@@ -1,4 +1,4 @@
-# Naija Class — Architecture and Module Specification
+# School Kit — Architecture and Module Specification
 
 A multi-tenant SaaS school management platform for Nigerian private schools, with AI-assisted learning built in from day one.
 
@@ -42,7 +42,7 @@ Concrete choices, optimised for solo development with Claude Code, Nigerian mark
 ## 3. Project structure
 
 ```
-naija-class/
+school-kit/
 ├── apps/
 │   ├── web/                  # Next.js — admin and teacher portals
 │   ├── mobile/               # Expo — parent and student app

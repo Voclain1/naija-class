@@ -1,0 +1,15 @@
+# 2026-05-13
+
+## Today's outcome
+Get Phase 0 Prompt 1 done: monorepo scaffolded, all three apps boot via `pnpm dev`.
+
+## Decisions
+- Phase 2 stays combined (attendance + grading)
+- Pilot school target: week 13 (after Phase 2 ships)
+- Repo initialized and pushed to GitHub
+
+## Stuck on
+- Nothing yet
+
+## Tomorrow's first task
+Verify scaffolding output. Begin Prompt 2 (tenancy + RLS).

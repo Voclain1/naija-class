@@ -1,4 +1,4 @@
-# Naija Class — Workflow
+# School Kit — Workflow
 
 How we build: fast, well, and only what's needed. Read once; refer back.
 
@@ -26,7 +26,7 @@ If everything else here is forgotten, these matter most:
 ## Repo structure
 
 ```
-naija-class/
+school-kit/
 ├── CLAUDE.md             How code is written (rules, conventions)
 ├── WORKFLOW.md           This file
 ├── README.md             Public project summary

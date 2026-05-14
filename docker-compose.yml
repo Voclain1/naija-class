@@ -1,0 +1,38 @@
+services:
+  postgres:
+    # pgvector image bundles Postgres 16 + the pgvector extension.
+    image: pgvector/pgvector:pg16
+    container_name: school-kit-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: school_kit
+      POSTGRES_PASSWORD: school_kit
+      POSTGRES_DB: school_kit
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infra/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U school_kit -d school_kit"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: school-kit-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  postgres_data:
+  redis_data:

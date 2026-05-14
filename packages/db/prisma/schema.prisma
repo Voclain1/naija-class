@@ -1,0 +1,169 @@
+// School Kit — Prisma schema (Phase 0)
+//
+// Models below mirror docs/modules/phase-0.md verbatim. Tenancy is enforced at
+// the Postgres layer via RLS (see packages/db/prisma/policies/phase-0.sql) and
+// at the application layer via withTenant() (see src/tenant-client.ts).
+
+generator client {
+  provider        = "prisma-client-js"
+  // Generated client lives inside this package, gitignored.
+  output          = "../src/generated/client"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  // Migrations run as the privileged DB owner (school_kit). The runtime client
+  // uses `url` and connects as `app_user`, which cannot bypass RLS.
+  directUrl  = env("DIRECT_URL")
+  extensions = [pgvector(map: "vector"), uuidOssp(map: "uuid-ossp")]
+}
+
+// ---------- Tenancy ----------
+
+model School {
+  id             String       @id @default(uuid())
+  name           String
+  slug           String       @unique // for subdomains: <slug>.schoolkit.ng
+  motto          String?
+  logoUrl        String?      @map("logo_url")
+  address        String?
+  phone          String?
+  email          String?
+  primaryColor   String?      @map("primary_color")
+  status         SchoolStatus @default(ONBOARDING)
+  onboardingStep Int          @default(1) @map("onboarding_step")
+  ndprConsent    Boolean      @default(false) @map("ndpr_consent")
+  ndprConsentAt  DateTime?    @map("ndpr_consent_at")
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+
+  branches    Branch[]
+  users       User[]
+  invitations Invitation[]
+
+  @@map("schools")
+}
+
+enum SchoolStatus {
+  ONBOARDING
+  ACTIVE
+  SUSPENDED
+  ARCHIVED
+}
+
+model Branch {
+  id        String   @id @default(uuid())
+  schoolId  String   @map("school_id")
+  name      String
+  address   String?
+  isMain    Boolean  @default(false) @map("is_main")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  @@index([schoolId])
+  @@map("branches")
+}
+
+// ---------- Identity ----------
+
+model User {
+  id            String    @id @default(uuid())
+  schoolId      String    @map("school_id")
+  email         String?   @unique
+  phone         String?   @unique
+  firstName     String    @map("first_name")
+  lastName      String    @map("last_name")
+  passwordHash  String?   @map("password_hash")
+  isActive      Boolean   @default(true) @map("is_active")
+  emailVerified Boolean   @default(false) @map("email_verified")
+  phoneVerified Boolean   @default(false) @map("phone_verified")
+  lastLoginAt   DateTime? @map("last_login_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  school   School     @relation(fields: [schoolId], references: [id])
+  roles    UserRole[]
+  sessions Session[]
+
+  @@index([schoolId])
+  @@map("users")
+}
+
+model Role {
+  id          String   @id @default(uuid())
+  schoolId    String?  @map("school_id") // null = system role (seeded)
+  key         String // 'owner', 'admin', 'teacher', etc.
+  name        String
+  description String?
+  isSystem    Boolean  @default(false) @map("is_system")
+  permissions Json     @default("[]") // string[] of permission keys, or ["*"]
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  users UserRole[]
+
+  @@unique([schoolId, key])
+  @@map("roles")
+}
+
+model UserRole {
+  userId    String   @map("user_id")
+  roleId    String   @map("role_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+  @@map("user_roles")
+}
+
+model Session {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  tokenHash String   @unique @map("token_hash")
+  ipAddress String?  @map("ip_address")
+  userAgent String?  @map("user_agent")
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+model Invitation {
+  id         String    @id @default(uuid())
+  schoolId   String    @map("school_id")
+  email      String?
+  phone      String?
+  roleKey    String    @map("role_key")
+  tokenHash  String    @unique @map("token_hash")
+  invitedBy  String    @map("invited_by")
+  expiresAt  DateTime  @map("expires_at")
+  acceptedAt DateTime? @map("accepted_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  @@index([schoolId])
+  @@map("invitations")
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  schoolId   String?  @map("school_id")
+  userId     String?  @map("user_id")
+  action     String // e.g. 'school.create', 'user.invite'
+  entityType String?  @map("entity_type")
+  entityId   String?  @map("entity_id")
+  metadata   Json?
+  ipAddress  String?  @map("ip_address")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([schoolId, createdAt])
+  @@map("audit_logs")
+}

@@ -1,4 +1,4 @@
-# Naija Class
+# School Kit
 
 A multi-tenant SaaS school management platform for Nigerian private schools, with AI-assisted learning built in from day one.
 
@@ -34,8 +34,8 @@ Future contributors and future-you should be productive after reading these four
 
 ```bash
 # Clone and install
-git clone <repo-url> naija-class
-cd naija-class
+git clone <repo-url> school-kit
+cd school-kit
 pnpm install
 
 # Environment
@@ -53,7 +53,7 @@ pnpm dev
 
 After `pnpm dev` boots, you should see:
 
-- Web (admin/teacher): `http://localhost:3000`
+- Web (admin/teacher): `http://localhost:3001`
 - API: `http://localhost:4000`
 - Mobile (Expo): scan QR with Expo Go app
 - Prisma Studio (optional): `pnpm db:studio` → `http://localhost:5555`
@@ -105,7 +105,7 @@ pnpm ai:eval              # run prompt eval suite (required before merging promp
 ## Project structure
 
 ```
-naija-class/
+school-kit/
 ├── CLAUDE.md             How code is written (read first)
 ├── WORKFLOW.md           How work happens
 ├── README.md             This file

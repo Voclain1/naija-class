@@ -1,0 +1,35 @@
+{
+  "name": "@school-kit/db",
+  "version": "0.0.0",
+  "private": true,
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./tenant-client": "./src/tenant-client.ts"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "lint": "echo 'lint placeholder'",
+    "test": "echo 'test placeholder'",
+    "generate": "dotenv -e ../../.env -- prisma generate",
+    "migrate": "dotenv -e ../../.env -- prisma migrate dev",
+    "migrate:deploy": "dotenv -e ../../.env -- prisma migrate deploy",
+    "migrate:reset": "dotenv -e ../../.env -- prisma migrate reset --force",
+    "studio": "dotenv -e ../../.env -- prisma studio",
+    "prisma": "dotenv -e ../../.env -- prisma",
+    "seed": "echo 'seed placeholder — implemented later in Phase 0'",
+    "clean": "rm -rf dist src/generated"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.22.0"
+  },
+  "devDependencies": {
+    "@school-kit/config": "workspace:*",
+    "@types/node": "^22.10.0",
+    "dotenv-cli": "^7.4.4",
+    "prisma": "^5.22.0",
+    "typescript": "^5.6.3"
+  }
+}

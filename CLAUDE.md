@@ -1,10 +1,10 @@
 # CLAUDE.md
 
-This file tells Claude Code how Naija Class is built. Read it before doing anything in this repo.
+This file tells Claude Code how School Kit is built. Read it before doing anything in this repo.
 
 ## Project
 
-Naija Class — multi-tenant school management platform for Nigerian private schools. Solo build with Claude Code. AI-assisted learning is a first-class feature, not an add-on.
+School Kit — multi-tenant school management platform for Nigerian private schools. Solo build with Claude Code. AI-assisted learning is a first-class feature, not an add-on.
 
 ## Read first (in this order)
 
@@ -77,6 +77,7 @@ infra/      Terraform / Pulumi
 - **Never query without a `school_id` filter.** Use `getTenantPrisma(schoolId)` from `packages/db/src/tenant-client.ts`. Raw SQL must `SET LOCAL app.current_school_id` first.
 - Never expose any ID from one school to a user from another. Re-validate `school_id` against the JWT on every endpoint that takes an ID in the path or body.
 - Never log full user PII in production. Email, phone, BVN, NIN all get redacted by the logger; if you bypass the logger you're doing it wrong.
+- **Runtime DB role must NOT have SUPERUSER or BYPASSRLS.** Postgres silently skips RLS policies for privileged roles, even with FORCE ROW LEVEL SECURITY. The runtime app connects as `app_user` (no privileges beyond SELECT/INSERT/UPDATE/DELETE on `public`). Migrations connect as `school_kit` via `DIRECT_URL`. If `DATABASE_URL` is ever changed to a privileged role, the RLS spec must fail loudly — this is a feature, not a bug.
 
 ### Money
 

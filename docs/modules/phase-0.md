@@ -31,7 +31,7 @@ The Prisma schema for Phase 0. Lives in `packages/db/prisma/schema.prisma`.
 model School {
   id            String   @id @default(uuid())
   name          String
-  slug          String   @unique           // for subdomains: <slug>.naijaclass.ng
+  slug          String   @unique           // for subdomains: <slug>.schoolkit.ng
   motto         String?
   logoUrl       String?  @map("logo_url")
   address       String?
@@ -470,7 +470,7 @@ Three weeks, day-ish granularity. Adjust as you go.
 
 ### Week 1 — scaffolding
 
-- [ ] Bootstrap Turborepo: `pnpm create turbo@latest naija-class`
+- [ ] Bootstrap Turborepo: `pnpm create turbo@latest school-kit`
 - [ ] Add `apps/web` (Next.js 15), `apps/api` (NestJS 10), `apps/mobile` (Expo 52)
 - [ ] Add packages: `db`, `types`, `ui`, `config`, `ai` (empty for now)
 - [ ] `docker-compose.yml` with postgres-16 + pgvector + redis
@@ -537,6 +537,6 @@ These belong in Phase 0 *eventually* but are deferred until they're actually nee
 ## Risks and gotchas
 
 - **RLS + connection pooling.** If you switch to PgBouncer in transaction mode, `SET LOCAL` still works; in statement mode it doesn't. Document the mode in `infra/`.
-- **Slug collisions.** `naijaclass.ng` subdomain space is small. Reserve common words (`admin`, `api`, `www`, `app`) in seed.
+- **Slug collisions.** `schoolkit.ng` subdomain space is small. Reserve common words (`admin`, `api`, `www`, `app`) in seed.
 - **Invitation race conditions.** Two admins can simultaneously invite the same email. Treat the invitations table as the source of truth, dedupe on `(school_id, email)` with a unique partial index.
 - **Audit volume.** At scale, `audit_logs` grows fast. Plan partition-by-month from day one (`PARTITION BY RANGE (created_at)`).
