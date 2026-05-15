@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { basePrisma, withTenant } from "@school-kit/db/tenant-client";
+import { basePrisma, withTenant } from "@school-kit/db";
 
 // Tenancy is the single bug class that can end the business overnight.
 // This suite exercises BOTH layers of defence: the application helper

@@ -1,0 +1,17 @@
+# 2026-05-14
+
+## Done today
+- Phase 0 Prompt 2 complete: withTenant + RLS + tests
+- 7/7 RLS isolation tests passing
+- Caught and fixed a near-miss: dev DB role was SUPERUSER, would have silently bypassed RLS in production. Split into app_user (runtime) and school_kit (migrations).
+- Added new rule to CLAUDE.md: runtime DB role must not have SUPERUSER/BYPASSRLS
+
+## Decisions
+- Implementation went beyond spec on three points: FORCE RLS, WITH CHECK clauses, app_user/migration role split — all worth keeping
+- Volume rename deferred until folder is renamed
+
+## Stuck on
+- Nothing
+
+## Tomorrow's first task
+Prompt 3 — auth signup. Begin with POST /auth/signup-owner.

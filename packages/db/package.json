@@ -19,17 +19,22 @@
     "migrate:reset": "dotenv -e ../../.env -- prisma migrate reset --force",
     "studio": "dotenv -e ../../.env -- prisma studio",
     "prisma": "dotenv -e ../../.env -- prisma",
-    "seed": "echo 'seed placeholder — implemented later in Phase 0'",
+    "seed": "dotenv -e ../../.env -- prisma db seed",
     "clean": "rm -rf dist src/generated"
   },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
+  },
   "dependencies": {
-    "@prisma/client": "^5.22.0"
+    "@prisma/client": "^5.22.0",
+    "@school-kit/types": "workspace:*"
   },
   "devDependencies": {
     "@school-kit/config": "workspace:*",
     "@types/node": "^22.10.0",
     "dotenv-cli": "^7.4.4",
     "prisma": "^5.22.0",
+    "tsx": "^4.19.2",
     "typescript": "^5.6.3"
   }
 }

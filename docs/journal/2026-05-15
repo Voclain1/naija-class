@@ -1,0 +1,23 @@
+# 2026-05-15
+
+## Done today
+- Phase 0 Prompt 3 complete: POST /auth/signup-owner end-to-end
+- 23/23 tests passing (10 service + 6 controller + 7 RLS = 23)
+- Manual smoke ran all 7 scenarios (happy path + 6 error cases) through the real Nest pipeline
+- Seed system roles wired (`pnpm db:seed` is real now); owner + admin rows in DB
+- Added ADR-001 (docs/DECISIONS.md): bearer-token sessions via argon2 for Phase 0; defer full Better Auth migration
+
+## Discoveries worth keeping
+- **Under FORCE RLS, Postgres hides which UNIQUE constraint failed.** Prisma surfaces `target: null` and "(not available)" — by design, to prevent cross-tenant info leak. Worked around with a SECURITY DEFINER pre-check function (`auth_check_signup_uniqueness`) that returns only booleans. Saved as memory: feedback-rls-hides-constraint-name.
+- **Vitest's default esbuild transform doesn't emit decorator metadata.** NestJS DI silently returns undefined for injected fields in any spec that spins up a real test module. Fixed by adding `unplugin-swc` + `@swc/core` to apps/api and configuring vitest.config.ts. Saved as memory: feedback-vitest-decorator-metadata.
+
+## Decisions
+- Approved approach B (argon2 directly, manage Session ourselves) over full Better Auth integration for Prompt 3 — proportional to scope, deferred properly via ADR-001
+- Audit log for signup is written inline inside the same transaction, not via the BullMQ queue. Comment in auth.service.ts explains why (no school_id exists yet when a queue worker would dequeue → loses atomicity)
+- Pre-check uniqueness rather than translate post-hoc — single extra roundtrip on signup is fine; signup is rare
+
+## Stuck on
+- Nothing
+
+## Tomorrow's first task
+Prompt 4 — POST /auth/login. Verify password against the stored argon2 hash, mint a session, re-use the bearer-token machinery from Prompt 3.
