@@ -106,6 +106,14 @@ infra/      Terraform / Pulumi
 
 ## Coding patterns
 
+### ESM module resolution
+
+- Workspace packages (`packages/*`) compile to `dist/`. Their `package.json` `main`/`types`/`exports` fields point at compiled output, never at `src/`.
+- TypeScript `module: Node16`, `moduleResolution: Node16` in each workspace package's `tsconfig.json`.
+- Relative imports inside `.ts` source files use `.js` extensions — TypeScript preserves them; Node ESM requires them.
+- Generated code (Prisma client) lives outside `src/` so compiled `dist/` can reach it with the same relative path.
+- Tests pass under Vitest+SWC's permissive resolution; runtime uses Node ESM's strict resolution. **If a package builds clean but runtime fails with `ERR_MODULE_NOT_FOUND`, the package is misconfigured, not the importing code.**
+
 ### NestJS module structure
 
 Every module lives in `apps/api/src/modules/<module-name>/`:
