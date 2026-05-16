@@ -8,8 +8,8 @@
 // Postgres, so a naive upsert against that constraint will not deduplicate.
 // We dedupe by hand with findFirst + create. Re-running the seed is safe.
 
-import { PrismaClient } from "../src/generated/client";
-import { SYSTEM_ROLE_SEEDS } from "./seed-data";
+import { PrismaClient } from "../generated/client/index.js";
+import { SYSTEM_ROLE_SEEDS } from "./seed-data.js";
 
 const prisma = new PrismaClient();
 

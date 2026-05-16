@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { RESERVED_SLUGS } from "./reserved-slugs";
+import { RESERVED_SLUGS } from "./reserved-slugs.js";
 
 // Slug rules: lowercase letters, digits, hyphens. 3–40 chars. Cannot start or
 // end with a hyphen. Becomes a subdomain (<slug>.schoolkit.ng).

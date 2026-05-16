@@ -42,7 +42,7 @@ playwright-report/
 test-results/
 
 # prisma generated client
-packages/db/src/generated/
+packages/db/generated/
 
 # expo
 apps/mobile/.expo/

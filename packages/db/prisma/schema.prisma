@@ -6,8 +6,10 @@
 
 generator client {
   provider        = "prisma-client-js"
-  // Generated client lives inside this package, gitignored.
-  output          = "../src/generated/client"
+  // Generated client lives inside this package, gitignored. Sits as a
+  // sibling of src/ so that compiled dist/*.js can require it via the same
+  // relative path source uses (../generated/client).
+  output          = "../generated/client"
   previewFeatures = ["postgresqlExtensions"]
 }
 

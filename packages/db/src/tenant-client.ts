@@ -1,5 +1,4 @@
-import { PrismaClient } from "./generated/client";
-
+import { PrismaClient } from "../generated/client/index.js";
 // Single base client for the application. Tenant scoping is enforced by setting
 // a transaction-local Postgres GUC (`app.current_school_id`) that every RLS
 // policy reads. EVERY authenticated request MUST route through `withTenant`.

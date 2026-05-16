@@ -106,6 +106,37 @@ infra/      Terraform / Pulumi
 
 ## Coding patterns
 
+### Prisma column types in raw SQL
+
+When writing raw SQL (migrations with SECURITY DEFINER functions, custom queries via `$queryRaw`):
+- Prisma `String @id` → PostgreSQL `TEXT`, not `uuid`
+- Prisma `DateTime` → `TIMESTAMP(3)` (3-digit ms precision; matches Prisma's default)
+- Prisma `Boolean` → `BOOLEAN`
+- Prisma `Int` → `INTEGER`
+- Prisma `Json` → `JSONB`
+
+If you need a uuid column specifically, declare it in Prisma as `String @id @db.Uuid`. Check `prisma migrate dev --create-only` and inspect the generated SQL before assuming.
+
+### SECURITY DEFINER functions — index
+
+SECURITY DEFINER SQL functions bypass RLS by running with the privileges of the function owner (the migration role, `school_kit`). They are the only legitimate escape hatch from FORCE RLS for the runtime role (`app_user`), so they are load-bearing security primitives — treat every one as you would a piece of auth code, not as a generic helper.
+
+Discipline for every function in this category:
+
+1. Owned by the migration role; runtime role has EXECUTE only (PUBLIC revoked).
+2. `SET search_path = public, pg_temp` pinned in the function body.
+3. Returns scalars / opaque ids only — never a full row, never PII the caller didn't supply.
+4. Has a header comment in the migration explaining (a) **why** SECURITY DEFINER is needed, (b) what fields it returns, and (c) what fields are **deliberately NOT** returned.
+5. Added to the inventory below in the same PR that introduces it.
+
+| Function | Migration | Purpose | Deliberately omits |
+|---|---|---|---|
+| `auth_check_signup_uniqueness(email, phone)` | `20260515000000_add_signup_uniqueness_function` | Distinguishes `EMAIL_TAKEN` vs `PHONE_TAKEN` at signup (FORCE RLS strips P2002 target). | Row ids, names, school_id — returns only two booleans. |
+| `auth_resolve_session(token_hash)` | `20260516000000_add_auth_lookup_functions` | AuthGuard session lookup pre-tenant; resolves bearer token to `{ session_id, user_id, school_id, expires_at, user_is_active }`. | `password_hash`, email/phone/names, roles/permissions. |
+| `auth_lookup_user_for_login(email)` | `20260516000000_add_auth_lookup_functions` | Login service user lookup pre-tenant; returns `{ user_id, school_id, password_hash, is_active }`. | phone, names, role grants, session rows. |
+
+If this list grows past 5, refactor before adding more — see `docs/deferred.md` ("Audit SECURITY DEFINER inventory").
+
 ### ESM module resolution
 
 - Workspace packages (`packages/*`) compile to `dist/`. Their `package.json` `main`/`types`/`exports` fields point at compiled output, never at `src/`.

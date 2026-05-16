@@ -39,9 +39,24 @@ export class ValidationError extends BaseError {
   readonly httpStatus = 400;
 }
 
+// Like ConflictError, UnauthorizedError carries an optional sub-code so the
+// client can distinguish between (e.g.) MISSING_BEARER_TOKEN, INVALID_SESSION,
+// SESSION_EXPIRED, USER_INACTIVE, and INVALID_CREDENTIALS without parsing
+// the human-readable message. Default is the generic "UNAUTHORIZED".
 export class UnauthorizedError extends BaseError {
-  readonly code = "UNAUTHORIZED";
   readonly httpStatus = 401;
+  readonly code: string;
+  constructor(codeOrMessage: string, message?: string, details?: unknown) {
+    // Two-arg form: (subCode, message). One-arg form: just the message,
+    // code defaults to "UNAUTHORIZED" (back-compat).
+    if (message === undefined) {
+      super(codeOrMessage, details);
+      this.code = "UNAUTHORIZED";
+    } else {
+      super(message, details);
+      this.code = codeOrMessage;
+    }
+  }
 }
 
 export class ForbiddenError extends BaseError {
