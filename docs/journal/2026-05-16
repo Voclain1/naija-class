@@ -1,0 +1,30 @@
+# 2026-05-16
+
+## Today's outcome
+Slice 5: Admin shell + login UI. End state: user can navigate to /login,
+sign in with real credentials, land on a protected /dashboard with the
+admin sidebar/topbar visible.
+
+## Decisions
+- Phase 0 ordering: vertical slices, not backend-first
+- Slice 5 starts with frontend foundation (Next.js, Tailwind, shadcn/ui)
+- Tailwind v3.4 + shadcn/ui (slate base, default style), hand-authored
+  the six primitives we need (button, input, label, card, dropdown-menu,
+  sonner) instead of running the shadcn CLI — same output, less ceremony.
+- Phase 0 auth token lives in `localStorage`; httpOnly-cookie migration
+  captured in deferred.md (blocks middleware-based route protection, so
+  Slice 5 uses a client-side `<RequireAuth>` gate with a branded loading
+  screen — explicitly not a blank white flash).
+- Sonner toaster positioned bottom-right because top-right collides with
+  the topbar's profile dropdown.
+- 401-mid-render: accepted brief flash. apiFetch clears the token and
+  fires a custom event; AuthProvider listens, flips to `guest`, and
+  routes to /login. Documented in auth-provider.tsx — chose this over
+  wrapping the shell in an error boundary because the alternative adds
+  plumbing for every query and the user ends up on /login either way.
+- Documented apps/web vs apps/api workspace consumption divergence as a
+  comment in `apps/web/next.config.mjs` (web uses transpilePackages on
+  TS source; api consumes built dist/).
+
+## Tomorrow's first task
+Slice 6: onboarding wizard backend + frontend.
