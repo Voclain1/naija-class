@@ -5,12 +5,23 @@ import type {
   LoginInput,
   LoginResponse,
   MeResponse,
+  SignupOwnerInput,
+  SignupOwnerResponse,
 } from "@school-kit/types";
 
 import { apiFetch } from "../api-client";
 
 export function loginRequest(input: LoginInput): Promise<LoginResponse> {
   return apiFetch<LoginResponse>("/auth/login", {
+    method: "POST",
+    body: input,
+  });
+}
+
+export function signupOwnerRequest(
+  input: SignupOwnerInput,
+): Promise<SignupOwnerResponse> {
+  return apiFetch<SignupOwnerResponse>("/auth/signup-owner", {
     method: "POST",
     body: input,
   });

@@ -1,4 +1,10 @@
 import "reflect-metadata";
+// Sentry must initialise before NestFactory.create — its OpenTelemetry-based
+// instrumentation patches import hooks, and the patching only catches code
+// loaded after init runs. A blank SENTRY_DSN_API makes init a no-op.
+import { initSentry } from "./observability/sentry";
+initSentry();
+
 import { NestFactory } from "@nestjs/core";
 import { Logger } from "@nestjs/common";
 import { AppModule } from "./app.module";

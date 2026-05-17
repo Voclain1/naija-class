@@ -7,6 +7,7 @@ import type { ReactNode } from "react";
 import { Toaster } from "@/components/ui/sonner";
 
 import { AuthProvider } from "./auth/auth-provider";
+import { PostHogProvider } from "./observability/posthog-provider";
 
 export function Providers({ children }: { children: ReactNode }) {
   // useState ensures the QueryClient is stable across re-renders without
@@ -28,7 +29,13 @@ export function Providers({ children }: { children: ReactNode }) {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <AuthProvider>{children}</AuthProvider>
+      <PostHogProvider>
+        {/* AuthProvider sits INSIDE PostHogProvider so its identify/reset
+            calls can rely on the SDK being mounted. PostHogProvider
+            renders children unwrapped when the key is blank, so the
+            no-key dev path costs zero. */}
+        <AuthProvider>{children}</AuthProvider>
+      </PostHogProvider>
       <Toaster />
     </QueryClientProvider>
   );

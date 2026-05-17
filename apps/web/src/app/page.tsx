@@ -17,11 +17,18 @@ export default function HomePage() {
           Phase 0 — auth and admin shell live. Marketing landing comes later.
         </p>
       </div>
-      <Button asChild>
-        <Link href={isAuthed ? "/dashboard" : "/login"}>
-          {isAuthed ? "Go to dashboard" : "Log in"}
-        </Link>
-      </Button>
+      <div className="flex gap-2">
+        <Button asChild>
+          <Link href={isAuthed ? "/dashboard" : "/signup"}>
+            {isAuthed ? "Go to dashboard" : "Create a school"}
+          </Link>
+        </Button>
+        {!isAuthed && (
+          <Button asChild variant="outline">
+            <Link href="/login">Log in</Link>
+          </Button>
+        )}
+      </div>
     </main>
   );
 }

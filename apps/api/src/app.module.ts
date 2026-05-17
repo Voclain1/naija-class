@@ -5,9 +5,16 @@ import { ConfigModule } from "@nestjs/config";
 import { HealthController } from "./health/health.controller";
 import { HttpExceptionFilter } from "./common/http-exception.filter";
 import { AuthModule } from "./modules/auth/auth.module";
+import { DebugModule } from "./modules/debug/debug.module";
 import { InvitationsModule } from "./modules/invitations/invitations.module";
 import { SchoolsModule } from "./modules/schools/schools.module";
 import { UsersModule } from "./modules/users/users.module";
+
+// DebugModule exposes /api/v1/debug/sentry-test for verifying Sentry wiring.
+// Gated at import time so production builds do not include the route. This
+// is the canonical "dev-only" pattern: not a runtime guard inside the
+// controller, but absence at module composition.
+const isProd = process.env.NODE_ENV === "production";
 
 @Module({
   imports: [
@@ -19,6 +26,7 @@ import { UsersModule } from "./modules/users/users.module";
     SchoolsModule,
     UsersModule,
     InvitationsModule,
+    ...(isProd ? [] : [DebugModule]),
   ],
   controllers: [HealthController],
   providers: [

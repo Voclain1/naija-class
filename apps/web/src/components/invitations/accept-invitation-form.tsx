@@ -26,6 +26,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ApiError, setStoredToken } from "@/lib/api-client";
 import { acceptInvitation } from "@/lib/invitations/invitations-api";
+import { track } from "@/lib/observability/events";
 
 // Extend the shared accept-invitation schema with a confirmPassword field +
 // a refinement that the two passwords match. The server has no
@@ -91,6 +92,16 @@ export function AcceptInvitationForm({ token, invitation }: Props) {
         ndprConsent: true,
       };
       const res = await acceptInvitation(token, payload);
+
+      // Track the acceptance BEFORE the hard navigation. PostHog buffers
+      // events and flushes on `pagehide`, so the event will still ship,
+      // but firing pre-navigate makes the order deterministic for tests.
+      // The accepted role is always 'admin' at Phase 0 — invitation_sent
+      // and invitation_accepted carry the same roleKey for funnel matching.
+      track("invitation_accepted", {
+        schoolId: res.school.id,
+        roleKey: "admin",
+      });
 
       // Store the bearer token, then push to /dashboard. The admin layout's
       // RequireAuth gate will rehydrate via /auth/me — but the AuthProvider

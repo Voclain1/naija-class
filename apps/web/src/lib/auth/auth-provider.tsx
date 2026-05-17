@@ -9,6 +9,7 @@ import type {
   LoginInput,
   MeResponse,
   SchoolMeDto,
+  SignupOwnerInput,
   SignupOwnerUserDto,
 } from "@school-kit/types";
 
@@ -18,7 +19,13 @@ import {
   getStoredToken,
   setStoredToken,
 } from "../api-client";
-import { loginRequest, logoutRequest, meRequest } from "./auth-api";
+import { identify, resetIdentity, track } from "../observability/events";
+import {
+  loginRequest,
+  logoutRequest,
+  meRequest,
+  signupOwnerRequest,
+} from "./auth-api";
 
 export type AuthStatus = "loading" | "authed" | "guest";
 
@@ -33,6 +40,7 @@ export interface AuthState {
 
 export interface AuthContextValue extends AuthState {
   login: (input: LoginInput) => Promise<void>;
+  signup: (input: SignupOwnerInput) => Promise<void>;
   logout: () => Promise<void>;
   // Called by the onboarding flow after each POST /onboarding/:step to keep
   // the auth context's school in sync without a round-trip to /auth/me.
@@ -84,7 +92,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     let cancelled = false;
     meRequest()
       .then((me) => {
-        if (!cancelled) setState(applyMeToState(me, token));
+        if (cancelled) return;
+        setState(applyMeToState(me, token));
+        // Re-identify on every hydration so PostHog associates this
+        // browser session with the right user, even after a tab reload.
+        identify(me.user.id, {
+          schoolId: me.school.id,
+          schoolStatus: me.school.status,
+          role: me.roles[0]?.key,
+        });
       })
       .catch(() => {
         if (cancelled) return;
@@ -122,12 +138,41 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // on reload. One extra request keeps the in-memory state consistent.
       const me = await meRequest();
       setState(applyMeToState(me, response.token));
+      identify(me.user.id, {
+        schoolId: me.school.id,
+        schoolStatus: me.school.status,
+        role: me.roles[0]?.key,
+      });
+      track("login_completed", {
+        schoolId: me.school.id,
+        role: me.roles[0]?.key ?? "unknown",
+      });
     },
     [],
   );
 
   const setSchool = useCallback((school: SchoolMeDto) => {
     setState((prev) => ({ ...prev, school }));
+  }, []);
+
+  const signup = useCallback(async (input: SignupOwnerInput) => {
+    const response = await signupOwnerRequest(input);
+    setStoredToken(response.token);
+    // Fetch /auth/me right after signup so roles + permissions populate
+    // in the same shape as login/hydration. The signup response gives us
+    // user + school + token; /auth/me adds the owner role grant.
+    const me = await meRequest();
+    setState(applyMeToState(me, response.token));
+    identify(me.user.id, {
+      schoolId: me.school.id,
+      schoolStatus: me.school.status,
+      role: me.roles[0]?.key,
+    });
+    track("signup_completed", {
+      schoolId: me.school.id,
+      schoolStatus: me.school.status,
+      role: me.roles[0]?.key ?? "owner",
+    });
   }, []);
 
   const logout = useCallback(async () => {
@@ -138,12 +183,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // state so the user is not stuck in a phantom session.
     }
     clearStoredToken();
+    // Reset PostHog identity so a subsequent login on the same browser
+    // gets a fresh anonymous id (no event fusion across users).
+    resetIdentity();
     setState(guestState());
     router.replace("/login");
   }, [router]);
 
   return (
-    <AuthContext.Provider value={{ ...state, login, logout, setSchool }}>
+    <AuthContext.Provider value={{ ...state, login, signup, logout, setSchool }}>
       {children}
     </AuthContext.Provider>
   );

@@ -1,0 +1,60 @@
+# 2026-05-17
+
+   ## Today's outcome
+   Slice 7: invitations. End state: an owner can invite an admin via 
+   /settings/users, the admin receives the link (logged to console for 
+   Phase 0; real email is Phase 4), clicks the token URL, sets a 
+   password, logs in, lands on /dashboard with admin permissions.
+
+   ## Decisions
+   - (capture as the day unfolds)
+
+   ## Stuck on
+   - Nothing yet
+
+   ## Tomorrow's first task
+   - (fill in at end of day)
+
+   ## Slice 7 — done
+- Invitation flow works end-to-end in browser
+- Owner -> admin -> admin logs in loop closed
+- 100/100 backend tests passing (33 new)
+- 4 SECURITY DEFINER functions now; trigger refactor at 5
+- 5th "tests pass, runtime fails": Tailwind config CommonJS in ESM project
+
+## Decisions made
+- Add 4th SECURITY DEFINER function rather than consolidate (different 
+  return shape, different concern; consolidate at 5+)
+- firstName/lastName as Invitation columns rather than audit metadata
+- Hard window.location.href after accept (forces AuthProvider remount)
+- accepted_at checked before expires_at (better UX for long-dormant tokens)
+
+## Lessons learned
+- CSS toolchain config files have their own module resolution path 
+  (Tailwind, PostCSS, etc.). The "ESM project rules" extend to 
+  config files, not just application code.
+- Race-condition tests using real Postgres concurrency (Promise.all 
+  with two real DB calls) caught the actual race. Mocked timing 
+  would have lied.
+- Pattern continues: tests pass, runtime fails, manual browser 
+  verification catches it. Five times now.
+
+## Phase 0 scoreboard
+1. Owner signs up via /signup in the browser -> onboarding -> dashboard ✓
+   (Pre-Slice-8a this was ✓ only at the API level — signup-owner endpoint
+   tested via curl. Slice 8a adds the /signup page so the criterion is
+   true end-to-end through the UI for the first time.)
+2. Owner invites admin -> accepts -> logs in ✓ (Slice 7)
+3. Two schools cannot see each other's data ✓
+4. RLS at DB layer ✓
+5. Audit log on signup/login/etc ✓
+6. Sentry catches error - Slice 8a (in progress)
+7. PostHog records signup_completed - Slice 8a (in progress)
+8. All tests pass ✓ (117/117 after Slice 8a CP1)
+9. CI passes on every PR - Slice 8b (tomorrow)
+
+6 of 9 done. One slice remains after 8a: CI on every PR (8b).
+
+## Tomorrow's first task
+Slice 8 — observability + CI. Sentry (apps/api + apps/web), PostHog 
+(apps/web), GitHub Actions workflow for lint/typecheck/test on every PR.

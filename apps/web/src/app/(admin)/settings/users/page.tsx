@@ -17,6 +17,8 @@ import {
 } from "@/components/settings/invitations-table";
 import { UsersTable } from "@/components/settings/users-table";
 import { ApiError } from "@/lib/api-client";
+import { useAuth } from "@/lib/auth/use-auth";
+import { track } from "@/lib/observability/events";
 import {
   listPendingInvitations,
   listUsers,
@@ -29,6 +31,7 @@ import {
 // "Copy link" affordance (raw tokens aren't persisted, so the URL is only
 // recoverable until page reload — by design, since re-issue is deferred).
 export default function SettingsUsersPage() {
+  const { school } = useAuth();
   const [users, setUsers] = useState<UserListItemDto[]>([]);
   const [pending, setPending] = useState<PendingInvitationDto[]>([]);
   const [copyableUrls, setCopyableUrls] = useState<CopyableUrlMap>({});
@@ -79,7 +82,13 @@ export default function SettingsUsersPage() {
       ...prev,
     ]);
     setCopyableUrls((prev) => ({ ...prev, [res.invitation.id]: res.acceptUrl }));
-  }, []);
+    if (school) {
+      track("invitation_sent", {
+        schoolId: school.id,
+        roleKey: res.invitation.roleKey,
+      });
+    }
+  }, [school]);
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-8">

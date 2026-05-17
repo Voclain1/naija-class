@@ -23,7 +23,8 @@
     "db:seed": "pnpm --filter @school-kit/db seed",
     "db:studio": "pnpm --filter @school-kit/db studio",
     "ai:eval": "pnpm --filter @school-kit/ai eval",
-    "clean": "turbo run clean && rm -rf node_modules"
+    "clean": "turbo run clean && rm -rf node_modules",
+    "kill-ports": "npx kill-port 3001 4000"
   },
   "devDependencies": {
     "turbo": "^2.3.3",

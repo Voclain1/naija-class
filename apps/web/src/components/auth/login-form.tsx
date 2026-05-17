@@ -2,6 +2,7 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Loader2 } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
@@ -102,6 +103,12 @@ export function LoginForm() {
             {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
             {submitting ? "Signing in…" : "Sign in"}
           </Button>
+          <p className="mt-2 text-center text-sm text-muted-foreground">
+            New school?{" "}
+            <Link href="/signup" className="underline">
+              Create an account
+            </Link>
+          </p>
         </form>
       </CardContent>
     </Card>

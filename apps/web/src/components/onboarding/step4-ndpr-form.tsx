@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/card";
 import { ApiError } from "@/lib/api-client";
 import { useAuth } from "@/lib/auth/use-auth";
+import { track } from "@/lib/observability/events";
 import { advanceStep4 } from "@/lib/onboarding/onboarding-api";
 
 import { OnboardingProgress } from "./progress-indicator";
@@ -41,6 +42,7 @@ export function Step4NdprForm() {
     try {
       const res = await advanceStep4({ ndprConsent: true });
       setSchool(res.school);
+      track("onboarding_step_completed", { schoolId: res.school.id, step: 4 });
       router.replace("/onboarding/5");
     } catch (apiError) {
       if (apiError instanceof ApiError) {

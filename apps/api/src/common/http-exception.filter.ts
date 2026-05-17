@@ -2,6 +2,8 @@ import { ArgumentsHost, Catch, ExceptionFilter, HttpException, Logger } from "@n
 import { BaseError } from "@school-kit/types";
 import type { Request, Response } from "express";
 
+import { Sentry } from "../observability/sentry";
+
 // Global error filter. Three branches:
 //   1. BaseError subclass → use its httpStatus + code + message + details
 //   2. NestJS HttpException → preserve its status; coerce its body shape into
@@ -39,6 +41,17 @@ export class HttpExceptionFilter implements ExceptionFilter {
     }
 
     // Unknown error — log everything, return nothing useful to the caller.
+    // BaseError and HttpException return above without reaching here, so by
+    // construction every exception captured to Sentry is an unexpected one.
+    // Sending modelled 4xx errors would flood the dashboard with normal
+    // validation / not-found noise; we want only what genuinely surprised us.
+    // captureException is a documented no-op when SENTRY_DSN_API is unset.
+    Sentry.captureException(exception, {
+      extra: {
+        method: req.method,
+        url: req.originalUrl,
+      },
+    });
     this.logger.error(
       `Unhandled exception on ${req.method} ${req.originalUrl}`,
       exception instanceof Error ? exception.stack : String(exception),

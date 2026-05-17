@@ -24,6 +24,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ApiError } from "@/lib/api-client";
 import { useAuth } from "@/lib/auth/use-auth";
+import { track } from "@/lib/observability/events";
 import { advanceStep3 } from "@/lib/onboarding/onboarding-api";
 
 import { OnboardingProgress } from "./progress-indicator";
@@ -56,6 +57,7 @@ export function Step3InvitesForm() {
     try {
       const res = await advanceStep3(values);
       setSchool(res.school);
+      track("onboarding_step_completed", { schoolId: res.school.id, step: 3 });
       router.replace("/onboarding/4");
     } catch (error) {
       if (error instanceof ApiError) {
