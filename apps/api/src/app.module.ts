@@ -5,7 +5,9 @@ import { ConfigModule } from "@nestjs/config";
 import { HealthController } from "./health/health.controller";
 import { HttpExceptionFilter } from "./common/http-exception.filter";
 import { AuthModule } from "./modules/auth/auth.module";
+import { InvitationsModule } from "./modules/invitations/invitations.module";
 import { SchoolsModule } from "./modules/schools/schools.module";
+import { UsersModule } from "./modules/users/users.module";
 
 @Module({
   imports: [
@@ -15,6 +17,8 @@ import { SchoolsModule } from "./modules/schools/schools.module";
     }),
     AuthModule,
     SchoolsModule,
+    UsersModule,
+    InvitationsModule,
   ],
   controllers: [HealthController],
   providers: [

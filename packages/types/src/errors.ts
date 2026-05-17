@@ -80,6 +80,23 @@ export class ConflictError extends BaseError {
   }
 }
 
+// 410 — the resource existed but is no longer available. Used by the public
+// invitation endpoints to distinguish "this invitation has expired" /
+// "this invitation has already been used" from a plain 404 (no such token).
+// 409 ConflictError would be wrong: the state isn't conflicting with the
+// caller's request, the resource is genuinely gone. Sub-code present in the
+// same shape as ConflictError so the client can branch on
+// INVITATION_EXPIRED vs INVITATION_ALREADY_ACCEPTED without parsing
+// the message.
+export class GoneError extends BaseError {
+  readonly httpStatus = 410;
+  readonly code: string;
+  constructor(code: string, message: string, details?: unknown) {
+    super(message, details);
+    this.code = code;
+  }
+}
+
 export class InternalError extends BaseError {
   readonly code = "INTERNAL_ERROR";
   readonly httpStatus = 500;

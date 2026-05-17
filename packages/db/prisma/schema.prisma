@@ -142,6 +142,8 @@ model Invitation {
   schoolId   String    @map("school_id")
   email      String?
   phone      String?
+  firstName  String?   @map("first_name")
+  lastName   String?   @map("last_name")
   roleKey    String    @map("role_key")
   tokenHash  String    @unique @map("token_hash")
   invitedBy  String    @map("invited_by")

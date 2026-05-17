@@ -134,8 +134,9 @@ Discipline for every function in this category:
 | `auth_check_signup_uniqueness(email, phone)` | `20260515000000_add_signup_uniqueness_function` | Distinguishes `EMAIL_TAKEN` vs `PHONE_TAKEN` at signup (FORCE RLS strips P2002 target). | Row ids, names, school_id — returns only two booleans. |
 | `auth_resolve_session(token_hash)` | `20260516000000_add_auth_lookup_functions` | AuthGuard session lookup pre-tenant; resolves bearer token to `{ session_id, user_id, school_id, expires_at, user_is_active }`. | `password_hash`, email/phone/names, roles/permissions. |
 | `auth_lookup_user_for_login(email)` | `20260516000000_add_auth_lookup_functions` | Login service user lookup pre-tenant; returns `{ user_id, school_id, password_hash, is_active }`. | phone, names, role grants, session rows. |
+| `auth_resolve_invitation_by_token_hash(token_hash)` | `20260517000000_invitation_names_and_lookup` | Public invitation endpoints (GET /invitations/:token, POST /invitations/:token/accept) resolve a token hash to `{ invitation_id, school_id, email, role_key, first_name, last_name, invited_by, expires_at, accepted_at }` before withTenant() can apply. | `token_hash`, `phone`, `created_at` — caller already has the token; phone is Phase-4 territory; created_at is read tenant-scoped from the pending-invitations list. |
 
-If this list grows past 5, refactor before adding more — see `docs/deferred.md` ("Audit SECURITY DEFINER inventory").
+If this list grows past 5, refactor before adding more — see `docs/deferred.md` ("Audit SECURITY DEFINER inventory"). **Current count: 4.**
 
 ### ESM module resolution
 
@@ -144,6 +145,8 @@ If this list grows past 5, refactor before adding more — see `docs/deferred.md
 - Relative imports inside `.ts` source files use `.js` extensions — TypeScript preserves them; Node ESM requires them.
 - Generated code (Prisma client) lives outside `src/` so compiled `dist/` can reach it with the same relative path.
 - Tests pass under Vitest+SWC's permissive resolution; runtime uses Node ESM's strict resolution. **If a package builds clean but runtime fails with `ERR_MODULE_NOT_FOUND`, the package is misconfigured, not the importing code.**
+- Config files for CSS/build tooling (`tailwind.config.ts`, `postcss.config.mjs`, etc.) must also be ESM in an ESM project. Use top-of-file `import` rather than `require()` even when the tool's docs show `require()` examples — those examples assume CommonJS. Tests don't catch this because the CSS pipeline only runs on real browser routes; the symptom is `ReferenceError: require is not defined` at the first request that triggers a Tailwind compile.
+- CJS-only npm packages (no `"type": "module"`, no `"exports"` map, single `module.exports = X`) work fine via `import x from "pkg"` thanks to Node's CJS interop — `x` resolves to `module.exports`. If a package instead does `module.exports.foo = ...` (named exports) the default import gives you the *namespace object*, and you either destructure (`import { foo } from "pkg"`) or use `import * as pkg`. Inspect `node_modules/<pkg>/index.js` once when adding a new dependency; the project standardises on the simplest form that works.
 
 ### NestJS module structure
 
@@ -202,6 +205,20 @@ Server components by default. Add `'use client'` only when needed (forms, intera
 - Integration tests for controllers with mocked Prisma.
 - E2E (Playwright) for critical user flows: signup → onboard → first student → first payment.
 - Run: `pnpm test` (all), `pnpm test:e2e`, `pnpm test:watch`.
+
+### Next.js route groups vs URL segments
+
+- Route groups: folders wrapped in parens like `(auth)`, `(admin)`. 
+  Organise files without affecting the URL. The folder name is stripped.
+  - `app/(admin)/dashboard/page.tsx` → URL `/dashboard`
+  - `app/(auth)/login/page.tsx` → URL `/login`
+- Real URL segments: plain folder names without parens.
+  - `app/onboarding/3/page.tsx` → URL `/onboarding/3`
+- When `docs/modules/*.md` specifies a URL path, the folder structure 
+  must match that path literally. If the spec says `/onboarding/3`, 
+  the folder is `onboarding/3` — NOT `(onboarding)/3`.
+- Tests don't catch this. Only the browser does. Verify visually 
+  when introducing any new route.
 
 ## Adding a new module
 
@@ -278,9 +295,15 @@ R2_SECRET_ACCESS_KEY
 R2_BUCKET
 SENTRY_DSN
 POSTHOG_KEY
+WEB_BASE_URL
 ```
 
 Never commit. Never log. Test keys and live keys are different env files.
+
+`WEB_BASE_URL` — the API can hold a `WEB_BASE_URL` env var when constructing
+user-facing URLs (invitation accept links, password reset links, etc.). The
+API never follows these URLs; it only constructs them for delivery. Production
+must set this explicitly; dev defaults to `http://localhost:3001`.
 
 ## When asking Claude Code for help
 

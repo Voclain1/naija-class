@@ -31,7 +31,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: "Academics", href: "/academics", icon: BarChart3, enabled: false },
   { label: "Finance", href: "/finance", icon: Wallet, enabled: false },
   { label: "Reports", href: "/reports", icon: BarChart3, enabled: false },
-  { label: "Settings", href: "/settings", icon: Settings, enabled: false },
+  { label: "Settings", href: "/settings", icon: Settings, enabled: true },
 ];
 
 export function AdminSidebar() {

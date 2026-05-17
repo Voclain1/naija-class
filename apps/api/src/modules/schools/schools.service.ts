@@ -4,9 +4,7 @@ import { Injectable } from "@nestjs/common";
 import { Prisma, basePrisma, withTenant } from "@school-kit/db";
 import {
   ConflictError,
-  ForbiddenError,
   NotFoundError,
-  UnauthorizedError,
   ValidationError,
   type OnboardingStep1Input,
   type OnboardingStep2Input,
@@ -19,6 +17,7 @@ import {
 } from "@school-kit/types";
 
 import type { AuthContext } from "../../common/auth/auth-context";
+import { assertUserActiveAndHasOneOf } from "../../common/auth/role-check";
 import { redactEmail } from "../../common/redact";
 
 const INVITATION_TTL_MS = 1000 * 60 * 60 * 24 * 7; // 7 days
@@ -379,44 +378,6 @@ async function loadSchoolOrThrow(schoolId: string): Promise<SchoolMeDto> {
     throw new NotFoundError("School not found.");
   }
   return toSchoolMeDto(school);
-}
-
-// Re-fetches the user and their role grants under withTenant (users +
-// user_roles are FORCE-RLS'd). Two gates in one helper because they share
-// the fetch — separating them would re-query twice for no benefit.
-//
-// - Active check: defense in depth. AuthGuard already rejected !is_active,
-//   but a deactivation can land between requests; CLAUDE.md says "never
-//   trust the JWT subject alone for mutations".
-// - Role check: handler-level authorisation. Owner-only routes pass
-//   ['owner']; owner-or-admin routes pass ['owner', 'admin'].
-async function assertUserActiveAndHasOneOf(
-  authCtx: AuthContext,
-  allowedRoleKeys: readonly string[],
-): Promise<void> {
-  const { isActive, roleKeys } = await withTenant(authCtx.schoolId, async (db) => {
-    const user = await db.user.findUnique({
-      where: { id: authCtx.userId },
-      select: { isActive: true },
-    });
-    const grants = await db.userRole.findMany({
-      where: { userId: authCtx.userId },
-      select: { role: { select: { key: true } } },
-    });
-    return {
-      isActive: user?.isActive ?? false,
-      roleKeys: grants.map((g) => g.role.key),
-    };
-  });
-
-  if (!isActive) {
-    throw new UnauthorizedError("USER_INACTIVE", "Your account has been deactivated.");
-  }
-  if (!roleKeys.some((k) => allowedRoleKeys.includes(k))) {
-    throw new ForbiddenError(
-      `This action requires one of the following roles: ${allowedRoleKeys.join(", ")}.`,
-    );
-  }
 }
 
 // Exported so the controller can call it with `step` already coerced.

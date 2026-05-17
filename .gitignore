@@ -60,3 +60,10 @@ apps/mobile/*.orig.*
 *.key
 .terraform/
 .terraform.lock.hcl
+
+# repo-root scratch files from manual curl chains (Slice 7 onward)
+/signup.json
+/invite.json
+/expired-inv.json
+/admin-login.json
+/og.json

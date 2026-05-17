@@ -1,5 +1,4 @@
 import { Injectable } from "@nestjs/common";
-import * as crypto from "node:crypto";
 
 import { Prisma, basePrisma, withTenant } from "@school-kit/db";
 import {
@@ -18,9 +17,9 @@ import type { AuthContext } from "../../common/auth/auth-context";
 // Indirect through password.ts so tests can spy on hashPassword / verifyPassword.
 // The argon2 package's CJS exports are non-configurable.
 import * as password from "../../common/auth/password";
+import { createSession } from "../../common/auth/sessions";
 import { redactEmail } from "../../common/redact";
 
-const SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 30; // 30 days
 const SIGNUP_AUDIT_ACTION = "auth.signup_owner";
 const LOGIN_AUDIT_ACTION = "auth.login";
 const LOGOUT_AUDIT_ACTION = "auth.logout";
@@ -170,7 +169,7 @@ export class AuthService {
     // Session creation outside the school+user transaction (see method
     // comment for why). Goes through withTenant so the RLS policy on
     // `sessions` is satisfied.
-    const { rawToken } = await this.createSession(created.schoolId, created.userId, ctx);
+    const { rawToken } = await createSession(created.schoolId, created.userId, ctx);
 
     return {
       user: created.user,
@@ -215,7 +214,7 @@ export class AuthService {
       throw new UnauthorizedError("INVALID_CREDENTIALS", "Invalid email or password.");
     }
 
-    const { rawToken } = await this.createSession(row.school_id, row.user_id, ctx);
+    const { rawToken } = await createSession(row.school_id, row.user_id, ctx);
 
     const user = await withTenant(row.school_id, async (db) => {
       // Touch lastLoginAt + read back the public-shape user payload.
@@ -359,28 +358,6 @@ export class AuthService {
     }
   }
 
-  private async createSession(
-    schoolId: string,
-    userId: string,
-    ctx: RequestContext,
-  ): Promise<{ rawToken: string }> {
-    const rawToken = crypto.randomBytes(32).toString("base64url");
-    const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
-
-    await withTenant(schoolId, (db) =>
-      db.session.create({
-        data: {
-          userId,
-          tokenHash,
-          ipAddress: ctx.ipAddress,
-          userAgent: ctx.userAgent,
-          expiresAt: new Date(Date.now() + SESSION_TTL_MS),
-        },
-      }),
-    );
-
-    return { rawToken };
-  }
 }
 
 // Selects — explicit so we never accidentally leak passwordHash, internal

@@ -1,4 +1,15 @@
 import type { Config } from "tailwindcss";
+// tailwindcss-animate is a CJS-only package (no "type": "module" in its
+// package.json, single `module.exports = plugin(...)`). Node's CJS interop
+// resolves the default import to that `module.exports` value, which is
+// exactly the plugin object Tailwind expects. Plain default-import works;
+// no `import * as` wrapping needed.
+//
+// Why this is `import` rather than `require`: tailwind.config.ts is loaded
+// by Tailwind's ESM-aware loader (Next 15 / Turbopack), and `require` is
+// not defined in that scope — see CLAUDE.md "ESM module resolution" for
+// the project-wide rule.
+import tailwindcssAnimate from "tailwindcss-animate";
 
 const config: Config = {
   darkMode: ["class"],
@@ -69,7 +80,7 @@ const config: Config = {
       },
     },
   },
-  plugins: [require("tailwindcss-animate")],
+  plugins: [tailwindcssAnimate],
 };
 
 export default config;
