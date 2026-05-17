@@ -35,7 +35,7 @@ model School {
   email          String?
   primaryColor   String?      @map("primary_color")
   status         SchoolStatus @default(ONBOARDING)
-  onboardingStep Int          @default(1) @map("onboarding_step")
+  onboardingStep Int          @default(0) @map("onboarding_step")
   ndprConsent    Boolean      @default(false) @map("ndpr_consent")
   ndprConsentAt  DateTime?    @map("ndpr_consent_at")
   createdAt      DateTime     @default(now()) @map("created_at")

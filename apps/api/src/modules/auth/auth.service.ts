@@ -404,13 +404,25 @@ const ROLE_GRANT_SELECT = {
   role: { select: { key: true, name: true, permissions: true } },
 } satisfies Prisma.UserRoleSelect;
 
+// Wider than the original signup-only shape — matches SchoolMeDto so the
+// /auth/me response can hydrate the onboarding wizard's forms without
+// requiring a second round-trip to GET /schools/me on every page mount.
+// Signup + login still return the same shape (defaults / nulls) which is
+// fine: the SchoolMeDto interface accepts nullable fields throughout.
 const SCHOOL_RESPONSE_SELECT = {
   id: true,
   name: true,
   slug: true,
+  motto: true,
+  logoUrl: true,
+  address: true,
+  phone: true,
+  email: true,
+  primaryColor: true,
   status: true,
   onboardingStep: true,
   ndprConsent: true,
+  ndprConsentAt: true,
   createdAt: true,
   updatedAt: true,
 } satisfies Prisma.SchoolSelect;

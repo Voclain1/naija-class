@@ -4,3 +4,4 @@
 export * from './errors.js';
 export * from './permissions.js';
 export * from './auth/index.js';
+export * from './onboarding/index.js';

@@ -8,7 +8,7 @@ import type {
   AuthMeRoleDto,
   LoginInput,
   MeResponse,
-  SignupOwnerSchoolDto,
+  SchoolMeDto,
   SignupOwnerUserDto,
 } from "@school-kit/types";
 
@@ -25,7 +25,7 @@ export type AuthStatus = "loading" | "authed" | "guest";
 export interface AuthState {
   status: AuthStatus;
   user: SignupOwnerUserDto | null;
-  school: SignupOwnerSchoolDto | null;
+  school: SchoolMeDto | null;
   roles: AuthMeRoleDto[];
   permissions: string[];
   token: string | null;
@@ -34,6 +34,12 @@ export interface AuthState {
 export interface AuthContextValue extends AuthState {
   login: (input: LoginInput) => Promise<void>;
   logout: () => Promise<void>;
+  // Called by the onboarding flow after each POST /onboarding/:step to keep
+  // the auth context's school in sync without a round-trip to /auth/me.
+  // Status + onboardingStep are what RequireAuth/RequireOnboarding gate on,
+  // so they must update the moment the step response lands or the
+  // subsequent router.push to the next step would be redirected back.
+  setSchool: (school: SchoolMeDto) => void;
 }
 
 const initialState: AuthState = {
@@ -120,6 +126,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [],
   );
 
+  const setSchool = useCallback((school: SchoolMeDto) => {
+    setState((prev) => ({ ...prev, school }));
+  }, []);
+
   const logout = useCallback(async () => {
     try {
       await logoutRequest();
@@ -133,7 +143,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [router]);
 
   return (
-    <AuthContext.Provider value={{ ...state, login, logout }}>
+    <AuthContext.Provider value={{ ...state, login, logout, setSchool }}>
       {children}
     </AuthContext.Provider>
   );

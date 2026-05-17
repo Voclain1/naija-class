@@ -28,3 +28,47 @@ admin sidebar/topbar visible.
 
 ## Tomorrow's first task
 Slice 6: onboarding wizard backend + frontend.
+
+## Done today
+- Slice 5 complete: admin shell + login UI working end-to-end in browser
+- Hit and fixed CORS (3rd "tests pass, runtime fails" gap so far)
+- 9 manual browser scenarios verified including 401 chain (junk token)
+- First real product moment: logged into the app in a real browser
+
+## Lessons learned
+- Pattern continues: backend changes that affect HTTP behaviour (env 
+  loading, ESM, CORS) need manual browser verification, not just unit 
+  tests
+- Claude Code's honest hand-off was the right move — agents shouldn't 
+  pretend to do what they can't
+- Slice 5 was lighter than Prompts 3-4; vertical slices that touch new 
+  surfaces (frontend) have their own friction but it surfaces differently
+
+## Tomorrow's first task
+Slice 6 — onboarding wizard. Backend: GET/PATCH /schools/me + 
+POST /schools/me/onboarding/:step. Frontend: 5-step wizard at 
+/onboarding/[step] gated on schools.onboarding_step.
+
+## Second outcome (afternoon → evening)
+Slice 6: onboarding wizard. Backend endpoints + 5-step frontend flow.
+End state: a freshly signed-up school owner is routed through the
+wizard, completes 5 steps with server-side persistence, and lands
+on /dashboard with school.status = ACTIVE.
+
+## Slice 6 notes (after build)
+- Schema migration: changed schools.onboarding_step default from 1 to 0,
+  back-filled all ONBOARDING rows to 0. New semantic: "number of completed
+  steps", not "currently on step N". Wizard gate: `POST step N requires
+  onboarding_step === N - 1`.
+- API: GET /schools/me, PATCH /schools/me, POST /schools/me/onboarding/:step
+  in apps/api/src/modules/schools/. 24 new tests, 67/67 total pass.
+- Frontend: (onboarding) route group, 5 pages, progress indicator, two
+  guards (RequireAuth bounces ONBOARDING→/onboarding/N, RequireOnboarding
+  blocks forward-jumps and ACTIVE→/dashboard).
+- Auth /me widened to return SchoolMeDto (was the narrower
+  SignupOwnerSchoolDto) so the wizard pre-fills its forms without a
+  second round-trip.
+- Known gap to revisit: clicking back from step 3 to step 1 lets the user
+  visit the form, but the submit POSTs step 1 which the gate blocks with
+  409. Step 1/2 forms should switch to PATCH on revisit. Captured for
+  Slice 6 polish or Slice 7 (settings page can also edit basics).
