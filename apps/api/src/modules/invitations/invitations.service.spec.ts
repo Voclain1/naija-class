@@ -102,8 +102,8 @@ describe("InvitationsService (Slice 7)", () => {
       const flat = JSON.stringify(dto);
       expect(flat).not.toContain(created.invitation.id);
       expect(flat).not.toContain("tokenHash");
-      expect((dto as Record<string, unknown>).schoolId).toBeUndefined();
-      expect((dto as Record<string, unknown>).invitedBy).toBeUndefined();
+      expect((dto as unknown as Record<string, unknown>).schoolId).toBeUndefined();
+      expect((dto as unknown as Record<string, unknown>).invitedBy).toBeUndefined();
     });
 
     it("bogus token — NotFoundError (404)", async () => {

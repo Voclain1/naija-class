@@ -18,6 +18,11 @@
     "./eslint/base": "./eslint/base.js",
     "./eslint/next": "./eslint/next.js"
   },
+  "scripts": {
+    "lint": "echo 'lint placeholder (config-only package)'",
+    "typecheck": "echo 'typecheck placeholder (config-only package, no .ts source)'",
+    "test": "echo 'test placeholder (config-only package)'"
+  },
   "dependencies": {
     "@eslint/eslintrc": "^3",
     "eslint-config-next": "^15.5.18",
