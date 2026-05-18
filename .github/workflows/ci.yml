@@ -142,6 +142,15 @@ jobs:
       - name: Prisma migrate deploy
         run: pnpm --filter @school-kit/db migrate:deploy
 
+      # Migrations create schema; seeds populate reference data the app code
+      # assumes exists. Tests in apps/api call AuthService.signupOwner which
+      # looks up the 'owner' system role by key — without this step, 31/117
+      # tests fail with "System role 'owner' is not seeded." Seed is
+      # idempotent (findFirst + update OR create) and only touches the
+      # non-RLS `roles` table, so it's safe to re-run on every CI build.
+      - name: Seed DB (system roles)
+        run: pnpm --filter @school-kit/db seed
+
       - name: Lint
         run: pnpm lint
 
