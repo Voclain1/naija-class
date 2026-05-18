@@ -2,10 +2,28 @@
   "name": "@school-kit/config",
   "version": "0.0.0",
   "private": true,
+  "type": "module",
   "files": [
     "tsconfig.base.json",
     "tsconfig.node.json",
     "tsconfig.next.json",
-    "tsconfig.expo.json"
-  ]
+    "tsconfig.expo.json",
+    "eslint"
+  ],
+  "exports": {
+    "./tsconfig.base.json": "./tsconfig.base.json",
+    "./tsconfig.node.json": "./tsconfig.node.json",
+    "./tsconfig.next.json": "./tsconfig.next.json",
+    "./tsconfig.expo.json": "./tsconfig.expo.json",
+    "./eslint/base": "./eslint/base.js",
+    "./eslint/next": "./eslint/next.js"
+  },
+  "dependencies": {
+    "@eslint/eslintrc": "^3",
+    "eslint-config-next": "^15.5.18",
+    "eslint-plugin-react": "^7",
+    "eslint-plugin-react-hooks": "^5",
+    "eslint-plugin-unused-imports": "^4",
+    "typescript-eslint": "^8"
+  }
 }

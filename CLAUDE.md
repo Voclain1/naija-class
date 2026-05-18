@@ -220,6 +220,15 @@ Server components by default. Add `'use client'` only when needed (forms, intera
 - Tests don't catch this. Only the browser does. Verify visually 
   when introducing any new route.
 
+  ### Dev overlay vs production error boundaries
+
+Next.js dev mode shows a red error overlay BEFORE `global-error.tsx` renders.
+This is a dev tool, not a bug. To verify the production error boundary,
+either dismiss the overlay (press Esc), or run `pnpm build && pnpm start`
+to test against the production server. In prod, errors go straight to
+`global-error.tsx` and `Sentry.captureException` fires from inside that
+boundary's useEffect.
+
 ## Adding a new module
 
 1. Read or write `docs/modules/<module>.md` (purpose, entities, endpoints, screens, tests).
@@ -293,8 +302,11 @@ R2_ACCOUNT_ID
 R2_ACCESS_KEY_ID
 R2_SECRET_ACCESS_KEY
 R2_BUCKET
-SENTRY_DSN
-POSTHOG_KEY
+SENTRY_DSN_API
+NEXT_PUBLIC_SENTRY_DSN
+SENTRY_ENVIRONMENT
+NEXT_PUBLIC_POSTHOG_KEY
+NEXT_PUBLIC_POSTHOG_HOST
 WEB_BASE_URL
 ```
 

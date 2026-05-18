@@ -14,7 +14,6 @@ import { redactString, redactValue } from "@/lib/observability/redact";
 const dsn = process.env.NEXT_PUBLIC_SENTRY_DSN;
 
 if (!dsn) {
-  // eslint-disable-next-line no-console
   console.info("[sentry/web/server] disabled: NEXT_PUBLIC_SENTRY_DSN not set");
 }
 

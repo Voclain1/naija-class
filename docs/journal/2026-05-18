@@ -1,0 +1,58 @@
+# 2026-05-18
+
+## Today's outcome
+Slice 8b: GitHub Actions CI. End state: a workflow file runs lint,
+typecheck, and tests on every PR. Closes Phase 0 acceptance criterion #9.
+
+## Decisions made
+- **Real ESLint for apps/web shipped as part of Slice 8b.** Initial plan
+  was to placeholder-out the broken `next lint` and defer real lint, but
+  that would have shipped a fake-green Lint check. Now: ESLint 9 flat
+  config, shared base in `packages/config/eslint/`, `apps/web/eslint.
+  config.js` extends the Next preset, lint script is `eslint . --max-
+  warnings=0`. apps/api stays on the placeholder for now (separate slice
+  in deferred.md). Fixed 6 violations in the existing web codebase:
+  three stale `// eslint-disable-next-line no-console` directives in the
+  Sentry/PostHog init code (no longer needed once base config allows
+  console.info), an unused `router`/`useRouter` import in
+  `accept-invitation-form.tsx`, an empty `interface extends BasePayload`
+  in `events.ts` (changed to a type alias), and two anonymous default
+  exports in `eslint.config.js` + `postcss.config.mjs`.
+- **`exports` map in `packages/config/package.json` needs every entry
+  listed explicitly.** Adding `"exports": { "./eslint/...": ... }`
+  silently broke `apps/web/tsconfig.json` extending
+  `@school-kit/config/tsconfig.next.json` — exports maps are exhaustive,
+  so anything not listed becomes inaccessible from outside the package.
+  Fix: include all four tsconfig.*.json files in the exports map too.
+  Caught by `pnpm typecheck` immediately; flagging so future package-
+  level exports changes remember to enumerate every consumer path.
+- **Single job, not multiple parallel jobs.** Trade-off: parallel jobs
+  would save ~20s wall-clock at the cost of 2× a 60s cold `pnpm install`
+  per extra runner. For Phase 0's ~30s test suite, sequential-in-one-job
+  is cheaper and simpler. Revisit if CI wall-clock ever exceeds ~6 min.
+  Captured in deferred.md.
+- **psql to apply init SQL, not docker-entrypoint-initdb.d volume mount.**
+  GH Actions service containers cannot mount host volumes at start time
+  (the workspace isn't checked out yet). So we apply
+  `infra/postgres/init/01-extensions.sql` and `02-app-role.sql` as a
+  step after services come up. Both scripts are idempotent. Same SQL as
+  docker-compose runs locally.
+- **CI writes its own `.env` from a heredoc.** apps/api's test script is
+  `dotenv -e ../../.env -- vitest run` and dotenv-cli errors if the file
+  is missing. The CI `.env` has placeholder keys for everything (Sentry
+  DSNs blank by design — no-op contract verified in 8a). The whole step
+  goes away once the shared test bootstrap (already in deferred.md) lands.
+- **No Turbo remote cache.** Local-only cache buys nothing on a fresh
+  GH runner. Remote cache is real overhead. Defer until CI minutes are
+  actually a cost concern.
+- **pnpm store cache via `actions/setup-node@v4` built-in `cache: pnpm`.**
+  Saves ~30–60s per run on cache hit. No separate node_modules cache.
+
+## Stuck on
+- Nothing.
+
+## Tomorrow's first task
+- Open a test PR to verify the workflow runs green end-to-end, then
+  walk through all four verification cases (green, red, recovery,
+  build-failure) before enabling required status checks in branch
+  protection.

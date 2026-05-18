@@ -35,7 +35,7 @@ interface OnboardingStepCompleted extends BasePayload {
   step: 1 | 2 | 3 | 4;
 }
 
-interface OnboardingCompleted extends BasePayload {}
+type OnboardingCompleted = BasePayload;
 
 interface InvitationSent extends BasePayload {
   roleKey: string;

@@ -2,12 +2,13 @@
   "name": "@school-kit/web",
   "version": "0.0.0",
   "private": true,
+  "type": "module",
   "scripts": {
     "dev": "next dev --port 3001",
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "lint": "next lint",
+    "lint": "eslint . --max-warnings=0",
     "test": "echo 'test placeholder'",
     "test:e2e": "echo 'e2e placeholder'",
     "clean": "rm -rf .next .turbo"
@@ -43,6 +44,7 @@
     "@types/node": "^22.10.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "eslint": "^9",
     "typescript": "^5.6.3"
   }
 }

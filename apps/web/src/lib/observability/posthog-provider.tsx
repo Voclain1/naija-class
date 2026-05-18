@@ -21,7 +21,6 @@ export function PostHogProvider({ children }: { children: ReactNode }) {
     const key = process.env.NEXT_PUBLIC_POSTHOG_KEY;
     const host = process.env.NEXT_PUBLIC_POSTHOG_HOST ?? "https://us.i.posthog.com";
     if (!key) {
-      // eslint-disable-next-line no-console
       console.info("[posthog] disabled: NEXT_PUBLIC_POSTHOG_KEY not set");
       return;
     }
@@ -40,7 +39,6 @@ export function PostHogProvider({ children }: { children: ReactNode }) {
       // Quiet in dev — uncomment debug() locally if needed.
       loaded: () => setReady(true),
     });
-    // eslint-disable-next-line no-console
     console.info("[posthog] initialised");
   }, []);
 

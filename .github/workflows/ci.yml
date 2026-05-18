@@ -1,0 +1,150 @@
+# School Kit — CI
+#
+# Runs on every PR opened against `main` and every push to `main`.
+# Closes Phase 0 acceptance criterion #9 (CI passes on every PR).
+#
+# Single job by design. Splitting into parallel lint / typecheck / test jobs
+# would save ~20s of wall-clock but cost 2× a 60s cold `pnpm install` per
+# extra runner. With the Phase 0 test suite (117 backend tests, ~30s),
+# sequential-in-one-job is the cheaper and simpler win. Captured as a
+# deferred optimisation in docs/deferred.md ("Multi-job parallelism in CI").
+
+name: ci
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    name: lint + typecheck + test + build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    # Service containers mirror local docker-compose.yml. We use the
+    # pgvector/pgvector:pg16 image (not vanilla postgres:16) because Prisma's
+    # schema declares the `vector` extension and we'd otherwise need to
+    # apt-install the extension binary on a stock image. Note that GH Actions
+    # service containers cannot mount host volumes at start time, so the init
+    # SQL under infra/postgres/init/ is applied via psql in a step below
+    # rather than as docker-entrypoint-initdb.d.
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: school_kit
+          POSTGRES_PASSWORD: school_kit
+          POSTGRES_DB: school_kit
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U school_kit -d school_kit"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Why this step exists: apps/api's test script is
+      #   `dotenv -e ../../.env -- vitest run`
+      # which errors out if `.env` is missing. We write a CI-only `.env` so
+      # the existing test command works unchanged. None of the keys here are
+      # real — Sentry/PostHog DSNs are deliberately blank (the no-op-when-DSN-
+      # empty contract was verified in Slice 8a), and Anthropic/Paystack/etc.
+      # are never called from tests.
+      #
+      # This step becomes unnecessary once we land the shared test bootstrap
+      # tracked in docs/deferred.md ("Convert from dotenv-cli test wrapper to
+      # a shared test bootstrap"). Remove this whole step in that PR.
+      - name: Write CI .env
+        run: |
+          cat > .env <<'EOF'
+          NODE_ENV=test
+          DATABASE_URL=postgresql://app_user:app_user@localhost:5432/school_kit?schema=public
+          DIRECT_URL=postgresql://school_kit:school_kit@localhost:5432/school_kit?schema=public
+          REDIS_URL=redis://localhost:6379
+          BETTER_AUTH_SECRET=ci-test-secret-not-used-for-real-auth-0000000000000000
+          BETTER_AUTH_URL=http://localhost:3001
+          API_PORT=4000
+          API_URL=http://localhost:4000
+          CORS_ORIGIN=http://localhost:3001
+          WEB_BASE_URL=http://localhost:3001
+          NEXT_PUBLIC_API_URL=http://localhost:4000/api/v1
+          ANTHROPIC_API_KEY=sk-ant-not-used-in-ci
+          PAYSTACK_SECRET_KEY=sk_test_not_used_in_ci
+          PAYSTACK_PUBLIC_KEY=pk_test_not_used_in_ci
+          TERMII_API_KEY=not-used-in-ci
+          TERMII_SENDER_ID=SchoolKit
+          RESEND_API_KEY=re_not_used_in_ci
+          R2_ACCOUNT_ID=not-used-in-ci
+          R2_ACCESS_KEY_ID=not-used-in-ci
+          R2_SECRET_ACCESS_KEY=not-used-in-ci
+          R2_BUCKET=school-kit-ci
+          SENTRY_DSN_API=
+          NEXT_PUBLIC_SENTRY_DSN=
+          SENTRY_ENVIRONMENT=ci
+          NEXT_PUBLIC_POSTHOG_KEY=
+          NEXT_PUBLIC_POSTHOG_HOST=https://us.i.posthog.com
+          EOF
+
+      # Postgres service containers don't support docker-entrypoint-initdb.d
+      # volume mounts in GH Actions, so we apply the same SQL that docker-compose
+      # auto-runs locally. Both scripts are idempotent.
+      - name: Apply DB extensions + app_user role
+        env:
+          PGPASSWORD: school_kit
+        run: |
+          psql -h localhost -U school_kit -d school_kit -v ON_ERROR_STOP=1 \
+            -f infra/postgres/init/01-extensions.sql
+          psql -h localhost -U school_kit -d school_kit -v ON_ERROR_STOP=1 \
+            -f infra/postgres/init/02-app-role.sql
+
+      - name: Prisma generate
+        run: pnpm --filter @school-kit/db generate
+
+      - name: Prisma migrate deploy
+        run: pnpm --filter @school-kit/db migrate:deploy
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Test
+        run: pnpm test
+
+      - name: Build (web)
+        run: pnpm --filter @school-kit/web build
