@@ -21,6 +21,13 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# Pre-empt GitHub's 2026-06-02 forced migration of Node 20 actions to Node 24.
+# actions/checkout@v4 and pnpm/action-setup@v4 still declare runtime node20 in
+# their action.yml; this flag opts them into the new runtime now so we surface
+# any incompatibilities here rather than as a surprise breakage on June 2nd.
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   ci:
     name: lint + typecheck + test + build
@@ -65,8 +72,6 @@ jobs:
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
-        with:
-          version: 9
 
       - name: Setup Node
         uses: actions/setup-node@v4
