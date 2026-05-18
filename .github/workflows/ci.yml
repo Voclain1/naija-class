@@ -139,6 +139,17 @@ jobs:
       - name: Prisma generate
         run: pnpm --filter @school-kit/db generate
 
+      # Compile every packages/* workspace to its dist/ output. Downstream
+      # steps (seed, test, build, lint) consume these packages via their
+      # compiled entry points (main/types/exports point at dist/, see
+      # CLAUDE.md → ESM module resolution). Without this step, the seed
+      # script's `import from "@school-kit/types"` resolves to a missing
+      # dist/index.js on a fresh CI runner. Locally, dist/ survives from
+      # a prior `pnpm build` and hides the gap. apps/* are excluded —
+      # they're built later or run directly from source (Next, Vitest+SWC).
+      - name: Build workspace packages
+        run: pnpm -r --filter "./packages/*" build
+
       - name: Prisma migrate deploy
         run: pnpm --filter @school-kit/db migrate:deploy
 
