@@ -150,7 +150,7 @@ describe("multi-tenant isolation (Phase 0 RLS)", () => {
         SELECT id FROM users WHERE email LIKE ${"%" + runId + "%"}
       `;
     });
-    expect(rows).toHaveLength(999);
+    expect(rows).toHaveLength(0);
   });
 
   it("withTenant refuses non-UUID schoolId", async () => {
