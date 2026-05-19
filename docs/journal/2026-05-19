@@ -1,0 +1,19 @@
+# 2026-05-19
+
+## Today's outcome
+Slice 8b close-out: CLAUDE.md edit, smoke-test PR (4 verification 
+cases), branch protection. Then [Slice 9 — Playwright E2E / something 
+else, depending on energy].
+
+## Decisions made
+- (capture as the day unfolds)
+
+## Stuck on
+- Nothing yet
+
+## Tomorrow's first task
+- (fill in at end of day)
+
+## CI smoke test
+Branch created to verify CI workflow runs on PRs and catches the
+right failure classes.
