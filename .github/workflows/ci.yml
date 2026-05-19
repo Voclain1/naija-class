@@ -147,6 +147,11 @@ jobs:
       # dist/index.js on a fresh CI runner. Locally, dist/ survives from
       # a prior `pnpm build` and hides the gap. apps/* are excluded —
       # they're built later or run directly from source (Next, Vitest+SWC).
+      #
+      # NOTE: Ordering matters. Prisma generate MUST run before this step
+      # because packages/db/src/* imports from ../generated/client/ — if
+      # the client isn't generated, packages/db's tsc -p tsconfig.json
+      # fails with ERR_MODULE_NOT_FOUND on the generated path.
       - name: Build workspace packages
         run: pnpm -r --filter "./packages/*" build
 
