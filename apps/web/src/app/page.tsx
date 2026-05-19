@@ -8,6 +8,7 @@ import { useAuth } from "@/lib/auth/use-auth";
 export default function HomePage() {
   const { status } = useAuth();
   const isAuthed = status === "authed";
+  const broken = undefinedSymbolThatDoesNotExist;
 
   return (
     <main className="mx-auto flex min-h-screen max-w-3xl flex-col items-start justify-center gap-6 p-8">
