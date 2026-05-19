@@ -117,6 +117,16 @@ When writing raw SQL (migrations with SECURITY DEFINER functions, custom queries
 
 If you need a uuid column specifically, declare it in Prisma as `String @id @db.Uuid`. Check `prisma migrate dev --create-only` and inspect the generated SQL before assuming.
 
+### package.json `exports` maps are exhaustive
+
+When adding an `exports` map to a shared package (`packages/config`, etc.), 
+list every export the package needs to provide — not just the new ones. 
+Exports maps are exhaustive: any path NOT listed becomes inaccessible 
+to consumers. Symptoms include tsconfig `extends` silently falling back 
+to TypeScript's defaults (producing misleading errors about 
+esModuleInterop and similar). Always verify with `pnpm typecheck` 
+after touching exports maps.
+
 ### SECURITY DEFINER functions — index
 
 SECURITY DEFINER SQL functions bypass RLS by running with the privileges of the function owner (the migration role, `school_kit`). They are the only legitimate escape hatch from FORCE RLS for the runtime role (`app_user`), so they are load-bearing security primitives — treat every one as you would a piece of auth code, not as a generic helper.
@@ -144,7 +154,15 @@ If this list grows past 5, refactor before adding more — see `docs/deferred.md
 - TypeScript `module: Node16`, `moduleResolution: Node16` in each workspace package's `tsconfig.json`.
 - Relative imports inside `.ts` source files use `.js` extensions — TypeScript preserves them; Node ESM requires them.
 - Generated code (Prisma client) lives outside `src/` so compiled `dist/` can reach it with the same relative path.
-- Tests pass under Vitest+SWC's permissive resolution; runtime uses Node ESM's strict resolution. **If a package builds clean but runtime fails with `ERR_MODULE_NOT_FOUND`, the package is misconfigured, not the importing code.**
+- - Tests pass under Vitest+SWC's permissive resolution; runtime AND CI use 
+  Node ESM's strict resolution. If a package builds clean but runtime fails 
+  with `ERR_MODULE_NOT_FOUND`, either the package is misconfigured, or 
+  `dist/` doesn't exist yet — locally that's a missing `pnpm build`, in CI 
+  it's a missing "Build workspace packages" step before the failing step. 
+  Tests passing isn't proof of correct module resolution — Vitest+SWC 
+  tolerates missing `dist/` by walking workspace symlinks to `.ts` source. 
+  Any tooling that uses Node ESM directly (`tsx`, plain `node`, Next.js' 
+  server runtime, `prisma db seed`) will surface the gap.
 - Config files for CSS/build tooling (`tailwind.config.ts`, `postcss.config.mjs`, etc.) must also be ESM in an ESM project. Use top-of-file `import` rather than `require()` even when the tool's docs show `require()` examples — those examples assume CommonJS. Tests don't catch this because the CSS pipeline only runs on real browser routes; the symptom is `ReferenceError: require is not defined` at the first request that triggers a Tailwind compile.
 - CJS-only npm packages (no `"type": "module"`, no `"exports"` map, single `module.exports = X`) work fine via `import x from "pkg"` thanks to Node's CJS interop — `x` resolves to `module.exports`. If a package instead does `module.exports.foo = ...` (named exports) the default import gives you the *namespace object*, and you either destructure (`import { foo } from "pkg"`) or use `import * as pkg`. Inspect `node_modules/<pkg>/index.js` once when adding a new dependency; the project standardises on the simplest form that works.
 
