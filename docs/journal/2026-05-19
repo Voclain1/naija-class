@@ -79,3 +79,29 @@ every toolchain layer has its own resolution model; CI/manual
 verification before "done" is non-negotiable.
 
 Next: Phase 1 planning — first business module.
+
+## Phase 1 scope LOCKED (planning only, no code)
+
+Decisions made tonight:
+- Build order: academic skeleton → students → enrollment → staff
+- CSV import: robust (column mapping, per-row validation, partial
+  success, error report); no AI dedup (Phase 5)
+- Admission application workflow: deferred
+- Guardians: captured in Phase 1 (data + CSV); parent auth → Phase 4
+- ClassLevel: HYBRID (seed standard Nigerian levels per-school at
+  creation, schools can edit/add)
+- AcademicYear / Term: SEPARATE tables (year has many terms)
+- Two thin AI-foundation tables (mastery, AI-interaction-log) folded
+  into academic-structure schema; shape owned by Phase 5; empty until
+  then. See deferred.md.
+
+Strategy items captured to deferred.md for later market-verified
+decisions: CBT, predictive AI, agentic positioning, Phase-7 modules.
+
+## Tomorrow's first task
+Prompt Claude Code: "Read ARCHITECTURE.md §6.2–6.5, CLAUDE.md, the
+Phase 1 decisions in docs/journal/2026-05-19.md and deferred.md, then
+draft docs/modules/phase-1.md" — full module spec: entities, Prisma
+models (incl. the 2 thin AI tables), RLS policies, API endpoints, CSV
+import design, UI screens, RBAC, acceptance criteria, slice breakdown.
+Review the spec before any code.

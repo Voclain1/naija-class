@@ -64,3 +64,28 @@ Format:
 - [ ] Wire real ESLint for apps/api. Slice 8b shipped real ESLint for `apps/web` (flat config, ESLint 9, shared base in `packages/config/eslint/`) but left `apps/api` on the echo-placeholder. Same pattern: add `packages/config/eslint/nest.js` extending the shared base with Node/Nest-specific rules (no-floating-promises, no-misused-promises, decorator-aware unused-vars), then point `apps/api/eslint.config.js` at it and flip the lint script to `eslint . --max-warnings=0`. Trigger: when api code starts having style drift, or before first external contributor.
 
 - [ ] Move to eslint-config-next's native flat-config export when it ships. Slice 8b uses `@eslint/eslintrc`'s `FlatCompat` to consume eslint-config-next v15.5's legacy configs (the package doesn't yet ship a `flat/` export). When eslint-config-next adds native flat config (likely in a Next 15.x patch or Next 16), `packages/config/eslint/next.js` collapses to a direct spread and we drop `@eslint/eslintrc` from the dependency tree. Trigger: when next minor/major release notes mention native flat config support.
+
+## Phase 1 — AI foundation tables (DECIDED, build in Phase 1)
+- [ ] Mastery-tracking table: thin/additive-friendly, school_id + RLS,
+  RLS test extended. Minimal columns (student, school, topic_ref,
+  status, updated_at). Detailed shape OWNED BY PHASE 5. Foundation-only,
+  sits empty until then. MUST be pulled into docs/modules/phase-1.md
+  when spec is written — failure mode is forgetting it and hitting a
+  live-data migration at Phase 5.
+- [ ] AI-interaction-log table: same discipline. Minimal columns
+  (student, school, session_ref, payload jsonb, created_at). Shape
+  owned by Phase 5.
+
+## Roadmap / strategy — REVISIT with live market research (not decided)
+- [ ] CBT / online exams (JAMB/WAEC/UTME prep) — competitors lead with
+  this. Decide in/defer based on pilot-school demand + current market.
+- [ ] Predictive AI (at-risk-student early warning from attendance+grade
+  trend, enrollment forecasting, auto billing reminders) — high-value,
+  data already collected. Verify market framing before Phase 5.
+- [ ] Agentic vs generative AI positioning — market may have shifted
+  toward adaptive/agentic by Phase 5. Run live search before committing
+  AI roadmap. Do NOT build multi-agent orchestration as solo founder.
+- [ ] Timetable, transport, library, hostel — Phase 7. Named so
+  "do you have X?" has a clear deferred answer, not a blank.
+- [ ] WAEC/NECO localization is the moat (Khanmigo/Squirrel AI aren't
+  localized) — keep leaning on it. Verify competitor claims when planning.
