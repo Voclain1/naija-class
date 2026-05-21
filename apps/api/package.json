@@ -12,7 +12,6 @@
     "lint": "echo 'lint placeholder'",
     "test": "dotenv -e ../../.env -- vitest run",
     "test:watch": "dotenv -e ../../.env -- vitest",
-    "test:e2e": "echo 'e2e placeholder'",
     "clean": "rm -rf dist"
   },
   "dependencies": {

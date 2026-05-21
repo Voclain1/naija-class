@@ -178,3 +178,144 @@ jobs:
 
       - name: Build (web)
         run: pnpm --filter @school-kit/web build
+
+  # Slice 9 — Playwright E2E smoke. Closes Phase 0 acceptance criterion #8.
+  # Runs sequentially after `ci` (needs: ci) — Phase 0 wall-clock isn't
+  # tight enough to justify the extra ~60s install cost on a parallel
+  # runner. Captured as a deferred optimisation when the test suite or
+  # CI critical path grows. The DB-setup steps duplicate the ci job by
+  # design; a composite action only pays off at 3+ consumers.
+  e2e:
+    name: e2e (Playwright)
+    needs: ci
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: school_kit
+          POSTGRES_PASSWORD: school_kit
+          POSTGRES_DB: school_kit
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U school_kit -d school_kit"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Same .env shape the ci job above writes — kept verbatim so each job
+      # is self-contained. See the ci job's "Write CI .env" comment for the
+      # deferral that will collapse this duplication.
+      - name: Write CI .env
+        run: |
+          cat > .env <<'EOF'
+          NODE_ENV=test
+          DATABASE_URL=postgresql://app_user:app_user@localhost:5432/school_kit?schema=public
+          DIRECT_URL=postgresql://school_kit:school_kit@localhost:5432/school_kit?schema=public
+          REDIS_URL=redis://localhost:6379
+          BETTER_AUTH_SECRET=ci-test-secret-not-used-for-real-auth-0000000000000000
+          BETTER_AUTH_URL=http://localhost:3001
+          API_PORT=4000
+          API_URL=http://localhost:4000
+          CORS_ORIGIN=http://localhost:3001
+          WEB_BASE_URL=http://localhost:3001
+          NEXT_PUBLIC_API_URL=http://localhost:4000/api/v1
+          ANTHROPIC_API_KEY=sk-ant-not-used-in-ci
+          PAYSTACK_SECRET_KEY=sk_test_not_used_in_ci
+          PAYSTACK_PUBLIC_KEY=pk_test_not_used_in_ci
+          TERMII_API_KEY=not-used-in-ci
+          TERMII_SENDER_ID=SchoolKit
+          RESEND_API_KEY=re_not_used_in_ci
+          R2_ACCOUNT_ID=not-used-in-ci
+          R2_ACCESS_KEY_ID=not-used-in-ci
+          R2_SECRET_ACCESS_KEY=not-used-in-ci
+          R2_BUCKET=school-kit-ci
+          SENTRY_DSN_API=
+          NEXT_PUBLIC_SENTRY_DSN=
+          SENTRY_ENVIRONMENT=ci
+          NEXT_PUBLIC_POSTHOG_KEY=
+          NEXT_PUBLIC_POSTHOG_HOST=https://us.i.posthog.com
+          EOF
+
+      - name: Apply DB extensions + app_user role
+        env:
+          PGPASSWORD: school_kit
+        run: |
+          psql -h localhost -U school_kit -d school_kit -v ON_ERROR_STOP=1 \
+            -f infra/postgres/init/01-extensions.sql
+          psql -h localhost -U school_kit -d school_kit -v ON_ERROR_STOP=1 \
+            -f infra/postgres/init/02-app-role.sql
+
+      - name: Prisma generate
+        run: pnpm --filter @school-kit/db generate
+
+      - name: Build workspace packages
+        run: pnpm -r --filter "./packages/*" build
+
+      - name: Prisma migrate deploy
+        run: pnpm --filter @school-kit/db migrate:deploy
+
+      - name: Seed DB (system roles)
+        run: pnpm --filter @school-kit/db seed
+
+      # Cache chromium (~110 MB) keyed on the e2e workspace's pinned
+      # @playwright/test version. A bump to the playwright version
+      # invalidates the cache; otherwise we reuse the existing browser
+      # download.
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('e2e/package.json') }}
+          restore-keys: |
+            playwright-${{ runner.os }}-
+
+      - name: Install Playwright chromium
+        run: pnpm --filter @school-kit/e2e exec playwright install --with-deps chromium
+
+      # webServer in playwright.config.ts spawns the api + web dev servers
+      # (reuseExistingServer: false in CI). CI=true bumps retries to 2
+      # for resilience against transient slow-compile flakes.
+      - name: Run Playwright tests
+        env:
+          CI: "true"
+        run: pnpm --filter @school-kit/e2e test:e2e
+
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            e2e/playwright-report
+            e2e/test-results
+          retention-days: 7
