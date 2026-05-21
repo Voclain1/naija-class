@@ -56,3 +56,26 @@ non-negotiable.
 
 ## Next: Phase 1 planning
 (see ARCHITECTURE.md roadmap — first business module)
+
+## PHASE 0 CLOSED — all 9 acceptance criteria met
+
+Slice 9 (Playwright E2E + CI) merged. Both CI jobs (ci + e2e) green
+and now required on main.
+
+Phase 0 took 6 working days: scaffold → RLS multi-tenancy → auth →
+onboarding → invitations → observability → CI → E2E.
+
+Bugs surfaced by E2E, logged for pre-pilot fix:
+- Zod .optional() ordering bug in branding + invite forms (empty
+  strings rejected before .optional() rescues) — onboarding funnel leak
+
+Carried forward (deferred.md): Windows Turbo crash (highest-leverage
+post-Phase-0 fix), @types/react override removal, dotenv-cli →
+shared test bootstrap, HttpOnly cookie sessions, Sentry/PostHog
+dashboard verification.
+
+"Tests pass, runtime fails" hit 9 times across Phase 0. Lesson banked:
+every toolchain layer has its own resolution model; CI/manual
+verification before "done" is non-negotiable.
+
+Next: Phase 1 planning — first business module.
