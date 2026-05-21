@@ -19,7 +19,7 @@ End of Phase 0, all of these are true:
 - [ ] Audit log writing one row per authenticated mutation
 - [ ] Sentry + PostHog integrated and verified in dev
 - [ ] GitHub Actions CI: lint, typecheck, test, build — all green on every PR
-- [ ] One Playwright E2E test: full signup → onboarding → invite admin → admin accepts → admin logs in
+- [x] One Playwright E2E test: full signup → onboarding → invite admin → admin accepts → admin logs in
 
 ## Data model
 

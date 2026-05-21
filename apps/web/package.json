@@ -10,7 +10,6 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "lint": "eslint . --max-warnings=0",
     "test": "echo 'test placeholder'",
-    "test:e2e": "echo 'e2e placeholder'",
     "clean": "rm -rf .next .turbo"
   },
   "dependencies": {

@@ -94,7 +94,9 @@ pnpm lint:fix
 pnpm typecheck
 pnpm test                 # unit + integration
 pnpm test:watch
-pnpm test:e2e             # Playwright
+pnpm test:e2e             # Playwright happy-path smoke (e2e/ workspace).
+                          # Reuses dev servers if running; otherwise spawns
+                          # them. ~1–2 min on a warm machine.
 
 # AI
 pnpm ai:eval              # run prompt eval suite (required before merging prompt changes)
