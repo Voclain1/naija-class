@@ -17,3 +17,42 @@ else, depending on energy].
 ## CI smoke test
 Branch created to verify CI workflow runs on PRs and catches the
 right failure classes.
+
+## PHASE 0 CLOSED — all 9 acceptance criteria met
+
+Slice 9 (Playwright E2E + CI integration) merged. Both CI jobs
+(ci + e2e) green and required on main.
+
+Phase 0 took 6 working days: scaffold → RLS multi-tenancy → auth →
+onboarding → invitations → observability → CI → E2E.
+
+What exists now:
+- Multi-tenant SaaS with database-enforced isolation (Postgres RLS +
+  FORCE RLS, withTenant helper, 4 SECURITY DEFINER functions)
+- Bearer-token auth (argon2, SHA-256 session hashing)
+- Full owner onboarding (5 steps) + admin invitation flow
+- Sentry + PostHog wiring (no-DSN-no-op contract)
+- 117 backend tests + 1 Playwright E2E, all green in CI
+- CI on every PR: lint + typecheck + test + build + e2e, branch
+  protected
+
+Bugs surfaced by E2E, logged for pre-pilot fix:
+- Zod .optional() ordering bug in branding + invite forms (empty
+  strings rejected before .optional() rescues) — onboarding funnel
+  leak, fix before pilot demo
+
+Carried forward (deferred.md highlights):
+- Windows Turbo crash (hidden bugs in slices 6, 7, 8b — now the
+  highest-leverage post-Phase-0 fix)
+- @types/react override removal when DefinitelyTyped fixes upstream
+- dotenv-cli test wrapper → shared test bootstrap
+- HttpOnly cookie session migration
+- Sentry/PostHog dashboard verification once accounts set up
+
+The "tests pass, runtime fails" pattern hit 9 times across Phase 0.
+Lesson banked permanently: every toolchain layer has its own
+resolution model; manual/CI verification before "done" is
+non-negotiable.
+
+## Next: Phase 1 planning
+(see ARCHITECTURE.md roadmap — first business module)
