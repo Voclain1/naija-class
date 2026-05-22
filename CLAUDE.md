@@ -111,6 +111,7 @@ infra/      Terraform / Pulumi
 When writing raw SQL (migrations with SECURITY DEFINER functions, custom queries via `$queryRaw`):
 - Prisma `String @id` → PostgreSQL `TEXT`, not `uuid`
 - Prisma `DateTime` → `TIMESTAMP(3)` (3-digit ms precision; matches Prisma's default)
+- Prisma `DateTime @db.Date` → PostgreSQL `DATE` (no time-of-day) — use this for calendar dates: academic year start/end, term start/end, student `dateOfBirth`, enrollment `enrolledAt`-as-date, etc. Reserve plain `DateTime` for true moments (`createdAt`, `updatedAt`, `acceptedAt`, `withdrawnAt`-as-event). The semantic difference matters because `DATE` doesn't store a timezone and avoids the "midnight in which zone?" trap when an admin in Lagos sets "term ends 2026-07-31" — the row stores the date, full stop. Convention established in Phase 1 / Slice 1 (2026-05-22); subsequent Phase 1 slices follow.
 - Prisma `Boolean` → `BOOLEAN`
 - Prisma `Int` → `INTEGER`
 - Prisma `Json` → `JSONB`

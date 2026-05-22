@@ -159,3 +159,165 @@ describe("multi-tenant isolation (Phase 0 RLS)", () => {
     ).rejects.toThrow(/UUID/);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Phase 1 / Slice 1 isolation — academic_years + terms
+//
+// Every new tenant-scoped table from Phase 1 needs the same isolation
+// invariants Phase 0 proved on users. The discipline going forward: each
+// Phase 1 slice appends a describe block here covering its own tables.
+// ---------------------------------------------------------------------------
+
+describe("multi-tenant isolation — Phase 1 / Slice 1 (academic_years + terms)", () => {
+  const runId = Math.random().toString(36).slice(2, 8);
+  let schoolA: { id: string };
+  let schoolB: { id: string };
+  let yearA: { id: string };
+  let yearB: { id: string };
+  let termA: { id: string };
+  let termB: { id: string };
+
+  beforeAll(async () => {
+    schoolA = await basePrisma.school.create({
+      data: { name: "School P1A", slug: `rls-p1a-${runId}` },
+      select: { id: true },
+    });
+    schoolB = await basePrisma.school.create({
+      data: { name: "School P1B", slug: `rls-p1b-${runId}` },
+      select: { id: true },
+    });
+
+    // Inserts MUST happen inside withTenant — both tables are FORCE-RLS'd.
+    yearA = await withTenant(schoolA.id, (db) =>
+      db.academicYear.create({
+        data: {
+          schoolId: schoolA.id,
+          label: `A-${runId}`,
+          startDate: new Date("2025-09-01"),
+          endDate: new Date("2026-07-31"),
+        },
+        select: { id: true },
+      }),
+    );
+    yearB = await withTenant(schoolB.id, (db) =>
+      db.academicYear.create({
+        data: {
+          schoolId: schoolB.id,
+          label: `B-${runId}`,
+          startDate: new Date("2025-09-01"),
+          endDate: new Date("2026-07-31"),
+        },
+        select: { id: true },
+      }),
+    );
+    termA = await withTenant(schoolA.id, (db) =>
+      db.term.create({
+        data: {
+          schoolId: schoolA.id,
+          academicYearId: yearA.id,
+          sequence: 1,
+          name: "First Term",
+          startDate: new Date("2025-09-01"),
+          endDate: new Date("2025-12-15"),
+        },
+        select: { id: true },
+      }),
+    );
+    termB = await withTenant(schoolB.id, (db) =>
+      db.term.create({
+        data: {
+          schoolId: schoolB.id,
+          academicYearId: yearB.id,
+          sequence: 1,
+          name: "First Term",
+          startDate: new Date("2025-09-01"),
+          endDate: new Date("2025-12-15"),
+        },
+        select: { id: true },
+      }),
+    );
+  });
+
+  afterAll(async () => {
+    if (schoolA?.id) {
+      await basePrisma.school.delete({ where: { id: schoolA.id } }).catch(() => undefined);
+    }
+    if (schoolB?.id) {
+      await basePrisma.school.delete({ where: { id: schoolB.id } }).catch(() => undefined);
+    }
+    await basePrisma.$disconnect();
+  });
+
+  it("School A sees its own academic_year and term only", async () => {
+    const years = await withTenant(schoolA.id, (db) => db.academicYear.findMany());
+    const terms = await withTenant(schoolA.id, (db) => db.term.findMany());
+    expect(years.map((y) => y.id)).toContain(yearA.id);
+    expect(years.map((y) => y.id)).not.toContain(yearB.id);
+    expect(terms.map((t) => t.id)).toContain(termA.id);
+    expect(terms.map((t) => t.id)).not.toContain(termB.id);
+  });
+
+  it("School B sees its own academic_year and term only", async () => {
+    const years = await withTenant(schoolB.id, (db) => db.academicYear.findMany());
+    const terms = await withTenant(schoolB.id, (db) => db.term.findMany());
+    expect(years.map((y) => y.id)).toContain(yearB.id);
+    expect(years.map((y) => y.id)).not.toContain(yearA.id);
+    expect(terms.map((t) => t.id)).toContain(termB.id);
+    expect(terms.map((t) => t.id)).not.toContain(termA.id);
+  });
+
+  it("findUnique across tenants returns null (not a 404 helper — real isolation)", async () => {
+    const leakedYear = await withTenant(schoolA.id, (db) =>
+      db.academicYear.findUnique({ where: { id: yearB.id } }),
+    );
+    const leakedTerm = await withTenant(schoolA.id, (db) =>
+      db.term.findUnique({ where: { id: termB.id } }),
+    );
+    expect(leakedYear).toBeNull();
+    expect(leakedTerm).toBeNull();
+  });
+
+  it("INSERT with another school's school_id fails the WITH CHECK clause", async () => {
+    await expect(
+      withTenant(schoolA.id, (db) =>
+        db.academicYear.create({
+          data: {
+            schoolId: schoolB.id,
+            label: `bad-${runId}`,
+            startDate: new Date("2025-09-01"),
+            endDate: new Date("2026-07-31"),
+          },
+        }),
+      ),
+    ).rejects.toThrow();
+
+    await expect(
+      withTenant(schoolA.id, (db) =>
+        db.term.create({
+          data: {
+            schoolId: schoolB.id,
+            academicYearId: yearA.id,
+            sequence: 2,
+            name: "Sneaky",
+            startDate: new Date("2025-09-01"),
+            endDate: new Date("2025-12-15"),
+          },
+        }),
+      ),
+    ).rejects.toThrow();
+  });
+
+  it("raw SQL with unset GUC returns zero rows from both new tables (FORCE RLS)", async () => {
+    const rows = await basePrisma.$transaction(async (tx) => {
+      const ys = await tx.$queryRaw<Array<{ id: string }>>`
+        SELECT id FROM academic_years WHERE label LIKE ${"%" + runId + "%"}
+      `;
+      const ts = await tx.$queryRaw<Array<{ id: string }>>`
+        SELECT id FROM terms WHERE id IN (${termA.id}, ${termB.id})
+      `;
+      return { ys, ts };
+    });
+    expect(rows.ys).toHaveLength(0);
+    expect(rows.ts).toHaveLength(0);
+  });
+});

@@ -4,10 +4,12 @@ import { ConfigModule } from "@nestjs/config";
 
 import { HealthController } from "./health/health.controller";
 import { HttpExceptionFilter } from "./common/http-exception.filter";
+import { AcademicYearsModule } from "./modules/academic-years/academic-years.module";
 import { AuthModule } from "./modules/auth/auth.module";
 import { DebugModule } from "./modules/debug/debug.module";
 import { InvitationsModule } from "./modules/invitations/invitations.module";
 import { SchoolsModule } from "./modules/schools/schools.module";
+import { TermsModule } from "./modules/terms/terms.module";
 import { UsersModule } from "./modules/users/users.module";
 
 // DebugModule exposes /api/v1/debug/sentry-test for verifying Sentry wiring.
@@ -26,6 +28,8 @@ const isProd = process.env.NODE_ENV === "production";
     SchoolsModule,
     UsersModule,
     InvitationsModule,
+    AcademicYearsModule,
+    TermsModule,
     ...(isProd ? [] : [DebugModule]),
   ],
   controllers: [HealthController],

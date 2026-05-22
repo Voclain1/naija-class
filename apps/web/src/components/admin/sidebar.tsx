@@ -21,14 +21,15 @@ interface NavItem {
   enabled: boolean;
 }
 
-// Phase 0: only Dashboard is wired up. Other items render as visibly
-// disabled placeholders so the sidebar shows the intended IA but cannot
-// navigate to half-built pages.
+// Phase 1 / Slice 1 wires Academics to /settings/academic (the academic
+// structure tab) — the spec keeps academic structure under Settings rather
+// than its own top-level so the IA mirrors Phase 0's "Settings" container.
+// Other items remain disabled until their slices land.
 const NAV_ITEMS: NavItem[] = [
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard, enabled: true },
   { label: "Students", href: "/students", icon: GraduationCap, enabled: false },
   { label: "Staff", href: "/staff", icon: Users, enabled: false },
-  { label: "Academics", href: "/academics", icon: BarChart3, enabled: false },
+  { label: "Academics", href: "/settings/academic", icon: BarChart3, enabled: true },
   { label: "Finance", href: "/finance", icon: Wallet, enabled: false },
   { label: "Reports", href: "/reports", icon: BarChart3, enabled: false },
   { label: "Settings", href: "/settings", icon: Settings, enabled: true },
