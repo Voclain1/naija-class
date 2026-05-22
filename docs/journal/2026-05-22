@@ -12,3 +12,36 @@ locked scope decisions. Review before any code.
 
 ## Tomorrow's first task
 - (fill in at end of day)
+
+## Done today
+- Phase 0 fully closed + sealed (e2e added to required checks, journal,
+  branch cleanup)
+- Phase 1 scope locked (6 decisions resolved: per-term enrollment, robust
+  CSV, hybrid ClassLevel, separate AcademicYear/Term, guardians captured,
+  synchronous audit)
+- docs/modules/phase-1.md drafted, finalized, merged (13 slices, 15 models)
+- Strategy items captured to deferred.md (CBT, predictive/agentic AI,
+  Phase-7 modules) — revisit with live market research
+- Phase 1 Slice 1 (AcademicYear + Term) built, verified, merged — both
+  CI jobs green
+
+## Decisions made
+- current/active modeled as is_current boolean + partial unique index
+  (correct-by-construction, DB-enforced one-current-per-school) — chose
+  over School-pointer to keep School/tenancy root free of Phase 1 coupling
+- 5 Phase 1 conventions locked in slice 1 (see commit): @db.Date,
+  partial-unique-current, role-key authz, <singular>.<verb> audit,
+  nested-create/flat-edit controllers
+
+## Landmines flagged for later
+- mapUniqueViolation breaks at slice 5 (Guardian, multiple unique
+  constraints) — deferred.md, fix via P2002 meta.target
+- "tests pass / runtime fails" pattern now 10 instances; live-curl is
+  the de-facto 5th verification gate, caught the instanceof-across-
+  workspace-boundary near-miss this slice
+
+## Tomorrow's first task
+Phase 1 Slice 2 — ClassLevel (model, RLS, seed-on-signup, CRUD, settings
+UI). The seed-on-signup is the interesting bit: hybrid ClassLevel means
+standard Nigerian levels get seeded into each school at creation. Touches
+auth.service signupOwner — the first slice that modifies a Phase 0 file.
