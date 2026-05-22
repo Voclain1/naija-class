@@ -161,7 +161,7 @@ model AuditLog {
   id         String   @id @default(uuid())
   schoolId   String?  @map("school_id")
   userId     String?  @map("user_id")
-  action     String // e.g. 'school.create', 'user.invite'
+  action     String // e.g. 'school.update', 'user.invite', 'academic-year.create'
   entityType String?  @map("entity_type")
   entityId   String?  @map("entity_id")
   metadata   Json?
@@ -170,4 +170,51 @@ model AuditLog {
 
   @@index([schoolId, createdAt])
   @@map("audit_logs")
+}
+
+// ---------- Phase 1 / Slice 1 — Academic structure (year + term) ----------
+//
+// First Phase 1 slice. Two tables, both school-scoped, both under FORCE RLS.
+// "Current year" / "current term" is modelled as an isCurrent flag enforced
+// by partial unique indexes (added in the migration's raw SQL because
+// Prisma's @@unique cannot express WHERE clauses). The service layer
+// cascades setCurrentTerm → academic_year.is_current; that invariant is the
+// only one the DB does not enforce, and the terms.service spec asserts it.
+
+model AcademicYear {
+  id        String   @id @default(uuid())
+  schoolId  String   @map("school_id")
+  label     String // e.g. "2025/2026" — unique per school
+  startDate DateTime @map("start_date") @db.Date // calendar dates, not moments — see CLAUDE.md
+  endDate   DateTime @map("end_date") @db.Date
+  isCurrent Boolean  @default(false) @map("is_current")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  terms Term[]
+
+  @@unique([schoolId, label])
+  @@index([schoolId])
+  @@index([schoolId, isCurrent])
+  @@map("academic_years")
+}
+
+model Term {
+  id             String   @id @default(uuid())
+  schoolId       String   @map("school_id")
+  academicYearId String   @map("academic_year_id")
+  sequence       Int // 1 | 2 | 3 — unique within a year
+  name           String // "First Term", "Second Term", "Third Term"
+  startDate      DateTime @map("start_date") @db.Date
+  endDate        DateTime @map("end_date") @db.Date
+  isCurrent      Boolean  @default(false) @map("is_current")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  academicYear AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+
+  @@unique([academicYearId, sequence])
+  @@index([schoolId])
+  @@index([schoolId, isCurrent])
+  @@map("terms")
 }

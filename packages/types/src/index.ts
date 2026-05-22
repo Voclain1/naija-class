@@ -6,3 +6,4 @@ export * from './permissions.js';
 export * from './auth/index.js';
 export * from './onboarding/index.js';
 export * from './invitations/index.js';
+export * from './academic-years/index.js';

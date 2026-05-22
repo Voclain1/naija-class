@@ -1109,21 +1109,23 @@ async roster(@CurrentUser() user, @Param('armId') armId: string) {
 
 ## Audit interceptor
 
-No change to the interceptor itself. New actions added to the implicit naming convention:
+No change to the interceptor itself. New actions added to the implicit naming convention.
 
-- `students.create`, `students.update`, `students.withdraw`, `students.graduate`, `students.reactivate`, `students.import.commit`
-- `guardians.create`, `guardians.update`, `guardians.delete`
-- `student-guardians.create`, `student-guardians.update`, `student-guardians.delete`
-- `enrollments.create`, `enrollments.update`, `enrollments.delete`
-- `academic-years.create`, `academic-years.update`, `academic-years.delete`, `academic-years.set-current`
-- `terms.create`, `terms.update`, `terms.delete`, `terms.set-current`
-- `class-levels.create`, `class-levels.update`, `class-levels.delete`
-- `class-arms.create`, `class-arms.update`, `class-arms.delete`
-- `subjects.create`, `subjects.update`, `subjects.delete`
-- `class-subjects.create`, `class-subjects.delete`
-- `teacher-assignments.create`, `teacher-assignments.update`, `teacher-assignments.delete`
-- `teacher-profiles.create`, `teacher-profiles.update`, `teacher-profiles.delete`
-- `imports.upload`, `imports.mapping`, `imports.commit`, `imports.abort`
+**Convention: `<singular-resource>.<verb>`** (Phase 0 set this: `school.update`, `user.invite`, `onboarding.step1_complete`). The list below uses that form. The hyphenated-plural prose form used elsewhere in this spec ("academic-years.create", etc.) is casual; **the code uses the singular form** and nobody should "fix" the code to match the casual prose. Slice 1 locked this in via inline `AUDIT` constants on `AcademicYearsService` and `TermsService` — copy the same shape in subsequent slices.
+
+- `student.create`, `student.update`, `student.withdraw`, `student.graduate`, `student.reactivate`, `student.import.commit`
+- `guardian.create`, `guardian.update`, `guardian.delete`
+- `student-guardian.create`, `student-guardian.update`, `student-guardian.delete`
+- `enrollment.create`, `enrollment.update`, `enrollment.delete`
+- `academic-year.create`, `academic-year.update`, `academic-year.delete`, `academic-year.set-current`
+- `term.create`, `term.update`, `term.delete`, `term.set-current`
+- `class-level.create`, `class-level.update`, `class-level.delete`
+- `class-arm.create`, `class-arm.update`, `class-arm.delete`
+- `subject.create`, `subject.update`, `subject.delete`
+- `class-subject.create`, `class-subject.delete`
+- `teacher-assignment.create`, `teacher-assignment.update`, `teacher-assignment.delete`
+- `teacher-profile.create`, `teacher-profile.update`, `teacher-profile.delete`
+- `import.upload`, `import.mapping`, `import.commit`, `import.abort`
 
 The CSV import commit writes **one** audit row per import (not per row inserted) with row counts in metadata. Rationale: 10 000 students × 3 imports × 1 audit row each would dominate the audit table; the import job already persists per-row state in `ImportJob` + the error report CSV.
 

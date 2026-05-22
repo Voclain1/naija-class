@@ -89,3 +89,9 @@ Format:
   "do you have X?" has a clear deferred answer, not a blank.
 - [ ] WAEC/NECO localization is the moat (Khanmigo/Squirrel AI aren't
   localized) — keep leaning on it. Verify competitor claims when planning.
+
+  - [ ] mapUniqueViolation helper assumes a single unique-per-school
+  constraint. Breaks at slice 5 (Guardian, multiple unique constraints).
+  Fix via P2002 meta.target inspection (preferred — avoids SD count
+  pressure) OR a SECURITY DEFINER pre-check (would push SD to 5,
+  trigger consolidation refactor). Decide at slice 5.
