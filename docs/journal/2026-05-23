@@ -1,0 +1,15 @@
+# 2026-05-23
+
+## Today's outcome
+Phase 1 Slice 2 — ClassLevel: model, RLS, seed-on-signup (hybrid),
+CRUD, settings UI. First slice touching a Phase 0 file (auth.service
+signupOwner). ~2 days.
+
+## Decisions made
+- (capture as the day unfolds)
+
+## Stuck on
+- Nothing yet
+
+## Tomorrow's first task
+- (fill in at end of day)
