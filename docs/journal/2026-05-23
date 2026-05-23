@@ -13,3 +13,33 @@ signupOwner). ~2 days.
 
 ## Tomorrow's first task
 - (fill in at end of day)
+
+## Done today
+- Phase 1 Slice 2 (ClassLevel) built, verified, merged — both CI jobs green
+- First slice to modify a Phase 0 file (auth.service.signupOwner); E2E
+  stayed green through the signup change — "touch Phase 0 safely" pattern
+  established
+- Hybrid seed-on-signup: 14 default Nigerian levels (KG 1/2, Primary 1-6,
+  JSS 1-3, SSS 1-3) seeded per-school inside the signup tx; live-verified
+  two schools each got distinct 14, zero cross-tenant leak
+
+## Decisions made
+- Seed runs INSIDE existing signupOwner tx via tx directly (NOT withTenant
+  — would nest $transaction and hang). GUC already set at line 101 so
+  FORCE RLS WITH CHECK passes. SD count stays 4.
+- Default pre-primary naming: KG 1 / KG 2 (per market). Spec updated to match.
+- Seed test lives in class-levels.service.spec, not auth.service.spec —
+  keeps auth specs literally unchanged, test where the contract lives
+
+## Landmines / notes
+- Windows Prisma DLL lock during db:generate when api dev server running —
+  now saved to memory + recurring-updates
+- "tests pass / runtime fails" pattern: live-curl caught nothing new this
+  slice (clean), but per-tenant HTTP isolation check remains the gold gate
+
+## Tomorrow's first task
+Phase 1 Slice 3 — ClassArm + Subject + ClassSubject (3 models, RLS, CRUDs,
+class-subject mapping matrix UI). 3 days, the biggest slice so far. First
+slice with a many-to-many (ClassSubject) and the parent-child create
+pattern (ClassArm under ClassLevel) that slice-1's nested-create/flat-edit
+convention was designed for.
