@@ -438,3 +438,252 @@ describe("multi-tenant isolation — Phase 1 / Slice 2 (class_levels)", () => {
     expect(rows).toHaveLength(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Phase 1 / Slice 3 isolation — class_arms + subjects + class_subjects
+//
+// Three more tenant-scoped tables, same direct-RLS shape as slices 1+2.
+// class_subjects is an explicit join (ClassLevel × Subject) with its own
+// school_id rather than EXISTS-through-parent — the spec calls this out
+// (docs/modules/phase-1.md "Note on student_guardians"). The suite proves
+// the steady-state isolation invariant for all three tables, plus the
+// WITH CHECK guard against cross-tenant inserts.
+// ---------------------------------------------------------------------------
+
+describe("multi-tenant isolation — Phase 1 / Slice 3 (class_arms + subjects + class_subjects)", () => {
+  const runId = Math.random().toString(36).slice(2, 8);
+  let schoolA: { id: string };
+  let schoolB: { id: string };
+  let levelA: { id: string };
+  let levelB: { id: string };
+  let armA: { id: string };
+  let armB: { id: string };
+  let subjectA: { id: string };
+  let subjectB: { id: string };
+  let classSubjectA: { id: string };
+  let classSubjectB: { id: string };
+
+  beforeAll(async () => {
+    schoolA = await basePrisma.school.create({
+      data: { name: "School P1S3A", slug: `rls-p1s3a-${runId}` },
+      select: { id: true },
+    });
+    schoolB = await basePrisma.school.create({
+      data: { name: "School P1S3B", slug: `rls-p1s3b-${runId}` },
+      select: { id: true },
+    });
+
+    // class_arms depends on class_levels and (optionally) users; class_subjects
+    // depends on class_levels and subjects. We seed a custom level per school
+    // for relation targets — the signup seed isn't running here.
+    levelA = await withTenant(schoolA.id, (db) =>
+      db.classLevel.create({
+        data: {
+          schoolId: schoolA.id,
+          name: `A-lvl-${runId}`,
+          code: `a-lvl-${runId}`,
+          stage: "JSS",
+          orderIndex: 100,
+        },
+        select: { id: true },
+      }),
+    );
+    levelB = await withTenant(schoolB.id, (db) =>
+      db.classLevel.create({
+        data: {
+          schoolId: schoolB.id,
+          name: `B-lvl-${runId}`,
+          code: `b-lvl-${runId}`,
+          stage: "JSS",
+          orderIndex: 100,
+        },
+        select: { id: true },
+      }),
+    );
+
+    armA = await withTenant(schoolA.id, (db) =>
+      db.classArm.create({
+        data: {
+          schoolId: schoolA.id,
+          classLevelId: levelA.id,
+          name: `A-arm-${runId}`,
+          code: `a-arm-${runId}`,
+        },
+        select: { id: true },
+      }),
+    );
+    armB = await withTenant(schoolB.id, (db) =>
+      db.classArm.create({
+        data: {
+          schoolId: schoolB.id,
+          classLevelId: levelB.id,
+          name: `B-arm-${runId}`,
+          code: `b-arm-${runId}`,
+        },
+        select: { id: true },
+      }),
+    );
+
+    subjectA = await withTenant(schoolA.id, (db) =>
+      db.subject.create({
+        data: {
+          schoolId: schoolA.id,
+          name: `A-sub-${runId}`,
+          code: `a-sub-${runId}`,
+        },
+        select: { id: true },
+      }),
+    );
+    subjectB = await withTenant(schoolB.id, (db) =>
+      db.subject.create({
+        data: {
+          schoolId: schoolB.id,
+          name: `B-sub-${runId}`,
+          code: `b-sub-${runId}`,
+        },
+        select: { id: true },
+      }),
+    );
+
+    classSubjectA = await withTenant(schoolA.id, (db) =>
+      db.classSubject.create({
+        data: {
+          schoolId: schoolA.id,
+          classLevelId: levelA.id,
+          subjectId: subjectA.id,
+        },
+        select: { id: true },
+      }),
+    );
+    classSubjectB = await withTenant(schoolB.id, (db) =>
+      db.classSubject.create({
+        data: {
+          schoolId: schoolB.id,
+          classLevelId: levelB.id,
+          subjectId: subjectB.id,
+        },
+        select: { id: true },
+      }),
+    );
+  });
+
+  afterAll(async () => {
+    if (schoolA?.id) {
+      await basePrisma.school.delete({ where: { id: schoolA.id } }).catch(() => undefined);
+    }
+    if (schoolB?.id) {
+      await basePrisma.school.delete({ where: { id: schoolB.id } }).catch(() => undefined);
+    }
+    await basePrisma.$disconnect();
+  });
+
+  it("School A sees its own class_arm, subject, and class_subject only", async () => {
+    const result = await withTenant(schoolA.id, async (db) => ({
+      arms: await db.classArm.findMany({ where: { name: { contains: runId } } }),
+      subjects: await db.subject.findMany({ where: { name: { contains: runId } } }),
+      classSubjects: await db.classSubject.findMany({
+        where: { classLevel: { name: { contains: runId } } },
+      }),
+    }));
+
+    expect(result.arms.map((r) => r.id)).toContain(armA.id);
+    expect(result.arms.map((r) => r.id)).not.toContain(armB.id);
+    expect(result.subjects.map((r) => r.id)).toContain(subjectA.id);
+    expect(result.subjects.map((r) => r.id)).not.toContain(subjectB.id);
+    expect(result.classSubjects.map((r) => r.id)).toContain(classSubjectA.id);
+    expect(result.classSubjects.map((r) => r.id)).not.toContain(classSubjectB.id);
+  });
+
+  it("School B sees its own class_arm, subject, and class_subject only", async () => {
+    const result = await withTenant(schoolB.id, async (db) => ({
+      arms: await db.classArm.findMany({ where: { name: { contains: runId } } }),
+      subjects: await db.subject.findMany({ where: { name: { contains: runId } } }),
+      classSubjects: await db.classSubject.findMany({
+        where: { classLevel: { name: { contains: runId } } },
+      }),
+    }));
+
+    expect(result.arms.map((r) => r.id)).toContain(armB.id);
+    expect(result.arms.map((r) => r.id)).not.toContain(armA.id);
+    expect(result.subjects.map((r) => r.id)).toContain(subjectB.id);
+    expect(result.subjects.map((r) => r.id)).not.toContain(subjectA.id);
+    expect(result.classSubjects.map((r) => r.id)).toContain(classSubjectB.id);
+    expect(result.classSubjects.map((r) => r.id)).not.toContain(classSubjectA.id);
+  });
+
+  it("findUnique across tenants returns null for all three tables", async () => {
+    const leakArm = await withTenant(schoolA.id, (db) =>
+      db.classArm.findUnique({ where: { id: armB.id } }),
+    );
+    const leakSubject = await withTenant(schoolA.id, (db) =>
+      db.subject.findUnique({ where: { id: subjectB.id } }),
+    );
+    const leakClassSubject = await withTenant(schoolA.id, (db) =>
+      db.classSubject.findUnique({ where: { id: classSubjectB.id } }),
+    );
+    expect(leakArm).toBeNull();
+    expect(leakSubject).toBeNull();
+    expect(leakClassSubject).toBeNull();
+  });
+
+  it("INSERT with another school's school_id fails the WITH CHECK clause (all three tables)", async () => {
+    // class_arms with foreign school_id
+    await expect(
+      withTenant(schoolA.id, (db) =>
+        db.classArm.create({
+          data: {
+            schoolId: schoolB.id,
+            classLevelId: levelA.id,
+            name: `bad-arm-${runId}`,
+            code: `bad-arm-${runId}`,
+          },
+        }),
+      ),
+    ).rejects.toThrow();
+
+    // subjects with foreign school_id
+    await expect(
+      withTenant(schoolA.id, (db) =>
+        db.subject.create({
+          data: {
+            schoolId: schoolB.id,
+            name: `bad-sub-${runId}`,
+            code: `bad-sub-${runId}`,
+          },
+        }),
+      ),
+    ).rejects.toThrow();
+
+    // class_subjects with foreign school_id — parent ids are A's, but
+    // school_id is B. WITH CHECK should reject before the FK fires.
+    await expect(
+      withTenant(schoolA.id, (db) =>
+        db.classSubject.create({
+          data: {
+            schoolId: schoolB.id,
+            classLevelId: levelA.id,
+            subjectId: subjectA.id,
+          },
+        }),
+      ),
+    ).rejects.toThrow();
+  });
+
+  it("raw SQL with unset GUC returns zero rows from all three tables (FORCE RLS)", async () => {
+    const rows = await basePrisma.$transaction(async (tx) => {
+      const arms = await tx.$queryRaw<Array<{ id: string }>>`
+        SELECT id FROM class_arms WHERE name LIKE ${"%" + runId + "%"}
+      `;
+      const subjects = await tx.$queryRaw<Array<{ id: string }>>`
+        SELECT id FROM subjects WHERE name LIKE ${"%" + runId + "%"}
+      `;
+      const classSubjects = await tx.$queryRaw<Array<{ id: string }>>`
+        SELECT id FROM class_subjects WHERE id IN (${classSubjectA.id}, ${classSubjectB.id})
+      `;
+      return { arms, subjects, classSubjects };
+    });
+    expect(rows.arms).toHaveLength(0);
+    expect(rows.subjects).toHaveLength(0);
+    expect(rows.classSubjects).toHaveLength(0);
+  });
+});
