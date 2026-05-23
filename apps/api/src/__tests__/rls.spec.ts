@@ -321,3 +321,120 @@ describe("multi-tenant isolation — Phase 1 / Slice 1 (academic_years + terms)"
     expect(rows.ts).toHaveLength(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Phase 1 / Slice 2 isolation — class_levels
+//
+// class_levels is FORCE RLS'd and tenant-scoped via school_id. The seed-on-
+// signup runs inside the existing signupOwner tx and satisfies WITH CHECK
+// because the GUC is already set there; this spec proves the steady-state
+// isolation invariant — that schools cannot see each other's levels and
+// cannot insert into each other's tenant.
+// ---------------------------------------------------------------------------
+
+describe("multi-tenant isolation — Phase 1 / Slice 2 (class_levels)", () => {
+  const runId = Math.random().toString(36).slice(2, 8);
+  let schoolA: { id: string };
+  let schoolB: { id: string };
+  let levelA: { id: string };
+  let levelB: { id: string };
+
+  beforeAll(async () => {
+    schoolA = await basePrisma.school.create({
+      data: { name: "School P1S2A", slug: `rls-p1s2a-${runId}` },
+      select: { id: true },
+    });
+    schoolB = await basePrisma.school.create({
+      data: { name: "School P1S2B", slug: `rls-p1s2b-${runId}` },
+      select: { id: true },
+    });
+
+    // Insert custom levels via withTenant (bypassing the signupOwner seed
+    // entirely — this suite is about steady-state isolation, not seed
+    // semantics; the seed is covered in class-levels.service.spec.ts).
+    levelA = await withTenant(schoolA.id, (db) =>
+      db.classLevel.create({
+        data: {
+          schoolId: schoolA.id,
+          name: `A-only-${runId}`,
+          code: `a-${runId}`,
+          stage: "PRIMARY",
+          orderIndex: 100,
+        },
+        select: { id: true },
+      }),
+    );
+    levelB = await withTenant(schoolB.id, (db) =>
+      db.classLevel.create({
+        data: {
+          schoolId: schoolB.id,
+          name: `B-only-${runId}`,
+          code: `b-${runId}`,
+          stage: "PRIMARY",
+          orderIndex: 100,
+        },
+        select: { id: true },
+      }),
+    );
+  });
+
+  afterAll(async () => {
+    if (schoolA?.id) {
+      await basePrisma.school.delete({ where: { id: schoolA.id } }).catch(() => undefined);
+    }
+    if (schoolB?.id) {
+      await basePrisma.school.delete({ where: { id: schoolB.id } }).catch(() => undefined);
+    }
+    await basePrisma.$disconnect();
+  });
+
+  it("School A sees its own class_level only", async () => {
+    const rows = await withTenant(schoolA.id, (db) =>
+      db.classLevel.findMany({ where: { name: { contains: runId } } }),
+    );
+    const ids = rows.map((r) => r.id);
+    expect(ids).toContain(levelA.id);
+    expect(ids).not.toContain(levelB.id);
+  });
+
+  it("School B sees its own class_level only", async () => {
+    const rows = await withTenant(schoolB.id, (db) =>
+      db.classLevel.findMany({ where: { name: { contains: runId } } }),
+    );
+    const ids = rows.map((r) => r.id);
+    expect(ids).toContain(levelB.id);
+    expect(ids).not.toContain(levelA.id);
+  });
+
+  it("findUnique across tenants returns null", async () => {
+    const leak = await withTenant(schoolA.id, (db) =>
+      db.classLevel.findUnique({ where: { id: levelB.id } }),
+    );
+    expect(leak).toBeNull();
+  });
+
+  it("INSERT with another school's school_id fails the WITH CHECK clause", async () => {
+    await expect(
+      withTenant(schoolA.id, (db) =>
+        db.classLevel.create({
+          data: {
+            schoolId: schoolB.id,
+            name: `bad-${runId}`,
+            code: `bad-${runId}`,
+            stage: "PRIMARY",
+            orderIndex: 200,
+          },
+        }),
+      ),
+    ).rejects.toThrow();
+  });
+
+  it("raw SQL with unset GUC returns zero rows from class_levels (FORCE RLS)", async () => {
+    const rows = await basePrisma.$transaction(async (tx) => {
+      return tx.$queryRaw<Array<{ id: string }>>`
+        SELECT id FROM class_levels WHERE name LIKE ${"%" + runId + "%"}
+      `;
+    });
+    expect(rows).toHaveLength(0);
+  });
+});

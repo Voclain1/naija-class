@@ -27,7 +27,7 @@ End of Phase 1, all of these are true:
 
 A pilot school with **250 students across 12 class arms, 15 teachers, 1 academic year × 3 terms, 14 class levels, 20 subjects** can complete first-day-of-term roster setup in under 90 minutes:
 
-1. Owner signs up → onboarding finishes (Phase 0) → school is auto-seeded with 14 default class levels.
+1. Owner signs up → onboarding finishes (Phase 0) → school is auto-seeded with 14 default class levels (KG 1, KG 2, Primary 1–6, JSS 1–3, SSS 1–3).
 2. Admin creates AcademicYear "2025/2026" + three terms.
 3. Admin creates class arms (JSS 1A, JSS 1B, …) and subjects, links subjects to levels.
 4. Admin uploads `students.csv` (250 rows); 8 rows fail validation (missing DOB, duplicate admission number, invalid gender code); admin downloads the error report, fixes those 8 rows in Excel, re-uploads the 8 → all import.
@@ -600,7 +600,7 @@ CREATE POLICY tenant_isolation ON ai_interaction_logs
 **Phase 1 adds zero new SECURITY DEFINER functions.** Every Phase 1 endpoint is post-authentication and post-tenant: by the time the handler runs, we have a session-resolved `schoolId` and can use `withTenant` for all DB access.
 
 Specifically:
-- **ClassLevel seeding** happens inside the existing signup transaction *after* the school is created. The seed routine calls `withTenant(school.id, ...)` for the inserts — the migration role has already created the school row, so we know the id; no pre-tenant lookup is needed.
+- **ClassLevel seeding** happens inside the existing signup transaction *after* the school is created. The seed uses the same `tx` handle as the other tenant-scoped inserts in `signupOwner` (user, userRole, auditLog) — by the time the seed runs, the GUC `app.current_school_id` has already been set inside that tx via `set_config(..., true)` (see `auth.service.ts:signupOwner`), so the RLS `WITH CHECK` is satisfied directly. *Do not wrap the seed in `withTenant`*: `withTenant` opens its own `basePrisma.$transaction`, and Prisma does not support nested transactions — the call would hang or deadlock. (Updated 2026-05-23 when slice 2 was implemented; the earlier wording said "calls `withTenant`" which is wrong for this site.)
 - **CSV import** runs entirely under `withTenant` — the admin is authenticated, the schoolId is on their JWT, and every row insert happens inside that tenant scope.
 - **Teacher acceptance** reuses the Phase 0 `auth_resolve_invitation_by_token_hash` SECURITY DEFINER function (no new one needed).
 - **Teacher scope filters** (a teacher querying their assigned students) are application-level joins through `teacher_assignments` and `enrollments`, both already tenant-scoped via RLS.
@@ -1135,7 +1135,7 @@ The CSV import commit writes **one** audit row per import (not per row inserted)
 
 End of Phase 1 these must all pass:
 
-1. New school signup auto-seeds 14 ClassLevels: Nursery 1, Nursery 2, Primary 1–6, JSS 1–3, SSS 1–3, with correct stage and orderIndex. Verified by integration test that signs up a fresh school and asserts on `class_levels` rows.
+1. New school signup auto-seeds 14 ClassLevels: KG 1, KG 2, Primary 1–6, JSS 1–3, SSS 1–3, with correct stage and orderIndex. Verified by integration test that signs up a fresh school and asserts on `class_levels` rows. (Pre-primary naming locked to KG 1 / KG 2 on 2026-05-23 — see the "default pre-primary naming" decision in slice 2 implementation; schools that prefer "Nursery 1 / Nursery 2" rename after the fact.)
 2. Admin can create an AcademicYear with three Terms, set one as current; setting another as current unflips the first. Verified by integration test.
 3. Admin can create a ClassArm under a ClassLevel, assign a class teacher, set capacity. The class teacher dropdown only lists users with the `teacher` role at this school.
 4. Admin can create a Subject and link it to one or more ClassLevels via ClassSubject. The matrix view persists checkbox state through refresh.

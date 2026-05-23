@@ -1,6 +1,6 @@
 import { Injectable } from "@nestjs/common";
 
-import { Prisma, basePrisma, withTenant } from "@school-kit/db";
+import { DEFAULT_CLASS_LEVELS, Prisma, basePrisma, withTenant } from "@school-kit/db";
 import {
   ConflictError,
   InternalError,
@@ -128,6 +128,26 @@ export class AuthService {
 
         await tx.userRole.create({
           data: { userId: user.id, roleId: ownerRole.id },
+        });
+
+        // Phase 1 / Slice 2 — seed the 14 standard Nigerian class levels
+        // (KG 1, KG 2, Primary 1–6, JSS 1–3, SSS 1–3). Uses `tx` directly,
+        // NOT withTenant: the GUC `app.current_school_id` was set on this
+        // tx at line ~101, so RLS WITH CHECK is already satisfied; wrapping
+        // in withTenant would open a second basePrisma.$transaction inside
+        // this one and Prisma does not support nested transactions (the
+        // call would hang). `skipDuplicates: true` makes the seed
+        // structurally idempotent against the (school_id, code) unique
+        // index — a hypothetical retry would no-op rather than throw.
+        await tx.classLevel.createMany({
+          data: DEFAULT_CLASS_LEVELS.map((level) => ({
+            schoolId: school.id,
+            code: level.code,
+            name: level.name,
+            stage: level.stage,
+            orderIndex: level.orderIndex,
+          })),
+          skipDuplicates: true,
         });
 
         // Audit entry written inline rather than queued through BullMQ. Two
