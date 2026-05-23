@@ -60,3 +60,32 @@ ALTER TABLE class_levels FORCE  ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation ON class_levels
   USING      (school_id::text = current_setting('app.current_school_id', true))
   WITH CHECK (school_id::text = current_setting('app.current_school_id', true));
+
+-- Slice 3: class_arms + subjects + class_subjects ----------------------
+-- All three carry their own school_id and use the same direct-RLS shape as
+-- slices 1+2. class_subjects is an explicit join (ClassLevel × Subject)
+-- with denormalised school_id rather than EXISTS-through-parent — matches
+-- the pattern explicitly documented for student_guardians, mastery_records,
+-- and ai_interaction_logs (docs/modules/phase-1.md "Note on
+-- student_guardians"). The service layer writes school_id from the parent
+-- on create; the WITH CHECK clause is the guard against a buggy controller
+-- ever inserting with a foreign school_id.
+
+ALTER TABLE class_arms     ENABLE ROW LEVEL SECURITY;
+ALTER TABLE class_arms     FORCE  ROW LEVEL SECURITY;
+ALTER TABLE subjects       ENABLE ROW LEVEL SECURITY;
+ALTER TABLE subjects       FORCE  ROW LEVEL SECURITY;
+ALTER TABLE class_subjects ENABLE ROW LEVEL SECURITY;
+ALTER TABLE class_subjects FORCE  ROW LEVEL SECURITY;
+
+CREATE POLICY tenant_isolation ON class_arms
+  USING      (school_id::text = current_setting('app.current_school_id', true))
+  WITH CHECK (school_id::text = current_setting('app.current_school_id', true));
+
+CREATE POLICY tenant_isolation ON subjects
+  USING      (school_id::text = current_setting('app.current_school_id', true))
+  WITH CHECK (school_id::text = current_setting('app.current_school_id', true));
+
+CREATE POLICY tenant_isolation ON class_subjects
+  USING      (school_id::text = current_setting('app.current_school_id', true))
+  WITH CHECK (school_id::text = current_setting('app.current_school_id', true));

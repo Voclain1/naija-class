@@ -90,6 +90,12 @@ model User {
   roles    UserRole[]
   sessions Session[]
 
+  // Phase 1 / Slice 3 — back-relation to ClassArm.classTeacherId.
+  // Named relation because slice 10's teacher-subject assignment will add a
+  // second User-to-ClassArm edge through TeacherAssignment; Prisma requires
+  // a relation name once two edges exist between the same two models.
+  classTeacherArms ClassArm[] @relation("ClassTeacherArms")
+
   @@index([schoolId])
   @@map("users")
 }
@@ -244,6 +250,10 @@ model ClassLevel {
   createdAt  DateTime   @default(now()) @map("created_at")
   updatedAt  DateTime   @updatedAt @map("updated_at")
 
+  // Phase 1 / Slice 3 back-relations.
+  arms          ClassArm[]
+  classSubjects ClassSubject[]
+
   @@unique([schoolId, code])
   @@index([schoolId])
   @@index([schoolId, orderIndex])
@@ -255,4 +265,85 @@ enum ClassStage {
   PRIMARY
   JSS
   SSS
+}
+
+// ---------- Phase 1 / Slice 3 — Class arms, subjects, class-subjects ----------
+//
+// Three models that complete the academic skeleton. ClassArm is the section
+// under a ClassLevel ("JSS 1A", "JSS 1B"); Subject is the school-wide subject
+// catalog; ClassSubject is the explicit many-to-many between ClassLevel and
+// Subject (curriculum lives at the level, not the arm — all arms of JSS 1
+// take the same set of subjects). All three carry their own school_id for
+// direct-RLS isolation, matching the slice 1+2 pattern.
+//
+// classTeacherId on ClassArm references users.id (not teacher_profiles.id —
+// that table arrives in slice 10). The dropdown stays empty until teachers
+// have accepted invitations; the UI surfaces an "Invite a teacher" CTA per
+// the spec risk note (docs/modules/phase-1.md → Risks and gotchas).
+
+model ClassArm {
+  id             String   @id @default(uuid())
+  schoolId       String   @map("school_id")
+  classLevelId   String   @map("class_level_id")
+  name           String // "JSS 1A" — human-facing; renamable
+  code           String // "jss1-a" — stable per-(school, level) identifier
+  capacity       Int? // optional max headcount
+  classTeacherId String?  @map("class_teacher_id") // FK → users.id (form teacher)
+  isActive       Boolean  @default(true) @map("is_active")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  classLevel   ClassLevel @relation(fields: [classLevelId], references: [id], onDelete: Cascade)
+  classTeacher User?      @relation("ClassTeacherArms", fields: [classTeacherId], references: [id], onDelete: SetNull)
+
+  @@unique([schoolId, classLevelId, code])
+  @@index([schoolId])
+  @@index([classTeacherId])
+  @@map("class_arms")
+}
+
+model Subject {
+  id        String          @id @default(uuid())
+  schoolId  String          @map("school_id")
+  name      String // "Mathematics" — human-facing; renamable
+  code      String // "math" — stable per-school identifier (unique)
+  category  SubjectCategory @default(CORE)
+  isActive  Boolean         @default(true) @map("is_active")
+  createdAt DateTime        @default(now()) @map("created_at")
+  updatedAt DateTime        @updatedAt @map("updated_at")
+
+  classSubjects ClassSubject[]
+
+  @@unique([schoolId, code])
+  @@index([schoolId])
+  @@map("subjects")
+}
+
+enum SubjectCategory {
+  CORE
+  ELECTIVE
+  VOCATIONAL
+}
+
+// Explicit join between ClassLevel and Subject. Explicit (not Prisma's
+// implicit m-n) because we need our own school_id column for direct-RLS and
+// our own `isCore` payload (curriculum metadata: e.g. Maths is core in JSS
+// but may be elective in some SSS streams). No updatedAt — link membership
+// is binary; toggling isCore is a single UPDATE without history.
+
+model ClassSubject {
+  id           String   @id @default(uuid())
+  schoolId     String   @map("school_id")
+  classLevelId String   @map("class_level_id")
+  subjectId    String   @map("subject_id")
+  isCore       Boolean  @default(true) @map("is_core")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  classLevel ClassLevel @relation(fields: [classLevelId], references: [id], onDelete: Cascade)
+  subject    Subject    @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+
+  @@unique([schoolId, classLevelId, subjectId])
+  @@index([schoolId])
+  @@index([subjectId])
+  @@map("class_subjects")
 }
