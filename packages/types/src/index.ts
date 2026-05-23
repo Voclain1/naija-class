@@ -8,3 +8,6 @@ export * from './onboarding/index.js';
 export * from './invitations/index.js';
 export * from './academic-years/index.js';
 export * from './class-levels/index.js';
+export * from './class-arms/index.js';
+export * from './subjects/index.js';
+export * from './class-subjects/index.js';

@@ -6,10 +6,13 @@ import { HealthController } from "./health/health.controller";
 import { HttpExceptionFilter } from "./common/http-exception.filter";
 import { AcademicYearsModule } from "./modules/academic-years/academic-years.module";
 import { AuthModule } from "./modules/auth/auth.module";
+import { ClassArmsModule } from "./modules/class-arms/class-arms.module";
 import { ClassLevelsModule } from "./modules/class-levels/class-levels.module";
+import { ClassSubjectsModule } from "./modules/class-subjects/class-subjects.module";
 import { DebugModule } from "./modules/debug/debug.module";
 import { InvitationsModule } from "./modules/invitations/invitations.module";
 import { SchoolsModule } from "./modules/schools/schools.module";
+import { SubjectsModule } from "./modules/subjects/subjects.module";
 import { TermsModule } from "./modules/terms/terms.module";
 import { UsersModule } from "./modules/users/users.module";
 
@@ -32,6 +35,9 @@ const isProd = process.env.NODE_ENV === "production";
     AcademicYearsModule,
     TermsModule,
     ClassLevelsModule,
+    ClassArmsModule,
+    SubjectsModule,
+    ClassSubjectsModule,
     ...(isProd ? [] : [DebugModule]),
   ],
   controllers: [HealthController],
