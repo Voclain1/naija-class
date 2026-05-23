@@ -43,3 +43,20 @@ CREATE UNIQUE INDEX academic_years_school_id_current_key
 CREATE UNIQUE INDEX terms_school_id_current_key
   ON terms (school_id)
   WHERE is_current = true;
+
+-- Slice 2: class_levels -------------------------------------------------
+-- Direct school_id check, same shape as slices above. No partial unique
+-- (no "current level" concept). The seed-on-signup that populates the
+-- 14 default rows runs INSIDE the signupOwner transaction using the same
+-- `tx` handle as the school/user/userRole inserts — the GUC is already set
+-- by `set_config('app.current_school_id', school.id, true)` earlier in
+-- that tx, so RLS WITH CHECK is satisfied without needing withTenant
+-- (which would nest $transaction and Prisma does not nest). See the seed
+-- call-site comment in apps/api/src/modules/auth/auth.service.ts.
+
+ALTER TABLE class_levels ENABLE ROW LEVEL SECURITY;
+ALTER TABLE class_levels FORCE  ROW LEVEL SECURITY;
+
+CREATE POLICY tenant_isolation ON class_levels
+  USING      (school_id::text = current_setting('app.current_school_id', true))
+  WITH CHECK (school_id::text = current_setting('app.current_school_id', true));

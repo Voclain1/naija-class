@@ -218,3 +218,41 @@ model Term {
   @@index([schoolId, isCurrent])
   @@map("terms")
 }
+
+// ---------- Phase 1 / Slice 2 — Class levels ----------
+//
+// Hybrid model: every new school is auto-seeded with the 14 standard Nigerian
+// levels (KG 1/2, Primary 1–6, JSS 1–3, SSS 1–3) inside the signup
+// transaction (see apps/api/src/modules/auth/auth.service.ts → signupOwner).
+// Schools can then add custom levels, edit names, or toggle isActive.
+//
+// `code` is the stable per-school identifier (matching the seed) and backs
+// the uniqueness constraint; `name` is the human-facing label and can be
+// renamed freely. `orderIndex` drives sort order in the UI; duplicates are
+// tolerated for schools that interleave custom levels (sort tie-breaks on
+// name ASC). No partial unique index here — there is no "current level"
+// concept; the current academic year/term carries that semantic.
+
+model ClassLevel {
+  id         String     @id @default(uuid())
+  schoolId   String     @map("school_id")
+  name       String // "KG 1", "Primary 4" — human-facing; renamable
+  code       String // "kg1", "pri4" — stable per-school identifier (unique)
+  stage      ClassStage // NURSERY | PRIMARY | JSS | SSS — coarse grouping
+  orderIndex Int        @map("order_index") // sort order; seeded 1..14
+  isActive   Boolean    @default(true) @map("is_active")
+  createdAt  DateTime   @default(now()) @map("created_at")
+  updatedAt  DateTime   @updatedAt @map("updated_at")
+
+  @@unique([schoolId, code])
+  @@index([schoolId])
+  @@index([schoolId, orderIndex])
+  @@map("class_levels")
+}
+
+enum ClassStage {
+  NURSERY
+  PRIMARY
+  JSS
+  SSS
+}

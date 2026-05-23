@@ -7,3 +7,4 @@ export * from './auth/index.js';
 export * from './onboarding/index.js';
 export * from './invitations/index.js';
 export * from './academic-years/index.js';
+export * from './class-levels/index.js';
