@@ -43,3 +43,38 @@ class-subject mapping matrix UI). 3 days, the biggest slice so far. First
 slice with a many-to-many (ClassSubject) and the parent-child create
 pattern (ClassArm under ClassLevel) that slice-1's nested-create/flat-edit
 convention was designed for.
+
+## Done today
+- Caught + fixed a merge-tracking gap: slice 2's PR was never actually
+  merged despite CI green; the journal had recorded "merged" prematurely.
+  Habit fix locked in: merge first, journal second, confirm with git log.
+- Phase 1 Slice 3 checkpoints 1 + 2 merged (per-checkpoint PR strategy):
+  - cp1: ClassArm + Subject + ClassSubject schema, RLS, isolation spec
+    (PR #6). class_subjects WITH CHECK proven — cross-tenant link
+    rejected before FK fires.
+  - cp2: CRUD for all three + atomic /bulk endpoint. Live-curl proved
+    partial-batch rollback. classTeacherId teacher-role validation
+    (rejectable-only until slice 13 seeds the teacher role).
+- Full suite 204/204. SECURITY DEFINER still 4.
+
+## Decisions made
+- ClassSubject granularity: ClassLevel × Subject (per-level curriculum;
+  per-arm overrides deferred as additive future table)
+- classTeacherId: nullable FK to User now, named relation ClassTeacherArms
+  reserved for slice 10's second User↔ClassArm edge
+- /bulk endpoint: atomic single-transaction, deletes-before-creates,
+  one audit row per op. Matrix UI (cp3) depends on this.
+- Permission constants: slice 3 ships PHASE_1_SLICE_3 only; slice 13 owns
+  the canonical all-slices rollup
+
+## Spec reconciliations pending (slice-3 closing PR)
+1. ClassArm endpoints nested-create (not spec's flat prose)
+2. ClassSubject /bulk endpoint (no spec entry)
+3. class-subject.update permission (spec omitted it)
+
+## Tomorrow's first task
+Slice 3 cp3 — the matrix UI. Class-arms page, subjects page, and the
+class-subject matrix (tristate cells, local-state diff vs server
+snapshot, unsaved-changes guard, batched save via /bulk). Fiddliest UI
+in the slice — fresh eyes. Plus the slice-3 closing reconciliation:
+update the spec's API list to match the 3 reconciliations above.
