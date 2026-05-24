@@ -89,3 +89,18 @@ CREATE POLICY tenant_isolation ON subjects
 CREATE POLICY tenant_isolation ON class_subjects
   USING      (school_id::text = current_setting('app.current_school_id', true))
   WITH CHECK (school_id::text = current_setting('app.current_school_id', true));
+
+-- Slice 4: students ---------------------------------------------------
+-- Direct school_id check, same shape as every prior Phase 1 slice. The
+-- service layer writes school_id from the JWT-resolved tenant; the
+-- WITH CHECK clause is the guard against a buggy controller ever
+-- inserting with a foreign school_id. SECURITY DEFINER count stays at 4
+-- — every Student endpoint is post-authentication and post-tenant, so
+-- withTenant() covers all DB access; no escape hatch needed.
+
+ALTER TABLE students ENABLE ROW LEVEL SECURITY;
+ALTER TABLE students FORCE  ROW LEVEL SECURITY;
+
+CREATE POLICY tenant_isolation ON students
+  USING      (school_id::text = current_setting('app.current_school_id', true))
+  WITH CHECK (school_id::text = current_setting('app.current_school_id', true));

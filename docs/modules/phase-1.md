@@ -212,7 +212,7 @@ model Student {
   firstName        String        @map("first_name")
   middleName       String?       @map("middle_name")
   lastName         String        @map("last_name")
-  dateOfBirth      DateTime      @map("date_of_birth")
+  dateOfBirth      DateTime      @map("date_of_birth") @db.Date  // Reconciled in slice 4 cp1: calendar date, not a moment — see CLAUDE.md.
   gender           Gender
   photoUrl         String?       @map("photo_url")
   address          String?

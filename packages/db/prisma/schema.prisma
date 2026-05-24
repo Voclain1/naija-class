@@ -347,3 +347,80 @@ model ClassSubject {
   @@index([subjectId])
   @@map("class_subjects")
 }
+
+// ---------- Phase 1 / Slice 4 — Students ----------
+//
+// First slice to model actual people. Student is the roster spine: CSV import
+// (slices 6-8) and Enrollment (slice 9) both build on this table. The model is
+// stripped of every relation that points at models that do not exist yet —
+// StudentGuardian (slice 5), Enrollment (slice 9), MasteryRecord +
+// AIInteractionLog (slice 12) — those back-relations are added by their own
+// slices to keep this one purely additive.
+//
+// Class membership is intentionally NOT on Student. The spec locks per-term
+// Enrollment as the only source of truth (docs/modules/phase-1.md → "Enrollment
+// is per-TERM, not per-academic-year"); a denormalised currentClassArmId here
+// would drift on every term boundary and break the join shape Phase 2 is built
+// around.
+//
+// dateOfBirth uses @db.Date per CLAUDE.md's "calendar date vs moment" rule
+// (also explicitly named in that rule). The spec text shows plain `DateTime`
+// — that's a pre-convention oversight from before slice 1 locked the
+// convention, reconciled in this slice's docs edit. Plain DateTime is kept
+// for admittedAt/withdrawnAt/graduatedAt: those are events (when the
+// transition happened), not calendar dates.
+//
+// admissionNumber is free-text required-unique-per-school (no auto-format,
+// no school-configurable scheme in Phase 1 — deferred). The unique constraint
+// is the ordinary @@unique form, not a partial index, since there's no
+// "current" semantic on Student.
+
+model Student {
+  id              String        @id @default(uuid())
+  schoolId        String        @map("school_id")
+  admissionNumber String        @map("admission_number") // free-text, unique per school
+  firstName       String        @map("first_name")
+  middleName      String?       @map("middle_name")
+  lastName        String        @map("last_name")
+  dateOfBirth     DateTime      @map("date_of_birth") @db.Date // calendar date — see CLAUDE.md
+  gender          Gender
+  photoUrl        String?       @map("photo_url") // string only; upload UI deferred (Phase 2/4)
+  address         String?
+  phone           String?
+  email           String?
+  bloodGroup      String?       @map("blood_group")
+  medicalNotes   String?       @map("medical_notes")
+  religion        String?
+  stateOfOrigin   String?       @map("state_of_origin")
+  nationality     String        @default("Nigerian")
+  status          StudentStatus @default(ACTIVE)
+  admittedAt      DateTime      @default(now()) @map("admitted_at") // event moment
+  withdrawnAt     DateTime?     @map("withdrawn_at") // event moment
+  graduatedAt     DateTime?     @map("graduated_at") // event moment
+  notes           String?
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
+
+  // Back-relations to StudentGuardian / Enrollment / MasteryRecord /
+  // AIInteractionLog land in slices 5 / 9 / 12 when those tables arrive.
+
+  @@unique([schoolId, admissionNumber])
+  @@index([schoolId])
+  @@index([schoolId, status])
+  @@index([schoolId, lastName, firstName]) // sorted roster scans
+  @@map("students")
+}
+
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
+}
+
+enum StudentStatus {
+  ACTIVE
+  INACTIVE
+  WITHDRAWN
+  GRADUATED
+  SUSPENDED
+}
