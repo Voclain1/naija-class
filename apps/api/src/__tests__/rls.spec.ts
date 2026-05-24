@@ -687,3 +687,121 @@ describe("multi-tenant isolation — Phase 1 / Slice 3 (class_arms + subjects + 
     expect(rows.classSubjects).toHaveLength(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Phase 1 / Slice 4 isolation — students
+//
+// students is FORCE RLS'd with the same direct-school_id shape as every
+// other Phase 1 slice. This suite proves the steady-state invariant: each
+// school sees only its own students, cross-tenant findUnique returns null,
+// and an attempt to INSERT with another school's school_id is rejected by
+// the WITH CHECK clause. dateOfBirth uses @db.Date (calendar date, no
+// time-of-day) — Prisma still serialises it as a JS Date in the client.
+// ---------------------------------------------------------------------------
+
+describe("multi-tenant isolation — Phase 1 / Slice 4 (students)", () => {
+  const runId = Math.random().toString(36).slice(2, 8);
+  let schoolA: { id: string };
+  let schoolB: { id: string };
+  let studentA: { id: string };
+  let studentB: { id: string };
+
+  beforeAll(async () => {
+    schoolA = await basePrisma.school.create({
+      data: { name: "School P1S4A", slug: `rls-p1s4a-${runId}` },
+      select: { id: true },
+    });
+    schoolB = await basePrisma.school.create({
+      data: { name: "School P1S4B", slug: `rls-p1s4b-${runId}` },
+      select: { id: true },
+    });
+
+    studentA = await withTenant(schoolA.id, (db) =>
+      db.student.create({
+        data: {
+          schoolId: schoolA.id,
+          admissionNumber: `A-${runId}`,
+          firstName: "Ada",
+          lastName: `Alpha-${runId}`,
+          dateOfBirth: new Date("2014-03-15"),
+          gender: "FEMALE",
+        },
+        select: { id: true },
+      }),
+    );
+    studentB = await withTenant(schoolB.id, (db) =>
+      db.student.create({
+        data: {
+          schoolId: schoolB.id,
+          admissionNumber: `B-${runId}`,
+          firstName: "Bola",
+          lastName: `Bravo-${runId}`,
+          dateOfBirth: new Date("2013-09-22"),
+          gender: "MALE",
+        },
+        select: { id: true },
+      }),
+    );
+  });
+
+  afterAll(async () => {
+    if (schoolA?.id) {
+      await basePrisma.school.delete({ where: { id: schoolA.id } }).catch(() => undefined);
+    }
+    if (schoolB?.id) {
+      await basePrisma.school.delete({ where: { id: schoolB.id } }).catch(() => undefined);
+    }
+    await basePrisma.$disconnect();
+  });
+
+  it("School A sees its own student only", async () => {
+    const rows = await withTenant(schoolA.id, (db) =>
+      db.student.findMany({ where: { lastName: { contains: runId } } }),
+    );
+    const ids = rows.map((r) => r.id);
+    expect(ids).toContain(studentA.id);
+    expect(ids).not.toContain(studentB.id);
+  });
+
+  it("School B sees its own student only", async () => {
+    const rows = await withTenant(schoolB.id, (db) =>
+      db.student.findMany({ where: { lastName: { contains: runId } } }),
+    );
+    const ids = rows.map((r) => r.id);
+    expect(ids).toContain(studentB.id);
+    expect(ids).not.toContain(studentA.id);
+  });
+
+  it("findUnique across tenants returns null", async () => {
+    const leak = await withTenant(schoolA.id, (db) =>
+      db.student.findUnique({ where: { id: studentB.id } }),
+    );
+    expect(leak).toBeNull();
+  });
+
+  it("INSERT with another school's school_id fails the WITH CHECK clause", async () => {
+    await expect(
+      withTenant(schoolA.id, (db) =>
+        db.student.create({
+          data: {
+            schoolId: schoolB.id,
+            admissionNumber: `bad-${runId}`,
+            firstName: "Mallory",
+            lastName: `Imposter-${runId}`,
+            dateOfBirth: new Date("2014-01-01"),
+            gender: "OTHER",
+          },
+        }),
+      ),
+    ).rejects.toThrow();
+  });
+
+  it("raw SQL with unset GUC returns zero rows from students (FORCE RLS)", async () => {
+    const rows = await basePrisma.$transaction(async (tx) => {
+      return tx.$queryRaw<Array<{ id: string }>>`
+        SELECT id FROM students WHERE last_name LIKE ${"%" + runId + "%"}
+      `;
+    });
+    expect(rows).toHaveLength(0);
+  });
+});
