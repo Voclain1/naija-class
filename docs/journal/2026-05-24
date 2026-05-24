@@ -9,3 +9,35 @@ endpoint, roster list UI, detail/edit. First roster slice. ~3 days.
 
 ## Tomorrow's first task
 - (fill at end of day)
+
+## Done today
+- Slice 3 fully closed (cp3 matrix UI merged, PR #8) — academic structure
+  module complete: years → terms → levels → arms → subjects → matrix
+- Caught a non-bug during cp3 manual pass: old pre-seed test school had 0
+  class levels; fresh signup correctly seeds 14. Matrix empty-states both
+  fire correctly. No actual bug — manual pass earned its keep.
+- Slice 4 planned (Student CRUD, 3 checkpoints) + cp1 merged (PR #9)
+
+## Decisions made
+- Student has NO class FK — membership lives in per-term Enrollment
+  (slice 9). Avoids two-sources-of-truth drift. (Changed my/the early
+  lean; spec was right.)
+- StudentStatus enum: all 5 values defined (ACTIVE/INACTIVE/WITHDRAWN/
+  GRADUATED/SUSPENDED), only 3 get transition endpoints in cp2
+- dateOfBirth @db.Date (reconciled from spec's DateTime) — calendar date
+- PII redaction (DOB/phone/email don't leak to logs) elevated to a real
+  cp2 acceptance criterion — first slice with real student PII
+
+## Notes
+- Migration timestamps: stop date-gaming them. cp1 used a future date
+  (20260525) for "one slice per day" rhythm; from slice 5 on, use real
+  datetimes. (Left cp1's as-is — already applied to dev DB.)
+- Saved to memory: prisma migrate diff uses --from-schema-datasource,
+  not --from-url (PowerShell dotenv-scope issue)
+- Slice-3 migration header comment corrected to the working invocation
+
+## Tomorrow's first task
+Slice 4 cp2 — Student module/service/controller, status-transition
+endpoints (withdraw/graduate/reactivate), cursor-paginated roster list
+endpoint, DTOs, and the PII-redaction work (audit logger allow-list +
+unit test proving DOB/phone/email are redacted). The meaty checkpoint.
