@@ -95,3 +95,21 @@ Format:
   Fix via P2002 meta.target inspection (preferred — avoids SD count
   pressure) OR a SECURITY DEFINER pre-check (would push SD to 5,
   trigger consolidation refactor). Decide at slice 5.
+
+- [ ] Cross-cutting unsaved-changes guard for the class-subject matrix.
+  Slice 3 cp3 ships a two-layer guard: `beforeunload` (catches close /
+  refresh / URL-bar navigation) plus a `MatrixDirtyContext` that the
+  AcademicSubNav consumes (catches sibling tab clicks within
+  `/settings/academic/*`). What's NOT guarded: the global sidebar, the
+  user menu, the logo/home link, and any link outside the academic
+  sub-nav. A user who clicks "Dashboard" in the sidebar with unsaved
+  matrix changes loses them silently. Phase-1-acceptable because the
+  matrix is a rarely-edited setup screen (term-start workflow), but
+  needs lifting to a global Next.js navigation interceptor before the
+  matrix sees daily traffic OR before any other screen needs the same
+  guard (e.g. CSV import mid-flow). Trigger: first user-reported "I
+  lost my changes" OR second screen that needs a dirty guard. Likely
+  approach: a router-level event listener (Next.js 15 App Router
+  doesn't expose `router.beforePopstate`-style hooks cleanly, so this
+  may need a wrapping `<Link>` component or a `useNavigationGuard()`
+  hook reading from a shared dirty registry).
