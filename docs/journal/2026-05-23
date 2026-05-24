@@ -78,3 +78,91 @@ class-subject matrix (tristate cells, local-state diff vs server
 snapshot, unsaved-changes guard, batched save via /bulk). Fiddliest UI
 in the slice — fresh eyes. Plus the slice-3 closing reconciliation:
 update the spec's API list to match the 3 reconciliations above.
+
+## Done today (cp3 — slice-3 closing checkpoint, ready for review)
+- Slice 3 cp3 built — 3 pages, 3 dialogs, 3 tables, 3 API clients, +
+  the matrix component + the MatrixDirtyContext. All 3 workspace
+  typechecks green (api, web, types).
+- Cell interaction model committed: NOT the 3-state cycle, but explicit
+  link-toggle (click cell) + nested core/elective pill (click `C`/`E`
+  badge with stopPropagation). Separates curriculum decision from
+  policy decision; spec prose ("checkbox + core/elective toggle")
+  already implied two controls.
+- Diff-vs-snapshot state model: parallel maps keyed by (levelId,
+  subjectId). snapshot is the server truth; desired is the user-touched
+  overlay. isCellDirty compares the two; per-level diff is computed at
+  save time and sent to /bulk one level at a time, sequentially.
+- Core/elective flip on existing link is encoded as delete-then-create
+  in ONE /bulk call, leaning on cp2's deletes-before-creates ordering
+  so the unique (school, level, subject) constraint isn't violated
+  mid-transaction. Live-curl proved this path: Maths CORE→ELECTIVE
+  yielded a fresh link id (0d1afc71) replacing the old one (b434a4f9)
+  inside a single bulk response; GET refresh confirmed persistence.
+- Unsaved-changes guard: beforeunload (browser-level) + sub-nav Context
+  (in-academic-sub-nav). Sidebar/top-nav NOT guarded — documented in
+  deferred.md with the trigger ("first user-reported 'I lost my
+  changes' OR second screen that needs a dirty guard").
+- Teacher dropdown stub: renders a friendly empty-state box with a
+  REAL link to /settings/users (the existing Phase 0 invitation flow,
+  verified to exist) — no 404 trap. Slice 10/13 replaces the stub with
+  a populated <select>.
+
+## Decisions made (cp3)
+- Cell UX: link-toggle + core/elective pill (rejected: 3-state cycle).
+  Reason: a single click that ambiguously cycles unlinked / core /
+  elective conflates two semantically different decisions and makes
+  diff-by-eye impossible during review.
+- Save batching: one /bulk per dirty level row, sequential. Reason:
+  per-row error attribution is unambiguous; for the 14-row spec target
+  the sequential cost is trivial.
+- Subjects delete UX: hard-delete button + soft-deactivate via the
+  edit-dialog Active checkbox. Mirrors class-levels exactly. Verified
+  server-side: subjects.service hard-deletes (cascades to
+  class_subjects via FK). PATCH isActive=false is the recommended
+  soft path.
+- Matrix reload-after-save: trust the /bulk response (it returns the
+  level's authoritative post-save rows per the cp2 contract). No
+  extra GET round-trip. Browser-refresh persistence verified by curl.
+
+## Spec reconciliations applied (slice-3 closing)
+1. ClassArm endpoint block rewritten to nested-create / flat-edit
+   shape (POST goes under /class-levels/:levelId/class-arms).
+2. ClassSubject endpoint block rewritten with the nested form, the
+   /bulk endpoint, and the PATCH route added. /bulk request body
+   shape documented.
+3. class-subject.update permission added to PHASE_1_PERMISSIONS list.
+Each change is annotated in-place with a "Reconciled in slice 3 cp3"
+note pointing at the slice-3 close.
+
+## Verification (cp3 is a UI checkpoint — manual is the gate)
+- All 4 new web routes return 200 on first GET (Next.js compiles each
+  page clean, no runtime errors).
+- API live-curl exercised the matrix's exact data path on a fresh
+  signup: (1) 3 creates in one /bulk, (2) core/elective flip via
+  delete-then-create in one /bulk — new id replaces old, atomic,
+  (3) GET refresh shows the flip persisted, (4) multi-level sequential
+  saves (matches the matrix UI's per-row save loop), (5) mixed
+  delete+create in one call, (6) empty-payload guard rejects with 400.
+- Class-arms CRUD: nested-create + soft-deactivate via PATCH +
+  includeInactive filter + hard-DELETE — all green.
+- Multi-tenant smoke: tenant 2 sees zero of tenant 1's subjects/links;
+  GET on tenant 1's levelId returns 404 (RLS hides it). Same
+  guarantee cp1's WITH CHECK already proved, re-confirmed at the
+  matrix data layer.
+
+## Landmines / notes
+- Browser-only interactions (cell click, beforeunload prompt, in-app
+  sub-nav confirm) coded per plan but only verifiable in a real
+  browser. The user will exercise these during cp3 review before
+  opening the closing PR.
+- Pre-existing OpenTelemetry "critical dependency" warnings persist
+  in the web dev log — Sentry/@fastify/otel, unrelated to this slice.
+- SECURITY DEFINER count still 4 (cp3 added no SD functions).
+
+## Tomorrow's first task
+After cp3 PR merges and slice-3 fully closes: Phase 1 Slice 4 —
+Student manual CRUD. First slice that introduces durable PII (DOB,
+gender, photo) → first redaction tests against the observability
+logger. New module shape: students model + soft-status enum
+(enrolled/transferred/withdrawn/repeated/graduated), no enrollments
+yet (that's slice 9).

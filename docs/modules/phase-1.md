@@ -654,25 +654,37 @@ DELETE /class-levels/:id                   — soft-delete via isActive=false, h
 
 ### Class arms
 
+ClassArm follows the slice-1 nested-create / flat-edit convention — the parent `classLevelId` comes from the URL on create, not the body. (Reconciled in slice 3 cp3: spec prose originally showed a flat `POST /class-arms` which never matched the shipped controller.)
+
 ```
-GET    /class-arms?classLevelId=&isActive=
-POST   /class-arms
+GET    /class-arms?includeInactive=                       — flat cross-level list
+GET    /class-levels/:levelId/class-arms?includeInactive= — nested list under one level
+POST   /class-levels/:levelId/class-arms                  — nested-create
 GET    /class-arms/:id
-PATCH  /class-arms/:id                     — including classTeacherId assignment
-DELETE /class-arms/:id                     — soft-delete via isActive=false
+PATCH  /class-arms/:id                                    — including classTeacherId assignment
+DELETE /class-arms/:id                                    — hard-delete; UI uses PATCH isActive=false for the recommended soft path
 ```
 
 ### Subjects
 
 ```
-GET    /subjects?isActive=
+GET    /subjects?includeInactive=
 POST   /subjects
 GET    /subjects/:id
-PATCH  /subjects/:id
-DELETE /subjects/:id
+PATCH  /subjects/:id                                      — including isActive toggle (soft-deactivate path)
+DELETE /subjects/:id                                      — hard-delete (cascades to class_subjects)
+```
 
-GET    /class-subjects?classLevelId=&subjectId=
-POST   /class-subjects                     — body: { classLevelId, subjectId, isCore }
+### Class subjects
+
+ClassSubject follows the same nested-create / flat-edit shape as ClassArm. The `/bulk` endpoint is the matrix UI's save path — atomic per level row, deletes-before-creates, all-or-nothing. (Reconciled in slice 3 cp3: original spec prose was missing the nested form, the `/bulk` endpoint, and the PATCH route.)
+
+```
+GET    /class-levels/:levelId/class-subjects
+POST   /class-levels/:levelId/class-subjects               — body: { subjectId, isCore? }
+POST   /class-levels/:levelId/class-subjects/bulk          — body: { create: [{ subjectId, isCore? }], delete: string[] }
+GET    /class-subjects/:id
+PATCH  /class-subjects/:id                                 — body: { isCore } — toggles core/elective in place
 DELETE /class-subjects/:id
 ```
 
@@ -1015,7 +1027,7 @@ export const PHASE_1_PERMISSIONS = [
   'class-level.read', 'class-level.create', 'class-level.update', 'class-level.delete',
   'class-arm.read', 'class-arm.create', 'class-arm.update', 'class-arm.delete',
   'subject.read', 'subject.create', 'subject.update', 'subject.delete',
-  'class-subject.read', 'class-subject.create', 'class-subject.delete',
+  'class-subject.read', 'class-subject.create', 'class-subject.update', 'class-subject.delete',
   'teacher-assignment.read', 'teacher-assignment.create', 'teacher-assignment.update', 'teacher-assignment.delete',
 
   // Roster
