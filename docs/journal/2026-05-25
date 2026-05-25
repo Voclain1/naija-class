@@ -1,0 +1,33 @@
+# 2026-05-25
+
+## Done today
+- Slice 4 (Student CRUD) fully closed — all 3 checkpoints merged:
+  - cp1: Student schema + RLS (PR #9)
+  - cp2: CRUD + status transitions + PII redaction (PR #10) — the high
+    point. Audited redact.ts, found DOB/names/address/medicalNotes/
+    bloodGroup were UNprotected (only email/phone were), extended the
+    redactor, proved leak-path closure with a 12-test block. Audit
+    metadata logs field-names not values — no PII copy in audit table.
+  - cp3: roster UI (PR #11) — list/search/filter/paginate, create/edit
+    form, detail, status actions. Browser pass clean.
+
+## Decisions made
+- Status transitions REJECT invalid moves (409) not silent overwrite —
+  withdrawn vs graduated is forensically distinct
+- Roster sort: [id-ASC kept, lastName-sort deferred] OR [composite cursor
+  done] — fill in whichever you chose
+- PII-redaction-as-acceptance-criterion is now the PATTERN for every
+  PII-bearing slice (guardians next in slice 5)
+
+## Notes
+- Migration timestamps now real-dated (we're past the date-gaming)
+- Roster is search-driven; id-ASC order acceptable since admins search
+  not scan (see deferred.md if lastName-sort deferred)
+
+## Tomorrow's first task
+Slice 5 — Guardian + StudentGuardian. MORE PII (parent names, phones,
+emails) — apply the cp2 redaction pattern from the start. Link/unlink
+guardians to students, guardian forms inline on student detail (the tab
+stub is already there). AND: the mapUniqueViolation decision is teed up —
+Guardian has multiple unique constraints, so the helper needs the P2002
+meta.target fix (preferred) we deferred back in slice 1. ~2 days.
