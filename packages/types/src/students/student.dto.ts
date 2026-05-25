@@ -54,7 +54,12 @@ export interface StudentDetailDto extends StudentDto {
 }
 
 export interface StudentGuardianRefDto {
+  // The Guardian's id — links to /guardians/:id.
   id: string;
+  // The StudentGuardian link row id — what PATCH/DELETE /student-guardians/:id
+  // targets. Distinct from `id` because the UI needs both: `id` to navigate
+  // to the guardian's own detail page; `linkId` to mutate this specific link.
+  linkId: string;
   firstName: string;
   lastName: string;
   relationship: string;
