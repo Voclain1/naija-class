@@ -251,3 +251,70 @@ describe("redactValue — Student PII closure (Phase 1 / Slice 4)", () => {
     expect(out.addressLine1).toBe("12 Allen Avenue");
   });
 });
+
+// -------------------------------------------------------------------------
+// Phase 1 / Slice 5 — Guardian PII closure test.
+//
+// Guardian adds two new workplace identifiers (occupation, employer) on
+// top of the slice-4 surface. Name / phone / email / address are already
+// covered by slice-4 rules; this block exists to pin the slice-5
+// additions and to document what a Guardian event payload looks like
+// after redaction (Sentry extra, audit metadata leaks, etc.).
+// -------------------------------------------------------------------------
+
+describe("redactValue — Guardian PII closure (Phase 1 / Slice 5)", () => {
+  const guardian = {
+    id: "gua-abc-123",
+    schoolId: "sch-xyz-789",
+    firstName: "Bola",
+    lastName: "Okafor",
+    relationship: "MOTHER",
+    phone: "+2348012345678",
+    email: "bola.okafor@example.com",
+    occupation: "Accountant",
+    employer: "Lagos Tax Services",
+    address: "14 Bode Thomas, Surulere",
+    notes: "Primary contact on weekdays.",
+    createdAt: "2025-09-01T08:14:22.000Z",
+    updatedAt: "2025-09-01T08:14:22.000Z",
+  };
+
+  const redacted = redactValue(guardian) as Record<string, unknown>;
+
+  it("masks occupation (slice-5 addition — workplace identifier)", () => {
+    expect(redacted.occupation).toBe("[REDACTED]");
+  });
+
+  it("masks employer (slice-5 addition — workplace identifier)", () => {
+    expect(redacted.employer).toBe("[REDACTED]");
+  });
+
+  it("inherits slice-4 masking for first/last name, address, phone, email", () => {
+    expect(redacted.firstName).toBe("[REDACTED]");
+    expect(redacted.lastName).toBe("[REDACTED]");
+    expect(redacted.address).toBe("[REDACTED]");
+    expect(redacted.phone).toBe("[REDACTED_PHONE]");
+    expect(redacted.email).toBe("[REDACTED_EMAIL]");
+  });
+
+  it("leaves non-identifying fields alone (debuggability is preserved)", () => {
+    expect(redacted.id).toBe("gua-abc-123");
+    expect(redacted.relationship).toBe("MOTHER");
+  });
+
+  it("masks snake_case variants too", () => {
+    const raw = {
+      first_name: "Bola",
+      last_name: "Okafor",
+      occupation: "Accountant",
+      employer: "Lagos Tax Services",
+      phone: "+2348012345678",
+    };
+    const out = redactValue(raw) as Record<string, unknown>;
+    expect(out.first_name).toBe("[REDACTED]");
+    expect(out.last_name).toBe("[REDACTED]");
+    expect(out.occupation).toBe("[REDACTED]");
+    expect(out.employer).toBe("[REDACTED]");
+    expect(out.phone).toBe("[REDACTED_PHONE]");
+  });
+});

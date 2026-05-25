@@ -805,3 +805,202 @@ describe("multi-tenant isolation — Phase 1 / Slice 4 (students)", () => {
     expect(rows).toHaveLength(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Phase 1 / Slice 5 isolation — guardians + student_guardians
+//
+// Same direct-school_id shape as every prior Phase 1 slice. student_guardians
+// carries its own school_id (denormalised from student + guardian at write
+// time) so RLS enforcement is a single column check, not EXISTS-through-
+// parent — see docs/modules/phase-1.md "Note on student_guardians" for the
+// rationale. Suite proves: (a) each school sees only its own guardians and
+// link rows, (b) findUnique cross-tenant returns null, (c) WITH CHECK
+// rejects cross-tenant inserts on both tables, including a link row whose
+// parent ids are A's but whose school_id is B's.
+// ---------------------------------------------------------------------------
+
+describe("multi-tenant isolation — Phase 1 / Slice 5 (guardians + student_guardians)", () => {
+  const runId = Math.random().toString(36).slice(2, 8);
+  let schoolA: { id: string };
+  let schoolB: { id: string };
+  let studentA: { id: string };
+  let studentB: { id: string };
+  let guardianA: { id: string };
+  let guardianB: { id: string };
+  let linkA: { id: string };
+  let linkB: { id: string };
+
+  beforeAll(async () => {
+    schoolA = await basePrisma.school.create({
+      data: { name: "School P1S5A", slug: `rls-p1s5a-${runId}` },
+      select: { id: true },
+    });
+    schoolB = await basePrisma.school.create({
+      data: { name: "School P1S5B", slug: `rls-p1s5b-${runId}` },
+      select: { id: true },
+    });
+
+    studentA = await withTenant(schoolA.id, (db) =>
+      db.student.create({
+        data: {
+          schoolId: schoolA.id,
+          admissionNumber: `A-S5-${runId}`,
+          firstName: "Ada",
+          lastName: `Alpha-${runId}`,
+          dateOfBirth: new Date("2014-03-15"),
+          gender: "FEMALE",
+        },
+        select: { id: true },
+      }),
+    );
+    studentB = await withTenant(schoolB.id, (db) =>
+      db.student.create({
+        data: {
+          schoolId: schoolB.id,
+          admissionNumber: `B-S5-${runId}`,
+          firstName: "Bola",
+          lastName: `Bravo-${runId}`,
+          dateOfBirth: new Date("2013-09-22"),
+          gender: "MALE",
+        },
+        select: { id: true },
+      }),
+    );
+
+    guardianA = await withTenant(schoolA.id, (db) =>
+      db.guardian.create({
+        data: {
+          schoolId: schoolA.id,
+          firstName: "GuA",
+          lastName: `GuAlpha-${runId}`,
+          relationship: "MOTHER",
+          phone: `+2348011${runId.slice(0, 6)}`,
+        },
+        select: { id: true },
+      }),
+    );
+    guardianB = await withTenant(schoolB.id, (db) =>
+      db.guardian.create({
+        data: {
+          schoolId: schoolB.id,
+          firstName: "GuB",
+          lastName: `GuBravo-${runId}`,
+          relationship: "FATHER",
+          phone: `+2348022${runId.slice(0, 6)}`,
+        },
+        select: { id: true },
+      }),
+    );
+
+    linkA = await withTenant(schoolA.id, (db) =>
+      db.studentGuardian.create({
+        data: {
+          schoolId: schoolA.id,
+          studentId: studentA.id,
+          guardianId: guardianA.id,
+        },
+        select: { id: true },
+      }),
+    );
+    linkB = await withTenant(schoolB.id, (db) =>
+      db.studentGuardian.create({
+        data: {
+          schoolId: schoolB.id,
+          studentId: studentB.id,
+          guardianId: guardianB.id,
+        },
+        select: { id: true },
+      }),
+    );
+  });
+
+  afterAll(async () => {
+    if (schoolA?.id) {
+      await basePrisma.school.delete({ where: { id: schoolA.id } }).catch(() => undefined);
+    }
+    if (schoolB?.id) {
+      await basePrisma.school.delete({ where: { id: schoolB.id } }).catch(() => undefined);
+    }
+    await basePrisma.$disconnect();
+  });
+
+  it("School A sees its own guardian and link only", async () => {
+    const result = await withTenant(schoolA.id, async (db) => ({
+      guardians: await db.guardian.findMany({ where: { lastName: { contains: runId } } }),
+      links: await db.studentGuardian.findMany({ where: { studentId: studentA.id } }),
+    }));
+    expect(result.guardians.map((g) => g.id)).toContain(guardianA.id);
+    expect(result.guardians.map((g) => g.id)).not.toContain(guardianB.id);
+    expect(result.links.map((l) => l.id)).toContain(linkA.id);
+    expect(result.links.map((l) => l.id)).not.toContain(linkB.id);
+  });
+
+  it("School B sees its own guardian and link only", async () => {
+    const result = await withTenant(schoolB.id, async (db) => ({
+      guardians: await db.guardian.findMany({ where: { lastName: { contains: runId } } }),
+      links: await db.studentGuardian.findMany({ where: { studentId: studentB.id } }),
+    }));
+    expect(result.guardians.map((g) => g.id)).toContain(guardianB.id);
+    expect(result.guardians.map((g) => g.id)).not.toContain(guardianA.id);
+    expect(result.links.map((l) => l.id)).toContain(linkB.id);
+    expect(result.links.map((l) => l.id)).not.toContain(linkA.id);
+  });
+
+  it("findUnique across tenants returns null for both tables", async () => {
+    const leakGuardian = await withTenant(schoolA.id, (db) =>
+      db.guardian.findUnique({ where: { id: guardianB.id } }),
+    );
+    const leakLink = await withTenant(schoolA.id, (db) =>
+      db.studentGuardian.findUnique({ where: { id: linkB.id } }),
+    );
+    expect(leakGuardian).toBeNull();
+    expect(leakLink).toBeNull();
+  });
+
+  it("INSERT guardian with another school's school_id fails the WITH CHECK clause", async () => {
+    await expect(
+      withTenant(schoolA.id, (db) =>
+        db.guardian.create({
+          data: {
+            schoolId: schoolB.id,
+            firstName: "Bad",
+            lastName: `bad-${runId}`,
+            relationship: "OTHER",
+            phone: "+2348099999999",
+          },
+        }),
+      ),
+    ).rejects.toThrow();
+  });
+
+  it("INSERT student_guardian with foreign school_id (but A's parent ids) fails WITH CHECK", async () => {
+    // The mischief case: a controller in school A tries to write a link
+    // row pointing at A's student + A's guardian but with school_id = B.
+    // WITH CHECK is the second-line defence that catches it.
+    await expect(
+      withTenant(schoolA.id, (db) =>
+        db.studentGuardian.create({
+          data: {
+            schoolId: schoolB.id,
+            studentId: studentA.id,
+            guardianId: guardianA.id,
+          },
+        }),
+      ),
+    ).rejects.toThrow();
+  });
+
+  it("raw SQL with unset GUC returns zero rows from both tables (FORCE RLS)", async () => {
+    const rows = await basePrisma.$transaction(async (tx) => {
+      const guardians = await tx.$queryRaw<Array<{ id: string }>>`
+        SELECT id FROM guardians WHERE last_name LIKE ${"%" + runId + "%"}
+      `;
+      const links = await tx.$queryRaw<Array<{ id: string }>>`
+        SELECT id FROM student_guardians WHERE id IN (${linkA.id}, ${linkB.id})
+      `;
+      return { guardians, links };
+    });
+    expect(rows.guardians).toHaveLength(0);
+    expect(rows.links).toHaveLength(0);
+  });
+});

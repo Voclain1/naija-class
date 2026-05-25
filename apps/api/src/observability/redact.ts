@@ -33,8 +33,13 @@ const PHONE_RE = /(\+?\d{1,3}[-.\s]?)?\(?\d{3,4}\)?[-.\s]?\d{3,4}[-.\s]?\d{3,4}/
 // PII-redaction acceptance criterion in docs/journal/2026-05-24.
 // bloodGroup is health-adjacent. email + phone are already covered by
 // the value regexes above; they're caught regardless of the key name.
+// Phase 1 slice 5: Guardian adds two new workplace identifiers —
+// `occupation` (e.g. "Banker at GTBank") and `employer` (e.g. "GTBank").
+// Both can identify an adult uniquely when combined with name + city, so
+// they go behind the redactor too. Guardian's first/last/phone/email/
+// address are already covered by the slice-4 entries.
 const SENSITIVE_KEY_RE =
-  /password|passwd|token|secret|api[_-]?key|bvn|nin|otp|authorization|cookie|set-cookie|date[_]?of[_]?birth|\bdob\b|first[_]?name|middle[_]?name|last[_]?name|^address$|medical[_]?notes|blood[_]?group/i;
+  /password|passwd|token|secret|api[_-]?key|bvn|nin|otp|authorization|cookie|set-cookie|date[_]?of[_]?birth|\bdob\b|first[_]?name|middle[_]?name|last[_]?name|^address$|medical[_]?notes|blood[_]?group|occupation|employer/i;
 
 // Maximum depth for object traversal. Sentry events nest a few levels deep
 // (event.contexts.runtime.foo); 8 is comfortably more than we'd ever produce

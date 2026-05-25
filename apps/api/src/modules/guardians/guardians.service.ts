@@ -1,0 +1,642 @@
+import { Injectable } from "@nestjs/common";
+
+import { Prisma, withTenant } from "@school-kit/db";
+import {
+  ConflictError,
+  NotFoundError,
+  type CreateGuardianInput,
+  type CreateAndLinkGuardianInput,
+  type CreateStudentGuardianLinkResponse,
+  type GuardianDetailDto,
+  type GuardianDto,
+  type GuardianListResponse,
+  type LinkExistingGuardianInput,
+  type ListGuardiansQuery,
+  type UpdateGuardianInput,
+  type UpdateStudentGuardianLinkInput,
+} from "@school-kit/types";
+
+import type { AuthContext } from "../../common/auth/auth-context";
+import { assertUserActiveAndHasOneOf } from "../../common/auth/role-check";
+
+interface RequestContext {
+  ipAddress: string | null;
+  userAgent: string | null;
+}
+
+// Audit-action naming — singular resource, dotted verb. Matches the slice-4
+// students convention (student.create, student.update, …). The link table
+// uses the singular-hyphenated form student-guardian.{create,update,delete}
+// (per docs/modules/phase-1.md line 1140-1141).
+const AUDIT = {
+  guardianCreate: "guardian.create",
+  guardianUpdate: "guardian.update",
+  guardianDelete: "guardian.delete",
+  linkCreate: "student-guardian.create",
+  linkUpdate: "student-guardian.update",
+  linkDelete: "student-guardian.delete",
+} as const;
+
+const DEFAULT_LIMIT = 50;
+const MAX_LIMIT = 200;
+
+@Injectable()
+export class GuardiansService {
+  // ----------------------------------------------------------------------
+  // list — cursor-paginated, id ASC. Search OR'd across firstName,
+  // lastName, phone (case-insensitive). studentId filter joins via the
+  // link table.
+  // ----------------------------------------------------------------------
+  async list(
+    authCtx: AuthContext,
+    query: ListGuardiansQuery,
+  ): Promise<GuardianListResponse> {
+    await assertUserActiveAndHasOneOf(authCtx, ["owner", "admin"]);
+
+    const limit = Math.min(query.limit ?? DEFAULT_LIMIT, MAX_LIMIT);
+
+    return withTenant(authCtx.schoolId, async (db) => {
+      const where: Prisma.GuardianWhereInput = {};
+      if (query.cursor) where.id = { gt: query.cursor };
+      if (query.search) {
+        const s = query.search.trim();
+        where.OR = [
+          { firstName: { contains: s, mode: "insensitive" } },
+          { lastName: { contains: s, mode: "insensitive" } },
+          { phone: { contains: s, mode: "insensitive" } },
+        ];
+      }
+      if (query.studentId) {
+        where.students = { some: { studentId: query.studentId } };
+      }
+
+      const rows = await db.guardian.findMany({
+        where,
+        select: GUARDIAN_SELECT,
+        orderBy: { id: "asc" },
+        take: limit + 1,
+      });
+
+      const hasNext = rows.length > limit;
+      const page = hasNext ? rows.slice(0, limit) : rows;
+      const cursor = hasNext ? page[page.length - 1].id : undefined;
+
+      return {
+        data: page.map(toGuardianDto),
+        meta: cursor === undefined ? {} : { cursor },
+      };
+    });
+  }
+
+  // ----------------------------------------------------------------------
+  // findById — detail with linked students.
+  // ----------------------------------------------------------------------
+  async findById(authCtx: AuthContext, id: string): Promise<GuardianDetailDto> {
+    await assertUserActiveAndHasOneOf(authCtx, ["owner", "admin"]);
+
+    return withTenant(authCtx.schoolId, async (db) => {
+      const row = await db.guardian.findUnique({
+        where: { id },
+        select: {
+          ...GUARDIAN_SELECT,
+          students: {
+            select: {
+              id: true,
+              studentId: true,
+              isPrimary: true,
+              canPickup: true,
+              student: {
+                select: {
+                  admissionNumber: true,
+                  firstName: true,
+                  lastName: true,
+                },
+              },
+            },
+          },
+        },
+      });
+      if (!row) throw new NotFoundError("Guardian not found.");
+      return {
+        ...toGuardianDto(row),
+        students: row.students.map((link) => ({
+          linkId: link.id,
+          studentId: link.studentId,
+          admissionNumber: link.student.admissionNumber,
+          firstName: link.student.firstName,
+          lastName: link.student.lastName,
+          isPrimary: link.isPrimary,
+          canPickup: link.canPickup,
+        })),
+      };
+    });
+  }
+
+  // ----------------------------------------------------------------------
+  // create — flat /guardians, no link.
+  // ----------------------------------------------------------------------
+  async create(
+    authCtx: AuthContext,
+    input: CreateGuardianInput,
+    reqCtx: RequestContext,
+  ): Promise<GuardianDto> {
+    await assertUserActiveAndHasOneOf(authCtx, ["owner", "admin"]);
+
+    return withTenant(authCtx.schoolId, async (db) => {
+      const created = await db.guardian.create({
+        data: guardianCreateData(authCtx.schoolId, input),
+        select: GUARDIAN_SELECT,
+      });
+
+      await writeGuardianCreateAudit(db, authCtx, reqCtx, created.id, created.relationship);
+
+      return toGuardianDto(created);
+    });
+  }
+
+  // ----------------------------------------------------------------------
+  // update — partial. No P2002 mapping needed: Guardian has zero unique
+  // constraints (spec — phone explicitly shareable; see schema.prisma).
+  // ----------------------------------------------------------------------
+  async update(
+    authCtx: AuthContext,
+    id: string,
+    input: UpdateGuardianInput,
+    reqCtx: RequestContext,
+  ): Promise<GuardianDto> {
+    await assertUserActiveAndHasOneOf(authCtx, ["owner", "admin"]);
+
+    return withTenant(authCtx.schoolId, async (db) => {
+      const existing = await db.guardian.findUnique({
+        where: { id },
+        select: { id: true },
+      });
+      if (!existing) throw new NotFoundError("Guardian not found.");
+
+      const data: Prisma.GuardianUpdateInput = {};
+      if (input.firstName !== undefined) data.firstName = input.firstName;
+      if (input.lastName !== undefined) data.lastName = input.lastName;
+      if (input.relationship !== undefined) data.relationship = input.relationship;
+      if (input.phone !== undefined) data.phone = input.phone;
+      if (input.email !== undefined) data.email = input.email;
+      if (input.occupation !== undefined) data.occupation = input.occupation;
+      if (input.employer !== undefined) data.employer = input.employer;
+      if (input.address !== undefined) data.address = input.address;
+      if (input.notes !== undefined) data.notes = input.notes;
+
+      const updated = await db.guardian.update({
+        where: { id },
+        data,
+        select: GUARDIAN_SELECT,
+      });
+
+      await db.auditLog.create({
+        data: {
+          schoolId: authCtx.schoolId,
+          userId: authCtx.userId,
+          action: AUDIT.guardianUpdate,
+          entityType: "guardian",
+          entityId: id,
+          ipAddress: reqCtx.ipAddress,
+          // Field names only — no values — so PII can't leak through audit
+          // metadata. Same discipline as students.service.update.
+          metadata: { changed: Object.keys(data) },
+        },
+      });
+
+      return toGuardianDto(updated);
+    });
+  }
+
+  // ----------------------------------------------------------------------
+  // delete — hard-delete, gated on no links. Spec: "hard-delete only if no
+  // StudentGuardian rows" (docs/modules/phase-1.md line 751). The Cascade
+  // onDelete on student_guardians is defence-in-depth in case the spec ever
+  // softens; today the explicit guard is the only allowed path.
+  // ----------------------------------------------------------------------
+  async delete(
+    authCtx: AuthContext,
+    id: string,
+    reqCtx: RequestContext,
+  ): Promise<void> {
+    await assertUserActiveAndHasOneOf(authCtx, ["owner", "admin"]);
+
+    await withTenant(authCtx.schoolId, async (db) => {
+      const existing = await db.guardian.findUnique({
+        where: { id },
+        select: { id: true },
+      });
+      if (!existing) throw new NotFoundError("Guardian not found.");
+
+      const linkCount = await db.studentGuardian.count({
+        where: { guardianId: id },
+      });
+      if (linkCount > 0) {
+        throw new ConflictError(
+          "GUARDIAN_HAS_LINKS",
+          "Cannot delete a guardian who is still linked to one or more students. Unlink first.",
+        );
+      }
+
+      await db.guardian.delete({ where: { id } });
+
+      await db.auditLog.create({
+        data: {
+          schoolId: authCtx.schoolId,
+          userId: authCtx.userId,
+          action: AUDIT.guardianDelete,
+          entityType: "guardian",
+          entityId: id,
+          ipAddress: reqCtx.ipAddress,
+          metadata: {},
+        },
+      });
+    });
+  }
+
+  // ----------------------------------------------------------------------
+  // linkExisting — POST /students/:studentId/guardians.
+  //
+  // Pre-checks the student exists (RLS would otherwise turn a foreign-key
+  // P2003 into a confusing 500 — explicit 404 is friendlier). Pre-checks
+  // the guardian too for symmetry. Then, inside the SAME withTenant
+  // transaction:
+  //   1. demote any existing isPrimary link if input.isPrimary === true
+  //   2. create the new link (P2002 → GUARDIAN_ALREADY_LINKED)
+  //   3. write the audit row
+  // All three either commit together or roll back together because
+  // withTenant wraps its callback in $transaction.
+  // ----------------------------------------------------------------------
+  async linkExisting(
+    authCtx: AuthContext,
+    studentId: string,
+    input: LinkExistingGuardianInput,
+    reqCtx: RequestContext,
+  ): Promise<CreateStudentGuardianLinkResponse> {
+    await assertUserActiveAndHasOneOf(authCtx, ["owner", "admin"]);
+
+    return withTenant(authCtx.schoolId, async (db) => {
+      const student = await db.student.findUnique({
+        where: { id: studentId },
+        select: { id: true },
+      });
+      if (!student) throw new NotFoundError("Student not found.");
+
+      const guardian = await db.guardian.findUnique({
+        where: { id: input.guardianId },
+        select: GUARDIAN_SELECT,
+      });
+      if (!guardian) throw new NotFoundError("Guardian not found.");
+
+      const isPrimary = input.isPrimary ?? false;
+      const canPickup = input.canPickup ?? true;
+
+      if (isPrimary) {
+        await demoteOtherPrimaries(db, studentId);
+      }
+
+      let link;
+      try {
+        link = await db.studentGuardian.create({
+          data: {
+            schoolId: authCtx.schoolId,
+            studentId,
+            guardianId: input.guardianId,
+            isPrimary,
+            canPickup,
+          },
+          select: LINK_SELECT,
+        });
+      } catch (e) {
+        throw mapStudentGuardianLinkUniqueViolation(e);
+      }
+
+      await writeLinkCreateAudit(db, authCtx, reqCtx, link);
+
+      return {
+        link: toLinkDto(link),
+        guardian: toGuardianDto(guardian),
+        createdGuardian: false,
+      };
+    });
+  }
+
+  // ----------------------------------------------------------------------
+  // createAndLink — POST /students/:studentId/guardians/new.
+  //
+  // Same transactional discipline as linkExisting; just creates the
+  // Guardian first. If the student doesn't exist, the Guardian insert is
+  // rolled back too (NotFoundError thrown BEFORE the insert).
+  // ----------------------------------------------------------------------
+  async createAndLink(
+    authCtx: AuthContext,
+    studentId: string,
+    input: CreateAndLinkGuardianInput,
+    reqCtx: RequestContext,
+  ): Promise<CreateStudentGuardianLinkResponse> {
+    await assertUserActiveAndHasOneOf(authCtx, ["owner", "admin"]);
+
+    return withTenant(authCtx.schoolId, async (db) => {
+      const student = await db.student.findUnique({
+        where: { id: studentId },
+        select: { id: true },
+      });
+      if (!student) throw new NotFoundError("Student not found.");
+
+      const { isPrimary: isPrimaryIn, canPickup: canPickupIn, ...guardianInput } = input;
+      const isPrimary = isPrimaryIn ?? false;
+      const canPickup = canPickupIn ?? true;
+
+      const guardian = await db.guardian.create({
+        data: guardianCreateData(authCtx.schoolId, guardianInput),
+        select: GUARDIAN_SELECT,
+      });
+
+      await writeGuardianCreateAudit(db, authCtx, reqCtx, guardian.id, guardian.relationship);
+
+      if (isPrimary) {
+        await demoteOtherPrimaries(db, studentId);
+      }
+
+      const link = await db.studentGuardian.create({
+        data: {
+          schoolId: authCtx.schoolId,
+          studentId,
+          guardianId: guardian.id,
+          isPrimary,
+          canPickup,
+        },
+        select: LINK_SELECT,
+      });
+
+      await writeLinkCreateAudit(db, authCtx, reqCtx, link);
+
+      return {
+        link: toLinkDto(link),
+        guardian: toGuardianDto(guardian),
+        createdGuardian: true,
+      };
+    });
+  }
+
+  // ----------------------------------------------------------------------
+  // updateLink — PATCH /student-guardians/:id. Toggle isPrimary / canPickup.
+  // ----------------------------------------------------------------------
+  async updateLink(
+    authCtx: AuthContext,
+    linkId: string,
+    input: UpdateStudentGuardianLinkInput,
+    reqCtx: RequestContext,
+  ): Promise<CreateStudentGuardianLinkResponse> {
+    await assertUserActiveAndHasOneOf(authCtx, ["owner", "admin"]);
+
+    return withTenant(authCtx.schoolId, async (db) => {
+      const existing = await db.studentGuardian.findUnique({
+        where: { id: linkId },
+        select: { id: true, studentId: true },
+      });
+      if (!existing) throw new NotFoundError("Student-guardian link not found.");
+
+      // If promoting to primary, demote siblings BEFORE the update so the
+      // updated row stays primary even if Postgres ever re-orders writes.
+      if (input.isPrimary === true) {
+        await demoteOtherPrimaries(db, existing.studentId, linkId);
+      }
+
+      const data: Prisma.StudentGuardianUpdateInput = {};
+      if (input.isPrimary !== undefined) data.isPrimary = input.isPrimary;
+      if (input.canPickup !== undefined) data.canPickup = input.canPickup;
+
+      const link = await db.studentGuardian.update({
+        where: { id: linkId },
+        data,
+        select: LINK_SELECT,
+      });
+
+      await db.auditLog.create({
+        data: {
+          schoolId: authCtx.schoolId,
+          userId: authCtx.userId,
+          action: AUDIT.linkUpdate,
+          entityType: "student-guardian",
+          entityId: linkId,
+          ipAddress: reqCtx.ipAddress,
+          metadata: { changed: Object.keys(data) },
+        },
+      });
+
+      const guardian = await db.guardian.findUnique({
+        where: { id: link.guardianId },
+        select: GUARDIAN_SELECT,
+      });
+      // Guardian must exist — the FK guarantees it. If somehow it's gone
+      // under us, fall through to a generic NotFound rather than a crash.
+      if (!guardian) throw new NotFoundError("Guardian not found.");
+
+      return {
+        link: toLinkDto(link),
+        guardian: toGuardianDto(guardian),
+        createdGuardian: false,
+      };
+    });
+  }
+
+  // ----------------------------------------------------------------------
+  // unlink — DELETE /student-guardians/:id. Guardian row preserved.
+  // ----------------------------------------------------------------------
+  async unlink(
+    authCtx: AuthContext,
+    linkId: string,
+    reqCtx: RequestContext,
+  ): Promise<void> {
+    await assertUserActiveAndHasOneOf(authCtx, ["owner", "admin"]);
+
+    await withTenant(authCtx.schoolId, async (db) => {
+      const existing = await db.studentGuardian.findUnique({
+        where: { id: linkId },
+        select: { id: true, studentId: true, guardianId: true },
+      });
+      if (!existing) throw new NotFoundError("Student-guardian link not found.");
+
+      await db.studentGuardian.delete({ where: { id: linkId } });
+
+      await db.auditLog.create({
+        data: {
+          schoolId: authCtx.schoolId,
+          userId: authCtx.userId,
+          action: AUDIT.linkDelete,
+          entityType: "student-guardian",
+          entityId: linkId,
+          ipAddress: reqCtx.ipAddress,
+          metadata: {
+            studentId: existing.studentId,
+            guardianId: existing.guardianId,
+          },
+        },
+      });
+    });
+  }
+}
+
+// -------------------------------------------------------------------------
+// helpers
+// -------------------------------------------------------------------------
+
+export const GUARDIAN_SELECT = {
+  id: true,
+  firstName: true,
+  lastName: true,
+  relationship: true,
+  phone: true,
+  email: true,
+  occupation: true,
+  employer: true,
+  address: true,
+  notes: true,
+  createdAt: true,
+  updatedAt: true,
+} satisfies Prisma.GuardianSelect;
+
+type GuardianRow = Prisma.GuardianGetPayload<{ select: typeof GUARDIAN_SELECT }>;
+
+export function toGuardianDto(row: GuardianRow): GuardianDto {
+  return {
+    id: row.id,
+    firstName: row.firstName,
+    lastName: row.lastName,
+    relationship: row.relationship,
+    phone: row.phone,
+    email: row.email,
+    occupation: row.occupation,
+    employer: row.employer,
+    address: row.address,
+    notes: row.notes,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
+}
+
+const LINK_SELECT = {
+  id: true,
+  studentId: true,
+  guardianId: true,
+  isPrimary: true,
+  canPickup: true,
+  createdAt: true,
+} satisfies Prisma.StudentGuardianSelect;
+
+type LinkRow = Prisma.StudentGuardianGetPayload<{ select: typeof LINK_SELECT }>;
+
+function toLinkDto(row: LinkRow) {
+  return {
+    id: row.id,
+    studentId: row.studentId,
+    guardianId: row.guardianId,
+    isPrimary: row.isPrimary,
+    canPickup: row.canPickup,
+    createdAt: row.createdAt,
+  };
+}
+
+function guardianCreateData(
+  schoolId: string,
+  input: Omit<CreateGuardianInput, never>,
+): Prisma.GuardianCreateInput {
+  return {
+    schoolId,
+    firstName: input.firstName,
+    lastName: input.lastName,
+    relationship: input.relationship,
+    phone: input.phone,
+    email: input.email ?? null,
+    occupation: input.occupation ?? null,
+    employer: input.employer ?? null,
+    address: input.address ?? null,
+    notes: input.notes ?? null,
+  } as unknown as Prisma.GuardianCreateInput;
+}
+
+// Demote any other isPrimary=true links for this student. Used by both
+// linkExisting (when input.isPrimary=true) and updateLink (when promoting
+// a sibling). Runs inside the caller's withTenant transaction so the
+// promote + demote land atomically.
+async function demoteOtherPrimaries(
+  db: import("@school-kit/db").PrismaClient,
+  studentId: string,
+  exceptLinkId?: string,
+): Promise<void> {
+  await db.studentGuardian.updateMany({
+    where: {
+      studentId,
+      isPrimary: true,
+      ...(exceptLinkId ? { NOT: { id: exceptLinkId } } : {}),
+    },
+    data: { isPrimary: false },
+  });
+}
+
+async function writeGuardianCreateAudit(
+  db: import("@school-kit/db").PrismaClient,
+  authCtx: AuthContext,
+  reqCtx: RequestContext,
+  guardianId: string,
+  relationship: string,
+): Promise<void> {
+  await db.auditLog.create({
+    data: {
+      schoolId: authCtx.schoolId,
+      userId: authCtx.userId,
+      action: AUDIT.guardianCreate,
+      entityType: "guardian",
+      entityId: guardianId,
+      ipAddress: reqCtx.ipAddress,
+      // Relationship is an enum bucket (FATHER/MOTHER/…) — not identifying.
+      // First/last/phone/email/address/occupation/employer DO NOT belong
+      // here; the redactor would mask them anyway, but the rule is to keep
+      // PII out of audit metadata at the source.
+      metadata: { relationship },
+    },
+  });
+}
+
+async function writeLinkCreateAudit(
+  db: import("@school-kit/db").PrismaClient,
+  authCtx: AuthContext,
+  reqCtx: RequestContext,
+  link: LinkRow,
+): Promise<void> {
+  await db.auditLog.create({
+    data: {
+      schoolId: authCtx.schoolId,
+      userId: authCtx.userId,
+      action: AUDIT.linkCreate,
+      entityType: "student-guardian",
+      entityId: link.id,
+      ipAddress: reqCtx.ipAddress,
+      // IDs and bool flags only — no PII. Spec audit shape.
+      metadata: {
+        studentId: link.studentId,
+        guardianId: link.guardianId,
+        isPrimary: link.isPrimary,
+        canPickup: link.canPickup,
+      },
+    },
+  });
+}
+
+// student_guardians has one unique constraint: (student_id, guardian_id).
+// The (only) P2002 from a link create is "this guardian is already linked to
+// this student". RLS hides the constraint name (see CLAUDE.md "RLS hides
+// constraint name on uniqueness errors") but the single-constraint shape
+// makes the discriminator unambiguous, same as slice 4's admission-number
+// helper. The multi-constraint err.meta.target inspection stays deferred
+// until a slice actually adds a model with two uniques.
+function mapStudentGuardianLinkUniqueViolation(e: unknown): unknown {
+  if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+    return new ConflictError(
+      "GUARDIAN_ALREADY_LINKED",
+      "This guardian is already linked to this student.",
+    );
+  }
+  return e;
+}

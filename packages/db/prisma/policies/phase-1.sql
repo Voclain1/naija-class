@@ -104,3 +104,25 @@ ALTER TABLE students FORCE  ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation ON students
   USING      (school_id::text = current_setting('app.current_school_id', true))
   WITH CHECK (school_id::text = current_setting('app.current_school_id', true));
+
+-- Slice 5: guardians + student_guardians ------------------------------
+-- Same direct-school_id shape as every prior Phase 1 slice. Both tables
+-- carry their own school_id (student_guardians denormalises from its
+-- parents at write time) so policy enforcement is a single column check
+-- — see the "Note on student_guardians" in docs/modules/phase-1.md for
+-- the rationale against EXISTS-through-parent. SECURITY DEFINER count
+-- stays at 4 — every endpoint in this slice is post-authentication and
+-- post-tenant; withTenant() covers all DB access.
+
+ALTER TABLE guardians         ENABLE ROW LEVEL SECURITY;
+ALTER TABLE guardians         FORCE  ROW LEVEL SECURITY;
+ALTER TABLE student_guardians ENABLE ROW LEVEL SECURITY;
+ALTER TABLE student_guardians FORCE  ROW LEVEL SECURITY;
+
+CREATE POLICY tenant_isolation ON guardians
+  USING      (school_id::text = current_setting('app.current_school_id', true))
+  WITH CHECK (school_id::text = current_setting('app.current_school_id', true));
+
+CREATE POLICY tenant_isolation ON student_guardians
+  USING      (school_id::text = current_setting('app.current_school_id', true))
+  WITH CHECK (school_id::text = current_setting('app.current_school_id', true));
