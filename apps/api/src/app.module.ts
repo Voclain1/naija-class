@@ -10,6 +10,7 @@ import { ClassArmsModule } from "./modules/class-arms/class-arms.module";
 import { ClassLevelsModule } from "./modules/class-levels/class-levels.module";
 import { ClassSubjectsModule } from "./modules/class-subjects/class-subjects.module";
 import { DebugModule } from "./modules/debug/debug.module";
+import { GuardiansModule } from "./modules/guardians/guardians.module";
 import { InvitationsModule } from "./modules/invitations/invitations.module";
 import { SchoolsModule } from "./modules/schools/schools.module";
 import { StudentsModule } from "./modules/students/students.module";
@@ -40,6 +41,7 @@ const isProd = process.env.NODE_ENV === "production";
     SubjectsModule,
     ClassSubjectsModule,
     StudentsModule,
+    GuardiansModule,
     ...(isProd ? [] : [DebugModule]),
   ],
   controllers: [HealthController],

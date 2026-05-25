@@ -401,8 +401,9 @@ model Student {
   createdAt       DateTime      @default(now()) @map("created_at")
   updatedAt       DateTime      @updatedAt @map("updated_at")
 
-  // Back-relations to StudentGuardian / Enrollment / MasteryRecord /
-  // AIInteractionLog land in slices 5 / 9 / 12 when those tables arrive.
+  // Slice 5 adds the StudentGuardian back-relation. Enrollment / MasteryRecord /
+  // AIInteractionLog land in slices 9 / 12 when those tables arrive.
+  guardians StudentGuardian[]
 
   @@unique([schoolId, admissionNumber])
   @@index([schoolId])
@@ -423,4 +424,83 @@ enum StudentStatus {
   WITHDRAWN
   GRADUATED
   SUSPENDED
+}
+
+// ---------- Phase 1 / Slice 5 — Guardians + student-guardian links ----------
+//
+// Guardian is a school-scoped person record (parent, sibling, NOK, etc.).
+// Phase 1 is admin-managed: owners and admins create / edit / link / unlink.
+// Parent AUTH and the parent-facing app are Phase 4 — guardians cannot log in
+// yet, so there is no User row paired with a Guardian here.
+//
+// Two design choices worth flagging:
+//
+//   1. NO unique constraint on (school_id, phone) or (school_id, email). A
+//      mother and father commonly share a household phone; a guardian with a
+//      shared family inbox may legitimately appear against multiple students
+//      under separate records (rare, but real). The (school_id, phone) index
+//      backs the link-existing picker; uniqueness would block valid data.
+//
+//   2. isPrimary on StudentGuardian has no schema-level "only one per
+//      student" rule — application enforces it (GuardiansService demotes
+//      sibling links inside the same transaction). A partial unique index
+//      would be the correct-by-construction guard, but it would also block
+//      the demote-then-promote pattern unless wrapped in a DEFERRABLE
+//      constraint, which Postgres only supports for UNIQUE on a regular
+//      index, not a partial one. The service-layer rule is the only path.
+//
+// onDelete: Cascade on BOTH FKs of StudentGuardian — deleting a Student or
+// a Guardian cleans up the links. Guardian deletion itself is gated by the
+// service to refuse hard-delete while links exist, so the cascade is a
+// belt-and-braces guard, not the primary unlink path.
+
+model Guardian {
+  id           String       @id @default(uuid())
+  schoolId     String       @map("school_id")
+  firstName    String       @map("first_name")
+  lastName     String       @map("last_name")
+  relationship Relationship
+  phone        String // NOT globally unique — see header comment
+  email        String?
+  occupation   String?
+  employer     String?
+  address      String?
+  notes        String?
+  createdAt    DateTime     @default(now()) @map("created_at")
+  updatedAt    DateTime     @updatedAt @map("updated_at")
+
+  students StudentGuardian[]
+
+  @@index([schoolId])
+  @@index([schoolId, phone]) // backs the link-existing picker's phone search
+  @@map("guardians")
+}
+
+enum Relationship {
+  FATHER
+  MOTHER
+  GUARDIAN
+  UNCLE
+  AUNT
+  GRANDPARENT
+  SIBLING
+  OTHER
+}
+
+model StudentGuardian {
+  id         String   @id @default(uuid())
+  schoolId   String   @map("school_id") // denormalised for direct RLS
+  studentId  String   @map("student_id")
+  guardianId String   @map("guardian_id")
+  isPrimary  Boolean  @default(false) @map("is_primary")
+  canPickup  Boolean  @default(true) @map("can_pickup")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  student  Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  guardian Guardian @relation(fields: [guardianId], references: [id], onDelete: Cascade)
+
+  @@unique([studentId, guardianId]) // a guardian cannot link to the same student twice
+  @@index([schoolId])
+  @@index([guardianId]) // reverse lookup: a guardian's children
+  @@map("student_guardians")
 }

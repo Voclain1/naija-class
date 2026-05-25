@@ -91,11 +91,12 @@ export class StudentsService {
   }
 
   // ----------------------------------------------------------------------
-  // findById — slice-4 detail returns Student + empty guardians[].
+  // findById — Student detail + linked guardians (populated by slice 5).
   //
-  // The empty array is the stable shape for cp2; slice 5 populates it via
-  // StudentGuardian rows. Returning it as `[]` now means the UI can render
-  // the detail page once and have it work both before and after slice 5.
+  // Returns guardians as StudentGuardianRefDto[] — the "guardian from a
+  // student's POV" shape declared in StudentDetailDto. Phone is included
+  // because the admin detail view needs it for the "call this guardian"
+  // contact card; the redactor masks it before Sentry ships it.
   // ----------------------------------------------------------------------
   async findById(authCtx: AuthContext, id: string): Promise<StudentDetailDto> {
     await assertUserActiveAndHasOneOf(authCtx, ["owner", "admin"]);
@@ -103,10 +104,38 @@ export class StudentsService {
     return withTenant(authCtx.schoolId, async (db) => {
       const row = await db.student.findUnique({
         where: { id },
-        select: STUDENT_SELECT,
+        select: {
+          ...STUDENT_SELECT,
+          guardians: {
+            select: {
+              isPrimary: true,
+              canPickup: true,
+              guardian: {
+                select: {
+                  id: true,
+                  firstName: true,
+                  lastName: true,
+                  relationship: true,
+                  phone: true,
+                },
+              },
+            },
+          },
+        },
       });
       if (!row) throw new NotFoundError("Student not found.");
-      return { ...toStudentDto(row), guardians: [] };
+      return {
+        ...toStudentDto(row),
+        guardians: row.guardians.map((link) => ({
+          id: link.guardian.id,
+          firstName: link.guardian.firstName,
+          lastName: link.guardian.lastName,
+          relationship: link.guardian.relationship,
+          phone: link.guardian.phone,
+          isPrimary: link.isPrimary,
+          canPickup: link.canPickup,
+        })),
+      };
     });
   }
 

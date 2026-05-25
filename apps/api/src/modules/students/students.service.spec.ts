@@ -188,7 +188,9 @@ describe("StudentsService", () => {
   // -----------------------------------------------------------------------
 
   describe("findById", () => {
-    it("returns student with empty guardians array (slice 5 will populate)", async () => {
+    it("returns student with empty guardians array when no links exist", async () => {
+      // Slice 5 populates guardians from real StudentGuardian rows; a
+      // freshly-created student has none, so the array is still empty.
       const { authCtx } = await createActiveSchool("fid");
       const created = await service.create(authCtx, requiredFields("F1"), reqCtx);
       const fetched = await service.findById(authCtx, created.id);
