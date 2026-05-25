@@ -5,20 +5,6 @@ Phase 1 Slice 4 — Student CRUD: model, migration, RLS, single-create
 endpoint, roster list UI, detail/edit. First roster slice. ~3 days.
 
 ## Decisions made
-- (capture as the day unfolds)
-
-## Tomorrow's first task
-- (fill at end of day)
-
-## Done today
-- Slice 3 fully closed (cp3 matrix UI merged, PR #8) — academic structure
-  module complete: years → terms → levels → arms → subjects → matrix
-- Caught a non-bug during cp3 manual pass: old pre-seed test school had 0
-  class levels; fresh signup correctly seeds 14. Matrix empty-states both
-  fire correctly. No actual bug — manual pass earned its keep.
-- Slice 4 planned (Student CRUD, 3 checkpoints) + cp1 merged (PR #9)
-
-## Decisions made
 - Student has NO class FK — membership lives in per-term Enrollment
   (slice 9). Avoids two-sources-of-truth drift. (Changed my/the early
   lean; spec was right.)
@@ -27,17 +13,72 @@ endpoint, roster list UI, detail/edit. First roster slice. ~3 days.
 - dateOfBirth @db.Date (reconciled from spec's DateTime) — calendar date
 - PII redaction (DOB/phone/email don't leak to logs) elevated to a real
   cp2 acceptance criterion — first slice with real student PII
+- cp3 photo handling: free-text URL field with helper text, NO uploader —
+  upload is already listed under Phase 1 deferred ("Student photo upload";
+  R2 wired for logos in Phase 0). Saves a half-built uploader.
+- cp3 pagination: cursor "Load more" button, not prev/next or infinite
+  scroll. Cursor returns only forward; simplest UX matching the contract.
+- cp3 sort: row order is server `id ASC` (cursor is on id per cp2's
+  comment block — keeps cursor stable across status changes). The
+  spec/plan mentioned "lastName ASC default"; not chasing that until a
+  pilot asks. Search + the admission-number column cover discovery.
+- cp3 status transitions live on the detail page, NOT in the edit form.
+  The form shows current status read-only with a pointer to the actions.
+  Reason: transitions also set/clear *At timestamps; mixing them with
+  PATCH would create half-consistent states.
+
+## Done today
+- Slice 3 fully closed (cp3 matrix UI merged, PR #8) — academic structure
+  module complete: years → terms → levels → arms → subjects → matrix
+- Caught a non-bug during cp3 manual pass: old pre-seed test school had 0
+  class levels; fresh signup correctly seeds 14. Matrix empty-states both
+  fire correctly. No actual bug — manual pass earned its keep.
+- Slice 4 planned (Student CRUD, 3 checkpoints)
+- cp1 merged (PR #9) — Prisma model, migration, RLS, isolation spec
+- cp2 merged (PR #10) — module/service/controller, status-transition
+  endpoints, cursor-paginated list, DTOs, PII redaction
+- cp3 built — roster UI: /students list, /students/new, /students/[id]
+  detail with tabs (Bio | Guardians | Enrollments), /students/[id]/edit;
+  StudentForm, StudentStatusBadge, StudentStatusActions,
+  StudentsRosterTable, StudentsListControls, StudentDetailTabs,
+  StudentAvatar; sidebar Students link enabled; dashboard "Add a student"
+  CTA wired
+
+## cp3 slice-4 closing reconciliations
+1. dateOfBirth @db.Date — confirmed present in spec (line 215) and in
+   the generated migration; no action.
+2. withdraw / graduate / reactivate bodies are optional. Spec prose
+   updated to show `{ reason?, withdrawnAt? }` etc. The Zod schemas
+   were always permissive — the prose was the laggard.
+3. List filters classArmId / academicYearId silently accepted & dropped
+   until slice 9 — spec now carries the reconciliation note inline next
+   to the endpoint list. Service already documented it.
+4. pg_trgm search added to docs/deferred.md. Today's `ILIKE %term%` is
+   fine for 250-student pilots; trigger is ~2 000 students or > 300ms
+   roster-search latency.
 
 ## Notes
+- SECURITY DEFINER count unchanged at 4 (cp3 is web-only)
+- Phase 0 blast radius: none (web-only checkpoint; no changes to api,
+  db, types, or any Phase 0 module)
+- Manual verification: I drove a full wire-contract pass via curl (signup
+  → create 3 students → list/search/status-filter/cursor-paginate →
+  detail → patch → withdraw with custom date+reason → ALREADY_WITHDRAWN
+  guard → INVALID_TRANSITION guard → reactivate → ALREADY_ACTIVE guard →
+  duplicate admission # → bad photoUrl validation). Next.js routes (4)
+  all serve 200. Real browser pass deferred to the user before PR.
 - Migration timestamps: stop date-gaming them. cp1 used a future date
   (20260525) for "one slice per day" rhythm; from slice 5 on, use real
   datetimes. (Left cp1's as-is — already applied to dev DB.)
-- Saved to memory: prisma migrate diff uses --from-schema-datasource,
+- Saved to memory earlier: prisma migrate diff uses --from-schema-datasource,
   not --from-url (PowerShell dotenv-scope issue)
 - Slice-3 migration header comment corrected to the working invocation
 
 ## Tomorrow's first task
-Slice 4 cp2 — Student module/service/controller, status-transition
-endpoints (withdraw/graduate/reactivate), cursor-paginated roster list
-endpoint, DTOs, and the PII-redaction work (audit logger allow-list +
-unit test proving DOB/phone/email are redacted). The meaty checkpoint.
+Slice 5 — Guardian + StudentGuardian. Models, RLS, link/unlink endpoints,
+guardian forms inline on student detail (replacing today's empty-state
+"Guardians" tab). Watch for `mapUniqueViolation` — Guardian has more than
+one unique-per-school constraint, which is the deferred.md trigger to
+either fix via P2002 meta.target inspection OR add a SECURITY DEFINER
+pre-check (the latter pushes SD count to 5 → consolidation refactor).
+Decide before writing.

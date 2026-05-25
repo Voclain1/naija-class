@@ -1,6 +1,7 @@
 "use client";
 
 import { GraduationCap } from "lucide-react";
+import Link from "next/link";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -29,13 +30,13 @@ export default function DashboardPage() {
             </CardTitle>
           </div>
           <CardDescription className="ml-9">
-            The Students module ships in the next slice — this CTA goes live
-            then.
+            Build your roster one student at a time — bulk CSV import is
+            arriving in a later slice.
           </CardDescription>
         </CardHeader>
         <CardContent className="ml-9">
-          <Button disabled title="Coming soon">
-            Add a student
+          <Button asChild>
+            <Link href="/students/new">Add a student</Link>
           </Button>
         </CardContent>
       </Card>

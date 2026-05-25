@@ -704,10 +704,21 @@ GET    /students?status=&classArmId=&academicYearId=&search=&cursor=&limit=
 POST   /students                            — single-create; body matches Student fields
 GET    /students/:id                        — includes guardians + current enrollment
 PATCH  /students/:id
-POST   /students/:id/withdraw               — body: { reason, withdrawnAt }
-POST   /students/:id/graduate
-POST   /students/:id/reactivate
+POST   /students/:id/withdraw               — body: { reason?, withdrawnAt? }
+POST   /students/:id/graduate               — body: { reason?, graduatedAt? }
+POST   /students/:id/reactivate             — body: { reason? }
 ```
+
+Reconciled in slice 4 cp3:
+- `classArmId` and `academicYearId` query params are silently accepted and
+  dropped by the cp2 service — they need Enrollment (slice 9) to be
+  meaningful. The shape stays in the DTO so the UI's query call survives
+  the slice-9 cutover without a v2 endpoint.
+- Withdraw / graduate / reactivate bodies are entirely optional. The cp2
+  service defaults `withdrawnAt` / `graduatedAt` to "now" when omitted, and
+  treats `reason` as audit-only metadata. The earlier prose `{ reason,
+  withdrawnAt }` implied required without saying so — the implementation
+  was always permissive; this rewrite matches the Zod DTOs.
 
 Example `POST /students` request:
 

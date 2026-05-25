@@ -27,7 +27,7 @@ interface NavItem {
 // Other items remain disabled until their slices land.
 const NAV_ITEMS: NavItem[] = [
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard, enabled: true },
-  { label: "Students", href: "/students", icon: GraduationCap, enabled: false },
+  { label: "Students", href: "/students", icon: GraduationCap, enabled: true },
   { label: "Staff", href: "/staff", icon: Users, enabled: false },
   { label: "Academics", href: "/settings/academic", icon: BarChart3, enabled: true },
   { label: "Finance", href: "/finance", icon: Wallet, enabled: false },

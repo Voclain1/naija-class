@@ -96,6 +96,15 @@ Format:
   pressure) OR a SECURITY DEFINER pre-check (would push SD to 5,
   trigger consolidation refactor). Decide at slice 5.
 
+- [ ] pg_trgm-backed student search. Slice 4 cp2 ships search as
+  `ILIKE %term%` across (admissionNumber, lastName, firstName) — fine
+  for a 250-student pilot, sequential-scan-shaped past that. Drop in
+  the `pg_trgm` extension (already on the box for pgvector neighbours
+  in Phase 5), add a GIN trigram index on the searchable columns, and
+  swap the Prisma `contains` to a raw `$queryRaw` similarity match.
+  Trigger: roster latency on `/students?search=…` exceeds ~300ms in
+  any pilot, OR first school crosses ~2 000 students.
+
 - [ ] Cross-cutting unsaved-changes guard for the class-subject matrix.
   Slice 3 cp3 ships a two-layer guard: `beforeunload` (catches close /
   refresh / URL-bar navigation) plus a `MatrixDirtyContext` that the
