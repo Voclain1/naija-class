@@ -5,7 +5,11 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
-import type { StudentDetailDto, StudentDto } from "@school-kit/types";
+import type {
+  StudentDetailDto,
+  StudentDto,
+  StudentGuardianRefDto,
+} from "@school-kit/types";
 
 import { StudentAvatar } from "@/components/students/student-avatar";
 import { StudentDetailTabs } from "@/components/students/student-detail-tabs";
@@ -51,6 +55,15 @@ export default function StudentDetailPage() {
       prev ? { ...prev, ...next, guardians: prev.guardians } : prev,
     );
   }, []);
+
+  // Guardians-tab updates (link / unlink / toggles) lift their post-mutation
+  // shape up to here so the next status-change render keeps the new list.
+  const onGuardiansChanged = useCallback(
+    (guardians: StudentGuardianRefDto[]) => {
+      setStudent((prev) => (prev ? { ...prev, guardians } : prev));
+    },
+    [],
+  );
 
   if (loading) {
     return (
@@ -123,7 +136,10 @@ export default function StudentDetailPage() {
         </div>
       </header>
 
-      <StudentDetailTabs student={student} />
+      <StudentDetailTabs
+        student={student}
+        onGuardiansChanged={onGuardiansChanged}
+      />
     </div>
   );
 }

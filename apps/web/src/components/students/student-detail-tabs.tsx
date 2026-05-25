@@ -2,12 +2,14 @@
 
 import { useState } from "react";
 
-import type { StudentDetailDto } from "@school-kit/types";
+import type { StudentDetailDto, StudentGuardianRefDto } from "@school-kit/types";
 
+import { GuardiansTab } from "@/components/students/guardians-tab";
 import { cn } from "@/lib/utils";
 
 interface Props {
   student: StudentDetailDto;
+  onGuardiansChanged: (next: StudentGuardianRefDto[]) => void;
 }
 
 type TabKey = "bio" | "guardians" | "enrollments";
@@ -32,11 +34,10 @@ function formatDateTime(value: string | Date | null): string {
   return d.toLocaleString();
 }
 
-// Tabbed view. Guardians + Enrollments render empty-state cards in cp3 —
-// slice 5 populates guardians via StudentGuardian, slice 9 populates
-// enrollments. The shape (detail returns `guardians: []` today) means this
-// tab will swap in real rows without a v2 endpoint.
-export function StudentDetailTabs({ student }: Props) {
+// Tabbed view. Guardians populated in slice 5 cp2; Enrollments still empty
+// in slice 4 — slice 9 fills it. The shape (detail returns guardians: [])
+// means the enrollments tab will swap in real rows without a v2 endpoint.
+export function StudentDetailTabs({ student, onGuardiansChanged }: Props) {
   const [tab, setTab] = useState<TabKey>("bio");
 
   return (
@@ -70,9 +71,10 @@ export function StudentDetailTabs({ student }: Props) {
 
       {tab === "bio" && <BioPanel student={student} />}
       {tab === "guardians" && (
-        <EmptyPanel
-          title="No guardians yet"
-          body="Guardian capture arrives in slice 5. You'll be able to add and link guardians from this tab."
+        <GuardiansTab
+          studentId={student.id}
+          guardians={student.guardians}
+          onGuardiansChanged={onGuardiansChanged}
         />
       )}
       {tab === "enrollments" && (

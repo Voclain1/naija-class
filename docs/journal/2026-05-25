@@ -11,6 +11,26 @@
   - cp3: roster UI (PR #11) — list/search/filter/paginate, create/edit
     form, detail, status actions. Browser pass clean.
 
+- Slice 5 (Guardian + StudentGuardian) fully closed in the same day —
+  compressed rhythm worked because the patterns were locked.
+  - cp1 (PR #12): Guardian + StudentGuardian models, RLS, 9 endpoints,
+    redaction extension (occupation/employer added to SENSITIVE_KEY_RE
+    alongside the slice-4 PII keys), GuardianDto + DTOs.
+  - cp2: GuardiansTab inline on /students/[id] — list (full phone
+    visible in admin UI, redactor still masks in logs/Sentry),
+    Link-existing picker (debounced search via /guardians?search=) +
+    Create-new form (POST /students/:id/guardians/new, one server
+    transaction). Per-row optimistic toggles for isPrimary/canPickup
+    with rollback on error. Promote-to-primary visibly demotes the
+    previously-primary row (mirroring the server's
+    demoteOtherPrimaries inside the same withTenant transaction).
+    Unlink → confirm dialog → DELETE /student-guardians/:id with
+    optimistic remove + restore on error.
+  - cp2 also added `linkId` to StudentGuardianRefDto + populated it in
+    students.findById — needed so the UI can target a specific link row
+    for PATCH/DELETE without losing the ability to navigate to the
+    guardian via `id`.
+
 ## Decisions made
 - Status transitions REJECT invalid moves (409) not silent overwrite —
   withdrawn vs graduated is forensically distinct
@@ -18,16 +38,27 @@
   done] — fill in whichever you chose
 - PII-redaction-as-acceptance-criterion is now the PATTERN for every
   PII-bearing slice (guardians next in slice 5)
+- mapUniqueViolation deferral: slice 5 turned out to be a non-trigger.
+  Guardian has ZERO unique constraints (phone deliberately shareable),
+  StudentGuardian has exactly one — `(studentId, guardianId)` — so a
+  local helper `mapStudentGuardianLinkUniqueViolation` discriminating
+  `GUARDIAN_ALREADY_LINKED` was sufficient. The multi-constraint
+  meta.target fix stays deferred (deferred.md updated) until a slice
+  introduces a model with 2+ uniques. SD-pre-check alternative remains
+  ruled out.
 
 ## Notes
 - Migration timestamps now real-dated (we're past the date-gaming)
 - Roster is search-driven; id-ASC order acceptable since admins search
   not scan (see deferred.md if lastName-sort deferred)
+- Two slices in one day is the new baseline when the cp pattern is
+  locked + the API was teed up by the prior cp. Don't generalise from a
+  single day — repeat on slice 6/7 to know if it sticks.
 
 ## Tomorrow's first task
-Slice 5 — Guardian + StudentGuardian. MORE PII (parent names, phones,
-emails) — apply the cp2 redaction pattern from the start. Link/unlink
-guardians to students, guardian forms inline on student detail (the tab
-stub is already there). AND: the mapUniqueViolation decision is teed up —
-Guardian has multiple unique constraints, so the helper needs the P2002
-meta.target fix (preferred) we deferred back in slice 1. ~2 days.
+Slice 6 — CSV import: upload + mapping + validate. First half of the
+import flow (preview mode, no commit yet). The PII-redaction-as-
+acceptance-criterion pattern applies to the error-report CSV: bad rows
+contain full PII; admins downloading constitutes data export, log via
+`imports.error-report.download` audit action (spec already in place).
+~4 days.

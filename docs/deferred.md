@@ -90,11 +90,22 @@ Format:
 - [ ] WAEC/NECO localization is the moat (Khanmigo/Squirrel AI aren't
   localized) — keep leaning on it. Verify competitor claims when planning.
 
-  - [ ] mapUniqueViolation helper assumes a single unique-per-school
-  constraint. Breaks at slice 5 (Guardian, multiple unique constraints).
-  Fix via P2002 meta.target inspection (preferred — avoids SD count
-  pressure) OR a SECURITY DEFINER pre-check (would push SD to 5,
-  trigger consolidation refactor). Decide at slice 5.
+  - [ ] mapUniqueViolation helper — multi-constraint meta.target fix.
+  Original concern: a model with 2+ unique-per-school constraints would
+  break the single-constraint discriminator. Slice 5 turned out to be a
+  non-trigger: Guardian carries ZERO unique constraints (phone is
+  intentionally shareable across guardians, per schema.prisma + the
+  list-guardians scoped tests), and StudentGuardian has exactly one
+  unique constraint — `(studentId, guardianId)` — so a local helper
+  `mapStudentGuardianLinkUniqueViolation` returning
+  `GUARDIAN_ALREADY_LINKED` was enough and stays in-place. The
+  P2002 `err.meta.target` inspection fix stays deferred until a slice
+  actually adds a model with 2+ uniques (no candidate currently
+  identified inside Phase 1 — TeacherProfile has one, ImportJob has
+  none, Enrollment has one). Trigger: first such model. The
+  SECURITY-DEFINER pre-check alternative remains worse on every axis
+  (cost: pushes SD count past 5, hardens an attack surface that doesn't
+  need hardening) so the meta.target path is the locked decision.
 
 - [ ] pg_trgm-backed student search. Slice 4 cp2 ships search as
   `ILIKE %term%` across (admissionNumber, lastName, firstName) — fine

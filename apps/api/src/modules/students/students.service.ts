@@ -108,6 +108,7 @@ export class StudentsService {
           ...STUDENT_SELECT,
           guardians: {
             select: {
+              id: true,
               isPrimary: true,
               canPickup: true,
               guardian: {
@@ -128,6 +129,7 @@ export class StudentsService {
         ...toStudentDto(row),
         guardians: row.guardians.map((link) => ({
           id: link.guardian.id,
+          linkId: link.id,
           firstName: link.guardian.firstName,
           lastName: link.guardian.lastName,
           relationship: link.guardian.relationship,
