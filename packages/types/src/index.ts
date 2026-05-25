@@ -11,3 +11,4 @@ export * from './class-levels/index.js';
 export * from './class-arms/index.js';
 export * from './subjects/index.js';
 export * from './class-subjects/index.js';
+export * from './students/index.js';

@@ -49,6 +49,20 @@ export const PHASE_1_SLICE_3_PERMISSIONS = [
   "class-subject.delete",
 ] as const;
 
+// Phase 1 slice 4 contributes student permission strings. Reference-only
+// until slice 13 wires PermissionsGuard. `student.delete` is intentionally
+// absent — owner-only hard-delete is deferred (see docs/modules/phase-1.md
+// "Updated seeded roles": delete on history-bearing tables is owner-scoped
+// in slice 13). `student.deactivate` covers the named transitions
+// (withdraw / graduate / reactivate) — they change roster state without
+// removing rows. `student.import` lands with slice 6.
+export const PHASE_1_SLICE_4_PERMISSIONS = [
+  "student.read",
+  "student.create",
+  "student.update",
+  "student.deactivate",
+] as const;
+
 export const ALL_PERMISSIONS = [...PHASE_0_PERMISSIONS] as const;
 
 export type Permission = (typeof ALL_PERMISSIONS)[number] | "*";
