@@ -12,6 +12,7 @@ import { ClassSubjectsModule } from "./modules/class-subjects/class-subjects.mod
 import { DebugModule } from "./modules/debug/debug.module";
 import { InvitationsModule } from "./modules/invitations/invitations.module";
 import { SchoolsModule } from "./modules/schools/schools.module";
+import { StudentsModule } from "./modules/students/students.module";
 import { SubjectsModule } from "./modules/subjects/subjects.module";
 import { TermsModule } from "./modules/terms/terms.module";
 import { UsersModule } from "./modules/users/users.module";
@@ -38,6 +39,7 @@ const isProd = process.env.NODE_ENV === "production";
     ClassArmsModule,
     SubjectsModule,
     ClassSubjectsModule,
+    StudentsModule,
     ...(isProd ? [] : [DebugModule]),
   ],
   controllers: [HealthController],

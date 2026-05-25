@@ -19,8 +19,22 @@ const EMAIL_RE = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi;
 // +44... which is fine — we'd rather over-redact than leak.
 const PHONE_RE = /(\+?\d{1,3}[-.\s]?)?\(?\d{3,4}\)?[-.\s]?\d{3,4}[-.\s]?\d{3,4}/g;
 
+// Sensitive key names. Case-insensitive (flag `i`) and underscore-tolerant
+// (`[_]?`) so both camelCase (`firstName`, `dateOfBirth`) and snake_case
+// (`first_name`, `date_of_birth`) match the same pattern. Adding a key here
+// masks the VALUE at that key, never the key name itself — see redactValue.
+//
+// Phase 0: password / token / secret / api-key / bvn / nin / otp /
+//          authorization / cookie  — credential + identifier surface.
+// Phase 1 slice 4: Student durable PII. dateOfBirth + medicalNotes are
+// NDPR-sensitive (children's data; medicalNotes is special-category
+// health data). first/middle/last name + address get masked too because
+// together with DOB they are uniquely identifying — see the slice-4
+// PII-redaction acceptance criterion in docs/journal/2026-05-24.
+// bloodGroup is health-adjacent. email + phone are already covered by
+// the value regexes above; they're caught regardless of the key name.
 const SENSITIVE_KEY_RE =
-  /password|passwd|token|secret|api[_-]?key|bvn|nin|otp|authorization|cookie|set-cookie/i;
+  /password|passwd|token|secret|api[_-]?key|bvn|nin|otp|authorization|cookie|set-cookie|date[_]?of[_]?birth|\bdob\b|first[_]?name|middle[_]?name|last[_]?name|^address$|medical[_]?notes|blood[_]?group/i;
 
 // Maximum depth for object traversal. Sentry events nest a few levels deep
 // (event.contexts.runtime.foo); 8 is comfortably more than we'd ever produce

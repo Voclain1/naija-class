@@ -104,3 +104,150 @@ describe("redactValue", () => {
     expect(out).toBeDefined();
   });
 });
+
+// -------------------------------------------------------------------------
+// Phase 1 / Slice 4 — Student PII closure test.
+//
+// Student is the first DTO with real children's PII. This test is the
+// acceptance criterion for the slice-4 PII-redaction work: it asserts that
+// every Student field that would identify a child gets masked when an
+// event carrying that object passes through the Sentry beforeSend pipeline
+// (which is what calls redactValue on event.extra/contexts/data).
+//
+// The leak path being closed: HttpExceptionFilter's catch-all branch calls
+// Sentry.captureException(exception, { extra: ... }). If a future
+// `extra` ever includes a Student row (e.g. for debugging a 500), the
+// redactor must strip identifying fields before the event ships.
+// -------------------------------------------------------------------------
+
+describe("redactValue — Student PII closure (Phase 1 / Slice 4)", () => {
+  // A Student row as the Prisma client returns it. Field names mirror the
+  // Prisma model + the StudentDto. Both camelCase and snake_case forms are
+  // exercised because audit metadata and raw $queryRaw results use both.
+  const student = {
+    id: "stu-abc-123",
+    schoolId: "sch-xyz-789",
+    admissionNumber: "ADM/2025/0001",
+    firstName: "Ada",
+    middleName: "Chioma",
+    lastName: "Okafor",
+    dateOfBirth: "2014-03-15",
+    gender: "FEMALE",
+    photoUrl: "https://r2.example/s/abc.jpg",
+    address: "12 Allen Avenue, Ikeja, Lagos",
+    phone: "+2348012345678",
+    email: "ada.okafor@example.com",
+    bloodGroup: "O+",
+    medicalNotes: "Asthma — keeps inhaler in school bag.",
+    religion: "Christian",
+    stateOfOrigin: "Anambra",
+    nationality: "Nigerian",
+    status: "ACTIVE",
+    admittedAt: "2025-09-01T00:00:00.000Z",
+    withdrawnAt: null,
+    graduatedAt: null,
+    notes: "Strong in mathematics.",
+    createdAt: "2025-09-01T08:14:22.000Z",
+    updatedAt: "2025-09-01T08:14:22.000Z",
+  };
+
+  const redacted = redactValue(student) as Record<string, unknown>;
+
+  it("masks dateOfBirth (NDPR sensitive — child's birth date)", () => {
+    expect(redacted.dateOfBirth).toBe("[REDACTED]");
+  });
+
+  it("masks first/middle/last name (identifying together with DOB)", () => {
+    expect(redacted.firstName).toBe("[REDACTED]");
+    expect(redacted.middleName).toBe("[REDACTED]");
+    expect(redacted.lastName).toBe("[REDACTED]");
+  });
+
+  it("masks address", () => {
+    expect(redacted.address).toBe("[REDACTED]");
+  });
+
+  it("masks medicalNotes (special-category health data under NDPR)", () => {
+    expect(redacted.medicalNotes).toBe("[REDACTED]");
+  });
+
+  it("masks bloodGroup (health-adjacent)", () => {
+    expect(redacted.bloodGroup).toBe("[REDACTED]");
+  });
+
+  it("masks email by value regex (the existing pipeline)", () => {
+    expect(redacted.email).toBe("[REDACTED_EMAIL]");
+  });
+
+  it("masks phone by value regex (the existing pipeline)", () => {
+    expect(redacted.phone).toBe("[REDACTED_PHONE]");
+  });
+
+  it("leaves non-identifying / non-PII fields alone (debuggability is preserved)", () => {
+    // We deliberately do NOT mask ids, status, timestamps, admissionNumber,
+    // nationality, religion, stateOfOrigin, notes, or photoUrl — those are
+    // useful for debugging and don't on their own identify a child.
+    expect(redacted.id).toBe("stu-abc-123");
+    expect(redacted.status).toBe("ACTIVE");
+    expect(redacted.admissionNumber).toBe("ADM/2025/0001");
+    expect(redacted.nationality).toBe("Nigerian");
+    expect(redacted.photoUrl).toBe("https://r2.example/s/abc.jpg");
+  });
+
+  it("masks snake_case variants too (raw $queryRaw rows, audit JSON)", () => {
+    const raw = {
+      first_name: "Ada",
+      middle_name: "Chioma",
+      last_name: "Okafor",
+      date_of_birth: "2014-03-15",
+      medical_notes: "Asthma",
+      blood_group: "O+",
+      phone: "+2348012345678",
+      email: "ada@example.com",
+    };
+    const out = redactValue(raw) as Record<string, unknown>;
+    expect(out.first_name).toBe("[REDACTED]");
+    expect(out.middle_name).toBe("[REDACTED]");
+    expect(out.last_name).toBe("[REDACTED]");
+    expect(out.date_of_birth).toBe("[REDACTED]");
+    expect(out.medical_notes).toBe("[REDACTED]");
+    expect(out.blood_group).toBe("[REDACTED]");
+    expect(out.phone).toBe("[REDACTED_PHONE]");
+    expect(out.email).toBe("[REDACTED_EMAIL]");
+  });
+
+  it("masks Student PII nested under arbitrary parent keys (Sentry extra payload shape)", () => {
+    // Simulates Sentry.captureException(err, { extra: { student } }) — the
+    // redactor must walk through `extra` and strip the leaf fields.
+    const eventExtra = {
+      requestId: "req-abc",
+      student: { ...student },
+    };
+    const out = redactValue(eventExtra) as {
+      requestId: string;
+      student: Record<string, unknown>;
+    };
+    expect(out.requestId).toBe("req-abc");
+    expect(out.student.firstName).toBe("[REDACTED]");
+    expect(out.student.dateOfBirth).toBe("[REDACTED]");
+    expect(out.student.medicalNotes).toBe("[REDACTED]");
+    expect(out.student.email).toBe("[REDACTED_EMAIL]");
+    expect(out.student.phone).toBe("[REDACTED_PHONE]");
+  });
+
+  it("does NOT over-mask innocent keys that happen to contain the substring 'address'", () => {
+    // "ipAddress" is a common Sentry/request-log field; if we matched it we
+    // would clobber a useful debugging value. The `^address$` anchor in
+    // SENSITIVE_KEY_RE is what prevents this — keep this assertion as a
+    // regression guard.
+    const out = redactValue({
+      ipAddress: "127.0.0.1",
+      addressLine1: "12 Allen Avenue",
+    }) as Record<string, unknown>;
+    expect(out.ipAddress).toBe("127.0.0.1");
+    // addressLine1 stays unmasked under the strict-anchor rule. If a future
+    // entity (Guardian, Branch) needs to mask addressLine1, add it
+    // explicitly to SENSITIVE_KEY_RE rather than loosening the anchor.
+    expect(out.addressLine1).toBe("12 Allen Avenue");
+  });
+});
