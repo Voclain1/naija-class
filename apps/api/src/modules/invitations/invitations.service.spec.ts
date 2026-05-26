@@ -1,5 +1,5 @@
 import * as crypto from "node:crypto";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 
 import { basePrisma, withTenant } from "@school-kit/db";
 import { GoneError, NotFoundError } from "@school-kit/types";

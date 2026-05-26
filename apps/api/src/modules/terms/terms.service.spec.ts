@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 
 import { basePrisma, withTenant } from "@school-kit/db";
 import { ConflictError, NotFoundError } from "@school-kit/types";

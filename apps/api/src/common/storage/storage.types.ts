@@ -1,0 +1,83 @@
+// Typed scope keys for objects we store on behalf of a tenant.
+//
+// Why a discriminated union, not a raw path: every method on
+// StorageDriver takes (schoolId, key) and asks the driver to derive the
+// actual storage path. There is no API for "give me the object at this
+// raw path" — that would be a path-traversal foot-gun ("schools/A/.../
+// /schools/B/..."). Slice 6 only needs import-source; slice 7 will add
+// import-error-report. New blob kinds require adding a case here AND
+// to pathFor() in storage.utils.ts, so a casual caller cannot bypass
+// the layout.
+export type StorageObjectKey = { kind: "import-source"; jobId: string };
+// slice 7: | { kind: "import-error-report"; jobId: string };
+
+export type StorageDriverKind = "filesystem" | "r2";
+
+// Output of put*: every driver returns the SAME shape — the canonical
+// storage path string (e.g. "schools/<id>/imports/<jobId>/source.csv").
+// Persisted on ImportJob.sourceFileUrl. Drivers do NOT return absolute
+// filesystem paths or signed URLs from put* — those come from sign*.
+export type StoragePath = string;
+
+// Input for put*. We accept a Node Buffer because the multipart upload
+// produces one (file size is capped at 5 MB by slice-6 controller, so
+// in-memory is fine). Slice 7 may stream large error-report CSVs back
+// to R2 with a separate streaming overload.
+export type StorageBody = Buffer;
+
+export interface StorageDriver {
+  /**
+   * Persist a tenant-scoped object. Returns the canonical storage path
+   * (the same layout for every driver — see storage.utils.ts/pathFor).
+   *
+   * Drivers MUST validate that schoolId and key components are UUIDs
+   * (or otherwise safe identifiers) before touching the underlying
+   * store. A driver that accepts a slash-containing schoolId is broken.
+   */
+  put(
+    schoolId: string,
+    key: StorageObjectKey,
+    body: StorageBody,
+    contentType: string,
+  ): Promise<StoragePath>;
+
+  /**
+   * Read a tenant-scoped object as a Buffer. Slice 6's validate worker
+   * reads via this method (5 MB ceiling, in-memory is fine). Slice 7
+   * may add a streaming variant.
+   */
+  get(schoolId: string, key: StorageObjectKey): Promise<Buffer>;
+
+  /**
+   * Produce a short-lived URL the admin's browser can fetch directly.
+   * For the filesystem driver in dev this is a path the api will serve
+   * over a tenant-checked endpoint (slice 6 does not yet expose such an
+   * endpoint — the bad-rows download is built in cp3 and goes through
+   * the api). For R2 in prod this is a presigned URL with the configured
+   * TTL.
+   */
+  signUrl(
+    schoolId: string,
+    key: StorageObjectKey,
+    ttlSeconds: number,
+  ): Promise<string>;
+
+  /**
+   * Delete a single object. No-op if it doesn't exist (idempotent).
+   */
+  delete(schoolId: string, key: StorageObjectKey): Promise<void>;
+
+  /**
+   * Delete every object under a tenant + jobId prefix. Used on
+   * DELETE /imports/:jobId to clean up R2 / local disk in one call.
+   * Slice 7's commit cleanup uses the same method.
+   */
+  deleteImportPrefix(schoolId: string, jobId: string): Promise<void>;
+
+  /**
+   * Sentinel — returned by storage.utils.ts/pathFor for testing. Allows
+   * a unit test to assert the canonical path layout without touching
+   * either backend. Not part of the runtime hot path.
+   */
+  readonly kind: StorageDriverKind;
+}
