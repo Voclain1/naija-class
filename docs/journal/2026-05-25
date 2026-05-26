@@ -62,3 +62,33 @@ acceptance-criterion pattern applies to the error-report CSV: bad rows
 contain full PII; admins downloading constitutes data export, log via
 `imports.error-report.download` audit action (spec already in place).
 ~4 days.
+## Done
+- Slice 6 cp1 (CSV import infrastructure) merged (PR #14):
+  ImportJob model + RLS, BullMQ queue, storage abstraction (filesystem
+  dev / R2 prod), the tenantWorker wrapper (worker tenant-safety via
+  withTenant(job.data.schoolId)), basePrisma lint rule (tenant-bypass
+  now a CI failure), studentImportRowSchema. App boots verified.
+
+## Decisions (slice 6 plan)
+- Async worker tenant safety: schoolId from JWT at enqueue → job.data →
+  tenantWorker → withTenant. No worker DB path without tenant context.
+- Storage: STORAGE_DRIVER env, filesystem (dev) / R2 (prod), single
+  UUID-validating pathFor(), no raw-path method. Path segregation tested.
+- Slice 6 boundary: ends at status=READY (upload→map→validate→preview).
+  Commit is slice 7. Bad-rows download in 6; post-commit error report in 7.
+- @nestjs/bullmq pinned v10 (NestJS 10 peer match)
+
+## Lesson / friction
+- Claude Code committed to main directly once (caught + recovered via
+  feature branch + reset). Branch protection on origin held — the slip
+  was local-only. In the faster cadence, watch git-flow more closely.
+
+## Deferred (added)
+- Consolidate pre-tenant DB access into common/pre-tenant/ (shrinks the
+  basePrisma allowlist from 8 paths to 1)
+- Prisma 5.22 → 7.x major upgrade (deliberate maintenance pass, not mid-feature)
+
+## Next
+- Slice 6 cp2: upload + mapping endpoints (multipart, row-cap parse on
+  upload, R2 persist, enqueue validate). Then cp3 (the validate worker —
+  the meaty parsing/validation/dedup engine) and cp4 (wizard UI).
