@@ -133,3 +133,8 @@ Format:
   doesn't expose `router.beforePopstate`-style hooks cleanly, so this
   may need a wrapping `<Link>` component or a `useNavigationGuard()`
   hook reading from a shared dirty registry).
+
+  - [ ] CSV import error report shows redundant errors on a single field
+  (e.g. "could not parse date" + "date required" when a parse failure
+  leaves the field empty). De-dupe to show only the root error for
+  cleaner admin output. Polish, not correctness. (slice 6 cp3)
