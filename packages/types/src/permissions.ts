@@ -63,6 +63,15 @@ export const PHASE_1_SLICE_4_PERMISSIONS = [
   "student.deactivate",
 ] as const;
 
+// Phase 1 slice 6 contributes the student-import permission. Reference-only
+// until slice 13 wires PermissionsGuard — until then the imports controller
+// gates on owner/admin via assertUserActiveAndHasOneOf (same pattern as
+// every prior Phase 1 slice). Guardian + teacher imports in slice 8 will
+// add `guardian.import` and `teacher.import` alongside this.
+export const PHASE_1_SLICE_6_PERMISSIONS = [
+  "student.import",
+] as const;
+
 export const ALL_PERMISSIONS = [...PHASE_0_PERMISSIONS] as const;
 
 export type Permission = (typeof ALL_PERMISSIONS)[number] | "*";
