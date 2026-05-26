@@ -1,0 +1,12 @@
+# 2026-05-26
+
+## Today's outcome
+Slice 6 cp2 — CSV import upload + mapping endpoints (multipart upload,
+synchronous row-cap parse, storage persist, enqueue validate). Then cp3
+(validate worker) if fresh enough.
+
+## Decisions made
+- (capture as the day unfolds)
+
+## Tomorrow's first task
+- (fill at end of day)
