@@ -25,11 +25,23 @@ import {
 } from "../../common/queue";
 import { StorageService, pathFor as storagePathFor } from "../../common/storage";
 import { preflightCsv } from "./imports.csv-parser";
+import {
+  EngineFatalError,
+  badRowsToCsv,
+  buildBadRowsFromSource,
+  parsePersistedMapping,
+  runValidationEngine,
+} from "./validate.engine";
 
 // Audit actions — singular resource, dotted verb (locked in slice 1).
+// `import.bad-rows.download` is a three-segment exception: the middle
+// segment is the sub-resource (bad-rows) and the last is the verb. The
+// shape stays parseable (resource.subresource.verb) and the action is
+// distinct from a future `import.commit` so NDPR audits can filter on it.
 const AUDIT = {
   upload: "import.upload",
   mapping: "import.mapping",
+  badRowsDownload: "import.bad-rows.download",
 } as const;
 
 // Job-data shape passed to the validate worker. Carries `schoolId` so
@@ -404,6 +416,133 @@ export class ImportsService {
         }`,
       ),
     );
+  }
+
+  // ----------------------------------------------------------------------
+  // generateBadRowsCsv — GET /imports/:jobId/bad-rows.csv
+  //
+  // Re-streams the source CSV and re-runs the same validation engine the
+  // worker ran, then serialises every BAD row to CSV with an `_errors`
+  // column. Why re-stream rather than persist a full bad-rows list on
+  // the row: previewSnapshot stores only the first 50 of each pile (per
+  // spec line 879); a 10k-row file with 8k bad rows would otherwise need
+  // a 1–2 MB JSON column. The engine is deterministic against the same
+  // source + mapping, so the re-run produces the same bytes as the
+  // wizard's poll saw.
+  //
+  // NDPR-relevant: this is a PII export — bad rows contain student names,
+  // DOBs, phone numbers, etc. Spec line 1236 calls for an audit row so
+  // compliance reviews show who downloaded what. Action key:
+  // `import.bad-rows.download`. The signed-URL TTL (for R2) is owned by
+  // the storage layer; here we just emit bytes from a tenant-checked
+  // route.
+  //
+  // Status guards:
+  //   - READY            → download allowed
+  //   - COMPLETED        → also allowed (post-commit; bad rows still
+  //                        useful to the admin)
+  //   - FAILED           → 409, no bad-rows to show
+  //   - PENDING/VALIDATING/COMMITTING → 409, not yet validated
+  // ----------------------------------------------------------------------
+  async generateBadRowsCsv(
+    authCtx: AuthContext,
+    jobId: string,
+    reqCtx: RequestContext,
+  ): Promise<{ filename: string; content: Buffer }> {
+    await assertUserActiveAndHasOneOf(authCtx, ["owner", "admin"]);
+
+    const job = await withTenant(authCtx.schoolId, async (db) => {
+      const row = await db.importJob.findUnique({
+        where: { id: jobId },
+        select: {
+          id: true,
+          status: true,
+          type: true,
+          columnMapping: true,
+        },
+      });
+      if (!row) throw new NotFoundError("Import job not found.");
+      if (row.type !== "STUDENTS") {
+        throw new ConflictError(
+          "INVALID_JOB_TYPE",
+          "Bad-rows CSV is only available for STUDENTS imports in slice 6.",
+        );
+      }
+      if (row.status !== "READY" && row.status !== "COMPLETED") {
+        throw new ConflictError(
+          "JOB_NOT_VALIDATED",
+          `Bad-rows CSV is only available after validation. Current status: ${row.status}.`,
+        );
+      }
+      return row;
+    });
+
+    let mapping;
+    try {
+      mapping = parsePersistedMapping(job.columnMapping);
+    } catch (e) {
+      // Mapping should be coherent — the cp2 endpoint validated it. If
+      // it's not, the job is unusable; the wizard should never reach
+      // this endpoint for such a row, but surface a 409 just in case.
+      if (e instanceof EngineFatalError) {
+        throw new ConflictError("MAPPING_INCOHERENT", e.message);
+      }
+      throw e;
+    }
+
+    let sourceBytes: Buffer;
+    try {
+      sourceBytes = await this.storage.get(authCtx.schoolId, {
+        kind: "import-source",
+        jobId,
+      });
+    } catch (e) {
+      // The source file is gone. The job row is still here but unusable.
+      // 409 is more accurate than 500 — the resource state is wrong, not
+      // an internal failure.
+      throw new ConflictError(
+        "SOURCE_MISSING",
+        `Source CSV is no longer available for this import: ${
+          e instanceof Error ? e.message : String(e)
+        }`,
+      );
+    }
+
+    // Re-run the engine. Caller is responsible for the audit row — we
+    // emit it BEFORE returning so the NDPR record is in place even if
+    // the response stream fails mid-flight.
+    const engineResult = await withTenant(authCtx.schoolId, (db) =>
+      runValidationEngine(db, sourceBytes, mapping.mapping, mapping.options),
+    );
+
+    const badWithSource = buildBadRowsFromSource(sourceBytes, engineResult.bad);
+    const csv = badRowsToCsv(engineResult.headers, badWithSource);
+
+    await withTenant(authCtx.schoolId, async (db) => {
+      await db.auditLog.create({
+        data: {
+          schoolId: authCtx.schoolId,
+          userId: authCtx.userId,
+          action: AUDIT.badRowsDownload,
+          entityType: "import_job",
+          entityId: jobId,
+          ipAddress: reqCtx.ipAddress,
+          // PII-free: row counts are not student data, and the action
+          // name itself flags the export. The exported file contents
+          // contain PII but live in storage / the response body, NOT in
+          // the audit table.
+          metadata: {
+            badRowCount: badWithSource.length,
+            totalRows: engineResult.totalRows,
+          },
+        },
+      });
+    });
+
+    return {
+      filename: `import-${jobId}-bad-rows.csv`,
+      content: csv,
+    };
   }
 }
 

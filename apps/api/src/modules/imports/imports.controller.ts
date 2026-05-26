@@ -14,6 +14,7 @@ import {
   PayloadTooLargeException,
   Post,
   Req,
+  Res,
   UploadedFile,
   UseFilters,
   UseGuards,
@@ -149,6 +150,37 @@ export class ImportsController {
       ipAddress: ip,
       userAgent: req.header("user-agent") ?? null,
     });
+  }
+
+  // GET /imports/:jobId/bad-rows.csv — re-streams source.csv, re-runs the
+  // engine, emits a CSV with the original headers + a final `_errors`
+  // column. Tenant-scoped via AuthGuard + service role check; an audit
+  // row lands BEFORE the response is sent (NDPR — PII export). We use
+  // @Res() to write the streaming body and headers directly; throws
+  // BEFORE res.send() still route through the global HttpExceptionFilter
+  // because no response has been sent yet.
+  @Get(":jobId/bad-rows.csv")
+  async downloadBadRowsCsv(
+    @CurrentUser() authCtx: AuthContext,
+    @Param("jobId", new ParseUUIDPipe()) jobId: string,
+    @Ip() ip: string,
+    @Req() req: Request,
+    @Res() res: Response,
+  ): Promise<void> {
+    const { filename, content } = await this.service.generateBadRowsCsv(
+      authCtx,
+      jobId,
+      {
+        ipAddress: ip,
+        userAgent: req.header("user-agent") ?? null,
+      },
+    );
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${filename}"`,
+    );
+    res.send(content);
   }
 
   @Get(":jobId")
