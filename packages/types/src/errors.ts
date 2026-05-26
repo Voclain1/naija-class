@@ -34,9 +34,30 @@ export abstract class BaseError extends Error {
   }
 }
 
+// 400. Two constructor shapes — same idea as UnauthorizedError. Existing
+// call sites all use the one-arg `(message, details?)` form, where the
+// `code` falls back to "VALIDATION_ERROR" and the message is the human-
+// readable line. Newer call sites that need a stable sub-code (CSV
+// import emits INVALID_CSV / AMBIGUOUS_HEADERS so the wizard can branch
+// without parsing strings) pass `(code, message, details?)` with the
+// second arg being a string. The string-type-of-second-arg disambiguates
+// the two — `details` is always an object in legacy calls.
 export class ValidationError extends BaseError {
-  readonly code = "VALIDATION_ERROR";
   readonly httpStatus = 400;
+  readonly code: string;
+  constructor(
+    codeOrMessage: string,
+    messageOrDetails?: string | unknown,
+    details?: unknown,
+  ) {
+    if (typeof messageOrDetails === "string") {
+      super(messageOrDetails, details);
+      this.code = codeOrMessage;
+    } else {
+      super(codeOrMessage, messageOrDetails);
+      this.code = "VALIDATION_ERROR";
+    }
+  }
 }
 
 // Like ConflictError, UnauthorizedError carries an optional sub-code so the
@@ -90,6 +111,20 @@ export class ConflictError extends BaseError {
 // the message.
 export class GoneError extends BaseError {
   readonly httpStatus = 410;
+  readonly code: string;
+  constructor(code: string, message: string, details?: unknown) {
+    super(message, details);
+    this.code = code;
+  }
+}
+
+// 413 — the request entity is larger than the server is willing or able to
+// process. CSV upload uses this for both FILE_TOO_LARGE (Multer rejects on
+// the 5 MB cap) and TOO_MANY_ROWS (>10 000 data rows; we count synchronously
+// before persisting to storage). Sub-code carried in the same shape as
+// ConflictError so the client can branch without parsing the message.
+export class PayloadTooLargeError extends BaseError {
+  readonly httpStatus = 413;
   readonly code: string;
   constructor(code: string, message: string, details?: unknown) {
     super(message, details);

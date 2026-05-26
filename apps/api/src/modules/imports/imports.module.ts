@@ -5,16 +5,19 @@ import { IMPORTS_QUEUE } from "../../common/queue";
 import { AuthModule } from "../auth/auth.module";
 import { ImportsController } from "./imports.controller";
 import { ImportsService } from "./imports.service";
+import { ImportsValidateProcessor } from "./workers/validate.processor";
 
 // ImportsModule — CSV import surface (slices 6, 7, 8).
 //
-// cp1 only registers the queue (so producers can inject Queue<...> in
-// cp2) and the skeleton controller/service. The validate processor
-// (cp3) is registered here as a Provider once written; the commit
-// processor (slice 7) follows the same pattern.
+// cp1 wired the queue + skeleton. cp2 adds the real controller, service,
+// and a stub validate processor that flips the job to READY so the
+// upload + mapping + GET surfaces close end-to-end today. cp3 replaces
+// the stub's body with real validation/parsing/dedup logic — the queue
+// wiring and the tenantWorker tenant-safety wrapper stay; only the body
+// changes.
 //
-// AuthModule is imported so the controller's @UseGuards(AuthGuard)
-// resolves — same shape as every other feature module in Phase 1.
+// The commit processor (slice 7) will land in this module too, registered
+// here as another @Processor on IMPORTS_QUEUE.
 
 @Module({
   imports: [
@@ -34,7 +37,7 @@ import { ImportsService } from "./imports.service";
     }),
   ],
   controllers: [ImportsController],
-  providers: [ImportsService],
+  providers: [ImportsService, ImportsValidateProcessor],
   exports: [ImportsService],
 })
 export class ImportsModule {}
