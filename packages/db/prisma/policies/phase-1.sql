@@ -126,3 +126,25 @@ CREATE POLICY tenant_isolation ON guardians
 CREATE POLICY tenant_isolation ON student_guardians
   USING      (school_id::text = current_setting('app.current_school_id', true))
   WITH CHECK (school_id::text = current_setting('app.current_school_id', true));
+
+-- Slice 6: import_jobs ------------------------------------------------
+-- CSV import bookkeeping. Same direct-school_id shape. The notable
+-- thing about this table is its writers: it's the FIRST table written
+-- by a BullMQ worker (the validate processor), not just by a request
+-- handler. The worker establishes tenant context from job.data.schoolId
+-- via the tenantWorker() wrapper (apps/api/src/common/queue/
+-- tenant-worker.ts) BEFORE any DB access — so withTenant() runs, the
+-- GUC is set, and this policy enforces isolation identically for
+-- worker writes as for handler writes. There is no window in which
+-- the worker can touch import_jobs (or any other RLS'd table) without
+-- the GUC set; if a processor were ever wired without tenantWorker(),
+-- RLS would simply return zero rows / WITH CHECK would reject every
+-- INSERT, failing loud rather than leaking. SECURITY DEFINER count
+-- stays at 4 — no pre-tenant access path is needed by this slice.
+
+ALTER TABLE import_jobs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE import_jobs FORCE  ROW LEVEL SECURITY;
+
+CREATE POLICY tenant_isolation ON import_jobs
+  USING      (school_id::text = current_setting('app.current_school_id', true))
+  WITH CHECK (school_id::text = current_setting('app.current_school_id', true));

@@ -67,3 +67,10 @@ apps/mobile/*.orig.*
 /expired-inv.json
 /admin-login.json
 /og.json
+
+# Slice 6: filesystem storage driver root (dev only).
+# Mirrors the R2 layout schools/<schoolId>/imports/<jobId>/... — created
+# lazily on first upload via apps/api's FilesystemStorageDriver. Prod
+# uses STORAGE_DRIVER=r2 and this directory never appears.
+.storage/
+

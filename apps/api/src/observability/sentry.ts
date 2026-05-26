@@ -23,7 +23,6 @@ export function initSentry(): void {
     // Single boot-time line so future-me can tell "disabled" from "broken".
     // Logger isn't bootstrapped here yet; raw console is fine — main.ts has
     // not created NestFactory at this point in the lifecycle.
-    // eslint-disable-next-line no-console
     console.info("[sentry] disabled: SENTRY_DSN_API not set");
     return;
   }
@@ -78,7 +77,6 @@ export function initSentry(): void {
   });
 
   initialised = true;
-  // eslint-disable-next-line no-console
   console.info(
     `[sentry] initialised (env=${process.env.SENTRY_ENVIRONMENT ?? process.env.NODE_ENV ?? "development"})`,
   );

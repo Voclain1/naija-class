@@ -1004,3 +1004,160 @@ describe("multi-tenant isolation — Phase 1 / Slice 5 (guardians + student_guar
     expect(rows.links).toHaveLength(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Phase 1 / Slice 6 isolation — import_jobs
+//
+// First table written by a BullMQ worker (not just request handlers). The
+// worker establishes tenant context from job.data.schoolId via the
+// tenantWorker() wrapper in apps/api/src/common/queue/tenant-worker.ts,
+// which calls withTenant() before any DB access. This spec proves the
+// steady-state RLS invariant that protects that pattern: if the GUC were
+// ever unset (e.g. a future processor wired without the wrapper), reads
+// return zero rows and inserts fail WITH CHECK, failing loud rather than
+// leaking. The "raw SQL with unset GUC" check is the explicit proof.
+// ---------------------------------------------------------------------------
+
+describe("multi-tenant isolation — Phase 1 / Slice 6 (import_jobs)", () => {
+  const runId = Math.random().toString(36).slice(2, 8);
+  let schoolA: { id: string };
+  let schoolB: { id: string };
+  let userA: { id: string };
+  let userB: { id: string };
+  let jobA: { id: string };
+  let jobB: { id: string };
+
+  beforeAll(async () => {
+    schoolA = await basePrisma.school.create({
+      data: { name: "School P1S6A", slug: `rls-p1s6a-${runId}` },
+      select: { id: true },
+    });
+    schoolB = await basePrisma.school.create({
+      data: { name: "School P1S6B", slug: `rls-p1s6b-${runId}` },
+      select: { id: true },
+    });
+
+    // import_jobs.createdBy is a TEXT FK pointing at users.id but with
+    // no FK constraint at the schema level (createdBy is not a relation
+    // in the Prisma model). We still create real user rows because the
+    // *audit_logs* (slice 7) will enforce the FK, and we want the
+    // test schools to look like real schools.
+    userA = await withTenant(schoolA.id, (db) =>
+      db.user.create({
+        data: {
+          schoolId: schoolA.id,
+          email: `imports-${runId}@school-a.test`,
+          firstName: "ImpA",
+          lastName: "Owner",
+        },
+        select: { id: true },
+      }),
+    );
+    userB = await withTenant(schoolB.id, (db) =>
+      db.user.create({
+        data: {
+          schoolId: schoolB.id,
+          email: `imports-${runId}@school-b.test`,
+          firstName: "ImpB",
+          lastName: "Owner",
+        },
+        select: { id: true },
+      }),
+    );
+
+    jobA = await withTenant(schoolA.id, (db) =>
+      db.importJob.create({
+        data: {
+          schoolId: schoolA.id,
+          type: "STUDENTS",
+          status: "PENDING",
+          sourceFileUrl: `schools/${schoolA.id}/imports/A-${runId}/source.csv`,
+          createdBy: userA.id,
+        },
+        select: { id: true },
+      }),
+    );
+    jobB = await withTenant(schoolB.id, (db) =>
+      db.importJob.create({
+        data: {
+          schoolId: schoolB.id,
+          type: "STUDENTS",
+          status: "PENDING",
+          sourceFileUrl: `schools/${schoolB.id}/imports/B-${runId}/source.csv`,
+          createdBy: userB.id,
+        },
+        select: { id: true },
+      }),
+    );
+  });
+
+  afterAll(async () => {
+    if (schoolA?.id) {
+      await basePrisma.school.delete({ where: { id: schoolA.id } }).catch(() => undefined);
+    }
+    if (schoolB?.id) {
+      await basePrisma.school.delete({ where: { id: schoolB.id } }).catch(() => undefined);
+    }
+    await basePrisma.$disconnect();
+  });
+
+  it("School A sees its own import_job only", async () => {
+    const rows = await withTenant(schoolA.id, (db) =>
+      db.importJob.findMany({ where: { sourceFileUrl: { contains: runId } } }),
+    );
+    const ids = rows.map((r) => r.id);
+    expect(ids).toContain(jobA.id);
+    expect(ids).not.toContain(jobB.id);
+  });
+
+  it("School B sees its own import_job only", async () => {
+    const rows = await withTenant(schoolB.id, (db) =>
+      db.importJob.findMany({ where: { sourceFileUrl: { contains: runId } } }),
+    );
+    const ids = rows.map((r) => r.id);
+    expect(ids).toContain(jobB.id);
+    expect(ids).not.toContain(jobA.id);
+  });
+
+  it("findUnique across tenants returns null", async () => {
+    const leak = await withTenant(schoolA.id, (db) =>
+      db.importJob.findUnique({ where: { id: jobB.id } }),
+    );
+    expect(leak).toBeNull();
+  });
+
+  it("INSERT with another school's school_id fails the WITH CHECK clause", async () => {
+    // The worker mischief case: an attacker who somehow controls the
+    // BullMQ job data sets schoolId=A but tries to write a row with
+    // school_id=B. tenantWorker() would refuse if the GUC didn't
+    // match, but WITH CHECK is the second-line defence at the DB.
+    await expect(
+      withTenant(schoolA.id, (db) =>
+        db.importJob.create({
+          data: {
+            schoolId: schoolB.id,
+            type: "STUDENTS",
+            status: "PENDING",
+            sourceFileUrl: `schools/${schoolB.id}/imports/bad-${runId}/source.csv`,
+            createdBy: userA.id,
+          },
+        }),
+      ),
+    ).rejects.toThrow();
+  });
+
+  it("raw SQL with unset GUC returns zero rows from import_jobs (FORCE RLS)", async () => {
+    // This is the explicit proof that a worker which somehow bypassed
+    // tenantWorker() — and therefore withTenant — could not read or
+    // operate on import_jobs rows. RLS fails closed: no GUC means
+    // current_setting('app.current_school_id', true) returns NULL/empty,
+    // which matches no row. The defence in depth that backstops the
+    // tenantWorker invariant.
+    const rows = await basePrisma.$transaction(async (tx) => {
+      return tx.$queryRaw<Array<{ id: string }>>`
+        SELECT id FROM import_jobs WHERE source_file_url LIKE ${"%" + runId + "%"}
+      `;
+    });
+    expect(rows).toHaveLength(0);
+  });
+});

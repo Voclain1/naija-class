@@ -53,6 +53,94 @@ export const baseConfig = [
 
       // console.log only — info/warn/error are used for observability logs.
       "no-console": ["warn", { allow: ["info", "warn", "error"] }],
+
+      // basePrisma bypasses RLS tenant scoping — it's the raw Prisma
+      // client. EVERY tenant-bound DB access MUST go through withTenant
+      // (which opens a tx + sets app.current_school_id), or — for
+      // documented pre-tenant cases (signup tx, SECURITY DEFINER
+      // lookups, schools/roles which have no RLS) — through the
+      // explicit allowlist below. A new module importing basePrisma
+      // outside the allowlist is, almost always, a tenant-isolation
+      // bug. The allowlist override is in this file (see the "files:"
+      // override blocks at the end of baseConfig).
+      //
+      // Adopted in slice 6 cp1 alongside the BullMQ worker work: the
+      // worker establishes tenant context via tenantWorker() → withTenant,
+      // and we want "skip the wrapper and call basePrisma directly" to
+      // be a CI failure, not a runtime hope.
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: [
+            {
+              name: "@school-kit/db",
+              importNames: ["basePrisma"],
+              message:
+                "Use withTenant(schoolId, db => ...) for tenant-scoped access. basePrisma bypasses RLS — see CLAUDE.md 'Multi-tenancy' hard rules.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+
+  // ---------------------------------------------------------------------
+  // basePrisma allowlist — files that legitimately import the raw client.
+  //
+  // Adding a new entry to this list is a security-relevant decision. The
+  // bar is: this file accesses Postgres BEFORE a tenant is known (e.g. it
+  // resolves a bearer token), OR it accesses a non-RLS table (schools,
+  // roles, sessions), OR it is the helper that defines withTenant. If
+  // none of those apply, the file should use withTenant instead — the
+  // lint failure is correct.
+  //
+  // Patterns use **/ so they match regardless of which package is the
+  // ESLint root (each app runs ESLint from its own dir; flat-config
+  // `files:` patterns are relative to that cwd, so unanchored globs
+  // are the safest cross-package form).
+  // ---------------------------------------------------------------------
+  {
+    files: [
+      // packages/db: tenant-client.ts defines basePrisma; index.ts re-exports
+      // it; seeds and migration helpers run pre-tenant by definition.
+      "**/packages/db/**",
+      "**/db/src/**",
+      "**/prisma/seed.ts",
+      "**/prisma/seed.mts",
+
+      // Test files: setup/teardown legitimately uses basePrisma to manage
+      // test schools (the schools table itself has no RLS). The RLS spec
+      // intentionally tests cross-tenant behaviour via basePrisma.
+      "**/*.spec.ts",
+      "**/*.spec.tsx",
+      "**/*.test.ts",
+      "**/*.test.tsx",
+      "**/__tests__/**",
+
+      // apps/api specific pre-tenant call sites. Each one corresponds to
+      // a known SECURITY DEFINER function or a non-RLS table:
+      //   - auth.guard.ts            session resolution PRE-tenant
+      //   - auth.service.ts          signup tx + login/uniqueness SECURITY DEFINER
+      //   - schools.service.ts       schools table is non-RLS (Phase 0 design)
+      //   - users.service.ts         reads schools (non-RLS) for status checks
+      //   - invitations.service.ts   reads schools + roles (non-RLS) +
+      //                              auth_resolve_invitation_by_token_hash (SD)
+      // If a NEW callsite needs basePrisma, prove it falls into one of
+      // these categories and add it here with a comment that says which.
+      //
+      // Patterns are unanchored ("**/<name>") because each app runs
+      // ESLint from its own working directory; flat-config `files:`
+      // patterns resolve relative to that cwd, so an anchored path
+      // like "apps/api/src/..." would silently never match when
+      // running from inside apps/api.
+      "**/common/auth/auth.guard.ts",
+      "**/modules/auth/auth.service.ts",
+      "**/modules/schools/schools.service.ts",
+      "**/modules/users/users.service.ts",
+      "**/modules/invitations/invitations.service.ts",
+    ],
+    rules: {
+      "no-restricted-imports": "off",
     },
   },
 ];

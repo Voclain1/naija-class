@@ -1,7 +1,7 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 
 import { basePrisma, withTenant } from "@school-kit/db";
-import { ConflictError, ForbiddenError } from "@school-kit/types";
+import { ForbiddenError } from "@school-kit/types";
 
 import { AuthService } from "../auth/auth.service";
 import { UsersService } from "./users.service";

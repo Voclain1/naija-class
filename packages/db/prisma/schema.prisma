@@ -504,3 +504,77 @@ model StudentGuardian {
   @@index([guardianId]) // reverse lookup: a guardian's children
   @@map("student_guardians")
 }
+
+// ---------- Phase 1 / Slice 6 — CSV import bookkeeping ----------
+//
+// One row per import attempt. The row is the source of truth for the
+// wizard UI; BullMQ's internal job state (waiting/active/failed) is
+// implementation detail and NEVER reaches the API consumer. The state
+// machine is:
+//
+//   PENDING ──mapping─▶ VALIDATING ──worker ok──▶ READY ──┐  (commit is slice 7+)
+//      │                     │                              ▼
+//      │ delete              │ retries exhausted        COMMITTING ─▶ COMPLETED
+//      ▼                     ▼
+//   (gone)                  FAILED  ◀─────────────────────  (worker fatal)
+//
+// `sourceFileUrl` is a storage path (driver-agnostic — R2 in prod,
+// filesystem in dev) of the form `schools/<schoolId>/imports/<jobId>/source.csv`.
+// The StorageService is responsible for constructing this path; the schema
+// does not enforce its shape because the path is opaque to Postgres.
+//
+// `previewSnapshot` holds first 50 good + first 50 bad rows for the UI
+// preview only — the full bad-rows download (and the slice-7 error report)
+// re-stream the source CSV rather than store all bad rows in JSON, to
+// avoid bloating this row for large mostly-bad uploads.
+//
+// `failedReason` is populated by the FailedJobEvent listener when BullMQ
+// exhausts retries, or directly by the worker when it detects an
+// unrecoverable error (missing source file, parser fatal, etc.). Surfaced
+// to the admin on step 3 of the wizard.
+//
+// `createdBy` is the userId of the admin who initiated the upload; flows
+// into job-data for the worker so audit rows (slice 7 commit) attribute
+// to a real user without needing a request context.
+//
+// SECURITY DEFINER count stays at 4. Every import endpoint is post-
+// authentication and post-tenant; the worker establishes tenant context
+// from job.data.schoolId via withTenant() — see apps/api/src/common/queue/
+// tenant-worker.ts for the wrapper that makes this invariant mechanical.
+model ImportJob {
+  id              String          @id @default(uuid())
+  schoolId        String          @map("school_id")
+  type            ImportJobType
+  status          ImportJobStatus @default(PENDING)
+  sourceFileUrl   String          @map("source_file_url")
+  columnMapping   Json?           @map("column_mapping")
+  totalRows       Int             @default(0) @map("total_rows")
+  validRows       Int             @default(0) @map("valid_rows")
+  invalidRows     Int             @default(0) @map("invalid_rows")
+  committedRows   Int             @default(0) @map("committed_rows")
+  errorReportUrl  String?         @map("error_report_url")
+  previewSnapshot Json?           @map("preview_snapshot")
+  failedReason    String?         @map("failed_reason")
+  createdBy       String          @map("created_by")
+  createdAt       DateTime        @default(now()) @map("created_at")
+  completedAt     DateTime?       @map("completed_at")
+
+  @@index([schoolId])
+  @@index([schoolId, status])
+  @@map("import_jobs")
+}
+
+enum ImportJobType {
+  STUDENTS
+  GUARDIANS
+  TEACHERS
+}
+
+enum ImportJobStatus {
+  PENDING
+  VALIDATING
+  READY
+  COMMITTING
+  COMPLETED
+  FAILED
+}
