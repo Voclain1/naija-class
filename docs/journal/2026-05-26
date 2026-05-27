@@ -10,3 +10,29 @@ synchronous row-cap parse, storage persist, enqueue validate). Then cp3
 
 ## Tomorrow's first task
 - (fill at end of day)
+
+## Done today
+- Slice 6 cp2 (upload + mapping endpoints, PR #15) + cp3 (validate
+  engine, PR #16) both merged. CSV import is upload→map→validate working
+  end-to-end; only cp4 (wizard UI) left to close slice 6.
+
+## cp3 — the validation engine (the hard one), done right
+- Strict date parsing per dateFormat (05/06 under DD/MM = 5 June, not
+  6 May; invalid dates = bad rows, no silent coercion)
+- Both dedups: in-file (2nd occurrence points at 1st) + external (one
+  batched findMany vs roster)
+- Row-numbering matches Excel (header=0, data=1, blanks hold slot but
+  uncounted) — error report is admin-actionable
+- Retryable-vs-fatal taxonomy (UnrecoverableError fails fast, transient
+  retries 3x)
+- Proven against an 11-row messy fixture: 4 good / 5 bad, correct row
+  numbers + messages. CI-verified.
+
+## Deferred (added)
+- CSV error report shows redundant parse+required errors on one field;
+  de-dupe for cleaner output (polish, not correctness)
+
+## Tomorrow's first task
+- Slice 6 cp4 — the import wizard UI (upload → map columns → preview
+  good/bad → download bad rows). Closes slice 6. Light build, but the
+  manual browser pass is the gate — walk a real messy CSV through it.
