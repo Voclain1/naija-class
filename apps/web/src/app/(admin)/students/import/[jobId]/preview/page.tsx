@@ -14,6 +14,7 @@ import {
   deleteImportJob,
   downloadBadRowsCsv,
   getImportJob,
+  triggerImportCommit,
 } from "@/lib/imports/api";
 import { clearUploadResponse } from "@/lib/imports/session";
 
@@ -37,6 +38,7 @@ export default function ImportStudentsPreviewPage() {
   const [error, setError] = useState<string | null>(null);
   const [downloading, setDownloading] = useState(false);
   const [aborting, setAborting] = useState(false);
+  const [committing, setCommitting] = useState(false);
   const [elapsed, setElapsed] = useState(0);
 
   // Hold the latest status in a ref so the polling effect can re-arm
@@ -114,6 +116,29 @@ export default function ImportStudentsPreviewPage() {
       setDownloading(false);
     }
   }, [jobId]);
+
+  const onCommit = useCallback(async () => {
+    setCommitting(true);
+    try {
+      await triggerImportCommit(jobId);
+      // Step-1's sessionStorage headers/sampleRows are no longer needed
+      // — the /done page is jobId-driven. Clear so a refresh of step 2
+      // doesn't reuse a stale snapshot for an already-committed job.
+      clearUploadResponse(jobId);
+      router.push(`/students/import/${jobId}/done`);
+    } catch (e) {
+      // Defensive — the READY status guard makes this unreachable in
+      // normal flow, but if the worker raced ahead (or another tab
+      // committed first) the user gets a clear toast and stays on
+      // the preview screen rather than seeing an empty /done page.
+      toast.error(
+        e instanceof ApiError
+          ? e.message
+          : "Could not start the import. Try again.",
+      );
+      setCommitting(false);
+    }
+  }, [jobId, router]);
 
   const onAbort = useCallback(async () => {
     if (
@@ -235,16 +260,24 @@ export default function ImportStudentsPreviewPage() {
   }
 
   if (job.status === "COMMITTING" || job.status === "COMPLETED") {
+    // The job already moved past preview — route the admin to the /done
+    // screen which is the canonical home for COMMITTING/COMPLETED state.
+    // Renders an intermediate panel in case the redirect hasn't fired yet
+    // (Server Components hydration race) or is blocked.
     return (
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
         <Header step={3} title="Import already in progress" />
         <div className="rounded-md border bg-muted/30 p-4 text-sm">
           This import is{" "}
-          <strong>{job.status === "COMMITTING" ? "committing" : "complete"}</strong>
-          . Commit-time UI lands in the next slice.
+          <strong>
+            {job.status === "COMMITTING" ? "committing" : "complete"}
+          </strong>
+          .
         </div>
-        <Button asChild variant="outline">
-          <Link href="/students">Back to roster</Link>
+        <Button asChild>
+          <Link href={`/students/import/${jobId}/done`}>
+            Go to results →
+          </Link>
         </Button>
       </div>
     );
@@ -331,8 +364,9 @@ export default function ImportStudentsPreviewPage() {
             {job.validRows === 1 ? "student" : "students"}?
           </p>
           <p className="text-xs text-muted-foreground">
-            Commit lands in the next slice. For now, you can download the
-            bad-rows CSV and clean it up in Excel.
+            {job.invalidRows > 0
+              ? "The rows in “Needs fixing” will be skipped. You can still download them and re-import later."
+              : "Every row looks good. Commit when you're ready."}
           </p>
         </div>
         <div className="flex gap-2">
@@ -340,19 +374,27 @@ export default function ImportStudentsPreviewPage() {
             type="button"
             variant="ghost"
             onClick={onAbort}
-            disabled={aborting}
+            disabled={aborting || committing}
           >
             <X className="h-4 w-4" />
             {aborting ? "Discarding…" : "Discard import"}
           </Button>
           <Button
             type="button"
-            disabled
-            title="Available in slice 7"
-            aria-disabled
+            onClick={onCommit}
+            disabled={committing || aborting || job.validRows === 0}
+            title={
+              job.validRows === 0
+                ? "No rows passed validation — fix the bad rows and re-upload."
+                : undefined
+            }
           >
-            Commit {job.validRows}{" "}
-            {job.validRows === 1 ? "student" : "students"}
+            {committing && <Loader2 className="h-4 w-4 animate-spin" />}
+            {committing
+              ? "Starting import…"
+              : `Commit ${job.validRows} ${
+                  job.validRows === 1 ? "student" : "students"
+                }`}
           </Button>
         </div>
       </div>
@@ -364,7 +406,7 @@ function Header({ step, title }: { step: number; title: string }) {
   return (
     <header className="flex flex-col gap-1">
       <p className="text-xs uppercase tracking-wide text-muted-foreground">
-        Step {step} of 3
+        Step {step} of 4
       </p>
       <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
     </header>
