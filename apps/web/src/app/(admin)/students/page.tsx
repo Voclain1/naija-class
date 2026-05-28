@@ -1,6 +1,6 @@
 "use client";
 
-import { Loader2, UserPlus } from "lucide-react";
+import { FileUp, Loader2, UserPlus } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
@@ -81,16 +81,24 @@ export default function StudentsRosterPage() {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Students</h1>
           <p className="text-sm text-muted-foreground">
-            Your school&apos;s roster. Add students one-by-one here; bulk CSV
-            import lands in a later slice.
+            Your school&apos;s roster. Add students one-by-one or import them
+            in bulk from a CSV.
           </p>
         </div>
-        <Button asChild>
-          <Link href="/students/new">
-            <UserPlus className="mr-1 h-4 w-4" />
-            Add student
-          </Link>
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button asChild variant="outline">
+            <Link href="/students/import">
+              <FileUp className="mr-1 h-4 w-4" />
+              Import students
+            </Link>
+          </Button>
+          <Button asChild>
+            <Link href="/students/new">
+              <UserPlus className="mr-1 h-4 w-4" />
+              Add student
+            </Link>
+          </Button>
+        </div>
       </header>
 
       <StudentsListControls
@@ -119,15 +127,23 @@ export default function StudentsRosterPage() {
           <p className="text-sm text-muted-foreground">
             {search || status
               ? "Try clearing the search or status filter."
-              : "Add your first student — bulk CSV import is arriving in a later slice."}
+              : "Add your first student — or import a roster from CSV."}
           </p>
           {!search && !status && (
-            <Button asChild className="mt-2">
-              <Link href="/students/new">
-                <UserPlus className="mr-1 h-4 w-4" />
-                Add student
-              </Link>
-            </Button>
+            <div className="mt-2 flex flex-wrap justify-center gap-2">
+              <Button asChild variant="outline">
+                <Link href="/students/import">
+                  <FileUp className="mr-1 h-4 w-4" />
+                  Import students
+                </Link>
+              </Button>
+              <Button asChild>
+                <Link href="/students/new">
+                  <UserPlus className="mr-1 h-4 w-4" />
+                  Add student
+                </Link>
+              </Button>
+            </div>
           )}
         </div>
       ) : (
