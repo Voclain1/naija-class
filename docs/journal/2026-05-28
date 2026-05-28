@@ -1,0 +1,12 @@
+# 2026-05-28
+
+## Today's outcome
+Slice 6 cp4 — CSV import wizard UI (upload → map columns → preview
+good/bad → download bad rows). Closes slice 6. Manual browser pass is
+the gate.
+
+## Decisions made
+- (capture as the day unfolds)
+
+## Tomorrow's first task
+- (fill at end of day)
