@@ -81,3 +81,146 @@ the gate.
   post-commit error-report CSV, the `/students/import/[jobId]/done`
   completion screen, and the audit row (`import.commit`) per spec.
   Phase-1 acceptance bar test 6 passes after this. ~2 days.
+
+---
+
+## Slice 7 (later same day) — CSV import COMMIT + error report
+
+### Done today
+- **cp1 — commit worker + endpoints + DTO** (PR follow-up):
+  - `workers/commit.handler.ts` — 9-step pipeline. Load + status guard
+    (accepts COMMITTING so BullMQ retries resume cleanly), re-read
+    source.csv, re-run `runValidationEngine` (external dedup at
+    commit-time pre-empts race-condition collisions), per-row
+    `withTenant(...)` create loop (each row its own tx — partial
+    success), P2002 routed through `describeCommitFailure` to the
+    `commitErrors` accumulator, merged error report persisted to
+    `schools/<id>/imports/<jobId>/error-report.csv`, audit row.
+  - `workers/imports.processor.ts` (renamed from `validate.processor.ts`)
+    — single `@Processor` class on `IMPORTS_QUEUE`, dispatches by
+    `job.name` to `handleValidate` or `handleCommit`. **Divergence
+    from plan, surfaced in cp1 report:** two `@Processor` classes on
+    one queue would have spawned two competing BullMQ Workers
+    (confirmed in `@nestjs/bullmq` `bull.explorer.js` source),
+    randomly load-balancing jobs and throwing on the wrong handler
+    ~50% of the time. Renamed + dispatcher is the correct shape;
+    slice 8 adds GUARDIANS/TEACHERS as more branches in the same
+    dispatcher, not new `@Processor` classes.
+  - Service: `triggerCommit` (READY → COMMITTING + enqueue + `import.commit`
+    audit), `generateErrorReportCsv` (reads persisted bytes from
+    storage + `import.error-report.download` audit), `IMPORT_JOB_SELECT.errorReportUrl`,
+    `toImportJobDto.hasErrorReport`.
+  - Controller: `POST /imports/:jobId/commit` (202) + `GET /imports/:jobId/error-report.csv`
+    (same response shape as bad-rows.csv).
+  - Types: `ImportCommitAcceptedResponse`, `ImportJobDto.hasErrorReport`
+    (boolean derived from `errorReportUrl !== null` — the path itself
+    stays server-side).
+  - Storage: new `"import-error-report"` kind in the discriminated union.
+  - Queue: new `IMPORTS_JOB_COMMIT` constant.
+  - 13 new tests across `commit.handler.spec.ts` (happy, partial,
+    every-row-collides, idempotency, `describeCommitFailure` mapping)
+    and `imports.service.spec.ts` (triggerCommit happy, duplicate-commit
+    409, PENDING reject, 404, ForbiddenError; generateErrorReportCsv
+    happy, JOB_NOT_COMPLETED, NO_ERROR_REPORT, ERROR_REPORT_MISSING,
+    404; `hasErrorReport` projection true/false). Suite: 349 pass.
+  - Curl proof end-to-end: signup → upload → mapping → READY (3 valid,
+    1 invalid) → commit → COMPLETED → error-report.csv → DB confirms
+    only the 3 good rows landed → 5 audit rows in expected order
+    (`import.upload`, `import.mapping`, `import.commit`,
+    `student.import.commit`, `import.error-report.download`).
+
+- **cp2 — UI: enable Commit button + /done results page (THIS slice
+  close)**:
+  - `lib/imports/api.ts` — added `triggerImportCommit(jobId)` (JSON
+    POST → `ImportCommitAcceptedResponse`) and `downloadErrorReportCsv(jobId)`
+    (blob-fetch + `<a download>` click pattern, same as bad-rows).
+    Refactored the shared download path into `downloadCsvByPath()`
+    helper rather than duplicate the auth-header + blob + filename
+    parsing.
+  - `preview/page.tsx` — removed the disabled state + "Available in
+    slice 7" tooltip on the Commit button. Wired `onCommit` →
+    `triggerImportCommit` → `clearUploadResponse(jobId)` →
+    `router.push('/done')`. Defensive ApiError toast if the
+    READY-status guard ever races. Footer copy reworded to reflect
+    the live commit. The "COMMITTING or COMPLETED" branch on preview
+    now routes to `/done` instead of `/students`. Disabled when
+    `validRows === 0` (no rows to commit).
+  - NEW `done/page.tsx` — jobId-driven, no sessionStorage. Same
+    poll-self-rearming pattern as preview (setTimeout, not
+    setInterval, so a slow API doesn't pile up requests). Branches:
+    - COMMITTING: skeleton + elapsed timer ("Importing N students…").
+    - COMPLETED: green panel "Imported N students." with sub-lines
+      for `validRows − committedRows` (commit-time failures) and
+      `invalidRows` (validate-time skipped). `hasErrorReport` →
+      "Download error report" CTA. Primary "View roster" (→
+      `/students`) + secondary "Import another file" (→
+      `/students/import`).
+    - FAILED: error panel with `failedReason` + "Back to import" CTA.
+    - PENDING/VALIDATING/READY (admin landed too early via direct
+      URL): "Import isn't ready yet" panel + "Back to preview" CTA.
+  - Wizard step counters updated everywhere from "Step N of 3" to
+    "Step N of 4" now that step 4 exists.
+
+### Decisions made
+- **One `@Processor` class for the imports queue, dispatch by
+  `job.name`.** Divergence from the original plan text ("register
+  `ImportsCommitProcessor` alongside") that would have shipped a
+  broken queue. The dispatcher shape is the @nestjs/bullmq-correct
+  pattern for multi-job-name queues. Future slice 8 grows the
+  dispatch, not the class count.
+- **Re-validate at commit time** (rather than trusting `previewSnapshot`).
+  External dedup against `students.admissionNumber` makes BullMQ
+  retry idempotency trivial — already-committed rows are excluded
+  before the per-row loop touches them.
+- **Per-row `withTenant(...)` transaction**, not the `tenantWorker`
+  wrapper (which opens one outer tx). Prisma doesn't nest
+  transactions, and partial-success commit requires per-row commit
+  boundaries. The commit handler does its own schoolId check at the
+  top and calls `withTenant` directly per step.
+- **`hasErrorReport: boolean`** in the DTO rather than exposing the
+  storage path. The download flows through `GET
+  /imports/:jobId/error-report.csv` so the audit row lands per
+  download (NDPR — PII export).
+- **Two complementary audit actions** for commit: `import.commit`
+  (service-written on POST, has IP) and `student.import.commit`
+  (worker-written on completion, has counts). Matches
+  [phase-1.md:1170](docs/modules/phase-1.md#L1170) +
+  [phase-1.md:1158](docs/modules/phase-1.md#L1158).
+- **"Every row collides" routes through validate-bad pile** (re-validate
+  catches them at external dedup), not through per-row commitErrors
+  with "Could not commit". The user's framing was `commitErrorCount=N`;
+  the actual impl is smarter — re-validate pre-empts so the count
+  is `validateBadCount=N` and the bad-rows.csv reason reads "Already
+  exists in roster". The load-bearing invariant (COMPLETED-with-0
+  vs FAILED) is preserved and tested explicitly.
+
+### Build verification
+- API: `pnpm typecheck` clean, `pnpm lint` clean (basePrisma stays
+  out of production code; commit handler uses `withTenant` only),
+  `pnpm test` green at **349/349** (unchanged from cp1 — cp2 is
+  web-only, no API tests touched).
+- Web: `pnpm typecheck` clean, `pnpm lint` clean.
+- SECURITY DEFINER count: **4** — unchanged. CLAUDE.md inventory
+  table not modified.
+- Manual browser pass = the gate. Handing back for walkthrough.
+
+### Slice 7 close
+- Phase-1.md "CSV import wizard" section reconciled in place to
+  reflect the live 4-step wizard (slice-6-era prose about "step 3
+  disabled" replaced; step 4 prose covers polling, results panel,
+  error-report download, CTAs).
+- No new deferred.md entries from slice 7 (cp1 + cp2). The slice-6
+  "expose CSV headers on GET /imports/:jobId" entry already
+  mentioned step 4 as a possible trigger — confirmed unaffected
+  because /done is jobId-driven and doesn't need bookmark-resume of
+  the headers/sampleRows state.
+- Slice 7 done end-to-end: cp1 commit worker + endpoints + DTO (PR
+  follow-up) + cp2 wizard close. **Phase-1 acceptance bar test 6
+  passes after this** (admin uploads 250 rows, 8 bad, downloads
+  error report, fixes in Excel, re-uploads — all UI paths exist).
+
+### Tomorrow's first task
+- Slice 8 — Guardian + Teacher imports. Reuses the import shell
+  with different Zod schemas + different post-insert hooks
+  (Guardian-link / Invitation-create). Mostly schema swaps; the
+  heavy lifting is already in slices 6 + 7. ~2 days per spec.

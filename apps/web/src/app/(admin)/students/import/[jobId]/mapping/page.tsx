@@ -266,7 +266,7 @@ export default function ImportStudentsMappingPage() {
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-6">
       <header className="flex flex-col gap-2">
         <p className="text-xs uppercase tracking-wide text-muted-foreground">
-          Step 2 of 3
+          Step 2 of 4
         </p>
         <h1 className="text-2xl font-semibold tracking-tight">
           Map your columns

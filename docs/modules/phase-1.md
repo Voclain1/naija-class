@@ -975,28 +975,20 @@ All new screens live under `apps/web/src/app/(admin)/` (admin/owner) or `apps/we
 
 ### CSV import wizard (admin)
 
-`/students/import` — a 3-step wizard in slice 6, growing to 4 in slice 7.
-
-Reconciled in slice 6 cp4: the original spec described 4 routes including
-`/done`, with commit-time UI in step 3 and a separate completion screen.
-Slice 6's boundary is upload → mapping → READY preview (commit lives in
-slice 7), so cp4 ships steps 1–3 and the commit CTA on step 3 is rendered
-DISABLED with a "Available in slice 7" tooltip. The `/done` route arrives
-with slice 7 alongside `POST /imports/:jobId/commit`. The bad-rows CSV
-download is on step 3 today (it's the only useful escape hatch while
-commit is gated) and stays there post-slice-7 — `/done` adds the
-*post-commit* error report on top.
+`/students/import` — a 4-step wizard. Slice 6 cp4 shipped steps 1–3 with
+the commit CTA disabled; slice 7 cp2 enabled the commit CTA and added
+step 4 (`/done`).
 
 1. `/students/import` — file picker, drag-and-drop, "Download template CSV" link (static file in `apps/web/public/students-import-template.csv`). On upload → server returns `jobId` + headers + sampleRows; the wizard parks headers/sampleRows in sessionStorage and navigates to step 2. Inline error states: `FILE_TOO_LARGE`, `TOO_MANY_ROWS`, `INVALID_CSV`, `AMBIGUOUS_HEADERS`, `INVALID_UPLOAD`.
 2. `/students/import/[jobId]/mapping` — GET job to verify status, hydrate headers/sampleRows from sessionStorage. Two-column table (CSV header + first 3 values | target-field dropdown), with the synonym table (`apps/web/src/lib/imports/synonyms.ts`) pre-filling guesses (Surname→lastName, Adm No→admissionNumber, DOB→dateOfBirth, Sex→gender, etc.). Date-format radio (DD/MM/YYYY default for Nigeria | MM/DD/YYYY | YYYY-MM-DD) + blank-handling radio (skip | error). "Validate" CTA disabled until every required field is mapped exactly once → POST mapping → navigate to preview. Abort → DELETE job → /students/import.
-3. `/students/import/[jobId]/preview` — GET job; if `VALIDATING`, poll every 2s (stop on READY / FAILED). Skeleton + elapsed timer while validating. On READY: two panels — "Ready to import (N)" first 50 good rows (admission no, name, DOB, gender) + total; "Needs fixing (M)" first 50 bad rows + per-row error messages + "Download bad rows" link (GET `/imports/:jobId/bad-rows.csv`). "Commit N students" button DISABLED with tooltip "Available in slice 7". Abort → DELETE → /students/import. On FAILED: error panel with `failedReason`.
-4. *(slice 7)* `/students/import/[jobId]/done` — completion screen: "Imported 242 students. 8 rows skipped." with the final error-report CSV download.
+3. `/students/import/[jobId]/preview` — GET job; if `VALIDATING`, poll every 2s (stop on READY / FAILED). Skeleton + elapsed timer while validating. On READY: two panels — "Ready to import (N)" first 50 good rows (admission no, name, DOB, gender) + total; "Needs fixing (M)" first 50 bad rows + per-row error messages + "Download bad rows" link (GET `/imports/:jobId/bad-rows.csv`). "Commit N students" button POSTs `/imports/:jobId/commit`, clears the upload sessionStorage entry, and routes to step 4. Disabled when `validRows === 0` (no rows to commit). Abort → DELETE → /students/import. On FAILED: error panel with `failedReason`. If the admin lands here with status already COMMITTING or COMPLETED (post-commit refresh or back-button), the page renders a "Go to results →" panel routing to step 4.
+4. `/students/import/[jobId]/done` — completion screen. GET job on mount; if `COMMITTING`, poll every 2s (stop on COMPLETED / FAILED) with the same skeleton + elapsed timer as step 3. On COMPLETED: "Imported N students." headline with sub-lines for commit-time failures (validRows − committedRows) and validate-time skipped rows (invalidRows). If `hasErrorReport`, a "Download error report" CTA wired to GET `/imports/:jobId/error-report.csv`. CTAs: "View roster" (primary → /students) + "Import another file" (secondary → /students/import). On FAILED: error panel with `failedReason` + "Back to import" CTA. Purely jobId-driven — no sessionStorage dependency.
 
 States:
 - During step 3 polling (VALIDATING): centered spinner + "Validating N rows…" with elapsed timer.
-- During step 4 polling (`COMMITTING`): same pattern. *(slice 7)*
+- During step 4 polling (`COMMITTING`): centered spinner + "Importing N students…" with elapsed timer (same pattern as step 3).
 - Network error: transient errors keep polling silently; hard errors (404, mapping-incoherent) surface as an inline panel with a "Back to upload" CTA.
-- Abort: button in steps 2 and 3 that calls `DELETE /imports/:jobId` and routes back to `/students/import`. During VALIDATING the abort button is disabled (the API would 409); admins wait for READY before discarding.
+- Abort: button in steps 2 and 3 that calls `DELETE /imports/:jobId` and routes back to `/students/import`. During VALIDATING the abort button is disabled (the API would 409); admins wait for READY before discarding. Step 4 has no abort — by that point the worker has already started inserting rows, and `DELETE /imports/:jobId` on a COMMITTING job 409s anyway.
 
 Headers-on-GET note: cp4 bridges headers + sample rows from step 1 to
 step 2 via sessionStorage rather than re-exposing them on the GET DTO.
