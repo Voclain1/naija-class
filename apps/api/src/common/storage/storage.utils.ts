@@ -23,7 +23,12 @@ export function pathFor(schoolId: string, key: StorageObjectKey): string {
       }
       return `schools/${schoolId}/imports/${key.jobId}/source.csv`;
     }
-    // slice 7 will add error-report
+    case "import-error-report": {
+      if (!UUID_RE.test(key.jobId)) {
+        throw new Error(`storage: jobId is not a UUID: ${redact(key.jobId)}`);
+      }
+      return `schools/${schoolId}/imports/${key.jobId}/error-report.csv`;
+    }
   }
 }
 

@@ -23,6 +23,7 @@ import {
 import { FileInterceptor } from "@nestjs/platform-express";
 import {
   ValidationError,
+  type ImportCommitAcceptedResponse,
   type ImportJobDto,
   type ImportMappingAcceptedResponse,
   type ImportUploadResponse,
@@ -168,6 +169,52 @@ export class ImportsController {
     @Res() res: Response,
   ): Promise<void> {
     const { filename, content } = await this.service.generateBadRowsCsv(
+      authCtx,
+      jobId,
+      {
+        ipAddress: ip,
+        userAgent: req.header("user-agent") ?? null,
+      },
+    );
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${filename}"`,
+    );
+    res.send(content);
+  }
+
+  // POST /imports/:jobId/commit — flips READY → COMMITTING, enqueues the
+  // commit worker, returns 202. The wizard polls GET /imports/:jobId for
+  // status === COMPLETED / FAILED. Same async-202 shape as POST /mapping.
+  @Post(":jobId/commit")
+  @HttpCode(202)
+  async commit(
+    @CurrentUser() authCtx: AuthContext,
+    @Param("jobId", new ParseUUIDPipe()) jobId: string,
+    @Ip() ip: string,
+    @Req() req: Request,
+  ): Promise<ImportCommitAcceptedResponse> {
+    return this.service.triggerCommit(authCtx, jobId, {
+      ipAddress: ip,
+      userAgent: req.header("user-agent") ?? null,
+    });
+  }
+
+  // GET /imports/:jobId/error-report.csv — serves the persisted error
+  // report from storage. Audit row before bytes (NDPR — PII export).
+  // 409 if the job isn't COMPLETED, or if it completed with no errors
+  // (NO_ERROR_REPORT), or if the file is gone from storage
+  // (ERROR_REPORT_MISSING).
+  @Get(":jobId/error-report.csv")
+  async downloadErrorReportCsv(
+    @CurrentUser() authCtx: AuthContext,
+    @Param("jobId", new ParseUUIDPipe()) jobId: string,
+    @Ip() ip: string,
+    @Req() req: Request,
+    @Res() res: Response,
+  ): Promise<void> {
+    const { filename, content } = await this.service.generateErrorReportCsv(
       authCtx,
       jobId,
       {

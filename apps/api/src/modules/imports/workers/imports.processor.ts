@@ -9,48 +9,40 @@ import type {
 } from "@school-kit/types";
 
 import {
+  IMPORTS_JOB_COMMIT,
   IMPORTS_JOB_VALIDATE,
   IMPORTS_QUEUE,
   tenantWorker,
 } from "../../../common/queue";
 import { StorageService } from "../../../common/storage";
-import type { ValidateJobData } from "../imports.service";
+import type { CommitJobData, ValidateJobData } from "../imports.service";
 import {
   EngineFatalError,
   parsePersistedMapping,
   runValidationEngine,
 } from "../validate.engine";
+import { runCommitHandler } from "./commit.handler";
 
-// cp3 real validate processor. Replaces the cp2 stub body — the
-// tenantWorker wrapper + queue registration stay; only the per-job logic
-// changes.
+// ImportsProcessor — sole BullMQ entry for IMPORTS_QUEUE.
 //
-// Pipeline per job:
-//   1. Load ImportJob row (must be in VALIDATING — we only ever enqueue
-//      one validate job per row, and the cp2 mapping endpoint sets the
-//      status before enqueuing).
-//   2. Stream source.csv from storage (5 MB cap was enforced at upload;
-//      we read the whole thing into a Buffer).
-//   3. Run runValidationEngine (parsing + per-row validation + in-file
-//      dedup + ONE external dedup query). The engine throws
-//      EngineFatalError for unrecoverable inputs.
-//   4. Update ImportJob: status=READY, totalRows, validRows, invalidRows,
-//      previewSnapshot { good: first 50, bad: first 50 }.
+// IMPORTANT: there is exactly ONE @Processor class on IMPORTS_QUEUE.
+// @nestjs/bullmq spawns one BullMQ Worker per @Processor class
+// (see bull.explorer.js / handleProcessor()). If two @Processor classes
+// share a queue, BullMQ load-balances jobs across them, so a `commit`
+// job would land on the wrong Worker ~half the time. Dispatch by
+// `job.name` here is the correct pattern for multi-job-name queues.
+// When slice 8 adds GUARDIANS / TEACHERS support it goes through more
+// branches in this same dispatch, not a second @Processor class.
 //
-// Retryable vs fatal:
-//   - EngineFatalError → throw UnrecoverableError so BullMQ skips the
-//     remaining 2 attempts. The FailedJobEvent listener at the bottom
-//     of this file writes ImportJob.status=FAILED with failedReason.
-//   - Anything else (DB transient, Redis blip, etc.) → bubble up so
-//     BullMQ retries per the queue's `attempts: 3` config.
-//
-// All DB work runs inside withTenant via the tenantWorker wrapper —
-// FORCE RLS scopes every read/write to the school. No basePrisma here;
-// the lint rule enforces this.
+// Handlers live in sibling files (`validate.engine.ts` for validate
+// logic; `commit.handler.ts` for commit logic). This file is the
+// orchestration seam: it owns `process()` dispatch, the tenant guard,
+// and the FailedJobEvent listener. The handlers are pure (or near-pure)
+// functions so they can be tested without a Job/Worker harness.
 
 @Processor(IMPORTS_QUEUE)
-export class ImportsValidateProcessor extends WorkerHost {
-  private readonly logger = new Logger(ImportsValidateProcessor.name);
+export class ImportsProcessor extends WorkerHost {
+  private readonly logger = new Logger(ImportsProcessor.name);
 
   constructor(private readonly storage: StorageService) {
     super();
@@ -60,9 +52,20 @@ export class ImportsValidateProcessor extends WorkerHost {
     if (job.name === IMPORTS_JOB_VALIDATE) {
       return this.handleValidate(job as Job<ValidateJobData>);
     }
+    if (job.name === IMPORTS_JOB_COMMIT) {
+      return this.handleCommit(job as Job<CommitJobData>);
+    }
     throw new Error(`unknown job name on imports queue: ${job.name}`);
   }
 
+  // ---------------------------------------------------------------------
+  // Validate handler — runs the engine, persists previewSnapshot + counts,
+  // flips status VALIDATING → READY. Whole job runs inside one withTenant
+  // transaction (tenantWorker wrapper); the engine + the update share it.
+  //
+  // Retryable vs fatal: EngineFatalError → UnrecoverableError so BullMQ
+  // skips the remaining attempts. Anything else bubbles for retry.
+  // ---------------------------------------------------------------------
   private readonly handleValidate = tenantWorker<ValidateJobData, void>(
     async (job, db) => {
       const { jobId, schoolId } = job.data;
@@ -90,14 +93,12 @@ export class ImportsValidateProcessor extends WorkerHost {
         return;
       }
       if (existing.type !== "STUDENTS") {
-        // cp3 only handles STUDENTS. Slice 8 adds GUARDIANS/TEACHERS.
+        // Slice 8 adds GUARDIANS/TEACHERS.
         throw new UnrecoverableError(
           `validate: import ${jobId} type ${existing.type} is not handled in slice 6`,
         );
       }
 
-      // Mapping was validated at write time, but defensively re-parse.
-      // A corrupted JSON column would throw EngineFatalError below.
       let mapping;
       try {
         mapping = parsePersistedMapping(existing.columnMapping);
@@ -108,9 +109,6 @@ export class ImportsValidateProcessor extends WorkerHost {
         throw e;
       }
 
-      // Read source.csv. A missing file is a fatal error — the upload
-      // path always writes it, so the only way to see this is manual
-      // tampering with the storage backend. Don't retry — just FAIL.
       let sourceBytes: Buffer;
       try {
         sourceBytes = await this.storage.get(schoolId, {
@@ -124,8 +122,6 @@ export class ImportsValidateProcessor extends WorkerHost {
         );
       }
 
-      // Run the engine. EngineFatalError → UnrecoverableError so BullMQ
-      // doesn't burn its retry budget on a corrupt file.
       let result;
       try {
         result = await runValidationEngine(
@@ -162,10 +158,6 @@ export class ImportsValidateProcessor extends WorkerHost {
           totalRows: result.totalRows,
           validRows: result.good.length,
           invalidRows: result.bad.length,
-          // Prisma's Json input type is JsonNull | InputJsonValue, neither
-          // of which an unconstrained Record satisfies directly. We've
-          // shape-checked previewSnapshot ourselves; cast through Prisma's
-          // InputJsonValue to satisfy the column.
           previewSnapshot: previewSnapshot as unknown as Prisma.InputJsonValue,
         },
       });
@@ -177,38 +169,70 @@ export class ImportsValidateProcessor extends WorkerHost {
   );
 
   // ---------------------------------------------------------------------
-  // FailedJobEvent listener. BullMQ fires this on every failure (each
-  // attempt) — we only want to write FAILED on the LAST attempt (or
-  // immediately for UnrecoverableError). For UnrecoverableError, BullMQ
-  // skips remaining retries and the failed event fires once with
-  // attemptsMade === 1 (or whatever attempt threw); detect that via the
-  // error name.
+  // Commit handler — re-streams source.csv, re-runs the engine (so
+  // external dedup picks up any rows committed since validate ran —
+  // including rows committed by a previous attempt of THIS worker after
+  // a crash), inserts each good row in its OWN withTenant transaction,
+  // then writes the merged error report to storage.
+  //
+  // CRITICAL: commit does NOT use tenantWorker. tenantWorker opens a
+  // single outer withTenant() transaction; per-row commits need their
+  // own transaction boundaries (otherwise one row's collision rolls
+  // back the whole batch). Prisma does not nest transactions, so the
+  // commit handler calls withTenant directly per operation.
+  //
+  // Retry safety: on worker crash mid-import, BullMQ retries. The
+  // status-guard accepts `status === COMMITTING` (not strict-READY) so
+  // the retry resumes. The re-validate's external dedup excludes any
+  // students already committed by the previous attempt, so we never
+  // try to insert them twice.
+  // ---------------------------------------------------------------------
+  private readonly handleCommit = async (job: Job<CommitJobData>): Promise<void> => {
+    if (!job.data?.schoolId || !job.data?.jobId) {
+      // Same defensive shape as tenantWorker — a job missing tenancy
+      // data has no business running.
+      throw new Error(
+        `commit: job ${job.id ?? "(no id)"} missing schoolId/jobId; refusing to run`,
+      );
+    }
+    await runCommitHandler({
+      jobId: job.data.jobId,
+      schoolId: job.data.schoolId,
+      userId: job.data.userId,
+      storage: this.storage,
+      logger: this.logger,
+    });
+  };
+
+  // ---------------------------------------------------------------------
+  // FailedJobEvent listener — fires for BOTH validate and commit jobs
+  // (one Worker per Processor class, one listener for all job names).
+  // Writes ImportJob.status=FAILED on UnrecoverableError or on the last
+  // exhausted attempt. The failure reason format is the same for both
+  // job names; the entityId is jobId either way.
   // ---------------------------------------------------------------------
   @OnWorkerEvent("failed")
-  async onFailed(job: Job<ValidateJobData>, error: Error): Promise<void> {
-    // Defensive — a job with no schoolId in data can't be tenant-scoped.
-    // tenantWorker refuses these at process time; the failed event still
-    // fires, but we have nowhere safe to write.
+  async onFailed(
+    job: Job<ValidateJobData | CommitJobData>,
+    error: Error,
+  ): Promise<void> {
     if (!job.data?.schoolId || !job.data?.jobId) {
       this.logger.error(
-        `validate failed listener: job ${job.id} missing schoolId/jobId; cannot mark FAILED`,
+        `imports failed listener: job ${job.id} missing schoolId/jobId; cannot mark FAILED`,
       );
       return;
     }
 
     const isUnrecoverable =
       error?.name === "UnrecoverableError" ||
-      // bullmq instanceof check across the unbundled module boundary is
-      // unreliable on Windows pnpm setups; fall back to name match.
       error instanceof UnrecoverableError;
     const maxAttempts = job.opts?.attempts ?? 1;
     const exhausted = job.attemptsMade >= maxAttempts;
 
     if (!isUnrecoverable && !exhausted) {
-      // BullMQ will retry — don't write FAILED yet, or a later success
-      // would have to overwrite it. Log and bail.
+      // BullMQ will retry — don't write FAILED yet.
       this.logger.warn(
-        `validate: import ${job.data.jobId} attempt ${job.attemptsMade}/${maxAttempts} failed (retryable): ${error?.message}`,
+        `imports: ${job.name} ${job.data.jobId} attempt ${job.attemptsMade}/${maxAttempts} failed (retryable): ${error?.message}`,
       );
       return;
     }
@@ -226,7 +250,7 @@ export class ImportsValidateProcessor extends WorkerHost {
       });
     } catch (writeErr) {
       this.logger.error(
-        `validate: failed to mark import ${job.data.jobId} as FAILED: ${
+        `imports: failed to mark import ${job.data.jobId} as FAILED: ${
           writeErr instanceof Error ? writeErr.message : String(writeErr)
         }`,
       );
