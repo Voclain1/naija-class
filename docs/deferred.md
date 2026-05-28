@@ -116,6 +116,46 @@ Format:
   Trigger: roster latency on `/students?search=…` exceeds ~300ms in
   any pilot, OR first school crosses ~2 000 students.
 
+- [ ] Consolidate pre-tenant DB access into a single `common/pre-tenant/`
+  module. Slice 6 cp1 grew the `basePrisma` allowlist (the ESLint rule
+  that flags tenant-bypassing imports) to 8 paths — auth lookups, the
+  validate worker, the import-job updater, etc. Each one is justified
+  individually (no schoolId in scope yet, or a tenantWorker that sets
+  one before any DB call) but the breadth dulls the rule. Plan: move
+  every legitimate caller behind a single barrel that exports a
+  narrower `preTenantPrisma` handle, shrink the allowlist back to 1.
+  Trigger: when the count tops 10, or when slice 13 sweeps permissions
+  and we touch most of these files anyway.
+
+- [ ] Prisma 5.22 → 7.x major upgrade. Slice 6 cp1 pinned Prisma at
+  5.22 because the validate worker / pgvector pieces all green. Major
+  upgrades are a dedicated maintenance pass, not a feature rider —
+  schema-engine binary path changes and the rust-free pre-Prisma-6
+  client need to be retested against our RLS spec and tenant client.
+  Trigger: end-of-phase maintenance window, or when a security
+  advisory lands on 5.x.
+
+- [ ] CSV bad-rows CSV de-duplicates parse+required errors per field.
+  Slice 6 cp3 surfaces both the "could not parse 'X' as DD/MM/YYYY"
+  message AND the schema's "date of birth required" when a row's DOB
+  is malformed — both are correct individually, but for the admin
+  fixing rows in Excel the second one is noise. Engine should drop
+  the required-error when a pre-parse error already covered the same
+  field. Polish, not correctness. Trigger: first admin feedback that
+  the bad-rows CSV is hard to scan.
+
+- [ ] Expose CSV headers + sample rows on `GET /imports/:jobId` so the
+  mapping wizard resumes after a tab close / refresh / direct-URL paste.
+  Slice 6 cp4 bridges step 1 → step 2 via sessionStorage keyed by jobId
+  (see apps/web/src/lib/imports/session.ts) — typical wizard completion
+  is <5 minutes so the gap rarely bites, but a refresh in step 2 today
+  bounces the admin back to upload. Fix: add `headers: string[]` and
+  `sampleRows: Record<string,string>[]` to `ImportJobDto` for PENDING
+  jobs only (the slice 7 commit path doesn't need them). Cheaper than
+  reading the persisted source CSV on every poll. Trigger: first admin
+  who hits the "session expired" toast, or when the wizard gains a step
+  4 (done screen) that admins might bookmark.
+
 - [ ] Cross-cutting unsaved-changes guard for the class-subject matrix.
   Slice 3 cp3 ships a two-layer guard: `beforeunload` (catches close /
   refresh / URL-bar navigation) plus a `MatrixDirtyContext` that the

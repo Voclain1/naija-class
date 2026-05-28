@@ -5,8 +5,79 @@ Slice 6 cp4 — CSV import wizard UI (upload → map columns → preview
 good/bad → download bad rows). Closes slice 6. Manual browser pass is
 the gate.
 
+## Done today
+- Slice 6 cp4 built end-to-end:
+  - Step 1 `/students/import` — file picker + drag-drop, template CSV
+    download (static file at `apps/web/public/students-import-template.csv`),
+    POST `/imports/students/upload` (multipart). Inline error states for
+    FILE_TOO_LARGE / TOO_MANY_ROWS / INVALID_CSV / AMBIGUOUS_HEADERS /
+    INVALID_UPLOAD / NETWORK_ERROR.
+  - Step 2 `/students/import/[jobId]/mapping` — on-mount GET job +
+    sessionStorage-hydrated headers/sampleRows; synonym table
+    (`lib/imports/synonyms.ts`) pre-fills each dropdown; two-column
+    table (CSV header + first 3 values | target dropdown); date-format
+    + blank-handling selects; "Validate" disabled until every required
+    field is mapped exactly once. Abort → DELETE job → /students/import.
+  - Step 3 `/students/import/[jobId]/preview` — GET job, poll every 2s
+    while VALIDATING with an elapsed timer; on READY render two panels
+    (Ready to import / Needs fixing) with sample tables and a "Download
+    bad rows" CTA that triggers GET `/imports/:jobId/bad-rows.csv` as
+    an in-browser download. Commit CTA disabled with "Available in
+    slice 7" tooltip. FAILED branch surfaces `failedReason`.
+  - Typed API client at `apps/web/src/lib/imports/api.ts` — five
+    wrappers (uploadStudentsCsv, applyStudentsImportMapping, getImportJob,
+    deleteImportJob, downloadBadRowsCsv); upload uses raw fetch +
+    FormData (apiFetch forces JSON), bad-rows download fetches the blob
+    then triggers an in-memory `<a download>` click.
+  - "Import students" CTA on `/students` roster page (outline button
+    next to the existing "Add student" primary, mirrored on the
+    empty-state).
+  - Phase-1.md wizard section reconciled to match cp4's 3-step
+    boundary; sessionStorage-bridge trade-off captured in deferred.md
+    (alongside the slice-6 carry-overs: pre-tenant consolidation,
+    Prisma 5.22 → 7 upgrade, redundant parse+required error de-dupe).
+
 ## Decisions made
-- (capture as the day unfolds)
+- 3-step wizard, not 4. cp4 closes at the READY preview screen; the
+  `/done` route ships with slice 7 alongside POST commit. The commit
+  button is rendered but disabled with a tooltip pointing at slice 7,
+  so admins see what's coming without being able to fire it.
+- Bridge step 1 → step 2 via sessionStorage (jobId-keyed) rather than
+  extending the GET DTO with headers/sampleRows. Cheap, contained,
+  doesn't broaden the public surface for a fringe case. Refresh-resume
+  across browser sessions is deferred. The mapping page redirects
+  back to /students/import if sessionStorage is empty on mount.
+- Auto-guess mapping via a local synonym table (`lib/imports/synonyms.ts`)
+  rather than calling out to the server. Synonyms are case-insensitive
+  + punctuation-stripped; the auto-guess refuses to claim a target
+  field twice so the wizard never starts in a duplicate-mapping state.
+  Admin overrides every guess via the dropdown.
+- Bad-rows download uses an in-memory blob + `<a download>` click
+  (the only browser-native way to attach the Authorization header to a
+  binary download). The endpoint already returns the right
+  Content-Disposition; we parse the filename out of it and fall back
+  to a sensible default.
+
+## Build verification
+- `pnpm typecheck` green across all 11 packages.
+- `pnpm lint` green for web (3 `<a>`-vs-`Link` lints caught + fixed
+  before final).
+- `pnpm test` green: 329 tests / 24 files. cp4 is web-only — no api
+  tests touched, no test changes needed.
+- Manual browser pass = the gate. Handing back for walkthrough.
+
+## Slice 6 close
+- Phase-1.md "CSV import wizard" section reconciled in place.
+- Deferred.md grew by 4 entries: pre-tenant consolidation (cp1),
+  Prisma 5.22 → 7 upgrade (cp1), bad-rows CSV de-dup parse+required
+  errors (cp3), expose headers on GET /imports/:jobId (cp4).
+- Slice 6 done end-to-end: cp1 infra (PR #14) + cp2 endpoints (PR #15)
+  + cp3 validate engine (PR #16) + cp4 wizard UI. Commit + done
+  screen + Phase-1 acceptance test 6 land in slice 7.
 
 ## Tomorrow's first task
-- (fill at end of day)
+- Slice 7 — CSV import commit + error report. Picks up where cp4 left
+  off: re-validate on commit, per-row transactions under withTenant,
+  post-commit error-report CSV, the `/students/import/[jobId]/done`
+  completion screen, and the audit row (`import.commit`) per spec.
+  Phase-1 acceptance bar test 6 passes after this. ~2 days.
