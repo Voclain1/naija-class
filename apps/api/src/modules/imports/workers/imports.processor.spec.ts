@@ -11,7 +11,7 @@ import { FilesystemStorageDriver } from "../../../common/storage/filesystem-stor
 import { StorageService } from "../../../common/storage/storage.service";
 import { AuthService } from "../../auth/auth.service";
 import { ImportsService, type ValidateJobData } from "../imports.service";
-import { ImportsValidateProcessor } from "./validate.processor";
+import { ImportsProcessor } from "./imports.processor";
 
 // Integration spec for the cp3 validate processor.
 //
@@ -77,7 +77,7 @@ function fakeJob(data: ValidateJobData): Job<ValidateJobData> {
   } as unknown as Job<ValidateJobData>;
 }
 
-describe("ImportsValidateProcessor (cp3)", () => {
+describe("ImportsProcessor — validate handler (slice 6 cp3)", () => {
   const runId = Math.random().toString(36).slice(2, 8);
   const reqCtx = { ipAddress: "127.0.0.1", userAgent: "vitest" };
   const authService = new AuthService();
@@ -86,7 +86,7 @@ describe("ImportsValidateProcessor (cp3)", () => {
   let storage: StorageService;
   let mockQueue: ReturnType<typeof makeMockQueue>;
   let importsService: ImportsService;
-  let processor: ImportsValidateProcessor;
+  let processor: ImportsProcessor;
 
   beforeAll(() => {
     storageRoot = mkdtempSync(join(tmpdir(), "schoolkit-validate-spec-"));
@@ -94,7 +94,7 @@ describe("ImportsValidateProcessor (cp3)", () => {
     storage = new StorageService(driver);
     mockQueue = makeMockQueue();
     importsService = new ImportsService(storage, mockQueue as never);
-    processor = new ImportsValidateProcessor(storage);
+    processor = new ImportsProcessor(storage);
   });
 
   afterAll(async () => {

@@ -36,6 +36,14 @@ export interface ImportMappingAcceptedResponse {
   status: Extract<ImportJobStatus, "VALIDATING">;
 }
 
+// Response of POST /imports/:jobId/commit. Symmetric to the mapping
+// response: the commit worker is enqueued and the admin will poll
+// GET /imports/:jobId for status === COMPLETED | FAILED.
+export interface ImportCommitAcceptedResponse {
+  jobId: string;
+  status: Extract<ImportJobStatus, "COMMITTING">;
+}
+
 // Response of GET /imports/:jobId. Carries everything the wizard needs
 // to render whichever step the job is in:
 //   - PENDING/VALIDATING: just status + counts (still 0 in PENDING)
@@ -63,6 +71,13 @@ export interface ImportJobDto {
   invalidRows: number;
   committedRows: number;
   previewSnapshot: ImportJobPreviewSnapshot | null;
+  // True when status === COMPLETED and the commit worker wrote an
+  // error-report.csv to storage. The wizard uses this to decide whether
+  // to render the "Download error report" link on the /done screen.
+  // The storage path itself is server-side only — the download goes
+  // through GET /imports/:jobId/error-report.csv, which writes an audit
+  // row (NDPR — PII export) before serving bytes.
+  hasErrorReport: boolean;
   failedReason: string | null;
   createdAt: string;
   completedAt: string | null;

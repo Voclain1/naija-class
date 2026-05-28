@@ -504,4 +504,294 @@ describe("ImportsService", () => {
       ).rejects.toBeInstanceOf(ConflictError);
     });
   });
+
+  // -----------------------------------------------------------------------
+  // triggerCommit — slice 7 cp1
+  //
+  // The service-layer state machine + enqueue contract. The worker logic
+  // itself is covered in workers/commit.handler.spec.ts.
+  // -----------------------------------------------------------------------
+
+  describe("triggerCommit", () => {
+    // Helper: land a job in READY with a synthetic snapshot. We bypass
+    // the validate worker here because triggerCommit only cares about
+    // status === READY; how the job got there is irrelevant to the
+    // state-transition contract.
+    async function landJobInReady(suffix: string) {
+      const { authCtx, schoolId } = await createActiveSchool(`cmt-${suffix}`);
+      const up = await service.uploadStudents(
+        authCtx,
+        { buffer: goodCsv, originalname: "g.csv", size: goodCsv.length },
+        reqCtx,
+      );
+      await withTenant(schoolId, (db) =>
+        db.importJob.update({
+          where: { id: up.jobId },
+          data: {
+            status: "READY",
+            validRows: 3,
+            invalidRows: 0,
+          },
+        }),
+      );
+      return { authCtx, schoolId, jobId: up.jobId };
+    }
+
+    it("happy path: flips READY → COMMITTING, enqueues with schoolId from authCtx, writes audit", async () => {
+      const { authCtx, schoolId, jobId } = await landJobInReady("happy");
+      mockQueue.calls.length = 0;
+
+      const result = await service.triggerCommit(authCtx, jobId, reqCtx);
+      expect(result).toEqual({ jobId, status: "COMMITTING" });
+
+      const row = await withTenant(schoolId, (db) =>
+        db.importJob.findUnique({ where: { id: jobId } }),
+      );
+      expect(row?.status).toBe("COMMITTING");
+
+      expect(mockQueue.calls).toHaveLength(1);
+      expect(mockQueue.calls[0]).toMatchObject({
+        name: "commit",
+        data: {
+          schoolId,
+          userId: authCtx.userId,
+          jobId,
+          type: "STUDENTS",
+        },
+        // BullMQ id includes the "commit-" prefix to distinguish from the
+        // validate enqueue (same ImportJob id is used for both jobs).
+        options: { jobId: `commit-${jobId}` },
+      });
+
+      const audit = await withTenant(schoolId, (db) =>
+        db.auditLog.findFirst({
+          where: { schoolId, action: "import.commit", entityId: jobId },
+        }),
+      );
+      expect(audit).toBeTruthy();
+      const meta = audit?.metadata as Record<string, unknown>;
+      expect(meta).toMatchObject({ validRowsAtTrigger: 3 });
+    });
+
+    // User-specified edge case #1 — duplicate POST /commit back-to-back.
+    // The first flips READY → COMMITTING; the second sees status =
+    // COMMITTING and 409s. This is the SERVICE-layer guard; the worker
+    // has its own status guard (tested in commit.handler.spec.ts) as a
+    // second line of defence.
+    it("duplicate commit returns 409 JOB_NOT_IN_READY_STATE on the second call", async () => {
+      const { authCtx, jobId } = await landJobInReady("dup");
+      mockQueue.calls.length = 0;
+
+      await service.triggerCommit(authCtx, jobId, reqCtx);
+      await expect(
+        service.triggerCommit(authCtx, jobId, reqCtx),
+      ).rejects.toMatchObject({ code: "JOB_NOT_IN_READY_STATE" });
+
+      // Only the first enqueue went through
+      expect(mockQueue.calls).toHaveLength(1);
+    });
+
+    it("rejects commit on a PENDING job with 409 JOB_NOT_IN_READY_STATE", async () => {
+      const { authCtx } = await createActiveSchool("cmt-pending");
+      const up = await service.uploadStudents(
+        authCtx,
+        { buffer: goodCsv, originalname: "g.csv", size: goodCsv.length },
+        reqCtx,
+      );
+      // Job is in PENDING straight after upload
+      await expect(
+        service.triggerCommit(authCtx, up.jobId, reqCtx),
+      ).rejects.toMatchObject({ code: "JOB_NOT_IN_READY_STATE" });
+    });
+
+    it("rejects an unknown jobId with NotFoundError", async () => {
+      const { authCtx } = await createActiveSchool("cmt-nf");
+      await expect(
+        service.triggerCommit(
+          authCtx,
+          "00000000-0000-4000-8000-000000000000",
+          reqCtx,
+        ),
+      ).rejects.toBeInstanceOf(NotFoundError);
+    });
+
+    it("non-owner/admin → ForbiddenError", async () => {
+      const { schoolId, jobId } = await landJobInReady("cmt-forbid");
+      const { authCtx: noRoleCtx } = await createUserWithoutRole(
+        schoolId,
+        "cmt",
+      );
+      await expect(
+        service.triggerCommit(noRoleCtx, jobId, reqCtx),
+      ).rejects.toBeInstanceOf(ForbiddenError);
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // generateErrorReportCsv — slice 7 cp1
+  // -----------------------------------------------------------------------
+
+  describe("generateErrorReportCsv", () => {
+    // Helper: land a job in COMPLETED with a persisted error report. We
+    // bypass the commit worker for the simpler error-report tests since
+    // we just need the row + the bytes — the worker is covered in
+    // commit.handler.spec.ts.
+    async function landJobInCompletedWithReport(suffix: string) {
+      const { authCtx, schoolId } = await createActiveSchool(`err-${suffix}`);
+      const up = await service.uploadStudents(
+        authCtx,
+        { buffer: goodCsv, originalname: "g.csv", size: goodCsv.length },
+        reqCtx,
+      );
+      const reportBytes = Buffer.from(
+        "Adm No,First Name,_errors\r\nADM/x,Ada,\"admissionNumber: collide\"\r\n",
+        "utf-8",
+      );
+      const reportPath = await storage.put(
+        schoolId,
+        { kind: "import-error-report", jobId: up.jobId },
+        reportBytes,
+        "text/csv",
+      );
+      await withTenant(schoolId, (db) =>
+        db.importJob.update({
+          where: { id: up.jobId },
+          data: {
+            status: "COMPLETED",
+            committedRows: 2,
+            validRows: 3,
+            invalidRows: 1,
+            errorReportUrl: reportPath,
+            completedAt: new Date(),
+          },
+        }),
+      );
+      return { authCtx, schoolId, jobId: up.jobId, reportBytes };
+    }
+
+    it("happy path: returns persisted bytes + filename + writes audit row", async () => {
+      const { authCtx, schoolId, jobId, reportBytes } =
+        await landJobInCompletedWithReport("happy");
+
+      const { filename, content } = await service.generateErrorReportCsv(
+        authCtx,
+        jobId,
+        reqCtx,
+      );
+      expect(filename).toBe(`import-${jobId}-error-report.csv`);
+      expect(content.equals(reportBytes)).toBe(true);
+
+      const audit = await withTenant(schoolId, (db) =>
+        db.auditLog.findFirst({
+          where: {
+            schoolId,
+            action: "import.error-report.download",
+            entityId: jobId,
+          },
+        }),
+      );
+      expect(audit).toBeTruthy();
+      const meta = audit?.metadata as Record<string, unknown>;
+      expect(meta).toMatchObject({ sizeBytes: reportBytes.length });
+    });
+
+    it("rejects with 409 JOB_NOT_COMPLETED when status is not COMPLETED", async () => {
+      const { authCtx } = await createActiveSchool("err-not-completed");
+      const up = await service.uploadStudents(
+        authCtx,
+        { buffer: goodCsv, originalname: "g.csv", size: goodCsv.length },
+        reqCtx,
+      );
+      // Job is in PENDING straight after upload
+      await expect(
+        service.generateErrorReportCsv(authCtx, up.jobId, reqCtx),
+      ).rejects.toMatchObject({ code: "JOB_NOT_COMPLETED" });
+    });
+
+    it("rejects with 409 NO_ERROR_REPORT when the import completed cleanly", async () => {
+      const { authCtx, schoolId } = await createActiveSchool("err-no-report");
+      const up = await service.uploadStudents(
+        authCtx,
+        { buffer: goodCsv, originalname: "g.csv", size: goodCsv.length },
+        reqCtx,
+      );
+      await withTenant(schoolId, (db) =>
+        db.importJob.update({
+          where: { id: up.jobId },
+          data: {
+            status: "COMPLETED",
+            committedRows: 3,
+            validRows: 3,
+            invalidRows: 0,
+            errorReportUrl: null, // clean import — no report
+            completedAt: new Date(),
+          },
+        }),
+      );
+      await expect(
+        service.generateErrorReportCsv(authCtx, up.jobId, reqCtx),
+      ).rejects.toMatchObject({ code: "NO_ERROR_REPORT" });
+    });
+
+    it("rejects with 409 ERROR_REPORT_MISSING when the storage object is gone", async () => {
+      const { authCtx, schoolId, jobId } =
+        await landJobInCompletedWithReport("err-gone");
+      // Delete the report bytes out from under the row.
+      await storage.delete(schoolId, { kind: "import-error-report", jobId });
+      await expect(
+        service.generateErrorReportCsv(authCtx, jobId, reqCtx),
+      ).rejects.toMatchObject({ code: "ERROR_REPORT_MISSING" });
+    });
+
+    it("rejects an unknown jobId with NotFoundError", async () => {
+      const { authCtx } = await createActiveSchool("err-nf");
+      await expect(
+        service.generateErrorReportCsv(
+          authCtx,
+          "00000000-0000-4000-8000-000000000000",
+          reqCtx,
+        ),
+      ).rejects.toBeInstanceOf(NotFoundError);
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // getJob — hasErrorReport projection (slice 7 cp1)
+  // -----------------------------------------------------------------------
+
+  describe("getJob hasErrorReport projection", () => {
+    it("hasErrorReport is false when errorReportUrl is null", async () => {
+      const { authCtx } = await createActiveSchool("hasrep-false");
+      const up = await service.uploadStudents(
+        authCtx,
+        { buffer: goodCsv, originalname: "g.csv", size: goodCsv.length },
+        reqCtx,
+      );
+      const job = await service.getJob(authCtx, up.jobId);
+      expect(job.hasErrorReport).toBe(false);
+    });
+
+    it("hasErrorReport is true after the row gains an errorReportUrl", async () => {
+      const { authCtx, schoolId } = await createActiveSchool("hasrep-true");
+      const up = await service.uploadStudents(
+        authCtx,
+        { buffer: goodCsv, originalname: "g.csv", size: goodCsv.length },
+        reqCtx,
+      );
+      await withTenant(schoolId, (db) =>
+        db.importJob.update({
+          where: { id: up.jobId },
+          data: {
+            status: "COMPLETED",
+            errorReportUrl: `schools/${schoolId}/imports/${up.jobId}/error-report.csv`,
+            completedAt: new Date(),
+          },
+        }),
+      );
+      const job = await service.getJob(authCtx, up.jobId);
+      expect(job.hasErrorReport).toBe(true);
+      // The path itself is NOT exposed in the DTO; only the boolean is.
+      expect((job as unknown as Record<string, unknown>).errorReportUrl).toBeUndefined();
+    });
+  });
 });

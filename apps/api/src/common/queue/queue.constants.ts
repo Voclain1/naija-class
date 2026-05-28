@@ -7,4 +7,4 @@ export const IMPORTS_QUEUE = "imports";
 
 // Job names within IMPORTS_QUEUE.
 export const IMPORTS_JOB_VALIDATE = "validate";
-// commit job lands in slice 7
+export const IMPORTS_JOB_COMMIT = "commit";

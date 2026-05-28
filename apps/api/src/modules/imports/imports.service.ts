@@ -10,6 +10,7 @@ import {
   ValidationError,
   applyStudentImportMappingSchema,
   type ApplyStudentImportMappingInput,
+  type ImportCommitAcceptedResponse,
   type ImportJobDto,
   type ImportJobPreviewSnapshot,
   type ImportMappingAcceptedResponse,
@@ -19,6 +20,7 @@ import {
 import type { AuthContext } from "../../common/auth/auth-context";
 import { assertUserActiveAndHasOneOf } from "../../common/auth/role-check";
 import {
+  IMPORTS_JOB_COMMIT,
   IMPORTS_JOB_VALIDATE,
   IMPORTS_QUEUE,
   type TenantJobData,
@@ -34,14 +36,22 @@ import {
 } from "./validate.engine";
 
 // Audit actions — singular resource, dotted verb (locked in slice 1).
-// `import.bad-rows.download` is a three-segment exception: the middle
-// segment is the sub-resource (bad-rows) and the last is the verb. The
-// shape stays parseable (resource.subresource.verb) and the action is
-// distinct from a future `import.commit` so NDPR audits can filter on it.
+//
+// `import.bad-rows.download` / `import.error-report.download` are three-
+// segment exceptions: the middle segment is the sub-resource and the last
+// is the verb. The shape stays parseable (resource.subresource.verb).
+//
+// `student.import.commit` follows the same three-segment shape and is
+// listed in phase-1.md line 1158 — written by the COMMIT WORKER (not by
+// this service) to ensure it lands inside the worker's transaction. The
+// service triggers the worker; the worker writes the audit. See
+// workers/commit.handler.ts step 9.
 const AUDIT = {
   upload: "import.upload",
   mapping: "import.mapping",
+  commit: "import.commit",
   badRowsDownload: "import.bad-rows.download",
+  errorReportDownload: "import.error-report.download",
 } as const;
 
 // Job-data shape passed to the validate worker. Carries `schoolId` so
@@ -50,6 +60,15 @@ const AUDIT = {
 // rationale. `userId` is included because the worker writes audit rows
 // (cp3) and needs the actor.
 export interface ValidateJobData extends TenantJobData {
+  jobId: string;
+  type: "STUDENTS";
+}
+
+// Job-data shape for the commit worker (slice 7). Same tenancy contract
+// as ValidateJobData; the worker re-streams source.csv from storage and
+// re-runs the validation engine before doing per-row inserts, so it
+// needs nothing else from the payload.
+export interface CommitJobData extends TenantJobData {
   jobId: string;
   type: "STUDENTS";
 }
@@ -72,7 +91,7 @@ export class ImportsService {
   constructor(
     private readonly storage: StorageService,
     @InjectQueue(IMPORTS_QUEUE)
-    private readonly queue: Queue<ValidateJobData>,
+    private readonly queue: Queue<ValidateJobData | CommitJobData>,
   ) {}
 
   // ----------------------------------------------------------------------
@@ -544,6 +563,207 @@ export class ImportsService {
       content: csv,
     };
   }
+
+  // ----------------------------------------------------------------------
+  // triggerCommit — POST /imports/:jobId/commit
+  //
+  // Lifecycle: status MUST be READY. Flips READY → COMMITTING and enqueues
+  // an IMPORTS_JOB_COMMIT BullMQ job. The worker re-streams source.csv,
+  // re-runs the validation engine (defends partial-success retry via
+  // external dedup against already-committed rows), and per-row inserts.
+  //
+  // Two duplicate-commit defences:
+  //   1. The status guard here is the FIRST defence: two POST /commit
+  //      hitting back-to-back race on the importJob.update — Postgres
+  //      serialises them, and the second observes status=COMMITTING and
+  //      throws 409 JOB_NOT_IN_READY_STATE.
+  //   2. The worker's status guard (commit.handler step 1) accepts only
+  //      COMMITTING — if (somehow) both workers do start, the second sees
+  //      a row that's already had its status changed by step 8 (to
+  //      COMPLETED) or is mid-COMMIT and exits as `{status: "skipped"}`.
+  //
+  // BullMQ's per-job-id dedup is the THIRD belt: we pass `{ jobId }` as
+  // the BullMQ job id (same as validate), so a back-to-back enqueue with
+  // the same jobId is rejected by BullMQ even before the worker picks
+  // it up.
+  //
+  // Audit:
+  //   - `import.commit` (lifecycle, like import.upload / import.mapping)
+  //     written HERE with the user's IP.
+  //   - `student.import.commit` (business event with row counts) written
+  //     by the worker after the inserts complete — see
+  //     workers/commit.handler.ts step 9.
+  // ----------------------------------------------------------------------
+  async triggerCommit(
+    authCtx: AuthContext,
+    jobId: string,
+    reqCtx: RequestContext,
+  ): Promise<ImportCommitAcceptedResponse> {
+    await assertUserActiveAndHasOneOf(authCtx, ["owner", "admin"]);
+
+    await withTenant(authCtx.schoolId, async (db) => {
+      const job = await db.importJob.findUnique({
+        where: { id: jobId },
+        select: { id: true, status: true, type: true, validRows: true },
+      });
+      if (!job) throw new NotFoundError("Import job not found.");
+      if (job.type !== "STUDENTS") {
+        throw new ConflictError(
+          "INVALID_JOB_TYPE",
+          "Commit endpoint is only for STUDENTS imports in slice 7.",
+        );
+      }
+      if (job.status !== "READY") {
+        throw new ConflictError(
+          "JOB_NOT_IN_READY_STATE",
+          `Commit can only be triggered on a READY job. Current status: ${job.status}.`,
+        );
+      }
+
+      await db.importJob.update({
+        where: { id: jobId },
+        data: { status: "COMMITTING" },
+      });
+
+      await db.auditLog.create({
+        data: {
+          schoolId: authCtx.schoolId,
+          userId: authCtx.userId,
+          action: AUDIT.commit,
+          entityType: "import_job",
+          entityId: jobId,
+          ipAddress: reqCtx.ipAddress,
+          metadata: {
+            // PII-free: counts only.
+            validRowsAtTrigger: job.validRows,
+          },
+        },
+      });
+    });
+
+    await this.queue.add(
+      IMPORTS_JOB_COMMIT,
+      {
+        schoolId: authCtx.schoolId,
+        userId: authCtx.userId,
+        jobId,
+        type: "STUDENTS",
+      },
+      // BullMQ job id mirrors the ImportJob id (same convention as the
+      // validate enqueue). A duplicate enqueue from a retry / double-tap
+      // would be rejected by BullMQ at the queue layer, in addition to
+      // the status guard above.
+      { jobId: `commit-${jobId}` },
+    );
+
+    return {
+      jobId,
+      status: "COMMITTING" as const,
+    };
+  }
+
+  // ----------------------------------------------------------------------
+  // generateErrorReportCsv — GET /imports/:jobId/error-report.csv
+  //
+  // Unlike bad-rows.csv (which RE-RUNS the engine), the error report is
+  // PERSISTED by the commit worker at job-completion time. The reason:
+  // the report includes commit-time race-condition failures that the
+  // engine cannot reproduce after the fact (the colliding row may have
+  // been committed by another admin and stayed committed).
+  //
+  // This endpoint just reads the persisted bytes from storage. Audit row
+  // (NDPR — PII export) before returning bytes.
+  //
+  // Status guards:
+  //   - COMPLETED + hasErrorReport → 200, serve bytes
+  //   - COMPLETED + no error report → 409 NO_ERROR_REPORT (the import was
+  //     fully clean; nothing to download)
+  //   - anything else → 409 JOB_NOT_COMPLETED
+  // ----------------------------------------------------------------------
+  async generateErrorReportCsv(
+    authCtx: AuthContext,
+    jobId: string,
+    reqCtx: RequestContext,
+  ): Promise<{ filename: string; content: Buffer }> {
+    await assertUserActiveAndHasOneOf(authCtx, ["owner", "admin"]);
+
+    const job = await withTenant(authCtx.schoolId, async (db) => {
+      const row = await db.importJob.findUnique({
+        where: { id: jobId },
+        select: {
+          id: true,
+          status: true,
+          type: true,
+          errorReportUrl: true,
+        },
+      });
+      if (!row) throw new NotFoundError("Import job not found.");
+      if (row.type !== "STUDENTS") {
+        throw new ConflictError(
+          "INVALID_JOB_TYPE",
+          "Error report is only available for STUDENTS imports in slice 7.",
+        );
+      }
+      if (row.status !== "COMPLETED") {
+        throw new ConflictError(
+          "JOB_NOT_COMPLETED",
+          `Error report is only available after commit completes. Current status: ${row.status}.`,
+        );
+      }
+      if (row.errorReportUrl === null) {
+        throw new ConflictError(
+          "NO_ERROR_REPORT",
+          "This import had no errors — there is no error report to download.",
+        );
+      }
+      return row;
+    });
+
+    let content: Buffer;
+    try {
+      content = await this.storage.get(authCtx.schoolId, {
+        kind: "import-error-report",
+        jobId,
+      });
+    } catch (e) {
+      // The DB row says we have a report but storage doesn't. Either an
+      // R2 outage or someone hand-cleaned the bucket. 409 is more
+      // accurate than 500 — the resource state is wrong.
+      throw new ConflictError(
+        "ERROR_REPORT_MISSING",
+        `Error report is no longer available in storage: ${
+          e instanceof Error ? e.message : String(e)
+        }`,
+      );
+    }
+
+    // Reference the selected column so the linter doesn't whine about
+    // errorReportUrl being read-but-unused. The path itself is a server
+    // concern; we just confirmed above that it was set.
+    void job.errorReportUrl;
+
+    await withTenant(authCtx.schoolId, async (db) => {
+      await db.auditLog.create({
+        data: {
+          schoolId: authCtx.schoolId,
+          userId: authCtx.userId,
+          action: AUDIT.errorReportDownload,
+          entityType: "import_job",
+          entityId: jobId,
+          ipAddress: reqCtx.ipAddress,
+          // PII-free: just the byte size.
+          metadata: {
+            sizeBytes: content.length,
+          },
+        },
+      });
+    });
+
+    return {
+      filename: `import-${jobId}-error-report.csv`,
+      content,
+    };
+  }
 }
 
 // -------------------------------------------------------------------------
@@ -559,6 +779,12 @@ const IMPORT_JOB_SELECT = {
   invalidRows: true,
   committedRows: true,
   previewSnapshot: true,
+  // errorReportUrl is selected but NEVER exposed in the DTO — the wizard
+  // gets a boolean (hasErrorReport) and the download flows through
+  // GET /imports/:jobId/error-report.csv with an audit row. Same
+  // discipline as sourceFileUrl (selected for deleteJob's storage cleanup
+  // path, not exposed).
+  errorReportUrl: true,
   failedReason: true,
   createdAt: true,
   completedAt: true,
@@ -578,6 +804,7 @@ function toImportJobDto(row: ImportJobRow): ImportJobDto {
     invalidRows: row.invalidRows,
     committedRows: row.committedRows,
     previewSnapshot: (row.previewSnapshot ?? null) as ImportJobPreviewSnapshot | null,
+    hasErrorReport: row.errorReportUrl !== null,
     failedReason: row.failedReason,
     createdAt: row.createdAt.toISOString(),
     completedAt: row.completedAt ? row.completedAt.toISOString() : null,

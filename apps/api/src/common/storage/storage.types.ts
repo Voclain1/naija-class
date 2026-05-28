@@ -4,12 +4,12 @@
 // StorageDriver takes (schoolId, key) and asks the driver to derive the
 // actual storage path. There is no API for "give me the object at this
 // raw path" — that would be a path-traversal foot-gun ("schools/A/.../
-// /schools/B/..."). Slice 6 only needs import-source; slice 7 will add
-// import-error-report. New blob kinds require adding a case here AND
-// to pathFor() in storage.utils.ts, so a casual caller cannot bypass
-// the layout.
-export type StorageObjectKey = { kind: "import-source"; jobId: string };
-// slice 7: | { kind: "import-error-report"; jobId: string };
+// /schools/B/..."). New blob kinds require adding a case here AND to
+// pathFor() in storage.utils.ts, so a casual caller cannot bypass the
+// layout.
+export type StorageObjectKey =
+  | { kind: "import-source"; jobId: string }
+  | { kind: "import-error-report"; jobId: string };
 
 export type StorageDriverKind = "filesystem" | "r2";
 
