@@ -12,6 +12,7 @@ import { ClassArmsModule } from "./modules/class-arms/class-arms.module";
 import { ClassLevelsModule } from "./modules/class-levels/class-levels.module";
 import { ClassSubjectsModule } from "./modules/class-subjects/class-subjects.module";
 import { DebugModule } from "./modules/debug/debug.module";
+import { EnrollmentsModule } from "./modules/enrollments/enrollments.module";
 import { GuardiansModule } from "./modules/guardians/guardians.module";
 import { ImportsModule } from "./modules/imports/imports.module";
 import { InvitationsModule } from "./modules/invitations/invitations.module";
@@ -51,6 +52,7 @@ const isProd = process.env.NODE_ENV === "production";
     ClassSubjectsModule,
     StudentsModule,
     GuardiansModule,
+    EnrollmentsModule,
     ImportsModule,
     ...(isProd ? [] : [DebugModule]),
   ],

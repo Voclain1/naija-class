@@ -197,7 +197,8 @@ model AcademicYear {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  terms Term[]
+  terms       Term[]
+  enrollments Enrollment[] // Phase 1 / Slice 9 back-relation.
 
   @@unique([schoolId, label])
   @@index([schoolId])
@@ -218,6 +219,7 @@ model Term {
   updatedAt      DateTime @updatedAt @map("updated_at")
 
   academicYear AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+  enrollments  Enrollment[] // Phase 1 / Slice 9 back-relation.
 
   @@unique([academicYearId, sequence])
   @@index([schoolId])
@@ -295,6 +297,7 @@ model ClassArm {
 
   classLevel   ClassLevel @relation(fields: [classLevelId], references: [id], onDelete: Cascade)
   classTeacher User?      @relation("ClassTeacherArms", fields: [classTeacherId], references: [id], onDelete: SetNull)
+  enrollments  Enrollment[] // Phase 1 / Slice 9 back-relation.
 
   @@unique([schoolId, classLevelId, code])
   @@index([schoolId])
@@ -401,9 +404,10 @@ model Student {
   createdAt       DateTime      @default(now()) @map("created_at")
   updatedAt       DateTime      @updatedAt @map("updated_at")
 
-  // Slice 5 adds the StudentGuardian back-relation. Enrollment / MasteryRecord /
-  // AIInteractionLog land in slices 9 / 12 when those tables arrive.
-  guardians StudentGuardian[]
+  // Slice 5 adds the StudentGuardian back-relation; slice 9 adds Enrollment.
+  // MasteryRecord + AIInteractionLog land in slice 12 when those tables arrive.
+  guardians   StudentGuardian[]
+  enrollments Enrollment[] // Phase 1 / Slice 9 back-relation.
 
   @@unique([schoolId, admissionNumber])
   @@index([schoolId])
@@ -577,4 +581,78 @@ enum ImportJobStatus {
   COMMITTING
   COMPLETED
   FAILED
+}
+
+// ---------- Phase 1 / Slice 9 — Enrollment (per-term) ----------
+//
+// Per-term, not per-academic-year. One row per (school, student, term).
+// Why per-term, locked at 2026-05-22 in Phase 1 planning (docs/modules/
+// phase-1.md → "Enrollment is per-TERM, not per-academic-year"):
+//   - Nigerian schools admit students mid-year. A second-term joiner
+//     gets a second-term row and no first-term row — no fudging.
+//   - Phase 2's term-scoped features (attendance, CA1/CA2/exam, report
+//     cards) join cleanly to Enrollment without a "which arm were they
+//     in this term" lookup table.
+//   - Mid-year arm transfers manifest as the NEXT term's row in the
+//     new arm; the old term's row stays as historical truth.
+// Do NOT "simplify" this back to per-year — it breaks the join shape
+// Phase 2 is designed around.
+//
+// academicYearId is denormalised from term.academicYearId for cheap
+// "all students enrolled in 2025/2026" roster queries. The service
+// layer resolves academicYearId from termId at write time; the API
+// never accepts it from a request body. The columns must stay
+// consistent — Phase 2 may add a CHECK constraint or trigger; Phase
+// 1 keeps it as a service-layer invariant to ship.
+//
+// Status enum (six values; only ENROLLED + WITHDRAWN have workflows
+// in slice 9, the others reachable via manual PATCH — see slice-9
+// scope decision):
+//   - ENROLLED       (default; created on enrol)
+//   - WITHDRAWN      (admin withdrew; cascade from student.withdraw)
+//   - GRADUATED      (admin graduated; cascade from student.graduate)
+//   - TRANSFERRED    (back-fill / manual PATCH; Phase 2 workflow)
+//   - PROMOTED       (back-fill / manual PATCH; Phase 2/3 promotion engine)
+//   - REPEATED       (back-fill / manual PATCH; Phase 2/3 promotion engine)
+//
+// No graduatedAt column — derived from updatedAt for the rare case the
+// Phase 2 transcript module needs an explicit moment. Captured in
+// docs/deferred.md as a Phase-2-trigger.
+
+model Enrollment {
+  id                String           @id @default(uuid())
+  schoolId          String           @map("school_id")
+  studentId         String           @map("student_id")
+  termId            String           @map("term_id")
+  academicYearId    String           @map("academic_year_id") // denormalised from term; MUST equal term.academic_year_id
+  classArmId        String           @map("class_arm_id")
+  status            EnrollmentStatus @default(ENROLLED)
+  enrolledAt        DateTime         @default(now()) @map("enrolled_at")
+  transferredAt     DateTime?        @map("transferred_at")
+  withdrawnAt       DateTime?        @map("withdrawn_at")
+  promotedFromArmId String?          @map("promoted_from_arm_id") // optional pointer to a previous term's arm (mid-year transfer or year promotion)
+  notes             String?
+  createdAt         DateTime         @default(now()) @map("created_at")
+  updatedAt         DateTime         @updatedAt @map("updated_at")
+
+  student      Student      @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  term         Term         @relation(fields: [termId], references: [id], onDelete: Cascade)
+  academicYear AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+  classArm     ClassArm     @relation(fields: [classArmId], references: [id], onDelete: Cascade)
+
+  @@unique([schoolId, studentId, termId]) // one row per student per term
+  @@index([schoolId])
+  @@index([classArmId])
+  @@index([schoolId, termId])
+  @@index([schoolId, academicYearId])
+  @@map("enrollments")
+}
+
+enum EnrollmentStatus {
+  ENROLLED
+  TRANSFERRED
+  PROMOTED
+  REPEATED
+  WITHDRAWN
+  GRADUATED
 }

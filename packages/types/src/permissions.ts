@@ -80,6 +80,18 @@ export const PHASE_1_SLICE_8_PERMISSIONS = [
   "guardian.import",
 ] as const;
 
+// Phase 1 slice 9 contributes the enrollment permissions. Reference-only
+// until slice 13 wires PermissionsGuard. `enrollment.delete` is
+// owner-only per the slice 13 role table at phase-1.md:1086; the slice 9
+// service accepts owner|admin (the same belt-and-braces pattern every
+// prior Phase 1 slice uses) and slice 13 will tighten delete to owner.
+export const PHASE_1_SLICE_9_PERMISSIONS = [
+  "enrollment.read",
+  "enrollment.create",
+  "enrollment.update",
+  "enrollment.delete",
+] as const;
+
 export const ALL_PERMISSIONS = [...PHASE_0_PERMISSIONS] as const;
 
 export type Permission = (typeof ALL_PERMISSIONS)[number] | "*";
