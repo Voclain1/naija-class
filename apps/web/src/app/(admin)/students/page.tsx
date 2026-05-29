@@ -4,12 +4,17 @@ import { FileUp, Loader2, UserPlus } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
-import type { StudentDto, StudentStatusDto } from "@school-kit/types";
+import type {
+  ClassArmDto,
+  StudentDto,
+  StudentStatusDto,
+} from "@school-kit/types";
 
 import { StudentsListControls } from "@/components/students/students-list-controls";
 import { StudentsRosterTable } from "@/components/students/students-roster-table";
 import { Button } from "@/components/ui/button";
 import { ApiError } from "@/lib/api-client";
+import { listClassArms } from "@/lib/class-arms/class-arms-api";
 import { listStudents } from "@/lib/students/students-api";
 
 // /students — Phase 1 / Slice 4 cp3.
@@ -23,16 +28,32 @@ import { listStudents } from "@/lib/students/students-api";
 // table renders in arrival order; admins typically discover students via
 // search or the admission-number column rather than alphabetical scroll.
 //
-// `classArmId` / `academicYearId` filters from the API DTO are not surfaced
-// in the UI yet — they require Enrollment (slice 9) to be meaningful.
+// Slice 9 wired the `classArmId` filter into the UI — joins through
+// current-term enrollment so picking a class shows that arm's roster for
+// the current term. `academicYearId` remains accepted-but-unused at the
+// API layer; no UI surface yet.
 export default function StudentsRosterPage() {
   const [students, setStudents] = useState<StudentDto[]>([]);
   const [cursor, setCursor] = useState<string | undefined>(undefined);
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<StudentStatusDto | "">("");
+  const [classArmId, setClassArmId] = useState("");
+  const [arms, setArms] = useState<ClassArmDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Load arms once for the filter dropdown.
+  useEffect(() => {
+    void (async () => {
+      try {
+        const list = await listClassArms();
+        setArms(list.filter((a) => a.isActive));
+      } catch {
+        // Silent — filter just shows "All classes".
+      }
+    })();
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -41,6 +62,7 @@ export default function StudentsRosterPage() {
       const res = await listStudents({
         search: search || undefined,
         status: status || undefined,
+        classArmId: classArmId || undefined,
       });
       setStudents(res.data);
       setCursor(res.meta.cursor);
@@ -49,7 +71,7 @@ export default function StudentsRosterPage() {
     } finally {
       setLoading(false);
     }
-  }, [search, status]);
+  }, [search, status, classArmId]);
 
   useEffect(() => {
     void load();
@@ -62,6 +84,7 @@ export default function StudentsRosterPage() {
       const res = await listStudents({
         search: search || undefined,
         status: status || undefined,
+        classArmId: classArmId || undefined,
         cursor,
       });
       setStudents((prev) => [...prev, ...res.data]);
@@ -73,7 +96,7 @@ export default function StudentsRosterPage() {
     } finally {
       setLoadingMore(false);
     }
-  }, [cursor, search, status]);
+  }, [cursor, search, status, classArmId]);
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-6">
@@ -104,8 +127,11 @@ export default function StudentsRosterPage() {
       <StudentsListControls
         search={search}
         status={status}
+        classArmId={classArmId}
+        arms={arms}
         onSearchChange={setSearch}
         onStatusChange={setStatus}
+        onClassArmChange={setClassArmId}
       />
 
       {loading ? (
@@ -120,16 +146,16 @@ export default function StudentsRosterPage() {
       ) : students.length === 0 ? (
         <div className="flex flex-col items-center gap-2 rounded-md border border-dashed bg-muted/30 p-8 text-center">
           <p className="text-sm font-medium">
-            {search || status
+            {search || status || classArmId
               ? "No students match those filters."
               : "No students yet."}
           </p>
           <p className="text-sm text-muted-foreground">
-            {search || status
-              ? "Try clearing the search or status filter."
+            {search || status || classArmId
+              ? "Try clearing the search, status, or class filter."
               : "Add your first student — or import a roster from CSV."}
           </p>
-          {!search && !status && (
+          {!search && !status && !classArmId && (
             <div className="mt-2 flex flex-wrap justify-center gap-2">
               <Button asChild variant="outline">
                 <Link href="/students/import">
