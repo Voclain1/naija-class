@@ -14,3 +14,4 @@ export * from './class-subjects/index.js';
 export * from './students/index.js';
 export * from './guardians/index.js';
 export * from './imports/index.js';
+export * from './enrollments/index.js';

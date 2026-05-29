@@ -207,3 +207,11 @@ Format:
   doesn't expose `router.beforePopstate`-style hooks cleanly, so this
   may need a wrapping `<Link>` component or a `useNavigationGuard()`
   hook reading from a shared dirty registry).
+
+  - [ ] Add graduatedAt column to Enrollment if Phase 2 transcript module
+  needs an explicit graduation moment; currently derived from updatedAt
+  (slice 9 cp1).
+- [ ] Stronger atomicity test for the slice 4 → slice 9 cascade via
+  Prisma $extends({ query: ... }) middleware (spy-based approach blocked
+  by Prisma tx-client proxy; correlation test is sufficient for now)
+  (slice 9 cp1).

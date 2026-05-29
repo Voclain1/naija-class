@@ -11,6 +11,8 @@
 // date (no time-of-day) but the wire form is still ISO string — the API
 // returns "2014-03-15T00:00:00.000Z" because Prisma maps DATE to JS Date.
 
+import type { CurrentEnrollmentRefDto } from "../enrollments/enrollment.dto.js";
+
 export type GenderDto = "MALE" | "FEMALE" | "OTHER";
 
 export type StudentStatusDto =
@@ -44,11 +46,23 @@ export interface StudentDto {
   notes: string | null;
   createdAt: string | Date;
   updatedAt: string | Date;
+  // Slice 9 addition: the student's enrollment in the school's CURRENT
+  // term (the Term with isCurrent=true), or null if not enrolled this
+  // term. The roster page reads this for the "Class" column without an
+  // extra round-trip. Populated by StudentsService.list / findById via
+  // a SINGLE batched query — see the slice 9 cp1 N+1 test.
+  //
+  // Methods that don't need the join (single-create response, status
+  // transitions) leave it `undefined` — using `?` rather than `| null`
+  // lets the API distinguish "didn't fetch" from "no enrollment".
+  currentEnrollment?: CurrentEnrollmentRefDto | null;
 }
 
 // Detail view — slice 4 returns an empty guardians array; slice 5 populates
-// it; slice 9 adds `currentEnrollment`. Keeping the shape stable so the UI
-// can render an "empty guardians" state today without a v2 endpoint later.
+// it; slice 9 adds `currentEnrollment` (lifted to the base StudentDto for
+// roster reuse, repeated here for documentation symmetry). Keeping the
+// shape stable so the UI can render an "empty guardians" state today
+// without a v2 endpoint later.
 export interface StudentDetailDto extends StudentDto {
   guardians: StudentGuardianRefDto[];
 }

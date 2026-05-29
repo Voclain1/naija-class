@@ -148,3 +148,30 @@ ALTER TABLE import_jobs FORCE  ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation ON import_jobs
   USING      (school_id::text = current_setting('app.current_school_id', true))
   WITH CHECK (school_id::text = current_setting('app.current_school_id', true));
+
+-- Slice 9: enrollments ------------------------------------------------
+-- Per-term enrollment. school_id is denormalised from term.school_id
+-- (which is itself denormalised from academic_year.school_id at write
+-- time), giving every read/write a direct school_id column to filter
+-- against — same pattern as student_guardians. No joined-through-
+-- parent EXISTS subquery needed.
+--
+-- The columns academic_year_id and term_id are tenant-scoped via this
+-- policy on enrollments; the service layer additionally enforces the
+-- invariant academic_year_id = term.academic_year_id at write time
+-- (resolved server-side from termId; the API never accepts
+-- academicYearId from the request body). A Phase 2 trigger or CHECK
+-- constraint could enforce this at the DB layer; Phase 1 ships the
+-- service-layer guarantee with full test coverage on every write path.
+--
+-- Writers: only request handlers in slice 9 (no BullMQ worker yet —
+-- slice 11+ may add the promotion engine on the imports queue, which
+-- would land here via the same tenantWorker() wrapper as slice 6's
+-- imports worker). SECURITY DEFINER count stays at 4.
+
+ALTER TABLE enrollments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE enrollments FORCE  ROW LEVEL SECURITY;
+
+CREATE POLICY tenant_isolation ON enrollments
+  USING      (school_id::text = current_setting('app.current_school_id', true))
+  WITH CHECK (school_id::text = current_setting('app.current_school_id', true));

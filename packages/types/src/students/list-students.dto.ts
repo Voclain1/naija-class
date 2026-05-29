@@ -6,10 +6,11 @@ import { z } from "zod";
 // previous response to fetch the next page. `limit` defaults to 50, max
 // 200 (a single admin click should not be able to pull a whole school).
 //
-// `classArmId` and `academicYearId` are silently accepted and ignored
-// until slice 9 lands Enrollment — keeping the query shape stable so the
-// UI can write the call once and have it work both before and after the
-// enrollment filter goes live.
+// Slice 9: `classArmId` is now a real filter — restricts to students
+// whose CURRENT-term enrollment is in that arm. `academicYearId` stays
+// accepted-but-unused; a more nuanced "ever-enrolled-in-year" filter
+// would join differently (no isCurrent constraint) and is deferred
+// until a UI surface requires it.
 export const listStudentsQuerySchema = z
   .object({
     status: z
@@ -18,8 +19,8 @@ export const listStudentsQuerySchema = z
     search: z.string().trim().min(1).max(100).optional(),
     cursor: z.string().uuid().optional(),
     limit: z.coerce.number().int().min(1).max(200).optional(),
-    // Reserved for slice 9 — accepted but ignored today.
     classArmId: z.string().uuid().optional(),
+    // Reserved — accepted but unused until a UI surface needs it.
     academicYearId: z.string().uuid().optional(),
   })
   .strict();

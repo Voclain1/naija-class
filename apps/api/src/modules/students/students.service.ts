@@ -17,6 +17,10 @@ import {
 
 import type { AuthContext } from "../../common/auth/auth-context";
 import { assertUserActiveAndHasOneOf } from "../../common/auth/role-check";
+import {
+  loadCurrentEnrollmentForStudent,
+  loadCurrentEnrollmentsForStudents,
+} from "../enrollments/enrollments.service";
 
 interface RequestContext {
   ipAddress: string | null;
@@ -46,9 +50,12 @@ export class StudentsService {
   // accepts the cosmetic trade-off (alphabetical paging would require a
   // composite cursor; out of scope for cp2).
   //
-  // `classArmId` / `academicYearId` query params are silently accepted and
-  // dropped until slice 9 lands Enrollment — keeps the UI's query shape
-  // stable across slice boundaries.
+  // Slice 9: `classArmId` is now a real filter (joins through Enrollment
+  // to the student's CURRENT-term enrollment); `academicYearId` stays
+  // accepted-but-unused until a more nuanced "ever-enrolled-in-year"
+  // filter is requested. The current-arm column is populated by ONE
+  // batched query (loadCurrentEnrollmentsForStudents) — see the slice-9
+  // cp1 "no N+1" spec.
   // ----------------------------------------------------------------------
   async list(
     authCtx: AuthContext,
@@ -70,6 +77,17 @@ export class StudentsService {
           { firstName: { contains: s, mode: "insensitive" } },
         ];
       }
+      // Slice 9: filter by current-term enrollment's classArmId. Uses
+      // the Enrollment relation with `term.isCurrent=true` so the
+      // filter restricts to students enrolled in that arm THIS term.
+      if (query.classArmId) {
+        where.enrollments = {
+          some: {
+            classArmId: query.classArmId,
+            term: { isCurrent: true },
+          },
+        };
+      }
 
       // Fetch limit + 1 so we know if there's a next page without a count.
       const rows = await db.student.findMany({
@@ -83,8 +101,20 @@ export class StudentsService {
       const page = hasNext ? rows.slice(0, limit) : rows;
       const cursor = hasNext ? page[page.length - 1].id : undefined;
 
+      // Slice 9: single batched query for current enrollments. ONE
+      // round-trip regardless of page size. The slice-9 cp1 spec
+      // counts queries to prove this is N+1-free.
+      const studentIds = page.map((r) => r.id);
+      const currentEnrollments = await loadCurrentEnrollmentsForStudents(
+        db,
+        studentIds,
+      );
+
       return {
-        data: page.map(toStudentDto),
+        data: page.map((row) => ({
+          ...toStudentDto(row),
+          currentEnrollment: currentEnrollments.get(row.id) ?? null,
+        })),
         meta: cursor === undefined ? {} : { cursor },
       };
     });
@@ -125,8 +155,14 @@ export class StudentsService {
         },
       });
       if (!row) throw new NotFoundError("Student not found.");
+      // Slice 9: include currentEnrollment in the detail response.
+      // One additional query (the join shape is non-trivial enough that
+      // a Prisma `include` on the student.findUnique would also be one
+      // round-trip; we use the shared helper for parity with the list path).
+      const currentEnrollment = await loadCurrentEnrollmentForStudent(db, id);
       return {
         ...toStudentDto(row),
+        currentEnrollment,
         guardians: row.guardians.map((link) => ({
           id: link.guardian.id,
           linkId: link.id,
@@ -310,6 +346,21 @@ export class StudentsService {
         select: STUDENT_SELECT,
       });
 
+      // Slice 9 cascade — atomic in this same withTenant() tx so a
+      // failure on the enrollment update rolls the student status
+      // update back too. updateMany silently no-ops if there's no
+      // current-term enrollment (a withdrawn-from-day-1 student); the
+      // updated `count` lets the audit log record whether the cascade
+      // actually flipped anything.
+      const enrollmentCascade = await db.enrollment.updateMany({
+        where: {
+          studentId: id,
+          term: { isCurrent: true },
+          status: { not: "WITHDRAWN" },
+        },
+        data: { status: "WITHDRAWN", withdrawnAt },
+      });
+
       await db.auditLog.create({
         data: {
           schoolId: authCtx.schoolId,
@@ -322,6 +373,10 @@ export class StudentsService {
             previousStatus: existing.status,
             withdrawnAt: withdrawnAt.toISOString(),
             reason: input.reason ?? null,
+            // Slice 9: surface the cascade outcome in audit metadata so
+            // forensic reads can tell whether the current-term row was
+            // flipped or whether the student had no current enrollment.
+            cascadedEnrollmentCount: enrollmentCascade.count,
           },
         },
       });
@@ -369,6 +424,16 @@ export class StudentsService {
         select: STUDENT_SELECT,
       });
 
+      // Slice 9 cascade — same atomicity guarantee as withdraw.
+      const enrollmentCascade = await db.enrollment.updateMany({
+        where: {
+          studentId: id,
+          term: { isCurrent: true },
+          status: { not: "GRADUATED" },
+        },
+        data: { status: "GRADUATED" },
+      });
+
       await db.auditLog.create({
         data: {
           schoolId: authCtx.schoolId,
@@ -381,6 +446,7 @@ export class StudentsService {
             previousStatus: existing.status,
             graduatedAt: graduatedAt.toISOString(),
             reason: input.reason ?? null,
+            cascadedEnrollmentCount: enrollmentCascade.count,
           },
         },
       });
