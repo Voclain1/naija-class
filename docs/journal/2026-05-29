@@ -1,0 +1,20 @@
+# 2026-MM-DD
+
+## Starting state
+Slice 7 closed yesterday (PRs #18 + #19). Phase 1 at 7 of 13 slices.
+Working tree clean, on main, up to date with origin. The entire CSV
+import feature is live: upload → map → validate → commit → real
+students in the roster.
+
+## Today's outcome
+Slice 8 — Guardian + Teacher CSV imports. Plan-first (lighter than
+6/7 plans, but four real decisions need settling): teacher-import
+scope vs deferring to after slice 10, guardian linking semantics
+(standalone vs single-link vs sibling-case multi-link), wizard
+routing, per-type Zod schemas.
+
+## Decisions made
+- (capture as the day unfolds)
+
+## Tomorrow's first task
+- (fill at end of day)
