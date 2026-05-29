@@ -3,10 +3,7 @@ import { Logger } from "@nestjs/common";
 import { Job, UnrecoverableError } from "bullmq";
 
 import { Prisma, withTenant } from "@school-kit/db";
-import type {
-  ImportJobPreviewSnapshot,
-  StudentImportRow,
-} from "@school-kit/types";
+import type { ImportJobPreviewSnapshot } from "@school-kit/types";
 
 import {
   IMPORTS_JOB_COMMIT,
@@ -16,10 +13,11 @@ import {
 } from "../../../common/queue";
 import { StorageService } from "../../../common/storage";
 import type { CommitJobData, ValidateJobData } from "../imports.service";
+import { runGuardianValidationEngine } from "../validate-guardians.engine";
+import { runStudentValidationEngine } from "../validate-students.engine";
 import {
   EngineFatalError,
   parsePersistedMapping,
-  runValidationEngine,
 } from "../validate.engine";
 import { runCommitHandler } from "./commit.handler";
 
@@ -92,12 +90,16 @@ export class ImportsProcessor extends WorkerHost {
         );
         return;
       }
-      if (existing.type !== "STUDENTS") {
-        // Slice 8 adds GUARDIANS/TEACHERS.
+      if (existing.type !== "STUDENTS" && existing.type !== "GUARDIANS") {
+        // TEACHERS deferred to slice 10 — Invitation table can't carry
+        // staffNumber/specialty per phase-1.md:478, so the spec's
+        // teacher import shape is impossible in Phase 1. cp1 slice 8
+        // design call.
         throw new UnrecoverableError(
-          `validate: import ${jobId} type ${existing.type} is not handled in slice 6`,
+          `validate: import ${jobId} type ${existing.type} is not handled in slice 8`,
         );
       }
+      const type = existing.type;
 
       let mapping;
       try {
@@ -122,14 +124,26 @@ export class ImportsProcessor extends WorkerHost {
         );
       }
 
+      // Dispatch to the per-type validate engine. Both engines share the
+      // CSV-parse + per-row loop via validate.engine.ts/parseSourceCsv;
+      // they differ in dedup semantics (slice 8 refactor).
       let result;
       try {
-        result = await runValidationEngine(
-          db,
-          sourceBytes,
-          mapping.mapping,
-          mapping.options,
-        );
+        if (type === "STUDENTS") {
+          result = await runStudentValidationEngine(
+            db,
+            sourceBytes,
+            mapping.mapping,
+            mapping.options,
+          );
+        } else {
+          result = await runGuardianValidationEngine(
+            db,
+            sourceBytes,
+            mapping.mapping,
+            mapping.options,
+          );
+        }
       } catch (e) {
         if (e instanceof EngineFatalError) {
           throw new UnrecoverableError(
@@ -142,7 +156,9 @@ export class ImportsProcessor extends WorkerHost {
       const previewSnapshot: ImportJobPreviewSnapshot = {
         good: result.good.slice(0, 50).map((g) => ({
           rowNumber: g.rowNumber,
-          parsedRow: serialiseParsedRow(g.parsedRow),
+          parsedRow: serialiseParsedRow(
+            g.parsedRow as unknown as Record<string, unknown>,
+          ),
         })),
         bad: result.bad.slice(0, 50).map((b) => ({
           rowNumber: b.rowNumber,
@@ -261,8 +277,11 @@ export class ImportsProcessor extends WorkerHost {
 // JSON-friendly view of a parsed row for the previewSnapshot.good entries.
 // Dates are stringified (so the wizard can render them); the schema's
 // `undefined` optional fields are stripped (JSON can't carry undefined).
+// Now generic over the row shape — works uniformly for student and
+// guardian rows (slice 8). Guardian rows have no Date columns today;
+// the Date branch is dead for that case but harmless.
 function serialiseParsedRow(
-  parsed: StudentImportRow,
+  parsed: Record<string, unknown>,
 ): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(parsed)) {

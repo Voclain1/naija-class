@@ -2,16 +2,24 @@ import { Logger } from "@nestjs/common";
 import { UnrecoverableError } from "bullmq";
 
 import { Prisma, withTenant } from "@school-kit/db";
-import type { StudentImportRowError } from "@school-kit/types";
+import type {
+  GuardianImportRow,
+  ImportRowError,
+  StudentImportRow,
+} from "@school-kit/types";
 
 import { StorageService } from "../../../common/storage";
+import { runGuardianValidationEngine } from "../validate-guardians.engine";
+import { runStudentValidationEngine } from "../validate-students.engine";
 import {
   EngineFatalError,
   badRowsToCsv,
   buildBadRowsFromSource,
   parsePersistedMapping,
-  runValidationEngine,
+  type EngineResult,
 } from "../validate.engine";
+import { commitGuardianRow, CommitRowError } from "./commit-guardians.row";
+import { commitStudentRow } from "./commit-students.row";
 
 // Commit-handler outcome — exposed so the spec can assert on the shape
 // without re-reading the DB row. The BullMQ wrapper in imports.processor
@@ -36,10 +44,12 @@ export interface CommitHandlerArgs {
   logger: Logger;
 }
 
-// runCommitHandler — pure (modulo IO) function that does the commit job's
-// work. Kept out of the @Processor class so it's testable without a Worker
-// harness and so the shape stays one focused function rather than scattered
-// methods.
+// runCommitHandler — orchestrates the commit pipeline for STUDENTS and
+// GUARDIANS (slice 8). The per-type bits (which engine to call, which
+// per-row commit function to invoke, which audit action to write) are
+// extracted into small modules; this file owns the shared orchestration:
+// status guard, source.csv re-read, per-row loop, error-report write,
+// final job-row update, audit row.
 //
 // Pipeline (each numbered step is its own withTenant transaction unless
 // otherwise noted):
@@ -51,21 +61,21 @@ export interface CommitHandlerArgs {
 //   2. Parse columnMapping. Corrupt mapping → UnrecoverableError; BullMQ
 //      skips retries and the listener writes status=FAILED.
 //   3. Read source.csv from storage. Missing file → UnrecoverableError.
-//   4. Re-run the validation engine. This is what makes per-row retries
-//      and partial-success semantics work:
-//        - in-file dedup re-applied
-//        - external dedup re-queries students.admissionNumber — any rows
-//          committed by a previous worker attempt (after a crash) OR by
-//          another admin between READY and now are excluded from the
-//          good pile and surface in the bad pile with "Already exists
-//          in roster"
+//   4. Re-run the type-specific validation engine. This is what makes
+//      per-row retries and partial-success semantics work:
+//        - in-file dedup re-applied (per-type semantics — students
+//          reject duplicate admission numbers; guardians reject only
+//          duplicate full link tuples)
+//        - external check re-applied (students: admission number not
+//          already taken; guardians: studentAdmissionNumber resolves
+//          to a real Student)
 //   5. For each row in result.good, open a per-row withTenant() tx and
-//      insert one Student row. P2002 (race-condition admission-number
-//      collision that re-validate missed because the OTHER admin's
-//      manual create happened in the millisecond gap) is caught and
-//      pushed onto commitErrors with "Could not commit: ...". Any other
-//      Prisma error is also caught — one bad row never fails the whole
-//      import.
+//      invoke the per-type commit row function. CommitRowError
+//      (recoverable per-row failure: student lookup missing, guardian
+//      link already exists) → push to commitErrors with the typed
+//      field+message. Other Prisma errors → push with the generic
+//      describeCommitFailure() message. One bad row never fails the
+//      whole import.
 //   6. Merge result.bad (validate-time failures) with commitErrors
 //      (commit-time failures), sort by rowNumber.
 //   7. If the merged list is non-empty, render bad-rows.csv (header +
@@ -76,15 +86,17 @@ export interface CommitHandlerArgs {
 //      symmetric with bad-rows.csv (slice 6).
 //   8. Update ImportJob: status=COMPLETED, committedRows, invalidRows
 //      (recomputed from merged list), errorReportUrl, completedAt.
-//   9. Write one audit row with action='student.import.commit' and
-//      counts in metadata. PII-free.
+//   9. Write one audit row with action='<resource>.import.commit' and
+//      counts in metadata. PII-free. Action is type-dispatched:
+//      'student.import.commit' for STUDENTS, 'guardian.import.commit'
+//      for GUARDIANS.
 
 export async function runCommitHandler(
   args: CommitHandlerArgs,
 ): Promise<CommitHandlerResult> {
   const { jobId, schoolId, userId, storage, logger } = args;
 
-  // Step 1 — load + guard. Single tx; closes before per-row work begins.
+  // Step 1 — load + guard.
   const existing = await withTenant(schoolId, async (db) =>
     db.importJob.findUnique({
       where: { id: jobId },
@@ -101,19 +113,18 @@ export async function runCommitHandler(
     return { status: "skipped", reason: "no-row" };
   }
   if (existing.status !== "COMMITTING") {
-    // READY → admin hasn't clicked Commit (impossible — service flips
-    // before enqueue, but defensive). COMPLETED/FAILED → already done.
-    // Anything else: idempotent no-op.
     logger.warn(
       `commit: import ${jobId} is ${existing.status}, not COMMITTING; skipping`,
     );
     return { status: "skipped", reason: "wrong-status" };
   }
-  if (existing.type !== "STUDENTS") {
+  if (existing.type !== "STUDENTS" && existing.type !== "GUARDIANS") {
+    // TEACHERS deferred to slice 10 per cp1 design call.
     throw new UnrecoverableError(
-      `commit: import ${jobId} type ${existing.type} is not handled in slice 7`,
+      `commit: import ${jobId} type ${existing.type} is not handled in slice 8`,
     );
   }
+  const type = existing.type;
 
   // Step 2 — parse mapping.
   let mapping;
@@ -137,12 +148,31 @@ export async function runCommitHandler(
     );
   }
 
-  // Step 4 — re-validate. Runs in its own withTenant tx (the engine
-  // does its external-dedup query against students.admissionNumber).
-  let engineResult;
+  // Step 4 — re-validate. Per-type engine; result is a discriminated
+  // union over Row.
+  type EngineResultEither =
+    | EngineResult<StudentImportRow>
+    | EngineResult<GuardianImportRow>;
+  let engineResult: EngineResultEither;
   try {
-    engineResult = await withTenant(schoolId, (db) =>
-      runValidationEngine(db, sourceBytes, mapping.mapping, mapping.options),
+    engineResult = await withTenant(
+      schoolId,
+      async (db): Promise<EngineResultEither> => {
+        if (type === "STUDENTS") {
+          return runStudentValidationEngine(
+            db,
+            sourceBytes,
+            mapping.mapping,
+            mapping.options,
+          );
+        }
+        return runGuardianValidationEngine(
+          db,
+          sourceBytes,
+          mapping.mapping,
+          mapping.options,
+        );
+      },
     );
   } catch (e) {
     if (e instanceof EngineFatalError) {
@@ -153,66 +183,62 @@ export async function runCommitHandler(
     throw e;
   }
 
-  // Step 5 — per-row commit. Each row is its own withTenant transaction
-  // so a collision on one row doesn't roll back others. We do NOT batch
-  // — see CLAUDE.md / slice 7 plan: per-row is the load-bearing choice
-  // for partial-success semantics and BullMQ-retry idempotency.
-  //
-  // Throughput: ~10ms per row at the dev Postgres → 5s for 500 rows,
-  // 100s for 10k. Within Phase 1's 10k cap and well within the BullMQ
-  // job stall threshold (default 30s — but our re-validate keeps the
-  // event loop active across each row, and BullMQ's stall window
-  // resets on each await).
+  // Step 5 — per-row commit. Each row gets its own withTenant tx so a
+  // failure on one row doesn't roll back others. Per-row throughput:
+  // ~10ms (students, single insert) / ~20-30ms (guardians, three
+  // operations). Within Phase 1's 10k cap.
   let committedRows = 0;
-  const commitErrors: StudentImportRowError[] = [];
+  const commitErrors: ImportRowError[] = [];
 
   for (const good of engineResult.good) {
     try {
-      await withTenant(schoolId, (rowDb) =>
-        rowDb.student.create({
-          data: {
+      await withTenant(schoolId, (rowDb) => {
+        if (type === "STUDENTS") {
+          return commitStudentRow(
+            good.parsedRow as StudentImportRow,
             schoolId,
-            admissionNumber: good.parsedRow.admissionNumber,
-            firstName: good.parsedRow.firstName,
-            middleName: good.parsedRow.middleName ?? null,
-            lastName: good.parsedRow.lastName,
-            dateOfBirth: good.parsedRow.dateOfBirth,
-            gender: good.parsedRow.gender,
-            phone: good.parsedRow.phone ?? null,
-            email: good.parsedRow.email ?? null,
-            address: good.parsedRow.address ?? null,
-            photoUrl: good.parsedRow.photoUrl ?? null,
-            bloodGroup: good.parsedRow.bloodGroup ?? null,
-            religion: good.parsedRow.religion ?? null,
-            stateOfOrigin: good.parsedRow.stateOfOrigin ?? null,
-          },
-        }),
-      );
+            rowDb,
+          );
+        }
+        return commitGuardianRow(
+          good.parsedRow as GuardianImportRow,
+          schoolId,
+          rowDb,
+        );
+      });
       committedRows += 1;
     } catch (e) {
+      let field: string;
+      let message: string;
+      if (e instanceof CommitRowError) {
+        // Typed per-row failure (student not found, link already
+        // exists, etc.). Use the carried field+message verbatim.
+        field = e.field;
+        message = e.message;
+      } else {
+        // Generic Prisma / unexpected error. Use describeCommitFailure
+        // to produce a safe (PII-free) message; the field label is the
+        // resource's "primary identifier" column.
+        field = type === "STUDENTS" ? "admissionNumber" : "studentAdmissionNumber";
+        message = describeCommitFailure(e);
+      }
       commitErrors.push({
         rowNumber: good.rowNumber,
         // csvRow gets overwritten in step 7 by buildBadRowsFromSource
         // (it has the verbatim source row content keyed by rowNumber).
-        // We pass {} here as a placeholder for type-safety.
         csvRow: {},
-        errors: [
-          {
-            field: "admissionNumber",
-            message: describeCommitFailure(e),
-          },
-        ],
+        errors: [{ field, message }],
       });
     }
   }
 
-  // Step 6 — merge + sort. result.bad is already sorted; commitErrors
-  // appends to the end; final sort restores ascending rowNumber.
-  const allBad = [...engineResult.bad, ...commitErrors].sort(
-    (a, b) => a.rowNumber - b.rowNumber,
-  );
+  // Step 6 — merge + sort.
+  const allBad: ImportRowError[] = [
+    ...engineResult.bad,
+    ...commitErrors,
+  ].sort((a, b) => a.rowNumber - b.rowNumber);
 
-  // Step 7 — error report (only if non-empty).
+  // Step 7 — error report.
   let errorReportUrl: string | null = null;
   if (allBad.length > 0) {
     const badWithSource = buildBadRowsFromSource(sourceBytes, allBad);
@@ -225,18 +251,15 @@ export async function runCommitHandler(
     );
   }
 
-  // Step 8 + 9 — finalise row + audit, single tx.
+  // Step 8 + 9 — finalise row + audit.
+  const auditAction =
+    type === "STUDENTS" ? "student.import.commit" : "guardian.import.commit";
   await withTenant(schoolId, async (db) => {
     await db.importJob.update({
       where: { id: jobId },
       data: {
         status: "COMPLETED",
         committedRows,
-        // Recompute invalidRows from the merged bad list. The validate
-        // step's invalidRows count may have grown (commit-time errors)
-        // or even shrunk (a row that failed external dedup at validate
-        // could pass on re-validate if the dup was deleted — unusual
-        // but possible).
         invalidRows: allBad.length,
         errorReportUrl,
         completedAt: new Date(),
@@ -247,13 +270,10 @@ export async function runCommitHandler(
       data: {
         schoolId,
         userId,
-        action: "student.import.commit",
+        action: auditAction,
         entityType: "import_job",
         entityId: jobId,
-        ipAddress: null, // worker has no HTTP request
-        // PII-free: row counts only. The bad rows' contents live in
-        // error-report.csv (tenant-scoped storage path) and the audit
-        // log NEVER carries import payload data.
+        ipAddress: null,
         metadata: {
           totalRows: engineResult.totalRows,
           validatedGood: engineResult.good.length,
@@ -267,7 +287,7 @@ export async function runCommitHandler(
   });
 
   logger.log(
-    `commit: import ${jobId} COMPLETED — committed=${committedRows} commitErrors=${commitErrors.length} validateBad=${engineResult.bad.length}`,
+    `commit: ${type.toLowerCase()} import ${jobId} COMPLETED — committed=${committedRows} commitErrors=${commitErrors.length} validateBad=${engineResult.bad.length}`,
   );
 
   return {
@@ -280,15 +300,18 @@ export async function runCommitHandler(
   };
 }
 
-// Map a per-row create error to the message that lands in error-report.csv.
-// P2002 (unique violation) at this point is always the admission_number
-// uniqueness — that's the only unique-per-school constraint on students.
-// Other Prisma errors get a generic message; we never leak raw error text
-// (could contain a column value).
-//
+// Map a per-row Prisma error to the message that lands in error-report.csv.
 // Exported for unit testing — the spy-based "actual P2002 from per-row
 // create" integration test is too fragile to wire across Prisma's tx
 // boundary, so the mapping is verified directly.
+//
+// For STUDENTS, the only unique constraint is admission_number, so P2002
+// is unambiguously a race. For GUARDIANS, the typed CommitRowError path
+// catches the StudentGuardian P2002 case BEFORE this falls through, so
+// any P2002 reaching here is an unexpected uniqueness violation on
+// Guardian itself (which has no unique columns per slice 5's schema
+// design) — should not happen, but the generic message keeps the import
+// alive if it does.
 export function describeCommitFailure(e: unknown): string {
   if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
     return "Could not commit: admission number already exists in roster (race).";

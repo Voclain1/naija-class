@@ -7,7 +7,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import {
-  STUDENT_IMPORT_DATE_FORMATS,
+  IMPORT_DATE_FORMATS,
   STUDENT_IMPORT_REQUIRED_FIELDS,
   STUDENT_IMPORT_TARGET_FIELDS,
   type StudentImportBlankHandling,
@@ -294,7 +294,7 @@ export default function ImportStudentsMappingPage() {
               setDateFormat(e.target.value as StudentImportDateFormat)
             }
           >
-            {STUDENT_IMPORT_DATE_FORMATS.map((fmt) => (
+            {IMPORT_DATE_FORMATS.map((fmt) => (
               <option key={fmt} value={fmt}>
                 {DATE_FORMAT_LABELS[fmt]}
               </option>

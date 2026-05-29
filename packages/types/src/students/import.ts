@@ -1,5 +1,12 @@
 import { z } from "zod";
 
+import {
+  type ImportDateFormat,
+  type ImportOptions,
+  type ImportRowError,
+  type ImportRowGood,
+} from "../imports/index.js";
+
 // CSV-import row schema for Student. Used by the validate worker in slice 6
 // to parse rows from a school's CSV, and by the slice-7 commit worker to
 // re-validate before insert.
@@ -24,20 +31,29 @@ import { z } from "zod";
 // `nationality` is also intentionally NOT exposed in the import: the DB
 // default ("Nigerian") covers the realistic case and dropping the column
 // reduces the chance of a mis-mapped header.
+//
+// Slice 8 extraction: the options schema + date-format / blank-handling
+// constants live in ../imports/options.ts because they're identical across
+// student + guardian imports (and teacher imports in slice 10). The aliases
+// below keep the slice-6 names (StudentImportOptions, etc.) working as
+// re-exports so existing call sites don't have to change.
 
-export const STUDENT_IMPORT_DATE_FORMATS = ["YYYY-MM-DD", "DD/MM/YYYY", "MM/DD/YYYY"] as const;
-export type StudentImportDateFormat = (typeof STUDENT_IMPORT_DATE_FORMATS)[number];
-
-export const STUDENT_IMPORT_BLANK_HANDLING = ["skip", "error"] as const;
-export type StudentImportBlankHandling = (typeof STUDENT_IMPORT_BLANK_HANDLING)[number];
-
-export const studentImportOptionsSchema = z
-  .object({
-    dateFormat: z.enum(STUDENT_IMPORT_DATE_FORMATS).default("YYYY-MM-DD"),
-    treatBlankAs: z.enum(STUDENT_IMPORT_BLANK_HANDLING).default("skip"),
-  })
-  .strict();
-export type StudentImportOptions = z.infer<typeof studentImportOptionsSchema>;
+// Type aliases — the slice 6 names map to the shared shapes from
+// ../imports/. These are TYPE-ONLY re-exports (erased at runtime) so
+// they don't introduce a circular-require chain with apply-mapping.dto.ts
+// (which lives under ../imports/ and references STUDENT_IMPORT_TARGET_FIELDS
+// from THIS file). Slice 8 hit that circular bug: the value-level
+// `export { X as Y } from "../imports/index.js"` created a runtime
+// require that landed apply-mapping.dto.js BEFORE students/import.js
+// finished defining its constants, producing schemas with z.enum(undefined).
+//
+// Slice-6 callsites using STUDENT_IMPORT_DATE_FORMATS / studentImportOptionsSchema
+// at VALUE level (one site in apps/web; see the slice 8 cp1 update) now
+// import from "@school-kit/types"'s IMPORT_DATE_FORMATS / importOptionsSchema
+// directly.
+export type StudentImportDateFormat = ImportDateFormat;
+export type StudentImportBlankHandling = "skip" | "error";
+export type StudentImportOptions = ImportOptions;
 
 // Gender accepted forms — kept here (not in createStudentSchema) because
 // the create endpoint only accepts the canonical enum literals; CSVs in
@@ -122,19 +138,12 @@ export const studentImportRowSchema = z
   .strict();
 export type StudentImportRow = z.infer<typeof studentImportRowSchema>;
 
-// The shape returned for a row that failed validation. Carries enough
-// context to render the preview UI and to write the bad-rows.csv with
-// an _errors column for the "fix in Excel and re-upload" loop.
-export type StudentImportRowError = {
-  rowNumber: number;             // 1-indexed data row (header is row 0)
-  csvRow: Record<string, string>;
-  errors: Array<{ field: string; message: string }>;
-};
-
-export type StudentImportRowGood = {
-  rowNumber: number;
-  parsedRow: StudentImportRow;
-};
+// Slice 8 extraction: the row-result shapes are now ImportRowError +
+// ImportRowGood<Row> in ../imports/row.ts (generic over the parsed-row
+// payload so guardian + teacher imports can reuse the same accumulator
+// shape). The Student-prefixed aliases below preserve slice-6 callsites.
+export type StudentImportRowError = ImportRowError;
+export type StudentImportRowGood = ImportRowGood<StudentImportRow>;
 
 // Parse one CSV row using the admin's column mapping + options. Returns a
 // discriminated union so the worker accumulator can fan results into the
