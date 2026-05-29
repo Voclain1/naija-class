@@ -946,7 +946,7 @@ If a future school imports 10 000 students in one go, revisit with savepoints. *
 ### Guardian + teacher imports
 
 Same lifecycle, different Zod schema and different post-insert hooks:
-- **Guardians:** rows include `student_admission_number` to link via an in-flight lookup to `Student.id`. Link creates a `Guardian` if not deduped (exact-match on phone + lastName) and a `StudentGuardian` row in the same transaction. Bad-row reason includes `"Student admission number not found"`.
+- **Guardians:** rows include `student_admission_number` to link via an in-flight lookup to `Student.id`. Link creates a `Guardian` if not deduped (exact-match on phone + lastName) and a `StudentGuardian` row in the same transaction. Bad-row reason includes `"Student admission number not found"`. *Slice 8 cp1 implementation note: the dedup key is `(phone + firstName + lastName)`, not `(phone + lastName)` as written here — see `docs/deferred.md` for the rationale (parents sharing a household phone + surname). Don't "fix" the implementation back to the spec.*
 - **Teachers:** rows include `email` + `firstName` + `lastName` + `staffNumber` + `specialty`. Commit creates an `Invitation` row with the teacher role (reusing Phase 0 invitation infra); the teacher receives an invitation email and their `TeacherProfile` is created on acceptance. **Subject and class assignments are NOT in the CSV in Phase 1** — admins assign teachers to classes after acceptance, via the teacher-assignment UI. This avoids the bad UX of importing assignments referencing teachers who haven't accepted yet.
 
 ## UI screens — web (Next.js)

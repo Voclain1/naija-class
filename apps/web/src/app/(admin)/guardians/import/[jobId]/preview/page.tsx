@@ -19,18 +19,16 @@ import {
 import { clearUploadResponse } from "@/lib/imports/session";
 import { Wizard } from "@/lib/imports/wizard-ui";
 
-// /students/import/[jobId]/preview — Slice 6 cp4 step 3.
+// /guardians/import/[jobId]/preview — Slice 8 cp2 step 3.
 //
-// Mount → GET job. If VALIDATING, poll every 2s until READY or FAILED.
-// READY: render two panels (good / bad), offer bad-rows CSV download.
-// Commit is slice 7: the button is rendered but disabled with a tooltip.
-//
-// We track `elapsed` while validating so admins watching a 250-row CSV
-// don't think the page is wedged.
+// Same poll-self-rearming pattern as the slice 6/7 students preview; the
+// only differences are the GoodRowsTable schema (guardian fields instead
+// of student fields) and the navigation targets (/guardians/import vs
+// /students/import).
 
 const POLL_INTERVAL_MS = 2000;
 
-export default function ImportStudentsPreviewPage() {
+export default function ImportGuardiansPreviewPage() {
   const router = useRouter();
   const params = useParams<{ jobId: string }>();
   const jobId = params.jobId;
@@ -42,14 +40,9 @@ export default function ImportStudentsPreviewPage() {
   const [committing, setCommitting] = useState(false);
   const [elapsed, setElapsed] = useState(0);
 
-  // Hold the latest status in a ref so the polling effect can re-arm
-  // without re-subscribing on every status change.
   const statusRef = useRef<ImportJobDto["status"] | null>(null);
   statusRef.current = job?.status ?? null;
 
-  // Poll loop. setTimeout (not setInterval) so the next request only fires
-  // once the previous one resolves — avoids piling up requests if the API
-  // briefly stalls.
   useEffect(() => {
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
@@ -62,9 +55,6 @@ export default function ImportStudentsPreviewPage() {
         if (next.status === "VALIDATING") {
           timer = setTimeout(tick, POLL_INTERVAL_MS);
         }
-        // READY / FAILED / COMPLETED / PENDING / COMMITTING — stop polling.
-        // (PENDING means the user landed here too early; we'll show an
-        // intermediate panel directing them back to mapping.)
       } catch (e) {
         if (cancelled) return;
         if (e instanceof ApiError && e.status === 404) {
@@ -74,8 +64,6 @@ export default function ImportStudentsPreviewPage() {
         setError(
           e instanceof ApiError ? e.message : "Could not load import job.",
         );
-        // Keep retrying on transient errors so a flaky network doesn't
-        // strand the wizard mid-validation.
         if (statusRef.current === "VALIDATING" || statusRef.current === null) {
           timer = setTimeout(tick, POLL_INTERVAL_MS);
         }
@@ -89,7 +77,6 @@ export default function ImportStudentsPreviewPage() {
     };
   }, [jobId]);
 
-  // Elapsed timer while validating.
   useEffect(() => {
     if (job?.status !== "VALIDATING") {
       setElapsed(0);
@@ -122,16 +109,9 @@ export default function ImportStudentsPreviewPage() {
     setCommitting(true);
     try {
       await triggerImportCommit(jobId);
-      // Step-1's sessionStorage headers/sampleRows are no longer needed
-      // — the /done page is jobId-driven. Clear so a refresh of step 2
-      // doesn't reuse a stale snapshot for an already-committed job.
       clearUploadResponse(jobId);
-      router.push(`/students/import/${jobId}/done`);
+      router.push(`/guardians/import/${jobId}/done`);
     } catch (e) {
-      // Defensive — the READY status guard makes this unreachable in
-      // normal flow, but if the worker raced ahead (or another tab
-      // committed first) the user gets a clear toast and stays on
-      // the preview screen rather than seeing an empty /done page.
       toast.error(
         e instanceof ApiError
           ? e.message
@@ -153,7 +133,7 @@ export default function ImportStudentsPreviewPage() {
     try {
       await deleteImportJob(jobId);
       clearUploadResponse(jobId);
-      router.push("/students/import");
+      router.push("/guardians/import");
     } catch (e) {
       toast.error(
         e instanceof ApiError
@@ -171,7 +151,7 @@ export default function ImportStudentsPreviewPage() {
           {error}
         </div>
         <Button asChild variant="outline">
-          <Link href="/students/import">Back to upload</Link>
+          <Link href="/guardians/import">Back to upload</Link>
         </Button>
       </div>
     );
@@ -186,8 +166,6 @@ export default function ImportStudentsPreviewPage() {
     );
   }
 
-  // Each status branch picks its own banner + body. Mapping page guards
-  // against PENDING but if a user lands here directly we route them back.
   if (job.status === "PENDING") {
     return (
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-4">
@@ -195,7 +173,7 @@ export default function ImportStudentsPreviewPage() {
           This import is still awaiting column mapping.
         </div>
         <Button asChild>
-          <Link href={`/students/import/${jobId}/mapping`}>
+          <Link href={`/guardians/import/${jobId}/mapping`}>
             Go to mapping →
           </Link>
         </Button>
@@ -257,10 +235,6 @@ export default function ImportStudentsPreviewPage() {
   }
 
   if (job.status === "COMMITTING" || job.status === "COMPLETED") {
-    // The job already moved past preview — route the admin to the /done
-    // screen which is the canonical home for COMMITTING/COMPLETED state.
-    // Renders an intermediate panel in case the redirect hasn't fired yet
-    // (Server Components hydration race) or is blocked.
     return (
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
         <Wizard.Header step={3} title="Import already in progress" />
@@ -272,7 +246,7 @@ export default function ImportStudentsPreviewPage() {
           .
         </div>
         <Button asChild>
-          <Link href={`/students/import/${jobId}/done`}>
+          <Link href={`/guardians/import/${jobId}/done`}>
             Go to results →
           </Link>
         </Button>
@@ -358,7 +332,7 @@ export default function ImportStudentsPreviewPage() {
         <div className="text-sm">
           <p className="font-medium">
             Commit {job.validRows}{" "}
-            {job.validRows === 1 ? "student" : "students"}?
+            {job.validRows === 1 ? "guardian link" : "guardian links"}?
           </p>
           <p className="text-xs text-muted-foreground">
             {job.invalidRows > 0
@@ -390,7 +364,7 @@ export default function ImportStudentsPreviewPage() {
             {committing
               ? "Starting import…"
               : `Commit ${job.validRows} ${
-                  job.validRows === 1 ? "student" : "students"
+                  job.validRows === 1 ? "row" : "rows"
                 }`}
           </Button>
         </div>
@@ -399,11 +373,10 @@ export default function ImportStudentsPreviewPage() {
   );
 }
 
-// Header / SummaryCard / EmptyPanel / BadRowsTable / formatElapsed moved
-// to `@/lib/imports/wizard-ui` in slice 8 cp2. GoodRowsTable stays local
-// because it's student-specific (admission #, name, DOB, gender columns);
-// the guardian wizard has its own variant.
-
+// Guardian-specific good-rows preview. Columns chosen for at-a-glance
+// readability — admins want to verify "the right parent is linked to
+// the right child" before committing. Phone and relationship help
+// distinguish two parents at the same household.
 interface GoodRow {
   rowNumber: number;
   parsedRow: Record<string, unknown>;
@@ -416,10 +389,10 @@ function GoodRowsTable({ rows }: { rows: GoodRow[] }) {
         <thead className="bg-muted/30 text-left text-xs uppercase text-muted-foreground">
           <tr>
             <th className="px-3 py-2 font-medium">Row</th>
-            <th className="px-3 py-2 font-medium">Admission #</th>
-            <th className="px-3 py-2 font-medium">Name</th>
-            <th className="px-3 py-2 font-medium">DOB</th>
-            <th className="px-3 py-2 font-medium">Gender</th>
+            <th className="px-3 py-2 font-medium">Ward Admission #</th>
+            <th className="px-3 py-2 font-medium">Guardian</th>
+            <th className="px-3 py-2 font-medium">Relationship</th>
+            <th className="px-3 py-2 font-medium">Phone</th>
           </tr>
         </thead>
         <tbody>
@@ -429,20 +402,17 @@ function GoodRowsTable({ rows }: { rows: GoodRow[] }) {
                 {r.rowNumber}
               </td>
               <td className="px-3 py-2 font-mono text-xs">
-                {String(r.parsedRow.admissionNumber ?? "")}
+                {String(r.parsedRow.studentAdmissionNumber ?? "")}
               </td>
               <td className="px-3 py-2">
                 {String(r.parsedRow.lastName ?? "")},{" "}
                 {String(r.parsedRow.firstName ?? "")}
-                {r.parsedRow.middleName
-                  ? ` ${String(r.parsedRow.middleName).charAt(0)}.`
-                  : ""}
               </td>
               <td className="px-3 py-2 text-xs">
-                {formatDob(r.parsedRow.dateOfBirth)}
+                {String(r.parsedRow.relationship ?? "")}
               </td>
-              <td className="px-3 py-2 text-xs">
-                {String(r.parsedRow.gender ?? "")}
+              <td className="px-3 py-2 font-mono text-xs">
+                {String(r.parsedRow.phone ?? "")}
               </td>
             </tr>
           ))}
@@ -450,14 +420,4 @@ function GoodRowsTable({ rows }: { rows: GoodRow[] }) {
       </table>
     </div>
   );
-}
-
-// BadRowsTable + BadRow type + formatElapsed moved to wizard-ui in cp2.
-
-function formatDob(raw: unknown): string {
-  // Validate worker stores Date objects in previewSnapshot.parsedRow which
-  // JSON-roundtrip to ISO strings. Slice off the time portion for display.
-  if (typeof raw === "string") return raw.slice(0, 10);
-  if (raw instanceof Date) return raw.toISOString().slice(0, 10);
-  return "";
 }

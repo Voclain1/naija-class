@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  FileSpreadsheet,
   Loader2,
   PlusCircle,
   Search,
@@ -10,6 +11,7 @@ import {
   UserPlus,
   X,
 } from "lucide-react";
+import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
@@ -98,15 +100,32 @@ export function GuardiansTab({ studentId, guardians, onGuardiansChanged }: Props
           currentGuardians={guardians}
         />
       ) : (
-        <Button
-          type="button"
-          variant="outline"
-          onClick={() => setShowAdd(true)}
-          className="w-fit"
-        >
-          <PlusCircle className="mr-1 h-4 w-4" />
-          Add guardian
-        </Button>
+        <div className="flex flex-wrap items-center gap-3">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => setShowAdd(true)}
+            className="w-fit"
+          >
+            <PlusCircle className="mr-1 h-4 w-4" />
+            Add guardian
+          </Button>
+          {/*
+            Slice 8 cp2 discoverability CTA — drops admins onto the
+            guardian bulk-import wizard from the place they spend most
+            of their guardian time (the student-detail Guardians tab).
+            Keeps the inline Add Guardian flow as the canonical "this
+            one student" entry; the link is for the case where the
+            admin realises they have a whole spreadsheet of parents.
+          */}
+          <Link
+            href="/guardians/import"
+            className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+          >
+            <FileSpreadsheet className="h-4 w-4" />
+            Bulk import guardians from CSV →
+          </Link>
+        </div>
       )}
     </div>
   );

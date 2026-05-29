@@ -7,20 +7,23 @@ import { useCallback, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { ApiError } from "@/lib/api-client";
-import { uploadStudentsCsv } from "@/lib/imports/api";
+import { uploadGuardiansCsv } from "@/lib/imports/api";
 import { saveUploadResponse } from "@/lib/imports/session";
 
-// /students/import — Slice 6 cp4 step 1.
+// /guardians/import — Slice 8 cp2 step 1.
 //
-// File picker + drag-drop. On success, navigates to the mapping step.
-// Inline error states match the API's documented error codes
-// (FILE_TOO_LARGE, TOO_MANY_ROWS, INVALID_CSV, AMBIGUOUS_HEADERS).
+// File picker + drag-drop. On success navigates to the mapping step.
+// Same shape as the slice 6 students upload page (apps/web/src/app/
+// (admin)/students/import/page.tsx); the URL + the API wrapper +
+// the navigation target are the only differences.
 //
-// We accept .csv only. The server doesn't pin a MIME type because
-// Excel-exported CSVs come through with a variety of types, but we use the
-// `accept` attribute as a friendly client-side filter; the real check is
-// always server-side.
-export default function ImportStudentsUploadPage() {
+// We rely on the same sessionStorage bridge as students for headers
+// + sampleRows hand-off — the GET DTO doesn't expose them (PII
+// concern + lossy projection on the server). Mapping page detects an
+// empty session and routes back here. Refresh-resume across browser
+// tabs doesn't work today; tracked in deferred.md.
+
+export default function ImportGuardiansUploadPage() {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
@@ -36,11 +39,9 @@ export default function ImportStudentsUploadPage() {
       setErrorMessage(null);
       setFileName(file.name);
       try {
-        const res = await uploadStudentsCsv(file);
-        // Park the headers + sample rows so the mapping page can render
-        // without an extra fetch — see lib/imports/session.ts for why.
+        const res = await uploadGuardiansCsv(file);
         saveUploadResponse(res);
-        router.push(`/students/import/${res.jobId}/mapping`);
+        router.push(`/guardians/import/${res.jobId}/mapping`);
       } catch (e) {
         if (e instanceof ApiError) {
           setErrorCode(e.code);
@@ -61,7 +62,6 @@ export default function ImportStudentsUploadPage() {
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       if (file) void handleFile(file);
-      // Reset so the same file can be re-picked after an error.
       e.target.value = "";
     },
     [handleFile],
@@ -84,11 +84,12 @@ export default function ImportStudentsUploadPage() {
           Step 1 of 4
         </p>
         <h1 className="text-2xl font-semibold tracking-tight">
-          Import students from CSV
+          Import guardians from CSV
         </h1>
         <p className="text-sm text-muted-foreground">
-          Upload a CSV exported from your spreadsheet. You&apos;ll map columns
-          on the next screen, then review what&apos;s ready to import.
+          Upload a CSV that lists each parent or guardian and the student
+          they&apos;re responsible for. We&apos;ll dedup parents who appear
+          on multiple rows (one row per child is fine).
         </p>
       </header>
 
@@ -98,25 +99,13 @@ export default function ImportStudentsUploadPage() {
           <div className="flex flex-col text-sm">
             <span className="font-medium">Not sure where to start?</span>
             <span className="text-xs text-muted-foreground">
-              Download the template, fill in your students, then upload it
-              here.
+              Download the template, fill in your guardians (use the
+              student&apos;s admission number to link), then upload it here.
             </span>
-            {/*
-              Slice 8 cp2 sub-line CTA — handles the case where an admin
-              clicked "Import" from the students roster but actually
-              wanted guardians. Quiet inline link, not a banner — the
-              primary path is still students.
-            */}
-            <Link
-              href="/guardians/import"
-              className="mt-1 text-xs text-muted-foreground underline-offset-2 hover:underline"
-            >
-              Importing guardians instead? Use the guardian import wizard →
-            </Link>
           </div>
         </div>
         <Button asChild variant="outline" size="sm">
-          <a href="/students-import-template.csv" download>
+          <a href="/guardians-import-template.csv" download>
             <Download className="mr-1 h-4 w-4" />
             Template CSV
           </a>

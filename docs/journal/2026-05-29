@@ -1,4 +1,4 @@
-# 2026-MM-DD
+# 2026-05-29
 
 ## Starting state
 Slice 7 closed yesterday (PRs #18 + #19). Phase 1 at 7 of 13 slices.
@@ -11,10 +11,164 @@ Slice 8 — Guardian + Teacher CSV imports. Plan-first (lighter than
 6/7 plans, but four real decisions need settling): teacher-import
 scope vs deferring to after slice 10, guardian linking semantics
 (standalone vs single-link vs sibling-case multi-link), wizard
-routing, per-type Zod schemas.
+routing, per-type Zod schemas. **Closed end-to-end:** plan + cp1
+(engine refactor + guardian API + 6 user-specified tests + circular-
+import fix) + cp2 (shared wizard UI + guardian wizard + 2 CTAs).
 
 ## Decisions made
-- (capture as the day unfolds)
+- **Q1 — defer teacher import to slice 10.** The Invitation table can't
+  carry staffNumber/specialty per phase-1.md:478 ("No new columns are
+  added to invitations"), and the slice 8 spec at line 950 requires
+  both. Spec is internally inconsistent. Slice 10 ships TeacherProfile
+  + the full teacher import together. Phase 1 deliverables don't
+  require teacher bulk-import.
+- **Q2 — single Admission Number column; sibling case handled by
+  Guardian dedup.** Two CSV rows for the same parent with different
+  studentAdmissionNumber → ONE Guardian + TWO StudentGuardian links.
+  Naturally expressed, simpler than multi-link, spec-aligned.
+- **Q3 — symmetric `/guardians/import` route**, plus two CTAs:
+  bulk-import link on the student-detail Guardians tab (the place
+  admins spend most of their guardian time), and a sub-line on the
+  /students/import help card pointing at the guardian wizard.
+- **Q4 — guardian Zod row schema** (required: firstName, lastName,
+  relationship, phone, studentAdmissionNumber; optional: email,
+  occupation, employer, address, notes, isPrimary, canPickup) plus a
+  12-field synonym table including "ward" / "ward adm no" idioms for
+  the link column.
+- **Two design divergences from the spec** (Q2-related), both captured
+  inline in code + in `docs/deferred.md`:
+  - **Dedup key is `(phone, firstName, lastName)`**, not the spec's
+    `(phone, lastName)`. Schema slice 5 comment explicitly anticipates
+    parents sharing a household phone + surname; the spec key
+    collapses Mr. + Mrs. Okonkwo into one Guardian. Inline pointer
+    added at phase-1.md:949.
+  - **First-row-wins** when dedup key matches but Guardian-level
+    fields disagree (relationship, email, etc.). Schema puts
+    relationship on Guardian, not on the link — find-or-create
+    semantics force a choice and first-wins is the simplest honest
+    one. Tested explicitly.
+- **One unexpected during cp1 — circular import bug.** Refactor had
+  `students/import.ts` value-re-exporting `STUDENT_IMPORT_DATE_FORMATS`
+  etc. from `../imports/index.js`. CommonJS load chain hit the value
+  re-export while `students/import.js` was mid-load, so the
+  apply-mapping schema was built with `z.enum(undefined)`. 17 existing
+  tests went red with the cryptic "Cannot read properties of undefined
+  (reading 'map')". Fix: only TYPE-only re-exports from
+  `students/import.ts`; the one external value-level consumer
+  (apps/web/.../mapping/page.tsx) now imports `IMPORT_DATE_FORMATS`
+  directly. Comment block in students/import.ts warns the next
+  refactor away.
+
+## Done today
+- **cp1 — guardian engine + API end-to-end** (PR follow-up):
+  - Extracted shared `runValidationEngine` core into
+    `validate.engine.ts/parseSourceCsv<Row>` — the CSV-parse +
+    blank-row + per-row accumulator is factored once; per-type engines
+    layer dedup on top.
+  - `validate-students.engine.ts` (new) — moved slice-6 student
+    dedup logic out of the shared engine.
+  - `validate-guardians.engine.ts` (new) — guardian-specific full-
+    tuple in-file dedup (collapse-to-merge for sibling case) +
+    studentAdmissionNumber external resolution.
+  - `workers/commit-students.row.ts` + `workers/commit-guardians.row.ts`
+    (new) — per-type per-row commit functions. Guardian commit is
+    three-op tx: student lookup + Guardian find-or-create +
+    StudentGuardian link. Typed `CommitRowError` for the two
+    recoverable per-row failures.
+  - `workers/commit.handler.ts` — type-dispatched orchestration shell.
+    Writes `student.import.commit` or `guardian.import.commit` audit
+    actions based on type.
+  - `imports.processor.ts` — validate handler dispatches by type.
+    Same @Processor dispatcher pattern slice 7 cp1 documented.
+  - Service: extracted `uploadImportFile(type)` private helper.
+    Polymorphic `applyMapping` (loads job, picks schema). Widened
+    `triggerCommit`, `generateBadRowsCsv`, `generateErrorReportCsv`
+    type gates from STUDENTS-only to STUDENTS | GUARDIANS.
+  - Controller: new `POST /imports/guardians/upload` mirroring the
+    student endpoint.
+  - Types: shared `ImportOptions`, `ImportRowError`, `ImportRowGood<Row>`
+    + per-type guardian row schema + parse function +
+    `applyGuardianImportMappingSchema`. `PHASE_1_SLICE_8_PERMISSIONS = ["guardian.import"]`.
+  - **6 user-specified tests pass** in `commit-guardians.handler.spec.ts`:
+    sibling case (1 Guardian + 2 links), relationship typo (first-row
+    wins), missing admno at validate, student-withdrawn-mid-commit,
+    every-row-collides, StudentGuardian @@unique P2002 → bad row.
+  - Curl proof: signup → seed students → upload guardian CSV → map
+    → validate → READY (2 valid / 1 missing-admno) → commit →
+    COMPLETED. DB has ONE Guardian + TWO StudentGuardian links from
+    the sibling rows; error report has the missing-admno row; all 5
+    expected audit rows present (`import.upload`, `import.mapping`,
+    `import.commit`, **`guardian.import.commit`**,
+    `import.error-report.download`).
+
+- **cp2 — wizard UI + discoverability** (THIS slice close):
+  - Extracted shared wizard chrome to `apps/web/src/lib/imports/wizard-ui.tsx`:
+    `Wizard.Header`, `Wizard.SummaryCard`, `Wizard.EmptyPanel`,
+    `Wizard.BadRowsTable`, `Wizard.PollingSkeleton`, plus
+    `formatElapsed` helper. Components are pure / presentational —
+    pages own the data and pass it down.
+  - Migrated the slice-6/7 student preview + done pages to the shared
+    components. 1:1 swap with no rendered-output changes — same
+    props, same Tailwind classes, same DOM structure.
+  - New `apps/web/src/lib/imports/guardian-synonyms.ts` — 12-field
+    synonym table + `detectMissingNameSplit(headers)` helper for the
+    combined-name guardrail. Picks up "Parent Name" / "Guardian Name"
+    / "Name" / "Full Name" columns when no separate first/last
+    columns map; the mapping page renders an inline amber note next
+    to the combined column explaining to split + re-upload. We
+    deliberately don't auto-split (Yoruba/Igbo two-part names break
+    naive heuristics).
+  - Four new pages under `apps/web/src/app/(admin)/guardians/import/`:
+    upload (`page.tsx`), mapping (`[jobId]/mapping/page.tsx` with the
+    combined-name guardrail), preview (`[jobId]/preview/page.tsx`
+    with a guardian-tuned `GoodRowsTable` showing
+    Ward Admission # / Guardian / Relationship / Phone), done
+    (`[jobId]/done/page.tsx` with "Import another guardian file"
+    secondary CTA and "View roster" → `/students` primary CTA).
+  - Two discoverability CTAs added:
+    - Bulk-import link with `FileSpreadsheet` icon next to "Add
+      guardian" on the student-detail Guardians tab.
+    - Sub-line "Importing guardians instead? Use the guardian import
+      wizard →" on the /students/import help card.
+  - Template CSV at `apps/web/public/guardians-import-template.csv` —
+    header row + one Nigerian example (Mother Ngozi Okonkwo, ward
+    admission "2025/JSS1/001", etc.).
+  - Guardian API client: `uploadGuardiansCsv` +
+    `applyGuardiansImportMapping`. Shared the multipart upload helper
+    between students and guardians (extracted `uploadImportCsv` in
+    api.ts).
+
+## Build verification
+- `pnpm typecheck` green: types, api, web all clean.
+- `pnpm lint` green: api, web.
+- `pnpm test` green at **355/355** (349 pre-slice-8 + 6 guardian
+  cases). API code unchanged in cp2; verified unchanged.
+- **SECURITY DEFINER count unchanged at 4.**
+- **SSR-level smoke** (cp2): web dev server up; new routes
+  `/guardians/import` and template CSV serve 200 OK; existing
+  `/students/import` continues to serve 200 OK (no regression from
+  shared-component swap).
+- **Manual browser walkthrough = the gate.** Auth flows + drag-drop +
+  the combined-name guardrail need a real browser session — handing
+  back for walkthrough.
+
+## Slice 8 close
+- `docs/deferred.md` gained three entries: the two design divergences
+  (dedup key + first-row-wins merge policy) and the `/guardians`
+  roster page deferral (the wizard's "View roster" CTA currently
+  routes to `/students` as a stopgap; flip the target when slice 11+
+  ships `/guardians`).
+- `docs/modules/phase-1.md:949` got an inline pointer noting the
+  dedup-key divergence — the spec text still reads the original
+  rule, but readers are warned not to "fix" the implementation.
+- Phase 1 at **8 of 13 slices**. Acceptance bar test #6 (CSV import
+  end-to-end) passed at slice 7 close; slice 8 adds the parallel
+  guardian path. Test #7 (guardian linking) now achievable via the
+  bulk path as well as the slice-5 inline form.
 
 ## Tomorrow's first task
-- (fill at end of day)
+- Slice 9 — Enrollment. Per-term enrollment model (`@@unique([schoolId,
+  studentId, termId])`), denormalised academicYearId, current-term
+  roster view, bulk-enroll wizard with previous-term carry-over.
+  Closes the student loop: roster + arms now know which student is
+  in which arm in which term. ~2 days per spec.

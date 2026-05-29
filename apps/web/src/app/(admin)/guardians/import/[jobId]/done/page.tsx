@@ -19,20 +19,16 @@ import { ApiError } from "@/lib/api-client";
 import { downloadErrorReportCsv, getImportJob } from "@/lib/imports/api";
 import { Wizard } from "@/lib/imports/wizard-ui";
 
-// /students/import/[jobId]/done — Slice 7 cp2 step 4 (final).
+// /guardians/import/[jobId]/done — Slice 8 cp2 step 4 (final).
 //
-// Mount → GET job. If COMMITTING, poll every 2s with elapsed timer (same
-// pattern as the preview page during VALIDATING). On COMPLETED render the
-// results panel (with optional error-report download); on FAILED render
-// the error panel with `failedReason`.
-//
-// This page is purely jobId-driven — it does NOT read sessionStorage. The
-// commit handler runs server-side; everything the wizard needs comes
-// back through GET /imports/:jobId.
+// jobId-driven, no sessionStorage. Same poll-self-rearming pattern as
+// the students done page. The "View roster" primary CTA points at
+// /students (the canonical roster page) because /guardians doesn't
+// exist as a roster route yet (deferred to slice 11).
 
 const POLL_INTERVAL_MS = 2000;
 
-export default function ImportStudentsDonePage() {
+export default function ImportGuardiansDonePage() {
   const params = useParams<{ jobId: string }>();
   const jobId = params.jobId;
 
@@ -41,10 +37,6 @@ export default function ImportStudentsDonePage() {
   const [downloading, setDownloading] = useState(false);
   const [elapsed, setElapsed] = useState(0);
 
-  // Same poll-self-rearming pattern as the preview page: setTimeout, not
-  // setInterval, so a slow API doesn't pile up requests. The status ref
-  // lets the error handler decide whether to keep retrying after a
-  // transient failure.
   const statusRef = useRef<ImportJobDto["status"] | null>(null);
   statusRef.current = job?.status ?? null;
 
@@ -60,9 +52,6 @@ export default function ImportStudentsDonePage() {
         if (next.status === "COMMITTING") {
           timer = setTimeout(tick, POLL_INTERVAL_MS);
         }
-        // COMPLETED / FAILED — stop polling. PENDING / VALIDATING / READY
-        // shouldn't be reachable from /done in normal flow, but we render
-        // a "wrong place" panel below rather than re-polling forever.
       } catch (e) {
         if (cancelled) return;
         if (e instanceof ApiError && e.status === 404) {
@@ -72,8 +61,6 @@ export default function ImportStudentsDonePage() {
         setError(
           e instanceof ApiError ? e.message : "Could not load import job.",
         );
-        // Keep retrying on transient errors so a flaky network doesn't
-        // strand the wizard mid-commit.
         if (statusRef.current === "COMMITTING" || statusRef.current === null) {
           timer = setTimeout(tick, POLL_INTERVAL_MS);
         }
@@ -87,8 +74,6 @@ export default function ImportStudentsDonePage() {
     };
   }, [jobId]);
 
-  // Elapsed timer while committing — admins watching a 250-row import
-  // need to know the page is doing something. Resets when status flips.
   useEffect(() => {
     if (job?.status !== "COMMITTING") {
       setElapsed(0);
@@ -124,7 +109,7 @@ export default function ImportStudentsDonePage() {
           {error}
         </div>
         <Button asChild variant="outline">
-          <Link href="/students/import">Back to import</Link>
+          <Link href="/guardians/import">Back to import</Link>
         </Button>
       </div>
     );
@@ -139,15 +124,13 @@ export default function ImportStudentsDonePage() {
     );
   }
 
-  // Status branches — each one renders its own panel.
-
   if (job.status === "COMMITTING") {
     return (
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
-        <Wizard.Header step={4} title="Importing your students" />
+        <Wizard.Header step={4} title="Importing your guardians" />
         <Wizard.PollingSkeleton
           label={`Importing ${job.validRows} ${
-            job.validRows === 1 ? "student" : "students"
+            job.validRows === 1 ? "guardian link" : "guardian links"
           }…`}
           elapsedSeconds={elapsed}
         />
@@ -170,7 +153,7 @@ export default function ImportStudentsDonePage() {
         </div>
         <div className="flex gap-2">
           <Button asChild variant="outline">
-            <Link href="/students/import">Back to import</Link>
+            <Link href="/guardians/import">Back to import</Link>
           </Button>
         </div>
       </div>
@@ -178,9 +161,6 @@ export default function ImportStudentsDonePage() {
   }
 
   if (job.status !== "COMPLETED") {
-    // PENDING / VALIDATING / READY — admin landed here too early
-    // (manual URL paste or sessionStorage drift). Point them at the
-    // right step rather than spinning.
     return (
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
         <Wizard.Header step={4} title="Import isn't ready yet" />
@@ -189,7 +169,7 @@ export default function ImportStudentsDonePage() {
           You can&apos;t see results until commit finishes.
         </div>
         <Button asChild variant="outline">
-          <Link href={`/students/import/${jobId}/preview`}>
+          <Link href={`/guardians/import/${jobId}/preview`}>
             Back to preview
           </Link>
         </Button>
@@ -197,11 +177,11 @@ export default function ImportStudentsDonePage() {
     );
   }
 
-  // COMPLETED — the happy(ish) case. Compute the row arithmetic for the
-  // sub-lines. `commitTimeFailures` covers rows that re-validate caught
-  // (race-condition collisions) AND any commit-time per-row failures —
-  // the difference is invisible to the admin; both ended up in the
-  // error report with a per-row reason.
+  // COMPLETED. `commitTimeFailures` captures rows that re-validate caught
+  // OR per-row P2002s — to the admin the distinction is invisible (both
+  // end up in the error report with a per-row reason). For guardian
+  // imports the typical commit-time failure is either a withdrawn
+  // student or a duplicate link.
   const commitTimeFailures = Math.max(0, job.validRows - job.committedRows);
 
   return (
@@ -213,16 +193,23 @@ export default function ImportStudentsDonePage() {
           <CheckCircle2 className="mt-0.5 h-6 w-6" />
           <div className="flex flex-1 flex-col gap-1">
             <p className="text-lg font-semibold">
-              Imported {job.committedRows.toLocaleString()}{" "}
-              {job.committedRows === 1 ? "student" : "students"}.
+              Linked {job.committedRows.toLocaleString()}{" "}
+              {job.committedRows === 1
+                ? "guardian to a student"
+                : "guardian rows to students"}
+              .
+            </p>
+            <p className="text-xs text-emerald-900/80">
+              Parents who appeared on multiple rows (e.g. one row per child)
+              were collapsed into a single guardian record.
             </p>
             {(commitTimeFailures > 0 || job.invalidRows > 0) && (
-              <ul className="flex flex-col gap-0.5 text-sm">
+              <ul className="mt-1 flex flex-col gap-0.5 text-sm">
                 {commitTimeFailures > 0 && (
                   <li>
                     {commitTimeFailures.toLocaleString()}{" "}
                     {commitTimeFailures === 1 ? "row" : "rows"} failed during
-                    commit (likely a duplicate admission number).
+                    commit (likely a withdrawn student or a duplicate link).
                   </li>
                 )}
                 {job.invalidRows > 0 && (
@@ -268,9 +255,15 @@ export default function ImportStudentsDonePage() {
 
       <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:justify-end">
         <Button asChild variant="outline">
-          <Link href="/students/import">Import another file</Link>
+          <Link href="/guardians/import">Import another guardian file</Link>
         </Button>
         <Button asChild>
+          {/*
+            /guardians roster page is slice 11 territory — until it
+            exists, the primary CTA routes to the student roster where
+            admins can drill into any student and see the new guardians
+            on the Guardians tab.
+          */}
           <Link href="/students">
             <Users className="h-4 w-4" />
             View roster
@@ -280,5 +273,3 @@ export default function ImportStudentsDonePage() {
     </div>
   );
 }
-
-// Header / formatElapsed moved to wizard-ui in cp2.
