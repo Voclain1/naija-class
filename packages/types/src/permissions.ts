@@ -66,10 +66,18 @@ export const PHASE_1_SLICE_4_PERMISSIONS = [
 // Phase 1 slice 6 contributes the student-import permission. Reference-only
 // until slice 13 wires PermissionsGuard — until then the imports controller
 // gates on owner/admin via assertUserActiveAndHasOneOf (same pattern as
-// every prior Phase 1 slice). Guardian + teacher imports in slice 8 will
-// add `guardian.import` and `teacher.import` alongside this.
+// every prior Phase 1 slice).
 export const PHASE_1_SLICE_6_PERMISSIONS = [
   "student.import",
+] as const;
+
+// Phase 1 slice 8 contributes the guardian-import permission. `teacher.import`
+// is deferred to slice 10 — the Invitation table can't carry staffNumber /
+// specialty per phase-1.md:478, so the spec's teacher-import shape needs
+// TeacherProfile (slice 10) to land first. cp1 design call captured in the
+// 2026-05-29 journal entry.
+export const PHASE_1_SLICE_8_PERMISSIONS = [
+  "guardian.import",
 ] as const;
 
 export const ALL_PERMISSIONS = [...PHASE_0_PERMISSIONS] as const;

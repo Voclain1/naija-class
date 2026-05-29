@@ -8,13 +8,18 @@ import {
   ConflictError,
   NotFoundError,
   ValidationError,
+  applyGuardianImportMappingSchema,
   applyStudentImportMappingSchema,
+  type ApplyGuardianImportMappingInput,
   type ApplyStudentImportMappingInput,
   type ImportCommitAcceptedResponse,
   type ImportJobDto,
+  type GuardianImportRow,
   type ImportJobPreviewSnapshot,
+  type ImportJobType,
   type ImportMappingAcceptedResponse,
   type ImportUploadResponse,
+  type StudentImportRow,
 } from "@school-kit/types";
 
 import type { AuthContext } from "../../common/auth/auth-context";
@@ -32,8 +37,10 @@ import {
   badRowsToCsv,
   buildBadRowsFromSource,
   parsePersistedMapping,
-  runValidationEngine,
+  type EngineResult,
 } from "./validate.engine";
+import { runGuardianValidationEngine } from "./validate-guardians.engine";
+import { runStudentValidationEngine } from "./validate-students.engine";
 
 // Audit actions — singular resource, dotted verb (locked in slice 1).
 //
@@ -58,19 +65,24 @@ const AUDIT = {
 // tenantWorker can establish withTenant() context BEFORE any DB call —
 // see apps/api/src/common/queue/tenant-worker.ts header for the full
 // rationale. `userId` is included because the worker writes audit rows
-// (cp3) and needs the actor.
+// and needs the actor.
+//
+// `type` is on the payload for debugging / logging convenience only —
+// the worker re-reads it from ImportJob.type before dispatching. Slice 8
+// widened from STUDENTS-only to STUDENTS | GUARDIANS.
 export interface ValidateJobData extends TenantJobData {
   jobId: string;
-  type: "STUDENTS";
+  type: "STUDENTS" | "GUARDIANS";
 }
 
-// Job-data shape for the commit worker (slice 7). Same tenancy contract
-// as ValidateJobData; the worker re-streams source.csv from storage and
-// re-runs the validation engine before doing per-row inserts, so it
-// needs nothing else from the payload.
+// Job-data shape for the commit worker (slice 7, widened in slice 8).
+// Same tenancy contract as ValidateJobData; the worker re-streams
+// source.csv from storage and re-runs the per-type validation engine
+// before doing per-row inserts, so it needs nothing else from the
+// payload.
 export interface CommitJobData extends TenantJobData {
   jobId: string;
-  type: "STUDENTS";
+  type: "STUDENTS" | "GUARDIANS";
 }
 
 interface RequestContext {
@@ -123,6 +135,27 @@ export class ImportsService {
     file: UploadFile,
     reqCtx: RequestContext,
   ): Promise<ImportUploadResponse> {
+    return this.uploadImportFile(authCtx, file, reqCtx, "STUDENTS");
+  }
+
+  // POST /imports/guardians/upload — slice 8. Symmetric with uploadStudents
+  // (same multipart shape, same CSV preflight, same ImportJob lifecycle).
+  // The type discriminator is the only thing that differs; everything else
+  // factors into uploadImportFile.
+  async uploadGuardians(
+    authCtx: AuthContext,
+    file: UploadFile,
+    reqCtx: RequestContext,
+  ): Promise<ImportUploadResponse> {
+    return this.uploadImportFile(authCtx, file, reqCtx, "GUARDIANS");
+  }
+
+  private async uploadImportFile(
+    authCtx: AuthContext,
+    file: UploadFile,
+    reqCtx: RequestContext,
+    type: Exclude<ImportJobType, "TEACHERS">,
+  ): Promise<ImportUploadResponse> {
     await assertUserActiveAndHasOneOf(authCtx, ["owner", "admin"]);
 
     // Multer fileFilter already rejected non-text uploads; we accept any
@@ -139,7 +172,8 @@ export class ImportsService {
 
     // Preflight — synchronous. Throws on caps / header issues. Done
     // BEFORE the withTenant transaction so we never open a DB tx for an
-    // upload we're going to reject.
+    // upload we're going to reject. Preflight is type-agnostic (just
+    // CSV shape + row count + header inspection).
     const preflight = preflightCsv(file.buffer);
 
     // We need a jobId to derive the storage path; Postgres' uuid()
@@ -164,7 +198,7 @@ export class ImportsService {
           data: {
             id: jobId,
             schoolId: authCtx.schoolId,
-            type: "STUDENTS",
+            type,
             status: "PENDING",
             sourceFileUrl: storagePathFor(authCtx.schoolId, {
               kind: "import-source",
@@ -195,7 +229,7 @@ export class ImportsService {
             // those live in the storage object (tenant-scoped path) and
             // never enter the audit log.
             metadata: {
-              type: "STUDENTS",
+              type,
               totalRows: preflight.totalRows,
               headerCount: preflight.headers.length,
               fileName: file.originalname,
@@ -207,7 +241,7 @@ export class ImportsService {
         return {
           jobId,
           status: "PENDING" as const,
-          type: "STUDENTS" as const,
+          type,
           headers: preflight.headers,
           sampleRows: preflight.sampleRows,
           totalRows: preflight.totalRows,
@@ -255,7 +289,44 @@ export class ImportsService {
   ): Promise<ImportMappingAcceptedResponse> {
     await assertUserActiveAndHasOneOf(authCtx, ["owner", "admin"]);
 
-    const parsed = applyStudentImportMappingSchema.safeParse(rawInput);
+    // Load the job FIRST so we know which mapping schema to validate
+    // against. Slice 8 polymorphism: STUDENTS jobs validate the body
+    // with applyStudentImportMappingSchema; GUARDIANS jobs use
+    // applyGuardianImportMappingSchema. The body shape is otherwise
+    // identical — only the target-field enum + required-set differ.
+    let jobType: "STUDENTS" | "GUARDIANS";
+    await withTenant(authCtx.schoolId, async (db) => {
+      const job = await db.importJob.findUnique({
+        where: { id: jobId },
+        select: { id: true, status: true, type: true },
+      });
+      if (!job) throw new NotFoundError("Import job not found.");
+      if (job.type !== "STUDENTS" && job.type !== "GUARDIANS") {
+        // TEACHERS deferred to slice 10 per cp1 design call.
+        throw new ConflictError(
+          "INVALID_JOB_TYPE",
+          `Mapping is not yet supported for ${job.type} imports.`,
+        );
+      }
+      if (job.status !== "PENDING") {
+        throw new ConflictError(
+          "JOB_NOT_IN_PENDING_STATE",
+          `Mapping can only be applied to a PENDING job. Current status: ${job.status}.`,
+        );
+      }
+      jobType = job.type;
+    });
+
+    // jobType is set inside the withTenant callback above; TS can't see
+    // through the closure assignment so we narrow with !.
+    const type = jobType!;
+    const resourceLabel = type === "STUDENTS" ? "student" : "guardian";
+
+    const schema =
+      type === "STUDENTS"
+        ? applyStudentImportMappingSchema
+        : applyGuardianImportMappingSchema;
+    const parsed = schema.safeParse(rawInput);
     if (!parsed.success) {
       // The schema's superRefine produces a `missing` array in
       // issue.params (a ZodCustomIssue) when required fields are absent —
@@ -265,7 +336,7 @@ export class ImportsService {
       if (missing.length > 0) {
         throw new ValidationError(
           "MISSING_REQUIRED_MAPPING",
-          `Required student fields not mapped: ${missing.join(", ")}.`,
+          `Required ${resourceLabel} fields not mapped: ${missing.join(", ")}.`,
           { missing },
         );
       }
@@ -274,24 +345,23 @@ export class ImportsService {
         formatZodIssues(parsed.error.issues),
       );
     }
-    const input: ApplyStudentImportMappingInput = parsed.data;
+    const input: ApplyStudentImportMappingInput | ApplyGuardianImportMappingInput =
+      parsed.data;
 
     await withTenant(authCtx.schoolId, async (db) => {
+      // Re-fetch with the status guard inside the SAME tx as the update
+      // so a concurrent applyMapping can't race past PENDING. (Belt-and-
+      // braces — the loader at the top of this method already filtered
+      // PENDING-only types, but a status flip between then and now
+      // would otherwise sneak through.)
       const job = await db.importJob.findUnique({
         where: { id: jobId },
-        select: { id: true, status: true, type: true },
+        select: { status: true },
       });
-      if (!job) throw new NotFoundError("Import job not found.");
-      if (job.type !== "STUDENTS") {
-        throw new ConflictError(
-          "INVALID_JOB_TYPE",
-          "This mapping endpoint is for STUDENTS imports.",
-        );
-      }
-      if (job.status !== "PENDING") {
+      if (!job || job.status !== "PENDING") {
         throw new ConflictError(
           "JOB_NOT_IN_PENDING_STATE",
-          `Mapping can only be applied to a PENDING job. Current status: ${job.status}.`,
+          `Mapping can only be applied to a PENDING job.`,
         );
       }
 
@@ -300,7 +370,7 @@ export class ImportsService {
         data: {
           columnMapping: {
             // The mapping object is what the validate worker reads.
-            // `options` lives alongside it so the cp3 worker can find
+            // `options` lives alongside it so the worker can find
             // dateFormat / treatBlankAs in one fetch.
             mapping: input.columnMapping,
             options: input.options ?? {
@@ -323,7 +393,8 @@ export class ImportsService {
           metadata: {
             // Header names ARE allowed in audit metadata — they came
             // from the school's own file (e.g. "Adm No", "DOB") and are
-            // not student PII.
+            // not PII.
+            type,
             mappedHeaderCount: Object.keys(input.columnMapping).length,
             mappedFieldCount: Object.values(input.columnMapping).filter(
               (v) => v !== null,
@@ -334,16 +405,16 @@ export class ImportsService {
     });
 
     // Enqueue AFTER the DB commit. If the enqueue fails the row sits in
-    // VALIDATING forever — that's a known issue (tracked in cp3); cp2
-    // accepts it because Redis being down is detected at startup. We
-    // pass schoolId from authCtx — never from a body field.
+    // VALIDATING forever — known limitation; Redis being down is
+    // detected at startup. schoolId from authCtx — never from a body
+    // field.
     await this.queue.add(
       IMPORTS_JOB_VALIDATE,
       {
         schoolId: authCtx.schoolId,
         userId: authCtx.userId,
         jobId,
-        type: "STUDENTS",
+        type,
       },
       // Job id mirrors the ImportJob id so BullMQ's dedup catches an
       // accidental double-enqueue (rare, but the column mapping endpoint
@@ -481,10 +552,11 @@ export class ImportsService {
         },
       });
       if (!row) throw new NotFoundError("Import job not found.");
-      if (row.type !== "STUDENTS") {
+      if (row.type !== "STUDENTS" && row.type !== "GUARDIANS") {
+        // TEACHERS deferred to slice 10.
         throw new ConflictError(
           "INVALID_JOB_TYPE",
-          "Bad-rows CSV is only available for STUDENTS imports in slice 6.",
+          `Bad-rows CSV is not yet supported for ${row.type} imports.`,
         );
       }
       if (row.status !== "READY" && row.status !== "COMPLETED") {
@@ -529,9 +601,32 @@ export class ImportsService {
 
     // Re-run the engine. Caller is responsible for the audit row — we
     // emit it BEFORE returning so the NDPR record is in place even if
-    // the response stream fails mid-flight.
-    const engineResult = await withTenant(authCtx.schoolId, (db) =>
-      runValidationEngine(db, sourceBytes, mapping.mapping, mapping.options),
+    // the response stream fails mid-flight. Per-type dispatch (slice 8):
+    // students and guardians use different engines. The downstream
+    // consumers (buildBadRowsFromSource + badRowsToCsv) only touch
+    // `bad` + `headers`, which are uniform across the union — no row-
+    // payload type ever leaks out of this block.
+    type EngineResultEither =
+      | EngineResult<StudentImportRow>
+      | EngineResult<GuardianImportRow>;
+    const engineResult = await withTenant(
+      authCtx.schoolId,
+      async (db): Promise<EngineResultEither> => {
+        if (job.type === "STUDENTS") {
+          return runStudentValidationEngine(
+            db,
+            sourceBytes,
+            mapping.mapping,
+            mapping.options,
+          );
+        }
+        return runGuardianValidationEngine(
+          db,
+          sourceBytes,
+          mapping.mapping,
+          mapping.options,
+        );
+      },
     );
 
     const badWithSource = buildBadRowsFromSource(sourceBytes, engineResult.bad);
@@ -601,16 +696,22 @@ export class ImportsService {
   ): Promise<ImportCommitAcceptedResponse> {
     await assertUserActiveAndHasOneOf(authCtx, ["owner", "admin"]);
 
+    // The type lookup happens inside the withTenant so the gate is part
+    // of the same RLS-scoped read. Hoist it out via assignment for the
+    // enqueue below (BullMQ payload carries `type` for log/debug only —
+    // the worker re-reads from the row).
+    let jobType: "STUDENTS" | "GUARDIANS";
     await withTenant(authCtx.schoolId, async (db) => {
       const job = await db.importJob.findUnique({
         where: { id: jobId },
         select: { id: true, status: true, type: true, validRows: true },
       });
       if (!job) throw new NotFoundError("Import job not found.");
-      if (job.type !== "STUDENTS") {
+      if (job.type !== "STUDENTS" && job.type !== "GUARDIANS") {
+        // TEACHERS deferred to slice 10.
         throw new ConflictError(
           "INVALID_JOB_TYPE",
-          "Commit endpoint is only for STUDENTS imports in slice 7.",
+          `Commit is not yet supported for ${job.type} imports.`,
         );
       }
       if (job.status !== "READY") {
@@ -619,6 +720,7 @@ export class ImportsService {
           `Commit can only be triggered on a READY job. Current status: ${job.status}.`,
         );
       }
+      jobType = job.type;
 
       await db.importJob.update({
         where: { id: jobId },
@@ -634,7 +736,8 @@ export class ImportsService {
           entityId: jobId,
           ipAddress: reqCtx.ipAddress,
           metadata: {
-            // PII-free: counts only.
+            // PII-free: counts + type only.
+            type: job.type,
             validRowsAtTrigger: job.validRows,
           },
         },
@@ -647,7 +750,7 @@ export class ImportsService {
         schoolId: authCtx.schoolId,
         userId: authCtx.userId,
         jobId,
-        type: "STUDENTS",
+        type: jobType!,
       },
       // BullMQ job id mirrors the ImportJob id (same convention as the
       // validate enqueue). A duplicate enqueue from a retry / double-tap
@@ -698,10 +801,11 @@ export class ImportsService {
         },
       });
       if (!row) throw new NotFoundError("Import job not found.");
-      if (row.type !== "STUDENTS") {
+      if (row.type !== "STUDENTS" && row.type !== "GUARDIANS") {
+        // TEACHERS deferred to slice 10.
         throw new ConflictError(
           "INVALID_JOB_TYPE",
-          "Error report is only available for STUDENTS imports in slice 7.",
+          `Error report is not yet supported for ${row.type} imports.`,
         );
       }
       if (row.status !== "COMPLETED") {
