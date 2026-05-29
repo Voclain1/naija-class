@@ -3,25 +3,34 @@
 import { Search, X } from "lucide-react";
 import { useEffect, useState } from "react";
 
-import type { StudentStatusDto } from "@school-kit/types";
+import type { ClassArmDto, StudentStatusDto } from "@school-kit/types";
 
 import { Input } from "@/components/ui/input";
 
 interface Props {
   search: string;
   status: StudentStatusDto | "";
+  classArmId: string;
+  arms: ClassArmDto[];
   onSearchChange: (next: string) => void;
   onStatusChange: (next: StudentStatusDto | "") => void;
+  onClassArmChange: (next: string) => void;
 }
 
 // Debounced search box (300ms) — keystrokes update local state immediately;
-// the parent's `onSearchChange` only fires once typing settles. Status
-// dropdown is non-debounced (single click).
+// the parent's `onSearchChange` only fires once typing settles. Status +
+// class-arm dropdowns are non-debounced (single click).
+//
+// Slice 9: class-arm filter joins through CURRENT-term enrollment; an arm
+// with no current-term enrollments simply yields an empty result.
 export function StudentsListControls({
   search,
   status,
+  classArmId,
+  arms,
   onSearchChange,
   onStatusChange,
+  onClassArmChange,
 }: Props) {
   const [draft, setDraft] = useState(search);
 
@@ -72,6 +81,19 @@ export function StudentsListControls({
         <option value="SUSPENDED">Suspended</option>
         <option value="WITHDRAWN">Withdrawn</option>
         <option value="GRADUATED">Graduated</option>
+      </select>
+      <select
+        className="h-10 rounded-md border border-input bg-background px-3 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 sm:w-48"
+        value={classArmId}
+        onChange={(e) => onClassArmChange(e.target.value)}
+        aria-label="Filter by current class arm"
+      >
+        <option value="">All classes</option>
+        {arms.map((a) => (
+          <option key={a.id} value={a.id}>
+            {a.name}
+          </option>
+        ))}
       </select>
     </div>
   );

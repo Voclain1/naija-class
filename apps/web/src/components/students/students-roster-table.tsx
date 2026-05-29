@@ -13,9 +13,11 @@ interface Props {
   students: StudentDto[];
 }
 
-// `current class` is intentionally NOT a column — class membership lives in
-// per-term Enrollment which doesn't land until slice 9. The detail page will
-// surface it the same way once enrollments are in.
+// Slice 9: the Class column is now wired. The roster API populates
+// `currentEnrollment` on each StudentDto via a single batched join (see
+// the slice-9 cp1 "no N+1" spec). Renders the level name + arm name
+// when present, or "—" when the student has no current-term enrollment
+// (admitted-not-yet-enrolled is a normal state).
 export function StudentsRosterTable({ students }: Props) {
   return (
     <div className="overflow-hidden rounded-md border">
@@ -24,6 +26,7 @@ export function StudentsRosterTable({ students }: Props) {
           <tr>
             <th className="px-3 py-2 font-medium">Student</th>
             <th className="px-3 py-2 font-medium">Admission #</th>
+            <th className="px-3 py-2 font-medium">Class</th>
             <th className="px-3 py-2 font-medium">Status</th>
             <th className="px-3 py-2 font-medium" aria-label="Actions" />
           </tr>
@@ -47,6 +50,20 @@ export function StudentsRosterTable({ students }: Props) {
               </td>
               <td className="px-3 py-2 font-mono text-xs text-muted-foreground">
                 {s.admissionNumber}
+              </td>
+              <td className="px-3 py-2 text-xs">
+                {s.currentEnrollment ? (
+                  <span>
+                    <span className="font-medium">
+                      {s.currentEnrollment.classArm.classLevel.name}
+                    </span>{" "}
+                    <span className="text-muted-foreground">
+                      · {s.currentEnrollment.classArm.name}
+                    </span>
+                  </span>
+                ) : (
+                  <span className="text-muted-foreground">—</span>
+                )}
               </td>
               <td className="px-3 py-2">
                 <StudentStatusBadge status={s.status} />

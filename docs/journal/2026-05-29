@@ -166,9 +166,160 @@ import fix) + cp2 (shared wizard UI + guardian wizard + 2 CTAs).
   guardian path. Test #7 (guardian linking) now achievable via the
   bulk path as well as the slice-5 inline form.
 
-## Tomorrow's first task
+## Tomorrow's first task (when slice 8 closed, became today's second
+## arc — slice 9 ran end-to-end the same day)
 - Slice 9 — Enrollment. Per-term enrollment model (`@@unique([schoolId,
   studentId, termId])`), denormalised academicYearId, current-term
   roster view, bulk-enroll wizard with previous-term carry-over.
   Closes the student loop: roster + arms now know which student is
   in which arm in which term. ~2 days per spec.
+
+---
+
+## Slice 9 (same-day arc) — Enrollment (per-term)
+
+### Done today
+
+- **cp1 — schema + RLS + service + cascade** (PR follow-up):
+  - `schema.prisma` gained `model Enrollment` (with denormalised
+    `academicYearId`, six-status enum, four FKs all `onDelete:
+    Cascade`) + back-relations on AcademicYear, Term, ClassArm,
+    Student. Discovered the model wasn't already in schema.prisma
+    (despite the appendix in `phase-1.md` showing it); slice 9 owns
+    the addition.
+  - Migration `20260530000000_phase_1_slice_9_enrollments` —
+    generated via `prisma migrate diff`, applied cleanly. RLS policy
+    block copied verbatim from `policies/phase-1.sql` (where the
+    canonical policy lives).
+  - `EnrollmentsService` with `list / findById / create / update /
+    delete / bulkCreate / getCurrentEnrollmentForStudent`. Single-row
+    create resolves `academicYearId` from term on the server (the
+    API never accepts it from a body), enforcing the denormalisation
+    invariant. Bulk uses `createMany({ skipDuplicates: true })` with
+    pre-counted "skipped" so the wizard can show a clear summary;
+    foreign student ids land in `errors`, not a thrown 409.
+  - **Cross-slice extension on `StudentsService`** — `withdraw` and
+    `graduate` cascade to the current-term enrollment inside the
+    same `withTenant()` callback. Audit metadata gains
+    `cascadedEnrollmentCount` so a missing cascade is observable in
+    forensic reads. `reactivate` does NOT auto-re-enroll (admin must
+    explicitly enrol for the next term).
+  - **N+1-free roster join** — `StudentsService.list` calls
+    `loadCurrentEnrollmentsForStudents(db, studentIds)`, a single
+    Prisma `findMany` with nested select on `classArm → classLevel`
+    and `term`. Test attaches a logged `PrismaClient`, captures
+    `$on('query', ...)`, asserts exactly ONE SELECT against
+    `enrollments` regardless of page size.
+  - **Tests**: 12 in `enrollments.service.spec.ts` (happy paths,
+    collision-409, academicYearId-denorm on create + bulk, bulk
+    idempotency, bulk foreign-id-routes-to-errors, cross-tenant RLS
+    × 3, `getCurrentEnrollmentForStudent` happy + null) + 6 in
+    `students.service.spec.ts` (`classArmId`-as-real-filter,
+    `academicYearId`-still-accepted, withdraw cascade flips current
+    enrollment, withdraw with no enrollment cascades zero, atomicity
+    structural proof, graduate cascade, roster no-N+1). **Suite at
+    373/373 pass.**
+  - **Spy-based atomicity test diverged to a correlation-based
+    test** — same Prisma tx-client-proxy issue as slice 7 cp1
+    (`vi.spyOn(basePrisma.auditLog, 'create')` doesn't fire inside
+    `withTenant()`). The correlation test asserts all four side-
+    effects (student status, enrollment status, audit row + cascade
+    metadata) land together; if they were in separate transactions,
+    drift would be observable. Stronger spy-via-Prisma-`$extends`
+    test captured in `docs/deferred.md`.
+  - Curl proof end-to-end: signup → year + current term → arm → 3
+    students → POST /enrollments (S1) → duplicate-409 → bulk-create
+    (created=2 skipped=1) → roster shows `currentEnrollment` for all
+    3 → withdraw S1 → enrollment.status=WITHDRAWN +
+    cascadedEnrollmentCount=1 in audit metadata. SD count unchanged
+    at 4.
+
+- **cp2 — UI (THIS slice close)**:
+  - `enrollments-api.ts` (new) — six typed wrappers for the slice 9
+    endpoints, with `buildListQuery` mirroring the pattern from
+    `students-api.ts`.
+  - **NEW `/enrollments` page** (`apps/web/src/app/(admin)/enrollments/page.tsx`):
+    - Two cascading dropdowns: academic year (defaults to current),
+      term within year (defaults to current).
+    - Per-level sections rendering per-arm cards. Each card shows
+      the enrollment count + table of enrolled students (name,
+      admission #, status pill) with inline status edit (single
+      PATCH on save).
+    - Empty-state with carry-over CTA when the target term has zero
+      enrollments for an arm AND a previous term has at least one
+      ENROLLED row for that arm. The hint shows the source term
+      label + count and links to
+      `/enrollments/bulk?armId=...&termId=...`.
+    - Both target + source enrollments fetched as bulk
+      `listEnrollments` calls (one for current, one for the full
+      year); grouped client-side by arm. No N+1 across arms.
+  - **NEW `/enrollments/bulk` wizard** (`bulk/page.tsx`):
+    - Reads `armId` + `termId` from search params; derives the
+      source term (immediately-previous-by-sequence within the same
+      year).
+    - **Three candidate groups**, fetched independently:
+      - `carried` — `listEnrollments({ termId: source, classArmId,
+        status: "ENROLLED" })`. Default-checked.
+      - `withdrew` — `listEnrollments({ termId: source, classArmId,
+        status: "WITHDRAWN" })`. Default-unchecked, separately
+        surfaced.
+      - `admitted` — pages through `listStudents({ status: "ACTIVE"
+        })` and filters by `admittedAt > source.endDate AND NOT in
+        accounted ids`. Default-checked.
+    - Per-group check-all toggle + per-row checkboxes. Footer shows
+      total selected; Commit posts to `/enrollments/bulk`.
+    - **Cross-year guard** — when source.academicYearId ≠
+      target.academicYearId, renders an amber banner refusing the
+      carry-over and a "Back to enrollments" CTA. No three-group
+      review shown.
+    - Success view shows `created / skipped / errors` from the API
+      response; per-row errors listed with truncated student id.
+  - **Student-detail Enrollments tab** filled (`enrollments-tab.tsx`,
+    swapped in via `student-detail-tabs.tsx`):
+    - Fetches `listEnrollments({ studentId })` + the active arms +
+      levels + the current term (looked up across years via
+      `listAcademicYears` + per-year `listTerms`).
+    - Renders rows ordered "current first, then DESC by year + term
+      sequence". Each row shows arm + level + term label + year +
+      enrolled-at + (if set) withdrew-at + a status pill.
+    - **Inline "Enroll in current term" CTA** when the student has
+      no current-term row. Form is a single class-arm dropdown
+      (grouped by class level via `<optgroup>`) + a "Enrol" button
+      that POSTs to `/enrollments`.
+  - **Students roster updates**:
+    - `students-roster-table.tsx` — new "Class" column showing
+      `<level name> · <arm name>` from the cp1-populated
+      `student.currentEnrollment`, or "—" when not enrolled.
+    - `students-list-controls.tsx` — new class-arm filter dropdown
+      next to the status filter. Wired into the page's `listStudents`
+      query as `classArmId`.
+
+### Build verification
+- `pnpm typecheck` clean — types, api, web.
+- `pnpm lint` clean — api, web.
+- `pnpm test` green at **373/373** (cp2 is web-only; api count
+  unchanged from cp1).
+- SECURITY DEFINER count: **4** — unchanged.
+- **SSR smoke** (cp2): `/enrollments`, `/enrollments/bulk`,
+  `/students` all serve 200 OK HTML; no fresh compile errors from
+  the new code.
+- **Manual browser walkthrough = the gate.** Handing back for
+  walkthrough.
+
+### Slice 9 close
+- `docs/deferred.md` slice-9 entries from cp1 still present
+  (`graduatedAt` column trigger, stronger atomicity test via
+  `$extends`). No new entries from cp2.
+- `docs/modules/phase-1.md` already carries the slice-9 cascade note
+  on slice 4 (cp1 added it). No new in-place reconciliation needed.
+- Phase 1 at **9 of 13 slices**. Acceptance bar test #8 (per-term
+  enrollment + bulk-enroll + mid-year admission group) passes after
+  this slice — verified by the carry-over wizard's three-group
+  logic + curl proof's bulk idempotency.
+
+### Tomorrow's first task
+- Slice 10 — TeacherProfile + class teacher assignment. Model + RLS
+  + CRUD endpoints + `ClassArm.classTeacherId` wiring + staff UI.
+  Unblocks slice 11 (TeacherAssignment + teacher portal) and the
+  long-deferred teacher CSV import (slice 8's deferred third type).
+  ~2 days per spec.

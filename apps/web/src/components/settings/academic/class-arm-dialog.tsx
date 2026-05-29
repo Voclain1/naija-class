@@ -6,9 +6,9 @@ import Link from "next/link";
 import { useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
+import { z } from "zod";
 
 import {
-  createClassArmSchema,
   type ClassArmDto,
   type ClassLevelDto,
   type CreateClassArmInput,
@@ -43,6 +43,29 @@ interface FormValues {
   isActive: boolean;
 }
 
+// Form-specific schema. createClassArmSchema is the API BODY (validated
+// server-side via the strict() guard); the form additionally tracks
+// classLevelId for the nested URL and accepts capacity as "" from a
+// blank <input type="number">. onSubmit below coerces "" → null before
+// constructing the CreateClassArmInput body.
+const classArmFormSchema = z.object({
+  classLevelId: z.string().uuid(),
+  name: z.string().trim().min(1).max(40),
+  code: z
+    .string()
+    .trim()
+    .min(1)
+    .max(20)
+    .regex(
+      /^[a-z0-9-]+$/,
+      "Code must be lowercase letters, digits, and hyphens only",
+    ),
+  capacity: z
+    .union([z.literal(""), z.coerce.number().int().min(0).max(10_000)])
+    .optional(),
+  isActive: z.boolean().optional(),
+});
+
 // Class-teacher dropdown is intentionally NOT populated in cp3 — there is
 // no /users?role=teacher endpoint yet, and signup seeds only the owner.
 // The empty state below tells the admin to invite a teacher first; the
@@ -58,7 +81,7 @@ export function ClassArmDialog({
   onSaved,
 }: Props) {
   const form = useForm<FormValues>({
-    resolver: zodResolver(createClassArmSchema) as never,
+    resolver: zodResolver(classArmFormSchema) as never,
     defaultValues: {
       classLevelId: defaultLevelId ?? levels[0]?.id ?? "",
       name: "",

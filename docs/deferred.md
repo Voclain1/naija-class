@@ -215,3 +215,21 @@ Format:
   Prisma $extends({ query: ... }) middleware (spy-based approach blocked
   by Prisma tx-client proxy; correlation test is sufficient for now)
   (slice 9 cp1).
+
+  - [ ] /enrollments/bulk wizard's "Admitted after previous term" group
+  pages through listStudents client-side and filters by admittedAt
+  locally. Fine for ~250-student schools; at 5,000+ becomes 25 serial
+  requests on mount. Add server-side admittedAt[gt] filter to GET
+  /students when scale demands. (slice 9 cp2)
+
+  - [ ] Audit the `as never` casts on zodResolver across the 5 academic
+  dialog forms (academic-year, term, class-level, class-arm, subject).
+  Class-arm was uniquely broken (URL-path param + nullable-number-from-
+  blank-input combo) — the API body schema rejected the FormValues
+  silently with no UI feedback, because `.strict()` errors have empty
+  `path: []` and react-hook-form has nowhere to bind them. The fix
+  (slice 9 cp2) introduces a local `classArmFormSchema` that mirrors
+  FormValues, but the `as never` cast itself is a type-safety smell
+  that could mask future regressions in the other four dialogs the
+  same way. Replace `zodResolver(schema) as never` with properly-
+  typed resolvers across all five dialogs. (Discovered slice 9 cp2.)

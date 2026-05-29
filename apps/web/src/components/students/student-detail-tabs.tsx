@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import type { StudentDetailDto, StudentGuardianRefDto } from "@school-kit/types";
 
+import { EnrollmentsTab } from "@/components/students/enrollments-tab";
 import { GuardiansTab } from "@/components/students/guardians-tab";
 import { cn } from "@/lib/utils";
 
@@ -77,12 +78,7 @@ export function StudentDetailTabs({ student, onGuardiansChanged }: Props) {
           onGuardiansChanged={onGuardiansChanged}
         />
       )}
-      {tab === "enrollments" && (
-        <EmptyPanel
-          title="No enrollments yet"
-          body="Per-term enrollment arrives in slice 9. You'll be able to enrol this student into a class arm and term from this tab."
-        />
-      )}
+      {tab === "enrollments" && <EnrollmentsTab studentId={student.id} />}
     </div>
   );
 }
@@ -140,11 +136,6 @@ function Field({
   );
 }
 
-function EmptyPanel({ title, body }: { title: string; body: string }) {
-  return (
-    <div className="flex flex-col items-center gap-1 rounded-md border border-dashed bg-muted/30 p-8 text-center">
-      <p className="text-sm font-medium">{title}</p>
-      <p className="text-sm text-muted-foreground">{body}</p>
-    </div>
-  );
-}
+// EmptyPanel removed — the slice-9 EnrollmentsTab owns its own empty
+// state now. Re-added if the Enrollments tab is ever replaced with a
+// placeholder again.
