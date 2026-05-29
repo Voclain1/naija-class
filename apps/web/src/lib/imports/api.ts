@@ -9,6 +9,7 @@
 // Everything else is a plain JSON call through apiFetch.
 
 import type {
+  ApplyGuardianImportMappingInput,
   ApplyStudentImportMappingInput,
   ImportCommitAcceptedResponse,
   ImportJobDto,
@@ -29,6 +30,24 @@ const API_BASE_URL =
 export async function uploadStudentsCsv(
   file: File,
 ): Promise<ImportUploadResponse> {
+  return uploadImportCsv("/imports/students/upload", file);
+}
+
+// POST /imports/guardians/upload — slice 8 cp1. Same multipart contract as
+// the students upload; the server sets type=GUARDIANS on the ImportJob row.
+export async function uploadGuardiansCsv(
+  file: File,
+): Promise<ImportUploadResponse> {
+  return uploadImportCsv("/imports/guardians/upload", file);
+}
+
+// Shared multipart upload helper. Both wizards' upload step calls this
+// with the right path; everything else (auth header, error envelope
+// decoding, ApiError wrapping) is identical.
+async function uploadImportCsv(
+  path: string,
+  file: File,
+): Promise<ImportUploadResponse> {
   const form = new FormData();
   form.append("file", file);
 
@@ -36,7 +55,7 @@ export async function uploadStudentsCsv(
   const token = getStoredToken();
   if (token) headers.set("Authorization", `Bearer ${token}`);
 
-  const response = await fetch(`${API_BASE_URL}/imports/students/upload`, {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
     method: "POST",
     headers,
     body: form,
@@ -63,6 +82,20 @@ export async function uploadStudentsCsv(
 export function applyStudentsImportMapping(
   jobId: string,
   input: ApplyStudentImportMappingInput,
+): Promise<ImportMappingAcceptedResponse> {
+  return apiFetch<ImportMappingAcceptedResponse>(
+    `/imports/${jobId}/mapping`,
+    { method: "POST", body: input },
+  );
+}
+
+// Same endpoint as the student mapping — the server dispatches the
+// per-type Zod schema off the loaded job's `type`. Two TypeScript-level
+// wrappers because the columnMapping target-field enum differs;
+// at the network layer they're identical POST bodies.
+export function applyGuardiansImportMapping(
+  jobId: string,
+  input: ApplyGuardianImportMappingInput,
 ): Promise<ImportMappingAcceptedResponse> {
   return apiFetch<ImportMappingAcceptedResponse>(
     `/imports/${jobId}/mapping`,

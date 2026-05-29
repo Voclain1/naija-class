@@ -156,6 +156,40 @@ Format:
   who hits the "session expired" toast, or when the wizard gains a step
   4 (done screen) that admins might bookmark.
 
+- [ ] Guardian-import dedup key — spec at phase-1.md:949 says exact-match on
+  `phone + lastName`. Slice 8 cp1 implements `phone + firstName + lastName`
+  instead because slice 5's schema comment at schema.prisma:438-442
+  explicitly anticipates "a mother and father commonly share a household
+  phone" — and they'd share lastName too. Spec key collapses Mr. + Mrs.
+  Okonkwo at the same number into ONE Guardian (wrong data). The fix
+  costs nothing (same query plan) and is the right product behaviour.
+  Captured here so a future reader of phase-1.md:949 doesn't try to
+  "fix" the implementation back to the spec. Trigger: only if a pilot
+  reports the opposite problem (two Guardian rows for what they think
+  is one person).
+
+- [ ] Guardian-import merge policy when dedup-key matches but Guardian-
+  level fields disagree — first-row wins, silently. Schema has
+  `relationship` as a per-Guardian column (schema.prisma:462), not on
+  StudentGuardian. When two CSV rows share the slice-8 dedup key
+  (phone+firstName+lastName) but disagree on relationship (or email,
+  occupation, etc.), the commit-side find-or-create returns the existing
+  Guardian and silently ignores the second row's Guardian-level data.
+  Same merge-conflict policy as distributed-systems sync. Tested
+  explicitly in commit-guardians.handler.spec.ts case 2. Trigger: only
+  if a pilot complains they can't tell why row N's relationship was
+  "ignored" — the obvious upgrade is to surface a per-row warning tier
+  in the error report (validate / commit / warning), which would also
+  cost a small UI tweak on the preview screen.
+
+- [ ] `/guardians` roster page (canonical entry point for the guardian
+  bulk-import wizard). Slice 5 shipped guardian forms inline on the
+  student-detail page; the standalone roster page hasn't landed yet.
+  Slice 8 cp2 routes the wizard's "View roster" CTA to `/students` as
+  a stopgap because that's where admins can drill down to a student
+  and see the new guardians on the Guardians tab. Trigger: when slice
+  11+ ships `/guardians` and `/guardians/[id]`, swap the CTA target.
+
 - [ ] Cross-cutting unsaved-changes guard for the class-subject matrix.
   Slice 3 cp3 ships a two-layer guard: `beforeunload` (catches close /
   refresh / URL-bar navigation) plus a `MatrixDirtyContext` that the
