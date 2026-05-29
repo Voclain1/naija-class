@@ -173,3 +173,15 @@ Format:
   doesn't expose `router.beforePopstate`-style hooks cleanly, so this
   may need a wrapping `<Link>` component or a `useNavigationGuard()`
   hook reading from a shared dirty registry).
+
+  - [ ] Spec phase-1.md:949 says guardian dedup key is (phone, lastName).
+  Slice 8 cp1 widened to (phone, firstName, lastName) based on the
+  schema's own comment about Nigerian shared household phone + surname
+  reality. Reconcile the spec text in a future docs pass.
+
+- [ ] Same-key + different-relationship CSV rows silently drop the
+  second row's Guardian-level fields (first-row-wins, inherited from
+  the slice-5 choice to put relationship on Guardian not StudentGuardian).
+  Polish: surface as a non-blocking warning in the error report with
+  severity=info, so the admin sees "Relationship 'GUARDIAN' for row 2
+  ignored; existing record uses 'MOTHER'." (slice 8 cp1)
