@@ -1,0 +1,23 @@
+# 2026-05-30
+
+## Starting state
+Slice 9 closed yesterday (PRs #22 + #23, plus 2 bug fixes baked in:
+the empty-state banner gating bug + the slice-3 class-arm form
+regression). Phase 1 at 9 of 13 slices. Working tree clean, on main.
+
+Today's foundation: a Nigerian school can sign up → define academic
+structure → onboard student body + guardians via CSV → enroll students
+per-term → carry over to next term. Human + academic data spine
+complete and verified end-to-end.
+
+## Today's outcome
+Slice 10 — TeacherProfile + class-teacher assignment + teacher CSV
+import (the deferred-from-slice-8 piece). Plan-first because slice 8
+deliberately punted TeacherProfile shape entirely, so this slice has
+real design decisions to settle before code.
+
+## Decisions made
+- (capture as the day unfolds)
+
+## Tomorrow's first task
+- (fill at end of day)
