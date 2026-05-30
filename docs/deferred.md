@@ -233,3 +233,8 @@ Format:
   that could mask future regressions in the other four dialogs the
   same way. Replace `zodResolver(schema) as never` with properly-
   typed resolvers across all five dialogs. (Discovered slice 9 cp2.)
+
+  - [ ] RLS isolation spec gap: slice 9 enrollments table never had its
+  RLS block added to apps/api/src/__tests__/rls.spec.ts. Discovered
+  during slice 10 cp1 (which DID add teacher_profiles). Required for
+  slice 13 acceptance #10 ("all Phase 1 tables in isolation spec").
