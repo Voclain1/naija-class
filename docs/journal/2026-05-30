@@ -64,5 +64,118 @@ real design decisions to settle before code.
 - cp3 — Staff UI: /staff roster, /staff/invite, /staff/[userId]
   detail+edit, /staff/import wizard, /teacher/profile empty-state.
 
+## cp3 — Staff UI (THIS slice close, web-only)
+
+Six pages + supporting libs, all consuming cp1/cp2 endpoints with ZERO API
+changes. The whole point of cp3 was to not repeat the slice-3 class-arm form
+bug, so every form got the local-resolver-schema + visible-errors treatment.
+
+### Built
+- **API client + helpers:**
+  - `lib/staff/staff-api.ts` — `listStaff` (→ GET /users), `listStaffInvitations`
+    (→ GET /users/invitations), `inviteStaff` (→ POST /users/invite),
+    `listTeacherProfiles` / `getTeacherProfile` / `createTeacherProfile` /
+    `updateTeacherProfile`, `getMyTeacherProfile` / `updateMyTeacherProfile`,
+    and a re-export `uploadTeachersImportCsv`.
+  - `lib/imports/api.ts` — added `uploadTeachersCsv` + `applyTeachersImportMapping`
+    (siblings of the student/guardian ones; same multipart + JSON shapes).
+  - `lib/imports/teacher-synonyms.ts` — 3-field synonym table (email /
+    firstName / lastName) + `detectMissingNameSplit` combined-name guardrail,
+    mirroring guardian-synonyms.ts. Synonyms table:
+      - email: email, emailaddress, mail, staffemail, teacheremail, workemail
+      - firstName: firstname, fname, givenname, first, stafffirstname, teacherfirstname
+      - lastName: lastname, lname, surname, familyname, last, staffsurname, stafflastname, teachersurname
+      - combined-name keys: teachername, staffname, name, fullname
+  - `public/teachers-import-template.csv` — header + one Nigerian example row.
+- **6 pages:**
+  1. `/staff` — unified roster: accepted users (any owner/admin/teacher role)
+     + pending invitations, with name/email search, role filter, and
+     all/active/invited status filter. Empty state when zero staff. Two CTAs:
+     "Import teachers (CSV)" + "Invite admin".
+  2. `/staff/invite` — single ADMIN invite (see divergence below); shows the
+     accept URL inline with a Copy button + "Invite another" / "View staff".
+  3. `/staff/[userId]` — detail: name/email/role + accepted + active badges;
+     profile block (staffNumber, specialty, qualifications, nutNumber,
+     joinedAt) OR amber "No teacher profile yet" + Create CTA; class-teacher
+     arms (from ClassArm.classTeacherId); Edit/Create profile CTA.
+  4. `/staff/[userId]/edit` — create OR update TeacherProfile.
+  5. `/staff/import/*` — 4-page wizard (upload / mapping / preview / done),
+     fourth wizard-ui.tsx consumer. Teacher-tuned GoodRowsTable
+     (email/first/surname), combined-name guardrail, invitation wording,
+     "View staff" done CTA + an honest note that accept links are in the
+     server logs (Resend deferred).
+  6. `/teacher/profile` — new `(teacher)` route group (RequireAuth + the
+     shared topbar, no admin sidebar). Empty state when no profile; otherwise
+     read-only staffNumber/nutNumber/joinedAt + editable specialty +
+     qualifications.
+- **Discoverability:** sub-line "Importing teachers instead? Use the staff
+  import wizard →" added to the /students/import help card (symmetric with the
+  guardian one); Staff sidebar item flipped `enabled: true`.
+
+### Form-class protection (per-form, deliberately)
+The slice-3 bug was: resolver used the strict API body schema, FormValues had
+extra/blank-input keys it rejected, errors landed in `path: []` with no UI.
+For cp3's five new forms:
+- **Local resolver schema matching FormValues exactly** on all five —
+  `inviteFormSchema` (3 strings), `teacherProfileFormSchema` (4 strings),
+  `selfProfileFormSchema` (2 strings). None reuse the strict API body schema.
+  Optional fields are plain `z.string().max()` (allow ""), so blank inputs
+  never trip `.min(1).optional()` (the deferred.md empty-optional bug), and
+  "" → null coercion happens on submit.
+- **Root error block AND per-field errors render on every form.** Unexpected
+  API errors go to `formState.errors.root`; field-specific ones
+  (STAFF_NUMBER_TAKEN, EMAIL_TAKEN, INVITATION_ALREADY_PENDING) bind to the
+  field via `setError`. No silent no-op submit anywhere.
+- **ZERO `as never` casts.** Because each resolver's output type === its
+  FormValues, the cast the deferred.md audit flags on the five academic
+  dialogs was avoided from the start. cp3 adds none.
+
+### Divergences from the cp3 prompt (all web-only-forced; documented)
+- **`/staff/invite` is admin-only, not teacher-preselected.** `POST
+  /users/invite` hardcodes `roleKey: "admin"` (inviteAdminSchema has no
+  roleKey). Sending a "teacher" single-invite would silently grant ADMIN —
+  privilege escalation — so there's no role dropdown; the form invites an
+  admin and routes teacher invites to `/staff/import`. deferred.md +
+  phase-1.md:1010 reconciliation added.
+- **`/teacher/profile` nutNumber is read-only** (prompt said editable). The
+  cp1 `/me` API (`updateMyTeacherProfileSchema.strict()`) accepts ONLY
+  specialty + qualifications; a teacher sending nutNumber gets a 400. This
+  matches phase-1.md:1022, which already specifies nutNumber read-only — so
+  the SPEC agrees; only the prompt phrasing diverged.
+- **`/staff` has no cursor pagination** — GET /users / GET /users/invitations
+  return the full set; the teacher-profiles has-profile lookup pulls one
+  page (limit 200) and surfaces an amber note if truncated. Fine at pilot
+  scale; deferred.md entry added.
+- **`/staff/[userId]` shows class-teacher arms but not assigned subjects** —
+  subjects need TeacherAssignment (slice 11).
+
+## Build verification
+- `@school-kit/types` build: clean (needed so web typecheck resolves the
+  cp1/cp2 teacher-profile + applyTeacherImportMapping exports from dist).
+- `pnpm typecheck` (web): clean.
+- `pnpm lint` (web): clean (`eslint . --max-warnings=0`).
+- `pnpm test` (api): **399 passed (29 files)** — unchanged from cp2; cp3 is
+  web-only, no API/spec changes.
+- **SECURITY DEFINER count: 4 — unchanged** (no new functions; cp3 is web).
+- **Manual browser walkthrough = the gate** — drag-drop upload, the
+  combined-name guardrail, the invite accept-URL copy, create-vs-edit profile,
+  and the teacher self-service empty state all need a real session. Handing
+  back for the walkthrough; nothing pushed/committed.
+
+## Slice 10 close
+- Phase 1 at **10 of 13 slices.** Slice 10 lays groundwork (profile +
+  class-teacher consumption + teacher CSV invite); it does NOT close
+  deliverable-18 — TeacherAssignment + teacher portal + scope filter
+  (acceptance #9) are slice 11.
+- `docs/deferred.md`: cp1 (teacher invite-only), cp2 (bulk accept-URL
+  delivery), and the slice-9 enrollments RLS-spec gap are all present;
+  cp3 added two entries (single teacher-invite needs roleKey; staff roster
+  server-pagination).
+- `docs/modules/phase-1.md`: Staff-section reconciliation block added under
+  the `/staff` UI list (1009-1013) recording the admin-only invite + unified
+  roster + subjects-deferred adjustments.
+
 ## Tomorrow's first task
-- (fill at end of day)
+- Slice 11 — TeacherAssignment + teacher portal (dashboard, classes,
+  class detail) + the service-layer scope filter that closes acceptance #9.
+  This is what turns slice 10's groundwork into the deliverable-18 loop.

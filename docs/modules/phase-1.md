@@ -1012,6 +1012,26 @@ expired" toast.
 - `/staff/[userId]/edit` — admin-editable profile fields.
 - `/staff/import` — CSV import wizard for bulk teacher invitations (same shell as students).
 
+> **Slice 10 cp3 reconciliation (what shipped, 2026-05-30).** cp3 was a
+> web-only slice (no API changes), which forced two adjustments to the list
+> above; both are captured in `docs/deferred.md`:
+> - `/staff` ships as a **unified roster** — accepted staff (any of
+>   owner/admin/teacher, from `GET /users`) **plus pending invitations**
+>   (`GET /users/invitations`), with a has-profile / invited-vs-active column
+>   and a role + search + status filter. (`GET /users` returns the full set,
+>   so there's no cursor "Load more" — fine at pilot scale.)
+> - `/staff/invite` ships **admin-only**, NOT teacher-preselected. `POST
+>   /users/invite` is hardcoded to `roleKey="admin"` (Phase 0;
+>   `inviteAdminSchema` has no `roleKey` field), and sending a "teacher"
+>   single-invite through it would silently grant **admin** — a privilege-
+>   escalation bug. So single-invite creates an admin and the page routes
+>   teacher invites to `/staff/import` (the CSV path mints `roleKey="teacher"`
+>   invitations). A single teacher-invite needs a `roleKey` on the invite
+>   endpoint (or a dedicated endpoint) — deferred.
+> - `/staff/[userId]` shows profile + **class-teacher arms** (read from
+>   `ClassArm.classTeacherId`). "Assigned subjects" depends on
+>   `TeacherAssignment`, which is slice 11; deferred to then.
+
 ### Teacher portal (route group `(teacher)`)
 
 Initial Phase 1 surface — minimal, just enough to validate scope-isolation:

@@ -28,7 +28,7 @@ interface NavItem {
 const NAV_ITEMS: NavItem[] = [
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard, enabled: true },
   { label: "Students", href: "/students", icon: GraduationCap, enabled: true },
-  { label: "Staff", href: "/staff", icon: Users, enabled: false },
+  { label: "Staff", href: "/staff", icon: Users, enabled: true },
   { label: "Academics", href: "/settings/academic", icon: BarChart3, enabled: true },
   { label: "Finance", href: "/finance", icon: Wallet, enabled: false },
   { label: "Reports", href: "/reports", icon: BarChart3, enabled: false },
