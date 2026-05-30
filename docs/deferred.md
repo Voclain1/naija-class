@@ -234,6 +234,34 @@ Format:
   same way. Replace `zodResolver(schema) as never` with properly-
   typed resolvers across all five dialogs. (Discovered slice 9 cp2.)
 
+- [ ] Teacher CSV import is INVITE-ONLY (email + firstName + lastName);
+  importing the profile fields (staffNumber, specialty) is deferred.
+  phase-1.md:950 originally specified the teacher CSV carries staffNumber
+  + specialty, but the Invitation row can't hold them (phase-1.md:478,
+  "No new columns are added to invitations") — which is why slice 8
+  deferred teacher import to slice 10 in the first place. Slice 10 cp2
+  ships the invite-only CSV (Q2 lifecycle: profiles are created by the
+  admin after acceptance), which fully satisfies acceptance criterion #7
+  ("the CSV import flow works for teachers, creating Invitations"). To
+  import profile fields too, the typed staffNumber/specialty would need a
+  STAGING mechanism that survives invite→accept: e.g. a pending
+  TeacherProfile (userId nullable + invitedEmail) materialised on accept,
+  or a small TeacherInvitationDraft table keyed by (schoolId, email)
+  consumed by the accept hook. Both are real schema work. Trigger: a pilot
+  that wants bulk staff-data load (not just bulk invites) — or when Resend
+  email delivery lands and the bulk-invite flow gets real reach. (slice 10
+  cp2.)
+
+- [ ] Bulk teacher-invite accept-URL delivery. commit-teachers.row.ts mints
+  one Invitation per row and LOGS the accept URL (`[INVITATION] <url>`),
+  exactly like the single-invite UsersService.invite flow — because Resend
+  email delivery is deferred (Phase 4). For a 15-teacher bulk import the
+  operator must currently scrape 15 URLs from the worker logs; and since
+  we only store the token HASH, there's no "copy link" affordance for them
+  afterwards (same root cause as the existing "Re-issue / revoke pending
+  invitations" item). Trigger: Phase 4 communications (Resend) — the bulk
+  path should send each teacher their own accept email. (slice 10 cp2.)
+
   - [ ] RLS isolation spec gap: slice 9 enrollments table never had its
   RLS block added to apps/api/src/__tests__/rls.spec.ts. Discovered
   during slice 10 cp1 (which DID add teacher_profiles). Required for

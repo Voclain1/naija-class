@@ -10,6 +10,11 @@ import {
   STUDENT_IMPORT_TARGET_FIELDS,
   type StudentImportTargetField,
 } from "../students/import.js";
+import {
+  TEACHER_IMPORT_REQUIRED_FIELDS,
+  TEACHER_IMPORT_TARGET_FIELDS,
+  type TeacherImportTargetField,
+} from "../teacher-profiles/import.js";
 import { importOptionsSchema } from "./options.js";
 
 // applyMappingSchema — body of POST /imports/:jobId/mapping. One schema
@@ -130,4 +135,50 @@ export const applyGuardianImportMappingSchema = z
 
 export type ApplyGuardianImportMappingInput = z.infer<
   typeof applyGuardianImportMappingSchema
+>;
+
+export const applyTeacherImportMappingSchema = z
+  .object({
+    columnMapping: z
+      .record(
+        z.string().min(1),
+        z.enum(TEACHER_IMPORT_TARGET_FIELDS).nullable(),
+      )
+      .superRefine((mapping, ctx) => {
+        const usedFields = new Map<TeacherImportTargetField, number>();
+        for (const value of Object.values(mapping)) {
+          if (value === null) continue;
+          usedFields.set(value, (usedFields.get(value) ?? 0) + 1);
+        }
+
+        const missing = TEACHER_IMPORT_REQUIRED_FIELDS.filter(
+          (f) => !usedFields.has(f),
+        );
+        if (missing.length > 0) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ["columnMapping"],
+            message: `Required teacher fields not mapped: ${missing.join(", ")}.`,
+            params: { missing },
+          });
+        }
+
+        const duplicated = [...usedFields.entries()]
+          .filter(([, count]) => count > 1)
+          .map(([f]) => f);
+        if (duplicated.length > 0) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            path: ["columnMapping"],
+            message: `Duplicate mapping for: ${duplicated.join(", ")}.`,
+            params: { duplicated },
+          });
+        }
+      }),
+    options: importOptionsSchema.optional(),
+  })
+  .strict();
+
+export type ApplyTeacherImportMappingInput = z.infer<
+  typeof applyTeacherImportMappingSchema
 >;

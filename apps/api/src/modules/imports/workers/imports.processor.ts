@@ -15,6 +15,7 @@ import { StorageService } from "../../../common/storage";
 import type { CommitJobData, ValidateJobData } from "../imports.service";
 import { runGuardianValidationEngine } from "../validate-guardians.engine";
 import { runStudentValidationEngine } from "../validate-students.engine";
+import { runTeacherValidationEngine } from "../validate-teachers.engine";
 import {
   EngineFatalError,
   parsePersistedMapping,
@@ -29,8 +30,9 @@ import { runCommitHandler } from "./commit.handler";
 // share a queue, BullMQ load-balances jobs across them, so a `commit`
 // job would land on the wrong Worker ~half the time. Dispatch by
 // `job.name` here is the correct pattern for multi-job-name queues.
-// When slice 8 adds GUARDIANS / TEACHERS support it goes through more
-// branches in this same dispatch, not a second @Processor class.
+// GUARDIANS (slice 8) and TEACHERS (slice 10 cp2) were added as more
+// branches in the per-type dispatch inside handleValidate / commit.handler,
+// not as second @Processor classes.
 //
 // Handlers live in sibling files (`validate.engine.ts` for validate
 // logic; `commit.handler.ts` for commit logic). This file is the
@@ -90,15 +92,9 @@ export class ImportsProcessor extends WorkerHost {
         );
         return;
       }
-      if (existing.type !== "STUDENTS" && existing.type !== "GUARDIANS") {
-        // TEACHERS deferred to slice 10 — Invitation table can't carry
-        // staffNumber/specialty per phase-1.md:478, so the spec's
-        // teacher import shape is impossible in Phase 1. cp1 slice 8
-        // design call.
-        throw new UnrecoverableError(
-          `validate: import ${jobId} type ${existing.type} is not handled in slice 8`,
-        );
-      }
+      // All three import types are handled (STUDENTS + GUARDIANS slice 8;
+      // TEACHERS slice 10 cp2). The dispatch below is exhaustive over
+      // ImportJobType.
       const type = existing.type;
 
       let mapping;
@@ -124,9 +120,10 @@ export class ImportsProcessor extends WorkerHost {
         );
       }
 
-      // Dispatch to the per-type validate engine. Both engines share the
-      // CSV-parse + per-row loop via validate.engine.ts/parseSourceCsv;
-      // they differ in dedup semantics (slice 8 refactor).
+      // Dispatch to the per-type validate engine. All three engines share
+      // the CSV-parse + per-row loop via validate.engine.ts/parseSourceCsv;
+      // they differ in dedup semantics (slice 8 refactor; teachers added
+      // in slice 10 cp2 — in-file dedup by email + external User-exists).
       let result;
       try {
         if (type === "STUDENTS") {
@@ -136,8 +133,15 @@ export class ImportsProcessor extends WorkerHost {
             mapping.mapping,
             mapping.options,
           );
-        } else {
+        } else if (type === "GUARDIANS") {
           result = await runGuardianValidationEngine(
+            db,
+            sourceBytes,
+            mapping.mapping,
+            mapping.options,
+          );
+        } else {
+          result = await runTeacherValidationEngine(
             db,
             sourceBytes,
             mapping.mapping,

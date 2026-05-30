@@ -6,11 +6,13 @@ import type {
   GuardianImportRow,
   ImportRowError,
   StudentImportRow,
+  TeacherImportRow,
 } from "@school-kit/types";
 
 import { StorageService } from "../../../common/storage";
 import { runGuardianValidationEngine } from "../validate-guardians.engine";
 import { runStudentValidationEngine } from "../validate-students.engine";
+import { runTeacherValidationEngine } from "../validate-teachers.engine";
 import {
   EngineFatalError,
   badRowsToCsv,
@@ -20,6 +22,7 @@ import {
 } from "../validate.engine";
 import { commitGuardianRow, CommitRowError } from "./commit-guardians.row";
 import { commitStudentRow } from "./commit-students.row";
+import { commitTeacherRow } from "./commit-teachers.row";
 
 // Commit-handler outcome — exposed so the spec can assert on the shape
 // without re-reading the DB row. The BullMQ wrapper in imports.processor
@@ -44,12 +47,12 @@ export interface CommitHandlerArgs {
   logger: Logger;
 }
 
-// runCommitHandler — orchestrates the commit pipeline for STUDENTS and
-// GUARDIANS (slice 8). The per-type bits (which engine to call, which
-// per-row commit function to invoke, which audit action to write) are
-// extracted into small modules; this file owns the shared orchestration:
-// status guard, source.csv re-read, per-row loop, error-report write,
-// final job-row update, audit row.
+// runCommitHandler — orchestrates the commit pipeline for STUDENTS,
+// GUARDIANS (slice 8), and TEACHERS (slice 10 cp2). The per-type bits
+// (which engine to call, which per-row commit function to invoke, which
+// audit action to write) are extracted into small modules; this file owns
+// the shared orchestration: status guard, source.csv re-read, per-row loop,
+// error-report write, final job-row update, audit row.
 //
 // Pipeline (each numbered step is its own withTenant transaction unless
 // otherwise noted):
@@ -68,7 +71,7 @@ export interface CommitHandlerArgs {
 //          duplicate full link tuples)
 //        - external check re-applied (students: admission number not
 //          already taken; guardians: studentAdmissionNumber resolves
-//          to a real Student)
+//          to a real Student; teachers: email not already a User)
 //   5. For each row in result.good, open a per-row withTenant() tx and
 //      invoke the per-type commit row function. CommitRowError
 //      (recoverable per-row failure: student lookup missing, guardian
@@ -89,7 +92,7 @@ export interface CommitHandlerArgs {
 //   9. Write one audit row with action='<resource>.import.commit' and
 //      counts in metadata. PII-free. Action is type-dispatched:
 //      'student.import.commit' for STUDENTS, 'guardian.import.commit'
-//      for GUARDIANS.
+//      for GUARDIANS, 'teacher.import.commit' for TEACHERS.
 
 export async function runCommitHandler(
   args: CommitHandlerArgs,
@@ -118,12 +121,10 @@ export async function runCommitHandler(
     );
     return { status: "skipped", reason: "wrong-status" };
   }
-  if (existing.type !== "STUDENTS" && existing.type !== "GUARDIANS") {
-    // TEACHERS deferred to slice 10 per cp1 design call.
-    throw new UnrecoverableError(
-      `commit: import ${jobId} type ${existing.type} is not handled in slice 8`,
-    );
-  }
+  // All three import types are handled (STUDENTS + GUARDIANS slice 8;
+  // TEACHERS slice 10 cp2). The dispatch below is exhaustive over
+  // ImportJobType — a new enum member would fail the per-type switches at
+  // typecheck time.
   const type = existing.type;
 
   // Step 2 — parse mapping.
@@ -152,7 +153,8 @@ export async function runCommitHandler(
   // union over Row.
   type EngineResultEither =
     | EngineResult<StudentImportRow>
-    | EngineResult<GuardianImportRow>;
+    | EngineResult<GuardianImportRow>
+    | EngineResult<TeacherImportRow>;
   let engineResult: EngineResultEither;
   try {
     engineResult = await withTenant(
@@ -166,7 +168,15 @@ export async function runCommitHandler(
             mapping.options,
           );
         }
-        return runGuardianValidationEngine(
+        if (type === "GUARDIANS") {
+          return runGuardianValidationEngine(
+            db,
+            sourceBytes,
+            mapping.mapping,
+            mapping.options,
+          );
+        }
+        return runTeacherValidationEngine(
           db,
           sourceBytes,
           mapping.mapping,
@@ -200,9 +210,19 @@ export async function runCommitHandler(
             rowDb,
           );
         }
-        return commitGuardianRow(
-          good.parsedRow as GuardianImportRow,
+        if (type === "GUARDIANS") {
+          return commitGuardianRow(
+            good.parsedRow as GuardianImportRow,
+            schoolId,
+            rowDb,
+          );
+        }
+        // TEACHERS — each good row becomes one Invitation. Needs userId
+        // for invitation.invitedBy (the admin who triggered the commit).
+        return commitTeacherRow(
+          good.parsedRow as TeacherImportRow,
           schoolId,
+          userId,
           rowDb,
         );
       });
@@ -212,14 +232,20 @@ export async function runCommitHandler(
       let message: string;
       if (e instanceof CommitRowError) {
         // Typed per-row failure (student not found, link already
-        // exists, etc.). Use the carried field+message verbatim.
+        // exists, invitation already exists, etc.). Use the carried
+        // field+message verbatim.
         field = e.field;
         message = e.message;
       } else {
         // Generic Prisma / unexpected error. Use describeCommitFailure
         // to produce a safe (PII-free) message; the field label is the
         // resource's "primary identifier" column.
-        field = type === "STUDENTS" ? "admissionNumber" : "studentAdmissionNumber";
+        field =
+          type === "STUDENTS"
+            ? "admissionNumber"
+            : type === "GUARDIANS"
+              ? "studentAdmissionNumber"
+              : "email";
         message = describeCommitFailure(e);
       }
       commitErrors.push({
@@ -253,7 +279,11 @@ export async function runCommitHandler(
 
   // Step 8 + 9 — finalise row + audit.
   const auditAction =
-    type === "STUDENTS" ? "student.import.commit" : "guardian.import.commit";
+    type === "STUDENTS"
+      ? "student.import.commit"
+      : type === "GUARDIANS"
+        ? "guardian.import.commit"
+        : "teacher.import.commit";
   await withTenant(schoolId, async (db) => {
     await db.importJob.update({
       where: { id: jobId },
