@@ -16,8 +16,53 @@ import (the deferred-from-slice-8 piece). Plan-first because slice 8
 deliberately punted TeacherProfile shape entirely, so this slice has
 real design decisions to settle before code.
 
-## Decisions made
-- (capture as the day unfolds)
+## Decisions made (plan-first, settled before code)
+- **Slice-table divergence noted:** phase-1.md:1199-1201 still shows the
+  ORIGINAL plan (slice 8 = Guardian+Teacher imports; slice 10 = profile +
+  class-teacher only). Reality: slice 8 deferred teacher import (rationale
+  in 2026-05-29 journal, not in phase-1.md), slice 10 absorbs it. The spec
+  table is stale; don't trust it for slice scope.
+- **Q1 — TeacherProfile schema:** ship the pinned shape verbatim
+  (phase-1.md:366-383). Includes `nutNumber`; omits `notes`.
+- **joinedAt vs hireDate:** keep spec's `joinedAt DateTime @default(now())`.
+  Real admin-entered hire date is Phase 3 payroll territory.
+- **Q2 — profile lifecycle = Option A (admin-explicit, CSV invite-only).**
+  Profile created only via POST /teacher-profiles after accept, real
+  admin-entered staffNumber. NO auto-create on accept (teacher portal
+  shows empty-state). Teacher CSV = email+firstName+lastName only;
+  importing staffNumber/specialty is DEFERRED to a future slice (capture
+  in deferred.md). Zero schema deviation; passes acceptance #7;
+  deliverable-18 read as "can get a profile," not "auto-gets one."
+- **Q3 — class-teacher assignment: already shipped in slice 3.** FK on
+  ClassArm → users.id, persistent, multiple arms per teacher, onDelete
+  SetNull + soft-delete handling. assertUserIsTeacher + create/PATCH +
+  the settings/class-arms dropdown UI all exist. Slice 10 only CONSUMES
+  it (staff UI); no new assignment mechanism.
+- **Blocker — no `teacher` system role is seeded** (only owner+admin;
+  full rollup deferred to slice 13). Without it invite-accept of a
+  teacher rolls back and assertUserIsTeacher always fails. **Decision:
+  pull a MINIMAL teacher role seed forward into slice 10 cp1** (role row +
+  read-scoped perms per phase-1.md:1087); full rollup + existing-school
+  migration stays slice 13.
+- **Q4 — teacher CSV: confirmed routine.** Third branch in the existing
+  imports.processor dispatcher (not a new @Processor). validate-teachers
+  .engine.ts + commit-teachers.row.ts (Invitation-creating per row).
+  teacherImportRowSchema in packages/types/src/imports/. Route =
+  /staff/import (4th wizard-ui.tsx consumer). ImportJobType.TEACHERS enum
+  already exists. One `teacher.import.commit` audit per job.
+- **SD count stays 4.** All endpoints post-tenant.
+- **Acceptance bar:** slice 10 LAYS GROUNDWORK, does not close
+  deliverable-18. It ships profile + class-teacher; TeacherAssignment +
+  teacher portal + scope filter (acceptance #9) are slice 11.
+
+## Checkpoints
+- cp1 — TeacherProfile model+migration+RLS+RLS-spec, CRUD + /me
+  self-service, minimal teacher-role seed. (class-teacher verified, not
+  rebuilt.)
+- cp2 — Teacher CSV import (dispatcher branch + engine + Invitation-
+  creating commit row + types + upload endpoint).
+- cp3 — Staff UI: /staff roster, /staff/invite, /staff/[userId]
+  detail+edit, /staff/import wizard, /teacher/profile empty-state.
 
 ## Tomorrow's first task
 - (fill at end of day)

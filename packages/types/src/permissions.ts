@@ -92,6 +92,26 @@ export const PHASE_1_SLICE_9_PERMISSIONS = [
   "enrollment.delete",
 ] as const;
 
+// Phase 1 slice 10 contributes the teacher-profile + teacher-import
+// permissions. Reference-only until slice 13 wires PermissionsGuard — until
+// then the controller gates on owner/admin via assertUserActiveAndHasOneOf
+// (every prior Phase 1 slice uses this same belt-and-braces pattern). The
+// two `*.self.*` strings are the teacher self-service surface (GET/PATCH
+// /teacher-profiles/me) and are already granted to the minimal `teacher`
+// role seeded in slice 10's migration (per phase-1.md:1087). `teacher.import`
+// lands its endpoint in slice 10 cp2. `teacher-profile.delete` is the
+// soft-delete (via User.isActive) path — admin-scoped, not owner-only,
+// because it removes no history (the profile row is preserved).
+export const PHASE_1_SLICE_10_PERMISSIONS = [
+  "teacher-profile.read",
+  "teacher-profile.create",
+  "teacher-profile.update",
+  "teacher-profile.delete",
+  "teacher.import",
+  "teacher-profile.self.read",
+  "teacher-profile.self.update",
+] as const;
+
 export const ALL_PERMISSIONS = [...PHASE_0_PERMISSIONS] as const;
 
 export type Permission = (typeof ALL_PERMISSIONS)[number] | "*";
