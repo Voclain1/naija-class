@@ -266,3 +266,28 @@ Format:
   RLS block added to apps/api/src/__tests__/rls.spec.ts. Discovered
   during slice 10 cp1 (which DID add teacher_profiles). Required for
   slice 13 acceptance #10 ("all Phase 1 tables in isolation spec").
+
+- [ ] Single teacher invite via the UI needs a `roleKey` on `POST
+  /users/invite`. Slice 10 cp3's `/staff/invite` form is ADMIN-ONLY:
+  `inviteAdminSchema` has no `roleKey` field and `UsersService.invite`
+  hardcodes `roleKey: "admin"` (Phase 0). cp3 was web-only, so the form
+  cannot create a teacher invitation — and passing a "teacher" role that the
+  endpoint ignores would silently grant ADMIN (privilege escalation), so the
+  form has no role dropdown at all. Teachers are invited in bulk via
+  `/staff/import` (the CSV path mints `roleKey="teacher"` invitations through
+  `commit-teachers.row.ts`). To support a single teacher invite from the UI,
+  either add an optional `roleKey` (enum of seeded roles) to the invite
+  schema + service with a role-grant check, or add a dedicated
+  `POST /staff/invite` endpoint. Trigger: an admin who needs to invite one
+  teacher without building a one-row CSV. (slice 10 cp3.)
+
+- [ ] Staff roster has no server-side pagination. `/staff` (slice 10 cp3)
+  loads the FULL set from `GET /users` + `GET /users/invitations` (neither is
+  cursor-paginated) and pulls one page (limit 200) of `GET /teacher-profiles`
+  purely to compute has-profile state. Fine for a pilot school's handful of
+  staff; if a school ever crosses ~200 teachers the has-profile lookup
+  silently stops past page 1 (the page surfaces an amber note when the
+  teacher-profiles cursor is non-empty, so it's visible, not silent — but the
+  fix is real). Add cursor params to `GET /users` (or fold has-profile into
+  the user list server-side) when staff counts grow. Trigger: first school
+  past ~200 staff, or staff-roster latency complaints. (slice 10 cp3.)

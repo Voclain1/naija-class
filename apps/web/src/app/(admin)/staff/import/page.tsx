@@ -7,20 +7,17 @@ import { useCallback, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { ApiError } from "@/lib/api-client";
-import { uploadStudentsCsv } from "@/lib/imports/api";
+import { uploadTeachersCsv } from "@/lib/imports/api";
 import { saveUploadResponse } from "@/lib/imports/session";
 
-// /students/import — Slice 6 cp4 step 1.
+// /staff/import — Slice 10 cp3 step 1 (fourth wizard-ui.tsx consumer).
 //
-// File picker + drag-drop. On success, navigates to the mapping step.
-// Inline error states match the API's documented error codes
-// (FILE_TOO_LARGE, TOO_MANY_ROWS, INVALID_CSV, AMBIGUOUS_HEADERS).
-//
-// We accept .csv only. The server doesn't pin a MIME type because
-// Excel-exported CSVs come through with a variety of types, but we use the
-// `accept` attribute as a friendly client-side filter; the real check is
-// always server-side.
-export default function ImportStudentsUploadPage() {
+// File picker + drag-drop, mirroring the students / guardians upload step.
+// On success, navigates to the mapping step. Teacher import is invite-only:
+// each committed row becomes an Invitation with roleKey="teacher"; the
+// teacher sets their own password on accept and an admin fills their
+// TeacherProfile in afterwards.
+export default function ImportTeachersUploadPage() {
   const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
@@ -36,11 +33,9 @@ export default function ImportStudentsUploadPage() {
       setErrorMessage(null);
       setFileName(file.name);
       try {
-        const res = await uploadStudentsCsv(file);
-        // Park the headers + sample rows so the mapping page can render
-        // without an extra fetch — see lib/imports/session.ts for why.
+        const res = await uploadTeachersCsv(file);
         saveUploadResponse(res);
-        router.push(`/students/import/${res.jobId}/mapping`);
+        router.push(`/staff/import/${res.jobId}/mapping`);
       } catch (e) {
         if (e instanceof ApiError) {
           setErrorCode(e.code);
@@ -61,7 +56,6 @@ export default function ImportStudentsUploadPage() {
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       if (file) void handleFile(file);
-      // Reset so the same file can be re-picked after an error.
       e.target.value = "";
     },
     [handleFile],
@@ -84,11 +78,12 @@ export default function ImportStudentsUploadPage() {
           Step 1 of 4
         </p>
         <h1 className="text-2xl font-semibold tracking-tight">
-          Import students from CSV
+          Import teachers from CSV
         </h1>
         <p className="text-sm text-muted-foreground">
-          Upload a CSV exported from your spreadsheet. You&apos;ll map columns
-          on the next screen, then review what&apos;s ready to import.
+          Upload a CSV of your teachers&apos; names and emails. Each one gets
+          an invitation to join and set their own password. You&apos;ll map
+          columns on the next screen, then review what&apos;s ready to send.
         </p>
       </header>
 
@@ -98,36 +93,12 @@ export default function ImportStudentsUploadPage() {
           <div className="flex flex-col text-sm">
             <span className="font-medium">Not sure where to start?</span>
             <span className="text-xs text-muted-foreground">
-              Download the template, fill in your students, then upload it
-              here.
+              Download the template — just email, first name, and surname.
             </span>
-            {/*
-              Slice 8 cp2 sub-line CTA — handles the case where an admin
-              clicked "Import" from the students roster but actually
-              wanted guardians. Quiet inline link, not a banner — the
-              primary path is still students.
-            */}
-            <Link
-              href="/guardians/import"
-              className="mt-1 text-xs text-muted-foreground underline-offset-2 hover:underline"
-            >
-              Importing guardians instead? Use the guardian import wizard →
-            </Link>
-            {/*
-              Slice 10 cp3 sub-line CTA — symmetric with the guardian one
-              above, for the admin who clicked "Import" from the wrong
-              roster but actually wants to bulk-invite teachers.
-            */}
-            <Link
-              href="/staff/import"
-              className="text-xs text-muted-foreground underline-offset-2 hover:underline"
-            >
-              Importing teachers instead? Use the staff import wizard →
-            </Link>
           </div>
         </div>
         <Button asChild variant="outline" size="sm">
-          <a href="/students-import-template.csv" download>
+          <a href="/teachers-import-template.csv" download>
             <Download className="mr-1 h-4 w-4" />
             Template CSV
           </a>
@@ -142,9 +113,7 @@ export default function ImportStudentsUploadPage() {
         onDragLeave={() => setDragOver(false)}
         onDrop={onDrop}
         className={`flex flex-col items-center justify-center gap-3 rounded-md border-2 border-dashed p-12 text-center transition-colors ${
-          dragOver
-            ? "border-primary bg-primary/5"
-            : "border-input bg-muted/20"
+          dragOver ? "border-primary bg-primary/5" : "border-input bg-muted/20"
         }`}
       >
         <Upload className="h-8 w-8 text-muted-foreground" />
@@ -193,7 +162,7 @@ export default function ImportStudentsUploadPage() {
 
       <div className="flex justify-start">
         <Button variant="ghost" asChild>
-          <Link href="/students">Cancel</Link>
+          <Link href="/staff">Cancel</Link>
         </Button>
       </div>
     </div>

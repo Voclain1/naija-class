@@ -11,6 +11,7 @@
 import type {
   ApplyGuardianImportMappingInput,
   ApplyStudentImportMappingInput,
+  ApplyTeacherImportMappingInput,
   ImportCommitAcceptedResponse,
   ImportJobDto,
   ImportMappingAcceptedResponse,
@@ -41,7 +42,17 @@ export async function uploadGuardiansCsv(
   return uploadImportCsv("/imports/guardians/upload", file);
 }
 
-// Shared multipart upload helper. Both wizards' upload step calls this
+// POST /imports/teachers/upload — slice 10 cp2. Same multipart contract as
+// the students / guardians uploads; the server sets type=TEACHERS on the
+// ImportJob row. Each committed row becomes an Invitation with
+// roleKey="teacher" (invite-only — profiles are created after acceptance).
+export async function uploadTeachersCsv(
+  file: File,
+): Promise<ImportUploadResponse> {
+  return uploadImportCsv("/imports/teachers/upload", file);
+}
+
+// Shared multipart upload helper. All three wizards' upload step call this
 // with the right path; everything else (auth header, error envelope
 // decoding, ApiError wrapping) is identical.
 async function uploadImportCsv(
@@ -96,6 +107,20 @@ export function applyStudentsImportMapping(
 export function applyGuardiansImportMapping(
   jobId: string,
   input: ApplyGuardianImportMappingInput,
+): Promise<ImportMappingAcceptedResponse> {
+  return apiFetch<ImportMappingAcceptedResponse>(
+    `/imports/${jobId}/mapping`,
+    { method: "POST", body: input },
+  );
+}
+
+// Same endpoint as the student / guardian mapping — the server dispatches
+// the per-type Zod schema off the loaded job's `type`. A third TypeScript-
+// level wrapper because the columnMapping target-field enum differs; at the
+// network layer it's an identical POST body.
+export function applyTeachersImportMapping(
+  jobId: string,
+  input: ApplyTeacherImportMappingInput,
 ): Promise<ImportMappingAcceptedResponse> {
   return apiFetch<ImportMappingAcceptedResponse>(
     `/imports/${jobId}/mapping`,
