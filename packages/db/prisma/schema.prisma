@@ -96,6 +96,13 @@ model User {
   // a relation name once two edges exist between the same two models.
   classTeacherArms ClassArm[] @relation("ClassTeacherArms")
 
+  // Phase 1 / Slice 10 — 1:1 HR profile for users who hold the teacher role.
+  // Optional because most users (owner, admin) never get one, and a teacher
+  // exists as a User the moment they accept their invitation; the profile is
+  // created explicitly by an admin afterwards (Q2 lifecycle, locked
+  // 2026-05-30 — no auto-create on accept).
+  teacherProfile TeacherProfile?
+
   @@index([schoolId])
   @@map("users")
 }
@@ -655,4 +662,47 @@ enum EnrollmentStatus {
   REPEATED
   WITHDRAWN
   GRADUATED
+}
+
+// ---------- Staff (Phase 1 / Slice 10) ----------
+//
+// TeacherProfile is the HR record for a User who holds the teacher role.
+// 1:1 with User (userId @unique). Created explicitly by an admin AFTER the
+// teacher accepts their invitation (Q2 lifecycle, locked 2026-05-30):
+//   - The invitation-accept path is untouched — no profile is auto-created.
+//   - `POST /teacher-profiles { userId, staffNumber, ... }` materialises it
+//     with a real, admin-entered staffNumber.
+//   - The teacher CSV import (slice 10 cp2) creates Invitations only; it does
+//     NOT import profile fields (deferred — the Invitation row can't carry
+//     them per phase-1.md:478, and acceptance #7 only requires invite-create).
+//
+// `joinedAt` is the pinned spec shape: a plain DateTime @default(now()), i.e.
+// the moment the profile row was created — NOT an admin-entered hire date.
+// A real `hireDate DATE` is Phase 3 payroll territory (alongside BVN capture,
+// deferred at phase-1.md:1234). Kept as joinedAt per the locked design.
+//
+// Two unique constraints (userId, and (schoolId, staffNumber)) — the service
+// pre-checks both before insert so it can return precise 409 codes; under
+// FORCE RLS the P2002 constraint name is stripped, so we cannot discriminate
+// from the error alone (see the RLS-hides-constraint-name note in CLAUDE.md).
+//
+// onDelete: Cascade — deleting the User drops the profile. In practice users
+// are soft-deleted (isActive=false), so this fires only on a real hard delete.
+model TeacherProfile {
+  id             String   @id @default(uuid())
+  schoolId       String   @map("school_id")
+  userId         String   @unique @map("user_id") // 1:1 with User
+  staffNumber    String   @map("staff_number") // unique per school; free-text in Phase 1
+  qualifications String? // free-text in Phase 1; structured array in Phase 3 payroll
+  specialty      String? // e.g. "Mathematics"
+  nutNumber      String?  @map("nut_number") // Nigerian Union of Teachers number (optional)
+  joinedAt       DateTime @default(now()) @map("joined_at")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([schoolId, staffNumber])
+  @@index([schoolId])
+  @@map("teacher_profiles")
 }

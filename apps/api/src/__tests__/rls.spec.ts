@@ -1161,3 +1161,152 @@ describe("multi-tenant isolation — Phase 1 / Slice 6 (import_jobs)", () => {
     expect(rows).toHaveLength(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Phase 1 / Slice 10 isolation — teacher_profiles
+//
+// teacher_profiles is FORCE RLS'd with the same direct-school_id shape as
+// every other Phase 1 table. It carries a user_id FK (1:1 with users), so the
+// fixture creates a user per school before the profile. This suite proves:
+// each school sees only its own profile, cross-tenant findUnique returns null,
+// a cross-tenant INSERT is rejected by WITH CHECK, and an unset GUC returns
+// zero rows (FORCE RLS fails closed).
+// ---------------------------------------------------------------------------
+
+describe("multi-tenant isolation — Phase 1 / Slice 10 (teacher_profiles)", () => {
+  const runId = Math.random().toString(36).slice(2, 8);
+  let schoolA: { id: string };
+  let schoolB: { id: string };
+  let userA: { id: string };
+  let userB: { id: string };
+  let spareUserA: { id: string };
+  let profileA: { id: string };
+  let profileB: { id: string };
+
+  beforeAll(async () => {
+    schoolA = await basePrisma.school.create({
+      data: { name: "School P1S10A", slug: `rls-p1s10a-${runId}` },
+      select: { id: true },
+    });
+    schoolB = await basePrisma.school.create({
+      data: { name: "School P1S10B", slug: `rls-p1s10b-${runId}` },
+      select: { id: true },
+    });
+
+    userA = await withTenant(schoolA.id, (db) =>
+      db.user.create({
+        data: {
+          schoolId: schoolA.id,
+          email: `teacher-${runId}@school-a.test`,
+          firstName: "TeachA",
+          lastName: `Alpha-${runId}`,
+        },
+        select: { id: true },
+      }),
+    );
+    userB = await withTenant(schoolB.id, (db) =>
+      db.user.create({
+        data: {
+          schoolId: schoolB.id,
+          email: `teacher-${runId}@school-b.test`,
+          firstName: "TeachB",
+          lastName: `Bravo-${runId}`,
+        },
+        select: { id: true },
+      }),
+    );
+    // A second user in School A with NO profile — used by the WITH CHECK
+    // test so the rejection is unambiguously the school_id mismatch, not the
+    // user_id uniqueness constraint.
+    spareUserA = await withTenant(schoolA.id, (db) =>
+      db.user.create({
+        data: {
+          schoolId: schoolA.id,
+          email: `teacher-spare-${runId}@school-a.test`,
+          firstName: "SpareA",
+          lastName: `Spare-${runId}`,
+        },
+        select: { id: true },
+      }),
+    );
+
+    profileA = await withTenant(schoolA.id, (db) =>
+      db.teacherProfile.create({
+        data: {
+          schoolId: schoolA.id,
+          userId: userA.id,
+          staffNumber: `A-${runId}`,
+        },
+        select: { id: true },
+      }),
+    );
+    profileB = await withTenant(schoolB.id, (db) =>
+      db.teacherProfile.create({
+        data: {
+          schoolId: schoolB.id,
+          userId: userB.id,
+          staffNumber: `B-${runId}`,
+        },
+        select: { id: true },
+      }),
+    );
+  });
+
+  afterAll(async () => {
+    if (schoolA?.id) {
+      await basePrisma.school.delete({ where: { id: schoolA.id } }).catch(() => undefined);
+    }
+    if (schoolB?.id) {
+      await basePrisma.school.delete({ where: { id: schoolB.id } }).catch(() => undefined);
+    }
+    await basePrisma.$disconnect();
+  });
+
+  it("School A sees its own teacher_profile only", async () => {
+    const rows = await withTenant(schoolA.id, (db) =>
+      db.teacherProfile.findMany({ where: { staffNumber: { contains: runId } } }),
+    );
+    const ids = rows.map((r) => r.id);
+    expect(ids).toContain(profileA.id);
+    expect(ids).not.toContain(profileB.id);
+  });
+
+  it("School B sees its own teacher_profile only", async () => {
+    const rows = await withTenant(schoolB.id, (db) =>
+      db.teacherProfile.findMany({ where: { staffNumber: { contains: runId } } }),
+    );
+    const ids = rows.map((r) => r.id);
+    expect(ids).toContain(profileB.id);
+    expect(ids).not.toContain(profileA.id);
+  });
+
+  it("findUnique across tenants returns null", async () => {
+    const leak = await withTenant(schoolA.id, (db) =>
+      db.teacherProfile.findUnique({ where: { id: profileB.id } }),
+    );
+    expect(leak).toBeNull();
+  });
+
+  it("INSERT with another school's school_id fails the WITH CHECK clause", async () => {
+    await expect(
+      withTenant(schoolA.id, (db) =>
+        db.teacherProfile.create({
+          data: {
+            schoolId: schoolB.id,
+            userId: spareUserA.id,
+            staffNumber: `bad-${runId}`,
+          },
+        }),
+      ),
+    ).rejects.toThrow();
+  });
+
+  it("raw SQL with unset GUC returns zero rows from teacher_profiles (FORCE RLS)", async () => {
+    const rows = await basePrisma.$transaction(async (tx) => {
+      return tx.$queryRaw<Array<{ id: string }>>`
+        SELECT id FROM teacher_profiles WHERE staff_number LIKE ${"%" + runId + "%"}
+      `;
+    });
+    expect(rows).toHaveLength(0);
+  });
+});

@@ -175,3 +175,20 @@ ALTER TABLE enrollments FORCE  ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation ON enrollments
   USING      (school_id::text = current_setting('app.current_school_id', true))
   WITH CHECK (school_id::text = current_setting('app.current_school_id', true));
+
+-- Slice 10: teacher_profiles -------------------------------------------
+-- HR profile for teacher-role users. Direct school_id column (the userId
+-- FK is to a same-tenant User, but we carry our own school_id for the
+-- cheap direct-filter pattern every Phase 1 table uses — no join-through-
+-- parent EXISTS subquery). Created by admin request handlers only; the
+-- invitation-accept path does NOT touch this table (no auto-create on
+-- accept — Q2 lifecycle locked 2026-05-30). SECURITY DEFINER count stays
+-- at 4: every teacher-profile endpoint is post-authentication and
+-- post-tenant, so withTenant() covers all access.
+
+ALTER TABLE teacher_profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE teacher_profiles FORCE  ROW LEVEL SECURITY;
+
+CREATE POLICY tenant_isolation ON teacher_profiles
+  USING      (school_id::text = current_setting('app.current_school_id', true))
+  WITH CHECK (school_id::text = current_setting('app.current_school_id', true));
