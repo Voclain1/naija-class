@@ -10,8 +10,10 @@ import {
   ValidationError,
   applyGuardianImportMappingSchema,
   applyStudentImportMappingSchema,
+  applyTeacherImportMappingSchema,
   type ApplyGuardianImportMappingInput,
   type ApplyStudentImportMappingInput,
+  type ApplyTeacherImportMappingInput,
   type ImportCommitAcceptedResponse,
   type ImportJobDto,
   type GuardianImportRow,
@@ -20,6 +22,7 @@ import {
   type ImportMappingAcceptedResponse,
   type ImportUploadResponse,
   type StudentImportRow,
+  type TeacherImportRow,
 } from "@school-kit/types";
 
 import type { AuthContext } from "../../common/auth/auth-context";
@@ -41,6 +44,7 @@ import {
 } from "./validate.engine";
 import { runGuardianValidationEngine } from "./validate-guardians.engine";
 import { runStudentValidationEngine } from "./validate-students.engine";
+import { runTeacherValidationEngine } from "./validate-teachers.engine";
 
 // Audit actions — singular resource, dotted verb (locked in slice 1).
 //
@@ -69,20 +73,21 @@ const AUDIT = {
 //
 // `type` is on the payload for debugging / logging convenience only —
 // the worker re-reads it from ImportJob.type before dispatching. Slice 8
-// widened from STUDENTS-only to STUDENTS | GUARDIANS.
+// widened from STUDENTS-only to STUDENTS | GUARDIANS; slice 10 cp2 widened
+// to the full ImportJobType (adding TEACHERS).
 export interface ValidateJobData extends TenantJobData {
   jobId: string;
-  type: "STUDENTS" | "GUARDIANS";
+  type: ImportJobType;
 }
 
-// Job-data shape for the commit worker (slice 7, widened in slice 8).
+// Job-data shape for the commit worker (slice 7, widened in slice 8 + 10).
 // Same tenancy contract as ValidateJobData; the worker re-streams
 // source.csv from storage and re-runs the per-type validation engine
 // before doing per-row inserts, so it needs nothing else from the
 // payload.
 export interface CommitJobData extends TenantJobData {
   jobId: string;
-  type: "STUDENTS" | "GUARDIANS";
+  type: ImportJobType;
 }
 
 interface RequestContext {
@@ -150,11 +155,23 @@ export class ImportsService {
     return this.uploadImportFile(authCtx, file, reqCtx, "GUARDIANS");
   }
 
+  // POST /imports/teachers/upload — slice 10 cp2. Same shell as students /
+  // guardians; the TEACHERS discriminator routes to the teacher engine +
+  // the Invitation-creating commit row. Invite-only: the CSV carries only
+  // email + firstName + lastName.
+  async uploadTeachers(
+    authCtx: AuthContext,
+    file: UploadFile,
+    reqCtx: RequestContext,
+  ): Promise<ImportUploadResponse> {
+    return this.uploadImportFile(authCtx, file, reqCtx, "TEACHERS");
+  }
+
   private async uploadImportFile(
     authCtx: AuthContext,
     file: UploadFile,
     reqCtx: RequestContext,
-    type: Exclude<ImportJobType, "TEACHERS">,
+    type: ImportJobType,
   ): Promise<ImportUploadResponse> {
     await assertUserActiveAndHasOneOf(authCtx, ["owner", "admin"]);
 
@@ -294,20 +311,13 @@ export class ImportsService {
     // with applyStudentImportMappingSchema; GUARDIANS jobs use
     // applyGuardianImportMappingSchema. The body shape is otherwise
     // identical — only the target-field enum + required-set differ.
-    let jobType: "STUDENTS" | "GUARDIANS";
+    let jobType: ImportJobType;
     await withTenant(authCtx.schoolId, async (db) => {
       const job = await db.importJob.findUnique({
         where: { id: jobId },
         select: { id: true, status: true, type: true },
       });
       if (!job) throw new NotFoundError("Import job not found.");
-      if (job.type !== "STUDENTS" && job.type !== "GUARDIANS") {
-        // TEACHERS deferred to slice 10 per cp1 design call.
-        throw new ConflictError(
-          "INVALID_JOB_TYPE",
-          `Mapping is not yet supported for ${job.type} imports.`,
-        );
-      }
       if (job.status !== "PENDING") {
         throw new ConflictError(
           "JOB_NOT_IN_PENDING_STATE",
@@ -320,12 +330,19 @@ export class ImportsService {
     // jobType is set inside the withTenant callback above; TS can't see
     // through the closure assignment so we narrow with !.
     const type = jobType!;
-    const resourceLabel = type === "STUDENTS" ? "student" : "guardian";
+    const resourceLabel =
+      type === "STUDENTS"
+        ? "student"
+        : type === "GUARDIANS"
+          ? "guardian"
+          : "teacher";
 
     const schema =
       type === "STUDENTS"
         ? applyStudentImportMappingSchema
-        : applyGuardianImportMappingSchema;
+        : type === "GUARDIANS"
+          ? applyGuardianImportMappingSchema
+          : applyTeacherImportMappingSchema;
     const parsed = schema.safeParse(rawInput);
     if (!parsed.success) {
       // The schema's superRefine produces a `missing` array in
@@ -345,8 +362,10 @@ export class ImportsService {
         formatZodIssues(parsed.error.issues),
       );
     }
-    const input: ApplyStudentImportMappingInput | ApplyGuardianImportMappingInput =
-      parsed.data;
+    const input:
+      | ApplyStudentImportMappingInput
+      | ApplyGuardianImportMappingInput
+      | ApplyTeacherImportMappingInput = parsed.data;
 
     await withTenant(authCtx.schoolId, async (db) => {
       // Re-fetch with the status guard inside the SAME tx as the update
@@ -552,13 +571,6 @@ export class ImportsService {
         },
       });
       if (!row) throw new NotFoundError("Import job not found.");
-      if (row.type !== "STUDENTS" && row.type !== "GUARDIANS") {
-        // TEACHERS deferred to slice 10.
-        throw new ConflictError(
-          "INVALID_JOB_TYPE",
-          `Bad-rows CSV is not yet supported for ${row.type} imports.`,
-        );
-      }
       if (row.status !== "READY" && row.status !== "COMPLETED") {
         throw new ConflictError(
           "JOB_NOT_VALIDATED",
@@ -601,14 +613,15 @@ export class ImportsService {
 
     // Re-run the engine. Caller is responsible for the audit row — we
     // emit it BEFORE returning so the NDPR record is in place even if
-    // the response stream fails mid-flight. Per-type dispatch (slice 8):
-    // students and guardians use different engines. The downstream
-    // consumers (buildBadRowsFromSource + badRowsToCsv) only touch
-    // `bad` + `headers`, which are uniform across the union — no row-
-    // payload type ever leaks out of this block.
+    // the response stream fails mid-flight. Per-type dispatch (slice 8 +
+    // 10): students, guardians, and teachers use different engines. The
+    // downstream consumers (buildBadRowsFromSource + badRowsToCsv) only
+    // touch `bad` + `headers`, which are uniform across the union — no
+    // row-payload type ever leaks out of this block.
     type EngineResultEither =
       | EngineResult<StudentImportRow>
-      | EngineResult<GuardianImportRow>;
+      | EngineResult<GuardianImportRow>
+      | EngineResult<TeacherImportRow>;
     const engineResult = await withTenant(
       authCtx.schoolId,
       async (db): Promise<EngineResultEither> => {
@@ -620,7 +633,15 @@ export class ImportsService {
             mapping.options,
           );
         }
-        return runGuardianValidationEngine(
+        if (job.type === "GUARDIANS") {
+          return runGuardianValidationEngine(
+            db,
+            sourceBytes,
+            mapping.mapping,
+            mapping.options,
+          );
+        }
+        return runTeacherValidationEngine(
           db,
           sourceBytes,
           mapping.mapping,
@@ -700,20 +721,13 @@ export class ImportsService {
     // of the same RLS-scoped read. Hoist it out via assignment for the
     // enqueue below (BullMQ payload carries `type` for log/debug only —
     // the worker re-reads from the row).
-    let jobType: "STUDENTS" | "GUARDIANS";
+    let jobType: ImportJobType;
     await withTenant(authCtx.schoolId, async (db) => {
       const job = await db.importJob.findUnique({
         where: { id: jobId },
         select: { id: true, status: true, type: true, validRows: true },
       });
       if (!job) throw new NotFoundError("Import job not found.");
-      if (job.type !== "STUDENTS" && job.type !== "GUARDIANS") {
-        // TEACHERS deferred to slice 10.
-        throw new ConflictError(
-          "INVALID_JOB_TYPE",
-          `Commit is not yet supported for ${job.type} imports.`,
-        );
-      }
       if (job.status !== "READY") {
         throw new ConflictError(
           "JOB_NOT_IN_READY_STATE",
@@ -801,13 +815,6 @@ export class ImportsService {
         },
       });
       if (!row) throw new NotFoundError("Import job not found.");
-      if (row.type !== "STUDENTS" && row.type !== "GUARDIANS") {
-        // TEACHERS deferred to slice 10.
-        throw new ConflictError(
-          "INVALID_JOB_TYPE",
-          `Error report is not yet supported for ${row.type} imports.`,
-        );
-      }
       if (row.status !== "COMPLETED") {
         throw new ConflictError(
           "JOB_NOT_COMPLETED",

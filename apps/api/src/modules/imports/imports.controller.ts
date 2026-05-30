@@ -172,6 +172,43 @@ export class ImportsController {
     );
   }
 
+  // POST /imports/teachers/upload — slice 10 cp2. Symmetric with students /
+  // guardians upload. Invite-only teacher CSV (email + firstName +
+  // lastName); each good row becomes one Invitation at commit.
+  @Post("teachers/upload")
+  @HttpCode(201)
+  @UseInterceptors(
+    FileInterceptor("file", {
+      limits: { fileSize: CSV_MAX_FILE_SIZE_BYTES },
+    }),
+  )
+  @UseFilters(UploadMulterErrorFilter)
+  async uploadTeachers(
+    @CurrentUser() authCtx: AuthContext,
+    @UploadedFile() file: Express.Multer.File | undefined,
+    @Ip() ip: string,
+    @Req() req: Request,
+  ): Promise<ImportUploadResponse> {
+    if (!file) {
+      throw new ValidationError(
+        "INVALID_UPLOAD",
+        "No file uploaded. Use multipart/form-data with a 'file' field.",
+      );
+    }
+    return this.service.uploadTeachers(
+      authCtx,
+      {
+        buffer: file.buffer,
+        originalname: file.originalname,
+        size: file.size,
+      },
+      {
+        ipAddress: ip,
+        userAgent: req.header("user-agent") ?? null,
+      },
+    );
+  }
+
   // POST /imports/:jobId/mapping — JSON body
   // Pipe-validated jobId rejects non-UUID early (404 if the row truly
   // doesn't exist is handled in the service; non-UUIDs never need a DB
