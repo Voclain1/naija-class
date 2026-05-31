@@ -11,6 +11,7 @@ import type {
   UserListItemDto,
 } from "@school-kit/types";
 
+import { TeacherAssignmentsSection } from "@/components/staff/teacher-assignments-section";
 import { Button } from "@/components/ui/button";
 import { ApiError } from "@/lib/api-client";
 import { listClassArms } from "@/lib/class-arms/class-arms-api";
@@ -252,6 +253,9 @@ export default function StaffDetailPage() {
           </ul>
         )}
       </section>
+
+      {/* Teaching assignments (slice 11 — subject × arm × year/term) */}
+      <TeacherAssignmentsSection teacherId={userId} />
     </div>
   );
 }

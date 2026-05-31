@@ -291,3 +291,11 @@ Format:
   fix is real). Add cursor params to `GET /users` (or fold has-profile into
   the user list server-side) when staff counts grow. Trigger: first school
   past ~200 staff, or staff-roster latency complaints. (slice 10 cp3.)
+
+  - [ ] Auth-to-cookies migration to enable server components.
+  Currently every page is "use client" because apiFetch reads the
+  Bearer token from localStorage (server components can't access it).
+  Migrating to httpOnly cookie auth (or hybrid session lookup) would
+  enable Server Components for SEO, smaller client bundle, server-
+  side notFound() / redirect() flows. Cross-cutting refactor — likely
+  Phase 4 or Phase 7. Discovered slice 11 cp3.

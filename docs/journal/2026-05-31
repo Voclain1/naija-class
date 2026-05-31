@@ -212,10 +212,79 @@ renders from ONE round-trip instead of three:
 - SECURITY DEFINER count: still 4 — cp2 is app-layer only, zero SQL/
   migration changes.
 
+## cp3 progress (teacher portal UI — landed A/B/C, awaiting review; nothing committed)
+
+Web-only slice consuming cp1 (admin CRUD) + cp2 (scope reads). NO API/types
+changes (git status: only apps/web touched), so the API suite is structurally
+untouched at 432.
+
+### A — Admin assignment UI (closes slice-10 "assigned subjects" deferral)
+- components/staff/teacher-assignments-section.tsx — lists the teacher's
+  TeacherAssignment rows (arm · subject · year · term-or-"Whole year"),
+  inline Add form (4 native selects: arm / subject / year[default current] /
+  term[default Whole year, filtered to the selected year's terms]), per-row
+  hard delete (DELETE /teacher-assignments/:id). Resolves ids→names via
+  listClassArms(includeInactive) / listSubjects(includeInactive) /
+  listAcademicYears / listTerms(per year).
+- Wired into (admin)/staff/[userId]/page.tsx after the class-teacher section.
+- FORM-CLASS PROTECTION (slice-10 lesson): local `assignmentFormSchema` ===
+  FormValues (4 strings) → ZERO `as never`; root error block + per-field
+  errors on all four; API codes mapped — TEACHER_ALREADY_ASSIGNED → root,
+  TERM_YEAR_MISMATCH → termId, INACTIVE_CLASS_ARM → classArmId,
+  INACTIVE_SUBJECT → subjectId, else → root; termId "" = whole year (→ null).
+
+### B — Teacher portal pages (route group VERIFIED)
+Pages land at (teacher)/teacher/<segment>/page.tsx (NOT (teacher)/<segment>/),
+per the layout's ROUTING GUARD:
+- /teacher/dashboard — welcome (useAuth firstName) + grouped classArms with
+  their subjects; empty state when no scope.
+- /teacher/classes — list of in-scope arms → links to [armId].
+- /teacher/classes/[armId] — arm name + this teacher's subjects + PII-narrow
+  roster (avatar, name, admission #, status). 404 from the roster endpoint →
+  "not one of your classes" state (the acceptance-#9 security property).
+All read ONLY /teacher-scope/me + /teacher-scope/me/arms/:armId/students.
+
+### C — Teacher nav
+- components/teacher/sidebar.tsx — minimal TeacherSidebar (Dashboard /
+  Classes / Profile only; NOT the admin sidebar). (teacher)/layout.tsx now
+  uses the same sidebar+topbar shell as (admin) but with the teacher nav.
+
+### API client wrappers
+- lib/staff/staff-api.ts — listTeacherAssignments / createTeacherAssignment /
+  deleteTeacherAssignment.
+- lib/teacher/teacher-scope-api.ts — getMyScope / getMyArmRoster.
+
+### D — Playwright E2E → SPLIT to cp4 (the locked plan reserves this)
+Not built today. Rationale: the e2e harness (e2e/tests/phase-0-happy-path
+.spec.ts) has NO teacher-login or academic-structure-setup helper — the only
+flow is a 231-line signup→onboard→invite→accept→login. The acceptance-#9 E2E
+needs the FULL chain (owner signs up → creates year+term+level+arm+subject via
+the settings UI → invites a teacher → teacher accepts → owner adds a
+TeacherAssignment via the new /staff/[userId] UI → teacher logs in → asserts
+dashboard + the cross-teacher 404). That fixture is hours of fragile setup;
+the prompt's SCOPE GUARD explicitly says don't bundle E2E under deadline
+pressure. cp4 owns: the two E2E tests + a reusable academic-structure /
+teacher-login harness (which slice 13 will also extend).
+
+### Divergence (forced — flagged)
+- **Teacher pages are CLIENT components, not server components.** The prompt
+  said "server component, reads /teacher-scope/me on load" + server
+  notFound(). The whole app authenticates via a Bearer token in localStorage
+  (api-client.ts), which a server component can't read — every existing page
+  (incl. (teacher)/teacher/profile) is "use client". So the pages are client
+  components fetching via apiFetch, and the [armId] out-of-scope case renders
+  an in-page "not one of your classes" state instead of server notFound().
+  Same UX, same security (the 404 still comes from the server).
+
+### Verification (nothing pushed)
+- web typecheck: clean. web lint `eslint . --max-warnings=0`: clean.
+- ZERO `as never` casts (grep: only comment mentions).
+- route group confirmed: (teacher)/teacher/{dashboard,classes,classes/[armId]}.
+- API suite: structurally untouched (web-only diff) — stays **432**.
+- **Manual browser walkthrough is the remaining gate** (admin assign →
+  teacher portal end-to-end) + cp4 E2E. Handing back for the walkthrough.
+
 ## Tomorrow's first task
-- Slice 11 cp3 — admin assignment UI on /staff/[userId] (closes the
-  slice-10 "assigned subjects" deferral) + teacher portal pages
-  (/teacher/dashboard, /teacher/classes, /teacher/classes/[armId]) + nav +
-  Playwright E2E. Carry forward slice-10 cp3 form discipline (zero
-  `as never`, local FormValues-matched schemas, root + per-field errors).
-  cp3 resolves the "/me returns ids only" name-rendering question.
+- Slice 11 cp4 — the two Playwright E2E tests (acceptance #9) + a reusable
+  academic-structure + teacher-invite/login harness. Then slice 11 closes
+  (deliverables 18-19, acceptance #9); Phase 1 → 11/13.
