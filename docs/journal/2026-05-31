@@ -284,7 +284,93 @@ teacher-login harness (which slice 13 will also extend).
 - **Manual browser walkthrough is the remaining gate** (admin assign →
   teacher portal end-to-end) + cp4 E2E. Handing back for the walkthrough.
 
+## cp4 progress (acceptance-#9 E2E — landed, awaiting review; nothing committed)
+
+E2E-only slice. git status: only `e2e/` touched (+ `pnpm-lock.yaml`), so the
+API suite is structurally untouched — stays **432**. cp4 adds TWO tests to the
+separate Playwright suite (now 3 total: the Phase-0 happy path + these two).
+
+### PART A — reusable fixture harness (e2e/fixtures/)
+Built so slice 13's acceptance #11 rollup reuses it. Design principle:
+**API-FIRST SETUP, UI-ONLY ASSERTIONS** — academic structure, invitations and
+assignments are built over HTTP / the tenant client; the browser is reserved
+for asserting the teacher portal.
+- `api.ts` — typed wrappers over Playwright's APIRequestContext for signup,
+  onboarding (1–5 → ACTIVE), academic CRUD (year/term/level/subject/arm,
+  incl. set-current), `/auth/me`, and `POST /teacher-assignments`. PATH NOTE:
+  baseURL carries a trailing slash and paths are prefix-relative — Playwright
+  resolves `new URL(path, baseURL)`, so a leading slash would drop `/api/v1`.
+- `db.ts` — `seedTeacherInvitation()` writes a `roleKey='teacher'` Invitation
+  row through `withTenant` (the documented divergence — see below).
+- `session.ts` — `loginAsAdmin` (provisions a fresh ACTIVE school; owner ⊇
+  admin for setup) and `loginAsTeacher` (API login + token injection). Both
+  return browser contexts with the bearer pre-injected into localStorage
+  (`sk_auth_token`) via `addInitScript`, so the app hydrates via `/auth/me`
+  with no UI-login round-trip.
+- `academic.ts` — `setupAcademicStructure` (reuses the signup-seeded JSS 2
+  level; creates year+term [current] + subject + arms; find-or-create when
+  `skipIfExists`), `assignTeacher`, `armId`.
+- `teacher.ts` — `inviteAndAcceptTeacher`: seeds the invitation, then ACCEPTS
+  it through the REAL public UI in a fresh context. userId is read race-free
+  via `/auth/me` against the freshly-stored token (NOT the accept response
+  body — the form hard-navigates to /dashboard, which discards it).
+- `unique.ts` — per-run unique suffixes + globally-unique owner phone.
+
+### PART B — the two tests (e2e/tests/slice-11-teacher-scope.spec.ts)
+1. **assign → sees** — admin assigns a teacher to JSS 2 A · Mathematics; the
+   teacher's /teacher/dashboard shows "JSS 2 A" + "Mathematics", /teacher/
+   classes lists it, the arm page shows the heading + subject + empty-roster
+   state.
+2. **cross-teacher isolation** — A→JSS 2 A, B→JSS 2 B. A's /teacher/classes
+   shows only JSS 2 A (asserts `toHaveCount(0)` for "JSS 2 B" AFTER A's arm has
+   rendered); A navigating to B's arm URL hits the in-page "not one of yours"
+   state (not a 404 page, not a crash); symmetric for B.
+
+### Divergence (the big one — flagged, sanctioned by the cp4 brief)
+- **No API mints a teacher invitation.** The brief's "POST /users/invite with
+  roleKey='teacher'" doesn't exist in that shape: in Phase 0 that endpoint is
+  admin-only and HARDCODES `roleKey:"admin"` (users.service.ts). The only
+  teacher-invite paths today are the async bulk-CSV import (BullMQ worker — too
+  heavy/flaky for an E2E setup step) and the not-yet-built slice-13 RBAC. The
+  brief explicitly sanctions "fetch the invitation directly from the DB", so
+  `seedTeacherInvitation` inserts the row via `withTenant` (same INSERT policy
+  the real `UsersService.invite` uses) and the REAL accept flow + REAL login do
+  everything else — the accept handler is role-generic (grants whatever
+  `role_key` the row carries), so this yields a genuine teacher: real password,
+  real session, real role grant. The ONLY synthetic step is the row insert;
+  when a teacher-invite API lands in slice 13, swap that one function for it —
+  the accept half is already production-faithful. (This is why `e2e` now
+  depends on `@school-kit/db`, and `playwright.config.ts` loads the root `.env`
+  before any worker imports the tenant client.)
+- **Setup is API-first, NOT settings-UI-driven.** The cp3 journal pictured cp4
+  building academic structure "via the settings UI". cp4 uses the admin API
+  instead (the brief's API-FIRST principle): faster, far less flake surface,
+  and the UI for that structure is already covered by slice-1–3 specs. The
+  browser is used ONLY for the teacher portal under test.
+
+### Flake-prevention disciplines applied
+- One `browser.newContext()` per session (admin + each teacher); contexts
+  closed in a `finally`.
+- Specific DOM waits only (`getByText`/`getByRole`/`waitForURL`) — ZERO
+  `waitForTimeout`.
+- Fresh, uniquely-identified school per test (unique slug/email/phone) — no
+  shared state, re-runs don't collide.
+- "Absent" assertions gated behind a positive render first (assert JSS 2 A
+  visible, THEN JSS 2 B count 0) so they can't pass on a not-yet-loaded page.
+
+### Verification (nothing pushed)
+- e2e `tsc --noEmit`: clean (added a `typecheck` script to the e2e package).
+- New spec: **3 consecutive runs, both tests green each = 6/6** (no flake).
+- Headed run: green. Full e2e suite (happy path + 2 new): **3 passed**.
+- API suite: untouched (e2e-only diff) — stays **432**.
+
+## Slice 11 — CLOSED
+Acceptance #9 (acceptance-bar step 8: "each teacher logs in and sees exactly
+and only the arms/subjects they teach") is now codified end-to-end. cp1
+(model+RLS+admin CRUD) + cp2 (scope filter + scoped reads) + cp3 (portal UI) +
+cp4 (E2E) complete. Deliverables 18–19 done. **Phase 1 → 11/13.**
+
 ## Tomorrow's first task
-- Slice 11 cp4 — the two Playwright E2E tests (acceptance #9) + a reusable
-  academic-structure + teacher-invite/login harness. Then slice 11 closes
-  (deliverables 18-19, acceptance #9); Phase 1 → 11/13.
+- Slice 12 — AI foundation tables (`MasteryRecord` + `AIInteractionLog`):
+  models, migration, RLS, extend the RLS isolation spec. Small slice; land it
+  before slice 13's RBAC/audit/E2E close-out.
