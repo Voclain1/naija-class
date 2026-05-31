@@ -18,11 +18,15 @@
 // invitations). See docs/deferred.md ("single teacher invite needs roleKey").
 
 import type {
+  CreateTeacherAssignmentInput,
   CreateTeacherProfileInput,
   InviteAdminInput,
   InviteAdminResponse,
+  ListTeacherAssignmentsQuery,
   ListTeacherProfilesQuery,
   PendingInvitationDto,
+  TeacherAssignmentDto,
+  TeacherAssignmentListResponse,
   TeacherProfileDto,
   TeacherProfileListResponse,
   UpdateMyTeacherProfileInput,
@@ -127,4 +131,41 @@ export function updateMyTeacherProfile(
     method: "PATCH",
     body: input,
   });
+}
+
+// ---- Teacher assignments (slice 11 cp1 admin CRUD) ----------------------
+//
+// Powers the "Teaching assignments" section on /staff/[userId]. The list is
+// filtered by teacherId; create + delete are the admin's assign / unassign
+// actions. Delete is a HARD delete (cp1's DELETE /teacher-assignments/:id —
+// history lives in audit_logs), so removed rows simply disappear.
+
+export function listTeacherAssignments(
+  query: ListTeacherAssignmentsQuery = {},
+): Promise<TeacherAssignmentListResponse> {
+  const params = new URLSearchParams();
+  if (query.teacherId) params.set("teacherId", query.teacherId);
+  if (query.classArmId) params.set("classArmId", query.classArmId);
+  if (query.academicYearId) params.set("academicYearId", query.academicYearId);
+  if (query.subjectId) params.set("subjectId", query.subjectId);
+  if (query.cursor) params.set("cursor", query.cursor);
+  if (query.limit !== undefined) params.set("limit", String(query.limit));
+  const qs = params.toString();
+  return apiFetch<TeacherAssignmentListResponse>(
+    `/teacher-assignments${qs ? `?${qs}` : ""}`,
+    { method: "GET" },
+  );
+}
+
+export function createTeacherAssignment(
+  input: CreateTeacherAssignmentInput,
+): Promise<TeacherAssignmentDto> {
+  return apiFetch<TeacherAssignmentDto>("/teacher-assignments", {
+    method: "POST",
+    body: input,
+  });
+}
+
+export function deleteTeacherAssignment(id: string): Promise<void> {
+  return apiFetch<void>(`/teacher-assignments/${id}`, { method: "DELETE" });
 }
