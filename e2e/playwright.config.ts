@@ -1,10 +1,25 @@
-import { defineConfig, devices } from "@playwright/test";
+import { fileURLToPath } from "node:url";
 
-// Phase 0 smoke. Single test, single worker, single browser — see
-// docs/modules/phase-0.md acceptance criterion #8 and CLAUDE.md → Tests.
-// Richer coverage (cross-browser, fixtures, storageState, parallelism) is
-// deferred until we have 5+ tests; trying to design for it now would be
-// premature abstraction.
+import { defineConfig, devices } from "@playwright/test";
+import dotenv from "dotenv";
+
+// Load the repo-root .env into THIS process (and, because Playwright re-imports
+// this config in every worker, into each worker too). Slice 11 cp4 needs
+// `DATABASE_URL` available before any test imports `@school-kit/db`: the
+// teacher-invitation fixture (e2e/fixtures/db.ts) seeds an Invitation row
+// directly through the tenant client because no API endpoint creates a
+// `roleKey='teacher'` invitation yet (POST /users/invite is admin-only in
+// Phase 0). `basePrisma` is constructed at module import, so the env must be
+// present first; doing it here at config module-scope guarantees that ordering.
+dotenv.config({
+  path: fileURLToPath(new URL("../.env", import.meta.url)),
+});
+
+// Phase 0 smoke seeded this harness; slice 11 cp4 grows it into a small
+// fixture-backed suite (see e2e/fixtures/). We're now past the "5+ tests"
+// threshold the original comment deferred richer coverage behind, so fixtures
+// live in e2e/fixtures/ and tests stay API-first for setup, UI-only for
+// assertions.
 export default defineConfig({
   testDir: "./tests",
   // Long-running by design: ~9 distinct routes compiled on-demand by Next.js

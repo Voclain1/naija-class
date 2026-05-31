@@ -280,6 +280,12 @@ Format:
   schema + service with a role-grant check, or add a dedicated
   `POST /staff/invite` endpoint. Trigger: an admin who needs to invite one
   teacher without building a one-row CSV. (slice 10 cp3.)
+  - ALSO BLOCKS a clean E2E path: slice 11 cp4's `inviteAndAcceptTeacher`
+    fixture (`e2e/fixtures/teacher.ts` + `db.ts`) seeds the `roleKey='teacher'`
+    Invitation row directly via `withTenant` precisely because no API mints
+    one. When this lands, swap `seedTeacherInvitation` for the new endpoint —
+    the fixture's accept+login half is already production-faithful. (slice 11
+    cp4.)
 
 - [ ] Staff roster has no server-side pagination. `/staff` (slice 10 cp3)
   loads the FULL set from `GET /users` + `GET /users/invitations` (neither is
