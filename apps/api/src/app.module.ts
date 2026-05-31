@@ -19,6 +19,7 @@ import { InvitationsModule } from "./modules/invitations/invitations.module";
 import { SchoolsModule } from "./modules/schools/schools.module";
 import { StudentsModule } from "./modules/students/students.module";
 import { SubjectsModule } from "./modules/subjects/subjects.module";
+import { TeacherAssignmentsModule } from "./modules/teacher-assignments/teacher-assignments.module";
 import { TeacherProfilesModule } from "./modules/teacher-profiles/teacher-profiles.module";
 import { TermsModule } from "./modules/terms/terms.module";
 import { UsersModule } from "./modules/users/users.module";
@@ -55,6 +56,7 @@ const isProd = process.env.NODE_ENV === "production";
     GuardiansModule,
     EnrollmentsModule,
     TeacherProfilesModule,
+    TeacherAssignmentsModule,
     ImportsModule,
     ...(isProd ? [] : [DebugModule]),
   ],

@@ -192,3 +192,21 @@ ALTER TABLE teacher_profiles FORCE  ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation ON teacher_profiles
   USING      (school_id::text = current_setting('app.current_school_id', true))
   WITH CHECK (school_id::text = current_setting('app.current_school_id', true));
+
+-- Slice 11: teacher_assignments ----------------------------------------
+-- Subject-teaching assignments (teacher × arm × subject × year × optional
+-- term). Direct school_id column — same cheap direct-filter pattern as
+-- every Phase 1 table; no join-through-parent EXISTS subquery despite the
+-- four FKs (teacher/arm/subject/year, all same-tenant). This is the table
+-- the teacher-scope filter reads (cp2) to decide which arms a teacher may
+-- see; the scope check itself is application-level authorization layered ON
+-- TOP of this tenant policy — RLS isolates by school, the service isolates
+-- by assignment. Created by admin request handlers only. SECURITY DEFINER
+-- count stays at 4: every endpoint is post-authentication and post-tenant.
+
+ALTER TABLE teacher_assignments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE teacher_assignments FORCE  ROW LEVEL SECURITY;
+
+CREATE POLICY tenant_isolation ON teacher_assignments
+  USING      (school_id::text = current_setting('app.current_school_id', true))
+  WITH CHECK (school_id::text = current_setting('app.current_school_id', true));
