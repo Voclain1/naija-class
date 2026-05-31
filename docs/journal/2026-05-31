@@ -122,5 +122,100 @@ Verification (all green; nothing pushed):
   ClassTeacherArms specs still green alongside the new TeacherSubject edge.
 - SECURITY DEFINER count: still 4 (slice-11 migration adds none).
 
+## cp2 progress (teacher scope filter — landed, awaiting review; nothing committed)
+
+### Q3 spec-drift reconciliation (RESOLVED in code)
+phase-1.md:1150 shows the scope check as
+`if (user.roles.includes('teacher')) { ... }`. **That cannot work in this
+codebase** — `AuthContext` (apps/api/.../auth/auth-context.ts) is role-free
+by design: it carries only `sessionId`, `userId`, `schoolId`, with a header
+comment "Roles and permissions are NOT included — handlers that need them
+re-fetch via withTenant" (the no-stale-permissions rationale). So cp2 does
+NOT read roles off the JWT/AuthContext. Instead it re-fetches the user +
+role grants under withTenant via the established
+`assertUserActiveAndHasOneOf(authCtx, ["teacher"])` (apps/api/.../auth/
+role-check.ts) — the exact pattern every admin endpoint already uses, just
+gated on `teacher` instead of `owner|admin`. This is the one spec-vs-code
+divergence flagged in the cp1 plan; it is now reconciled and tested
+(getMyScope as admin → 403 proves roles come from the DB, not the token).
+
+### Built
+- packages/types/src/teacher-scope/ — TeacherScopeDto, ENRICHED (post-review
+  extension): `classArms: [{id,name,code}]` +
+  `subjectsByArm: Record<armId, [{id,name,code}]>` (TeacherScopeArmDto /
+  TeacherScopeSubjectDto), plus a TRIMMED TeacherRosterStudentDto +
+  TeacherRosterResponse. Registered in the types barrel.
+- apps/api modules/teacher-scope/teacher-scope.helper.ts — `getTeacherScope(
+  db, teacherId, year?)`: subject-assignment arms (active only, optional
+  year filter) ∪ homeroom arms (ClassArm.classTeacherId, active). Two
+  queries, unioned in code — no N+1. Each arm/subject carries {id,name,code}
+  pulled via a select-widening on the SAME two queries (no extra round-
+  trips). Pure over (db, teacherId, year?); caller owns the withTenant
+  boundary. subjectsByArm stays a Map in the helper; the service converts to
+  the wire Record (the Map-in-helper / Record-on-wire split cp2 already used).
+- teacher-scope.service.ts — getMyScope + getMyArmRoster, both gated
+  `["teacher"]` via the role re-fetch above. Roster returns current-term
+  students of ONE in-scope arm; out-of-scope/cross-tenant arm → 404 (not
+  403) so the arm reads as non-existent, matching RLS semantics.
+- teacher-scope.controller.ts — GET /teacher-scope/me and
+  GET /teacher-scope/me/arms/:armId/students. Thin pass-through; no admin
+  branch (Q3a — dedicated teacher surface).
+- module registered in app.module.
+
+### Security test matrix (teacher-scope.service.spec.ts — all 12 green)
+1. subject-assignments only → those arms + subjectIdsByArm populated ✓
+2. homeroom only → that arm, NO subjectIdsByArm entry ✓
+3. subject + homeroom → union, deduped (overlapping arm once) ✓
+4. neither → empty arrays (not an error) ✓
+5. year filter restricts subject assignments ✓
+6. cross-tenant → empty (RLS hides other school's assignments/homeroom) ✓
+7. GET /me as teacher → 200 with own scope ✓
+8. GET /me as admin → 403 (ForbiddenError) ✓
+9. roster in-scope arm → 200 with students (+ asserts no PII fields) ✓
+10. roster out-of-scope arm (same tenant) → 404 ✓
+11. roster arm in another tenant → 404 ✓
+12. teacher hitting admin CRUD (POST /teacher-assignments) → 403 ✓
+   (plus a 13th: unknown arm id → 404)
+
+### Divergence (flagged for review)
+- **Roster PII-minimisation (KEPT — confirmed right call).** The roster
+  returns a TRIMMED student shape (id, admissionNumber, name, gender,
+  photoUrl, status) — NOT the full StudentDto. A class register doesn't need
+  medical notes / address / contact / DOB. Separate concern from the scope
+  enrichment below; student PII stays narrow.
+- **/me is not year-scoped (KEPT — confirmed right call).** getMyScope
+  returns all active assignments across years (helper supports a year
+  filter; the endpoint passes none). cp3 can pass a year for a single-year
+  view.
+
+### Post-review extension (resolves cp2 divergence 3 — Option A)
+Enriched GET /teacher-scope/me with arm + subject NAMES + CODES so cp3
+renders from ONE round-trip instead of three:
+- Helper `TeacherScope` + `TeacherScopeDto`: `classArmIds` →
+  `classArms: [{id,name,code}]`; `subjectIdsByArm` →
+  `subjectsByArm: Record<armId,[{id,name,code}]>`.
+- Implementation: widened the two existing selects (ClassArm + Subject
+  {id,name,code}); NO new queries — same N+1-free shape.
+- Roster endpoint UNCHANGED (already returns student names).
+- PII check: arm/subject names + codes are class-level identifiers every
+  admin endpoint exposes — not student data. Roster trim (test #9) untouched.
+- Tests: cases 1-6 (helper) + #7 (/me endpoint) now assert the richer shape
+  (ids + names + codes + structure). No new tests — same 13 in the file.
+
+### Verification (all green; nothing pushed) — incl. post-review enrichment
+- typecheck: types + api clean.
+- lint: api `eslint . --max-warnings=0` clean; no basePrisma in helper/
+  service/controller (withTenant only).
+- test: **432 passed (31 files)** = prior 419 + 13 (12 matrix + 1 bonus
+  unknown-arm-id 404), +1 file. Enrichment changed assertions only — count
+  unchanged at 432. No regressions.
+- SECURITY DEFINER count: still 4 — cp2 is app-layer only, zero SQL/
+  migration changes.
+
 ## Tomorrow's first task
-- (fill at end of day)
+- Slice 11 cp3 — admin assignment UI on /staff/[userId] (closes the
+  slice-10 "assigned subjects" deferral) + teacher portal pages
+  (/teacher/dashboard, /teacher/classes, /teacher/classes/[armId]) + nav +
+  Playwright E2E. Carry forward slice-10 cp3 form discipline (zero
+  `as never`, local FormValues-matched schemas, root + per-field errors).
+  cp3 resolves the "/me returns ids only" name-rendering question.
