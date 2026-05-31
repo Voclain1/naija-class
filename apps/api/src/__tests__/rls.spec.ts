@@ -1310,3 +1310,189 @@ describe("multi-tenant isolation — Phase 1 / Slice 10 (teacher_profiles)", () 
     expect(rows).toHaveLength(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Phase 1 / Slice 11 isolation — teacher_assignments
+//
+// teacher_assignments is FORCE RLS'd with the same direct-school_id shape as
+// every Phase 1 table. It carries four FKs (teacher→users, class_arm,
+// subject, academic_year) plus an optional term FK, so the fixture builds a
+// full academic mini-structure per school before the assignment row. This is
+// the table the teacher-scope filter reads (cp2) — but the scope filter is
+// application-level authorization layered ON TOP of this policy; this suite
+// proves only the tenancy floor: each school sees only its own assignments,
+// cross-tenant findUnique returns null, a cross-tenant INSERT is rejected by
+// WITH CHECK (parent ids are A's but school_id is B's), and an unset GUC
+// returns zero rows (FORCE RLS fails closed).
+// ---------------------------------------------------------------------------
+
+describe("multi-tenant isolation — Phase 1 / Slice 11 (teacher_assignments)", () => {
+  const runId = Math.random().toString(36).slice(2, 8);
+  let schoolA: { id: string };
+  let schoolB: { id: string };
+  let assignmentA: { id: string };
+  let assignmentB: { id: string };
+  // School A's relation targets, kept for the WITH CHECK mischief test.
+  let aTargets: {
+    teacherId: string;
+    classArmId: string;
+    subjectId: string;
+    academicYearId: string;
+  };
+
+  // Build a teacher + level + arm + subject + year for one school, then an
+  // assignment tying them together. Inserts happen inside withTenant — every
+  // table here is FORCE-RLS'd.
+  async function buildAssignment(
+    schoolId: string,
+    tag: string,
+  ): Promise<{
+    assignmentId: string;
+    teacherId: string;
+    classArmId: string;
+    subjectId: string;
+    academicYearId: string;
+  }> {
+    return withTenant(schoolId, async (db) => {
+      const teacher = await db.user.create({
+        data: {
+          schoolId,
+          email: `ta-${tag}-${runId}@school.test`,
+          firstName: "Teach",
+          lastName: `${tag}-${runId}`,
+        },
+        select: { id: true },
+      });
+      const level = await db.classLevel.create({
+        data: {
+          schoolId,
+          name: `${tag}-lvl-${runId}`,
+          code: `${tag}-lvl-${runId}`,
+          stage: "JSS",
+          orderIndex: 100,
+        },
+        select: { id: true },
+      });
+      const arm = await db.classArm.create({
+        data: {
+          schoolId,
+          classLevelId: level.id,
+          name: `${tag}-arm-${runId}`,
+          code: `${tag}-arm-${runId}`,
+        },
+        select: { id: true },
+      });
+      const subject = await db.subject.create({
+        data: { schoolId, name: `${tag}-sub-${runId}`, code: `${tag}-sub-${runId}` },
+        select: { id: true },
+      });
+      const year = await db.academicYear.create({
+        data: {
+          schoolId,
+          label: `${tag}-${runId}`,
+          startDate: new Date("2025-09-01"),
+          endDate: new Date("2026-07-31"),
+        },
+        select: { id: true },
+      });
+      const assignment = await db.teacherAssignment.create({
+        data: {
+          schoolId,
+          teacherId: teacher.id,
+          classArmId: arm.id,
+          subjectId: subject.id,
+          academicYearId: year.id,
+        },
+        select: { id: true },
+      });
+      return {
+        assignmentId: assignment.id,
+        teacherId: teacher.id,
+        classArmId: arm.id,
+        subjectId: subject.id,
+        academicYearId: year.id,
+      };
+    });
+  }
+
+  beforeAll(async () => {
+    schoolA = await basePrisma.school.create({
+      data: { name: "School P1S11A", slug: `rls-p1s11a-${runId}` },
+      select: { id: true },
+    });
+    schoolB = await basePrisma.school.create({
+      data: { name: "School P1S11B", slug: `rls-p1s11b-${runId}` },
+      select: { id: true },
+    });
+
+    const a = await buildAssignment(schoolA.id, "a");
+    const b = await buildAssignment(schoolB.id, "b");
+    assignmentA = { id: a.assignmentId };
+    assignmentB = { id: b.assignmentId };
+    aTargets = {
+      teacherId: a.teacherId,
+      classArmId: a.classArmId,
+      subjectId: a.subjectId,
+      academicYearId: a.academicYearId,
+    };
+  });
+
+  afterAll(async () => {
+    if (schoolA?.id) {
+      await basePrisma.school.delete({ where: { id: schoolA.id } }).catch(() => undefined);
+    }
+    if (schoolB?.id) {
+      await basePrisma.school.delete({ where: { id: schoolB.id } }).catch(() => undefined);
+    }
+    await basePrisma.$disconnect();
+  });
+
+  it("School A sees its own teacher_assignment only", async () => {
+    const rows = await withTenant(schoolA.id, (db) => db.teacherAssignment.findMany());
+    const ids = rows.map((r) => r.id);
+    expect(ids).toContain(assignmentA.id);
+    expect(ids).not.toContain(assignmentB.id);
+  });
+
+  it("School B sees its own teacher_assignment only", async () => {
+    const rows = await withTenant(schoolB.id, (db) => db.teacherAssignment.findMany());
+    const ids = rows.map((r) => r.id);
+    expect(ids).toContain(assignmentB.id);
+    expect(ids).not.toContain(assignmentA.id);
+  });
+
+  it("findUnique across tenants returns null", async () => {
+    const leak = await withTenant(schoolA.id, (db) =>
+      db.teacherAssignment.findUnique({ where: { id: assignmentB.id } }),
+    );
+    expect(leak).toBeNull();
+  });
+
+  it("INSERT with another school's school_id fails the WITH CHECK clause", async () => {
+    // The mischief case: a controller in School A tries to write an
+    // assignment whose relation ids are all A's, but with school_id = B.
+    // WITH CHECK is the second-line defence that rejects it.
+    await expect(
+      withTenant(schoolA.id, (db) =>
+        db.teacherAssignment.create({
+          data: {
+            schoolId: schoolB.id,
+            teacherId: aTargets.teacherId,
+            classArmId: aTargets.classArmId,
+            subjectId: aTargets.subjectId,
+            academicYearId: aTargets.academicYearId,
+          },
+        }),
+      ),
+    ).rejects.toThrow();
+  });
+
+  it("raw SQL with unset GUC returns zero rows from teacher_assignments (FORCE RLS)", async () => {
+    const rows = await basePrisma.$transaction(async (tx) => {
+      return tx.$queryRaw<Array<{ id: string }>>`
+        SELECT id FROM teacher_assignments WHERE id IN (${assignmentA.id}, ${assignmentB.id})
+      `;
+    });
+    expect(rows).toHaveLength(0);
+  });
+});

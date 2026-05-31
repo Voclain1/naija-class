@@ -90,10 +90,10 @@ model User {
   roles    UserRole[]
   sessions Session[]
 
-  // Phase 1 / Slice 3 — back-relation to ClassArm.classTeacherId.
-  // Named relation because slice 10's teacher-subject assignment will add a
-  // second User-to-ClassArm edge through TeacherAssignment; Prisma requires
-  // a relation name once two edges exist between the same two models.
+  // Phase 1 / Slice 3 — back-relation to ClassArm.classTeacherId (the form
+  // teacher). Named relation to disambiguate from the slice-11 teacher-
+  // subject assignment edge below — both are User-to-teaching relations and
+  // Prisma needs explicit names once a model has more than one relation set.
   classTeacherArms ClassArm[] @relation("ClassTeacherArms")
 
   // Phase 1 / Slice 10 — 1:1 HR profile for users who hold the teacher role.
@@ -102,6 +102,12 @@ model User {
   // created explicitly by an admin afterwards (Q2 lifecycle, locked
   // 2026-05-30 — no auto-create on accept).
   teacherProfile TeacherProfile?
+
+  // Phase 1 / Slice 11 — subject-teaching assignments (this user teaches a
+  // subject in a class arm for a year/term). Distinct from classTeacherArms
+  // above: a form teacher owns the arm's register; a subject teacher teaches
+  // one subject to it. The named relation pairs with TeacherAssignment.teacher.
+  teacherAssignments TeacherAssignment[] @relation("TeacherSubjectAssignments")
 
   @@index([schoolId])
   @@map("users")
@@ -204,8 +210,9 @@ model AcademicYear {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  terms       Term[]
-  enrollments Enrollment[] // Phase 1 / Slice 9 back-relation.
+  terms              Term[]
+  enrollments        Enrollment[] // Phase 1 / Slice 9 back-relation.
+  teacherAssignments TeacherAssignment[] // Phase 1 / Slice 11 back-relation.
 
   @@unique([schoolId, label])
   @@index([schoolId])
@@ -225,8 +232,9 @@ model Term {
   createdAt      DateTime @default(now()) @map("created_at")
   updatedAt      DateTime @updatedAt @map("updated_at")
 
-  academicYear AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
-  enrollments  Enrollment[] // Phase 1 / Slice 9 back-relation.
+  academicYear       AcademicYear        @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+  enrollments        Enrollment[] // Phase 1 / Slice 9 back-relation.
+  teacherAssignments TeacherAssignment[] // Phase 1 / Slice 11 back-relation (term-specific assignments).
 
   @@unique([academicYearId, sequence])
   @@index([schoolId])
@@ -302,9 +310,10 @@ model ClassArm {
   createdAt      DateTime @default(now()) @map("created_at")
   updatedAt      DateTime @updatedAt @map("updated_at")
 
-  classLevel   ClassLevel @relation(fields: [classLevelId], references: [id], onDelete: Cascade)
-  classTeacher User?      @relation("ClassTeacherArms", fields: [classTeacherId], references: [id], onDelete: SetNull)
-  enrollments  Enrollment[] // Phase 1 / Slice 9 back-relation.
+  classLevel         ClassLevel          @relation(fields: [classLevelId], references: [id], onDelete: Cascade)
+  classTeacher       User?               @relation("ClassTeacherArms", fields: [classTeacherId], references: [id], onDelete: SetNull)
+  enrollments        Enrollment[] // Phase 1 / Slice 9 back-relation.
+  teacherAssignments TeacherAssignment[] // Phase 1 / Slice 11 back-relation (subject teachers of this arm).
 
   @@unique([schoolId, classLevelId, code])
   @@index([schoolId])
@@ -322,7 +331,8 @@ model Subject {
   createdAt DateTime        @default(now()) @map("created_at")
   updatedAt DateTime        @updatedAt @map("updated_at")
 
-  classSubjects ClassSubject[]
+  classSubjects      ClassSubject[]
+  teacherAssignments TeacherAssignment[] // Phase 1 / Slice 11 back-relation.
 
   @@unique([schoolId, code])
   @@index([schoolId])
@@ -399,7 +409,7 @@ model Student {
   phone           String?
   email           String?
   bloodGroup      String?       @map("blood_group")
-  medicalNotes   String?       @map("medical_notes")
+  medicalNotes    String?       @map("medical_notes")
   religion        String?
   stateOfOrigin   String?       @map("state_of_origin")
   nationality     String        @default("Nigerian")
@@ -705,4 +715,67 @@ model TeacherProfile {
   @@unique([schoolId, staffNumber])
   @@index([schoolId])
   @@map("teacher_profiles")
+}
+
+// ---------- Phase 1 / Slice 11 — TeacherAssignment ----------
+//
+// Records "teacher T teaches subject S in class arm A for year Y (optionally
+// term-specific)". This is the data behind the teacher-scope filter that
+// closes acceptance #9 — a teacher logging in sees only the arms + subjects
+// they are assigned to (cp2), plus the arms where they are the form teacher
+// (ClassArm.classTeacherId, slice 3/10) which the scope helper unions in.
+//
+// Shape (locked 2026-05-31): direct FKs to classArm + subject, NOT through
+// ClassSubject. ClassSubject is (classLevel × subject) — curriculum at the
+// LEVEL; a teacher teaches a specific ARM (JSS 1A, not "JSS 1" as a whole),
+// so the assignment must reference the arm. academicYearId scopes the
+// assignment to a year; termId is OPTIONAL — null means "the whole year",
+// a set value means "this term only" (e.g. a relief teacher covering one
+// term). Closest to candidate (c) in the plan, with year + optional-term
+// scoping added.
+//
+// Co-teaching is ALLOWED by design (Q2, 2026-05-31): teacherId is part of
+// the unique key, so two teachers can share the same (arm, subject, year,
+// term). Supports lab/team teaching and mid-term relief. The unique only
+// stops the SAME teacher being assigned twice to an identical tuple.
+//
+// CAVEAT — NULL term + the unique key: Postgres treats NULL as DISTINCT in a
+// unique index, so two identical whole-year rows (termId = NULL) do NOT
+// collide at the DB. The service therefore pre-checks for an existing
+// identical active assignment (matching null term explicitly) and returns a
+// clean 409 TEACHER_ALREADY_ASSIGNED; the P2002 catch is the backstop for
+// the non-null race. See teacher-assignments.service.ts.
+//
+// Direct school_id column for the same cheap direct-RLS filter every Phase 1
+// table uses — no join-through-parent EXISTS subquery. onDelete: Cascade on
+// teacher/arm/subject/year (deleting any drops the assignment); SetNull on
+// term so clearing a term-specific assignment's term degrades it to a
+// whole-year row rather than vanishing.
+//
+// SECURITY DEFINER count stays at 4 — every endpoint is post-authentication
+// and post-tenant; withTenant() covers all access.
+model TeacherAssignment {
+  id             String   @id @default(uuid())
+  schoolId       String   @map("school_id")
+  teacherId      String   @map("teacher_id") // FK → users.id
+  classArmId     String   @map("class_arm_id")
+  subjectId      String   @map("subject_id")
+  academicYearId String   @map("academic_year_id")
+  termId         String?  @map("term_id") // null = whole year; set = term-specific
+  isActive       Boolean  @default(true) @map("is_active")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  teacher      User         @relation("TeacherSubjectAssignments", fields: [teacherId], references: [id], onDelete: Cascade)
+  classArm     ClassArm     @relation(fields: [classArmId], references: [id], onDelete: Cascade)
+  subject      Subject      @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  academicYear AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+  term         Term?        @relation(fields: [termId], references: [id], onDelete: SetNull)
+
+  @@unique([schoolId, teacherId, classArmId, subjectId, academicYearId, termId])
+  @@index([schoolId])
+  @@index([teacherId])
+  @@index([classArmId])
+  @@index([schoolId, academicYearId])
+  @@map("teacher_assignments")
 }

@@ -112,6 +112,24 @@ export const PHASE_1_SLICE_10_PERMISSIONS = [
   "teacher-profile.self.update",
 ] as const;
 
+// Phase 1 slice 11 contributes the teacher-assignment permissions.
+// Reference-only until slice 13 wires PermissionsGuard — until then the
+// controller gates on owner/admin via assertUserActiveAndHasOneOf (every
+// prior Phase 1 slice uses this same belt-and-braces pattern). Note that
+// `teacher-assignment.read` is ALREADY granted to the minimal `teacher`
+// system role seeded in slice 10's migration (phase-1.md:1087) — the read-
+// scoped teacher endpoints land in slice 11 cp2; this CRUD set is the
+// admin-facing create/update/delete surface. `teacher-assignment.delete` is
+// admin-scoped (not owner-only): a deleted assignment leaves history in
+// audit_logs, so it is not a history-bearing hard-delete like
+// student/enrollment/academic-year.
+export const PHASE_1_SLICE_11_PERMISSIONS = [
+  "teacher-assignment.read",
+  "teacher-assignment.create",
+  "teacher-assignment.update",
+  "teacher-assignment.delete",
+] as const;
+
 export const ALL_PERMISSIONS = [...PHASE_0_PERMISSIONS] as const;
 
 export type Permission = (typeof ALL_PERMISSIONS)[number] | "*";

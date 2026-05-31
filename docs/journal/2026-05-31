@@ -1,13 +1,126 @@
 # 2026-05-31
 
 ## Starting state
-Slice 10 closed yesterday. Phase 1 at 10/13. On main, tree clean.
+Slice 10 closed yesterday (PRs #24/#25/#26). Phase 1 at 10 of 13 slices.
+On main, tree clean. Slice 10 shipped TeacherProfile + class-teacher
+consumption + teacher CSV import + staff UI — the groundwork. It did NOT
+close deliverable-18 / acceptance #9 (teacher sees only assigned); that
+is this slice.
 
 ## Today's outcome
-Slice 11 plan-first → cp1. TeacherAssignment + teacher portal scope.
+Slice 11 — TeacherAssignment + teacher portal + the service-layer scope
+filter that closes acceptance #9. Plan-first because the assignment shape,
+the scope-filter mechanism, and the portal minimum all warranted settling
+before code.
 
-## Decisions made
-- (capture as the day unfolds)
+## Plan (settled before code; recommendations confirmed by user)
+
+### Q1 — TeacherAssignment shape (spec-locked, phase-1.md:180-204)
+`teacher × classArm × subject × academicYear × (optional term)`. Direct
+FKs to classArm + subject — NOT through ClassSubject (ClassSubject is
+classLevel×subject; a teacher teaches a specific arm, not a level).
+Unique `(schoolId, teacherId, classArmId, subjectId, academicYearId,
+termId)`, `termId` nullable (null = whole year, set = term-specific).
+Closest to candidate (c), plus year scoping + optional per-term override.
+
+### Q2 — cardinality
+Teacher→many assignments: yes. **Co-teaching ALLOWED** (no app guard):
+`teacherId` is inside the unique key, so two teachers can share an
+(arm, subject, year, term). Matches the schema; supports lab/team
+teaching. Tightening later is a cheap app-rule; loosening is a migration.
+- NOTE: the DB unique treats NULL term as DISTINCT (Postgres), so two
+  identical whole-year (termId=NULL) rows would NOT collide at the DB.
+  The service adds a pre-check (match incl. null term) returning a clean
+  409 TEACHER_ALREADY_ASSIGNED, with the P2002 catch as a backstop for the
+  non-null race. The "duplicate" spec case asserts this.
+
+### Q3 — scope filter (lands cp2; reconciliation noted here for when it does)
+Lives in the SERVICE layer (needs DB access to teacher_assignments; it's
+in-school authorization, not tenancy; PermissionsGuard isn't wired until
+slice 13). **Spec drift to reconcile in cp2:** phase-1.md:1150's example
+`user.roles.includes('teacher')` cannot work as written — AuthContext is
+role-free by design (auth-context.ts; roles are re-fetched, see
+role-check.ts). cp2's `getTeacherScope` re-fetches roleKeys the same way
+`assertUserActiveAndHasOneOf` does. **Record this drift in the cp2 journal
+entry when cp2 lands.**
+
+### Q3a — teacher endpoint surface (confirmed: dedicated)
+Teachers hit ONLY a small set of dedicated `/teacher-*` scope-filtered
+read endpoints (cp2). All admin CRUD stays owner|admin and rejects
+teachers outright — smallest security surface (phase-1.md:1265 risk note).
+
+### Q4 — teacher portal minimum (cp3)
+- /teacher/dashboard — "Welcome. You are assigned to: <arms + subjects>."
+- /teacher/classes — arms in scope (subject-assignment ∪ homeroom).
+- /teacher/classes/[armId] — roster + this teacher's subjects; 404 if
+  armId ∉ scope (the testable security property).
+- /teacher/profile — already shipped slice 10; untouched.
+No timetable/grading/announcements (Phase 2/4).
+
+## Checkpoints (3; cp3 may split to 4 if UI runs long)
+- **cp1 (this session)** — TeacherAssignment model + 5 back-relations +
+  migration + RLS policy + RLS-spec coverage + admin CRUD module + DTOs +
+  PHASE_1_SLICE_11_PERMISSIONS + service spec. API only, no scope yet.
+- cp2 — getTeacherScope helper + role re-fetch + dedicated scoped teacher
+  read endpoints + security tests (teacher→other arm 404, teacher→admin
+  CRUD 403). The Q3 drift reconciliation is recorded here.
+- cp3 — admin assignment UI on /staff/[userId] (closes slice-10's
+  deferred "assigned subjects") + teacher portal pages + nav + Playwright
+  E2E (admin assigns → teacher sees only assigned). cp3 carries forward
+  slice-10 cp3 form discipline: zero `as never` casts, local
+  FormValues-matched schemas, root + per-field error blocks. Does NOT
+  retroactively audit the older academic dialogs (own deferred entry).
+
+## Grounding notes (verified against repo)
+- The slice-10 `teacher` system-role seed ALREADY grants the full slice-11
+  read scope (teacher-assignment.read, student.read, enrollment.read,
+  class-arm.read, …) — no seed migration needed this slice.
+- Permissions follow the per-slice reference-only pattern; ALL_PERMISSIONS
+  stays Phase-0-only until slice 13's rollup.
+- SECURITY DEFINER count stays 4 — every endpoint is post-tenant.
+
+## Acceptance
+This slice closes acceptance #9 + deliverable-checklist 18-19. The
+class-teacher half (classArm.classTeacherId, slice 10) folds into
+getTeacherScope via the homeroom-arms union (cp2). Phase 1 → 11/13.
+
+## cp1 progress (API foundation — landed, awaiting review; nothing committed)
+Built:
+- schema.prisma — TeacherAssignment model + 5 back-relations (User via
+  named `TeacherSubjectAssignments`, ClassArm, Subject, AcademicYear, Term).
+  Fixed the stale User comment that attributed this edge to slice 10.
+- migration 20260601000000_phase_1_slice_11_teacher_assignments — table +
+  4 indexes + unique(school_id,teacher_id,class_arm_id,subject_id,
+  academic_year_id,term_id) + 5 FKs (term_id SET NULL, rest CASCADE) + RLS
+  ENABLE/FORCE/tenant_isolation. Generated via migrate diff, applied via
+  migrate deploy.
+- policies/phase-1.sql — teacher_assignments RLS block appended (source of
+  truth, kept in sync with the migration).
+- rls.spec.ts — slice-11 describe block (5 tests: A/B isolation, x-tenant
+  findUnique null, WITH CHECK reject, unset-GUC zero rows).
+- packages/types/src/teacher-assignments/ — Dto + create/update/list Zod
+  DTOs + barrel; registered in types index. PHASE_1_SLICE_11_PERMISSIONS
+  added (reference-only; teacher role already has teacher-assignment.read).
+- apps/api modules/teacher-assignments/ — controller (owner|admin via
+  AuthGuard + service gate), service (CRUD + FK/teacher-role validation +
+  TERM_YEAR_MISMATCH + duplicate pre-check incl. NULL-term gap + P2002
+  backstop + audit), module; registered in app.module.
+- teacher-assignments.service.spec.ts — 15 integration tests.
+
+Decisions confirmed in code:
+- Duplicate guard pre-checks active rows incl. null term (DB unique misses
+  NULL-term dup); co-teaching (different teacher, same tuple) ALLOWED, with
+  a test; re-assign-after-deactivate allowed, with a test.
+
+Verification (all green; nothing pushed):
+- migrate deploy: applied cleanly.
+- typecheck: types + api clean.
+- lint: api `eslint . --max-warnings=0` clean (covers the basePrisma rule);
+  no basePrisma in service/controller.
+- test: **419 passed (30 files)** = prior 399 + 20 (15 service + 5 rls),
+  +1 file. No regressions — slice-3 class-arms/class-subjects and slice-10
+  ClassTeacherArms specs still green alongside the new TeacherSubject edge.
+- SECURITY DEFINER count: still 4 (slice-11 migration adds none).
 
 ## Tomorrow's first task
 - (fill at end of day)

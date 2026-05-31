@@ -16,3 +16,4 @@ export * from './guardians/index.js';
 export * from './imports/index.js';
 export * from './enrollments/index.js';
 export * from './teacher-profiles/index.js';
+export * from './teacher-assignments/index.js';
