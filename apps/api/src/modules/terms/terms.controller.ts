@@ -23,6 +23,8 @@ import type { Request } from "express";
 import type { AuthContext } from "../../common/auth/auth-context";
 import { AuthGuard } from "../../common/auth/auth.guard";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
+import { Permissions } from "../../common/auth/permissions.decorator";
+import { PermissionsGuard } from "../../common/auth/permissions.guard";
 import { ZodValidationPipe } from "../../common/zod-validation.pipe";
 import { TermsService } from "./terms.service";
 
@@ -33,7 +35,7 @@ import { TermsService } from "./terms.service";
 // Subsequent slices' child-resource controllers (class arms, class subjects,
 // student guardians) will copy this shape.
 @Controller()
-@UseGuards(AuthGuard)
+@UseGuards(AuthGuard, PermissionsGuard)
 export class TermsController {
   constructor(private readonly service: TermsService) {}
 
@@ -42,6 +44,7 @@ export class TermsController {
   // -----------------------------------------------------------------------
 
   @Get("academic-years/:yearId/terms")
+  @Permissions("term.read")
   async listForYear(
     @CurrentUser() authCtx: AuthContext,
     @Param("yearId") yearId: string,
@@ -51,6 +54,7 @@ export class TermsController {
 
   @Post("academic-years/:yearId/terms")
   @HttpCode(201)
+  @Permissions("term.create")
   async create(
     @Param("yearId") yearId: string,
     @Body(new ZodValidationPipe(createTermSchema)) dto: CreateTermInput,
@@ -69,6 +73,7 @@ export class TermsController {
   // -----------------------------------------------------------------------
 
   @Get("terms/:id")
+  @Permissions("term.read")
   async findById(
     @CurrentUser() authCtx: AuthContext,
     @Param("id") id: string,
@@ -77,6 +82,7 @@ export class TermsController {
   }
 
   @Patch("terms/:id")
+  @Permissions("term.update")
   async update(
     @Param("id") id: string,
     @Body(new ZodValidationPipe(updateTermSchema)) dto: UpdateTermInput,
@@ -92,6 +98,7 @@ export class TermsController {
 
   @Delete("terms/:id")
   @HttpCode(204)
+  @Permissions("term.delete")
   async delete(
     @Param("id") id: string,
     @CurrentUser() authCtx: AuthContext,
@@ -106,6 +113,7 @@ export class TermsController {
 
   @Post("terms/:id/set-current")
   @HttpCode(200)
+  @Permissions("term.update")
   async setCurrent(
     @Param("id") id: string,
     @CurrentUser() authCtx: AuthContext,

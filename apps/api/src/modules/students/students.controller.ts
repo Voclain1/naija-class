@@ -33,21 +33,24 @@ import type { Request } from "express";
 import type { AuthContext } from "../../common/auth/auth-context";
 import { AuthGuard } from "../../common/auth/auth.guard";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
+import { Permissions } from "../../common/auth/permissions.decorator";
+import { PermissionsGuard } from "../../common/auth/permissions.guard";
 import { ZodValidationPipe } from "../../common/zod-validation.pipe";
 import { StudentsService } from "./students.service";
 
-// PermissionsGuard is slice 13; until then AuthGuard + service-layer
-// assertUserActiveAndHasOneOf("owner"/"admin") is the authz pattern (same
-// as every prior Phase 1 slice).
+// Authz: AuthGuard + PermissionsGuard (slice 13). The service-layer
+// assertUserActiveAndHasOneOf("owner"/"admin") calls stay as defense-in-depth.
 //
 // student.delete is intentionally NOT exposed — owner-only hard-delete is
-// deferred. Withdrawal / graduation are the modelled lifecycle exits.
+// deferred. Withdrawal / graduation are the modelled lifecycle exits, gated by
+// student.deactivate.
 @Controller("students")
-@UseGuards(AuthGuard)
+@UseGuards(AuthGuard, PermissionsGuard)
 export class StudentsController {
   constructor(private readonly service: StudentsService) {}
 
   @Get()
+  @Permissions("student.read")
   async list(
     @CurrentUser() authCtx: AuthContext,
     @Query(new ZodValidationPipe(listStudentsQuerySchema))
@@ -57,6 +60,7 @@ export class StudentsController {
   }
 
   @Get(":id")
+  @Permissions("student.read")
   async findById(
     @CurrentUser() authCtx: AuthContext,
     @Param("id") id: string,
@@ -66,6 +70,7 @@ export class StudentsController {
 
   @Post()
   @HttpCode(201)
+  @Permissions("student.create")
   async create(
     @Body(new ZodValidationPipe(createStudentSchema)) dto: CreateStudentInput,
     @CurrentUser() authCtx: AuthContext,
@@ -79,6 +84,7 @@ export class StudentsController {
   }
 
   @Patch(":id")
+  @Permissions("student.update")
   async update(
     @Param("id") id: string,
     @Body(new ZodValidationPipe(updateStudentSchema)) dto: UpdateStudentInput,
@@ -94,6 +100,7 @@ export class StudentsController {
 
   @Post(":id/withdraw")
   @HttpCode(200)
+  @Permissions("student.deactivate")
   async withdraw(
     @Param("id") id: string,
     @Body(new ZodValidationPipe(withdrawStudentSchema)) dto: WithdrawStudentInput,
@@ -109,6 +116,7 @@ export class StudentsController {
 
   @Post(":id/graduate")
   @HttpCode(200)
+  @Permissions("student.deactivate")
   async graduate(
     @Param("id") id: string,
     @Body(new ZodValidationPipe(graduateStudentSchema)) dto: GraduateStudentInput,
@@ -124,6 +132,7 @@ export class StudentsController {
 
   @Post(":id/reactivate")
   @HttpCode(200)
+  @Permissions("student.deactivate")
   async reactivate(
     @Param("id") id: string,
     @Body(new ZodValidationPipe(reactivateStudentSchema))

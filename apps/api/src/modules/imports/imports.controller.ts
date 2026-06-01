@@ -33,6 +33,8 @@ import type { Request, Response } from "express";
 import type { AuthContext } from "../../common/auth/auth-context";
 import { AuthGuard } from "../../common/auth/auth.guard";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
+import { Permissions } from "../../common/auth/permissions.decorator";
+import { PermissionsGuard } from "../../common/auth/permissions.guard";
 import { CSV_MAX_FILE_SIZE_BYTES } from "./imports.csv-parser";
 import { ImportsService } from "./imports.service";
 
@@ -76,13 +78,18 @@ class UploadMulterErrorFilter implements ExceptionFilter {
   }
 }
 
-// PermissionsGuard is slice 13; until then AuthGuard + service-level
-// assertUserActiveAndHasOneOf("owner"/"admin") is the authz pattern (same
-// shape as every Phase 1 slice). `student.import` was added to the
-// reference permission list in this slice but is not yet enforced — slice
-// 13 will sweep all reference permissions into the guard.
+// Authz: AuthGuard + PermissionsGuard (slice 13). The per-type UPLOAD
+// endpoints gate on the matching {student,guardian,teacher}.import permission.
+// The SHARED lifecycle endpoints (mapping / commit / getJob / delete /
+// downloads) serve all three import types — the type is only known at runtime
+// from the ImportJob row, so they gate on `student.import` as the
+// representative import permission (admin co-holds all three import perms;
+// owner has the wildcard; teacher has none — so no role can reach a shared
+// endpoint without also holding the type-specific upload permission). The
+// service-layer assertUserActiveAndHasOneOf("owner"/"admin") stays as the
+// substantive defense-in-depth gate.
 @Controller("imports")
-@UseGuards(AuthGuard)
+@UseGuards(AuthGuard, PermissionsGuard)
 export class ImportsController {
   constructor(private readonly service: ImportsService) {}
 
@@ -97,6 +104,7 @@ export class ImportsController {
   // converts the resulting HTTP exception to our FILE_TOO_LARGE envelope.
   @Post("students/upload")
   @HttpCode(201)
+  @Permissions("student.import")
   @UseInterceptors(
     FileInterceptor("file", {
       limits: { fileSize: CSV_MAX_FILE_SIZE_BYTES },
@@ -140,6 +148,7 @@ export class ImportsController {
   // path is otherwise identical.
   @Post("guardians/upload")
   @HttpCode(201)
+  @Permissions("guardian.import")
   @UseInterceptors(
     FileInterceptor("file", {
       limits: { fileSize: CSV_MAX_FILE_SIZE_BYTES },
@@ -177,6 +186,7 @@ export class ImportsController {
   // lastName); each good row becomes one Invitation at commit.
   @Post("teachers/upload")
   @HttpCode(201)
+  @Permissions("teacher.import")
   @UseInterceptors(
     FileInterceptor("file", {
       limits: { fileSize: CSV_MAX_FILE_SIZE_BYTES },
@@ -215,6 +225,7 @@ export class ImportsController {
   // round-trip).
   @Post(":jobId/mapping")
   @HttpCode(202)
+  @Permissions("student.import")
   async applyMapping(
     @CurrentUser() authCtx: AuthContext,
     @Param("jobId", new ParseUUIDPipe()) jobId: string,
@@ -236,6 +247,7 @@ export class ImportsController {
   // BEFORE res.send() still route through the global HttpExceptionFilter
   // because no response has been sent yet.
   @Get(":jobId/bad-rows.csv")
+  @Permissions("student.import")
   async downloadBadRowsCsv(
     @CurrentUser() authCtx: AuthContext,
     @Param("jobId", new ParseUUIDPipe()) jobId: string,
@@ -264,6 +276,7 @@ export class ImportsController {
   // status === COMPLETED / FAILED. Same async-202 shape as POST /mapping.
   @Post(":jobId/commit")
   @HttpCode(202)
+  @Permissions("student.import")
   async commit(
     @CurrentUser() authCtx: AuthContext,
     @Param("jobId", new ParseUUIDPipe()) jobId: string,
@@ -282,6 +295,7 @@ export class ImportsController {
   // (NO_ERROR_REPORT), or if the file is gone from storage
   // (ERROR_REPORT_MISSING).
   @Get(":jobId/error-report.csv")
+  @Permissions("student.import")
   async downloadErrorReportCsv(
     @CurrentUser() authCtx: AuthContext,
     @Param("jobId", new ParseUUIDPipe()) jobId: string,
@@ -306,6 +320,7 @@ export class ImportsController {
   }
 
   @Get(":jobId")
+  @Permissions("student.import")
   async getJob(
     @CurrentUser() authCtx: AuthContext,
     @Param("jobId", new ParseUUIDPipe()) jobId: string,
@@ -315,6 +330,7 @@ export class ImportsController {
 
   @Delete(":jobId")
   @HttpCode(204)
+  @Permissions("student.import")
   async deleteJob(
     @CurrentUser() authCtx: AuthContext,
     @Param("jobId", new ParseUUIDPipe()) jobId: string,

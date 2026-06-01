@@ -35,6 +35,8 @@ import type { Request } from "express";
 import type { AuthContext } from "../../common/auth/auth-context";
 import { AuthGuard } from "../../common/auth/auth.guard";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
+import { Permissions } from "../../common/auth/permissions.decorator";
+import { PermissionsGuard } from "../../common/auth/permissions.guard";
 import { ZodValidationPipe } from "../../common/zod-validation.pipe";
 import { GuardiansService } from "./guardians.service";
 
@@ -44,16 +46,19 @@ import { GuardiansService } from "./guardians.service";
 //   - /student-guardians/:id — flat link PATCH/DELETE
 // Each handler builds its own reqCtx the same way StudentsController does.
 //
-// PermissionsGuard is slice 13; until then AuthGuard + service-layer
-// assertUserActiveAndHasOneOf("owner"/"admin") is the authz pattern.
+// Authz: AuthGuard + PermissionsGuard (slice 13). The student-guardian link
+// operations have no dedicated permission string — they are gated by the
+// parent guardian.{create,update,delete} verbs (linking is a guardian
+// mutation). Service-layer asserts stay as defense-in-depth.
 @Controller()
-@UseGuards(AuthGuard)
+@UseGuards(AuthGuard, PermissionsGuard)
 export class GuardiansController {
   constructor(private readonly service: GuardiansService) {}
 
   // ----- /guardians ----------------------------------------------------
 
   @Get("guardians")
+  @Permissions("guardian.read")
   async list(
     @CurrentUser() authCtx: AuthContext,
     @Query(new ZodValidationPipe(listGuardiansQuerySchema))
@@ -63,6 +68,7 @@ export class GuardiansController {
   }
 
   @Get("guardians/:id")
+  @Permissions("guardian.read")
   async findById(
     @CurrentUser() authCtx: AuthContext,
     @Param("id") id: string,
@@ -72,6 +78,7 @@ export class GuardiansController {
 
   @Post("guardians")
   @HttpCode(201)
+  @Permissions("guardian.create")
   async create(
     @Body(new ZodValidationPipe(createGuardianSchema)) dto: CreateGuardianInput,
     @CurrentUser() authCtx: AuthContext,
@@ -82,6 +89,7 @@ export class GuardiansController {
   }
 
   @Patch("guardians/:id")
+  @Permissions("guardian.update")
   async update(
     @Param("id") id: string,
     @Body(new ZodValidationPipe(updateGuardianSchema)) dto: UpdateGuardianInput,
@@ -94,6 +102,7 @@ export class GuardiansController {
 
   @Delete("guardians/:id")
   @HttpCode(204)
+  @Permissions("guardian.delete")
   async delete(
     @Param("id") id: string,
     @CurrentUser() authCtx: AuthContext,
@@ -107,6 +116,7 @@ export class GuardiansController {
 
   @Post("students/:studentId/guardians")
   @HttpCode(201)
+  @Permissions("guardian.create")
   async linkExisting(
     @Param("studentId") studentId: string,
     @Body(new ZodValidationPipe(linkExistingGuardianSchema))
@@ -120,6 +130,7 @@ export class GuardiansController {
 
   @Post("students/:studentId/guardians/new")
   @HttpCode(201)
+  @Permissions("guardian.create")
   async createAndLink(
     @Param("studentId") studentId: string,
     @Body(new ZodValidationPipe(createAndLinkGuardianSchema))
@@ -134,6 +145,7 @@ export class GuardiansController {
   // ----- /student-guardians/:id (flat link operations) -----------------
 
   @Patch("student-guardians/:id")
+  @Permissions("guardian.update")
   async updateLink(
     @Param("id") id: string,
     @Body(new ZodValidationPipe(updateStudentGuardianLinkSchema))
@@ -147,6 +159,7 @@ export class GuardiansController {
 
   @Delete("student-guardians/:id")
   @HttpCode(204)
+  @Permissions("guardian.delete")
   async unlink(
     @Param("id") id: string,
     @CurrentUser() authCtx: AuthContext,

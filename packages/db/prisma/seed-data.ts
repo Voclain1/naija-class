@@ -2,7 +2,11 @@
 // tests (e.g. to assert the 'owner' role row exists) without running the seed
 // routine as a side effect.
 
-import { PHASE_0_PERMISSIONS } from "@school-kit/types";
+import {
+  OWNER_ONLY_PERMISSIONS,
+  PHASE_0_PERMISSIONS,
+  PHASE_1_PERMISSIONS,
+} from "@school-kit/types";
 
 export interface SystemRoleSeed {
   key: string;
@@ -10,6 +14,17 @@ export interface SystemRoleSeed {
   description: string;
   permissions: readonly string[];
 }
+
+// admin gets every Phase 0 + Phase 1 permission EXCEPT the owner-only
+// history-bearing deletes (academic-year/term/enrollment delete). Slice 13
+// RBAC rollup. Keep IN SYNC with the migration that updates the existing
+// global admin role row (prisma/migrations/*_phase_1_slice_13_admin_rbac_rollup).
+const ADMIN_PERMISSIONS: readonly string[] = [
+  ...PHASE_0_PERMISSIONS,
+  ...PHASE_1_PERMISSIONS.filter(
+    (p) => !(OWNER_ONLY_PERMISSIONS as readonly string[]).includes(p),
+  ),
+];
 
 // System roles are global (school_id = NULL, is_system = true) and referenced
 // by `key`. Per docs/modules/phase-0.md → RBAC → Seeded roles.
@@ -29,8 +44,8 @@ export const SYSTEM_ROLE_SEEDS: SystemRoleSeed[] = [
     key: "admin",
     name: "Administrator",
     description:
-      "School administrator — every Phase 0 permission except school deletion (TODO when school.delete lands).",
-    permissions: [...PHASE_0_PERMISSIONS],
+      "School administrator — every Phase 0 + Phase 1 permission except the owner-only history-bearing deletes (academic-year/term/enrollment) and school deletion (TODO when school.delete lands).",
+    permissions: ADMIN_PERMISSIONS,
   },
   // Phase 1 / Slice 10 — minimal `teacher` role. Read-scoped access to a
   // teacher's own arms/subjects/roster + self-service on their profile (per

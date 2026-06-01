@@ -25,6 +25,8 @@ import type { Request } from "express";
 import type { AuthContext } from "../../common/auth/auth-context";
 import { AuthGuard } from "../../common/auth/auth.guard";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
+import { Permissions } from "../../common/auth/permissions.decorator";
+import { PermissionsGuard } from "../../common/auth/permissions.guard";
 import { ZodValidationPipe } from "../../common/zod-validation.pipe";
 import { ClassSubjectsService } from "./class-subjects.service";
 
@@ -32,7 +34,7 @@ import { ClassSubjectsService } from "./class-subjects.service";
 // (/class-levels/:levelId/class-subjects[/bulk]) AND the flat URLs
 // (/class-subjects/:id). Mirrors TermsController + ClassArmsController.
 @Controller()
-@UseGuards(AuthGuard)
+@UseGuards(AuthGuard, PermissionsGuard)
 export class ClassSubjectsController {
   constructor(private readonly service: ClassSubjectsService) {}
 
@@ -41,6 +43,7 @@ export class ClassSubjectsController {
   // -----------------------------------------------------------------------
 
   @Get("class-levels/:levelId/class-subjects")
+  @Permissions("class-subject.read")
   async listForLevel(
     @CurrentUser() authCtx: AuthContext,
     @Param("levelId") levelId: string,
@@ -50,6 +53,7 @@ export class ClassSubjectsController {
 
   @Post("class-levels/:levelId/class-subjects")
   @HttpCode(201)
+  @Permissions("class-subject.create")
   async create(
     @Param("levelId") levelId: string,
     @Body(new ZodValidationPipe(createClassSubjectSchema)) dto: CreateClassSubjectInput,
@@ -63,8 +67,10 @@ export class ClassSubjectsController {
     });
   }
 
+  // The matrix-save path deletes-before-creates, so it needs both verbs.
   @Post("class-levels/:levelId/class-subjects/bulk")
   @HttpCode(200)
+  @Permissions("class-subject.create", "class-subject.delete")
   async bulk(
     @Param("levelId") levelId: string,
     @Body(new ZodValidationPipe(bulkClassSubjectsSchema)) dto: BulkClassSubjectsInput,
@@ -83,6 +89,7 @@ export class ClassSubjectsController {
   // -----------------------------------------------------------------------
 
   @Get("class-subjects/:id")
+  @Permissions("class-subject.read")
   async findById(
     @CurrentUser() authCtx: AuthContext,
     @Param("id") id: string,
@@ -91,6 +98,7 @@ export class ClassSubjectsController {
   }
 
   @Patch("class-subjects/:id")
+  @Permissions("class-subject.update")
   async update(
     @Param("id") id: string,
     @Body(new ZodValidationPipe(updateClassSubjectSchema)) dto: UpdateClassSubjectInput,
@@ -106,6 +114,7 @@ export class ClassSubjectsController {
 
   @Delete("class-subjects/:id")
   @HttpCode(204)
+  @Permissions("class-subject.delete")
   async delete(
     @Param("id") id: string,
     @CurrentUser() authCtx: AuthContext,

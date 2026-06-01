@@ -13,6 +13,8 @@ import type {
 import type { AuthContext } from "../../common/auth/auth-context";
 import { AuthGuard } from "../../common/auth/auth.guard";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
+import { Permissions } from "../../common/auth/permissions.decorator";
+import { PermissionsGuard } from "../../common/auth/permissions.guard";
 import { TeacherScopeService } from "./teacher-scope.service";
 
 // Phase 1 / Slice 11 cp2 — the dedicated, scope-filtered teacher endpoints
@@ -22,12 +24,15 @@ import { TeacherScopeService } from "./teacher-scope.service";
 // a thin pass-through. No admin branch here: a non-teacher (owner/admin) is
 // rejected with 403 by the service's role re-fetch.
 @Controller("teacher-scope")
-@UseGuards(AuthGuard)
+@UseGuards(AuthGuard, PermissionsGuard)
 export class TeacherScopeController {
   constructor(private readonly service: TeacherScopeService) {}
 
   // GET /teacher-scope/me — the caller's own scope (arms + subjects-by-arm).
+  // teacher-assignment.read is held by the teacher role; the service further
+  // enforces teacher-only and applies the scope filter.
   @Get("me")
+  @Permissions("teacher-assignment.read")
   async getMyScope(
     @CurrentUser() authCtx: AuthContext,
   ): Promise<TeacherScopeDto> {
@@ -38,6 +43,7 @@ export class TeacherScopeController {
   // 404 if the arm is not in the caller's scope (or belongs to another
   // tenant) — see the service header for the 404-not-403 rationale.
   @Get("me/arms/:armId/students")
+  @Permissions("student.read")
   async getMyArmRoster(
     @CurrentUser() authCtx: AuthContext,
     @Param("armId", new ParseUUIDPipe()) armId: string,

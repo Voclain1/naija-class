@@ -23,20 +23,24 @@ import type { Request } from "express";
 import type { AuthContext } from "../../common/auth/auth-context";
 import { AuthGuard } from "../../common/auth/auth.guard";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
+import { Permissions } from "../../common/auth/permissions.decorator";
+import { PermissionsGuard } from "../../common/auth/permissions.guard";
 import { ZodValidationPipe } from "../../common/zod-validation.pipe";
 import { AcademicYearsService } from "./academic-years.service";
 
 @Controller("academic-years")
-@UseGuards(AuthGuard)
+@UseGuards(AuthGuard, PermissionsGuard)
 export class AcademicYearsController {
   constructor(private readonly service: AcademicYearsService) {}
 
   @Get()
+  @Permissions("academic-year.read")
   async list(@CurrentUser() authCtx: AuthContext): Promise<AcademicYearDto[]> {
     return this.service.list(authCtx);
   }
 
   @Get(":id")
+  @Permissions("academic-year.read")
   async findById(
     @CurrentUser() authCtx: AuthContext,
     @Param("id") id: string,
@@ -46,6 +50,7 @@ export class AcademicYearsController {
 
   @Post()
   @HttpCode(201)
+  @Permissions("academic-year.create")
   async create(
     @Body(new ZodValidationPipe(createAcademicYearSchema)) dto: CreateAcademicYearInput,
     @CurrentUser() authCtx: AuthContext,
@@ -59,6 +64,7 @@ export class AcademicYearsController {
   }
 
   @Patch(":id")
+  @Permissions("academic-year.update")
   async update(
     @Param("id") id: string,
     @Body(new ZodValidationPipe(updateAcademicYearSchema)) dto: UpdateAcademicYearInput,
@@ -74,6 +80,7 @@ export class AcademicYearsController {
 
   @Delete(":id")
   @HttpCode(204)
+  @Permissions("academic-year.delete")
   async delete(
     @Param("id") id: string,
     @CurrentUser() authCtx: AuthContext,
@@ -88,6 +95,7 @@ export class AcademicYearsController {
 
   @Post(":id/set-current")
   @HttpCode(200)
+  @Permissions("academic-year.update")
   async setCurrent(
     @Param("id") id: string,
     @CurrentUser() authCtx: AuthContext,
