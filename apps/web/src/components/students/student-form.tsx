@@ -5,9 +5,9 @@ import { Loader2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
+import { z } from "zod";
 
 import {
-  createStudentSchema,
   type CreateStudentInput,
   type StudentDto,
   type UpdateStudentInput,
@@ -28,29 +28,70 @@ interface Props {
   existing?: StudentDto;
 }
 
-// All form fields are strings — react-hook-form + HTMLInput give strings, and
-// we coerce/normalise to the API DTO shape on submit. The Zod resolver runs
-// against `createStudentSchema` (which mirrors the API contract) even on
-// edit; UpdateStudentInput is a structural subset, so values that validate
-// for create also validate for update.
-interface FormValues {
-  admissionNumber: string;
-  firstName: string;
-  middleName: string;
-  lastName: string;
-  dateOfBirth: string; // YYYY-MM-DD from <input type="date">
-  gender: "MALE" | "FEMALE" | "OTHER" | "";
-  photoUrl: string;
-  address: string;
-  phone: string;
-  email: string;
-  bloodGroup: string;
-  medicalNotes: string;
-  religion: string;
-  stateOfOrigin: string;
-  nationality: string;
-  notes: string;
-}
+// FORM-CLASS PROTECTION (slice-10 cp3 / slice-11 cp4 discipline, applied here
+// in the slice-4-form empty-optional fix):
+//   (a) A LOCAL schema that matches FormValues EXACTLY — all strings. It is NOT
+//       the strict API body schema (`createStudentSchema`), whose optional
+//       fields are `.min(1)…optional()` / `.email()` / `.url()` and therefore
+//       REJECT the empty string a blank input carries. Reusing it as the
+//       resolver silently blocked submit (most fields rendered no error). The
+//       local schema lets optionals be "" and validates format only when
+//       non-empty (deferred.md empty-optional pattern). Because the resolver's
+//       output type === FormValues, there is NO `as never` cast.
+//   (b) A root error block AND a per-field error render for every field — a
+//       failed submit can never silently no-op.
+//   (c) "" → undefined coercion for optional fields happens on submit; the API
+//       stores them as nullable text, never empty string.
+
+const GENDER_VALUES = ["MALE", "FEMALE", "OTHER"] as const;
+
+// Validates an optional free-text field: "" is allowed; otherwise length-capped.
+const optionalText = (max: number) => z.string().trim().max(max);
+
+const studentFormSchema = z.object({
+  admissionNumber: z
+    .string()
+    .trim()
+    .min(1, "Admission number is required.")
+    .max(40, "Admission number is too long."),
+  firstName: z.string().trim().min(1, "First name is required.").max(60),
+  middleName: optionalText(60),
+  lastName: z.string().trim().min(1, "Last name is required.").max(60),
+  dateOfBirth: z
+    .string()
+    .min(1, "Date of birth is required.")
+    .refine(
+      (v) => !Number.isNaN(new Date(v).getTime()),
+      "Enter a valid date.",
+    ),
+  gender: z.string().min(1, "Select a gender."),
+  photoUrl: z
+    .string()
+    .trim()
+    .max(500)
+    .refine(
+      (v) => v === "" || z.string().url().safeParse(v).success,
+      "Enter a valid URL (including https://).",
+    ),
+  address: optionalText(500),
+  phone: optionalText(30),
+  email: z
+    .string()
+    .trim()
+    .max(254)
+    .refine(
+      (v) => v === "" || z.string().email().safeParse(v).success,
+      "Enter a valid email address.",
+    ),
+  bloodGroup: optionalText(10),
+  medicalNotes: optionalText(2000),
+  religion: optionalText(40),
+  stateOfOrigin: optionalText(40),
+  nationality: optionalText(40),
+  notes: optionalText(2000),
+});
+
+type FormValues = z.infer<typeof studentFormSchema>;
 
 function toIsoDate(value: string | Date): string {
   // API returns dateOfBirth as "YYYY-MM-DDT00:00:00.000Z" (Prisma DATE → Date).
@@ -88,22 +129,22 @@ function defaultValues(existing?: StudentDto): FormValues {
 export function StudentForm({ existing }: Props) {
   const router = useRouter();
   const form = useForm<FormValues>({
-    resolver: zodResolver(createStudentSchema) as never,
+    resolver: zodResolver(studentFormSchema),
     defaultValues: defaultValues(existing),
     mode: "onSubmit",
   });
 
   const onSubmit = form.handleSubmit(async (values) => {
-    // `createStudentSchema` accepts `null` on nullable-optional fields. We
-    // map blank strings to `undefined` (so they're absent from the JSON
-    // payload) rather than null — matches the existing slice patterns.
+    // Optional blanks map to `undefined` (absent from the JSON body) rather
+    // than null — matches the existing slice patterns. The local schema has
+    // already guaranteed required fields are present and formats are valid.
     const payload: CreateStudentInput = {
       admissionNumber: values.admissionNumber.trim(),
       firstName: values.firstName.trim(),
       middleName: emptyToUndefined(values.middleName),
       lastName: values.lastName.trim(),
       dateOfBirth: new Date(values.dateOfBirth),
-      gender: values.gender as "MALE" | "FEMALE" | "OTHER",
+      gender: values.gender as CreateStudentInput["gender"],
       photoUrl: emptyToUndefined(values.photoUrl),
       address: emptyToUndefined(values.address),
       phone: emptyToUndefined(values.phone),
@@ -138,16 +179,25 @@ export function StudentForm({ existing }: Props) {
             message: "A student with that admission number already exists.",
           });
         } else {
-          toast.error(error.message);
+          form.setError("root", { type: "manual", message: error.message });
         }
       } else {
-        toast.error("Could not reach the server. Try again.");
+        form.setError("root", {
+          type: "manual",
+          message: "Could not reach the server. Try again.",
+        });
       }
     }
   });
 
   return (
     <form onSubmit={onSubmit} className="flex flex-col gap-6" noValidate>
+      {form.formState.errors.root && (
+        <div className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">
+          {form.formState.errors.root.message}
+        </div>
+      )}
+
       {existing && (
         <section className="flex items-center justify-between rounded-md border bg-muted/30 px-4 py-3">
           <div className="flex flex-col gap-0.5 text-sm">
@@ -231,7 +281,13 @@ export function StudentForm({ existing }: Props) {
             <Input
               id="student-middleName"
               {...form.register("middleName")}
+              aria-invalid={Boolean(form.formState.errors.middleName)}
             />
+            {form.formState.errors.middleName && (
+              <p className="text-sm text-destructive">
+                {form.formState.errors.middleName.message}
+              </p>
+            )}
           </div>
 
           <div className="flex flex-col gap-1">
@@ -243,9 +299,11 @@ export function StudentForm({ existing }: Props) {
               aria-invalid={Boolean(form.formState.errors.gender)}
             >
               <option value="">Select…</option>
-              <option value="MALE">Male</option>
-              <option value="FEMALE">Female</option>
-              <option value="OTHER">Other</option>
+              {GENDER_VALUES.map((g) => (
+                <option key={g} value={g}>
+                  {g.charAt(0) + g.slice(1).toLowerCase()}
+                </option>
+              ))}
             </select>
             {form.formState.errors.gender && (
               <p className="text-sm text-destructive">
@@ -268,7 +326,13 @@ export function StudentForm({ existing }: Props) {
               id="student-phone"
               type="tel"
               {...form.register("phone")}
+              aria-invalid={Boolean(form.formState.errors.phone)}
             />
+            {form.formState.errors.phone && (
+              <p className="text-sm text-destructive">
+                {form.formState.errors.phone.message}
+              </p>
+            )}
           </div>
 
           <div className="flex flex-col gap-1">
@@ -291,7 +355,13 @@ export function StudentForm({ existing }: Props) {
             <Input
               id="student-address"
               {...form.register("address")}
+              aria-invalid={Boolean(form.formState.errors.address)}
             />
+            {form.formState.errors.address && (
+              <p className="text-sm text-destructive">
+                {form.formState.errors.address.message}
+              </p>
+            )}
           </div>
 
           <div className="flex flex-col gap-1">
@@ -300,7 +370,13 @@ export function StudentForm({ existing }: Props) {
               id="student-stateOfOrigin"
               placeholder="Lagos"
               {...form.register("stateOfOrigin")}
+              aria-invalid={Boolean(form.formState.errors.stateOfOrigin)}
             />
+            {form.formState.errors.stateOfOrigin && (
+              <p className="text-sm text-destructive">
+                {form.formState.errors.stateOfOrigin.message}
+              </p>
+            )}
           </div>
 
           <div className="flex flex-col gap-1">
@@ -308,7 +384,13 @@ export function StudentForm({ existing }: Props) {
             <Input
               id="student-nationality"
               {...form.register("nationality")}
+              aria-invalid={Boolean(form.formState.errors.nationality)}
             />
+            {form.formState.errors.nationality && (
+              <p className="text-sm text-destructive">
+                {form.formState.errors.nationality.message}
+              </p>
+            )}
           </div>
 
           <div className="flex flex-col gap-1">
@@ -316,7 +398,13 @@ export function StudentForm({ existing }: Props) {
             <Input
               id="student-religion"
               {...form.register("religion")}
+              aria-invalid={Boolean(form.formState.errors.religion)}
             />
+            {form.formState.errors.religion && (
+              <p className="text-sm text-destructive">
+                {form.formState.errors.religion.message}
+              </p>
+            )}
           </div>
 
           <div className="flex flex-col gap-1">
@@ -325,7 +413,13 @@ export function StudentForm({ existing }: Props) {
               id="student-bloodGroup"
               placeholder="O+"
               {...form.register("bloodGroup")}
+              aria-invalid={Boolean(form.formState.errors.bloodGroup)}
             />
+            {form.formState.errors.bloodGroup && (
+              <p className="text-sm text-destructive">
+                {form.formState.errors.bloodGroup.message}
+              </p>
+            )}
           </div>
 
           <div className="flex flex-col gap-1 md:col-span-2">
@@ -354,7 +448,13 @@ export function StudentForm({ existing }: Props) {
               rows={3}
               className="rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
               {...form.register("medicalNotes")}
+              aria-invalid={Boolean(form.formState.errors.medicalNotes)}
             />
+            {form.formState.errors.medicalNotes && (
+              <p className="text-sm text-destructive">
+                {form.formState.errors.medicalNotes.message}
+              </p>
+            )}
           </div>
 
           <div className="flex flex-col gap-1 md:col-span-2">
@@ -364,7 +464,13 @@ export function StudentForm({ existing }: Props) {
               rows={3}
               className="rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
               {...form.register("notes")}
+              aria-invalid={Boolean(form.formState.errors.notes)}
             />
+            {form.formState.errors.notes && (
+              <p className="text-sm text-destructive">
+                {form.formState.errors.notes.message}
+              </p>
+            )}
           </div>
         </div>
       </section>
