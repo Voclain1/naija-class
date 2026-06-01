@@ -1496,3 +1496,299 @@ describe("multi-tenant isolation — Phase 1 / Slice 11 (teacher_assignments)", 
     expect(rows).toHaveLength(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Phase 1 / Slice 12 isolation — mastery_records
+//
+// First of the two AI-foundation tables. Thin by design and EMPTY in
+// production — but it MUST pass the same tenancy invariant as every other
+// Phase 1 table, which is the entire point of landing it now (lock in
+// school_id + RLS before Phase 5 fills it, so Phase 5 isn't a live-data
+// migration). mastery_records carries its OWN school_id despite the
+// student_id FK, so RLS is a flat direct-column check, NOT EXISTS-through-
+// students (docs/modules/phase-1.md "Note on student_guardians"). The fixture
+// creates a student per school as the FK target. Suite proves: each school
+// sees only its own rows, cross-tenant findUnique returns null, a cross-
+// tenant INSERT is rejected by WITH CHECK (parent student_id is A's but
+// school_id is B's), and an unset GUC returns zero rows (FORCE RLS fails
+// closed). Contributes to acceptance #10 / #13.
+// ---------------------------------------------------------------------------
+
+describe("multi-tenant isolation — Phase 1 / Slice 12 (mastery_records)", () => {
+  const runId = Math.random().toString(36).slice(2, 8);
+  let schoolA: { id: string };
+  let schoolB: { id: string };
+  let studentA: { id: string };
+  let studentB: { id: string };
+  let masteryA: { id: string };
+  let masteryB: { id: string };
+
+  beforeAll(async () => {
+    schoolA = await basePrisma.school.create({
+      data: { name: "School P1S12MA", slug: `rls-p1s12ma-${runId}` },
+      select: { id: true },
+    });
+    schoolB = await basePrisma.school.create({
+      data: { name: "School P1S12MB", slug: `rls-p1s12mb-${runId}` },
+      select: { id: true },
+    });
+
+    studentA = await withTenant(schoolA.id, (db) =>
+      db.student.create({
+        data: {
+          schoolId: schoolA.id,
+          admissionNumber: `A-S12M-${runId}`,
+          firstName: "Ada",
+          lastName: `Alpha-${runId}`,
+          dateOfBirth: new Date("2014-03-15"),
+          gender: "FEMALE",
+        },
+        select: { id: true },
+      }),
+    );
+    studentB = await withTenant(schoolB.id, (db) =>
+      db.student.create({
+        data: {
+          schoolId: schoolB.id,
+          admissionNumber: `B-S12M-${runId}`,
+          firstName: "Bola",
+          lastName: `Bravo-${runId}`,
+          dateOfBirth: new Date("2013-09-22"),
+          gender: "MALE",
+        },
+        select: { id: true },
+      }),
+    );
+
+    masteryA = await withTenant(schoolA.id, (db) =>
+      db.masteryRecord.create({
+        data: {
+          schoolId: schoolA.id,
+          studentId: studentA.id,
+          topicRef: `topic-a-${runId}`,
+          status: "in_progress",
+        },
+        select: { id: true },
+      }),
+    );
+    masteryB = await withTenant(schoolB.id, (db) =>
+      db.masteryRecord.create({
+        data: {
+          schoolId: schoolB.id,
+          studentId: studentB.id,
+          topicRef: `topic-b-${runId}`,
+          status: "in_progress",
+        },
+        select: { id: true },
+      }),
+    );
+  });
+
+  afterAll(async () => {
+    if (schoolA?.id) {
+      await basePrisma.school.delete({ where: { id: schoolA.id } }).catch(() => undefined);
+    }
+    if (schoolB?.id) {
+      await basePrisma.school.delete({ where: { id: schoolB.id } }).catch(() => undefined);
+    }
+    await basePrisma.$disconnect();
+  });
+
+  it("School A sees its own mastery_record only", async () => {
+    const rows = await withTenant(schoolA.id, (db) =>
+      db.masteryRecord.findMany({ where: { topicRef: { contains: runId } } }),
+    );
+    const ids = rows.map((r) => r.id);
+    expect(ids).toContain(masteryA.id);
+    expect(ids).not.toContain(masteryB.id);
+  });
+
+  it("School B sees its own mastery_record only", async () => {
+    const rows = await withTenant(schoolB.id, (db) =>
+      db.masteryRecord.findMany({ where: { topicRef: { contains: runId } } }),
+    );
+    const ids = rows.map((r) => r.id);
+    expect(ids).toContain(masteryB.id);
+    expect(ids).not.toContain(masteryA.id);
+  });
+
+  it("findUnique across tenants returns null", async () => {
+    const leak = await withTenant(schoolA.id, (db) =>
+      db.masteryRecord.findUnique({ where: { id: masteryB.id } }),
+    );
+    expect(leak).toBeNull();
+  });
+
+  it("INSERT with another school's school_id fails the WITH CHECK clause", async () => {
+    // Mischief case: a controller in School A writes a row whose student_id is
+    // A's but whose school_id is B's. WITH CHECK is the second-line defence.
+    await expect(
+      withTenant(schoolA.id, (db) =>
+        db.masteryRecord.create({
+          data: {
+            schoolId: schoolB.id,
+            studentId: studentA.id,
+            topicRef: `bad-${runId}`,
+            status: "in_progress",
+          },
+        }),
+      ),
+    ).rejects.toThrow();
+  });
+
+  it("raw SQL with unset GUC returns zero rows from mastery_records (FORCE RLS)", async () => {
+    const rows = await basePrisma.$transaction(async (tx) => {
+      return tx.$queryRaw<Array<{ id: string }>>`
+        SELECT id FROM mastery_records WHERE topic_ref LIKE ${"%" + runId + "%"}
+      `;
+    });
+    expect(rows).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 1 / Slice 12 isolation — ai_interaction_logs
+//
+// Second AI-foundation table. Same discipline as mastery_records: own
+// school_id (flat direct-column RLS), EMPTY in production, must pass the
+// tenancy invariant now. student_id is NULLABLE here (teacher-driven sessions
+// have no student), but the fixture links a student per school so the WITH
+// CHECK mischief test can prove the school_id check fires independently of the
+// FK. payload is an opaque JSONB envelope — Phase 5 owns its shape and it MUST
+// stay PII-free (CLAUDE.md AI rules); the test payload is a placeholder only.
+// Suite proves: each school sees only its own rows, cross-tenant findUnique
+// returns null, a cross-tenant INSERT is rejected by WITH CHECK, and an unset
+// GUC returns zero rows (FORCE RLS fails closed). Contributes to #10 / #13.
+// ---------------------------------------------------------------------------
+
+describe("multi-tenant isolation — Phase 1 / Slice 12 (ai_interaction_logs)", () => {
+  const runId = Math.random().toString(36).slice(2, 8);
+  let schoolA: { id: string };
+  let schoolB: { id: string };
+  let studentA: { id: string };
+  let studentB: { id: string };
+  let logA: { id: string };
+  let logB: { id: string };
+
+  beforeAll(async () => {
+    schoolA = await basePrisma.school.create({
+      data: { name: "School P1S12LA", slug: `rls-p1s12la-${runId}` },
+      select: { id: true },
+    });
+    schoolB = await basePrisma.school.create({
+      data: { name: "School P1S12LB", slug: `rls-p1s12lb-${runId}` },
+      select: { id: true },
+    });
+
+    studentA = await withTenant(schoolA.id, (db) =>
+      db.student.create({
+        data: {
+          schoolId: schoolA.id,
+          admissionNumber: `A-S12L-${runId}`,
+          firstName: "Ada",
+          lastName: `Alpha-${runId}`,
+          dateOfBirth: new Date("2014-03-15"),
+          gender: "FEMALE",
+        },
+        select: { id: true },
+      }),
+    );
+    studentB = await withTenant(schoolB.id, (db) =>
+      db.student.create({
+        data: {
+          schoolId: schoolB.id,
+          admissionNumber: `B-S12L-${runId}`,
+          firstName: "Bola",
+          lastName: `Bravo-${runId}`,
+          dateOfBirth: new Date("2013-09-22"),
+          gender: "MALE",
+        },
+        select: { id: true },
+      }),
+    );
+
+    logA = await withTenant(schoolA.id, (db) =>
+      db.aIInteractionLog.create({
+        data: {
+          schoolId: schoolA.id,
+          studentId: studentA.id,
+          sessionRef: `sess-a-${runId}`,
+          payload: { placeholder: true },
+        },
+        select: { id: true },
+      }),
+    );
+    logB = await withTenant(schoolB.id, (db) =>
+      db.aIInteractionLog.create({
+        data: {
+          schoolId: schoolB.id,
+          studentId: studentB.id,
+          sessionRef: `sess-b-${runId}`,
+          payload: { placeholder: true },
+        },
+        select: { id: true },
+      }),
+    );
+  });
+
+  afterAll(async () => {
+    if (schoolA?.id) {
+      await basePrisma.school.delete({ where: { id: schoolA.id } }).catch(() => undefined);
+    }
+    if (schoolB?.id) {
+      await basePrisma.school.delete({ where: { id: schoolB.id } }).catch(() => undefined);
+    }
+    await basePrisma.$disconnect();
+  });
+
+  it("School A sees its own ai_interaction_log only", async () => {
+    const rows = await withTenant(schoolA.id, (db) =>
+      db.aIInteractionLog.findMany({ where: { sessionRef: { contains: runId } } }),
+    );
+    const ids = rows.map((r) => r.id);
+    expect(ids).toContain(logA.id);
+    expect(ids).not.toContain(logB.id);
+  });
+
+  it("School B sees its own ai_interaction_log only", async () => {
+    const rows = await withTenant(schoolB.id, (db) =>
+      db.aIInteractionLog.findMany({ where: { sessionRef: { contains: runId } } }),
+    );
+    const ids = rows.map((r) => r.id);
+    expect(ids).toContain(logB.id);
+    expect(ids).not.toContain(logA.id);
+  });
+
+  it("findUnique across tenants returns null", async () => {
+    const leak = await withTenant(schoolA.id, (db) =>
+      db.aIInteractionLog.findUnique({ where: { id: logB.id } }),
+    );
+    expect(leak).toBeNull();
+  });
+
+  it("INSERT with another school's school_id fails the WITH CHECK clause", async () => {
+    // Mischief case: parent student_id is A's, but school_id is B's. WITH
+    // CHECK rejects it independently of the (nullable) FK.
+    await expect(
+      withTenant(schoolA.id, (db) =>
+        db.aIInteractionLog.create({
+          data: {
+            schoolId: schoolB.id,
+            studentId: studentA.id,
+            sessionRef: `bad-${runId}`,
+            payload: { placeholder: true },
+          },
+        }),
+      ),
+    ).rejects.toThrow();
+  });
+
+  it("raw SQL with unset GUC returns zero rows from ai_interaction_logs (FORCE RLS)", async () => {
+    const rows = await basePrisma.$transaction(async (tx) => {
+      return tx.$queryRaw<Array<{ id: string }>>`
+        SELECT id FROM ai_interaction_logs WHERE session_ref LIKE ${"%" + runId + "%"}
+      `;
+    });
+    expect(rows).toHaveLength(0);
+  });
+});

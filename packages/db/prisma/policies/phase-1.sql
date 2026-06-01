@@ -210,3 +210,30 @@ ALTER TABLE teacher_assignments FORCE  ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation ON teacher_assignments
   USING      (school_id::text = current_setting('app.current_school_id', true))
   WITH CHECK (school_id::text = current_setting('app.current_school_id', true));
+
+-- Slice 12: mastery_records + ai_interaction_logs ----------------------
+-- The two AI-foundation tables. Thin by design — they exist to lock in
+-- school_id + RLS NOW (so Phase 5 fills empty tables, not a live-data
+-- migration) and sit EMPTY in Phase 1. Detailed shape is OWNED BY PHASE 5.
+--
+-- Both carry their OWN school_id despite the student_id FK, so the policy is
+-- the cheap flat direct-column check — NOT an EXISTS-through-students
+-- subquery. This is the pattern explicitly documented for student_guardians,
+-- mastery_records, and ai_interaction_logs in docs/modules/phase-1.md ("Note
+-- on student_guardians"): a second line of defence if a student from another
+-- school were ever linked, and cheaper to enforce. FORCE so the migration
+-- role cannot bypass it. SECURITY DEFINER count stays at 4 — no endpoints,
+-- no pre-tenant access.
+
+ALTER TABLE mastery_records     ENABLE ROW LEVEL SECURITY;
+ALTER TABLE mastery_records     FORCE  ROW LEVEL SECURITY;
+ALTER TABLE ai_interaction_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE ai_interaction_logs FORCE  ROW LEVEL SECURITY;
+
+CREATE POLICY tenant_isolation ON mastery_records
+  USING      (school_id::text = current_setting('app.current_school_id', true))
+  WITH CHECK (school_id::text = current_setting('app.current_school_id', true));
+
+CREATE POLICY tenant_isolation ON ai_interaction_logs
+  USING      (school_id::text = current_setting('app.current_school_id', true))
+  WITH CHECK (school_id::text = current_setting('app.current_school_id', true));
