@@ -421,10 +421,13 @@ model Student {
   createdAt       DateTime      @default(now()) @map("created_at")
   updatedAt       DateTime      @updatedAt @map("updated_at")
 
-  // Slice 5 adds the StudentGuardian back-relation; slice 9 adds Enrollment.
-  // MasteryRecord + AIInteractionLog land in slice 12 when those tables arrive.
-  guardians   StudentGuardian[]
-  enrollments Enrollment[] // Phase 1 / Slice 9 back-relation.
+  // Slice 5 adds the StudentGuardian back-relation; slice 9 adds Enrollment;
+  // slice 12 adds the two AI-foundation back-relations (tables sit empty in
+  // Phase 1 — shape owned by Phase 5).
+  guardians         StudentGuardian[]
+  enrollments       Enrollment[]       // Phase 1 / Slice 9 back-relation.
+  masteryRecords    MasteryRecord[]    // Phase 1 / Slice 12 back-relation.
+  aiInteractionLogs AIInteractionLog[] // Phase 1 / Slice 12 back-relation.
 
   @@unique([schoolId, admissionNumber])
   @@index([schoolId])
@@ -778,4 +781,71 @@ model TeacherAssignment {
   @@index([classArmId])
   @@index([schoolId, academicYearId])
   @@map("teacher_assignments")
+}
+
+// ---------- Phase 1 / Slice 12 — AI foundation (thin; semantics OWNED BY PHASE 5) ----------
+//
+// These two tables exist to lock in school_id + RLS + audit shape NOW so that
+// when Phase 5 fills out the AI features we are NOT doing a live-data
+// migration on a populated table. They sit EMPTY in Phase 1 — slice 12 is a
+// hard gate against premature Phase-5 work, not a feature. Do not build
+// against them in Phase 1.
+//
+// Deliberately omitted (Phase 5 owns these — adding them now pre-empts a
+// decision the spec intentionally punts):
+//   - MasteryRecord: NO score column (0-1 vs 0-100 vs letter is Phase 5), NO
+//     time-decay field beyond updatedAt, NO source/origin column (tutor vs
+//     assessment vs manual). status is free-text String now, an enum in
+//     Phase 5; topicRef is a loose string so the grain (subject/topic/
+//     objective) can be chosen later without a migration.
+//   - AIInteractionLog: payload is an OPAQUE Json envelope whose structure is
+//     Phase-5-owned. It MUST stay PII-free per CLAUDE.md AI hard rules (never
+//     send student PII to the LLM; log opaque ids + class-level context only).
+//     The inline-vs-R2 storage tradeoff (cost/PII/eval) is a Phase-5 decision
+//     made when there is a real payload — not pre-built here.
+//
+// NAMING DRIFT (reconcile in Phase 5): ARCHITECTURE.md §5/§7 and CLAUDE.md's
+// AI hard rules name the LLM-call log `AIGeneration`/`ai_generations`; this
+// table is `AIInteractionLog`/`ai_interaction_logs`. Phase 5 MUST rename/
+// absorb one into the other (or define the boundary between them) BEFORE
+// building the claudeClient call-logger, so we don't end up with two
+// overlapping tables. Tracked in docs/deferred.md.
+//
+// Both tables carry their OWN school_id (despite the studentId FK) → flat
+// direct-column RLS, same cheap pattern as student_guardians (see
+// docs/modules/phase-1.md "Note on student_guardians"). SECURITY DEFINER
+// count stays at 4 — no endpoints, no pre-tenant access; the tables are only
+// ever reached via withTenant once Phase 5 wires them up.
+
+model MasteryRecord {
+  id        String   @id @default(uuid())
+  schoolId  String   @map("school_id")
+  studentId String   @map("student_id")
+  topicRef  String   @map("topic_ref") // loose identifier; taxonomy owned by Phase 5
+  status    String // free-text in Phase 1; enum in Phase 5
+  updatedAt DateTime @updatedAt @map("updated_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([schoolId, studentId, topicRef])
+  @@index([schoolId])
+  @@index([studentId])
+  @@map("mastery_records")
+}
+
+model AIInteractionLog {
+  id         String   @id @default(uuid())
+  schoolId   String   @map("school_id")
+  studentId  String?  @map("student_id") // nullable: teacher-driven sessions exist too
+  sessionRef String   @map("session_ref") // loose grouping identifier; shape owned by Phase 5
+  payload    Json // raw envelope; structure owned by Phase 5; MUST stay PII-free
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  student Student? @relation(fields: [studentId], references: [id], onDelete: SetNull)
+
+  @@index([schoolId])
+  @@index([schoolId, createdAt])
+  @@index([studentId])
+  @@map("ai_interaction_logs")
 }

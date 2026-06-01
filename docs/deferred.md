@@ -65,16 +65,34 @@ Format:
 
 - [ ] Move to eslint-config-next's native flat-config export when it ships. Slice 8b uses `@eslint/eslintrc`'s `FlatCompat` to consume eslint-config-next v15.5's legacy configs (the package doesn't yet ship a `flat/` export). When eslint-config-next adds native flat config (likely in a Next 15.x patch or Next 16), `packages/config/eslint/next.js` collapses to a direct spread and we drop `@eslint/eslintrc` from the dependency tree. Trigger: when next minor/major release notes mention native flat config support.
 
-## Phase 1 — AI foundation tables (DECIDED, build in Phase 1)
-- [ ] Mastery-tracking table: thin/additive-friendly, school_id + RLS,
+## Phase 1 — AI foundation tables (DONE — slice 12, 2026-06-01)
+- [x] Mastery-tracking table: thin/additive-friendly, school_id + RLS,
   RLS test extended. Minimal columns (student, school, topic_ref,
   status, updated_at). Detailed shape OWNED BY PHASE 5. Foundation-only,
   sits empty until then. MUST be pulled into docs/modules/phase-1.md
   when spec is written — failure mode is forgetting it and hitting a
-  live-data migration at Phase 5.
-- [ ] AI-interaction-log table: same discipline. Minimal columns
+  live-data migration at Phase 5. _(Shipped as `MasteryRecord` /
+  `mastery_records`, slice 12. FORCE RLS + isolation spec; zero rows.)_
+- [x] AI-interaction-log table: same discipline. Minimal columns
   (student, school, session_ref, payload jsonb, created_at). Shape
-  owned by Phase 5.
+  owned by Phase 5. _(Shipped as `AIInteractionLog` /
+  `ai_interaction_logs`, slice 12.)_
+
+## Phase 5 — AI table naming reconciliation (BLOCKER for the call-logger)
+- [ ] `AIInteractionLog` vs `AIGeneration` naming drift. Slice 12 shipped
+  `ai_interaction_logs`, but ARCHITECTURE.md §5/§7 and CLAUDE.md's AI hard
+  rule ("every `claudeClient.messages.create` must log to the
+  `ai_generations` table") name the LLM-call log `AIGeneration` /
+  `ai_generations`. ARCHITECTURE.md §5 also lists `CurriculumChunk` +
+  `TutorSession` as the other two AI tables — neither is `MasteryRecord`,
+  which §5 doesn't list at all. Phase 5 MUST, BEFORE building the call-
+  logger, either (a) rename/absorb `AIInteractionLog` → `AIGeneration`, or
+  (b) define a clear boundary between an interaction log and a generation
+  log — otherwise we end up with two overlapping tables doing the same job.
+  Decide alongside the `AIInteractionLog.payload` / `MasteryRecord.status`
+  taxonomy (the inline-vs-R2 payload storage tradeoff is part of this).
+  Trigger: first Phase 5 slice that writes an LLM call. Flagged in the
+  slice-12 schema + migration headers.
 
 ## Roadmap / strategy — REVISIT with live market research (not decided)
 - [ ] CBT / online exams (JAMB/WAEC/UTME prep) — competitors lead with
