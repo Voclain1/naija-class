@@ -24,6 +24,8 @@ import type { Request } from "express";
 import type { AuthContext } from "../../common/auth/auth-context";
 import { AuthGuard } from "../../common/auth/auth.guard";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
+import { Permissions } from "../../common/auth/permissions.decorator";
+import { PermissionsGuard } from "../../common/auth/permissions.guard";
 import { ZodValidationPipe } from "../../common/zod-validation.pipe";
 import { ClassArmsService } from "./class-arms.service";
 
@@ -32,7 +34,7 @@ import { ClassArmsService } from "./class-arms.service";
 // (/class-arms/:id). Matches the slice-1 TermsController pattern —
 // nested-create + flat-edit. See terms.controller.ts header.
 @Controller()
-@UseGuards(AuthGuard)
+@UseGuards(AuthGuard, PermissionsGuard)
 export class ClassArmsController {
   constructor(private readonly service: ClassArmsService) {}
 
@@ -41,6 +43,7 @@ export class ClassArmsController {
   // -----------------------------------------------------------------------
 
   @Get("class-levels/:levelId/class-arms")
+  @Permissions("class-arm.read")
   async listForLevel(
     @CurrentUser() authCtx: AuthContext,
     @Param("levelId") levelId: string,
@@ -53,6 +56,7 @@ export class ClassArmsController {
 
   @Post("class-levels/:levelId/class-arms")
   @HttpCode(201)
+  @Permissions("class-arm.create")
   async create(
     @Param("levelId") levelId: string,
     @Body(new ZodValidationPipe(createClassArmSchema)) dto: CreateClassArmInput,
@@ -71,6 +75,7 @@ export class ClassArmsController {
   // -----------------------------------------------------------------------
 
   @Get("class-arms")
+  @Permissions("class-arm.read")
   async list(
     @CurrentUser() authCtx: AuthContext,
     @Query("includeInactive") includeInactive?: string,
@@ -81,6 +86,7 @@ export class ClassArmsController {
   }
 
   @Get("class-arms/:id")
+  @Permissions("class-arm.read")
   async findById(
     @CurrentUser() authCtx: AuthContext,
     @Param("id") id: string,
@@ -89,6 +95,7 @@ export class ClassArmsController {
   }
 
   @Patch("class-arms/:id")
+  @Permissions("class-arm.update")
   async update(
     @Param("id") id: string,
     @Body(new ZodValidationPipe(updateClassArmSchema)) dto: UpdateClassArmInput,
@@ -104,6 +111,7 @@ export class ClassArmsController {
 
   @Delete("class-arms/:id")
   @HttpCode(204)
+  @Permissions("class-arm.delete")
   async delete(
     @Param("id") id: string,
     @CurrentUser() authCtx: AuthContext,

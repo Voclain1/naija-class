@@ -24,15 +24,18 @@ import type { Request } from "express";
 import type { AuthContext } from "../../common/auth/auth-context";
 import { AuthGuard } from "../../common/auth/auth.guard";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
+import { Permissions } from "../../common/auth/permissions.decorator";
+import { PermissionsGuard } from "../../common/auth/permissions.guard";
 import { ZodValidationPipe } from "../../common/zod-validation.pipe";
 import { ClassLevelsService } from "./class-levels.service";
 
 @Controller("class-levels")
-@UseGuards(AuthGuard)
+@UseGuards(AuthGuard, PermissionsGuard)
 export class ClassLevelsController {
   constructor(private readonly service: ClassLevelsService) {}
 
   @Get()
+  @Permissions("class-level.read")
   async list(
     @CurrentUser() authCtx: AuthContext,
     @Query("includeInactive") includeInactive?: string,
@@ -43,6 +46,7 @@ export class ClassLevelsController {
   }
 
   @Get(":id")
+  @Permissions("class-level.read")
   async findById(
     @CurrentUser() authCtx: AuthContext,
     @Param("id") id: string,
@@ -52,6 +56,7 @@ export class ClassLevelsController {
 
   @Post()
   @HttpCode(201)
+  @Permissions("class-level.create")
   async create(
     @Body(new ZodValidationPipe(createClassLevelSchema)) dto: CreateClassLevelInput,
     @CurrentUser() authCtx: AuthContext,
@@ -65,6 +70,7 @@ export class ClassLevelsController {
   }
 
   @Patch(":id")
+  @Permissions("class-level.update")
   async update(
     @Param("id") id: string,
     @Body(new ZodValidationPipe(updateClassLevelSchema)) dto: UpdateClassLevelInput,
@@ -80,6 +86,7 @@ export class ClassLevelsController {
 
   @Delete(":id")
   @HttpCode(204)
+  @Permissions("class-level.delete")
   async delete(
     @Param("id") id: string,
     @CurrentUser() authCtx: AuthContext,

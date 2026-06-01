@@ -24,17 +24,20 @@ import type { Request } from "express";
 import type { AuthContext } from "../../common/auth/auth-context";
 import { AuthGuard } from "../../common/auth/auth.guard";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
+import { Permissions } from "../../common/auth/permissions.decorator";
+import { PermissionsGuard } from "../../common/auth/permissions.guard";
 import { ZodValidationPipe } from "../../common/zod-validation.pipe";
 import { SubjectsService } from "./subjects.service";
 
 // Subject is a school-scoped root catalogue entry — flat CRUD only.
 // Matches the academic-years pattern (slice 1) and class-levels (slice 2).
 @Controller("subjects")
-@UseGuards(AuthGuard)
+@UseGuards(AuthGuard, PermissionsGuard)
 export class SubjectsController {
   constructor(private readonly service: SubjectsService) {}
 
   @Get()
+  @Permissions("subject.read")
   async list(
     @CurrentUser() authCtx: AuthContext,
     @Query("includeInactive") includeInactive?: string,
@@ -45,6 +48,7 @@ export class SubjectsController {
   }
 
   @Get(":id")
+  @Permissions("subject.read")
   async findById(
     @CurrentUser() authCtx: AuthContext,
     @Param("id") id: string,
@@ -54,6 +58,7 @@ export class SubjectsController {
 
   @Post()
   @HttpCode(201)
+  @Permissions("subject.create")
   async create(
     @Body(new ZodValidationPipe(createSubjectSchema)) dto: CreateSubjectInput,
     @CurrentUser() authCtx: AuthContext,
@@ -67,6 +72,7 @@ export class SubjectsController {
   }
 
   @Patch(":id")
+  @Permissions("subject.update")
   async update(
     @Param("id") id: string,
     @Body(new ZodValidationPipe(updateSubjectSchema)) dto: UpdateSubjectInput,
@@ -82,6 +88,7 @@ export class SubjectsController {
 
   @Delete(":id")
   @HttpCode(204)
+  @Permissions("subject.delete")
   async delete(
     @Param("id") id: string,
     @CurrentUser() authCtx: AuthContext,

@@ -8,20 +8,20 @@ The first business module. End of Phase 1, a real Nigerian school can move off E
 
 End of Phase 1, all of these are true:
 
-- [ ] An admin can define an `AcademicYear` (e.g. "2025/2026") and its three `Term`s with start/end dates.
-- [ ] Every newly-created school is auto-seeded with the standard Nigerian `ClassLevel`s (Nursery 1 through SSS 3) and can edit/add its own.
-- [ ] An admin can create `ClassArm`s under any `ClassLevel` (e.g. JSS 1A, JSS 1B), set a capacity, and assign a class teacher.
-- [ ] An admin can define `Subject`s and link them to one or more `ClassLevel`s via `ClassSubject`.
-- [ ] An admin can register a `Student` one-by-one with admission number, bio, photo URL, status, and link to one or more `Guardian` records.
-- [ ] An admin can **bulk-import** students from CSV with: column mapping, per-row validation, preview of good/bad rows, partial-success commit, downloadable error report. No AI dedupe (Phase 5).
-- [ ] An admin can `Enroll` a student into a `ClassArm` for a given `AcademicYear`, with status (enrolled / transferred / withdrawn / repeated / graduated).
-- [ ] An admin can invite a teacher (Phase 0 invitation flow) → on accept, the teacher gets a `TeacherProfile` and can be assigned via `TeacherAssignment` to teach a `Subject` in a `ClassArm`.
-- [ ] A teacher logging in sees **only** their assigned arms and subjects. They cannot list or query students outside their assignments.
-- [ ] Two thin AI-foundation tables (`MasteryRecord`, `AIInteractionLog`) exist with `school_id` + RLS, sit empty, and are covered by the RLS isolation test. Their semantic shape is owned by Phase 5.
-- [ ] Every new table has FORCE RLS, a tenant-isolation policy with WITH CHECK, and is covered by the RLS isolation spec.
-- [ ] Every Phase 1 mutation writes one row to `audit_logs`.
-- [ ] All tests pass (unit, integration, RLS isolation, CSV import golden-files, one E2E for the import wizard).
-- [ ] CI passes on every PR.
+- [x] An admin can define an `AcademicYear` (e.g. "2025/2026") and its three `Term`s with start/end dates.
+- [x] Every newly-created school is auto-seeded with the standard Nigerian `ClassLevel`s (Nursery 1 through SSS 3) and can edit/add its own.
+- [x] An admin can create `ClassArm`s under any `ClassLevel` (e.g. JSS 1A, JSS 1B), set a capacity, and assign a class teacher.
+- [x] An admin can define `Subject`s and link them to one or more `ClassLevel`s via `ClassSubject`.
+- [x] An admin can register a `Student` one-by-one with admission number, bio, photo URL, status, and link to one or more `Guardian` records.
+- [x] An admin can **bulk-import** students from CSV with: column mapping, per-row validation, preview of good/bad rows, partial-success commit, downloadable error report. No AI dedupe (Phase 5).
+- [x] An admin can `Enroll` a student into a `ClassArm` for a given `AcademicYear`, with status (enrolled / transferred / withdrawn / repeated / graduated).
+- [x] An admin can invite a teacher (Phase 0 invitation flow) → on accept, the teacher gets a `TeacherProfile` and can be assigned via `TeacherAssignment` to teach a `Subject` in a `ClassArm`.
+- [x] A teacher logging in sees **only** their assigned arms and subjects. They cannot list or query students outside their assignments.
+- [x] Two thin AI-foundation tables (`MasteryRecord`, `AIInteractionLog`) exist with `school_id` + RLS, sit empty, and are covered by the RLS isolation test. Their semantic shape is owned by Phase 5.
+- [x] Every new table has FORCE RLS, a tenant-isolation policy with WITH CHECK, and is covered by the RLS isolation spec.
+- [x] Every Phase 1 mutation writes one row to `audit_logs`. _(Slice 13: locked by the consolidated `apps/api/src/__tests__/audit-coverage.spec.ts`.)_
+- [x] All tests pass (unit, integration, RLS isolation, CSV import golden-files, one E2E for the import wizard).
+- [x] CI passes on every PR.
 
 ## Acceptance bar (concrete test)
 
@@ -1187,6 +1187,13 @@ The CSV import commit writes **one** audit row per import (not per row inserted)
 
 ## Acceptance criteria
 
+**Status: ALL MET — Phase 1 closed in slice 13 (2026-06-01).** Criteria #1–#9 were
+met by their owning slices' integration tests; slice 13 closed the remaining
+cross-cutting ones: #6's Playwright leg (`e2e/tests/csv-import-students.spec.ts`),
+#10 (enrollments RLS block added → all 15 tables covered), #11 (SECURITY DEFINER
+count confirmed still 4), and #12 (CI runs the new CSV-import E2E). The RBAC
+rollup, audit-coverage lock, and admin happy-path E2E also landed here.
+
 End of Phase 1 these must all pass:
 
 1. New school signup auto-seeds 14 ClassLevels: KG 1, KG 2, Primary 1–6, JSS 1–3, SSS 1–3, with correct stage and orderIndex. Verified by integration test that signs up a fresh school and asserts on `class_levels` rows. (Pre-primary naming locked to KG 1 / KG 2 on 2026-05-23 — see the "default pre-primary naming" decision in slice 2 implementation; schools that prefer "Nursery 1 / Nursery 2" rename after the fact.)
@@ -1198,9 +1205,9 @@ End of Phase 1 these must all pass:
 7. The same CSV import flow works for guardians (linking by `student_admission_number`) and teachers (creating Invitations via the Phase 0 flow).
 8. Admin can enrol a student into a ClassArm for a given Term via single-create and via bulk-enroll. Re-enrolling the same student into the same term returns a 409 conflict, not a silent overwrite. A student admitted mid-year shows zero rows for the term they missed and one row for the term they joined — verified by integration test.
 9. Teacher invitation flow end-to-end: admin invites by email → teacher accepts at `/invitations/[token]` → admin assigns the teacher as class teacher of JSS 1A → teacher logs in → teacher sees `/teacher/classes/[arm-id]` for JSS 1A's roster ONLY. Attempting to GET another arm's roster returns 404 from the service-layer scope filter.
-10. Two separate schools cannot see each other's academic structure, students, guardians, enrollments, teacher profiles, import jobs, mastery records, or AI interaction logs. Verified by the extended RLS isolation spec covering all 15 new tables.
-11. SECURITY DEFINER count remains at 4 (no new ones added). CLAUDE.md inventory table is unchanged.
-12. CI passes on every PR: lint, typecheck, unit, integration, RLS isolation, Playwright E2E (Phase 0 happy-path + new CSV import path).
+10. Two separate schools cannot see each other's academic structure, students, guardians, enrollments, teacher profiles, import jobs, mastery records, or AI interaction logs. Verified by the extended RLS isolation spec covering all 15 new tables. _(MET — slice 13, 2026-06-01: the slice-9 enrollments block was the last gap; `rls.spec.ts` now covers all 15 tables, 63 tests.)_
+11. SECURITY DEFINER count remains at 4 (no new ones added). CLAUDE.md inventory table is unchanged. _(MET — slice 13: zero new SECURITY DEFINER functions; the PermissionsGuard resolves permissions via `withTenant`, not a pre-tenant escape hatch.)_
+12. CI passes on every PR: lint, typecheck, unit, integration, RLS isolation, Playwright E2E (Phase 0 happy-path + new CSV import path). _(MET — slice 13: `e2e/tests/csv-import-students.spec.ts` added; API suite 476, RLS 63, E2E 5 specs.)_
 13. The two AI-foundation tables (`mastery_records`, `ai_interaction_logs`) exist, have FORCE RLS, pass the isolation spec, and contain zero rows. _(MET — slice 12, 2026-06-01: both tables shipped verbatim from the data-model spec, FORCE RLS + `tenant_isolation` policy, 10 new isolation tests in `rls.spec.ts`; tables sit empty.)_
 
 ## Slice breakdown
@@ -1221,7 +1228,7 @@ Sequenced per the locked build order (academic skeleton → students → enrollm
 | 10 | **TeacherProfile + class teacher assignment + teacher CSV import** — model, RLS, CRUD endpoints (incl. `/teacher-profiles/me` self-service), `ClassArm.classTeacherId` wiring (already shipped in slice 3 — consumed here), the teacher CSV import deferred from slice 8, staff UI. _(Reconciled 2026-05-30: absorbs the teacher-import half of the original slice-8 scope. Profile lifecycle is admin-explicit — created via `POST /teacher-profiles` after the teacher accepts, no auto-create on accept; the teacher CSV creates Invitations only and does not import profile fields. A minimal `teacher` system role is seeded in the slice-10 migration as the testability unlock; the full RBAC rollup stays slice 13.)_ | Phase 1 staff branch begins. Class teachers can be assigned even before subject assignments exist. | 2 days |
 | 11 | **TeacherAssignment + teacher portal** — model, RLS, CRUD endpoints, service-layer scope filter, `(teacher)` route group with dashboard + classes + profile screens | The teacher-scope filter is the most testable security property of Phase 1. End-to-end test: admin assigns, teacher sees only assigned. | 4 days |  _(CLOSED 2026-05-31, PRs #27–#30 + cp4. Acceptance-bar step 8 / acceptance #9 met: the cp4 Playwright tests [`e2e/tests/slice-11-teacher-scope.spec.ts`] codify "admin assigns → teacher sees exactly that" plus cross-teacher isolation [a teacher hitting another teacher's arm URL gets the in-page "not one of yours" state, not a 404/crash]. cp4 was E2E-only [`e2e/` + lockfile]; the API suite stays 432. Two divergences worth knowing for the slice-13 reuse: **(a)** no API mints a `roleKey='teacher'` invitation yet [`POST /users/invite` is Phase-0 admin-only], so the fixture seeds the invitation row via `withTenant` and drives the REAL accept+login flow — swap that one insert for the API when slice-13 RBAC lands; **(b)** the fixtures are API-first for setup [academic structure + assignments over HTTP], UI-only for assertions. The reusable harness lives in `e2e/fixtures/` for acceptance #11 to extend.)_ |
 | 12 | **AI foundation tables** — `MasteryRecord` + `AIInteractionLog` models, migration, RLS, extend RLS isolation spec | Tiny slice, but easy to forget. Land it after teacher assignments so it doesn't lengthen the critical path. | 1 day |  _(CLOSED 2026-06-01, cp1. Both models shipped VERBATIM from the data-model spec — no score/decay/source on Mastery, opaque Phase-5-owned `payload` on the log — because the spec's silence is deliberate Phase-5 ownership, not a gap to fill. Both carry their own `school_id` → flat direct-column RLS (not EXISTS-through-students). Migration `20260601120000_phase_1_slice_12_ai_foundation_tables` applied clean over slice-11 state; RLS block appended verbatim from `policies/phase-1.sql`. Extended `rls.spec.ts` with 2 describe blocks / 10 tests (own-only ×2, cross-tenant findUnique null, WITH CHECK reject, unset-GUC zero-rows — per table); API suite 432 → 442. SECURITY DEFINER count unchanged at 4. Closes acceptance #13; contributes the last 2 of 15 tables to acceptance #10. FLAGGED for Phase 5: `AIInteractionLog` vs `AIGeneration` naming reconciliation — see `docs/deferred.md` "Phase 5 — AI table naming reconciliation".)_ |
-| 13 | **Phase 1 RBAC, audit coverage, RLS spec, E2E** — wire all new permissions into seed; gather every Phase 1 slice's permission constants in `packages/types/src/permissions.ts` (canonical rollup — slices 1/2 deferred this so every slice's strings arrive in one auditable diff; slice 3 already landed `PHASE_1_SLICE_3_PERMISSIONS` as a forward declaration); update `admin` role on existing schools; verify every Phase 1 mutation writes its expected synchronous audit row (no BullMQ migration in this slice — that stays deferred); extend RLS isolation spec to all 15 new tables; add Playwright E2E for the CSV import wizard | Phase 1 closes here. All deliverables green. | 3 days |
+| 13 | **Phase 1 RBAC, audit coverage, RLS spec, E2E** — wire all new permissions into seed; gather every Phase 1 slice's permission constants in `packages/types/src/permissions.ts` (canonical rollup — slices 1/2 deferred this so every slice's strings arrive in one auditable diff; slice 3 already landed `PHASE_1_SLICE_3_PERMISSIONS` as a forward declaration); update `admin` role on existing schools; verify every Phase 1 mutation writes its expected synchronous audit row (no BullMQ migration in this slice — that stays deferred); extend RLS isolation spec to all 15 new tables; add Playwright E2E for the CSV import wizard | Phase 1 closes here. All deliverables green. | 3 days |  _(CLOSED 2026-06-01. **cp1 RBAC:** consolidated `PHASE_1_PERMISSIONS` + `OWNER_ONLY_PERMISSIONS` in `permissions.ts` (per-slice `SLICE_N` constants collapsed; nothing imported them); new `@Permissions` decorator + `PermissionsGuard` (re-fetches perms via `withTenant`, wildcard short-circuit, fails closed on missing metadata) wired onto every Phase-1 controller handler (reads + mutations); the three owner-only deletes (academic-year/term/enrollment) gated so admin is denied, with the service asserts kept as defense-in-depth and tightened to `['owner']`; admin system role updated in `seed-data.ts` + idempotent data migration `20260601130000_phase_1_slice_13_admin_rbac_rollup` for existing DBs (system roles are global singletons → one UPDATE). Guard unit spec + a controller-introspection spec (every mutation handler must declare `@Permissions`). **cp2 verification:** consolidated `audit-coverage.spec.ts` exercises every mutation and asserts exactly one audit row (coverage was already complete — this locks it); slice-9 enrollments RLS block added (all 15 tables, `rls.spec.ts` 63 tests). **cp3 E2E:** `csv-import-students.spec.ts` drives the wizard end-to-end with a real-Excel-shaped 250-row fixture (242 good / 8 bad: missing DOB, invalid gender, duplicate admission #) and verifies the error report has exactly 8 rows; `admin-roster-happy-path.spec.ts` creates a student through the admin UI and enrols them. API suite 442 → 476; E2E 2 → 5 specs. SECURITY DEFINER count unchanged at 4 (CLAUDE.md inventory untouched). FLAGGED: discovered a slice-4 student-form bug — blank optional fields fail the shared Zod schema and silently block submit; see `docs/deferred.md` "Student create/edit form rejects BLANK optional fields".)_ |
 
 Total: **32 days** raw, ~5 calendar weeks at observed pace. Buffer: 1 week. **Phase 1 target: 6 weeks elapsed, ~26 working days.**
 

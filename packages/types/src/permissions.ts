@@ -21,20 +21,44 @@ export const PHASE_0_PERMISSIONS = [
   "audit.read",
 ] as const;
 
-// Phase 1 slice 3 contributes class-arm + subject + class-subject permission
-// strings. These are reference-only until slice 13 wires the PermissionsGuard
-// and gathers the canonical Phase 1 permission rollup across all slices (per
-// the slice-13 entry in docs/modules/phase-1.md). Slices 1 and 2 deliberately
-// did NOT land their permission constants in code — slice 13 owns that
-// retroactive cleanup so every slice's strings arrive in one auditable diff.
+// Phase 1 canonical permission rollup. Slice 13 consolidates here every
+// permission string introduced across slices 1–12 — the earlier slices landed
+// their strings as reference-only `PHASE_1_SLICE_N_PERMISSIONS` constants (or,
+// for slices 1/2/5 and the AI-foundation reads, did not land them at all),
+// deferring the load-bearing wiring to this one auditable diff (per the
+// slice-13 entry in docs/modules/phase-1.md). This array is now the single
+// source of truth — it is granted to the `admin` role (minus the owner-only
+// deletes) in packages/db/prisma/seed-data.ts and enforced by the
+// PermissionsGuard. Mirrors docs/modules/phase-1.md "RBAC implementation →
+// New permission strings".
 //
-// `class-subject.update` is a slice-3 addition over the spec's enumeration
-// (docs/modules/phase-1.md line 1018, which lists only read/create/delete)
-// because the matrix UI's PATCH-isCore endpoint needs a permission to gate
-// against and modelling the toggle as delete+create has been ruled out — see
-// packages/types/src/class-subjects/update-class-subject.dto.ts. Tracked
-// against the running slice-3 spec-reconciliation list.
-export const PHASE_1_SLICE_3_PERMISSIONS = [
+// Notes carried forward from the per-slice constants:
+//   - `class-subject.update` is a slice-3 addition over the spec enumeration:
+//     the matrix UI's PATCH-isCore endpoint needs a permission to gate against
+//     (modelling the toggle as delete+create was ruled out).
+//   - `student.delete` is intentionally absent — owner-only hard-delete on
+//     history-bearing tables is deferred; withdraw/graduate/reactivate are the
+//     modelled lifecycle exits, gated by `student.deactivate`.
+//   - `teacher-profile.self.*` is the teacher self-service surface
+//     (GET/PATCH /teacher-profiles/me), granted to the `teacher` role.
+//   - `*.delete` on history-bearing tables (academic-year, term, enrollment)
+//     is owner-only — see OWNER_ONLY_PERMISSIONS below. teacher-assignment /
+//     teacher-profile / guardian / class-* deletes are admin-scoped (they
+//     leave history in audit_logs).
+export const PHASE_1_PERMISSIONS = [
+  // Academic structure
+  "academic-year.read",
+  "academic-year.create",
+  "academic-year.update",
+  "academic-year.delete",
+  "term.read",
+  "term.create",
+  "term.update",
+  "term.delete",
+  "class-level.read",
+  "class-level.create",
+  "class-level.update",
+  "class-level.delete",
   "class-arm.read",
   "class-arm.create",
   "class-arm.update",
@@ -47,62 +71,28 @@ export const PHASE_1_SLICE_3_PERMISSIONS = [
   "class-subject.create",
   "class-subject.update",
   "class-subject.delete",
-] as const;
+  "teacher-assignment.read",
+  "teacher-assignment.create",
+  "teacher-assignment.update",
+  "teacher-assignment.delete",
 
-// Phase 1 slice 4 contributes student permission strings. Reference-only
-// until slice 13 wires PermissionsGuard. `student.delete` is intentionally
-// absent — owner-only hard-delete is deferred (see docs/modules/phase-1.md
-// "Updated seeded roles": delete on history-bearing tables is owner-scoped
-// in slice 13). `student.deactivate` covers the named transitions
-// (withdraw / graduate / reactivate) — they change roster state without
-// removing rows. `student.import` lands with slice 6.
-export const PHASE_1_SLICE_4_PERMISSIONS = [
+  // Roster
   "student.read",
   "student.create",
   "student.update",
   "student.deactivate",
-] as const;
-
-// Phase 1 slice 6 contributes the student-import permission. Reference-only
-// until slice 13 wires PermissionsGuard — until then the imports controller
-// gates on owner/admin via assertUserActiveAndHasOneOf (same pattern as
-// every prior Phase 1 slice).
-export const PHASE_1_SLICE_6_PERMISSIONS = [
   "student.import",
-] as const;
-
-// Phase 1 slice 8 contributes the guardian-import permission. `teacher.import`
-// is deferred to slice 10 — the Invitation table can't carry staffNumber /
-// specialty per phase-1.md:478, so the spec's teacher-import shape needs
-// TeacherProfile (slice 10) to land first. cp1 design call captured in the
-// 2026-05-29 journal entry.
-export const PHASE_1_SLICE_8_PERMISSIONS = [
+  "guardian.read",
+  "guardian.create",
+  "guardian.update",
+  "guardian.delete",
   "guardian.import",
-] as const;
-
-// Phase 1 slice 9 contributes the enrollment permissions. Reference-only
-// until slice 13 wires PermissionsGuard. `enrollment.delete` is
-// owner-only per the slice 13 role table at phase-1.md:1086; the slice 9
-// service accepts owner|admin (the same belt-and-braces pattern every
-// prior Phase 1 slice uses) and slice 13 will tighten delete to owner.
-export const PHASE_1_SLICE_9_PERMISSIONS = [
   "enrollment.read",
   "enrollment.create",
   "enrollment.update",
   "enrollment.delete",
-] as const;
 
-// Phase 1 slice 10 contributes the teacher-profile + teacher-import
-// permissions. Reference-only until slice 13 wires PermissionsGuard — until
-// then the controller gates on owner/admin via assertUserActiveAndHasOneOf
-// (every prior Phase 1 slice uses this same belt-and-braces pattern). The
-// two `*.self.*` strings are the teacher self-service surface (GET/PATCH
-// /teacher-profiles/me) and are already granted to the minimal `teacher`
-// role seeded in slice 10's migration (per phase-1.md:1087). `teacher.import`
-// lands its endpoint in slice 10 cp2. `teacher-profile.delete` is the
-// soft-delete (via User.isActive) path — admin-scoped, not owner-only,
-// because it removes no history (the profile row is preserved).
-export const PHASE_1_SLICE_10_PERMISSIONS = [
+  // Staff
   "teacher-profile.read",
   "teacher-profile.create",
   "teacher-profile.update",
@@ -110,27 +100,27 @@ export const PHASE_1_SLICE_10_PERMISSIONS = [
   "teacher.import",
   "teacher-profile.self.read",
   "teacher-profile.self.update",
+
+  // AI foundation (Phase 5 extends)
+  "mastery.read",
+  "ai-interaction.read",
 ] as const;
 
-// Phase 1 slice 11 contributes the teacher-assignment permissions.
-// Reference-only until slice 13 wires PermissionsGuard — until then the
-// controller gates on owner/admin via assertUserActiveAndHasOneOf (every
-// prior Phase 1 slice uses this same belt-and-braces pattern). Note that
-// `teacher-assignment.read` is ALREADY granted to the minimal `teacher`
-// system role seeded in slice 10's migration (phase-1.md:1087) — the read-
-// scoped teacher endpoints land in slice 11 cp2; this CRUD set is the
-// admin-facing create/update/delete surface. `teacher-assignment.delete` is
-// admin-scoped (not owner-only): a deleted assignment leaves history in
-// audit_logs, so it is not a history-bearing hard-delete like
-// student/enrollment/academic-year.
-export const PHASE_1_SLICE_11_PERMISSIONS = [
-  "teacher-assignment.read",
-  "teacher-assignment.create",
-  "teacher-assignment.update",
-  "teacher-assignment.delete",
+// History-bearing hard-deletes are owner-only. The `admin` role seed is the
+// Phase 1 rollup MINUS these; the PermissionsGuard then denies admin on the
+// delete endpoints (owner passes via the `*` wildcard). `student.delete` is
+// not listed because it is not a permission at all (no endpoint exposed it).
+export const OWNER_ONLY_PERMISSIONS = [
+  "academic-year.delete",
+  "term.delete",
+  "enrollment.delete",
 ] as const;
 
-export const ALL_PERMISSIONS = [...PHASE_0_PERMISSIONS] as const;
+export const ALL_PERMISSIONS = [
+  ...PHASE_0_PERMISSIONS,
+  ...PHASE_1_PERMISSIONS,
+  /* extend per phase */
+] as const;
 
 export type Permission = (typeof ALL_PERMISSIONS)[number] | "*";
 

@@ -219,7 +219,10 @@ export class TermsService {
     id: string,
     reqCtx: RequestContext,
   ): Promise<void> {
-    await assertUserActiveAndHasOneOf(authCtx, ["owner", "admin"]);
+    // Owner-only: terms is history-bearing (see OWNER_ONLY_PERMISSIONS in
+    // @school-kit/types). The PermissionsGuard already denies admin via the
+    // term.delete permission; this service assert agrees as defense-in-depth.
+    await assertUserActiveAndHasOneOf(authCtx, ["owner"]);
 
     await withTenant(authCtx.schoolId, async (db) => {
       const existing = await db.term.findUnique({

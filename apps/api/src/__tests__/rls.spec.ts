@@ -1792,3 +1792,193 @@ describe("multi-tenant isolation — Phase 1 / Slice 12 (ai_interaction_logs)", 
     expect(rows).toHaveLength(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Phase 1 / Slice 9 isolation — enrollments
+//
+// Added in slice 13 (the Phase 1 close-out) to close the known gap: the
+// slice-9 enrollments table shipped its RLS policy but never got its block in
+// this spec (tracked in docs/deferred.md). Same five-assertion pattern as the
+// teacher_assignments block — enrollments has FK parents (student, term, year,
+// arm) so the setup builds the full chain per school. Closes acceptance #10
+// ("all 15 Phase 1 tables in the isolation spec").
+// ---------------------------------------------------------------------------
+
+describe("multi-tenant isolation — Phase 1 / Slice 9 (enrollments)", () => {
+  const runId = Math.random().toString(36).slice(2, 8);
+  let schoolA: { id: string };
+  let schoolB: { id: string };
+  let enrollmentA: { id: string };
+  let enrollmentB: { id: string };
+  // School A's relation targets, kept for the WITH CHECK mischief test.
+  let aTargets: {
+    studentId: string;
+    termId: string;
+    academicYearId: string;
+    classArmId: string;
+  };
+
+  // Build a level + arm + year + term + student for one school, then an
+  // enrollment tying them together. All inserts happen inside withTenant —
+  // every table here is FORCE-RLS'd.
+  async function buildEnrollment(
+    schoolId: string,
+    tag: string,
+  ): Promise<{
+    enrollmentId: string;
+    studentId: string;
+    termId: string;
+    academicYearId: string;
+    classArmId: string;
+  }> {
+    return withTenant(schoolId, async (db) => {
+      const level = await db.classLevel.create({
+        data: {
+          schoolId,
+          name: `${tag}-lvl-${runId}`,
+          code: `${tag}-lvl-${runId}`,
+          stage: "JSS",
+          orderIndex: 100,
+        },
+        select: { id: true },
+      });
+      const arm = await db.classArm.create({
+        data: {
+          schoolId,
+          classLevelId: level.id,
+          name: `${tag}-arm-${runId}`,
+          code: `${tag}-arm-${runId}`,
+        },
+        select: { id: true },
+      });
+      const year = await db.academicYear.create({
+        data: {
+          schoolId,
+          label: `${tag}-${runId}`,
+          startDate: new Date("2025-09-01"),
+          endDate: new Date("2026-07-31"),
+        },
+        select: { id: true },
+      });
+      const term = await db.term.create({
+        data: {
+          schoolId,
+          academicYearId: year.id,
+          sequence: 1,
+          name: "First Term",
+          startDate: new Date("2025-09-01"),
+          endDate: new Date("2025-12-15"),
+        },
+        select: { id: true },
+      });
+      const student = await db.student.create({
+        data: {
+          schoolId,
+          admissionNumber: `${tag}-adm-${runId}`,
+          firstName: "Enrol",
+          lastName: `${tag}-${runId}`,
+          dateOfBirth: new Date("2014-01-01"),
+          gender: "OTHER",
+        },
+        select: { id: true },
+      });
+      const enrollment = await db.enrollment.create({
+        data: {
+          schoolId,
+          studentId: student.id,
+          termId: term.id,
+          academicYearId: year.id,
+          classArmId: arm.id,
+        },
+        select: { id: true },
+      });
+      return {
+        enrollmentId: enrollment.id,
+        studentId: student.id,
+        termId: term.id,
+        academicYearId: year.id,
+        classArmId: arm.id,
+      };
+    });
+  }
+
+  beforeAll(async () => {
+    schoolA = await basePrisma.school.create({
+      data: { name: "School P1S9A", slug: `rls-p1s9a-${runId}` },
+      select: { id: true },
+    });
+    schoolB = await basePrisma.school.create({
+      data: { name: "School P1S9B", slug: `rls-p1s9b-${runId}` },
+      select: { id: true },
+    });
+
+    const a = await buildEnrollment(schoolA.id, "a");
+    const b = await buildEnrollment(schoolB.id, "b");
+    enrollmentA = { id: a.enrollmentId };
+    enrollmentB = { id: b.enrollmentId };
+    aTargets = {
+      studentId: a.studentId,
+      termId: a.termId,
+      academicYearId: a.academicYearId,
+      classArmId: a.classArmId,
+    };
+  });
+
+  afterAll(async () => {
+    if (schoolA?.id) {
+      await basePrisma.school.delete({ where: { id: schoolA.id } }).catch(() => undefined);
+    }
+    if (schoolB?.id) {
+      await basePrisma.school.delete({ where: { id: schoolB.id } }).catch(() => undefined);
+    }
+    await basePrisma.$disconnect();
+  });
+
+  it("School A sees its own enrollment only", async () => {
+    const rows = await withTenant(schoolA.id, (db) => db.enrollment.findMany());
+    const ids = rows.map((r) => r.id);
+    expect(ids).toContain(enrollmentA.id);
+    expect(ids).not.toContain(enrollmentB.id);
+  });
+
+  it("School B sees its own enrollment only", async () => {
+    const rows = await withTenant(schoolB.id, (db) => db.enrollment.findMany());
+    const ids = rows.map((r) => r.id);
+    expect(ids).toContain(enrollmentB.id);
+    expect(ids).not.toContain(enrollmentA.id);
+  });
+
+  it("findUnique across tenants returns null", async () => {
+    const leak = await withTenant(schoolA.id, (db) =>
+      db.enrollment.findUnique({ where: { id: enrollmentB.id } }),
+    );
+    expect(leak).toBeNull();
+  });
+
+  it("INSERT with another school's school_id fails the WITH CHECK clause", async () => {
+    // Mischief case: all relation ids are A's, but school_id = B. WITH CHECK
+    // rejects it as the second-line defence.
+    await expect(
+      withTenant(schoolA.id, (db) =>
+        db.enrollment.create({
+          data: {
+            schoolId: schoolB.id,
+            studentId: aTargets.studentId,
+            termId: aTargets.termId,
+            academicYearId: aTargets.academicYearId,
+            classArmId: aTargets.classArmId,
+          },
+        }),
+      ),
+    ).rejects.toThrow();
+  });
+
+  it("raw SQL with unset GUC returns zero rows from enrollments (FORCE RLS)", async () => {
+    const rows = await basePrisma.$transaction(async (tx) => {
+      return tx.$queryRaw<Array<{ id: string }>>`
+        SELECT id FROM enrollments WHERE id IN (${enrollmentA.id}, ${enrollmentB.id})
+      `;
+    });
+    expect(rows).toHaveLength(0);
+  });
+});

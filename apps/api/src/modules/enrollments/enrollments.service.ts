@@ -266,16 +266,17 @@ export class EnrollmentsService {
   }
 
   // ----------------------------------------------------------------------
-  // delete — owner-only (slice 13 will guard via PermissionsGuard; for now
-  // we accept owner or admin and document the intent). Audit row records
-  // the deletion.
+  // delete — owner-only: enrollments is history-bearing (see
+  // OWNER_ONLY_PERMISSIONS in @school-kit/types). The PermissionsGuard denies
+  // admin via the enrollment.delete permission; this service assert agrees as
+  // defense-in-depth. Audit row records the deletion.
   // ----------------------------------------------------------------------
   async delete(
     authCtx: AuthContext,
     id: string,
     reqCtx: RequestContext,
   ): Promise<void> {
-    await assertUserActiveAndHasOneOf(authCtx, ["owner", "admin"]);
+    await assertUserActiveAndHasOneOf(authCtx, ["owner"]);
 
     await withTenant(authCtx.schoolId, async (db) => {
       const existing = await db.enrollment.findUnique({

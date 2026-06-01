@@ -281,10 +281,13 @@ Format:
   invitations" item). Trigger: Phase 4 communications (Resend) — the bulk
   path should send each teacher their own accept email. (slice 10 cp2.)
 
-  - [ ] RLS isolation spec gap: slice 9 enrollments table never had its
+  - [x] RLS isolation spec gap: slice 9 enrollments table never had its
   RLS block added to apps/api/src/__tests__/rls.spec.ts. Discovered
   during slice 10 cp1 (which DID add teacher_profiles). Required for
   slice 13 acceptance #10 ("all Phase 1 tables in isolation spec").
+  DONE (slice 13): enrollments describe block added (5 assertions, same
+  pattern as teacher_assignments). All 15 Phase 1 tables now covered;
+  rls.spec.ts at 63 tests.
 
 - [ ] Single teacher invite via the UI needs a `roleKey` on `POST
   /users/invite`. Slice 10 cp3's `/staff/invite` form is ADMIN-ONLY:
@@ -324,3 +327,20 @@ Format:
   enable Server Components for SEO, smaller client bundle, server-
   side notFound() / redirect() flows. Cross-cutting refactor — likely
   Phase 4 or Phase 7. Discovered slice 11 cp3.
+
+- [x] Student create/edit form rejects BLANK optional fields. The form
+  (`apps/web/src/components/students/student-form.tsx`) validated raw form
+  values with `zodResolver(createStudentSchema)`, whose optional fields are
+  `.min(1)…optional()` / `.email()` / `.url()` — so an empty string `""` (the
+  default for an untouched input) failed validation. Most of those fields
+  rendered NO error message, so clicking "Create student" with only the
+  required fields filled silently did nothing. Broke acceptance #5's UI path
+  (a service-level create with omitted optionals works fine — that's why
+  slice-4 specs pass). Discovered by slice 13's
+  `e2e/tests/admin-roster-happy-path.spec.ts`.
+  RESOLVED on its own branch/PR `fix/empty-optional-forms` (merged before
+  slice 13): local `studentFormSchema` matching FormValues with optionals
+  allowing `""`, root + per-field errors, `""`→undefined on submit, zero
+  `as never`. Sibling forms (slice-5 guardian, slice-10 cp3 staff) audited
+  and already compliant. See the `#58` entry above for the full record.
+  (Discovered slice 13; fixed in fix/empty-optional-forms.)

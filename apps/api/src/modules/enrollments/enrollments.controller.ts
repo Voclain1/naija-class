@@ -31,15 +31,18 @@ import type { Request } from "express";
 import type { AuthContext } from "../../common/auth/auth-context";
 import { AuthGuard } from "../../common/auth/auth.guard";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
+import { Permissions } from "../../common/auth/permissions.decorator";
+import { PermissionsGuard } from "../../common/auth/permissions.guard";
 import { ZodValidationPipe } from "../../common/zod-validation.pipe";
 import { EnrollmentsService } from "./enrollments.service";
 
 @Controller("enrollments")
-@UseGuards(AuthGuard)
+@UseGuards(AuthGuard, PermissionsGuard)
 export class EnrollmentsController {
   constructor(private readonly service: EnrollmentsService) {}
 
   @Get()
+  @Permissions("enrollment.read")
   async list(
     @CurrentUser() authCtx: AuthContext,
     @Query(new ZodValidationPipe(listEnrollmentsQuerySchema))
@@ -49,6 +52,7 @@ export class EnrollmentsController {
   }
 
   @Get(":id")
+  @Permissions("enrollment.read")
   async findById(
     @CurrentUser() authCtx: AuthContext,
     @Param("id", new ParseUUIDPipe()) id: string,
@@ -58,6 +62,7 @@ export class EnrollmentsController {
 
   @Post()
   @HttpCode(201)
+  @Permissions("enrollment.create")
   async create(
     @CurrentUser() authCtx: AuthContext,
     @Body(new ZodValidationPipe(createEnrollmentSchema))
@@ -76,6 +81,7 @@ export class EnrollmentsController {
   // payload is safe (already-enrolled rows are counted in `skipped`).
   @Post("bulk")
   @HttpCode(201)
+  @Permissions("enrollment.create")
   async bulkCreate(
     @CurrentUser() authCtx: AuthContext,
     @Body(new ZodValidationPipe(bulkCreateEnrollmentSchema))
@@ -90,6 +96,7 @@ export class EnrollmentsController {
   }
 
   @Patch(":id")
+  @Permissions("enrollment.update")
   async update(
     @CurrentUser() authCtx: AuthContext,
     @Param("id", new ParseUUIDPipe()) id: string,
@@ -104,8 +111,11 @@ export class EnrollmentsController {
     });
   }
 
+  // Owner-only: enrollment is history-bearing (see OWNER_ONLY_PERMISSIONS).
+  // admin lacks enrollment.delete, so the guard rejects admin here.
   @Delete(":id")
   @HttpCode(204)
+  @Permissions("enrollment.delete")
   async delete(
     @CurrentUser() authCtx: AuthContext,
     @Param("id", new ParseUUIDPipe()) id: string,
