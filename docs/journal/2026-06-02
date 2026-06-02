@@ -1,0 +1,17 @@
+# 2026-06-02
+
+## Starting state
+Phase 1 closed (13/13) two days ago. Phase 2 spec on main (730 lines,
+phase-1.md fidelity, 9 slices, 23-day target). Working tree clean,
+on main.
+
+## Today's outcome
+Slice 1 of Phase 2 — plan-first against phase-2.md, then cp1 build.
+GradingScheme + GradingComponent + GradeBoundary models + migration
++ RLS + signup-tx seed + settings UI.
+
+## Decisions made
+- (capture as the day unfolds)
+
+## Tomorrow's first task
+- (fill at end of day)
