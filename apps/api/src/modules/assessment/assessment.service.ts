@@ -12,7 +12,9 @@ import {
   type AssessmentFeedResponse,
   type AssessmentScoreDto,
   type AssessmentWithScoresDto,
+  type BulkAssessmentScoreInput,
   type CreateAssessmentScoreInput,
+  type SignOffBulkInput,
   type UpdateAssessmentScoreInput,
 } from "@school-kit/types";
 
@@ -29,6 +31,7 @@ interface RequestContext {
 const AUDIT = {
   scoreCreate: "assessment-score.create",
   scoreUpdate: "assessment-score.update",
+  signOff: "assessment.sign-off",
 } as const;
 
 // The tenant-scoped Prisma handle (the `db` passed into withTenant's callback).
@@ -101,7 +104,7 @@ export class AssessmentService {
       });
 
       // h) audit (one row; the implicit sign-off unlock rides as metadata).
-      await this.writeAudit(db, authCtx, reqCtx, AUDIT.scoreCreate, saved.id, {
+      await this.writeAudit(db, authCtx, reqCtx, AUDIT.scoreCreate, "assessment_score", saved.id, {
         studentId: input.studentId,
         subjectId: input.subjectId,
         termId: input.termId,
@@ -161,7 +164,7 @@ export class AssessmentService {
         academicYearId: enrollment.academicYearId,
       });
 
-      await this.writeAudit(db, authCtx, reqCtx, AUDIT.scoreUpdate, saved.id, {
+      await this.writeAudit(db, authCtx, reqCtx, AUDIT.scoreUpdate, "assessment_score", saved.id, {
         studentId: existing.studentId,
         subjectId: existing.subjectId,
         termId: existing.termId,
@@ -218,56 +221,365 @@ export class AssessmentService {
         );
       }
 
-      const enrollments = await db.enrollment.findMany({
-        where: { termId: query.termId, classArmId: query.classArmId },
-        select: { student: { select: FEED_STUDENT_SELECT } },
+      return this.buildColumnFeed(db, query);
+    });
+  }
+
+  // =========================================================================
+  // POST /assessment-scores/bulk — one gradebook column save. ATOMIC
+  // all-or-nothing (Q2a): pre-validate every row, then upsert all + materialize
+  // one summary per distinct student in a single tx. Unlike the Phase-1 CSV
+  // import (deliberately per-row, partial-success), this is one interactive
+  // edit — any failure rolls the whole batch back.
+  // =========================================================================
+  async bulkUpsertScores(
+    authCtx: AuthContext,
+    input: BulkAssessmentScoreInput,
+    reqCtx: RequestContext,
+  ): Promise<AssessmentFeedResponse> {
+    await assertUserActiveAndHasOneOf(authCtx, ["owner", "admin", "teacher"]);
+
+    return withTenant(authCtx.schoolId, async (db) => {
+      const scoped = this.isTeacherScoped(await this.resolveRoleKeys(db, authCtx.userId));
+
+      // b) term once → academicYearId for the scope check.
+      const term = await db.term.findUnique({
+        where: { id: input.termId },
+        select: { academicYearId: true },
       });
-      const studentIds = enrollments.map((e) => e.student.id);
-
-      const [assessments, scores] = await Promise.all([
-        db.assessment.findMany({
-          where: { termId: query.termId, subjectId: query.subjectId, studentId: { in: studentIds } },
-          select: ASSESSMENT_SELECT,
-        }),
-        db.assessmentScore.findMany({
-          where: { termId: query.termId, subjectId: query.subjectId, studentId: { in: studentIds } },
-          select: SCORE_SELECT,
-        }),
-      ]);
-
-      const assessmentByStudent = new Map(assessments.map((a) => [a.studentId, a]));
-      const scoresByStudent = new Map<string, typeof scores>();
-      for (const s of scores) {
-        const list = scoresByStudent.get(s.studentId) ?? [];
-        list.push(s);
-        scoresByStudent.set(s.studentId, list);
+      if (!term) {
+        throw new ValidationError("Unknown term.", {
+          issues: [{ path: ["termId"], code: "unknown_term", message: "Unknown term." }],
+        });
       }
 
-      const rows = enrollments
-        .map((e) => e.student)
-        .sort((a, b) => a.lastName.localeCompare(b.lastName) || a.firstName.localeCompare(b.firstName))
-        .map((student) => {
-          const a = assessmentByStudent.get(student.id);
-          return {
-            student: {
-              id: student.id,
-              admissionNumber: student.admissionNumber,
-              firstName: student.firstName,
-              middleName: student.middleName,
-              lastName: student.lastName,
-            },
-            assessment: a ? toAssessmentDto(a) : null,
-            scores: (scoresByStudent.get(student.id) ?? []).map(toScoreDto),
-          };
-        });
+      // c) components: a column save spans several components (CA1/CA2/Exam) —
+      // resolve every referenced one ONCE; RLS scopes the lookup to this school.
+      const componentIds = [...new Set(input.rows.map((r) => r.componentId))];
+      const components = await db.gradingComponent.findMany({
+        where: { id: { in: componentIds } },
+        select: { id: true, weight: true },
+      });
+      const weightById = new Map(components.map((c) => [c.id, c.weight]));
 
-      return { data: rows };
+      // d) strict 0..weight across ALL rows up front — collect every issue, bind
+      // to the offending row. No writes attempted until all rows are valid.
+      const scoreIssues: Array<{ path: (string | number)[]; code: string; message: string }> = [];
+      input.rows.forEach((r, i) => {
+        const weight = weightById.get(r.componentId);
+        if (weight === undefined) {
+          scoreIssues.push({
+            path: ["rows", i, "componentId"],
+            code: "unknown_component",
+            message: "Unknown grading component.",
+          });
+          return;
+        }
+        const error = findScoreError(r.score, weight);
+        if (error) {
+          scoreIssues.push({ path: ["rows", i, "score"], code: "score_range", message: error });
+        }
+      });
+      if (scoreIssues.length > 0) {
+        throw new ValidationError("One or more scores are invalid.", { issues: scoreIssues });
+      }
+
+      // e) enrollments for ALL students in one query → classArmId + academicYearId.
+      const studentIds = [...new Set(input.rows.map((r) => r.studentId))];
+      const enrollByStudent = await this.loadEnrollmentsForTerm(db, input.termId, studentIds);
+
+      const enrollIssues: Array<{ path: (string | number)[]; code: string; message: string }> = [];
+      input.rows.forEach((r, i) => {
+        if (!enrollByStudent.has(r.studentId)) {
+          enrollIssues.push({
+            path: ["rows", i, "studentId"],
+            code: "not_enrolled",
+            message: "Student is not enrolled this term.",
+          });
+        }
+      });
+      if (enrollIssues.length > 0) {
+        throw new ValidationError("One or more students are not enrolled this term.", {
+          issues: enrollIssues,
+        });
+      }
+
+      // e') bulk teacher-scope pre-check (Q3b): one getTeacherScope call total.
+      if (scoped) {
+        const scope = await this.loadTeacherScope(db, authCtx.userId, term.academicYearId);
+        const scopeIssues: Array<{ path: (string | number)[]; code: string; message: string }> = [];
+        input.rows.forEach((r, i) => {
+          const arm = enrollByStudent.get(r.studentId)!.classArmId;
+          const subjects = scope.subjectsByArm.get(arm) ?? [];
+          if (!subjects.some((s) => s.id === input.subjectId)) {
+            scopeIssues.push({
+              path: ["rows", i],
+              code: "out_of_scope",
+              message: "This class or subject is not in your assigned scope.",
+            });
+          }
+        });
+        if (scopeIssues.length > 0) {
+          throw new NotFoundError("This class or subject is not in your assigned scope.", {
+            issues: scopeIssues,
+          });
+        }
+      }
+
+      // f) all validation passed — atomic write of every row.
+      for (const r of input.rows) {
+        await db.assessmentScore.upsert({
+          where: {
+            schoolId_studentId_subjectId_termId_componentId: {
+              schoolId: authCtx.schoolId,
+              studentId: r.studentId,
+              subjectId: input.subjectId,
+              termId: input.termId,
+              componentId: r.componentId,
+            },
+          },
+          create: {
+            schoolId: authCtx.schoolId,
+            studentId: r.studentId,
+            subjectId: input.subjectId,
+            termId: input.termId,
+            componentId: r.componentId,
+            score: r.score,
+            enteredBy: authCtx.userId,
+          },
+          update: { score: r.score, enteredBy: authCtx.userId, enteredAt: new Date() },
+          select: { id: true },
+        });
+      }
+
+      // materialize ONE summary per distinct student (not per row).
+      let clearedSignOffCount = 0;
+      for (const studentId of studentIds) {
+        const enrollment = enrollByStudent.get(studentId)!;
+        const { clearedSignOff } = await this.materializeSummary(db, authCtx.schoolId, {
+          studentId,
+          subjectId: input.subjectId,
+          termId: input.termId,
+          classArmId: enrollment.classArmId,
+          academicYearId: enrollment.academicYearId,
+        });
+        if (clearedSignOff) clearedSignOffCount += 1;
+      }
+
+      // g) single audit row (Phase-1 bulk convention).
+      const classArmIds = [...new Set([...enrollByStudent.values()].map((e) => e.classArmId))];
+      await this.writeAudit(db, authCtx, reqCtx, AUDIT.scoreCreate, "assessment_score", input.termId, {
+        bulk: true,
+        termId: input.termId,
+        subjectId: input.subjectId,
+        classArmId: classArmIds[0] ?? null,
+        count: input.rows.length,
+        clearedSignOffCount,
+      });
+
+      // h) return the refreshed column feed (one arm — a column is one arm).
+      return this.buildColumnFeed(db, {
+        termId: input.termId,
+        classArmId: classArmIds[0]!,
+        subjectId: input.subjectId,
+      });
+    });
+  }
+
+  // =========================================================================
+  // POST /assessments/:id/sign-off — subject teacher signs off one
+  // (student × subject). Requires the column fully scored.
+  // =========================================================================
+  async signOff(
+    authCtx: AuthContext,
+    id: string,
+    reqCtx: RequestContext,
+  ): Promise<AssessmentDto> {
+    await assertUserActiveAndHasOneOf(authCtx, ["owner", "admin", "teacher"]);
+
+    return withTenant(authCtx.schoolId, async (db) => {
+      const scoped = this.isTeacherScoped(await this.resolveRoleKeys(db, authCtx.userId));
+
+      const row = await db.assessment.findUnique({
+        where: { id },
+        select: {
+          id: true,
+          studentId: true,
+          subjectId: true,
+          termId: true,
+          classArmId: true,
+          academicYearId: true,
+        },
+      });
+      if (!row) throw new NotFoundError("Assessment not found.");
+
+      if (scoped) {
+        await this.assertSubjectInScope(db, authCtx.userId, row.classArmId, row.subjectId, row.academicYearId);
+      }
+
+      await this.assertColumnFullyScored(db, row.studentId, row.subjectId, row.termId);
+
+      const updated = await db.assessment.update({
+        where: { id },
+        data: { subjectSignedOffAt: new Date(), subjectSignedOffBy: authCtx.userId },
+        select: ASSESSMENT_SELECT,
+      });
+
+      await this.writeAudit(db, authCtx, reqCtx, AUDIT.signOff, "assessment", id, {
+        studentId: row.studentId,
+        subjectId: row.subjectId,
+        termId: row.termId,
+      });
+
+      return toAssessmentDto(updated);
+    });
+  }
+
+  // =========================================================================
+  // POST /assessments/sign-off/bulk — sign off a whole column at once.
+  // =========================================================================
+  async signOffColumn(
+    authCtx: AuthContext,
+    input: SignOffBulkInput,
+    reqCtx: RequestContext,
+  ): Promise<AssessmentDto[]> {
+    await assertUserActiveAndHasOneOf(authCtx, ["owner", "admin", "teacher"]);
+
+    return withTenant(authCtx.schoolId, async (db) => {
+      const scoped = this.isTeacherScoped(await this.resolveRoleKeys(db, authCtx.userId));
+
+      if (scoped) {
+        const term = await db.term.findUnique({
+          where: { id: input.termId },
+          select: { academicYearId: true },
+        });
+        await this.assertSubjectInScope(
+          db,
+          authCtx.userId,
+          input.classArmId,
+          input.subjectId,
+          term?.academicYearId,
+        );
+      }
+
+      const enrollments = await db.enrollment.findMany({
+        where: { termId: input.termId, classArmId: input.classArmId },
+        select: { studentId: true },
+      });
+      const studentIds = enrollments.map((e) => e.studentId);
+
+      // Every enrolled student's column must be fully scored before sign-off.
+      const componentIds = (
+        await db.gradingComponent.findMany({ select: { id: true } })
+      ).map((c) => c.id);
+      const scores = await db.assessmentScore.findMany({
+        where: { termId: input.termId, subjectId: input.subjectId, studentId: { in: studentIds } },
+        select: { studentId: true, componentId: true },
+      });
+      const scoredByStudent = new Map<string, Set<string>>();
+      for (const s of scores) {
+        const set = scoredByStudent.get(s.studentId) ?? new Set<string>();
+        set.add(s.componentId);
+        scoredByStudent.set(s.studentId, set);
+      }
+
+      const issues: Array<{ path: (string | number)[]; code: string; message: string }> = [];
+      for (const studentId of studentIds) {
+        const scored = scoredByStudent.get(studentId) ?? new Set<string>();
+        for (const componentId of componentIds) {
+          if (!scored.has(componentId)) {
+            issues.push({
+              path: ["students", studentId, "componentId"],
+              code: "missing_component",
+              message: "All components must be scored before sign-off.",
+            });
+          }
+        }
+      }
+      if (issues.length > 0) {
+        throw new ValidationError("All students must be fully scored before sign-off.", { issues });
+      }
+
+      const now = new Date();
+      await db.assessment.updateMany({
+        where: { termId: input.termId, classArmId: input.classArmId, subjectId: input.subjectId },
+        data: { subjectSignedOffAt: now, subjectSignedOffBy: authCtx.userId },
+      });
+
+      const updated = await db.assessment.findMany({
+        where: { termId: input.termId, classArmId: input.classArmId, subjectId: input.subjectId },
+        select: ASSESSMENT_SELECT,
+      });
+
+      await this.writeAudit(db, authCtx, reqCtx, AUDIT.signOff, "assessment", input.classArmId, {
+        bulk: true,
+        termId: input.termId,
+        classArmId: input.classArmId,
+        subjectId: input.subjectId,
+        count: updated.length,
+      });
+
+      return updated.map(toAssessmentDto);
     });
   }
 
   // =========================================================================
   // Internals
   // =========================================================================
+
+  // Build the (arm × subject × term) gradebook column: one row per enrolled
+  // student with their summary + per-component scores. Shared by GET /assessments
+  // and the bulk score save's response. No N+1: one enrollment query + one
+  // assessment query + one score query.
+  private async buildColumnFeed(
+    db: TenantDb,
+    query: { termId: string; classArmId: string; subjectId: string },
+  ): Promise<AssessmentFeedResponse> {
+    const enrollments = await db.enrollment.findMany({
+      where: { termId: query.termId, classArmId: query.classArmId },
+      select: { student: { select: FEED_STUDENT_SELECT } },
+    });
+    const studentIds = enrollments.map((e) => e.student.id);
+
+    const [assessments, scores] = await Promise.all([
+      db.assessment.findMany({
+        where: { termId: query.termId, subjectId: query.subjectId, studentId: { in: studentIds } },
+        select: ASSESSMENT_SELECT,
+      }),
+      db.assessmentScore.findMany({
+        where: { termId: query.termId, subjectId: query.subjectId, studentId: { in: studentIds } },
+        select: SCORE_SELECT,
+      }),
+    ]);
+
+    const assessmentByStudent = new Map(assessments.map((a) => [a.studentId, a]));
+    const scoresByStudent = new Map<string, typeof scores>();
+    for (const s of scores) {
+      const list = scoresByStudent.get(s.studentId) ?? [];
+      list.push(s);
+      scoresByStudent.set(s.studentId, list);
+    }
+
+    const rows = enrollments
+      .map((e) => e.student)
+      .sort((a, b) => a.lastName.localeCompare(b.lastName) || a.firstName.localeCompare(b.firstName))
+      .map((student) => {
+        const a = assessmentByStudent.get(student.id);
+        return {
+          student: {
+            id: student.id,
+            admissionNumber: student.admissionNumber,
+            firstName: student.firstName,
+            middleName: student.middleName,
+            lastName: student.lastName,
+          },
+          assessment: a ? toAssessmentDto(a) : null,
+          scores: (scoresByStudent.get(student.id) ?? []).map(toScoreDto),
+        };
+      });
+
+    return { data: rows };
+  }
 
   private async resolveRoleKeys(db: TenantDb, userId: string): Promise<string[]> {
     const grants = await db.userRole.findMany({
@@ -283,6 +595,56 @@ export class AssessmentService {
   private isTeacherScoped(roleKeys: string[]): boolean {
     const privileged = roleKeys.includes("owner") || roleKeys.includes("admin");
     return !privileged && roleKeys.includes("teacher");
+  }
+
+  // Thin seams the bulk path uses ONCE each — extracted so the N+1-prevention
+  // test can spy and assert exactly one call regardless of batch size.
+  private async loadTeacherScope(db: TenantDb, userId: string, academicYearId?: string) {
+    return getTeacherScope(db, userId, academicYearId);
+  }
+
+  private async loadEnrollmentsForTerm(
+    db: TenantDb,
+    termId: string,
+    studentIds: string[],
+  ): Promise<Map<string, { classArmId: string; academicYearId: string }>> {
+    const enrollments = await db.enrollment.findMany({
+      where: { termId, studentId: { in: studentIds } },
+      select: { studentId: true, classArmId: true, academicYearId: true },
+    });
+    return new Map(
+      enrollments.map((e) => [e.studentId, { classArmId: e.classArmId, academicYearId: e.academicYearId }]),
+    );
+  }
+
+  // Sign-off gate: every component in the school's scheme must have a score for
+  // this (student, subject, term). Missing components → ValidationError listing
+  // each gap.
+  private async assertColumnFullyScored(
+    db: TenantDb,
+    studentId: string,
+    subjectId: string,
+    termId: string,
+  ): Promise<void> {
+    const componentIds = (await db.gradingComponent.findMany({ select: { id: true } })).map((c) => c.id);
+    const scored = new Set(
+      (
+        await db.assessmentScore.findMany({
+          where: { studentId, subjectId, termId },
+          select: { componentId: true },
+        })
+      ).map((s) => s.componentId),
+    );
+    const missing = componentIds.filter((id) => !scored.has(id));
+    if (missing.length > 0) {
+      throw new ValidationError("All components must be scored before sign-off.", {
+        issues: missing.map((componentId) => ({
+          path: ["rows", componentId],
+          code: "missing_component",
+          message: "All components must be scored before sign-off.",
+        })),
+      });
+    }
   }
 
   private async requireComponentWeight(
@@ -437,6 +799,7 @@ export class AssessmentService {
     authCtx: AuthContext,
     reqCtx: RequestContext,
     action: string,
+    entityType: string,
     entityId: string,
     metadata: Prisma.InputJsonValue,
   ): Promise<void> {
@@ -445,7 +808,7 @@ export class AssessmentService {
         schoolId: authCtx.schoolId,
         userId: authCtx.userId,
         action,
-        entityType: "assessment_score",
+        entityType,
         entityId,
         ipAddress: reqCtx.ipAddress,
         metadata,

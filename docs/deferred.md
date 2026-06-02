@@ -344,3 +344,19 @@ Format:
   `as never`. Sibling forms (slice-5 guardian, slice-10 cp3 staff) audited
   and already compliant. See the `#58` entry above for the full record.
   (Discovered slice 13; fixed in fix/empty-optional-forms.)
+- [ ] Grading-scheme "reset scores" / unfreeze path — once any AssessmentScore
+  exists for a school, the GradingService freeze guard (Phase 2 / Slice 2 cp3)
+  blocks all component create/update/delete/replace, because changing a weight
+  or the component set would silently corrupt every already-materialized
+  Assessment total (phase-2.md "score aggregation cascading wrong if
+  GradingComponent.weight changes mid-term"). The invariant is deliberately
+  conservative (ANY score, school-wide — not "active term only") to categorically
+  prevent the retroactive-recompute footgun. The unfreeze is therefore an
+  explicit, audited admin action — e.g. `POST /grading-scheme/reset` (owner-only)
+  that deletes the school's AssessmentScores + their Assessment summaries inside
+  one audited tx, returning the scheme to an editable state. The freeze error
+  message points at this path ("an admin must reset scores first (audited)").
+  NOT built in slice 2 — trigger is the first pilot that genuinely needs to
+  re-weight a scheme after marks were entered (rare; most schools lock the
+  scheme before the term starts). When built, it must be a single audited
+  mutation, not a silent cascade.

@@ -13,12 +13,17 @@ import {
 } from "@nestjs/common";
 import {
   assessmentFeedQuerySchema,
+  bulkAssessmentScoreSchema,
   createAssessmentScoreSchema,
+  signOffBulkSchema,
   updateAssessmentScoreSchema,
+  type AssessmentDto,
   type AssessmentFeedQuery,
   type AssessmentFeedResponse,
   type AssessmentWithScoresDto,
+  type BulkAssessmentScoreInput,
   type CreateAssessmentScoreInput,
+  type SignOffBulkInput,
   type UpdateAssessmentScoreInput,
 } from "@school-kit/types";
 import type { Request } from "express";
@@ -54,6 +59,18 @@ export class AssessmentScoresController {
     return this.service.createScore(authCtx, dto, reqContext(ip, req));
   }
 
+  // Bulk column save — atomic all-or-nothing. Returns the refreshed feed.
+  @Post("bulk")
+  @HttpCode(200)
+  async bulk(
+    @Body(new ZodValidationPipe(bulkAssessmentScoreSchema)) dto: BulkAssessmentScoreInput,
+    @CurrentUser() authCtx: AuthContext,
+    @Ip() ip: string,
+    @Req() req: Request,
+  ): Promise<AssessmentFeedResponse> {
+    return this.service.bulkUpsertScores(authCtx, dto, reqContext(ip, req));
+  }
+
   @Patch(":id")
   async update(
     @Param("id") id: string,
@@ -80,6 +97,30 @@ export class AssessmentsController {
     @CurrentUser() authCtx: AuthContext,
   ): Promise<AssessmentFeedResponse> {
     return this.service.getFeed(authCtx, query);
+  }
+
+  // Bulk column sign-off — declared before ":id/sign-off" for clarity (the
+  // patterns don't collide: "sign-off/bulk" vs ":id/sign-off").
+  @Post("sign-off/bulk")
+  @HttpCode(200)
+  async signOffColumn(
+    @Body(new ZodValidationPipe(signOffBulkSchema)) dto: SignOffBulkInput,
+    @CurrentUser() authCtx: AuthContext,
+    @Ip() ip: string,
+    @Req() req: Request,
+  ): Promise<AssessmentDto[]> {
+    return this.service.signOffColumn(authCtx, dto, reqContext(ip, req));
+  }
+
+  @Post(":id/sign-off")
+  @HttpCode(200)
+  async signOff(
+    @Param("id") id: string,
+    @CurrentUser() authCtx: AuthContext,
+    @Ip() ip: string,
+    @Req() req: Request,
+  ): Promise<AssessmentDto> {
+    return this.service.signOff(authCtx, id, reqContext(ip, req));
   }
 
   @Get(":id")

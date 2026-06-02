@@ -103,6 +103,7 @@ export class GradingService {
   ): Promise<GradingComponentDto> {
     await assertUserActiveAndHasOneOf(authCtx, ["owner", "admin"]);
     return withTenant(authCtx.schoolId, async (db) => {
+      await this.assertSchemeNotFrozen(db);
       const scheme = await this.requireSchemeId(db);
 
       let created;
@@ -147,6 +148,7 @@ export class GradingService {
   ): Promise<GradingComponentDto> {
     await assertUserActiveAndHasOneOf(authCtx, ["owner", "admin"]);
     return withTenant(authCtx.schoolId, async (db) => {
+      await this.assertSchemeNotFrozen(db);
       const existing = await db.gradingComponent.findUnique({
         where: { id },
         select: { id: true },
@@ -193,6 +195,7 @@ export class GradingService {
   ): Promise<void> {
     await assertUserActiveAndHasOneOf(authCtx, ["owner", "admin"]);
     await withTenant(authCtx.schoolId, async (db) => {
+      await this.assertSchemeNotFrozen(db);
       const existing = await db.gradingComponent.findUnique({
         where: { id },
         select: { id: true, key: true },
@@ -227,6 +230,7 @@ export class GradingService {
   ): Promise<GradingSchemeDto> {
     await assertUserActiveAndHasOneOf(authCtx, ["owner", "admin"]);
     return withTenant(authCtx.schoolId, async (db) => {
+      await this.assertSchemeNotFrozen(db);
       const schemeId = await this.requireSchemeId(db);
 
       await db.gradingComponent.deleteMany({ where: { schemeId } });
@@ -371,6 +375,27 @@ export class GradingService {
     const scheme = await db.gradingScheme.findFirst({ select: { id: true } });
     if (!scheme) throw new NotFoundError("Grading scheme not found.");
     return scheme.id;
+  }
+
+  // FREEZE GUARD (Phase 2 / Slice 2 cp3 — phase-2.md "score aggregation
+  // cascading wrong if GradingComponent.weight changes mid-term"). Once ANY
+  // assessment_score exists for the school, the component set is frozen: editing
+  // a weight or adding/removing a component would silently corrupt every
+  // already-materialized total. The invariant is deliberately SCHOOL-WIDE and
+  // conservative (not "active term only") to categorically prevent the
+  // retroactive-recompute footgun. A fast existence check (findFirst, indexed on
+  // school_id) — RLS scopes it to this school, so one school's scores never
+  // freeze another's scheme. Boundary edits are NOT affected (they change letter
+  // resolution, not score validation). The audited "reset scores" unfreeze path
+  // is deferred (see docs/deferred.md).
+  private async assertSchemeNotFrozen(db: TenantDb): Promise<void> {
+    const anyScore = await db.assessmentScore.findFirst({ select: { id: true } });
+    if (anyScore) {
+      throw new ValidationError(
+        "This scheme is frozen because scores have been entered. To change the scheme, an admin must reset scores first (audited).",
+        { issues: [{ path: "components", code: "scheme_frozen", message: "Scheme is frozen — scores exist." }] },
+      );
+    }
   }
 
   // Whole-set weight invariant. Throws ValidationError (rolling back the
