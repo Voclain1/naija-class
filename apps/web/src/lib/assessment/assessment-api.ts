@@ -7,7 +7,12 @@
 // cp1 wires the read path (getGradebookFeed). The write wrappers
 // (bulkSaveScores, signOffColumn) land in cp2.
 
-import type { AssessmentFeedResponse } from "@school-kit/types";
+import type {
+  AssessmentDto,
+  AssessmentFeedResponse,
+  BulkAssessmentScoreInput,
+  SignOffBulkInput,
+} from "@school-kit/types";
 
 import { apiFetch } from "../api-client";
 
@@ -21,5 +26,27 @@ export function getGradebookFeed(
   const params = new URLSearchParams({ termId, classArmId, subjectId });
   return apiFetch<AssessmentFeedResponse>(`/assessments?${params.toString()}`, {
     method: "GET",
+  });
+}
+
+// POST /assessment-scores/bulk — one atomic column save. Returns the refreshed
+// feed (with re-materialized totals/grades) on 200; throws ApiError carrying
+// { issues: [{ path: ['rows', i, 'score'], message }] } in `details` on 400.
+export function bulkSaveScores(
+  input: BulkAssessmentScoreInput,
+): Promise<AssessmentFeedResponse> {
+  return apiFetch<AssessmentFeedResponse>("/assessment-scores/bulk", {
+    method: "POST",
+    body: input,
+  });
+}
+
+// POST /assessments/sign-off/bulk — sign off the whole column. Returns the
+// updated assessments on 200; throws ApiError with a per-student missing-score
+// list in `details` on 400 (when the column isn't fully scored).
+export function signOffColumn(input: SignOffBulkInput): Promise<AssessmentDto[]> {
+  return apiFetch<AssessmentDto[]>("/assessments/sign-off/bulk", {
+    method: "POST",
+    body: input,
   });
 }
