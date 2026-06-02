@@ -10,7 +10,78 @@ Slice 12 — plan-first then cp1. MasteryRecord + AIInteractionLog
 tables. Thin slice setting up Phase 5's AI architecture foundation.
 
 ## Decisions made
-- (capture as the day unfolds)
+Slice 12 + slice 13 closed in the morning → **Phase 1 is DONE** (13/13).
+The afternoon was a **plan-first Phase 2 design session**. No code written;
+the output is `docs/modules/phase-2.md` (written at phase-1.md fidelity).
+That doc is the source of truth for every Phase 2 slice — future slices
+read from it, NOT from this conversation.
+
+### LOCKED Phase 2 design decisions (no Q-decisions — settled today)
+
+**8 new tables total.**
+
+Grading model (5):
+- `GradingScheme` — per-school, exactly one per school (`@@unique([schoolId])`).
+- `GradingComponent` — N per scheme (CA1, CA2, Project, Exam, Practical…),
+  each weight + label + order; weights MUST sum to 100, validated atomically
+  at write.
+- `GradeBoundary` — per-school letter↔range map; WAEC scale pre-seeded at
+  school creation, editable. A1=75–100, B2=70–74, B3=65–69, C4=60–64,
+  C5=55–59, C6=50–54, D7=45–49, E8=40–44, F9=0–39.
+- `AssessmentScore` — one row per student×subject×term×component; STRICT
+  validation: score ∈ [0, component.weight] (scores stored already-weighted).
+- `Assessment` — denormalized summary student×subject×term; totalScore,
+  letterGrade, classPosition, subjectPosition; materialized on write.
+
+Attendance model (2):
+- `AttendanceRecord` — daily, UNIVERSAL (no opt-in); one row per student×date;
+  PRESENT/ABSENT/LATE/EXCUSED + markedBy/markedAt; upsert-the-day.
+- `SubjectAttendanceRecord` — subject-period, SEPARATE table, OPT-IN via
+  `School.subjectAttendanceEnabled` (boolean added in slice 8 alongside the
+  table). status + markedBy/markedAt + subjectId + period.
+
+Report card model (1):
+- `ReportCard` — MATERIALIZED artifact (not live-rendered); one row per
+  student×term; PDF via Puppeteer/headless-Chrome → R2, `artifactUrl` on row;
+  BullMQ batch render at term end. HYBRID approval: granular per-(student×
+  subject) subject-teacher sign-off (recommended shape = two columns on
+  `Assessment`, NOT a separate table — keeps us at 8) + batch per-(arm×term)
+  form-teacher review → principal approval → release. States: DRAFT →
+  SUBJECT_REVIEWED → FORM_REVIEWED → PRINCIPAL_APPROVED → RELEASED (arm
+  advances as a unit; reopen is audited). Comments at 3 grains — subjectComment
+  (Assessment), formTeacherComment (ReportCard, per student-term), principalNote
+  (ReportCard, per arm-term) — manual text in Phase 2, AI-hook-ready for Phase 5
+  (plain text columns, no AI-specific schema).
+
+Close-out Scope B (slice 9): RBAC rollup (`PHASE_2_PERMISSIONS` →
+PermissionsGuard), audit verification (every mutation audits), RLS spec
+extended to all 8 tables (23 total), E2E rollup (critical-path + form-coverage
++ cross-tenant/teacher-scope walks — the form-coverage tier categorically
+catches the slice-4 form-class bug pattern).
+
+### Slice breakdown sketch (→ formalized in phase-2.md)
+1. GradingScheme + GradingComponent + GradeBoundary (settings + seed-on-signup)
+2. Assessment + AssessmentScore + score-entry API (strict validation)
+3. Gradebook grid UI (teacher)
+4. Aggregation + positions (test-first)
+5. Report card materialization + Puppeteer PDF (heaviest, 3–4 cps)
+6. Report card approval workflow
+7. Daily attendance (universal)
+8. Subject-period attendance (opt-in)
+9. Phase 2 close (RBAC + audit + RLS + Scope B E2E)
+
+### Headline risks captured
+- Puppeteer at fly.io memory budget → pooled single browser, concurrency
+  cap 1–2, page recycle, hard timeout; slice-5 acceptance gate on a 40-card
+  batch, external render service as deferred fallback.
+- Score aggregation cascading wrong if `GradingComponent.weight` changes
+  mid-term → scheme is FROZEN per term once any AssessmentScore exists; weight
+  change requires an audited "reset term scores" path (deferred).
+- SECURITY DEFINER count stays 4; seeding rides the existing signup tx
+  (NOT withTenant), same as Phase 1 ClassLevel seed.
 
 ## Tomorrow's first task
-- (fill at end of day)
+- Start Phase 2 slice 1 (GradingScheme + GradingComponent + GradeBoundary):
+  read `docs/modules/phase-2.md` slice-1 sections + `CLAUDE.md`, write the
+  service spec first (sum-to-100 + tile-0–100 invariants), then models +
+  migration + RLS + seed-on-signup + `/settings/grading` UI.
