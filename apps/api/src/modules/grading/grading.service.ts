@@ -44,8 +44,12 @@ export class GradingService {
   // Scheme
   // =========================================================================
 
+  // READS are open to teachers too (Phase 2 / Slice 3): the gradebook grid needs
+  // the scheme's components (column labels + weights) to render and validate
+  // score entry. Scheme/component/boundary config is non-sensitive school setup,
+  // not student PII. MUTATIONS below stay owner/admin-only (the settings UI).
   async getScheme(authCtx: AuthContext): Promise<GradingSchemeDto> {
-    await assertUserActiveAndHasOneOf(authCtx, ["owner", "admin"]);
+    await assertUserActiveAndHasOneOf(authCtx, ["owner", "admin", "teacher"]);
     return withTenant(authCtx.schoolId, async (db) => {
       const scheme = await db.gradingScheme.findFirst({ select: SCHEME_SELECT });
       if (!scheme) throw new NotFoundError("Grading scheme not found.");

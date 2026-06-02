@@ -2,6 +2,7 @@
 
 import {
   BookOpen,
+  ClipboardList,
   LayoutDashboard,
   UserCircle,
   type LucideIcon,
@@ -17,13 +18,14 @@ interface NavItem {
   icon: LucideIcon;
 }
 
-// Slice 11 cp3 — the teacher portal's MINIMAL nav. Deliberately NOT the admin
-// sidebar: a teacher sees only their own surfaces (no Students / Staff /
-// Academics / Settings IA). Three items, all enabled — the whole teacher
-// portal in Phase 1.
+// The teacher portal's MINIMAL nav. Deliberately NOT the admin sidebar: a
+// teacher sees only their own surfaces (no Students / Staff / Academics /
+// Settings IA). Dashboard / Classes / Profile shipped in slice 11 cp3;
+// Gradebook added in Phase 2 / Slice 3.
 const NAV_ITEMS: NavItem[] = [
   { label: "Dashboard", href: "/teacher/dashboard", icon: LayoutDashboard },
   { label: "Classes", href: "/teacher/classes", icon: BookOpen },
+  { label: "Gradebook", href: "/teacher/gradebook", icon: ClipboardList },
   { label: "Profile", href: "/teacher/profile", icon: UserCircle },
 ];
 

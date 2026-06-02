@@ -36,11 +36,24 @@ export interface TeacherScopeSubjectDto {
 // endpoint, not student PII. (Student PII stays narrow on the roster — see
 // TeacherRosterStudentDto.)
 //
+// The school's CURRENT term (Term.isCurrent), or null if no term is marked
+// current yet. Added in Phase 2 / Slice 3 cp1: the teacher gradebook needs a
+// termId to read/write scores, but `term.read` is admin-gated and teachers
+// don't hold it — so the current term rides on the teacher's one-stop context
+// endpoint (GET /teacher-scope/me) rather than adding a new permission/route.
+// The gradebook is current-term-only in slice 3.
+export interface TeacherCurrentTermDto {
+  id: string;
+  name: string;
+  sequence: number;
+}
+
 // subjectsByArm is a plain object on the wire (the helper builds a Map; the
 // service converts to Record<armId, TeacherScopeSubjectDto[]>).
 export interface TeacherScopeDto {
   classArms: TeacherScopeArmDto[];
   subjectsByArm: Record<string, TeacherScopeSubjectDto[]>;
+  currentTerm: TeacherCurrentTermDto | null;
 }
 
 // Trimmed roster row for the per-arm student list. Deliberately a SUBSET of

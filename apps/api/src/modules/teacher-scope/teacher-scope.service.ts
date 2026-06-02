@@ -30,10 +30,18 @@ export class TeacherScopeService {
 
     return withTenant(authCtx.schoolId, async (db) => {
       const scope = await getTeacherScope(db, authCtx.userId);
+      // Slice 3 cp1: the gradebook needs a termId but teachers can't call the
+      // admin-gated term endpoints, so the current term rides on this context
+      // read. RLS scopes the lookup to the school; null when none is set.
+      const currentTerm = await db.term.findFirst({
+        where: { isCurrent: true },
+        select: { id: true, name: true, sequence: true },
+      });
       return {
         classArms: scope.classArms,
         // Map → plain Record for the JSON wire form.
         subjectsByArm: Object.fromEntries(scope.subjectsByArm),
+        currentTerm,
       };
     });
   }
