@@ -7,6 +7,7 @@ import { HttpExceptionFilter } from "./common/http-exception.filter";
 import { QueueModule } from "./common/queue";
 import { StorageModule } from "./common/storage";
 import { AcademicYearsModule } from "./modules/academic-years/academic-years.module";
+import { AssessmentModule } from "./modules/assessment/assessment.module";
 import { AuthModule } from "./modules/auth/auth.module";
 import { ClassArmsModule } from "./modules/class-arms/class-arms.module";
 import { ClassLevelsModule } from "./modules/class-levels/class-levels.module";
@@ -62,6 +63,7 @@ const isProd = process.env.NODE_ENV === "production";
     TeacherScopeModule,
     ImportsModule,
     GradingModule,
+    AssessmentModule,
     ...(isProd ? [] : [DebugModule]),
   ],
   controllers: [HealthController],
