@@ -228,8 +228,22 @@ describe("AssessmentService (cp2 — score entry + materialization)", () => {
     await assign(schoolId, { teacherId, classArmId: armId, subjectId, academicYearId: yearId });
     const studentId = await enroll(schoolId, { classArmId: armId, termId, academicYearId: yearId, suffix });
     const ca1 = await getComponent(schoolId, "ca1");
+    const ca2 = await getComponent(schoolId, "ca2");
     const exam = await getComponent(schoolId, "exam");
-    return { schoolId, ownerId, teacherId, armId, subjectId, yearId, termId, studentId, ca1, exam };
+    return { schoolId, ownerId, teacherId, armId, subjectId, yearId, termId, studentId, ca1, ca2, exam };
+  }
+
+  // Score all three default components for a student via the bulk path, so the
+  // column is complete and eligible for sign-off.
+  function fullColumn(
+    f: { studentId: string; ca1: { id: string }; ca2: { id: string }; exam: { id: string } },
+    studentId = f.studentId,
+  ) {
+    return [
+      { studentId, componentId: f.ca1.id, score: 15 },
+      { studentId, componentId: f.ca2.id, score: 15 },
+      { studentId, componentId: f.exam.id, score: 50 },
+    ];
   }
 
   // =======================================================================
@@ -486,5 +500,344 @@ describe("AssessmentService (cp2 — score entry + materialization)", () => {
         subjectId: otherSubject,
       }),
     ).rejects.toBeInstanceOf(NotFoundError);
+  });
+
+  // =======================================================================
+  // cp3 — bulk column save (atomic)
+  // =======================================================================
+
+  it("bulk: teacher saves a full column (multiple students × components) atomically", async () => {
+    const f = await fullFixture("bulk-happy");
+    const s2 = await enroll(f.schoolId, {
+      classArmId: f.armId,
+      termId: f.termId,
+      academicYearId: f.yearId,
+      suffix: "bulk-happy-2",
+    });
+    const rows = [...fullColumn(f), ...fullColumn(f, s2)];
+    const feed = await service.bulkUpsertScores(
+      ctx(f.schoolId, f.teacherId),
+      { termId: f.termId, subjectId: f.subjectId, rows },
+      reqCtx,
+    );
+
+    expect(feed.data).toHaveLength(2);
+    const s1row = feed.data.find((r) => r.student.id === f.studentId)!;
+    expect(s1row.assessment?.totalScore).toBe(80); // 15 + 15 + 50
+    expect(s1row.scores).toHaveLength(3);
+
+    const audit = await withTenant(f.schoolId, (db) =>
+      db.auditLog.findFirst({
+        where: { action: "assessment-score.create", entityType: "assessment_score" },
+        orderBy: { createdAt: "desc" },
+        select: { metadata: true },
+      }),
+    );
+    expect((audit?.metadata as { count?: number; bulk?: boolean })?.count).toBe(6);
+    expect((audit?.metadata as { bulk?: boolean })?.bulk).toBe(true);
+  });
+
+  it("bulk: one invalid score rejects the whole batch (no writes, no audit)", async () => {
+    const f = await fullFixture("bulk-invalid");
+    const rows = [
+      { studentId: f.studentId, componentId: f.ca1.id, score: 10 },
+      { studentId: f.studentId, componentId: f.exam.id, score: 75 }, // > 60-weight Exam
+    ];
+    await expect(
+      service.bulkUpsertScores(ctx(f.schoolId, f.teacherId), { termId: f.termId, subjectId: f.subjectId, rows }, reqCtx),
+    ).rejects.toBeInstanceOf(ValidationError);
+
+    const count = await withTenant(f.schoolId, (db) =>
+      db.assessmentScore.count({ where: { studentId: f.studentId } }),
+    );
+    expect(count).toBe(0);
+    const audit = await withTenant(f.schoolId, (db) =>
+      db.auditLog.findFirst({ where: { action: "assessment-score.create" } }),
+    );
+    expect(audit).toBeNull();
+  });
+
+  it("bulk: an out-of-scope row rejects the whole batch (404)", async () => {
+    const f = await fullFixture("bulk-scope");
+    const otherSubject = await makeSubject(f.schoolId, "bulk-scope-other");
+    await expect(
+      service.bulkUpsertScores(
+        ctx(f.schoolId, f.teacherId),
+        { termId: f.termId, subjectId: otherSubject, rows: [{ studentId: f.studentId, componentId: f.ca1.id, score: 10 }] },
+        reqCtx,
+      ),
+    ).rejects.toBeInstanceOf(NotFoundError);
+  });
+
+  it("bulk: an unenrolled student rejects the whole batch", async () => {
+    const f = await fullFixture("bulk-unenr");
+    const unenrolled = await studentNoEnroll(f.schoolId, "bulk-unenr");
+    await expect(
+      service.bulkUpsertScores(
+        ctx(f.schoolId, f.ownerId), // owner → isolate the enrollment gate from scope
+        {
+          termId: f.termId,
+          subjectId: f.subjectId,
+          rows: [
+            { studentId: f.studentId, componentId: f.ca1.id, score: 10 },
+            { studentId: unenrolled, componentId: f.ca1.id, score: 10 },
+          ],
+        },
+        reqCtx,
+      ),
+    ).rejects.toBeInstanceOf(ValidationError);
+    const count = await withTenant(f.schoolId, (db) =>
+      db.assessmentScore.count({ where: { studentId: f.studentId } }),
+    );
+    expect(count).toBe(0);
+  });
+
+  it("bulk re-save clears prior sign-off and counts it in audit", async () => {
+    const f = await fullFixture("bulk-clear");
+    await service.bulkUpsertScores(
+      ctx(f.schoolId, f.teacherId),
+      { termId: f.termId, subjectId: f.subjectId, rows: fullColumn(f) },
+      reqCtx,
+    );
+    await service.signOffColumn(
+      ctx(f.schoolId, f.teacherId),
+      { termId: f.termId, classArmId: f.armId, subjectId: f.subjectId },
+      reqCtx,
+    );
+
+    await service.bulkUpsertScores(
+      ctx(f.schoolId, f.teacherId),
+      { termId: f.termId, subjectId: f.subjectId, rows: [{ studentId: f.studentId, componentId: f.ca1.id, score: 18 }] },
+      reqCtx,
+    );
+
+    const a = await withTenant(f.schoolId, (db) =>
+      db.assessment.findFirst({
+        where: { studentId: f.studentId, subjectId: f.subjectId, termId: f.termId },
+        select: { subjectSignedOffAt: true },
+      }),
+    );
+    expect(a?.subjectSignedOffAt).toBeNull();
+
+    const audit = await withTenant(f.schoolId, (db) =>
+      db.auditLog.findFirst({
+        where: { action: "assessment-score.create", entityType: "assessment_score" },
+        orderBy: { createdAt: "desc" },
+        select: { metadata: true },
+      }),
+    );
+    expect((audit?.metadata as { clearedSignOffCount?: number })?.clearedSignOffCount).toBe(1);
+  });
+
+  it("bulk: admin/owner unscoped save succeeds for any students", async () => {
+    const f = await fullFixture("bulk-admin");
+    const feed = await service.bulkUpsertScores(
+      ctx(f.schoolId, f.ownerId),
+      { termId: f.termId, subjectId: f.subjectId, rows: [{ studentId: f.studentId, componentId: f.ca1.id, score: 12 }] },
+      reqCtx,
+    );
+    expect(feed.data).toHaveLength(1);
+  });
+
+  it("bulk: a materialization failure rolls back ALL upserts (no orphans)", async () => {
+    const f = await fullFixture("bulk-atomic");
+    const spy = vi
+      .spyOn(service as unknown as { materializeSummary: () => Promise<unknown> }, "materializeSummary")
+      .mockRejectedValueOnce(new Error("boom"));
+    await expect(
+      service.bulkUpsertScores(
+        ctx(f.schoolId, f.teacherId),
+        {
+          termId: f.termId,
+          subjectId: f.subjectId,
+          rows: [
+            { studentId: f.studentId, componentId: f.ca1.id, score: 10 },
+            { studentId: f.studentId, componentId: f.exam.id, score: 20 },
+          ],
+        },
+        reqCtx,
+      ),
+    ).rejects.toThrow("boom");
+    spy.mockRestore();
+    const count = await withTenant(f.schoolId, (db) =>
+      db.assessmentScore.count({ where: { studentId: f.studentId } }),
+    );
+    expect(count).toBe(0);
+  });
+
+  it("bulk: one scope call + one enrollment query regardless of batch size (N+1 guard)", async () => {
+    const f = await fullFixture("bulk-n1");
+    const s2 = await enroll(f.schoolId, {
+      classArmId: f.armId,
+      termId: f.termId,
+      academicYearId: f.yearId,
+      suffix: "bulk-n1-2",
+    });
+    const scopeSpy = vi.spyOn(
+      service as unknown as { loadTeacherScope: () => Promise<unknown> },
+      "loadTeacherScope",
+    );
+    const enrSpy = vi.spyOn(
+      service as unknown as { loadEnrollmentsForTerm: () => Promise<unknown> },
+      "loadEnrollmentsForTerm",
+    );
+    await service.bulkUpsertScores(
+      ctx(f.schoolId, f.teacherId),
+      {
+        termId: f.termId,
+        subjectId: f.subjectId,
+        rows: [
+          { studentId: f.studentId, componentId: f.ca1.id, score: 10 },
+          { studentId: f.studentId, componentId: f.ca2.id, score: 10 },
+          { studentId: s2, componentId: f.ca1.id, score: 10 },
+          { studentId: s2, componentId: f.ca2.id, score: 10 },
+        ],
+      },
+      reqCtx,
+    );
+    expect(scopeSpy).toHaveBeenCalledTimes(1);
+    expect(enrSpy).toHaveBeenCalledTimes(1);
+    scopeSpy.mockRestore();
+    enrSpy.mockRestore();
+  });
+
+  // =======================================================================
+  // cp3 — single sign-off
+  // =======================================================================
+
+  it("sign-off: a fully-scored column can be signed off", async () => {
+    const f = await fullFixture("so-happy");
+    await service.bulkUpsertScores(
+      ctx(f.schoolId, f.teacherId),
+      { termId: f.termId, subjectId: f.subjectId, rows: fullColumn(f) },
+      reqCtx,
+    );
+    const a = await withTenant(f.schoolId, (db) =>
+      db.assessment.findFirstOrThrow({
+        where: { studentId: f.studentId, subjectId: f.subjectId, termId: f.termId },
+        select: { id: true },
+      }),
+    );
+    const signed = await service.signOff(ctx(f.schoolId, f.teacherId), a.id, reqCtx);
+    expect(signed.subjectSignedOffAt).not.toBeNull();
+    expect(signed.subjectSignedOffBy).toBe(f.teacherId);
+  });
+
+  it("sign-off: rejects when the column is not fully scored", async () => {
+    const f = await fullFixture("so-partial");
+    const created = await service.createScore(
+      ctx(f.schoolId, f.teacherId),
+      { studentId: f.studentId, subjectId: f.subjectId, termId: f.termId, componentId: f.ca1.id, score: 15 },
+      reqCtx,
+    );
+    await expect(
+      service.signOff(ctx(f.schoolId, f.teacherId), created.assessment.id, reqCtx),
+    ).rejects.toBeInstanceOf(ValidationError);
+  });
+
+  it("sign-off: an out-of-scope teacher → 404", async () => {
+    const f = await fullFixture("so-scope");
+    await service.bulkUpsertScores(
+      ctx(f.schoolId, f.ownerId),
+      { termId: f.termId, subjectId: f.subjectId, rows: fullColumn(f) },
+      reqCtx,
+    );
+    const a = await withTenant(f.schoolId, (db) =>
+      db.assessment.findFirstOrThrow({ where: { studentId: f.studentId }, select: { id: true } }),
+    );
+    const otherTeacher = await grantSystemRole(f.schoolId, "so-scope-other", "teacher");
+    await expect(service.signOff(ctx(f.schoolId, otherTeacher), a.id, reqCtx)).rejects.toBeInstanceOf(
+      NotFoundError,
+    );
+  });
+
+  it("sign-off: admin/owner unscoped can sign off", async () => {
+    const f = await fullFixture("so-admin");
+    await service.bulkUpsertScores(
+      ctx(f.schoolId, f.ownerId),
+      { termId: f.termId, subjectId: f.subjectId, rows: fullColumn(f) },
+      reqCtx,
+    );
+    const a = await withTenant(f.schoolId, (db) =>
+      db.assessment.findFirstOrThrow({ where: { studentId: f.studentId }, select: { id: true } }),
+    );
+    const signed = await service.signOff(ctx(f.schoolId, f.ownerId), a.id, reqCtx);
+    expect(signed.subjectSignedOffAt).not.toBeNull();
+  });
+
+  // =======================================================================
+  // cp3 — bulk column sign-off
+  // =======================================================================
+
+  it("bulk sign-off: a fully-scored column signs off every student", async () => {
+    const f = await fullFixture("bso-happy");
+    const s2 = await enroll(f.schoolId, {
+      classArmId: f.armId,
+      termId: f.termId,
+      academicYearId: f.yearId,
+      suffix: "bso-2",
+    });
+    await service.bulkUpsertScores(
+      ctx(f.schoolId, f.teacherId),
+      { termId: f.termId, subjectId: f.subjectId, rows: [...fullColumn(f), ...fullColumn(f, s2)] },
+      reqCtx,
+    );
+    const result = await service.signOffColumn(
+      ctx(f.schoolId, f.teacherId),
+      { termId: f.termId, classArmId: f.armId, subjectId: f.subjectId },
+      reqCtx,
+    );
+    expect(result).toHaveLength(2);
+    expect(result.every((a) => a.subjectSignedOffAt !== null)).toBe(true);
+  });
+
+  it("bulk sign-off: rejects if any student is missing a component", async () => {
+    const f = await fullFixture("bso-partial");
+    const s2 = await enroll(f.schoolId, {
+      classArmId: f.armId,
+      termId: f.termId,
+      academicYearId: f.yearId,
+      suffix: "bso-p-2",
+    });
+    await service.bulkUpsertScores(
+      ctx(f.schoolId, f.teacherId),
+      {
+        termId: f.termId,
+        subjectId: f.subjectId,
+        rows: [...fullColumn(f), { studentId: s2, componentId: f.ca1.id, score: 10 }], // s2 only CA1
+      },
+      reqCtx,
+    );
+    await expect(
+      service.signOffColumn(
+        ctx(f.schoolId, f.teacherId),
+        { termId: f.termId, classArmId: f.armId, subjectId: f.subjectId },
+        reqCtx,
+      ),
+    ).rejects.toBeInstanceOf(ValidationError);
+  });
+
+  it("bulk sign-off: an out-of-scope teacher → 404", async () => {
+    const f = await fullFixture("bso-scope");
+    const otherSubject = await makeSubject(f.schoolId, "bso-scope-other");
+    await expect(
+      service.signOffColumn(
+        ctx(f.schoolId, f.teacherId),
+        { termId: f.termId, classArmId: f.armId, subjectId: otherSubject },
+        reqCtx,
+      ),
+    ).rejects.toBeInstanceOf(NotFoundError);
+  });
+
+  it("bulk sign-off: cross-tenant cannot reach another school's column", async () => {
+    const a = await fullFixture("bso-xa");
+    const b = await fullFixture("bso-xb");
+    // A's owner targets B's ids: under A's RLS no rows match → 0 touched, B untouched.
+    const result = await service.signOffColumn(
+      ctx(a.schoolId, a.ownerId),
+      { termId: b.termId, classArmId: b.armId, subjectId: b.subjectId },
+      reqCtx,
+    );
+    expect(result).toHaveLength(0);
   });
 });

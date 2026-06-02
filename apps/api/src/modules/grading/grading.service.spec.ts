@@ -327,4 +327,84 @@ describe("GradingService", () => {
     await withTenant(schoolId, (db) => db.gradingScheme.deleteMany({}));
     await expect(service.getScheme(authCtx)).rejects.toBeInstanceOf(NotFoundError);
   });
+
+  // -------------------------------------------------------------------------
+  // Freeze guard (slice 2 cp3) — once any AssessmentScore exists for the
+  // school, the component set is frozen (phase-2.md weight-change-mid-term
+  // risk). Boundary edits are NOT affected. RLS confines the check per school.
+  // -------------------------------------------------------------------------
+
+  // Insert one AssessmentScore tied to the seeded CA1 component. studentId/
+  // subjectId/termId are plain strings (no enforced FK) — the only FK is to the
+  // grading component.
+  async function insertScore(schoolId: string): Promise<void> {
+    await withTenant(schoolId, async (db) => {
+      const ca1 = await db.gradingComponent.findFirstOrThrow({
+        where: { key: "ca1" },
+        select: { id: true },
+      });
+      await db.assessmentScore.create({
+        data: {
+          schoolId,
+          studentId: `stu-${runId}`,
+          subjectId: `subj-${runId}`,
+          termId: `term-${runId}`,
+          componentId: ca1.id,
+          score: 10,
+          enteredBy: `user-${runId}`,
+        },
+      });
+    });
+  }
+
+  it("freeze: with a score present, component create/update/delete/replace are all rejected", async () => {
+    const { schoolId, authCtx } = await createActiveSchool("freeze");
+    await insertScore(schoolId);
+    const scheme = await service.getScheme(authCtx);
+    const comp = scheme.components[0];
+
+    await expect(
+      service.createComponent(authCtx, { key: "extra", label: "Extra", weight: 0, orderIndex: 9 }, reqCtx),
+    ).rejects.toBeInstanceOf(ValidationError);
+    await expect(
+      service.updateComponent(authCtx, comp.id, { label: "Renamed" }, reqCtx),
+    ).rejects.toBeInstanceOf(ValidationError);
+    await expect(service.deleteComponent(authCtx, comp.id, reqCtx)).rejects.toBeInstanceOf(
+      ValidationError,
+    );
+    await expect(
+      service.replaceComponents(
+        authCtx,
+        { components: [{ key: "ca1", label: "CA1", weight: 100, orderIndex: 1 }] },
+        reqCtx,
+      ),
+    ).rejects.toBeInstanceOf(ValidationError);
+  });
+
+  it("freeze: boundary edits still succeed when scores exist (scope-limited to components)", async () => {
+    const { schoolId, authCtx } = await createActiveSchool("freeze-bound");
+    await insertScore(schoolId);
+    const bands = await service.listBoundaries(authCtx);
+    const a1 = bands.find((b) => b.letter === "A1")!;
+    const updated = await service.updateBoundary(authCtx, a1.id, { remark: "Top marks" }, reqCtx);
+    expect(updated.remark).toBe("Top marks");
+  });
+
+  it("freeze: one school's scores do not freeze another school's scheme (RLS-confined)", async () => {
+    const frozen = await createActiveSchool("freeze-x-frozen");
+    await insertScore(frozen.schoolId);
+    const fresh = await createActiveSchool("freeze-x-fresh");
+    const scheme = await service.getScheme(fresh.authCtx);
+    const comp = scheme.components.find((c) => c.key === "ca1")!;
+    const updated = await service.updateComponent(fresh.authCtx, comp.id, { label: "First Assessment" }, reqCtx);
+    expect(updated.label).toBe("First Assessment");
+  });
+
+  it("freeze: with zero scores a component edit still works (non-regression)", async () => {
+    const { authCtx } = await createActiveSchool("freeze-zero");
+    const scheme = await service.getScheme(authCtx);
+    const comp = scheme.components.find((c) => c.key === "ca2")!;
+    const updated = await service.updateComponent(authCtx, comp.id, { label: "Second Assessment" }, reqCtx);
+    expect(updated.label).toBe("Second Assessment");
+  });
 });
