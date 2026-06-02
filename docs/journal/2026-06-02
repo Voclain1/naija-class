@@ -11,7 +11,70 @@ GradingScheme + GradingComponent + GradeBoundary models + migration
 + RLS + signup-tx seed + settings UI.
 
 ## Decisions made
-- (capture as the day unfolds)
+
+Plan-first session against phase-2.md slice 1, then cp1 build. Plan
+approved with both flagged decisions going to my leans.
+
+### Settled implementation decisions (slice 1)
+
+- **Q1 — signup-tx seed mechanics:** inline in `signupOwner`, mirroring
+  the Phase-1 class-level precedent, using extracted constants from a new
+  `packages/db/src/seeds/grading.ts`. Scheme via `upsert` (need its id to
+  attach components + retry-idempotency against `@@unique([schoolId])`);
+  components + boundaries via `createMany({ skipDuplicates: true })`. NOT a
+  separate tx-taking helper (keeps the GUC/tx-sharing subtlety visible at
+  the one call site). Seed writes NO separate audit row — piggybacks
+  `auth.signup_owner`, same as the class-level seed.
+- **Q1 sub-decision (FLAGGED → my lean APPROVED): INCLUDE the idempotent
+  backfill** for existing schemeless schools in the slice-1 migration. The
+  migration role (`school_kit`) is a superuser → bypasses FORCE RLS, so the
+  cross-school backfill INSERTs need no GUC. `NOT EXISTS` guards keep it
+  idempotent on re-`migrate deploy`. Removes the slice-2 footgun (scores
+  depend on a scheme existing).
+- **Q2 — sum-to-100 enforcement:** service-layer (load-bearing, covers
+  single PATCH/DELETE re-validation) + Zod `.superRefine` on the bulk PUT
+  for bindable UX. **No Postgres trigger** (consistent with Phase-1
+  deferring the enrollment CHECK+trigger to service-layer). Refine issues
+  bind to a real path `['components']` — never bare object-level with empty
+  `path:[]` (the class-arm `as never` lesson).
+- **Q3 — boundary tile-0-100:** same shape; service-layer primary + Zod
+  superRefine binding issues to per-row paths `['boundaries', i, 'maxScore']`.
+- **Q4 — settings UI form-class discipline (cp2):** confirmed — local
+  FormValues schema (not the API body schema), root + per-field error
+  blocks, ''→undefined on submit, zero `as never`. Highest-risk form class
+  in the slice (numeric weight/min/max = the exact class-arm break combo).
+- **Q5 (FLAGGED → my lean APPROVED): 2 cps as scoped** (cp1 = API
+  foundation, cp2 = settings UI). cp1a/cp1b split is the NAMED fallback —
+  invoke SCOPE GUARD mid-build only if cp1 actually balloons; do not
+  pre-split.
+
+### Slice-1-era RBAC pattern (important divergence noted)
+
+Phase-1 controllers now carry `@Permissions` + `PermissionsGuard` (retrofit
+landed in slice 13). Per the approved plan I mirror the **slice-1-ERA**
+shape, not today's: grading controller uses `@UseGuards(AuthGuard)` ONLY,
+and the service gates via `assertUserActiveAndHasOneOf(['owner','admin'])`.
+`PHASE_2_SLICE_1_PERMISSIONS` lands as a **reference-only** const (NOT in
+`ALL_PERMISSIONS`, NOT wired to the guard or admin seed). Slice 9 retrofits
+`PermissionsGuard` + `@Permissions` exactly as slice 13 did for Phase 1 —
+this keeps admins able to use the settings UI during slices 1–8 (they have
+no grading perms yet; owner passes via `*`).
+
+### Build manifest (cp1)
+3 Prisma models (GradingScheme/GradingComponent/GradeBoundary; School
+unchanged; GradingComponent omits the `scores` back-relation until slice 2's
+AssessmentScore lands) → migration `20260602000000_phase_2_slice_1_grading_config`
+(DDL + 3 RLS blocks + idempotent backfill) → `policies/phase-2.sql` (3
+grading-table blocks only; later slices append the other 5) → `seeds/grading.ts`
+(`DEFAULT_GRADING_SCHEME_NAME`, `DEFAULT_GRADING_COMPONENTS` ca1/ca2/exam =
+20/20/60, `DEFAULT_GRADE_BOUNDARIES` 9 WAEC bands) re-exported from index.ts →
+inline signup-tx seed → `packages/types/src/grading/` DTOs + barrel +
+`PHASE_2_SLICE_1_PERMISSIONS` → NestJS `grading` module (service spec FIRST)
+→ `rls.spec.ts` +3 describe blocks (coverage 15→18 tables).
+
+phase-2.md is the source of truth; this entry records the slice-1 decisions
+that formalize against it.
 
 ## Tomorrow's first task
-- (fill at end of day)
+- (fill at end of day — expected: cp2 settings UI, or cp1b if SCOPE GUARD
+  was invoked)

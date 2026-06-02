@@ -1,6 +1,14 @@
 import { Injectable } from "@nestjs/common";
 
-import { DEFAULT_CLASS_LEVELS, Prisma, basePrisma, withTenant } from "@school-kit/db";
+import {
+  DEFAULT_CLASS_LEVELS,
+  DEFAULT_GRADE_BOUNDARIES,
+  DEFAULT_GRADING_COMPONENTS,
+  DEFAULT_GRADING_SCHEME_NAME,
+  Prisma,
+  basePrisma,
+  withTenant,
+} from "@school-kit/db";
 import {
   ConflictError,
   InternalError,
@@ -146,6 +154,48 @@ export class AuthService {
             name: level.name,
             stage: level.stage,
             orderIndex: level.orderIndex,
+          })),
+          skipDuplicates: true,
+        });
+
+        // Phase 2 / Slice 1 — seed the school's single grading scheme + its
+        // three default components (CA1/CA2/Exam = 20/20/60, Σ=100) and the
+        // nine WAEC grade boundaries (A1..F9). Same `tx` + GUC as the
+        // class-level seed above — NOT withTenant (a nested
+        // basePrisma.$transaction would hang; see the class-level note).
+        //
+        // The scheme is UPSERTED (not created) on the (school_id) unique so a
+        // hypothetical signup-tx retry is idempotent — we need its id to attach
+        // components anyway. Components + boundaries use `skipDuplicates`
+        // against their unique indexes for the same belt-and-braces. No
+        // separate audit row: this is part of the signup bootstrap, attributed
+        // to the auth.signup_owner entry written below (mirrors the class-level
+        // seed, which also writes no audit of its own).
+        const gradingScheme = await tx.gradingScheme.upsert({
+          where: { schoolId: school.id },
+          update: {},
+          create: { schoolId: school.id, name: DEFAULT_GRADING_SCHEME_NAME },
+          select: { id: true },
+        });
+        await tx.gradingComponent.createMany({
+          data: DEFAULT_GRADING_COMPONENTS.map((component) => ({
+            schoolId: school.id,
+            schemeId: gradingScheme.id,
+            key: component.key,
+            label: component.label,
+            weight: component.weight,
+            orderIndex: component.orderIndex,
+          })),
+          skipDuplicates: true,
+        });
+        await tx.gradeBoundary.createMany({
+          data: DEFAULT_GRADE_BOUNDARIES.map((boundary) => ({
+            schoolId: school.id,
+            letter: boundary.letter,
+            minScore: boundary.minScore,
+            maxScore: boundary.maxScore,
+            remark: boundary.remark,
+            orderIndex: boundary.orderIndex,
           })),
           skipDuplicates: true,
         });
