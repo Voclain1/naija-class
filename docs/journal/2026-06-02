@@ -168,3 +168,71 @@ phase-2.md is the source of truth; this entry records the slice-2 decisions.
 - Slice 2 cp2: AssessmentService single-score POST/PATCH (materialization
   wired, Q1a) + teacher-scope single-row (Q3b) + GET feed + integration
   spec. Then cp3 (bulk + sign-off + freeze guard).
+
+---
+
+# Phase 2 / Slice 3 — Gradebook grid UI
+
+Slice 2 closed (cp1 models/pure-fns + cp2 single-score + cp3 bulk/sign-off/
+freeze, all on main). Slice 3 is the first major Phase-2 UI: the form-class
+discipline at GRID scale. Plan-first against phase-2.md slice 3; plan approved
+with all flagged decisions going to my leans.
+
+## The one backend touch (Flag #0)
+Teachers can't resolve a termId: term.read is admin-gated and the teacher role
+lacks it, but the feed/bulk/sign-off endpoints all REQUIRE termId. Fix:
+extend GET /teacher-scope/me with `currentTerm: { id, name, sequence } | null`
+resolved from Term.isCurrent inside the existing withTenant. Single source of
+teacher context, no new permission/route. The gradebook is CURRENT-TERM only
+in slice 3 (multi-term selection deferred); the picker is effectively
+arm → subject. Lands in cp1.
+
+## Settled decisions
+- **Q1 save model:** explicit Save button only (cp3's bulk is atomic — auto-
+  save makes that murky). Payload = DIRTY cells only (RHF dirtyFields).
+  beforeunload guard when dirty cells exist (crash-recovery mitigation).
+- **Q2 position column:** show with "—" placeholder, bound to
+  assessment.subjectPosition (the gradebook-relevant per-subject rank;
+  classPosition is the report-card overall position). Populated by slice 4.
+- **Q3 per-cell errors:** per-cell primary (parse bulk path ['rows', i,
+  'score'] → red border + chip on the offending cell) + a thin summary banner
+  for the tall-grid scroll case. Most range errors surface pre-submit via the
+  client per-cell 0..weight refine; server path-bound issues are the backstop
+  (freeze, server-side weight change).
+- **Q4 sign-off gating:** disabled until (every cell filled AND no unsaved
+  dirty cells) with an adaptive explainer ("Save your changes first" vs "Fill
+  in all scores to sign off"). After success → locked (inputs disabled +
+  "Signed off ✓" badge) + "Re-open to edit" (client-side re-enable); saving a
+  changed score clears sign-off server-side (cp3 implicit unlock).
+- **Q5 cp split:** Split 1 (data-first). cp1 = currentTerm extension +
+  assessment-api wrappers + /teacher/gradebook picker + grid rendering
+  read-only (Total/Grade/Position read-only) with editable score cells +
+  per-cell client validation, NO save + loading/empty/scope-404 states +
+  sidebar Gradebook entry + teacher-scope spec extension. cp2 = Save (bulk) +
+  per-cell error binding + summary banner + beforeunload guard + Sign-off
+  column (gating + lock + Re-open) + manual browser pass.
+- **Q6 number-cell shape:** FormValues = { rows: [{ studentId, scores:
+  Record<componentId, string> }] } via useFieldArray + dotted registration
+  rows.${i}.scores.${componentId}. Cells hold STRING (empty = unentered),
+  coerced to int at save. makeGradebookSchema(components) factory parametrizes
+  the discipline by the loaded scheme (superRefine validates each cell vs its
+  component.weight, binds issues to ['rows', i, 'scores', componentId]). Zero
+  `as never`; FormValues schema separate from the bulk API body schema.
+
+## Acceptance #7 ("no total/grade computed in the browser")
+Total/Grade/Position are READ-ONLY cells bound to feed[i].assessment.* — never
+summed client-side. After save, pessimistic re-render: trust the bulk
+response's refreshed feed. The only client computation is per-cell range
+validation (input validation, not grading).
+
+## Routes / locations
+- /teacher/gradebook (picker) + /teacher/gradebook/[armId]/[subjectId] (grid;
+  term = current).
+- API wrappers: apps/web/src/lib/assessment/assessment-api.ts (getGradebookFeed,
+  + cp2: bulkSaveScores, signOffColumn). Reuse getGradingScheme (lib/grading)
+  for columns + getMyScope (lib/teacher) for the picker.
+- Components: apps/web/src/components/teacher/gradebook/.
+
+## Scope
+Slice 3 ships the TEACHER gradebook only (admins enter scores via the API; an
+admin gradebook view is deferred). phase-2.md is the source of truth.

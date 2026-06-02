@@ -341,6 +341,18 @@ describe("TeacherScope (cp2 security matrix)", () => {
     expect(result.classArms[0].name).toBeTruthy();
     expect(result.classArms[0].code).toBeTruthy();
     expect(result.subjectsByArm).toEqual({});
+    // No term marked current in this fixture → null (slice 3 cp1).
+    expect(result.currentTerm).toBeNull();
+  });
+
+  it("GET /teacher-scope/me includes the school's current term (slice 3 cp1)", async () => {
+    const schoolId = await makeSchool("me-curterm");
+    const teacher = await grantSystemRole(schoolId, "me-curterm", "teacher");
+    const { termId } = await makeYear(schoolId, "ct", true); // current term
+
+    const result = await scopeService.getMyScope(ctx(schoolId, teacher));
+    expect(result.currentTerm).toMatchObject({ id: termId, sequence: 1 });
+    expect(result.currentTerm?.name).toBeTruthy();
   });
 
   it("GET /teacher-scope/me as an admin → 403 (admins use admin CRUD, not teacher endpoints)", async () => {
