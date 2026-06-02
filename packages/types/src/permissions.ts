@@ -116,9 +116,31 @@ export const OWNER_ONLY_PERMISSIONS = [
   "enrollment.delete",
 ] as const;
 
+// Phase 2 / Slice 1 — grading configuration permissions. REFERENCE-ONLY for
+// now: this constant is NOT yet spread into ALL_PERMISSIONS, NOT granted to any
+// seeded role, and NOT enforced by a guard. The grading controller gates via
+// assertUserActiveAndHasOneOf(['owner','admin']) at the service layer (the
+// slice-1-era pattern), exactly as Phase 1 slice 1 did before the slice-13
+// PermissionsGuard retrofit. The Phase 2 RBAC rollup (slice 9) consolidates
+// every PHASE_2_SLICE_N constant, spreads them into ALL_PERMISSIONS, grants
+// them to admin in the seed + a data migration, and wires @Permissions onto
+// these handlers — mirroring the Phase 1 slice-13 rollup. Landing the strings
+// here now keeps them discoverable for that diff.
+export const PHASE_2_SLICE_1_PERMISSIONS = [
+  "grading-scheme.read",
+  "grading-scheme.update",
+  "grading-component.read",
+  "grading-component.create",
+  "grading-component.update",
+  "grading-component.delete",
+  "grade-boundary.read",
+  "grade-boundary.update",
+] as const;
+
 export const ALL_PERMISSIONS = [
   ...PHASE_0_PERMISSIONS,
   ...PHASE_1_PERMISSIONS,
+  /* PHASE_2_SLICE_1_PERMISSIONS folded in by the slice-9 rollup */
   /* extend per phase */
 ] as const;
 

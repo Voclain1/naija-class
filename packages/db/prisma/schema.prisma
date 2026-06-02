@@ -849,3 +849,80 @@ model AIInteractionLog {
   @@index([studentId])
   @@map("ai_interaction_logs")
 }
+
+// ---------- Phase 2 / Slice 1 — Grading configuration ----------
+//
+// Three per-school config tables, all seeded with sensible WAEC-style defaults
+// at school creation (signupOwner, same tx as the class-level seed) and fully
+// editable thereafter. They carry their own school_id → flat direct-column RLS,
+// the same cheap pattern as every Phase 1 table. See docs/modules/phase-2.md
+// (Data model → Grading configuration) for the locked design.
+//
+// Exactly one scheme per school (the @@unique on school_id enforces it). Most
+// Nigerian schools run a single CA1+CA2+Exam scheme across every subject;
+// per-level / per-subject schemes are explicitly deferred (phase-2.md "What's
+// deferred"). Defaults: CA1=20, CA2=20, Exam=60 (Σ=100) — see
+// packages/db/src/seeds/grading.ts.
+model GradingScheme {
+  id        String   @id @default(uuid())
+  schoolId  String   @map("school_id")
+  name      String // "WAEC-style (default)"
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  components GradingComponent[]
+
+  @@unique([schoolId]) // one scheme per school
+  @@map("grading_schemes")
+}
+
+// N rows per scheme (CA1, CA2, Project, Exam, Practical…). weight is an integer
+// percent; the set of components for a school MUST sum to exactly 100. That
+// invariant is enforced ATOMICALLY OVER THE WHOLE SET at the service layer
+// (and the bulk-PUT Zod refine), NOT by a DB constraint — same call as Phase 1
+// made for the enrollment academicYearId-consistency invariant. See
+// grading.service.ts and docs/modules/phase-2.md "Hard rules → Weights sum to 100".
+//
+// The slice-2 `scores GradingComponent[]` back-relation to AssessmentScore is
+// intentionally ABSENT here — AssessmentScore is a Phase 2 / Slice 2 table.
+// Adding the relation now would reference a model that does not yet exist; it
+// lands in slice 2 alongside that table (onDelete: Restrict on the score side).
+model GradingComponent {
+  id         String   @id @default(uuid())
+  schoolId   String   @map("school_id")
+  schemeId   String   @map("scheme_id")
+  key        String // "ca1","ca2","project","exam","practical" — stable per school
+  label      String // "First CA", "Project"
+  weight     Int // integer percent; Σ weight per scheme = 100
+  orderIndex Int      @map("order_index") // display order, left→right in the gradebook grid
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  scheme GradingScheme @relation(fields: [schemeId], references: [id], onDelete: Cascade)
+
+  @@unique([schoolId, schemeId, key])
+  @@index([schoolId])
+  @@map("grading_components")
+}
+
+// Per-school letter ↔ score-range map. WAEC scale pre-populated at school
+// creation; fully editable. Ranges are inclusive on both ends and must tile
+// 0..100 without gaps or overlaps — a service-layer invariant (+ bulk-PUT Zod
+// refine), not a DB constraint. Default bands A1..F9 — see
+// packages/db/src/seeds/grading.ts.
+model GradeBoundary {
+  id         String   @id @default(uuid())
+  schoolId   String   @map("school_id")
+  letter     String // "A1","B2","B3","C4","C5","C6","D7","E8","F9"
+  minScore   Int      @map("min_score") // inclusive, 0..100
+  maxScore   Int      @map("max_score") // inclusive, 0..100
+  remark     String? // "Excellent","Very Good",...
+  orderIndex Int      @map("order_index")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@unique([schoolId, letter])
+  @@index([schoolId])
+  @@map("grade_boundaries")
+}
