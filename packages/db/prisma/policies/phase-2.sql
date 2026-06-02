@@ -35,3 +35,24 @@ CREATE POLICY tenant_isolation ON "grading_components"
 CREATE POLICY tenant_isolation ON "grade_boundaries"
   USING      (school_id::text = current_setting('app.current_school_id', true))
   WITH CHECK (school_id::text = current_setting('app.current_school_id', true));
+
+-- ---------------------------------------------------------------------
+-- Slice 2 — assessment (assessment_scores, assessments). Raw marks +
+-- their denormalized per-(student × subject × term) summary. Both carry
+-- their own school_id → flat direct-column check (NOT EXISTS-through-
+-- component): a score row's school_id is the tenancy guard, independent
+-- of the grading_components FK.
+-- ---------------------------------------------------------------------
+
+ALTER TABLE "assessment_scores" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "assessment_scores" FORCE  ROW LEVEL SECURITY;
+ALTER TABLE "assessments"       ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "assessments"       FORCE  ROW LEVEL SECURITY;
+
+CREATE POLICY tenant_isolation ON "assessment_scores"
+  USING      (school_id::text = current_setting('app.current_school_id', true))
+  WITH CHECK (school_id::text = current_setting('app.current_school_id', true));
+
+CREATE POLICY tenant_isolation ON "assessments"
+  USING      (school_id::text = current_setting('app.current_school_id', true))
+  WITH CHECK (school_id::text = current_setting('app.current_school_id', true));

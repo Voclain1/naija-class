@@ -2330,3 +2330,263 @@ describe("multi-tenant isolation — Phase 2 / Slice 1 (grade_boundaries)", () =
     expect(rows).toHaveLength(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Phase 2 / Slice 2 isolation — assessment_scores
+//
+// Raw marks. Carries its own school_id → flat direct-column RLS (NOT
+// EXISTS-through-component). The fixture builds a scheme + component per school
+// (the FK target, ON DELETE RESTRICT) since these RLS-spec schools are created
+// via basePrisma, not the signup seed. The WITH CHECK mischief test uses A's
+// component id but B's school_id to prove the school_id check fires independently
+// of the FK. Contributes to acceptance #14.
+// ---------------------------------------------------------------------------
+
+describe("multi-tenant isolation — Phase 2 / Slice 2 (assessment_scores)", () => {
+  const runId = Math.random().toString(36).slice(2, 8);
+  let schoolA: { id: string };
+  let schoolB: { id: string };
+  let componentA: { id: string };
+  let scoreA: { id: string };
+  let scoreB: { id: string };
+
+  async function buildComponent(schoolId: string, tag: string): Promise<{ id: string }> {
+    return withTenant(schoolId, async (db) => {
+      const scheme = await db.gradingScheme.create({
+        data: { schoolId, name: `scheme-${tag}-${runId}` },
+        select: { id: true },
+      });
+      return db.gradingComponent.create({
+        data: {
+          schoolId,
+          schemeId: scheme.id,
+          key: `ca1-${runId}`,
+          label: "First CA",
+          weight: 100,
+          orderIndex: 1,
+        },
+        select: { id: true },
+      });
+    });
+  }
+
+  beforeAll(async () => {
+    schoolA = await basePrisma.school.create({
+      data: { name: "School P2S2ASA", slug: `rls-p2s2asa-${runId}` },
+      select: { id: true },
+    });
+    schoolB = await basePrisma.school.create({
+      data: { name: "School P2S2ASB", slug: `rls-p2s2asb-${runId}` },
+      select: { id: true },
+    });
+
+    componentA = await buildComponent(schoolA.id, "a");
+    const componentB = await buildComponent(schoolB.id, "b");
+
+    scoreA = await withTenant(schoolA.id, (db) =>
+      db.assessmentScore.create({
+        data: {
+          schoolId: schoolA.id,
+          studentId: `stu-a-${runId}`,
+          subjectId: `subj-a-${runId}`,
+          termId: `term-a-${runId}`,
+          componentId: componentA.id,
+          score: 50,
+          enteredBy: `user-a-${runId}`,
+        },
+        select: { id: true },
+      }),
+    );
+    scoreB = await withTenant(schoolB.id, (db) =>
+      db.assessmentScore.create({
+        data: {
+          schoolId: schoolB.id,
+          studentId: `stu-b-${runId}`,
+          subjectId: `subj-b-${runId}`,
+          termId: `term-b-${runId}`,
+          componentId: componentB.id,
+          score: 50,
+          enteredBy: `user-b-${runId}`,
+        },
+        select: { id: true },
+      }),
+    );
+  });
+
+  afterAll(async () => {
+    if (schoolA?.id) {
+      await basePrisma.school.delete({ where: { id: schoolA.id } }).catch(() => undefined);
+    }
+    if (schoolB?.id) {
+      await basePrisma.school.delete({ where: { id: schoolB.id } }).catch(() => undefined);
+    }
+    await basePrisma.$disconnect();
+  });
+
+  it("School A sees its own assessment_score only", async () => {
+    const rows = await withTenant(schoolA.id, (db) =>
+      db.assessmentScore.findMany({ where: { enteredBy: { contains: runId } } }),
+    );
+    const ids = rows.map((r) => r.id);
+    expect(ids).toContain(scoreA.id);
+    expect(ids).not.toContain(scoreB.id);
+  });
+
+  it("School B sees its own assessment_score only", async () => {
+    const rows = await withTenant(schoolB.id, (db) =>
+      db.assessmentScore.findMany({ where: { enteredBy: { contains: runId } } }),
+    );
+    const ids = rows.map((r) => r.id);
+    expect(ids).toContain(scoreB.id);
+    expect(ids).not.toContain(scoreA.id);
+  });
+
+  it("findUnique across tenants returns null", async () => {
+    const leak = await withTenant(schoolA.id, (db) =>
+      db.assessmentScore.findUnique({ where: { id: scoreB.id } }),
+    );
+    expect(leak).toBeNull();
+  });
+
+  it("INSERT with another school's school_id fails the WITH CHECK clause", async () => {
+    // A's component id, but B's school_id — WITH CHECK rejects independently of FK.
+    await expect(
+      withTenant(schoolA.id, (db) =>
+        db.assessmentScore.create({
+          data: {
+            schoolId: schoolB.id,
+            studentId: `bad-${runId}`,
+            subjectId: `bad-${runId}`,
+            termId: `bad-${runId}`,
+            componentId: componentA.id,
+            score: 10,
+            enteredBy: `bad-${runId}`,
+          },
+        }),
+      ),
+    ).rejects.toThrow();
+  });
+
+  it("raw SQL with unset GUC returns zero rows from assessment_scores (FORCE RLS)", async () => {
+    const rows = await basePrisma.$transaction(async (tx) => {
+      return tx.$queryRaw<Array<{ id: string }>>`
+        SELECT id FROM assessment_scores WHERE entered_by LIKE ${"%" + runId + "%"}
+      `;
+    });
+    expect(rows).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 2 / Slice 2 isolation — assessments
+//
+// The denormalized summary. Standalone (no enforced relations) → the fixture
+// inserts arbitrary plain-string ids; the school_id is the only tenancy guard.
+// Tagged via subject_comment so the fixture can find its rows. Contributes to
+// acceptance #14.
+// ---------------------------------------------------------------------------
+
+describe("multi-tenant isolation — Phase 2 / Slice 2 (assessments)", () => {
+  const runId = Math.random().toString(36).slice(2, 8);
+  let schoolA: { id: string };
+  let schoolB: { id: string };
+  let assessmentA: { id: string };
+  let assessmentB: { id: string };
+
+  async function buildAssessment(schoolId: string, tag: string): Promise<{ id: string }> {
+    return withTenant(schoolId, (db) =>
+      db.assessment.create({
+        data: {
+          schoolId,
+          studentId: `stu-${tag}-${runId}`,
+          subjectId: `subj-${tag}-${runId}`,
+          termId: `term-${tag}-${runId}`,
+          academicYearId: `year-${tag}-${runId}`,
+          classArmId: `arm-${tag}-${runId}`,
+          totalScore: 80,
+          letterGrade: "A1",
+          subjectComment: `c-${runId}`,
+          computedAt: new Date("2026-06-03"),
+        },
+        select: { id: true },
+      }),
+    );
+  }
+
+  beforeAll(async () => {
+    schoolA = await basePrisma.school.create({
+      data: { name: "School P2S2AA", slug: `rls-p2s2aa-${runId}` },
+      select: { id: true },
+    });
+    schoolB = await basePrisma.school.create({
+      data: { name: "School P2S2AB", slug: `rls-p2s2ab-${runId}` },
+      select: { id: true },
+    });
+    assessmentA = await buildAssessment(schoolA.id, "a");
+    assessmentB = await buildAssessment(schoolB.id, "b");
+  });
+
+  afterAll(async () => {
+    if (schoolA?.id) {
+      await basePrisma.school.delete({ where: { id: schoolA.id } }).catch(() => undefined);
+    }
+    if (schoolB?.id) {
+      await basePrisma.school.delete({ where: { id: schoolB.id } }).catch(() => undefined);
+    }
+    await basePrisma.$disconnect();
+  });
+
+  it("School A sees its own assessment only", async () => {
+    const rows = await withTenant(schoolA.id, (db) =>
+      db.assessment.findMany({ where: { subjectComment: { contains: runId } } }),
+    );
+    const ids = rows.map((r) => r.id);
+    expect(ids).toContain(assessmentA.id);
+    expect(ids).not.toContain(assessmentB.id);
+  });
+
+  it("School B sees its own assessment only", async () => {
+    const rows = await withTenant(schoolB.id, (db) =>
+      db.assessment.findMany({ where: { subjectComment: { contains: runId } } }),
+    );
+    const ids = rows.map((r) => r.id);
+    expect(ids).toContain(assessmentB.id);
+    expect(ids).not.toContain(assessmentA.id);
+  });
+
+  it("findUnique across tenants returns null", async () => {
+    const leak = await withTenant(schoolA.id, (db) =>
+      db.assessment.findUnique({ where: { id: assessmentB.id } }),
+    );
+    expect(leak).toBeNull();
+  });
+
+  it("INSERT with another school's school_id fails the WITH CHECK clause", async () => {
+    await expect(
+      withTenant(schoolA.id, (db) =>
+        db.assessment.create({
+          data: {
+            schoolId: schoolB.id,
+            studentId: `bad-${runId}`,
+            subjectId: `bad-${runId}`,
+            termId: `bad-${runId}`,
+            academicYearId: `bad-${runId}`,
+            classArmId: `bad-${runId}`,
+            totalScore: 10,
+            subjectComment: `bad-${runId}`,
+            computedAt: new Date("2026-06-03"),
+          },
+        }),
+      ),
+    ).rejects.toThrow();
+  });
+
+  it("raw SQL with unset GUC returns zero rows from assessments (FORCE RLS)", async () => {
+    const rows = await basePrisma.$transaction(async (tx) => {
+      return tx.$queryRaw<Array<{ id: string }>>`
+        SELECT id FROM assessments WHERE subject_comment LIKE ${"%" + runId + "%"}
+      `;
+    });
+    expect(rows).toHaveLength(0);
+  });
+});

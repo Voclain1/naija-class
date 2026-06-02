@@ -75,6 +75,96 @@ inline signup-tx seed → `packages/types/src/grading/` DTOs + barrel +
 phase-2.md is the source of truth; this entry records the slice-1 decisions
 that formalize against it.
 
+## Slice 1 outcome (closed)
+cp1 (API foundation) + cp2 (settings UI) both shipped green. Scheme +
+boundary editors live at /settings/grading[/boundaries]; form-class
+discipline applied to the numeric grids; manual browser pass confirmed
+the live indicators (100/100, tile 0–100) + no-silent-no-op.
+
+---
+
+# Phase 2 / Slice 2 — Assessment + AssessmentScore + score-entry API
+
+Plan-first against phase-2.md slice 2, then cp1 build. Plan approved with
+three explicit calls on the flagged items.
+
+## Settled implementation decisions (slice 2)
+
+- **Q1 — materialization timing:** (a) SAME tx as the score write. The UI
+  reads totalScore + letterGrade from the POST/PATCH response, so the
+  summary must be materialized before the response returns; a separate tx
+  or BullMQ would let score and summary diverge. Reuses the cp1
+  mutate→re-read→recompute→upsert→return shape inside one withTenant tx.
+- **Q2 — bulk tx shape:** (a) ATOMIC all-or-nothing. A gradebook column
+  save is one interactive edit, not a 10k-row import (the opposite of the
+  Phase-1 CSV per-row choice). Pre-validate every row up front, then one
+  tx writes all rows + re-materializes one Assessment per distinct student.
+- **Q3 — teacher-scope integration:** (b) BULK PRE-CHECK. One getTeacherScope
+  call + one enrollment.findMany for all batch students; validate every row
+  in memory (subject ∈ subjectsByArm[student's enrollment arm this term])
+  before any write. The same enrollment fetch supplies Assessment.classArmId
+  (double duty). No N+1. (c RLS-enforced scope rejected by spec.)
+- **Q4 — cp split:** Split 1 (service-spec-first). cp1 = models + migration
+  + RLS + RLS spec + DTOs + PURE compute/validate functions with unit tests
+  written FIRST. cp2 = single-score endpoint + materialization + scope +
+  integration spec. cp3 = bulk + bulk-scope + sign-off + freeze guard +
+  integration spec.
+- **Q5 — componentId validation:** (a) RLS-scoped fetch as the primary guard
+  (cross-tenant id → null → ValidationError) + explicit belt-and-braces
+  assert component.schoolId === authCtx.schoolId. Live component.weight is
+  the strict ceiling; never trust a client-supplied max.
+- **Q6 — sign-off + re-edit:** confirmed. A score POST/PATCH on a signed-off
+  Assessment clears subjectSignedOffAt/By in the same tx; the implicit
+  unlock is metadata ({ clearedSignOff: true }) on the score-change audit
+  row, not a second action. Slice 6 owns the real workflow gate.
+
+## Three flagged calls (user decisions)
+
+- **Flag #1 (admin scope): CONFIRMED** role gate ["owner","admin","teacher"],
+  admins UNSCOPED. Real ops (teacher quits mid-term, sick teacher,
+  substitute) need admin score entry; enteredBy captures the override in
+  audit. Phase-1 roster precedent (admins unscoped, teachers scoped).
+- **Flag #2 (freeze guard): INCLUDE NOW in cp3**, touching slice-1 code.
+  REFINEMENT: the conservative invariant — ANY assessment_scores row for the
+  SCHOOL exists → scheme frozen until an audited reset. Do NOT scope to
+  "active term only" (the fuzzy active-term concept invites the retroactive-
+  recompute footgun: finish Term 1 → edit scheme → Term 1 cards recompute
+  against the new scheme). Simpler invariant prevents that categorically.
+  Error: "This scheme is frozen because scores have been entered. To change
+  the scheme, an admin must reset scores first (audited)." (Reset path is
+  deferred per phase-2.md — link the deferred entry if practical.) Worth one
+  line in cp3's commit message.
+- **Flag #3 (no-enrollment): CONFIRMED** reject with ValidationError
+  ("Student is not enrolled this term"). Atomic bulk → one unenrolled
+  student rejects the whole batch.
+
+## cp1 build manifest
+2 models (Assessment + AssessmentScore) + GradingComponent.scores back-
+relation (slice-1 deferred, no DDL) → migration
+20260603000000_phase_2_slice_2_assessment (DDL + 2 RLS blocks) →
+policies/phase-2.sql append (2 blocks; file already has the 3 grading-table
+blocks) → rls.spec.ts +2 describe blocks (~10 tests, coverage 18→20) →
+packages/types/src/assessment/ DTOs + PURE functions (sumComponentScores,
+resolveLetterGrade, strict-score validator) + PHASE_2_SLICE_2_PERMISSIONS
+(reference-only) → unit tests FIRST locking the materialization invariants.
+
+cp1 does NOT ship endpoints/service — that's cp2 (single score) + cp3 (bulk
++ sign-off + freeze guard).
+
+## Load-bearing unit invariants (slice 4 reads against these)
+- Strict 0..weight (accept; reject <0, >weight, non-integer); re-validated
+  against the live component row.
+- totalScore = EXACT Σ of component scores (no averaging, rounding, or
+  extrapolation).
+- letterGrade band edges vs default WAEC: 100→A1, 75→A1, 74→B2, 40→E8,
+  39→F9, 0→F9.
+- Partial entry (only CA1, exam missing) → total = partial sum, grade
+  reflects partial — NOT extrapolated to a full-marks basis. (Most likely
+  invariant to get wrong; the one positions rank on.)
+
+phase-2.md is the source of truth; this entry records the slice-2 decisions.
+
 ## Tomorrow's first task
-- (fill at end of day — expected: cp2 settings UI, or cp1b if SCOPE GUARD
-  was invoked)
+- Slice 2 cp2: AssessmentService single-score POST/PATCH (materialization
+  wired, Q1a) + teacher-scope single-row (Q3b) + GET feed + integration
+  spec. Then cp3 (bulk + sign-off + freeze guard).

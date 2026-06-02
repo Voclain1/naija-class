@@ -137,10 +137,23 @@ export const PHASE_2_SLICE_1_PERMISSIONS = [
   "grade-boundary.update",
 ] as const;
 
+// Phase 2 / Slice 2 — assessment score-entry permissions. REFERENCE-ONLY (not
+// in ALL_PERMISSIONS, not granted to a role, not guarded) until the slice-9
+// rollup, exactly like PHASE_2_SLICE_1_PERMISSIONS. The slice-2 controllers
+// (cp2/cp3) gate via assertUserActiveAndHasOneOf(['owner','admin','teacher'])
+// with the teacher-scope pre-check; admins/owners are unscoped. `assessment.aggregate`
+// is intentionally absent here — it belongs to slice 4's aggregation pass.
+export const PHASE_2_SLICE_2_PERMISSIONS = [
+  "assessment.read",
+  "assessment-score.create",
+  "assessment-score.update",
+  "assessment.sign-off",
+] as const;
+
 export const ALL_PERMISSIONS = [
   ...PHASE_0_PERMISSIONS,
   ...PHASE_1_PERMISSIONS,
-  /* PHASE_2_SLICE_1_PERMISSIONS folded in by the slice-9 rollup */
+  /* PHASE_2_SLICE_1_PERMISSIONS + PHASE_2_SLICE_2_PERMISSIONS folded in by the slice-9 rollup */
   /* extend per phase */
 ] as const;
 

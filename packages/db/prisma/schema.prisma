@@ -884,10 +884,11 @@ model GradingScheme {
 // made for the enrollment academicYearId-consistency invariant. See
 // grading.service.ts and docs/modules/phase-2.md "Hard rules → Weights sum to 100".
 //
-// The slice-2 `scores GradingComponent[]` back-relation to AssessmentScore is
-// intentionally ABSENT here — AssessmentScore is a Phase 2 / Slice 2 table.
-// Adding the relation now would reference a model that does not yet exist; it
-// lands in slice 2 alongside that table (onDelete: Restrict on the score side).
+// The `scores AssessmentScore[]` back-relation landed in Phase 2 / Slice 2
+// (alongside the AssessmentScore table). onDelete: Restrict on the score side
+// blocks deleting a component that still has scores — a guard against orphaning
+// entered marks (the freeze invariant in grading.service.ts is the friendlier,
+// earlier gate; this FK is the DB backstop).
 model GradingComponent {
   id         String   @id @default(uuid())
   schoolId   String   @map("school_id")
@@ -899,7 +900,8 @@ model GradingComponent {
   createdAt  DateTime @default(now()) @map("created_at")
   updatedAt  DateTime @updatedAt @map("updated_at")
 
-  scheme GradingScheme @relation(fields: [schemeId], references: [id], onDelete: Cascade)
+  scheme GradingScheme     @relation(fields: [schemeId], references: [id], onDelete: Cascade)
+  scores AssessmentScore[]
 
   @@unique([schoolId, schemeId, key])
   @@index([schoolId])
@@ -925,4 +927,83 @@ model GradeBoundary {
   @@unique([schoolId, letter])
   @@index([schoolId])
   @@map("grade_boundaries")
+}
+
+// ---------- Phase 2 / Slice 2 — Assessment + AssessmentScore ----------
+//
+// The academic record's source of truth (AssessmentScore) and its denormalized
+// per-(student × subject × term) summary (Assessment). See docs/modules/
+// phase-2.md (Data model → Assessment) for the locked design. Both carry their
+// own school_id → flat direct-column RLS, like every Phase 1/2 table.
+//
+// AssessmentScore is the raw mark a teacher types. score ∈ [0, component.weight]
+// (STRICT — validated at the DTO and re-validated against the LIVE component row
+// in the service; the component's weight is the ceiling). The summary below is
+// DERIVED from these rows and materialized in the SAME tx as the score write
+// (phase-2.md Hard rules "Grades are computed server-side"). There is no FK
+// between the two tables — they are joined by the composite
+// (student, subject, term); the score's only enforced relation is to the
+// grading component (we need its live weight to validate).
+model AssessmentScore {
+  id          String   @id @default(uuid())
+  schoolId    String   @map("school_id")
+  studentId   String   @map("student_id")
+  subjectId   String   @map("subject_id")
+  termId      String   @map("term_id")
+  componentId String   @map("component_id")
+  score       Int // 0..component.weight (strict; already-weighted units)
+  enteredBy   String   @map("entered_by") // users.id (plain FK; mirrors ImportJob.createdBy — captures admin overrides)
+  enteredAt   DateTime @default(now()) @map("entered_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  component GradingComponent @relation(fields: [componentId], references: [id], onDelete: Restrict)
+
+  @@unique([schoolId, studentId, subjectId, termId, componentId])
+  @@index([schoolId])
+  @@index([schoolId, termId, subjectId])
+  @@map("assessment_scores")
+}
+
+// Denormalized summary: one row per (student × subject × term). Materialized on
+// score entry (and re-materialized on the slice-4 aggregation pass) — NOT
+// live-rendered — so the gradebook and report card read one row per cell.
+//   totalScore      = EXACT Σ (AssessmentScore.score) over the entered
+//                     components, 0..100 (no averaging/rounding/extrapolation —
+//                     the load-bearing invariant slice 4 ranks against)
+//   letterGrade     = resolved from GradeBoundary at compute time (nullable: a
+//                     pathological boundary gap would leave it null)
+//   classArmId      = denormalized from the student's Enrollment for the term
+//                     (score entry rejects a student with no enrollment)
+//   subjectPosition / classPosition  = LEFT NULL by slice 2; slice 4 computes
+//                     them in the explicit aggregation pass (positions depend on
+//                     every other student's total, so they are not a per-write
+//                     side effect).
+//   subjectSignedOffAt/By  = the subject teacher's per-(student × subject)
+//                     sign-off. In slice 2 a score POST/PATCH CLEARS this (the
+//                     implicit unlock); slice 6 owns the arm-state workflow gate.
+model Assessment {
+  id                 String    @id @default(uuid())
+  schoolId           String    @map("school_id")
+  studentId          String    @map("student_id")
+  subjectId          String    @map("subject_id")
+  termId             String    @map("term_id")
+  academicYearId     String    @map("academic_year_id") // denormalized from term
+  classArmId         String    @map("class_arm_id") // denormalized from enrollment for position scans
+  totalScore         Int       @map("total_score") // 0..100
+  letterGrade        String?   @map("letter_grade")
+  remark             String?
+  subjectPosition    Int?      @map("subject_position")
+  classPosition      Int?      @map("class_position")
+  subjectComment     String?   @map("subject_comment") // per-subject; AI-hook-ready (Phase 5), plain text
+  subjectSignedOffAt DateTime? @map("subject_signed_off_at")
+  subjectSignedOffBy String?   @map("subject_signed_off_by") // users.id
+  computedAt         DateTime  @map("computed_at")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+
+  @@unique([schoolId, studentId, subjectId, termId])
+  @@index([schoolId])
+  @@index([schoolId, termId, subjectId, classArmId]) // position scans
+  @@index([schoolId, classArmId, termId])
+  @@map("assessments")
 }

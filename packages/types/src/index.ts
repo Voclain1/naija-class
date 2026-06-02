@@ -19,3 +19,4 @@ export * from './teacher-profiles/index.js';
 export * from './teacher-assignments/index.js';
 export * from './teacher-scope/index.js';
 export * from './grading/index.js';
+export * from './assessment/index.js';
