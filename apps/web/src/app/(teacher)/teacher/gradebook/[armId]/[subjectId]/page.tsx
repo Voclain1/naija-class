@@ -132,7 +132,13 @@ export default function GradebookGridPage() {
               Grading.
             </div>
           ) : (
-            <GradebookGrid scheme={status.data.scheme} feed={status.data.feed} />
+            <GradebookGrid
+              scheme={status.data.scheme}
+              initialFeed={status.data.feed}
+              termId={status.data.term.id}
+              classArmId={armId}
+              subjectId={subjectId}
+            />
           )}
         </>
       )}
