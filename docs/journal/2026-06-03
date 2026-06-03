@@ -1,0 +1,25 @@
+# 2026-06-03
+
+## Starting state
+Phase 2 one-third complete:
+- Slice 1 closed (grading scheme + components + boundaries + 
+  settings UI)
+- Slice 2 closed (assessment + scores + materialization + 
+  sign-off + freeze)
+- Slice 3 closed (gradebook UI + interactive save + sign-off 
+  workflow)
+- Slices 4-9 remaining (6 to go)
+
+Working tree clean, on main.
+
+## Today's outcome
+Slice 4 of Phase 2 — plan-first against phase-2.md, then cp1 
+build. Aggregation + positions, test-first. The most correctness-
+critical slice in Phase 2 (positions go on materialized PDFs 
+that schools physically distribute).
+
+## Decisions made
+- (capture as the day unfolds)
+
+## Tomorrow's first task
+- (fill at end of day)
