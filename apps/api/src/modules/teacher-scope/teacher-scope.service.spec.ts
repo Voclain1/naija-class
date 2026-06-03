@@ -343,6 +343,8 @@ describe("TeacherScope (cp2 security matrix)", () => {
     expect(result.subjectsByArm).toEqual({});
     // No term marked current in this fixture → null (slice 3 cp1).
     expect(result.currentTerm).toBeNull();
+    // The teacher is the FORM teacher of this homeroom arm (slice 4 cp2).
+    expect(result.formTeacherArmIds).toEqual([arm]);
   });
 
   it("GET /teacher-scope/me includes the school's current term (slice 3 cp1)", async () => {

@@ -1,8 +1,8 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Check, Loader2, RotateCcw } from "lucide-react";
-import { useEffect, useState } from "react";
+import { Check, Loader2, RefreshCw, RotateCcw } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
 import { useFieldArray, useForm } from "react-hook-form";
 import { toast } from "sonner";
 
@@ -12,7 +12,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ApiError } from "@/lib/api-client";
 import {
+  aggregateScores,
   bulkSaveScores,
+  getAggregateStatus,
   getGradebookFeed,
   signOffColumn,
 } from "@/lib/assessment/assessment-api";
@@ -33,6 +35,8 @@ interface Props {
   termId: string;
   classArmId: string;
   subjectId: string;
+  // The form teacher of the arm may recompute positions (slice 4).
+  canAggregate: boolean;
 }
 
 function formatStamp(stamp: string | Date): string {
@@ -43,17 +47,35 @@ function formatStamp(stamp: string | Date): string {
   });
 }
 
+function formatDateTime(stamp: string | Date): string {
+  return new Date(stamp).toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 // cp2: editable grid with an atomic Save (dirty cells only → bulk endpoint),
 // per-cell server-error binding, a "Sign off column" action (gated + lock +
 // Re-open), and a beforeunload guard for unsaved edits. Total / Grade / Position
 // stay READ-ONLY from the server-materialized feed — never summed in the browser
 // (acceptance #7).
-export function GradebookGrid({ scheme, initialFeed, termId, classArmId, subjectId }: Props) {
+export function GradebookGrid({
+  scheme,
+  initialFeed,
+  termId,
+  classArmId,
+  subjectId,
+  canAggregate,
+}: Props) {
   const components = scheme.components; // ordered by orderIndex from the API
 
   const [feed, setFeed] = useState(initialFeed);
   const [saving, setSaving] = useState(false);
   const [signingOff, setSigningOff] = useState(false);
+  const [aggregating, setAggregating] = useState(false);
+  const [positionsAt, setPositionsAt] = useState<string | Date | null>(null);
   const [banner, setBanner] = useState<string | null>(null);
   const [savedFlash, setSavedFlash] = useState(false);
   const [reopened, setReopened] = useState(false);
@@ -92,6 +114,39 @@ export function GradebookGrid({ scheme, initialFeed, termId, classArmId, subject
     window.addEventListener("beforeunload", handler);
     return () => window.removeEventListener("beforeunload", handler);
   }, [isDirty]);
+
+  // When were THIS subject's positions last computed (for the status line)?
+  const loadPositionsStatus = useCallback(async () => {
+    try {
+      const status = await getAggregateStatus(termId, classArmId);
+      setPositionsAt(status.perSubject.find((p) => p.subjectId === subjectId)?.lastComputedAt ?? null);
+    } catch {
+      // Non-fatal: the status line just shows "never computed".
+    }
+  }, [termId, classArmId, subjectId]);
+
+  useEffect(() => {
+    void loadPositionsStatus();
+  }, [loadPositionsStatus]);
+
+  // Form-teacher "Recompute positions" — a SUBJECT-NARROWED pass (this column).
+  async function onRecompute(): Promise<void> {
+    setAggregating(true);
+    setBanner(null);
+    try {
+      await aggregateScores({ termId, classArmId, subjectId });
+      const refreshed = await getGradebookFeed(termId, classArmId, subjectId);
+      applyFeed(refreshed); // positions now visible in the read-only column
+      await loadPositionsStatus();
+      toast.success("Positions recomputed.");
+    } catch (e) {
+      setBanner(
+        e instanceof ApiError ? e.message : "Couldn't recompute positions — try again.",
+      );
+    } finally {
+      setAggregating(false);
+    }
+  }
 
   const onSave = form.handleSubmit(async (values) => {
     const { rows, cellByIndex } = collectDirtyRows(values, dirtyFields);
@@ -159,7 +214,7 @@ export function GradebookGrid({ scheme, initialFeed, termId, classArmId, subject
     }
   }
 
-  const busy = saving || signingOff;
+  const busy = saving || signingOff || aggregating;
   const canSave = isDirty && isValid && !busy;
   const signOffReason = isDirty
     ? "Save your changes first"
@@ -188,9 +243,30 @@ export function GradebookGrid({ scheme, initialFeed, termId, classArmId, subject
               Saved
             </span>
           )}
+          <span className="text-xs text-muted-foreground">
+            Positions:{" "}
+            {positionsAt ? `computed ${formatDateTime(positionsAt)}` : "never computed"}
+          </span>
         </div>
 
         <div className="flex items-center gap-2">
+          {canAggregate && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              disabled={busy}
+              onClick={onRecompute}
+              title="Recompute this subject's positions for the arm"
+            >
+              {aggregating ? (
+                <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+              ) : (
+                <RefreshCw className="mr-1 h-4 w-4" />
+              )}
+              {aggregating ? "Recomputing…" : "Recompute positions"}
+            </Button>
+          )}
           {isSignedOff ? (
             !reopened && (
               <Button type="button" variant="outline" size="sm" onClick={() => setReopened(true)}>

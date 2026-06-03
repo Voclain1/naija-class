@@ -150,6 +150,11 @@ export const PHASE_2_SLICE_2_PERMISSIONS = [
   "assessment.sign-off",
 ] as const;
 
+// Phase 2 / Slice 4 — position aggregation. REFERENCE-ONLY (slice 9 rollup).
+// The aggregation endpoints gate via the service (owner/admin OR the arm's form
+// teacher), not @Permissions, until the slice-9 PermissionsGuard retrofit.
+export const PHASE_2_SLICE_4_PERMISSIONS = ["assessment.aggregate"] as const;
+
 export const ALL_PERMISSIONS = [
   ...PHASE_0_PERMISSIONS,
   ...PHASE_1_PERMISSIONS,

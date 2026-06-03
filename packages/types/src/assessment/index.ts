@@ -6,3 +6,4 @@ export * from "./update-assessment-score.dto.js";
 export * from "./bulk-assessment-score.dto.js";
 export * from "./sign-off.dto.js";
 export * from "./gradebook-feed.dto.js";
+export * from "./aggregate.dto.js";

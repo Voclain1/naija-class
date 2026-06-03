@@ -23,6 +23,9 @@ interface Loaded {
   term: TeacherCurrentTermDto;
   scheme: GradingSchemeDto;
   feed: AssessmentFeedResponse;
+  // True when the viewer is the FORM teacher of this arm — they may recompute
+  // positions (slice 4). Subject-only teachers see positions read-only.
+  canAggregate: boolean;
 }
 
 type Status =
@@ -62,7 +65,14 @@ export default function GradebookGridPage() {
       const feed = await getGradebookFeed(scope.currentTerm.id, armId, subjectId);
       setStatus({
         kind: "ready",
-        data: { armName: arm.name, subjectName: subject.name, term: scope.currentTerm, scheme, feed },
+        data: {
+          armName: arm.name,
+          subjectName: subject.name,
+          term: scope.currentTerm,
+          scheme,
+          feed,
+          canAggregate: scope.formTeacherArmIds.includes(armId),
+        },
       });
     } catch (e) {
       // A 404 from the feed means the column isn't in this teacher's scope.
@@ -138,6 +148,7 @@ export default function GradebookGridPage() {
               termId={status.data.term.id}
               classArmId={armId}
               subjectId={subjectId}
+              canAggregate={status.data.canAggregate}
             />
           )}
         </>

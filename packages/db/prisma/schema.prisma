@@ -997,7 +997,11 @@ model Assessment {
   subjectComment     String?   @map("subject_comment") // per-subject; AI-hook-ready (Phase 5), plain text
   subjectSignedOffAt DateTime? @map("subject_signed_off_at")
   subjectSignedOffBy String?   @map("subject_signed_off_by") // users.id
-  computedAt         DateTime  @map("computed_at")
+  computedAt         DateTime  @map("computed_at") // MATERIALIZATION stamp (set on score entry)
+  // POSITIONS stamp (Phase 2 / Slice 4) — set by the aggregation pass when it
+  // writes subjectPosition/classPosition. Distinct from computedAt (which is the
+  // score-materialization moment); the status endpoint sources max() of this.
+  positionsComputedAt DateTime? @map("positions_computed_at")
   createdAt          DateTime  @default(now()) @map("created_at")
   updatedAt          DateTime  @updatedAt @map("updated_at")
 

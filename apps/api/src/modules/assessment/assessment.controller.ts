@@ -12,11 +12,17 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import {
+  aggregateInputSchema,
+  aggregateStatusQuerySchema,
   assessmentFeedQuerySchema,
   bulkAssessmentScoreSchema,
   createAssessmentScoreSchema,
   signOffBulkSchema,
   updateAssessmentScoreSchema,
+  type AggregateInput,
+  type AggregateResultDto,
+  type AggregateStatusQuery,
+  type AggregateStatusResponse,
   type AssessmentDto,
   type AssessmentFeedQuery,
   type AssessmentFeedResponse,
@@ -32,6 +38,7 @@ import type { AuthContext } from "../../common/auth/auth-context";
 import { AuthGuard } from "../../common/auth/auth.guard";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import { ZodValidationPipe } from "../../common/zod-validation.pipe";
+import { AggregationService } from "./aggregation.service";
 import { AssessmentService } from "./assessment.service";
 
 // NOTE: slice-2-era guarding — AuthGuard only, with the service gating via
@@ -86,7 +93,10 @@ export class AssessmentScoresController {
 @Controller("assessments")
 @UseGuards(AuthGuard)
 export class AssessmentsController {
-  constructor(private readonly service: AssessmentService) {}
+  constructor(
+    private readonly service: AssessmentService,
+    private readonly aggregation: AggregationService,
+  ) {}
 
   // Gradebook column feed. Declared before ":id" so "/assessments?..." with no
   // path segment routes here (Nest matches the empty path on GET / regardless,
@@ -97,6 +107,26 @@ export class AssessmentsController {
     @CurrentUser() authCtx: AuthContext,
   ): Promise<AssessmentFeedResponse> {
     return this.service.getFeed(authCtx, query);
+  }
+
+  // Position aggregation (slice 4). Static paths declared before ":id" routes.
+  @Post("aggregate")
+  @HttpCode(200)
+  async aggregate(
+    @Body(new ZodValidationPipe(aggregateInputSchema)) dto: AggregateInput,
+    @CurrentUser() authCtx: AuthContext,
+    @Ip() ip: string,
+    @Req() req: Request,
+  ): Promise<AggregateResultDto> {
+    return this.aggregation.aggregate(authCtx, dto, reqContext(ip, req));
+  }
+
+  @Get("aggregate/status")
+  async aggregateStatus(
+    @Query(new ZodValidationPipe(aggregateStatusQuerySchema)) query: AggregateStatusQuery,
+    @CurrentUser() authCtx: AuthContext,
+  ): Promise<AggregateStatusResponse> {
+    return this.aggregation.getStatus(authCtx, query.termId, query.classArmId);
   }
 
   // Bulk column sign-off — declared before ":id/sign-off" for clarity (the

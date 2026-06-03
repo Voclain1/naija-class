@@ -54,6 +54,12 @@ export interface TeacherScopeDto {
   classArms: TeacherScopeArmDto[];
   subjectsByArm: Record<string, TeacherScopeSubjectDto[]>;
   currentTerm: TeacherCurrentTermDto | null;
+  // The subset of classArms where this teacher is the FORM teacher
+  // (ClassArm.classTeacherId === me). Added in Phase 2 / Slice 4: the gradebook
+  // shows the "Recompute positions" action only to a form teacher (positions
+  // are an arm-level, not a subject-level, concern). Subject-only teachers see
+  // positions read-only.
+  formTeacherArmIds: string[];
 }
 
 // Trimmed roster row for the per-arm student list. Deliberately a SUBSET of

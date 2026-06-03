@@ -8,6 +8,9 @@
 // (bulkSaveScores, signOffColumn) land in cp2.
 
 import type {
+  AggregateInput,
+  AggregateResultDto,
+  AggregateStatusResponse,
   AssessmentDto,
   AssessmentFeedResponse,
   BulkAssessmentScoreInput,
@@ -48,5 +51,26 @@ export function signOffColumn(input: SignOffBulkInput): Promise<AssessmentDto[]>
   return apiFetch<AssessmentDto[]>("/assessments/sign-off/bulk", {
     method: "POST",
     body: input,
+  });
+}
+
+// POST /assessments/aggregate — recompute positions. The gradebook calls the
+// SUBJECT-NARROWED form (subjectId set) for the form teacher's "Recompute
+// positions" action.
+export function aggregateScores(input: AggregateInput): Promise<AggregateResultDto> {
+  return apiFetch<AggregateResultDto>("/assessments/aggregate", {
+    method: "POST",
+    body: input,
+  });
+}
+
+// GET /assessments/aggregate/status — when positions were last computed.
+export function getAggregateStatus(
+  termId: string,
+  classArmId: string,
+): Promise<AggregateStatusResponse> {
+  const params = new URLSearchParams({ termId, classArmId });
+  return apiFetch<AggregateStatusResponse>(`/assessments/aggregate/status?${params.toString()}`, {
+    method: "GET",
   });
 }
