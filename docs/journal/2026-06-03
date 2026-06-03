@@ -19,7 +19,88 @@ critical slice in Phase 2 (positions go on materialized PDFs
 that schools physically distribute).
 
 ## Decisions made
-- (capture as the day unfolds)
+
+Plan-first against phase-2.md slice 4; plan approved with all decisions
+going to my leans + the added edge cases. Test-first: the cp1 test suite
+IS the slice-4 spec.
+
+### Decisive schema fact
+`Enrollment` is UNIQUE on `(schoolId, studentId, termId)` — one row per
+student per term → one arm, unambiguous. Mid-term transfers don't create a
+second same-term row (they manifest as the NEXT term's row). This collapses
+the "which arm for the term" ambiguity (Q1d is N/A) and gives a clean
+denominator: the `(termId, classArmId)` enrollment roster.
+
+### Q1 — the ranking spec (12 enumerated cases for the test suite)
+- (a) ties → SPARSE "1, 1, 3" (competition ranking; 3-way → 1,1,1,4)
+- (b) unscored (no Assessment row) → excluded (no row to rank)
+- (c) partial scoring (row exists, partial total) → ranked at the partial
+  total (matches slice-2 "partial = partial sum")
+- (d) transfer → N/A (one enrollment per term)
+- (e) withdrawn → excluded; denominator = Enrollment status=ENROLLED only.
+  A non-enrolled student's Assessment row gets subjectPosition/classPosition
+  = null (honors the phase-2.md "read the roster live" risk note)
+- (f) class position with missing subjects → average over AVAILABLE subjects;
+  KNOWN inflation limitation (5/6 subjects ranks by mean(5)); slice-6
+  report-card build re-aggregates before release
+- (g) single-student arm → position 1
+- (h) empty arm → 0 updates, no error
+- (i) all-tied → all rank 1
+- (j) CRITICAL: subject-narrowed pass must NOT touch classPosition (only a
+  full arm pass recomputes overall). Banked Phase-2 lesson: "compute scopes
+  must be narrower than write scopes."
+- (k) idempotency (re-run → identical positions)
+- (l) stable secondary sort by studentId among ties (deterministic test output)
+
+### Q2 — explicit-only trigger
+Auto-on-bulk-save deferred (spec offers it with "or"; clean future
+enhancement). Gradebook shows "positions last computed at HH:MM — Recompute".
+
+### Q3 — class position is AVERAGE-based (rank by overallAverage), matching the
+ReportCard.overallAverage displayed metric. Average stored as Int hundredths
+(money/kobo rule — no Float in grade math).
+
+### Q4 — Split 1 (pure-functions-first)
+cp1 = pure functions in packages/types/src/assessment/aggregation-rules.ts +
+golden-file unit tests (the 12 cases). NO service/endpoint/DB. cp2 = service +
+endpoints + the positionsComputedAt migration + gradebook wiring + integration
+spec (b/e/f/j-through-DB, role gate, audit, RLS isolation, idempotency) +
+manual verification.
+
+### Q5 — update ALL rows in scope (full pass: every Assessment in (term,arm);
+narrow pass: every row in (term,subject,arm)). Idempotent.
+
+### Flag A (APPROVED) — add `Assessment.positionsComputedAt DateTime?`
+One additive nullable column (cp2 migration) to back the status endpoint
+(max(positionsComputedAt) per subject + overall). computedAt is the
+MATERIALIZATION stamp (score entry) — conflating would be wrong. No new table,
+no RLS change, SD count stays 4.
+
+### Flag B (APPROVED) — gate = owner/admin OR form-teacher-of-arm
+(ClassArm.classTeacherId == caller, via getTeacherScope homeroom set). No admin
+gradebook in Phase 2, so the form teacher's "Recompute positions" button (in
+the teacher gradebook, SUBJECT-NARROWED) gives the trigger a UI home. Subject
+teachers see positions read-only. Full arm pass (with classPosition) runs at
+slice-6 report-card build or via direct admin API.
+
+### Routine
+Endpoints: POST /assessments/aggregate { termId, classArmId, subjectId? } +
+GET /assessments/aggregate/status?termId=&classArmId=. Audit assessment.aggregate
+(one row/pass, { termId, classArmId, subjectId?, studentCount, updateCount }).
+One withTenant tx/pass. PHASE_2_SLICE_4_PERMISSIONS = assessment.aggregate
+(reference-only). No RLS spec change.
+
+### cp1 build manifest
+aggregation-rules.ts: rankSparse(items) [sparse, stable-by-id],
+computeClassAverages(byStudent) [Int hundredths], computeSubjectPositions(rows)
+→ Map<studentId, position>, computeClassPositions(averages) → Map<studentId,
+position>. All pure. aggregation-rules.spec.ts: 12 cases as descriptive it()
+blocks + golden fixtures. No DB.
+
+phase-2.md is the source of truth; this entry records the slice-4 decisions.
 
 ## Tomorrow's first task
-- (fill at end of day)
+- Slice 4 cp2: AggregationService (full + narrow pass, ENROLLED-roster
+  denominator, Flag-B gate) + POST /aggregate + GET /status + the
+  positionsComputedAt migration + gradebook Recompute button + integration
+  spec + manual verification.
