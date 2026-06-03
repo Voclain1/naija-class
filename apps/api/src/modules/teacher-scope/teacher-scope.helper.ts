@@ -39,6 +39,10 @@ import type {
 export interface TeacherScope {
   classArms: TeacherScopeArmDto[];
   subjectsByArm: Map<string, TeacherScopeSubjectDto[]>;
+  // Arms where this teacher is the FORM teacher (ClassArm.classTeacherId). Used
+  // by the slice-4 gradebook to show the form-teacher-only "Recompute positions"
+  // action; the aggregation gate re-checks server-side.
+  formTeacherArmIds: string[];
 }
 
 export async function getTeacherScope(
@@ -100,5 +104,5 @@ export async function getTeacherScope(
   }
   const classArms = [...armsById.values()];
 
-  return { classArms, subjectsByArm };
+  return { classArms, subjectsByArm, formTeacherArmIds: homeroomArms.map((h) => h.id) };
 }

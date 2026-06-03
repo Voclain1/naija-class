@@ -42,6 +42,7 @@ export class TeacherScopeService {
         // Map → plain Record for the JSON wire form.
         subjectsByArm: Object.fromEntries(scope.subjectsByArm),
         currentTerm,
+        formTeacherArmIds: scope.formTeacherArmIds,
       };
     });
   }
