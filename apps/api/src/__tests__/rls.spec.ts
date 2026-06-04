@@ -2590,3 +2590,109 @@ describe("multi-tenant isolation — Phase 2 / Slice 2 (assessments)", () => {
     expect(rows).toHaveLength(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Phase 2 / Slice 5 isolation — report_cards (the 8th and final Phase 2 table;
+// RLS coverage 20 → 21). The materialized report-card artifact. Standalone (no
+// enforced relations) → arbitrary plain-string ids; school_id is the only
+// tenancy guard. Tagged via form_teacher_comment so the fixture can find its
+// rows. Contributes to acceptance #14.
+// ---------------------------------------------------------------------------
+
+describe("multi-tenant isolation — Phase 2 / Slice 5 (report_cards)", () => {
+  const runId = Math.random().toString(36).slice(2, 8);
+  let schoolA: { id: string };
+  let schoolB: { id: string };
+  let cardA: { id: string };
+  let cardB: { id: string };
+
+  async function buildCard(schoolId: string, tag: string): Promise<{ id: string }> {
+    return withTenant(schoolId, (db) =>
+      db.reportCard.create({
+        data: {
+          schoolId,
+          studentId: `stu-${tag}-${runId}`,
+          termId: `term-${tag}-${runId}`,
+          academicYearId: `year-${tag}-${runId}`,
+          classArmId: `arm-${tag}-${runId}`,
+          formTeacherComment: `c-${runId}`,
+        },
+        select: { id: true },
+      }),
+    );
+  }
+
+  beforeAll(async () => {
+    schoolA = await basePrisma.school.create({
+      data: { name: "School P2S5A", slug: `rls-p2s5a-${runId}` },
+      select: { id: true },
+    });
+    schoolB = await basePrisma.school.create({
+      data: { name: "School P2S5B", slug: `rls-p2s5b-${runId}` },
+      select: { id: true },
+    });
+    cardA = await buildCard(schoolA.id, "a");
+    cardB = await buildCard(schoolB.id, "b");
+  });
+
+  afterAll(async () => {
+    if (schoolA?.id) {
+      await basePrisma.school.delete({ where: { id: schoolA.id } }).catch(() => undefined);
+    }
+    if (schoolB?.id) {
+      await basePrisma.school.delete({ where: { id: schoolB.id } }).catch(() => undefined);
+    }
+    await basePrisma.$disconnect();
+  });
+
+  it("School A sees its own report_card only", async () => {
+    const rows = await withTenant(schoolA.id, (db) =>
+      db.reportCard.findMany({ where: { formTeacherComment: { contains: runId } } }),
+    );
+    const ids = rows.map((r) => r.id);
+    expect(ids).toContain(cardA.id);
+    expect(ids).not.toContain(cardB.id);
+  });
+
+  it("School B sees its own report_card only", async () => {
+    const rows = await withTenant(schoolB.id, (db) =>
+      db.reportCard.findMany({ where: { formTeacherComment: { contains: runId } } }),
+    );
+    const ids = rows.map((r) => r.id);
+    expect(ids).toContain(cardB.id);
+    expect(ids).not.toContain(cardA.id);
+  });
+
+  it("findUnique across tenants returns null", async () => {
+    const leak = await withTenant(schoolA.id, (db) =>
+      db.reportCard.findUnique({ where: { id: cardB.id } }),
+    );
+    expect(leak).toBeNull();
+  });
+
+  it("INSERT with another school's school_id fails the WITH CHECK clause", async () => {
+    await expect(
+      withTenant(schoolA.id, (db) =>
+        db.reportCard.create({
+          data: {
+            schoolId: schoolB.id,
+            studentId: `bad-${runId}`,
+            termId: `bad-${runId}`,
+            academicYearId: `bad-${runId}`,
+            classArmId: `bad-${runId}`,
+            formTeacherComment: `bad-${runId}`,
+          },
+        }),
+      ),
+    ).rejects.toThrow();
+  });
+
+  it("raw SQL with unset GUC returns zero rows from report_cards (FORCE RLS)", async () => {
+    const rows = await basePrisma.$transaction(async (tx) => {
+      return tx.$queryRaw<Array<{ id: string }>>`
+        SELECT id FROM report_cards WHERE form_teacher_comment LIKE ${"%" + runId + "%"}
+      `;
+    });
+    expect(rows).toHaveLength(0);
+  });
+});

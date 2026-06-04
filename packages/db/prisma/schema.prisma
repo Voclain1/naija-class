@@ -1011,3 +1011,65 @@ model Assessment {
   @@index([schoolId, classArmId, termId])
   @@map("assessments")
 }
+
+// ---------- Phase 2 / Slice 5 — Report card ----------
+//
+// Materialized artifact, NOT live-rendered. One row per (student × term). The
+// build pass (POST /report-cards/arm/build) runs the slice-4 full aggregation
+// in-tx, then snapshots the term's rollup onto this row so the PDF reads a
+// FROZEN rollup (not a live recompute). Carries the workflow state (slice 6
+// drives the state machine; slice 5 only ever creates DRAFT), the three
+// free-text comment grains, and the R2 pointer to the rendered PDF (slice 5 cp2
+// renders; pdfStatus tracks it).
+//
+// overallAverage is an Int in hundredths (7350 = 73.50%) — the money/kobo rule
+// applied to averages, no Float in grade math. overallPosition mirrors the
+// student's Assessment.classPosition (denormalized here for the PDF footer).
+// principalNote is per-arm-term, written once and denormalized identically onto
+// every card in the arm (slice 6). Carries its own school_id → flat
+// direct-column RLS, like every Phase 1/2 table.
+model ReportCard {
+  id                  String              @id @default(uuid())
+  schoolId            String              @map("school_id")
+  studentId           String              @map("student_id")
+  termId              String              @map("term_id")
+  academicYearId      String              @map("academic_year_id")
+  classArmId          String              @map("class_arm_id")
+  status              ReportCardStatus    @default(DRAFT)
+  overallTotal        Int?                @map("overall_total") // Σ subject totals
+  overallAverage      Int?                @map("overall_average") // avg × 100 (hundredths), no Float
+  overallPosition     Int?                @map("overall_position") // = student's Assessment.classPosition
+  subjectsCount       Int?                @map("subjects_count")
+  formTeacherComment  String?             @map("form_teacher_comment") // per student-term; AI-hook-ready (Phase 5)
+  principalNote       String?             @map("principal_note") // per arm-term; AI-hook-ready (Phase 5)
+  formReviewedAt      DateTime?           @map("form_reviewed_at")
+  formReviewedBy      String?             @map("form_reviewed_by") // users.id
+  principalApprovedAt DateTime?           @map("principal_approved_at")
+  principalApprovedBy String?             @map("principal_approved_by") // users.id
+  releasedAt          DateTime?           @map("released_at")
+  pdfStatus           ReportCardPdfStatus @default(PENDING) @map("pdf_status")
+  artifactUrl         String?             @map("artifact_url") // R2: schools/<id>/report-cards/<termId>/<studentId>.pdf
+  generatedAt         DateTime?           @map("generated_at")
+  createdAt           DateTime            @default(now()) @map("created_at")
+  updatedAt           DateTime            @updatedAt @map("updated_at")
+
+  @@unique([schoolId, studentId, termId])
+  @@index([schoolId])
+  @@index([schoolId, classArmId, termId, status])
+  @@map("report_cards")
+}
+
+enum ReportCardStatus {
+  DRAFT // created; scores may still be changing
+  SUBJECT_REVIEWED // every subject for the arm signed off by its subject teacher
+  FORM_REVIEWED // form teacher reviewed the arm + wrote form comments
+  PRINCIPAL_APPROVED // principal approved the arm
+  RELEASED // parent-visible; PDF materialized
+}
+
+enum ReportCardPdfStatus {
+  PENDING // not yet enqueued / awaiting render
+  GENERATING // BullMQ job running Puppeteer
+  GENERATED // artifactUrl populated
+  FAILED // render failed; retryable
+}

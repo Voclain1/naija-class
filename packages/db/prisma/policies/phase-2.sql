@@ -56,3 +56,16 @@ CREATE POLICY tenant_isolation ON "assessment_scores"
 CREATE POLICY tenant_isolation ON "assessments"
   USING      (school_id::text = current_setting('app.current_school_id', true))
   WITH CHECK (school_id::text = current_setting('app.current_school_id', true));
+
+-- ---------------------------------------------------------------------
+-- Slice 5 — report_cards. The materialized per-(student × term) report-card
+-- artifact (rollup + workflow state + comments + R2 PDF pointer). Own
+-- school_id → flat direct-column check. The 8th and final Phase 2 table.
+-- ---------------------------------------------------------------------
+
+ALTER TABLE "report_cards" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "report_cards" FORCE  ROW LEVEL SECURITY;
+
+CREATE POLICY tenant_isolation ON "report_cards"
+  USING      (school_id::text = current_setting('app.current_school_id', true))
+  WITH CHECK (school_id::text = current_setting('app.current_school_id', true));

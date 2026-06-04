@@ -155,6 +155,17 @@ export const PHASE_2_SLICE_2_PERMISSIONS = [
 // teacher), not @Permissions, until the slice-9 PermissionsGuard retrofit.
 export const PHASE_2_SLICE_4_PERMISSIONS = ["assessment.aggregate"] as const;
 
+// Phase 2 / Slice 5 — report cards. REFERENCE-ONLY (slice 9 rollup). build/render
+// gate to owner/admin in the service; reads to owner/admin OR the arm's form
+// teacher. `report-card.release` lands here for cohesion though the release
+// transition itself is slice 6.
+export const PHASE_2_SLICE_5_PERMISSIONS = [
+  "report-card.read",
+  "report-card.build",
+  "report-card.render",
+  "report-card.release",
+] as const;
+
 export const ALL_PERMISSIONS = [
   ...PHASE_0_PERMISSIONS,
   ...PHASE_1_PERMISSIONS,
