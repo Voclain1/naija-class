@@ -3,9 +3,19 @@ import { afterAll, describe, expect, it } from "vitest";
 import { basePrisma, withTenant } from "@school-kit/db";
 import { ForbiddenError, NotFoundError } from "@school-kit/types";
 
+import type { Queue } from "bullmq";
+
+import type { StorageService } from "../../common/storage";
 import { AggregationService } from "../assessment/aggregation.service";
 import { AuthService } from "../auth/auth.service";
 import { ReportCardService } from "./report-card.service";
+
+// cp1 reads/build path does not enqueue or store; stub the cp2 collaborators.
+const stubStorage = {
+  put: async () => "stub/path",
+  signUrl: async () => "file:///stub",
+} as unknown as StorageService;
+const stubQueue = { add: async () => undefined } as unknown as Queue;
 
 // Phase 2 / Slice 5 cp1 — report-card BUILD + read integration spec. Real DB,
 // real RLS. Build runs the slice-4 aggregation in-tx then snapshots the rollup
@@ -31,7 +41,7 @@ function ctx(schoolId: string, userId: string) {
 describe("ReportCardService (cp1 — build + reads)", () => {
   const runId = Math.random().toString(36).slice(2, 8);
   const authService = new AuthService();
-  const service = new ReportCardService(new AggregationService());
+  const service = new ReportCardService(new AggregationService(), stubStorage, stubQueue);
   const schoolIdsToCleanup = new Set<string>();
 
   afterAll(async () => {

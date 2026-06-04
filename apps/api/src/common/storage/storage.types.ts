@@ -9,7 +9,10 @@
 // layout.
 export type StorageObjectKey =
   | { kind: "import-source"; jobId: string }
-  | { kind: "import-error-report"; jobId: string };
+  | { kind: "import-error-report"; jobId: string }
+  // Phase 2 / Slice 5 — the rendered report-card PDF. Layout:
+  // schools/<schoolId>/report-cards/<termId>/<studentId>.pdf
+  | { kind: "report-card"; termId: string; studentId: string };
 
 export type StorageDriverKind = "filesystem" | "r2";
 

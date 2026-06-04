@@ -66,6 +66,8 @@ Format:
 
 - [ ] Move to eslint-config-next's native flat-config export when it ships. Slice 8b uses `@eslint/eslintrc`'s `FlatCompat` to consume eslint-config-next v15.5's legacy configs (the package doesn't yet ship a `flat/` export). When eslint-config-next adds native flat config (likely in a Next 15.x patch or Next 16), `packages/config/eslint/next.js` collapses to a direct spread and we drop `@eslint/eslintrc` from the dependency tree. Trigger: when next minor/major release notes mention native flat config support.
 
+- [ ] **Re-validate the report-card PDF memory gate IN A FLY.IO CONTAINER + author `apps/api/Dockerfile` with Chromium provisioning.** Slice-5 cp2's 40-card memory gate was measured in **dev on Windows** only (numbers in the 2026-06-04 journal entry). The fly.io Linux container fit is unproven. Before the first deploy that enables PDF render: (1) write `apps/api/Dockerfile` provisioning Chromium + system libs + a font (checklist in `docs/modules/phase-2.md` § "Deployment — Chromium provisioning"); (2) re-run the gate in-container against the target machine size (512MB / 1GB) — GREEN if peak RSS < 70% of budget. If it FAILS in-container, fall back to the external render service (the existing phase-2.md deferred item). **Trigger: pre-deploy / Phase 3 infra, or the first time PDF render is wanted in a deployed env.**
+
 ## Phase 1 — AI foundation tables (DONE — slice 12, 2026-06-01)
 - [x] Mastery-tracking table: thin/additive-friendly, school_id + RLS,
   RLS test extended. Minimal columns (student, school, topic_ref,
