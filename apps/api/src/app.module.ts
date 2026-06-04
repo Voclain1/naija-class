@@ -18,6 +18,7 @@ import { GradingModule } from "./modules/grading/grading.module";
 import { GuardiansModule } from "./modules/guardians/guardians.module";
 import { ImportsModule } from "./modules/imports/imports.module";
 import { InvitationsModule } from "./modules/invitations/invitations.module";
+import { ReportCardRenderModule } from "./modules/report-cards/render/report-card-render.module";
 import { ReportCardsModule } from "./modules/report-cards/report-cards.module";
 import { SchoolsModule } from "./modules/schools/schools.module";
 import { StudentsModule } from "./modules/students/students.module";
@@ -66,6 +67,7 @@ const isProd = process.env.NODE_ENV === "production";
     GradingModule,
     AssessmentModule,
     ReportCardsModule,
+    ReportCardRenderModule,
     ...(isProd ? [] : [DebugModule]),
   ],
   controllers: [HealthController],

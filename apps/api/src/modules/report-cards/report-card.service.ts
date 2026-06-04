@@ -1,19 +1,27 @@
+import { InjectQueue } from "@nestjs/bullmq";
 import { Injectable } from "@nestjs/common";
+import type { Queue } from "bullmq";
 
 import { Prisma, withTenant } from "@school-kit/db";
 import {
   NotFoundError,
   type BuildReportCardsInput,
   type BuildReportCardsResultDto,
+  type RenderArmInput,
+  type RenderArmResultDto,
   type ReportCardBoardQuery,
   type ReportCardBoardResponse,
   type ReportCardDetailDto,
   type ReportCardDto,
+  type ReportCardPdfUrlDto,
+  type ReportCardRenderData,
   type ReportCardStudentDto,
 } from "@school-kit/types";
 
 import type { AuthContext } from "../../common/auth/auth-context";
 import { assertUserActiveAndHasOneOf } from "../../common/auth/role-check";
+import { REPORT_CARDS_JOB_RENDER, REPORT_CARDS_QUEUE } from "../../common/queue";
+import { StorageService } from "../../common/storage";
 import { AggregationService } from "../assessment/aggregation.service";
 
 interface RequestContext {
@@ -24,6 +32,8 @@ interface RequestContext {
 type TenantDb = Parameters<Parameters<typeof withTenant>[1]>[0];
 
 const AUDIT_BUILD = "report-card.build";
+const AUDIT_RENDER_BATCH = "report-card.render-batch";
+const PDF_URL_TTL_SECONDS = 3600; // 1 hour (Q6) — re-issued per download click
 
 // Phase 2 / Slice 5 cp1 — report-card BUILD + read surface (no PDF; cp2 renders).
 // Build runs the slice-4 full aggregation IN-TX, then snapshots the term rollup
@@ -31,7 +41,11 @@ const AUDIT_BUILD = "report-card.build";
 // rollup, not a live recompute).
 @Injectable()
 export class ReportCardService {
-  constructor(private readonly aggregation: AggregationService) {}
+  constructor(
+    private readonly aggregation: AggregationService,
+    private readonly storage: StorageService,
+    @InjectQueue(REPORT_CARDS_QUEUE) private readonly renderQueue: Queue,
+  ) {}
 
   // POST /report-cards/arm/build — owner/admin only.
   async build(
@@ -180,6 +194,137 @@ export class ReportCardService {
       const subjects = await this.buildSubjectBreakdown(db, card.studentId, card.termId);
       return { reportCard: toReportCardDto(card), student: toStudentDto(student), subjects };
     });
+  }
+
+  // POST /report-cards/arm/render — owner/admin only. Enqueue one per-card PDF
+  // render job for every card in (term, arm), decoupled from slice-6 release.
+  async enqueueArmRender(
+    authCtx: AuthContext,
+    input: RenderArmInput,
+    reqCtx: RequestContext,
+  ): Promise<RenderArmResultDto> {
+    await assertUserActiveAndHasOneOf(authCtx, ["owner", "admin"]);
+
+    return withTenant(authCtx.schoolId, async (db) => {
+      const arm = await db.classArm.findUnique({ where: { id: input.classArmId }, select: { id: true } });
+      if (!arm) throw new NotFoundError("Class arm not found.");
+
+      const cards = await db.reportCard.findMany({
+        where: { termId: input.termId, classArmId: input.classArmId },
+        select: { id: true },
+      });
+
+      // One job per card (per-card retry isolation, mirrors the import per-row
+      // decision). schoolId from authCtx — NEVER from a body field — so
+      // tenantWorker establishes the correct tenant. jobId = card id dedupes a
+      // double-enqueue.
+      for (const card of cards) {
+        await db.reportCard.update({ where: { id: card.id }, data: { pdfStatus: "PENDING" } });
+        await this.renderQueue.add(
+          REPORT_CARDS_JOB_RENDER,
+          { schoolId: authCtx.schoolId, userId: authCtx.userId, reportCardId: card.id },
+          { jobId: `render-${card.id}` },
+        );
+      }
+
+      await db.auditLog.create({
+        data: {
+          schoolId: authCtx.schoolId,
+          userId: authCtx.userId,
+          action: AUDIT_RENDER_BATCH,
+          entityType: "report_card",
+          entityId: input.classArmId,
+          ipAddress: reqCtx.ipAddress,
+          metadata: { termId: input.termId, classArmId: input.classArmId, enqueuedCount: cards.length },
+        },
+      });
+
+      return { enqueuedCount: cards.length };
+    });
+  }
+
+  // GET /report-cards/:id/pdf — fresh short-lived signed URL once GENERATED.
+  async getPdfUrl(authCtx: AuthContext, id: string): Promise<ReportCardPdfUrlDto> {
+    await assertUserActiveAndHasOneOf(authCtx, ["owner", "admin", "teacher"]);
+
+    return withTenant(authCtx.schoolId, async (db) => {
+      const card = await db.reportCard.findUnique({
+        where: { id },
+        select: { studentId: true, termId: true, classArmId: true, pdfStatus: true },
+      });
+      if (!card) throw new NotFoundError("Report card not found.");
+      await this.assertCanReadArm(db, authCtx, card.classArmId);
+      if (card.pdfStatus !== "GENERATED") {
+        throw new NotFoundError("Report card PDF is not ready.");
+      }
+
+      const signedUrl = await this.storage.signUrl(
+        authCtx.schoolId,
+        { kind: "report-card", termId: card.termId, studentId: card.studentId },
+        PDF_URL_TTL_SECONDS,
+      );
+      return { signedUrl, expiresAt: new Date(Date.now() + PDF_URL_TTL_SECONDS * 1000) };
+    });
+  }
+
+  // Assemble everything the HTML template needs for one card, using the CALLER's
+  // tx handle (the render worker's tenantWorker db). No gate — the worker is a
+  // system job, already tenant-scoped. Returns null if the card vanished.
+  async getRenderData(db: TenantDb, reportCardId: string): Promise<ReportCardRenderData | null> {
+    const card = await db.reportCard.findUnique({
+      where: { id: reportCardId },
+      select: {
+        schoolId: true,
+        studentId: true,
+        termId: true,
+        classArmId: true,
+        academicYearId: true,
+        overallTotal: true,
+        overallAverage: true,
+        overallPosition: true,
+        subjectsCount: true,
+        formTeacherComment: true,
+        principalNote: true,
+      },
+    });
+    if (!card) return null;
+
+    const [school, term, year, arm, student] = await Promise.all([
+      // schools has no RLS → MUST filter by the card's school_id explicitly.
+      db.school.findUnique({ where: { id: card.schoolId }, select: { name: true, motto: true, logoUrl: true } }),
+      db.term.findUnique({ where: { id: card.termId }, select: { name: true, startDate: true, endDate: true } }),
+      db.academicYear.findUnique({ where: { id: card.academicYearId }, select: { label: true } }),
+      db.classArm.findUnique({ where: { id: card.classArmId }, select: { name: true } }),
+      db.student.findUnique({ where: { id: card.studentId }, select: STUDENT_BIO_SELECT }),
+    ]);
+    if (!school || !term || !year || !arm || !student) return null;
+
+    const subjects = await this.buildSubjectBreakdown(db, card.studentId, card.termId);
+
+    return {
+      school: { name: school.name, motto: school.motto, logoUrl: school.logoUrl },
+      academicYear: { label: year.label },
+      term: { name: term.name, startDate: term.startDate, endDate: term.endDate },
+      classArm: { name: arm.name },
+      student: {
+        firstName: student.firstName,
+        middleName: student.middleName,
+        lastName: student.lastName,
+        admissionNumber: student.admissionNumber,
+        gender: student.gender,
+        dateOfBirth: student.dateOfBirth,
+        photoUrl: student.photoUrl,
+      },
+      rollup: {
+        overallTotal: card.overallTotal,
+        overallAverage: card.overallAverage,
+        overallPosition: card.overallPosition,
+        subjectsCount: card.subjectsCount,
+        formTeacherComment: card.formTeacherComment,
+        principalNote: card.principalNote,
+      },
+      subjects,
+    };
   }
 
   // =========================================================================

@@ -29,6 +29,15 @@ export function pathFor(schoolId: string, key: StorageObjectKey): string {
       }
       return `schools/${schoolId}/imports/${key.jobId}/error-report.csv`;
     }
+    case "report-card": {
+      if (!UUID_RE.test(key.termId)) {
+        throw new Error(`storage: termId is not a UUID: ${redact(key.termId)}`);
+      }
+      if (!UUID_RE.test(key.studentId)) {
+        throw new Error(`storage: studentId is not a UUID: ${redact(key.studentId)}`);
+      }
+      return `schools/${schoolId}/report-cards/${key.termId}/${key.studentId}.pdf`;
+    }
   }
 }
 

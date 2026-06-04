@@ -1,0 +1,93 @@
+# 2026-06-04
+
+## Starting state
+Phase 2 4.33 of 9 slices done in 5 build days:
+- Slice 1, 2, 3, 4 closed
+- Slice 5 cp1 done (data layer + build service, no PDF)
+- Slice 5 cp2 pending (the headline-risk cp: Puppeteer + R2 + memory gate)
+- Slice 5 cp3 pending (UI)
+- Slices 6-9 pending
+
+Yesterday (2026-06-03): slice 4 cp1, slice 4 cp2, slice 5 plan-first.
+This morning: slice 5 cp1 (`217b115`, PR #45).
+
+Working tree clean, on main.
+
+## Today's outcome
+Slice 5 cp2 built end-to-end — the report-card PDF render worker. Enqueue →
+BullMQ (Redis) → in-process @Processor → pooled headless Chromium → PDF →
+storage → pdfStatus GENERATED → short-lived signed URL. Verified with a real
+render integration spec, a real BullMQ wiring smoke against a booted API, and
+the load-bearing 40-card memory measurement. NOT committed/pushed — reported
+back for review.
+
+### Build manifest
+StorageObjectKey `+report-card` case + pathFor entry (drivers key-agnostic) →
+REPORT_CARDS_QUEUE + _JOB_RENDER constants → render.dto.ts (renderArm schema,
+RenderArmResultDto, ReportCardPdfUrlDto, ReportCardRenderData) → ReportCardService
++getRenderData/+enqueueArmRender/+getPdfUrl (inject StorageService + @InjectQueue)
+→ render/ module: report-card-template.ts (hand-rolled typed HTML + mandatory
+esc()), browser-pool.ts (singleton Chromium, page recycle @20, 30s hard timeout,
+crash relaunch), render.service.ts, render.processor.ts (@Processor concurrency 1),
+report-card-render.module.ts → controller +POST arm/render (202) +GET :id/pdf
+(`:id/pdf` before `:id`) → app.module wires ReportCardRenderModule;
+ReportCardsModule registers the queue + re-exports BullModule.
+
+## Decisions made
+- **Render OUTSIDE the DB transaction — design fix the memory gate surfaced.**
+  First cut wrapped the whole render in tenantWorker's single withTenant() tx
+  (like imports VALIDATE). The 40-card gate exposed it: holding a Prisma
+  interactive tx across a multi-second Chromium render blows the 5s tx timeout
+  ("Transaction already closed… 72100 ms passed"). Refactored renderCard to own
+  its txns like imports COMMIT: (1) SHORT tx read-data + flip GENERATING, (2) NO
+  tx render + store, (3) SHORT tx flip GENERATED + audit. Processor dropped
+  tenantWorker (kept a schoolId/reportCardId guard). **Lesson: never hold a DB
+  tx across a seconds-long, externally-bounded operation.**
+- **Dropped `--single-process` / `--no-zygote`** — they crash page.pdf() with an
+  empty-message protocol error (Windows; known cross-platform PDF footgun). Kept
+  `--no-sandbox --disable-setuid-sandbox --disable-dev-shm-usage --disable-gpu`.
+  Memory bounded by page-recycle + concurrency-1, not by those flags.
+- **esc() is the single XSS boundary** — hand-rolled template, every
+  user-controlled field through esc(); a unit test runs `<script>` through every
+  field. esc is deliberately NOT idempotent (re-escapes `&`); documented+tested.
+- **Deterministic storage path** = idempotent re-render (overwrite in place).
+  artifactUrl stores the PATH; getPdfUrl mints a 1h signed URL on demand.
+- PII boundary holds: in-process under withTenant, only outbound write is the PDF
+  to our own tenant-scoped storage. No LLM, no PII off-box.
+
+### THE 40-CARD MEMORY GATE (load-bearing; Windows dev, NOT in-container)
+```
+cards rendered : 40 (all GENERATED)   wall-clock: 31073 ms (777 ms/card)
+peak Node heap : 56.5 MB   peak Node RSS: 156.1 MB   peak Chromium: 461 MB
+peak COMBINED  : 581.2 MB
+vs fly.io 512MB : FAIL  (113.5%)        vs fly.io 1024MB : GREEN (56.8%)
+```
+**FLAGGED.** 1GB machine is comfortably GREEN (56.8%) → deploy target for PDF
+render. 512MB FAILS on the Windows-dev number, but two caveats make the real
+Linux figure expected-lower: Linux headless Chromium is lighter, and Win32
+WorkingSet overcounts shared pages. So 512MB is undecided — MUST be re-measured
+in a fly.io container. External-render fallback NOT triggered (clear GREEN at
+1GB). Deferred item added: in-container re-validation + author `apps/api/Dockerfile`
+with Chromium provisioning (libs + font checklist now in phase-2.md).
+
+### Verification
+- typecheck (api+types) clean; lint (api real ESLint) clean.
+- Full api suite **656 passed + 2 skipped** (634→656; +22 = 12 template/esc unit
+  + 10 render integration). Gate + wiring-smoke guarded behind env flags (out of
+  default suite — the 2 skipped).
+- Render integration (real DB+RLS+Chromium+fs storage) 10/10: real %PDF ~75KB,
+  audit/attempt, XSS-in-data renders, RLS cross-tenant null, getPdfUrl gate,
+  owner-only enqueue, failure→not-GENERATED, **and retry-recovery (attempt 1
+  fails mid-render → GENERATING leftover → attempt 2 → GENERATED)**.
+- **BullMQ wiring smoke**: booted API (clean DI; routes `:id/pdf` before `:id`),
+  enqueued one job to real Redis, running worker consumed it → GENERATED, 75300-
+  byte `%PDF-` on disk in 1541ms.
+- SD count **4** (unchanged). Migration: **none** (cp2 is app code only).
+- Audit actions: report-card.render-batch (per enqueue), report-card.render
+  (per attempt). New dep: puppeteer ^25.1.0 (apps/api).
+
+## Tomorrow's first task
+Report back to user for review (no commit yet). On approval: slice 5 cp3 — the
+report-card UI (workflow board, card view, Regenerate button). Slice 6 owns the
+workflow state machine / Release / Reopen (the render trigger is decoupled from
+release on purpose).

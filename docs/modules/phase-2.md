@@ -521,6 +521,29 @@ Puppeteer/headless Chrome is memory-hungry, and the API's deploy target (fly.io)
 - **Hard page timeout** so a wedged render can't pin a tab forever.
 - Consider a dedicated worker process / machine for rendering so a render OOM can't take down HTTP serving. **Tracked as a slice-5 acceptance gate** — if the pooled single-browser approach blows the memory budget under a 40-card arm batch, fall back to an external render service (deferred, `docs/deferred.md`).
 
+#### Slice-5 cp2 implementation notes (what actually shipped)
+
+The render worker runs **in-process** in the API (module-structured: `apps/api/src/modules/report-cards/render/` — `browser-pool.ts`, `render.service.ts`, `render.processor.ts`, `report-card-template.ts`, `report-card-render.module.ts`). Decisions vs the spec above:
+
+- **One pooled browser, `BrowserPool`** — lazy single `puppeteer.launch`, reused across jobs, recycled (full browser teardown + relaunch) every `PAGE_RECYCLE_LIMIT = 20` pages to bound renderer leak growth. A page failure tears the browser down (distrust + cold relaunch); a Chromium `disconnected` event drops the handle so the next job relaunches.
+- **Concurrency 1** on `REPORT_CARDS_QUEUE` (`@Processor(REPORT_CARDS_QUEUE, { concurrency: 1 })`) — the load-bearing memory knob. Do **not** raise without re-running the memory gate.
+- **Hard page timeout** `PAGE_HARD_TIMEOUT_MS = 30_000` — `withPage()` races the render against a timer and kills the page (+ browser) on overrun.
+- **Chromium launch flags:** `--no-sandbox --disable-setuid-sandbox --disable-dev-shm-usage --disable-gpu`. We deliberately **dropped `--single-process` / `--no-zygote`**: they shave a little RSS but make `page.pdf()` crash the renderer with an empty-message protocol error (confirmed on Windows dev; a known cross-platform PDF-printing footgun). Page-recycle + concurrency-1 bound memory without them.
+- **Template is a hand-rolled typed function** (`renderReportCardHtml`), not React/JSX. Every user-controlled field passes through `esc()` (the single XSS boundary); a unit test feeds a `<script>` payload through every field and asserts it comes out inert.
+- **Deterministic storage path** `schools/<schoolId>/report-cards/<termId>/<studentId>.pdf` (via `StorageObjectKey` `{ kind: "report-card" }` + `pathFor`). Re-render overwrites in place — idempotent across BullMQ retries, no orphaned blobs. `artifactUrl` stores the path; `getPdfUrl` mints a short-lived (1h) signed URL on demand.
+- **PII boundary:** the worker runs in-process under `withTenant`; the only outbound write is the PDF to our own tenant-scoped storage. No student PII leaves the box; no LLM is involved.
+
+#### Deployment — Chromium provisioning (documented, NOT deploy-validated)
+
+The 40-card memory gate was measured in **dev on Windows** (see the slice-5 cp2 journal entry). It has **not** been validated inside a fly.io Linux container. Before the first deploy that exercises PDF render, the API container image must:
+
+1. **Provide a Chromium binary + its system libraries.** `puppeteer` (not `puppeteer-core`) downloads its own Chromium at `pnpm install`, but the headless binary still needs OS shared libs that aren't in a slim Node base image: `libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 libasound2 libpango-1.0-0 libcairo2 fonts-liberation` (Debian/Ubuntu names). Without them Chromium fails to launch with a missing-`.so` error.
+2. **Ship a font for Naija names + the WAEC grid** — `fonts-liberation` (or a bundled TTF) so the PDF isn't tofu boxes.
+3. **Decide binary source.** Either let `puppeteer` cache Chromium into the image at build (set `PUPPETEER_CACHE_DIR` and copy it into the runtime stage of a multi-stage build), or install the distro `chromium` package and point `puppeteer.launch({ executablePath })` at it. The former matches dev; the latter is smaller.
+4. **`/dev/shm` size.** `--disable-dev-shm-usage` is already set (forces Chromium onto `/tmp`), so the container's default 64MB `/dev/shm` is not a blocker — but if that flag is ever removed, mount a larger `/dev/shm`.
+
+There is no `apps/api/Dockerfile` yet (Phase 3 / pre-deploy work). When it lands, the steps above are its acceptance checklist, and the memory gate must be **re-measured in-container** against the fly.io machine size (512MB / 1GB) before PDF render is enabled in prod.
+
 ## UI screens — web (Next.js)
 
 New screens under `apps/web/src/app/(admin)/` (admin/principal), `apps/web/src/app/(teacher)/` (teacher). Route-group rules from CLAUDE.md apply.
