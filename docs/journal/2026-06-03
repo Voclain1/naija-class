@@ -104,3 +104,88 @@ phase-2.md is the source of truth; this entry records the slice-4 decisions.
   denominator, Flag-B gate) + POST /aggregate + GET /status + the
   positionsComputedAt migration + gradebook Recompute button + integration
   spec + manual verification.
+
+---
+
+# Phase 2 / Slice 5 — Report card materialization + Puppeteer PDF
+
+Slice 4 closed (cp1 pure ranking + cp2 service/endpoints/gradebook). Slice 5
+is the HEADLINE-RISK slice: Puppeteer at fly.io's memory budget, R2, BullMQ
+render worker, the 40-card batch gate. Plan-first; plan approved, with THREE
+of my leans OVERRIDDEN by my own pushback (the user accepted the pushbacks).
+
+## Big de-risk: primitives already exist
+R2 storage (StorageService.put/signUrl/delete, filesystem driver in dev / R2
+in prod), BullMQ + tenantWorker, and the @Processor/@InjectQueue pattern all
+shipped in Phase 1 (CSV import). StorageObjectKey is a typed union → slice 5
+ADDS a `report-card` kind + a pathFor() entry. Workers run IN the API Nest
+process (the imports precedent) — central to Q3.
+
+## Settled decisions (3 pushbacks accepted)
+- **Q3 worker process: IN-PROCESS, module-structured.** ReportCardRenderModule
+  isolates the render processor. Mandated controls = pooled single browser +
+  concurrency 1 + hard page timeout + page recycling. The 40-card memory gate
+  (cp2) is the DATA-DRIVEN escalation trigger; if it fails → deferred
+  external-service fallback OR a (then-contained) process split. BANKED LESSON:
+  "when the spec says 'consider X', the considered escalation is the deferred
+  entry, not the cp2 build." (Overrode my own (b)-separate lean.)
+- **Q7 template: HAND-ROLLED TYPED TEMPLATE + mandatory esc().**
+  renderReportCardHtml(data): string via template literals + array.map().join.
+  esc() on every user-controlled field (names, comments, school name). cp2 (or
+  a cp1 placeholder) unit-tests esc() against HTML-injection vectors (&,<,>,",',
+  + a sample XSS payload). NO react/react-dom in the API runtime. BANKED:
+  explicit escaping > implicit-by-framework for security-critical templates.
+  (Overrode my own React lean.)
+- **Q1b build calls aggregate: expose aggregateArmInTx(db, termId, classArmId).**
+  Slice-4's aggregate() wraps its own withTenant for direct callers; the new
+  public aggregateArmInTx takes an existing tx handle (delegates to the existing
+  private runFullArmPass). Build calls it inside its own withTenant → atomic, no
+  nested-tx deadlock. Small touch to slice-4 code (like slice-2 cp3 touched
+  slice-1 for the freeze guard). BANKED: services composable inside other
+  services' txs should expose *InTx variants.
+- **Q1a build trigger: explicit POST /report-cards/arm/build.**
+- **Q2 per-card jobs. Q4 concurrency 1. Q5 BullMQ auto-retry (attempts 3,
+  exponential). Q6 R2 TTL 1h + overwrite same path on re-render.**
+- **Q8 cp split = Option C (three cps):** cp1 = model + migration + RLS + build
+  service + endpoints (build, board-feed, GET :id) + integration spec, NO PDF.
+  cp2 = render worker (ReportCardRenderModule, pooled browser, conc 1, hard
+  timeout, recycling) + Puppeteer + R2 (new key kind) + per-card render + POST
+  /report-cards/arm/render + GET /:id/pdf + 40-CARD MEMORY GATE + manual smoke.
+  cp3 = UI (board read view + Download PDF + Regenerate).
+
+## Slice-5 scope boundaries
+- Render TRIGGER decoupled from slice-6 release: slice 5 ships POST
+  /report-cards/arm/render (admin). Cards stay DRAFT; slice 6 wires the state
+  machine (DRAFT→SUBJECT_REVIEWED→…→RELEASED) on top + calls the same enqueue.
+- Endpoints (slice 5): build, render, board-feed, GET :id, GET :id/pdf.
+  (release deferred to slice 6.)
+- Role gate: build/render = owner/admin only. Reads (board, :id, :id/pdf) =
+  owner/admin OR form teacher of arm (reuse slice-4 formTeacherArmIds gate).
+  Subject teachers NOT in slice-5 read scope.
+- Rollup materialized onto ReportCard at BUILD (PDF reads frozen rollup, not
+  live recompute): overallTotal, overallAverage (Int hundredths, kobo-rule),
+  overallPosition (= student's Assessment.classPosition), subjectsCount.
+  Per-subject component scores from AssessmentScore; total/grade/position/
+  comment from Assessment.
+
+## Routine
+- Migration 20260604000000_phase_2_slice_5_report_card — report_cards table
+  only; no School.* change. RLS coverage 20 → 21 (+1 table; slices 7/8 add the
+  two attendance tables → 23 later).
+- Audit: report-card.build (one row/arm-build, { termId, classArmId, cardCount,
+  mode }); report-card.render (one row/attempt by the WORKER under tenantWorker,
+  { reportCardId, pdfStatus, attempt, durationMs }) — lands in cp2.
+- PHASE_2_SLICE_5_PERMISSIONS (reference-only): report-card.read, .build,
+  .render, .release (release perm lands here for cohesion; slice 9 rollup).
+- Puppeteer + Chromium: cp2 = "build + DEV-verified" (npm install downloads dev
+  Chromium); Dockerfile changes for fly.io documented in cp2 but NOT
+  deployment-validated this session (separate deploy-test session).
+
+## cp1 build manifest
+ReportCard model + migration (report_cards + RLS) → aggregateArmInTx refactor on
+AggregationService → DTOs (ReportCardDto, board) + PHASE_2_SLICE_5_PERMISSIONS →
+ReportCardService (build: aggregateArmInTx → rollup → upsert DRAFT cards; board
+feed; getById; Flag-B read gate) → controller (build, board, GET :id) + module
+→ integration spec + rls.spec +1 block. NO PDF (cp2).
+
+phase-2.md is the source of truth; this entry records the slice-5 decisions.

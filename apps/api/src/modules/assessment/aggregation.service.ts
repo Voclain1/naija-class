@@ -130,6 +130,20 @@ export class AggregationService {
     });
   }
 
+  // Run the FULL arm pass inside a tx the CALLER owns (composability). The
+  // public aggregate()/getStatus() above open their own withTenant for direct
+  // HTTP callers; a SERVICE composing aggregation inside its own transaction
+  // (slice 5's report-card build) calls this with its db handle — atomic, no
+  // nested-tx deadlock. The caller is responsible for tenancy + authorization
+  // (build is owner/admin-gated; the db handle is already RLS-scoped).
+  async aggregateArmInTx(
+    db: TenantDb,
+    termId: string,
+    classArmId: string,
+  ): Promise<AggregateResultDto> {
+    return this.runFullArmPass(db, termId, classArmId);
+  }
+
   // =========================================================================
   // Internals
   // =========================================================================
