@@ -79,8 +79,28 @@ jobs:
           node-version: 22
           cache: pnpm
 
+      # The render integration spec (slice 5 cp2) needs real Chromium. Puppeteer's
+      # postinstall downloads Chrome only on a pnpm-store cache MISS; `cache: pnpm`
+      # above caches the pnpm STORE keyed on the lockfile, so a lockfile-unchanged
+      # PR restores a warm store, pnpm SKIPS the postinstall, and ~/.cache/puppeteer
+      # (never part of that cache) is empty → "Could not find Chrome". Restoring the
+      # browser cache BEFORE install lets a present Chrome short-circuit the
+      # postinstall download; the explicit install step below is the belt that
+      # guarantees it regardless of cache state.
+      - name: Cache Puppeteer browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/puppeteer
+          key: puppeteer-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      # Explicit Chrome install — idempotent (a no-op when the cache above hit).
+      # Installs the exact Chrome build puppeteer 25.x expects into
+      # ~/.cache/puppeteer, independent of the pnpm store cache.
+      - name: Install Chrome for Puppeteer
+        run: pnpm --filter @school-kit/api exec puppeteer browsers install chrome
 
       # Why this step exists: apps/api's test script is
       #   `dotenv -e ../../.env -- vitest run`
