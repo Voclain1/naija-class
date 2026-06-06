@@ -2687,6 +2687,20 @@ describe("multi-tenant isolation — Phase 2 / Slice 5 (report_cards)", () => {
     ).rejects.toThrow();
   });
 
+  // Slice 6: the approval workflow advances status via updateMany. RLS must
+  // scope that write to the caller's school — a cross-tenant status transition
+  // matches zero rows and leaves the other school's card untouched.
+  it("School B cannot transition (update status of) School A's report card", async () => {
+    const result = await withTenant(schoolB.id, (db) =>
+      db.reportCard.updateMany({ where: { id: cardA.id }, data: { status: "FORM_REVIEWED" } }),
+    );
+    expect(result.count).toBe(0);
+    const after = await withTenant(schoolA.id, (db) =>
+      db.reportCard.findUnique({ where: { id: cardA.id }, select: { status: true } }),
+    );
+    expect(after?.status).toBe("DRAFT");
+  });
+
   it("raw SQL with unset GUC returns zero rows from report_cards (FORCE RLS)", async () => {
     const rows = await basePrisma.$transaction(async (tx) => {
       return tx.$queryRaw<Array<{ id: string }>>`

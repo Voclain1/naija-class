@@ -20,6 +20,11 @@ import {
 
 import type { AuthContext } from "../../common/auth/auth-context";
 import { assertUserActiveAndHasOneOf } from "../../common/auth/role-check";
+// Slice 6 — released-card immutability gate + SUBJECT_REVIEWED cascade. Plain
+// functions (not Nest providers) so there's no AssessmentModule ↔
+// ReportCardsModule DI cycle; the files they live in import only db + types.
+import { assertNoReleasedCards } from "../report-cards/workflow/released-guard";
+import { cascadeSubjectReviewedIfComplete } from "../report-cards/workflow/subject-reviewed-cascade";
 import { getTeacherScope } from "../teacher-scope/teacher-scope.helper";
 
 interface RequestContext {
@@ -59,6 +64,8 @@ export class AssessmentService {
       this.assertScore(input.score, weight);
       // c) the student's enrollment for the term → classArmId + academicYearId.
       const enrollment = await this.requireEnrollment(db, authCtx.schoolId, input.studentId, input.termId);
+      // c') released-card immutability (slice 6): a RELEASED card is frozen.
+      await assertNoReleasedCards(db, input.termId, [input.studentId]);
       // d) teacher scope (admins/owners skip).
       if (scoped) {
         await this.assertSubjectInScope(
@@ -140,6 +147,8 @@ export class AssessmentService {
       const weight = await this.requireComponentWeight(db, authCtx.schoolId, existing.componentId);
       this.assertScore(input.score, weight);
       const enrollment = await this.requireEnrollment(db, authCtx.schoolId, existing.studentId, existing.termId);
+      // Released-card immutability (slice 6).
+      await assertNoReleasedCards(db, existing.termId, [existing.studentId]);
       if (scoped) {
         await this.assertSubjectInScope(
           db,
@@ -326,6 +335,10 @@ export class AssessmentService {
         }
       }
 
+      // e'') released-card immutability (slice 6): no student in the batch may
+      // have a RELEASED card for the term.
+      await assertNoReleasedCards(db, input.termId, studentIds);
+
       // f) all validation passed — atomic write of every row.
       for (const r of input.rows) {
         await db.assessmentScore.upsert({
@@ -417,6 +430,8 @@ export class AssessmentService {
         await this.assertSubjectInScope(db, authCtx.userId, row.classArmId, row.subjectId, row.academicYearId);
       }
 
+      // Released-card immutability (slice 6) — can't re-sign a released card.
+      await assertNoReleasedCards(db, row.termId, [row.studentId]);
       await this.assertColumnFullyScored(db, row.studentId, row.subjectId, row.termId);
 
       const updated = await db.assessment.update({
@@ -430,6 +445,10 @@ export class AssessmentService {
         subjectId: row.subjectId,
         termId: row.termId,
       });
+
+      // SUBJECT_REVIEWED eager cascade (slice 6): if the arm is now fully signed
+      // off, advance its DRAFT cards. Same tx; no own audit (rides on sign-off).
+      await cascadeSubjectReviewedIfComplete(db, row.termId, row.classArmId);
 
       return toAssessmentDto(updated);
     });
@@ -467,6 +486,9 @@ export class AssessmentService {
         select: { studentId: true },
       });
       const studentIds = enrollments.map((e) => e.studentId);
+
+      // Released-card immutability (slice 6).
+      await assertNoReleasedCards(db, input.termId, studentIds);
 
       // Every enrolled student's column must be fully scored before sign-off.
       const componentIds = (
@@ -518,6 +540,9 @@ export class AssessmentService {
         subjectId: input.subjectId,
         count: updated.length,
       });
+
+      // SUBJECT_REVIEWED eager cascade (slice 6).
+      await cascadeSubjectReviewedIfComplete(db, input.termId, input.classArmId);
 
       return updated.map(toAssessmentDto);
     });
