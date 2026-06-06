@@ -21,6 +21,7 @@
     "db:migrate": "pnpm --filter @school-kit/db migrate",
     "db:reset": "pnpm --filter @school-kit/db migrate:reset",
     "db:seed": "pnpm --filter @school-kit/db seed",
+    "dev:seed": "pnpm --filter @school-kit/db dev:seed",
     "db:studio": "pnpm --filter @school-kit/db studio",
     "ai:eval": "pnpm --filter @school-kit/ai eval",
     "clean": "turbo run clean && rm -rf node_modules",

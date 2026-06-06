@@ -1,0 +1,87 @@
+# 2026-06-05
+
+## Starting state
+Phase 2 ~50% complete in 5.5 build days:
+- Slices 1-4 closed
+- Slice 5 cp1 + cp2 merged (data + render worker)
+- Slice 5 cp3 built yesterday but UNCOMMITTED — pending browser
+  pass for the 8 manual scenarios
+- Slices 6-9 pending
+
+Yesterday's parked state: cp3 work in working tree, typecheck +
+lint + suite green; 8 browser scenarios needed before commit.
+
+## Today's outcome
+1. Run the 8 browser scenarios for cp3
+2. If green: commit + push + merge → slice 5 CLOSED
+3. Then: slice 6 plan-first (approval workflow + comment editing
+   + release/reopen)
+
+## Decisions made
+- **Dev-seed script** (`packages/db/prisma/dev-seed.ts`, `pnpm dev:seed`) to
+  unblock the cp3 browser pass with realistic data. Creates a complete ACTIVE
+  test school: owner + teacher logins (dev-owner / dev-teacher @
+  test.naija-class.local / Test1234!), 14 class levels, 6 secondary arms (owner
+  = form teacher of JSS 2 A), 8 subjects mapped to all levels, 5 Nigerian-named
+  students enrolled in JSS 2 A (First Term), Maths + English scored (the other 6
+  subjects left UNSCORED so the cp3 "no scores" states are exercisable), and
+  positions/grades computed via the slice-4 pure ranking funcs.
+  - **Idempotent** — every write is an upsert/find-or-create on a natural key;
+    ran twice, row counts identical (1 school / 2 users / 6 arms / 8 subjects /
+    5 students / 10 assessments / 30 scores / 2 teacher-assignments / 48
+    class-subjects). `pnpm db:seed` (system roles) is untouched and is a
+    prerequisite.
+  - **Connection:** DIRECT_URL (privileged `school_kit`) so the seed writes
+    across the tenant without juggling the RLS GUC per table — same trust
+    bracket as migrations; app still reads as `app_user` under RLS.
+  - **Password:** added `argon2` to `packages/db` devDeps and hash with
+    `argon2id` exactly as `AuthService` does (can't import apps/api from
+    packages/db — wrong dep direction). Verified: both seeded logins return 200
+    + token via the real `/auth/login`; wrong password → 401.
+  - **Positions verified** against the design: subject positions diverge between
+    Maths and English; English has a 79/79 tie ranked "2,2,4" (sparse); class
+    position denormalized consistently across each student's rows.
+  - One deviation from the brief's literal script string: the package.json entry
+    is `dotenv -e ../../.env -- tsx prisma/dev-seed.ts` (not bare `tsx …`) so
+    DATABASE_URL/DIRECT_URL actually load — matches every other db script.
+  - Form-teacher-of-JSS-2-A is the OWNER (per the brief). NOTE for scenario 7:
+    the cp3 form-teacher-scoped view is a TEACHER-role path, and dev-teacher is
+    deliberately a subject-only (non-form) teacher — so to exercise "form teacher
+    sees only their arm + 404 on others" you'd point a teacher-role user at an
+    arm they form-teach. Flagged, not changed (followed the brief).
+  - Amendment: dev-teacher now ALSO form-teaches JSS 1 A (generalized the arm
+    loop to a `formTeacherByLevelCode` map: jss2→owner, jss1→teacher) so the
+    teacher-role + form-teacher path (scenario 7) is clickable. Idempotent.
+
+- **cp3 render bug — jobId dedup made Render-all / Regenerate silent no-ops.**
+  Browser pass surfaced cards stuck at `pdfStatus = PENDING` forever. Diagnosed
+  empirically (booted `pnpm dev:api`, inspected Redis): the worker WAS processing
+  jobs fine — the producer was the problem.
+  - **Bug:** `enqueueArmRender` added jobs with a stable `jobId =
+    render-${card.id}` (`report-card.service.ts`). Card ids are stable across
+    rebuilds (upsert on (school,student,term)), and the queue retained completed
+    jobs (`removeOnComplete: { age: 3600 }`). BullMQ **ignores add() when that
+    jobId already exists**, so every re-enqueue after the first was a silent
+    no-op → the card was flipped to PENDING but no job ran. Confirmed in Redis:
+    job hashes with `processedOn`/`finishedOn` from a prior session, cards
+    PENDING, worker logged nothing; deleting the keys made the identical enqueue
+    render all 5.
+  - **Fix:** dropped the stable jobId (let BullMQ auto-assign) so every request
+    runs; set `removeOnComplete: true` (nothing to retain without a jobId); and
+    reordered `enqueueArmRender` to enqueue FIRST, then flip pdfStatus → PENDING
+    (so a failed add() can't leave a card mislabelled PENDING with no job).
+  - **Lesson:** the jobId-dedup pattern was borrowed from the imports queue,
+    where it's CORRECT ("validate the same file again" should be a no-op). For
+    report cards the intent is OPPOSITE — "regenerate the same card again" MUST
+    re-run. A borrowed pattern's semantics don't transfer; match the pattern to
+    the action, not the neighbouring module.
+  - **cp2 smoke gap:** the wiring smoke creates a fresh school + fresh card every
+    run and enqueues ONCE with a never-seen jobId, so it never exercised the
+    re-enqueue/dedup path — false confidence. Closed with a render-spec
+    regression test ("re-render is NOT deduped"): a real BullMQ queue, two
+    enqueues of the same card → asserts two DISTINCT job ids + no stable jobId +
+    both render (2 audit rows). Would have caught this pre-merge. Render spec
+    11 → 12.
+
+## Tomorrow's first task
+- (fill at end of day)

@@ -2,6 +2,7 @@
 
 import {
   BarChart3,
+  FileText,
   GraduationCap,
   LayoutDashboard,
   Settings,
@@ -32,6 +33,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: "Staff", href: "/staff", icon: Users, enabled: true },
   { label: "Academics", href: "/settings/academic", icon: BarChart3, enabled: true },
   { label: "Grading", href: "/settings/grading", icon: SlidersHorizontal, enabled: true },
+  { label: "Report Cards", href: "/report-cards", icon: FileText, enabled: true },
   { label: "Finance", href: "/finance", icon: Wallet, enabled: false },
   { label: "Reports", href: "/reports", icon: BarChart3, enabled: false },
   { label: "Settings", href: "/settings", icon: Settings, enabled: true },

@@ -197,7 +197,9 @@ export class ReportCardService {
   }
 
   // POST /report-cards/arm/render — owner/admin only. Enqueue one per-card PDF
-  // render job for every card in (term, arm), decoupled from slice-6 release.
+  // render job for every card in (term, arm). When input.reportCardId is set,
+  // narrow to that single card (the cp3 per-card "Regenerate" action), decoupled
+  // from slice-6 release.
   async enqueueArmRender(
     authCtx: AuthContext,
     input: RenderArmInput,
@@ -209,22 +211,44 @@ export class ReportCardService {
       const arm = await db.classArm.findUnique({ where: { id: input.classArmId }, select: { id: true } });
       if (!arm) throw new NotFoundError("Class arm not found.");
 
+      // Default: every card in (term, arm). When reportCardId is set, narrow to
+      // that one card — but KEEP the term+arm filter so a card id from another
+      // arm/term matches nothing (cross-arm validation falls out of the where
+      // clause; no separate ownership check needed).
       const cards = await db.reportCard.findMany({
-        where: { termId: input.termId, classArmId: input.classArmId },
+        where: {
+          termId: input.termId,
+          classArmId: input.classArmId,
+          ...(input.reportCardId ? { id: input.reportCardId } : {}),
+        },
         select: { id: true },
       });
 
       // One job per card (per-card retry isolation, mirrors the import per-row
-      // decision). schoolId from authCtx — NEVER from a body field — so
-      // tenantWorker establishes the correct tenant. jobId = card id dedupes a
-      // double-enqueue.
+      // decision). schoolId from authCtx — NEVER from a body field — so the
+      // worker establishes the correct tenant.
+      //
+      // NO custom jobId. A stable `render-${card.id}` jobId would dedupe against
+      // a PRIOR completed/retained job in Redis — which is correct for "validate
+      // the same import again" but WRONG for "regenerate the same card again":
+      // BullMQ silently ignores add() when that jobId already exists, so every
+      // Regenerate / Render-all after the first becomes a no-op and the card
+      // sticks at PENDING. Let BullMQ auto-assign a unique id so every request
+      // actually runs. Double-enqueue safety is already covered by the worker
+      // (concurrency 1 + deterministic R2-path overwrite) — a rare double click
+      // just renders twice, harmlessly.
+      //
+      // ORDER MATTERS: enqueue FIRST, flip pdfStatus → PENDING only after the
+      // add() succeeds. If add() throws (Redis blip), we must NOT leave the card
+      // labelled PENDING with no job behind it — the throw aborts the tx and the
+      // pdfStatus update never ran.
       for (const card of cards) {
+        await this.renderQueue.add(REPORT_CARDS_JOB_RENDER, {
+          schoolId: authCtx.schoolId,
+          userId: authCtx.userId,
+          reportCardId: card.id,
+        });
         await db.reportCard.update({ where: { id: card.id }, data: { pdfStatus: "PENDING" } });
-        await this.renderQueue.add(
-          REPORT_CARDS_JOB_RENDER,
-          { schoolId: authCtx.schoolId, userId: authCtx.userId, reportCardId: card.id },
-          { jobId: `render-${card.id}` },
-        );
       }
 
       await db.auditLog.create({
@@ -235,7 +259,12 @@ export class ReportCardService {
           entityType: "report_card",
           entityId: input.classArmId,
           ipAddress: reqCtx.ipAddress,
-          metadata: { termId: input.termId, classArmId: input.classArmId, enqueuedCount: cards.length },
+          metadata: {
+            termId: input.termId,
+            classArmId: input.classArmId,
+            reportCardId: input.reportCardId ?? null,
+            enqueuedCount: cards.length,
+          },
         },
       });
 

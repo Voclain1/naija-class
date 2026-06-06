@@ -2,11 +2,13 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { Queue } from "bullmq";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { basePrisma, withTenant } from "@school-kit/db";
 import { ForbiddenError, NotFoundError } from "@school-kit/types";
 
+import { REPORT_CARDS_QUEUE } from "../../../common/queue";
 import { FilesystemStorageDriver } from "../../../common/storage/filesystem-storage.driver";
 import { StorageService } from "../../../common/storage/storage.service";
 import { AggregationService } from "../../assessment/aggregation.service";
@@ -14,6 +16,21 @@ import { AuthService } from "../../auth/auth.service";
 import { ReportCardService } from "../report-card.service";
 import { BrowserPool } from "./browser-pool";
 import { RenderService } from "./render.service";
+
+// Redis connection for the one test that uses a REAL BullMQ queue (the
+// jobId-dedup regression). Mirrors QueueModule's URL parsing.
+function redisConnection() {
+  const url = process.env.REDIS_URL ?? "redis://localhost:6379";
+  const p = new URL(url);
+  return {
+    host: p.hostname,
+    port: p.port ? Number(p.port) : 6379,
+    username: p.username || undefined,
+    password: p.password || undefined,
+    db: p.pathname && p.pathname.length > 1 ? Number(p.pathname.slice(1)) : 0,
+    maxRetriesPerRequest: null,
+  };
+}
 
 // Phase 2 / Slice 5 cp2 — render integration spec. Real DB + real RLS + real
 // Chromium + a filesystem StorageService rooted in a temp dir. Proves:
@@ -357,6 +374,49 @@ describe("RenderService (cp2 — PDF render)", () => {
     expect(statuses.every((c) => c.pdfStatus === "PENDING")).toBe(true);
   }, 60_000);
 
+  it("enqueueArmRender with reportCardId narrows to a SINGLE card (cp3 Regenerate)", async () => {
+    const { schoolId, ownerId } = await makeSchool("enq1");
+    const armId = await makeArm(schoolId, "enq1");
+    const subjectId = await makeSubject(schoolId, "enq1");
+    const { yearId, termId } = await makeYearTerm(schoolId, "enq1");
+    const s1 = await enrollStudent(schoolId, { armId, termId, yearId, suffix: "o1" });
+    const s2 = await enrollStudent(schoolId, { armId, termId, yearId, suffix: "o2" });
+    for (const s of [s1, s2]) await score(schoolId, { studentId: s, subjectId, termId, yearId, armId, total: 55 });
+    await reportCards.build(ctx(schoolId, ownerId), { termId, classArmId: armId }, reqCtx);
+
+    const target = await withTenant(schoolId, (db) =>
+      db.reportCard.findFirstOrThrow({ where: { termId, classArmId: armId, studentId: s1 }, select: { id: true } }),
+    );
+
+    const result = await reportCards.enqueueArmRender(
+      ctx(schoolId, ownerId),
+      { termId, classArmId: armId, reportCardId: target.id },
+      reqCtx,
+    );
+    expect(result).toEqual({ enqueuedCount: 1 });
+
+    // ONLY the target card flipped to PENDING from DRAFT-build's PENDING... both
+    // are PENDING after build, so prove the enqueue touched only one by checking
+    // the OTHER card was never updated (its updatedAt is unchanged). Simpler:
+    // assert exactly one render-batch audit row names this reportCardId.
+    const audit = await withTenant(schoolId, (db) =>
+      db.auditLog.findFirstOrThrow({
+        where: { action: "report-card.render-batch", entityId: armId },
+        select: { metadata: true },
+      }),
+    );
+    expect(audit.metadata).toMatchObject({ reportCardId: target.id, enqueuedCount: 1 });
+
+    // A reportCardId from a DIFFERENT arm matches nothing (cross-arm guard).
+    const otherArmId = await makeArm(schoolId, "enq1-other");
+    const cross = await reportCards.enqueueArmRender(
+      ctx(schoolId, ownerId),
+      { termId, classArmId: otherArmId, reportCardId: target.id },
+      reqCtx,
+    );
+    expect(cross).toEqual({ enqueuedCount: 0 });
+  }, 60_000);
+
   it("enqueueArmRender is owner/admin only — a teacher is forbidden", async () => {
     const f = await seedOneCard("enq-teacher", { classTeacherId: "x", firstName: "Z" });
     await expect(
@@ -373,5 +433,76 @@ describe("RenderService (cp2 — PDF render)", () => {
     const url = await reportCards.getPdfUrl(ctx(f.schoolId, f.ownerId), f.cardId);
     expect(url.signedUrl).toContain(`report-cards/${f.termId}/${f.studentId}.pdf`);
     expect(url.expiresAt).toBeInstanceOf(Date);
+  }, 60_000);
+
+  // ---- jobId-dedup regression (the cp3 PENDING-forever bug) ---------------
+
+  it("re-render is NOT deduped — two enqueues of the same card create two distinct jobs", async () => {
+    // THE regression test for the cp3 blocker. enqueueArmRender used a stable
+    // `render-${cardId}` jobId; combined with completed-job retention, BullMQ
+    // silently dropped every re-enqueue (Regenerate / Render-all) as a duplicate
+    // → cards stuck at PENDING. The fix drops the jobId so each request is a
+    // fresh job.
+    //
+    // We use a REAL BullMQ queue (the stub used elsewhere can't exhibit dedup)
+    // wrapped to capture the job id each add() returns. With a stable jobId a
+    // duplicate add returns the SAME existing job id → the captured set collapses
+    // to 1; the fix yields 2 distinct ids. Then we render both jobs through the
+    // real renderCard (the worker's body) to prove the second actually re-runs.
+    //
+    // Throwaway queue NAME (not REPORT_CARDS_QUEUE): a real worker — e.g. a
+    // `dev:api` on the same Redis — would otherwise consume these jobs and add
+    // its own renders, making the audit-count assertion flaky. We simulate the
+    // worker ourselves, so isolation is all we need from the queue.
+    const queueName = `${REPORT_CARDS_QUEUE}-test-${runId}`;
+    const realQueue = new Queue(queueName, { connection: redisConnection() });
+    await realQueue.obliterate({ force: true });
+
+    const adds: { reportCardId: string; jobId: string; passedJobId: unknown }[] = [];
+    const captureQueue = {
+      add: async (name: string, data: { reportCardId: string }, opts?: { jobId?: string }) => {
+        const job = await realQueue.add(name, data, opts);
+        adds.push({ reportCardId: data.reportCardId, jobId: String(job.id), passedJobId: opts?.jobId });
+        return job;
+      },
+    } as unknown as Queue;
+    const svc = new ReportCardService(new AggregationService(), storage, captureQueue);
+
+    try {
+      const f = await seedOneCard("redo");
+
+      // Render-all, then a Regenerate on the SAME card — back to back, no flush.
+      for (let i = 0; i < 2; i++) {
+        await svc.enqueueArmRender(
+          ctx(f.schoolId, f.ownerId),
+          { termId: f.termId, classArmId: f.armId, reportCardId: f.cardId },
+          reqCtx,
+        );
+      }
+
+      // Both enqueues hit add() and produced DISTINCT job ids (no dedup), and
+      // neither passed a stable jobId (the root cause).
+      expect(adds.length).toBe(2);
+      expect(new Set(adds.map((a) => a.jobId)).size).toBe(2);
+      expect(adds.every((a) => a.passedJobId === undefined)).toBe(true);
+
+      // Drain both jobs through the real renderCard (worker body) → the card
+      // re-renders. Two render audit rows prove two real renders, not one deduped.
+      for (const a of adds) {
+        await render.renderCard({ schoolId: f.schoolId, userId: f.ownerId, reportCardId: a.reportCardId, attempt: 1 });
+      }
+
+      const after = await cardState(f.schoolId, f.cardId);
+      expect(after.pdfStatus).toBe("GENERATED");
+      expect(after.artifactUrl).toBe(`schools/${f.schoolId}/report-cards/${f.termId}/${f.studentId}.pdf`);
+
+      const renderAudits = await withTenant(f.schoolId, (db) =>
+        db.auditLog.count({ where: { action: "report-card.render", entityId: f.cardId } }),
+      );
+      expect(renderAudits).toBe(2);
+    } finally {
+      await realQueue.obliterate({ force: true }).catch(() => undefined);
+      await realQueue.close();
+    }
   }, 60_000);
 });

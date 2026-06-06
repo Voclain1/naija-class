@@ -86,8 +86,81 @@ with Chromium provisioning (libs + font checklist now in phase-2.md).
 - Audit actions: report-card.render-batch (per enqueue), report-card.render
   (per attempt). New dep: puppeteer ^25.1.0 (apps/api).
 
+## Slice 5 cp3 — report-card UI (CLOSES SLICE 5)
+Built the admin + form-teacher report-card UI on top of cp1/cp2. NOT committed
+— reported back for review.
+
+### cp2 endpoint extension (the one server change)
+`renderArmSchema` gained an optional `reportCardId`; `enqueueArmRender` narrows
+the enqueue to that one card when present, KEEPING the term+arm filter so a card
+id from another arm matches nothing (cross-arm validation falls out of the where
+clause — no separate ownership check). Audit metadata carries `reportCardId`.
+This backs the per-card "Regenerate" button. API-additive; the arm-level call is
+unchanged. +1 integration test (single-card narrow + cross-arm → enqueuedCount 0).
+
+### UI manifest
+- `lib/report-cards/report-card-api.ts` — 5 wrappers (getBoard, getById, build,
+  render[+optional reportCardId], getPdfUrl), apiFetch convention.
+- `lib/report-cards/format.ts` — formatAverage (Int hundredths → "73.50%"),
+  formatOrdinal, formatInt, formatStamp, fullStudentName.
+- `components/report-cards/status-badges.tsx` — WorkflowStatusBadge (DRAFT…
+  RELEASED, forward-compatible) + PdfStatusBadge (PENDING/GENERATING/GENERATED/
+  FAILED, color-coded + spinner).
+- `(admin)/report-cards/page.tsx` — picker. Role-branched: owner/admin get a
+  term selector (years→terms) + ALL arms; a form teacher is current-term-only +
+  ONLY formTeacherArmIds (the slice-4 Flag-B gate, client-side mirror).
+- `(admin)/report-cards/[armId]/page.tsx` — workflow board. Build (disabled once
+  cards exist, last-built stamp) + Render-all (owner/admin only); per-row View /
+  Download (GENERATED) / Regenerate (GENERATED|FAILED, owner/admin); polls
+  getBoard every 4s while any card is GENERATING, stops when none remain; skeleton
+  / empty / out-of-scope (404) / no-term states.
+- `(admin)/report-cards/[armId]/[reportCardId]/page.tsx` — card detail: bio +
+  badges, per-subject breakdown (component cols derived from the data, like the
+  PDF template), rollup boxes, READ-ONLY comments ("Not yet written" placeholder
+  — editing is slice 6's surface). Polls while GENERATING.
+- `components/admin/sidebar.tsx` — "Report Cards" nav entry (FileText icon).
+
+### Decisions
+- **Role branch via `useAuth().roles`** (not permissions — slice-5 perms are
+  reference-only, PermissionsGuard is slice 9): `roles.some(r => r.key in
+  {owner,admin})` = canManage. Form teachers see read-only board + View/Download;
+  Build/Render/Regenerate are manager-only in the UI AND server-gated (defence in
+  depth — the service already does owner/admin assertion).
+- **Form-teacher scoping mirrors the gradebook**: picker filters arms to
+  formTeacherArmIds; the board re-checks it client-side and the server 404s an
+  out-of-scope arm anyway (assertCanReadArm). Authorization is server-truth; the
+  client gate is just for clean UX.
+- **Regenerate = single-card render** via the cp2 extension; optimistically flips
+  that row to GENERATING locally, polling confirms. Render-all flips every row.
+- **Download** opens the signed URL in a new tab (`window.open _blank
+  noopener`); R2 sets Content-Disposition: attachment so it downloads.
+- **Comments read-only** — slice 5 cards stay DRAFT; comment editing + the
+  workflow state machine are slice 6. No textarea rendered.
+- `useSearchParams` used directly in a `"use client"` page (no Suspense wrapper)
+  — matches the existing `enrollments/bulk` precedent.
+
+### Verification
+- typecheck (web + api) clean; lint (web + api, real ESLint) clean.
+- Full api suite **657 passed + 2 skipped** (656 → 657; +1 = the single-card
+  extension test). Web has NO unit-test harness (`"test": echo placeholder`), so
+  the cp3 gate is the manual browser pass — no web suite delta.
+- Booted api (:4000) + web (:3001): all three new routes compile + serve 200, no
+  compile / module-not-found errors. The build→render→GENERATED→pdf server path
+  was proven end-to-end in cp2 (real BullMQ wiring smoke); the cp3 single-card
+  extension by the new integration test + the mapped controller route.
+- SD count **4** (the only SD "hits" outside the 3 auth migrations are
+  explanatory comments). Migration: **none** (cp3 is UI + an API-additive DTO
+  field; no schema change).
+- **Manual browser pass (8 scenarios): NOT yet run by me** — it needs an
+  authenticated browser session (log in, click, watch badges transition, open the
+  PDF). Handed to the user as a checklist; everything beneath the UI (endpoints,
+  render pipeline, single-card extension) is automated-green.
+
+### Slice 5 status: CLOSED (pending review + the manual browser pass).
+Slice 6 next: workflow state transitions (DRAFT→…→RELEASED), comment editing,
+sign-off integration, Release + Reopen endpoints. The render trigger stays
+decoupled from release.
+
 ## Tomorrow's first task
-Report back to user for review (no commit yet). On approval: slice 5 cp3 — the
-report-card UI (workflow board, card view, Regenerate button). Slice 6 owns the
-workflow state machine / Release / Reopen (the render trigger is decoupled from
-release on purpose).
+Run the cp3 manual browser pass (8 scenarios), then — on green — commit/PR slice
+5 cp3 and move to slice 6 (report-card workflow + release).

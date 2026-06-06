@@ -2,6 +2,7 @@ import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 
+import { DEV_STORAGE_PATH, computeDevStorageSig } from "./dev-storage.util";
 import { importPrefixFor, pathFor } from "./storage.utils";
 import type {
   StorageBody,
@@ -28,10 +29,28 @@ import type {
 // somehow escapes the root (via traversal or absolute components) is
 // rejected by ensureUnderRoot() before the write.
 
+// DEV ONLY. signUrl() returns an HTTP URL pointing at DevStorageController,
+// which streams the file from local disk — browsers refuse to load the file://
+// URLs this driver used to return. Production uses the R2 driver, whose
+// signUrl() returns an https:// presigned URL natively; none of the dev-storage
+// machinery runs there.
+//
+// `signing` is optional: when absent (e.g. a unit test constructing the driver
+// with just a root) signUrl() falls back to a file:// URL — harmless because
+// tests only assert on the path substring, never open it. The StorageModule
+// always wires `signing` in dev so real download links are HTTP.
+export interface FilesystemSigning {
+  baseUrl: string; // e.g. http://localhost:4000/api/v1
+  secret: string;
+}
+
 export class FilesystemStorageDriver implements StorageDriver {
   readonly kind: StorageDriverKind = "filesystem";
 
-  constructor(private readonly root: string) {
+  constructor(
+    private readonly root: string,
+    private readonly signing?: FilesystemSigning,
+  ) {
     if (!isAbsolute(root)) {
       throw new Error(
         `FilesystemStorageDriver: root must be absolute, got ${root}`,
@@ -61,16 +80,19 @@ export class FilesystemStorageDriver implements StorageDriver {
   async signUrl(
     schoolId: string,
     key: StorageObjectKey,
-    _ttlSeconds: number,
+    ttlSeconds: number,
   ): Promise<string> {
-    // Dev signed URLs aren't actually signed — the admin's browser cannot
-    // reach a filesystem path directly. The eventual download endpoint
-    // (slice 7 / bad-rows.csv in cp3) reads through `get()` and serves
-    // the bytes via a tenant-scoped HTTP route. For symmetry with the
-    // R2 driver we return a file:// URL so callers see a string; if a
-    // caller tries to fetch it, the failure is loud rather than silent.
     const canonical = pathFor(schoolId, key);
-    return pathToFileURL(this.absolute(canonical)).toString();
+    if (!this.signing) {
+      // No signing configured (unit-test construction) — return a file:// URL.
+      // Callers in tests only inspect the path; they never fetch it.
+      return pathToFileURL(this.absolute(canonical)).toString();
+    }
+    // HTTP URL the browser CAN load: it routes back to DevStorageController,
+    // which verifies the HMAC and streams the bytes. Mirrors an R2 signed URL.
+    const exp = Date.now() + ttlSeconds * 1000;
+    const sig = computeDevStorageSig(canonical, exp, this.signing.secret);
+    return `${this.signing.baseUrl}/${DEV_STORAGE_PATH}/${canonical}?exp=${exp}&sig=${sig}`;
   }
 
   async delete(schoolId: string, key: StorageObjectKey): Promise<void> {
