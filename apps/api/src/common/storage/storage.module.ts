@@ -1,6 +1,8 @@
 import { Global, Logger, Module } from "@nestjs/common";
 import { ConfigModule, ConfigService } from "@nestjs/config";
 
+import { DevStorageController } from "./dev-storage.controller";
+import { DEV_STORAGE_SECRET, STORAGE_FS_ROOT } from "./dev-storage.util";
 import {
   FilesystemStorageDriver,
   defaultFilesystemRoot,
@@ -25,15 +27,40 @@ import type { StorageDriver } from "./storage.types";
 // switching env vars at deploy time is the only difference between dev
 // and prod. STORAGE_FILESYSTEM_ROOT overrides the dev location for
 // tests that need an isolated directory.
+//
+// DEV-ONLY download path: the filesystem driver's signUrl() returns an HTTP URL
+// pointing at DevStorageController (below), which streams the file from disk —
+// browsers refuse file:// URLs. We register that controller only when NODE_ENV
+// !== 'production'. The root + HMAC secret are provided once (STORAGE_FS_ROOT /
+// DEV_STORAGE_SECRET) and shared by the driver (signer) and the controller
+// (verifier) so they can't drift. Production uses the R2 driver (https:// signed
+// URLs) and never loads the dev controller.
+
+const isProd = process.env.NODE_ENV === "production";
 
 @Global()
 @Module({
   imports: [ConfigModule],
+  controllers: isProd ? [] : [DevStorageController],
   providers: [
     {
-      provide: STORAGE_DRIVER_TOKEN,
+      provide: STORAGE_FS_ROOT,
       inject: [ConfigService],
-      useFactory: (config: ConfigService): StorageDriver => {
+      useFactory: (config: ConfigService): string =>
+        config.get<string>("STORAGE_FILESYSTEM_ROOT") ?? defaultFilesystemRoot(),
+    },
+    {
+      provide: DEV_STORAGE_SECRET,
+      inject: [ConfigService],
+      useFactory: (config: ConfigService): string =>
+        config.get<string>("DEV_STORAGE_SECRET") ??
+        config.get<string>("BETTER_AUTH_SECRET") ??
+        "dev-only-storage-signing-key",
+    },
+    {
+      provide: STORAGE_DRIVER_TOKEN,
+      inject: [ConfigService, STORAGE_FS_ROOT, DEV_STORAGE_SECRET],
+      useFactory: (config: ConfigService, root: string, secret: string): StorageDriver => {
         const kind = (config.get<string>("STORAGE_DRIVER") ?? "filesystem").toLowerCase();
         const logger = new Logger("StorageModule");
 
@@ -52,9 +79,12 @@ import type { StorageDriver } from "./storage.types";
         }
 
         if (kind === "filesystem") {
-          const root = config.get<string>("STORAGE_FILESYSTEM_ROOT") ?? defaultFilesystemRoot();
+          // signUrl() returns an HTTP URL to DevStorageController. The base URL
+          // is the API's own origin under the api/v1 global prefix.
+          const port = config.get<string>("API_PORT") ?? "4000";
+          const baseUrl = `http://localhost:${port}/api/v1`;
           logger.log(`Using filesystem storage driver (root=${root})`);
-          return new FilesystemStorageDriver(root);
+          return new FilesystemStorageDriver(root, { baseUrl, secret });
         }
 
         throw new Error(

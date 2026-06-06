@@ -45,7 +45,10 @@ cp .env.example .env
 # Database
 pnpm db:up               # docker-compose: postgres + redis + pgvector
 pnpm db:migrate          # apply migrations
-pnpm db:seed             # seed roles, demo school
+pnpm db:seed             # seed system roles (idempotent)
+pnpm dev:seed            # DEV-ONLY: full test school for browser testing
+                         #   (idempotent; run db:seed first). Logs the
+                         #   dev-owner / dev-teacher logins + password.
 
 # Run everything
 pnpm dev

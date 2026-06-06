@@ -2,12 +2,16 @@ import { z } from "zod";
 
 import type { ReportCardSubjectRowDto } from "./report-card.dto.js";
 
-// POST /report-cards/arm/render — enqueue a per-card PDF render job for every
-// card in (term, arm). Decoupled from slice-6 release; renders DRAFT cards.
+// POST /report-cards/arm/render — enqueue a per-card PDF render job. By default
+// renders EVERY card in (term, arm); the optional `reportCardId` narrows the
+// enqueue to a SINGLE card (the per-card "Regenerate" action, slice 5 cp3). The
+// reportCardId is still validated against (termId, classArmId) server-side, so a
+// card id from another arm matches nothing. Decoupled from slice-6 release.
 export const renderArmSchema = z
   .object({
     termId: z.string().trim().min(1),
     classArmId: z.string().trim().min(1),
+    reportCardId: z.string().trim().min(1).optional(),
   })
   .strict();
 export type RenderArmInput = z.infer<typeof renderArmSchema>;
