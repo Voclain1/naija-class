@@ -36,8 +36,8 @@ describe("ReportCardWorkflowService (cp1 — state machine + gates)", () => {
   const runId = Math.random().toString(36).slice(2, 8);
   const auth = new AuthService();
   const assessment = new AssessmentService();
-  const workflow = new ReportCardWorkflowService();
   const reportCards = new ReportCardService(new AggregationService(), stubStorage, stubQueue);
+  const workflow = new ReportCardWorkflowService(reportCards);
   const schoolIds = new Set<string>();
 
   afterAll(async () => {

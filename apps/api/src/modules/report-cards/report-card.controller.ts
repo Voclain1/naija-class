@@ -1,17 +1,25 @@
-import { Body, Controller, Get, HttpCode, Ip, Param, Post, Query, Req, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, HttpCode, Ip, Param, Patch, Post, Put, Query, Req, UseGuards } from "@nestjs/common";
 import {
   buildReportCardsSchema,
+  principalNoteUpdateSchema,
   renderArmSchema,
   reportCardArmActionSchema,
+  reportCardArmReopenSchema,
   reportCardBoardQuerySchema,
+  reportCardCommentUpdateSchema,
   type BuildReportCardsInput,
   type BuildReportCardsResultDto,
+  type PrincipalNoteResultDto,
+  type PrincipalNoteUpdateInput,
   type RenderArmInput,
   type RenderArmResultDto,
   type ReportCardArmActionInput,
+  type ReportCardArmReopenInput,
   type ReportCardBoardQuery,
   type ReportCardBoardResponse,
+  type ReportCardCommentUpdateInput,
   type ReportCardDetailDto,
+  type ReportCardDto,
   type ReportCardPdfUrlDto,
   type ReportCardTransitionResultDto,
 } from "@school-kit/types";
@@ -90,6 +98,45 @@ export class ReportCardsController {
     return this.workflow.approve(authCtx, dto, reqContext(ip, req));
   }
 
+  // Release (owner/admin): PRINCIPAL_APPROVED → RELEASED + enqueue render jobs,
+  // atomically. Reopen (owner only): audited rollback to DRAFT.
+  @Post("arm/release")
+  @HttpCode(200)
+  async release(
+    @Body(new ZodValidationPipe(reportCardArmActionSchema)) dto: ReportCardArmActionInput,
+    @CurrentUser() authCtx: AuthContext,
+    @Ip() ip: string,
+    @Req() req: Request,
+  ): Promise<ReportCardTransitionResultDto> {
+    return this.workflow.release(authCtx, dto, reqContext(ip, req));
+  }
+
+  @Post("arm/reopen")
+  @HttpCode(200)
+  async reopen(
+    @Body(new ZodValidationPipe(reportCardArmReopenSchema)) dto: ReportCardArmReopenInput,
+    @CurrentUser() authCtx: AuthContext,
+    @Ip() ip: string,
+    @Req() req: Request,
+  ): Promise<ReportCardTransitionResultDto> {
+    return this.workflow.reopen(authCtx, dto, reqContext(ip, req));
+  }
+
+  // The arm-term principal note, fanned out to every card in (term, arm).
+  // Owner/admin; FORM_REVIEWED only. PUT (not PATCH) — it's an arm-level upsert
+  // of one value, the split from the per-card formTeacherComment makes the
+  // fan-out visible at the URL.
+  @Put("arm/principal-note")
+  @HttpCode(200)
+  async principalNote(
+    @Body(new ZodValidationPipe(principalNoteUpdateSchema)) dto: PrincipalNoteUpdateInput,
+    @CurrentUser() authCtx: AuthContext,
+    @Ip() ip: string,
+    @Req() req: Request,
+  ): Promise<PrincipalNoteResultDto> {
+    return this.workflow.editPrincipalNote(authCtx, dto, reqContext(ip, req));
+  }
+
   @Get()
   async board(
     @Query(new ZodValidationPipe(reportCardBoardQuerySchema)) query: ReportCardBoardQuery,
@@ -115,5 +162,18 @@ export class ReportCardsController {
     @CurrentUser() authCtx: AuthContext,
   ): Promise<ReportCardDetailDto> {
     return this.service.getById(authCtx, id);
+  }
+
+  // Per-card form-teacher comment. owner/admin OR the arm's form teacher;
+  // editable in DRAFT / SUBJECT_REVIEWED only (gated in the workflow service).
+  @Patch(":id")
+  async editComment(
+    @Param("id") id: string,
+    @Body(new ZodValidationPipe(reportCardCommentUpdateSchema)) dto: ReportCardCommentUpdateInput,
+    @CurrentUser() authCtx: AuthContext,
+    @Ip() ip: string,
+    @Req() req: Request,
+  ): Promise<ReportCardDto> {
+    return this.workflow.editFormTeacherComment(authCtx, id, dto, reqContext(ip, req));
   }
 }

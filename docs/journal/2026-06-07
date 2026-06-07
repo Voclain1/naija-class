@@ -1,0 +1,87 @@
+# 2026-06-07
+
+## Starting state
+Slice 6 cp1 (state machine + immutability gate + SUBJECT_REVIEWED cascade) merged
+to main (PR #48, squash `350e0ff`) after a CI fix (explicit Puppeteer Chrome
+install — the render integration spec was failing on pnpm-store cache hits that
+skip the postinstall Chrome download). Suite on main: 669.
+
+## Today's outcome
+Slice 6 **cp2** — release + reopen + comment editing. Built on a fresh branch off
+main. NOT committed — reported back for review.
+
+(Pre-flight surprise: the brief said "cp1 is on main" but local+remote main were
+still at slice-5 cp3 — cp1 was open PR #48. Surfaced it, asked, user merged #48,
+then I synced main and built cp2 on top. Don't trust "it's on main" — verify with
+git before building.)
+
+## What shipped (cp2)
+- **`ReportCardService.enqueueArmRenderInTx(db, schoolId, userId, termId,
+  classArmId, reportCardId?)`** — the enqueue mechanics (find cards → enqueue
+  per card → flip PENDING → return count), composable inside another service's
+  tx; writes NO audit (caller owns it). `enqueueArmRender` is now a thin
+  withTenant wrapper that calls it + writes the render-batch audit. **Third
+  *InTx pattern banked** (after `aggregateArmInTx` and the cp1 cascade/guard
+  helpers): a method composable inside another service's transaction lives
+  alongside its public withTenant-wrapping form. Inherits the slice-5 cp3
+  properties — NO stable jobId (re-release re-renders) + enqueue-before-PENDING.
+- **`ReportCardWorkflowService.release`** — PRINCIPAL_APPROVED → RELEASED +
+  releasedAt + pdfStatus PENDING, then `enqueueArmRenderInTx` **in the same tx**.
+  A thrown enqueue (Redis down) rolls the whole release back — no
+  RELEASED-with-no-pending-render window (the plan-first "same tx" decision).
+  Render FAILURES after commit do NOT roll back RELEASED (release is the academic
+  decision; the worker flips pdfStatus → FAILED individually).
+- **`ReportCardWorkflowService.reopen`** — OWNER ONLY (admin excluded per spec).
+  Required non-empty `reason`. Rolls any non-DRAFT arm → DRAFT, **clears** the
+  workflow timestamps (formReviewedAt/By, principalApprovedAt/By, releasedAt) for
+  a clean re-walk but **preserves** the PDF artifact (generatedAt / artifactUrl /
+  pdfStatus) — the R2 blob stays at its deterministic path and a re-release
+  overwrites it. **Race guard:** any card pdfStatus=GENERATING → 409
+  `ARM_RENDER_IN_FLIGHT` (don't roll a card to DRAFT while the worker is about to
+  write GENERATED onto it).
+- **Comment editing — split by grain (Q4):** per-card `PATCH /report-cards/:id`
+  (`formTeacherComment`, owner/admin OR form teacher, editable in DRAFT /
+  SUBJECT_REVIEWED) vs arm-fan-out `PUT /report-cards/arm/principal-note`
+  (owner/admin, FORM_REVIEWED only, `updateMany` writes the same note to every
+  card). The split makes the fan-out visible at the URL — a per-card PATCH that
+  secretly fanned out would mislead.
+- **Defence-in-depth:** both comment edits run the state-gate AND
+  `assertNoReleasedCards` even though the state gate already excludes RELEASED —
+  the redundancy catches a future state-gate bypass before it mutates a released
+  card.
+- Audit actions added: `report-card.release` ({…, fromStatus, toStatus,
+  cardCount, enqueuedCount}), `report-card.reopen` ({…, fromStatuses[], toStatus,
+  reason, cardCount}), `report-card.comment` (one shape, `field` distinguishes
+  per-card vs arm-level).
+
+## Decision note (consistency fix during build)
+`editPrincipalNote`'s wrong-state error is `COMMENT_NOT_EDITABLE` (a comment
+edit), NOT `assertAllInState`'s `INVALID_TRANSITION` — matches `formTeacherComment`
+and the Q5 intent. The brief mentioned both `assertAllInState` and
+COMMENT_NOT_EDITABLE; the error-code consistency wins (a comment edit isn't a
+workflow transition).
+
+## Verification
+- typecheck + lint (api) clean.
+- Full api suite **685 passed + 2 skipped** (669 → 685; +16 cp2 integration:
+  release happy/out-of-order/gate/cross-tenant; reopen happy/from-multiple-states/
+  race-guard/owner-only/reason-required/cross-tenant; comments DRAFT+SUBJECT_REVIEWED
+  editable/FORM_REVIEWED-409/RELEASED-409/principalNote-fan-out/wrong-state/
+  teacher-forbidden/stranger-404; and the re-release-after-reopen walk with real
+  Chromium proving generatedAt advances + same R2 path).
+- cp2 spec uses a REAL isolated-name BullMQ queue (so release's in-tx enqueue is
+  exercised, no stray-worker flakiness) + real filesystem storage + real
+  BrowserPool for the re-release render.
+- SD count **4** (unchanged); **no migration**, no schema/policy change.
+
+## Service split confirmed
+All cp2 methods landed on `ReportCardWorkflowService` (release / reopen /
+editFormTeacherComment / editPrincipalNote). `ReportCardService` (build / board /
+getById / breakdown / render-data) unchanged except the enqueueArmRenderInTx
+refactor + exporting REPORT_CARD_SELECT/toReportCardDto for the comment-edit
+return.
+
+## Tomorrow's first task
+Slice 6 cp3 (UI): workflow-board state-change buttons (Release/Reopen/Approve),
+comment editors (per-card formTeacherComment + arm-level principalNote), manual
+browser pass. Then slice 6 closes.

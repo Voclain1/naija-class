@@ -213,10 +213,10 @@ export class ReportCardService {
     });
   }
 
-  // POST /report-cards/arm/render — owner/admin only. Enqueue one per-card PDF
-  // render job for every card in (term, arm). When input.reportCardId is set,
-  // narrow to that single card (the cp3 per-card "Regenerate" action), decoupled
-  // from slice-6 release.
+  // POST /report-cards/arm/render — owner/admin only. Public wrapper: gate +
+  // validate the arm, open its own tx, compose enqueueArmRenderInTx, audit.
+  // When input.reportCardId is set, narrow to that single card (the cp3 per-card
+  // "Regenerate" action), decoupled from slice-6 release.
   async enqueueArmRender(
     authCtx: AuthContext,
     input: RenderArmInput,
@@ -228,45 +228,14 @@ export class ReportCardService {
       const arm = await db.classArm.findUnique({ where: { id: input.classArmId }, select: { id: true } });
       if (!arm) throw new NotFoundError("Class arm not found.");
 
-      // Default: every card in (term, arm). When reportCardId is set, narrow to
-      // that one card — but KEEP the term+arm filter so a card id from another
-      // arm/term matches nothing (cross-arm validation falls out of the where
-      // clause; no separate ownership check needed).
-      const cards = await db.reportCard.findMany({
-        where: {
-          termId: input.termId,
-          classArmId: input.classArmId,
-          ...(input.reportCardId ? { id: input.reportCardId } : {}),
-        },
-        select: { id: true },
-      });
-
-      // One job per card (per-card retry isolation, mirrors the import per-row
-      // decision). schoolId from authCtx — NEVER from a body field — so the
-      // worker establishes the correct tenant.
-      //
-      // NO custom jobId. A stable `render-${card.id}` jobId would dedupe against
-      // a PRIOR completed/retained job in Redis — which is correct for "validate
-      // the same import again" but WRONG for "regenerate the same card again":
-      // BullMQ silently ignores add() when that jobId already exists, so every
-      // Regenerate / Render-all after the first becomes a no-op and the card
-      // sticks at PENDING. Let BullMQ auto-assign a unique id so every request
-      // actually runs. Double-enqueue safety is already covered by the worker
-      // (concurrency 1 + deterministic R2-path overwrite) — a rare double click
-      // just renders twice, harmlessly.
-      //
-      // ORDER MATTERS: enqueue FIRST, flip pdfStatus → PENDING only after the
-      // add() succeeds. If add() throws (Redis blip), we must NOT leave the card
-      // labelled PENDING with no job behind it — the throw aborts the tx and the
-      // pdfStatus update never ran.
-      for (const card of cards) {
-        await this.renderQueue.add(REPORT_CARDS_JOB_RENDER, {
-          schoolId: authCtx.schoolId,
-          userId: authCtx.userId,
-          reportCardId: card.id,
-        });
-        await db.reportCard.update({ where: { id: card.id }, data: { pdfStatus: "PENDING" } });
-      }
+      const enqueuedCount = await this.enqueueArmRenderInTx(
+        db,
+        authCtx.schoolId,
+        authCtx.userId,
+        input.termId,
+        input.classArmId,
+        input.reportCardId,
+      );
 
       await db.auditLog.create({
         data: {
@@ -280,13 +249,54 @@ export class ReportCardService {
             termId: input.termId,
             classArmId: input.classArmId,
             reportCardId: input.reportCardId ?? null,
-            enqueuedCount: cards.length,
+            enqueuedCount,
           },
         },
       });
 
-      return { enqueuedCount: cards.length };
+      return { enqueuedCount };
     });
+  }
+
+  // Composable enqueue (Phase 2 / Slice 6 cp2): enqueue one render job per card
+  // in (term, arm[, reportCardId]) and flip each to PENDING, using the CALLER's
+  // tx handle. Returns enqueuedCount. Writes NO audit — the caller owns it
+  // (enqueueArmRender → report-card.render-batch; release → report-card.release).
+  //
+  // The third *InTx variant in the codebase (after aggregateArmInTx and the
+  // slice-6 cascade/guard helpers): a method composable inside another service's
+  // transaction lives alongside its public withTenant-wrapping form. Slice 6's
+  // `release` calls this so the RELEASED transition + the enqueue commit (or roll
+  // back) atomically — no RELEASED-with-no-pending-render window.
+  //
+  // Properties release inherits (from slice 5 cp3's fix): NO stable jobId (so a
+  // re-release actually re-renders — BullMQ would silently drop a duplicate
+  // jobId), and enqueue-BEFORE-PENDING ordering (a thrown add() aborts the
+  // caller's tx before any card is mislabelled PENDING with no job behind it).
+  // The default-job-options on REPORT_CARDS_QUEUE (removeOnComplete: true) keep
+  // the no-retention contract.
+  async enqueueArmRenderInTx(
+    db: TenantDb,
+    schoolId: string,
+    userId: string,
+    termId: string,
+    classArmId: string,
+    reportCardId?: string,
+  ): Promise<number> {
+    // KEEP the term+arm filter even when reportCardId is set, so a card id from
+    // another arm/term matches nothing (cross-arm validation falls out of the
+    // where clause; no separate ownership check needed).
+    const cards = await db.reportCard.findMany({
+      where: { termId, classArmId, ...(reportCardId ? { id: reportCardId } : {}) },
+      select: { id: true },
+    });
+
+    for (const card of cards) {
+      await this.renderQueue.add(REPORT_CARDS_JOB_RENDER, { schoolId, userId, reportCardId: card.id });
+      await db.reportCard.update({ where: { id: card.id }, data: { pdfStatus: "PENDING" } });
+    }
+
+    return cards.length;
   }
 
   // GET /report-cards/:id/pdf — fresh short-lived signed URL once GENERATED.
@@ -481,7 +491,9 @@ export class ReportCardService {
 // Selects + mappers
 // -------------------------------------------------------------------------
 
-const REPORT_CARD_SELECT = {
+// Exported so ReportCardWorkflowService's comment-edit can return a ReportCardDto
+// without duplicating the select/mapper (slice 6 cp2).
+export const REPORT_CARD_SELECT = {
   id: true,
   studentId: true,
   termId: true,
@@ -516,7 +528,7 @@ const STUDENT_BIO_SELECT = {
 type ReportCardRow = Prisma.ReportCardGetPayload<{ select: typeof REPORT_CARD_SELECT }>;
 type StudentBioRow = Prisma.StudentGetPayload<{ select: typeof STUDENT_BIO_SELECT }>;
 
-function toReportCardDto(row: ReportCardRow): ReportCardDto {
+export function toReportCardDto(row: ReportCardRow): ReportCardDto {
   return {
     id: row.id,
     studentId: row.studentId,
