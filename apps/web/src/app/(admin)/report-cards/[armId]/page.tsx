@@ -1,23 +1,28 @@
 "use client";
 
-import { ArrowLeft, Download, FileText, Loader2, RefreshCw } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Download, FileText, Loader2, RefreshCw, RotateCcw, Send, TriangleAlert } from "lucide-react";
 import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
-import type { ReportCardBoardRowDto } from "@school-kit/types";
+import type { ReportCardBoardRowDto, ReportCardStatusDto } from "@school-kit/types";
 
 import { PdfStatusBadge, WorkflowStatusBadge } from "@/components/report-cards/status-badges";
+import { ReopenModal } from "@/components/report-cards/reopen-modal";
 import { listAcademicYears, listTerms } from "@/lib/academic-years/academic-years-api";
 import { ApiError } from "@/lib/api-client";
 import { useAuth } from "@/lib/auth/use-auth";
 import { listClassArms } from "@/lib/class-arms/class-arms-api";
 import {
+  approveArm,
   buildReportCards,
+  formReviewArm,
   getReportCardBoard,
   getReportCardPdfUrl,
+  releaseArm,
   renderReportCards,
+  reopenArm,
 } from "@/lib/report-cards/report-card-api";
 import { formatAverage, formatInt, formatOrdinal, formatStamp, fullStudentName } from "@/lib/report-cards/format";
 import { openInNewTab } from "@/lib/report-cards/open-in-new-tab";
@@ -39,11 +44,14 @@ export default function ReportCardBoardPage() {
   const queryTermId = search.get("termId");
   const { roles } = useAuth();
   const canManage = useMemo(() => roles.some((r) => r.key === "owner" || r.key === "admin"), [roles]);
+  const isOwner = useMemo(() => roles.some((r) => r.key === "owner"), [roles]);
 
   const [status, setStatus] = useState<Status>({ kind: "loading" });
   const [rows, setRows] = useState<ReportCardBoardRowDto[]>([]);
   const [building, setBuilding] = useState(false);
   const [rendering, setRendering] = useState(false);
+  const [workflowBusy, setWorkflowBusy] = useState(false);
+  const [reopenOpen, setReopenOpen] = useState(false);
 
   // Resolve the arm name + term (manager: arms/terms APIs; form teacher: scope),
   // then load the board feed.
@@ -119,16 +127,33 @@ export default function ReportCardBoardPage() {
     [armId],
   );
 
-  // Poll while any card is GENERATING; stop once none remain.
+  // The arm's single workflow status (invariant: all cards share it). "MIXED" is
+  // a defensive case that shouldn't occur by the batch-transition invariant.
+  const armStatus = useMemo<ReportCardStatusDto | "MIXED" | null>(() => {
+    if (rows.length === 0) return null;
+    const set = new Set(rows.map((r) => r.reportCard.status));
+    return set.size === 1 ? ([...set][0] as ReportCardStatusDto) : "MIXED";
+  }, [rows]);
+
+  // Cards with an active render: GENERATING, OR a RELEASED card still PENDING
+  // (just-released, awaiting the worker → GENERATING → GENERATED). A PENDING card
+  // in a non-RELEASED arm is un-rendered-by-design, not pending work.
   const ready = status.kind === "ready" ? status : null;
-  const hasGenerating = rows.some((r) => r.reportCard.pdfStatus === "GENERATING");
+  const renderingCount = rows.filter((r) => {
+    const p = r.reportCard.pdfStatus;
+    return p === "GENERATING" || (p === "PENDING" && r.reportCard.status === "RELEASED");
+  }).length;
+  const failedCount = rows.filter((r) => r.reportCard.pdfStatus === "FAILED").length;
+  // Drives the polling loop, the "Rendering…" banner, and the workflow-button
+  // disable. True the instant release flips cards to GENERATING (optimistic).
+  const shouldPoll = renderingCount > 0;
   const refreshRef = useRef(refreshRows);
   refreshRef.current = refreshRows;
   useEffect(() => {
-    if (!ready || !hasGenerating) return;
+    if (!ready || !shouldPoll) return;
     const id = setInterval(() => void refreshRef.current(ready.termId), POLL_MS);
     return () => clearInterval(id);
-  }, [ready, hasGenerating]);
+  }, [ready, shouldPoll]);
 
   const onBuild = useCallback(async () => {
     if (!ready) return;
@@ -192,6 +217,76 @@ export default function ReportCardBoardPage() {
     }
   }, []);
 
+  // Run an arm-level workflow transition, then refresh the board. On release we
+  // optimistically flip cards to RELEASED+GENERATING so the rendering banner +
+  // spinners show immediately (polling reconciles against server truth).
+  const runWorkflow = useCallback(
+    async (action: () => Promise<void>, optimisticRelease = false) => {
+      if (!ready) return;
+      setWorkflowBusy(true);
+      try {
+        await action();
+        if (optimisticRelease) {
+          // GENERATING (not PENDING): the server briefly shows PENDING before the
+          // worker picks up, but GENERATING gives immediate "working" feedback
+          // (spinner + "Generating…" badge + the rendering banner); polling
+          // reconciles within a tick. Mirrors Render-all's optimism.
+          setRows((prev) => prev.map((r) => ({ ...r, reportCard: { ...r.reportCard, status: "RELEASED", pdfStatus: "GENERATING" } })));
+        }
+        await refreshRows(ready.termId);
+      } catch (e) {
+        toast.error(e instanceof ApiError ? e.message : "Action failed — try again.");
+      } finally {
+        setWorkflowBusy(false);
+      }
+    },
+    [ready, refreshRows],
+  );
+
+  const onFormReview = useCallback(() => {
+    if (!ready) return;
+    const termId = ready.termId;
+    void runWorkflow(async () => {
+      await formReviewArm(termId, armId);
+      toast.success("Arm submitted for form review.");
+    });
+  }, [ready, armId, runWorkflow]);
+
+  const onApprove = useCallback(() => {
+    if (!ready) return;
+    const termId = ready.termId;
+    void runWorkflow(async () => {
+      await approveArm(termId, armId);
+      toast.success("Arm approved.");
+    });
+  }, [ready, armId, runWorkflow]);
+
+  const onRelease = useCallback(() => {
+    if (!ready) return;
+    const termId = ready.termId;
+    void runWorkflow(async () => {
+      const r = await releaseArm(termId, armId);
+      toast.success(`Released ${r.cardCount} report card${r.cardCount === 1 ? "" : "s"} — generating PDFs…`);
+    }, true);
+  }, [ready, armId, runWorkflow]);
+
+  // Reopen is its own handler (modal-driven, reason required). Kept open on error
+  // so the user can retry (e.g. the ARM_RENDER_IN_FLIGHT race guard).
+  const onReopen = useCallback(
+    async (reason: string) => {
+      if (!ready) return;
+      try {
+        await reopenArm(ready.termId, armId, reason);
+        toast.success("Arm reopened to draft.");
+        setReopenOpen(false);
+        await refreshRows(ready.termId);
+      } catch (e) {
+        toast.error(e instanceof ApiError ? e.message : "Could not reopen — try again.");
+      }
+    },
+    [ready, armId, refreshRows],
+  );
+
   const lastBuilt = useMemo(() => {
     if (rows.length === 0) return null;
     return rows
@@ -236,29 +331,109 @@ export default function ReportCardBoardPage() {
               </p>
             </div>
 
-            {canManage && (
-              <div className="flex flex-wrap items-center gap-3">
+            <div className="flex flex-wrap items-center gap-3">
+              {/* Build — only when the board is empty (owner/admin). */}
+              {canManage && rows.length === 0 && (
                 <button
                   type="button"
                   onClick={onBuild}
-                  disabled={building || rows.length > 0}
-                  title={rows.length > 0 ? "Report cards already built for this term" : undefined}
+                  disabled={building}
                   className="inline-flex items-center gap-2 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {building ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
                   {building ? "Building…" : "Build report cards"}
                 </button>
+              )}
+
+              {armStatus === "MIXED" && (
+                <p className="inline-flex items-center gap-2 rounded-md border border-amber-300/60 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                  <TriangleAlert className="h-4 w-4" />
+                  Arm cards are in inconsistent states — contact administrator.
+                </p>
+              )}
+
+              {/* Form-review — DRAFT / SUBJECT_REVIEWED. owner/admin OR form teacher
+                  (anyone who can open this board), gated server-side. */}
+              {(armStatus === "DRAFT" || armStatus === "SUBJECT_REVIEWED") && (
+                <button
+                  type="button"
+                  onClick={onFormReview}
+                  disabled={workflowBusy || shouldPoll}
+                  className="inline-flex items-center gap-2 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {workflowBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                  Form-review arm
+                </button>
+              )}
+
+              {/* Approve — FORM_REVIEWED (owner/admin). */}
+              {armStatus === "FORM_REVIEWED" && canManage && (
+                <button
+                  type="button"
+                  onClick={onApprove}
+                  disabled={workflowBusy || shouldPoll}
+                  className="inline-flex items-center gap-2 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {workflowBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                  Approve arm
+                </button>
+              )}
+
+              {/* Release — PRINCIPAL_APPROVED (owner/admin). */}
+              {armStatus === "PRINCIPAL_APPROVED" && canManage && (
+                <button
+                  type="button"
+                  onClick={onRelease}
+                  disabled={workflowBusy || shouldPoll}
+                  className="inline-flex items-center gap-2 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {workflowBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                  Release arm
+                </button>
+              )}
+
+              {/* Render all PDFs — RELEASED, re-render existing artifacts (owner/admin). */}
+              {armStatus === "RELEASED" && canManage && (
                 <button
                   type="button"
                   onClick={onRenderAll}
-                  disabled={rendering || rows.length === 0}
+                  disabled={rendering || shouldPoll}
                   className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-medium transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {rendering ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
                   {rendering ? "Enqueueing…" : "Render all PDFs"}
                 </button>
+              )}
+
+              {/* Reopen — OWNER only (admin excluded), from any finalised state. */}
+              {isOwner && (armStatus === "FORM_REVIEWED" || armStatus === "PRINCIPAL_APPROVED" || armStatus === "RELEASED") && (
+                <button
+                  type="button"
+                  onClick={() => setReopenOpen(true)}
+                  disabled={workflowBusy || shouldPoll}
+                  className="inline-flex items-center gap-2 rounded-md border border-amber-300 px-3 py-2 text-sm font-medium text-amber-800 transition-colors hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <RotateCcw className="h-4 w-4" />
+                  Reopen arm
+                </button>
+              )}
+            </div>
+
+            {/* Persistent render-progress feedback — survives fast batches that
+                finish before the first poll tick, and slow 40-card batches. */}
+            {renderingCount > 0 ? (
+              <div className="flex items-center gap-2 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Rendering {renderingCount} report card{renderingCount === 1 ? "" : "s"}…
+                {failedCount > 0 ? ` · ${failedCount} failed` : ""}
               </div>
-            )}
+            ) : failedCount > 0 && armStatus === "RELEASED" ? (
+              <div className="flex items-center gap-2 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+                <TriangleAlert className="h-4 w-4" />
+                {failedCount} report card{failedCount === 1 ? "" : "s"} failed to render — use Regenerate on the affected
+                rows below.
+              </div>
+            ) : null}
           </header>
 
           {rows.length === 0 ? (
@@ -340,6 +515,8 @@ export default function ReportCardBoardPage() {
           )}
         </>
       )}
+
+      <ReopenModal open={reopenOpen} onClose={() => setReopenOpen(false)} onSubmit={onReopen} />
     </div>
   );
 }

@@ -15,6 +15,8 @@ import {
   getReportCardById,
   getReportCardPdfUrl,
   renderReportCards,
+  updateFormTeacherComment,
+  updatePrincipalNote,
 } from "@/lib/report-cards/report-card-api";
 import { formatAverage, formatInt, formatOrdinal, fullStudentName } from "@/lib/report-cards/format";
 import { openInNewTab } from "@/lib/report-cards/open-in-new-tab";
@@ -59,13 +61,17 @@ export default function ReportCardDetailPage() {
     void load();
   }, [load]);
 
-  // Poll while the PDF is generating so the badge + download action update.
-  const pdfStatus = status.kind === "ready" ? status.data.reportCard.pdfStatus : null;
+  // Poll while a render is active: GENERATING, or RELEASED+PENDING (just-released,
+  // awaiting the worker) so the badge + download action update.
+  const card = status.kind === "ready" ? status.data.reportCard : null;
+  const shouldPoll = card
+    ? card.pdfStatus === "GENERATING" || (card.pdfStatus === "PENDING" && card.status === "RELEASED")
+    : false;
   useEffect(() => {
-    if (pdfStatus !== "GENERATING") return;
+    if (!shouldPoll) return;
     const id = setInterval(() => void load(true), POLL_MS);
     return () => clearInterval(id);
-  }, [pdfStatus, load]);
+  }, [shouldPoll, load]);
 
   const onDownload = useCallback(async () => {
     try {
@@ -93,6 +99,34 @@ export default function ReportCardDetailPage() {
       toast.error(e instanceof ApiError ? e.message : "Could not regenerate the PDF.");
     }
   }, [status, reportCardId]);
+
+  const onSaveFormComment = useCallback(
+    async (value: string | null) => {
+      try {
+        await updateFormTeacherComment(reportCardId, value);
+        toast.success("Comment saved.");
+        await load(true);
+      } catch (e) {
+        toast.error(e instanceof ApiError ? e.message : "Could not save the comment.");
+      }
+    },
+    [reportCardId, load],
+  );
+
+  const onSavePrincipalNote = useCallback(
+    async (value: string | null) => {
+      if (status.kind !== "ready") return;
+      const { termId, classArmId } = status.data.reportCard;
+      try {
+        await updatePrincipalNote(termId, classArmId, value);
+        toast.success("Principal's note saved — it applies to every card in this arm.");
+        await load(true);
+      } catch (e) {
+        toast.error(e instanceof ApiError ? e.message : "Could not save the principal's note.");
+      }
+    },
+    [status, load],
+  );
 
   // Component columns (CA1/CA2/Exam…) from the first subject — consistent across
   // subjects, mirroring how the PDF template derives its header.
@@ -132,6 +166,8 @@ export default function ReportCardDetailPage() {
           canManage={canManage}
           onDownload={onDownload}
           onRegenerate={onRegenerate}
+          onSaveFormComment={onSaveFormComment}
+          onSavePrincipalNote={onSavePrincipalNote}
         />
       )}
     </div>
@@ -144,14 +180,23 @@ function ReportCardDetail({
   canManage,
   onDownload,
   onRegenerate,
+  onSaveFormComment,
+  onSavePrincipalNote,
 }: {
   data: ReportCardDetailDto;
   componentLabels: string[];
   canManage: boolean;
   onDownload: () => void;
   onRegenerate: () => void;
+  onSaveFormComment: (value: string | null) => Promise<void>;
+  onSavePrincipalNote: (value: string | null) => Promise<void>;
 }) {
   const { reportCard, student, subjects } = data;
+  // Form comment: editable in DRAFT/SUBJECT_REVIEWED by anyone who can open the
+  // card (owner/admin or the arm's form teacher — the read gate already ensures
+  // that). Principal note: owner/admin, FORM_REVIEWED only.
+  const formEditable = reportCard.status === "DRAFT" || reportCard.status === "SUBJECT_REVIEWED";
+  const principalEditable = canManage && reportCard.status === "FORM_REVIEWED";
 
   return (
     <>
@@ -244,12 +289,89 @@ function ReportCardDetail({
         </>
       )}
 
-      {/* Comments — READ-ONLY in cp3. Editing is slice 6's surface. */}
+      {/* Comments — editable in the state windows the workflow allows (slice 6). */}
       <section className="flex flex-col gap-4">
-        <CommentBlock title="Form teacher's comment" body={reportCard.formTeacherComment} />
-        <CommentBlock title="Principal's remark" body={reportCard.principalNote} />
+        <EditableComment
+          title="Form teacher's comment"
+          body={reportCard.formTeacherComment}
+          editable={formEditable}
+          placeholder="Write a comment about this student's term…"
+          onSave={onSaveFormComment}
+        />
+        <EditableComment
+          title="Principal's remark"
+          body={reportCard.principalNote}
+          editable={principalEditable}
+          placeholder="Write the principal's remark for this arm…"
+          explanation="This note appears on all report cards in this arm. Editing here updates all cards."
+          onSave={onSavePrincipalNote}
+        />
       </section>
     </>
+  );
+}
+
+// A comment field that is an editable textarea (with a change-gated Save) in the
+// allowed states, and a read-only display otherwise. Save is disabled until the
+// content differs from the server value (no no-op writes). Empty → null (clear).
+function EditableComment({
+  title,
+  body,
+  editable,
+  placeholder,
+  explanation,
+  onSave,
+}: {
+  title: string;
+  body: string | null;
+  editable: boolean;
+  placeholder: string;
+  explanation?: string;
+  onSave: (value: string | null) => Promise<void>;
+}) {
+  const [draft, setDraft] = useState(body ?? "");
+  const [saving, setSaving] = useState(false);
+  useEffect(() => {
+    setDraft(body ?? "");
+  }, [body]);
+
+  if (!editable) return <CommentBlock title={title} body={body} />;
+
+  const normalized = draft.trim() === "" ? null : draft;
+  const changed = normalized !== (body ?? null);
+  const save = async () => {
+    if (!changed || saving) return;
+    setSaving(true);
+    try {
+      await onSave(normalized);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div className="text-xs font-semibold uppercase text-muted-foreground">{title}</div>
+      {explanation && <p className="text-xs text-muted-foreground">{explanation}</p>}
+      <textarea
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        rows={3}
+        placeholder={placeholder}
+        className="w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+      />
+      <div className="flex justify-end">
+        <button
+          type="button"
+          onClick={() => void save()}
+          disabled={!changed || saving}
+          className="inline-flex items-center gap-2 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+          Save
+        </button>
+      </div>
+    </div>
   );
 }
 
