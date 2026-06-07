@@ -4,6 +4,7 @@ import type { Queue } from "bullmq";
 
 import { Prisma, withTenant } from "@school-kit/db";
 import {
+  ConflictError,
   NotFoundError,
   type BuildReportCardsInput,
   type BuildReportCardsResultDto,
@@ -60,6 +61,22 @@ export class ReportCardService {
       if (!term) throw new NotFoundError("Term not found.");
       const arm = await db.classArm.findUnique({ where: { id: input.classArmId }, select: { id: true } });
       if (!arm) throw new NotFoundError("Class arm not found.");
+
+      // 0. Slice 6 guard: rebuild only while the arm is fully DRAFT (or has no
+      //    cards yet). A non-DRAFT card means the workflow has started —
+      //    rebuilding would re-snapshot the frozen rollup AND mix statuses
+      //    (new students would arrive DRAFT alongside advanced cards). Reopen →
+      //    DRAFT first. (This is stricter than the RELEASED-only edit gate; the
+      //    invariant "all cards in an arm share a status" is worth protecting.)
+      const nonDraft = await db.reportCard.count({
+        where: { termId: input.termId, classArmId: input.classArmId, status: { not: "DRAFT" } },
+      });
+      if (nonDraft > 0) {
+        throw new ConflictError(
+          "ARM_NOT_DRAFT",
+          "This arm's report cards are past DRAFT. Reopen the arm before rebuilding.",
+        );
+      }
 
       // 1. Fresh positions FIRST, atomically in this tx (Q1b). The full pass sets
       //    subjectPosition + classPosition on every Assessment row in the arm.

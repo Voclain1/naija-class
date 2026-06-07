@@ -6,6 +6,7 @@ import { AssessmentModule } from "../assessment/assessment.module";
 import { AuthModule } from "../auth/auth.module";
 import { ReportCardsController } from "./report-card.controller";
 import { ReportCardService } from "./report-card.service";
+import { ReportCardWorkflowService } from "./workflow/report-card-workflow.service";
 
 @Module({
   // AuthModule exports AuthGuard; AssessmentModule exports AggregationService
@@ -39,7 +40,7 @@ import { ReportCardService } from "./report-card.service";
     }),
   ],
   controllers: [ReportCardsController],
-  providers: [ReportCardService],
+  providers: [ReportCardService, ReportCardWorkflowService],
   exports: [ReportCardService, BullModule],
 })
 export class ReportCardsModule {}

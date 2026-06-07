@@ -83,5 +83,101 @@ lint + suite green; 8 browser scenarios needed before commit.
     both render (2 audit rows). Would have caught this pre-merge. Render spec
     11 → 12.
 
+- **Two more cp3 browser-pass fixes (uncommitted, roll up with cp3).**
+  - **Download popup-blocked:** `window.open()` after an awaited `getPdfUrl()`
+    lost the user-gesture flag → silently blocked. Fixed with a programmatic
+    `<a target=_blank>.click()` helper (`lib/report-cards/open-in-new-tab.ts`),
+    applied to the board + detail download buttons.
+  - **`file://` blocked by the browser:** the filesystem `signUrl()` returned a
+    `file://` path ("Not allowed to load local resource"). Added a **dev-only**
+    `DevStorageController` (registered only when `NODE_ENV !== production`) that
+    streams the file over HTTP with an HMAC `sig` + `exp` (the dev analogue of an
+    R2 signed URL); the filesystem driver's `signUrl()` now returns
+    `http://localhost:4000/api/v1/dev-storage/...`. R2 path untouched. Verified:
+    200 application/pdf on a valid URL; 403 on tampered/expired/no-sig.
+
+## Slice 6 — Report card approval workflow (PLANNING + cp1)
+
+Plan-first, all 9 questions answered, then cp1 built. NOT committed — reported
+back for review.
+
+### Decisions (the 9 Q&A, banked)
+- **Q1 SUBJECT_REVIEWED denominator:** measured against EXISTING Assessment rows
+  for (term, arm) — "≥1 assessment and none unsigned". Curriculum coverage NOT
+  enforced here (an unscored subject has no row; form-review re-runs the same
+  predicate where it matters).
+- **Q3 Immutability scope:** RELEASED-only. Edits in SUBJECT_REVIEWED /
+  FORM_REVIEWED / PRINCIPAL_APPROVED are allowed; workflow transitions re-check
+  preconditions inside the tx to handle races (matches the spec hard rule + the
+  race example).
+- **Q-rebuild Build guard:** stricter than the edit gate — `build` 409s
+  (`ARM_NOT_DRAFT`) when ANY card in the arm is non-DRAFT. Rebuild mid-workflow
+  requires reopen → DRAFT first. Protects the "all cards in an arm share a
+  status" invariant (a naive rebuild would mix DRAFT new-students with advanced
+  cards).
+- **Q5 Comment matrix (cp2):** formTeacherComment editable in DRAFT,
+  SUBJECT_REVIEWED; principalNote editable in FORM_REVIEWED; all else blocked.
+- **Q4 Comment endpoints (cp2):** split — `PATCH /report-cards/:id`
+  (formTeacherComment, per-card) + `PUT /report-cards/arm/principal-note` (arm
+  fan-out). Fan-out semantics visible at the URL.
+- **Q6 Service split:** new `ReportCardWorkflowService` (transitions / release /
+  reopen / comments), `ReportCardService` keeps build/read/render. Bank the
+  service-per-concern pattern for slices 7–8 if they grow.
+- **Q2 No auto-revert:** eager-set DRAFT→SUBJECT_REVIEWED on the sign-off
+  cascade; NO down-transition on un-sign-off. form-review re-verifies
+  (`isArmFullySignedOff`) so a stale SUBJECT_REVIEWED 409s there.
+- **Q10 Comments optional** at form-review (empty/null is valid).
+- **Q-reopen-stamps (cp2):** reopen clears formReviewedAt/By,
+  principalApprovedAt/By, releasedAt; PRESERVES generatedAt/artifactUrl/pdfStatus
+  (PDF stays on R2; re-release overwrites).
+- **Banked tradeoff — snapshot drift:** the card rollup is FROZEN at build; live
+  score edits in SUBJECT_REVIEWED/FORM_REVIEWED drift from it until a rebuild
+  (via reopen). Workflow gates catch races via precondition re-checks but do NOT
+  re-snapshot mid-workflow. **Pattern: a materialized snapshot in a workflow
+  system is the audit truth at build/release time — it intentionally diverges
+  from live data between those points.**
+
+### cp split
+- **cp1 (this):** state-machine core + immutability gate + SUBJECT_REVIEWED
+  cascade + form-review/approve endpoints + non-DRAFT build guard + specs.
+- **cp2:** release (composes the slice-5 render enqueue in-tx) + reopen (race
+  guard + audit) + comment editing.
+- **cp3:** board state-change UI + comment UI + manual browser pass.
+
+### cp1 build manifest
+`packages/types/src/report-cards/workflow.dto.ts` (reportCardArmActionSchema +
+ReportCardTransitionResultDto) → `report-cards/workflow/` module:
+`transitions.ts` (LEGAL_FORWARD_TRANSITIONS + `assertAllInState` + 409s),
+`released-guard.ts` (`assertNoReleasedCards`, plain fn), `subject-reviewed-cascade.ts`
+(`isArmFullySignedOff` + `cascadeSubjectReviewedIfComplete`, plain fns),
+`report-card-workflow.service.ts` (`formReview`, `approve`) → controller `POST
+arm/form-review`, `POST arm/approve` → AssessmentService patched (gate on
+createScore/updateScore/bulkUpsertScores/signOff/signOffColumn; cascade after
+signOff/signOffColumn, same tx) → ReportCardService.build non-DRAFT guard.
+
+- **No DI cycle:** the gate + cascade are plain FUNCTIONS imported by
+  AssessmentService (whose module is imported by ReportCardsModule). The function
+  files import only `@school-kit/db` + `@school-kit/types`, so the file graph is
+  acyclic and there's no AssessmentModule ↔ ReportCardsModule provider cycle.
+- **Audit:** report-card.form-review / report-card.approve, metadata
+  { termId, classArmId, fromStatus, toStatus, cardCount }. The cascade writes NO
+  audit (it rides on sign-off, which already audits).
+- **Role gates:** form-review = owner/admin OR arm's form teacher (404 for a
+  stranger teacher, mirrors assertCanReadArm); approve = owner/admin.
+
+### Verification (cp1)
+- typecheck + lint (api) clean.
+- Full api suite **669 passed + 2 skipped** (658 → 669; +10 workflow integration
+  + 1 RLS cross-tenant status-transition test).
+- Workflow spec 10/10: eager cascade (last subject flips the arm), full walk
+  SUBJECT_REVIEWED→FORM_REVIEWED→PRINCIPAL_APPROVED + audit, form-teacher gate
+  (stranger→404), approve owner-only (teacher→403), out-of-order 409s, no
+  auto-revert (un-sign → form-review 409), RELEASED immutability
+  (score/signoff/rebuild→409), non-DRAFT rebuild guard, cross-tenant denial,
+  empty-arm 409.
+- **SD count 4** (unchanged); **no migration**, **no new RLS describe block** (the
+  existing report_cards block got the status-transition isolation test).
+
 ## Tomorrow's first task
-- (fill at end of day)
+- Slice 6 cp2: release (render compose in-tx) + reopen (race guard) + comment
+  editing (formTeacherComment per-card + principalNote arm fan-out), then cp3 UI.
