@@ -1073,3 +1073,37 @@ enum ReportCardPdfStatus {
   GENERATED // artifactUrl populated
   FAILED // render failed; retryable
 }
+
+// ---------- Attendance (Phase 2 / Slice 7 — daily, universal) ----------
+
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  LATE
+  EXCUSED
+}
+
+// Daily attendance. UNIVERSAL — every school, no opt-in. One row per
+// (student × date). Re-marking updates the existing row (upsert on the unique
+// key), never inserts a duplicate. Flat plain-FK convention (no Prisma
+// relations): studentId / classArmId / termId / markedBy are plain TEXT
+// referencing the relevant table — same choice as the assessment tables.
+model AttendanceRecord {
+  id         String           @id @default(uuid())
+  schoolId   String           @map("school_id")
+  studentId  String           @map("student_id")
+  classArmId String           @map("class_arm_id") // arm context at marking time
+  termId     String           @map("term_id") // term containing `date`
+  date       DateTime         @db.Date
+  status     AttendanceStatus
+  note       String?
+  markedBy   String           @map("marked_by") // users.id
+  markedAt   DateTime         @default(now()) @map("marked_at")
+  updatedAt  DateTime         @updatedAt @map("updated_at")
+
+  @@unique([schoolId, studentId, date]) // one record per student per date
+  @@index([schoolId])
+  @@index([schoolId, classArmId, date]) // register query
+  @@index([schoolId, termId]) // summary query
+  @@map("attendance_records")
+}

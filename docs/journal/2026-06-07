@@ -85,3 +85,98 @@ return.
 Slice 6 cp3 (UI): workflow-board state-change buttons (Release/Reopen/Approve),
 comment editors (per-card formTeacherComment + arm-level principalNote), manual
 browser pass. Then slice 6 closes.
+
+---
+
+# Slice 7 — Daily attendance (universal) — planning + cp1
+
+Slice 6 closed on main (PR #50, `680f2c5`). Suite on main: 685. Branch
+`feat/phase-2-slice-7-cp1-daily-attendance` off main.
+
+## Plan Q&A (7 questions, all answered before building)
+
+- **Q-schema → adopt the spec's `AttendanceRecord` verbatim.** uuid id, `termId`
+  carried on the row, `@@unique([schoolId, studentId, date])`, flat plain-FK
+  (no Prisma `@relation`), `markedAt` + `updatedAt` only (no `createdAt`). My
+  plan-first draft had deviated on 5 points (cuid, no termId, `[studentId,date]`
+  unique, added relations, added createdAt) — all overruled.
+  **Banked:** spec-canonical schemas are adopted verbatim; a plan-first
+  deviation needs explicit override justification, not the reverse.
+- **Q3 (who marks) → form-teacher-only + owner/admin.** Subject teachers cannot
+  mark daily attendance — slice 8 owns subject-period attendance. The spec
+  (L391/L631) bundles daily + subject attendance wording; slice 7 reads it as
+  form-teacher-only for *daily*.
+- **Q5 (roster vs transfer) → accept current-arm-only roster.** A mid-term
+  transfer/withdrawal drops the student from the register (filtered on current
+  `classArmId` + `status = ENROLLED`) but they remain in the summary (queried by
+  `studentId` + `termId`). Existing `attendance_records` rows survive a transfer.
+  Per-date enrollment history → `docs/deferred.md`.
+- **Q7 (rate formula) → policy (i): `(PRESENT + LATE) / daysMarked`.** EXCUSED
+  counts in the denominator as not-attended.
+- **Q8 (summary access) → form-teacher + owner/admin only.** Subject teachers
+  excluded from daily-attendance reads too. Distinct routes
+  `/attendance/register` + `/attendance/summary`; per-student date-by-date
+  history endpoint deferred to Phase 3+ analytics.
+- **Q6 (audit shape) → keep the per-status breakdown.** One audit row per bulk
+  save: `{ classArmId, termId, date, count, byStatus: { PRESENT, ABSENT, LATE,
+  EXCUSED } }`.
+
+## What shipped (cp1 — backend only)
+
+- **`AttendanceRecord` + `AttendanceStatus` enum** (schema verbatim per Q-schema)
+  + migration `20260607000000_phase_2_slice_7_attendance` (id TEXT, flat FKs,
+  3 indexes + the `(school_id, student_id, date)` unique, RLS ENABLE+FORCE +
+  `tenant_isolation`). Policy mirrored into `prisma/policies/phase-2.sql`.
+  Applied cleanly to the dev DB; client regenerated.
+- **DTOs** (`packages/types/src/attendance/`): register/mark/summary Zod schemas
+  (date as `YYYY-MM-DD`) + response interfaces. `attendanceRate` is an **Int in
+  hundredths** (8000 = 80.00%) — the kobo-style "no floats" rule applied to a
+  percentage. `PHASE_2_SLICE_7_PERMISSIONS = ["attendance.mark","attendance.read"]`
+  added reference-only (slice-9 RBAC rollup folds it in).
+- **`AttendanceService`** — three endpoints in one module:
+  - `getRegister` — resolves the term containing the date, derives the roster
+    (ENROLLED in the arm/term with `enrolledAt` < next-midnight, i.e. joined by
+    that date), left-joins the day's marks (status `null` = unmarked).
+  - `markBulk` — atomic all-or-nothing in one `withTenant` tx: reject duplicate
+    students in the payload, reject any student not on the register (400 with
+    `invalidStudentIds`), upsert each on `(schoolId, studentId, date)`, write ONE
+    `attendance.mark` audit row with the `byStatus` tally. `@HttpCode(200)` (an
+    upsert, not a create).
+  - `getSummary` — built from `attendance_records` themselves (NOT the current
+    roster) so a transferred/withdrawn student still surfaces with their history;
+    per-student counts + `rate = (present+late)/daysMarked × 10000`; arm summary
+    `{ totalDaysOperated = distinct dates, armAttendanceRate = mean of per-student
+    rates }`.
+- **The gate (`assertCanAccessArmAttendance`)** — richer than slice 6's
+  owner/admin/form-teacher helper because the spec needs a 403/404 split: owner
+  /admin pass; the arm's form teacher passes; a **subject teacher of the same
+  arm** (in `getTeacherScope().classArms` but not `formTeacherArmIds`) → **403**
+  (they can see the arm but may not touch daily attendance); a teacher for whom
+  the arm is wholly out of scope (incl. the form teacher of a *different* arm) →
+  **404** (invisible, same as cross-tenant). Reuses `getTeacherScope` rather than
+  a bare `classTeacherId` check precisely to get the in-scope-but-not-form-teacher
+  distinction.
+
+## Date handling
+`YYYY-MM-DD` → UTC-midnight `Date` to match how Prisma reads a `@db.Date` column
+back, keeping day comparisons timezone-free. Future date → 400; date inside no
+term → 400; past in-term date → 200. (Known simplification: "today" is computed in
+UTC, so a mark submitted between 00:00–01:00 Lagos time could read as next-day-UTC
+→ future-rejected. Acceptable under the CLAUDE.md DATE convention; revisit if it
+bites.)
+
+## Verification
+- typecheck + lint (api + types) clean.
+- Full api suite **705 passed + 2 skipped** (685 → 705, +20); +14 attendance integration tests
+  (register sort/term-resolve, mid-term-join exclusion, transfer-drop, mark+audit
+  tally, idempotent re-mark, future/past/outside-term date windows, roster-mismatch
+  400 with ids, form-teacher gate 200/403/404, summary-gate 403, cross-tenant
+  empty register, summary rate math, EXCUSED-in-denominator 8000) + 6 RLS tests
+  (attendance_records block; RLS table coverage **21 → 22**).
+- SD count **4** (unchanged) — every endpoint is post-auth, post-tenant.
+- Migration applies cleanly with RLS forced; no unexpected migrations.
+
+## Not in cp1 (cp2 work)
+Web UI (register grid + mark + summary view), mobile parent/student attendance
+read. Subject-period attendance is **slice 8** (separate table
+`subject_attendance_records`).

@@ -362,3 +362,16 @@ Format:
   re-weight a scheme after marks were entered (rare; most schools lock the
   scheme before the term starts). When built, it must be a single audited
   mutation, not a silent cascade.
+- [ ] Per-date enrollment history (daily attendance). Enrollment carries one
+  row per (student, term) with a single `classArmId` field. A mid-term arm
+  transfer overwrites the previous arm. The daily-attendance register
+  (Phase 2 / Slice 7) therefore reflects the student's CURRENT arm; historical
+  "who was in this arm on this date" is not queryable. Existing
+  `attendance_records` rows survive a transfer (they carry their own
+  `class_arm_id`), and the term summary still surfaces a transferred/withdrawn
+  student (it is queried by `term_id`, not current enrollment) — so no history
+  is lost, only the "register as it stood on a past date for a since-moved
+  student" reconstruction. Trigger: the first school that needs to audit
+  past-date attendance for transferred students. When built, the fix is an
+  enrollment-history/movement table (one row per arm placement with an
+  effective-date range), not a column on Enrollment.

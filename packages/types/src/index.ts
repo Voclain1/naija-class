@@ -21,3 +21,4 @@ export * from './teacher-scope/index.js';
 export * from './grading/index.js';
 export * from './assessment/index.js';
 export * from './report-cards/index.js';
+export * from './attendance/index.js';
