@@ -6,20 +6,20 @@ import { cn } from "@/lib/utils";
 
 const PILL = "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium";
 
-// Workflow status badge. Slice 5 cards are all DRAFT; the later workflow states
-// land in slice 6 but are rendered here so the badge is forward-compatible.
+// Workflow status badge — renders every state in the slice-6 approval lifecycle.
 export function WorkflowStatusBadge({ status }: { status: ReportCardStatusDto }) {
   const label: Record<ReportCardStatusDto, string> = {
     DRAFT: "Draft",
-    SUBJECT_REVIEWED: "Subject reviewed",
+    SUBJECT_REVIEWED: "Subjects reviewed",
     FORM_REVIEWED: "Form reviewed",
-    PRINCIPAL_APPROVED: "Approved",
+    PRINCIPAL_APPROVED: "Principal approved",
     RELEASED: "Released",
   };
+  // Distinguishable per state: gray → amber → blue → purple → green.
   const tone: Record<ReportCardStatusDto, string> = {
     DRAFT: "bg-muted text-muted-foreground",
-    SUBJECT_REVIEWED: "bg-sky-50 text-sky-700",
-    FORM_REVIEWED: "bg-indigo-50 text-indigo-700",
+    SUBJECT_REVIEWED: "bg-amber-50 text-amber-700",
+    FORM_REVIEWED: "bg-blue-50 text-blue-700",
     PRINCIPAL_APPROVED: "bg-violet-50 text-violet-700",
     RELEASED: "bg-emerald-50 text-emerald-700",
   };
