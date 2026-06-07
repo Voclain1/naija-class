@@ -2710,3 +2710,123 @@ describe("multi-tenant isolation — Phase 2 / Slice 5 (report_cards)", () => {
     expect(rows).toHaveLength(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Phase 2 / Slice 7 isolation — attendance_records (RLS coverage 21 → 22). The
+// daily-attendance row. Flat plain-FK (no enforced relations) → arbitrary
+// plain-string ids; school_id is the only tenancy guard. Tagged via `note` so
+// the fixture can find its rows.
+// ---------------------------------------------------------------------------
+
+describe("multi-tenant isolation — Phase 2 / Slice 7 (attendance_records)", () => {
+  const runId = Math.random().toString(36).slice(2, 8);
+  let schoolA: { id: string };
+  let schoolB: { id: string };
+  let recA: { id: string };
+  let recB: { id: string };
+
+  async function mark(schoolId: string, tag: string): Promise<{ id: string }> {
+    return withTenant(schoolId, (db) =>
+      db.attendanceRecord.create({
+        data: {
+          schoolId,
+          studentId: `stu-${tag}-${runId}`,
+          classArmId: `arm-${tag}-${runId}`,
+          termId: `term-${tag}-${runId}`,
+          date: new Date("2025-10-01"),
+          status: "PRESENT",
+          note: `n-${runId}`,
+          markedBy: `u-${tag}-${runId}`,
+        },
+        select: { id: true },
+      }),
+    );
+  }
+
+  beforeAll(async () => {
+    schoolA = await basePrisma.school.create({
+      data: { name: "School P2S7A", slug: `rls-p2s7a-${runId}` },
+      select: { id: true },
+    });
+    schoolB = await basePrisma.school.create({
+      data: { name: "School P2S7B", slug: `rls-p2s7b-${runId}` },
+      select: { id: true },
+    });
+    recA = await mark(schoolA.id, "a");
+    recB = await mark(schoolB.id, "b");
+  });
+
+  afterAll(async () => {
+    if (schoolA?.id) {
+      await basePrisma.school.delete({ where: { id: schoolA.id } }).catch(() => undefined);
+    }
+    if (schoolB?.id) {
+      await basePrisma.school.delete({ where: { id: schoolB.id } }).catch(() => undefined);
+    }
+    await basePrisma.$disconnect();
+  });
+
+  it("School A sees its own attendance_record only", async () => {
+    const rows = await withTenant(schoolA.id, (db) =>
+      db.attendanceRecord.findMany({ where: { note: { contains: runId } } }),
+    );
+    const ids = rows.map((r) => r.id);
+    expect(ids).toContain(recA.id);
+    expect(ids).not.toContain(recB.id);
+  });
+
+  it("School B sees its own attendance_record only", async () => {
+    const rows = await withTenant(schoolB.id, (db) =>
+      db.attendanceRecord.findMany({ where: { note: { contains: runId } } }),
+    );
+    const ids = rows.map((r) => r.id);
+    expect(ids).toContain(recB.id);
+    expect(ids).not.toContain(recA.id);
+  });
+
+  it("findUnique across tenants returns null", async () => {
+    const leak = await withTenant(schoolA.id, (db) =>
+      db.attendanceRecord.findUnique({ where: { id: recB.id } }),
+    );
+    expect(leak).toBeNull();
+  });
+
+  it("INSERT with another school's school_id fails the WITH CHECK clause", async () => {
+    await expect(
+      withTenant(schoolA.id, (db) =>
+        db.attendanceRecord.create({
+          data: {
+            schoolId: schoolB.id,
+            studentId: `bad-${runId}`,
+            classArmId: `bad-${runId}`,
+            termId: `bad-${runId}`,
+            date: new Date("2025-10-02"),
+            status: "ABSENT",
+            note: `bad-${runId}`,
+            markedBy: `bad-${runId}`,
+          },
+        }),
+      ),
+    ).rejects.toThrow();
+  });
+
+  it("School B cannot update School A's attendance record", async () => {
+    const result = await withTenant(schoolB.id, (db) =>
+      db.attendanceRecord.updateMany({ where: { id: recA.id }, data: { status: "ABSENT" } }),
+    );
+    expect(result.count).toBe(0);
+    const after = await withTenant(schoolA.id, (db) =>
+      db.attendanceRecord.findUnique({ where: { id: recA.id }, select: { status: true } }),
+    );
+    expect(after?.status).toBe("PRESENT");
+  });
+
+  it("raw SQL with unset GUC returns zero rows from attendance_records (FORCE RLS)", async () => {
+    const rows = await basePrisma.$transaction(async (tx) => {
+      return tx.$queryRaw<Array<{ id: string }>>`
+        SELECT id FROM attendance_records WHERE note LIKE ${"%" + runId + "%"}
+      `;
+    });
+    expect(rows).toHaveLength(0);
+  });
+});

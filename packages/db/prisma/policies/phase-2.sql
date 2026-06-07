@@ -69,3 +69,16 @@ ALTER TABLE "report_cards" FORCE  ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation ON "report_cards"
   USING      (school_id::text = current_setting('app.current_school_id', true))
   WITH CHECK (school_id::text = current_setting('app.current_school_id', true));
+
+-- ---------------------------------------------------------------------
+-- Slice 7 — attendance_records. Daily attendance (universal). One row per
+-- (student × date); own school_id → flat direct-column check. The
+-- subject-period table (subject_attendance_records) lands in slice 8.
+-- ---------------------------------------------------------------------
+
+ALTER TABLE "attendance_records" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "attendance_records" FORCE  ROW LEVEL SECURITY;
+
+CREATE POLICY tenant_isolation ON "attendance_records"
+  USING      (school_id::text = current_setting('app.current_school_id', true))
+  WITH CHECK (school_id::text = current_setting('app.current_school_id', true));

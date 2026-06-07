@@ -166,6 +166,11 @@ export const PHASE_2_SLICE_5_PERMISSIONS = [
   "report-card.release",
 ] as const;
 
+// Phase 2 / Slice 7 — daily attendance. REFERENCE-ONLY (slice 9 rollup). Both
+// mark and read gate to owner/admin OR the arm's FORM teacher in the service; a
+// subject teacher of the arm is forbidden (subject-period attendance is slice 8).
+export const PHASE_2_SLICE_7_PERMISSIONS = ["attendance.mark", "attendance.read"] as const;
+
 export const ALL_PERMISSIONS = [
   ...PHASE_0_PERMISSIONS,
   ...PHASE_1_PERMISSIONS,
