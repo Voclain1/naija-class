@@ -287,6 +287,18 @@ async function main() {
     if (t.sequence === 1) firstTermId = term.id;
   }
 
+  // Resolve the CURRENT term by its isCurrent flag rather than pinning to a
+  // hardcoded term id. Term-scoped seed data (the enrollments below) follows
+  // whichever term is current at seed time, so the roster doesn't go stale as
+  // real calendar time advances past the originally-seeded term. (The score
+  // fixture in step 11 stays on firstTermId on purpose — it's the report-card
+  // "First Term" fixture.) See docs/journal/2026-06-08 — dev-seed staleness.
+  const currentTerm = await prisma.term.findFirst({
+    where: { schoolId, isCurrent: true },
+    select: { id: true },
+  });
+  const currentTermId = currentTerm?.id ?? firstTermId;
+
   // 7. One arm per secondary level. Two form-teacher assignments, so both the
   //    owner-role and teacher-role form-teacher paths are testable in cp3:
   //      JSS 2 A → owner    (owner-role + form-teacher scenarios)
@@ -344,7 +356,10 @@ async function main() {
     }
   }
 
-  // 9. Students + enroll all five in JSS 2 A for the current (First) term.
+  // 9. Students + enroll all five in JSS 2 A for the current term (whichever
+  //    term has isCurrent=true at seed time). enrolledAt is pinned to the
+  //    academic-year start so any in-term date puts them on the register (the
+  //    attendance roster filters enrolledAt <= the selected date).
   const studentIdByAdmission = new Map<string, string>();
   for (const s of STUDENTS) {
     const student = await prisma.student.upsert({
@@ -362,15 +377,16 @@ async function main() {
     });
     studentIdByAdmission.set(s.admissionNumber, student.id);
     await prisma.enrollment.upsert({
-      where: { schoolId_studentId_termId: { schoolId, studentId: student.id, termId: firstTermId } },
-      update: { classArmId: targetArmId, status: "ENROLLED" },
+      where: { schoolId_studentId_termId: { schoolId, studentId: student.id, termId: currentTermId } },
+      update: { classArmId: targetArmId, status: "ENROLLED", enrolledAt: new Date("2025-09-01") },
       create: {
         schoolId,
         studentId: student.id,
-        termId: firstTermId,
+        termId: currentTermId,
         academicYearId: year.id,
         classArmId: targetArmId,
         status: "ENROLLED",
+        enrolledAt: new Date("2025-09-01"),
       },
     });
   }

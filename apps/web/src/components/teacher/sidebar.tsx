@@ -2,6 +2,7 @@
 
 import {
   BookOpen,
+  CalendarCheck,
   ClipboardList,
   LayoutDashboard,
   UserCircle,
@@ -22,10 +23,15 @@ interface NavItem {
 // teacher sees only their own surfaces (no Students / Staff / Academics /
 // Settings IA). Dashboard / Classes / Profile shipped in slice 11 cp3;
 // Gradebook added in Phase 2 / Slice 3.
+// Attendance (Phase 2 / Slice 7) links to the daily register (the default); the
+// term summary is a sub-link inside the page. The entry shows for everyone in
+// the portal — a subject-only teacher who opens it sees the empty-picker "form
+// teachers only" message (the server is the real gate).
 const NAV_ITEMS: NavItem[] = [
   { label: "Dashboard", href: "/teacher/dashboard", icon: LayoutDashboard },
   { label: "Classes", href: "/teacher/classes", icon: BookOpen },
   { label: "Gradebook", href: "/teacher/gradebook", icon: ClipboardList },
+  { label: "Attendance", href: "/teacher/attendance", icon: CalendarCheck },
   { label: "Profile", href: "/teacher/profile", icon: UserCircle },
 ];
 
