@@ -1,0 +1,70 @@
+# 2026-06-08
+
+## Slice 7 cp2 manual pass — blocked at S1, root-caused, fixed
+
+S1 of the attendance cp2 browser pass (dev-owner, /teacher/attendance, JSS 2 A,
+today) showed an **empty roster** ("No students enrolled…") even though JSS 2 A
+has 5 enrolled students that worked all through slice 5/6 testing.
+
+### Root cause — dev-seed staleness
+The register is **200-with-empty-roster**, NOT the date-outside-term 400. Today
+(2026-06-08) *does* fall inside **Third Term** (2026-04-27 → 2026-07-24), which is
+also `isCurrent` in the live DB. Attendance resolves its term **by the selected
+date** → Third Term. But the five enrollments are pinned to **First Term** only
+(dev-seed step 9, `termId: firstTermId`). Different term → zero roster, no 400.
+
+Why report cards / gradebook worked and attendance didn't: those surfaces resolve
+the **current term** (`Term.isCurrent`) regardless of date, and during slice 5/6
+testing First Term was current — where the enrollments live. Attendance is the
+first surface to resolve a term **from a date**, so it's the first to hit the
+mismatch.
+
+Two compounding facts found while diagnosing:
+- **`enrolledAt` = 2026-06-05** (last seed run) on all five, even though their
+  term is First Term (Sep–Dec 2025). cp1's roster also filters
+  `enrolledAt < selectedDate + 1`. So "just pick a First-Term date" (the obvious
+  fix) is impossible: First Term ends 2025-12-12, entirely before `enrolledAt`,
+  so no single date satisfies both term-resolution and the enrolledAt filter.
+- The live **current term has advanced to Third Term** while enrollments stayed in
+  First Term — so the gradebook/report cards would *also* read empty now. The
+  staleness isn't attendance-specific; attendance is just where it surfaced.
+
+### Lesson — dev-seed staleness pattern
+**Hardcoded term references in seed data create latent failures as real calendar
+time advances past the seeded current term.** Mitigation: seed enrollments and
+other term-scoped data via a `Term.isCurrent` lookup, not hardcoded term ids.
+Any seed data referencing time-bounded entities (terms, academic years) should
+**resolve those entities at seed time**, not pin to hardcoded ids.
+
+### Fixes applied
+- **(c) immediate, live DB**: `UPDATE enrollments SET term_id = <Third Term>
+  WHERE class_arm_id = <JSS 2 A> AND term_id = <First Term>` via Prisma over
+  `DIRECT_URL` (bypasses RLS). **5 rows updated**; verified **5 ENROLLED in Third
+  Term**. `enrolledAt` (2026-06-05) is already < today, so the roster filter
+  passes. Unblocks S1 immediately; no dev:api restart needed (next request picks
+  it up). Will be wiped by the next intentional `db:reset`.
+- **(b) durable, dev-seed.ts**: resolve `currentTermId` via
+  `prisma.term.findFirst({ where: { schoolId, isCurrent: true } })` (fallback
+  `firstTermId`); enroll the five in `currentTermId` instead of the hardcoded
+  `firstTermId`; set `enrolledAt: new Date("2025-09-01")` (academic-year start)
+  on both create + update so any in-term date is on the register. The step-11
+  **score fixture stays on `firstTermId`** on purpose (it's the report-card
+  "First Term" fixture). Did **not** re-run `db:seed` (c already unblocked
+  today's data); the next intentional `db:reset` picks up the new logic.
+
+### Residual gap (known, not fixed today)
+fix (b) resolves `currentTermId` via `isCurrent`, but the seed still **hardcodes
+First Term as `isCurrent: true` with 2025 dates**. So a fresh `db:reset` today
+would make First Term current again → attendance-for-today (which resolves to
+*Third* Term by date) would be empty once more, until the seed's current term is
+advanced to a term whose range contains "now". Decoupling the enrollment from a
+hardcoded id is the right first step; advancing the seed's current term (or
+making the seed pick the term that contains today) is the follow-up if/when
+attendance testing after a reset needs to "just work". Noted here so it isn't a
+surprise at the next reset.
+
+### Diagnostic note
+Querying tenant tables (terms, enrollments) directly with the runtime
+`DATABASE_URL` returns **0 rows** — that's `app_user` under FORCE RLS with no
+`app.current_school_id` GUC set, not "no data". Use `DIRECT_URL` (migration role)
+to inspect/repair across tenants, or run inside `withTenant`.
