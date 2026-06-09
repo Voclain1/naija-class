@@ -1,0 +1,175 @@
+# 2026-06-09
+
+# Slice 8 — Subject-period attendance (opt-in): plan-first + cp1
+
+Plan-first Q&A and cp1 both today. Slice 7 closed on main (PR #52, afdf0a3);
+Phase 2 now 8/9 slices.
+
+## Cp split (2 cps)
+- **cp1 (this):** model + `School.subjectAttendanceEnabled` column + migration +
+  RLS (22→23) + `SubjectAttendanceService` (register/mark/summary) + opt-in flag
+  wired into the existing `PATCH /schools/me` + 3 endpoints + integration spec.
+- **cp2:** `/teacher/attendance/subject` register + summary UI + the
+  `/settings/attendance` owner/admin toggle + manual browser pass.
+
+## The 7 questions — resolved
+- **Q1 period** — Int, min 1, no upper bound (spec-canonical).
+- **Q2 toggle** — extended `PATCH /schools/me` (owner+admin per acceptance #9
+  "admin toggles"), `subjectAttendanceEnabled` added to `patchSchoolSchema` +
+  `SchoolMeDto`; existing `school.update` audit captures it. NO new endpoint /
+  audit action / role gate. (My plan-first instinct to make it owner-only +
+  a new `/schools/me/settings` was wrong — see banking #1, #2.)
+- **Q3 scope gate** — inline private `assertCanMarkSubject` on
+  `getTeacherScope`, mirroring slice 7's `assertCanAccessArmAttendance`. NOT
+  promoted to a shared util (one consumer — see banking #3).
+- **Q4 summary** — aggregate by PERIOD record; rate = (PRESENT+LATE)/periodsMarked
+  × 10000, EXCUSED in the denominator (policy i).
+- **Q5 summary scope** — subject teacher sees only subjects they teach
+  (symmetric with the mark gate); owner/admin see all.
+- **Q6 dev-seed** — leaves `subjectAttendanceEnabled` default **false**; the cp2
+  manual scenario 1 toggles it on (tests the full hidden→toggle→surface
+  lifecycle). No non-default config baked into the seed (banking #4).
+- **Q7 cp split** — 2 cps confirmed.
+
+## Spec deviations (justified, noted in the cp1 commit body)
+- **Routes** `/subject-attendance/{register,mark,summary}` (spec canon), a
+  top-level module — NOT nested under `/attendance`.
+- **Summary params** include `classArmId` despite the spec's abbreviated
+  `?subjectId=&termId=` — the per-arm summary mirrors slice 7 and is the
+  consumable view (a subject spans arms).
+- **Schema** spec-verbatim (field order `studentId` before `classArmId`, bare
+  `@@index([schoolId])` kept) **plus** one arm-keyed summary index
+  `[schoolId, classArmId, subjectId, termId]` mirroring slice 7's term index.
+  The two long indexes needed explicit `map:` names — their auto-names both
+  truncate to the same 63-char Postgres identifier and collide.
+
+## Banking patterns (carried into the cp1 commit body)
+1. **Spec role gates are intentional.** When the spec specifies owner+admin
+   (acceptance #9 "admin toggles"), plan-first shouldn't *tighten* it without an
+   explicit reason. My instinct to make the toggle owner-only was wrong.
+2. **Reuse over invention.** The existing `PATCH /schools/me` is the right path
+   for a new `School` field. New endpoints need a justification — a different
+   gate, audit shape, or consumer. `subjectAttendanceEnabled` has none, so
+   extension wins.
+3. **Don't pre-extract for a single consumer.** A shared util needs two
+   consumers minimum. Slice 7 + slice 8 = two → the `attendance/shared/`
+   extraction (`loadRoster`, `resolveTermForDate`, `parseIsoDate`,
+   `rateHundredths`, `fullName`, `TenantDb`, `STUDENT_NAME_SELECT`) is justified
+   *now* (not at slice 7, when it had one).
+4. **Default-false opt-in, tested via the manual lifecycle.** Seed off; manual
+   scenario 1 toggles on. Avoids a non-default in the seed and exercises the
+   real opt-in semantics in the cp2 gate.
+
+## Opt-in semantics
+Every subject endpoint calls `assertEnabled` FIRST (reads
+`School.subjectAttendanceEnabled`; `schools` is not under RLS so it resolves
+regardless of the tenant GUC) and 404s when off — even for owner/admin: the
+surface genuinely doesn't exist for the school yet. The teacher portal learns
+the flag via `/teacher-scope/me` (rides with `currentTerm`, since teachers can't
+read school settings) so cp2 can hide the surface rather than 404 on click.
+
+## Scope gate matrix (`assertCanMarkSubject`, on `getTeacherScope`)
+owner/admin bypass · `subjectsByArm[arm]` includes subject → ✓ · in arm scope but
+wrong subject (incl. a form teacher with no assignment) → **403** · arm out of
+scope → **404**. Richer than assessment's uniform-404 `assertSubjectInScope`,
+matching slice 7's daily 403/404 split.
+
+## cp1 verification (all green)
+- typecheck (api + types) clean · lint clean.
+- **API suite 705 → 731** (+20 subject-attendance integration + 6 RLS); slice
+  7's 14 daily-attendance tests **pass post-refactor** — the shared-util
+  extraction is behaviour-preserving.
+- **SD count 4** (unchanged — slice 8 adds no SECURITY DEFINER function).
+- Migration `20260609000000_phase_2_slice_8_subject_attendance` applies cleanly
+  (schools column + new table + FORCE RLS); `migrate status` up to date.
+- **RLS coverage 22 → 23** (`subject_attendance_records`, Phase 2's final table).
+
+## Not in cp1 (cp2) — register/summary/toggle UI + manual pass.
+## Not in slice 8 (slice 9) — `PHASE_2_PERMISSIONS` rollup (incl.
+`subject-attendance.*`), audit-coverage spec extension, cross-tenant E2E, and the
+dev-seed full time-relative refactor (still pending from slice 7).
+
+---
+
+# Slice 8 — cp2 (subject-period attendance UI, closes slice 8)
+
+Web-only cp consuming cp1's endpoints + the flag on `/teacher-scope/me` and
+`/schools/me`. No api/db/types/migration touched (suite stays 731 by
+construction).
+
+## What shipped (apps/web/src/)
+- `lib/subject-attendance/subject-attendance-api.ts` — 3 wrappers
+  (`getSubjectRegister`, `markSubjectAttendance`, `getSubjectSummary`).
+- `components/teacher/attendance/use-subject-attendance-scope.ts` — subject-first
+  scope hook. Teacher: subjects from `subjectsByArm` + arms-per-subject (inverted)
+  + current term + the flag, all from one `/teacher-scope/me`. Manager: every
+  subject + every arm (no cross-filter — owner bypasses the subject gate server-
+  side and the roster is arm-based) + real term picker + flag from `/schools/me`.
+- `app/(teacher)/teacher/attendance/subject/page.tsx` — subject → arm → date →
+  **period** pickers, flag-gated (redirects to `/teacher` when off), lifted
+  "Last marked at HH:MM" stamp.
+- `components/teacher/attendance/subject-register-editor.tsx` — the roster grid.
+- `app/(teacher)/teacher/attendance/subject/summary/page.tsx` — per-student
+  periods/P/A/L/E/rate table + days·periods·rate footer.
+- `app/(admin)/settings/attendance/page.tsx` — owner/admin opt-in toggle
+  (reads `/schools/me`, writes `PATCH /schools/me`); a minimal accessible
+  `role="switch"` (no shared Switch primitive) + dirty-gated Save + toast.
+- `app/(admin)/settings/page.tsx` — the bare `/settings` redirect became a small
+  hub (Users / Academics / Grading / **Attendance**) so the toggle is reachable.
+- `components/teacher/sidebar.tsx` — conditional **Subject attendance** entry,
+  gated on `subjectAttendanceEnabled` (fetched via `getSchoolMe`, readable by any
+  role so it works for owner/admin too); disambiguated active state so daily vs
+  subject entries don't both highlight on the `/subject` sub-tree.
+
+## Decisions
+- **No `<RosterGrid>` extraction.** Inlined the grid in `subject-register-editor`
+  rather than refactoring slice 7's `register-editor` to share one. That editor is
+  manually-verified, **test-unguarded** UI; the regression risk of refactoring it
+  outweighs the DRY win for one more consumer. The cp1 "2-consumers → extract"
+  threshold doesn't carry when one consumer is already shipped + unguarded. Only
+  `status-meta` (pure styling) is shared.
+- **Flag read split:** the sidebar + the manager scope use `getSchoolMe` (any
+  authed role); the teacher scope uses the flag riding on `/teacher-scope/me`.
+  Both resolve the same `School.subjectAttendanceEnabled`.
+- **Owner/admin reach the subject surface** at `/teacher/attendance/subject`
+  (RequireAuth only, same as slice 7), seeing every subject + arm.
+
+## Verification
+- web typecheck + lint clean.
+- API suite **731** (re-run clean, 142s — the earlier overnight hang was a
+  stalled DB connection during machine sleep, not a code failure). cp2 touches
+  zero api/db/types files.
+- SD count 4; no migration.
+
+## Two bugs caught in the S2 manual walk (fixed, web-only)
+1. **Privilege-surface: teacher could load the (admin) shell.** `(admin)/layout`
+   was `RequireAuth` (authed-only), so a teacher reached `/settings/*` and saw
+   the admin sidebar (the PATCH was still server-gated, but the surface was
+   wrong). Fix: `RequireAuth` gained an optional `roles` prop; the (admin) layout
+   now passes `["owner","admin"]` and bounces teachers to `/teacher/dashboard`.
+   The (teacher) layout stays role-open (owner/admin may view teacher pages).
+   Follow-up: the redirect first targeted `/teacher` (no index page → 404); the
+   canonical landing is `/teacher/dashboard`. Fixed there AND in the two
+   subject-page flag-gate redirects (same latent `/teacher` 404).
+2. **Sidebar flag read.** The "Subject attendance" entry read the flag via
+   `getSchoolMe`. Although `/schools/me` is in fact open to any authed role (so
+   this wasn't a 403), the plan-first decision was to read it from
+   `/teacher-scope/me` so the teacher portal never depends on a school-settings
+   read. Switched the sidebar to `getMyScope().subjectAttendanceEnabled`. (The
+   "missing entry" symptom was really bug 1 — the teacher was looking at the
+   admin sidebar.) Verified the live dev flag is `true` and `/teacher-scope/me`
+   carries it.
+
+## Bug caught in S3 — infinite register re-fetch loop (subject page only)
+The subject register page passed an **inline arrow** `onLoaded={({…}) =>
+setLastMarkedAt(stamp)}`. The editor's `load` useCallback lists `onLoaded` in
+its deps, so a new arrow every render recreated `load` → `useEffect([load])`
+refired → `load()` set a fresh `Date` into the lifted stamp → re-render → new
+arrow → loop (~6.3k requests in 5 min). The slice-7 **daily** page does NOT have
+this — it already memoised `handleLoaded` with `useCallback([])`. Fix: mirror
+that — memoise `handleLoaded` in the subject page and pass it instead of the
+inline arrow. Loop gone; the fetch effect fires once per
+(subject, arm, date, period) change. (The subject **summary** page has no
+`onLoaded` and primitive-only `load` deps — not affected.)
+
+## Manual browser pass — re-walking S1–S3 after the fixes, then S4–S8.
