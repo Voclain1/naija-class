@@ -37,26 +37,30 @@ import type { Request } from "express";
 import type { AuthContext } from "../../common/auth/auth-context";
 import { AuthGuard } from "../../common/auth/auth.guard";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
+import { Permissions } from "../../common/auth/permissions.decorator";
+import { PermissionsGuard } from "../../common/auth/permissions.guard";
 import { ZodValidationPipe } from "../../common/zod-validation.pipe";
 import { AggregationService } from "./aggregation.service";
 import { AssessmentService } from "./assessment.service";
 
-// NOTE: slice-2-era guarding — AuthGuard only, with the service gating via
-// assertUserActiveAndHasOneOf(['owner','admin','teacher']) + the teacher-scope
-// pre-check. @Permissions + PermissionsGuard are wired in the slice-9 RBAC
-// rollup (same deferral as slices 1–2 of Phase 2).
+// Two-layer gate (slice 9 RBAC rollup): @Permissions on every handler is the
+// coarse role authorization (PermissionsGuard); the service's
+// assertUserActiveAndHasOneOf + getTeacherScope pre-check narrows it to the
+// teacher's own (arm, subject). The guard rejects unauthorized users; the
+// service scopes authorized ones.
 
 function reqContext(ip: string, req: Request) {
   return { ipAddress: ip, userAgent: req.header("user-agent") ?? null };
 }
 
 @Controller("assessment-scores")
-@UseGuards(AuthGuard)
+@UseGuards(AuthGuard, PermissionsGuard)
 export class AssessmentScoresController {
   constructor(private readonly service: AssessmentService) {}
 
   @Post()
   @HttpCode(201)
+  @Permissions("assessment-score.create")
   async create(
     @Body(new ZodValidationPipe(createAssessmentScoreSchema)) dto: CreateAssessmentScoreInput,
     @CurrentUser() authCtx: AuthContext,
@@ -69,6 +73,7 @@ export class AssessmentScoresController {
   // Bulk column save — atomic all-or-nothing. Returns the refreshed feed.
   @Post("bulk")
   @HttpCode(200)
+  @Permissions("assessment-score.create")
   async bulk(
     @Body(new ZodValidationPipe(bulkAssessmentScoreSchema)) dto: BulkAssessmentScoreInput,
     @CurrentUser() authCtx: AuthContext,
@@ -79,6 +84,7 @@ export class AssessmentScoresController {
   }
 
   @Patch(":id")
+  @Permissions("assessment-score.update")
   async update(
     @Param("id") id: string,
     @Body(new ZodValidationPipe(updateAssessmentScoreSchema)) dto: UpdateAssessmentScoreInput,
@@ -91,7 +97,7 @@ export class AssessmentScoresController {
 }
 
 @Controller("assessments")
-@UseGuards(AuthGuard)
+@UseGuards(AuthGuard, PermissionsGuard)
 export class AssessmentsController {
   constructor(
     private readonly service: AssessmentService,
@@ -102,6 +108,7 @@ export class AssessmentsController {
   // path segment routes here (Nest matches the empty path on GET / regardless,
   // but keeping it first documents intent).
   @Get()
+  @Permissions("assessment.read")
   async feed(
     @Query(new ZodValidationPipe(assessmentFeedQuerySchema)) query: AssessmentFeedQuery,
     @CurrentUser() authCtx: AuthContext,
@@ -112,6 +119,7 @@ export class AssessmentsController {
   // Position aggregation (slice 4). Static paths declared before ":id" routes.
   @Post("aggregate")
   @HttpCode(200)
+  @Permissions("assessment.aggregate")
   async aggregate(
     @Body(new ZodValidationPipe(aggregateInputSchema)) dto: AggregateInput,
     @CurrentUser() authCtx: AuthContext,
@@ -122,6 +130,7 @@ export class AssessmentsController {
   }
 
   @Get("aggregate/status")
+  @Permissions("assessment.read")
   async aggregateStatus(
     @Query(new ZodValidationPipe(aggregateStatusQuerySchema)) query: AggregateStatusQuery,
     @CurrentUser() authCtx: AuthContext,
@@ -133,6 +142,7 @@ export class AssessmentsController {
   // patterns don't collide: "sign-off/bulk" vs ":id/sign-off").
   @Post("sign-off/bulk")
   @HttpCode(200)
+  @Permissions("assessment.sign-off")
   async signOffColumn(
     @Body(new ZodValidationPipe(signOffBulkSchema)) dto: SignOffBulkInput,
     @CurrentUser() authCtx: AuthContext,
@@ -144,6 +154,7 @@ export class AssessmentsController {
 
   @Post(":id/sign-off")
   @HttpCode(200)
+  @Permissions("assessment.sign-off")
   async signOff(
     @Param("id") id: string,
     @CurrentUser() authCtx: AuthContext,
@@ -154,6 +165,7 @@ export class AssessmentsController {
   }
 
   @Get(":id")
+  @Permissions("assessment.read")
   async findById(
     @Param("id") id: string,
     @CurrentUser() authCtx: AuthContext,

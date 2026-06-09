@@ -12,3 +12,4 @@ export {
   type DefaultGradingComponent,
   type DefaultGradeBoundary,
 } from "./seeds/grading.js";
+export { SYSTEM_ROLE_SEEDS, type SystemRoleSeed } from "./seeds/system-roles.js";

@@ -16,6 +16,8 @@ import type { Request } from "express";
 import type { AuthContext } from "../../common/auth/auth-context";
 import { AuthGuard } from "../../common/auth/auth.guard";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
+import { Permissions } from "../../common/auth/permissions.decorator";
+import { PermissionsGuard } from "../../common/auth/permissions.guard";
 import { ZodValidationPipe } from "../../common/zod-validation.pipe";
 import { AttendanceService } from "./attendance.service";
 
@@ -29,12 +31,13 @@ function reqContext(ip: string, req: Request) {
 }
 
 @Controller("attendance")
-@UseGuards(AuthGuard)
+@UseGuards(AuthGuard, PermissionsGuard)
 export class AttendanceController {
   constructor(private readonly service: AttendanceService) {}
 
   // GET /attendance/register?classArmId=&date= — the day's register for one arm.
   @Get("register")
+  @Permissions("attendance.read")
   async register(
     @Query(new ZodValidationPipe(attendanceRegisterQuerySchema)) query: AttendanceRegisterQuery,
     @CurrentUser() authCtx: AuthContext,
@@ -45,6 +48,7 @@ export class AttendanceController {
   // POST /attendance/mark — upsert the day's register (atomic). Returns { count }.
   @Post("mark")
   @HttpCode(200)
+  @Permissions("attendance.mark")
   async mark(
     @Body(new ZodValidationPipe(attendanceMarkSchema)) dto: AttendanceMarkInput,
     @CurrentUser() authCtx: AuthContext,
@@ -56,6 +60,7 @@ export class AttendanceController {
 
   // GET /attendance/summary?classArmId=&termId= — per-student term stats.
   @Get("summary")
+  @Permissions("attendance.read")
   async summary(
     @Query(new ZodValidationPipe(attendanceSummaryQuerySchema)) query: AttendanceSummaryQuery,
     @CurrentUser() authCtx: AuthContext,

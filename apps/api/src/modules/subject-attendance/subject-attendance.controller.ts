@@ -16,6 +16,8 @@ import type { Request } from "express";
 import type { AuthContext } from "../../common/auth/auth-context";
 import { AuthGuard } from "../../common/auth/auth.guard";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
+import { Permissions } from "../../common/auth/permissions.decorator";
+import { PermissionsGuard } from "../../common/auth/permissions.guard";
 import { ZodValidationPipe } from "../../common/zod-validation.pipe";
 import { SubjectAttendanceService } from "./subject-attendance.service";
 
@@ -29,12 +31,13 @@ function reqContext(ip: string, req: Request) {
 }
 
 @Controller("subject-attendance")
-@UseGuards(AuthGuard)
+@UseGuards(AuthGuard, PermissionsGuard)
 export class SubjectAttendanceController {
   constructor(private readonly service: SubjectAttendanceService) {}
 
   // GET /subject-attendance/register?classArmId=&subjectId=&date=&period=
   @Get("register")
+  @Permissions("subject-attendance.read")
   async register(
     @Query(new ZodValidationPipe(subjectAttendanceRegisterQuerySchema))
     query: SubjectAttendanceRegisterQuery,
@@ -46,6 +49,7 @@ export class SubjectAttendanceController {
   // POST /subject-attendance/mark — upsert one (subject, date, period). { count }.
   @Post("mark")
   @HttpCode(200)
+  @Permissions("subject-attendance.mark")
   async mark(
     @Body(new ZodValidationPipe(subjectAttendanceMarkSchema)) dto: SubjectAttendanceMarkInput,
     @CurrentUser() authCtx: AuthContext,
@@ -57,6 +61,7 @@ export class SubjectAttendanceController {
 
   // GET /subject-attendance/summary?classArmId=&subjectId=&termId=
   @Get("summary")
+  @Permissions("subject-attendance.read")
   async summary(
     @Query(new ZodValidationPipe(subjectAttendanceSummaryQuerySchema))
     query: SubjectAttendanceSummaryQuery,

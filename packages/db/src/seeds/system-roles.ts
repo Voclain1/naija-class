@@ -1,11 +1,17 @@
-// Static seed data. Kept separate from seed.ts so it can be imported from
-// tests (e.g. to assert the 'owner' role row exists) without running the seed
-// routine as a side effect.
+// Static system-role seed data. Lives in src/seeds (alongside class-levels +
+// grading) so it compiles into the package's public API and can be imported
+// from tests (e.g. the permissions-coverage spec asserts the role grants)
+// without running the seed routine as a side effect. Moved here from
+// prisma/seed-data.ts in the Phase 2 slice 9 RBAC rollup — the old location was
+// outside src/ and so couldn't be imported across packages (TS rootDir).
 
 import {
   OWNER_ONLY_PERMISSIONS,
   PHASE_0_PERMISSIONS,
   PHASE_1_PERMISSIONS,
+  PHASE_2_OWNER_ONLY_PERMISSIONS,
+  PHASE_2_PERMISSIONS,
+  PHASE_2_TEACHER_PERMISSIONS,
 } from "@school-kit/types";
 
 export interface SystemRoleSeed {
@@ -15,14 +21,20 @@ export interface SystemRoleSeed {
   permissions: readonly string[];
 }
 
-// admin gets every Phase 0 + Phase 1 permission EXCEPT the owner-only
-// history-bearing deletes (academic-year/term/enrollment delete). Slice 13
-// RBAC rollup. Keep IN SYNC with the migration that updates the existing
-// global admin role row (prisma/migrations/*_phase_1_slice_13_admin_rbac_rollup).
+// admin gets every Phase 0 + Phase 1 + Phase 2 permission EXCEPT the owner-only
+// ones — the Phase 1 history-bearing deletes (academic-year/term/enrollment) and
+// the Phase 2 `report-card.reopen` (audited rollback of a RELEASED arm). Phase 1
+// slice 13 + Phase 2 slice 9 RBAC rollups. Keep IN SYNC with the migrations that
+// update the existing global admin role row
+// (prisma/migrations/*_phase_1_slice_13_admin_rbac_rollup and
+// *_phase_2_slice_9_rbac_rollup).
 const ADMIN_PERMISSIONS: readonly string[] = [
   ...PHASE_0_PERMISSIONS,
   ...PHASE_1_PERMISSIONS.filter(
     (p) => !(OWNER_ONLY_PERMISSIONS as readonly string[]).includes(p),
+  ),
+  ...PHASE_2_PERMISSIONS.filter(
+    (p) => !(PHASE_2_OWNER_ONLY_PERMISSIONS as readonly string[]).includes(p),
   ),
 ];
 
@@ -44,7 +56,7 @@ export const SYSTEM_ROLE_SEEDS: SystemRoleSeed[] = [
     key: "admin",
     name: "Administrator",
     description:
-      "School administrator — every Phase 0 + Phase 1 permission except the owner-only history-bearing deletes (academic-year/term/enrollment) and school deletion (TODO when school.delete lands).",
+      "School administrator — every Phase 0 + Phase 1 + Phase 2 permission except the owner-only history-bearing deletes (academic-year/term/enrollment), report-card.reopen, and school deletion (TODO when school.delete lands).",
     permissions: ADMIN_PERMISSIONS,
   },
   // Phase 1 / Slice 10 — minimal `teacher` role. Read-scoped access to a
@@ -52,16 +64,16 @@ export const SYSTEM_ROLE_SEEDS: SystemRoleSeed[] = [
   // phase-1.md:1087). Pulled forward into slice 10 (rather than the slice-13
   // RBAC rollup) because without it invitation-accept of a teacher rolls back
   // and class-arms' assertUserIsTeacher always fails — the whole staff branch
-  // is untestable. The full permission rollup + existing-school role migration
-  // stays slice 13. Kept IN SYNC with the idempotent seed in
+  // is untestable. Kept IN SYNC with the idempotent seed in
   // prisma/migrations/20260530120000_phase_1_slice_10_teacher_profiles
   // (the migration covers existing/CI DBs via `migrate deploy`; this covers a
-  // fresh `db:seed`). If you edit one permission list, edit both.
+  // fresh `db:seed`). If you edit one permission list, edit both. The Phase 2
+  // additions land via the slice-9 RBAC rollup migration.
   {
     key: "teacher",
     name: "Teacher",
     description:
-      "Teaching staff — read-scoped access to their assigned arms, subjects, and roster, plus self-service on their own profile. Full RBAC rollup lands in slice 13.",
+      "Teaching staff — read-scoped access to their assigned arms, subjects, and roster, self-service on their own profile, plus the Phase 2 score/attendance/report-card actions for their own arms (the service narrows these to scope). Phase 2 slice 9 RBAC rollup.",
     permissions: [
       "class-arm.read",
       "class-level.read",
@@ -72,6 +84,9 @@ export const SYSTEM_ROLE_SEEDS: SystemRoleSeed[] = [
       "teacher-profile.self.update",
       "student.read",
       "enrollment.read",
+      // Phase 2 (slice 9) — granted at the guard; getTeacherScope narrows them
+      // to the teacher's own (arm, subject). See PHASE_2_TEACHER_PERMISSIONS.
+      ...PHASE_2_TEACHER_PERMISSIONS,
     ],
   },
 ];
