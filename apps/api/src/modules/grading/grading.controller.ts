@@ -34,29 +34,33 @@ import type { Request } from "express";
 import type { AuthContext } from "../../common/auth/auth-context";
 import { AuthGuard } from "../../common/auth/auth.guard";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
+import { Permissions } from "../../common/auth/permissions.decorator";
+import { PermissionsGuard } from "../../common/auth/permissions.guard";
 import { ZodValidationPipe } from "../../common/zod-validation.pipe";
 import { GradingService } from "./grading.service";
 
-// NOTE: slice-1-era guarding — AuthGuard only, with the service gating via
-// assertUserActiveAndHasOneOf(['owner','admin']). @Permissions + PermissionsGuard
-// are wired in the Phase 2 slice-9 RBAC rollup (mirrors Phase 1 slice 13).
-// Until then, granting grading perms to admin early would be a no-op anyway.
+// Grading config is owner/admin-only: every handler carries a grading-* permission
+// (PermissionsGuard, slice-9 rollup), and the teacher role is NOT granted any of
+// them. The service's assertUserActiveAndHasOneOf(['owner','admin']) stays as
+// defense-in-depth.
 
 function reqContext(ip: string, req: Request) {
   return { ipAddress: ip, userAgent: req.header("user-agent") ?? null };
 }
 
 @Controller("grading-scheme")
-@UseGuards(AuthGuard)
+@UseGuards(AuthGuard, PermissionsGuard)
 export class GradingSchemeController {
   constructor(private readonly service: GradingService) {}
 
   @Get()
+  @Permissions("grading-scheme.read")
   async getScheme(@CurrentUser() authCtx: AuthContext): Promise<GradingSchemeDto> {
     return this.service.getScheme(authCtx);
   }
 
   @Patch()
+  @Permissions("grading-scheme.update")
   async updateScheme(
     @Body(new ZodValidationPipe(updateGradingSchemeSchema)) dto: UpdateGradingSchemeInput,
     @CurrentUser() authCtx: AuthContext,
@@ -67,12 +71,14 @@ export class GradingSchemeController {
   }
 
   @Get("components")
+  @Permissions("grading-component.read")
   async listComponents(@CurrentUser() authCtx: AuthContext): Promise<GradingComponentDto[]> {
     return this.service.listComponents(authCtx);
   }
 
   @Post("components")
   @HttpCode(201)
+  @Permissions("grading-component.create")
   async createComponent(
     @Body(new ZodValidationPipe(createGradingComponentSchema)) dto: CreateGradingComponentInput,
     @CurrentUser() authCtx: AuthContext,
@@ -84,6 +90,7 @@ export class GradingSchemeController {
 
   // Bulk replace — the settings UI save path (sum-to-100 over the whole set).
   @Put("components")
+  @Permissions("grading-component.update")
   async replaceComponents(
     @Body(new ZodValidationPipe(replaceGradingComponentsSchema)) dto: ReplaceGradingComponentsInput,
     @CurrentUser() authCtx: AuthContext,
@@ -94,6 +101,7 @@ export class GradingSchemeController {
   }
 
   @Patch("components/:id")
+  @Permissions("grading-component.update")
   async updateComponent(
     @Param("id") id: string,
     @Body(new ZodValidationPipe(updateGradingComponentSchema)) dto: UpdateGradingComponentInput,
@@ -106,6 +114,7 @@ export class GradingSchemeController {
 
   @Delete("components/:id")
   @HttpCode(204)
+  @Permissions("grading-component.delete")
   async deleteComponent(
     @Param("id") id: string,
     @CurrentUser() authCtx: AuthContext,
@@ -117,17 +126,19 @@ export class GradingSchemeController {
 }
 
 @Controller("grade-boundaries")
-@UseGuards(AuthGuard)
+@UseGuards(AuthGuard, PermissionsGuard)
 export class GradeBoundariesController {
   constructor(private readonly service: GradingService) {}
 
   @Get()
+  @Permissions("grade-boundary.read")
   async listBoundaries(@CurrentUser() authCtx: AuthContext): Promise<GradeBoundaryDto[]> {
     return this.service.listBoundaries(authCtx);
   }
 
   // Bulk replace — the settings UI save path (ranges tile 0..100).
   @Put()
+  @Permissions("grade-boundary.update")
   async replaceBoundaries(
     @Body(new ZodValidationPipe(replaceGradeBoundariesSchema)) dto: ReplaceGradeBoundariesInput,
     @CurrentUser() authCtx: AuthContext,
@@ -138,6 +149,7 @@ export class GradeBoundariesController {
   }
 
   @Patch(":id")
+  @Permissions("grade-boundary.update")
   async updateBoundary(
     @Param("id") id: string,
     @Body(new ZodValidationPipe(updateGradeBoundarySchema)) dto: UpdateGradeBoundaryInput,

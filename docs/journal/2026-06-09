@@ -173,3 +173,71 @@ inline arrow. Loop gone; the fetch effect fires once per
 `onLoaded` and primitive-only `load` deps — not affected.)
 
 ## Manual browser pass — re-walking S1–S3 after the fixes, then S4–S8.
+
+---
+
+# Slice 9 — Phase 2 close-out: plan-first + cp1 (RBAC rollup)
+
+Slice 8 closed on main (PR #54, ce95124). Five independent work streams; 3 cps.
+
+## The 5 work streams + decisions
+- **WS1 — `PHASE_2_PERMISSIONS` rollup + `@Permissions` wiring** (cp1, this).
+- **WS2 — audit-coverage spec extension** (cp2).
+- **WS3 — cross-tenant E2E walks** (cp3) — API-level, not browser.
+- **WS4 — tighten `GET /schools/me` to owner+admin** (cp2).
+- **WS5 — dev-seed time-relative term refactor** (cp3).
+
+## The 8 questions — resolved
+- **Q1** flat `PHASE_2_PERMISSIONS` in `permissions.ts` + separate
+  `PHASE_2_OWNER_ONLY_PERMISSIONS = ["report-card.reopen"]`; comment-grouped.
+- **Q2** `@Permissions` on every Phase 2 endpoint (slices 2–8), defence-in-depth.
+- **Q3** teacher role at the guard includes form-review/comment/aggregate/
+  sign-off/subject-attendance.* — the service narrows scope.
+  **Banking — two-layer gate:** role authorization at the `@Permissions` guard;
+  scope narrowing in the service via `getTeacherScope`. Different jobs — the
+  guard rejects unauthorized users; the service narrows scope for authorized
+  ones. Withholding role perms to enforce scope would 403 legitimate form teachers.
+- **Q4** summary by period record · **Q5** teacher sees own subjects · **Q6**
+  dev-seed moves scores to the current term · **Q7** 3 cps (cp1 = WS1 isolated
+  for security review; cp2 = WS2+WS4; cp3 = WS3+WS5) · **Q8** `report-card.render`
+  stays unaudited (build/release side-effect) — documented, not a gap.
+
+## cp1 build (WS1)
+- **`packages/types/src/permissions.ts`** — `PHASE_2_PERMISSIONS` (25, synthesized
+  from the spec, NOT the incomplete per-slice consts), `PHASE_2_OWNER_ONLY_PERMISSIONS`,
+  `PHASE_2_TEACHER_PERMISSIONS` (13); spread into `ALL_PERMISSIONS`.
+- **`@Permissions` on all 7 Phase-2 controllers** (assessment-scores, assessments,
+  grading-scheme, grade-boundaries, report-cards, attendance, subject-attendance)
+  via `@UseGuards(AuthGuard, PermissionsGuard)` + a key per handler. Mappings of
+  note: `arm/render` → `report-card.build` (no separate render permission);
+  `arm/principal-note` + per-card `PATCH` → `report-card.comment`; `arm/reopen`
+  → `report-card.reopen` (owner-only). **Schools (Phase 0) deliberately NOT
+  retrofitted** — adding `PermissionsGuard` there would gate `GET /schools/me`
+  to `school.read` and 403 teachers, which IS the WS4/cp2 tighten. The toggle
+  keeps its service-layer owner/admin gate for now (consistent with how slice 13
+  left Phase 0 controllers).
+- **Role grants** — moved `prisma/seed-data.ts` → `src/seeds/system-roles.ts`
+  (so it's importable from tests — its own comment's long-standing intent, blocked
+  by TS `rootDir` from the old location). admin `+= PHASE_2 − reopen`; teacher
+  `+= PHASE_2_TEACHER`; owner unchanged (`["*"]`).
+- **Idempotent data migration** `20260609120000_phase_2_slice_9_rbac_rollup` —
+  full-literal UPDATE of the admin + teacher global role rows (mirrors slice-13;
+  `permissions || new` was rejected — jsonb `||` duplicates on re-run, not
+  idempotent). Applied; verified **admin 85 / owner 1 / teacher 22** perms,
+  admin lacks reopen, teacher has subject-attendance.mark but not
+  grading-scheme.update. Re-`migrate deploy` → "No pending migrations" (no-op).
+- **`permissions-coverage.spec.ts`** — Phase 2 controllers added to the
+  fail-closed `@Permissions` coverage; every Phase-2 `@Permissions` value ∈
+  `PHASE_2_PERMISSIONS`; owner = wildcard, admin = all-but-owner-only, teacher =
+  exactly the documented subset (asserts against the real `SYSTEM_ROLE_SEEDS`,
+  now importable from `@school-kit/db`).
+
+## cp1 verification (all green)
+typecheck (api + types + db) + lint clean · **API suite 731 → 749** (+18 coverage
+tests) · migration idempotent (re-deploy no-op) · SD count **4** · no schema
+change (data-only migration). The guard is defence-in-depth — existing
+service-layer role+scope gates stay; no Phase-2 HTTP controller specs exist so
+the guard doesn't affect the service-level suite.
+
+## Not in cp1 — WS2 audit-coverage + WS4 /schools/me tighten (cp2);
+WS3 cross-tenant E2E + WS5 dev-seed time-relative + static form-class audit (cp3).

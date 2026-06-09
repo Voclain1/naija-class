@@ -171,10 +171,88 @@ export const PHASE_2_SLICE_5_PERMISSIONS = [
 // subject teacher of the arm is forbidden (subject-period attendance is slice 8).
 export const PHASE_2_SLICE_7_PERMISSIONS = ["attendance.mark", "attendance.read"] as const;
 
+// Phase 2 canonical permission rollup (slice 9). Synthesized from the spec's
+// "RBAC implementation → New permission strings" list (docs/modules/phase-2.md),
+// NOT mechanically concatenated from the per-slice reference consts above —
+// slices 3/6/8 emitted no const, slice 2 omitted `assessment-score.read`, and
+// slice 5's `report-card.render` is not a permission (render is a build/release
+// side-effect, gated by `report-card.build`). This array is now the single
+// source of truth: spread into ALL_PERMISSIONS below, granted to admin (minus
+// the owner-only reopen) + teacher (the subset) in
+// packages/db/prisma/seed-data.ts, enforced by PermissionsGuard, and applied to
+// existing/CI DBs by the 20260609..._phase_2_slice_9_rbac_rollup data migration.
+// The per-slice PHASE_2_SLICE_N_PERMISSIONS consts above are superseded by this
+// and kept only as historical reference.
+export const PHASE_2_PERMISSIONS = [
+  // Grading configuration
+  "grading-scheme.read",
+  "grading-scheme.update",
+  "grading-component.read",
+  "grading-component.create",
+  "grading-component.update",
+  "grading-component.delete",
+  "grade-boundary.read",
+  "grade-boundary.update",
+
+  // Assessment
+  "assessment.read",
+  "assessment-score.read",
+  "assessment-score.create",
+  "assessment-score.update",
+  "assessment.sign-off",
+  "assessment.aggregate",
+
+  // Attendance (daily, universal)
+  "attendance.read",
+  "attendance.mark",
+
+  // Subject-period attendance (opt-in)
+  "subject-attendance.read",
+  "subject-attendance.mark",
+
+  // Report cards + approval workflow
+  "report-card.read",
+  "report-card.build",
+  "report-card.form-review",
+  "report-card.principal-approve",
+  "report-card.release",
+  "report-card.reopen",
+  "report-card.comment",
+] as const;
+
+// Owner-only Phase 2 permission — reopening a RELEASED arm (audited rollback to
+// DRAFT). Admin gets every Phase 2 permission EXCEPT this. Mirrors
+// OWNER_ONLY_PERMISSIONS for Phase 1.
+export const PHASE_2_OWNER_ONLY_PERMISSIONS = ["report-card.reopen"] as const;
+
+// The Phase 2 subset granted to the `teacher` role at the GUARD level. The
+// SERVICE layer (getTeacherScope) then narrows these to the teacher's own
+// arms/subjects — two-layer gate: the guard authorizes the role, the service
+// scopes the row. form-review + comment are INCLUDED because a form teacher
+// needs them; withholding them at the guard to "enforce scope" would 403
+// legitimate form teachers (the service checks ClassArm.classTeacherId).
+// subject-attendance.* is granted unconditionally here; the service's opt-in
+// (assertEnabled) 404s when the school hasn't turned the feature on.
+export const PHASE_2_TEACHER_PERMISSIONS = [
+  "assessment.read",
+  "assessment-score.read",
+  "assessment-score.create",
+  "assessment-score.update",
+  "assessment.sign-off",
+  "assessment.aggregate",
+  "attendance.read",
+  "attendance.mark",
+  "subject-attendance.read",
+  "subject-attendance.mark",
+  "report-card.read",
+  "report-card.form-review",
+  "report-card.comment",
+] as const;
+
 export const ALL_PERMISSIONS = [
   ...PHASE_0_PERMISSIONS,
   ...PHASE_1_PERMISSIONS,
-  /* PHASE_2_SLICE_1_PERMISSIONS + PHASE_2_SLICE_2_PERMISSIONS folded in by the slice-9 rollup */
+  ...PHASE_2_PERMISSIONS,
   /* extend per phase */
 ] as const;
 

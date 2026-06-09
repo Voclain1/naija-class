@@ -9,7 +9,7 @@
 // We dedupe by hand with findFirst + create. Re-running the seed is safe.
 
 import { PrismaClient } from "../generated/client/index.js";
-import { SYSTEM_ROLE_SEEDS } from "./seed-data.js";
+import { SYSTEM_ROLE_SEEDS } from "../src/seeds/system-roles.js";
 
 const prisma = new PrismaClient();
 
