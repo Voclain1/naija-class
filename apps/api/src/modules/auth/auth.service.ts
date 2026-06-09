@@ -470,6 +470,7 @@ const SCHOOL_RESPONSE_SELECT = {
   onboardingStep: true,
   ndprConsent: true,
   ndprConsentAt: true,
+  subjectAttendanceEnabled: true,
   createdAt: true,
   updatedAt: true,
 } satisfies Prisma.SchoolSelect;

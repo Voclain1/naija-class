@@ -15,8 +15,16 @@ import { onboardingStep2Schema } from "./step2-branding.dto.js";
 //
 // At least one field is required — sending {} would still pass the merged
 // partial — so we tack a refine on the bottom.
+// School-level settings editable via the same PATCH (Phase 2 / Slice 8 adds the
+// subject-attendance opt-in here rather than a new endpoint — same owner/admin
+// gate, same school.update audit).
+const schoolSettingsSchema = z.object({
+  subjectAttendanceEnabled: z.boolean(),
+});
+
 export const patchSchoolSchema = onboardingStep1Schema
   .merge(onboardingStep2Schema)
+  .merge(schoolSettingsSchema)
   .partial()
   .strict()
   .refine((data) => Object.keys(data).length > 0, {

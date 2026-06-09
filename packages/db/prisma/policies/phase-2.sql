@@ -82,3 +82,17 @@ ALTER TABLE "attendance_records" FORCE  ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation ON "attendance_records"
   USING      (school_id::text = current_setting('app.current_school_id', true))
   WITH CHECK (school_id::text = current_setting('app.current_school_id', true));
+
+-- ---------------------------------------------------------------------
+-- Slice 8 — subject_attendance_records. Subject-period attendance (opt-in via
+-- School.subjectAttendanceEnabled — the flag gates the API, RLS gates the rows).
+-- One row per (student × subject × date × period); own school_id → flat
+-- direct-column check.
+-- ---------------------------------------------------------------------
+
+ALTER TABLE "subject_attendance_records" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "subject_attendance_records" FORCE  ROW LEVEL SECURITY;
+
+CREATE POLICY tenant_isolation ON "subject_attendance_records"
+  USING      (school_id::text = current_setting('app.current_school_id', true))
+  WITH CHECK (school_id::text = current_setting('app.current_school_id', true));

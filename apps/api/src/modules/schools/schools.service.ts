@@ -73,6 +73,12 @@ export class SchoolsService {
     if (input.email !== undefined) data.email = input.email;
     if (input.logoUrl !== undefined) data.logoUrl = input.logoUrl;
     if (input.primaryColor !== undefined) data.primaryColor = input.primaryColor;
+    // Slice 8 — the subject-attendance opt-in rides this same PATCH (owner/admin,
+    // school.update audit). Reaching this endpoint is itself the enable path, so
+    // it carries no opt-in gate.
+    if (input.subjectAttendanceEnabled !== undefined) {
+      data.subjectAttendanceEnabled = input.subjectAttendanceEnabled;
+    }
 
     return this.updateSchoolWithAudit(authCtx, data, "school.update", reqCtx, {
       changed: Object.keys(data),
@@ -343,6 +349,7 @@ const SCHOOL_RESPONSE_SELECT = {
   onboardingStep: true,
   ndprConsent: true,
   ndprConsentAt: true,
+  subjectAttendanceEnabled: true,
   createdAt: true,
   updatedAt: true,
 } satisfies Prisma.SchoolSelect;
@@ -364,6 +371,7 @@ function toSchoolMeDto(school: SchoolRow): SchoolMeDto {
     onboardingStep: school.onboardingStep,
     ndprConsent: school.ndprConsent,
     ndprConsentAt: school.ndprConsentAt,
+    subjectAttendanceEnabled: school.subjectAttendanceEnabled,
     createdAt: school.createdAt,
     updatedAt: school.updatedAt,
   };

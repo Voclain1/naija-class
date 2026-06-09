@@ -60,6 +60,11 @@ export interface TeacherScopeDto {
   // are an arm-level, not a subject-level, concern). Subject-only teachers see
   // positions read-only.
   formTeacherArmIds: string[];
+  // The school's subject-period attendance opt-in (Phase 2 / Slice 8). Rides
+  // here — like currentTerm — because teachers can't read school settings
+  // directly; the teacher portal uses it to decide whether to render the
+  // subject-attendance surface at all (the endpoints 404 when it's false).
+  subjectAttendanceEnabled: boolean;
 }
 
 // Trimmed roster row for the per-arm student list. Deliberately a SUBSET of
