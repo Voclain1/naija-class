@@ -3,6 +3,7 @@
 import {
   BookOpen,
   CalendarCheck,
+  CalendarClock,
   ClipboardList,
   LayoutDashboard,
   UserCircle,
@@ -10,7 +11,9 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
 
+import { getMyScope } from "@/lib/teacher/teacher-scope-api";
 import { cn } from "@/lib/utils";
 
 interface NavItem {
@@ -19,24 +22,62 @@ interface NavItem {
   icon: LucideIcon;
 }
 
-// The teacher portal's MINIMAL nav. Deliberately NOT the admin sidebar: a
-// teacher sees only their own surfaces (no Students / Staff / Academics /
-// Settings IA). Dashboard / Classes / Profile shipped in slice 11 cp3;
-// Gradebook added in Phase 2 / Slice 3.
-// Attendance (Phase 2 / Slice 7) links to the daily register (the default); the
-// term summary is a sub-link inside the page. The entry shows for everyone in
-// the portal — a subject-only teacher who opens it sees the empty-picker "form
-// teachers only" message (the server is the real gate).
-const NAV_ITEMS: NavItem[] = [
+// The teacher portal's MINIMAL nav. Dashboard / Classes / Profile shipped in
+// slice 11 cp3; Gradebook in Phase 2 / Slice 3; Attendance in Slice 7. The
+// "Subject attendance" entry (Slice 8) is conditional — only rendered when the
+// school has opted into subject-period attendance (School.subjectAttendanceEnabled).
+const BASE_ITEMS: NavItem[] = [
   { label: "Dashboard", href: "/teacher/dashboard", icon: LayoutDashboard },
   { label: "Classes", href: "/teacher/classes", icon: BookOpen },
   { label: "Gradebook", href: "/teacher/gradebook", icon: ClipboardList },
   { label: "Attendance", href: "/teacher/attendance", icon: CalendarCheck },
-  { label: "Profile", href: "/teacher/profile", icon: UserCircle },
 ];
+
+const SUBJECT_ITEM: NavItem = {
+  label: "Subject attendance",
+  href: "/teacher/attendance/subject",
+  icon: CalendarClock,
+};
+
+const PROFILE_ITEM: NavItem = { label: "Profile", href: "/teacher/profile", icon: UserCircle };
 
 export function TeacherSidebar() {
   const pathname = usePathname();
+  // The school's subject-attendance opt-in rides on /teacher-scope/me (the plan-
+  // first decision) so teachers can read it without school-settings access.
+  // Default hidden until it resolves / on error. /teacher-scope/me is gated to
+  // the teacher role, so an owner/admin viewing the teacher portal gets a 403
+  // here and the entry stays hidden — they reach the subject surface by URL.
+  const [subjectEnabled, setSubjectEnabled] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    getMyScope()
+      .then((s) => {
+        if (active) setSubjectEnabled(s.subjectAttendanceEnabled);
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const items: NavItem[] = [
+    ...BASE_ITEMS,
+    ...(subjectEnabled ? [SUBJECT_ITEM] : []),
+    PROFILE_ITEM,
+  ];
+
+  // Disambiguate the daily vs subject attendance entries so both don't light up
+  // on the /teacher/attendance/subject sub-tree.
+  const onSubjectTree = pathname.startsWith("/teacher/attendance/subject");
+  function isActive(href: string): boolean {
+    if (href === "/teacher/attendance") {
+      return (pathname === href || pathname.startsWith(`${href}/`)) && !onSubjectTree;
+    }
+    if (href === "/teacher/attendance/subject") return onSubjectTree;
+    return pathname === href || pathname.startsWith(`${href}/`);
+  }
 
   return (
     <aside className="hidden w-60 shrink-0 border-r bg-card md:flex md:flex-col">
@@ -44,10 +85,9 @@ export function TeacherSidebar() {
         School Kit
       </div>
       <nav className="flex flex-1 flex-col gap-1 p-2">
-        {NAV_ITEMS.map((item) => {
+        {items.map((item) => {
           const Icon = item.icon;
-          const active =
-            pathname === item.href || pathname.startsWith(`${item.href}/`);
+          const active = isActive(item.href);
           return (
             <Link
               key={item.href}
