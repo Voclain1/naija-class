@@ -23,6 +23,7 @@ import { ReportCardRenderModule } from "./modules/report-cards/render/report-car
 import { ReportCardsModule } from "./modules/report-cards/report-cards.module";
 import { SchoolsModule } from "./modules/schools/schools.module";
 import { StudentsModule } from "./modules/students/students.module";
+import { SubjectAttendanceModule } from "./modules/subject-attendance/subject-attendance.module";
 import { SubjectsModule } from "./modules/subjects/subjects.module";
 import { TeacherAssignmentsModule } from "./modules/teacher-assignments/teacher-assignments.module";
 import { TeacherProfilesModule } from "./modules/teacher-profiles/teacher-profiles.module";
@@ -68,6 +69,7 @@ const isProd = process.env.NODE_ENV === "production";
     GradingModule,
     AssessmentModule,
     AttendanceModule,
+    SubjectAttendanceModule,
     ReportCardsModule,
     ReportCardRenderModule,
     ...(isProd ? [] : [DebugModule]),

@@ -22,6 +22,9 @@ export interface SchoolMeDto {
   onboardingStep: number;
   ndprConsent: boolean;
   ndprConsentAt: string | Date | null;
+  // Opt-in to subject-period attendance (Phase 2 / Slice 8). The admin settings
+  // page reads + toggles this; the teacher portal learns it via /teacher-scope/me.
+  subjectAttendanceEnabled: boolean;
   createdAt: string | Date;
   updatedAt: string | Date;
 }

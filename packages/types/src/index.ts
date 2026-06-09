@@ -22,3 +22,4 @@ export * from './grading/index.js';
 export * from './assessment/index.js';
 export * from './report-cards/index.js';
 export * from './attendance/index.js';
+export * from './subject-attendance/index.js';

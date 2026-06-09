@@ -38,6 +38,9 @@ model School {
   onboardingStep Int          @default(0) @map("onboarding_step")
   ndprConsent    Boolean      @default(false) @map("ndpr_consent")
   ndprConsentAt  DateTime?    @map("ndpr_consent_at")
+  // Opt-in to subject-period attendance (Phase 2 / Slice 8). Default false:
+  // the subject-attendance surface 404s until a school turns it on.
+  subjectAttendanceEnabled Boolean @default(false) @map("subject_attendance_enabled")
   createdAt      DateTime     @default(now()) @map("created_at")
   updatedAt      DateTime     @updatedAt @map("updated_at")
 
@@ -1106,4 +1109,36 @@ model AttendanceRecord {
   @@index([schoolId, classArmId, date]) // register query
   @@index([schoolId, termId]) // summary query
   @@map("attendance_records")
+}
+
+// ---------- Subject-period attendance (Phase 2 / Slice 8 — opt-in) ----------
+
+// Subject-period attendance. SEPARATE table from daily — period-level semantics,
+// per-subject query patterns, and OPT-IN per school via
+// School.subjectAttendanceEnabled (the endpoints 404 until a school enables it).
+// Senior classes that run a period timetable use it; primary classes don't. One
+// row per (student × subject × date × period). Reuses the AttendanceStatus enum.
+// Flat plain-FK convention (no Prisma relations) — same as the daily table.
+model SubjectAttendanceRecord {
+  id         String           @id @default(uuid())
+  schoolId   String           @map("school_id")
+  studentId  String           @map("student_id")
+  classArmId String           @map("class_arm_id") // arm context at marking time
+  subjectId  String           @map("subject_id")
+  termId     String           @map("term_id") // term containing `date`
+  date       DateTime         @db.Date
+  period     Int // period number within the day (≥1, no upper bound)
+  status     AttendanceStatus
+  note       String?
+  markedBy   String           @map("marked_by") // users.id
+  markedAt   DateTime         @default(now()) @map("marked_at")
+  updatedAt  DateTime         @updatedAt @map("updated_at")
+
+  @@unique([schoolId, studentId, subjectId, date, period]) // one record per student per subject per period per date
+  @@index([schoolId])
+  // Explicit index names: the auto-generated names for these two would both
+  // truncate to the same 63-char Postgres identifier and collide.
+  @@index([schoolId, classArmId, subjectId, date], map: "subject_attendance_arm_subject_date_idx") // register query
+  @@index([schoolId, classArmId, subjectId, termId], map: "subject_attendance_arm_subject_term_idx") // summary query (arm-keyed, mirrors slice 7's term index)
+  @@map("subject_attendance_records")
 }

@@ -37,12 +37,20 @@ export class TeacherScopeService {
         where: { isCurrent: true },
         select: { id: true, name: true, sequence: true },
       });
+      // Slice 8: the subject-attendance opt-in rides this read too (teachers
+      // can't read school settings directly). schools is not under RLS, so the
+      // findUnique resolves the authed school regardless of the tenant GUC.
+      const school = await db.school.findUnique({
+        where: { id: authCtx.schoolId },
+        select: { subjectAttendanceEnabled: true },
+      });
       return {
         classArms: scope.classArms,
         // Map → plain Record for the JSON wire form.
         subjectsByArm: Object.fromEntries(scope.subjectsByArm),
         currentTerm,
         formTeacherArmIds: scope.formTeacherArmIds,
+        subjectAttendanceEnabled: school?.subjectAttendanceEnabled ?? false,
       };
     });
   }
