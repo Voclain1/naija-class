@@ -250,36 +250,55 @@ async function main() {
   });
   const componentIdByKey = new Map(components.map((c) => [c.key, c.id]));
 
-  // 6. Academic year 2025/2026 (current) + three terms (First is current).
+  // 6. Academic year + three terms, computed RELATIVE TO TODAY so the CURRENT
+  //    term always contains the seed-day's date. This keeps date-resolved
+  //    surfaces (attendance, subject-attendance) aligned with isCurrent-resolved
+  //    surfaces (gradebook, report cards) no matter how far real calendar time
+  //    has advanced past a hardcoded date — closing the dev-seed staleness
+  //    incident (docs/journal/2026-06-08, finished in slice-9 cp3). Windows, in
+  //    days from today: First (prior) [−135,−46] · Second (current) [−45,+45] ·
+  //    Third (next) [+46,+135]; the year brackets First.start → Third.end. The
+  //    `update` clauses refresh the dates too, so re-seeding an existing dev DB
+  //    (not just a fresh reset) rolls the windows forward.
+  const MS_DAY = 86_400_000;
+  const seedToday = new Date();
+  const dayOffset = (days: number) => new Date(seedToday.getTime() + days * MS_DAY);
+  const yearStart = dayOffset(-135);
+  const yearEnd = dayOffset(135);
   const year = await prisma.academicYear.upsert({
     where: { schoolId_label: { schoolId, label: "2025/2026" } },
-    update: { isCurrent: true },
+    update: { isCurrent: true, startDate: yearStart, endDate: yearEnd },
     create: {
       schoolId,
       label: "2025/2026",
-      startDate: new Date("2025-09-01"),
-      endDate: new Date("2026-07-31"),
+      startDate: yearStart,
+      endDate: yearEnd,
       isCurrent: true,
     },
     select: { id: true },
   });
   const TERMS = [
-    { sequence: 1, name: "First Term", startDate: "2025-09-08", endDate: "2025-12-12", isCurrent: true },
-    { sequence: 2, name: "Second Term", startDate: "2026-01-05", endDate: "2026-04-03", isCurrent: false },
-    { sequence: 3, name: "Third Term", startDate: "2026-04-27", endDate: "2026-07-24", isCurrent: false },
+    { sequence: 1, name: "First Term", startDate: dayOffset(-135), endDate: dayOffset(-46), isCurrent: false },
+    { sequence: 2, name: "Second Term", startDate: dayOffset(-45), endDate: dayOffset(45), isCurrent: true },
+    { sequence: 3, name: "Third Term", startDate: dayOffset(46), endDate: dayOffset(135), isCurrent: false },
   ];
+  // Clear any existing current-term flag first: the partial unique index
+  // `terms_school_id_current_key` permits only ONE is_current term per school, so
+  // re-seeding while a different term is flagged current would transiently create
+  // two and violate it. Reset, then the loop sets the single new current term.
+  await prisma.term.updateMany({ where: { schoolId }, data: { isCurrent: false } });
   let firstTermId = "";
   for (const t of TERMS) {
     const term = await prisma.term.upsert({
       where: { academicYearId_sequence: { academicYearId: year.id, sequence: t.sequence } },
-      update: { isCurrent: t.isCurrent },
+      update: { isCurrent: t.isCurrent, name: t.name, startDate: t.startDate, endDate: t.endDate },
       create: {
         schoolId,
         academicYearId: year.id,
         sequence: t.sequence,
         name: t.name,
-        startDate: new Date(t.startDate),
-        endDate: new Date(t.endDate),
+        startDate: t.startDate,
+        endDate: t.endDate,
         isCurrent: t.isCurrent,
       },
       select: { id: true },
@@ -287,12 +306,11 @@ async function main() {
     if (t.sequence === 1) firstTermId = term.id;
   }
 
-  // Resolve the CURRENT term by its isCurrent flag rather than pinning to a
-  // hardcoded term id. Term-scoped seed data (the enrollments below) follows
-  // whichever term is current at seed time, so the roster doesn't go stale as
-  // real calendar time advances past the originally-seeded term. (The score
-  // fixture in step 11 stays on firstTermId on purpose — it's the report-card
-  // "First Term" fixture.) See docs/journal/2026-06-08 — dev-seed staleness.
+  // The CURRENT term (isCurrent=true → the window containing today). Both the
+  // enrollments (below) AND the score fixture (step 11) pin to it, so the whole
+  // demo — gradebook + report cards (isCurrent-resolved) AND daily/subject
+  // attendance (date-resolved → today) — is populated for the seed day. firstTermId
+  // survives only as a defensive fallback (there is always an isCurrent term).
   const currentTerm = await prisma.term.findFirst({
     where: { schoolId, isCurrent: true },
     select: { id: true },
@@ -378,7 +396,7 @@ async function main() {
     studentIdByAdmission.set(s.admissionNumber, student.id);
     await prisma.enrollment.upsert({
       where: { schoolId_studentId_termId: { schoolId, studentId: student.id, termId: currentTermId } },
-      update: { classArmId: targetArmId, status: "ENROLLED", enrolledAt: new Date("2025-09-01") },
+      update: { classArmId: targetArmId, status: "ENROLLED", enrolledAt: yearStart },
       create: {
         schoolId,
         studentId: student.id,
@@ -386,7 +404,7 @@ async function main() {
         academicYearId: year.id,
         classArmId: targetArmId,
         status: "ENROLLED",
-        enrolledAt: new Date("2025-09-01"),
+        enrolledAt: yearStart,
       },
     });
   }
@@ -428,7 +446,9 @@ async function main() {
     }
   }
 
-  // 11. Scores for JSS 2 A × {Maths, English} × First Term. Per-component
+  // 11. Scores for JSS 2 A × {Maths, English} × the CURRENT term (so gradebook +
+  //     report cards are populated for the seed day; slice-9 cp3 moved these off
+  //     the old hardcoded First Term). Per-component
   //     AssessmentScore rows + the materialized Assessment summary (totalScore +
   //     letter + remark). Basic Science et al. are left UNSCORED on purpose so
   //     the cp3 "no scores" empty states are exercisable.
@@ -459,7 +479,7 @@ async function main() {
               schoolId,
               studentId,
               subjectId,
-              termId: firstTermId,
+              termId: currentTermId,
               componentId,
             },
           },
@@ -468,7 +488,7 @@ async function main() {
             schoolId,
             studentId,
             subjectId,
-            termId: firstTermId,
+            termId: currentTermId,
             componentId,
             score: marks[key],
             enteredBy: teacher.id,
@@ -479,14 +499,14 @@ async function main() {
       // Materialized summary (what slice-2 materialization persists).
       await prisma.assessment.upsert({
         where: {
-          schoolId_studentId_subjectId_termId: { schoolId, studentId, subjectId, termId: firstTermId },
+          schoolId_studentId_subjectId_termId: { schoolId, studentId, subjectId, termId: currentTermId },
         },
         update: { totalScore: total, letterGrade: letter, remark, computedAt: new Date() },
         create: {
           schoolId,
           studentId,
           subjectId,
-          termId: firstTermId,
+          termId: currentTermId,
           academicYearId: year.id,
           classArmId: targetArmId,
           totalScore: total,
@@ -518,7 +538,7 @@ async function main() {
             schoolId,
             studentId: row.studentId,
             subjectId,
-            termId: firstTermId,
+            termId: currentTermId,
           },
         },
         data: {
@@ -538,7 +558,7 @@ async function main() {
   console.log(`Owner login:   ${OWNER_EMAIL} / ${PASSWORD}`);
   console.log(`Teacher login: ${TEACHER_EMAIL} / ${PASSWORD}`);
   console.log("Form teachers: owner → JSS 2 A, dev-teacher → JSS 1 A");
-  console.log(`Arm with scores: ${TARGET_ARM_NAME} (Mathematics + English Language, First Term)`);
+  console.log(`Arm with scores: ${TARGET_ARM_NAME} (Mathematics + English Language, current term)`);
   console.log("dev-teacher also has SUBJECT assignments in JSS 2 A (Maths + English)");
   console.log("Now go to /report-cards as owner");
   console.log("");

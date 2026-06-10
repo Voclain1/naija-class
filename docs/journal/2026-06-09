@@ -266,26 +266,19 @@ both validate; report cards must be **built, commented, then column-signed-off
 (cascade → SUBJECT_REVIEWED)** before form-review (it 409s otherwise — DRAFT
 isn't enough).
 
-### TWO FINDINGS + rulings
-1. **Render IS audited (ruling: keep as-is).** The plan assumed
-   `POST /report-cards/arm/render` writes no audit row ("intentional absence").
-   It does: `enqueueArmRender` writes **`report-card.render-batch`** and the
-   render worker writes **`report-card.render`** per card. The plan-first Q8
-   assumption was wrong; cp2 verified render DOES audit, and the spec asserts the
-   actual behavior. Auditing is appropriate for PDF-debug forensics. No change.
-2. **`approve` audit action diverged from its permission name (ruling: RENAME).**
-   The approve transition wrote **`report-card.approve`** while its `@Permissions`
-   key + the spec say **`report-card.principal-approve`**. Renamed the audit
-   action to `report-card.principal-approve` in
-   `report-card-workflow.service.ts`, updated both asserting specs
-   (workflow + audit-coverage), and added a data migration
-   `20260609130000_rename_report_card_approve_audit_action` rewriting existing
-   `audit_logs` rows (`UPDATE … SET action = 'report-card.principal-approve'
-   WHERE action = 'report-card.approve'` — idempotent). Applied to dev; verified
-   **0 `report-card.approve` rows remain** (153 now `principal-approve`).
-   **Banking:** audit action strings should match permission names + spec-doc
-   strings; divergence is a trip hazard — catch it via the audit-coverage spec by
-   asserting canonical names.
+### TWO FINDINGS (surfaced + reported back; rulings 2026-06-10)
+1. **Render IS audited.** The plan assumed `POST /report-cards/arm/render` writes
+   no audit row ("intentional absence"). It does: `enqueueArmRender` writes
+   **`report-card.render-batch`** and the render worker writes
+   **`report-card.render`** per card. The plan-first Q8 assumption was wrong; the
+   spec asserts the actual behavior. (Ruling 2026-06-10: keep as-is — auditing is
+   appropriate for PDF-debug forensics.)
+2. **`approve` audit action diverges from its permission name.** The approve
+   transition writes audit action **`report-card.approve`** while its
+   `@Permissions` key + the spec say **`report-card.principal-approve`**. The spec
+   asserts the ACTUAL `report-card.approve` (true regression guard) with a comment
+   flagging the divergence. Surfaced for a ruling. (Ruling 2026-06-10: RENAME to
+   `report-card.principal-approve` — see the 2026-06-10 entry.)
 
 No coverage GAPS found — every state-changing Phase 2 endpoint writes an audit row.
 
@@ -305,10 +298,10 @@ admin reads OK, teacher → 403.
 ## cp2 verification (all green)
 typecheck (api + types) + lint clean · **API suite 749 → 755** (+4 audit Phase-2
 its, +2 schools its) · `/schools/me` teacher → 403, owner/admin → 200 · SD count
-**4** · one data migration (the finding-2 audit-action rename; applied +
-idempotent). (Docker Postgres/Redis had to be restarted mid-run — the machine had
-slept; one transient exit-1 on the first post-restart full run, green + stable on
-re-run.)
+**4** · no migration (data + spec only). (Docker Postgres/Redis had to be
+restarted mid-run — the machine had slept; one transient exit-1 on the first
+post-restart full run, green + stable on re-run.) The finding-2 rename + its data
+migration + the cp2 commit landed 2026-06-10 — see that entry.
 
 ## Not in cp2 — WS3 cross-tenant E2E + WS5 dev-seed time-relative + static
 form-class audit (cp3, closes slice 9 + Phase 2).
