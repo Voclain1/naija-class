@@ -241,3 +241,74 @@ the guard doesn't affect the service-level suite.
 
 ## Not in cp1 — WS2 audit-coverage + WS4 /schools/me tighten (cp2);
 WS3 cross-tenant E2E + WS5 dev-seed time-relative + static form-class audit (cp3).
+
+---
+
+# Slice 9 — cp2 (audit-coverage spec + /schools/me tighten)
+
+Closes WS2 + WS4. Data + spec only — no migration, SD count stays 4.
+
+## WS2 — Phase 2 audit-coverage
+Extended `apps/api/src/__tests__/audit-coverage.spec.ts` with a "Phase 2 audit
+coverage" describe block mirroring the Phase 1 one: every Phase 2 mutation writes
+an audit row with the expected **action + actor (userId) + metadata-shape**
+(required keys present, not exact values). Two schools — a "config" school
+(grading + school.update; freely mutates the seeded scheme since no scores → not
+frozen) and a "pipeline" school (assessment → report-card → attendance, sharing a
+real BullMQ queue + filesystem storage like the workflow specs). 18 actions
+covered: grading-scheme.update, grading-component.create/update/delete,
+grade-boundary.update, assessment-score.create/update, assessment.sign-off,
+assessment.aggregate, report-card.build/comment(×2)/form-review/approve/release/
+reopen/render-batch, attendance.mark, subject-attendance.mark, school.update.
+
+Fixture notes: a **weight-0** grading component keeps Σ=100 so create + delete
+both validate; report cards must be **built, commented, then column-signed-off
+(cascade → SUBJECT_REVIEWED)** before form-review (it 409s otherwise — DRAFT
+isn't enough).
+
+### TWO FINDINGS + rulings
+1. **Render IS audited (ruling: keep as-is).** The plan assumed
+   `POST /report-cards/arm/render` writes no audit row ("intentional absence").
+   It does: `enqueueArmRender` writes **`report-card.render-batch`** and the
+   render worker writes **`report-card.render`** per card. The plan-first Q8
+   assumption was wrong; cp2 verified render DOES audit, and the spec asserts the
+   actual behavior. Auditing is appropriate for PDF-debug forensics. No change.
+2. **`approve` audit action diverged from its permission name (ruling: RENAME).**
+   The approve transition wrote **`report-card.approve`** while its `@Permissions`
+   key + the spec say **`report-card.principal-approve`**. Renamed the audit
+   action to `report-card.principal-approve` in
+   `report-card-workflow.service.ts`, updated both asserting specs
+   (workflow + audit-coverage), and added a data migration
+   `20260609130000_rename_report_card_approve_audit_action` rewriting existing
+   `audit_logs` rows (`UPDATE … SET action = 'report-card.principal-approve'
+   WHERE action = 'report-card.approve'` — idempotent). Applied to dev; verified
+   **0 `report-card.approve` rows remain** (153 now `principal-approve`).
+   **Banking:** audit action strings should match permission names + spec-doc
+   strings; divergence is a trip hazard — catch it via the audit-coverage spec by
+   asserting canonical names.
+
+No coverage GAPS found — every state-changing Phase 2 endpoint writes an audit row.
+
+## WS4 — `/schools/me` tighten
+`GET /schools/me` now asserts owner/admin in the service (`findMe` →
+`assertUserActiveAndHasOneOf(["owner","admin"])`), closing the slice-8-cp2
+finding (any authed user could read school config). **Service-level role
+assertion, not `@Permissions("school.read")`:** the latter would force
+`PermissionsGuard` onto the whole Phase-0 schools controller incl. the onboarding
+handler (no clean permission) — that retrofit stays deferred with the rest of
+Phase 0. Pre-tighten grep confirmed **no teacher path calls `/schools/me`**:
+the admin settings page + the manager (owner/admin) branch of
+`use-subject-attendance-scope` are the only callers; teachers read the school
+name from `/auth/me` and the subject flag from `/teacher-scope/me`. Tests added:
+admin reads OK, teacher → 403.
+
+## cp2 verification (all green)
+typecheck (api + types) + lint clean · **API suite 749 → 755** (+4 audit Phase-2
+its, +2 schools its) · `/schools/me` teacher → 403, owner/admin → 200 · SD count
+**4** · one data migration (the finding-2 audit-action rename; applied +
+idempotent). (Docker Postgres/Redis had to be restarted mid-run — the machine had
+slept; one transient exit-1 on the first post-restart full run, green + stable on
+re-run.)
+
+## Not in cp2 — WS3 cross-tenant E2E + WS5 dev-seed time-relative + static
+form-class audit (cp3, closes slice 9 + Phase 2).

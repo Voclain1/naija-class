@@ -29,7 +29,11 @@ type TenantDb = Parameters<Parameters<typeof withTenant>[1]>[0];
 
 const AUDIT = {
   formReview: "report-card.form-review",
-  approve: "report-card.approve",
+  // Matches the @Permissions key + the spec's audit-action list. (Renamed from
+  // "report-card.approve" in slice-9 cp2 — audit action strings should match
+  // permission names; the divergence was a trip hazard. A data migration
+  // rewrites existing audit_logs rows.)
+  approve: "report-card.principal-approve",
   release: "report-card.release",
   reopen: "report-card.reopen",
   comment: "report-card.comment",

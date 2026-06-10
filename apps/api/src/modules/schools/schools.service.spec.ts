@@ -99,6 +99,30 @@ describe("SchoolsService (Slice 6)", () => {
     });
   }
 
+  // Helper: create a teacher user inside an existing school (for the
+  // owner/admin-only findMe gate test).
+  async function createTeacherUser(schoolId: string, suffix: string) {
+    const teacherRole = await basePrisma.role.findFirstOrThrow({
+      where: { schoolId: null, key: "teacher", isSystem: true },
+      select: { id: true },
+    });
+    return withTenant(schoolId, async (db) => {
+      const user = await db.user.create({
+        data: {
+          schoolId,
+          firstName: "Tina",
+          lastName: "Teacher",
+          email: `teacher-${suffix}-${runId}@example.test`,
+          phone: randomPhone(),
+          passwordHash: "argon2id$placeholder",
+        },
+        select: { id: true },
+      });
+      await db.userRole.create({ data: { userId: user.id, roleId: teacherRole.id } });
+      return { userId: user.id, authCtx: { sessionId: "sess-placeholder", userId: user.id, schoolId } };
+    });
+  }
+
   // Helper: build a typed onboarding payload. Saves a lot of `as` casts in
   // the test bodies and mirrors what the controller's parseStepPayload does.
   function payload<S extends OnboardingStepPayload["step"]>(
@@ -127,6 +151,19 @@ describe("SchoolsService (Slice 6)", () => {
       expect(school).toHaveProperty("address");
       expect(school).toHaveProperty("primaryColor");
       expect(school).toHaveProperty("ndprConsentAt");
+    });
+
+    it("findMe — admin may read the school (Phase 2 slice 9 cp2)", async () => {
+      const { schoolId } = await createOwnedSchool("find-admin");
+      const admin = await createAdminUser(schoolId, "find-admin");
+      const school = await schoolsService.findMe(admin.authCtx);
+      expect(school.id).toBe(schoolId);
+    });
+
+    it("findMe — a teacher is forbidden (owner/admin only; WS4 tighten)", async () => {
+      const { schoolId } = await createOwnedSchool("find-teacher");
+      const teacher = await createTeacherUser(schoolId, "find-teacher");
+      await expect(schoolsService.findMe(teacher.authCtx)).rejects.toBeInstanceOf(ForbiddenError);
     });
 
     it("patchMe as owner — updates fields and writes an audit row, does NOT bump onboardingStep", async () => {
