@@ -1,0 +1,146 @@
+# 2026-06-10
+
+# Slice 9 cp2 (continued) — finding rulings + the approve-action rename + commit
+
+Continues the slice-9 cp2 work built 2026-06-09 (Phase 2 audit-coverage spec +
+`/schools/me` tighten). Today: the user ruled on the two findings surfaced
+yesterday, I implemented the rename, and committed cp2.
+
+## Finding rulings
+1. **Render audited — keep as-is.** Ruling text banked into the cp2 commit body:
+   "render auditing was assumed intentional-absence in plan-first; cp2 verified
+   render DOES audit (`enqueueArmRender → report-card.render-batch`; worker →
+   `report-card.render` per card). Spec asserts the actual behavior. Auditing is
+   appropriate for PDF-debug forensics." No code change.
+2. **Approve action — RENAME.** `report-card.approve` →
+   `report-card.principal-approve` to match the `@Permissions` key + spec doc.
+
+## The rename (finding 2)
+- `report-card-workflow.service.ts` — the `AUDIT.approve` const now
+  `"report-card.principal-approve"` (with a comment on why).
+- Both asserting specs updated: `report-card-workflow.service.spec.ts`
+  (slice-6 cp2 walk) and `audit-coverage.spec.ts` (the Phase-2 block) now assert
+  `report-card.principal-approve`; the stale divergence comments are gone.
+- **Data migration** `20260609130000_rename_report_card_approve_audit_action`
+  (a data-only `UPDATE "audit_logs" SET action = 'report-card.principal-approve'
+  WHERE action = 'report-card.approve'`, idempotent). NOTE the migration's
+  timestamp orders it right after the cp1 RBAC rollup (`20260609120000`) — it's a
+  monotonic ordering key, not a calendar stamp; authored today.
+- Applied to dev via `migrate deploy`; verified **0 `report-card.approve` rows
+  remain** — 153 rows now `report-card.principal-approve` (and the render-audit
+  finding is visible in the same readout: `report-card.render` 337,
+  `report-card.render-batch` 112).
+
+**Banking:** audit action strings should match permission names + spec-doc
+strings. Divergence is a trip hazard; catch it via the audit-coverage spec by
+asserting canonical names.
+
+## Verification (post-rename)
+typecheck (api) + lint clean · **API suite 755** (stable; the rename swapped
+assertion strings, no test-count change) · migration applied + idempotent · 0
+stale `report-card.approve` rows · SD count **4**.
+
+## Commit
+cp2 committed as `6e55983` on `feat/phase-2-slice-9-cp2-audit-schools` (7 files:
+the audit-coverage spec, the two workflow files, the two schools files, the
+journal, and the rename migration). The commit body carries WS2 + WS4 + both
+finding rulings + the audit-action banking note. Not yet pushed / no PR.
+
+## Next — slice 9 cp3 (closes slice 9 + Phase 2)
+WS3 cross-tenant E2E (API-level walks) + WS5 dev-seed time-relative refactor +
+the static form-class audit + the Phase-2 close-out manual verify.
+
+---
+
+# Slice 9 cp3 — Phase 2 close-out (E2E walks + dev-seed time-relative + form audit)
+
+Three independent work streams. Closes slice 9 and **Phase 2**.
+
+## WS3 — cross-tenant E2E walks
+New `apps/api/src/__tests__/phase-2-e2e.spec.ts` — API/service-level walks (not
+browser), each on its own ephemeral signupOwner schools (no dev-seed reliance):
+- **WALK 1 (critical path):** the Phase 2 happy path composed end-to-end —
+  grading config → scores → aggregate → build → sign-off (cascade →
+  SUBJECT_REVIEWED) → form-review → approve → release → daily attendance →
+  enable subject flag → subject attendance. Asserts each return shape + a release
+  audit row.
+- **WALK 2 (cross-tenant denial):** School B owner acting on School A ids —
+  `getById`/`getBoard` → 404 (RLS hides A's rows); `getFeed` → empty `{data:[]}`
+  (RLS-filtered, doesn't 404 a missing arm — adjusted the assertion to match);
+  daily register → empty roster; marking A's student from B → rejected, 0 rows
+  written into A.
+- **WALK 3 (teacher-scope negatives):** T1 (form teacher of jss1a, teaches jss1a
+  Maths) → score jss2a → 404; mark daily attendance jss2a → 404 (not its form
+  teacher, out of scope); approve jss1a report cards → 403 (owner/admin only);
+  read `/schools/me` → 403 (cp2 tighten). Proves the "scope leaks within-school"
+  hard rule.
+
+## WS5 — dev-seed time-relative refactor (closes the slice-7 staleness incident)
+`dev-seed.ts` now computes term windows from `new Date()`: First (prior)
+[−135,−46] · **Second (current, isCurrent) [−45,+45]** · Third (next) [+46,+135]
+days from today; the year brackets First.start → Third.end; `enrolledAt` =
+year start. The score fixture moved off the old hardcoded First Term onto
+`currentTermId` too (slice 7 deliberately left it; cp3 finishes the migration) so
+gradebook + report cards AND date-resolved attendance are all populated for the
+seed day. The term `update` clauses now refresh dates (re-seeds roll forward, not
+just fresh resets), and a `term.updateMany(isCurrent:false)` precedes the loop —
+the partial unique index `terms_school_id_current_key` (one current term/school)
+would otherwise 409 when a different term is already flagged current (it did, on
+the first run — the slice-7 fix had left Third Term current).
+- **Verified** after `pnpm dev:seed`: TODAY 2026-06-10 falls in **Second Term**
+  (2026-04-26 → 2026-07-25, isCurrent); JSS 2 A roster in the current term = 5;
+  assessments in the current term = 10. The slice-7 follow-up (which lived in the
+  2026-06-08 journal, not a deferred.md entry) is closed. NB: `pnpm db:seed` seeds
+  ROLES only; the dev school is `pnpm dev:seed` — easy to confuse.
+
+## Static form-class audit (no fixes — findings for Phase 3+)
+Audited every Phase 2 form against the form-class discipline (the slice-4
+blank-optional-field bug: react-hook-form + `zodResolver(strictSchema)` where an
+optional `""` fails `.min(1)`/`.email()`/`.url()` before `.optional()` rescues).
+**All Phase 2 forms PASS:**
+- `scheme-editor.tsx` (slice 4) — zodResolver; explicit FORM-CLASS DISCIPLINE
+  comment; FormValues === resolver output; required labels are `.min(1)` (intended).
+- `boundaries-editor.tsx` (slice 4) — zodResolver; `remark: .max(80)` (blank ""
+  valid, no `.min`), `""`→undefined on submit. PASS.
+- `gradebook-grid.tsx` (slice 2/3) — zodResolver numeric grid; scores held as
+  strings, blank allowed. PASS.
+- `register-editor.tsx` (slice 7) + `subject-register-editor.tsx` (slice 8) —
+  controlled `<Input>` + local state, `note.trim() || null` on save. No resolver. PASS.
+- report-card comment editor (slice 6) — `useState` + controlled textarea,
+  empty → null. No resolver. PASS.
+- `reopen-modal.tsx` (slice 6) — `reason` required (`reason.trim().length > 0`
+  gates submit; intended). PASS.
+- settings attendance toggle (slice 8 cp2) — boolean. N/A.
+The only STILL-OPEN form-class issue is the Phase-0 step-2 branding form
+(`logoUrl`/`primaryColor`), already in `docs/deferred.md` — NOT a Phase 2 form.
+
+## cp3 verification (all green)
+typecheck (api + db) + lint clean · **API suite 755 → 758** (+3 E2E walks) ·
+dev-seed: current term brackets today, roster 5, scores 10 · SD count **4** ·
+**no migration** (data-only seed change + spec).
+
+---
+
+# PHASE 2 — CLOSED ✅
+
+Slice 9 cp3 closes slice 9 and Phase 2. All 9 slices done:
+1. grading config · 2. assessment + score entry · 3. gradebook grid · 4.
+aggregation/positions · 5. report-card materialization + PDF · 6. approval
+workflow · 7. daily attendance · 8. opt-in subject attendance · 9. RBAC + audit +
+RLS + E2E close-out.
+
+Acceptance-gate status at close:
+- **23 RLS-isolated tables** — `rls.spec.ts` covers all (cp1 established the
+  count); cross-tenant proven end-to-end by WALK 2.
+- **SD count = 4** — unchanged across all of slice 9.
+- **Every state-changing endpoint audited** — locked by `audit-coverage.spec.ts`
+  (cp2; render-batch + the principal-approve rename folded in).
+- **Every Phase 2 endpoint carries `@Permissions`** — wired cp1, guarded by
+  `permissions-coverage.spec.ts`.
+- **Cross-tenant + teacher-scope isolation** — proven by WALKs 2 & 3.
+- **Dev-seed time-relative** — the seed day is always in the current term.
+- **Static form audit** — all Phase 2 forms pass; surfaced for Phase 3+ where
+  open (the Phase-0 branding form only).
+- API suite **758 passed / 2 skipped**.
+
+~10.5 build days. Phase 3 (finance) is next.
