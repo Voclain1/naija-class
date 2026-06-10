@@ -40,11 +40,17 @@ export type OnboardingStepPayload =
 
 @Injectable()
 export class SchoolsService {
-  // GET /schools/me — returns the authed user's school. Any authed role may
-  // read; the AuthGuard already enforced the bearer token, and schools is
-  // not under RLS so we read directly via basePrisma. authCtx.schoolId came
-  // from auth_resolve_session, so the tenant has already been authenticated.
+  // GET /schools/me — owner/admin only (Phase 2 slice 9 cp2, WS4). Returns the
+  // authed user's school config. Teachers don't need it: the topbar reads the
+  // school name from /auth/me (authCtx.school) and the subject-attendance flag
+  // rides on /teacher-scope/me — so tightening this closes the slice-8-cp2
+  // finding (any authed user could read school config) without breaking the
+  // teacher portal. Role-asserted at the service (matching patchMe) rather than
+  // @Permissions("school.read"): the latter would force PermissionsGuard onto
+  // the whole Phase-0 schools controller (incl. the onboarding handler, which
+  // has no clean permission) — deferred with the rest of the Phase-0 retrofit.
   async findMe(authCtx: AuthContext): Promise<SchoolMeDto> {
+    await assertUserActiveAndHasOneOf(authCtx, ["owner", "admin"]);
     return loadSchoolOrThrow(authCtx.schoolId);
   }
 

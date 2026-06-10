@@ -1,15 +1,31 @@
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import { Queue } from "bullmq";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { basePrisma, withTenant } from "@school-kit/db";
 
+import { REPORT_CARDS_QUEUE } from "../common/queue";
+import { FilesystemStorageDriver } from "../common/storage/filesystem-storage.driver";
+import { StorageService } from "../common/storage/storage.service";
 import { AcademicYearsService } from "../modules/academic-years/academic-years.service";
+import { AggregationService } from "../modules/assessment/aggregation.service";
+import { AssessmentService } from "../modules/assessment/assessment.service";
+import { AttendanceService } from "../modules/attendance/attendance.service";
 import { AuthService } from "../modules/auth/auth.service";
 import { ClassArmsService } from "../modules/class-arms/class-arms.service";
 import { ClassLevelsService } from "../modules/class-levels/class-levels.service";
 import { ClassSubjectsService } from "../modules/class-subjects/class-subjects.service";
 import { EnrollmentsService } from "../modules/enrollments/enrollments.service";
+import { GradingService } from "../modules/grading/grading.service";
 import { GuardiansService } from "../modules/guardians/guardians.service";
+import { ReportCardService } from "../modules/report-cards/report-card.service";
+import { ReportCardWorkflowService } from "../modules/report-cards/workflow/report-card-workflow.service";
+import { SchoolsService } from "../modules/schools/schools.service";
 import { StudentsService } from "../modules/students/students.service";
+import { SubjectAttendanceService } from "../modules/subject-attendance/subject-attendance.service";
 import { SubjectsService } from "../modules/subjects/subjects.service";
 import { TeacherAssignmentsService } from "../modules/teacher-assignments/teacher-assignments.service";
 import { TeacherProfilesService } from "../modules/teacher-profiles/teacher-profiles.service";
@@ -431,5 +447,297 @@ describe("Phase 1 audit coverage — every mutation writes one audit row", () =>
 
     await teacherAssignments.delete(ownerCtx, assignment.id, reqCtx);
     await expectOneAudit("teacher-assignment.delete", assignment.id);
+  });
+});
+
+// ===========================================================================
+// Phase 2 audit coverage (slice 9 cp2). Mirrors the Phase 1 block: every Phase 2
+// mutation writes an audit row with the expected action + actor + metadata
+// shape (required keys present, not exact values). Two schools — a "config"
+// school for the grading + school.update mutations (freely mutate the seeded
+// scheme; no scores so it isn't frozen) and a "pipeline" school for the
+// assessment → report-card → attendance chain.
+//
+// FINDINGS from slice-9 cp2 (see docs/journal/2026-06-09):
+//   • render IS audited — enqueueArmRender writes `report-card.render-batch`
+//     (and the render worker writes `report-card.render` per card). NOT the
+//     "intentional absence" the plan assumed; the spec asserts the real
+//     `report-card.render-batch`. Auditing is appropriate for PDF-debug forensics.
+//   • the approve transition's audit action was `report-card.approve`, diverging
+//     from its `@Permissions` key `report-card.principal-approve`. RENAMED to
+//     `report-card.principal-approve` (workflow service + a data migration
+//     rewriting existing audit_logs rows); asserted under the canonical name here.
+// ===========================================================================
+describe("Phase 2 audit coverage — every mutation writes an audit row", () => {
+  const runId = Math.random().toString(36).slice(2, 8);
+  const reqCtx = { ipAddress: "127.0.0.1", userAgent: "vitest" };
+  const ctx = (schoolId: string, userId: string) => ({ sessionId: "sess", userId, schoolId });
+
+  const auth = new AuthService();
+  const grading = new GradingService();
+  const assessment = new AssessmentService();
+  const aggregation = new AggregationService();
+  const attendance = new AttendanceService();
+  const subjectAttendance = new SubjectAttendanceService();
+  const schools = new SchoolsService();
+
+  let storageRoot: string;
+  let storage: StorageService;
+  let queue: Queue;
+  let reportCards: ReportCardService;
+  let workflow: ReportCardWorkflowService;
+
+  const schoolIds = new Set<string>();
+
+  function redisConnection() {
+    const url = process.env.REDIS_URL ?? "redis://localhost:6379";
+    const p = new URL(url);
+    return {
+      host: p.hostname,
+      port: p.port ? Number(p.port) : 6379,
+      username: p.username || undefined,
+      password: p.password || undefined,
+      db: p.pathname && p.pathname.length > 1 ? Number(p.pathname.slice(1)) : 0,
+      maxRetriesPerRequest: null,
+    };
+  }
+
+  async function makeSchool(suffix: string): Promise<{ schoolId: string; ownerId: string }> {
+    const signed = await auth.signupOwner(
+      {
+        schoolName: `Audit P2 ${suffix}`,
+        schoolSlug: `audit-p2-${suffix}-${runId}`,
+        ownerFirstName: "Owen",
+        ownerLastName: "Owner",
+        ownerEmail: `audit-p2-${suffix}-${runId}@example.test`,
+        ownerPhone: randomPhone(),
+        password: "Correct-Horse-9",
+        ndprConsent: true,
+      },
+      reqCtx,
+    );
+    schoolIds.add(signed.school.id);
+    await basePrisma.school.update({
+      where: { id: signed.school.id },
+      data: { status: "ACTIVE", onboardingStep: 5 },
+    });
+    return { schoolId: signed.school.id, ownerId: signed.user.id };
+  }
+
+  // Asserts an audit row exists for (action[, entityId]) with the right actor
+  // and the required metadata keys present (shape contract, not exact values).
+  async function expectAudit(
+    schoolId: string,
+    action: string,
+    opts: { entityId?: string; actorId: string; keys: string[] },
+  ): Promise<void> {
+    const row = await withTenant(schoolId, (db) =>
+      db.auditLog.findFirst({
+        where: opts.entityId ? { action, entityId: opts.entityId } : { action },
+        orderBy: { createdAt: "desc" },
+      }),
+    );
+    expect(row, `audit row for ${action}`).toBeTruthy();
+    expect(row!.userId, `${action} actor`).toBe(opts.actorId);
+    const meta = (row!.metadata ?? {}) as Record<string, unknown>;
+    for (const k of opts.keys) {
+      expect(meta, `${action} metadata missing '${k}'`).toHaveProperty(k);
+    }
+  }
+
+  // Pipeline fixture (shared by the assessment / report-card / attendance its).
+  let pipe: {
+    schoolId: string;
+    ownerId: string;
+    yearId: string;
+    termId: string;
+    armId: string;
+    subjectId: string;
+    comp: { ca1: string; ca2: string; exam: string };
+    students: string[];
+  };
+
+  beforeAll(async () => {
+    storageRoot = await mkdtemp(join(tmpdir(), "audit-p2-"));
+    storage = new StorageService(new FilesystemStorageDriver(storageRoot));
+    // Isolated queue NAME so a stray dev:api worker can't steal the enqueued jobs.
+    queue = new Queue(`${REPORT_CARDS_QUEUE}-audit-${runId}`, { connection: redisConnection() });
+    await queue.obliterate({ force: true });
+    reportCards = new ReportCardService(aggregation, storage, queue);
+    workflow = new ReportCardWorkflowService(reportCards);
+
+    // Build the pipeline school's fixture: year/term/level/arm/subject + two
+    // enrolled students + the seeded grading components. subjectAttendance on.
+    const { schoolId, ownerId } = await makeSchool("pipe");
+    await basePrisma.school.update({ where: { id: schoolId }, data: { subjectAttendanceEnabled: true } });
+    const fixture = await withTenant(schoolId, async (db) => {
+      const level = await db.classLevel.findFirstOrThrow({ where: { schoolId }, orderBy: { orderIndex: "asc" }, select: { id: true } });
+      const year = await db.academicYear.create({
+        data: { schoolId, label: `Y-${runId}`, startDate: new Date("2025-09-01"), endDate: new Date("2026-07-31") },
+        select: { id: true },
+      });
+      const term = await db.term.create({
+        data: { schoolId, academicYearId: year.id, sequence: 1, name: "First Term", startDate: new Date("2025-09-01"), endDate: new Date("2025-12-15"), isCurrent: true },
+        select: { id: true },
+      });
+      const arm = await db.classArm.create({
+        data: { schoolId, classLevelId: level.id, name: "Arm P2", code: `arm-p2-${runId}` },
+        select: { id: true },
+      });
+      const subject = await db.subject.create({
+        data: { schoolId, name: "Maths P2", code: `maths-p2-${runId}` },
+        select: { id: true },
+      });
+      const students: string[] = [];
+      for (const n of ["a", "b"]) {
+        const s = await db.student.create({
+          data: { schoolId, admissionNumber: `ADM-p2-${n}-${runId}`, firstName: "Stu", lastName: `P-${n}`, dateOfBirth: new Date("2013-05-10"), gender: "FEMALE" },
+          select: { id: true },
+        });
+        await db.enrollment.create({
+          data: { schoolId, studentId: s.id, termId: term.id, academicYearId: year.id, classArmId: arm.id, status: "ENROLLED", enrolledAt: new Date("2025-09-01") },
+        });
+        students.push(s.id);
+      }
+      const comps = await db.gradingComponent.findMany({ select: { id: true, key: true } });
+      const byKey = new Map(comps.map((cc) => [cc.key, cc.id]));
+      return {
+        yearId: year.id,
+        termId: term.id,
+        armId: arm.id,
+        subjectId: subject.id,
+        comp: { ca1: byKey.get("ca1")!, ca2: byKey.get("ca2")!, exam: byKey.get("exam")! },
+        students,
+      };
+    });
+    pipe = { schoolId, ownerId, ...fixture };
+  });
+
+  afterAll(async () => {
+    await queue.obliterate({ force: true }).catch(() => undefined);
+    await queue.close();
+    for (const id of schoolIds) await basePrisma.school.delete({ where: { id } }).catch(() => undefined);
+    await basePrisma.$disconnect();
+    await rm(storageRoot, { recursive: true, force: true });
+  });
+
+  // ---- grading config + school.update (own school) ------------------------
+  it("grading + school.update mutations each write an audit row", async () => {
+    const { schoolId, ownerId } = await makeSchool("cfg");
+    const c = ctx(schoolId, ownerId);
+    const seeded = await withTenant(schoolId, async (db) => {
+      const scheme = await db.gradingScheme.findFirstOrThrow({ select: { id: true } });
+      const boundary = await db.gradeBoundary.findFirstOrThrow({ select: { id: true } });
+      return { schemeId: scheme.id, boundaryId: boundary.id };
+    });
+
+    await grading.updateScheme(c, { name: "Updated Scheme" }, reqCtx);
+    await expectAudit(schoolId, "grading-scheme.update", { entityId: seeded.schemeId, actorId: ownerId, keys: ["changed"] });
+
+    await grading.updateBoundary(c, seeded.boundaryId, { remark: "Top marks" }, reqCtx);
+    await expectAudit(schoolId, "grade-boundary.update", { entityId: seeded.boundaryId, actorId: ownerId, keys: ["changed"] });
+
+    // Bulk replace with a valid (sum=100) set → grading-component.update.
+    await grading.replaceComponents(c, {
+      components: [
+        { key: "ca1", label: "CA1", weight: 20, orderIndex: 1 },
+        { key: "ca2", label: "CA2", weight: 20, orderIndex: 2 },
+        { key: "exam", label: "Exam", weight: 60, orderIndex: 3 },
+      ],
+    }, reqCtx);
+    await expectAudit(schoolId, "grading-component.update", { actorId: ownerId, keys: ["bulk", "count"] });
+
+    // A weight-0 component keeps sum=100 so create + delete both validate.
+    const extra = await grading.createComponent(c, { key: "extra", label: "Extra", weight: 0, orderIndex: 4 }, reqCtx);
+    await expectAudit(schoolId, "grading-component.create", { entityId: extra.id, actorId: ownerId, keys: ["key"] });
+
+    await grading.deleteComponent(c, extra.id, reqCtx);
+    await expectAudit(schoolId, "grading-component.delete", { entityId: extra.id, actorId: ownerId, keys: ["key"] });
+
+    await schools.patchMe(c, { name: "Renamed School" }, reqCtx);
+    await expectAudit(schoolId, "school.update", { actorId: ownerId, keys: ["changed"] });
+  });
+
+  // ---- assessment → report-card pipeline (one ordered walk) ---------------
+  it("assessment + report-card mutations each write an audit row", async () => {
+    const { schoolId, ownerId, termId, armId, subjectId, comp, students } = pipe;
+    const c = ctx(schoolId, ownerId);
+    const [s1, s2] = students;
+
+    // Enter a full column for both students via single createScore calls (no
+    // bulk → every assessment-score.create row keeps the single shape).
+    for (const studentId of [s1, s2]) {
+      for (const [componentId, score] of [[comp.ca1, 15], [comp.ca2, 15], [comp.exam, 50]] as const) {
+        await assessment.createScore(c, { studentId, subjectId, termId, componentId, score }, reqCtx);
+      }
+    }
+    await expectAudit(schoolId, "assessment-score.create", { actorId: ownerId, keys: ["studentId", "subjectId", "termId", "componentId"] });
+
+    const scoreId = await withTenant(schoolId, (db) =>
+      db.assessmentScore.findFirstOrThrow({ where: { studentId: s1, componentId: comp.ca1, termId }, select: { id: true } }).then((r) => r.id),
+    );
+    await assessment.updateScore(c, scoreId, { score: 16 }, reqCtx);
+    await expectAudit(schoolId, "assessment-score.update", { actorId: ownerId, keys: ["studentId", "subjectId", "termId", "componentId"] });
+
+    await aggregation.aggregate(c, { termId, classArmId: armId }, reqCtx);
+    await expectAudit(schoolId, "assessment.aggregate", { actorId: ownerId, keys: ["termId", "classArmId", "studentCount", "updateCount", "mode"] });
+
+    // Report cards: build → comment → sign-off column → form-review →
+    // principal-note → approve → render-batch → release → reopen.
+    await reportCards.build(c, { termId, classArmId: armId }, reqCtx);
+    await expectAudit(schoolId, "report-card.build", { actorId: ownerId, keys: ["termId", "classArmId", "cardCount", "mode"] });
+
+    const cardId = await withTenant(schoolId, (db) =>
+      db.reportCard.findFirstOrThrow({ where: { termId, classArmId: armId, studentId: s1 }, select: { id: true } }).then((r) => r.id),
+    );
+    await workflow.editFormTeacherComment(c, cardId, { formTeacherComment: "Good term." }, reqCtx);
+    await expectAudit(schoolId, "report-card.comment", { entityId: cardId, actorId: ownerId, keys: ["reportCardId", "field", "termId", "classArmId"] });
+
+    // Sign off the whole column (assessment.sign-off, bulk) → the cascade
+    // advances the arm's cards to SUBJECT_REVIEWED, which form-review requires.
+    await assessment.signOffColumn(c, { termId, classArmId: armId, subjectId }, reqCtx);
+    await expectAudit(schoolId, "assessment.sign-off", { actorId: ownerId, keys: ["termId", "subjectId", "classArmId", "count"] });
+
+    await workflow.formReview(c, { termId, classArmId: armId }, reqCtx);
+    await expectAudit(schoolId, "report-card.form-review", { entityId: armId, actorId: ownerId, keys: ["termId", "classArmId", "fromStatus", "toStatus", "cardCount"] });
+
+    await workflow.editPrincipalNote(c, { termId, classArmId: armId, principalNote: "Well done." }, reqCtx);
+    await expectAudit(schoolId, "report-card.comment", { entityId: armId, actorId: ownerId, keys: ["termId", "classArmId", "field", "cardCount"] });
+
+    await workflow.approve(c, { termId, classArmId: armId }, reqCtx);
+    await expectAudit(schoolId, "report-card.principal-approve", { entityId: armId, actorId: ownerId, keys: ["termId", "classArmId", "fromStatus", "toStatus", "cardCount"] });
+
+    await reportCards.enqueueArmRender(c, { termId, classArmId: armId }, reqCtx);
+    await expectAudit(schoolId, "report-card.render-batch", { entityId: armId, actorId: ownerId, keys: ["termId", "classArmId", "enqueuedCount"] });
+
+    await workflow.release(c, { termId, classArmId: armId }, reqCtx);
+    await expectAudit(schoolId, "report-card.release", { entityId: armId, actorId: ownerId, keys: ["fromStatus", "toStatus", "cardCount", "enqueuedCount"] });
+
+    await workflow.reopen(c, { termId, classArmId: armId, reason: "Correction needed." }, reqCtx);
+    await expectAudit(schoolId, "report-card.reopen", { entityId: armId, actorId: ownerId, keys: ["fromStatuses", "toStatus", "reason", "cardCount"] });
+  });
+
+  // ---- attendance (universal) ---------------------------------------------
+  it("attendance.mark writes an audit row", async () => {
+    const { schoolId, ownerId, armId, students } = pipe;
+    const c = ctx(schoolId, ownerId);
+    await attendance.markBulk(
+      c,
+      { classArmId: armId, date: "2025-10-01", records: students.map((studentId) => ({ studentId, status: "PRESENT" as const })) },
+      reqCtx,
+    );
+    await expectAudit(schoolId, "attendance.mark", { entityId: armId, actorId: ownerId, keys: ["classArmId", "termId", "date", "count", "byStatus"] });
+  });
+
+  // ---- subject-period attendance (opt-in; flag enabled in beforeAll) -------
+  it("subject-attendance.mark writes an audit row", async () => {
+    const { schoolId, ownerId, armId, subjectId, students } = pipe;
+    const c = ctx(schoolId, ownerId);
+    await subjectAttendance.markBulk(
+      c,
+      { classArmId: armId, subjectId, date: "2025-10-01", period: 1, records: students.map((studentId) => ({ studentId, status: "PRESENT" as const })) },
+      reqCtx,
+    );
+    await expectAudit(schoolId, "subject-attendance.mark", { entityId: armId, actorId: ownerId, keys: ["classArmId", "subjectId", "termId", "date", "period", "count", "byStatus"] });
   });
 });

@@ -219,7 +219,7 @@ describe("ReportCardWorkflowService (cp1 — state machine + gates)", () => {
     expect(new Set(await statuses(f.schoolId, f.termId, f.armId))).toEqual(new Set(["PRINCIPAL_APPROVED"]));
 
     expect(await auditCount(f.schoolId, "report-card.form-review", f.armId)).toBe(1);
-    expect(await auditCount(f.schoolId, "report-card.approve", f.armId)).toBe(1);
+    expect(await auditCount(f.schoolId, "report-card.principal-approve", f.armId)).toBe(1);
   }, 60_000);
 
   it("the arm's FORM teacher may form-review; a stranger teacher gets 404; owner may too", async () => {
