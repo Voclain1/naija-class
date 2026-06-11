@@ -1,0 +1,62 @@
+# 2026-06-11
+
+## Phase 3 scoped — phase-3.md created
+
+Phase 2 closed (slice 9 cp3, 2026-06-10). Did Phase 3 scope discovery across
+ARCHITECTURE / DECISIONS / CLAUDE / WORKFLOW / README / the phase-0..2 deferred
+sections / deferred.md, then drafted **`docs/modules/phase-3.md`** mirroring
+phase-2.md's structure.
+
+**Phase 3 = finance + first deploy.** ARCHITECTURE §9 defines its success as
+"first paying customer", which requires a deployed product — so deploy work and
+the finance build run in parallel. September 2026 is the real deadline.
+
+Locked decisions (in the doc): first deploy in scope; pilot acquisition is
+operational not a build deliverable; Paystack + Fly.io/Neon/Vercel/R2 are
+user-provisioned prerequisites (each gates the slice that needs it); NDPR NG-only
+deferred; SaaS subscription billing deferred to Phase 4+ (Phase 3 is school→parent
+fee collection only); thin payroll in; online (Paystack) + offline (manual cash/
+POS/transfer) payments; `bursar` role ships; auth hardening is a prerequisite
+slice before any finance slice.
+
+Substantive refinement banked: **finance flexibility** = school-defined
+`FeeCategory` + scoped `FeeItem` (level/arm/term/year, nulls = "all") + curated
+`DiscountRule` types (5 pre-built, typed params, per-type eval functions — NOT a
+DSL) + **snapshot-on-issue** invoices (issued invoices freeze the fee/discount
+state; editing fees later doesn't touch them — the slice-6 snapshot-drift pattern
+applied to money).
+
+Slice order front-loads de-risking: pre-deploy + in-container PDF memory gate
+(slice 1) → auth hardening (slice 2) → audit partitioning (slice 3) → fee catalog
+→ discounts → invoices → manual payments → **Paystack (the meaty, risky one)** →
+installments → debtors → refunds → payroll → expenses → dashboard → Phase-3 close
+(slice 15). ~27-30 cps, ~38-48 build days; ~65 weekdays to mid-September — tight,
+with late slices (expenses, dashboard, installments) as deferral valves.
+
+Estimate realism flagged: the ARCHITECTURE "3-4 weeks" quote predates the
+flexibility requirements + "includes first deploy" and is optimistic by a wide
+margin; the doc carries a ~38-48 build-day range with assumptions.
+
+## Revisions (post-review, same day)
+Four surgical additions to phase-3.md after the user's review:
+1. §7 hard rules — **BVN treated as high-sensitivity PII**: encrypted at rest
+   (`pgcrypto`/column-level), redacted in logs, never in list responses, returned
+   only to the staff member themselves or owner+admin on explicit view, all access
+   audited.
+2. §13 risks — strengthened the "no pilot signal" mitigation: **validate the
+   curated discount-rule set against ≥1 real Nigerian school fee sheet before the
+   slice-5 plan-first locks** (the variation constraint itself needs a ground-truth
+   check).
+3. §3 slice 3 — audit-partitioning includes a **backfill strategy** (existing
+   `audit_logs` rows distributed into monthly partitions during the migration;
+   acceptable dev downtime, no prod downtime since prod doesn't exist yet).
+4. §10 pre-deploy — **email provider (Resend)** provisioned during slice 10
+   (debtor reminders), not slice 1; API key needed before the slice-10 build.
+
+Prerequisite cloud accounts (user-provisioned): Fly.io, Neon/Supabase, Vercel,
+Cloudflare R2 (prod), Sentry auth token — before slice 1. Paystack sandbox before
+slice 8. Resend before slice 10.
+
+## Next planning step
+Slice 1 plan-first (pre-deploy infra). No code yet. Before that plan-first, the
+user must provision the prerequisite accounts above.
