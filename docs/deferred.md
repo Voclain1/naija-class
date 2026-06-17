@@ -29,7 +29,17 @@ Format:
 
 - [ ] Expired-session sweeper. Daily cron: `DELETE FROM sessions WHERE expires_at < NOW() - INTERVAL '7 days'`. The AuthGuard already rejects expired sessions with `SESSION_EXPIRED`, so this is housekeeping (table growth) rather than correctness. — when `sessions` row count starts mattering for backup size.
 
-- [ ] Audit SECURITY DEFINER inventory before Phase 3. We now have 4 functions (`auth_check_signup_uniqueness`, `auth_resolve_session`, `auth_lookup_user_for_login`, `auth_resolve_invitation_by_token_hash`). If the count climbs past 5, refactor to either a consolidated `auth_resolve(...)` function or move them into a separate `auth_service` schema owned by a dedicated role — keeps the attack surface auditable. **Adding the next function triggers this refactor.**
+- - [ ] Audit SECURITY DEFINER inventory before Phase 3. We now have 4 functions
+  (`auth_check_signup_uniqueness`, `auth_resolve_session`,
+  `auth_lookup_user_for_login`, `auth_resolve_invitation_by_token_hash`). If the
+  count climbs past 5, refactor to either a consolidated `auth_resolve(...)`
+  function or move them into a separate `auth_service` schema owned by a
+  dedicated role — keeps the attack surface auditable. **Adding the next
+  function triggers this refactor.** **Trigger landed:** Phase 3 / Slice 12
+  introduces `encrypt_bvn` + `decrypt_bvn` (pgcrypto symmetric, key via Fly
+  secret + `SET LOCAL app.bvn_key`), pushing the count from 4 → 6 — the
+  refactor must land in the same PR as the BVN columns. See
+  `docs/modules/phase-3.md` §7 BVN encryption mechanism.
 
 - [ ] Rate-limit `GET /invitations/:token` and `POST /invitations/:token/accept`. Same trigger as the login rate-limit item — before public signup goes live. Per-IP cap is the minimum; per-token-hash cap on accept would also prevent brute-forcing acceptedAt-flipping races.
 
