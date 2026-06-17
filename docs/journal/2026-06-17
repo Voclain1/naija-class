@@ -208,10 +208,83 @@ Chromium binary confirmed at: `/app/.cache/puppeteer/chrome/linux-149.0.7827.22`
 ## cp1 status: BUILT — typecheck clean, lint clean, tests 758/2 confirmed.
 ## Docker build status: VERIFIED — image `school-kit-api:latest` (3.41GB), all smoke checks pass.
 
-## cp2 (next)
-Run the in-container 40-card memory gate:
-1. `docker exec` into a running container (DB + Redis reachable via host.docker.internal)
-2. `RUN_MEMORY_GATE=1 vitest run memory-gate.spec.ts` inside container
-3. Record Node RSS + Chromium tree + combined; apply fallback decision tree
-4. Update `fly.toml` [[vm]] memory based on result
-5. Commit tier decision to journal
+## cp3 (deferred — image size optimisation)
+
+Image is **3.41 GB** — too large for production Fly.io deploys (slow push,
+slow machine boot, high storage cost).
+
+**Root cause**: the runtime stage does `COPY --from=builder /app ./` which
+copies the full pnpm workspace layout: all node_modules (devDependencies
+included), TypeScript source files, Chromium binary, and generated artefacts.
+
+**Target**: under 1 GB.
+
+**Approach** (do not implement now — after tier decision is committed):
+1. In the runtime stage, run `pnpm install --prod --frozen-lockfile` against
+   only the packages that are needed at runtime (`@school-kit/api`,
+   `@school-kit/db`, `@school-kit/types`) rather than copying the full builder
+   node_modules. This prunes all devDependencies (NestJS CLI, vitest, ts-node,
+   etc.) which account for the majority of the bloat.
+2. Copy only compiled `dist/` directories and the generated Prisma client —
+   not raw `.ts` source files.
+3. Chromium stays (it is a runtime dependency for PDF rendering); its ~300 MB
+   contribution is unavoidable and counted toward the 1 GB target.
+4. Evaluate `pnpm deploy` (pnpm's built-in monorepo deploy command) as an
+   alternative to manual pruning — it copies a single package's production
+   closure to an output directory, ready to `COPY` into the runtime stage.
+
+**Gate dependency**: the cp3 pass must happen after cp2 because the gate
+measures memory at runtime; an image-size optimisation changes the node_modules
+layout and could affect which native modules are present. Gate first, then
+optimise.
+
+**Tracking**: add as `cp3` under Slice 1a, or fold into Slice 1b pre-deploy
+checklist (whichever fits the PR boundary). Do not ship a 3.41 GB image to Fly.
+
+## cp2 — 40-card memory gate (COMPLETE)
+
+**Run**: `RUN_MEMORY_GATE=1 vitest run src/modules/report-cards/render/memory-gate.spec.ts`
+inside `docker exec -w /app/apps/api sk-gate sh -c "..."`.
+
+**Environment**: `linux-149.0.7827.22` (headless Chrome), `node:22-slim`
+Debian Bookworm, Docker Desktop on Windows (Hyper-V VM, `host.docker.internal`
+for DB+Redis), 1 concurrent render, PAGE_RECYCLE_LIMIT=20 (browser recycled
+once at card 20).
+
+**Gate numbers**:
+```
+cards rendered      : 40
+wall-clock          : 13807 ms  (345 ms/card)
+peak Node heapUsed  : 57.6 MB
+peak Node RSS       : 179.3 MB
+peak Chromium tree  : 918.1 MB  ← /proc VmRSS; see caveat
+peak COMBINED       : 1096.3 MB
+vs Tier 0 (512 MB)  : FAIL — 214.1%  (threshold <358 MB)
+vs Tier 1 (1 GB)    : FAIL — 107.1%  (threshold <716 MB)
+```
+
+**Chromium VmRSS caveat**: Linux VmRSS counts shared pages per-process.
+Chromium's multi-process model (browser + renderer + GPU processes) shares
+many memory pages between them. The cgroup `memory.usage_in_bytes` on a real
+Fly.io machine counts shared pages only once and will be lower. Even so, the
+decision tree is mechanical — FAIL at Tier 1 means Tier 2.
+
+**Test exit code**: 1 (not 0) — the test itself PASSED (1/1); exit code 1
+came from vitest writing its cache to `node_modules/.vite` after the test,
+which failed with EACCES because the container runs as `USER node` (uid 1000)
+and that directory is owned by root. The gate measurement is valid.
+
+**Decision: TIER 2**
+
+Separate `school-kit-render-worker` Fly app (2 GB, scale-to-zero):
+- Consumes the `report-card.render` BullMQ queue
+- The main API machine does NOT run Chromium
+- With PDF rendering offloaded, API machine set to **512 MB** (NestJS + Prisma
+  + BullMQ queue producer; no Chromium process)
+
+`fly.toml` updated: `[[vm]] memory = "512mb"`.
+
+`school-kit-render-worker` `fly-render.toml` is a slice 1b deliverable.
+
+**Slice 1a complete.** Next: cp3 image size optimisation (see above), then
+slice 1b (Neon prod roles, R2, staging env, smoke test, Sentry source maps).

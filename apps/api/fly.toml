@@ -2,11 +2,26 @@
 #
 # Region: jnb (Johannesburg) — locked Phase 3 scope decision (Q4/Q5).
 #
-# Machine size placeholder — updated after the in-container memory gate (cp2):
-#   Tier 0 gate GREEN (<358 MB combined):  set memory = "512mb"
-#   Tier 1 gate GREEN (<716 MB combined):  leave memory = "1gb"   ← current
-#   Tier 2 gate FAIL  (>=716 MB combined): add school-kit-render-worker app;
-#                                          see phase-3.md §10 fallback tree.
+# --- MEMORY GATE RESULT (cp2, 2026-06-18) ---
+# 40-card in-container gate (linux-149.0.7827.22, 1 concurrent render):
+#   peak Node RSS       : 179.3 MB
+#   peak Chromium tree  : 918.1 MB  (VmRSS; see caveat below)
+#   peak COMBINED       : 1096.3 MB
+#   vs Tier 0 (512 MB)  : FAIL — 214.1%
+#   vs Tier 1 (1 GB)    : FAIL — 107.1%
+#   Decision            : TIER 2 — separate school-kit-render-worker app (2 GB)
+#
+# Caveat: VmRSS overcounts shared Chromium pages (counted per-process;
+# cgroup counts shared pages once). The real Fly cgroup footprint is likely
+# lower, but the gate is mechanical — FAIL at Tier 1 means Tier 2.
+#
+# Consequence: this API machine does NOT render PDFs. RenderService jobs are
+# consumed by school-kit-render-worker (separate Fly app, fly-render.toml,
+# 2 GB, scale-to-zero). API only enqueues the BullMQ jobs.
+# school-kit-render-worker fly.toml is created in slice 1b.
+#
+# With PDF rendering offloaded, 512 MB is sufficient for this API machine
+# (NestJS + Prisma + BullMQ queue producer, no Chromium process).
 #
 # Deploy command (from repo root, after `flyctl auth login`):
 #   flyctl deploy -f apps/api/Dockerfile --config apps/api/fly.toml
@@ -42,6 +57,6 @@ primary_region = "jnb"
     timeout      = "3s"
 
 [[vm]]
-  memory   = "1gb"    # placeholder — see comment at top of file
+  memory   = "512mb"  # Tier 2: PDF rendering offloaded; no Chromium here
   cpu_kind = "shared"
   cpus     = 1
