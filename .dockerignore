@@ -1,0 +1,60 @@
+# ── Build output ──────────────────────────────────────────────────────────────
+**/node_modules
+**/dist
+**/.next
+**/.turbo
+**/.expo
+**/.pnpm-store
+**/*.tsbuildinfo
+
+# ── Secrets ───────────────────────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+
+# ── Non-API app source ────────────────────────────────────────────────────────
+# We exclude source directories rather than the whole app folder so that each
+# app's package.json remains in the build context — pnpm --frozen-lockfile
+# requires every workspace importer's package.json to match the lockfile
+# (apps/web, apps/mobile, and e2e are all declared importers in pnpm-lock.yaml).
+# Small config files (next.config.mjs, tailwind.config.ts, etc.) stay in the
+# context but are never COPY'd into the image, so they cost nothing in image size.
+apps/web/src
+apps/web/public
+apps/mobile/app
+e2e/tests
+e2e/fixtures
+
+# ── Non-workspace directories ─────────────────────────────────────────────────
+infra
+docs
+
+# ── Documentation ─────────────────────────────────────────────────────────────
+*.md
+
+# ── VCS ───────────────────────────────────────────────────────────────────────
+.git
+.gitignore
+.gitattributes
+
+# ── OS / editor ───────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.vscode
+.idea
+*.swp
+*.swo
+
+# ── Test artefacts ────────────────────────────────────────────────────────────
+coverage
+playwright-report
+test-results
+
+# ── Dev-only scratch ──────────────────────────────────────────────────────────
+.storage
+*.log
+/signup.json
+/invite.json
+/expired-inv.json
+/admin-login.json
+/og.json

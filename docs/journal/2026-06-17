@@ -1,0 +1,217 @@
+# 2026-06-17
+
+## Starting state
+Phase 2 closed (slice 9 cp3, PR #57/58). 758 passing tests, SD count 4,
+`audit-coverage.spec.ts` locked. Working tree clean, on main.
+Branch: `docs/phase-3-pre-slice-1-locks`.
+
+Phase 3 scope locked (phase-3.md created 2026-06-11; BVN custody + render-
+fallback tree + smoke-test spec + SD-inventory trigger added 2026-06-17 pre-
+build). No cloud environment exists yet. No Dockerfile exists yet.
+
+## Today's outcome
+Phase 3 Slice 1a cp1 — Dockerfile + `.dockerignore` + `fly.toml` +
+`GET /health/db` + Linux-compatible memory-gate sampler.
+
+## Decisions made (plan-first approved)
+See plan-first drafted this session — all decisions approved verbatim.
+Divergences from the plan noted below.
+
+## cp1 build manifest
+
+### `.dockerignore` (repo root — not `apps/api/`)
+Created at `.dockerignore`. Docker reads the `.dockerignore` at the build
+context root (`.`) when `docker build -f apps/api/Dockerfile .` is run from
+the repo root.
+
+**Revised before cp2** (post-cp1 review): Original version excluded `apps/web`
+and `apps/mobile` at the directory level and used `!apps/web/package.json`
+re-include patterns. That pattern is fragile — Docker's spec says the last-
+matching pattern wins, but some BuildKit versions short-circuit evaluation when
+the parent directory is excluded at the directory level, silently dropping the
+re-include. Fixed by excluding specific large content subdirectories instead:
+`apps/web/src`, `apps/web/public`, `apps/mobile/app`, `e2e/tests`,
+`e2e/fixtures`. The `package.json` files are then naturally in the build context
+with no re-include needed.
+
+Key exclusions:
+- `apps/web/src`, `apps/web/public` — Next.js source + static assets excluded;
+  `apps/web/package.json` and small config files remain in context.
+- `apps/mobile/app` — Expo source excluded; `apps/mobile/package.json` remains.
+- `e2e/tests`, `e2e/fixtures` — Playwright test files excluded; `e2e/package.json`
+  remains.
+- **Why the manifests must stay**: `apps/web`, `apps/mobile`, and `e2e` are
+  declared workspace importers in `pnpm-lock.yaml` (lines 183, 137, 277).
+  `pnpm install --frozen-lockfile` validates that every lockfile importer has a
+  corresponding `package.json` on disk. Without them, pnpm fails with a lockfile
+  mismatch error.
+- `infra` — excluded entirely (not a pnpm workspace package, no manifest needed).
+- `docs` — excluded entirely.
+- `*.md`, `**/*.tsbuildinfo` — excluded (recursive).
+- Standard additions: `.git`, `**/node_modules`, `**/.next`, `.env*` (with
+  `!.env.example`), test artefacts, OS/editor files.
+
+### `apps/api/Dockerfile`
+Two-stage build (builder → runtime) on `node:22-slim` (Debian Bookworm).
+
+**Builder stage:**
+- `corepack enable` → pnpm available (version from `packageManager` field).
+- Workspace manifest COPY before source files for layer caching.
+- `ENV PUPPETEER_CACHE_DIR=/app/.cache/puppeteer` set before `pnpm install`
+  so puppeteer's postinstall writes Chromium to a predictable path.
+- `pnpm install --frozen-lockfile` — installs all deps + downloads Chromium.
+- Source COPY after install (dep layer stays cached on source-only changes).
+- `prisma generate` called directly (not via `packages/db`'s `generate`
+  script, which uses `dotenv-cli` to load `../../.env` — that file doesn't
+  exist in Docker). Dummy `DATABASE_URL` / `DIRECT_URL` satisfy schema
+  validation; no real connection is made.
+- Build order: types → db → api (workspace dependency order).
+
+**Runtime stage:**
+- Chromium OS deps installed via `apt-get` (Debian Bookworm package names):
+  `libcups2` and `libasound2` — **not** the `t64` variants. The `t64` suffix
+  (`libcups2t64`, `libasound2t64`) is a Debian 13 (Trixie) naming convention
+  for the 64-bit `time_t` transition; Debian 12 (Bookworm stable) still ships
+  the original names. Confirmed by probing the `node:22-slim` apt cache —
+  `libcups2t64`/`libasound2t64` are not present in the Bookworm repository;
+  `libcups2`/`libasound2` are. Earlier cp1 notes incorrectly called these
+  "Bookworm names"; corrected during the first docker build attempt in cp2.
+- `COPY --from=builder /app ./` — full workspace copy (node_modules, dist,
+  generated Prisma client at `packages/db/generated/`, Chromium cache).
+  Source `.ts` files come along (acceptable for now; a future pass can prune
+  them — noted in deferred.md candidate).
+- `ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true` prevents any re-download at
+  container start; `PUPPETEER_CACHE_DIR=/app/.cache/puppeteer` tells
+  `puppeteer.launch()` where to find the binary.
+- `USER node` — non-root (uid 1000); `--no-sandbox` in `BrowserPool.LAUNCH_ARGS`
+  is the correct flag for non-root containers.
+- `CMD ["node", "apps/api/dist/main.js"]` — runs from `/app`, so the
+  full relative path resolves to the compiled NestJS entry point.
+
+**ConfigModule note (closes deferred.md item):**
+`app.module.ts` has `ConfigModule.forRoot({ envFilePath: ["../../.env"] })`.
+In-container, `../../.env` does not exist. `ConfigModule` silently ignores
+missing `envFilePath` entries and falls back to `process.env`, so Fly.io-
+injected secrets arrive correctly without a `.env` file. Verified as part of
+the cp1 acceptance (docker run with -e, no .env file → API starts → /health
+200).
+
+### `apps/api/fly.toml`
+- `primary_region = "jnb"` (Johannesburg, locked scope decision).
+- `internal_port = 4000` matches `main.ts` (`API_PORT ?? 4000`).
+- `auto_stop_machines = "stop"`, `min_machines_running = 0` — staging scale-
+  to-zero to save cost; raise to 1 for prod.
+- `[[vm]] memory = "1gb"` — placeholder pending the cp2 gate result.
+- Health check: `GET /api/v1/health`, 15s interval, 3s timeout, 10s grace.
+- CORS origin, DB URL, Redis URL, auth secrets → Fly.io secrets (slice 1b).
+- Migration release command → slice 1b (needs an actual Fly app to exist).
+
+### `apps/api/src/health/health.controller.ts`
+Added `@Get("db")` method (`checkDb`):
+- Calls `basePrisma.$queryRawUnsafe<Array<{ role: string }>>` with a static
+  `SELECT current_user AS role` — no user input, no injection risk.
+- Returns `{ status: "ok", role: "app_user" }` on success.
+- Throws `HttpException(503)` if `role !== "app_user"` — catches a
+  misconfigured `DATABASE_URL` pointing at `school_kit` (migration role) that
+  would otherwise silently bypass RLS for every tenant query.
+- No new DI provider needed; `basePrisma` is the established pre-tenant handle.
+- DB unreachable → `$queryRawUnsafe` throws → NestJS global exception handler
+  → 500. Correct for a health check.
+
+### `apps/api/src/modules/report-cards/render/memory-gate.spec.ts`
+
+**RUN_MEMORY_GATE guard — already present (per mandatory addition check):**
+```ts
+const RUN_GATE = process.env.RUN_MEMORY_GATE === "1";
+// ...
+describe.runIf(RUN_GATE)("40-card memory gate", () => { ... });
+```
+The gate is already wrapped — it is NOT in the default Vitest suite and will
+not run in CI without `RUN_MEMORY_GATE=1`. No change needed for the guard.
+
+**Linux-compatible `sampleChromiumBytes`:**
+Replaced the Windows-only `Win32_Process` implementation with a platform
+branch:
+- `process.platform === "win32"` → original PowerShell path (unchanged).
+- All other platforms (Linux / container) → shell loop over
+  `/proc/[0-9]*/cmdline`, translating NUL bytes to spaces (`tr '\0' ' '`)
+  and grepping for `chrome`, then extracting `VmRSS` from
+  `/proc/<pid>/status`. Uses only POSIX shell + `tr` + `grep` + `awk` —
+  all present in `node:22-slim` without extra packages. Returns bytes (VmRSS
+  is in KB; multiply × 1024).
+
+The caveat note (Linux overcounts on developer machines where installed
+Chromium also runs) is preserved in the comment block. Inside the container,
+all `chrome` processes are puppeteer-owned.
+
+## Build verification
+
+### typecheck + lint
+- `pnpm typecheck` (api): **clean** — `basePrisma.$queryRawUnsafe<Array<{ role: string }>>` types correctly; no new imports break.
+- `pnpm lint` (api): **clean** — no ESLint warnings.
+
+### Test suite
+- `pnpm test` (api): **758 passed / 2 skipped** — confirmed clean (ran
+  twice). First run showed 1 flaky failure in
+  `report-card-workflow-cp2.service.spec.ts` (BrowserPool.withPage); the test
+  passes in isolation (16/16) and on the second full-suite run (758/2). Root
+  cause: parallel Chromium timing contention with other specs that also spin
+  up a browser — not caused by any cp1 change.
+
+### SECURITY DEFINER count: **4** — unchanged.
+
+### Docker build — completed 2026-06-18 (cp2)
+
+Four fixes were required beyond the original Dockerfile design:
+
+**Fix 1 — Debian Bookworm lib names** (cp2, attempt 1):
+`libcups2t64` / `libasound2t64` do not exist in Debian 12 (Bookworm) stable.
+The t64 suffix is Debian 13 (Trixie)-only. Corrected to `libcups2` /
+`libasound2`.
+
+**Fix 2 — pnpm fetch timeout** (cp2, attempt 2):
+Docker Desktop's virtual network is slow; undici's default 300s body-timeout
+caused Chromium download to fail mid-stream. Added
+`echo "fetch-timeout=1200000" >> /root/.npmrc` and
+`ENV PUPPETEER_DOWNLOAD_TIMEOUT=1200000` to the builder stage.
+
+**Fix 3 — unzip missing in builder** (cp2, attempt 3):
+puppeteer 25.x / @puppeteer/browsers 3.x downloads Chrome for Linux as a
+`.zip` archive and extracts it with the native `unzip` binary. `node:22-slim`
+does not include `unzip`. Added
+`RUN apt-get install -y --no-install-recommends unzip` to the builder stage.
+pnpm install then completed in ~8.5 minutes.
+
+**Fix 4 — Prisma binary target** (cp2, attempt 4):
+Without the OpenSSL detection fix, `prisma generate` defaulted to
+`debian-openssl-1.1.x`. Debian Bookworm uses OpenSSL 3.0.x. The API crashed
+on startup with `PrismaClientInitializationError: Query Engine not found for
+runtime "debian-openssl-3.0.x"`. Added
+`binaryTargets = ["native", "debian-openssl-3.0.x"]` to
+`packages/db/prisma/schema.prisma`.
+
+**Fix 5 — prisma generate path** (found during attempt 3 after unzip fix):
+`pnpm exec prisma generate` at the workspace root fails because `prisma` is
+a devDependency of `packages/db`, not the root. Changed to
+`pnpm --filter @school-kit/db exec prisma generate --schema=./prisma/schema.prisma`.
+
+### Docker smoke test — PASSED
+
+```
+GET /api/v1/health  → 200  {"status":"ok","service":"school-kit-api"}
+GET /api/v1/health/db → 200  {"status":"ok","role":"app_user"}
+GET /api/v1/health/db (with school_kit role) → 503  ✓ RLS guard fires
+```
+
+Chromium binary confirmed at: `/app/.cache/puppeteer/chrome/linux-149.0.7827.22`
+
+## cp1 status: BUILT — typecheck clean, lint clean, tests 758/2 confirmed.
+## Docker build status: VERIFIED — image `school-kit-api:latest` (3.41GB), all smoke checks pass.
+
+## cp2 (next)
+Run the in-container 40-card memory gate:
+1. `docker exec` into a running container (DB + Redis reachable via host.docker.internal)
+2. `RUN_MEMORY_GATE=1 vitest run memory-gate.spec.ts` inside container
+3. Record Node RSS + Chromium tree + combined; apply fallback decision tree
+4. Update `fly.toml` [[vm]] memory based on result
+5. Commit tier decision to journal

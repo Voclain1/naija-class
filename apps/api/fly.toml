@@ -1,0 +1,47 @@
+# School Kit API — Fly.io configuration
+#
+# Region: jnb (Johannesburg) — locked Phase 3 scope decision (Q4/Q5).
+#
+# Machine size placeholder — updated after the in-container memory gate (cp2):
+#   Tier 0 gate GREEN (<358 MB combined):  set memory = "512mb"
+#   Tier 1 gate GREEN (<716 MB combined):  leave memory = "1gb"   ← current
+#   Tier 2 gate FAIL  (>=716 MB combined): add school-kit-render-worker app;
+#                                          see phase-3.md §10 fallback tree.
+#
+# Deploy command (from repo root, after `flyctl auth login`):
+#   flyctl deploy -f apps/api/Dockerfile --config apps/api/fly.toml
+#
+# Secrets are set via `flyctl secrets set KEY=value` — never in this file.
+
+app            = "school-kit-api"
+primary_region = "jnb"
+
+[build]
+  dockerfile = "apps/api/Dockerfile"
+
+[env]
+  NODE_ENV    = "production"
+  API_PORT    = "4000"
+  # CORS_ORIGIN, DATABASE_URL, REDIS_URL, BETTER_AUTH_SECRET, etc. are
+  # injected as Fly.io secrets — not here.
+
+[http_service]
+  internal_port        = 4000
+  force_https          = true
+  auto_stop_machines   = "stop"
+  auto_start_machines  = true
+  # staging: scale to zero between requests to save cost.
+  # prod: raise to 1 so the first request after idle isn't a cold start.
+  min_machines_running = 0
+
+  [[http_service.checks]]
+    grace_period = "10s"
+    interval     = "15s"
+    method       = "GET"
+    path         = "/api/v1/health"
+    timeout      = "3s"
+
+[[vm]]
+  memory   = "1gb"    # placeholder — see comment at top of file
+  cpu_kind = "shared"
+  cpus     = 1

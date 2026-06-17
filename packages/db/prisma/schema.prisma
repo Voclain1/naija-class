@@ -11,6 +11,9 @@ generator client {
   // relative path source uses (../generated/client).
   output          = "../generated/client"
   previewFeatures = ["postgresqlExtensions"]
+  // native   → local dev (Windows / macOS picks the right target automatically)
+  // debian-openssl-3.0.x → Fly.io / Docker on Debian 12 (Bookworm) with OpenSSL 3
+  binaryTargets   = ["native", "debian-openssl-3.0.x"]
 }
 
 datasource db {
