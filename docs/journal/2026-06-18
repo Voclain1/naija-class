@@ -1,0 +1,177 @@
+# 2026-06-18
+
+## Starting state
+
+Phase 3 Slice 1a complete. Branch `docs/phase-3-pre-slice-1-locks` had all cp1+cp2
+work committed (Dockerfile, `.dockerignore`, `fly.toml`, `GET /health/db`, Linux
+memory-gate sampler). Docker image verified at 3.41 GB. Tier 2 decision locked.
+758 passing tests, 2 skipped.
+
+## Two architecture questions answered (text-only, no tools)
+
+Before the slice 1b plan-first, two design questions were resolved:
+
+**Q1 — Render worker location:**
+Correct approach: `Dockerfile.render` pointing at `apps/api/` source, different CMD.
+No new workspace package. No standalone entry point existed — `main.ts` boots the
+full `AppModule`. Two new files needed:
+- `apps/api/src/render-worker.module.ts` — slim module with `WorkerHealthController`
+  (needed for Fly scale-to-zero HTTP detection) + `ReportCardRenderModule` import chain
+- `apps/api/src/main-render-worker.ts` — `NestFactory.create()` (not
+  `createApplicationContext()`) so an HTTP listener exists for Fly; `enableShutdownHooks()`
+  for SIGTERM drain on scale-to-zero
+BullMQ `@Processor` hooks into NestJS module lifecycle, not the HTTP adapter; works
+correctly with `NestFactory.create()`.
+
+**Q2 — cp3 sequencing:**
+Fold into slice 1b cp1 (not a separate commit on the docs branch). Stripping
+Chromium from the API and creating the render worker Dockerfile are one coherent
+Tier 2 change. Splitting them produces a broken intermediate state (API has no
+Chrome, render worker doesn't exist yet). Image size is only a push-to-Fly problem;
+nothing is deployed until slice 1b anyway.
+
+## Slice 1b plan-first
+
+Four checkpoints drafted and approved:
+- cp1: Dockerfile restructure for Tier 2
+- cp2: fly-render.toml + Fly apps created + Neon prod roles + R2 bucket
+- cp3: staging deploy + 5-op smoke test
+- cp4: Sentry source maps + dev DB cleanup + slice 1b close
+
+**Four corrections applied before cp1 started:**
+
+1. **Redis provider**: Fly Redis (`flyctl redis create --name school-kit-redis --region jnb
+   --no-replicas`). Private Fly network URL for REDIS_URL on both apps.
+
+2. **Smoke test DTO shape**: Checked `packages/types/src/auth/signup-owner.dto.ts`.
+   Correct field names are `schoolName`, `schoolSlug`, `ownerFirstName`, `ownerLastName`,
+   `ownerEmail`, `ownerPhone`, `password`, `ndprConsent: true`. The plan-first draft
+   had wrong names (`firstName`, `lastName`, `email`). Fixed in the cp3 smoke script.
+
+3. **Migration step comment**: `STAGING_DIRECT_URL` must use `school_kit` role
+   credentials (migration role, not `app_user`). DDL run as `app_user` fails silently
+   in a way that is hard to diagnose mid-deploy. Explicit comment added to the workflow.
+
+4. **`sourceMap: true`**: `apps/api/tsconfig.json` did not have `sourceMap: true`.
+   Added in cp1 (not cp4) so built artifacts already include maps by the time cp4
+   uploads them.
+
+## cp1 — Dockerfile restructure for Tier 2 (COMPLETE)
+
+### Key finding: `puppeteer` is in `dependencies`
+
+`apps/api/package.json` has `puppeteer: "^25.1.0"` in `dependencies` (not devDeps).
+It must stay there — the render worker (same package source) needs it at runtime.
+`PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true` in the API builder prevents Chrome download.
+`pnpm deploy --prod` includes the puppeteer package (~5 MB) but no Chrome binary.
+`puppeteer` is never loaded at runtime in the API (ReportCardRenderModule removed).
+
+### `apps/api/Dockerfile` (rewrite)
+
+**Builder stage:**
+- Removed `RUN apt-get install unzip` — Chrome is never downloaded so the zip is
+  never extracted; unzip not needed in the API builder.
+- Added `ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true` before `pnpm install`.
+- After all three build steps: `RUN pnpm --filter @school-kit/api deploy --prod /app/api-deploy`.
+  `pnpm deploy` creates a self-contained production directory:
+  - Package files (dist/, src/, package.json) at root
+  - `@school-kit/db` (with dist/ + generated/ Prisma client) and `@school-kit/types`
+    (with dist/) copied into node_modules/@school-kit/
+  - All third-party prod deps; devDeps (~2 GB) excluded
+
+**Runtime stage:**
+- Removed all Chromium OS libs (`libnss3`, `libatk*`, etc.) and `fonts-liberation`.
+- `COPY --from=builder /app/api-deploy ./`
+- `CMD ["node", "dist/main.js"]` — deploy dir root is /app, so dist/main.js is correct.
+- No `PUPPETEER_CACHE_DIR` env needed.
+
+Expected image: ~600 MB (from 3.41 GB).
+
+### `apps/api/Dockerfile.render` (NEW)
+
+Builder stage: identical to the old API Dockerfile (Chrome downloads to
+`/app/.cache/puppeteer`; `unzip` installed). After builds:
+```
+RUN pnpm --filter @school-kit/api deploy --prod /app/render-deploy
+RUN cp -r /app/.cache /app/render-deploy/.cache
+```
+Chrome lands at `/app/render-deploy/.cache/puppeteer/chrome/...` — the same relative
+path the `PUPPETEER_CACHE_DIR` env points at in the runtime stage.
+
+Runtime stage: all Chromium OS libs present. `COPY --from=builder /app/render-deploy ./`.
+`ENV PUPPETEER_CACHE_DIR=/app/.cache/puppeteer`. `CMD ["node", "dist/main-render-worker.js"]`.
+
+### `apps/api/src/app.module.ts`
+
+Removed `ReportCardRenderModule` import and its entry in the imports array.
+`ReportCardsModule` stays — the API still owns the HTTP `/report-cards` endpoints
+and enqueues BullMQ render jobs.
+
+### `apps/api/src/render-worker.module.ts` (NEW)
+
+Root module for `school-kit-render-worker`. Inline `WorkerHealthController`:
+```typescript
+@Controller()
+class WorkerHealthController {
+  @Get("health")
+  health(): { status: string } { return { status: "ok" }; }
+}
+```
+Imports: `ConfigModule` (global), `QueueModule` (BullMQ+Redis), `StorageModule`
+(R2 upload), `ReportCardsModule` (ReportCardService + queue token), `ReportCardRenderModule`
+(BrowserPool + RenderService + Processor).
+
+`ReportCardsModule` transitively imports `AuthModule` and `AssessmentModule`. Their
+controllers load but are never routed (no global prefix, no HTTP routes wired to them).
+NestJS ignores unrouted controllers in an HTTP app. ~20-30 MB extra RSS, acceptable.
+
+### `apps/api/src/main-render-worker.ts` (NEW)
+
+```typescript
+const app = await NestFactory.create(RenderWorkerModule, {
+  logger: ["error", "warn", "log"],
+});
+app.enableShutdownHooks();
+await app.listen(Number(process.env.RENDER_WORKER_PORT ?? 4001));
+```
+
+`enableShutdownHooks()` is load-bearing: Fly sends SIGTERM on scale-to-zero and
+deploys; without it a mid-render SIGTERM leaves `pdfStatus` stuck at PENDING.
+
+### `report-card-workflow.service.ts` — `release()` wake call
+
+Changed `return withTenant(...)` to `const result: ReportCardTransitionResultDto = await withTenant(...)`.
+The explicit type annotation is required because the inferred type narrows to
+`{ status: string; cardCount: number }` when assigned to a `const`, which is not
+assignable to `ReportCardTransitionResultDto` (expects `status: ReportCardStatusDto`).
+
+After the tx commits:
+```typescript
+const renderWorkerUrl = process.env.RENDER_WORKER_URL;
+if (renderWorkerUrl) {
+  fetch(`${renderWorkerUrl}/health`).catch(() => {});
+}
+```
+Fire-and-forget. Errors are swallowed — a failed wake doesn't fail the release;
+jobs wait in the BullMQ queue until the render worker is manually started or
+the next scheduled boot.
+
+### `apps/api/tsconfig.json`
+
+Added `"sourceMap": true` to `compilerOptions`. Required for Sentry CLI to upload
+non-empty source maps in cp4.
+
+## Build verification
+
+- `pnpm --filter @school-kit/api typecheck`: **clean**
+- `pnpm --filter @school-kit/api test`: **758 passed / 2 skipped** (unchanged baseline)
+
+## cp1 status: COMPLETE
+
+Commit: `62f8e4d` on branch `feat/phase-3-slice-1b`.
+
+## Next
+
+cp2: fly-render.toml (create), Fly Redis provisioning, Neon prod role split,
+R2 prod bucket, `flyctl apps create` for both apps, secrets set.
+Prerequisites: Neon project + R2 bucket provisioned by user before cp2 build starts.
