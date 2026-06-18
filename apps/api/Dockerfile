@@ -80,6 +80,11 @@ COPY --from=builder /app/api-deploy ./
 
 ENV NODE_ENV=production
 
+# Sentry release tag — set by `flyctl deploy --build-arg SENTRY_RELEASE=<sha>`.
+# Defaults to "unknown" when not supplied so the app still starts cleanly.
+ARG SENTRY_RELEASE=unknown
+ENV SENTRY_RELEASE=${SENTRY_RELEASE}
+
 # Drop to the built-in non-root node user (uid 1000).
 USER node
 

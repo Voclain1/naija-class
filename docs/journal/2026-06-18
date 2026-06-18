@@ -193,8 +193,208 @@ Commits on branch `feat/phase-3-slice-1b`:
 - `62f8e4d` — main cp1 changes
 - follow-up fix commit — PUPPETEER_SKIP_DOWNLOAD rename
 
+## cp2 — fly-render.toml + .env.example updates (COMPLETE)
+
+### API image size
+
+`docker image inspect school-kit-api:cp1 --format '{{.Size}}'` → **150 MB**.
+Target was <600 MB (expected after pnpm deploy pruning). Result is 150 MB —
+well below even the optimistic estimate.
+
+### `apps/api/fly-render.toml` (NEW)
+
+Tier 2 render worker Fly config:
+- `app = "school-kit-render-worker"`, `primary_region = "jnb"`
+- `[build] dockerfile = "apps/api/Dockerfile.render"`
+- `memory = "2gb"` — Chromium peaks ~1.1 GB combined; 2 GB adds headroom
+- `auto_stop_machines = "stop"`, `min_machines_running = 0` — scale to zero
+- `[[http_service.checks]] path = "/health"`, `grace_period = "30s"` — Chrome
+  takes ~15–25s to init on cold boot
+- `RENDER_WORKER_PORT = "4001"` in `[env]` (non-secret, baked in)
+
+### `.env.example` updates
+
+Added two new sections:
+- `RENDER_WORKER_URL` — URL the API calls fire-and-forget after releasing
+  report cards to wake the stopped Fly machine. Blank in local dev (render
+  module is in AppModule). Staging/prod: `http://school-kit-render-worker.internal:4001`
+- `RENDER_WORKER_PORT` — defaults to 4001 in code
+- `SENTRY_AUTH_TOKEN` — added to Monitoring section; needed only in CI for
+  source map upload, never at runtime
+
+### Provisioning commands (user runs; not codified as script)
+
+Fly app creation:
+```
+flyctl apps create school-kit-api --region jnb
+flyctl apps create school-kit-render-worker --region jnb
+```
+
+Fly Redis (private network URL, no replicas for staging cost):
+```
+flyctl redis create --name school-kit-redis --region jnb --no-replicas
+```
+
+Neon role split (run as neondb_owner in Neon SQL editor):
+```sql
+CREATE ROLE app_user WITH LOGIN PASSWORD '<generate>';
+GRANT CONNECT ON DATABASE neondb TO app_user;
+GRANT USAGE ON SCHEMA public TO app_user;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO app_user;
+GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO app_user;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO app_user;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+  GRANT USAGE ON SEQUENCES TO app_user;
+```
+- `DATABASE_URL` (runtime) → Neon pooled connection as `app_user`
+- `DIRECT_URL` / `STAGING_DIRECT_URL` (migrations) → Neon direct connection as
+  `neondb_owner` (or a separate `school_kit` role granted full DDL)
+
+Fly secrets for `school-kit-api`:
+```
+flyctl secrets set \
+  DATABASE_URL="postgresql://app_user:...@<neon-host>/neondb?sslmode=require" \
+  REDIS_URL="redis://default:...@<fly-redis-host>:6379" \
+  BETTER_AUTH_SECRET="$(openssl rand -hex 32)" \
+  BETTER_AUTH_URL="https://school-kit-api.fly.dev" \
+  CORS_ORIGIN="https://<vercel-web-url>" \
+  WEB_BASE_URL="https://<vercel-web-url>" \
+  ANTHROPIC_API_KEY="sk-ant-..." \
+  R2_ACCOUNT_ID="..." \
+  R2_ACCESS_KEY_ID="..." \
+  R2_SECRET_ACCESS_KEY="..." \
+  R2_BUCKET="school-kit-staging" \
+  SENTRY_DSN_API="..." \
+  SENTRY_ENVIRONMENT="staging" \
+  RENDER_WORKER_URL="http://school-kit-render-worker.internal:4001" \
+  --app school-kit-api
+```
+
+Fly secrets for `school-kit-render-worker` (same DB, Redis, R2; no CORS/auth):
+```
+flyctl secrets set \
+  DATABASE_URL="postgresql://app_user:...@<neon-host>/neondb?sslmode=require" \
+  REDIS_URL="redis://default:...@<fly-redis-host>:6379" \
+  BETTER_AUTH_SECRET="<same as API>" \
+  R2_ACCOUNT_ID="..." \
+  R2_ACCESS_KEY_ID="..." \
+  R2_SECRET_ACCESS_KEY="..." \
+  R2_BUCKET="school-kit-staging" \
+  SENTRY_DSN_API="..." \
+  SENTRY_ENVIRONMENT="staging" \
+  --app school-kit-render-worker
+```
+
+GitHub Actions secrets needed for `deploy-staging.yml`:
+- `FLY_API_TOKEN` — `flyctl auth token`
+- `STAGING_DATABASE_URL` — Neon app_user connection string
+- `STAGING_DIRECT_URL` — Neon neondb_owner connection string (migration role)
+- `SENTRY_AUTH_TOKEN` — optional; source map upload skipped if absent
+- `SENTRY_ORG` — optional; required with SENTRY_AUTH_TOKEN
+
+## cp3 — staging deploy workflow + smoke test + rollback runbook (COMPLETE)
+
+### `.github/workflows/deploy-staging.yml` (NEW)
+
+Trigger: `workflow_run` on `ci` completion for `main` branch + `workflow_dispatch`.
+Concurrency: `cancel-in-progress: false` — never cancel an in-flight deploy.
+
+Steps:
+1. Install deps (PUPPETEER_SKIP_DOWNLOAD=true on runner — Chrome only in Docker)
+2. Write minimal `.env` with `STAGING_DATABASE_URL` / `STAGING_DIRECT_URL`
+   from GitHub Secrets; other vars are placeholders (runner never starts API)
+3. `pnpm --filter @school-kit/db generate` + build workspace packages
+4. Build API on runner (`pnpm --filter @school-kit/api build`) for source maps
+5. Upload Sentry source maps (`continue-on-error: true`; skipped if no token)
+6. `pnpm --filter @school-kit/db migrate:deploy` — uses `DIRECT_URL` =
+   neondb_owner (migration role). Critical: app_user cannot run DDL.
+7. `flyctl deploy` API + render worker with `--build-arg SENTRY_RELEASE=${{ github.sha }}`
+8. `bash scripts/smoke-test.sh`
+9. On smoke failure: `flyctl releases rollback --app school-kit-api` + exit 1
+
+STAGING_DIRECT_URL must use the migration role (neondb_owner / school_kit),
+NOT app_user. This is plan-first correction #3 — DDL run as app_user silently
+fails (no CREATE TABLE privilege), producing a half-migrated state that is very
+hard to diagnose mid-deploy.
+
+### `scripts/smoke-test.sh` (NEW)
+
+Five ops (all against `$SMOKE_API_URL`):
+1. `GET /api/v1/health` → 200
+2. `GET /api/v1/health/db` → 200 with `.role == "app_user"` (RLS role check)
+3. `POST /api/v1/auth/signup-owner` → 201 (school slug: `smoke-<unix-timestamp>`)
+4. `POST /api/v1/auth/login` → 200 with `.token` in body
+5. `GET /api/v1/schools/me` with Bearer → 200, `.slug` matches
+
+Uses `jq` for JSON parsing (available on ubuntu-latest). Exits non-zero on any
+failure — caught by the workflow's rollback step.
+
+Smoke schools accumulate with `smoke-<timestamp>` slug. Clean with:
+`pnpm db:prune-smoke` (new in cp4).
+
+### `docs/runbooks/deploy-rollback.md` (NEW)
+
+Three failure classes:
+1. **Deploy failure** (Fly never finished): previous release still serving;
+   check Docker build log, retry deploy. No rollback needed.
+2. **Migration failure** (smoke op 3 fails, missing table): automatic rollback
+   already ran. Inspect `_prisma_migrations` as school_kit to find the failed
+   migration; fix + redeploy.
+3. **Data-corruption failure** (smoke passes, incident flagged): manual incident.
+   Roll back code with `flyctl releases rollback`, then recover data via Neon
+   PITR (point-in-time recovery from Neon dashboard).
+
+## cp4 — Sentry source maps + dev DB cleanup + slice 1b close (COMPLETE)
+
+### Sentry source map integration
+
+`apps/api/src/observability/sentry.ts`: added `release: process.env.SENTRY_RELEASE`
+to `Sentry.init` options (conditional — undefined in dev, fine).
+
+`apps/api/Dockerfile` + `Dockerfile.render`: added
+```
+ARG SENTRY_RELEASE=unknown
+ENV SENTRY_RELEASE=${SENTRY_RELEASE}
+```
+in the runtime stage. Passed by the deploy workflow via
+`flyctl deploy --build-arg SENTRY_RELEASE=${{ github.sha }}`.
+
+### Dev DB prune script
+
+`scripts/prune-smoke-schools.sql`: dynamic SQL using `information_schema` to
+find all tables with `school_id` column and delete records for smoke schools.
+Also handles `sessions` (keyed by `user_id`, not `school_id`) separately.
+Uses `SET LOCAL session_replication_role = 'replica'` to disable FK trigger
+checks — requires `school_kit` (superuser) role.
+
+`packages/db/package.json`: added `prune-smoke` script.
+Root `package.json`: added `db:prune-smoke → pnpm --filter @school-kit/db prune-smoke`.
+
+## Slice 1b status: COMPLETE
+
+All four checkpoints done. Branch `feat/phase-3-slice-1b` ready for PR.
+
+Files created/modified in slice 1b:
+- `apps/api/Dockerfile` — PUPPETEER_SKIP_DOWNLOAD rename + pnpm deploy + SENTRY_RELEASE ARG
+- `apps/api/Dockerfile.render` — NEW; render worker Docker build + SENTRY_RELEASE ARG
+- `apps/api/fly-render.toml` — NEW; Fly config for school-kit-render-worker
+- `apps/api/src/app.module.ts` — removed ReportCardRenderModule
+- `apps/api/src/render-worker.module.ts` — NEW; slim module for render worker process
+- `apps/api/src/main-render-worker.ts` — NEW; render worker entrypoint
+- `apps/api/src/modules/report-cards/workflow/report-card-workflow.service.ts` — wake call
+- `apps/api/src/observability/sentry.ts` — SENTRY_RELEASE added
+- `apps/api/tsconfig.json` — sourceMap: true
+- `.env.example` — RENDER_WORKER_URL, RENDER_WORKER_PORT, SENTRY_AUTH_TOKEN
+- `.github/workflows/deploy-staging.yml` — NEW; staging deploy + smoke + rollback
+- `scripts/smoke-test.sh` — NEW; 5-op smoke test
+- `scripts/prune-smoke-schools.sql` — NEW; dev DB cleanup
+- `docs/runbooks/deploy-rollback.md` — NEW; three-class rollback guide
+- `packages/db/package.json` — prune-smoke script
+- `package.json` (root) — db:prune-smoke
+
 ## Next
 
-cp2: fly-render.toml (create), Fly Redis provisioning, Neon prod role split,
-R2 prod bucket, `flyctl apps create` for both apps, secrets set.
-Prerequisites: Neon project + R2 bucket provisioned by user before cp2 build starts.
+Phase 3 Slice 2: auth hardening (2FA for owners, password policy, rate-limiting,
+localStorage → httpOnly cookie auth, ADR-001 evaluation). Must land before any
+finance slice per phase-3.md §11.

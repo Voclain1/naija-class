@@ -23,6 +23,7 @@
     "db:seed": "pnpm --filter @school-kit/db seed",
     "dev:seed": "pnpm --filter @school-kit/db dev:seed",
     "db:studio": "pnpm --filter @school-kit/db studio",
+    "db:prune-smoke": "pnpm --filter @school-kit/db prune-smoke",
     "ai:eval": "pnpm --filter @school-kit/ai eval",
     "clean": "turbo run clean && rm -rf node_modules",
     "kill-ports": "npx kill-port 3001 4000"

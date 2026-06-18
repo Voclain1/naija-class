@@ -19,6 +19,15 @@ Format:
 
 - [ ] Refactor audit log writes from direct (synchronous) to BullMQ queued, per the architecture doc. Signup is correctly an exception (atomic with school creation), but other modules should use the queue. — Phase 1 onward.
 
+- [ ] BullMQ Redis polling cost — Fly Redis bills at $0.20/100K commands.
+  BullMQ's default polling is aggressive; at scale this accumulates quickly.
+  Before the first pilot school goes live, configure sensible intervals in
+  the queue module: `stalledInterval: 30000` (check stalled jobs every 30s
+  instead of the default 5s), and review `drainDelay` and `lockDuration`
+  defaults. Trigger: before any school is actively using the platform in
+  production. Consider switching to Fly Redis fixed-price plan (~$10/month)
+  if command volume consistently exceeds ~500K/month.
+
 - [ ] Document the SECURITY DEFINER `auth_check_signup_uniqueness` SQL function with a code comment explaining *why* elevated privileges are intentional. — pre-Phase 1 cleanup.
 
 - [ ] Fix root-level `pnpm dev:api` (Turbo wrapper). Currently `pnpm dev` from `apps/api` works, but the Turbo-wrapped version exits with code 3221225781. Once Turbo dev pipeline is debugged, the root command is the preferred way to start. — when it starts being annoying.

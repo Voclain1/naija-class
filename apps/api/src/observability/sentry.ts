@@ -31,6 +31,10 @@ export function initSentry(): void {
     dsn,
     environment:
       process.env.SENTRY_ENVIRONMENT ?? process.env.NODE_ENV ?? "development",
+    // Set by Docker ARG SENTRY_RELEASE in production (= git SHA from CI).
+    // Undefined in dev — Sentry still captures errors, just without a
+    // release tag for source map lookup.
+    ...(process.env.SENTRY_RELEASE ? { release: process.env.SENTRY_RELEASE } : {}),
     // No performance tracing in Slice 8a. Set to a non-zero number later if
     // we want APM; that pulls in extra infra and is out of scope here.
     tracesSampleRate: 0,

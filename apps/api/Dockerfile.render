@@ -93,6 +93,10 @@ ENV PUPPETEER_CACHE_DIR=/app/.cache/puppeteer
 ENV PUPPETEER_SKIP_DOWNLOAD=true
 ENV NODE_ENV=production
 
+# Sentry release tag — set by `flyctl deploy --build-arg SENTRY_RELEASE=<sha>`.
+ARG SENTRY_RELEASE=unknown
+ENV SENTRY_RELEASE=${SENTRY_RELEASE}
+
 USER node
 
 CMD ["node", "dist/main-render-worker.js"]

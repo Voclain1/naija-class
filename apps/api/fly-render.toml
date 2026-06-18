@@ -1,0 +1,61 @@
+# School Kit Render Worker — Fly.io configuration
+#
+# Separate app from school-kit-api (Tier 2: PDF rendering offloaded).
+# Region: jnb (Johannesburg) — same as API app.
+#
+# This machine runs the BullMQ render processor + a minimal HTTP health
+# endpoint (GET /health) on port 4001. It does NOT serve the REST API.
+#
+# Scale-to-zero: Fly stops this machine when there are no queued render jobs.
+# The API wakes it via a fire-and-forget GET /health call after releasing
+# report cards (see report-card-workflow.service.ts `release()` wake call).
+# Render jobs wait in the BullMQ queue while the machine boots (~15–25s for
+# Chrome init). Workers drain the queue then the machine goes idle and Fly
+# stops it again.
+#
+# 2 GB VM: headless Chromium peak measured at ~918 MB VmRSS + ~179 MB Node RSS
+# during the 40-card gate (2026-06-18). 2 GB gives ~900 MB headroom for Fly
+# memory overhead and concurrent renders beyond the gate load.
+#
+# Deploy command (from repo root, after `flyctl auth login`):
+#   flyctl deploy -f apps/api/Dockerfile.render --config apps/api/fly-render.toml
+#
+# Secrets are set via `flyctl secrets set KEY=value` — never in this file.
+# Required secrets (same Fly app, separate set command):
+#   DATABASE_URL, REDIS_URL, BETTER_AUTH_SECRET, R2_ACCOUNT_ID,
+#   R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET,
+#   SENTRY_DSN_API, SENTRY_ENVIRONMENT
+
+app            = "school-kit-render-worker"
+primary_region = "jnb"
+
+[build]
+  dockerfile = "apps/api/Dockerfile.render"
+
+[env]
+  NODE_ENV           = "production"
+  RENDER_WORKER_PORT = "4001"
+  # All secrets (DATABASE_URL, REDIS_URL, R2_*, SENTRY_DSN_API) are injected
+  # via `flyctl secrets set` — not here.
+
+[http_service]
+  internal_port        = 4001
+  force_https          = true
+  auto_stop_machines   = "stop"
+  auto_start_machines  = true
+  # Zero min machines: this app must be able to stop completely between jobs.
+  # The API wake call (GET /health) triggers auto_start when a release fires.
+  min_machines_running = 0
+
+  [[http_service.checks]]
+    # 30s grace: Chrome takes ~15–25s to initialise on cold boot.
+    grace_period = "30s"
+    interval     = "30s"
+    method       = "GET"
+    path         = "/health"
+    timeout      = "5s"
+
+[[vm]]
+  memory   = "2gb"  # Tier 2: Chromium peaks ~1.1 GB combined; 2 GB adds headroom
+  cpu_kind = "shared"
+  cpus     = 1
