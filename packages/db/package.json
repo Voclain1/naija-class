@@ -29,6 +29,7 @@
     "prisma": "dotenv -e ../../.env -- prisma",
     "seed": "dotenv -e ../../.env -- prisma db seed",
     "dev:seed": "dotenv -e ../../.env -- tsx prisma/dev-seed.ts",
+    "prune-smoke": "dotenv -e ../../.env -- sh -c 'psql \"$DIRECT_URL\" -f ../../scripts/prune-smoke-schools.sql'",
     "clean": "rm -rf dist generated"
   },
   "prisma": {

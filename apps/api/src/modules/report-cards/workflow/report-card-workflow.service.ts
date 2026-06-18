@@ -136,7 +136,7 @@ export class ReportCardWorkflowService {
   ): Promise<ReportCardTransitionResultDto> {
     await assertUserActiveAndHasOneOf(authCtx, ["owner", "admin"]);
 
-    return withTenant(authCtx.schoolId, async (db) => {
+    const result: ReportCardTransitionResultDto = await withTenant(authCtx.schoolId, async (db) => {
       const term = await db.term.findUnique({ where: { id: input.termId }, select: { id: true } });
       if (!term) throw new NotFoundError("Term not found.");
       const arm = await db.classArm.findUnique({ where: { id: input.classArmId }, select: { id: true } });
@@ -169,6 +169,16 @@ export class ReportCardWorkflowService {
       });
       return { status: "RELEASED", cardCount: cards.length };
     });
+
+    // Wake the render worker machine after the tx commits (Fly scale-to-zero).
+    // Jobs wait in the BullMQ queue during cold start (~5–30 s); acceptable for
+    // batch rendering. Fire-and-forget: errors here don't fail the release.
+    const renderWorkerUrl = process.env.RENDER_WORKER_URL;
+    if (renderWorkerUrl) {
+      fetch(`${renderWorkerUrl}/health`).catch(() => {});
+    }
+
+    return result;
   }
 
   // POST /report-cards/arm/reopen — OWNER ONLY (admin excluded per spec; the

@@ -1,0 +1,102 @@
+# School Kit Render Worker — multi-stage Dockerfile
+#
+# Build from the repo root:
+#   docker build -f apps/api/Dockerfile.render -t school-kit-render-worker .
+#
+# Boots main-render-worker.js: the BullMQ render processor + a minimal HTTP
+# health endpoint (port 4001) for Fly scale-to-zero detection.
+# NOT the full HTTP API. Deployed as school-kit-render-worker on Fly (2 GB).
+#
+# Stage 1 (builder):  install workspace deps WITH Chromium download, generate
+#                     Prisma client, compile TypeScript, prune to prod dep
+#                     closure and copy the Chrome binary into the deploy dir.
+# Stage 2 (runtime):  Chromium OS libs + pruned app + non-root user.
+
+# ── Stage 1: builder ─────────────────────────────────────────────────────────
+FROM node:22-slim AS builder
+WORKDIR /app
+
+RUN corepack enable
+
+# unzip is required by @puppeteer/browsers: Chrome for Linux ships as a .zip
+# and is extracted with the native unzip binary (absent from node:22-slim).
+RUN apt-get update && apt-get install -y --no-install-recommends unzip \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY packages/config/package.json ./packages/config/
+COPY packages/types/package.json  ./packages/types/
+COPY packages/db/package.json     ./packages/db/
+COPY apps/api/package.json        ./apps/api/
+COPY apps/web/package.json    ./apps/web/
+COPY apps/mobile/package.json ./apps/mobile/
+COPY e2e/package.json         ./e2e/
+
+# Chrome downloads to a predictable path so it can be bundled into the deploy dir.
+ENV PUPPETEER_CACHE_DIR=/app/.cache/puppeteer
+ENV PUPPETEER_DOWNLOAD_TIMEOUT=1200000
+RUN echo "fetch-timeout=1200000" >> /root/.npmrc
+
+# PUPPETEER_SKIP_DOWNLOAD is intentionally NOT set here — Chrome must
+# download for the render worker.
+RUN pnpm install --frozen-lockfile
+
+COPY packages/config/ ./packages/config/
+COPY packages/types/  ./packages/types/
+COPY packages/db/     ./packages/db/
+COPY apps/api/        ./apps/api/
+
+RUN DATABASE_URL="postgresql://x:x@localhost/x" \
+    DIRECT_URL="postgresql://x:x@localhost/x" \
+    pnpm --filter @school-kit/db exec prisma generate --schema=./prisma/schema.prisma
+
+RUN pnpm --filter @school-kit/types build
+RUN pnpm --filter @school-kit/db    build
+RUN pnpm --filter @school-kit/api   build
+
+# Prune to prod deps, then bundle Chrome into the deploy dir.
+# The .cache dir is placed inside render-deploy/ so Chrome ends up at the same
+# relative path the PUPPETEER_CACHE_DIR env var points at in the runtime stage.
+RUN pnpm --filter @school-kit/api deploy --prod /app/render-deploy
+RUN cp -r /app/.cache /app/render-deploy/.cache
+
+
+# ── Stage 2: runtime ─────────────────────────────────────────────────────────
+FROM node:22-slim AS runtime
+WORKDIR /app
+
+# OS libraries required by headless Chromium on Debian 12 (Bookworm).
+# libcups2 and libasound2 use pre-Trixie names (t64 variants are Debian 13+).
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libnss3            \
+    libatk1.0-0        \
+    libatk-bridge2.0-0 \
+    libcups2           \
+    libdrm2            \
+    libxkbcommon0      \
+    libxcomposite1     \
+    libxdamage1        \
+    libxfixes3         \
+    libxrandr2         \
+    libgbm1            \
+    libasound2         \
+    libpango-1.0-0     \
+    libcairo2          \
+    fonts-liberation   \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /app/render-deploy ./
+
+# Chrome binary landed at /app/.cache/puppeteer/chrome/... via cp above.
+ENV PUPPETEER_CACHE_DIR=/app/.cache/puppeteer
+# Suppress any postinstall re-download; binary is already bundled.
+ENV PUPPETEER_SKIP_DOWNLOAD=true
+ENV NODE_ENV=production
+
+# Sentry release tag — set by `flyctl deploy --build-arg SENTRY_RELEASE=<sha>`.
+ARG SENTRY_RELEASE=unknown
+ENV SENTRY_RELEASE=${SENTRY_RELEASE}
+
+USER node
+
+CMD ["node", "dist/main-render-worker.js"]

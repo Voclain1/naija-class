@@ -1,0 +1,205 @@
+# School Kit — staging deploy
+#
+# Triggers automatically after the `ci` workflow passes on `main`.
+# Can also be triggered manually via workflow_dispatch.
+#
+# Secrets required in this repository (Settings → Secrets → Actions):
+#   FLY_API_TOKEN              — Fly.io personal access token (flyctl auth token)
+#   STAGING_DATABASE_URL       — Neon app_user connection string (runtime role)
+#   STAGING_DIRECT_URL         — Neon school_kit connection string (migration role)
+#                                MUST be the school_kit (migration) role, NOT app_user.
+#                                Prisma migrate deploy uses directUrl; running DDL
+#                                as app_user silently fails because it lacks CREATE
+#                                TABLE / ALTER TABLE privileges.
+#
+# All other runtime secrets (REDIS_URL, BETTER_AUTH_*, R2_*, PAYSTACK_*, etc.)
+# are set directly on the Fly apps via `flyctl secrets set` — they live in Fly's
+# encrypted secret store and are never needed by this runner.
+# See docs/runbooks/provision-production.md for the full `flyctl secrets set` list.
+
+name: deploy-staging
+
+on:
+  workflow_run:
+    workflows: ["ci"]
+    branches: [main]
+    types: [completed]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: false  # never cancel an in-flight deploy
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  STAGING_API_URL: https://school-kit-api.fly.dev
+
+jobs:
+  deploy:
+    name: staging deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    # Only run when CI passed (or manual dispatch).
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      # Skip Chromium download on the runner — this step is only for
+      # prisma generate + build. Chrome is downloaded *inside* Dockerfile.render
+      # during `flyctl deploy` (Docker builder stage), not on the runner.
+      - name: Install dependencies
+        env:
+          PUPPETEER_SKIP_DOWNLOAD: "true"
+        run: pnpm install --frozen-lockfile
+
+      # Write a minimal .env so dotenv-cli in db package scripts resolves the
+      # file without error. Only DATABASE_URL and DIRECT_URL need real values
+      # here — the runner doesn't start the API server, it only generates the
+      # Prisma client and runs migrations. All other values are placeholders.
+      #
+      # NOTE: DIRECT_URL must use the school_kit migration role (not app_user).
+      # See header comment for why.
+      - name: Write deploy .env
+        run: |
+          cat > .env <<'ENVEOF'
+          NODE_ENV=production
+          DATABASE_URL=${{ secrets.STAGING_DATABASE_URL }}
+          DIRECT_URL=${{ secrets.STAGING_DIRECT_URL }}
+          REDIS_URL=redis://placeholder-not-used-by-runner
+          BETTER_AUTH_SECRET=placeholder-not-used-by-runner
+          BETTER_AUTH_URL=https://placeholder
+          API_PORT=4000
+          API_URL=https://placeholder
+          CORS_ORIGIN=https://placeholder
+          WEB_BASE_URL=https://placeholder
+          NEXT_PUBLIC_API_URL=https://placeholder/api/v1
+          ANTHROPIC_API_KEY=sk-ant-placeholder
+          PAYSTACK_SECRET_KEY=sk_test_placeholder
+          PAYSTACK_PUBLIC_KEY=pk_test_placeholder
+          TERMII_API_KEY=placeholder
+          TERMII_SENDER_ID=SchoolKit
+          RESEND_API_KEY=re_placeholder
+          R2_ACCOUNT_ID=placeholder
+          R2_ACCESS_KEY_ID=placeholder
+          R2_SECRET_ACCESS_KEY=placeholder
+          R2_BUCKET=school-kit-staging
+          SENTRY_DSN_API=
+          NEXT_PUBLIC_SENTRY_DSN=
+          SENTRY_ENVIRONMENT=staging
+          NEXT_PUBLIC_POSTHOG_KEY=
+          NEXT_PUBLIC_POSTHOG_HOST=https://us.i.posthog.com
+          RENDER_WORKER_URL=http://school-kit-render-worker.internal:4001
+          RENDER_WORKER_PORT=4001
+          SENTRY_AUTH_TOKEN=
+          ENVEOF
+
+      - name: Prisma generate
+        run: pnpm --filter @school-kit/db generate
+
+      - name: Build workspace packages
+        run: pnpm -r --filter "./packages/*" build
+
+      # Build the API on the runner so we have dist/*.js.map files for Sentry.
+      # This is separate from the Docker build (which rebuilds from source inside
+      # the image). The source maps are identical — same tsconfig, same source.
+      - name: Build API (for source maps)
+        run: pnpm --filter @school-kit/api build
+
+      # Upload source maps to Sentry and create a named release (= git SHA).
+      # Requires GitHub Secrets: SENTRY_AUTH_TOKEN (project:releases + org:read
+      # scope) and SENTRY_ORG (your Sentry organisation slug).
+      # Skipped gracefully if SENTRY_AUTH_TOKEN is not set (first deploy before
+      # Sentry is provisioned, or forks). continue-on-error ensures a Sentry
+      # outage doesn't block a working deploy.
+      - name: Upload Sentry source maps
+        continue-on-error: true
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ secrets.SENTRY_ORG }}
+          SENTRY_PROJECT: school-kit-api
+          SENTRY_RELEASE: ${{ github.sha }}
+        run: |
+          if [ -z "${SENTRY_AUTH_TOKEN}" ]; then
+            echo "SENTRY_AUTH_TOKEN not set — skipping source map upload"
+            exit 0
+          fi
+          npx --yes @sentry/cli@2 releases new "$SENTRY_RELEASE"
+          npx @sentry/cli@2 releases files "$SENTRY_RELEASE" upload-sourcemaps apps/api/dist/ --ext .map
+          npx @sentry/cli@2 releases finalize "$SENTRY_RELEASE"
+          echo "Source maps uploaded for release ${SENTRY_RELEASE}"
+
+      # Runs `prisma migrate deploy` against the Neon staging DB.
+      # Prisma reads DIRECT_URL (school_kit role) for DDL; DATABASE_URL
+      # (app_user) for the connection pool — both from the .env above.
+      - name: Run staging migrations
+        run: pnpm --filter @school-kit/db migrate:deploy
+
+      - name: Install flyctl
+        uses: superfly/flyctl-actions/setup-flyctl@master
+
+      # Build and deploy the API image. Uses apps/api/Dockerfile (no Chrome).
+      # The Fly app's runtime secrets (REDIS_URL, BETTER_AUTH_SECRET, etc.)
+      # are already set via `flyctl secrets set` — not managed here.
+      # SENTRY_RELEASE is embedded as a Docker build arg so the running
+      # container knows its release version for Sentry error grouping.
+      - name: Deploy API
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: >-
+          flyctl deploy
+          --dockerfile apps/api/Dockerfile
+          --config apps/api/fly.toml
+          --build-arg SENTRY_RELEASE=${{ github.sha }}
+          --wait-timeout 180
+
+      # Build and deploy the render worker image. Uses Dockerfile.render
+      # (includes Chrome download ~200 MB — build is slower).
+      - name: Deploy render worker
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: >-
+          flyctl deploy
+          --dockerfile apps/api/Dockerfile.render
+          --config apps/api/fly-render.toml
+          --build-arg SENTRY_RELEASE=${{ github.sha }}
+          --wait-timeout 300
+
+      # Five-op smoke test: health → db role → signup → login → schools/me.
+      # Any non-zero exit rolls back the API deploy.
+      - name: Smoke test
+        id: smoke
+        run: bash scripts/smoke-test.sh
+        env:
+          SMOKE_API_URL: ${{ env.STAGING_API_URL }}
+
+      # Auto-rollback: restore the previous API release if smoke fails.
+      # The render worker is not rolled back automatically — it has no state
+      # and smoke tests don't exercise it directly (render jobs need a report
+      # card, which requires a seeded school). Roll back manually if needed.
+      - name: Rollback API on smoke failure
+        if: steps.smoke.outcome == 'failure'
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          echo "Smoke test failed — rolling back school-kit-api to previous release"
+          flyctl releases rollback --app school-kit-api
+          echo "See docs/runbooks/deploy-rollback.md for next steps"
+          exit 1
+
+      # cp4 placeholder: Sentry source map upload goes here.
+      # Requires SENTRY_AUTH_TOKEN secret + sentry-cli install.
+      # Tracked in slice 1b cp4.

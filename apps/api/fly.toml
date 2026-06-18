@@ -1,0 +1,62 @@
+# School Kit API — Fly.io configuration
+#
+# Region: jnb (Johannesburg) — locked Phase 3 scope decision (Q4/Q5).
+#
+# --- MEMORY GATE RESULT (cp2, 2026-06-18) ---
+# 40-card in-container gate (linux-149.0.7827.22, 1 concurrent render):
+#   peak Node RSS       : 179.3 MB
+#   peak Chromium tree  : 918.1 MB  (VmRSS; see caveat below)
+#   peak COMBINED       : 1096.3 MB
+#   vs Tier 0 (512 MB)  : FAIL — 214.1%
+#   vs Tier 1 (1 GB)    : FAIL — 107.1%
+#   Decision            : TIER 2 — separate school-kit-render-worker app (2 GB)
+#
+# Caveat: VmRSS overcounts shared Chromium pages (counted per-process;
+# cgroup counts shared pages once). The real Fly cgroup footprint is likely
+# lower, but the gate is mechanical — FAIL at Tier 1 means Tier 2.
+#
+# Consequence: this API machine does NOT render PDFs. RenderService jobs are
+# consumed by school-kit-render-worker (separate Fly app, fly-render.toml,
+# 2 GB, scale-to-zero). API only enqueues the BullMQ jobs.
+# school-kit-render-worker fly.toml is created in slice 1b.
+#
+# With PDF rendering offloaded, 512 MB is sufficient for this API machine
+# (NestJS + Prisma + BullMQ queue producer, no Chromium process).
+#
+# Deploy command (from repo root, after `flyctl auth login`):
+#   flyctl deploy -f apps/api/Dockerfile --config apps/api/fly.toml
+#
+# Secrets are set via `flyctl secrets set KEY=value` — never in this file.
+
+app            = "school-kit-api"
+primary_region = "jnb"
+
+[build]
+  dockerfile = "apps/api/Dockerfile"
+
+[env]
+  NODE_ENV    = "production"
+  API_PORT    = "4000"
+  # CORS_ORIGIN, DATABASE_URL, REDIS_URL, BETTER_AUTH_SECRET, etc. are
+  # injected as Fly.io secrets — not here.
+
+[http_service]
+  internal_port        = 4000
+  force_https          = true
+  auto_stop_machines   = "stop"
+  auto_start_machines  = true
+  # staging: scale to zero between requests to save cost.
+  # prod: raise to 1 so the first request after idle isn't a cold start.
+  min_machines_running = 0
+
+  [[http_service.checks]]
+    grace_period = "10s"
+    interval     = "15s"
+    method       = "GET"
+    path         = "/api/v1/health"
+    timeout      = "3s"
+
+[[vm]]
+  memory   = "512mb"  # Tier 2: PDF rendering offloaded; no Chromium here
+  cpu_kind = "shared"
+  cpus     = 1

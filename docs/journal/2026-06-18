@@ -1,0 +1,400 @@
+# 2026-06-18
+
+## Starting state
+
+Phase 3 Slice 1a complete. Branch `docs/phase-3-pre-slice-1-locks` had all cp1+cp2
+work committed (Dockerfile, `.dockerignore`, `fly.toml`, `GET /health/db`, Linux
+memory-gate sampler). Docker image verified at 3.41 GB. Tier 2 decision locked.
+758 passing tests, 2 skipped.
+
+## Two architecture questions answered (text-only, no tools)
+
+Before the slice 1b plan-first, two design questions were resolved:
+
+**Q1 — Render worker location:**
+Correct approach: `Dockerfile.render` pointing at `apps/api/` source, different CMD.
+No new workspace package. No standalone entry point existed — `main.ts` boots the
+full `AppModule`. Two new files needed:
+- `apps/api/src/render-worker.module.ts` — slim module with `WorkerHealthController`
+  (needed for Fly scale-to-zero HTTP detection) + `ReportCardRenderModule` import chain
+- `apps/api/src/main-render-worker.ts` — `NestFactory.create()` (not
+  `createApplicationContext()`) so an HTTP listener exists for Fly; `enableShutdownHooks()`
+  for SIGTERM drain on scale-to-zero
+BullMQ `@Processor` hooks into NestJS module lifecycle, not the HTTP adapter; works
+correctly with `NestFactory.create()`.
+
+**Q2 — cp3 sequencing:**
+Fold into slice 1b cp1 (not a separate commit on the docs branch). Stripping
+Chromium from the API and creating the render worker Dockerfile are one coherent
+Tier 2 change. Splitting them produces a broken intermediate state (API has no
+Chrome, render worker doesn't exist yet). Image size is only a push-to-Fly problem;
+nothing is deployed until slice 1b anyway.
+
+## Slice 1b plan-first
+
+Four checkpoints drafted and approved:
+- cp1: Dockerfile restructure for Tier 2
+- cp2: fly-render.toml + Fly apps created + Neon prod roles + R2 bucket
+- cp3: staging deploy + 5-op smoke test
+- cp4: Sentry source maps + dev DB cleanup + slice 1b close
+
+**Four corrections applied before cp1 started:**
+
+1. **Redis provider**: Fly Redis (`flyctl redis create --name school-kit-redis --region jnb
+   --no-replicas`). Private Fly network URL for REDIS_URL on both apps.
+
+2. **Smoke test DTO shape**: Checked `packages/types/src/auth/signup-owner.dto.ts`.
+   Correct field names are `schoolName`, `schoolSlug`, `ownerFirstName`, `ownerLastName`,
+   `ownerEmail`, `ownerPhone`, `password`, `ndprConsent: true`. The plan-first draft
+   had wrong names (`firstName`, `lastName`, `email`). Fixed in the cp3 smoke script.
+
+3. **Migration step comment**: `STAGING_DIRECT_URL` must use `school_kit` role
+   credentials (migration role, not `app_user`). DDL run as `app_user` fails silently
+   in a way that is hard to diagnose mid-deploy. Explicit comment added to the workflow.
+
+4. **`sourceMap: true`**: `apps/api/tsconfig.json` did not have `sourceMap: true`.
+   Added in cp1 (not cp4) so built artifacts already include maps by the time cp4
+   uploads them.
+
+## cp1 — Dockerfile restructure for Tier 2 (COMPLETE)
+
+### Key finding: `puppeteer` is in `dependencies`
+
+`apps/api/package.json` has `puppeteer: "^25.1.0"` in `dependencies` (not devDeps).
+It must stay there — the render worker (same package source) needs it at runtime.
+`PUPPETEER_SKIP_DOWNLOAD=true` in the API builder prevents Chrome download.
+`pnpm deploy --prod` includes the puppeteer package (~5 MB) but no Chrome binary.
+`puppeteer` is never loaded at runtime in the API (ReportCardRenderModule removed).
+
+### `apps/api/Dockerfile` (rewrite)
+
+**Builder stage:**
+- Removed `RUN apt-get install unzip` — Chrome is never downloaded so the zip is
+  never extracted; unzip not needed in the API builder.
+- Added `ENV PUPPETEER_SKIP_DOWNLOAD=true` before `pnpm install`.
+- After all three build steps: `RUN pnpm --filter @school-kit/api deploy --prod /app/api-deploy`.
+  `pnpm deploy` creates a self-contained production directory:
+  - Package files (dist/, src/, package.json) at root
+  - `@school-kit/db` (with dist/ + generated/ Prisma client) and `@school-kit/types`
+    (with dist/) copied into node_modules/@school-kit/
+  - All third-party prod deps; devDeps (~2 GB) excluded
+
+**Runtime stage:**
+- Removed all Chromium OS libs (`libnss3`, `libatk*`, etc.) and `fonts-liberation`.
+- `COPY --from=builder /app/api-deploy ./`
+- `CMD ["node", "dist/main.js"]` — deploy dir root is /app, so dist/main.js is correct.
+- No `PUPPETEER_CACHE_DIR` env needed.
+
+Expected image: ~600 MB (from 3.41 GB).
+
+### `apps/api/Dockerfile.render` (NEW)
+
+Builder stage: identical to the old API Dockerfile (Chrome downloads to
+`/app/.cache/puppeteer`; `unzip` installed). After builds:
+```
+RUN pnpm --filter @school-kit/api deploy --prod /app/render-deploy
+RUN cp -r /app/.cache /app/render-deploy/.cache
+```
+Chrome lands at `/app/render-deploy/.cache/puppeteer/chrome/...` — the same relative
+path the `PUPPETEER_CACHE_DIR` env points at in the runtime stage.
+
+Runtime stage: all Chromium OS libs present. `COPY --from=builder /app/render-deploy ./`.
+`ENV PUPPETEER_CACHE_DIR=/app/.cache/puppeteer`. `CMD ["node", "dist/main-render-worker.js"]`.
+
+### `apps/api/src/app.module.ts`
+
+Removed `ReportCardRenderModule` import and its entry in the imports array.
+`ReportCardsModule` stays — the API still owns the HTTP `/report-cards` endpoints
+and enqueues BullMQ render jobs.
+
+### `apps/api/src/render-worker.module.ts` (NEW)
+
+Root module for `school-kit-render-worker`. Inline `WorkerHealthController`:
+```typescript
+@Controller()
+class WorkerHealthController {
+  @Get("health")
+  health(): { status: string } { return { status: "ok" }; }
+}
+```
+Imports: `ConfigModule` (global), `QueueModule` (BullMQ+Redis), `StorageModule`
+(R2 upload), `ReportCardsModule` (ReportCardService + queue token), `ReportCardRenderModule`
+(BrowserPool + RenderService + Processor).
+
+`ReportCardsModule` transitively imports `AuthModule` and `AssessmentModule`. Their
+controllers load but are never routed (no global prefix, no HTTP routes wired to them).
+NestJS ignores unrouted controllers in an HTTP app. ~20-30 MB extra RSS, acceptable.
+
+### `apps/api/src/main-render-worker.ts` (NEW)
+
+```typescript
+const app = await NestFactory.create(RenderWorkerModule, {
+  logger: ["error", "warn", "log"],
+});
+app.enableShutdownHooks();
+await app.listen(Number(process.env.RENDER_WORKER_PORT ?? 4001));
+```
+
+`enableShutdownHooks()` is load-bearing: Fly sends SIGTERM on scale-to-zero and
+deploys; without it a mid-render SIGTERM leaves `pdfStatus` stuck at PENDING.
+
+### `report-card-workflow.service.ts` — `release()` wake call
+
+Changed `return withTenant(...)` to `const result: ReportCardTransitionResultDto = await withTenant(...)`.
+The explicit type annotation is required because the inferred type narrows to
+`{ status: string; cardCount: number }` when assigned to a `const`, which is not
+assignable to `ReportCardTransitionResultDto` (expects `status: ReportCardStatusDto`).
+
+After the tx commits:
+```typescript
+const renderWorkerUrl = process.env.RENDER_WORKER_URL;
+if (renderWorkerUrl) {
+  fetch(`${renderWorkerUrl}/health`).catch(() => {});
+}
+```
+Fire-and-forget. Errors are swallowed — a failed wake doesn't fail the release;
+jobs wait in the BullMQ queue until the render worker is manually started or
+the next scheduled boot.
+
+### `apps/api/tsconfig.json`
+
+Added `"sourceMap": true` to `compilerOptions`. Required for Sentry CLI to upload
+non-empty source maps in cp4.
+
+## Build verification
+
+- `pnpm --filter @school-kit/api typecheck`: **clean**
+- `pnpm --filter @school-kit/api test`: **758 passed / 2 skipped** (unchanged baseline)
+
+## Post-cp1 fix — PUPPETEER_SKIP_DOWNLOAD env var name
+
+`PUPPETEER_SKIP_CHROMIUM_DOWNLOAD` is the puppeteer v24 name. puppeteer v25 renamed
+it to `PUPPETEER_SKIP_DOWNLOAD`. The postinstall script in v25 ignores the old name,
+so the API builder attempted Chrome download despite the env var being set, then
+failed because Linux lacks the Windows extraction binaries (`powershell.exe`,
+`pwsh.exe`).
+
+The old Dockerfile (slice 1a, before cp1 restructure) was unaffected: that file
+used `PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true` only in the runtime stage, where
+`pnpm install` never runs — Chrome was already present from the builder copy.
+The bug only surfaces in the new API Dockerfile where the skip var is relied upon
+in the builder stage to prevent the download.
+
+Fix applied (same session, post-cp1 commit):
+- `apps/api/Dockerfile`: `PUPPETEER_SKIP_CHROMIUM_DOWNLOAD` → `PUPPETEER_SKIP_DOWNLOAD`
+  (ENV declaration + comment)
+- `apps/api/Dockerfile.render`: same rename in the runtime stage ENV and comment.
+  Builder stage of Dockerfile.render intentionally has no SKIP var (Chrome must
+  download there).
+
+## cp1 status: COMPLETE (including env var fix)
+
+Commits on branch `feat/phase-3-slice-1b`:
+- `62f8e4d` — main cp1 changes
+- follow-up fix commit — PUPPETEER_SKIP_DOWNLOAD rename
+
+## cp2 — fly-render.toml + .env.example updates (COMPLETE)
+
+### API image size
+
+`docker image inspect school-kit-api:cp1 --format '{{.Size}}'` → **150 MB**.
+Target was <600 MB (expected after pnpm deploy pruning). Result is 150 MB —
+well below even the optimistic estimate.
+
+### `apps/api/fly-render.toml` (NEW)
+
+Tier 2 render worker Fly config:
+- `app = "school-kit-render-worker"`, `primary_region = "jnb"`
+- `[build] dockerfile = "apps/api/Dockerfile.render"`
+- `memory = "2gb"` — Chromium peaks ~1.1 GB combined; 2 GB adds headroom
+- `auto_stop_machines = "stop"`, `min_machines_running = 0` — scale to zero
+- `[[http_service.checks]] path = "/health"`, `grace_period = "30s"` — Chrome
+  takes ~15–25s to init on cold boot
+- `RENDER_WORKER_PORT = "4001"` in `[env]` (non-secret, baked in)
+
+### `.env.example` updates
+
+Added two new sections:
+- `RENDER_WORKER_URL` — URL the API calls fire-and-forget after releasing
+  report cards to wake the stopped Fly machine. Blank in local dev (render
+  module is in AppModule). Staging/prod: `http://school-kit-render-worker.internal:4001`
+- `RENDER_WORKER_PORT` — defaults to 4001 in code
+- `SENTRY_AUTH_TOKEN` — added to Monitoring section; needed only in CI for
+  source map upload, never at runtime
+
+### Provisioning commands (user runs; not codified as script)
+
+Fly app creation:
+```
+flyctl apps create school-kit-api --region jnb
+flyctl apps create school-kit-render-worker --region jnb
+```
+
+Fly Redis (private network URL, no replicas for staging cost):
+```
+flyctl redis create --name school-kit-redis --region jnb --no-replicas
+```
+
+Neon role split (run as neondb_owner in Neon SQL editor):
+```sql
+CREATE ROLE app_user WITH LOGIN PASSWORD '<generate>';
+GRANT CONNECT ON DATABASE neondb TO app_user;
+GRANT USAGE ON SCHEMA public TO app_user;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO app_user;
+GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO app_user;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO app_user;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+  GRANT USAGE ON SEQUENCES TO app_user;
+```
+- `DATABASE_URL` (runtime) → Neon pooled connection as `app_user`
+- `DIRECT_URL` / `STAGING_DIRECT_URL` (migrations) → Neon direct connection as
+  `neondb_owner` (or a separate `school_kit` role granted full DDL)
+
+Fly secrets for `school-kit-api`:
+```
+flyctl secrets set \
+  DATABASE_URL="postgresql://app_user:...@<neon-host>/neondb?sslmode=require" \
+  REDIS_URL="redis://default:...@<fly-redis-host>:6379" \
+  BETTER_AUTH_SECRET="$(openssl rand -hex 32)" \
+  BETTER_AUTH_URL="https://school-kit-api.fly.dev" \
+  CORS_ORIGIN="https://<vercel-web-url>" \
+  WEB_BASE_URL="https://<vercel-web-url>" \
+  ANTHROPIC_API_KEY="sk-ant-..." \
+  R2_ACCOUNT_ID="..." \
+  R2_ACCESS_KEY_ID="..." \
+  R2_SECRET_ACCESS_KEY="..." \
+  R2_BUCKET="school-kit-staging" \
+  SENTRY_DSN_API="..." \
+  SENTRY_ENVIRONMENT="staging" \
+  RENDER_WORKER_URL="http://school-kit-render-worker.internal:4001" \
+  --app school-kit-api
+```
+
+Fly secrets for `school-kit-render-worker` (same DB, Redis, R2; no CORS/auth):
+```
+flyctl secrets set \
+  DATABASE_URL="postgresql://app_user:...@<neon-host>/neondb?sslmode=require" \
+  REDIS_URL="redis://default:...@<fly-redis-host>:6379" \
+  BETTER_AUTH_SECRET="<same as API>" \
+  R2_ACCOUNT_ID="..." \
+  R2_ACCESS_KEY_ID="..." \
+  R2_SECRET_ACCESS_KEY="..." \
+  R2_BUCKET="school-kit-staging" \
+  SENTRY_DSN_API="..." \
+  SENTRY_ENVIRONMENT="staging" \
+  --app school-kit-render-worker
+```
+
+GitHub Actions secrets needed for `deploy-staging.yml`:
+- `FLY_API_TOKEN` — `flyctl auth token`
+- `STAGING_DATABASE_URL` — Neon app_user connection string
+- `STAGING_DIRECT_URL` — Neon neondb_owner connection string (migration role)
+- `SENTRY_AUTH_TOKEN` — optional; source map upload skipped if absent
+- `SENTRY_ORG` — optional; required with SENTRY_AUTH_TOKEN
+
+## cp3 — staging deploy workflow + smoke test + rollback runbook (COMPLETE)
+
+### `.github/workflows/deploy-staging.yml` (NEW)
+
+Trigger: `workflow_run` on `ci` completion for `main` branch + `workflow_dispatch`.
+Concurrency: `cancel-in-progress: false` — never cancel an in-flight deploy.
+
+Steps:
+1. Install deps (PUPPETEER_SKIP_DOWNLOAD=true on runner — Chrome only in Docker)
+2. Write minimal `.env` with `STAGING_DATABASE_URL` / `STAGING_DIRECT_URL`
+   from GitHub Secrets; other vars are placeholders (runner never starts API)
+3. `pnpm --filter @school-kit/db generate` + build workspace packages
+4. Build API on runner (`pnpm --filter @school-kit/api build`) for source maps
+5. Upload Sentry source maps (`continue-on-error: true`; skipped if no token)
+6. `pnpm --filter @school-kit/db migrate:deploy` — uses `DIRECT_URL` =
+   neondb_owner (migration role). Critical: app_user cannot run DDL.
+7. `flyctl deploy` API + render worker with `--build-arg SENTRY_RELEASE=${{ github.sha }}`
+8. `bash scripts/smoke-test.sh`
+9. On smoke failure: `flyctl releases rollback --app school-kit-api` + exit 1
+
+STAGING_DIRECT_URL must use the migration role (neondb_owner / school_kit),
+NOT app_user. This is plan-first correction #3 — DDL run as app_user silently
+fails (no CREATE TABLE privilege), producing a half-migrated state that is very
+hard to diagnose mid-deploy.
+
+### `scripts/smoke-test.sh` (NEW)
+
+Five ops (all against `$SMOKE_API_URL`):
+1. `GET /api/v1/health` → 200
+2. `GET /api/v1/health/db` → 200 with `.role == "app_user"` (RLS role check)
+3. `POST /api/v1/auth/signup-owner` → 201 (school slug: `smoke-<unix-timestamp>`)
+4. `POST /api/v1/auth/login` → 200 with `.token` in body
+5. `GET /api/v1/schools/me` with Bearer → 200, `.slug` matches
+
+Uses `jq` for JSON parsing (available on ubuntu-latest). Exits non-zero on any
+failure — caught by the workflow's rollback step.
+
+Smoke schools accumulate with `smoke-<timestamp>` slug. Clean with:
+`pnpm db:prune-smoke` (new in cp4).
+
+### `docs/runbooks/deploy-rollback.md` (NEW)
+
+Three failure classes:
+1. **Deploy failure** (Fly never finished): previous release still serving;
+   check Docker build log, retry deploy. No rollback needed.
+2. **Migration failure** (smoke op 3 fails, missing table): automatic rollback
+   already ran. Inspect `_prisma_migrations` as school_kit to find the failed
+   migration; fix + redeploy.
+3. **Data-corruption failure** (smoke passes, incident flagged): manual incident.
+   Roll back code with `flyctl releases rollback`, then recover data via Neon
+   PITR (point-in-time recovery from Neon dashboard).
+
+## cp4 — Sentry source maps + dev DB cleanup + slice 1b close (COMPLETE)
+
+### Sentry source map integration
+
+`apps/api/src/observability/sentry.ts`: added `release: process.env.SENTRY_RELEASE`
+to `Sentry.init` options (conditional — undefined in dev, fine).
+
+`apps/api/Dockerfile` + `Dockerfile.render`: added
+```
+ARG SENTRY_RELEASE=unknown
+ENV SENTRY_RELEASE=${SENTRY_RELEASE}
+```
+in the runtime stage. Passed by the deploy workflow via
+`flyctl deploy --build-arg SENTRY_RELEASE=${{ github.sha }}`.
+
+### Dev DB prune script
+
+`scripts/prune-smoke-schools.sql`: dynamic SQL using `information_schema` to
+find all tables with `school_id` column and delete records for smoke schools.
+Also handles `sessions` (keyed by `user_id`, not `school_id`) separately.
+Uses `SET LOCAL session_replication_role = 'replica'` to disable FK trigger
+checks — requires `school_kit` (superuser) role.
+
+`packages/db/package.json`: added `prune-smoke` script.
+Root `package.json`: added `db:prune-smoke → pnpm --filter @school-kit/db prune-smoke`.
+
+## Slice 1b status: COMPLETE
+
+All four checkpoints done. Branch `feat/phase-3-slice-1b` ready for PR.
+
+Files created/modified in slice 1b:
+- `apps/api/Dockerfile` — PUPPETEER_SKIP_DOWNLOAD rename + pnpm deploy + SENTRY_RELEASE ARG
+- `apps/api/Dockerfile.render` — NEW; render worker Docker build + SENTRY_RELEASE ARG
+- `apps/api/fly-render.toml` — NEW; Fly config for school-kit-render-worker
+- `apps/api/src/app.module.ts` — removed ReportCardRenderModule
+- `apps/api/src/render-worker.module.ts` — NEW; slim module for render worker process
+- `apps/api/src/main-render-worker.ts` — NEW; render worker entrypoint
+- `apps/api/src/modules/report-cards/workflow/report-card-workflow.service.ts` — wake call
+- `apps/api/src/observability/sentry.ts` — SENTRY_RELEASE added
+- `apps/api/tsconfig.json` — sourceMap: true
+- `.env.example` — RENDER_WORKER_URL, RENDER_WORKER_PORT, SENTRY_AUTH_TOKEN
+- `.github/workflows/deploy-staging.yml` — NEW; staging deploy + smoke + rollback
+- `scripts/smoke-test.sh` — NEW; 5-op smoke test
+- `scripts/prune-smoke-schools.sql` — NEW; dev DB cleanup
+- `docs/runbooks/deploy-rollback.md` — NEW; three-class rollback guide
+- `packages/db/package.json` — prune-smoke script
+- `package.json` (root) — db:prune-smoke
+
+## Next
+
+Phase 3 Slice 2: auth hardening (2FA for owners, password policy, rate-limiting,
+localStorage → httpOnly cookie auth, ADR-001 evaluation). Must land before any
+finance slice per phase-3.md §11.

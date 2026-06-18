@@ -63,18 +63,48 @@ function ctx(schoolId: string, userId: string) {
 
 const execAsync = promisify(exec);
 
-// Peak summed working set (bytes) of every puppeteer-owned chrome.exe. Filtered
-// by ExecutablePath so the developer's own Chrome is excluded. ASYNC so the
-// sampler never blocks the event loop (a blocking sampler starves the CDP
-// websocket and slows/wedges the very render we're measuring).
+// Peak summed RSS (bytes) of every puppeteer-owned Chromium process.
+// ASYNC so the sampler never blocks the event loop (a blocking sampler starves
+// the CDP websocket and slows/wedges the very render we're measuring).
+//
+// Platform-branched because the in-container gate runs on Linux:
+//   Windows — WMI Win32_Process (dev measurement; overcounts shared pages).
+//   Linux   — /proc/<pid>/cmdline + /proc/<pid>/status VmRSS (authoritative
+//              in-container figure; all chrome processes in the container are
+//              puppeteer-owned, so no filtering by executable path is needed).
 async function sampleChromiumBytes(): Promise<number> {
+  if (process.platform === "win32") {
+    try {
+      const { stdout } = await execAsync(
+        `powershell -NoProfile -Command "(Get-CimInstance Win32_Process -Filter \\"Name='chrome.exe'\\" | Where-Object { $_.ExecutablePath -like '*puppeteer*' -or $_.ExecutablePath -like '*.cache*chrome*' } | Measure-Object -Property WorkingSetSize -Sum).Sum"`,
+        { windowsHide: true },
+      );
+      const n = Number(stdout.trim());
+      return Number.isFinite(n) ? n : 0;
+    } catch {
+      return 0;
+    }
+  }
+
+  // Linux: iterate /proc/<pid>/cmdline for processes whose command line
+  // contains "chrome", then read VmRSS from /proc/<pid>/status.
+  // tr converts NUL-delimited cmdline bytes to spaces for grep.
+  // Shell arithmetic avoids awk dependency on minimal images.
   try {
     const { stdout } = await execAsync(
-      `powershell -NoProfile -Command "(Get-CimInstance Win32_Process -Filter \\"Name='chrome.exe'\\" | Where-Object { $_.ExecutablePath -like '*puppeteer*' -or $_.ExecutablePath -like '*.cache*chrome*' } | Measure-Object -Property WorkingSetSize -Sum).Sum"`,
-      { windowsHide: true },
+      [
+        "total=0",
+        "for f in /proc/[0-9]*/cmdline; do",
+        "  tr '\\0' ' ' < \"$f\" 2>/dev/null | grep -q chrome || continue",
+        "  pid=\"${f%/cmdline}\"; pid=\"${pid#/proc/}\"",
+        "  kb=$(awk '/VmRSS/{print $2;exit}' \"/proc/$pid/status\" 2>/dev/null)",
+        "  total=$((total + ${kb:-0}))",
+        "done",
+        "echo $total",
+      ].join("\n"),
     );
-    const n = Number(stdout.trim());
-    return Number.isFinite(n) ? n : 0;
+    const kb = Number(stdout.trim());
+    return Number.isFinite(kb) ? kb * 1024 : 0;
   } catch {
     return 0;
   }

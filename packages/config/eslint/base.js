@@ -138,6 +138,10 @@ export const baseConfig = [
       "**/modules/schools/schools.service.ts",
       "**/modules/users/users.service.ts",
       "**/modules/invitations/invitations.service.ts",
+      // health.controller.ts runs GET /health/db PRE-tenant (no auth token,
+      // no schoolId). It issues a single SELECT current_user to verify the
+      // runtime DB role is app_user (not school_kit). No tenant data touched.
+      "**/health/health.controller.ts",
     ],
     rules: {
       "no-restricted-imports": "off",
