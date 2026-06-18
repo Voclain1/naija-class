@@ -131,3 +131,26 @@ flyctl logs --app school-kit-api
 # Run smoke test manually against staging
 SMOKE_API_URL=https://school-kit-api.fly.dev bash scripts/smoke-test.sh
 ```
+
+---
+
+## Note: RENDER_WORKER_URL is Fly-private only
+
+`RENDER_WORKER_URL=http://school-kit-render-worker.internal:4001` uses Fly's
+private WireGuard network DNS. The `.internal` suffix only resolves from within
+the same Fly organisation's private network — it does not resolve from:
+- Local dev machines
+- GitHub Actions runners
+- Any host outside Fly's private network
+
+**The smoke test (`scripts/smoke-test.sh`) does not call the render worker.**
+It calls only the API (`SMOKE_API_URL = https://school-kit-api.fly.dev`). The
+five smoke ops (health, DB role, signup, login, schools/me) exercise the API
+stack without touching the PDF render path, so the render worker being stopped
+(scale-to-zero) does not affect the smoke result.
+
+If you need to verify the render worker from outside Fly, use:
+```bash
+flyctl ssh console --app school-kit-render-worker
+curl http://localhost:4001/health
+```
