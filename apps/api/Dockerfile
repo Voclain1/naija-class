@@ -33,7 +33,7 @@ COPY e2e/package.json         ./e2e/
 # this env var so Chrome downloads in the render worker build.
 # PUPPETEER_CACHE_DIR and PUPPETEER_DOWNLOAD_TIMEOUT are kept for parity but
 # are no-ops when skip is set. No `unzip` needed either (no .zip to extract).
-ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
+ENV PUPPETEER_SKIP_DOWNLOAD=true
 ENV PUPPETEER_CACHE_DIR=/app/.cache/puppeteer
 ENV PUPPETEER_DOWNLOAD_TIMEOUT=1200000
 RUN echo "fetch-timeout=1200000" >> /root/.npmrc
@@ -64,7 +64,7 @@ RUN pnpm --filter @school-kit/api   build
 #     and generated/ into node_modules/@school-kit/<name>/
 #   - all third-party prod deps into node_modules/
 # devDependencies (vitest, ts-node, @nestjs/cli, ~2 GB of dev tooling) excluded.
-# Chromium is absent: PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true above ensured no
+# Chromium is absent: PUPPETEER_SKIP_DOWNLOAD=true above ensured no
 # download; puppeteer package itself (~5 MB) is in prod deps but never loaded
 # (ReportCardRenderModule is removed from AppModule in Tier 2).
 RUN pnpm --filter @school-kit/api deploy --prod /app/api-deploy

@@ -37,7 +37,7 @@ ENV PUPPETEER_CACHE_DIR=/app/.cache/puppeteer
 ENV PUPPETEER_DOWNLOAD_TIMEOUT=1200000
 RUN echo "fetch-timeout=1200000" >> /root/.npmrc
 
-# PUPPETEER_SKIP_CHROMIUM_DOWNLOAD is intentionally NOT set here — Chrome must
+# PUPPETEER_SKIP_DOWNLOAD is intentionally NOT set here — Chrome must
 # download for the render worker.
 RUN pnpm install --frozen-lockfile
 
@@ -90,7 +90,7 @@ COPY --from=builder /app/render-deploy ./
 # Chrome binary landed at /app/.cache/puppeteer/chrome/... via cp above.
 ENV PUPPETEER_CACHE_DIR=/app/.cache/puppeteer
 # Suppress any postinstall re-download; binary is already bundled.
-ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
+ENV PUPPETEER_SKIP_DOWNLOAD=true
 ENV NODE_ENV=production
 
 USER node

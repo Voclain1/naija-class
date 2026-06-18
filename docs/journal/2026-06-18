@@ -62,7 +62,7 @@ Four checkpoints drafted and approved:
 
 `apps/api/package.json` has `puppeteer: "^25.1.0"` in `dependencies` (not devDeps).
 It must stay there — the render worker (same package source) needs it at runtime.
-`PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true` in the API builder prevents Chrome download.
+`PUPPETEER_SKIP_DOWNLOAD=true` in the API builder prevents Chrome download.
 `pnpm deploy --prod` includes the puppeteer package (~5 MB) but no Chrome binary.
 `puppeteer` is never loaded at runtime in the API (ReportCardRenderModule removed).
 
@@ -71,7 +71,7 @@ It must stay there — the render worker (same package source) needs it at runti
 **Builder stage:**
 - Removed `RUN apt-get install unzip` — Chrome is never downloaded so the zip is
   never extracted; unzip not needed in the API builder.
-- Added `ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true` before `pnpm install`.
+- Added `ENV PUPPETEER_SKIP_DOWNLOAD=true` before `pnpm install`.
 - After all three build steps: `RUN pnpm --filter @school-kit/api deploy --prod /app/api-deploy`.
   `pnpm deploy` creates a self-contained production directory:
   - Package files (dist/, src/, package.json) at root
@@ -166,9 +166,32 @@ non-empty source maps in cp4.
 - `pnpm --filter @school-kit/api typecheck`: **clean**
 - `pnpm --filter @school-kit/api test`: **758 passed / 2 skipped** (unchanged baseline)
 
-## cp1 status: COMPLETE
+## Post-cp1 fix — PUPPETEER_SKIP_DOWNLOAD env var name
 
-Commit: `62f8e4d` on branch `feat/phase-3-slice-1b`.
+`PUPPETEER_SKIP_CHROMIUM_DOWNLOAD` is the puppeteer v24 name. puppeteer v25 renamed
+it to `PUPPETEER_SKIP_DOWNLOAD`. The postinstall script in v25 ignores the old name,
+so the API builder attempted Chrome download despite the env var being set, then
+failed because Linux lacks the Windows extraction binaries (`powershell.exe`,
+`pwsh.exe`).
+
+The old Dockerfile (slice 1a, before cp1 restructure) was unaffected: that file
+used `PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true` only in the runtime stage, where
+`pnpm install` never runs — Chrome was already present from the builder copy.
+The bug only surfaces in the new API Dockerfile where the skip var is relied upon
+in the builder stage to prevent the download.
+
+Fix applied (same session, post-cp1 commit):
+- `apps/api/Dockerfile`: `PUPPETEER_SKIP_CHROMIUM_DOWNLOAD` → `PUPPETEER_SKIP_DOWNLOAD`
+  (ENV declaration + comment)
+- `apps/api/Dockerfile.render`: same rename in the runtime stage ENV and comment.
+  Builder stage of Dockerfile.render intentionally has no SKIP var (Chrome must
+  download there).
+
+## cp1 status: COMPLETE (including env var fix)
+
+Commits on branch `feat/phase-3-slice-1b`:
+- `62f8e4d` — main cp1 changes
+- follow-up fix commit — PUPPETEER_SKIP_DOWNLOAD rename
 
 ## Next
 
