@@ -395,6 +395,20 @@ manual-vs-online payment distinction, snapshot "this invoice reflects fees as of
 - **Snapshot-on-issue is inviolable.** An issued invoice never silently changes when a fee or discount rule is later edited.
 - **BVN is high-sensitivity PII.** Stored encrypted at rest (column-level encryption or `pgcrypto`), redacted in all log output, never returned in list responses, and only returned to the staff member themselves or to owner+admin on an explicit view. Any access is audited.
 
+- **BVN encryption mechanism (locked).** Symmetric encryption via Postgres
+  `pgcrypto` (`pgp_sym_encrypt` / `pgp_sym_decrypt`); plaintext never leaves the
+  DB process. The encryption key is a Fly.io secret (`BVN_ENCRYPTION_KEY`), made
+  available to the runtime via `SET LOCAL app.bvn_key = '<key>'` per connection
+  (same pattern as `app.current_school_id`). Encrypt/decrypt wrapped in two
+  SECURITY DEFINER functions (`encrypt_bvn`, `decrypt_bvn`) so `app_user` never
+  sees the key directly — the SD inventory grows from 4 → 6 at slice 12, which
+  **triggers the deferred SD-inventory refactor** ("If this list grows past 5,
+  refactor" — CLAUDE.md). Refactor lands in the same PR as the BVN columns. **Key
+  rotation:** a single audited migration tx that decrypts with the old key + re-
+  encrypts with the new one. **Key loss = data loss:** BVNs cannot be recovered
+  if the key is destroyed; schools re-enter them. Documented trade-off vs paid
+  KMS, revisit at Phase 4+ when paying customers absorb the ~$1/month/key.
+
 ## 8. RBAC additions
 
 Mirrors the Phase-2 slice-9 rollup machinery (`PHASE_3_PERMISSIONS` flat const +
@@ -431,16 +445,45 @@ The slice-1 deliverable, drawn from `docs/deferred.md` + phase-2.md §Deployment
 - **`apps/api/Dockerfile`** — multi-stage; provisions Chromium + the system libs
   (the exact list in phase-2.md:540) + a font (`fonts-liberation`) for the WAEC
   grid; decides binary source (puppeteer-cached vs distro chromium).
-- **In-container PDF memory gate** — re-run the 40-card batch on the fly.io target
-  size (512MB / 1GB). GREEN if peak RSS < 70% of budget; if it FAILS, trigger the
-  external-render fallback (existing deferred item).
+- - **In-container PDF memory gate + fallback decision tree.** Run the 40-card
+  batch in-container against successive tiers; commit to the cheapest that
+  passes. **Tier 0:** 512MB Fly machine. PASS if peak RSS < 70% of 512MB (358MB).
+  **Tier 1:** 1GB Fly machine. PASS if peak RSS < 70% of 1GB (716MB). **Tier 2:**
+  separate `school-kit-render-worker` Fly app (2GB, `auto_stop_machines=true`,
+  `min_machines_running=0`), consuming the `report-card.render` BullMQ queue
+  from the API. Scale-to-zero between batches keeps marginal cost near nil.
+  **Tier 3 (deferred, not chosen):** external Chromium-as-a-service (Browserless
+  et al.) — only revisit if Tiers 0-2 all fail, which would indicate a Puppeteer
+  leak rather than a capacity issue. Decision is mechanical at the gate; the
+  pivot to Tier 2 (separate worker) is the only one that changes slice 1b's
+  shape (adds the second Fly app + the queue split), so the gate runs FIRST in
+  slice 1a.
 - **Prod DB** (Neon or Supabase) with the `app_user` / `school_kit` role split + RLS.
 - **Prod R2** bucket + credentials; **Vercel** (web) + **Fly.io** (api, Joburg) projects.
 - **`staging` environment** (WORKFLOW: staging auto-deploys, soak before main).
 - **Prod secrets** via platform (Fly.io secrets / Vercel env); verify `ConfigModule`
   handles no-`.env`-present.
-- **Rollback runbook** (`docs/runbooks/`) + post-deploy **smoke test** (signup →
-  login → one critical flow → auto-rollback on failure).
+- - **Rollback runbook + smoke test (5-op, auto-rollback on any non-2xx).** Smoke
+  test, run by GitHub Actions after each `flyctl deploy`:
+  1. `GET /health` → 200 — process up
+  2. `GET /health/db` → 200 with `role: "app_user"` — DB up, RLS role correct
+     (not accidentally connected as `school_kit`)
+  3. `POST /auth/signup-owner` with a timestamp-suffixed email → 201 — full
+     signup tx works (School + User + UserRole + Session + audit_log + class-
+     level seed + grading-scheme seed commit atomically; signup-uniqueness SD
+     function works)
+  4. `POST /auth/login` with the new credentials → 200 with access token —
+     password verification + session creation + `auth_lookup_user_for_login`
+     SD function work
+  5. `GET /schools/me` with the bearer token → 200 with the right schoolId —
+     post-tenant bearer auth + `withTenant()` + RLS all work; cross-tenant leak
+     would surface here
+  Any non-2xx triggers `flyctl releases rollback`. Smoke schools accumulate
+  with a `smoke-<timestamp>` slug pattern, cleaned by the dev-seed prune task.
+  Rollback runbook covers three failure classes: deploy failure (Fly never
+  finishes), migration failure (Fly finishes, smoke step 3 fails on a missing
+  table), data-corruption failure (smoke passes, manual incident — runbook
+  links to backup-restore from Neon's point-in-time recovery).
 - **Sentry source-map upload** + `SENTRY_AUTH_TOKEN` in CI.
 - **Dev DB cleanup** (~100 accumulated test schools) before any pilot data lands.
 - **Email provider** (Resend or alternative) — provisioned during **slice 10**
