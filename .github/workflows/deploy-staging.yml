@@ -74,11 +74,17 @@ jobs:
       # NOTE: DIRECT_URL must use the school_kit migration role (not app_user).
       # See header comment for why.
       - name: Write deploy .env
+        # Map GitHub Secrets (STAGING_*) to the env var names Prisma expects
+        # (DATABASE_URL / DIRECT_URL) via the step env block — the only place
+        # where ${{ }} expansion is guaranteed regardless of heredoc quoting.
+        env:
+          DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+          DIRECT_URL: ${{ secrets.STAGING_DIRECT_URL }}
         run: |
-          cat > .env <<'ENVEOF'
+          cat > .env <<ENVEOF
           NODE_ENV=production
-          DATABASE_URL=${{ secrets.STAGING_DATABASE_URL }}
-          DIRECT_URL=${{ secrets.STAGING_DIRECT_URL }}
+          DATABASE_URL=${DATABASE_URL}
+          DIRECT_URL=${DIRECT_URL}
           REDIS_URL=redis://placeholder-not-used-by-runner
           BETTER_AUTH_SECRET=placeholder-not-used-by-runner
           BETTER_AUTH_URL=https://placeholder
