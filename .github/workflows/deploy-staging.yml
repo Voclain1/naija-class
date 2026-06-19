@@ -74,44 +74,36 @@ jobs:
       # NOTE: DIRECT_URL must use the school_kit migration role (not app_user).
       # See header comment for why.
       - name: Write deploy .env
-        # Map GitHub Secrets (STAGING_*) to the env var names Prisma expects
-        # (DATABASE_URL / DIRECT_URL) via the step env block — the only place
-        # where ${{ }} expansion is guaranteed regardless of heredoc quoting.
-        env:
-          DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
-          DIRECT_URL: ${{ secrets.STAGING_DIRECT_URL }}
         run: |
-          cat > .env <<ENVEOF
-          NODE_ENV=production
-          DATABASE_URL=${DATABASE_URL}
-          DIRECT_URL=${DIRECT_URL}
-          REDIS_URL=redis://placeholder-not-used-by-runner
-          BETTER_AUTH_SECRET=placeholder-not-used-by-runner
-          BETTER_AUTH_URL=https://placeholder
-          API_PORT=4000
-          API_URL=https://placeholder
-          CORS_ORIGIN=https://placeholder
-          WEB_BASE_URL=https://placeholder
-          NEXT_PUBLIC_API_URL=https://placeholder/api/v1
-          ANTHROPIC_API_KEY=sk-ant-placeholder
-          PAYSTACK_SECRET_KEY=sk_test_placeholder
-          PAYSTACK_PUBLIC_KEY=pk_test_placeholder
-          TERMII_API_KEY=placeholder
-          TERMII_SENDER_ID=SchoolKit
-          RESEND_API_KEY=re_placeholder
-          R2_ACCOUNT_ID=placeholder
-          R2_ACCESS_KEY_ID=placeholder
-          R2_SECRET_ACCESS_KEY=placeholder
-          R2_BUCKET=school-kit-staging
-          SENTRY_DSN_API=
-          NEXT_PUBLIC_SENTRY_DSN=
-          SENTRY_ENVIRONMENT=staging
-          NEXT_PUBLIC_POSTHOG_KEY=
-          NEXT_PUBLIC_POSTHOG_HOST=https://us.i.posthog.com
-          RENDER_WORKER_URL=http://school-kit-render-worker.internal:4001
-          RENDER_WORKER_PORT=4001
-          SENTRY_AUTH_TOKEN=
-          ENVEOF
+          echo "DATABASE_URL=${{ secrets.STAGING_DATABASE_URL }}" > .env
+          echo "DIRECT_URL=${{ secrets.STAGING_DIRECT_URL }}" >> .env
+          echo "NODE_ENV=production" >> .env
+          echo "API_PORT=4000" >> .env
+          echo "API_URL=https://placeholder" >> .env
+          echo "BETTER_AUTH_SECRET=placeholder-not-used-by-runner" >> .env
+          echo "BETTER_AUTH_URL=https://placeholder" >> .env
+          echo "CORS_ORIGIN=https://placeholder" >> .env
+          echo "WEB_BASE_URL=https://placeholder" >> .env
+          echo "REDIS_URL=redis://placeholder-not-used-by-runner" >> .env
+          echo "NEXT_PUBLIC_API_URL=https://placeholder/api/v1" >> .env
+          echo "ANTHROPIC_API_KEY=sk-ant-placeholder" >> .env
+          echo "PAYSTACK_SECRET_KEY=sk_test_placeholder" >> .env
+          echo "PAYSTACK_PUBLIC_KEY=pk_test_placeholder" >> .env
+          echo "TERMII_API_KEY=placeholder" >> .env
+          echo "TERMII_SENDER_ID=SchoolKit" >> .env
+          echo "RESEND_API_KEY=re_placeholder" >> .env
+          echo "R2_ACCOUNT_ID=placeholder" >> .env
+          echo "R2_ACCESS_KEY_ID=placeholder" >> .env
+          echo "R2_SECRET_ACCESS_KEY=placeholder" >> .env
+          echo "R2_BUCKET=school-kit-staging" >> .env
+          echo "SENTRY_DSN_API=" >> .env
+          echo "NEXT_PUBLIC_SENTRY_DSN=" >> .env
+          echo "SENTRY_ENVIRONMENT=staging" >> .env
+          echo "NEXT_PUBLIC_POSTHOG_KEY=" >> .env
+          echo "NEXT_PUBLIC_POSTHOG_HOST=https://us.i.posthog.com" >> .env
+          echo "RENDER_WORKER_URL=http://school-kit-render-worker.internal:4001" >> .env
+          echo "RENDER_WORKER_PORT=4001" >> .env
+          echo "SENTRY_AUTH_TOKEN=" >> .env
 
       - name: Prisma generate
         run: pnpm --filter @school-kit/db generate
