@@ -24,7 +24,7 @@
 # (NestJS + Prisma + BullMQ queue producer, no Chromium process).
 #
 # Deploy command (from repo root, after `flyctl auth login`):
-#   flyctl deploy -f apps/api/Dockerfile --config apps/api/fly.toml
+#   flyctl deploy --config apps/api/fly.toml --remote-only
 #
 # Secrets are set via `flyctl secrets set KEY=value` — never in this file.
 
@@ -32,7 +32,7 @@ app            = "school-kit-api"
 primary_region = "jnb"
 
 [build]
-  dockerfile = "apps/api/Dockerfile"
+  dockerfile = "Dockerfile"
 
 [env]
   NODE_ENV    = "production"

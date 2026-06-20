@@ -18,7 +18,7 @@
 # memory overhead and concurrent renders beyond the gate load.
 #
 # Deploy command (from repo root, after `flyctl auth login`):
-#   flyctl deploy -f apps/api/Dockerfile.render --config apps/api/fly-render.toml
+#   flyctl deploy --config apps/api/fly-render.toml --remote-only
 #
 # Secrets are set via `flyctl secrets set KEY=value` — never in this file.
 # Required secrets (same Fly app, separate set command):
@@ -30,7 +30,7 @@ app            = "school-kit-render-worker"
 primary_region = "jnb"
 
 [build]
-  dockerfile = "apps/api/Dockerfile.render"
+  dockerfile = "Dockerfile.render"
 
 [env]
   NODE_ENV           = "production"
