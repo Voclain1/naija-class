@@ -56,6 +56,16 @@ RUN pnpm --filter @school-kit/types build
 RUN pnpm --filter @school-kit/db    build
 RUN pnpm --filter @school-kit/api   build
 
+# Strip Prisma query engine binaries for non-Bookworm targets before pnpm
+# deploy copies the generated client into the pruned closure. The runtime
+# image is Debian Bookworm (OpenSSL 3); only debian-openssl-3.0.x is needed.
+# Leaving other binaries (debian-openssl-1.1.x, rhel-*, etc.) causes the
+# wrong .so to be selected and produces libssl.so.1.1: cannot open shared
+# object file at startup.
+RUN find /app/packages/db/generated/client -name "*.node" \
+    | grep -v "debian-openssl-3.0.x" \
+    | xargs rm -f
+
 # Prune to the API's production dependency closure.
 #
 # pnpm deploy copies:
@@ -74,7 +84,11 @@ RUN pnpm --filter @school-kit/api deploy --prod /app/api-deploy
 FROM node:22-slim AS runtime
 WORKDIR /app
 
+# libssl3 is required by the Prisma query engine binary (debian-openssl-3.0.x).
+# node:22-slim (Debian Bookworm slim) omits it; install explicitly.
 # No Chromium system libraries — the API never renders PDFs.
+RUN apt-get update -y && apt-get install -y --no-install-recommends libssl3 \
+    && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /app/api-deploy ./
 
