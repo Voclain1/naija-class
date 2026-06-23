@@ -1,0 +1,41 @@
+# 2026-06-23 — Staging deploy incident notes
+
+## Provisioning gap: REDIS_URL not set on school-kit-api
+
+**Symptom:** API logs show `ECONNREFUSED 127.0.0.1:6379` — the BullMQ / Redis
+client is falling back to localhost because `REDIS_URL` is not set as a Fly
+secret on the `school-kit-api` app.
+
+**This is a provisioning gap, not a code bug.**
+
+**Fix — run once before the next deploy attempt:**
+
+```bash
+flyctl secrets set \
+  REDIS_URL="<Fly Redis private URL from flyctl redis list>" \
+  --app school-kit-api
+```
+
+The Fly Redis private URL is the `.internal` form printed when the Redis
+instance was created (`flyctl redis create`). Run `flyctl redis list` to
+retrieve it if it was not noted at creation time.
+
+The render worker (`school-kit-render-worker`) needs the same secret — set it
+there too:
+
+```bash
+flyctl secrets set \
+  REDIS_URL="<same Fly Redis private URL>" \
+  --app school-kit-render-worker
+```
+
+Setting a Fly secret triggers a machine restart automatically; no manual redeploy
+needed after `flyctl secrets set`.
+
+## Also fixed in this session
+
+- `fix/prisma-binary-target` (PR #64): strip non-Bookworm Prisma binaries before
+  `pnpm deploy`; add `libssl3` to the API runtime stage. Root cause: `pnpm deploy
+  --prod` was copying the `debian-openssl-1.1.x` query engine alongside the
+  correct `debian-openssl-3.0.x` one; at runtime the wrong binary was loaded,
+  producing `libssl.so.1.1: cannot open shared object file`.
