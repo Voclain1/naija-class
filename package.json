@@ -21,6 +21,7 @@
     "db:migrate": "pnpm --filter @school-kit/db migrate",
     "db:reset": "pnpm --filter @school-kit/db migrate:reset",
     "db:seed": "pnpm --filter @school-kit/db seed",
+    "db:seed:prod": "pnpm --filter @school-kit/db seed:prod",
     "dev:seed": "pnpm --filter @school-kit/db dev:seed",
     "db:studio": "pnpm --filter @school-kit/db studio",
     "db:prune-smoke": "pnpm --filter @school-kit/db prune-smoke",
