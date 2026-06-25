@@ -46,18 +46,25 @@ CREATE ROLE app_user WITH LOGIN PASSWORD '<openssl rand -hex 32>';
 GRANT CONNECT ON DATABASE neondb TO app_user;
 GRANT USAGE   ON SCHEMA public   TO app_user;
 
--- Grant DML on any tables that already exist (empty DB on first run, so this
--- is a no-op initially; re-run after the first migration if needed).
-GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES    IN SCHEMA public TO app_user;
-GRANT USAGE                          ON ALL SEQUENCES IN SCHEMA public TO app_user;
+-- WARNING: Must run as school_kit (table owner), not neondb_owner.
+-- neondb_owner does not own the tables — school_kit does (migrations run as school_kit).
+-- GRANT ON ALL TABLES run as neondb_owner silently grants nothing.
 
--- Auto-grant DML to app_user for every future table created by school_kit.
--- This is the load-bearing line: without it, new tables from migrations are
--- inaccessible to app_user until a manual re-grant.
-ALTER DEFAULT PRIVILEGES FOR ROLE school_kit IN SCHEMA public
-  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES    TO app_user;
-ALTER DEFAULT PRIVILEGES FOR ROLE school_kit IN SCHEMA public
-  GRANT USAGE                          ON SEQUENCES TO app_user;
+-- Step 1: Allow neondb_owner to impersonate school_kit
+GRANT school_kit TO neondb_owner;
+SET ROLE school_kit;
+
+-- Step 2: Grant app_user DML on all existing tables
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO app_user;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO app_user;
+
+-- Step 3: Set default privileges so future migration tables auto-grant to app_user
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO app_user;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+  GRANT USAGE, SELECT ON SEQUENCES TO app_user;
+
+RESET ROLE;
 ```
 
 ### 1c. Get connection strings
@@ -135,16 +142,18 @@ pnpm --filter @school-kit/api build
 pnpm --filter @school-kit/db migrate:deploy
 ```
 
-Then re-run the DML grant (step 1b) to cover tables created by the migration:
+Then re-run the DML grant (step 1b) to cover tables created by the migration.
+**Must run as school_kit, not neondb_owner** — see the warning in step 1b.
 
 ```sql
--- Re-run as neondb_owner after the first migration
-GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES    IN SCHEMA public TO app_user;
-GRANT USAGE                          ON ALL SEQUENCES IN SCHEMA public TO app_user;
+SET ROLE school_kit;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO app_user;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO app_user;
+RESET ROLE;
 ```
 
 Subsequent deploys do not need this re-grant — the `ALTER DEFAULT PRIVILEGES`
-above handles it for any tables created from now on by school_kit.
+in step 1b handles it for any tables created from now on by school_kit.
 
 ---
 
