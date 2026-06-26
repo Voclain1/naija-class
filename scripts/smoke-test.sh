@@ -21,6 +21,7 @@ BASE="${SMOKE_API_URL:?SMOKE_API_URL env var must be set}"
 TIMESTAMP=$(date +%s)
 SLUG="smoke-${TIMESTAMP}"
 EMAIL="smoke-${TIMESTAMP}@smoke-test.invalid"
+PHONE="080${TIMESTAMP:0:8}"
 PASSWORD="SmokeTest1234"
 
 fail() {
@@ -55,7 +56,7 @@ SIGNUP_RESP=$(curl -s -w "\n%{http_code}" -X POST "${BASE}/api/v1/auth/signup-ow
     \"ownerFirstName\": \"Smoke\",
     \"ownerLastName\": \"Test\",
     \"ownerEmail\": \"${EMAIL}\",
-    \"ownerPhone\": \"08000000000\",
+    \"ownerPhone\": \"${PHONE}\",
     \"password\": \"${PASSWORD}\",
     \"ndprConsent\": true
   }")
