@@ -132,6 +132,18 @@ export class PayloadTooLargeError extends BaseError {
   }
 }
 
+// 429 — too many requests. Thrown by rate-limit guards. Sub-code lets the
+// client distinguish RATE_LIMIT_IP (global ThrottlerGuard) vs RATE_LIMIT_EMAIL
+// (per-email lockout) without parsing the human-readable message.
+export class RateLimitError extends BaseError {
+  readonly httpStatus = 429;
+  readonly code: string;
+  constructor(code: string, message: string, details?: unknown) {
+    super(message, details);
+    this.code = code;
+  }
+}
+
 export class InternalError extends BaseError {
   readonly code = "INTERNAL_ERROR";
   readonly httpStatus = 500;

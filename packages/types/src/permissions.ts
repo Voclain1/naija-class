@@ -225,6 +225,19 @@ export const PHASE_2_PERMISSIONS = [
 // OWNER_ONLY_PERMISSIONS for Phase 1.
 export const PHASE_2_OWNER_ONLY_PERMISSIONS = ["report-card.reopen"] as const;
 
+// Phase 3 auth-hardening permissions. `auth.2fa.manage` lets a user enrol,
+// verify, and disable their own TOTP 2FA — owner-only so that only the school
+// owner can gate their own account with a second factor. `auth.2fa.read` lets
+// admin view 2FA status on the user list (CP2 admin surface). Owner gets both
+// via the '*' wildcard; admin gets only auth.2fa.read (see
+// PHASE_3_OWNER_ONLY_PERMISSIONS + system-roles seed).
+export const PHASE_3_PERMISSIONS = [
+  "auth.2fa.manage",
+  "auth.2fa.read",
+] as const;
+
+export const PHASE_3_OWNER_ONLY_PERMISSIONS = ["auth.2fa.manage"] as const;
+
 // The Phase 2 subset granted to the `teacher` role at the GUARD level. The
 // SERVICE layer (getTeacherScope) then narrows these to the teacher's own
 // arms/subjects — two-layer gate: the guard authorizes the role, the service
@@ -253,6 +266,7 @@ export const ALL_PERMISSIONS = [
   ...PHASE_0_PERMISSIONS,
   ...PHASE_1_PERMISSIONS,
   ...PHASE_2_PERMISSIONS,
+  ...PHASE_3_PERMISSIONS,
   /* extend per phase */
 ] as const;
 

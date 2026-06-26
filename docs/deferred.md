@@ -34,7 +34,7 @@ Format:
 
 - [ ] Folder rename: `Naija-class` → `school-kit`. Cosmetic; mismatches project name. Will create fresh Docker volumes when done. — anytime there's a natural pause.
 
-- [ ] Rate limiting on `POST /auth/login`. Per-IP first cut (e.g., 10/min) plus per-email lockout after N consecutive failures. Captured during Phase 0 Prompt 4 plan. — before public signup goes live, or before launch.
+- [x] Rate limiting on `POST /auth/login`. Per-IP first cut (10/min) plus per-email lockout (20/15min) via `RateLimitByEmailGuard`. **DONE Phase 3 Slice 2.**
 
 - [ ] Expired-session sweeper. Daily cron: `DELETE FROM sessions WHERE expires_at < NOW() - INTERVAL '7 days'`. The AuthGuard already rejects expired sessions with `SESSION_EXPIRED`, so this is housekeeping (table growth) rather than correctness. — when `sessions` row count starts mattering for backup size.
 
@@ -50,7 +50,9 @@ Format:
   refactor must land in the same PR as the BVN columns. See
   `docs/modules/phase-3.md` §7 BVN encryption mechanism.
 
-- [ ] Rate-limit `GET /invitations/:token` and `POST /invitations/:token/accept`. Same trigger as the login rate-limit item — before public signup goes live. Per-IP cap is the minimum; per-token-hash cap on accept would also prevent brute-forcing acceptedAt-flipping races.
+- [x] Rate-limit `GET /invitations/:token` and `POST /invitations/:token/accept`. 30/min and 20/min per-IP respectively via `@Throttle`. **DONE Phase 3 Slice 2.** Per-token-hash cap (prevent brute-forcing token space) still deferred — the 32-byte random token space makes this low-risk.
+
+- [ ] Forced password reset for users with weak passwords (pre-Phase 3 accounts). Users who signed up under the Phase 0 policy (1+ letter + 1+ digit) will not meet the Phase 3 policy (uppercase + lowercase + digit + special char). A one-time flow that flags non-compliant accounts and prompts reset on next login would close the gap. — before pilot onboarding if a school has pre-existing users with weak passwords; otherwise low priority since only the owner account exists at Slice 2.
 
 - [ ] Re-issue / revoke pending invitations. Today the admin UI lists pending invitations but only the freshly-created one shows a "Copy link" (because we don't store raw tokens). To copy an older link, the admin currently creates a fresh invite. Re-issue would rotate the token + bump expiresAt; revoke would delete the row (or mark a `revokedAt`). Trigger: first customer who needs to re-send a missed invitation.
 

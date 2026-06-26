@@ -1,7 +1,10 @@
 import { Module } from "@nestjs/common";
-import { APP_FILTER } from "@nestjs/core";
+import { APP_FILTER, APP_GUARD } from "@nestjs/core";
 import { ConfigModule } from "@nestjs/config";
+import { ThrottlerGuard, ThrottlerModule } from "@nestjs/throttler";
 
+import { RedisAuthModule } from "./common/auth/redis-auth.module";
+import { RedisThrottlerStorage } from "./common/auth/redis-throttler-storage";
 import { HealthController } from "./health/health.controller";
 import { HttpExceptionFilter } from "./common/http-exception.filter";
 import { QueueModule } from "./common/queue";
@@ -42,6 +45,18 @@ const isProd = process.env.NODE_ENV === "production";
       isGlobal: true,
       envFilePath: ["../../.env"],
     }),
+    // RedisAuthModule must come before ThrottlerModule — ThrottlerModule's
+    // useClass factory resolves RedisThrottlerStorage from the DI context,
+    // which RedisAuthModule exports. Global modules register before feature
+    // modules that consume them.
+    RedisAuthModule,
+    ThrottlerModule.forRootAsync({
+      inject: [RedisThrottlerStorage],
+      useFactory: (storage: RedisThrottlerStorage) => ({
+        throttlers: [{ name: "default", ttl: 60000, limit: 200 }],
+        storage,
+      }),
+    }),
     // Globals first: QueueModule wires BullMQ to Redis; StorageModule
     // picks the storage driver. Both expose providers downstream
     // modules depend on, so they must be imported before the feature
@@ -77,6 +92,12 @@ const isProd = process.env.NODE_ENV === "production";
     {
       provide: APP_FILTER,
       useClass: HttpExceptionFilter,
+    },
+    // Global IP-based rate limit: 200 req/min across all routes.
+    // Per-endpoint overrides use @Throttle({ default: { ttl, limit } }).
+    {
+      provide: APP_GUARD,
+      useClass: ThrottlerGuard,
     },
   ],
 })
