@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import type { ThrottlerStorage, ThrottlerStorageRecord } from "@nestjs/throttler";
+import type { ThrottlerStorage } from "@nestjs/throttler";
 import type Redis from "ioredis";
 
 import { REDIS_AUTH_CLIENT } from "./redis-auth.provider.js";
@@ -18,7 +18,7 @@ export class RedisThrottlerStorage implements ThrottlerStorage {
     _limit: number,
     _blockDuration: number,
     throttlerName: string,
-  ): Promise<ThrottlerStorageRecord> {
+  ): ReturnType<ThrottlerStorage["increment"]> {
     const redisKey = `thr:${throttlerName}:${key}`;
     const ttlSeconds = Math.ceil(ttl / 1000);
 
