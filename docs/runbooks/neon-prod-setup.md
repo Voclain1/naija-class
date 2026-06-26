@@ -23,13 +23,25 @@ following in order.
 -- ─── Step 1: migration role (school_kit) ────────────────────────────────────
 --
 -- school_kit runs `prisma migrate deploy` — it needs CREATE TABLE, ALTER TABLE,
--- CREATE INDEX, CREATE EXTENSION. It must NOT have SUPERUSER or BYPASSRLS:
--- both of those silently skip RLS policies, which is the exact failure mode
--- CLAUDE.md prohibits ("Runtime DB role must NOT have SUPERUSER or BYPASSRLS").
+-- CREATE INDEX, CREATE EXTENSION. It must NOT have SUPERUSER (CLAUDE.md hard
+-- rule: "Runtime DB role must NOT have SUPERUSER or BYPASSRLS" — that rule
+-- applies to app_user, the runtime role, not to school_kit).
 --
--- school_kit is NOT a runtime role. It connects only during migrations (CI step).
+-- school_kit MUST have BYPASSRLS — see the ALTER ROLE below.
+--
+-- school_kit is NOT a runtime role. It connects only during migrations (CI step)
+-- and is the OWNER of all SECURITY DEFINER functions.
 
 CREATE ROLE school_kit WITH LOGIN PASSWORD '<openssl rand -hex 32>';
+
+-- BYPASSRLS is required for school_kit (not app_user).
+-- SECURITY DEFINER functions owned by school_kit query the users table
+-- pre-tenant (before app.current_school_id is set). Without BYPASSRLS,
+-- FORCE RLS filters every row and all pre-tenant auth lookups return zero
+-- rows — login, session resolution, invitation lookup all fail silently
+-- with INVALID_CREDENTIALS or NOT_FOUND. This was discovered during the
+-- first staging smoke test (2026-06-26).
+ALTER ROLE school_kit BYPASSRLS;
 
 -- Allow creating and using objects in the public schema.
 GRANT CREATE ON SCHEMA public TO school_kit;

@@ -1,0 +1,144 @@
+# 2026-06-26 — Phase 3 Slice 1 close-out
+
+## Summary
+
+Slice 1 (pre-deploy infra) is closed. Staging is live at `school-kit-api.fly.dev`.
+Smoke test 5/5 ops passing as of run #12. SD function count: 4 (unchanged).
+
+---
+
+## Slice 1a — Dockerfile + memory gate
+
+Built the multi-stage `apps/api/Dockerfile` (Tier 2 decision path):
+
+- **40-card in-container PDF memory gate** (linux-149.0.7827.22, 1 concurrent render):
+  - Peak Node RSS: 179.3 MB
+  - Peak Chromium VmRSS: 918.1 MB
+  - Peak combined: 1096.3 MB
+  - vs Tier 0 (512 MB): **FAIL** — 214.1%
+  - vs Tier 1 (1 GB): **FAIL** — 107.1%
+  - Decision: **TIER 2** — separate `school-kit-render-worker` Fly app (2 GB)
+
+The Chromium VmRSS figure overcounts shared pages (each process's VmRSS includes
+shared mapped pages; the kernel cgroup counts them once). The real container
+footprint is likely lower, but the gate is mechanical: FAIL at Tier 1 → Tier 2.
+
+Dockerfile split:
+- `apps/api/Dockerfile` — API image, no Chromium (~150 MB). `PUPPETEER_SKIP_DOWNLOAD=true`.
+- `apps/api/Dockerfile.render` — render worker image, includes Chrome download (~200 MB build overhead).
+
+Both use `node:22-slim` (Debian 12 Bookworm) with `binaryTargets = ["native", "debian-openssl-3.0.x"]`.
+
+---
+
+## Slice 1b — Tier 2 architecture + staging pipeline
+
+### Tier 2 architecture
+
+- API (`school-kit-api`, 512 MB, `primary_region = "jnb"`): enqueues BullMQ render jobs, no Chromium.
+- Render worker (`school-kit-render-worker`, 2 GB, scale-to-zero): processes `REPORT_CARDS_QUEUE`, exposes `GET /health` on port 4001 for Fly machine detection.
+- API wakes the render worker via a fire-and-forget `fetch(RENDER_WORKER_URL/health)` in `ReportCardWorkflowService.release()` after each report-card batch is published.
+- `RENDER_WORKER_URL=http://school-kit-render-worker.internal:4001` — Fly private WireGuard network only; does not resolve outside Fly.
+
+### Staging pipeline
+
+- `deploy-staging.yml` — triggers on `ci` workflow pass on `main` + `workflow_dispatch`.
+- Steps: install deps → write `.env` (echo statements, not heredoc) → `prisma generate` → build packages → build API → upload Sentry source maps → `prisma migrate deploy` → `flyctl deploy` API → `flyctl deploy` render worker → smoke test → auto-rollback on failure.
+- Sentry release embedded as Docker `ARG SENTRY_RELEASE` via `--build-arg` from `flyctl deploy`.
+
+---
+
+## Staging infrastructure provisioned
+
+| Component | Detail |
+|---|---|
+| Neon (PostgreSQL 16 + pgvector) | `eu-central-1` (Frankfurt); closest to Fly `jnb` available |
+| Fly Redis | Private network; `school-kit-redis`, `jnb` region |
+| R2 bucket | `school-kit-staging` |
+| Sentry | `school-kit-api` project; source maps uploading |
+| Fly app — API | `school-kit-api`, `jnb`, 512 MB shared-1x |
+| Fly app — render worker | `school-kit-render-worker`, `jnb`, 2 GB shared-1x |
+
+---
+
+## Neon provisioning lessons (hard-won)
+
+### 1. Grants must run as school_kit, not neondb_owner
+
+`GRANT ON ALL TABLES` only grants on tables the executing role **owns**.
+`neondb_owner` does not own the application tables — `school_kit` does (because
+`prisma migrate deploy` runs as `school_kit`). Running grants as `neondb_owner`
+silently does nothing.
+
+Fix: `GRANT school_kit TO neondb_owner; SET ROLE school_kit;` before any grant,
+then `RESET ROLE;` after. Documented in `docs/runbooks/neon-prod-setup.md`.
+
+### 2. school_kit requires BYPASSRLS
+
+`SECURITY DEFINER` functions (`auth_lookup_user_for_login`, `auth_resolve_session`,
+`auth_resolve_invitation_by_token_hash`) are owned by `school_kit` and query the
+`users` / `sessions` tables **pre-tenant** (before `app.current_school_id` is set).
+They exist precisely because the login + session-resolution flows need to query
+these tables before the tenant is known.
+
+In dev, `school_kit` is a superuser → bypasses FORCE RLS → works.
+On Neon, `school_kit` is non-superuser, non-BYPASSRLS → FORCE RLS applies to the
+function owner → function returns zero rows → login always fails with
+`INVALID_CREDENTIALS`, session resolution always fails with `INVALID_SESSION`.
+
+Fix: `ALTER ROLE school_kit BYPASSRLS;` on Neon. BYPASSRLS is distinct from
+SUPERUSER; it only bypasses RLS, not DDL restrictions. The CLAUDE.md prohibition
+("Runtime DB role must NOT have SUPERUSER or BYPASSRLS") applies to `app_user`
+(the runtime role), not `school_kit` (the migration/function-owner role).
+
+Discovered during the first staging smoke test on 2026-06-26 (op 4, login → 401).
+
+### 3. ALTER DEFAULT PRIVILEGES must run as school_kit
+
+`ALTER DEFAULT PRIVILEGES` sets future-table grants. It must run as the role that
+will CREATE those future tables — i.e. `school_kit`. Running it as `neondb_owner`
+sets privileges for tables that `neondb_owner` creates (none, in our setup).
+
+All corrected in `docs/runbooks/neon-prod-setup.md`.
+
+---
+
+## Smoke test: 5/5 ops passing (run #12)
+
+After the BYPASSRLS fix, all five ops pass:
+
+1. `GET /api/v1/health` → 200 ✓
+2. `GET /api/v1/health/db` → 200, `role == "app_user"` ✓
+3. `POST /api/v1/auth/signup-owner` → 201 ✓
+4. `POST /api/v1/auth/login` → 200, token received ✓
+5. `GET /api/v1/schools/me` → 200, slug matches ✓
+
+Fixes shipped during slice 1b stabilisation:
+- `fix/staging-workflow-env` (#61) — `.env` write: echo statements, not heredoc
+- `fix/staging-deploy-dockerfile-path` (#62) — remove redundant `--dockerfile` flag
+- `fix/infra-fly-dockerfile-paths` (#63) — fix `fly.toml` dockerfile paths (relative to toml, not repo root)
+- `fix/prisma-binary-target` (#64) — strip non-Bookworm Prisma binaries; add `libssl3` to runtime stage
+- `fix/neon-grant-instructions` (#65) — grant SQL must run as `school_kit`
+- `fix/smoke-test-phone` (#67) — unique phone per run (was PHONE_TAKEN on repeat runs)
+
+---
+
+## SECURITY DEFINER function count: 4 (unchanged)
+
+| Function | Migration | Purpose |
+|---|---|---|
+| `auth_check_signup_uniqueness` | `20260515000000` | Email/phone uniqueness at signup |
+| `auth_resolve_session` | `20260516000000` | AuthGuard session lookup pre-tenant |
+| `auth_lookup_user_for_login` | `20260516000000` | Login user lookup pre-tenant |
+| `auth_resolve_invitation_by_token_hash` | `20260517000000` | Invitation endpoint pre-tenant |
+
+Count stays at 4 through slice 1. Slice 12 (BVN) adds 2 (`encrypt_bvn`, `decrypt_bvn`)
+→ triggers the deferred SD-inventory refactor (CLAUDE.md: "if list grows past 5, refactor").
+
+---
+
+## Next
+
+**Slice 2: auth hardening** — 2FA (TOTP for owners), password complexity policy,
+login + invitation rate-limiting, localStorage → httpOnly cookie auth, ADR-001
+re-evaluation. Must land before any finance slice (per phase-3.md §11).

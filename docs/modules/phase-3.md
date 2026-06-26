@@ -72,7 +72,7 @@ estimates assume Phase-2 velocity.
 
 | # | Slice | Why it ships independently | cps | Size |
 |---|---|---|---|---|
-| 1 | **Pre-deploy infra** — `apps/api/Dockerfile` (Chromium provisioning), **in-container PDF memory gate** (40-card batch on 512MB/1GB), prod DB (Neon/Supabase) + RLS roles, prod R2 bucket, Vercel + Fly.io setup, `staging` env, rollback runbook | Nothing else is safe to deploy until the render-memory unknown is settled and an environment exists. The single biggest technical risk. | 2-3 | 4 days |
+| 1 ✓ | **Pre-deploy infra** — `apps/api/Dockerfile` (Chromium provisioning), **in-container PDF memory gate** (40-card batch on 512MB/1GB), prod DB (Neon/Supabase) + RLS roles, prod R2 bucket, Vercel + Fly.io setup, `staging` env, rollback runbook | Nothing else is safe to deploy until the render-memory unknown is settled and an environment exists. The single biggest technical risk. | 2-3 | 4 days |
 | 2 | **Auth hardening** — 2FA (owner), password complexity policy, login + invitation rate-limiting, localStorage → httpOnly cookie auth, Better Auth migration per ADR-001 if needed | "Before finance goes live." Real money raises the auth bar; isolate it before any money endpoint exists. | 2 | 3 days |
 | 3 | **Audit-log partitioning** — convert `audit_logs` to `PARTITION BY RANGE(created_at)` monthly, with a partition-creation job; includes a **backfill strategy** (existing `audit_logs` rows distributed into the appropriate monthly partitions during migration — runs as part of the migration; acceptable dev downtime, no prod downtime since prod doesn't exist yet) | Land before finance write-volume hits the table (noted since Phase 0; finance forces it). Pure infra, testable alone. | 1 | 2 days |
 | 4 | **Fee catalog** — `FeeCategory` (school-defined) + `FeeItem` with optional scope (level / arm / term / year), migration, RLS, admin CRUD UI | The flexible fee skeleton everything hangs off. Demoable: a school names its own fees and scopes them. | 2 | 3 days |
@@ -89,6 +89,12 @@ estimates assume Phase-2 velocity.
 | 15 | **Phase 3 close** — `PHASE_3_PERMISSIONS` rollup + `bursar` role wire-up + admin/owner grant updates + idempotent role migration; finance audit-coverage; cross-tenant + bursar-scope E2E; finance manual gates | The slice-9 equivalent for Phase 3. Closes the phase; all gates green. | 2 | 3 days |
 
 Total: **~27-30 cps**, **~48 build days** raw before trimming.
+
+> **Slice 1 closed 2026-06-26.** Staging live at `school-kit-api.fly.dev`.
+> Key finding: `school_kit` requires `BYPASSRLS` on Neon for SECURITY DEFINER
+> pre-tenant auth functions (`auth_lookup_user_for_login`, `auth_resolve_session`,
+> `auth_resolve_invitation_by_token_hash`). Without it, FORCE RLS filters every row
+> and login / session resolution return zero rows. See `docs/runbooks/neon-prod-setup.md`.
 
 ## 4. Data model
 
