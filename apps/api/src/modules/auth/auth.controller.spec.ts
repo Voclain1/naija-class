@@ -1,11 +1,12 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { Test } from "@nestjs/testing";
 import { APP_FILTER } from "@nestjs/core";
-import { INestApplication } from "@nestjs/common";
+import { Global, Module, INestApplication } from "@nestjs/common";
 import request from "supertest";
 
 import { basePrisma } from "@school-kit/db";
 
+import { REDIS_AUTH_CLIENT } from "../../common/auth/redis-auth.provider";
 import { AuthModule } from "./auth.module";
 import { HttpExceptionFilter } from "../../common/http-exception.filter";
 
@@ -13,6 +14,18 @@ import { HttpExceptionFilter } from "../../common/http-exception.filter";
 // correctly, the response shape matches the spec, and error codes are
 // surfaced as documented. Service-level invariants (atomicity, hash
 // algorithm, audit redaction) are covered in auth.service.spec.ts.
+
+// Provides a mock Redis client globally so RateLimitByEmailGuard can be
+// instantiated without a real Redis connection in the test environment.
+// @Global() is required — it mirrors RedisAuthModule's real-app role and
+// makes the token visible to AuthModule's own injector scope.
+const mockRedis = { incr: vi.fn().mockResolvedValue(1), expire: vi.fn().mockResolvedValue(1) };
+@Global()
+@Module({
+  providers: [{ provide: REDIS_AUTH_CLIENT, useValue: mockRedis }],
+  exports: [REDIS_AUTH_CLIENT],
+})
+class MockRedisAuthModule {}
 
 describe("POST /auth/signup-owner (controller integration)", () => {
   const runId = Math.random().toString(36).slice(2, 8);
@@ -24,7 +37,7 @@ describe("POST /auth/signup-owner (controller integration)", () => {
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
-      imports: [AuthModule],
+      imports: [MockRedisAuthModule, AuthModule],
       providers: [{ provide: APP_FILTER, useClass: HttpExceptionFilter }],
     }).compile();
 

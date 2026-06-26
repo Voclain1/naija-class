@@ -1,14 +1,23 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { Test } from "@nestjs/testing";
 import { APP_FILTER } from "@nestjs/core";
-import { INestApplication } from "@nestjs/common";
+import { Global, Module, INestApplication } from "@nestjs/common";
 import request from "supertest";
 
 import { basePrisma } from "@school-kit/db";
 
+import { REDIS_AUTH_CLIENT } from "../../common/auth/redis-auth.provider";
 import { AuthModule } from "../auth/auth.module";
 import { HttpExceptionFilter } from "../../common/http-exception.filter";
 import { UsersModule } from "./users.module";
+
+const mockRedis = { incr: vi.fn().mockResolvedValue(1), expire: vi.fn().mockResolvedValue(1) };
+@Global()
+@Module({
+  providers: [{ provide: REDIS_AUTH_CLIENT, useValue: mockRedis }],
+  exports: [REDIS_AUTH_CLIENT],
+})
+class MockRedisAuthModule {}
 
 // HTTP-level smoke spec — proves controller + guard + pipe + filter all
 // line up and the response envelopes match the spec. Service-level
@@ -28,7 +37,7 @@ describe("Users endpoints (controller integration)", () => {
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
-      imports: [AuthModule, UsersModule],
+      imports: [MockRedisAuthModule, AuthModule, UsersModule],
       providers: [{ provide: APP_FILTER, useClass: HttpExceptionFilter }],
     }).compile();
     app = moduleRef.createNestApplication();

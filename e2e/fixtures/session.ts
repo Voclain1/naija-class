@@ -83,7 +83,7 @@ export async function loginAsAdmin(
 
   const suffix = uniqueSuffix();
   const email = `e2e-admin-${suffix}@school-kit.test`;
-  const password = "Password123";
+  const password = "Password1!";
   const schoolName = `E2E School ${suffix}`;
 
   const anonApi = await createApiContext();

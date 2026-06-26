@@ -50,7 +50,7 @@ export async function inviteAndAcceptTeacher(
   const email = opts.email ?? `e2e-teacher-${suffix}@school-kit.test`;
   const firstName = opts.firstName ?? "Tunde";
   const lastName = opts.lastName ?? "Teacher";
-  const password = opts.password ?? "Password123";
+  const password = opts.password ?? "Password1!";
 
   const { acceptPath } = await seedTeacherInvitation({
     schoolId: opts.schoolId,

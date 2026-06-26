@@ -22,7 +22,7 @@ TIMESTAMP=$(date +%s)
 SLUG="smoke-${TIMESTAMP}"
 EMAIL="smoke-${TIMESTAMP}@smoke-test.invalid"
 PHONE="080${TIMESTAMP:0:8}"
-PASSWORD="SmokeTest1234"
+PASSWORD="SmokeTest1234!"
 
 fail() {
   echo "SMOKE FAIL [$1]: $2" >&2

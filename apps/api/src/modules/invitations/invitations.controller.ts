@@ -8,6 +8,7 @@ import {
   Post,
   Req,
 } from "@nestjs/common";
+import { Throttle } from "@nestjs/throttler";
 import {
   acceptInvitationSchema,
   type AcceptInvitationInput,
@@ -23,15 +24,15 @@ import { InvitationsService } from "./invitations.service";
 // is by definition something a user does before they have a session. The
 // token itself is the authorization: knowing the random 32-byte secret
 // proves the holder controls (or was forwarded) the email it was sent to.
-//
-// Rate-limit deferred — see docs/deferred.md "Rate-limit GET/POST
-// /invitations/:token..."
 @Controller("invitations")
 export class InvitationsController {
   constructor(private readonly invitationsService: InvitationsService) {}
 
   // GET /invitations/:token — return public-safe metadata for the accept page.
+  // Rate limit: 30 req/min per-IP (tighter than global 200 to reduce token
+  // enumeration surface).
   @Get(":token")
+  @Throttle({ default: { ttl: 60000, limit: 30 } })
   async get(@Param("token") token: string): Promise<PublicInvitationDto> {
     return this.invitationsService.getByToken(token);
   }
@@ -41,8 +42,10 @@ export class InvitationsController {
   // user IS created here, but the response shape the caller acts on is the
   // session, which is "authentication" not "registration". Keeping it 200
   // means the client can treat signup, login, and accept identically.
+  // Rate limit: 20 req/min per-IP (stricter than GET — submitting credentials).
   @Post(":token/accept")
   @HttpCode(200)
+  @Throttle({ default: { ttl: 60000, limit: 20 } })
   async accept(
     @Param("token") token: string,
     @Body(new ZodValidationPipe(acceptInvitationSchema)) dto: AcceptInvitationInput,

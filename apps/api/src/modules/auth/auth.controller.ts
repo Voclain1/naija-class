@@ -8,6 +8,7 @@ import {
   Req,
   UseGuards,
 } from "@nestjs/common";
+import { Throttle } from "@nestjs/throttler";
 import {
   loginSchema,
   signupOwnerSchema,
@@ -22,6 +23,7 @@ import type { Request } from "express";
 import type { AuthContext } from "../../common/auth/auth-context";
 import { AuthGuard } from "../../common/auth/auth.guard";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
+import { RateLimitByEmailGuard } from "../../common/guards/rate-limit-by-email.guard";
 import { ZodValidationPipe } from "../../common/zod-validation.pipe";
 import { AuthService } from "./auth.service";
 
@@ -48,8 +50,12 @@ export class AuthController {
 
   // Public endpoint. 200 (not 201) — no resource is created from the
   // caller's perspective; this is authentication, not registration.
+  // Rate limits: 10 req/min per-IP (ThrottlerGuard global override) +
+  // 20 req/15min per-email (RateLimitByEmailGuard, applied here).
   @Post("login")
   @HttpCode(200)
+  @Throttle({ default: { ttl: 60000, limit: 10 } })
+  @UseGuards(RateLimitByEmailGuard)
   async login(
     @Body(new ZodValidationPipe(loginSchema)) dto: LoginInput,
     @Ip() ip: string,

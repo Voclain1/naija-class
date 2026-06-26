@@ -5,10 +5,53 @@ decision, kept short. Reverse-chronological: newest at the top.
 
 ---
 
+## ADR-002 — Hand-roll TOTP 2FA + Next.js cookie proxy; defer Better Auth to Phase 4+
+
+**Date:** 2026-06-26
+**Status:** Accepted
+**Scope:** Phase 3 Slice 2 auth hardening — 2FA, httpOnly cookie, rate limiting, Better Auth deferral
+
+### Context
+
+ADR-001 deferred Better Auth to "before Phase 1 ships a real user feature" and listed three revisit triggers. All three have now fired:
+
+1. ✓ A second authentication method: TOTP 2FA.
+2. ✓ Email verification: imminent (Phase 4 parent OTP flows).
+3. ✓ Before a real user feature ships: Phase 3 is the last infra slice before Phase 4.
+
+The consequence written in ADR-001 ("When we add 2FA, we will migrate to Better Auth properly") is now in scope. After evaluating Better Auth's 2FA plugin: it requires a full session-adapter migration (cookies, OAuth, DB schema changes). Completing the migration in Phase 3 would be a 2–3 week scope expansion that blocks Phase 4.
+
+### Decision
+
+1. **TOTP 2FA**: hand-rolled via `otplib` (`import { authenticator } from 'otplib'`). TOTP secret stored in `users.totp_secret` (plain text in Phase 3; Phase 4 KMS encrypts it at rest). 2FA challenge token: Redis key `2fa:challenge:<token>` → `{userId, schoolId}`, 5-min TTL, single-use (deleted on read). Uses the auth Redis client (`REDIS_AUTH_CLIENT`), not BullMQ's connection.
+2. **httpOnly cookie**: Next.js proxy routes (`/api/auth/*`) set `Set-Cookie: sk_token=<raw_token>; HttpOnly; Secure; SameSite=Strict` on the Vercel domain. The NestJS API `AuthGuard` is unchanged (reads `Authorization: Bearer`). The web app stops reading from `localStorage`. Mobile continues with `Authorization: Bearer`.
+3. **Rate limiting**: `@nestjs/throttler` for IP-based limits (global 200/min, per-endpoint overrides). Custom `RateLimitByEmailGuard` using Redis `INCR/EXPIRE` for per-email limits (20 attempts/15 min on `POST /auth/login`). Separate `REDIS_AUTH_CLIENT` (not BullMQ's connection).
+4. **Password policy**: raised from "1+ letter + 1+ digit" to "uppercase + lowercase + digit + special char" (min 8 chars, max 128). Login schema intentionally stays lenient (no complexity check) to prevent 400 vs 401 probing.
+5. **Better Auth**: deferred to Phase 4+. Phase 4 must migrate before parent OTP flows ship.
+
+### Consequences
+
+- **+** Phase 3 stays on schedule. 2FA ships before Phase 4 finance slice.
+- **+** Cookie migration unblocks Next.js middleware auth (server components, SSR redirects).
+- **−** Phase 4 carries the Better Auth migration cost. Scope is known and bounded (session adapter + cookie plumbing + OAuth surface if needed).
+- **−** TOTP secret is initially stored unencrypted. Phase 4 KMS integration encrypts it.
+
+### Revisit when
+
+- Phase 4 parent OTP flows begin — migrate to Better Auth at that point.
+
+### See also
+
+- ADR-001 (superseded)
+- `docs/modules/phase-3.md` §11 (auth hardening slice)
+- `docs/deferred.md` — Better Auth migration deferred item
+
+---
+
 ## ADR-001 — Bearer-token sessions via argon2 for Phase 0; defer full Better Auth migration
 
 **Date:** 2026-05-14
-**Status:** Accepted
+**Status:** Superseded by ADR-002 (2026-06-26)
 **Scope:** Phase 0 auth (signup, login, session creation)
 
 ### Context

@@ -12,6 +12,8 @@ import {
   PHASE_2_OWNER_ONLY_PERMISSIONS,
   PHASE_2_PERMISSIONS,
   PHASE_2_TEACHER_PERMISSIONS,
+  PHASE_3_OWNER_ONLY_PERMISSIONS,
+  PHASE_3_PERMISSIONS,
 } from "@school-kit/types";
 
 export interface SystemRoleSeed {
@@ -21,13 +23,12 @@ export interface SystemRoleSeed {
   permissions: readonly string[];
 }
 
-// admin gets every Phase 0 + Phase 1 + Phase 2 permission EXCEPT the owner-only
-// ones — the Phase 1 history-bearing deletes (academic-year/term/enrollment) and
-// the Phase 2 `report-card.reopen` (audited rollback of a RELEASED arm). Phase 1
-// slice 13 + Phase 2 slice 9 RBAC rollups. Keep IN SYNC with the migrations that
-// update the existing global admin role row
-// (prisma/migrations/*_phase_1_slice_13_admin_rbac_rollup and
-// *_phase_2_slice_9_rbac_rollup).
+// admin gets every Phase 0 + Phase 1 + Phase 2 + Phase 3 permission EXCEPT the
+// owner-only ones — the Phase 1 history-bearing deletes (academic-year/term/
+// enrollment), the Phase 2 `report-card.reopen`, and the Phase 3
+// `auth.2fa.manage` (owners manage their own 2FA). Phase 1 slice 13 + Phase 2
+// slice 9 + Phase 3 slice 2 RBAC rollups. Keep IN SYNC with the migrations that
+// update the existing global admin role row.
 const ADMIN_PERMISSIONS: readonly string[] = [
   ...PHASE_0_PERMISSIONS,
   ...PHASE_1_PERMISSIONS.filter(
@@ -35,6 +36,9 @@ const ADMIN_PERMISSIONS: readonly string[] = [
   ),
   ...PHASE_2_PERMISSIONS.filter(
     (p) => !(PHASE_2_OWNER_ONLY_PERMISSIONS as readonly string[]).includes(p),
+  ),
+  ...PHASE_3_PERMISSIONS.filter(
+    (p) => !(PHASE_3_OWNER_ONLY_PERMISSIONS as readonly string[]).includes(p),
   ),
 ];
 
@@ -56,7 +60,7 @@ export const SYSTEM_ROLE_SEEDS: SystemRoleSeed[] = [
     key: "admin",
     name: "Administrator",
     description:
-      "School administrator — every Phase 0 + Phase 1 + Phase 2 permission except the owner-only history-bearing deletes (academic-year/term/enrollment), report-card.reopen, and school deletion (TODO when school.delete lands).",
+      "School administrator — every Phase 0 + Phase 1 + Phase 2 + Phase 3 permission except the owner-only ones (history-bearing deletes, report-card.reopen, auth.2fa.manage) and school deletion (TODO when school.delete lands).",
     permissions: ADMIN_PERMISSIONS,
   },
   // Phase 1 / Slice 10 — minimal `teacher` role. Read-scoped access to a

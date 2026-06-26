@@ -28,8 +28,10 @@ export const signupOwnerSchema = z.object({
     .string()
     .min(8, "password must be at least 8 characters")
     .max(128, "password must be at most 128 characters")
-    .regex(/[A-Za-z]/, "password must contain at least one letter")
-    .regex(/[0-9]/, "password must contain at least one digit"),
+    .regex(/[A-Z]/, "password must contain at least one uppercase letter")
+    .regex(/[a-z]/, "password must contain at least one lowercase letter")
+    .regex(/[0-9]/, "password must contain at least one digit")
+    .regex(/[^A-Za-z0-9]/, "password must contain at least one special character"),
   ndprConsent: z.literal(true, {
     errorMap: () => ({ message: "NDPR consent is required to create an account" }),
   }),

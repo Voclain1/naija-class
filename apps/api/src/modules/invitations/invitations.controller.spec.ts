@@ -1,12 +1,13 @@
 import * as crypto from "node:crypto";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { Test } from "@nestjs/testing";
 import { APP_FILTER } from "@nestjs/core";
-import { INestApplication } from "@nestjs/common";
+import { Global, Module, INestApplication } from "@nestjs/common";
 import request from "supertest";
 
 import { basePrisma, withTenant } from "@school-kit/db";
 
+import { REDIS_AUTH_CLIENT } from "../../common/auth/redis-auth.provider";
 import { AuthModule } from "../auth/auth.module";
 import { HttpExceptionFilter } from "../../common/http-exception.filter";
 import { InvitationsModule } from "./invitations.module";
@@ -16,6 +17,18 @@ import { UsersModule } from "../users/users.module";
 // required), the response envelope matches the spec, and each error case
 // returns the right HTTP status — especially 404 vs 410 discrimination,
 // which only the GoneError plumbing test exercises end-to-end.
+
+// Provides a mock Redis client globally so RateLimitByEmailGuard can be
+// instantiated without a real Redis connection in the test environment.
+// @Global() is required — it mirrors RedisAuthModule's real-app role and
+// makes the token visible to AuthModule's own injector scope.
+const mockRedis = { incr: vi.fn().mockResolvedValue(1), expire: vi.fn().mockResolvedValue(1) };
+@Global()
+@Module({
+  providers: [{ provide: REDIS_AUTH_CLIENT, useValue: mockRedis }],
+  exports: [REDIS_AUTH_CLIENT],
+})
+class MockRedisAuthModule {}
 
 describe("Invitations endpoints (controller integration)", () => {
   const runId = Math.random().toString(36).slice(2, 8);
@@ -30,7 +43,7 @@ describe("Invitations endpoints (controller integration)", () => {
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
-      imports: [AuthModule, UsersModule, InvitationsModule],
+      imports: [MockRedisAuthModule, AuthModule, UsersModule, InvitationsModule],
       providers: [{ provide: APP_FILTER, useClass: HttpExceptionFilter }],
     }).compile();
     app = moduleRef.createNestApplication();
