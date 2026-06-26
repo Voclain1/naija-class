@@ -27,7 +27,7 @@ const owner = {
   lastName: "Owner",
   email: `e2e-owner-${runId}@school-kit.test`,
   phone: `+234${phoneRunId}`,
-  password: "Password123",
+  password: "Password1!",
 };
 
 // School-level contact captured in onboarding step 1 — distinct from
@@ -42,7 +42,7 @@ const admin = {
   email: `e2e-admin-${runId}@school-kit.test`,
   firstName: "Adam",
   lastName: "Admin",
-  password: "Password456",
+  password: "Password4@",
 };
 
 test("Phase 0 happy path: signup -> onboarding -> invite -> accept -> login", async ({
