@@ -1,14 +1,23 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { Test } from "@nestjs/testing";
 import { APP_FILTER } from "@nestjs/core";
-import { INestApplication } from "@nestjs/common";
+import { Global, Module, INestApplication } from "@nestjs/common";
 import request from "supertest";
 import * as crypto from "node:crypto";
 
 import { basePrisma, withTenant } from "@school-kit/db";
 
+import { REDIS_AUTH_CLIENT } from "../../common/auth/redis-auth.provider";
 import { AuthModule } from "./auth.module";
 import { HttpExceptionFilter } from "../../common/http-exception.filter";
+
+const mockRedis = { incr: vi.fn().mockResolvedValue(1), expire: vi.fn().mockResolvedValue(1) };
+@Global()
+@Module({
+  providers: [{ provide: REDIS_AUTH_CLIENT, useValue: mockRedis }],
+  exports: [REDIS_AUTH_CLIENT],
+})
+class MockRedisAuthModule {}
 
 // Covers /auth/login (HTTP), /auth/logout, /auth/me, and AuthGuard behaviour
 // against the real HTTP surface. Session-level invariants (token hashing,
@@ -31,7 +40,7 @@ describe("Auth session endpoints (Phase 0 Prompt 4)", () => {
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
-      imports: [AuthModule],
+      imports: [MockRedisAuthModule, AuthModule],
       providers: [{ provide: APP_FILTER, useClass: HttpExceptionFilter }],
     }).compile();
     app = moduleRef.createNestApplication();
