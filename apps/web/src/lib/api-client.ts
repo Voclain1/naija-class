@@ -11,7 +11,6 @@
 
 import type { ErrorBody } from "@school-kit/types";
 
-export const AUTH_TOKEN_STORAGE_KEY = "sk_auth_token";
 export const AUTH_UNAUTHORIZED_EVENT = "sk:auth:unauthorized";
 
 const API_BASE_URL =
@@ -31,19 +30,28 @@ export class ApiError extends Error {
   }
 }
 
+// One-time cleanup: remove the pre-cookie-strategy localStorage key if present.
+// Safe to run on every load — removeItem is a no-op if the key doesn't exist.
+if (typeof window !== "undefined") {
+  window.localStorage.removeItem("sk_auth_token");
+}
+
+// Module-level in-memory token. Set by the auth provider on login/signup/
+// cold-boot hydration; cleared on logout. NOT persisted — a hard reload
+// drops it and the provider re-seeds from the sk_session HttpOnly cookie
+// via GET /api/auth/session.
+let activeToken: string | null = null;
+
 export function getStoredToken(): string | null {
-  if (typeof window === "undefined") return null;
-  return window.localStorage.getItem(AUTH_TOKEN_STORAGE_KEY);
+  return activeToken;
 }
 
 export function setStoredToken(token: string): void {
-  if (typeof window === "undefined") return;
-  window.localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, token);
+  activeToken = token;
 }
 
 export function clearStoredToken(): void {
-  if (typeof window === "undefined") return;
-  window.localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
+  activeToken = null;
 }
 
 interface ApiFetchOptions extends Omit<RequestInit, "body"> {
