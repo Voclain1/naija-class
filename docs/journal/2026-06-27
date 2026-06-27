@@ -1,0 +1,563 @@
+# 2026-06-27 — Phase 3 Slice 2 CP2 plan-first
+
+## Starting state
+
+CP1 is closed and merged (`phase-3/slice-2-cp1`). It delivered:
+- `PasswordPolicyService` + Zod complexity enforcement on signup + spec
+- `RateLimitByEmailGuard` — Redis-backed 20 req/15min per-email on `POST /auth/login`
+- Global `@Throttle` override on `POST /auth/login` — 10 req/min per-IP
+- `PHASE_3_PERMISSIONS = ['auth.2fa.manage', 'auth.2fa.read']` in `packages/types`
+- Owner seed grant updated; `auth.2fa.manage` is owner-only
+
+Current `users` table: no TOTP columns. `LoginResponse` returns `{ user, school, token }`.
+Web app stores the bearer token in `localStorage` (`AUTH_TOKEN_STORAGE_KEY`). No
+Next.js `middleware.ts`. No `/api/auth` route handler.
+
+CP2 closes Slice 2 (auth hardening). It must land before any finance slice.
+
+---
+
+## Design decisions locked
+
+**D1 — TOTP library: otplib v12**
+`otplib` v12 — RFC 6238 compliant, actively maintained, ESM-compatible. Imported
+as `import { authenticator } from 'otplib'`. Issuer string: `"School Kit"`.
+
+**D2 — Cookie strategy (D2 from pre-build locks)**
+The Next.js route handler at `apps/web/src/app/api/auth/[...auth]/route.ts` is the
+only path that sets or clears the `sk_session` cookie. It proxies POST requests for
+`login`, `signup-owner`, `logout`, `2fa/challenge` (and GET for `me`) to the NestJS
+API. On success it sets:
+
+```
+Set-Cookie: sk_session=<rawToken>; HttpOnly; Secure; SameSite=Lax; Path=/
+```
+
+`Secure` is `false` in localhost dev (`process.env.NODE_ENV !== 'production'`).
+
+The Next.js `middleware.ts` reads only cookie **presence** to gate `/(admin)/` and
+`/(teacher)/` route groups — no DB call, no session validation. Actual session
+validation remains in NestJS `AuthGuard`. The middleware is stateless and fast.
+
+**D3 — In-memory token; no localStorage**
+The raw bearer token is:
+- Stored in a module-level `let activeToken: string | null = null` in `api-client.ts`
+- Exported via `setActiveToken(token)` — called by the auth-provider after login/signup
+- Read by `apiFetch` instead of `window.localStorage`
+- Never written to localStorage, sessionStorage, or any persistent client store
+
+Cold-boot hydration: the auth-provider calls the Next.js proxy `GET /api/auth/me`,
+which reads the `sk_session` cookie server-side, forwards to NestJS as
+`Authorization: Bearer <cookie-value>`, and returns `{ user, school, roles,
+permissions, token }`. The `token` in the response body allows the auth-provider
+to seed `activeToken` for the in-memory Bearer header on subsequent NestJS calls.
+
+Security gain: the token never touches localStorage (which survives tab close and
+is readable by XSS scripts long after the page is gone). In-memory state is gone
+on reload; the HttpOnly cookie re-hydrates it transparently.
+
+**D4 — 2FA login challenge flow (D4 from pre-build locks)**
+When `POST /auth/login` resolves a user with `totp_enabled = true`:
+- Does NOT issue a session
+- Generates `challengeToken = crypto.randomBytes(32).toString('base64url')`
+- Writes `2fa:challenge:<challengeToken>` → `JSON.stringify({ userId, schoolId })`
+  to Redis with TTL = 300 seconds
+- Returns HTTP 200 `{ requiresTwoFactor: true, challengeToken }` — no `user`, no
+  `school`, no `token` in this branch
+
+`POST /auth/2fa/challenge` (throttled: 5 req / 5min per-IP):
+- Reads `2fa:challenge:<challengeToken>` from Redis
+- Deletes the key immediately (single-use; replay impossible)
+- `withTenant(schoolId)` to fetch `totp_secret`
+- `totpService.verifyCode(totp_secret, code)` — rejects on wrong code or expired challenge
+- On success: issues a normal session, returns
+  `{ requiresTwoFactor: false, user, school, token }` (same shape as normal login)
+
+**D5 — TOTP secret storage (D5 from pre-build locks)**
+`totp_secret TEXT NULL` — active TOTP secret (NULL when 2FA not enabled).
+`totp_pending_secret TEXT NULL` — setup in progress (cleared on confirm or on a new
+setup call). `totp_enabled BOOLEAN NOT NULL DEFAULT false`.
+TOTP secrets contain no PII and no key material that helps an attacker without the
+secret itself. Protection: never returned in list responses or logs; the
+`POST /auth/2fa/setup` response is the only path that surfaces the secret (to
+the owner, at enrollment time). Never logged.
+
+**D6 — RedisService injectable**
+A thin `RedisService` (`apps/api/src/common/redis/redis.service.ts`) wraps an
+IORedis client (IORedis is already a transitive dep via BullMQ). Registered in a
+`@Global() RedisModule`. Provides `get`, `set(key, value, ttlSeconds)`, `del`,
+`getAndDel` (atomic GET + DEL via a Lua one-liner). Used exclusively for the 2FA
+challenge store. `QueueModule` continues to manage its own IORedis connections
+separately (BullMQ isolates connections per queue/worker).
+
+**D7 — Permissions on 2FA management endpoints**
+`POST /auth/2fa/setup`, `POST /auth/2fa/confirm`, `DELETE /auth/2fa`:
+`@Permissions('auth.2fa.manage')` — owner-only (from CP1 seed).
+`GET /auth/2fa/status`: `@Permissions('auth.2fa.read')` — owner + admin can check
+2FA status; only the owner can enroll.
+`POST /auth/2fa/challenge`: public — no `AuthGuard`, no `PermissionsGuard`
+(it IS the login completion step; session not yet issued).
+
+**D8 — LoginResponse discriminated union**
+```ts
+// packages/types/src/auth/login.dto.ts
+export type LoginResponse =
+  | { requiresTwoFactor: false; user: SignupOwnerUserDto; school: SignupOwnerSchoolDto; token: string }
+  | { requiresTwoFactor: true; challengeToken: string };
+```
+Existing non-2FA login tests use the `requiresTwoFactor: false` branch — they
+type-narrow correctly. Auth-provider `login()` type-narrows on `requiresTwoFactor`
+before calling `meRequest()` (no session exists on the `true` branch).
+
+**D9 — /settings/security is owner-only; /settings link added**
+A `RequirePermission('auth.2fa.manage')` guard at the page level. The settings hub
+`/settings/page.tsx` gets a "Security" card linking to `/settings/security`.
+`react-qr-code` for QR rendering (pure SVG, no canvas).
+
+---
+
+## Sub-checkpoint breakdown
+
+### Step 1 — DB + TotpService + 2FA management endpoints
+
+Files created / modified:
+
+**1. Migration `<timestamp>_add_totp_to_users`**
+```sql
+ALTER TABLE users ADD COLUMN totp_secret TEXT;
+ALTER TABLE users ADD COLUMN totp_pending_secret TEXT;
+ALTER TABLE users ADD COLUMN totp_enabled BOOLEAN NOT NULL DEFAULT false;
+```
+Add to `User` model in `schema.prisma`:
+```prisma
+totpSecret        String?  @map("totp_secret")
+totpPendingSecret String?  @map("totp_pending_secret")
+totpEnabled       Boolean  @default(false) @map("totp_enabled")
+```
+No RLS change needed — existing tenant-isolation policy covers new columns.
+
+**2. `packages/types/src/auth/totp.dto.ts` (NEW)**
+```ts
+export interface TotpSetupResponseDto { otpAuthUrl: string; secret: string }
+export const totpConfirmSchema = z.object({ code: z.string().length(6) })
+export type TotpConfirmInput = z.infer<typeof totpConfirmSchema>
+export const totpDisableSchema = z.object({ currentPassword: z.string().min(1) })
+export type TotpDisableInput = z.infer<typeof totpDisableSchema>
+export interface TotpStatusDto { enabled: boolean }
+```
+Export from `packages/types/src/auth/index.ts`.
+
+**3. `apps/api/src/modules/auth/totp.service.ts` (NEW)**
+```ts
+@Injectable()
+export class TotpService {
+  generateSecret(): string { return authenticator.generateSecret(20) }
+  getOtpAuthUrl(secret: string, email: string): string {
+    return authenticator.keyuri(email, 'School Kit', secret)
+  }
+  verifyCode(secret: string, code: string): boolean {
+    return authenticator.verify({ token: code, secret })
+  }
+}
+```
+Default otplib window: ±1 step (30s grace). No need to override.
+
+**4. `apps/api/src/common/redis/redis.service.ts` (NEW)**
+IORedis client injected via `ConfigService`. Methods: `get`, `set(key, value, ttlSec)`,
+`del`, `getAndDel` (Lua: `local v = redis.call('GET', KEYS[1]); if v then
+redis.call('DEL', KEYS[1]) end; return v`).
+
+**5. `apps/api/src/common/redis/redis.module.ts` (NEW)**
+`@Global() @Module` exporting `RedisService`. Imported in `AppModule`.
+
+**6. `apps/api/src/modules/auth/auth.service.ts`**
+Add three methods:
+- `setupTwoFactor(userId, schoolId)`: generate secret → write to `totp_pending_secret`
+  (withTenant) → return `{ otpAuthUrl, secret }`. Does NOT activate 2FA yet.
+- `confirmTwoFactor(userId, schoolId, code)`: withTenant read `totp_pending_secret`,
+  `totpService.verifyCode(pendingSecret, code)` — throws 400 on wrong code; on
+  success: `totp_secret = pendingSecret`, `totp_enabled = true`,
+  `totp_pending_secret = null`, audit log `auth.2fa.enable`.
+- `disableTwoFactor(userId, schoolId, currentPassword)`: withTenant read `password_hash`
+  via `db.user.findUnique` (using `USER_SENSITIVE_SELECT` that includes passwordHash —
+  never returned to client), `password.verifyPassword(hash, currentPassword)` — throws
+  401 on mismatch; on success: `totp_secret = null`, `totp_pending_secret = null`,
+  `totp_enabled = false`, audit log `auth.2fa.disable`.
+
+**7. `apps/api/src/modules/auth/auth.controller.ts`**
+```
+GET  /auth/2fa/status     @UseGuards(AuthGuard, PermissionsGuard) @Permissions('auth.2fa.read')
+POST /auth/2fa/setup      @UseGuards(AuthGuard, PermissionsGuard) @Permissions('auth.2fa.manage')
+POST /auth/2fa/confirm    @UseGuards(AuthGuard, PermissionsGuard) @Permissions('auth.2fa.manage')
+DELETE /auth/2fa          @UseGuards(AuthGuard, PermissionsGuard) @Permissions('auth.2fa.manage')
+```
+
+**8. `apps/api/src/modules/auth/auth.module.ts`**
+Add `TotpService` to providers + exports.
+
+**9. `apps/api/src/modules/auth/totp.service.spec.ts` (NEW)**
+- `generateSecret()` returns a base32 string of expected length
+- `getOtpAuthUrl()` returns a string starting with `otpauth://totp/`
+- `verifyCode()` happy path (generate secret → generate code via otplib → verify)
+- `verifyCode()` wrong code → false
+
+**10. `apps/api/src/modules/auth/auth.service.spec.ts` additions**
+- `setupTwoFactor`: stores a secret in `totp_pending_secret`
+- `confirmTwoFactor` wrong code → throws error
+- `confirmTwoFactor` right code → activates 2FA, clears pending, writes audit log
+- `disableTwoFactor` wrong password → throws INVALID_CREDENTIALS
+- `disableTwoFactor` right password → clears totp fields, writes audit log
+
+Gate: `pnpm --filter @school-kit/api test` green; migration applies cleanly on dev DB.
+
+---
+
+### Step 2 — Login 2FA branch + challenge endpoint
+
+Files created / modified:
+
+**1. `packages/types/src/auth/login.dto.ts`**
+Change `LoginResponse` to the D8 union. Add:
+```ts
+export const totpChallengeSchema = z.object({
+  challengeToken: z.string().min(1),
+  code: z.string().length(6),
+})
+export type TotpChallengeInput = z.infer<typeof totpChallengeSchema>
+// TotpChallengeResponse is the requiresTwoFactor: false branch
+export type TotpChallengeResponse = LoginResponse & { requiresTwoFactor: false }
+```
+
+**2. `apps/api/src/modules/auth/auth.service.ts`**
+Modify `login()`:
+- After `!is_active` check, fetch `totp_enabled` from the user row (add it to the
+  `LookupUserForLoginRow` interface). The SECURITY DEFINER `auth_lookup_user_for_login`
+  returns `{ user_id, school_id, password_hash, is_active }` — extend it to also
+  return `totp_enabled` (migration adding the column is already done in step 1).
+- If `totp_enabled = true`: generate challengeToken, `redisService.set(...)`, return
+  `{ requiresTwoFactor: true, challengeToken }`. No session row, no audit log yet
+  (the login is not complete).
+- If `totp_enabled = false`: existing path, but return shape gains `requiresTwoFactor: false`.
+
+Add `loginWithChallenge(input, ctx)`:
+- `await redisService.getAndDel('2fa:challenge:' + input.challengeToken)`
+- If null: throw `UnauthorizedError('INVALID_2FA_CHALLENGE', 'Challenge expired or already used.')`
+- Parse JSON → `{ userId, schoolId }`
+- `withTenant(schoolId)` → fetch `totp_secret` + current `password_hash` (for timing; not needed)
+- `totpService.verifyCode(totpSecret, input.code)` → throw `UnauthorizedError('INVALID_2FA_CODE')` if false
+- `createSession(schoolId, userId, ctx)` — same path as normal login
+- Update `lastLoginAt`, write audit log `auth.login_2fa`
+- Return `{ requiresTwoFactor: false, user, school, token }`
+
+Note: extend `auth_lookup_user_for_login` SD function to return `totp_enabled`. This
+requires a new migration updating the function body (NOT a new function — same function,
+same migration slot). The SD inventory count stays at 4.
+
+**3. `apps/api/src/modules/auth/auth.controller.ts`**
+```ts
+@Post('2fa/challenge')
+@HttpCode(200)
+@Throttle({ default: { ttl: 300_000, limit: 5 } })  // 5 req / 5min per-IP
+async twoFactorChallenge(
+  @Body(new ZodValidationPipe(totpChallengeSchema)) dto: TotpChallengeInput,
+  @Ip() ip: string,
+  @Req() req: Request,
+): Promise<TotpChallengeResponse> {
+  return this.authService.loginWithChallenge(dto, { ipAddress: ip, userAgent: req.header('user-agent') ?? null });
+}
+```
+No `AuthGuard` — this IS the auth step.
+
+**4. Auth service login branch + challenge tests**
+- Login with 2FA disabled → existing shape with `requiresTwoFactor: false`
+- Login with 2FA enabled → `{ requiresTwoFactor: true, challengeToken }` returned; no session created
+- `loginWithChallenge` with expired/unknown token → INVALID_2FA_CHALLENGE
+- `loginWithChallenge` with wrong code → INVALID_2FA_CODE
+- `loginWithChallenge` success → session created, returns full user shape
+
+SD function update note: extend `auth_lookup_user_for_login` to `RETURN TABLE
+(...existing..., totp_enabled BOOLEAN)` in the function body; same function, new
+migration file. SD count remains 4 (unchanged function identity).
+
+Gate: `pnpm --filter @school-kit/api test` green.
+
+---
+
+### Step 3 — Web: cookie proxy + middleware + auth refactor + 2FA UI + /settings/security
+
+Files created / modified:
+
+**1. `apps/web/src/app/api/auth/[...auth]/route.ts` (NEW)**
+
+Catch-all POST handler (and GET for `me`). Route segments map to NestJS paths:
+
+| Next.js segment | NestJS endpoint | Cookie action |
+|---|---|---|
+| `POST /api/auth/login` | `POST /api/v1/auth/login` | Set on `requiresTwoFactor: false` |
+| `POST /api/auth/signup-owner` | `POST /api/v1/auth/signup-owner` | Set always |
+| `POST /api/auth/logout` | `POST /api/v1/auth/logout` | Clear always |
+| `POST /api/auth/2fa/challenge` | `POST /api/v1/auth/2fa/challenge` | Set on success |
+| `GET /api/auth/me` | `GET /api/v1/auth/me` | None (read-only) |
+
+Cookie helper:
+```ts
+const COOKIE_NAME = 'sk_session';
+const COOKIE_OPTS = `HttpOnly; SameSite=Lax; Path=/; Max-Age=${60 * 60 * 24 * 30}${
+  process.env.NODE_ENV === 'production' ? '; Secure' : ''
+}`;
+
+function setCookie(res: NextResponse, token: string) {
+  res.headers.set('Set-Cookie', `${COOKIE_NAME}=${token}; ${COOKIE_OPTS}`);
+}
+function clearCookie(res: NextResponse) {
+  res.headers.set('Set-Cookie', `${COOKIE_NAME}=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0`);
+}
+```
+
+The handler reads the existing `sk_session` cookie and passes it as
+`Authorization: Bearer <value>` to NestJS for authenticated proxied calls (logout, me).
+
+The handler returns the full NestJS response body to the browser (including `token` for
+in-memory seeding), plus the `Set-Cookie` header. Login's `requiresTwoFactor: true`
+branch gets no cookie set (no session exists yet).
+
+**2. `apps/web/src/middleware.ts` (NEW)**
+```ts
+import { NextRequest, NextResponse } from 'next/server';
+
+const PROTECTED_PATHS = ['/(admin)', '/(teacher)'];  // route group path prefixes
+
+export function middleware(req: NextRequest) {
+  const hasSession = req.cookies.has('sk_session');
+  const { pathname } = req.nextUrl;
+  const isProtected =
+    pathname.startsWith('/dashboard') ||
+    // ... enumerate the concrete URL prefixes for (admin) and (teacher) groups
+    false;
+  if (isProtected && !hasSession) {
+    return NextResponse.redirect(new URL('/login', req.url));
+  }
+  return NextResponse.next();
+}
+
+export const config = { matcher: ['/((?!api|_next|login|signup|favicon).*)'] };
+```
+Note: Next.js route groups don't map to URL segments — `/(admin)/` strips the
+`(admin)` part. The matcher must use concrete URL segments (e.g. `/dashboard`,
+`/settings`, `/students`, `/teachers`, `/report-cards`, etc.). The correct approach
+is to match all paths not explicitly public and gate on cookie presence.
+
+**3. `apps/web/src/lib/api-client.ts`**
+- Remove: `AUTH_TOKEN_STORAGE_KEY`, `getStoredToken()`, `setStoredToken()`, `clearStoredToken()`
+- Add: `let activeToken: string | null = null` and `export function setActiveToken(t: string | null): void { activeToken = t }`
+- `apiFetch`: replace `const token = getStoredToken()` with `const token = activeToken`
+- Keep `AUTH_UNAUTHORIZED_EVENT` (mid-session 401 handling still needed)
+- `apiFetch` for auth endpoints (`/api/auth/...`): use relative path to Next.js proxy (no Bearer header needed for login/signup/challenge — cookie is implicit)
+
+Actually, the client still calls NestJS directly for non-auth endpoints (students, classes, etc.) with Bearer from `activeToken`. Auth endpoints are redirected to the Next.js proxy. One approach: the auth-api functions call `/api/auth/login` (relative) while all other apiFetch calls go to `NEXT_PUBLIC_API_URL`. Better: keep `apiFetch` pointing at `NEXT_PUBLIC_API_URL` (NestJS) and add a `proxyFetch` helper for auth routes — OR simply have `auth-api.ts` use a different base URL for the Next.js proxy.
+
+Cleanest split: `auth-api.ts` uses `fetch` directly against relative `/api/auth/...` paths (Next.js proxy). All other modules continue using `apiFetch` against NestJS. This avoids changing the `apiFetch` routing logic.
+
+**4. `apps/web/src/lib/auth/auth-api.ts`**
+Rewrite to hit Next.js proxy instead of NestJS directly:
+```ts
+export function loginRequest(input: LoginInput): Promise<LoginResponse> {
+  return fetch('/api/auth/login', { method: 'POST', body: JSON.stringify(input), headers: { 'Content-Type': 'application/json' } })
+    .then(r => r.json())
+}
+// same pattern for signupOwnerRequest, logoutRequest, meRequest, twoFactorChallengeRequest
+```
+Errors are still `ApiError`-shaped (the proxy passes NestJS error bodies through unchanged).
+
+**5. `apps/web/src/lib/auth/auth-provider.tsx`**
+- Replace `getStoredToken()` / `setStoredToken()` calls with `setActiveToken()`
+- Cold-boot hydration: call `meRequest()` (now hits `/api/auth/me` proxy) without checking localStorage first — the cookie does the work. If the proxy returns 401 (no valid cookie), transition to `guest`.
+- `login()`: call `loginRequest()` → type-narrow on `requiresTwoFactor`:
+  - `false` → `setActiveToken(response.token)` → call `meRequest()` to get roles → `setState(authed)`
+  - `true` → store `challengeToken` in local component state → transition UI to TOTP step (no state change in AuthContext yet — auth is not yet complete)
+- `signup()`: proxy response includes token → `setActiveToken(response.token)` → call `meRequest()` → setState
+- `logout()`: call proxy `logoutRequest()` → `setActiveToken(null)` → setState(guest)
+
+TOTP challenge completion: a new `completeChallenge(challengeToken, code)` function on `AuthContextValue` → calls `twoFactorChallengeRequest` (proxy → NestJS `/auth/2fa/challenge`) → `setActiveToken(response.token)` → `meRequest()` → setState(authed)
+
+**6. `apps/web/src/components/auth/login-form.tsx`**
+- Add `step: 'password' | 'totp'` local state
+- After `login()` call, check if `requiresTwoFactor: true` was the response — if so, store the `challengeToken` in component state and set `step = 'totp'`
+- Render `<PasswordStep>` or `<TotpStep>` based on step
+- `TotpStep`: 6-digit code input + "Verify" button → calls `completeChallenge(challengeToken, code)` from AuthContext
+- On success → existing post-login redirect logic
+
+**7. `apps/web/src/app/(admin)/settings/security/page.tsx` (NEW)**
+Server component wrapping `<SecuritySettingsForm />` client component.
+
+`SecuritySettingsForm`:
+- On mount: `GET /auth/2fa/status` → `{ enabled: boolean }`
+- If not enrolled: "Set up Two-Factor Authentication" section:
+  - "Begin Setup" button → calls `POST /auth/2fa/setup` → shows QR code
+    (`<QRCode value={otpAuthUrl} />` from `react-qr-code`) + secret text as fallback
+  - Code input → "Confirm" button → calls `POST /auth/2fa/confirm` → shows success toast
+- If enrolled: "Two-factor authentication is active" badge + "Disable 2FA" button
+  - Disable reveals a current-password input → calls `DELETE /auth/2fa` → shows confirmation
+
+**8. `apps/web/src/app/(admin)/settings/page.tsx`**
+Add "Security" card to `LINKS` array:
+```ts
+{ label: 'Security', href: '/settings/security', description: 'Two-factor authentication and account security.', icon: ShieldCheck }
+```
+Gate this card with `owner`-only render (check `permissions.includes('auth.2fa.manage')` before rendering).
+
+**9. Permissions-coverage spec update**
+Add `AuthController` to the coverage list (step 1 created new guarded endpoints);
+add `TwoFactorController` if the 2FA endpoints are split into a sub-controller.
+
+Gate: `pnpm --filter @school-kit/web build` clean; manual verification of:
+- Login → password → normal session → /dashboard accessible
+- Login → password → TOTP step renders
+- TOTP correct → /dashboard accessible
+- /settings/security → QR renders → confirm → 2FA active badge
+- Disable 2FA → password confirm → badge gone
+- Hard refresh while logged in → stays logged in (cookie hydrates state)
+- Logout → cookie cleared → /dashboard redirects to /login
+
+---
+
+## Open items / pre-build checks
+
+1. **otplib ESM**: run `pnpm add otplib` in `apps/api` and verify the import surface
+   (`import { authenticator } from 'otplib'`) works with `moduleResolution: Node16`.
+   otplib v12 ships both CJS and ESM; Node16 resolution picks the CJS build which is
+   fine for the API.
+
+2. **react-qr-code**: `pnpm add react-qr-code` in `apps/web`. It exports a default
+   `QRCode` component rendering pure SVG. No canvas dependency; works in RSC tree as
+   long as it's inside a `'use client'` component.
+
+3. **IORedis direct dep**: IORedis is already in the lockfile as a transitive dep of
+   BullMQ. Add it as a direct dep in `apps/api/package.json` (`ioredis`) so
+   `RedisService` can import types explicitly without relying on transitive resolution.
+
+4. **`auth_lookup_user_for_login` SD function update**: the function must return
+   `totp_enabled` so the login service can branch without a second DB call. This is a
+   function body update, not a new function — SD count stays at 4. The migration that
+   updates it runs after the column-add migration from step 1.
+   IMPORTANT: the SD function DELIBERATELY omits `totp_secret` and `totp_pending_secret`
+   — the caller only needs the branch flag, never the actual secrets. Document in the SD
+   inventory table header comment.
+
+5. **Middleware path enumeration**: the `(admin)` route group maps to URL segments
+   `/dashboard`, `/settings`, `/students`, `/teachers`, `/report-cards`, `/assessments`,
+   `/attendance`, `/grading`, etc. Enumerate the complete list from the existing
+   `apps/web/src/app/(admin)/` directory before writing the middleware matcher to avoid
+   leaving any route unprotected or accidentally blocking public pages.
+
+6. **LoginResponse union type in existing tests**: `auth.service.spec.ts` and
+   `auth.login.spec.ts` currently assert `expect(result.token).toBeDefined()`. With the
+   union type, TypeScript narrows on `requiresTwoFactor` — existing test assertions
+   either need a type-narrowing `if` or will require `(result as ...).token`. Audit
+   before starting step 2.
+
+7. **2FA challenge timing attack**: if the Redis GET returns null (expired), throw
+   `INVALID_2FA_CHALLENGE` with the same response-time budget as a failed code verify
+   (add a dummy `totpService.verifyCode` call on the miss path, same pattern as the
+   login dummy-hash strategy).
+
+8. **SD inventory table update (CLAUDE.md)**: the `auth_lookup_user_for_login` row
+   must be updated to reflect the new `totp_enabled` return field and the deliberate
+   omission of `totp_secret`/`totp_pending_secret`. Update in the same PR.
+
+---
+
+## Pre-Step 1 question answered — 2026-06-27
+
+**Q: Does `POST /auth/2fa/challenge` need any pre-tenant DB access?**
+
+**Answer: Option (1) — no pre-tenant access needed. SD count stays at 4.**
+
+Reasoning by tracing the full challenge flow:
+
+The Redis payload `{ userId, schoolId }` was written by `POST /auth/login` AFTER:
+1. `auth_lookup_user_for_login(email)` resolved the user pre-tenant (the one SD call)
+2. `argon2.verify(passwordHash, input.password)` passed
+3. `is_active` checked and passed
+
+By the time `POST /auth/2fa/challenge` runs, the `schoolId` is already known from
+Redis. Every subsequent operation is tenant-scoped via `withTenant(schoolId)`:
+
+```
+Redis GETDEL 2fa:challenge:<token>  →  { userId, schoolId }
+withTenant(schoolId)  →  db.user.findUnique  →  { isActive, totpSecret }
+totpService.verifyCode(totpSecret, code)
+createSession(schoolId, userId, ctx)  — already uses withTenant internally
+withTenant(schoolId)  →  update lastLoginAt + write audit log
+withTenant(schoolId)  →  fetch user/school shape for response
+```
+
+No pre-tenant lookup required at any step. No new SD function needed.
+
+**Corollary — login service `totp_enabled` check (Step 2 plan revision):**
+The plan-first Step 2 draft proposed extending `auth_lookup_user_for_login` to
+return `totp_enabled`. That is not necessary. After the SD call gives us `schoolId`,
+we can call `withTenant(schoolId)` to fetch `totp_enabled`:
+
+```ts
+// After password verify + is_active check (pre-tenant via SD function):
+const { totpEnabled } = await withTenant(row.school_id, async (db) =>
+  db.user.findUniqueOrThrow({ where: { id: row.user_id }, select: { totpEnabled: true } })
+);
+if (totpEnabled) { /* challenge branch */ }
+```
+
+This avoids modifying `auth_lookup_user_for_login` entirely. SD count unchanged at 4.
+The "extend SD function" bullet in Step 2 above is superseded by this approach.
+CLAUDE.md SD inventory table needs no update for this CP2 (no new or modified functions).
+
+**D6 revision — no new RedisModule:**
+CP1 already created `REDIS_AUTH_CLIENT` (global, exported from `RedisAuthModule`).
+The provider comment explicitly reads "auth-related keys (rate limiting + 2FA challenge
+tokens)." The `RedisService` wrapper described in D6 is not needed — `AuthService`
+injects `REDIS_AUTH_CLIENT` (`Redis` from ioredis) directly, same pattern as
+`RedisThrottlerStorage`. No new module or service for Redis.
+
+---
+
+## Step 1 build — DB + TotpService + 2FA management endpoints (COMPLETE)
+
+### otplib v13 API correction
+`pnpm add otplib` resolved v13.4.1 (not v12 as assumed in the plan). The `authenticator`
+singleton no longer exists. Correct v13 surface: `generateSecret()`, `generateSync({ secret })`,
+`verifySync({ token, secret })` → `{ valid: boolean }`, `generateURI({ label, issuer, secret })`.
+Updated `TotpService` and both specs before any test run.
+
+### Constructor default parameters
+`new AuthService()` is used in 35 spec files across the codebase — all bypass the DI
+container. Added default values to the constructor:
+```ts
+constructor(
+  private readonly totpService: TotpService = new TotpService(),
+  @Inject(REDIS_AUTH_CLIENT) private readonly redis: Redis = null as unknown as Redis,
+)
+```
+NestJS DI resolves real providers in production; defaults kick in only for direct
+instantiation in specs. Existing tests are unaffected — they don't call 2FA methods.
+
+### REDIS_AUTH_CLIENT — no new module
+`RedisAuthModule` (from CP1) already exports `REDIS_AUTH_CLIENT` globally; the provider
+comment explicitly names "2FA challenge tokens." No new RedisService or RedisModule needed.
+AuthService injects `REDIS_AUTH_CLIENT` directly (same pattern as `RedisThrottlerStorage`).
+`redis` field is wired in Step 1 but the challenge methods that USE it land in Step 2.
+
+### Files created / modified in Step 1
+- `packages/db/prisma/migrations/20260627000000_phase_3_slice_2_totp_columns/migration.sql` — NEW
+- `packages/db/prisma/schema.prisma` — `totpPendingSecret`, `totpSecret`, `totpEnabled` on User
+- `packages/types/src/auth/totp.dto.ts` — NEW
+- `packages/types/src/auth/index.ts` — export totp.dto.js
+- `apps/api/src/modules/auth/totp.service.ts` — NEW
+- `apps/api/src/modules/auth/auth.service.ts` — constructor + `getTwoFactorStatus`, `setupTwoFactor`, `confirmTwoFactor`, `disableTwoFactor`
+- `apps/api/src/modules/auth/auth.controller.ts` — GET 2fa/status, POST 2fa/setup, POST 2fa/confirm, DELETE 2fa
+- `apps/api/src/modules/auth/auth.module.ts` — TotpService + PermissionsGuard added
+- `apps/api/src/modules/auth/totp.service.spec.ts` — NEW (7 tests)
+- `apps/api/src/modules/auth/auth.service.spec.ts` — 2FA describe block added (~13 tests)
+
+### Gate: PASS
+`pnpm --filter @school-kit/api typecheck` → clean
+`pnpm --filter @school-kit/api test` → 801 passed / 2 skipped (50 test files)

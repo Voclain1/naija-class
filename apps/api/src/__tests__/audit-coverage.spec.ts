@@ -741,3 +741,87 @@ describe("Phase 2 audit coverage — every mutation writes an audit row", () => 
     await expectAudit(schoolId, "subject-attendance.mark", { entityId: armId, actorId: ownerId, keys: ["classArmId", "subjectId", "termId", "date", "period", "count", "byStatus"] });
   });
 });
+
+// ===========================================================================
+// Phase 3 Slice 2 auth hardening — 2FA login audit.
+// Verifies that completing the 2FA challenge flow writes an auth.login_2fa
+// audit row. Needs a Redis-connected AuthService (for challenge-token storage).
+// ===========================================================================
+describe("Phase 3 Slice 2 auth hardening — auth.login_2fa writes an audit row", () => {
+  const runId = Math.random().toString(36).slice(2, 8);
+  const phoneSuffix = Math.floor(Math.random() * 1_000_000).toString().padStart(6, "0");
+  const reqCtx = { ipAddress: "127.0.0.1", userAgent: "vitest" };
+
+  // Inline Redis connection — same approach as the Phase 2 block.
+  const redisUrl = process.env.REDIS_URL ?? "redis://localhost:6379";
+  const parsed = new URL(redisUrl);
+  const redisConnection = {
+    host: parsed.hostname,
+    port: parsed.port ? Number(parsed.port) : 6379,
+    username: parsed.username || undefined,
+    password: parsed.password || undefined,
+    db: parsed.pathname && parsed.pathname.length > 1 ? Number(parsed.pathname.slice(1)) : 0,
+  };
+
+  // Import here to avoid pulling ioredis into Phase 1 / Phase 2 describe scope.
+  let redisClient: import("ioredis").default;
+  let svc: AuthService;
+
+  const schoolIds = new Set<string>();
+
+  beforeAll(async () => {
+    const Redis = (await import("ioredis")).default;
+    redisClient = new Redis({ ...redisConnection, maxRetriesPerRequest: null });
+    svc = new AuthService(new (await import("../modules/auth/totp.service.js")).TotpService(), redisClient);
+  });
+
+  afterAll(async () => {
+    for (const id of schoolIds) {
+      await basePrisma.school.delete({ where: { id } }).catch(() => undefined);
+    }
+    await basePrisma.$disconnect();
+    await redisClient.quit();
+  });
+
+  it("loginWithChallenge writes auth.login_2fa audit row", async () => {
+    // Bootstrap: signup → enable 2FA → login (get challenge) → challenge.
+    const { generateSync } = await import("otplib");
+
+    const signup = await svc.signupOwner(
+      {
+        schoolName: `P3 Audit ${runId}`,
+        schoolSlug: `p3-audit-${runId}`,
+        ownerFirstName: "Three",
+        ownerLastName: "Fac",
+        ownerEmail: `p3-audit-${runId}@example.test`,
+        ownerPhone: `+234807${phoneSuffix}`,
+        password: "Correct-Horse-9",
+        ndprConsent: true,
+      },
+      reqCtx,
+    );
+    schoolIds.add(signup.school.id);
+    const { school, user } = signup;
+
+    const setup = await svc.setupTwoFactor(user.id, school.id);
+    const confirmCode = generateSync({ secret: setup.secret });
+    await svc.confirmTwoFactor(user.id, school.id, { code: confirmCode });
+
+    const loginResult = await svc.login(
+      { email: `p3-audit-${runId}@example.test`, password: "Correct-Horse-9" },
+      reqCtx,
+    );
+    if (!loginResult.requiresTwoFactor) throw new Error("Expected 2FA challenge");
+
+    const challengeCode = generateSync({ secret: setup.secret });
+    await svc.loginWithChallenge(
+      { challengeToken: loginResult.challengeToken, code: challengeCode },
+      reqCtx,
+    );
+
+    const auditRow = await withTenant(school.id, (db) =>
+      db.auditLog.findFirst({ where: { schoolId: school.id, action: "auth.login_2fa", userId: user.id } }),
+    );
+    expect(auditRow, "auth.login_2fa audit row").toBeTruthy();
+  });
+});

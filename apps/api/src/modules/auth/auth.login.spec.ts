@@ -55,6 +55,7 @@ describe("AuthService.login (Phase 0 Prompt 4)", () => {
     const before = Date.now();
     const input = loginSchema.parse({ email: testEmail, password: testPassword });
     const result = await service.login(input, ctx);
+    if (result.requiresTwoFactor) throw new Error("Expected a session, not a 2FA challenge");
 
     expect(result.user.id).toBe(testUserId);
     expect(result.user.schoolId).toBe(testSchoolId);
@@ -163,6 +164,7 @@ describe("AuthService.login (Phase 0 Prompt 4)", () => {
   it("email is case-insensitive at the boundary (Zod lowercases)", async () => {
     const input = loginSchema.parse({ email: testEmail.toUpperCase(), password: testPassword });
     const result = await service.login(input, ctx);
+    if (result.requiresTwoFactor) throw new Error("Expected a session, not a 2FA challenge");
     expect(result.user.id).toBe(testUserId);
   });
 });

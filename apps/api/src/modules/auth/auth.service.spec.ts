@@ -1,8 +1,9 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import * as argon2 from "argon2";
+import { generateSync } from "otplib";
 
 import { basePrisma, withTenant } from "@school-kit/db";
-import { ConflictError, ValidationError, signupOwnerSchema } from "@school-kit/types";
+import { ConflictError, UnauthorizedError, ValidationError, signupOwnerSchema } from "@school-kit/types";
 
 import { AuthService } from "./auth.service";
 
@@ -285,5 +286,163 @@ describe("AuthService.signupOwner (Phase 0 Prompt 3)", () => {
     expect(err.code).toBe("VALIDATION_ERROR");
     expect(err.httpStatus).toBe(400);
     expect(err.toBody().details).toEqual({ issues: [{ path: "password", code: "x", message: "y" }] });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 2FA management — setup / confirm / disable (integration against real DB)
+// ---------------------------------------------------------------------------
+describe("AuthService — 2FA management (Phase 3 Slice 2 CP2)", () => {
+  const runId = Math.random().toString(36).slice(2, 8);
+  const phoneSuffix = Math.floor(Math.random() * 1_000_000)
+    .toString()
+    .padStart(6, "0");
+  const service = new AuthService();
+  const ctx = { ipAddress: "127.0.0.1", userAgent: "vitest" };
+  const schoolIdsToCleanup = new Set<string>();
+
+  let schoolId: string;
+  let userId: string;
+
+  beforeAll(async () => {
+    const owner = await basePrisma.role.findFirst({
+      where: { schoolId: null, key: "owner", isSystem: true },
+      select: { id: true },
+    });
+    if (!owner) throw new Error("System role 'owner' not seeded. Run pnpm db:seed.");
+
+    // Create a fresh school + owner for 2FA tests.
+    const result = await service.signupOwner(
+      signupOwnerSchema.parse({
+        schoolName: "2FA Test Academy",
+        schoolSlug: `2fa-test-${runId}`,
+        ownerFirstName: "Totp",
+        ownerLastName: "Owner",
+        ownerEmail: `totp-${runId}@example.test`,
+        ownerPhone: `+234901${phoneSuffix}`,
+        password: "Correct-Horse-9",
+        ndprConsent: true,
+      }),
+      ctx,
+    );
+    schoolId = result.school.id;
+    userId = result.user.id;
+    schoolIdsToCleanup.add(schoolId);
+  });
+
+  afterAll(async () => {
+    for (const id of schoolIdsToCleanup) {
+      await basePrisma.school.delete({ where: { id } }).catch(() => undefined);
+    }
+  });
+
+  describe("getTwoFactorStatus", () => {
+    it("returns enabled: false before any setup", async () => {
+      const status = await service.getTwoFactorStatus(userId, schoolId);
+      expect(status.enabled).toBe(false);
+    });
+  });
+
+  describe("setupTwoFactor", () => {
+    it("stores a pending secret and returns otpAuthUrl + secret", async () => {
+      const result = await service.setupTwoFactor(userId, schoolId);
+
+      expect(result.otpAuthUrl).toMatch(/^otpauth:\/\/totp\//);
+      expect(result.secret).toMatch(/^[A-Z2-7]+$/);
+
+      // Pending secret is written; active secret and enabled flag are still unset.
+      const user = await withTenant(schoolId, (db) =>
+        db.user.findUniqueOrThrow({
+          where: { id: userId },
+          select: { totpPendingSecret: true, totpSecret: true, totpEnabled: true },
+        }),
+      );
+      expect(user.totpPendingSecret).toBe(result.secret);
+      expect(user.totpSecret).toBeNull();
+      expect(user.totpEnabled).toBe(false);
+    });
+
+    it("overwriting setup replaces the pending secret", async () => {
+      const first = await service.setupTwoFactor(userId, schoolId);
+      const second = await service.setupTwoFactor(userId, schoolId);
+      expect(second.secret).not.toBe(first.secret);
+
+      const user = await withTenant(schoolId, (db) =>
+        db.user.findUniqueOrThrow({
+          where: { id: userId },
+          select: { totpPendingSecret: true },
+        }),
+      );
+      expect(user.totpPendingSecret).toBe(second.secret);
+    });
+  });
+
+  describe("confirmTwoFactor", () => {
+    it("wrong code — throws INVALID_2FA_CODE", async () => {
+      await service.setupTwoFactor(userId, schoolId);
+      await expect(
+        service.confirmTwoFactor(userId, schoolId, { code: "000000" }),
+      ).rejects.toThrow(UnauthorizedError);
+    });
+
+    it("correct code — activates 2FA and writes audit log", async () => {
+      const { secret } = await service.setupTwoFactor(userId, schoolId);
+      const code = generateSync({ secret });
+
+      await service.confirmTwoFactor(userId, schoolId, { code });
+
+      const user = await withTenant(schoolId, (db) =>
+        db.user.findUniqueOrThrow({
+          where: { id: userId },
+          select: { totpSecret: true, totpPendingSecret: true, totpEnabled: true },
+        }),
+      );
+      expect(user.totpEnabled).toBe(true);
+      expect(user.totpSecret).toBe(secret);
+      expect(user.totpPendingSecret).toBeNull();
+
+      const audit = await withTenant(schoolId, (db) =>
+        db.auditLog.findFirst({ where: { schoolId, action: "auth.2fa.enable" } }),
+      );
+      expect(audit).toBeTruthy();
+    });
+
+    it("getTwoFactorStatus returns enabled: true after confirm", async () => {
+      const status = await service.getTwoFactorStatus(userId, schoolId);
+      expect(status.enabled).toBe(true);
+    });
+  });
+
+  describe("disableTwoFactor", () => {
+    it("wrong password — throws INVALID_CREDENTIALS", async () => {
+      await expect(
+        service.disableTwoFactor(userId, schoolId, { currentPassword: "wrong-password" }),
+      ).rejects.toThrow(UnauthorizedError);
+    });
+
+    it("correct password — clears 2FA columns and writes audit log", async () => {
+      await service.disableTwoFactor(userId, schoolId, { currentPassword: "Correct-Horse-9" });
+
+      const user = await withTenant(schoolId, (db) =>
+        db.user.findUniqueOrThrow({
+          where: { id: userId },
+          select: { totpSecret: true, totpPendingSecret: true, totpEnabled: true },
+        }),
+      );
+      expect(user.totpEnabled).toBe(false);
+      expect(user.totpSecret).toBeNull();
+      expect(user.totpPendingSecret).toBeNull();
+
+      const audit = await withTenant(schoolId, (db) =>
+        db.auditLog.findFirst({ where: { schoolId, action: "auth.2fa.disable" } }),
+      );
+      expect(audit).toBeTruthy();
+    });
+
+    it("attempting to disable when already disabled — throws ValidationError", async () => {
+      await expect(
+        service.disableTwoFactor(userId, schoolId, { currentPassword: "Correct-Horse-9" }),
+      ).rejects.toThrow(ValidationError);
+    });
   });
 });

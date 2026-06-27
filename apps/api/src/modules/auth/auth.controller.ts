@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   Ip,
@@ -12,17 +13,27 @@ import { Throttle } from "@nestjs/throttler";
 import {
   loginSchema,
   signupOwnerSchema,
+  totpChallengeSchema,
+  totpConfirmSchema,
+  totpDisableSchema,
   type LoginInput,
   type LoginResponse,
   type MeResponse,
   type SignupOwnerInput,
   type SignupOwnerResponse,
+  type TotpChallengeInput,
+  type TotpConfirmInput,
+  type TotpDisableInput,
+  type TotpSetupResponseDto,
+  type TotpStatusDto,
 } from "@school-kit/types";
 import type { Request } from "express";
 
 import type { AuthContext } from "../../common/auth/auth-context";
 import { AuthGuard } from "../../common/auth/auth.guard";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
+import { Permissions } from "../../common/auth/permissions.decorator";
+import { PermissionsGuard } from "../../common/auth/permissions.guard";
 import { RateLimitByEmailGuard } from "../../common/guards/rate-limit-by-email.guard";
 import { ZodValidationPipe } from "../../common/zod-validation.pipe";
 import { AuthService } from "./auth.service";
@@ -90,5 +101,69 @@ export class AuthController {
   @UseGuards(AuthGuard)
   async me(@CurrentUser() user: AuthContext): Promise<MeResponse> {
     return this.authService.getMe(user);
+  }
+
+  // Returns whether 2FA is currently enabled for the authenticated user.
+  // admin can read another owner's status via owner UI; both need auth.2fa.read.
+  @Get("2fa/status")
+  @UseGuards(AuthGuard, PermissionsGuard)
+  @Permissions("auth.2fa.read")
+  async twoFactorStatus(@CurrentUser() user: AuthContext): Promise<TotpStatusDto> {
+    return this.authService.getTwoFactorStatus(user.userId, user.schoolId);
+  }
+
+  // Owner-only. Generates a fresh TOTP secret stored as totp_pending_secret.
+  // 2FA is NOT yet active — the owner must confirm with a code first.
+  @Post("2fa/setup")
+  @UseGuards(AuthGuard, PermissionsGuard)
+  @Permissions("auth.2fa.manage")
+  async twoFactorSetup(@CurrentUser() user: AuthContext): Promise<TotpSetupResponseDto> {
+    return this.authService.setupTwoFactor(user.userId, user.schoolId);
+  }
+
+  // Owner-only. Verifies the first code from the authenticator app and
+  // activates 2FA. Clears totp_pending_secret on success.
+  @Post("2fa/confirm")
+  @HttpCode(204)
+  @UseGuards(AuthGuard, PermissionsGuard)
+  @Permissions("auth.2fa.manage")
+  async twoFactorConfirm(
+    @CurrentUser() user: AuthContext,
+    @Body(new ZodValidationPipe(totpConfirmSchema)) dto: TotpConfirmInput,
+  ): Promise<void> {
+    await this.authService.confirmTwoFactor(user.userId, user.schoolId, dto);
+  }
+
+  // Owner-only. Disables 2FA after verifying the owner's current password.
+  // Defence-in-depth: a stolen session cannot silently remove the second factor.
+  @Delete("2fa")
+  @HttpCode(204)
+  @UseGuards(AuthGuard, PermissionsGuard)
+  @Permissions("auth.2fa.manage")
+  async twoFactorDisable(
+    @CurrentUser() user: AuthContext,
+    @Body(new ZodValidationPipe(totpDisableSchema)) dto: TotpDisableInput,
+  ): Promise<void> {
+    await this.authService.disableTwoFactor(user.userId, user.schoolId, dto);
+  }
+
+  // Public — no AuthGuard. Consumes the one-time challenge token issued by
+  // POST /auth/login (when totp_enabled) and a live TOTP code. On success
+  // issues a normal session (same response shape as a non-2FA login).
+  // Throttle: 5 req / 5min per-IP — tighter than the login throttle because
+  // the token is already rate-limited by the login endpoint that issued it;
+  // this limit purely caps token-guess attempts.
+  @Post("2fa/challenge")
+  @HttpCode(200)
+  @Throttle({ default: { ttl: 300_000, limit: 5 } })
+  async twoFactorChallenge(
+    @Body(new ZodValidationPipe(totpChallengeSchema)) dto: TotpChallengeInput,
+    @Ip() ip: string,
+    @Req() req: Request,
+  ): Promise<LoginResponse> {
+    return this.authService.loginWithChallenge(dto, {
+      ipAddress: ip,
+      userAgent: req.header("user-agent") ?? null,
+    });
   }
 }

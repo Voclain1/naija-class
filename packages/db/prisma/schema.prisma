@@ -84,13 +84,16 @@ model User {
   phone         String?   @unique
   firstName     String    @map("first_name")
   lastName      String    @map("last_name")
-  passwordHash  String?   @map("password_hash")
-  isActive      Boolean   @default(true) @map("is_active")
-  emailVerified Boolean   @default(false) @map("email_verified")
-  phoneVerified Boolean   @default(false) @map("phone_verified")
-  lastLoginAt   DateTime? @map("last_login_at")
-  createdAt     DateTime  @default(now()) @map("created_at")
-  updatedAt     DateTime  @updatedAt @map("updated_at")
+  passwordHash        String?   @map("password_hash")
+  isActive            Boolean   @default(true) @map("is_active")
+  emailVerified       Boolean   @default(false) @map("email_verified")
+  phoneVerified       Boolean   @default(false) @map("phone_verified")
+  lastLoginAt         DateTime? @map("last_login_at")
+  totpPendingSecret   String?   @map("totp_pending_secret")
+  totpSecret          String?   @map("totp_secret")
+  totpEnabled         Boolean   @default(false) @map("totp_enabled")
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @updatedAt @map("updated_at")
 
   school   School     @relation(fields: [schoolId], references: [id])
   roles    UserRole[]
