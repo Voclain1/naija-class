@@ -11,7 +11,9 @@ import { BrandLoadingScreen } from "../brand-loading-screen";
 // Mirror of RequireAuth for the (onboarding) route group. Four branches:
 //
 //   loading        → loading screen.
-//   guest          → /login.
+//   guest          → /signup (onboarding is only reachable after signup; a
+//                    guest here hasn't created an account yet, not forgotten
+//                    their password — sending them to /login would confuse).
 //   ACTIVE school  → /dashboard (don't let the user re-walk a finished wizard).
 //   ONBOARDING     → enforce the same "you can only access the next un-completed
 //                    step, or any previous step" rule the backend enforces.
@@ -34,7 +36,7 @@ export function RequireOnboarding({
 
   useEffect(() => {
     if (status === "guest") {
-      router.replace("/login");
+      router.replace("/signup");
       return;
     }
     if (status === "authed") {

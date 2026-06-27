@@ -1,4 +1,4 @@
-import { BarChart3, CalendarCheck, SlidersHorizontal, Users, type LucideIcon } from "lucide-react";
+import { BarChart3, CalendarCheck, ShieldCheck, SlidersHorizontal, Users, type LucideIcon } from "lucide-react";
 import Link from "next/link";
 
 // /settings — a small hub linking the settings areas. (Previously a bare
@@ -20,6 +20,12 @@ const LINKS: SettingsLink[] = [
     href: "/settings/attendance",
     description: "Enable subject-period attendance for teachers.",
     icon: CalendarCheck,
+  },
+  {
+    label: "Security",
+    href: "/settings/security",
+    description: "Two-factor authentication for your owner account.",
+    icon: ShieldCheck,
   },
 ];
 

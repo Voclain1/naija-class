@@ -1,4 +1,7 @@
-import { Injectable } from "@nestjs/common";
+import * as crypto from "node:crypto";
+
+import { Inject, Injectable } from "@nestjs/common";
+import type Redis from "ioredis";
 
 import {
   DEFAULT_CLASS_LEVELS,
@@ -13,24 +16,38 @@ import {
   ConflictError,
   InternalError,
   UnauthorizedError,
+  ValidationError,
   type AuthMeRoleDto,
   type LoginInput,
   type LoginResponse,
   type MeResponse,
   type SignupOwnerInput,
   type SignupOwnerResponse,
+  type TotpChallengeInput,
+  type TotpConfirmInput,
+  type TotpDisableInput,
+  type TotpSetupResponseDto,
+  type TotpStatusDto,
 } from "@school-kit/types";
 
 import type { AuthContext } from "../../common/auth/auth-context";
+import { REDIS_AUTH_CLIENT } from "../../common/auth/redis-auth.provider.js";
 // Indirect through password.ts so tests can spy on hashPassword / verifyPassword.
 // The argon2 package's CJS exports are non-configurable.
 import * as password from "../../common/auth/password";
 import { createSession } from "../../common/auth/sessions";
 import { redactEmail } from "../../common/redact";
+import { TotpService } from "./totp.service.js";
 
 const SIGNUP_AUDIT_ACTION = "auth.signup_owner";
 const LOGIN_AUDIT_ACTION = "auth.login";
+const LOGIN_2FA_AUDIT_ACTION = "auth.login_2fa";
 const LOGOUT_AUDIT_ACTION = "auth.logout";
+const TOTP_ENABLE_AUDIT_ACTION = "auth.2fa.enable";
+const TOTP_DISABLE_AUDIT_ACTION = "auth.2fa.disable";
+
+const CHALLENGE_TTL_SECONDS = 300;
+const CHALLENGE_KEY_PREFIX = "2fa:challenge:";
 
 // Fixed argon2id hash used as a target when login is attempted against an
 // unknown email or a user without a password_hash. Verifying against it
@@ -63,6 +80,17 @@ interface LookupUserForLoginRow {
 
 @Injectable()
 export class AuthService {
+  // Default parameters allow `new AuthService()` in integration tests that
+  // bypass the DI container. In production NestJS resolves both via DI:
+  // TotpService from providers, REDIS_AUTH_CLIENT from RedisAuthModule.
+  // Tests that call 2FA methods (setup/confirm/disable) receive real objects;
+  // tests that only call signup/login get the cheap defaults and never touch
+  // the Redis path.
+  constructor(
+    private readonly totpService: TotpService = new TotpService(),
+    @Inject(REDIS_AUTH_CLIENT) private readonly redis: Redis = null as unknown as Redis,
+  ) {}
+
   // Creates: School → User → UserRole (owner) → AuditLog in a single
   // transaction. Then mints a session row outside the tx and returns the
   // raw bearer token to the client (the token hash is what we persist).
@@ -284,6 +312,29 @@ export class AuthService {
       throw new UnauthorizedError("INVALID_CREDENTIALS", "Invalid email or password.");
     }
 
+    // Check 2FA after password + is_active pass — schoolId is available from
+    // the SD function result so we can scope straight to withTenant.
+    const { totpEnabled } = await withTenant(row.school_id, (db) =>
+      db.user.findUniqueOrThrow({
+        where: { id: row.user_id },
+        select: { totpEnabled: true },
+      }),
+    );
+
+    if (totpEnabled) {
+      // Issue a single-use, short-lived challenge token instead of a session.
+      // The client must POST this token + a TOTP code to /auth/2fa/challenge.
+      const challengeToken = crypto.randomBytes(32).toString("base64url");
+      const key = `${CHALLENGE_KEY_PREFIX}${challengeToken}`;
+      await this.redis.set(
+        key,
+        JSON.stringify({ userId: row.user_id, schoolId: row.school_id }),
+        "EX",
+        CHALLENGE_TTL_SECONDS,
+      );
+      return { requiresTwoFactor: true, challengeToken };
+    }
+
     const { rawToken } = await createSession(row.school_id, row.user_id, ctx);
 
     const user = await withTenant(row.school_id, async (db) => {
@@ -321,7 +372,90 @@ export class AuthService {
       select: SCHOOL_RESPONSE_SELECT,
     });
 
-    return { user, school, token: rawToken };
+    return { requiresTwoFactor: false, user, school, token: rawToken };
+  }
+
+  // Completes a 2FA-gated login started by login(). The client submits the
+  // challenge token it received + the current TOTP code. On a wrong code the
+  // token is preserved in Redis so the user can retry within the 300 s TTL;
+  // on a correct code the token is deleted (single-use) and a normal session
+  // is issued. The per-endpoint throttle (5 attempts / 5 min) guards against
+  // code enumeration.
+  async loginWithChallenge(input: TotpChallengeInput, ctx: RequestContext): Promise<LoginResponse> {
+    const key = `${CHALLENGE_KEY_PREFIX}${input.challengeToken}`;
+
+    // GET without deleting: a wrong-code attempt must not consume the token
+    // so the user can retry. The token is deleted explicitly below, only after
+    // successful TOTP verification. The per-endpoint throttle is the
+    // brute-force guard against code enumeration within the 300 s window.
+    const raw = await this.redis.get(key);
+
+    if (!raw) {
+      // Timing-attack guard: run a dummy verifyCode so response time on a
+      // missing/expired token stays comparable to a real wrong-code attempt
+      // (which also goes through verifyCode). Without this, a timing oracle
+      // could distinguish "token already used" from "code wrong".
+      this.totpService.verifyCode("AAAAAAAAAAAAAAAAAAAAAAAAAAAA", "000000");
+      throw new UnauthorizedError(
+        "INVALID_2FA_CHALLENGE",
+        "Challenge token is invalid or has expired.",
+      );
+    }
+
+    const { userId, schoolId } = JSON.parse(raw) as { userId: string; schoolId: string };
+
+    // Re-check is_active + fetch the live totp_secret inside the challenge
+    // window. The user could be deactivated during the 300s TTL.
+    const tfaUser = await withTenant(schoolId, (db) =>
+      db.user.findUniqueOrThrow({
+        where: { id: userId },
+        select: { isActive: true, totpSecret: true },
+      }),
+    );
+
+    if (!tfaUser.isActive) {
+      throw new UnauthorizedError("INVALID_CREDENTIALS", "Invalid email or password.");
+    }
+
+    if (!tfaUser.totpSecret || !this.totpService.verifyCode(tfaUser.totpSecret, input.code)) {
+      throw new UnauthorizedError("INVALID_2FA_CODE", "Verification code is incorrect.");
+    }
+
+    // Consume the challenge token now that the code is verified. This is the
+    // single-use enforcement point — a replay attempt after a successful login
+    // finds no key and receives INVALID_2FA_CHALLENGE.
+    await this.redis.del(key);
+
+    const { rawToken } = await createSession(schoolId, userId, ctx);
+
+    const user = await withTenant(schoolId, async (db) => {
+      const updatedUser = await db.user.update({
+        where: { id: userId },
+        data: { lastLoginAt: new Date() },
+        select: USER_RESPONSE_SELECT,
+      });
+
+      await db.auditLog.create({
+        data: {
+          schoolId,
+          userId,
+          action: LOGIN_2FA_AUDIT_ACTION,
+          entityType: "user",
+          entityId: userId,
+          ipAddress: ctx.ipAddress,
+          metadata: { userAgent: ctx.userAgent },
+        },
+      });
+
+      return updatedUser;
+    });
+
+    const school = await basePrisma.school.findUniqueOrThrow({
+      where: { id: schoolId },
+      select: SCHOOL_RESPONSE_SELECT,
+    });
+
+    return { requiresTwoFactor: false, user, school, token: rawToken };
   }
 
   // Deletes the session row matching the current bearer token and writes an
@@ -405,6 +539,128 @@ export class AuthService {
     const permissions = flat.has("*") ? ["*"] : Array.from(flat).sort();
 
     return { user, school, roles, permissions };
+  }
+
+  // Returns whether 2FA is currently enabled for the authenticated user.
+  async getTwoFactorStatus(userId: string, schoolId: string): Promise<TotpStatusDto> {
+    const user = await withTenant(schoolId, (db) =>
+      db.user.findUniqueOrThrow({ where: { id: userId }, select: { totpEnabled: true } }),
+    );
+    return { enabled: user.totpEnabled };
+  }
+
+  // Generates a fresh TOTP secret, persists it as totp_pending_secret (not
+  // totp_secret — 2FA is NOT active yet), and returns the otpauth:// URL
+  // for QR display + the raw secret as text fallback. Calling setup again
+  // overwrites any in-progress pending secret.
+  async setupTwoFactor(userId: string, schoolId: string): Promise<TotpSetupResponseDto> {
+    const secret = this.totpService.generateSecret();
+
+    const user = await withTenant(schoolId, (db) =>
+      db.user.update({
+        where: { id: userId },
+        data: { totpPendingSecret: secret },
+        select: { email: true },
+      }),
+    );
+
+    const otpAuthUrl = this.totpService.getOtpAuthUrl(secret, user.email ?? userId);
+    return { otpAuthUrl, secret };
+  }
+
+  // Verifies the first TOTP code against totp_pending_secret. On success,
+  // activates 2FA: totp_secret ← pending, totp_enabled ← true,
+  // totp_pending_secret ← null. Writes an audit log.
+  async confirmTwoFactor(
+    userId: string,
+    schoolId: string,
+    input: TotpConfirmInput,
+  ): Promise<void> {
+    const user = await withTenant(schoolId, (db) =>
+      db.user.findUniqueOrThrow({
+        where: { id: userId },
+        select: { totpPendingSecret: true },
+      }),
+    );
+
+    if (!user.totpPendingSecret) {
+      throw new ValidationError("2FA setup has not been started. Call POST /auth/2fa/setup first.");
+    }
+
+    if (!this.totpService.verifyCode(user.totpPendingSecret, input.code)) {
+      throw new UnauthorizedError("INVALID_2FA_CODE", "Verification code is incorrect.");
+    }
+
+    await withTenant(schoolId, async (db) => {
+      await db.user.update({
+        where: { id: userId },
+        data: {
+          totpSecret: user.totpPendingSecret,
+          totpEnabled: true,
+          totpPendingSecret: null,
+        },
+      });
+
+      await db.auditLog.create({
+        data: {
+          schoolId,
+          userId,
+          action: TOTP_ENABLE_AUDIT_ACTION,
+          entityType: "user",
+          entityId: userId,
+          metadata: {},
+        },
+      });
+    });
+  }
+
+  // Disables 2FA after re-verifying the owner's current password (defence
+  // against a stolen session enabling someone to disable 2FA). Clears all
+  // three TOTP columns. Writes an audit log.
+  async disableTwoFactor(
+    userId: string,
+    schoolId: string,
+    input: TotpDisableInput,
+  ): Promise<void> {
+    const user = await withTenant(schoolId, (db) =>
+      db.user.findUniqueOrThrow({
+        where: { id: userId },
+        select: { passwordHash: true, totpEnabled: true },
+      }),
+    );
+
+    if (!user.totpEnabled) {
+      throw new ValidationError("Two-factor authentication is not currently enabled.");
+    }
+
+    if (!user.passwordHash) {
+      throw new UnauthorizedError("INVALID_CREDENTIALS", "Invalid password.");
+    }
+
+    const passwordOk = await password
+      .verifyPassword(user.passwordHash, input.currentPassword)
+      .catch(() => false);
+    if (!passwordOk) {
+      throw new UnauthorizedError("INVALID_CREDENTIALS", "Invalid password.");
+    }
+
+    await withTenant(schoolId, async (db) => {
+      await db.user.update({
+        where: { id: userId },
+        data: { totpSecret: null, totpPendingSecret: null, totpEnabled: false },
+      });
+
+      await db.auditLog.create({
+        data: {
+          schoolId,
+          userId,
+          action: TOTP_DISABLE_AUDIT_ACTION,
+          entityType: "user",
+          entityId: userId,
+          metadata: {},
+        },
+      });
+    });
   }
 
   // Calls the SECURITY DEFINER function added in
