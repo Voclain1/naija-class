@@ -14,11 +14,11 @@ export const loginSchema = z.object({
 
 export type LoginInput = z.infer<typeof loginSchema>;
 
-// Login response is shape-compatible with the signup response so the
-// client can treat both flows identically (store token, refresh user
-// state). The DTO types from signup-owner.dto.ts are reused verbatim.
-export interface LoginResponse {
-  user: SignupOwnerUserDto;
-  school: SignupOwnerSchoolDto;
-  token: string;
-}
+// Discriminated union: when the user has 2FA enabled, login issues a
+// short-lived challenge token instead of a session. The client must POST
+// that token + a TOTP code to /auth/2fa/challenge to complete the flow.
+// Both branches share the same HTTP 200 status; the client branches on
+// `requiresTwoFactor`.
+export type LoginResponse =
+  | { requiresTwoFactor: false; user: SignupOwnerUserDto; school: SignupOwnerSchoolDto; token: string }
+  | { requiresTwoFactor: true; challengeToken: string };
