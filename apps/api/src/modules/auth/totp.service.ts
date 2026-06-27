@@ -1,5 +1,5 @@
 import { Injectable } from "@nestjs/common";
-import { generateSecret, generateSync, generateURI, verifySync } from "otplib";
+import { generateSecret, generateURI, verifySync } from "otplib";
 
 // Thin wrapper around otplib v13 TOTP functions.
 // All state lives in the DB (totp_secret / totp_pending_secret); this
