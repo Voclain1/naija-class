@@ -146,8 +146,9 @@ Discipline for every function in this category:
 | `auth_resolve_session(token_hash)` | `20260516000000_add_auth_lookup_functions` | AuthGuard session lookup pre-tenant; resolves bearer token to `{ session_id, user_id, school_id, expires_at, user_is_active }`. | `password_hash`, email/phone/names, roles/permissions. |
 | `auth_lookup_user_for_login(email)` | `20260516000000_add_auth_lookup_functions` | Login service user lookup pre-tenant; returns `{ user_id, school_id, password_hash, is_active }`. | phone, names, role grants, session rows. |
 | `auth_resolve_invitation_by_token_hash(token_hash)` | `20260517000000_invitation_names_and_lookup` | Public invitation endpoints (GET /invitations/:token, POST /invitations/:token/accept) resolve a token hash to `{ invitation_id, school_id, email, role_key, first_name, last_name, invited_by, expires_at, accepted_at }` before withTenant() can apply. | `token_hash`, `phone`, `created_at` — caller already has the token; phone is Phase-4 territory; created_at is read tenant-scoped from the pending-invitations list. |
+| `create_audit_log_partition(p_year, p_month)` | `20260628000000_phase_3_slice_3_audit_partitioning` | Called by `PartitionService` at startup and on the monthly cron; creates the named monthly child partition of `audit_logs`. `app_user` cannot `CREATE TABLE` directly; this runs as `school_kit`. | Returns VOID. Table name derived from integer arithmetic only; quoted via `%I` in the function body — no caller input reaches the DDL string. |
 
-If this list grows past 5, refactor before adding more — see `docs/deferred.md` ("Audit SECURITY DEFINER inventory"). **Current count: 4.**
+If this list grows past 5, refactor before adding more — see `docs/deferred.md` ("Audit SECURITY DEFINER inventory"). **Current count: 5.**
 
 ### ESM module resolution
 

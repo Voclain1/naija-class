@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
 import { APP_FILTER, APP_GUARD } from "@nestjs/core";
 import { ConfigModule } from "@nestjs/config";
+import { ScheduleModule } from "@nestjs/schedule";
 import { ThrottlerGuard, ThrottlerModule } from "@nestjs/throttler";
 
 import { RedisAuthModule } from "./common/auth/redis-auth.module";
@@ -24,6 +25,7 @@ import { ImportsModule } from "./modules/imports/imports.module";
 import { InvitationsModule } from "./modules/invitations/invitations.module";
 import { ReportCardsModule } from "./modules/report-cards/report-cards.module";
 import { SchoolsModule } from "./modules/schools/schools.module";
+import { SystemModule } from "./modules/system/system.module";
 import { StudentsModule } from "./modules/students/students.module";
 import { SubjectAttendanceModule } from "./modules/subject-attendance/subject-attendance.module";
 import { SubjectsModule } from "./modules/subjects/subjects.module";
@@ -61,8 +63,10 @@ const isProd = process.env.NODE_ENV === "production";
     // picks the storage driver. Both expose providers downstream
     // modules depend on, so they must be imported before the feature
     // modules that consume them (ImportsModule).
+    ScheduleModule.forRoot(),
     QueueModule,
     StorageModule,
+    SystemModule,
     AuthModule,
     SchoolsModule,
     UsersModule,
