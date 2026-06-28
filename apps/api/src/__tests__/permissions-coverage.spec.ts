@@ -4,6 +4,8 @@ import {
   PHASE_2_OWNER_ONLY_PERMISSIONS,
   PHASE_2_PERMISSIONS,
   PHASE_2_TEACHER_PERMISSIONS,
+  PHASE_3_OWNER_ONLY_PERMISSIONS,
+  PHASE_3_PERMISSIONS,
 } from "@school-kit/types";
 import { describe, expect, it } from "vitest";
 
@@ -27,6 +29,8 @@ import { TeacherAssignmentsController } from "../modules/teacher-assignments/tea
 import { TeacherProfilesController } from "../modules/teacher-profiles/teacher-profiles.controller";
 import { TeacherScopeController } from "../modules/teacher-scope/teacher-scope.controller";
 import { TermsController } from "../modules/terms/terms.controller";
+import { FeeCategoriesController } from "../modules/fee-catalog/fee-categories.controller";
+import { FeeItemsController } from "../modules/fee-catalog/fee-items.controller";
 
 // Static RBAC safety net (slice 13). Every route handler on a Phase 1
 // controller MUST declare @Permissions — the PermissionsGuard fails closed,
@@ -170,6 +174,56 @@ describe("Phase 2 RBAC coverage: seeded role grants match the spec", () => {
       if (!teacherSubset.has(p)) {
         expect(teacherPerms.has(p), `teacher should NOT have ${p}`).toBe(false);
       }
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 3 RBAC coverage (slice 4 fee catalog). Same fail-closed guard contract
+// as Phase 1/2. Verifies all 8 fee-catalog permission strings are declared on
+// handlers, are known Phase 3 strings, and that the seeded admin role carries
+// all PHASE_3_PERMISSIONS except the owner-only auth.2fa.manage.
+// ---------------------------------------------------------------------------
+
+const PHASE_3_FEE_CONTROLLERS: Array<[string, Ctor]> = [
+  ["FeeCategoriesController", FeeCategoriesController],
+  ["FeeItemsController", FeeItemsController],
+];
+
+const PHASE_3_SET = new Set<string>(PHASE_3_PERMISSIONS);
+
+describe("Phase 3 RBAC coverage: fee-catalog route handlers declare @Permissions", () => {
+  assertCoverage(PHASE_3_FEE_CONTROLLERS);
+
+  it("every Phase 3 fee-catalog @Permissions value is a known Phase 3 permission", () => {
+    const unknown: string[] = [];
+    for (const [name, ctor] of PHASE_3_FEE_CONTROLLERS) {
+      for (const p of handlerPermissions(ctor)) {
+        if (!PHASE_3_SET.has(p)) unknown.push(`${name}:${p}`);
+      }
+    }
+    expect(unknown, `unknown Phase 3 permission(s): ${unknown.join(", ")}`).toEqual([]);
+  });
+});
+
+describe("Phase 3 RBAC coverage: seeded role grants match the spec", () => {
+  it("admin grants every Phase 3 permission EXCEPT the owner-only ones (auth.2fa.manage)", () => {
+    const adminPerms = new Set(roleSeed("admin").permissions);
+    const ownerOnly = new Set<string>(PHASE_3_OWNER_ONLY_PERMISSIONS);
+    for (const p of PHASE_3_PERMISSIONS) {
+      expect(adminPerms.has(p), `admin ${ownerOnly.has(p) ? "should NOT" : "should"} have ${p}`).toBe(
+        !ownerOnly.has(p),
+      );
+    }
+  });
+
+  it("all 8 fee-catalog permission strings are granted to admin", () => {
+    const adminPerms = new Set(roleSeed("admin").permissions);
+    const feeCatalogPerms = PHASE_3_PERMISSIONS.filter(
+      (p) => p.startsWith("fee-category.") || p.startsWith("fee-item."),
+    );
+    for (const p of feeCatalogPerms) {
+      expect(adminPerms.has(p), `admin should have ${p}`).toBe(true);
     }
   });
 });
