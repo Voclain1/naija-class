@@ -18,6 +18,7 @@ import { ClassArmsModule } from "./modules/class-arms/class-arms.module";
 import { ClassLevelsModule } from "./modules/class-levels/class-levels.module";
 import { ClassSubjectsModule } from "./modules/class-subjects/class-subjects.module";
 import { DebugModule } from "./modules/debug/debug.module";
+import { FeeCatalogModule } from "./modules/fee-catalog/fee-catalog.module";
 import { EnrollmentsModule } from "./modules/enrollments/enrollments.module";
 import { GradingModule } from "./modules/grading/grading.module";
 import { GuardiansModule } from "./modules/guardians/guardians.module";
@@ -89,6 +90,7 @@ const isProd = process.env.NODE_ENV === "production";
     AttendanceModule,
     SubjectAttendanceModule,
     ReportCardsModule,
+    FeeCatalogModule,
     ...(isProd ? [] : [DebugModule]),
   ],
   controllers: [HealthController],
