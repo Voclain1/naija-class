@@ -186,7 +186,7 @@ model Invitation {
 }
 
 model AuditLog {
-  id         String   @id @default(uuid())
+  id         String   @default(uuid())
   schoolId   String?  @map("school_id")
   userId     String?  @map("user_id")
   action     String // e.g. 'school.update', 'user.invite', 'academic-year.create'
@@ -196,6 +196,11 @@ model AuditLog {
   ipAddress  String?  @map("ip_address")
   createdAt  DateTime @default(now()) @map("created_at")
 
+  // Composite PK required by PostgreSQL: all unique constraints on a
+  // partitioned table must include every partition key column.
+  // audit_logs is partitioned by created_at, so the PK is (id, created_at).
+  // Nothing FK-references audit_logs.id, so this change is safe.
+  @@id([id, createdAt])
   @@index([schoolId, createdAt])
   @@map("audit_logs")
 }
