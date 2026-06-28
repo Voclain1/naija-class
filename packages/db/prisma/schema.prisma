@@ -1122,6 +1122,62 @@ model AttendanceRecord {
   @@map("attendance_records")
 }
 
+// ---------- Phase 3 / Slice 4 — Fee catalog ----------
+//
+// FeeCategory: school-defined taxonomy (Tuition, Hostel, Sports, PTA Levy…).
+// FeeItem: a single fee with optional scope; NULL scope field = "applies to all".
+// Invoice generation (slice 6) matches a FeeItem when every non-null scope field
+// equals the student's value. Scope rule: classArmId must not be set without
+// classLevelId — enforced in the service layer (Zod refine + merge-check).
+//
+// Only the FeeItem→FeeCategory relation is enforced; the four scope FKs
+// (classLevelId, classArmId, termId, academicYearId) follow the project's
+// plain-FK convention: stored as TEXT?, existence validated in the service via
+// withTenant, not enforced at the DB layer (keeps the schema lean, avoids
+// cross-module FK fragility). See CLAUDE.md "Coding patterns → Plain-FK".
+
+model FeeCategory {
+  id          String   @id @default(uuid())
+  schoolId    String   @map("school_id")
+  name        String
+  description String?
+  active      Boolean  @default(true)
+  createdBy   String   @map("created_by")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  feeItems FeeItem[]
+
+  @@unique([schoolId, name])
+  @@index([schoolId])
+  @@map("fee_categories")
+}
+
+model FeeItem {
+  id             String  @id @default(uuid())
+  schoolId       String  @map("school_id")
+  categoryId     String  @map("category_id")
+  name           String
+  amount         Int // kobo — never Float (CLAUDE.md money hard rule)
+  classLevelId   String? @map("class_level_id") // null = all levels
+  classArmId     String? @map("class_arm_id") // null = all arms; requires classLevelId when set
+  termId         String? @map("term_id") // null = all terms
+  academicYearId String? @map("academic_year_id") // null = all years
+  active         Boolean  @default(true)
+  createdBy      String   @map("created_by")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  category FeeCategory @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+
+  @@index([schoolId])
+  // Non-unique scan index for invoice generation (slice 6): matches student's
+  // (level, term, year) against fee items. Non-unique because a school can have
+  // many items with the same scope combination (e.g. two hostel fees for JSS1 T1).
+  @@index([schoolId, classLevelId, termId, academicYearId])
+  @@map("fee_items")
+}
+
 // ---------- Subject-period attendance (Phase 2 / Slice 8 — opt-in) ----------
 
 // Subject-period attendance. SEPARATE table from daily — period-level semantics,

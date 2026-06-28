@@ -231,9 +231,23 @@ export const PHASE_2_OWNER_ONLY_PERMISSIONS = ["report-card.reopen"] as const;
 // admin view 2FA status on the user list (CP2 admin surface). Owner gets both
 // via the '*' wildcard; admin gets only auth.2fa.read (see
 // PHASE_3_OWNER_ONLY_PERMISSIONS + system-roles seed).
+//
+// Fee catalog permissions (slice 4) are admin-accessible with no owner-only
+// restriction in this slice. The billing.delete owner-only gate lands at
+// slice 15 close-out alongside the bursar role wire-up.
 export const PHASE_3_PERMISSIONS = [
   "auth.2fa.manage",
   "auth.2fa.read",
+
+  // Slice 4 — fee catalog
+  "fee-category.read",
+  "fee-category.create",
+  "fee-category.update",
+  "fee-category.delete",
+  "fee-item.read",
+  "fee-item.create",
+  "fee-item.update",
+  "fee-item.delete",
 ] as const;
 
 export const PHASE_3_OWNER_ONLY_PERMISSIONS = ["auth.2fa.manage"] as const;
