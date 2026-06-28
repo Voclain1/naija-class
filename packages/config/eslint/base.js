@@ -142,6 +142,11 @@ export const baseConfig = [
       // no schoolId). It issues a single SELECT current_user to verify the
       // runtime DB role is app_user (not school_kit). No tenant data touched.
       "**/health/health.controller.ts",
+      // partition.service.ts calls SELECT create_audit_log_partition(), a
+      // SECURITY DEFINER function that issues CREATE TABLE DDL. Schema-level
+      // partition management has no school context — it is pre-tenant by
+      // definition, exactly like the auth SECURITY DEFINER call sites above.
+      "**/modules/system/partition.service.ts",
     ],
     rules: {
       "no-restricted-imports": "off",
