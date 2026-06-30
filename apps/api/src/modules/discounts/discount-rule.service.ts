@@ -110,6 +110,8 @@ export class DiscountRuleService {
         select: DISCOUNT_RULE_SELECT,
       });
 
+      // audit_logs has FORCE RLS — basePrisma without the school GUC set would be
+      // blocked. All audit writes in this service must go through withTenant.
       await db.auditLog.create({
         data: {
           schoolId: authCtx.schoolId,

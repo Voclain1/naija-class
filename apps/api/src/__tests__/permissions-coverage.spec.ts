@@ -29,6 +29,7 @@ import { TeacherAssignmentsController } from "../modules/teacher-assignments/tea
 import { TeacherProfilesController } from "../modules/teacher-profiles/teacher-profiles.controller";
 import { TeacherScopeController } from "../modules/teacher-scope/teacher-scope.controller";
 import { TermsController } from "../modules/terms/terms.controller";
+import { DiscountRulesController } from "../modules/discounts/discount-rules.controller";
 import { FeeCategoriesController } from "../modules/fee-catalog/fee-categories.controller";
 import { FeeItemsController } from "../modules/fee-catalog/fee-items.controller";
 
@@ -198,6 +199,28 @@ describe("Phase 3 RBAC coverage: fee-catalog route handlers declare @Permissions
   it("every Phase 3 fee-catalog @Permissions value is a known Phase 3 permission", () => {
     const unknown: string[] = [];
     for (const [name, ctor] of PHASE_3_FEE_CONTROLLERS) {
+      for (const p of handlerPermissions(ctor)) {
+        if (!PHASE_3_SET.has(p)) unknown.push(`${name}:${p}`);
+      }
+    }
+    expect(unknown, `unknown Phase 3 permission(s): ${unknown.join(", ")}`).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 3 / Slice 5 — discount-rule controller coverage.
+// ---------------------------------------------------------------------------
+
+const PHASE_3_DISCOUNT_CONTROLLERS: Array<[string, Ctor]> = [
+  ["DiscountRulesController", DiscountRulesController],
+];
+
+describe("Phase 3 RBAC coverage: discount-rule route handlers declare @Permissions", () => {
+  assertCoverage(PHASE_3_DISCOUNT_CONTROLLERS);
+
+  it("every Phase 3 discount-rule @Permissions value is a known Phase 3 permission", () => {
+    const unknown: string[] = [];
+    for (const [name, ctor] of PHASE_3_DISCOUNT_CONTROLLERS) {
       for (const p of handlerPermissions(ctor)) {
         if (!PHASE_3_SET.has(p)) unknown.push(`${name}:${p}`);
       }
