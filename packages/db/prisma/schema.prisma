@@ -1237,6 +1237,54 @@ model DiscountRule {
   @@map("discount_rules")
 }
 
+// ---------- Phase 3 / Slice 6 — Invoices (snapshot-on-issue) ----------
+//
+// SNAPSHOT-ON-ISSUE: the `items` JSONB column freezes the fee + discount state
+// at the moment the invoice is issued. FeeItem amounts and DiscountRule values
+// can be edited freely afterwards; issued invoices are unaffected because they
+// carry the frozen snapshot. (Mirrors the released-report-card snapshot pattern.)
+//
+// The @@unique([schoolId, studentId, termId]) constraint enforces one invoice per
+// student per term. CANCELLED invoices hold the slot — re-generation after cancel
+// is not supported (void + create a new record is the intended workflow).
+//
+// `totalPaid` starts at 0 and is updated by the payment service (slice 7).
+
+enum InvoiceStatus {
+  DRAFT
+  ISSUED
+  PARTIALLY_PAID
+  PAID
+  OVERDUE
+  CANCELLED
+  REFUNDED
+}
+
+model Invoice {
+  id             String        @id @default(uuid())
+  schoolId       String        @map("school_id")
+  studentId      String        @map("student_id")      // plain-FK — validated in service
+  termId         String        @map("term_id")          // plain-FK
+  academicYearId String        @map("academic_year_id") // denormalised from term at issue time
+  status         InvoiceStatus @default(ISSUED)
+  // Frozen snapshot of fee line items and applied discounts at issue time.
+  // Shape: [{ feeItemId, categoryName, feeName, amount, discountsApplied: [{ ruleId, ruleName, discountAmount }], netAmount }]
+  items          Json
+  totalAmount    Int           @map("total_amount")   // Σ item.amount (kobo)
+  totalDiscount  Int           @map("total_discount") // Σ capped item discount (kobo)
+  totalDue       Int           @map("total_due")      // totalAmount − totalDiscount (kobo)
+  totalPaid      Int           @default(0) @map("total_paid") // updated by slice 7 payment service
+  dueDate        DateTime?     @map("due_date") @db.Date
+  issuedAt       DateTime?     @map("issued_at")
+  issuedBy       String?       @map("issued_by")
+  createdAt      DateTime      @default(now()) @map("created_at")
+  updatedAt      DateTime      @updatedAt @map("updated_at")
+
+  @@unique([schoolId, studentId, termId])
+  @@index([schoolId, status])
+  @@map("invoices")
+}
+
 // ---------- Subject-period attendance (Phase 2 / Slice 8 — opt-in) ----------
 
 // Subject-period attendance. SEPARATE table from daily — period-level semantics,
