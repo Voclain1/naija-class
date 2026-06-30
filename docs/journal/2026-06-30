@@ -1,0 +1,136 @@
+# 2026-06-30 — Phase 3 Slice 5 CP2: Discount Rules API + Web UI
+
+## Starting state
+
+CP1 closed on 2026-06-29 (commit `b228098`). It delivered:
+- `DiscountRule` Prisma model + enums (`DiscountDuration`, `DiscountType`)
+- Migration with FORCE RLS + tenant-isolation policy + RBAC seed
+- `createDiscountRuleSchema` / `updateDiscountRuleSchema` in `packages/types` with 5 Zod `.refine()` guards
+- `DiscountRuleService` with full CRUD + audit log on every mutation
+- 20 integration tests (all green)
+
+Product decisions locked in CP1:
+- Manual only — no rule engine, no auto-triggering
+- `PERCENTAGE` capped at 9999 basis points (99.99%); 100% must use `FULL_WAIVER`
+- `value: Int?` — NULL for `FULL_WAIVER`, positive int for others
+- Scope: exactly one of `feeItemId` XOR `feeCategoryId`
+- Permissions: `discount-rule.read/create/update/deactivate` (no hard delete)
+
+---
+
+## CP2 deliverables
+
+### API layer
+
+**`apps/api/src/modules/discounts/discount-rules.controller.ts`** (new)
+5 endpoints, all gated with `@Permissions`:
+- `GET /discount-rules?studentId=&includeInactive=` → `discount-rule.read`
+- `GET /discount-rules/:id` → `discount-rule.read`
+- `POST /discount-rules` → `discount-rule.create`
+- `PATCH /discount-rules/:id` → `discount-rule.update`
+- `DELETE /discount-rules/:id` → `discount-rule.deactivate` (soft-delete; returns 204)
+
+**`apps/api/src/modules/discounts/discounts.module.ts`** (updated)
+Added `DiscountRulesController` to controllers; `DiscountRuleService` exported.
+
+**`apps/api/src/app.module.ts`** (updated)
+`DiscountsModule` imported after `FeeCatalogModule`.
+
+**`apps/api/src/__tests__/permissions-coverage.spec.ts`** (extended)
+New `Phase 3 RBAC coverage: discount-rule route handlers declare @Permissions` describe
+block with `assertCoverage` + unknown-permission guard for all 4 `discount-rule.*`
+permission strings.
+
+### Web layer
+
+**`apps/web/src/lib/finance/discount-rules-api.ts`** (new)
+5 typed wrappers: `listDiscountRules`, `getDiscountRule`, `createDiscountRule`,
+`updateDiscountRule`, `deactivateDiscountRule` (DELETE → 204).
+
+**`apps/web/src/app/(admin)/settings/finance/discounts/page.tsx`** (new)
+"use client" page. Student picker → per-student rules table → "Assign discount" modal.
+- Discount type: PERCENTAGE (basis-point input with live preview), FIXED_AMOUNT (₦ input),
+  FULL_WAIVER
+- Target: specific fee item or entire fee category
+- Duration: LIFETIME, SESSION (requires academic year), TERM (requires year + term)
+- Deactivate button on each active rule
+
+### Gate: 881/881 tests pass (2 skipped)
+
+---
+
+## Bug fixes during CP2
+
+### Bug 1 — Student picker empty
+`listStudents({ limit: 500 })` exceeded `listStudentsQuerySchema` max of 200. Zod rejected
+the request, Promise.all caught it silently, no state setter ran.
+**Fix:** changed to `listStudents({ limit: 200 })`.
+
+### Bug 2 — Monolithic Promise.all silences partial failures
+The mount `useEffect` used `Promise.all([...]).then([all 4 setters]).catch(() => {})`.
+One rejection (the students 500 call) prevented all four setters from ever running.
+**Fix:** split into four independent `.then(setter).catch(...)` chains, matching the
+pattern used on the fee catalog page (`fees/page.tsx`).
+
+### Bug 3 — HTTP 304 on fee-items and academic-years returns no body
+NestJS/Express adds `ETag` headers to GET responses by default. On subsequent browser
+loads the browser sent `If-None-Match`; NestJS returned 304 with no body; `apiFetch`
+hit `response.ok === false` (304 is not 2xx), parsed no body, threw `ApiError`;
+`.catch(() => {})` swallowed it silently.
+**Fix:** added `cache: "no-store"` to the `fetch()` call in `apps/web/src/lib/api-client.ts`
+(before `...rest` so callers can still override). Applies globally to all `apiFetch` calls.
+
+### Bug 4 — Fee categories empty despite 200 response
+`listFeeCategories()` defaults to `active: true`. If an admin had deactivated a fee
+category, it disappeared from the discounts modal even though active fee items still
+existed under it (fee items have an independent `active` flag). The API returned `[]`
+with a valid 200, so no error surfaced.
+**Fix:** discounts page calls `listFeeCategories({ includeInactive: true })` and
+`listFeeItems({ includeInactive: true })`. Discount rules legitimately target deactivated
+fee items/categories — a scholarship applied to a retired tuition line must still be
+visible and manageable.
+Changed silent `.catch(() => {})` to `.catch(e => console.error('[DiscountsPage]', e))`
+on fee-catalog and academic-years calls so future API errors surface in DevTools.
+
+---
+
+## Notable decisions
+
+**`includeInactive: true` on discount modal pickers** — discount rules outlive the
+active lifespan of fee categories and items. A bursar needs to see all targets
+regardless of active state when assigning or reviewing discounts.
+
+**`cache: "no-store"` is global in `apiFetch`** — none of the NestJS endpoints should
+be served from the HTTP cache (freshness is managed by React Query / component state,
+not HTTP headers). This is correct for an authenticated API client.
+
+**Academic years empty = data not yet created** — if the year/term duration picker
+shows no years, the school must add academic years via Settings → Academic Years first.
+No code change required; the console.error will surface API-level errors if they occur.
+
+---
+
+## Required comment preserved
+
+Per explicit product instruction, this comment appears above every audit log write in
+`discount-rule.service.ts`:
+
+```typescript
+// audit_logs has FORCE RLS — basePrisma without the school GUC set would be
+// blocked. All audit writes in this service must go through withTenant.
+```
+
+---
+
+## Files changed in CP2
+
+```
+apps/api/src/__tests__/permissions-coverage.spec.ts       modified
+apps/api/src/app.module.ts                                 modified
+apps/api/src/modules/discounts/discount-rule.service.ts   modified (comment added)
+apps/api/src/modules/discounts/discount-rules.controller.ts  new
+apps/api/src/modules/discounts/discounts.module.ts         modified
+apps/web/src/app/(admin)/settings/finance/discounts/       new (page.tsx)
+apps/web/src/lib/api-client.ts                             modified (cache: no-store)
+apps/web/src/lib/finance/discount-rules-api.ts             new
+```

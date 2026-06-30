@@ -79,6 +79,10 @@ export async function apiFetch<T>(
   }
 
   const response = await fetch(`${API_BASE_URL}${path}`, {
+    // Prevent the browser from sending If-None-Match / If-Modified-Since.
+    // NestJS adds ETag headers by default; a cached 304 has no body, which
+    // causes apiFetch to throw an ApiError and silently blank state setters.
+    cache: "no-store",
     ...rest,
     headers: finalHeaders,
     body: body === undefined ? undefined : JSON.stringify(body),

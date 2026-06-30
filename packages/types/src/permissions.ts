@@ -248,6 +248,13 @@ export const PHASE_3_PERMISSIONS = [
   "fee-item.create",
   "fee-item.update",
   "fee-item.delete",
+
+  // Slice 5 — discount rules (manual per-student assignment)
+  // Bursar role wire-up deferred to slice 15; strings must exist now.
+  "discount-rule.read",
+  "discount-rule.create",
+  "discount-rule.update",
+  "discount-rule.deactivate",
 ] as const;
 
 export const PHASE_3_OWNER_ONLY_PERMISSIONS = ["auth.2fa.manage"] as const;

@@ -1178,6 +1178,65 @@ model FeeItem {
   @@map("fee_items")
 }
 
+// ---------- Phase 3 / Slice 5 — Discount rules ----------
+//
+// A discount rule is a manual per-student assignment created by a
+// bursar/owner/admin. No rule engine, no auto-triggering, no eligibility
+// conditions. Each rule targets exactly one student and either one FeeItem
+// (feeItemId set) or one FeeCategory (feeCategoryId set) — never both, never
+// neither (Zod refine in DTO + service re-check for defence-in-depth).
+//
+// Duration:
+//   TERM      — applies for a single term; termId required
+//   SESSION   — applies for a full academic year; academicYearId required
+//   LIFETIME  — no date bound; no term/year fields needed
+//
+// Discount type:
+//   PERCENTAGE   → value is basis points (Int, 1–9999; 1000 = 10%, 9999 = 99.99%)
+//   FIXED_AMOUNT → value is kobo (Int, positive)
+//   FULL_WAIVER  → value is NULL (entire fee waived)
+//
+// Stacking is allowed. Total cannot go below zero — enforced at invoice
+// generation (slice 6), not here. All FK columns (studentId, feeItemId,
+// feeCategoryId, termId, academicYearId) follow the plain-FK convention:
+// validated in the service via withTenant, not enforced at the DB layer.
+
+enum DiscountDuration {
+  TERM
+  SESSION
+  LIFETIME
+}
+
+enum DiscountType {
+  PERCENTAGE
+  FIXED_AMOUNT
+  FULL_WAIVER
+}
+
+model DiscountRule {
+  id             String           @id @default(uuid())
+  schoolId       String           @map("school_id")
+  studentId      String           @map("student_id")      // plain-FK — validated in service
+  name           String
+  // Exactly one of feeItemId / feeCategoryId must be set (Zod refine + service re-check)
+  feeItemId      String?          @map("fee_item_id")
+  feeCategoryId  String?          @map("fee_category_id")
+  duration       DiscountDuration
+  termId         String?          @map("term_id")          // required when duration = TERM
+  academicYearId String?          @map("academic_year_id") // required when duration = SESSION
+  discountType   DiscountType     @map("discount_type")
+  // basis points 1–9999 (PERCENTAGE) | kobo (FIXED_AMOUNT) | NULL (FULL_WAIVER)
+  value          Int?
+  active         Boolean          @default(true)
+  createdBy      String           @map("created_by")
+  createdAt      DateTime         @default(now()) @map("created_at")
+  updatedAt      DateTime         @updatedAt @map("updated_at")
+
+  @@index([schoolId])
+  @@index([schoolId, studentId])
+  @@map("discount_rules")
+}
+
 // ---------- Subject-period attendance (Phase 2 / Slice 8 — opt-in) ----------
 
 // Subject-period attendance. SEPARATE table from daily — period-level semantics,
