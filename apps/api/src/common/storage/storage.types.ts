@@ -45,6 +45,7 @@ export interface StorageDriver {
     key: StorageObjectKey,
     body: StorageBody,
     contentType: string,
+    contentDisposition?: string,
   ): Promise<StoragePath>;
 
   /**

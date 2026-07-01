@@ -63,6 +63,7 @@ export class FilesystemStorageDriver implements StorageDriver {
     key: StorageObjectKey,
     body: StorageBody,
     _contentType: string,
+    _contentDisposition?: string,
   ): Promise<StoragePath> {
     const canonical = pathFor(schoolId, key);
     const absolute = this.absolute(canonical);

@@ -228,6 +228,7 @@ export class PaymentsService {
         { kind: "payment-receipt", paymentId: payment.id },
         Buffer.from(html, "utf8"),
         "text/html",
+        "inline",
       );
 
       // 7. Persist receipt metadata on payment row.

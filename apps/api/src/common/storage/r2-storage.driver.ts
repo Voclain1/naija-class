@@ -63,6 +63,7 @@ export class R2StorageDriver implements StorageDriver {
     key: StorageObjectKey,
     body: StorageBody,
     contentType: string,
+    contentDisposition?: string,
   ): Promise<StoragePath> {
     const canonical = pathFor(schoolId, key);
     await this.client.send(
@@ -71,6 +72,7 @@ export class R2StorageDriver implements StorageDriver {
         Key: canonical,
         Body: body,
         ContentType: contentType,
+        ...(contentDisposition ? { ContentDisposition: contentDisposition } : {}),
       }),
     );
     return canonical;
@@ -97,11 +99,20 @@ export class R2StorageDriver implements StorageDriver {
     ttlSeconds: number,
   ): Promise<string> {
     const canonical = pathFor(schoolId, key);
+    // For HTML receipts, force the browser to render inline rather than download.
+    // ResponseContentDisposition in the signed URL overrides the object's stored
+    // Content-Disposition for this request, covering objects uploaded before the
+    // ContentDisposition was stored on put().
+    const responseContentDisposition =
+      key.kind === "payment-receipt" ? "inline" : undefined;
     return getSignedUrl(
       this.client,
       new GetObjectCommand({
         Bucket: this.config.bucket,
         Key: canonical,
+        ...(responseContentDisposition
+          ? { ResponseContentDisposition: responseContentDisposition }
+          : {}),
       }),
       { expiresIn: ttlSeconds },
     );
