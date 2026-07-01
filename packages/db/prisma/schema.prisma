@@ -1279,10 +1279,64 @@ model Invoice {
   issuedBy       String?       @map("issued_by")
   createdAt      DateTime      @default(now()) @map("created_at")
   updatedAt      DateTime      @updatedAt @map("updated_at")
+  payments       Payment[]
 
   @@unique([schoolId, studentId, termId])
   @@index([schoolId, status])
   @@map("invoices")
+}
+
+// ---------- Phase 3 / Slice 7 — Payments (manual recording + receipts) ----------
+//
+// Manual payments (CASH, POS, BANK_TRANSFER) are created with status = SUCCESS;
+// PENDING is reserved for the Paystack async path (slice 8).
+//
+// totalPaid on Invoice is recomputed via SUM(amount) WHERE status = 'SUCCESS'
+// after each payment write — idempotent, safe for future reversals (slice 11).
+//
+// @@unique([schoolId, paystackReference]) is implemented as a partial unique index
+// in the migration (WHERE paystack_reference IS NOT NULL) so manual rows (null)
+// coexist without violating the constraint. Prisma doesn't know about the WHERE
+// clause — it sees the unique as declared here, which is sufficient for the client.
+
+enum PaymentMethod {
+  PAYSTACK
+  CASH
+  POS
+  BANK_TRANSFER
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  REVERSED
+}
+
+model Payment {
+  id                String        @id @default(uuid())
+  schoolId          String        @map("school_id")
+  invoiceId         String        @map("invoice_id")
+  studentId         String        @map("student_id")        // denormalised from invoice at record time
+  amount            Int                                      // kobo — always > 0
+  method            PaymentMethod
+  status            PaymentStatus @default(SUCCESS)          // manual = SUCCESS; Paystack = PENDING (slice 8)
+  paystackReference String?       @map("paystack_reference") // null for manual; slice 8 sets this
+  paystackData      Json?         @map("paystack_data")
+  reference         String?                                  // bank transfer ref, POS txn ID, cheque no.
+  receiptNumber     String?       @map("receipt_number")     // "RCP-<id-first-8-upper>"
+  receiptUrl        String?       @map("receipt_url")        // R2 canonical path; signed on demand
+  recordedBy        String?       @map("recorded_by")        // userId; null for Paystack webhook (slice 8)
+  paidAt            DateTime?     @map("paid_at")
+  createdAt         DateTime      @default(now()) @map("created_at")
+  updatedAt         DateTime      @updatedAt @map("updated_at")
+
+  invoice           Invoice       @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
+
+  @@unique([schoolId, paystackReference])
+  @@index([schoolId, invoiceId])
+  @@index([schoolId, studentId])
+  @@map("payments")
 }
 
 // ---------- Subject-period attendance (Phase 2 / Slice 8 — opt-in) ----------

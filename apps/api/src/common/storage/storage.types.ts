@@ -12,7 +12,10 @@ export type StorageObjectKey =
   | { kind: "import-error-report"; jobId: string }
   // Phase 2 / Slice 5 — the rendered report-card PDF. Layout:
   // schools/<schoolId>/report-cards/<termId>/<studentId>.pdf
-  | { kind: "report-card"; termId: string; studentId: string };
+  | { kind: "report-card"; termId: string; studentId: string }
+  // Phase 3 / Slice 7 — HTML payment receipt. Layout:
+  // schools/<schoolId>/receipts/<paymentId>.html
+  | { kind: "payment-receipt"; paymentId: string };
 
 export type StorageDriverKind = "filesystem" | "r2";
 

@@ -38,6 +38,12 @@ export function pathFor(schoolId: string, key: StorageObjectKey): string {
       }
       return `schools/${schoolId}/report-cards/${key.termId}/${key.studentId}.pdf`;
     }
+    case "payment-receipt": {
+      if (!UUID_RE.test(key.paymentId)) {
+        throw new Error(`storage: paymentId is not a UUID: ${redact(key.paymentId)}`);
+      }
+      return `schools/${schoolId}/receipts/${key.paymentId}.html`;
+    }
   }
 }
 

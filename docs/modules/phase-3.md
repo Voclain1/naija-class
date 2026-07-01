@@ -78,7 +78,7 @@ estimates assume Phase-2 velocity.
 | 4 | **Fee catalog** — `FeeCategory` (school-defined) + `FeeItem` with optional scope (level / arm / term / year), migration, RLS, admin CRUD UI | The flexible fee skeleton everything hangs off. Demoable: a school names its own fees and scopes them. | 2 | 3 days |
 | 5 | **Discount rules** — `DiscountRule` (5 curated rule types, typed jsonb params), per-type server-side eval functions, RLS, admin CRUD UI | Curated flexibility without a DSL. Each rule type tested individually. | 2 | 3 days |
 | 6 | **Invoice generation (snapshot-on-issue)** — `Invoice` with denormalized item+discount snapshot, generation by student's (level, arm, term, year), RLS, admin issue/preview UI | The freeze point — invoices stop tracking live fee/discount edits. The core correctness property. | 2 | 3 days |
-| 7 | **Manual payment recording + receipts** — `Payment` (cash/POS/bank-transfer), receipt generation (PDF on R2, reusing the slice-5 render pattern), RLS, bursar UI | Schools can collect + receipt money with zero Paystack dependency. Ships before the online rail. | 2 | 3 days |
+| 7 | **Manual payment recording + receipts** — `Payment` (cash/POS/bank-transfer), receipt generation (**HTML on R2**, signed URL via `GET /payments/:id/receipt`), `computeInvoiceStatus` pure fn, RLS, bursar UI embedded in invoice detail page | Schools can collect + receipt money with zero Paystack dependency. Ships before the online rail. | 2 | 3 days |
 | 8 | **Paystack integration** — init + redirect + **webhook + reconciliation + idempotency keys + signature verification**, `Payment` online path, sandbox integration tests | The meaty, riskiest finance surface — real money, async, replay-safe. | 3 | 5 days |
 | 9 | **Installment plans + partial payments** — `PaymentPlan` (+ installment rows), partial-payment allocation against an invoice, status transitions | Nigerian schools commonly take fees in tranches. Builds on the invoice + payment base. | 2 | 3 days |
 | 10 | **Debtor list + email reminders** — outstanding-balance query, reminder schedule, **email via Resend** (SMS deferred to Phase 4 — guardians aren't users yet) | The "who owes" operational surface. Email-only keeps it inside Phase-3 channels. | 1 | 2 days |
@@ -95,6 +95,12 @@ Total: **~27-30 cps**, **~48 build days** raw before trimming.
 > pre-tenant auth functions (`auth_lookup_user_for_login`, `auth_resolve_session`,
 > `auth_resolve_invitation_by_token_hash`). Without it, FORCE RLS filters every row
 > and login / session resolution return zero rows. See `docs/runbooks/neon-prod-setup.md`.
+>
+> **Slices 4, 5, 6 closed (2026-06-30).** Fee catalog, discount rules, and
+> invoice generation (snapshot-on-issue) are live on the branch. Slices 2 and 3
+> (auth hardening, audit-log partitioning) are deferred; tracked in `docs/deferred.md`.
+>
+> **Slice 7 plan-first locked 2026-07-01.** See §16 for decisions.
 
 ## 4. Data model
 
@@ -226,15 +232,18 @@ model Payment {
   status            PaymentStatus @default(PENDING)
   paystackReference String?  @map("paystack_reference") // idempotency key for the online path
   paystackData      Json?    @map("paystack_data")
-  receiptNumber     String?  @map("receipt_number")
-  receiptUrl        String?  @map("receipt_url")        // R2
-  recordedBy        String?  @map("recorded_by")        // set for manual (cash/POS/transfer)
+  reference         String?                              // bank transfer ref, POS txn ID, cheque no., etc.
+  receiptNumber     String?  @map("receipt_number")      // "RCP-<paymentId-first-8-upper>"; human-readable
+  receiptUrl        String?  @map("receipt_url")         // R2 canonical path — signed on demand
+  recordedBy        String?  @map("recorded_by")         // set for manual; null for Paystack webhook
   paidAt            DateTime? @map("paid_at")
   createdAt         DateTime @default(now()) @map("created_at")
   updatedAt         DateTime @updatedAt @map("updated_at")
   invoice           Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
-  @@unique([schoolId, paystackReference])              // webhook idempotency (partial-unique on non-null)
+  // Partial unique — Postgres excludes NULL rows, so manual payments (paystackReference = null) can coexist.
+  @@unique([schoolId, paystackReference])              // webhook idempotency
   @@index([schoolId, invoiceId])
+  @@index([schoolId, studentId])
   @@map("payments")
 }
 
@@ -340,9 +349,11 @@ GET    /invoices/:id
 POST   /invoices/:id/cancel
 
 # Slice 7 — manual payments + receipts
-POST   /payments/manual                  — body: { invoiceId, amount, method, paidAt }
-GET    /payments?invoiceId=&studentId=
-GET    /payments/:id/receipt             — signed R2 URL
+# Controller declaration order: list → POST /manual (static) → GET /:id → GET /:id/receipt
+POST   /payments/manual                  — body: { invoiceId, amount (kobo), method, paidAt, reference? }
+GET    /payments?invoiceId=&studentId=&page=&limit=
+GET    /payments/:id
+GET    /payments/:id/receipt             — → { url: string; expiresAt: Date } (signed R2 URL, 15-min TTL)
 
 # Slice 8 — Paystack
 POST   /payments/paystack/init           — body: { invoiceId, amount } → { authorizationUrl, reference }
@@ -591,3 +602,83 @@ Specific, not vague:
 
 *Per-slice plan-firsts happen as each slice approaches — this doc is the phase
 map, not the slice specs. Slice 1's plan-first is the next planning step.*
+
+## 16. Slice 7 plan-first decisions (locked 2026-07-01)
+
+These decisions were finalized at the plan-first and are building constraints for
+CP1/CP2. Reopen only if a concrete blocker surfaces.
+
+**D1 — Overpayment: REJECT.**
+`POST /payments/manual` returns `ConflictError("PAYMENT_WOULD_EXCEED_BALANCE", ...)` if
+`dto.amount > (invoice.totalDue - invoice.totalPaid)`. Overpayment in a Nigerian
+school context is almost always a data-entry error; the bursar corrects the amount.
+Accepting and crediting a positive balance would require a refund flow (slice 11)
+to unwind. PAID = fully settled, no credit balance. Slice 11 handles intentional
+overpay if it ever emerges.
+
+**D2 — totalPaid update: RECOMPUTE from aggregate, not atomic increment.**
+After each payment write:
+```typescript
+const { _sum } = await db.payment.aggregate({
+  where: { invoiceId, status: "SUCCESS" },
+  _sum: { amount: true },
+});
+const newTotalPaid = _sum.amount ?? 0;
+await db.invoice.update({ data: { totalPaid: newTotalPaid, status: computeInvoiceStatus(newTotalPaid, invoice.totalDue) } });
+```
+Recompute is idempotent: replaying any write produces the correct balance.
+Slice 8 (Paystack webhooks) and slice 11 (reversals) use the identical path.
+
+**D3 — Status transition: pure function in service, not DB trigger.**
+```typescript
+function computeInvoiceStatus(totalPaid: number, totalDue: number): InvoiceStatus {
+  if (totalPaid <= 0)        return "ISSUED";
+  if (totalPaid < totalDue)  return "PARTIALLY_PAID";
+  return "PAID";
+}
+```
+CANCELLED and REFUNDED are terminal — payment recording rejects if invoice is
+in either state. OVERDUE is not transitioned by this function (cron/manual, TBD).
+
+**D4 — Receipt format: HTML on R2 (not PDF).**
+Receipt generated in-process from a template string, uploaded via
+`storageService.put(schoolId, { kind: "payment-receipt", paymentId }, buffer, "text/html")`.
+Bursars open the signed URL in a browser and use the print dialog.
+PDF via Puppeteer is a fast-follow (swap `put` + content-type, no API contract change).
+This decision avoids pulling in the `RenderService` dependency before the receipt
+template exists.
+
+**D5 — Manual payment default status: SUCCESS at creation.**
+Manual payments are confirmed-in-hand at the moment of recording. `PENDING` is
+reserved for Paystack initiation (slice 8), where the payment row is created PENDING
+and transitions to SUCCESS on webhook confirmation.
+
+**D6 — `paidAt`: any valid ISO datetime accepted (no backdate limit).**
+Bursars record when cash was received, which may be yesterday or last week (late
+entry). The audit log records both `paidAt` and `createdAt`; the gap is always
+visible. Arbitrary backdate limits add friction without safety benefit.
+
+**D7 — Receipt number: derived from payment ID.**
+`receiptNumber = "RCP-" + paymentId.slice(0, 8).toUpperCase()`.
+Unique by UUID collision probability; human-readable; no sequence table.
+
+**D8 — `StorageObjectKey` extended with `payment-receipt` kind.**
+Added to `packages/types` (or `storage.types.ts`):
+```typescript
+| { kind: "payment-receipt"; paymentId: string }
+```
+Path: `schools/${schoolId}/receipts/${paymentId}.html`
+
+**Permissions added to `PHASE_3_PERMISSIONS`:** `payment.read`, `payment.record`.
+`payment.refund` lands in slice 11.
+
+**CP breakdown:**
+- CP1: Payment model + enums + migrations (DDL + RBAC data migration) +
+  `StorageObjectKey` extension + `payment.dto.ts` types + `PaymentsService`
+  (`recordManual`, `findAll`, `findById`, `getReceiptUrl`) + `PaymentsModule`
+  in `AppModule` + service integration spec (~10 tests including pure-unit
+  `computeInvoiceStatus` cases).
+- CP2: `PaymentsController` (4 endpoints, correct declaration order, `@Permissions`) +
+  `permissions-coverage.spec.ts` payments block + `payments-api.ts` client +
+  `/finance/invoices/[id]` updated with payment form + payment history table +
+  receipt link + manual gate (partial → PARTIALLY_PAID → remainder → PAID → receipt URL). Push + PR.

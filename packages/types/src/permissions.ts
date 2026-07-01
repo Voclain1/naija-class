@@ -261,6 +261,11 @@ export const PHASE_3_PERMISSIONS = [
   "invoice.read",
   "invoice.issue",
   "invoice.cancel",
+
+  // Slice 7 — manual payment recording + receipts
+  // payment.refund lands in slice 11. Bursar role wire-up deferred to slice 15.
+  "payment.read",
+  "payment.record",
 ] as const;
 
 export const PHASE_3_OWNER_ONLY_PERMISSIONS = ["auth.2fa.manage"] as const;
