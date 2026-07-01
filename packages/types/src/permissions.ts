@@ -255,6 +255,12 @@ export const PHASE_3_PERMISSIONS = [
   "discount-rule.create",
   "discount-rule.update",
   "discount-rule.deactivate",
+
+  // Slice 6 — invoices (snapshot-on-issue)
+  // Bursar role wire-up deferred to slice 15.
+  "invoice.read",
+  "invoice.issue",
+  "invoice.cancel",
 ] as const;
 
 export const PHASE_3_OWNER_ONLY_PERMISSIONS = ["auth.2fa.manage"] as const;
