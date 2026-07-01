@@ -84,6 +84,8 @@ export default function InvoiceDetailPage() {
     getInvoice(id)
       .then((inv) => {
         setInvoice(inv);
+        // Resolve student name and term name in parallel — failures are non-fatal
+        // (display falls back to UUID if the sub-fetch fails).
         Promise.all([
           getStudent(inv.studentId).then(setStudent).catch(() => {}),
           listTerms(inv.academicYearId)
@@ -153,13 +155,20 @@ export default function InvoiceDetailPage() {
     }
   }
 
-  if (loading) return <div className="p-6 text-gray-400">Loading…</div>;
-  if (error || !invoice) return <div className="p-6 text-red-600">{error ?? "Invoice not found."}</div>;
+  if (loading) {
+    return <div className="p-6 text-gray-400">Loading…</div>;
+  }
+
+  if (error || !invoice) {
+    return <div className="p-6 text-red-600">{error ?? "Invoice not found."}</div>;
+  }
 
   const studentLabel = student
     ? `${student.firstName} ${student.lastName} (${student.admissionNumber})`
     : invoice.studentId;
+
   const termLabel = term ? term.name : invoice.termId;
+
   const grandTotal = invoice.items.reduce((s, item) => s + item.netAmount, 0);
 
   return (
@@ -217,6 +226,8 @@ export default function InvoiceDetailPage() {
           </thead>
           <tbody>
             {invoice.items.map((item) => {
+              // Derive the capped display discount from the already-correct netAmount
+              // rather than summing discountsApplied (which would show the uncapped raw sum).
               const displayDiscount = item.amount - item.netAmount;
               return (
                 <tr key={item.feeItemId} className="border-t hover:bg-gray-50">
@@ -232,7 +243,9 @@ export default function InvoiceDetailPage() {
                       >
                         −{formatKobo(displayDiscount)}
                       </span>
-                    ) : "—"}
+                    ) : (
+                      "—"
+                    )}
                   </td>
                   <td className="px-4 py-2 text-right font-mono font-medium">{formatKobo(item.netAmount)}</td>
                 </tr>
@@ -268,7 +281,7 @@ export default function InvoiceDetailPage() {
         </div>
       </dl>
 
-      {/* Discount breakdown */}
+      {/* Discount rule breakdown (if any discounts) */}
       {invoice.items.some((item) => item.discountsApplied.length > 0) && (
         <details className="text-sm">
           <summary className="cursor-pointer text-gray-500 hover:text-gray-700">
