@@ -4,11 +4,19 @@ import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 
-import type { InvoiceDto, InvoiceStatus, StudentDetailDto, TermDto } from "@school-kit/types";
+import type {
+  InvoiceDto,
+  InvoiceStatus,
+  ManualPaymentMethod,
+  PaymentDto,
+  StudentDetailDto,
+  TermDto,
+} from "@school-kit/types";
 
 import { listTerms } from "@/lib/academic-years/academic-years-api";
 import { formatKobo } from "@/lib/finance/format";
 import { cancelInvoice, getInvoice } from "@/lib/finance/invoices-api";
+import { getPaymentReceiptUrl, listPayments, recordManualPayment } from "@/lib/finance/payments-api";
 import { getStudent } from "@/lib/students/students-api";
 
 const STATUS_LABELS: Record<InvoiceStatus, string> = {
@@ -32,16 +40,43 @@ const STATUS_COLOURS: Record<InvoiceStatus, string> = {
 };
 
 const CANCELLABLE: Set<InvoiceStatus> = new Set(["ISSUED", "DRAFT", "OVERDUE"]);
+const PAYABLE: Set<InvoiceStatus> = new Set(["ISSUED", "PARTIALLY_PAID", "OVERDUE"]);
+
+const METHOD_LABELS: Record<ManualPaymentMethod, string> = {
+  CASH: "Cash",
+  POS: "POS",
+  BANK_TRANSFER: "Bank transfer",
+};
+
+function nowLocalDatetimeValue(): string {
+  const d = new Date();
+  d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+  return d.toISOString().slice(0, 16);
+}
 
 export default function InvoiceDetailPage() {
   const { id } = useParams<{ id: string }>();
+
   const [invoice, setInvoice] = useState<InvoiceDto | null>(null);
   const [student, setStudent] = useState<StudentDetailDto | null>(null);
   const [term, setTerm] = useState<TermDto | null>(null);
+  const [payments, setPayments] = useState<PaymentDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Cancel
   const [cancelling, setCancelling] = useState(false);
   const [cancelError, setCancelError] = useState<string | null>(null);
+
+  // Record payment form
+  const [recording, setRecording] = useState(false);
+  const [recordError, setRecordError] = useState<string | null>(null);
+  const [form, setForm] = useState({
+    amount: "",
+    method: "CASH" as ManualPaymentMethod,
+    paidAt: nowLocalDatetimeValue(),
+    reference: "",
+  });
 
   useEffect(() => {
     if (!id) return;
@@ -58,6 +93,9 @@ export default function InvoiceDetailPage() {
               const matched = terms.find((t) => t.id === inv.termId);
               if (matched) setTerm(matched);
             })
+            .catch(() => {}),
+          listPayments({ invoiceId: inv.id })
+            .then((r) => setPayments(r.data))
             .catch(() => {}),
         ]).catch(() => {});
       })
@@ -79,6 +117,44 @@ export default function InvoiceDetailPage() {
     }
   }
 
+  async function handleRecordPayment(e: React.FormEvent) {
+    e.preventDefault();
+    if (!invoice) return;
+    const amountKobo = Math.round(parseFloat(form.amount) * 100);
+    if (!amountKobo || amountKobo <= 0) return;
+    setRecording(true);
+    setRecordError(null);
+    try {
+      await recordManualPayment({
+        invoiceId: invoice.id,
+        amount: amountKobo,
+        method: form.method,
+        paidAt: new Date(form.paidAt).toISOString(),
+        reference: form.reference || undefined,
+      });
+      const [updatedInvoice, updatedPayments] = await Promise.all([
+        getInvoice(invoice.id),
+        listPayments({ invoiceId: invoice.id }),
+      ]);
+      setInvoice(updatedInvoice);
+      setPayments(updatedPayments.data);
+      setForm({ amount: "", method: "CASH", paidAt: nowLocalDatetimeValue(), reference: "" });
+    } catch (e) {
+      setRecordError(e instanceof Error ? e.message : "Failed to record payment.");
+    } finally {
+      setRecording(false);
+    }
+  }
+
+  async function handleOpenReceipt(paymentId: string) {
+    try {
+      const { url } = await getPaymentReceiptUrl(paymentId);
+      window.open(url, "_blank", "noopener,noreferrer");
+    } catch {
+      // Non-fatal — receipt may not be ready yet
+    }
+  }
+
   if (loading) {
     return <div className="p-6 text-gray-400">Loading…</div>;
   }
@@ -97,6 +173,7 @@ export default function InvoiceDetailPage() {
 
   return (
     <div className="p-6 space-y-6 max-w-4xl">
+      {/* Header */}
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold">Invoice</h1>
@@ -221,6 +298,115 @@ export default function InvoiceDetailPage() {
             )}
           </div>
         </details>
+      )}
+
+      {/* Payment history */}
+      <div>
+        <h2 className="text-base font-semibold mb-3">Payments</h2>
+        {payments.length === 0 ? (
+          <p className="text-sm text-gray-400">No payments recorded.</p>
+        ) : (
+          <div className="border rounded-lg overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="text-left px-4 py-2 font-medium">Date</th>
+                  <th className="text-left px-4 py-2 font-medium">Method</th>
+                  <th className="text-left px-4 py-2 font-medium">Reference</th>
+                  <th className="text-right px-4 py-2 font-medium">Amount</th>
+                  <th className="px-4 py-2" />
+                </tr>
+              </thead>
+              <tbody>
+                {payments.map((p) => (
+                  <tr key={p.id} className="border-t hover:bg-gray-50">
+                    <td className="px-4 py-2 text-gray-500">
+                      {p.paidAt ? new Date(p.paidAt).toLocaleString("en-NG", { dateStyle: "medium", timeStyle: "short" }) : "—"}
+                    </td>
+                    <td className="px-4 py-2">{METHOD_LABELS[p.method as ManualPaymentMethod] ?? p.method}</td>
+                    <td className="px-4 py-2 text-gray-500 font-mono text-xs">{p.reference ?? "—"}</td>
+                    <td className="px-4 py-2 text-right font-mono font-medium">{formatKobo(p.amount)}</td>
+                    <td className="px-4 py-2 text-right">
+                      {p.receiptUrl && (
+                        <button
+                          onClick={() => handleOpenReceipt(p.id)}
+                          className="text-xs text-blue-600 hover:underline"
+                        >
+                          Receipt
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Record payment form */}
+      {PAYABLE.has(invoice.status) && (
+        <div className="border rounded-lg p-4 space-y-4">
+          <h2 className="text-base font-semibold">Record payment</h2>
+          <form onSubmit={handleRecordPayment} className="space-y-3">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm text-gray-600 mb-1">Amount (₦)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0.01"
+                  required
+                  value={form.amount}
+                  onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))}
+                  placeholder={`Max ${(invoice.totalDue - invoice.totalPaid) / 100}`}
+                  className="w-full border rounded px-3 py-1.5 text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-gray-600 mb-1">Method</label>
+                <select
+                  value={form.method}
+                  onChange={(e) => setForm((f) => ({ ...f, method: e.target.value as ManualPaymentMethod }))}
+                  className="w-full border rounded px-3 py-1.5 text-sm bg-white"
+                >
+                  <option value="CASH">Cash</option>
+                  <option value="POS">POS</option>
+                  <option value="BANK_TRANSFER">Bank transfer</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm text-gray-600 mb-1">Date paid</label>
+                <input
+                  type="datetime-local"
+                  required
+                  value={form.paidAt}
+                  onChange={(e) => setForm((f) => ({ ...f, paidAt: e.target.value }))}
+                  className="w-full border rounded px-3 py-1.5 text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-gray-600 mb-1">Reference (optional)</label>
+                <input
+                  type="text"
+                  maxLength={200}
+                  value={form.reference}
+                  onChange={(e) => setForm((f) => ({ ...f, reference: e.target.value }))}
+                  placeholder="Bank ref, POS txn ID…"
+                  className="w-full border rounded px-3 py-1.5 text-sm"
+                />
+              </div>
+            </div>
+            {recordError && <p className="text-sm text-red-600">{recordError}</p>}
+            <button
+              type="submit"
+              disabled={recording}
+              className="px-4 py-2 bg-green-600 text-white text-sm rounded hover:bg-green-700 disabled:opacity-50"
+            >
+              {recording ? "Recording…" : "Record payment"}
+            </button>
+          </form>
+        </div>
       )}
 
       {/* Cancel */}

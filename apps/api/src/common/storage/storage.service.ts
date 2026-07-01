@@ -29,8 +29,9 @@ export class StorageService {
     key: StorageObjectKey,
     body: StorageBody,
     contentType: string,
+    contentDisposition?: string,
   ): Promise<StoragePath> {
-    return this.driver.put(schoolId, key, body, contentType);
+    return this.driver.put(schoolId, key, body, contentType, contentDisposition);
   }
 
   get(schoolId: string, key: StorageObjectKey): Promise<Buffer> {

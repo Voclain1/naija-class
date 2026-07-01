@@ -33,6 +33,7 @@ import { DiscountRulesController } from "../modules/discounts/discount-rules.con
 import { FeeCategoriesController } from "../modules/fee-catalog/fee-categories.controller";
 import { FeeItemsController } from "../modules/fee-catalog/fee-items.controller";
 import { InvoicesController } from "../modules/invoices/invoices.controller";
+import { PaymentsController } from "../modules/payments/payments.controller";
 
 // Static RBAC safety net (slice 13). Every route handler on a Phase 1
 // controller MUST declare @Permissions — the PermissionsGuard fails closed,
@@ -244,6 +245,28 @@ describe("Phase 3 RBAC coverage: invoice route handlers declare @Permissions", (
   it("every Phase 3 invoice @Permissions value is a known Phase 3 permission", () => {
     const unknown: string[] = [];
     for (const [name, ctor] of PHASE_3_INVOICE_CONTROLLERS) {
+      for (const p of handlerPermissions(ctor)) {
+        if (!PHASE_3_SET.has(p)) unknown.push(`${name}:${p}`);
+      }
+    }
+    expect(unknown, `unknown Phase 3 permission(s): ${unknown.join(", ")}`).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 3 / Slice 7 — payment controller coverage.
+// ---------------------------------------------------------------------------
+
+const PHASE_3_PAYMENT_CONTROLLERS: Array<[string, Ctor]> = [
+  ["PaymentsController", PaymentsController],
+];
+
+describe("Phase 3 RBAC coverage: payment route handlers declare @Permissions", () => {
+  assertCoverage(PHASE_3_PAYMENT_CONTROLLERS);
+
+  it("every Phase 3 payment @Permissions value is a known Phase 3 permission", () => {
+    const unknown: string[] = [];
+    for (const [name, ctor] of PHASE_3_PAYMENT_CONTROLLERS) {
       for (const p of handlerPermissions(ctor)) {
         if (!PHASE_3_SET.has(p)) unknown.push(`${name}:${p}`);
       }
