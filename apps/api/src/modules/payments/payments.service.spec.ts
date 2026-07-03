@@ -749,7 +749,7 @@ describe("PaymentsService — Paystack methods (integration)", () => {
     const { invoiceId } = await makeIssuedInvoice2(schoolId, ownerId, 50_000_00, "wi");
 
     // Create an already-SUCCESS payment.
-    const { paymentId, paystackReference } = await withTenant(schoolId, async (db) => {
+    const { paystackReference } = await withTenant(schoolId, async (db) => {
       const inv = await db.invoice.findUniqueOrThrow({ where: { id: invoiceId }, select: { studentId: true } });
       const p = await db.payment.create({
         data: {
@@ -767,7 +767,7 @@ describe("PaymentsService — Paystack methods (integration)", () => {
       const ref = `PSK-${schoolId}-${p.id}`;
       await db.payment.update({ where: { id: p.id }, data: { paystackReference: ref } });
       await db.invoice.update({ where: { id: invoiceId }, data: { totalPaid: 50_000_00, status: "PAID" } });
-      return { paymentId: p.id, paystackReference: ref };
+      return { paystackReference: ref };
     });
 
     // Send the webhook again.
