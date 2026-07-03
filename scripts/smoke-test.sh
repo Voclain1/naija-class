@@ -33,9 +33,16 @@ echo "Running smoke test against ${BASE}"
 echo "  Smoke school slug: ${SLUG}"
 echo ""
 
-# ── Op 1: basic health ──────────────────────────────────────────────────────
-STATUS=$(curl -s -o /dev/null -w "%{http_code}" "${BASE}/api/v1/health")
-[[ "${STATUS}" == "200" ]] || fail "op 1" "GET /health expected 200, got ${STATUS}"
+# ── Op 1: basic health (with retry) ─────────────────────────────────────────
+for i in $(seq 1 10); do
+  STATUS=$(curl -s -o /dev/null -w "%{http_code}" "${BASE}/api/v1/health")
+  if [[ "${STATUS}" == "200" ]]; then
+    break
+  fi
+  echo "  health check attempt ${i}/10 — got ${STATUS}, retrying in 5s..."
+  sleep 5
+done
+[[ "${STATUS}" == "200" ]] || fail "op 1" "GET /health expected 200, got ${STATUS} after 10 attempts"
 echo "[OK] op 1 — GET /health → 200"
 
 # ── Op 2: DB health + runtime role check ────────────────────────────────────
