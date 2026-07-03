@@ -34,6 +34,7 @@ import { FeeCategoriesController } from "../modules/fee-catalog/fee-categories.c
 import { FeeItemsController } from "../modules/fee-catalog/fee-items.controller";
 import { InvoicesController } from "../modules/invoices/invoices.controller";
 import { PaymentsController } from "../modules/payments/payments.controller";
+import { PaystackController } from "../modules/payments/paystack.controller";
 
 // Static RBAC safety net (slice 13). Every route handler on a Phase 1
 // controller MUST declare @Permissions — the PermissionsGuard fails closed,
@@ -271,6 +272,46 @@ describe("Phase 3 RBAC coverage: payment route handlers declare @Permissions", (
         if (!PHASE_3_SET.has(p)) unknown.push(`${name}:${p}`);
       }
     }
+    expect(unknown, `unknown Phase 3 permission(s): ${unknown.join(", ")}`).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 3 / Slice 8 — PaystackController coverage.
+//
+// Cannot use assertCoverage() here: handleWebhook deliberately carries NO
+// @Permissions (it is authenticated by PaystackWebhookGuard only — Paystack
+// server-to-server calls have no user session). Skipping that handler from the
+// all-must-have-permissions rule is intentional and load-bearing; this block
+// documents the deliberate exception explicitly.
+// ---------------------------------------------------------------------------
+
+describe("Phase 3 RBAC coverage: PaystackController handler permissions", () => {
+  it("PaystackController has at least one route handler", () => {
+    expect(routeHandlers(PaystackController).length).toBeGreaterThan(0);
+  });
+
+  it("initPayment carries @Permissions('payment.record')", () => {
+    const proto = PaystackController.prototype as unknown as Record<string, unknown>;
+    const perms = Reflect.getMetadata(PERMISSIONS_METADATA_KEY, proto["initPayment"] as object);
+    expect(perms).toEqual(["payment.record"]);
+  });
+
+  it("verifyPayment carries @Permissions('payment.read')", () => {
+    const proto = PaystackController.prototype as unknown as Record<string, unknown>;
+    const perms = Reflect.getMetadata(PERMISSIONS_METADATA_KEY, proto["verifyPayment"] as object);
+    expect(perms).toEqual(["payment.read"]);
+  });
+
+  it("handleWebhook carries NO @Permissions (webhook has no user session — guard is HMAC only)", () => {
+    const proto = PaystackController.prototype as unknown as Record<string, unknown>;
+    const perms = Reflect.getMetadata(PERMISSIONS_METADATA_KEY, proto["handleWebhook"] as object);
+    expect(perms).toBeUndefined();
+  });
+
+  it("Paystack @Permissions values ('payment.record', 'payment.read') are known Phase 3 permissions", () => {
+    const paystackPerms = ["payment.record", "payment.read"];
+    const unknown = paystackPerms.filter((p) => !PHASE_3_SET.has(p));
     expect(unknown, `unknown Phase 3 permission(s): ${unknown.join(", ")}`).toEqual([]);
   });
 });

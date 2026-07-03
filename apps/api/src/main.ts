@@ -10,7 +10,12 @@ import { Logger } from "@nestjs/common";
 import { AppModule } from "./app.module";
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  // rawBody: true makes req.rawBody (Buffer) available alongside the parsed
+  // req.body. Required for Paystack webhook signature verification — Paystack
+  // computes HMAC-SHA512 over the raw bytes before JSON parsing occurs.
+  // NestJS 10 populates both; existing ZodValidationPipe / body-reading
+  // middleware is unaffected.
+  const app = await NestFactory.create(AppModule, { rawBody: true });
   app.setGlobalPrefix("api/v1");
 
   // CORS: the web app at :3001 calls this API at :4000, so the browser

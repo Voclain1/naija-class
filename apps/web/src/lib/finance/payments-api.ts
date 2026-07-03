@@ -1,7 +1,9 @@
 import type {
+  InitPaystackPaymentInput,
   PaginatedPaymentsDto,
   PaymentDto,
   PaymentReceiptUrlDto,
+  PaystackInitResponseDto,
   RecordManualPaymentInput,
 } from "@school-kit/types";
 
@@ -32,4 +34,12 @@ export function getPayment(id: string): Promise<PaymentDto> {
 
 export function getPaymentReceiptUrl(id: string): Promise<PaymentReceiptUrlDto> {
   return apiFetch<PaymentReceiptUrlDto>(`/payments/${id}/receipt`, { method: "GET" });
+}
+
+export function initPaystackPayment(input: InitPaystackPaymentInput): Promise<PaystackInitResponseDto> {
+  return apiFetch<PaystackInitResponseDto>("/payments/paystack/init", { method: "POST", body: input });
+}
+
+export function verifyPaystackPayment(reference: string): Promise<PaymentDto> {
+  return apiFetch<PaymentDto>(`/payments/paystack/verify/${encodeURIComponent(reference)}`, { method: "GET" });
 }

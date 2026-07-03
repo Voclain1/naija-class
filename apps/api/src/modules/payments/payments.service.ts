@@ -1,9 +1,10 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, Logger } from "@nestjs/common";
 
-import { withTenant } from "@school-kit/db";
+import { type PrismaClient, withTenant } from "@school-kit/db";
 import {
   ConflictError,
   NotFoundError,
+  type InitPaystackPaymentInput,
   type InvoiceStatus,
   type ListPaymentsInput,
   type PaginatedPaymentsDto,
@@ -11,15 +12,20 @@ import {
   type PaymentMethod,
   type PaymentReceiptUrlDto,
   type PaymentStatus,
+  type PaystackInitResponseDto,
+  type PaystackWebhookEvent,
   type RecordManualPaymentInput,
 } from "@school-kit/types";
 
 import type { AuthContext } from "../../common/auth/auth-context.js";
+import { PaystackService } from "../../common/paystack/paystack.service.js";
 import { StorageService } from "../../common/storage/storage.service.js";
 
 const RECEIPT_URL_TTL_SECONDS = 15 * 60; // 15 minutes
 
 const AUDIT_RECORD = "payment.record";
+const AUDIT_PAYSTACK_CONFIRM = "payment.paystack-confirm";
+const AUDIT_PAYSTACK_FAILED = "payment.paystack-failed";
 
 // ---------------------------------------------------------------------------
 // Pure helpers (exported for unit tests)
@@ -34,6 +40,22 @@ export function computeInvoiceStatus(totalPaid: number, totalDue: number): Invoi
   if (totalPaid <= 0) return "ISSUED";
   if (totalPaid < totalDue) return "PARTIALLY_PAID";
   return "PAID";
+}
+
+// Parses a Paystack reference of the form "PSK-{schoolId}-{paymentId}" (77 chars).
+// Returns null for any string that does not match the exact structure.
+// Exported so the spec can test it directly.
+export function parsePaystackReference(
+  ref: string,
+): { schoolId: string; paymentId: string } | null {
+  if (!ref.startsWith("PSK-")) return null;
+  const rest = ref.slice(4); // "{schoolId}-{paymentId}", 73 chars
+  if (rest.length !== 73) return null;
+  const schoolId = rest.slice(0, 36);
+  const paymentId = rest.slice(37); // skip separator "-"
+  const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!uuidRe.test(schoolId) || !uuidRe.test(paymentId)) return null;
+  return { schoolId, paymentId };
 }
 
 // ---------------------------------------------------------------------------
@@ -109,6 +131,7 @@ type PaymentRow = {
   method: string;
   status: string;
   paystackReference: string | null;
+  paystackData: unknown;
   reference: string | null;
   receiptNumber: string | null;
   receiptUrl: string | null;
@@ -116,6 +139,16 @@ type PaymentRow = {
   paidAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
+};
+
+// Minimal payment shape needed by the Paystack apply helpers.
+type PaymentCore = {
+  id: string;
+  schoolId: string;
+  invoiceId: string;
+  studentId: string;
+  amount: number;
+  method: string;
 };
 
 function toDto(row: PaymentRow): PaymentDto {
@@ -144,7 +177,12 @@ function toDto(row: PaymentRow): PaymentDto {
 
 @Injectable()
 export class PaymentsService {
-  constructor(private readonly storage: StorageService) {}
+  private readonly logger = new Logger(PaymentsService.name);
+
+  constructor(
+    private readonly storage: StorageService,
+    private readonly paystack: PaystackService,
+  ) {}
 
   // ─── Record manual payment ────────────────────────────────────────────────
 
@@ -256,7 +294,211 @@ export class PaymentsService {
         },
       });
 
-      return toDto(updated);
+      return toDto(updated as PaymentRow);
+    });
+  }
+
+  // ─── Initiate Paystack payment ─────────────────────────────────────────────
+
+  async initPaystack(
+    authCtx: AuthContext,
+    dto: InitPaystackPaymentInput,
+  ): Promise<PaystackInitResponseDto> {
+    // Phase 1: validate and create PENDING payment row (short DB transaction).
+    const { paymentId, customerEmail } = await withTenant(authCtx.schoolId, async (db) => {
+      const invoice = await db.invoice.findUnique({
+        where: { id: dto.invoiceId },
+        select: { id: true, schoolId: true, studentId: true, status: true, totalDue: true, totalPaid: true },
+      });
+      if (!invoice || invoice.schoolId !== authCtx.schoolId) {
+        throw new NotFoundError("Invoice not found.");
+      }
+      if (invoice.status === "CANCELLED" || invoice.status === "REFUNDED") {
+        throw new ConflictError(
+          "INVOICE_NOT_PAYABLE",
+          `Invoice cannot accept payments in status ${invoice.status}.`,
+        );
+      }
+
+      const remaining = invoice.totalDue - invoice.totalPaid;
+      if (dto.amount > remaining) {
+        throw new ConflictError(
+          "PAYMENT_WOULD_EXCEED_BALANCE",
+          `Payment of ${formatKoboForMessage(dto.amount)} would exceed the outstanding balance of ${formatKoboForMessage(remaining)}.`,
+        );
+      }
+
+      // Resolve customer email: primary guardian's email or synthetic fallback.
+      // We do NOT send any student PII to Paystack — just a routing email.
+      const guardianLink = await db.studentGuardian.findFirst({
+        where: { studentId: invoice.studentId, isPrimary: true },
+        select: { guardian: { select: { email: true } } },
+      });
+
+      const payment = await db.payment.create({
+        data: {
+          schoolId: authCtx.schoolId,
+          invoiceId: dto.invoiceId,
+          studentId: invoice.studentId,
+          amount: dto.amount,
+          method: "PAYSTACK",
+          status: "PENDING",
+          recordedBy: authCtx.userId,
+        },
+        select: { id: true },
+      });
+
+      // Synthetic email uses payment.id so it is stable across retries.
+      const resolvedEmail =
+        guardianLink?.guardian?.email ?? `noreply-${payment.id.slice(0, 8)}@schoolkit.ng`;
+
+      return { paymentId: payment.id, customerEmail: resolvedEmail };
+    });
+
+    // Phase 2: call Paystack API (outside DB transaction — avoids holding a
+    // connection open during a network call).
+    const paystackReference = `PSK-${authCtx.schoolId}-${paymentId}`;
+    let initData: { authorization_url: string };
+    try {
+      initData = await this.paystack.initializeTransaction({
+        amount: dto.amount,
+        email: customerEmail,
+        reference: paystackReference,
+      });
+    } catch (err) {
+      // Paystack API failed — mark the PENDING row as FAILED so it does not linger.
+      await withTenant(authCtx.schoolId, (db) =>
+        db.payment.update({ where: { id: paymentId }, data: { status: "FAILED" } }),
+      );
+      throw err;
+    }
+
+    // Phase 3: persist the Paystack reference onto the payment row.
+    await withTenant(authCtx.schoolId, (db) =>
+      db.payment.update({ where: { id: paymentId }, data: { paystackReference } }),
+    );
+
+    return {
+      authorizationUrl: initData.authorization_url,
+      reference: paystackReference,
+      paymentId,
+    };
+  }
+
+  // ─── Handle Paystack webhook ───────────────────────────────────────────────
+
+  async handleWebhook(event: PaystackWebhookEvent): Promise<void> {
+    const { event: eventType, data } = event;
+
+    if (eventType !== "charge.success" && eventType !== "charge.failed") {
+      return; // silently ignore events we don't handle
+    }
+
+    const parsed = parsePaystackReference(data.reference);
+    if (!parsed) {
+      this.logger.warn(`Webhook: unrecognized reference format: ${data.reference}`);
+      return;
+    }
+    const { schoolId, paymentId } = parsed;
+
+    await withTenant(schoolId, async (db) => {
+      const payment = await db.payment.findUnique({
+        where: { id: paymentId },
+        select: {
+          id: true,
+          schoolId: true,
+          invoiceId: true,
+          studentId: true,
+          amount: true,
+          method: true,
+          status: true,
+        },
+      });
+
+      if (!payment || payment.schoolId !== schoolId) {
+        this.logger.warn(`Webhook: payment ${paymentId} not found for school ${schoolId}`);
+        return;
+      }
+
+      // Idempotency: terminal rows are never re-processed.
+      if (
+        payment.status === "SUCCESS" ||
+        payment.status === "FAILED" ||
+        payment.status === "REVERSED"
+      ) {
+        this.logger.log(
+          `Webhook: payment ${paymentId} already terminal (${payment.status}), skipping`,
+        );
+        return;
+      }
+
+      if (eventType === "charge.success") {
+        const paidAt = data.paid_at ? new Date(data.paid_at) : new Date();
+        await this.applyPaystackSuccess(db, payment, data as Record<string, unknown>, paidAt);
+      } else {
+        await this.applyPaystackFailed(db, payment);
+      }
+    });
+  }
+
+  // ─── Verify Paystack payment (self-heal) ───────────────────────────────────
+
+  async verifyPaystack(authCtx: AuthContext, reference: string): Promise<PaymentDto> {
+    const parsed = parsePaystackReference(reference);
+    if (!parsed) {
+      throw new NotFoundError("Payment not found.");
+    }
+
+    // Cross-school guard: schoolId in reference must match the authenticated user's school.
+    if (parsed.schoolId !== authCtx.schoolId) {
+      throw new NotFoundError("Payment not found.");
+    }
+
+    // Call Paystack verify outside a DB transaction (avoids holding connection during network I/O).
+    const verifyData = await this.paystack.verifyTransaction(reference);
+
+    return withTenant(authCtx.schoolId, async (db) => {
+      const payment = await db.payment.findUnique({
+        where: { id: parsed.paymentId },
+        select: {
+          id: true,
+          schoolId: true,
+          invoiceId: true,
+          studentId: true,
+          amount: true,
+          method: true,
+          status: true,
+        },
+      });
+
+      if (!payment || payment.schoolId !== authCtx.schoolId) {
+        throw new NotFoundError("Payment not found.");
+      }
+
+      // Idempotency: if already terminal, return current state without re-applying.
+      if (
+        payment.status === "SUCCESS" ||
+        payment.status === "FAILED" ||
+        payment.status === "REVERSED"
+      ) {
+        const row = await db.payment.findUniqueOrThrow({ where: { id: payment.id } });
+        return toDto(row as PaymentRow);
+      }
+
+      if (verifyData.status === "success") {
+        const paidAt = verifyData.paid_at ? new Date(verifyData.paid_at) : new Date();
+        await this.applyPaystackSuccess(
+          db,
+          payment,
+          { reference, status: verifyData.status, amount: verifyData.amount, paid_at: verifyData.paid_at },
+          paidAt,
+        );
+      } else {
+        await this.applyPaystackFailed(db, payment);
+      }
+
+      const row = await db.payment.findUniqueOrThrow({ where: { id: payment.id } });
+      return toDto(row as PaymentRow);
     });
   }
 
@@ -278,7 +520,7 @@ export class PaymentsService {
         }),
         db.payment.count({ where }),
       ]);
-      return { data: rows.map(toDto), total, page: input.page, limit: input.limit };
+      return { data: rows.map((r) => toDto(r as PaymentRow)), total, page: input.page, limit: input.limit };
     });
   }
 
@@ -290,7 +532,7 @@ export class PaymentsService {
       if (!row || row.schoolId !== authCtx.schoolId) {
         throw new NotFoundError("Payment not found.");
       }
-      return toDto(row);
+      return toDto(row as PaymentRow);
     });
   }
 
@@ -314,6 +556,106 @@ export class PaymentsService {
         RECEIPT_URL_TTL_SECONDS,
       );
       return { url, expiresAt: new Date(Date.now() + RECEIPT_URL_TTL_SECONDS * 1000) };
+    });
+  }
+
+  // ─── Private: apply Paystack success ──────────────────────────────────────
+
+  private async applyPaystackSuccess(
+    db: PrismaClient,
+    payment: PaymentCore,
+    paystackData: Record<string, unknown>,
+    paidAt: Date,
+  ): Promise<void> {
+    // 1. Transition payment to SUCCESS and store Paystack payload.
+    await db.payment.update({
+      where: { id: payment.id },
+      data: {
+        status: "SUCCESS",
+        paidAt,
+        paystackData: paystackData as object,
+      },
+    });
+
+    // 2. Generate and upload receipt HTML.
+    const receiptNumber = receiptNumberFor(payment.id);
+    const html = buildReceiptHtml({
+      receiptNumber,
+      paymentId: payment.id,
+      invoiceId: payment.invoiceId,
+      amount: payment.amount,
+      method: payment.method,
+      reference: null,
+      paidAt,
+    });
+    const receiptUrl = await this.storage.put(
+      payment.schoolId,
+      { kind: "payment-receipt", paymentId: payment.id },
+      Buffer.from(html, "utf8"),
+      "text/html",
+      "inline",
+    );
+
+    // 3. Recompute totalPaid aggregate (idempotent — includes this payment now it's SUCCESS).
+    const { _sum } = await db.payment.aggregate({
+      where: { invoiceId: payment.invoiceId, status: "SUCCESS" },
+      _sum: { amount: true },
+    });
+    const newTotalPaid = _sum.amount ?? 0;
+
+    const invoice = await db.invoice.findUniqueOrThrow({
+      where: { id: payment.invoiceId },
+      select: { totalDue: true },
+    });
+    const newStatus = computeInvoiceStatus(newTotalPaid, invoice.totalDue);
+
+    // 4. Persist receipt metadata.
+    await db.payment.update({
+      where: { id: payment.id },
+      data: { receiptNumber, receiptUrl },
+    });
+
+    // 5. Update invoice.
+    await db.invoice.update({
+      where: { id: payment.invoiceId },
+      data: { totalPaid: newTotalPaid, status: newStatus },
+    });
+
+    // 6. Audit log (userId null — webhook has no authenticated user).
+    await db.auditLog.create({
+      data: {
+        schoolId: payment.schoolId,
+        userId: null,
+        action: AUDIT_PAYSTACK_CONFIRM,
+        entityType: "payment",
+        entityId: payment.id,
+        metadata: {
+          invoiceId: payment.invoiceId,
+          amount: payment.amount,
+          newInvoiceStatus: newStatus,
+          newTotalPaid,
+        },
+      },
+    });
+  }
+
+  // ─── Private: apply Paystack failed ───────────────────────────────────────
+
+  private async applyPaystackFailed(db: PrismaClient, payment: PaymentCore): Promise<void> {
+    await db.payment.update({
+      where: { id: payment.id },
+      data: { status: "FAILED" },
+    });
+
+    await db.auditLog.create({
+      data: {
+        schoolId: payment.schoolId,
+        userId: null,
+        action: AUDIT_PAYSTACK_FAILED,
+        entityType: "payment",
+        entityId: payment.id,
+        metadata: { invoiceId: payment.invoiceId, amount: payment.amount },
+      },
     });
   }
 }

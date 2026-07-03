@@ -1,13 +1,17 @@
 import { Module } from "@nestjs/common";
 
+import { PaystackModule } from "../../common/paystack/paystack.module.js";
+import { PaystackController } from "./paystack.controller.js";
 import { PaymentsController } from "./payments.controller.js";
 import { PaymentsService } from "./payments.service.js";
 
 // StorageService is provided by the global StorageModule (registered in AppModule).
-// No need to import StorageModule here.
+// PaystackService is provided by PaystackModule (imported below).
+// No need to import StorageModule here — it is global.
 
 @Module({
-  controllers: [PaymentsController],
+  imports: [PaystackModule],
+  controllers: [PaymentsController, PaystackController],
   providers: [PaymentsService],
   exports: [PaymentsService],
 })
