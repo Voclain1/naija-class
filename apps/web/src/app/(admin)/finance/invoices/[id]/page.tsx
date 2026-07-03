@@ -16,7 +16,7 @@ import type {
 import { listTerms } from "@/lib/academic-years/academic-years-api";
 import { formatKobo } from "@/lib/finance/format";
 import { cancelInvoice, getInvoice } from "@/lib/finance/invoices-api";
-import { getPaymentReceiptUrl, listPayments, recordManualPayment } from "@/lib/finance/payments-api";
+import { getPaymentReceiptUrl, initPaystackPayment, listPayments, recordManualPayment } from "@/lib/finance/payments-api";
 import { getStudent } from "@/lib/students/students-api";
 
 const STATUS_LABELS: Record<InvoiceStatus, string> = {
@@ -67,6 +67,10 @@ export default function InvoiceDetailPage() {
   // Cancel
   const [cancelling, setCancelling] = useState(false);
   const [cancelError, setCancelError] = useState<string | null>(null);
+
+  // Paystack init
+  const [initiatingPaystack, setInitiatingPaystack] = useState(false);
+  const [paystackError, setPaystackError] = useState<string | null>(null);
 
   // Record payment form
   const [recording, setRecording] = useState(false);
@@ -143,6 +147,24 @@ export default function InvoiceDetailPage() {
       setRecordError(e instanceof Error ? e.message : "Failed to record payment.");
     } finally {
       setRecording(false);
+    }
+  }
+
+  async function handlePayViaPaystack() {
+    if (!invoice) return;
+    const balance = invoice.totalDue - invoice.totalPaid;
+    if (balance <= 0) return;
+    setInitiatingPaystack(true);
+    setPaystackError(null);
+    try {
+      const { authorizationUrl } = await initPaystackPayment({
+        invoiceId: invoice.id,
+        amount: balance,
+      });
+      window.location.href = authorizationUrl;
+    } catch (e) {
+      setPaystackError(e instanceof Error ? e.message : "Failed to initiate payment.");
+      setInitiatingPaystack(false);
     }
   }
 
@@ -406,6 +428,30 @@ export default function InvoiceDetailPage() {
               {recording ? "Recording…" : "Record payment"}
             </button>
           </form>
+        </div>
+      )}
+
+      {/* Pay via Paystack */}
+      {PAYABLE.has(invoice.status) && (
+        <div className="border rounded-lg p-4 space-y-3">
+          <div>
+            <h2 className="text-base font-semibold">Pay via Paystack</h2>
+            <p className="text-sm text-gray-500 mt-0.5">
+              Redirects to Paystack checkout for the outstanding balance of{" "}
+              <span className="font-mono font-medium">
+                {formatKobo(invoice.totalDue - invoice.totalPaid)}
+              </span>.
+              Payment is confirmed automatically via webhook.
+            </p>
+          </div>
+          {paystackError && <p className="text-sm text-red-600">{paystackError}</p>}
+          <button
+            onClick={handlePayViaPaystack}
+            disabled={initiatingPaystack}
+            className="px-4 py-2 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 disabled:opacity-50"
+          >
+            {initiatingPaystack ? "Redirecting…" : "Pay outstanding balance"}
+          </button>
         </div>
       )}
 

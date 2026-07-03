@@ -4,6 +4,7 @@ import { ConfigModule } from "@nestjs/config";
 import { ScheduleModule } from "@nestjs/schedule";
 import { ThrottlerGuard, ThrottlerModule } from "@nestjs/throttler";
 
+import { PaystackModule } from "./common/paystack/paystack.module.js";
 import { RedisAuthModule } from "./common/auth/redis-auth.module";
 import { RedisThrottlerStorage } from "./common/auth/redis-throttler-storage";
 import { HealthController } from "./health/health.controller";
@@ -64,12 +65,13 @@ const isProd = process.env.NODE_ENV === "production";
       }),
     }),
     // Globals first: QueueModule wires BullMQ to Redis; StorageModule
-    // picks the storage driver. Both expose providers downstream
-    // modules depend on, so they must be imported before the feature
-    // modules that consume them (ImportsModule).
+    // picks the storage driver; PaystackModule wraps the Paystack API and
+    // provides PaystackService to PaymentsModule. All three must be imported
+    // before the feature modules that consume them.
     ScheduleModule.forRoot(),
     QueueModule,
     StorageModule,
+    PaystackModule,
     SystemModule,
     AuthModule,
     SchoolsModule,

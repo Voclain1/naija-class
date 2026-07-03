@@ -603,6 +603,167 @@ Specific, not vague:
 *Per-slice plan-firsts happen as each slice approaches — this doc is the phase
 map, not the slice specs. Slice 1's plan-first is the next planning step.*
 
+## 17. Slice 8 plan-first decisions (locked 2026-07-02)
+
+These decisions were finalized at the plan-first and are building constraints for
+CP1/CP2/CP3. Reopen only if a concrete blocker surfaces.
+
+**D1 — Initiation actor: bursar-initiated.**
+`POST /payments/paystack/init` is auth-gated (`payment.record`). The bursar clicks
+"Pay via Paystack" on the invoice detail page; the API returns `{ authorizationUrl,
+reference, paymentId }` and the frontend opens `authorizationUrl` in a new browser
+tab. Phase 3 is admin-operated — parents are not users yet (Phase 4). The bursar
+can complete the checkout on the school's computer or share the URL with the parent.
+
+**D2 — Customer email for Paystack init: server-resolved, not passed from frontend.**
+Paystack's `/transaction/initialize` requires a customer email. The init endpoint
+accepts no `customerEmail` field. The service loads the student's primary guardian
+email from the DB (within the same `withTenant` context). If no guardian email
+exists, synthetic fallback: `noreply-{paymentId.slice(0,8)}@schoolkit.ng`. Keeps
+the init DTO minimal; avoids the frontend needing to know the guardian data model.
+Auto-populate from guardian is a UX refinement for a later slice once guardian
+email capture is standard.
+
+**D3 — Paystack reference format: `PSK-{schoolId}-{paymentId}`.**
+Total length: 78 chars (within Paystack's 100-char limit). The payment row is
+created FIRST (to obtain `paymentId`), then Paystack is called with this reference.
+The webhook handler extracts `schoolId` from the reference string (chars 4–39),
+calls `withTenant(schoolId)`, and looks up the payment by `paystackReference` — no
+cross-tenant DB lookup, no new SECURITY DEFINER function (count stays at 5). If
+the reference cannot be parsed (malformed), the webhook handler returns `200` silently.
+
+**D4 — Webhook endpoint: separate `PaystackController`, no class-level AuthGuard.**
+`POST /payments/paystack/webhook` must be public — Paystack has no bearer token.
+NestJS method-level `@UseGuards()` ADDS to class-level guards, not replaces them.
+A dedicated `PaystackController` at `@Controller("payments/paystack")` has no
+class-level guards. The webhook method carries `@UseGuards(PaystackWebhookGuard)`
+only. The `init` and `verify` methods carry their own `@UseGuards(AuthGuard,
+PermissionsGuard)`. `PaymentsController` is unchanged. `PaystackController` is
+registered in `PaymentsModule`.
+
+**D5 — Raw body preservation for webhook signature: `rawBody: true` in bootstrap.**
+Paystack computes `x-paystack-signature` as HMAC-SHA512 over the raw request body.
+NestJS's JSON middleware destroys the raw bytes before the handler sees them.
+Fix: `NestFactory.create(AppModule, { rawBody: true })` in `main.ts`. NestJS 10
+exposes `req.rawBody` (Buffer) when this flag is set. `PaystackWebhookGuard` reads
+`req.rawBody`, computes HMAC-SHA512 with `PAYSTACK_SECRET_KEY`, and compares to the
+header. If `PAYSTACK_SECRET_KEY` is missing or the signature does not match, the
+guard throws `UnauthorizedException` — **fail closed**. JSON parsing of `req.body`
+is unaffected for all other endpoints.
+
+**D6 — Webhook idempotency: status check before processing.**
+When `charge.success` arrives:
+1. Parse `schoolId` from reference. If parse fails, return `200` silently.
+2. `withTenant(schoolId)`: find payment by `paystackReference`.
+3. If not found, return `200` silently (the init might have failed before the row was written).
+4. If `payment.status === 'SUCCESS'`, return `200` immediately — idempotent skip.
+5. If `payment.status === 'FAILED'`, log a warning, return `200` — do not re-confirm.
+6. If `payment.status === 'PENDING'`, apply `applyPaystackSuccess()`.
+The `@@unique([schoolId, paystackReference])` DB constraint is the second layer.
+Duplicate rows are structurally impossible; the status check handles replay.
+
+**D7 — `charge.failed` handling.**
+Update payment to `FAILED`. Do NOT touch invoice `totalPaid` (FAILED rows are
+excluded from the recompute aggregate). Audit log: `payment.paystack-failed`. Return
+`200 { status: "ok" }` unconditionally — returning non-2xx to Paystack triggers
+retries. A failed payment leaves the invoice in its prior state; the bursar can
+initiate a new Paystack payment or switch to manual.
+
+**D8 — Verify endpoint: self-heal for missed webhooks.**
+`GET /payments/paystack/verify/:reference` — auth-gated (`payment.read`). Calls
+Paystack `/transaction/verify/:reference`. If Paystack returns `success` and the
+local payment is `PENDING`, the service applies `applyPaystackSuccess()` — the same
+helper used by the webhook handler. If Paystack returns `failed`, throws a
+`ConflictError`. If already `SUCCESS`, returns the current `PaymentDto` unchanged.
+This self-heals the case where the webhook was missed (ngrok not running, network
+failure, infra restart during checkout).
+
+**D9 — `paidAt` for Paystack payments.**
+Derived from `data.paid_at` in the Paystack webhook event (ISO string). If absent
+(Paystack verify path), use `new Date()`. Stored on the payment row; used in the
+receipt HTML.
+
+**D10 — Shared success helper: no logic duplication between webhook and verify.**
+Both `handleWebhook` (on `charge.success`) and `verifyPaystack` (on remote success)
+call a private `applyPaystackSuccess(db, payment, paystackData, paidAt)`. This helper:
+1. Updates payment: `status → SUCCESS`, `paystackData`, `paidAt`.
+2. Recomputes `totalPaid` via aggregate (identical to `recordManual` pattern, D2 in §16).
+3. Computes new invoice status via `computeInvoiceStatus`.
+4. Updates invoice.
+5. Generates receipt HTML and uploads to R2.
+6. Persists `receiptNumber` + `receiptUrl` on payment row.
+7. Writes audit log: `payment.paystack-confirm`.
+One path, tested once, used twice.
+
+**D11 — New permissions: none.**
+`init` uses existing `payment.record`; `verify` uses `payment.read`. The webhook is
+public. `payment.paystack-confirm` is an audit action string, not a permission — no
+changes to `PHASE_3_PERMISSIONS`.
+
+**No schema migration needed.** `paystackReference`, `paystackData`,
+`PaymentMethod.PAYSTACK`, `PaymentStatus.PENDING/FAILED` all exist on the `Payment`
+model from slice 7. The `@@unique([schoolId, paystackReference])` index exists.
+
+**CP breakdown:**
+
+- **CP1** — `PaystackService` + `PaystackWebhookGuard` + types (~3 hours):
+  - `apps/api/src/common/paystack/paystack.service.ts` — wraps Paystack API with
+    native `fetch` (Node 22); methods: `initializeTransaction({ amount, email,
+    reference, metadata? })`, `verifyTransaction(reference)`, `verifyWebhookSignature(rawBody: Buffer, signature: string): boolean` (pure HMAC, no network).
+  - `apps/api/src/common/paystack/paystack.module.ts`
+  - `apps/api/src/common/paystack/paystack-webhook.guard.ts` — reads `req.rawBody`,
+    computes HMAC-SHA512, compares to `x-paystack-signature` header; fails closed if
+    `PAYSTACK_SECRET_KEY` unset.
+  - `main.ts`: add `rawBody: true` to `NestFactory.create()`.
+  - `PaystackModule` imported into `AppModule`.
+  - New Zod schemas in `packages/types/src/finance/payment.dto.ts`:
+    - `initPaystackPaymentSchema` / `InitPaystackPaymentInput`: `{ invoiceId: uuid, amount: int.positive }`
+    - `PaystackInitResponseDto`: `{ authorizationUrl: string; reference: string; paymentId: string }`
+  - Unit spec `paystack.service.spec.ts`: correct key passes, wrong key fails,
+    tampered body fails (3 tests on the pure HMAC path — no network mock needed).
+
+- **CP2** — `PaymentsService` Paystack methods + service spec (~4 hours):
+  - `PaymentsModule` imports `PaystackModule`; `PaystackService` injected into `PaymentsService`.
+  - Three new public methods:
+    - `initPaystack(authCtx, dto)`: validate invoice → overpayment guard → create PENDING
+      payment row → resolve customer email (guardian lookup, then synthetic fallback) →
+      build reference `PSK-{schoolId}-{paymentId}` → call `paystackService.initializeTransaction()`
+      (if Paystack throws, update row to FAILED + rethrow) → update row with `paystackReference`
+      → return `PaystackInitResponseDto`.
+    - `handleWebhook(event)`: switch on `event.event`; for `charge.success` / `charge.failed`
+      parse schoolId, `withTenant`, idempotency check, dispatch to `applyPaystackSuccess` or
+      `applyPaystackFailed`. Unknown event types: return silently (Paystack sends many event types).
+    - `verifyPaystack(authCtx, reference)`: extract schoolId from reference →
+      call `paystackService.verifyTransaction()` → `withTenant` → dispatch to helper or return as-is.
+  - Two private helpers: `applyPaystackSuccess(db, payment, paystackData, paidAt)` (the
+    recompute-receipt-audit chain) and `applyPaystackFailed(db, payment)` (update + audit).
+  - Service spec additions (~15 tests):
+    - `initPaystack`: happy path, invoice not found, CANCELLED invoice, overpayment, Paystack API error.
+    - `handleWebhook`: unknown event (silent), `charge.success` already SUCCESS (idempotent skip),
+      `charge.success` PENDING → SUCCESS, `charge.failed`.
+    - `verifyPaystack`: already SUCCESS (return unchanged), PENDING + Paystack success → SUCCESS,
+      Paystack failed (throws ConflictError).
+
+- **CP3** — controller + web UI + manual gate (~3 hours):
+  - `apps/api/src/modules/payments/paystack.controller.ts`:
+    - `@Controller("payments/paystack")`, no class-level guards.
+    - `POST /init` — `@UseGuards(AuthGuard, PermissionsGuard)` + `@Permissions("payment.record")`.
+    - `POST /webhook` — `@UseGuards(PaystackWebhookGuard)` + `@HttpCode(200)`; always returns
+      `{ status: "ok" }`.
+    - `GET /verify/:reference` — `@UseGuards(AuthGuard, PermissionsGuard)` + `@Permissions("payment.read")`.
+  - `PaystackController` registered in `PaymentsModule`.
+  - `permissions-coverage.spec.ts` — add Paystack init + verify block.
+  - `packages/types/src/api/payments.ts` — add `initPaystackPayment()`, `verifyPaystackPayment()` API client functions.
+  - Web UI — invoice detail page (`apps/web/src/app/(admin)/finance/invoices/[id]/page.tsx`):
+    - "Pay via Paystack" button opens `authorizationUrl` in a new tab.
+    - "Refresh" / "Verify" button calls `verifyPaystackPayment()` and re-fetches the payment list.
+  - New page `apps/web/src/app/(admin)/finance/payments/callback/page.tsx`:
+    - Reads `?reference=` query param, calls verify, shows success/failure state + link back to invoice.
+    - Paystack redirects here after checkout (configured as `callback_url` in the init payload).
+  - Manual gate: sandbox test keys → init → open Paystack test checkout → complete test payment →
+    verify webhook delivery (or trigger `GET /verify/:reference`) → confirm invoice transitions
+    ISSUED → PARTIALLY_PAID or PAID → receipt URL returns HTML → push + PR.
+
 ## 16. Slice 7 plan-first decisions (locked 2026-07-01)
 
 These decisions were finalized at the plan-first and are building constraints for

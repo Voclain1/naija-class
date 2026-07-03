@@ -72,3 +72,37 @@ export const listPaymentsSchema = z.object({
   limit: z.coerce.number().int().positive().max(200).default(50),
 });
 export type ListPaymentsInput = z.infer<typeof listPaymentsSchema>;
+
+// ---------------------------------------------------------------------------
+// Slice 8 — Paystack online payment
+// ---------------------------------------------------------------------------
+
+// Body for POST /payments/paystack/init.
+// Amount in kobo. Customer email is resolved server-side (guardian lookup →
+// synthetic fallback); callers do NOT pass it.
+export const initPaystackPaymentSchema = z.object({
+  invoiceId: z.string().uuid(),
+  amount: z.number().int().positive(),
+});
+export type InitPaystackPaymentInput = z.infer<typeof initPaystackPaymentSchema>;
+
+// Response from POST /payments/paystack/init.
+export interface PaystackInitResponseDto {
+  authorizationUrl: string;
+  reference: string; // "PSK-{schoolId}-{paymentId}"
+  paymentId: string;
+}
+
+// Minimal shape of the Paystack webhook event body we handle.
+// Paystack sends many event types; we only act on charge.success and
+// charge.failed. All others are silently acknowledged.
+export interface PaystackWebhookEvent {
+  event: string;
+  data: {
+    reference: string;
+    status: string;
+    amount: number;
+    paid_at: string | null;
+    [key: string]: unknown;
+  };
+}
