@@ -395,3 +395,24 @@ Format:
   past-date attendance for transferred students. When built, the fix is an
   enrollment-history/movement table (one row per arm placement with an
   effective-date range), not a column on Enrollment.
+
+- [ ] Receipt branding — HTML receipts (Phase 3 / Slice 7) contain no school
+  name, logo, student name, or term; they carry only the payment amount,
+  receipt number, method, and date. Add these fields to the receipt template
+  as a fast-follow once pilot feedback confirms the minimal receipt is
+  acceptable. Trigger: first pilot school that requests a branded receipt.
+
+- [ ] PDF receipts via Puppeteer — `storageService.put` saves receipts as
+  `text/html` (Phase 3 / Slice 7, D4 in `docs/modules/phase-3.md §16`).
+  Swap to `text/pdf` by running the template through `RenderService` with no
+  API contract change (`GET /payments/:id/receipt` returns a signed URL
+  regardless of MIME type). Trigger: first bursar who finds the browser-print
+  path inadequate. Zero schema change needed.
+
+- [ ] Paystack webhook URL — must be configured in the Paystack dashboard
+  (Settings → API Keys & Webhooks → Webhook URL) pointing to
+  `https://school-kit-api.fly.dev/api/v1/payments/paystack/webhook` before
+  live payments can be processed. Operational step, not a build item. Without
+  it, `charge.success` events are never delivered and the verify endpoint
+  (`GET /payments/paystack/verify/:reference`) is the only self-heal path.
+  Trigger: before any school goes live on Paystack.
