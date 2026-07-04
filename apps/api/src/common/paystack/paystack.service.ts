@@ -61,19 +61,20 @@ export class PaystackService {
   private readonly secretKey: string;
   private readonly baseUrl = "https://api.paystack.co";
 
-  constructor(config: ConfigService) {
+  constructor(private readonly config: ConfigService) {
     const key = config.get<string>("PAYSTACK_SECRET_KEY");
     if (!key) {
-      // Fail at construction time so the problem surfaces on startup, not at
-      // the first payment attempt.
-      throw new Error("PAYSTACK_SECRET_KEY is not set");
+      this.logger.warn("PAYSTACK_SECRET_KEY is not set — Paystack payments will fail at runtime");
     }
-    this.secretKey = key;
+    this.secretKey = key ?? "";
   }
 
   // ─── Initialize transaction ────────────────────────────────────────────────
 
   async initializeTransaction(params: PaystackInitParams): Promise<PaystackInitData> {
+    if (!this.secretKey) {
+      throw new Error("PAYSTACK_SECRET_KEY is not configured on this server");
+    }
     const body: Record<string, unknown> = {
       amount: params.amount,
       email: params.email,
@@ -112,6 +113,9 @@ export class PaystackService {
   // ─── Verify transaction ────────────────────────────────────────────────────
 
   async verifyTransaction(reference: string): Promise<PaystackVerifyData> {
+    if (!this.secretKey) {
+      throw new Error("PAYSTACK_SECRET_KEY is not configured on this server");
+    }
     const encodedRef = encodeURIComponent(reference);
     const res = await fetch(`${this.baseUrl}/transaction/verify/${encodedRef}`, {
       headers: { Authorization: `Bearer ${this.secretKey}` },
