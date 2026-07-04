@@ -184,6 +184,12 @@ jobs:
           --remote-only
           --wait-timeout 300
 
+      # Give NestJS time to finish initializing on the 512MB Fly machine before
+      # hitting /health. More modules = longer startup; 30 s base wait plus
+      # the smoke test's own 10×5 s retry loop = 80 s total cold-start budget.
+      - name: Wait for API to be ready
+        run: sleep 30
+
       # Five-op smoke test: health → db role → signup → login → schools/me.
       # Any non-zero exit rolls back the API deploy.
       - name: Smoke test
