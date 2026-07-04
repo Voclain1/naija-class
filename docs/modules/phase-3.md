@@ -843,3 +843,177 @@ Path: `schools/${schoolId}/receipts/${paymentId}.html`
   `permissions-coverage.spec.ts` payments block + `payments-api.ts` client +
   `/finance/invoices/[id]` updated with payment form + payment history table +
   receipt link + manual gate (partial → PARTIALLY_PAID → remainder → PAID → receipt URL). Push + PR.
+
+## 18. Slice 9 plan-first decisions (locked 2026-07-05)
+
+These decisions were finalized at the plan-first and are building constraints for
+CP1/CP2. Reopen only if a concrete blocker surfaces.
+
+---
+
+**D1 — What an installment plan is.**
+A `PaymentPlan` is a named schedule of expected payment dates and amounts set by
+the bursar after an invoice is issued. Its installments describe *when* the bursar
+expects each tranche of money; they do not move money themselves. Payments continue
+to flow through the existing `recordManual` / Paystack paths unchanged. The plan
+answers the question "of the ₦150,000 owed, when does the school expect each
+portion?" — not "how is each payment routed?"
+
+**D2 — Amounts constraint: installments must sum to `totalDue` exactly.**
+At plan creation, validate `Σ installment.amount === invoice.totalDue`. Reject
+with `ConflictError("INSTALLMENT_SUM_MISMATCH", ...)` if not. Partial-coverage
+plans (where installments sum to less than `totalDue`) are disallowed — they
+introduce ambiguity about what "paid" means and make allocation undefined. The
+bursar must account for the full invoice.
+
+**D3 — One active plan per invoice.**
+An invoice can have at most one plan at a time. Before creating, query
+`payment_plans` for `invoiceId`. If a plan already exists, reject with
+`ConflictError("PLAN_ALREADY_EXISTS", ...)`. To replace a plan, the bursar
+deletes and recreates (deletion is only allowed before any payments — D6).
+
+**D4 — Eligible invoice statuses for plan creation: `ISSUED` only.**
+Only invoices in status `ISSUED` may receive a new plan. `PARTIALLY_PAID` is
+excluded: once payments have begun, the existing allocation (even on zero installments)
+is established, and re-planning mid-payment creates ambiguity. `PAID`, `CANCELLED`,
+`DRAFT` are obviously rejected. If the school needs a plan on a partially-paid
+invoice, the path is: record payment → note outstanding balance → the unpaid portion
+is visible but the plan cannot be retroactively added for a mid-flight invoice. This
+is the simplest correct rule; reconsider at pilot feedback.
+
+**D5 — Payment allocation: automatic, chronological, threshold-based.**
+After every successful payment (both `recordManual` and `applyPaystackSuccess`),
+if the invoice has a plan, recompute which installments are covered. No explicit
+payment-to-installment link is stored; `paid` on each installment is a materialized
+Boolean re-derived from `invoice.totalPaid` after every payment.
+
+Algorithm (pure, testable independently):
+1. Sort installments by `dueDate` ASC.
+2. Compute cumulative amounts: `cumulative[i] = Σ amount[0..i]`.
+3. Mark `paid = true` for installment `i` when `cumulative[i] <= invoice.totalPaid`.
+
+Example — three ₦50,000 installments, totalPaid = ₦80,000:
+- Installment 1 cumulative = 50,000 ≤ 80,000 → `paid = true`
+- Installment 2 cumulative = 100,000 > 80,000 → `paid = false`
+- Installment 3 cumulative = 150,000 > 80,000 → `paid = false`
+
+This is idempotent (rerun gives same result) and consistent (same source of truth
+as `totalPaid`, which is itself recomputed from the aggregate of SUCCESS payments).
+Allocation is always applied in one direction — recording a payment can only move
+installments from unpaid → paid, never the reverse.
+
+**D6 — Plan mutability: create-once, delete-before-first-payment.**
+- **No modification endpoint.** Changing installment amounts or dates after creation
+  would require re-running allocation retroactively, which is error-prone. Replace =
+  delete + create.
+- **Deletion:** Allowed only when `invoice.totalPaid === 0`. Once any SUCCESS payment
+  exists, `DELETE /payment-plans/:id` returns
+  `ConflictError("PLAN_LOCKED_PAYMENTS_EXIST", ...)`. This prevents a plan from being
+  removed mid-payment-stream, which would silently orphan the allocation history.
+
+**D7 — Installment "overdue" is computed at read time; Invoice OVERDUE status transition is out of scope.**
+Two distinct things:
+
+*Installment-level overdue:* An installment is considered overdue when
+`!paid && dueDate < today`. This is computed in the DTO layer (`PaymentPlanInstallmentDto`)
+on every `GET /payment-plans?invoiceId=`. Not stored; no cron needed. The frontend
+displays a badge ("Overdue", "Due", "Paid") on each installment.
+
+*Invoice OVERDUE status:* The `Invoice.status` field has an `OVERDUE` enum value,
+but `computeInvoiceStatus` (the pure function from slice 7) does not transition to
+it — it handles only `ISSUED / PARTIALLY_PAID / PAID`. A DB-level OVERDUE transition
+requires a scheduled job that scans invoices with `dueDate < today && totalPaid < totalDue`.
+That cron belongs in slice 10 (debtor list), not here. Slice 9 does not touch
+`computeInvoiceStatus`.
+
+**D8 — Hooking into existing payment flows: `recomputeInstallmentsPaid` injected into `PaymentsService`.**
+`PaymentPlanService` exposes a method:
+```typescript
+async recomputeInstallmentsPaid(
+  db: TenantPrismaClient,
+  invoiceId: string,
+  totalPaid: number,
+): Promise<void>
+```
+It is called at the end of `PaymentsService.recordManual()` and
+`PaymentsService.applyPaystackSuccess()`, immediately after the aggregate
+recompute that produces `newTotalPaid`. Both methods already have a tenant
+`db` client and `newTotalPaid` in scope — no extra DB round-trip to fetch
+`totalPaid` is needed. If no plan exists for the invoice, the call is a no-op
+(single query, early return).
+
+`PaymentPlanService` is registered in `PaymentsModule` alongside `PaymentsService`.
+`PaymentsService` receives it by constructor injection. No circular dependency —
+`PaymentPlanService` does not import `PaymentsService`.
+
+**D9 — Schema: `PaymentPlan` and `PaymentPlanInstallment` are NOT yet migrated.**
+Both models appear in this doc's §4 spec but were not included in slice 7's
+migration (the slice 7 PR added `Payment` and enums only). CP1 runs the migration.
+
+One addition vs the §4 spec: add `paymentPlans PaymentPlan[]` as a relation field
+on `Invoice` to enable Prisma eager loading via `include`. This is a Prisma-level
+relation; no extra column in the DB (foreign key is on `payment_plans.invoice_id`).
+
+**D10 — Permissions added to `PHASE_3_PERMISSIONS`.**
+Three new strings:
+- `payment-plan.create` — bursar creates a plan for an ISSUED invoice
+- `payment-plan.read` — bursar/admin views the plan for an invoice
+- `payment-plan.delete` — bursar deletes a plan (only before first payment)
+
+No `payment-plan.update` — D6 makes modification a delete + create pair.
+
+---
+
+**CP breakdown:**
+
+- **CP1** — schema + service + spec (~3 hours):
+  - `packages/db/prisma/schema.prisma` — add `PaymentPlan` + `PaymentPlanInstallment`
+    (verbatim from §4) + `Invoice.paymentPlans PaymentPlan[]` relation. Run
+    `pnpm db:migrate -- --name add_payment_plans`.
+  - RLS policies: add `payment_plans` + `payment_plan_installments` to
+    `packages/db/prisma/policies/finance.sql` (same `tenant_isolation` pattern
+    as other finance tables).
+  - `packages/types/src/finance/payment-plan.dto.ts` — Zod schemas:
+    - `createInstallmentSchema`: `{ amount: z.number().int().positive(), dueDate: z.string().date() }`
+    - `createPaymentPlanSchema`: `{ invoiceId: z.string().uuid(), name: z.string().min(1).max(100), installments: z.array(createInstallmentSchema).min(1) }`
+    - `PaymentPlanInstallmentDto`: `{ id, amount, dueDate, paid, isOverdue }`
+    - `PaymentPlanDto`: `{ id, invoiceId, name, createdAt, installments: PaymentPlanInstallmentDto[] }`
+  - `PHASE_3_PERMISSIONS` in `packages/types` — add the three new strings.
+  - `apps/api/src/modules/payments/payment-plan.service.ts`:
+    - `create(authCtx, dto)` — validate invoice status (`ISSUED` only), check no
+      existing plan, validate sum === totalDue, create plan + installments in one tx.
+    - `findByInvoice(authCtx, invoiceId)` — fetch plan + installments, compute
+      `isOverdue` on each row.
+    - `delete(authCtx, planId)` — verify totalPaid === 0, cascade delete via Prisma.
+    - `recomputeInstallmentsPaid(db, invoiceId, totalPaid)` — internal helper;
+      sort installments, compute cumulative sums, bulk-update `paid` booleans.
+  - `PaymentPlanService` added to `PaymentsModule` providers; injected into
+    `PaymentsService` constructor; `recomputeInstallmentsPaid` called at the end
+    of `recordManual` and `applyPaystackSuccess`.
+  - `payment-plan.service.spec.ts` — unit tests (~12 tests):
+    - `create`: happy path, wrong invoice status, plan already exists, sum mismatch.
+    - `delete`: happy path (totalPaid === 0), locked (totalPaid > 0).
+    - `recomputeInstallmentsPaid`: three installments — none paid, first paid,
+      first+second paid, all paid; non-round allocation (80k against 50k/50k/50k).
+
+- **CP2** — controller + web UI + manual gate (~2 hours):
+  - `apps/api/src/modules/payments/payment-plans.controller.ts`:
+    - `@Controller("payment-plans")`, class-level `@UseGuards(AuthGuard, PermissionsGuard)`.
+    - `POST /` — `@Permissions("payment-plan.create")`.
+    - `GET /?invoiceId=` — `@Permissions("payment-plan.read")`.
+    - `DELETE /:id` — `@Permissions("payment-plan.delete")`.
+  - `PaymentPlansController` registered in `PaymentsModule.controllers`.
+  - `permissions-coverage.spec.ts` — add payment-plans block (all three handlers).
+  - `packages/types/src/api/payments.ts` — add `createPaymentPlan()`,
+    `getPaymentPlan(invoiceId)`, `deletePaymentPlan(id)` API client functions.
+  - Web UI — invoice detail page (`apps/web/src/app/(admin)/finance/invoices/[id]/page.tsx`):
+    - If invoice is `ISSUED` and no plan exists: "Set up installment plan" panel
+      with a dynamic form (add/remove rows of amount + dueDate, sum validated
+      client-side against `totalDue` before submit).
+    - If plan exists: installment timeline — each row shows amount, dueDate, and
+      a badge (`Paid ✓` / `Overdue` / `Due <date>`). Delete plan button (disabled
+      if any payment recorded).
+  - Manual gate: create ISSUED invoice → set up 3-installment plan → record
+    payment covering first installment → verify installment 1 → `paid`, 2 → unpaid
+    → record remainder → verify all → `paid` → delete plan fails (payments exist)
+    → push + PR.
