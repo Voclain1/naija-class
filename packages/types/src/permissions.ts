@@ -266,6 +266,12 @@ export const PHASE_3_PERMISSIONS = [
   // payment.refund lands in slice 11. Bursar role wire-up deferred to slice 15.
   "payment.read",
   "payment.record",
+
+  // Slice 9 — installment plans
+  // No payment-plan.update — plans are immutable; replace = delete + create.
+  "payment-plan.create",
+  "payment-plan.read",
+  "payment-plan.delete",
 ] as const;
 
 export const PHASE_3_OWNER_ONLY_PERMISSIONS = ["auth.2fa.manage"] as const;

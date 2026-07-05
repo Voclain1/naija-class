@@ -33,6 +33,7 @@ import { DiscountRulesController } from "../modules/discounts/discount-rules.con
 import { FeeCategoriesController } from "../modules/fee-catalog/fee-categories.controller";
 import { FeeItemsController } from "../modules/fee-catalog/fee-items.controller";
 import { InvoicesController } from "../modules/invoices/invoices.controller";
+import { PaymentPlansController } from "../modules/payments/payment-plans.controller";
 import { PaymentsController } from "../modules/payments/payments.controller";
 import { PaystackController } from "../modules/payments/paystack.controller";
 
@@ -312,6 +313,28 @@ describe("Phase 3 RBAC coverage: PaystackController handler permissions", () => 
   it("Paystack @Permissions values ('payment.record', 'payment.read') are known Phase 3 permissions", () => {
     const paystackPerms = ["payment.record", "payment.read"];
     const unknown = paystackPerms.filter((p) => !PHASE_3_SET.has(p));
+    expect(unknown, `unknown Phase 3 permission(s): ${unknown.join(", ")}`).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 3 / Slice 9 — PaymentPlansController coverage.
+// ---------------------------------------------------------------------------
+
+const PHASE_3_PAYMENT_PLAN_CONTROLLERS: Array<[string, Ctor]> = [
+  ["PaymentPlansController", PaymentPlansController],
+];
+
+describe("Phase 3 RBAC coverage: payment-plan route handlers declare @Permissions", () => {
+  assertCoverage(PHASE_3_PAYMENT_PLAN_CONTROLLERS);
+
+  it("every Phase 3 payment-plan @Permissions value is a known Phase 3 permission", () => {
+    const unknown: string[] = [];
+    for (const [name, ctor] of PHASE_3_PAYMENT_PLAN_CONTROLLERS) {
+      for (const p of handlerPermissions(ctor)) {
+        if (!PHASE_3_SET.has(p)) unknown.push(`${name}:${p}`);
+      }
+    }
     expect(unknown, `unknown Phase 3 permission(s): ${unknown.join(", ")}`).toEqual([]);
   });
 });

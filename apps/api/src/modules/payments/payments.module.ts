@@ -1,6 +1,8 @@
 import { Module } from "@nestjs/common";
 
 import { PaystackModule } from "../../common/paystack/paystack.module.js";
+import { PaymentPlanService } from "./payment-plan.service.js";
+import { PaymentPlansController } from "./payment-plans.controller.js";
 import { PaystackController } from "./paystack.controller.js";
 import { PaymentsController } from "./payments.controller.js";
 import { PaymentsService } from "./payments.service.js";
@@ -11,8 +13,8 @@ import { PaymentsService } from "./payments.service.js";
 
 @Module({
   imports: [PaystackModule],
-  controllers: [PaymentsController, PaystackController],
-  providers: [PaymentsService],
-  exports: [PaymentsService],
+  controllers: [PaymentsController, PaystackController, PaymentPlansController],
+  providers: [PaymentsService, PaymentPlanService],
+  exports: [PaymentsService, PaymentPlanService],
 })
 export class PaymentsModule {}

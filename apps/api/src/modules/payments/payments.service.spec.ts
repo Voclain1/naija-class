@@ -4,6 +4,7 @@ import { basePrisma, withTenant } from "@school-kit/db";
 import { recordManualPaymentSchema } from "@school-kit/types";
 
 import { AuthService } from "../auth/auth.service.js";
+import { PaymentPlanService } from "./payment-plan.service.js";
 import { computeInvoiceStatus, parsePaystackReference } from "./payments.service.js";
 
 // Phase 3 / Slice 7 CP1 — payments service spec.
@@ -182,7 +183,7 @@ describe("PaymentsService (integration)", () => {
       { baseUrl: "http://localhost:4000/api/v1", secret: "test-secret" },
     );
     const storage = new StorageService(driver);
-    const svc = new PaymentsService(storage, null as never);
+    const svc = new PaymentsService(storage, null as never, new PaymentPlanService());
 
     const { schoolId, ownerId } = await makeSchool("full");
     const invoiceId = await makeIssuedInvoice(schoolId, ownerId, 150_000_00); // ₦150,000
@@ -215,7 +216,7 @@ describe("PaymentsService (integration)", () => {
       { baseUrl: "http://localhost:4000/api/v1", secret: "test-secret" },
     );
     const storage = new StorageService(driver);
-    const svc = new PaymentsService(storage, null as never);
+    const svc = new PaymentsService(storage, null as never, new PaymentPlanService());
 
     const { schoolId, ownerId } = await makeSchool("partial");
     const invoiceId = await makeIssuedInvoice(schoolId, ownerId, 100_000_00); // ₦100,000
@@ -259,6 +260,7 @@ describe("PaymentsService (integration)", () => {
         }),
       ),
       null as never,
+      new PaymentPlanService(),
     );
 
     const { schoolId, ownerId } = await makeSchool("cancelled");
@@ -292,6 +294,7 @@ describe("PaymentsService (integration)", () => {
         }),
       ),
       null as never,
+      new PaymentPlanService(),
     );
 
     const { schoolId, ownerId } = await makeSchool("overpay");
@@ -337,6 +340,7 @@ describe("PaymentsService (integration)", () => {
         }),
       ),
       null as never,
+      new PaymentPlanService(),
     );
 
     const { schoolId, ownerId } = await makeSchool("list");
@@ -368,6 +372,7 @@ describe("PaymentsService (integration)", () => {
         }),
       ),
       null as never,
+      new PaymentPlanService(),
     );
 
     const { schoolId, ownerId } = await makeSchool("audit");
@@ -569,7 +574,7 @@ describe("PaymentsService — Paystack methods (integration)", () => {
   it("initPaystack: happy path → creates PENDING row, returns authorizationUrl + reference + paymentId", async () => {
     const { PaymentsService, storage } = await makeSvcWithStorage("init-happy");
     const stub = makePaystackStub();
-    const svc = new PaymentsService(storage, stub as never);
+    const svc = new PaymentsService(storage, stub as never, new PaymentPlanService());
 
     const { schoolId, ownerId } = await makeSchool2("init-happy");
     const { invoiceId } = await makeIssuedInvoice2(schoolId, ownerId, 50_000_00, "ih");
@@ -594,7 +599,7 @@ describe("PaymentsService — Paystack methods (integration)", () => {
 
   it("initPaystack: rejects payment on CANCELLED invoice", async () => {
     const { PaymentsService, storage } = await makeSvcWithStorage("init-cancelled");
-    const svc = new PaymentsService(storage, makePaystackStub() as never);
+    const svc = new PaymentsService(storage, makePaystackStub() as never, new PaymentPlanService());
 
     const { schoolId, ownerId } = await makeSchool2("init-cancelled");
     const { invoiceId } = await makeIssuedInvoice2(schoolId, ownerId, 50_000_00, "ic");
@@ -610,7 +615,7 @@ describe("PaymentsService — Paystack methods (integration)", () => {
 
   it("initPaystack: rejects overpayment", async () => {
     const { PaymentsService, storage } = await makeSvcWithStorage("init-overpay");
-    const svc = new PaymentsService(storage, makePaystackStub() as never);
+    const svc = new PaymentsService(storage, makePaystackStub() as never, new PaymentPlanService());
 
     const { schoolId, ownerId } = await makeSchool2("init-overpay");
     const { invoiceId } = await makeIssuedInvoice2(schoolId, ownerId, 20_000_00, "io");
@@ -625,7 +630,7 @@ describe("PaymentsService — Paystack methods (integration)", () => {
     const stub = makePaystackStub({
       initializeTransaction: async () => { throw new Error("Paystack API down"); },
     });
-    const svc = new PaymentsService(storage, stub as never);
+    const svc = new PaymentsService(storage, stub as never, new PaymentPlanService());
 
     const { schoolId, ownerId } = await makeSchool2("init-apifail");
     const { invoiceId } = await makeIssuedInvoice2(schoolId, ownerId, 30_000_00, "iaf");
@@ -647,7 +652,7 @@ describe("PaymentsService — Paystack methods (integration)", () => {
   it("handleWebhook charge.success: PENDING → SUCCESS, invoice totalPaid updated, receipt generated", async () => {
     const { PaymentsService, storage } = await makeSvcWithStorage("webhook-success");
     const stub = makePaystackStub();
-    const svc = new PaymentsService(storage, stub as never);
+    const svc = new PaymentsService(storage, stub as never, new PaymentPlanService());
 
     const { schoolId, ownerId } = await makeSchool2("webhook-success");
     const { invoiceId } = await makeIssuedInvoice2(schoolId, ownerId, 50_000_00, "ws");
@@ -701,7 +706,7 @@ describe("PaymentsService — Paystack methods (integration)", () => {
 
   it("handleWebhook charge.failed: PENDING → FAILED, invoice totalPaid unchanged", async () => {
     const { PaymentsService, storage } = await makeSvcWithStorage("webhook-failed");
-    const svc = new PaymentsService(storage, makePaystackStub() as never);
+    const svc = new PaymentsService(storage, makePaystackStub() as never, new PaymentPlanService());
 
     const { schoolId, ownerId } = await makeSchool2("webhook-failed");
     const { invoiceId } = await makeIssuedInvoice2(schoolId, ownerId, 50_000_00, "wf");
@@ -743,7 +748,7 @@ describe("PaymentsService — Paystack methods (integration)", () => {
 
   it("handleWebhook charge.success: idempotent — already SUCCESS → no double-credit", async () => {
     const { PaymentsService, storage } = await makeSvcWithStorage("webhook-idem");
-    const svc = new PaymentsService(storage, makePaystackStub() as never);
+    const svc = new PaymentsService(storage, makePaystackStub() as never, new PaymentPlanService());
 
     const { schoolId, ownerId } = await makeSchool2("webhook-idem");
     const { invoiceId } = await makeIssuedInvoice2(schoolId, ownerId, 50_000_00, "wi");
@@ -785,7 +790,7 @@ describe("PaymentsService — Paystack methods (integration)", () => {
 
   it("handleWebhook: unknown event type → no-op (no DB writes)", async () => {
     const { PaymentsService, storage } = await makeSvcWithStorage("webhook-unknown");
-    const svc = new PaymentsService(storage, makePaystackStub() as never);
+    const svc = new PaymentsService(storage, makePaystackStub() as never, new PaymentPlanService());
 
     // Should not throw and should not touch the DB.
     await expect(
@@ -798,7 +803,7 @@ describe("PaymentsService — Paystack methods (integration)", () => {
 
   it("handleWebhook: unrecognized reference format → no-op", async () => {
     const { PaymentsService, storage } = await makeSvcWithStorage("webhook-badref");
-    const svc = new PaymentsService(storage, makePaystackStub() as never);
+    const svc = new PaymentsService(storage, makePaystackStub() as never, new PaymentPlanService());
 
     await expect(
       svc.handleWebhook({
@@ -813,7 +818,7 @@ describe("PaymentsService — Paystack methods (integration)", () => {
   it("verifyPaystack: PENDING → SUCCESS when Paystack returns success", async () => {
     const { PaymentsService, storage } = await makeSvcWithStorage("verify-success");
     const stub = makePaystackStub();
-    const svc = new PaymentsService(storage, stub as never);
+    const svc = new PaymentsService(storage, stub as never, new PaymentPlanService());
 
     const { schoolId, ownerId } = await makeSchool2("verify-success");
     const { invoiceId } = await makeIssuedInvoice2(schoolId, ownerId, 40_000_00, "vs");
@@ -865,7 +870,7 @@ describe("PaymentsService — Paystack methods (integration)", () => {
         customer: { email: "g@example.test" },
       }),
     });
-    const svc = new PaymentsService(storage, stub as never);
+    const svc = new PaymentsService(storage, stub as never, new PaymentPlanService());
     // Spy on the private helper to ensure it is NOT called when already terminal.
     (svc as unknown as Record<string, unknown>)["applyPaystackSuccess"] = applySpy;
 
@@ -900,7 +905,7 @@ describe("PaymentsService — Paystack methods (integration)", () => {
 
   it("verifyPaystack: cross-school guard — schoolId in reference ≠ authCtx.schoolId → NotFoundError", async () => {
     const { PaymentsService, storage } = await makeSvcWithStorage("verify-xschool");
-    const svc = new PaymentsService(storage, makePaystackStub() as never);
+    const svc = new PaymentsService(storage, makePaystackStub() as never, new PaymentPlanService());
 
     const { schoolId: school1 } = await makeSchool2("verify-xschool-1");
     const { schoolId: school2 } = await makeSchool2("verify-xschool-2");
