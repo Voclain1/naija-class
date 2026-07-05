@@ -1,6 +1,7 @@
 import { afterAll, describe, expect, it } from "vitest";
 
 import { basePrisma, withTenant } from "@school-kit/db";
+import type { InvoiceStatus } from "@school-kit/types";
 
 import { AuthService } from "../auth/auth.service.js";
 import { computeInstallmentsPaid } from "./payment-plan.service.js";
@@ -96,7 +97,7 @@ describe("PaymentPlanService (integration)", () => {
         password: "Correct-Horse-9",
         ndprConsent: true,
       },
-      { ipAddress: "127.0.0.1" },
+      { ipAddress: "127.0.0.1", userAgent: "test" },
     );
     schoolIds.add(signed.school.id);
     await basePrisma.school.update({
@@ -109,7 +110,7 @@ describe("PaymentPlanService (integration)", () => {
   async function makeInvoice(
     schoolId: string,
     ownerId: string,
-    opts: { totalDue: number; totalPaid?: number; status?: string },
+    opts: { totalDue: number; totalPaid?: number; status?: InvoiceStatus },
   ): Promise<string> {
     return withTenant(schoolId, async (db) => {
       const year = await db.academicYear.create({
