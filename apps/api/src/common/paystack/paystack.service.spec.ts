@@ -1,6 +1,6 @@
 import * as crypto from "node:crypto";
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { PaystackService } from "./paystack.service.js";
 
@@ -66,8 +66,18 @@ describe("PaystackService.verifyWebhookSignature", () => {
 });
 
 describe("PaystackService constructor", () => {
-  it("throws at construction time if PAYSTACK_SECRET_KEY is not set", () => {
+  it("logs a warning if PAYSTACK_SECRET_KEY is not set", () => {
     const config = { get: (_key: string) => undefined } as never;
-    expect(() => new PaystackService(config)).toThrow("PAYSTACK_SECRET_KEY is not set");
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    expect(() => new PaystackService(config)).not.toThrow();
+    warnSpy.mockRestore();
+  });
+
+  it("throws at call time if PAYSTACK_SECRET_KEY is not set", async () => {
+    const config = { get: (_key: string) => undefined } as never;
+    const service = new PaystackService(config);
+    await expect(
+      service.initializeTransaction({ email: "test@test.com", amount: 100, reference: "ref" }),
+    ).rejects.toThrow("PAYSTACK_SECRET_KEY is not configured");
   });
 });

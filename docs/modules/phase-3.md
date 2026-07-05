@@ -75,11 +75,11 @@ estimates assume Phase-2 velocity.
 | 1 ✓ | **Pre-deploy infra** — `apps/api/Dockerfile` (Chromium provisioning), **in-container PDF memory gate** (40-card batch on 512MB/1GB), prod DB (Neon/Supabase) + RLS roles, prod R2 bucket, Vercel + Fly.io setup, `staging` env, rollback runbook | Nothing else is safe to deploy until the render-memory unknown is settled and an environment exists. The single biggest technical risk. | 2-3 | 4 days |
 | 2 | **Auth hardening** — 2FA (owner), password complexity policy, login + invitation rate-limiting, localStorage → httpOnly cookie auth, Better Auth migration per ADR-001 if needed | "Before finance goes live." Real money raises the auth bar; isolate it before any money endpoint exists. | 2 | 3 days |
 | 3 | **Audit-log partitioning** — convert `audit_logs` to `PARTITION BY RANGE(created_at)` monthly, with a partition-creation job; includes a **backfill strategy** (existing `audit_logs` rows distributed into the appropriate monthly partitions during migration — runs as part of the migration; acceptable dev downtime, no prod downtime since prod doesn't exist yet) | Land before finance write-volume hits the table (noted since Phase 0; finance forces it). Pure infra, testable alone. | 1 | 2 days |
-| 4 | **Fee catalog** — `FeeCategory` (school-defined) + `FeeItem` with optional scope (level / arm / term / year), migration, RLS, admin CRUD UI | The flexible fee skeleton everything hangs off. Demoable: a school names its own fees and scopes them. | 2 | 3 days |
-| 5 | **Discount rules** — `DiscountRule` (5 curated rule types, typed jsonb params), per-type server-side eval functions, RLS, admin CRUD UI | Curated flexibility without a DSL. Each rule type tested individually. | 2 | 3 days |
-| 6 | **Invoice generation (snapshot-on-issue)** — `Invoice` with denormalized item+discount snapshot, generation by student's (level, arm, term, year), RLS, admin issue/preview UI | The freeze point — invoices stop tracking live fee/discount edits. The core correctness property. | 2 | 3 days |
-| 7 | **Manual payment recording + receipts** — `Payment` (cash/POS/bank-transfer), receipt generation (**HTML on R2**, signed URL via `GET /payments/:id/receipt`), `computeInvoiceStatus` pure fn, RLS, bursar UI embedded in invoice detail page | Schools can collect + receipt money with zero Paystack dependency. Ships before the online rail. | 2 | 3 days |
-| 8 | **Paystack integration** — init + redirect + **webhook + reconciliation + idempotency keys + signature verification**, `Payment` online path, sandbox integration tests | The meaty, riskiest finance surface — real money, async, replay-safe. | 3 | 5 days |
+| 4 ✓ | **Fee catalog** — `FeeCategory` (school-defined) + `FeeItem` with optional scope (level / arm / term / year), migration, RLS, admin CRUD UI | The flexible fee skeleton everything hangs off. Demoable: a school names its own fees and scopes them. | 2 | 3 days |
+| 5 ✓ | **Discount rules** — `DiscountRule` (5 curated rule types, typed jsonb params), per-type server-side eval functions, RLS, admin CRUD UI | Curated flexibility without a DSL. Each rule type tested individually. | 2 | 3 days |
+| 6 ✓ | **Invoice generation (snapshot-on-issue)** — `Invoice` with denormalized item+discount snapshot, generation by student's (level, arm, term, year), RLS, admin issue/preview UI | The freeze point — invoices stop tracking live fee/discount edits. The core correctness property. | 2 | 3 days |
+| 7 ✓ | **Manual payment recording + receipts** — `Payment` (cash/POS/bank-transfer), receipt generation (**HTML on R2**, signed URL via `GET /payments/:id/receipt`), `computeInvoiceStatus` pure fn, RLS, bursar UI embedded in invoice detail page | Schools can collect + receipt money with zero Paystack dependency. Ships before the online rail. | 2 | 3 days |
+| 8 ✓ | **Paystack integration** — init + redirect + **webhook + reconciliation + idempotency keys + signature verification**, `Payment` online path, sandbox integration tests | The meaty, riskiest finance surface — real money, async, replay-safe. | 3 | 5 days |
 | 9 | **Installment plans + partial payments** — `PaymentPlan` (+ installment rows), partial-payment allocation against an invoice, status transitions | Nigerian schools commonly take fees in tranches. Builds on the invoice + payment base. | 2 | 3 days |
 | 10 | **Debtor list + email reminders** — outstanding-balance query, reminder schedule, **email via Resend** (SMS deferred to Phase 4 — guardians aren't users yet) | The "who owes" operational surface. Email-only keeps it inside Phase-3 channels. | 1 | 2 days |
 | 11 | **Refunds** — `Refund` with audit trail, Paystack refund path + manual refund recording, owner/admin-gated | Money leaves the school; the highest-trust mutation. Isolated + heavily audited. | 1 | 2 days |
@@ -96,11 +96,23 @@ Total: **~27-30 cps**, **~48 build days** raw before trimming.
 > `auth_resolve_invitation_by_token_hash`). Without it, FORCE RLS filters every row
 > and login / session resolution return zero rows. See `docs/runbooks/neon-prod-setup.md`.
 >
-> **Slices 4, 5, 6 closed (2026-06-30).** Fee catalog, discount rules, and
-> invoice generation (snapshot-on-issue) are live on the branch. Slices 2 and 3
-> (auth hardening, audit-log partitioning) are deferred; tracked in `docs/deferred.md`.
+> **Slices 2 and 3 deferred.** Auth hardening and audit-log partitioning tracked in
+> `docs/deferred.md`.
 >
-> **Slice 7 plan-first locked 2026-07-01.** See §16 for decisions.
+> **Slice 4 closed 2026-06-28.** Fee catalog with kobo discipline, `formatKobo`
+> utility, scope-aware FeeItems.
+>
+> **Slice 5 closed 2026-06-30.** Manual per-student discount assignment, three types
+> (PERCENTAGE/FIXED_AMOUNT/FULL_WAIVER), three durations (TERM/SESSION/LIFETIME).
+>
+> **Slice 6 closed 2026-07-01.** Invoice generation with snapshot-on-issue semantics,
+> preview dry-run, idempotent re-generation.
+>
+> **Slice 7 closed 2026-07-01.** Manual payment recording, receipt HTML on R2,
+> invoice status transitions.
+>
+> **Slice 8 closed 2026-07-04.** Paystack integration, PSK reference encoding,
+> webhook handler, constructor resilience fix.
 
 ## 4. Data model
 
