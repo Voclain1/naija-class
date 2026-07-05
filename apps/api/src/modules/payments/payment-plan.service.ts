@@ -233,7 +233,7 @@ export class PaymentPlanService {
     if (toUpdate.length === 0) return;
 
     await Promise.all(
-      toUpdate.map((inst, i) => {
+      toUpdate.map((inst, _i) => {
         const newPaid = paidFlags[plan.installments.indexOf(inst)];
         return db.paymentPlanInstallment.update({
           where: { id: inst.id },
