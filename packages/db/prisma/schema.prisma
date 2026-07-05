@@ -1280,6 +1280,7 @@ model Invoice {
   createdAt      DateTime      @default(now()) @map("created_at")
   updatedAt      DateTime      @updatedAt @map("updated_at")
   payments       Payment[]
+  paymentPlans   PaymentPlan[]
 
   @@unique([schoolId, studentId, termId])
   @@index([schoolId, status])
@@ -1337,6 +1338,46 @@ model Payment {
   @@index([schoolId, invoiceId])
   @@index([schoolId, studentId])
   @@map("payments")
+}
+
+// ---------- Phase 3 / Slice 9 — Installment plans ----------
+//
+// A PaymentPlan is a named schedule of expected payment dates + amounts.
+// It does NOT move money — payments still flow through recordManual / Paystack.
+// Constraint: Σ installment.amount === invoice.totalDue (enforced in service).
+// One plan per invoice; only allowed when invoice.status ∈ {ISSUED, PARTIALLY_PAID}.
+//
+// After every successful payment, PaymentPlanService.recomputeInstallmentsPaid()
+// walks installments ordered by dueDate and marks paid = true for every installment
+// whose cumulative amount is covered by invoice.totalPaid. Allocation is purely
+// threshold-based — no payment-to-installment link is stored.
+
+model PaymentPlan {
+  id           String                   @id @default(uuid())
+  schoolId     String                   @map("school_id")
+  invoiceId    String                   @map("invoice_id")
+  name         String
+  createdBy    String                   @map("created_by")
+  createdAt    DateTime                 @default(now()) @map("created_at")
+  invoice      Invoice                  @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
+  installments PaymentPlanInstallment[]
+
+  @@unique([schoolId, invoiceId])
+  @@index([schoolId, invoiceId])
+  @@map("payment_plans")
+}
+
+model PaymentPlanInstallment {
+  id        String      @id @default(uuid())
+  schoolId  String      @map("school_id")
+  planId    String      @map("plan_id")
+  amount    Int                           // kobo — always > 0
+  dueDate   DateTime    @map("due_date") @db.Date
+  paid      Boolean     @default(false)
+  plan      PaymentPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  @@index([schoolId, planId])
+  @@map("payment_plan_installments")
 }
 
 // ---------- Subject-period attendance (Phase 2 / Slice 8 — opt-in) ----------

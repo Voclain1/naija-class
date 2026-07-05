@@ -872,14 +872,12 @@ An invoice can have at most one plan at a time. Before creating, query
 `ConflictError("PLAN_ALREADY_EXISTS", ...)`. To replace a plan, the bursar
 deletes and recreates (deletion is only allowed before any payments — D6).
 
-**D4 — Eligible invoice statuses for plan creation: `ISSUED` only.**
-Only invoices in status `ISSUED` may receive a new plan. `PARTIALLY_PAID` is
-excluded: once payments have begun, the existing allocation (even on zero installments)
-is established, and re-planning mid-payment creates ambiguity. `PAID`, `CANCELLED`,
-`DRAFT` are obviously rejected. If the school needs a plan on a partially-paid
-invoice, the path is: record payment → note outstanding balance → the unpaid portion
-is visible but the plan cannot be retroactively added for a mid-flight invoice. This
-is the simplest correct rule; reconsider at pilot feedback.
+**D4 — Eligible invoice statuses for plan creation: `ISSUED` and `PARTIALLY_PAID`.** *(amended)*
+A bursar may set up a payment schedule retroactively after a first payment has been
+made. The sum constraint (D2) is against `invoice.totalDue` — not the remaining
+balance. The allocation logic (D5) already handles partial coverage correctly since
+it walks cumulative sums against `totalPaid`. `PAID`, `CANCELLED`, `OVERDUE`,
+`REFUNDED`, and `DRAFT` statuses cannot receive a new plan.
 
 **D5 — Payment allocation: automatic, chronological, threshold-based.**
 After every successful payment (both `recordManual` and `applyPaystackSuccess`),

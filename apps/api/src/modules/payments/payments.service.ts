@@ -20,6 +20,7 @@ import {
 import type { AuthContext } from "../../common/auth/auth-context.js";
 import { PaystackService } from "../../common/paystack/paystack.service.js";
 import { StorageService } from "../../common/storage/storage.service.js";
+import { PaymentPlanService } from "./payment-plan.service.js";
 
 const RECEIPT_URL_TTL_SECONDS = 15 * 60; // 15 minutes
 
@@ -182,6 +183,7 @@ export class PaymentsService {
   constructor(
     private readonly storage: StorageService,
     private readonly paystack: PaystackService,
+    private readonly paymentPlan: PaymentPlanService,
   ) {}
 
   // ─── Record manual payment ────────────────────────────────────────────────
@@ -293,6 +295,9 @@ export class PaymentsService {
           },
         },
       });
+
+      // 9. Update installment paid flags if an installment plan exists.
+      await this.paymentPlan.recomputeInstallmentsPaid(db, dto.invoiceId, newTotalPaid);
 
       return toDto(updated as PaymentRow);
     });
@@ -637,6 +642,9 @@ export class PaymentsService {
         },
       },
     });
+
+    // 7. Update installment paid flags if an installment plan exists.
+    await this.paymentPlan.recomputeInstallmentsPaid(db, payment.invoiceId, newTotalPaid);
   }
 
   // ─── Private: apply Paystack failed ───────────────────────────────────────
