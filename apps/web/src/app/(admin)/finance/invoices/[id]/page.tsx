@@ -5,10 +5,12 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 
 import type {
+  CreatePaymentPlanInput,
   InvoiceDto,
   InvoiceStatus,
   ManualPaymentMethod,
   PaymentDto,
+  PaymentPlanDto,
   StudentDetailDto,
   TermDto,
 } from "@school-kit/types";
@@ -16,6 +18,11 @@ import type {
 import { listTerms } from "@/lib/academic-years/academic-years-api";
 import { formatKobo } from "@/lib/finance/format";
 import { cancelInvoice, getInvoice } from "@/lib/finance/invoices-api";
+import {
+  createPaymentPlan,
+  deletePaymentPlan,
+  getPaymentPlan,
+} from "@/lib/finance/payment-plans-api";
 import { getPaymentReceiptUrl, initPaystackPayment, listPayments, recordManualPayment } from "@/lib/finance/payments-api";
 import { getStudent } from "@/lib/students/students-api";
 
@@ -41,6 +48,7 @@ const STATUS_COLOURS: Record<InvoiceStatus, string> = {
 
 const CANCELLABLE: Set<InvoiceStatus> = new Set(["ISSUED", "DRAFT", "OVERDUE"]);
 const PAYABLE: Set<InvoiceStatus> = new Set(["ISSUED", "PARTIALLY_PAID", "OVERDUE"]);
+const PLANNABLE: Set<InvoiceStatus> = new Set(["ISSUED", "PARTIALLY_PAID"]);
 
 const METHOD_LABELS: Record<ManualPaymentMethod, string> = {
   CASH: "Cash",
@@ -54,6 +62,31 @@ function nowLocalDatetimeValue(): string {
   return d.toISOString().slice(0, 16);
 }
 
+function todayIso(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+// ─── Installment plan form state ──────────────────────────────────────────────
+
+type InstallmentFormRow = { amount: string; dueDate: string };
+
+function buildAutoSplit(count: number, totalDue: number): InstallmentFormRow[] {
+  if (count <= 0 || totalDue <= 0) return [];
+  const base = Math.floor(totalDue / count);
+  const remainder = totalDue - base * count;
+  return Array.from({ length: count }, (_, i) => {
+    const kobo = i === 0 ? base + remainder : base;
+    const date = new Date();
+    date.setMonth(date.getMonth() + i + 1);
+    return {
+      amount: (kobo / 100).toFixed(2),
+      dueDate: date.toISOString().slice(0, 10),
+    };
+  });
+}
+
+// ─── Page component ───────────────────────────────────────────────────────────
+
 export default function InvoiceDetailPage() {
   const { id } = useParams<{ id: string }>();
 
@@ -61,6 +94,7 @@ export default function InvoiceDetailPage() {
   const [student, setStudent] = useState<StudentDetailDto | null>(null);
   const [term, setTerm] = useState<TermDto | null>(null);
   const [payments, setPayments] = useState<PaymentDto[]>([]);
+  const [plan, setPlan] = useState<PaymentPlanDto | null | undefined>(undefined); // undefined = loading
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -82,14 +116,22 @@ export default function InvoiceDetailPage() {
     reference: "",
   });
 
+  // Installment plan form
+  const [planCount, setPlanCount] = useState(3);
+  const [planName, setPlanName] = useState("Payment plan");
+  const [planMode, setPlanMode] = useState<"auto" | "manual">("auto");
+  const [planRows, setPlanRows] = useState<InstallmentFormRow[]>([]);
+  const [planSubmitting, setPlanSubmitting] = useState(false);
+  const [planError, setPlanError] = useState<string | null>(null);
+  const [planDeleting, setPlanDeleting] = useState(false);
+  const [planDeleteError, setPlanDeleteError] = useState<string | null>(null);
+
   useEffect(() => {
     if (!id) return;
     setLoading(true);
     getInvoice(id)
       .then((inv) => {
         setInvoice(inv);
-        // Resolve student name and term name in parallel — failures are non-fatal
-        // (display falls back to UUID if the sub-fetch fails).
         Promise.all([
           getStudent(inv.studentId).then(setStudent).catch(() => {}),
           listTerms(inv.academicYearId)
@@ -101,11 +143,21 @@ export default function InvoiceDetailPage() {
           listPayments({ invoiceId: inv.id })
             .then((r) => setPayments(r.data))
             .catch(() => {}),
+          getPaymentPlan(inv.id)
+            .then(setPlan)
+            .catch(() => setPlan(null)),
         ]).catch(() => {});
       })
       .catch((e) => setError(e instanceof Error ? e.message : "Failed to load invoice."))
       .finally(() => setLoading(false));
   }, [id]);
+
+  // When invoice loads and plan mode is auto, seed the plan rows.
+  useEffect(() => {
+    if (invoice && planMode === "auto") {
+      setPlanRows(buildAutoSplit(planCount, invoice.totalDue));
+    }
+  }, [invoice, planCount, planMode]);
 
   async function handleCancel() {
     if (!invoice) return;
@@ -136,12 +188,14 @@ export default function InvoiceDetailPage() {
         paidAt: new Date(form.paidAt).toISOString(),
         reference: form.reference || undefined,
       });
-      const [updatedInvoice, updatedPayments] = await Promise.all([
+      const [updatedInvoice, updatedPayments, updatedPlan] = await Promise.all([
         getInvoice(invoice.id),
         listPayments({ invoiceId: invoice.id }),
+        getPaymentPlan(invoice.id).catch(() => null),
       ]);
       setInvoice(updatedInvoice);
       setPayments(updatedPayments.data);
+      setPlan(updatedPlan);
       setForm({ amount: "", method: "CASH", paidAt: nowLocalDatetimeValue(), reference: "" });
     } catch (e) {
       setRecordError(e instanceof Error ? e.message : "Failed to record payment.");
@@ -177,6 +231,48 @@ export default function InvoiceDetailPage() {
     }
   }
 
+  async function handleCreatePlan(e: React.FormEvent) {
+    e.preventDefault();
+    if (!invoice) return;
+    setPlanSubmitting(true);
+    setPlanError(null);
+    try {
+      const installments = planRows.map((row) => ({
+        amount: Math.round(parseFloat(row.amount) * 100),
+        dueDate: row.dueDate,
+      }));
+      const input: CreatePaymentPlanInput = {
+        invoiceId: invoice.id,
+        name: planName,
+        installments,
+      };
+      const created = await createPaymentPlan(input);
+      setPlan(created);
+    } catch (e) {
+      setPlanError(e instanceof Error ? e.message : "Failed to create plan.");
+    } finally {
+      setPlanSubmitting(false);
+    }
+  }
+
+  async function handleDeletePlan() {
+    if (!plan) return;
+    setPlanDeleting(true);
+    setPlanDeleteError(null);
+    try {
+      await deletePaymentPlan(plan.id);
+      setPlan(null);
+    } catch (e) {
+      setPlanDeleteError(e instanceof Error ? e.message : "Failed to delete plan.");
+    } finally {
+      setPlanDeleting(false);
+    }
+  }
+
+  function handlePlanRowChange(index: number, field: "amount" | "dueDate", value: string) {
+    setPlanRows((rows) => rows.map((r, i) => (i === index ? { ...r, [field]: value } : r)));
+  }
+
   if (loading) {
     return <div className="p-6 text-gray-400">Loading…</div>;
   }
@@ -192,6 +288,9 @@ export default function InvoiceDetailPage() {
   const termLabel = term ? term.name : invoice.termId;
 
   const grandTotal = invoice.items.reduce((s, item) => s + item.netAmount, 0);
+
+  // A plan can only be deleted before any payment is recorded.
+  const hasSuccessPayment = payments.some((p) => p.status === "SUCCESS");
 
   return (
     <div className="p-6 space-y-6 max-w-4xl">
@@ -248,8 +347,6 @@ export default function InvoiceDetailPage() {
           </thead>
           <tbody>
             {invoice.items.map((item) => {
-              // Derive the capped display discount from the already-correct netAmount
-              // rather than summing discountsApplied (which would show the uncapped raw sum).
               const displayDiscount = item.amount - item.netAmount;
               return (
                 <tr key={item.feeItemId} className="border-t hover:bg-gray-50">
@@ -363,6 +460,182 @@ export default function InvoiceDetailPage() {
               </tbody>
             </table>
           </div>
+        )}
+      </div>
+
+      {/* Installment plan */}
+      <div>
+        <h2 className="text-base font-semibold mb-3">Installment plan</h2>
+
+        {/* Plan exists — show table */}
+        {plan ? (
+          <div className="space-y-3">
+            <p className="text-sm text-gray-500">{plan.name}</p>
+            <div className="border rounded-lg overflow-hidden">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="text-left px-4 py-2 font-medium">Due date</th>
+                    <th className="text-right px-4 py-2 font-medium">Amount</th>
+                    <th className="text-center px-4 py-2 font-medium">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {plan.installments.map((inst) => (
+                    <tr key={inst.id} className="border-t hover:bg-gray-50">
+                      <td className={`px-4 py-2 ${inst.isOverdue ? "text-red-600 font-medium" : "text-gray-700"}`}>
+                        {inst.dueDate}
+                        {inst.isOverdue && (
+                          <span className="ml-2 text-xs bg-red-100 text-red-600 rounded px-1.5 py-0.5">Overdue</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-2 text-right font-mono">{formatKobo(inst.amount)}</td>
+                      <td className="px-4 py-2 text-center">
+                        {inst.paid ? (
+                          <span className="text-green-600 font-medium">✓ Paid</span>
+                        ) : (
+                          <span className="text-gray-400">Pending</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {!hasSuccessPayment && (
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={handleDeletePlan}
+                  disabled={planDeleting}
+                  className="px-3 py-1.5 bg-red-600 text-white text-sm rounded hover:bg-red-700 disabled:opacity-50"
+                >
+                  {planDeleting ? "Deleting…" : "Delete plan"}
+                </button>
+                {planDeleteError && <p className="text-sm text-red-600">{planDeleteError}</p>}
+              </div>
+            )}
+          </div>
+        ) : plan === null && PLANNABLE.has(invoice.status) ? (
+          /* No plan yet, invoice is plannable — show setup form */
+          <form onSubmit={handleCreatePlan} className="border rounded-lg p-4 space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm text-gray-600 mb-1">Plan name</label>
+                <input
+                  type="text"
+                  required
+                  value={planName}
+                  onChange={(e) => setPlanName(e.target.value)}
+                  className="w-full border rounded px-3 py-1.5 text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-gray-600 mb-1">Number of installments</label>
+                <input
+                  type="number"
+                  min={1}
+                  max={24}
+                  required
+                  value={planCount}
+                  onChange={(e) => {
+                    const n = parseInt(e.target.value, 10);
+                    if (n > 0) {
+                      setPlanCount(n);
+                      if (planMode === "auto") {
+                        setPlanRows(buildAutoSplit(n, invoice.totalDue));
+                      } else {
+                        setPlanRows((rows) => {
+                          if (n > rows.length) {
+                            return [
+                              ...rows,
+                              ...Array.from({ length: n - rows.length }, () => ({
+                                amount: "",
+                                dueDate: "",
+                              })),
+                            ];
+                          }
+                          return rows.slice(0, n);
+                        });
+                      }
+                    }
+                  }}
+                  className="w-full border rounded px-3 py-1.5 text-sm"
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setPlanMode("auto");
+                  setPlanRows(buildAutoSplit(planCount, invoice.totalDue));
+                }}
+                className={`px-3 py-1.5 text-sm rounded border ${planMode === "auto" ? "bg-blue-50 border-blue-400 text-blue-700" : "border-gray-300 text-gray-600"}`}
+              >
+                Auto-split equally
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setPlanMode("manual");
+                  if (planRows.length !== planCount) {
+                    setPlanRows(Array.from({ length: planCount }, () => ({ amount: "", dueDate: "" })));
+                  }
+                }}
+                className={`px-3 py-1.5 text-sm rounded border ${planMode === "manual" ? "bg-blue-50 border-blue-400 text-blue-700" : "border-gray-300 text-gray-600"}`}
+              >
+                Set amounts manually
+              </button>
+            </div>
+
+            {/* Installment rows */}
+            <div className="space-y-2">
+              {planRows.map((row, i) => (
+                <div key={i} className="grid grid-cols-[auto_1fr_1fr] gap-3 items-center">
+                  <span className="text-sm text-gray-500 w-6">{i + 1}.</span>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-0.5">Amount (₦)</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0.01"
+                      required
+                      readOnly={planMode === "auto"}
+                      value={row.amount}
+                      onChange={(e) => handlePlanRowChange(i, "amount", e.target.value)}
+                      className={`w-full border rounded px-2 py-1 text-sm ${planMode === "auto" ? "bg-gray-50 text-gray-500" : ""}`}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-0.5">Due date</label>
+                    <input
+                      type="date"
+                      required
+                      min={todayIso()}
+                      value={row.dueDate}
+                      onChange={(e) => handlePlanRowChange(i, "dueDate", e.target.value)}
+                      className="w-full border rounded px-2 py-1 text-sm"
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {planError && <p className="text-sm text-red-600">{planError}</p>}
+            <button
+              type="submit"
+              disabled={planSubmitting}
+              className="px-4 py-2 bg-indigo-600 text-white text-sm rounded hover:bg-indigo-700 disabled:opacity-50"
+            >
+              {planSubmitting ? "Creating plan…" : "Set up payment plan"}
+            </button>
+          </form>
+        ) : plan === null ? (
+          <p className="text-sm text-gray-400">No installment plan. Plans can only be created on issued or partially-paid invoices.</p>
+        ) : (
+          /* plan === undefined = still loading */
+          <p className="text-sm text-gray-400">Loading…</p>
         )}
       </div>
 
