@@ -34,6 +34,7 @@
     "otplib": "^13.4.1",
     "puppeteer": "^25.1.0",
     "reflect-metadata": "^0.2.2",
+    "resend": "^6.17.1",
     "rxjs": "^7.8.1",
     "zod": "^3.23.8"
   },

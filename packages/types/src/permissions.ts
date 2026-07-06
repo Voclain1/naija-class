@@ -272,6 +272,10 @@ export const PHASE_3_PERMISSIONS = [
   "payment-plan.create",
   "payment-plan.read",
   "payment-plan.delete",
+
+  // Slice 10 — debtor list + email reminders
+  "finance.debtors.read",
+  "finance.debtors.remind",
 ] as const;
 
 export const PHASE_3_OWNER_ONLY_PERMISSIONS = ["auth.2fa.manage"] as const;

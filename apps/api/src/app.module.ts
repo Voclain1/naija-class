@@ -21,6 +21,7 @@ import { ClassSubjectsModule } from "./modules/class-subjects/class-subjects.mod
 import { DebugModule } from "./modules/debug/debug.module";
 import { DiscountsModule } from "./modules/discounts/discounts.module";
 import { FeeCatalogModule } from "./modules/fee-catalog/fee-catalog.module";
+import { FinanceModule } from "./modules/finance/finance.module";
 import { InvoicesModule } from "./modules/invoices/invoices.module";
 import { PaymentsModule } from "./modules/payments/payments.module";
 import { EnrollmentsModule } from "./modules/enrollments/enrollments.module";
@@ -99,6 +100,7 @@ const isProd = process.env.NODE_ENV === "production";
     DiscountsModule,
     InvoicesModule,
     PaymentsModule,
+    FinanceModule,
     ...(isProd ? [] : [DebugModule]),
   ],
   controllers: [HealthController],
