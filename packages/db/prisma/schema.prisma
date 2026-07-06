@@ -1333,11 +1333,48 @@ model Payment {
   updatedAt         DateTime      @updatedAt @map("updated_at")
 
   invoice           Invoice       @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
+  refunds           Refund[]
 
   @@unique([schoolId, paystackReference])
   @@index([schoolId, invoiceId])
   @@index([schoolId, studentId])
   @@map("payments")
+}
+
+// ---------- Phase 3 / Slice 11 — Refunds ----------
+//
+// A Refund represents money returned to a parent (Paystack path) or an
+// administrative reversal of a manual payment (no money movement). Creating a
+// Refund always marks the linked Payment as REVERSED and recomputes the invoice
+// totalPaid + status. Full reversals only in slice 11 (amount === payment.amount).
+//
+// status: PROCESSED for manual payments (immediate); PROCESSED or FAILED for
+// Paystack payments (result of the Paystack refund API call). REQUESTED is
+// reserved for a future async refund queue.
+//
+// processedBy: the userId of the admin/owner who initiated the refund.
+
+enum RefundStatus {
+  REQUESTED
+  PROCESSED
+  FAILED
+}
+
+model Refund {
+  id                String       @id @default(uuid())
+  schoolId          String       @map("school_id")
+  paymentId         String       @map("payment_id")
+  amount            Int                               // kobo — equals payment.amount (full reversal only)
+  reason            String
+  status            RefundStatus
+  paystackRefundRef String?      @map("paystack_refund_ref") // Paystack refund ID; null for manual reversals
+  processedBy       String       @map("processed_by")        // userId of the admin/owner
+  createdAt         DateTime     @default(now()) @map("created_at")
+
+  payment           Payment      @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+
+  @@index([schoolId, paymentId])
+  @@map("refunds")
 }
 
 // ---------- Phase 3 / Slice 9 — Installment plans ----------

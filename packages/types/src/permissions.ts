@@ -263,9 +263,11 @@ export const PHASE_3_PERMISSIONS = [
   "invoice.cancel",
 
   // Slice 7 — manual payment recording + receipts
-  // payment.refund lands in slice 11. Bursar role wire-up deferred to slice 15.
   "payment.read",
   "payment.record",
+
+  // Slice 11 — refunds (owner + admin only; bursar excluded — highest-trust mutation)
+  "payment.refund",
 
   // Slice 9 — installment plans
   // No payment-plan.update — plans are immutable; replace = delete + create.

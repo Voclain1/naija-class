@@ -23,7 +23,7 @@ import {
   deletePaymentPlan,
   getPaymentPlan,
 } from "@/lib/finance/payment-plans-api";
-import { getPaymentReceiptUrl, initPaystackPayment, listPayments, recordManualPayment } from "@/lib/finance/payments-api";
+import { createRefund, getPaymentReceiptUrl, initPaystackPayment, listPayments, recordManualPayment } from "@/lib/finance/payments-api";
 import { getStudent } from "@/lib/students/students-api";
 
 const STATUS_LABELS: Record<InvoiceStatus, string> = {
@@ -101,6 +101,13 @@ export default function InvoiceDetailPage() {
   // Cancel
   const [cancelling, setCancelling] = useState(false);
   const [cancelError, setCancelError] = useState<string | null>(null);
+
+  // Refund
+  const [refundPaymentId, setRefundPaymentId] = useState<string | null>(null);
+  const [refundAmount, setRefundAmount] = useState(0);
+  const [refundReason, setRefundReason] = useState("");
+  const [refunding, setRefunding] = useState(false);
+  const [refundError, setRefundError] = useState<string | null>(null);
 
   // Paystack init
   const [initiatingPaystack, setInitiatingPaystack] = useState(false);
@@ -219,6 +226,36 @@ export default function InvoiceDetailPage() {
     } catch (e) {
       setPaystackError(e instanceof Error ? e.message : "Failed to initiate payment.");
       setInitiatingPaystack(false);
+    }
+  }
+
+  function openRefundDialog(paymentId: string, amount: number) {
+    setRefundPaymentId(paymentId);
+    setRefundAmount(amount);
+    setRefundReason("");
+    setRefundError(null);
+  }
+
+  async function handleRefund(e: React.FormEvent) {
+    e.preventDefault();
+    if (!refundPaymentId) return;
+    setRefunding(true);
+    setRefundError(null);
+    try {
+      await createRefund({ paymentId: refundPaymentId, amount: refundAmount, reason: refundReason });
+      const [updatedInvoice, updatedPayments, updatedPlan] = await Promise.all([
+        getInvoice(invoice!.id),
+        listPayments({ invoiceId: invoice!.id }),
+        getPaymentPlan(invoice!.id).catch(() => null),
+      ]);
+      setInvoice(updatedInvoice);
+      setPayments(updatedPayments.data);
+      setPlan(updatedPlan);
+      setRefundPaymentId(null);
+    } catch (e) {
+      setRefundError(e instanceof Error ? e.message : "Refund failed.");
+    } finally {
+      setRefunding(false);
     }
   }
 
@@ -433,25 +470,41 @@ export default function InvoiceDetailPage() {
                   <th className="text-left px-4 py-2 font-medium">Method</th>
                   <th className="text-left px-4 py-2 font-medium">Reference</th>
                   <th className="text-right px-4 py-2 font-medium">Amount</th>
+                  <th className="text-left px-4 py-2 font-medium">Status</th>
                   <th className="px-4 py-2" />
                 </tr>
               </thead>
               <tbody>
                 {payments.map((p) => (
-                  <tr key={p.id} className="border-t hover:bg-gray-50">
+                  <tr key={p.id} className={`border-t hover:bg-gray-50 ${p.status === "REVERSED" ? "opacity-50" : ""}`}>
                     <td className="px-4 py-2 text-gray-500">
                       {p.paidAt ? new Date(p.paidAt).toLocaleString("en-NG", { dateStyle: "medium", timeStyle: "short" }) : "—"}
                     </td>
                     <td className="px-4 py-2">{METHOD_LABELS[p.method as ManualPaymentMethod] ?? p.method}</td>
                     <td className="px-4 py-2 text-gray-500 font-mono text-xs">{p.reference ?? "—"}</td>
-                    <td className="px-4 py-2 text-right font-mono font-medium">{formatKobo(p.amount)}</td>
-                    <td className="px-4 py-2 text-right">
+                    <td className={`px-4 py-2 text-right font-mono font-medium ${p.status === "REVERSED" ? "line-through text-gray-400" : ""}`}>
+                      {formatKobo(p.amount)}
+                    </td>
+                    <td className="px-4 py-2 text-xs text-gray-500">
+                      {p.status === "REVERSED" ? (
+                        <span className="text-red-500 font-medium">Reversed</span>
+                      ) : p.status}
+                    </td>
+                    <td className="px-4 py-2 text-right space-x-3">
                       {p.receiptUrl && (
                         <button
                           onClick={() => handleOpenReceipt(p.id)}
                           className="text-xs text-blue-600 hover:underline"
                         >
                           Receipt
+                        </button>
+                      )}
+                      {p.status === "SUCCESS" && (
+                        <button
+                          onClick={() => openRefundDialog(p.id, p.amount)}
+                          className="text-xs text-red-600 hover:underline"
+                        >
+                          Reverse
                         </button>
                       )}
                     </td>
@@ -747,6 +800,59 @@ export default function InvoiceDetailPage() {
           ← Back to invoices
         </Link>
       </div>
+
+      {/* Refund confirmation dialog */}
+      {refundPaymentId && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-md p-6 space-y-4">
+            <h2 className="text-lg font-semibold text-gray-900">Reverse payment</h2>
+            <p className="text-sm text-gray-600">
+              This will reverse the{" "}
+              <span className="font-mono font-medium">{formatKobo(refundAmount)}</span> payment
+              and update the invoice balance.{" "}
+              {invoice?.status === "PAID" && (
+                <span className="text-red-600 font-medium">The invoice will become REFUNDED.</span>
+              )}
+            </p>
+            <form onSubmit={handleRefund} className="space-y-3">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Reason <span className="text-red-500">*</span>
+                </label>
+                <textarea
+                  required
+                  maxLength={500}
+                  rows={3}
+                  value={refundReason}
+                  onChange={(e) => setRefundReason(e.target.value)}
+                  placeholder="e.g. Payment recorded in error, parent requested refund…"
+                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
+                />
+              </div>
+              {refundError && (
+                <p className="text-sm text-red-600">{refundError}</p>
+              )}
+              <div className="flex gap-3 justify-end">
+                <button
+                  type="button"
+                  onClick={() => setRefundPaymentId(null)}
+                  disabled={refunding}
+                  className="px-4 py-2 text-sm border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={refunding || !refundReason.trim()}
+                  className="px-4 py-2 text-sm bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50"
+                >
+                  {refunding ? "Reversing…" : "Confirm reversal"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
