@@ -33,6 +33,7 @@ import { DiscountRulesController } from "../modules/discounts/discount-rules.con
 import { FeeCategoriesController } from "../modules/fee-catalog/fee-categories.controller";
 import { FeeItemsController } from "../modules/fee-catalog/fee-items.controller";
 import { InvoicesController } from "../modules/invoices/invoices.controller";
+import { FinanceController } from "../modules/finance/finance.controller";
 import { PaymentPlansController } from "../modules/payments/payment-plans.controller";
 import { PaymentsController } from "../modules/payments/payments.controller";
 import { PaystackController } from "../modules/payments/paystack.controller";
@@ -358,5 +359,27 @@ describe("Phase 3 RBAC coverage: seeded role grants match the spec", () => {
     for (const p of feeCatalogPerms) {
       expect(adminPerms.has(p), `admin should have ${p}`).toBe(true);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 3 / Slice 10 — FinanceController coverage (debtor list + reminders).
+// ---------------------------------------------------------------------------
+
+const PHASE_3_FINANCE_CONTROLLERS: Array<[string, Ctor]> = [
+  ["FinanceController", FinanceController],
+];
+
+describe("Phase 3 RBAC coverage: finance route handlers declare @Permissions", () => {
+  assertCoverage(PHASE_3_FINANCE_CONTROLLERS);
+
+  it("every Phase 3 finance @Permissions value is a known Phase 3 permission", () => {
+    const unknown: string[] = [];
+    for (const [name, ctor] of PHASE_3_FINANCE_CONTROLLERS) {
+      for (const p of handlerPermissions(ctor)) {
+        if (!PHASE_3_SET.has(p)) unknown.push(`${name}:${p}`);
+      }
+    }
+    expect(unknown, `unknown Phase 3 permission(s): ${unknown.join(", ")}`).toEqual([]);
   });
 });

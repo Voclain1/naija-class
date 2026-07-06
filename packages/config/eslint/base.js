@@ -147,6 +147,10 @@ export const baseConfig = [
       // partition management has no school context — it is pre-tenant by
       // definition, exactly like the auth SECURITY DEFINER call sites above.
       "**/modules/system/partition.service.ts",
+      // finance.service.ts — transitionOverdueInvoices is a system cron that iterates
+      // all schools. It uses basePrisma to fetch the school list, then calls withTenant
+      // per school for the actual invoice updates. No tenant data is accessed via basePrisma.
+      "**/modules/finance/finance.service.ts",
     ],
     rules: {
       "no-restricted-imports": "off",
