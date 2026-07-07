@@ -288,7 +288,7 @@ describe("RefundsService (integration)", () => {
       status: "OVERDUE",
       dueDate: YESTERDAY,
     });
-    const p1 = await makePayment(schoolId, invoiceId, studentId, 60_000);
+    const _p1 = await makePayment(schoolId, invoiceId, studentId, 60_000);
     const p2 = await makePayment(schoolId, invoiceId, studentId, 40_000);
     await withTenant(schoolId, (db) =>
       db.invoice.update({ where: { id: invoiceId }, data: { totalPaid: 100_000 } }),
