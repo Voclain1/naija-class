@@ -37,6 +37,7 @@ import { FinanceController } from "../modules/finance/finance.controller";
 import { PaymentPlansController } from "../modules/payments/payment-plans.controller";
 import { PaymentsController } from "../modules/payments/payments.controller";
 import { PaystackController } from "../modules/payments/paystack.controller";
+import { RefundsController } from "../modules/payments/refunds.controller";
 
 // Static RBAC safety net (slice 13). Every route handler on a Phase 1
 // controller MUST declare @Permissions — the PermissionsGuard fails closed,
@@ -376,6 +377,28 @@ describe("Phase 3 RBAC coverage: finance route handlers declare @Permissions", (
   it("every Phase 3 finance @Permissions value is a known Phase 3 permission", () => {
     const unknown: string[] = [];
     for (const [name, ctor] of PHASE_3_FINANCE_CONTROLLERS) {
+      for (const p of handlerPermissions(ctor)) {
+        if (!PHASE_3_SET.has(p)) unknown.push(`${name}:${p}`);
+      }
+    }
+    expect(unknown, `unknown Phase 3 permission(s): ${unknown.join(", ")}`).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 3 / Slice 11 — RefundsController coverage.
+// ---------------------------------------------------------------------------
+
+const PHASE_3_REFUND_CONTROLLERS: Array<[string, Ctor]> = [
+  ["RefundsController", RefundsController],
+];
+
+describe("Phase 3 RBAC coverage: refund route handlers declare @Permissions", () => {
+  assertCoverage(PHASE_3_REFUND_CONTROLLERS);
+
+  it("every Phase 3 refund @Permissions value is a known Phase 3 permission", () => {
+    const unknown: string[] = [];
+    for (const [name, ctor] of PHASE_3_REFUND_CONTROLLERS) {
       for (const p of handlerPermissions(ctor)) {
         if (!PHASE_3_SET.has(p)) unknown.push(`${name}:${p}`);
       }

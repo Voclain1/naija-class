@@ -32,15 +32,24 @@ const AUDIT_PAYSTACK_FAILED = "payment.paystack-failed";
 // Pure helpers (exported for unit tests)
 // ---------------------------------------------------------------------------
 
-// Derives the correct InvoiceStatus from the authoritative totalPaid and totalDue.
-// Called after every successful payment write with a recomputed (not incremented)
-// totalPaid so the result is always consistent with the payments table.
-// CANCELLED and REFUNDED are terminal — the caller must reject payment before
-// reaching this function (it is never called for terminal invoices).
-export function computeInvoiceStatus(totalPaid: number, totalDue: number): InvoiceStatus {
-  if (totalPaid <= 0) return "ISSUED";
-  if (totalPaid < totalDue) return "PARTIALLY_PAID";
-  return "PAID";
+// Derives the correct InvoiceStatus from totalPaid, totalDue, and an optional
+// dueDate. CANCELLED and REFUNDED are terminal — the caller must reject payment
+// before reaching this function (it is never called for terminal invoices).
+//
+// dueDate is optional (absent for payment-recording callers that never go DOWN
+// the status ladder). Pass dueDate when the status may need to stay OVERDUE
+// after a reversal, i.e. when totalPaid could drop below totalDue.
+export function computeInvoiceStatus(
+  totalPaid: number,
+  totalDue: number,
+  dueDate?: Date | null,
+): InvoiceStatus {
+  if (totalPaid >= totalDue) return "PAID";
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const isOverdue = !!dueDate && dueDate < today;
+  if (totalPaid <= 0) return isOverdue ? "OVERDUE" : "ISSUED";
+  return isOverdue ? "OVERDUE" : "PARTIALLY_PAID";
 }
 
 // Parses a Paystack reference of the form "PSK-{schoolId}-{paymentId}" (77 chars).

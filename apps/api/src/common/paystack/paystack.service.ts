@@ -39,6 +39,19 @@ interface PaystackVerifyResponse {
   data: PaystackVerifyData;
 }
 
+export interface PaystackRefundData {
+  id: number;         // Paystack refund ID
+  amount: number;     // kobo
+  status: string;
+  transaction: string; // Paystack transaction reference
+}
+
+interface PaystackRefundResponse {
+  status: boolean;
+  message: string;
+  data: PaystackRefundData;
+}
+
 // ---------------------------------------------------------------------------
 // Params for initializeTransaction
 // ---------------------------------------------------------------------------
@@ -134,6 +147,41 @@ export class PaystackService {
     if (!json.status) {
       this.logger.error(`Paystack verify rejected: ${json.message}`);
       throw new InternalError("PAYSTACK_VERIFY_FAILED", json.message);
+    }
+
+    return json.data;
+  }
+
+  // ─── Refund transaction ───────────────────────────────────────────────────
+
+  // Calls Paystack POST /refund to return money to the payer.
+  // reference: the original transaction reference ("PSK-{schoolId}-{paymentId}").
+  // amount: refund amount in kobo (must equal payment amount — partial refunds
+  //   are not supported in slice 11).
+  // Returns the Paystack refund object whose `id` is stored as paystackRefundRef.
+  async refundTransaction(reference: string, amount: number): Promise<PaystackRefundData> {
+    if (!this.secretKey) {
+      throw new Error("PAYSTACK_SECRET_KEY is not configured on this server");
+    }
+    const res = await fetch(`${this.baseUrl}/refund`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${this.secretKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ transaction: reference, amount }),
+    });
+
+    if (!res.ok) {
+      const text = await res.text().catch(() => "<no body>");
+      this.logger.error(`Paystack refund failed: ${res.status} ${text}`);
+      throw new Error(`Paystack refund failed (HTTP ${res.status}): ${text}`);
+    }
+
+    const json = (await res.json()) as PaystackRefundResponse;
+    if (!json.status) {
+      this.logger.error(`Paystack refund rejected: ${json.message}`);
+      throw new Error(`Paystack refund rejected: ${json.message}`);
     }
 
     return json.data;

@@ -1,10 +1,12 @@
 import type {
+  CreateRefundInput,
   InitPaystackPaymentInput,
   PaginatedPaymentsDto,
   PaymentDto,
   PaymentReceiptUrlDto,
   PaystackInitResponseDto,
   RecordManualPaymentInput,
+  RefundDto,
 } from "@school-kit/types";
 
 import { apiFetch } from "../api-client";
@@ -42,4 +44,8 @@ export function initPaystackPayment(input: InitPaystackPaymentInput): Promise<Pa
 
 export function verifyPaystackPayment(reference: string): Promise<PaymentDto> {
   return apiFetch<PaymentDto>(`/payments/paystack/verify/${encodeURIComponent(reference)}`, { method: "GET" });
+}
+
+export function createRefund(input: CreateRefundInput): Promise<RefundDto> {
+  return apiFetch<RefundDto>("/refunds", { method: "POST", body: input });
 }
