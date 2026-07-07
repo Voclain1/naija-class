@@ -38,15 +38,19 @@ Format:
 
 - [ ] Expired-session sweeper. Daily cron: `DELETE FROM sessions WHERE expires_at < NOW() - INTERVAL '7 days'`. The AuthGuard already rejects expired sessions with `SESSION_EXPIRED`, so this is housekeeping (table growth) rather than correctness. — when `sessions` row count starts mattering for backup size.
 
-- - [ ] Audit SECURITY DEFINER inventory. Current count: 5
-  (`auth_check_signup_uniqueness`, `auth_resolve_session`,
-  `auth_lookup_user_for_login`, `auth_resolve_invitation_by_token_hash`,
-  `create_audit_log_partition`). Refactor triggers at 6 ("past 5" per CLAUDE.md).
-  Options: consolidated `auth_resolve(...)` function, or a separate
-  `auth_service` schema owned by a dedicated role. **Trigger landed:** Phase 3 /
-  Slice 12 introduces `encrypt_bvn` + `decrypt_bvn` (pgcrypto symmetric, key
-  via Fly secret + `SET LOCAL app.bvn_key`), pushing the count from 5 → 7 —
-  the refactor must land in the same PR as the BVN columns. See
+- [x] Audit SECURITY DEFINER inventory. **DONE Phase 3 Slice 12 (2026-07-08).**
+  Reviewed all 5 pre-existing functions (`auth_check_signup_uniqueness`,
+  `auth_resolve_session`, `auth_lookup_user_for_login`,
+  `auth_resolve_invitation_by_token_hash`, `create_audit_log_partition`) for
+  consolidation; decision was to keep all 5 as-is (each has a narrow,
+  non-overlapping return shape — see CLAUDE.md's audit note for the full
+  reasoning) and instead land a mechanical conformance spec
+  (`apps/api/src/__tests__/security-definer-inventory.spec.ts`) that enforces
+  the ownership/search_path/grant discipline on every CI run, at any count —
+  replacing the "refactor past 5" human-memory threshold. `encrypt_bvn` +
+  `decrypt_bvn` (pgcrypto symmetric BVN encryption, key via Fly secret +
+  `SET LOCAL app.bvn_key`) landed in the same PR, bringing the count to 7.
+  See CLAUDE.md "SECURITY DEFINER functions — index" and
   `docs/modules/phase-3.md` §7 BVN encryption mechanism.
 
 - [x] Rate-limit `GET /invitations/:token` and `POST /invitations/:token/accept`. 30/min and 20/min per-IP respectively via `@Throttle`. **DONE Phase 3 Slice 2.** Per-token-hash cap (prevent brute-forcing token space) still deferred — the 32-byte random token space makes this low-risk.

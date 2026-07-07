@@ -92,6 +92,16 @@ model User {
   totpPendingSecret   String?   @map("totp_pending_secret")
   totpSecret          String?   @map("totp_secret")
   totpEnabled         Boolean   @default(false) @map("totp_enabled")
+
+  // Phase 3 / Slice 12 — encrypted BVN (Bank Verification Number), staff/
+  // payroll PII, not student/guardian data. bvnEncrypted is pgcrypto
+  // ciphertext, only ever produced/consumed via the encrypt_bvn/decrypt_bvn
+  // SECURITY DEFINER functions. bvnLast4 is plaintext (safe in isolation) for
+  // masked display without invoking decryption. See CLAUDE.md "SECURITY
+  // DEFINER functions — index" and docs/modules/phase-3.md §7.
+  bvnEncrypted        Bytes?    @map("bvn_encrypted")
+  bvnLast4            String?   @map("bvn_last4")
+
   createdAt           DateTime  @default(now()) @map("created_at")
   updatedAt           DateTime  @updatedAt @map("updated_at")
 
