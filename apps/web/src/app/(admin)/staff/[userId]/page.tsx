@@ -11,6 +11,7 @@ import type {
   UserListItemDto,
 } from "@school-kit/types";
 
+import { BvnSection } from "@/components/staff/bvn-section";
 import { TeacherAssignmentsSection } from "@/components/staff/teacher-assignments-section";
 import { Button } from "@/components/ui/button";
 import { ApiError } from "@/lib/api-client";
@@ -183,6 +184,9 @@ export default function StaffDetailPage() {
           </Link>
         </Button>
       </header>
+
+      {/* BVN — staff-wide payroll identifier, not teacher-specific */}
+      <BvnSection mode="other" userId={userId} />
 
       {/* Teacher profile */}
       <section className="flex flex-col gap-3">

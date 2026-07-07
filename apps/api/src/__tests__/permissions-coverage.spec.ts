@@ -38,6 +38,7 @@ import { PaymentPlansController } from "../modules/payments/payment-plans.contro
 import { PaymentsController } from "../modules/payments/payments.controller";
 import { PaystackController } from "../modules/payments/paystack.controller";
 import { RefundsController } from "../modules/payments/refunds.controller";
+import { BvnController } from "../modules/users/bvn.controller";
 
 // Static RBAC safety net (slice 13). Every route handler on a Phase 1
 // controller MUST declare @Permissions — the PermissionsGuard fails closed,
@@ -404,5 +405,62 @@ describe("Phase 3 RBAC coverage: refund route handlers declare @Permissions", ()
       }
     }
     expect(unknown, `unknown Phase 3 permission(s): ${unknown.join(", ")}`).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 3 / Slice 12 — BvnController coverage.
+//
+// Cannot use assertCoverage() here: the three /me/bvn* handlers deliberately
+// carry NO @Permissions — every authenticated user manages their own BVN
+// regardless of role (same "documented exception" shape as PaystackController's
+// handleWebhook above). The three /:id/bvn* handlers (admin/owner acting on
+// another staff member) ARE permission-gated and follow the normal rule.
+// ---------------------------------------------------------------------------
+
+describe("Phase 3 RBAC coverage: BvnController handler permissions", () => {
+  it("BvnController has at least one route handler", () => {
+    expect(routeHandlers(BvnController).length).toBeGreaterThan(0);
+  });
+
+  it.each([
+    "captureOwnBvn",
+    "getOwnBvnStatus",
+    "revealOwnBvn",
+  ])("%s carries NO @Permissions (self-service — no role check needed)", (handlerName) => {
+    const proto = BvnController.prototype as unknown as Record<string, unknown>;
+    const perms = Reflect.getMetadata(PERMISSIONS_METADATA_KEY, proto[handlerName] as object);
+    expect(perms).toBeUndefined();
+  });
+
+  it("captureBvnForStaff carries @Permissions('staff-bvn.manage-others')", () => {
+    const proto = BvnController.prototype as unknown as Record<string, unknown>;
+    const perms = Reflect.getMetadata(PERMISSIONS_METADATA_KEY, proto["captureBvnForStaff"] as object);
+    expect(perms).toEqual(["staff-bvn.manage-others"]);
+  });
+
+  it("getBvnStatusForStaff carries @Permissions('staff-bvn.read')", () => {
+    const proto = BvnController.prototype as unknown as Record<string, unknown>;
+    const perms = Reflect.getMetadata(PERMISSIONS_METADATA_KEY, proto["getBvnStatusForStaff"] as object);
+    expect(perms).toEqual(["staff-bvn.read"]);
+  });
+
+  it("revealBvnForStaff carries @Permissions('staff-bvn.reveal')", () => {
+    const proto = BvnController.prototype as unknown as Record<string, unknown>;
+    const perms = Reflect.getMetadata(PERMISSIONS_METADATA_KEY, proto["revealBvnForStaff"] as object);
+    expect(perms).toEqual(["staff-bvn.reveal"]);
+  });
+
+  it("BVN @Permissions values are known Phase 3 permissions", () => {
+    const bvnPerms = ["staff-bvn.manage-others", "staff-bvn.read", "staff-bvn.reveal"];
+    const unknown = bvnPerms.filter((p) => !PHASE_3_SET.has(p));
+    expect(unknown, `unknown Phase 3 permission(s): ${unknown.join(", ")}`).toEqual([]);
+  });
+
+  it("admin is granted all three staff-bvn.* permissions; bursar is excluded (mirrors payment.refund)", () => {
+    const adminPerms = new Set(roleSeed("admin").permissions);
+    expect(adminPerms.has("staff-bvn.manage-others")).toBe(true);
+    expect(adminPerms.has("staff-bvn.read")).toBe(true);
+    expect(adminPerms.has("staff-bvn.reveal")).toBe(true);
   });
 });

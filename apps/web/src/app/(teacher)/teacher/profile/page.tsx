@@ -14,6 +14,7 @@ import {
   type UpdateMyTeacherProfileInput,
 } from "@school-kit/types";
 
+import { BvnSection } from "@/components/staff/bvn-section";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -155,6 +156,9 @@ export default function TeacherProfilePage() {
         <header className="flex flex-col gap-1">
           <h1 className="text-2xl font-semibold tracking-tight">My profile</h1>
         </header>
+        {/* BVN lives on User, not TeacherProfile — available regardless of
+            whether an admin has set up the HR profile yet. */}
+        <BvnSection mode="self" />
         <div className="flex flex-col items-start gap-2 rounded-md border border-dashed bg-muted/30 p-8 text-sm">
           <p className="font-medium">Your profile isn&apos;t set up yet.</p>
           <p className="text-muted-foreground">
@@ -171,6 +175,7 @@ export default function TeacherProfilePage() {
     return (
       <div className="mx-auto flex w-full max-w-2xl flex-col gap-4">
         <h1 className="text-2xl font-semibold tracking-tight">My profile</h1>
+        <BvnSection mode="self" />
         <div className="rounded-md border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive">
           {loadError ?? "Could not load your profile."}
         </div>
@@ -187,6 +192,8 @@ export default function TeacherProfilePage() {
           and NUT number are managed by your administrator.
         </p>
       </header>
+
+      <BvnSection mode="self" />
 
       {/* Read-only, admin-managed fields */}
       <dl className="grid grid-cols-1 gap-x-6 gap-y-3 rounded-md border bg-card p-4 sm:grid-cols-3">

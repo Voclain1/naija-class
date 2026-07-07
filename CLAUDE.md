@@ -147,8 +147,37 @@ Discipline for every function in this category:
 | `auth_lookup_user_for_login(email)` | `20260516000000_add_auth_lookup_functions` | Login service user lookup pre-tenant; returns `{ user_id, school_id, password_hash, is_active }`. | phone, names, role grants, session rows. |
 | `auth_resolve_invitation_by_token_hash(token_hash)` | `20260517000000_invitation_names_and_lookup` | Public invitation endpoints (GET /invitations/:token, POST /invitations/:token/accept) resolve a token hash to `{ invitation_id, school_id, email, role_key, first_name, last_name, invited_by, expires_at, accepted_at }` before withTenant() can apply. | `token_hash`, `phone`, `created_at` — caller already has the token; phone is Phase-4 territory; created_at is read tenant-scoped from the pending-invitations list. |
 | `create_audit_log_partition(p_year, p_month)` | `20260628000000_phase_3_slice_3_audit_partitioning` | Called by `PartitionService` at startup and on the monthly cron; creates the named monthly child partition of `audit_logs`. `app_user` cannot `CREATE TABLE` directly; this runs as `school_kit`. | Returns VOID. Table name derived from integer arithmetic only; quoted via `%I` in the function body — no caller input reaches the DDL string. |
+| `encrypt_bvn(p_bvn_plaintext)` | `20260708010000_phase_3_slice_12_bvn_encryption_functions` | Wraps `pgp_sym_encrypt` for staff BVN capture (`BvnService.captureBvn`). `pgp_sym_encrypt`/`pgp_sym_decrypt` have EXECUTE revoked from PUBLIC in the same migration, so this is the only path to producing BVN ciphertext. Pure crypto primitive — no table access, no school_id/user_id params; the row UPDATE stays ordinary `app_user` SQL under `withTenant`/RLS. | Nothing beyond the ciphertext — there is no row here. |
+| `decrypt_bvn(p_bvn_encrypted)` | `20260708010000_phase_3_slice_12_bvn_encryption_functions` | Wraps `pgp_sym_decrypt` for `BvnService.revealBvn`. Same PUBLIC-revoked pgcrypto primitive as above. | Nothing beyond the plaintext BVN string — the service layer (not this function) is responsible for auditing every call and never logging the return value. |
 
-If this list grows past 5, refactor before adding more — see `docs/deferred.md` ("Audit SECURITY DEFINER inventory"). **Current count: 5.**
+**SECURITY DEFINER inventory audit (Phase 3 / Slice 12, 2026-07-08):** reviewed
+all 5 pre-existing functions for consolidation when the count crossed the
+"past 5" trigger. **Decision: keep all 5 as-is, no consolidation.** Each has a
+deliberately narrow, non-overlapping return shape tailored to one caller
+(`auth_lookup_user_for_login` returns `password_hash`, which the other three
+auth functions correctly never see; `create_audit_log_partition` is a
+different domain — DDL, not an RLS pre-tenant lookup). Merging any of them
+would either widen a return row beyond what its caller needs or require a
+branching "which entity type" argument — both weaken the "returns scalars
+only, narrow to the one caller's need" discipline this table exists to
+enforce. A dedicated `auth_service` schema/role (the other option
+`docs/deferred.md` floated) was also rejected for this PR: it touches every
+existing call site in the login/session path, unacceptable blast radius for a
+refactor that isn't required to reduce count, only to review it.
+
+The refactor actually delivered: **`apps/api/src/__tests__/security-definer-inventory.spec.ts`**
+is a mechanical conformance gate, run on every CI pass, that queries `pg_proc`
+for every function with `prosecdef = true` and asserts each one (a) appears in
+the spec's `SECURITY_DEFINER_FUNCTIONS` constant — the single source of truth
+this table and the spec both point at, so a new SD function added without
+updating both fails loudly; (b) is owned by `school_kit`; (c) has
+`search_path=public, pg_temp` pinned; (d) has EXECUTE revoked from `PUBLIC`
+and granted to `app_user`. This replaces "if it grows past 5, refactor" — a
+human-memory threshold — with a standing gate that holds at any count.
+Table-review cadence: revisit this table's shape every +3 functions; the
+conformance spec itself never needs a count bump.
+
+**Current count: 7.**
 
 ### ESM module resolution
 

@@ -278,6 +278,14 @@ export const PHASE_3_PERMISSIONS = [
   // Slice 10 — debtor list + email reminders
   "finance.debtors.read",
   "finance.debtors.remind",
+
+  // Slice 12 — BVN capture/reveal (owner + admin only; bursar excluded —
+  // mirrors payment.refund, the highest-trust read/write in the payroll
+  // surface). The /users/me/bvn* self-service routes need no permission
+  // string — every authenticated user manages their own BVN regardless of role.
+  "staff-bvn.manage-others",
+  "staff-bvn.read",
+  "staff-bvn.reveal",
 ] as const;
 
 export const PHASE_3_OWNER_ONLY_PERMISSIONS = ["auth.2fa.manage"] as const;

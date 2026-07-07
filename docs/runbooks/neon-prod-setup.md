@@ -14,6 +14,22 @@ Create a new project at https://neon.tech. Choose a region close to Fly's `jnb`
 Note the **connection string** Neon shows after creation — that is your
 `neondb_owner` superuser URL. Keep it; you need it only for this setup step.
 
+### Required extensions
+
+Run once, as `neondb_owner` (or any role with `CREATE` on the database), before
+the first migration:
+
+```sql
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp"; -- Prisma id generation
+CREATE EXTENSION IF NOT EXISTS vector;      -- pgvector, AI/RAG (Phase 5)
+CREATE EXTENSION IF NOT EXISTS pgcrypto;    -- BVN column encryption (Phase 3 / Slice 12)
+```
+
+Verify with `SELECT extname, extversion FROM pg_extension WHERE extname = 'pgcrypto';`
+— should return one row. The Phase-3/Slice-12 migration also runs
+`CREATE EXTENSION IF NOT EXISTS pgcrypto;` itself (idempotent), so this step is
+a belt-and-braces pre-check, not a hard dependency.
+
 ### 1b. Create the two application roles
 
 Open the Neon SQL editor (or connect via `psql` as `neondb_owner`) and run the
