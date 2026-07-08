@@ -1,16 +1,25 @@
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import { afterAll, describe, expect, it } from "vitest";
 
 import { basePrisma, withTenant } from "@school-kit/db";
-import { NotFoundError } from "@school-kit/types";
+import { NotFoundError, ValidationError } from "@school-kit/types";
 
+import { FilesystemStorageDriver } from "../../common/storage/filesystem-storage.driver";
+import { StorageService } from "../../common/storage/storage.service";
 import { AuthService } from "../auth/auth.service";
 import { ExpenseCategoryService } from "./expense-category.service";
 import { ExpenseService } from "./expense.service";
 
-// Phase 3 / Slice 13 cp1 — expense integration spec. Real DB + RLS.
+// Phase 3 / Slice 13 — expense integration spec. Real DB + RLS + real
+// filesystem storage driver (mocking Prisma or storage here would defeat the
+// point — the whole feature is "does the round-trip actually work").
 // Covers: create (happy, category-not-found, cross-tenant category rejected),
 // findAll (categoryId filter, date range filter), findById, update (partial,
-// categoryId re-validation), delete, audit rows, cross-tenant isolation.
+// categoryId re-validation), delete (+ receipt blob cleanup), receipt
+// upload/download, audit rows, cross-tenant isolation.
 //
 // categoryId has no DB FK (plain FK — see schema.prisma header comment on
 // Expense), so the "category must exist and belong to this school" guard is
@@ -35,13 +44,15 @@ describe("ExpenseService", () => {
   const runId = Math.random().toString(36).slice(2, 8);
   const auth = new AuthService();
   const categorySvc = new ExpenseCategoryService();
-  const svc = new ExpenseService();
+  const storageRoot = mkdtempSync(join(tmpdir(), "schoolkit-expense-storage-"));
+  const svc = new ExpenseService(new StorageService(new FilesystemStorageDriver(storageRoot)));
   const schoolIds = new Set<string>();
 
   afterAll(async () => {
     for (const id of schoolIds) {
       await basePrisma.school.delete({ where: { id } }).catch(() => undefined);
     }
+    rmSync(storageRoot, { recursive: true, force: true });
     await basePrisma.$disconnect();
   });
 
@@ -249,6 +260,108 @@ describe("ExpenseService", () => {
       await svc.delete(authCtx, created.id, reqCtx);
       const log = await withTenant(schoolId, (db) =>
         db.auditLog.findFirst({ where: { entityId: created.id, action: "expense.delete" } }),
+      );
+      expect(log).not.toBeNull();
+    });
+
+    it("cleans up the receipt blob from disk when deleting an expense that has one", async () => {
+      const { schoolId, ownerId } = await makeSchool("d5");
+      const authCtx = ctx(schoolId, ownerId);
+      const categoryId = await makeCategory(schoolId, ownerId, "Cat");
+      const created = await svc.create(authCtx, { categoryId, amount: 1000, incurredAt: "2026-06-01" }, reqCtx);
+      await svc.uploadReceipt(
+        authCtx,
+        created.id,
+        { buffer: Buffer.from("fake-jpeg-bytes"), mimetype: "image/jpeg" },
+        reqCtx,
+      );
+      const blobPath = join(storageRoot, "schools", schoolId, "expenses", created.id, "receipt");
+      expect(existsSync(blobPath)).toBe(true);
+
+      await svc.delete(authCtx, created.id, reqCtx);
+      expect(existsSync(blobPath)).toBe(false);
+    });
+  });
+
+  describe("uploadReceipt / getReceiptUrl", () => {
+    it("uploads a receipt and round-trips a signed URL", async () => {
+      const { schoolId, ownerId } = await makeSchool("r1");
+      const authCtx = ctx(schoolId, ownerId);
+      const categoryId = await makeCategory(schoolId, ownerId, "Cat");
+      const created = await svc.create(authCtx, { categoryId, amount: 1000, incurredAt: "2026-06-01" }, reqCtx);
+
+      const updated = await svc.uploadReceipt(
+        authCtx,
+        created.id,
+        { buffer: Buffer.from("fake-jpeg-bytes"), mimetype: "image/jpeg" },
+        reqCtx,
+      );
+      expect(updated.receiptUrl).not.toBeNull();
+
+      const { url, expiresAt } = await svc.getReceiptUrl(authCtx, created.id);
+      expect(url).toBeTruthy();
+      expect(expiresAt.getTime()).toBeGreaterThan(Date.now());
+    });
+
+    it("rejects a disallowed mimetype", async () => {
+      const { schoolId, ownerId } = await makeSchool("r2");
+      const authCtx = ctx(schoolId, ownerId);
+      const categoryId = await makeCategory(schoolId, ownerId, "Cat");
+      const created = await svc.create(authCtx, { categoryId, amount: 1000, incurredAt: "2026-06-01" }, reqCtx);
+      await expect(
+        svc.uploadReceipt(
+          authCtx,
+          created.id,
+          { buffer: Buffer.from("not-a-receipt"), mimetype: "application/zip" },
+          reqCtx,
+        ),
+      ).rejects.toBeInstanceOf(ValidationError);
+    });
+
+    it("re-uploading replaces the previous receipt (delete-then-put)", async () => {
+      const { schoolId, ownerId } = await makeSchool("r3");
+      const authCtx = ctx(schoolId, ownerId);
+      const categoryId = await makeCategory(schoolId, ownerId, "Cat");
+      const created = await svc.create(authCtx, { categoryId, amount: 1000, incurredAt: "2026-06-01" }, reqCtx);
+
+      const first = await svc.uploadReceipt(
+        authCtx,
+        created.id,
+        { buffer: Buffer.from("first-version"), mimetype: "image/png" },
+        reqCtx,
+      );
+      const second = await svc.uploadReceipt(
+        authCtx,
+        created.id,
+        { buffer: Buffer.from("second-version"), mimetype: "application/pdf" },
+        reqCtx,
+      );
+      // Same canonical path both times (extensionless key derives only from
+      // expenseId) — the second put() overwrote the first.
+      expect(second.receiptUrl).toBe(first.receiptUrl);
+    });
+
+    it("throws NotFoundError from getReceiptUrl when no receipt was ever uploaded", async () => {
+      const { schoolId, ownerId } = await makeSchool("r4");
+      const authCtx = ctx(schoolId, ownerId);
+      const categoryId = await makeCategory(schoolId, ownerId, "Cat");
+      const created = await svc.create(authCtx, { categoryId, amount: 1000, incurredAt: "2026-06-01" }, reqCtx);
+      await expect(svc.getReceiptUrl(authCtx, created.id)).rejects.toBeInstanceOf(NotFoundError);
+    });
+
+    it("writes an audit log row for the receipt upload action", async () => {
+      const { schoolId, ownerId } = await makeSchool("r5");
+      const authCtx = ctx(schoolId, ownerId);
+      const categoryId = await makeCategory(schoolId, ownerId, "Cat");
+      const created = await svc.create(authCtx, { categoryId, amount: 1000, incurredAt: "2026-06-01" }, reqCtx);
+      await svc.uploadReceipt(
+        authCtx,
+        created.id,
+        { buffer: Buffer.from("fake-jpeg-bytes"), mimetype: "image/jpeg" },
+        reqCtx,
+      );
+      const log = await withTenant(schoolId, (db) =>
+        db.auditLog.findFirst({ where: { entityId: created.id, action: "expense.receipt-upload" } }),
       );
       expect(log).not.toBeNull();
     });

@@ -25,6 +25,7 @@ import { FinanceModule } from "./modules/finance/finance.module";
 import { InvoicesModule } from "./modules/invoices/invoices.module";
 import { PaymentsModule } from "./modules/payments/payments.module";
 import { EnrollmentsModule } from "./modules/enrollments/enrollments.module";
+import { ExpensesModule } from "./modules/expenses/expenses.module";
 import { GradingModule } from "./modules/grading/grading.module";
 import { GuardiansModule } from "./modules/guardians/guardians.module";
 import { ImportsModule } from "./modules/imports/imports.module";
@@ -101,6 +102,7 @@ const isProd = process.env.NODE_ENV === "production";
     InvoicesModule,
     PaymentsModule,
     FinanceModule,
+    ExpensesModule,
     ...(isProd ? [] : [DebugModule]),
   ],
   controllers: [HealthController],

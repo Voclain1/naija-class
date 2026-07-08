@@ -37,3 +37,8 @@ export interface ListExpensesQuery {
   from?: string; // incurredAt >= from (date string)
   to?: string; // incurredAt <= to (date string)
 }
+
+export interface ExpenseReceiptUrlDto {
+  url: string;
+  expiresAt: Date;
+}

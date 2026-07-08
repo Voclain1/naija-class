@@ -3,13 +3,16 @@ import { Injectable } from "@nestjs/common";
 import { withTenant, type PrismaClient } from "@school-kit/db";
 import {
   NotFoundError,
+  ValidationError,
   type CreateExpenseInput,
   type ExpenseDto,
+  type ExpenseReceiptUrlDto,
   type ListExpensesQuery,
   type UpdateExpenseInput,
 } from "@school-kit/types";
 
 import type { AuthContext } from "../../common/auth/auth-context.js";
+import { StorageService } from "../../common/storage/storage.service.js";
 
 interface RequestContext {
   ipAddress: string | null;
@@ -19,7 +22,20 @@ const AUDIT = {
   create: "expense.create",
   update: "expense.update",
   delete: "expense.delete",
+  receiptUpload: "expense.receipt-upload",
 } as const;
+
+// 8 MB, not the CSV module's 5 MB — a receipt is a phone-camera photo of a
+// paper receipt or a scanned invoice, routinely larger than a CSV payload.
+export const EXPENSE_RECEIPT_MAX_FILE_SIZE_BYTES = 8 * 1024 * 1024;
+
+export const EXPENSE_RECEIPT_ALLOWED_MIME_TYPES = [
+  "image/jpeg",
+  "image/png",
+  "application/pdf",
+] as const;
+
+const RECEIPT_URL_TTL_SECONDS = 15 * 60; // mirrors PaymentsService's receipt TTL
 
 const EXPENSE_SELECT = {
   id: true,
@@ -64,6 +80,8 @@ function toDto(row: ExpenseRow): ExpenseDto {
 
 @Injectable()
 export class ExpenseService {
+  constructor(private readonly storage: StorageService) {}
+
   async findAll(authCtx: AuthContext, query: ListExpensesQuery = {}): Promise<ExpenseDto[]> {
     return withTenant(authCtx.schoolId, async (db) => {
       const rows = await db.expense.findMany({
@@ -194,9 +212,8 @@ export class ExpenseService {
     });
   }
 
-  // Receipt-blob cleanup on delete is wired in CP2 alongside the upload
-  // endpoint (StorageService isn't injected here yet — in CP1, receiptUrl is
-  // always null, since no upload path exists to set it).
+  // storage.delete() is idempotent (no-op if nothing was ever uploaded), so
+  // this runs unconditionally rather than branching on receiptUrl.
   async delete(authCtx: AuthContext, id: string, reqCtx: RequestContext): Promise<void> {
     return withTenant(authCtx.schoolId, async (db) => {
       const existing = await db.expense.findUnique({
@@ -206,6 +223,7 @@ export class ExpenseService {
       if (!existing) throw new NotFoundError("Expense not found.");
 
       await db.expense.delete({ where: { id } });
+      await this.storage.delete(authCtx.schoolId, { kind: "expense-receipt", expenseId: id });
 
       await db.auditLog.create({
         data: {
@@ -218,6 +236,80 @@ export class ExpenseService {
           metadata: {},
         },
       });
+    });
+  }
+
+  async uploadReceipt(
+    authCtx: AuthContext,
+    id: string,
+    file: { buffer: Buffer; mimetype: string },
+    reqCtx: RequestContext,
+  ): Promise<ExpenseDto> {
+    if (!EXPENSE_RECEIPT_ALLOWED_MIME_TYPES.includes(
+      file.mimetype as (typeof EXPENSE_RECEIPT_ALLOWED_MIME_TYPES)[number],
+    )) {
+      throw new ValidationError(
+        "INVALID_RECEIPT_TYPE",
+        `Receipt must be one of: ${EXPENSE_RECEIPT_ALLOWED_MIME_TYPES.join(", ")}.`,
+      );
+    }
+
+    return withTenant(authCtx.schoolId, async (db) => {
+      const existing = await db.expense.findUnique({
+        where: { id },
+        select: { id: true },
+      });
+      if (!existing) throw new NotFoundError("Expense not found.");
+
+      // Re-uploading replaces the previous file (delete-then-put, not
+      // append) — no separate "remove receipt" endpoint. pathFor() derives
+      // the same extensionless key every time, so put() naturally overwrites.
+      const receiptUrl = await this.storage.put(
+        authCtx.schoolId,
+        { kind: "expense-receipt", expenseId: id },
+        file.buffer,
+        file.mimetype,
+      );
+
+      const updated = await db.expense.update({
+        where: { id },
+        data: { receiptUrl },
+        select: EXPENSE_SELECT,
+      });
+
+      await db.auditLog.create({
+        data: {
+          schoolId: authCtx.schoolId,
+          userId: authCtx.userId,
+          action: AUDIT.receiptUpload,
+          entityType: "expense",
+          entityId: id,
+          ipAddress: reqCtx.ipAddress,
+          metadata: { mimetype: file.mimetype, size: file.buffer.length },
+        },
+      });
+
+      return toDto(updated);
+    });
+  }
+
+  async getReceiptUrl(authCtx: AuthContext, id: string): Promise<ExpenseReceiptUrlDto> {
+    return withTenant(authCtx.schoolId, async (db) => {
+      const row = await db.expense.findUnique({
+        where: { id },
+        select: { id: true, receiptUrl: true },
+      });
+      if (!row) throw new NotFoundError("Expense not found.");
+      if (!row.receiptUrl) {
+        throw new NotFoundError("No receipt has been uploaded for this expense.");
+      }
+
+      const url = await this.storage.signUrl(
+        authCtx.schoolId,
+        { kind: "expense-receipt", expenseId: id },
+        RECEIPT_URL_TTL_SECONDS,
+      );
+      return { url, expiresAt: new Date(Date.now() + RECEIPT_URL_TTL_SECONDS * 1000) };
     });
   }
 }

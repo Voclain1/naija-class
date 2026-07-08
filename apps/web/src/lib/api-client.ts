@@ -69,8 +69,14 @@ export async function apiFetch<T>(
 ): Promise<T> {
   const { body, headers, notifyOnUnauthorized = true, ...rest } = options;
 
+  // FormData (multipart file uploads — expense receipts) must NOT be
+  // JSON.stringify'd, and must NOT get an explicit Content-Type: the browser
+  // sets multipart/form-data with the correct boundary itself. Every other
+  // caller passes a plain object body and gets the existing JSON behavior.
+  const isFormData = body instanceof FormData;
+
   const finalHeaders = new Headers(headers);
-  if (body !== undefined && !finalHeaders.has("Content-Type")) {
+  if (body !== undefined && !isFormData && !finalHeaders.has("Content-Type")) {
     finalHeaders.set("Content-Type", "application/json");
   }
   const token = getStoredToken();
@@ -85,7 +91,7 @@ export async function apiFetch<T>(
     cache: "no-store",
     ...rest,
     headers: finalHeaders,
-    body: body === undefined ? undefined : JSON.stringify(body),
+    body: body === undefined ? undefined : isFormData ? body : JSON.stringify(body),
   });
 
   if (response.status === 204) {

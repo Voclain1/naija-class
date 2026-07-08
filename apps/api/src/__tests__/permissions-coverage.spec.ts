@@ -30,6 +30,8 @@ import { TeacherProfilesController } from "../modules/teacher-profiles/teacher-p
 import { TeacherScopeController } from "../modules/teacher-scope/teacher-scope.controller";
 import { TermsController } from "../modules/terms/terms.controller";
 import { DiscountRulesController } from "../modules/discounts/discount-rules.controller";
+import { ExpenseCategoriesController } from "../modules/expenses/expense-categories.controller";
+import { ExpensesController } from "../modules/expenses/expenses.controller";
 import { FeeCategoriesController } from "../modules/fee-catalog/fee-categories.controller";
 import { FeeItemsController } from "../modules/fee-catalog/fee-items.controller";
 import { InvoicesController } from "../modules/invoices/invoices.controller";
@@ -462,5 +464,48 @@ describe("Phase 3 RBAC coverage: BvnController handler permissions", () => {
     expect(adminPerms.has("staff-bvn.manage-others")).toBe(true);
     expect(adminPerms.has("staff-bvn.read")).toBe(true);
     expect(adminPerms.has("staff-bvn.reveal")).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 3 / Slice 13 — expense tracking controller coverage.
+// ---------------------------------------------------------------------------
+
+const PHASE_3_EXPENSE_CONTROLLERS: Array<[string, Ctor]> = [
+  ["ExpenseCategoriesController", ExpenseCategoriesController],
+  ["ExpensesController", ExpensesController],
+];
+
+describe("Phase 3 RBAC coverage: expense route handlers declare @Permissions", () => {
+  assertCoverage(PHASE_3_EXPENSE_CONTROLLERS);
+
+  it("every Phase 3 expense @Permissions value is a known Phase 3 permission", () => {
+    const unknown: string[] = [];
+    for (const [name, ctor] of PHASE_3_EXPENSE_CONTROLLERS) {
+      for (const p of handlerPermissions(ctor)) {
+        if (!PHASE_3_SET.has(p)) unknown.push(`${name}:${p}`);
+      }
+    }
+    expect(unknown, `unknown Phase 3 permission(s): ${unknown.join(", ")}`).toEqual([]);
+  });
+
+  it("admin is granted all 8 expense-tracking permission strings (no owner-only restriction)", () => {
+    const adminPerms = new Set(roleSeed("admin").permissions);
+    const expensePerms = PHASE_3_PERMISSIONS.filter(
+      (p) => p.startsWith("expense-category.") || p.startsWith("expense."),
+    );
+    for (const p of expensePerms) {
+      expect(adminPerms.has(p), `admin should have ${p}`).toBe(true);
+    }
+  });
+
+  it("uploadReceipt and getReceiptUrl carry expense.update / expense.read respectively", () => {
+    const proto = ExpensesController.prototype as unknown as Record<string, unknown>;
+    expect(Reflect.getMetadata(PERMISSIONS_METADATA_KEY, proto["uploadReceipt"] as object)).toEqual([
+      "expense.update",
+    ]);
+    expect(Reflect.getMetadata(PERMISSIONS_METADATA_KEY, proto["getReceiptUrl"] as object)).toEqual([
+      "expense.read",
+    ]);
   });
 });
