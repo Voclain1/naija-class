@@ -1427,6 +1427,60 @@ model PaymentPlanInstallment {
   @@map("payment_plan_installments")
 }
 
+// ---------- Expense tracking (Phase 3 / Slice 13) ----------
+//
+// ExpenseCategory mirrors FeeCategory exactly (school-defined taxonomy,
+// name unique per school, soft-deactivate via `active`).
+//
+// Expense.categoryId is a PLAIN FK — no enforced Prisma relation, no DB-level
+// FOREIGN KEY constraint. Same convention as FeeItem's scope columns
+// (classLevelId/classArmId/termId/academicYearId), NOT the FeeItem.category
+// exception (which DOES get an enforced relation with onDelete: Restrict).
+// Consequences, load-bearing for the service layer:
+//   - ExpenseCategoryService.delete cannot use a Prisma `_count` relation
+//     shorthand (there's no relation to count through) — it runs an explicit
+//     `db.expense.count({ where: { categoryId } })` guard instead.
+//   - ExpensesService.create/update must validate categoryId exists AND
+//     belongs to the caller's school before writing (no DB FK to catch a
+//     dangling reference).
+//   - The web UI resolves categoryId -> name client-side against an
+//     already-fetched category list, same pattern as teacher-assignments-
+//     section.tsx's armName()/subjectName() helpers — no server-side include.
+//
+// No snapshot/freeze semantics (unlike Invoice/Payment): an Expense doesn't
+// feed any derived, stored total elsewhere — the finance dashboard (slice 14)
+// sums expenses at read time. Amount/date/description/category are freely
+// editable after creation.
+model ExpenseCategory {
+  id        String   @id @default(uuid())
+  schoolId  String   @map("school_id")
+  name      String
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([schoolId, name])
+  @@index([schoolId])
+  @@map("expense_categories")
+}
+
+model Expense {
+  id          String   @id @default(uuid())
+  schoolId    String   @map("school_id")
+  categoryId  String   @map("category_id") // plain FK -> expense_categories.id — see header comment
+  amount      Int // kobo — never Float (CLAUDE.md money hard rule)
+  description String?
+  incurredAt  DateTime @map("incurred_at") @db.Date
+  receiptUrl  String?  @map("receipt_url") // R2 canonical path — signed on demand; see storage.types.ts "expense-receipt"
+  recordedBy  String   @map("recorded_by")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@index([schoolId, incurredAt])
+  @@index([schoolId, categoryId])
+  @@map("expenses")
+}
+
 // ---------- Subject-period attendance (Phase 2 / Slice 8 — opt-in) ----------
 
 // Subject-period attendance. SEPARATE table from daily — period-level semantics,

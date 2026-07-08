@@ -286,6 +286,18 @@ export const PHASE_3_PERMISSIONS = [
   "staff-bvn.manage-others",
   "staff-bvn.read",
   "staff-bvn.reveal",
+
+  // Slice 13 — expense tracking. No owner-only restriction (unlike
+  // payment.refund/staff-bvn.reveal, this isn't a highest-trust surface).
+  // Bursar wire-up deferred to slice 15, same as every other Phase 3 bucket.
+  "expense-category.read",
+  "expense-category.create",
+  "expense-category.update",
+  "expense-category.delete",
+  "expense.read",
+  "expense.create",
+  "expense.update",
+  "expense.delete",
 ] as const;
 
 export const PHASE_3_OWNER_ONLY_PERMISSIONS = ["auth.2fa.manage"] as const;
