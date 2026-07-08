@@ -20,15 +20,20 @@ Run once, as `neondb_owner` (or any role with `CREATE` on the database), before
 the first migration:
 
 ```sql
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp"; -- Prisma id generation
+-- Required extensions (run as neondb_owner in Neon SQL Editor):
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
 CREATE EXTENSION IF NOT EXISTS vector;      -- pgvector, AI/RAG (Phase 5)
-CREATE EXTENSION IF NOT EXISTS pgcrypto;    -- BVN column encryption (Phase 3 / Slice 12)
 ```
 
 Verify with `SELECT extname, extversion FROM pg_extension WHERE extname = 'pgcrypto';`
-— should return one row. The Phase-3/Slice-12 migration also runs
-`CREATE EXTENSION IF NOT EXISTS pgcrypto;` itself (idempotent), so this step is
-a belt-and-braces pre-check, not a hard dependency.
+— should return one row. **This is a hard dependency, not a pre-check**: `school_kit`
+(the migration role) has DDL privileges scoped to its owned tables/schema, not
+database-level `CREATE EXTENSION` — Neon reserves that for `neondb_owner`. The
+`20260708000000_phase_3_slice_12_bvn_columns` migration does NOT install
+pgcrypto itself; if this manual step is skipped, that migration's `encrypt_bvn`/
+`decrypt_bvn` functions (next migration) will fail at creation time with
+"function pgp_sym_encrypt(text, text) does not exist."
 
 ### 1b. Create the two application roles
 
