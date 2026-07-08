@@ -19,11 +19,10 @@
 -- No RLS changes needed — `users` already carries FORCE RLS + tenant_isolation
 -- from Phase 0; these are just two new nullable columns on an existing table.
 --
--- CREATE EXTENSION IF NOT EXISTS is idempotent — safe whether or not pgcrypto
--- was already enabled on this database (dev confirmed NOT enabled prior to
--- this migration; prod status unconfirmed at plan time, hence the guard).
-
-CREATE EXTENSION IF NOT EXISTS pgcrypto;
+-- pgcrypto extension: installed manually via Neon SQL Editor as neondb_owner.
+-- Cannot run via migration (requires DATABASE-level CREATE privilege, not
+-- table-owner privilege). See docs/runbooks/neon-prod-setup.md for the
+-- provisioning step.
 
 ALTER TABLE "users"
   ADD COLUMN "bvn_encrypted" BYTEA,

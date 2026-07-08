@@ -15,7 +15,17 @@ export type StorageObjectKey =
   | { kind: "report-card"; termId: string; studentId: string }
   // Phase 3 / Slice 7 — HTML payment receipt. Layout:
   // schools/<schoolId>/receipts/<paymentId>.html
-  | { kind: "payment-receipt"; paymentId: string };
+  | { kind: "payment-receipt"; paymentId: string }
+  // Phase 3 / Slice 13 — user-uploaded expense receipt (photo or scanned
+  // invoice). Layout: schools/<schoolId>/expenses/<expenseId>/receipt
+  // Deliberately NO file extension in the path — unlike payment-receipt
+  // (always .html), the upload can be JPEG/PNG/PDF and the object's
+  // Content-Type (set from the upload's mimetype at put() time) is what
+  // tells the browser how to render it, not the URL. Adding an `ext` field
+  // here would require persisting it back on the Expense row just so a
+  // later get()/signUrl()/delete() call could reconstruct the same key —
+  // an extensionless path avoids that entirely.
+  | { kind: "expense-receipt"; expenseId: string };
 
 export type StorageDriverKind = "filesystem" | "r2";
 

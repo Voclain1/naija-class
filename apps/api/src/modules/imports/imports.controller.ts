@@ -1,17 +1,12 @@
 import {
-  ArgumentsHost,
-  BadRequestException,
   Body,
-  Catch,
   Controller,
   Delete,
-  ExceptionFilter,
   Get,
   HttpCode,
   Ip,
   Param,
   ParseUUIDPipe,
-  PayloadTooLargeException,
   Post,
   Req,
   Res,
@@ -35,48 +30,9 @@ import { AuthGuard } from "../../common/auth/auth.guard";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import { Permissions } from "../../common/auth/permissions.decorator";
 import { PermissionsGuard } from "../../common/auth/permissions.guard";
+import { UploadErrorFilter } from "../../common/upload-error.filter";
 import { CSV_MAX_FILE_SIZE_BYTES } from "./imports.csv-parser";
 import { ImportsService } from "./imports.service";
-
-// Multer rejects oversized uploads via PayloadTooLargeException (NestJS
-// translates Multer's LIMIT_FILE_SIZE into that exception in
-// platform-express's `transformException`). The global HttpExceptionFilter
-// would render the default 413 envelope, but the spec demands the
-// `FILE_TOO_LARGE` sub-code so the wizard can branch without parsing the
-// message. This controller-scoped filter intercepts the 413 and writes the
-// canonical envelope. Scoped (not global) because no other endpoint
-// produces a 413, and a global mapping would couple unrelated routes to
-// the same code.
-@Catch(PayloadTooLargeException, BadRequestException)
-class UploadMulterErrorFilter implements ExceptionFilter {
-  catch(
-    exception: PayloadTooLargeException | BadRequestException,
-    host: ArgumentsHost,
-  ): void {
-    const res = host.switchToHttp().getResponse<Response>();
-    // BadRequestException can land here when Multer rejects on something
-    // other than size (e.g. malformed multipart). Surface a generic
-    // INVALID_UPLOAD code so the client never sees a stray 400 with the
-    // wrong shape. We keep multer's own message because it's normally
-    // useful debugging info (e.g. "Unexpected field").
-    if (exception instanceof BadRequestException) {
-      res.status(400).json({
-        error: {
-          code: "INVALID_UPLOAD",
-          message: exception.message || "The uploaded file could not be read.",
-        },
-      });
-      return;
-    }
-    res.status(413).json({
-      error: {
-        code: "FILE_TOO_LARGE",
-        message:
-          "This file is larger than the 5 MB limit. Please split it into smaller files and upload them separately.",
-      },
-    });
-  }
-}
 
 // Authz: AuthGuard + PermissionsGuard (slice 13). The per-type UPLOAD
 // endpoints gate on the matching {student,guardian,teacher}.import permission.
@@ -110,7 +66,7 @@ export class ImportsController {
       limits: { fileSize: CSV_MAX_FILE_SIZE_BYTES },
     }),
   )
-  @UseFilters(UploadMulterErrorFilter)
+  @UseFilters(new UploadErrorFilter("5 MB"))
   async uploadStudents(
     @CurrentUser() authCtx: AuthContext,
     @UploadedFile() file: Express.Multer.File | undefined,
@@ -154,7 +110,7 @@ export class ImportsController {
       limits: { fileSize: CSV_MAX_FILE_SIZE_BYTES },
     }),
   )
-  @UseFilters(UploadMulterErrorFilter)
+  @UseFilters(new UploadErrorFilter("5 MB"))
   async uploadGuardians(
     @CurrentUser() authCtx: AuthContext,
     @UploadedFile() file: Express.Multer.File | undefined,
@@ -192,7 +148,7 @@ export class ImportsController {
       limits: { fileSize: CSV_MAX_FILE_SIZE_BYTES },
     }),
   )
-  @UseFilters(UploadMulterErrorFilter)
+  @UseFilters(new UploadErrorFilter("5 MB"))
   async uploadTeachers(
     @CurrentUser() authCtx: AuthContext,
     @UploadedFile() file: Express.Multer.File | undefined,
