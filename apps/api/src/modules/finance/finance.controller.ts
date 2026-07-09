@@ -1,8 +1,11 @@
 import { Body, Controller, Get, HttpCode, Post, Query, UseGuards } from "@nestjs/common";
 import {
+  financeDashboardQuerySchema,
   listDebtorsSchema,
   sendRemindersSchema,
   type DebtorDto,
+  type FinanceDashboardDto,
+  type FinanceDashboardQuery,
   type ListDebtorsInput,
   type SendRemindersInput,
   type SendRemindersResult,
@@ -42,5 +45,16 @@ export class FinanceController {
     @Body(new ZodValidationPipe(sendRemindersSchema)) dto: SendRemindersInput,
   ): Promise<SendRemindersResult> {
     return this.service.sendReminders(authCtx, dto);
+  }
+
+  // ─── GET /finance/dashboard?termId= ───────────────────────────────────────
+
+  @Get("dashboard")
+  @Permissions("finance.dashboard.read")
+  async getDashboard(
+    @CurrentUser() authCtx: AuthContext,
+    @Query(new ZodValidationPipe(financeDashboardQuerySchema)) query: FinanceDashboardQuery,
+  ): Promise<FinanceDashboardDto> {
+    return this.service.getDashboard(authCtx, query.termId);
   }
 }

@@ -1,4 +1,5 @@
 export * from "./bvn.dto.js";
+export * from "./dashboard.dto.js";
 export * from "./debtor.dto.js";
 export * from "./discount-rule.dto.js";
 export * from "./expense-category.dto.js";

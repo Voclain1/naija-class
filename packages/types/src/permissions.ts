@@ -298,6 +298,10 @@ export const PHASE_3_PERMISSIONS = [
   "expense.create",
   "expense.update",
   "expense.delete",
+
+  // Slice 14 — finance dashboard. Read-only aggregation, not a highest-trust
+  // surface — no owner-only restriction. Bursar wire-up deferred to slice 15.
+  "finance.dashboard.read",
 ] as const;
 
 export const PHASE_3_OWNER_ONLY_PERMISSIONS = ["auth.2fa.manage"] as const;
