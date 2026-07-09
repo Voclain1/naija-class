@@ -1,15 +1,17 @@
 import { afterAll, describe, expect, it } from "vitest";
 
 import { basePrisma, withTenant } from "@school-kit/db";
-import type { InvoiceStatus } from "@school-kit/types";
+import { NotFoundError, type InvoiceStatus } from "@school-kit/types";
 
 import { AuthService } from "../auth/auth.service.js";
 import { FinanceService } from "./finance.service.js";
 
 // Phase 3 / Slice 10 — FinanceService integration spec.
+// Phase 3 / Slice 14 adds the getDashboard block.
 //
 // Covers: transitionOverdueInvoices (OVERDUE cron), listDebtors (query +
-// sort), and sendReminders (skip when no guardian email).
+// sort), sendReminders (skip when no guardian email), and getDashboard
+// (collections vs target, debtor totals, expense totals, P&L).
 //
 // All tests hit a real DB via withTenant. Each test creates its own isolated
 // school so there is no cross-test pollution.
@@ -377,5 +379,252 @@ describe("FinanceService (integration)", () => {
     // or no guardian email (skipped=1). Both outcomes satisfy the assertion.
     expect(result.sent).toBe(0);
     expect(result.skipped).toBe(1);
+  });
+
+  // ── getDashboard ─────────────────────────────────────────────────────────
+
+  /** Adds one more invoice to an already-existing term (student created fresh each time). */
+  async function addInvoice(
+    schoolId: string,
+    ownerId: string,
+    termId: string,
+    academicYearId: string,
+    opts: { totalDue: number; totalPaid?: number; status: InvoiceStatus },
+  ): Promise<string> {
+    return withTenant(schoolId, async (db) => {
+      const student = await db.student.create({
+        data: {
+          schoolId,
+          admissionNumber: `ADM-DASH-${opts.status}-${runId}-${Math.random().toString(36).slice(2, 6)}`,
+          firstName: "Dash",
+          lastName: opts.status,
+          dateOfBirth: new Date("2010-01-01"),
+          gender: "MALE",
+        },
+        select: { id: true },
+      });
+      const invoice = await db.invoice.create({
+        data: {
+          schoolId,
+          studentId: student.id,
+          termId,
+          academicYearId,
+          status: opts.status,
+          items: [],
+          totalAmount: opts.totalDue,
+          totalDiscount: 0,
+          totalDue: opts.totalDue,
+          totalPaid: opts.totalPaid ?? 0,
+          issuedAt: new Date(),
+          issuedBy: ownerId,
+        },
+        select: { id: true },
+      });
+      return invoice.id;
+    });
+  }
+
+  /** Creates a fresh category + expense (each test gets its own category to avoid name collisions). */
+  async function addExpense(
+    schoolId: string,
+    ownerId: string,
+    opts: { amount: number; incurredAt: Date },
+  ): Promise<string> {
+    return withTenant(schoolId, async (db) => {
+      const category = await db.expenseCategory.create({
+        data: { schoolId, name: `Dash-Cat-${Math.random().toString(36).slice(2, 8)}` },
+        select: { id: true },
+      });
+      const expense = await db.expense.create({
+        data: {
+          schoolId,
+          categoryId: category.id,
+          amount: opts.amount,
+          incurredAt: opts.incurredAt,
+          recordedBy: ownerId,
+        },
+        select: { id: true },
+      });
+      return expense.id;
+    });
+  }
+
+  it("throws NotFoundError for an unknown termId", async () => {
+    const svc = new FinanceService();
+    const { schoolId, ownerId } = await makeSchool("dash-notfound");
+    await expect(
+      svc.getDashboard(ctx(schoolId, ownerId), "00000000-0000-0000-0000-000000000000"),
+    ).rejects.toBeInstanceOf(NotFoundError);
+  });
+
+  it("totalInvoiced/totalCollected/collectionRatePercent cover ISSUED/PARTIALLY_PAID/PAID/OVERDUE and exclude DRAFT/CANCELLED", async () => {
+    const svc = new FinanceService();
+    const { schoolId, ownerId } = await makeSchool("dash-invoiced");
+    const { termId, invoiceId: firstId } = await makeInvoice(schoolId, ownerId, {
+      totalDue: 100_000,
+      totalPaid: 100_000,
+      status: "PAID",
+    });
+    const term = await withTenant(schoolId, (db) =>
+      db.term.findUniqueOrThrow({ where: { id: termId }, select: { academicYearId: true } }),
+    );
+
+    await addInvoice(schoolId, ownerId, termId, term.academicYearId, {
+      totalDue: 80_000,
+      totalPaid: 30_000,
+      status: "PARTIALLY_PAID",
+    });
+    await addInvoice(schoolId, ownerId, termId, term.academicYearId, {
+      totalDue: 50_000,
+      totalPaid: 0,
+      status: "OVERDUE",
+    });
+    // DRAFT: never issued, excluded from totalInvoiced.
+    await addInvoice(schoolId, ownerId, termId, term.academicYearId, {
+      totalDue: 999_999,
+      totalPaid: 0,
+      status: "DRAFT",
+    });
+    // CANCELLED: voided, excluded from totalInvoiced.
+    await addInvoice(schoolId, ownerId, termId, term.academicYearId, {
+      totalDue: 777_777,
+      totalPaid: 0,
+      status: "CANCELLED",
+    });
+
+    const dashboard = await svc.getDashboard(ctx(schoolId, ownerId), termId);
+
+    // 100_000 (PAID) + 80_000 (PARTIALLY_PAID) + 50_000 (OVERDUE) — DRAFT and
+    // CANCELLED contribute nothing.
+    expect(dashboard.totalInvoiced).toBe(230_000);
+    expect(dashboard.totalCollected).toBe(130_000); // 100_000 + 30_000 + 0
+    expect(dashboard.collectionRatePercent).toBe(Math.round((130_000 / 230_000) * 100));
+    expect(firstId).toBeTruthy();
+  });
+
+  it("REFUNDED invoice contributes totalDue to totalInvoiced, zero to totalCollected, and is excluded from outstandingBalance/debtorCount", async () => {
+    // Mirrors slice 11: a full reversal recomputes totalPaid to 0 and moves
+    // the invoice to the terminal REFUNDED status. REFUNDED is NOT one of
+    // the debtor-set statuses (ISSUED/PARTIALLY_PAID/OVERDUE) — it's not
+    // collectible, so it must not appear as outstanding either.
+    const svc = new FinanceService();
+    const { schoolId, ownerId } = await makeSchool("dash-refunded");
+    const { termId } = await makeInvoice(schoolId, ownerId, {
+      totalDue: 100_000,
+      totalPaid: 0,
+      status: "REFUNDED",
+    });
+
+    const dashboard = await svc.getDashboard(ctx(schoolId, ownerId), termId);
+
+    expect(dashboard.totalInvoiced).toBe(100_000); // REFUNDED counts as invoiced...
+    expect(dashboard.totalCollected).toBe(0); // ...but not as collected (reversed to 0)
+    expect(dashboard.outstandingBalance).toBe(0); // not outstanding — it's terminal, not collectible
+    expect(dashboard.debtorCount).toBe(0); // not counted as a debtor
+  });
+
+  it("outstandingBalance and debtorCount count only ISSUED/PARTIALLY_PAID/OVERDUE", async () => {
+    const svc = new FinanceService();
+    const { schoolId, ownerId } = await makeSchool("dash-outstanding");
+    const { termId, invoiceId: _issuedId } = await makeInvoice(schoolId, ownerId, {
+      totalDue: 100_000,
+      totalPaid: 0,
+      status: "ISSUED",
+    });
+    const term = await withTenant(schoolId, (db) =>
+      db.term.findUniqueOrThrow({ where: { id: termId }, select: { academicYearId: true } }),
+    );
+    await addInvoice(schoolId, ownerId, termId, term.academicYearId, {
+      totalDue: 60_000,
+      totalPaid: 20_000,
+      status: "PARTIALLY_PAID",
+    });
+    await addInvoice(schoolId, ownerId, termId, term.academicYearId, {
+      totalDue: 40_000,
+      totalPaid: 0,
+      status: "OVERDUE",
+    });
+    // PAID: fully settled, not outstanding.
+    await addInvoice(schoolId, ownerId, termId, term.academicYearId, {
+      totalDue: 30_000,
+      totalPaid: 30_000,
+      status: "PAID",
+    });
+
+    const dashboard = await svc.getDashboard(ctx(schoolId, ownerId), termId);
+
+    // (100_000 - 0) + (60_000 - 20_000) + (40_000 - 0) = 180_000
+    expect(dashboard.outstandingBalance).toBe(180_000);
+    expect(dashboard.debtorCount).toBe(3);
+  });
+
+  it("collectionRatePercent is 0 when totalInvoiced is 0 (no divide-by-zero)", async () => {
+    const svc = new FinanceService();
+    const { schoolId, ownerId } = await makeSchool("dash-zero");
+    // Only a DRAFT invoice exists — contributes nothing to totalInvoiced.
+    const { termId } = await makeInvoice(schoolId, ownerId, {
+      totalDue: 100_000,
+      totalPaid: 0,
+      status: "DRAFT",
+    });
+
+    const dashboard = await svc.getDashboard(ctx(schoolId, ownerId), termId);
+    expect(dashboard.totalInvoiced).toBe(0);
+    expect(dashboard.collectionRatePercent).toBe(0);
+  });
+
+  it("totalExpenses includes expenses within the term's date range (inclusive boundaries) and excludes those outside", async () => {
+    const svc = new FinanceService();
+    const { schoolId, ownerId } = await makeSchool("dash-expenses");
+    const { termId } = await makeInvoice(schoolId, ownerId, { totalDue: 100_000, status: "ISSUED" });
+    const term = await withTenant(schoolId, (db) =>
+      db.term.findUniqueOrThrow({ where: { id: termId }, select: { startDate: true, endDate: true } }),
+    );
+
+    const dayBefore = new Date(term.startDate);
+    dayBefore.setDate(dayBefore.getDate() - 1);
+    const dayAfter = new Date(term.endDate);
+    dayAfter.setDate(dayAfter.getDate() + 1);
+
+    await addExpense(schoolId, ownerId, { amount: 10_000, incurredAt: term.startDate }); // on boundary — included
+    await addExpense(schoolId, ownerId, { amount: 20_000, incurredAt: term.endDate }); // on boundary — included
+    await addExpense(schoolId, ownerId, { amount: 5_000, incurredAt: dayBefore }); // before term — excluded
+    await addExpense(schoolId, ownerId, { amount: 7_000, incurredAt: dayAfter }); // after term — excluded
+
+    const dashboard = await svc.getDashboard(ctx(schoolId, ownerId), termId);
+    expect(dashboard.totalExpenses).toBe(30_000); // 10_000 + 20_000 only
+  });
+
+  it("netPosition = totalCollected - totalExpenses", async () => {
+    const svc = new FinanceService();
+    const { schoolId, ownerId } = await makeSchool("dash-net");
+    const { termId } = await makeInvoice(schoolId, ownerId, {
+      totalDue: 100_000,
+      totalPaid: 100_000,
+      status: "PAID",
+    });
+    const term = await withTenant(schoolId, (db) =>
+      db.term.findUniqueOrThrow({ where: { id: termId }, select: { startDate: true } }),
+    );
+    await addExpense(schoolId, ownerId, { amount: 40_000, incurredAt: term.startDate });
+
+    const dashboard = await svc.getDashboard(ctx(schoolId, ownerId), termId);
+    expect(dashboard.totalCollected).toBe(100_000);
+    expect(dashboard.totalExpenses).toBe(40_000);
+    expect(dashboard.netPosition).toBe(60_000);
+  });
+
+  it("is isolated per school (RLS) — a term id from another school is treated as not found", async () => {
+    const svc = new FinanceService();
+    const a = await makeSchool("dash-iso-a");
+    const b = await makeSchool("dash-iso-b");
+    const { termId: termIdA } = await makeInvoice(a.schoolId, a.ownerId, {
+      totalDue: 100_000,
+      status: "ISSUED",
+    });
+
+    await expect(
+      svc.getDashboard(ctx(b.schoolId, b.ownerId), termIdA),
+    ).rejects.toBeInstanceOf(NotFoundError);
   });
 });

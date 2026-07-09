@@ -3,7 +3,13 @@ import { Cron } from "@nestjs/schedule";
 import { Resend } from "resend";
 
 import { basePrisma, withTenant } from "@school-kit/db";
-import type { DebtorDto, SendRemindersInput, SendRemindersResult } from "@school-kit/types";
+import {
+  NotFoundError,
+  type DebtorDto,
+  type FinanceDashboardDto,
+  type SendRemindersInput,
+  type SendRemindersResult,
+} from "@school-kit/types";
 
 import type { AuthContext } from "../../common/auth/auth-context.js";
 
@@ -112,6 +118,78 @@ export class FinanceService implements OnModuleInit {
       });
 
       return debtors;
+    });
+  }
+
+  // ─── Finance dashboard ─────────────────────────────────────────────────────
+  //
+  // Phase 3 / Slice 14. Read-only aggregation — no audit log (same precedent
+  // as listDebtors: reads aren't audited in this codebase, only mutations).
+  //
+  // "Collections vs target": target = totalDue on invoices that were actually
+  // issued (excludes DRAFT — never issued, no frozen snapshot — and CANCELLED
+  // — voided, no longer expected). REFUNDED IS included in totalInvoiced (it
+  // was legitimately invoiced and collected at some point) but its totalPaid
+  // is already zeroed by slice 11's reversal recompute, so it correctly nets
+  // to zero on the "collected" side without special-casing here.
+  //
+  // Debtor set (ISSUED/PARTIALLY_PAID/OVERDUE only) is a separate, LEANER
+  // aggregate than listDebtors() — the dashboard only needs two numbers
+  // (outstandingBalance, debtorCount), not the per-invoice student/class-arm/
+  // payment-plan joins listDebtors does for its UI list. Invoice carries
+  // @@unique([schoolId, studentId, termId]), so debtorCount === the aggregate
+  // count directly — no distinct-student dance needed.
+  //
+  // Expense has no termId (only a bare incurredAt date), so "expenses for
+  // this term" is resolved via the Term row's own date range rather than a
+  // direct FK filter.
+  async getDashboard(authCtx: AuthContext, termId: string): Promise<FinanceDashboardDto> {
+    return withTenant(authCtx.schoolId, async (db) => {
+      const term = await db.term.findUnique({
+        where: { id: termId },
+        select: { id: true, name: true, startDate: true, endDate: true },
+      });
+      if (!term) throw new NotFoundError("Term not found.");
+
+      const [invoicedAgg, debtorAgg, expenseAgg] = await Promise.all([
+        db.invoice.aggregate({
+          where: { termId, status: { notIn: ["DRAFT", "CANCELLED"] } },
+          _sum: { totalDue: true, totalPaid: true },
+        }),
+        db.invoice.aggregate({
+          where: { termId, status: { in: ["ISSUED", "PARTIALLY_PAID", "OVERDUE"] } },
+          _sum: { totalDue: true, totalPaid: true },
+          _count: true,
+        }),
+        db.expense.aggregate({
+          where: { incurredAt: { gte: term.startDate, lte: term.endDate } },
+          _sum: { amount: true },
+        }),
+      ]);
+
+      const totalInvoiced = invoicedAgg._sum.totalDue ?? 0;
+      const totalCollected = invoicedAgg._sum.totalPaid ?? 0;
+      const collectionRatePercent =
+        totalInvoiced > 0 ? Math.round((totalCollected / totalInvoiced) * 100) : 0;
+
+      const outstandingBalance =
+        (debtorAgg._sum.totalDue ?? 0) - (debtorAgg._sum.totalPaid ?? 0);
+      const debtorCount = debtorAgg._count;
+
+      const totalExpenses = expenseAgg._sum.amount ?? 0;
+      const netPosition = totalCollected - totalExpenses;
+
+      return {
+        termId: term.id,
+        termName: term.name,
+        totalInvoiced,
+        totalCollected,
+        collectionRatePercent,
+        outstandingBalance,
+        debtorCount,
+        totalExpenses,
+        netPosition,
+      };
     });
   }
 

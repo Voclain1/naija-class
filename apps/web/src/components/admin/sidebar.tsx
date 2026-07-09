@@ -34,7 +34,12 @@ const NAV_ITEMS: NavItem[] = [
   { label: "Academics", href: "/settings/academic", icon: BarChart3, enabled: true },
   { label: "Grading", href: "/settings/grading", icon: SlidersHorizontal, enabled: true },
   { label: "Report Cards", href: "/report-cards", icon: FileText, enabled: true },
-  { label: "Finance", href: "/finance", icon: Wallet, enabled: false },
+  // Points at /finance/dashboard (the money-view landing page), not a
+  // /finance index hub — no such hub exists yet. Enabled now that Slice 14
+  // ships the first genuinely "home" screen for the finance section;
+  // invoices/debtors/payments/expenses remain direct-URL-only until a real
+  // hub page is built.
+  { label: "Finance", href: "/finance/dashboard", icon: Wallet, enabled: true },
   { label: "Reports", href: "/reports", icon: BarChart3, enabled: false },
   { label: "Settings", href: "/settings", icon: Settings, enabled: true },
 ];

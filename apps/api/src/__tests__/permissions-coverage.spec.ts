@@ -368,6 +368,7 @@ describe("Phase 3 RBAC coverage: seeded role grants match the spec", () => {
 
 // ---------------------------------------------------------------------------
 // Phase 3 / Slice 10 — FinanceController coverage (debtor list + reminders).
+// Phase 3 / Slice 14 adds the dashboard endpoint to the same controller.
 // ---------------------------------------------------------------------------
 
 const PHASE_3_FINANCE_CONTROLLERS: Array<[string, Ctor]> = [
@@ -376,6 +377,17 @@ const PHASE_3_FINANCE_CONTROLLERS: Array<[string, Ctor]> = [
 
 describe("Phase 3 RBAC coverage: finance route handlers declare @Permissions", () => {
   assertCoverage(PHASE_3_FINANCE_CONTROLLERS);
+
+  it("getDashboard carries @Permissions('finance.dashboard.read')", () => {
+    const proto = FinanceController.prototype as unknown as Record<string, unknown>;
+    const perms = Reflect.getMetadata(PERMISSIONS_METADATA_KEY, proto["getDashboard"] as object);
+    expect(perms).toEqual(["finance.dashboard.read"]);
+  });
+
+  it("admin is granted finance.dashboard.read (not a highest-trust surface, no owner-only restriction)", () => {
+    const adminPerms = new Set(roleSeed("admin").permissions);
+    expect(adminPerms.has("finance.dashboard.read")).toBe(true);
+  });
 
   it("every Phase 3 finance @Permissions value is a known Phase 3 permission", () => {
     const unknown: string[] = [];
