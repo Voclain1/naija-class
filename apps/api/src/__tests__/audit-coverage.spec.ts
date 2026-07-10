@@ -18,9 +18,18 @@ import { AuthService } from "../modules/auth/auth.service";
 import { ClassArmsService } from "../modules/class-arms/class-arms.service";
 import { ClassLevelsService } from "../modules/class-levels/class-levels.service";
 import { ClassSubjectsService } from "../modules/class-subjects/class-subjects.service";
+import { DiscountRuleService } from "../modules/discounts/discount-rule.service";
 import { EnrollmentsService } from "../modules/enrollments/enrollments.service";
+import { ExpenseCategoryService } from "../modules/expenses/expense-category.service";
+import { ExpenseService } from "../modules/expenses/expense.service";
+import { FeeCategoryService } from "../modules/fee-catalog/fee-category.service";
+import { FeeItemService } from "../modules/fee-catalog/fee-item.service";
 import { GradingService } from "../modules/grading/grading.service";
 import { GuardiansService } from "../modules/guardians/guardians.service";
+import { InvoiceGenerationService } from "../modules/invoices/invoice-generation.service";
+import { PaymentPlanService } from "../modules/payments/payment-plan.service";
+import { PaymentsService } from "../modules/payments/payments.service";
+import { RefundsService } from "../modules/payments/refunds.service";
 import { ReportCardService } from "../modules/report-cards/report-card.service";
 import { ReportCardWorkflowService } from "../modules/report-cards/workflow/report-card-workflow.service";
 import { SchoolsService } from "../modules/schools/schools.service";
@@ -30,6 +39,7 @@ import { SubjectsService } from "../modules/subjects/subjects.service";
 import { TeacherAssignmentsService } from "../modules/teacher-assignments/teacher-assignments.service";
 import { TeacherProfilesService } from "../modules/teacher-profiles/teacher-profiles.service";
 import { TermsService } from "../modules/terms/terms.service";
+import { BvnService } from "../modules/users/bvn.service";
 
 // Slice 13 — consolidated audit-coverage regression guard.
 //
@@ -823,5 +833,259 @@ describe("Phase 3 Slice 2 auth hardening — auth.login_2fa writes an audit row"
       db.auditLog.findFirst({ where: { schoolId: school.id, action: "auth.login_2fa", userId: user.id } }),
     );
     expect(auditRow, "auth.login_2fa audit row").toBeTruthy();
+  });
+});
+
+// ===========================================================================
+// Phase 3 Finance audit coverage (slice 15 cp3, Task 1 follow-up). Every
+// finance mutation already writes its audit row (asserted individually in
+// each service spec, e.g. expense-category.service.spec.ts's "writes an
+// audit log row" tests) — this block is the Phase-1-style centralized
+// regression lock phase-3.md's acceptance criterion #10 named but never
+// got. One or two mutations per resource, not exhaustive edge cases (those
+// live in the service specs) — same discipline as the Phase 1 block above.
+// ===========================================================================
+describe("Phase 3 Finance audit coverage — key finance mutations write their audit row", () => {
+  const runId = Math.random().toString(36).slice(2, 8);
+  const reqCtx = { ipAddress: "127.0.0.1", userAgent: "vitest" };
+
+  const auth = new AuthService();
+  const feeCategories = new FeeCategoryService();
+  const feeItems = new FeeItemService();
+  const discountRules = new DiscountRuleService();
+  const invoices = new InvoiceGenerationService();
+  const expenseCategories = new ExpenseCategoryService();
+  const bvn = new BvnService({ get: (_k: string) => "audit-spec-bvn-key-not-a-real-secret" } as never);
+
+  let expenses: ExpenseService;
+  let storageRoot: string;
+  let schoolId: string;
+  let ownerCtx: { sessionId: string; userId: string; schoolId: string };
+  let classLevelId: string;
+
+  const schoolIdsToCleanup = new Set<string>();
+
+  beforeAll(async () => {
+    storageRoot = await mkdtemp(join(tmpdir(), "sk-audit-fin-"));
+    expenses = new ExpenseService(new StorageService(new FilesystemStorageDriver(storageRoot)));
+
+    const signed = await auth.signupOwner(
+      {
+        schoolName: `Audit Finance ${runId}`,
+        schoolSlug: `audit-fin-${runId}`,
+        ownerFirstName: "Owen",
+        ownerLastName: "Owner",
+        ownerEmail: `audit-fin-${runId}@example.test`,
+        ownerPhone: randomPhone(),
+        password: "Correct-Horse-9",
+        ndprConsent: true,
+      },
+      reqCtx,
+    );
+    schoolId = signed.school.id;
+    schoolIdsToCleanup.add(schoolId);
+    await basePrisma.school.update({
+      where: { id: schoolId },
+      data: { status: "ACTIVE", onboardingStep: 5 },
+    });
+    ownerCtx = { sessionId: "sess", userId: signed.user.id, schoolId };
+    classLevelId = await withTenant(schoolId, async (db) => {
+      const level = await db.classLevel.findFirstOrThrow({
+        where: { schoolId },
+        orderBy: { orderIndex: "asc" },
+        select: { id: true },
+      });
+      return level.id;
+    });
+  });
+
+  afterAll(async () => {
+    for (const id of schoolIdsToCleanup) {
+      await basePrisma.school.delete({ where: { id } }).catch(() => undefined);
+    }
+    await basePrisma.$disconnect();
+    await rm(storageRoot, { recursive: true, force: true });
+  });
+
+  // Same withTenant-scoped pattern as the Phase 1 block's expectOneAudit —
+  // audit_logs is FORCE RLS; basePrisma (no app.current_school_id set)
+  // fails CLOSED under that policy and would return zero rows for every
+  // query regardless of the where clause, not "all rows unfiltered." Also
+  // asserts row.schoolId explicitly so the check is literally against
+  // (action, entityId, schoolId), not just implied by RLS scoping.
+  async function expectFinanceAudit(action: string, entityId: string): Promise<void> {
+    const rows = await withTenant(schoolId, (db) => db.auditLog.findMany({ where: { action, entityId } }));
+    expect(rows.length, `audit rows for ${action} (${entityId}, school ${schoolId})`).toBe(1);
+    expect(rows[0].schoolId, `${action} schoolId`).toBe(schoolId);
+  }
+
+  async function makeStudent(suffix: string): Promise<string> {
+    return withTenant(schoolId, async (db) => {
+      const s = await db.student.create({
+        data: {
+          schoolId,
+          admissionNumber: `ADM-FIN-${suffix}-${runId}`,
+          firstName: "Fin",
+          lastName: "Student",
+          dateOfBirth: new Date("2012-01-01"),
+          gender: "FEMALE",
+        },
+        select: { id: true },
+      });
+      return s.id;
+    });
+  }
+
+  it("fee-category: create / delete", async () => {
+    const cat = await feeCategories.create(ownerCtx, { name: `Cat-CD-${runId}` }, reqCtx);
+    await expectFinanceAudit("fee-category.create", cat.id);
+
+    await feeCategories.delete(ownerCtx, cat.id, reqCtx);
+    await expectFinanceAudit("fee-category.delete", cat.id);
+  });
+
+  it("fee-item: create / delete", async () => {
+    const cat = await feeCategories.create(ownerCtx, { name: `Cat-Item-${runId}` }, reqCtx);
+    const item = await feeItems.create(
+      ownerCtx,
+      { categoryId: cat.id, name: "Tuition", amount: 15_000_000 },
+      reqCtx,
+    );
+    await expectFinanceAudit("fee-item.create", item.id);
+
+    await feeItems.delete(ownerCtx, item.id, reqCtx);
+    await expectFinanceAudit("fee-item.delete", item.id);
+  });
+
+  it("discount-rule: create / deactivate", async () => {
+    const studentId = await makeStudent("disc");
+    const cat = await feeCategories.create(ownerCtx, { name: `Cat-Disc-${runId}` }, reqCtx);
+
+    const rule = await discountRules.create(
+      ownerCtx,
+      {
+        studentId,
+        name: "Sibling waiver",
+        feeCategoryId: cat.id,
+        duration: "LIFETIME",
+        discountType: "FULL_WAIVER",
+      },
+      reqCtx,
+    );
+    await expectFinanceAudit("discount-rule.create", rule.id);
+
+    await discountRules.deactivate(ownerCtx, rule.id, reqCtx);
+    await expectFinanceAudit("discount-rule.deactivate", rule.id);
+  });
+
+  it("invoice.issue (generateForArm)", async () => {
+    const { academicYearId, termId, classArmId } = await withTenant(schoolId, async (db) => {
+      const year = await db.academicYear.create({
+        data: { schoolId, label: `Y-Inv-${runId}`, startDate: new Date("2025-09-01"), endDate: new Date("2026-07-31") },
+        select: { id: true },
+      });
+      const term = await db.term.create({
+        data: { schoolId, academicYearId: year.id, sequence: 1, name: "First Term", startDate: new Date("2025-09-01"), endDate: new Date("2025-12-15") },
+        select: { id: true },
+      });
+      const arm = await db.classArm.create({
+        data: { schoolId, classLevelId, name: `Arm-Inv-${runId}`, code: `arm-inv-${runId}` },
+        select: { id: true },
+      });
+      return { academicYearId: year.id, termId: term.id, classArmId: arm.id };
+    });
+
+    const cat = await feeCategories.create(ownerCtx, { name: `Cat-Inv-${runId}` }, reqCtx);
+    await feeItems.create(
+      ownerCtx,
+      { categoryId: cat.id, name: "Term Tuition", amount: 15_000_000, classLevelId, termId },
+      reqCtx,
+    );
+
+    const studentId = await makeStudent("inv");
+    await withTenant(schoolId, (db) =>
+      db.enrollment.create({
+        data: { schoolId, studentId, classArmId, termId, academicYearId, status: "ENROLLED" },
+      }),
+    );
+
+    const result = await invoices.generateForArm(ownerCtx, { termId, classArmId }, reqCtx);
+    expect(result.invoices.length).toBeGreaterThan(0);
+    await expectFinanceAudit("invoice.issue", result.invoices[0].id);
+  });
+
+  it("payment.record (recordManual)", async () => {
+    // Reuses the same storageRoot as the expense tests — payment receipts
+    // and expense receipts write to different sub-paths under it.
+    const storage = new StorageService(new FilesystemStorageDriver(storageRoot));
+    const payments = new PaymentsService(storage, null as never, new PaymentPlanService());
+
+    const studentId = await makeStudent("pay");
+    const invoiceId = await withTenant(schoolId, async (db) => {
+      const year = await db.academicYear.create({
+        data: { schoolId, label: `Y-Pay-${runId}`, startDate: new Date("2025-09-01"), endDate: new Date("2026-07-31") },
+        select: { id: true },
+      });
+      const term = await db.term.create({
+        data: { schoolId, academicYearId: year.id, sequence: 1, name: "First Term", startDate: new Date("2025-09-01"), endDate: new Date("2025-12-15") },
+        select: { id: true },
+      });
+      const invoice = await db.invoice.create({
+        data: {
+          schoolId,
+          studentId,
+          termId: term.id,
+          academicYearId: year.id,
+          status: "ISSUED",
+          items: [],
+          totalAmount: 150_000_00,
+          totalDiscount: 0,
+          totalDue: 150_000_00,
+          issuedAt: new Date(),
+          issuedBy: ownerCtx.userId,
+        },
+        select: { id: true },
+      });
+      return invoice.id;
+    });
+
+    const payment = await payments.recordManual(
+      ownerCtx,
+      { invoiceId, amount: 150_000_00, method: "CASH", paidAt: new Date().toISOString() },
+      reqCtx,
+    );
+    await expectFinanceAudit("payment.record", payment.id);
+
+    // ---- refund.create (needs a SUCCESS payment, hence nested here) -------
+    const refunds = new RefundsService(null as never, new PaymentPlanService());
+    const refund = await refunds.create(ownerCtx, {
+      paymentId: payment.id,
+      amount: 150_000_00,
+      reason: "Audit coverage spec — full reversal",
+    });
+    await expectFinanceAudit("refund.create", refund.id);
+  });
+
+  it("expense: create / delete", async () => {
+    const cat = await expenseCategories.create(ownerCtx, { name: `Cat-Exp-${runId}` }, reqCtx);
+    const expense = await expenses.create(
+      ownerCtx,
+      { categoryId: cat.id, amount: 50_000_00, incurredAt: "2025-10-01" },
+      reqCtx,
+    );
+    await expectFinanceAudit("expense.create", expense.id);
+
+    await expenses.delete(ownerCtx, expense.id, reqCtx);
+    await expectFinanceAudit("expense.delete", expense.id);
+  });
+
+  it("staff-bvn: update (capture) / reveal", async () => {
+    // Owner captures/reveals their own BVN — audit assertions don't care
+    // whose BVN it is, only that the action + entityId + schoolId land.
+    await bvn.captureBvn(ownerCtx, ownerCtx.userId, { bvn: "12345678901" });
+    await expectFinanceAudit("staff-bvn.update", ownerCtx.userId);
+
+    await bvn.revealBvn(ownerCtx, ownerCtx.userId);
+    await expectFinanceAudit("staff-bvn.reveal", ownerCtx.userId);
   });
 });
