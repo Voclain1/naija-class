@@ -233,8 +233,22 @@ export const PHASE_2_OWNER_ONLY_PERMISSIONS = ["report-card.reopen"] as const;
 // PHASE_3_OWNER_ONLY_PERMISSIONS + system-roles seed).
 //
 // Fee catalog permissions (slice 4) are admin-accessible with no owner-only
-// restriction in this slice. The billing.delete owner-only gate lands at
-// slice 15 close-out alongside the bursar role wire-up.
+// restriction in this slice.
+//
+// billing.delete (retired, slice 15 close-out): ARCHITECTURE.md's original
+// permissions matrix and early phase-3.md drafts named a coarse
+// "billing.delete" owner-only gate for "hard-delete of finance records." By
+// slice 15 every actual finance hard-delete (fee-category.delete,
+// fee-item.delete, expense-category.delete, expense.delete,
+// payment-plan.delete) already existed as its own granular, admin-accessible
+// permission — locked decisions from slices 4/9/13, each explicitly asserted
+// "no owner-only restriction" in permissions-coverage.spec.ts. billing.delete
+// was never wired to an endpoint; it was a placeholder the granular design
+// superseded without anyone circling back to the docs. Slice 15 retires the
+// placeholder rather than adding an unused permission string or retrofitting
+// owner-only onto three already-shipped, already-tested admin-accessible
+// deletes. See ARCHITECTURE.md §permissions-matrix and phase-3.md's RBAC
+// table / acceptance criterion #12 for the corresponding doc update.
 export const PHASE_3_PERMISSIONS = [
   "auth.2fa.manage",
   "auth.2fa.read",
@@ -250,14 +264,12 @@ export const PHASE_3_PERMISSIONS = [
   "fee-item.delete",
 
   // Slice 5 — discount rules (manual per-student assignment)
-  // Bursar role wire-up deferred to slice 15; strings must exist now.
   "discount-rule.read",
   "discount-rule.create",
   "discount-rule.update",
   "discount-rule.deactivate",
 
   // Slice 6 — invoices (snapshot-on-issue)
-  // Bursar role wire-up deferred to slice 15.
   "invoice.read",
   "invoice.issue",
   "invoice.cancel",
@@ -289,7 +301,6 @@ export const PHASE_3_PERMISSIONS = [
 
   // Slice 13 — expense tracking. No owner-only restriction (unlike
   // payment.refund/staff-bvn.reveal, this isn't a highest-trust surface).
-  // Bursar wire-up deferred to slice 15, same as every other Phase 3 bucket.
   "expense-category.read",
   "expense-category.create",
   "expense-category.update",
@@ -300,11 +311,65 @@ export const PHASE_3_PERMISSIONS = [
   "expense.delete",
 
   // Slice 14 — finance dashboard. Read-only aggregation, not a highest-trust
-  // surface — no owner-only restriction. Bursar wire-up deferred to slice 15.
+  // surface — no owner-only restriction.
   "finance.dashboard.read",
 ] as const;
 
 export const PHASE_3_OWNER_ONLY_PERMISSIONS = ["auth.2fa.manage"] as const;
+
+// Phase 3 / Slice 15 — the `bursar` role's exact grant. Explicit inclusion
+// list (mirrors PHASE_2_TEACHER_PERMISSIONS), not "admin minus a few" — finance
+// is a strict subset of admin's permissions, and an inclusion list fails
+// loudly if a future Phase 3 permission is added here without a bursar
+// decision, whereas an exclusion filter would silently grant it.
+//
+// Deliberately excluded: auth.2fa.* (auth surface, not finance),
+// staff-bvn.* (HR-adjacent staff-payroll surface), payment.refund (highest-
+// trust mutation — owner+admin only), and every Phase 0/1/2 permission
+// (academics, roster, staff, school settings). "payroll.*" from phase-3.md's
+// original RBAC table isn't listed below because no payroll permission was
+// ever built — Phase 3's payroll slice was narrowed to BVN capture/reveal
+// only, so there is nothing to grant.
+export const PHASE_3_BURSAR_PERMISSIONS = [
+  "fee-category.read",
+  "fee-category.create",
+  "fee-category.update",
+  "fee-category.delete",
+  "fee-item.read",
+  "fee-item.create",
+  "fee-item.update",
+  "fee-item.delete",
+
+  "discount-rule.read",
+  "discount-rule.create",
+  "discount-rule.update",
+  "discount-rule.deactivate",
+
+  "invoice.read",
+  "invoice.issue",
+  "invoice.cancel",
+
+  "payment.read",
+  "payment.record",
+
+  "payment-plan.create",
+  "payment-plan.read",
+  "payment-plan.delete",
+
+  "finance.debtors.read",
+  "finance.debtors.remind",
+
+  "expense-category.read",
+  "expense-category.create",
+  "expense-category.update",
+  "expense-category.delete",
+  "expense.read",
+  "expense.create",
+  "expense.update",
+  "expense.delete",
+
+  "finance.dashboard.read",
+] as const;
 
 // The Phase 2 subset granted to the `teacher` role at the GUARD level. The
 // SERVICE layer (getTeacherScope) then narrows these to the teacher's own

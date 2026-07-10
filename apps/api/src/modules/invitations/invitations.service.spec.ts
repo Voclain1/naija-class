@@ -217,6 +217,29 @@ describe("InvitationsService (Slice 7)", () => {
       expect(JSON.stringify(meta)).not.toContain(res.token);
     });
 
+    it("bursar invitation — accept assigns the bursar role (Phase 3 slice 15)", async () => {
+      const { authCtx, schoolId } = await createActiveSchool("acc-bursar");
+      const created = await usersService.invite(
+        authCtx,
+        { email: `acc-bursar-${runId}@example.test`, roleKey: "bursar" },
+        ctx,
+      );
+
+      const res = await invitationsService.accept(created.token, acceptInput, ctx);
+
+      const grant = await withTenant(schoolId, (db) =>
+        db.userRole.findFirst({
+          where: { userId: res.user.id },
+          select: { role: { select: { key: true, permissions: true } } },
+        }),
+      );
+      expect(grant?.role.key).toBe("bursar");
+      // Spot-check the grant is finance-only, not admin's full set.
+      expect(grant?.role.permissions).toContain("invoice.read");
+      expect(grant?.role.permissions).not.toContain("staff-bvn.reveal");
+      expect(grant?.role.permissions).not.toContain("student.create");
+    });
+
     it("expired token — GoneError INVITATION_EXPIRED", async () => {
       const { authCtx, schoolId } = await createActiveSchool("acc-expired");
       const created = await usersService.invite(

@@ -4,6 +4,7 @@ import {
   PHASE_2_OWNER_ONLY_PERMISSIONS,
   PHASE_2_PERMISSIONS,
   PHASE_2_TEACHER_PERMISSIONS,
+  PHASE_3_BURSAR_PERMISSIONS,
   PHASE_3_OWNER_ONLY_PERMISSIONS,
   PHASE_3_PERMISSIONS,
 } from "@school-kit/types";
@@ -519,5 +520,92 @@ describe("Phase 3 RBAC coverage: expense route handlers declare @Permissions", (
     expect(Reflect.getMetadata(PERMISSIONS_METADATA_KEY, proto["getReceiptUrl"] as object)).toEqual([
       "expense.read",
     ]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 3 / Slice 15 — RBAC close-out. The bursar role's exact grant, a
+// re-assertion that admin still holds every Phase 3 permission except the
+// owner-only set, and a mechanical audit that every PHASE_3_PERMISSIONS
+// string is accounted for by exactly one of the three buckets below (owner-
+// only, bursar-and-admin, admin-only-not-bursar). A permission added to
+// PHASE_3_PERMISSIONS in a future slice without a bursar decision fails this
+// audit loudly, instead of silently defaulting to "bursar doesn't have it"
+// or "bursar has it" by accident — the same fail-closed discipline the
+// SECURITY DEFINER inventory spec established for that table.
+// ---------------------------------------------------------------------------
+
+const PHASE_3_BURSAR_SET = new Set<string>(PHASE_3_BURSAR_PERMISSIONS);
+const PHASE_3_OWNER_ONLY_SET = new Set<string>(PHASE_3_OWNER_ONLY_PERMISSIONS);
+
+describe("Phase 3 RBAC close-out: seeded role grants", () => {
+  it("owner is still the wildcard role", () => {
+    expect(roleSeed("owner").permissions).toEqual(["*"]);
+  });
+
+  it("admin grants every Phase 3 permission EXCEPT the owner-only ones (unchanged by the bursar wire-up)", () => {
+    const adminPerms = new Set(roleSeed("admin").permissions);
+    for (const p of PHASE_3_PERMISSIONS) {
+      expect(adminPerms.has(p), `admin ${PHASE_3_OWNER_ONLY_SET.has(p) ? "should NOT" : "should"} have ${p}`).toBe(
+        !PHASE_3_OWNER_ONLY_SET.has(p),
+      );
+    }
+  });
+
+  it("bursar grants exactly PHASE_3_BURSAR_PERMISSIONS (no more, no less)", () => {
+    const bursarPerms = new Set(roleSeed("bursar").permissions);
+    for (const p of PHASE_3_BURSAR_PERMISSIONS) {
+      expect(bursarPerms.has(p), `bursar should have ${p}`).toBe(true);
+    }
+    for (const p of PHASE_3_PERMISSIONS) {
+      if (!PHASE_3_BURSAR_SET.has(p)) {
+        expect(bursarPerms.has(p), `bursar should NOT have ${p}`).toBe(false);
+      }
+    }
+  });
+
+  it("bursar holds no Phase 0/1/2 permission (finance-only role, no academic/roster/staff/settings access)", () => {
+    const bursarPerms = new Set(roleSeed("bursar").permissions);
+    expect(bursarPerms.size).toBe(PHASE_3_BURSAR_PERMISSIONS.length);
+  });
+
+  it("bursar is excluded from payment.refund and all three staff-bvn.* permissions", () => {
+    const bursarPerms = new Set(roleSeed("bursar").permissions);
+    expect(bursarPerms.has("payment.refund")).toBe(false);
+    expect(bursarPerms.has("staff-bvn.manage-others")).toBe(false);
+    expect(bursarPerms.has("staff-bvn.read")).toBe(false);
+    expect(bursarPerms.has("staff-bvn.reveal")).toBe(false);
+    expect(bursarPerms.has("auth.2fa.manage")).toBe(false);
+    expect(bursarPerms.has("auth.2fa.read")).toBe(false);
+  });
+
+  it("a permission is never both owner-only and bursar-granted", () => {
+    const overlap = PHASE_3_PERMISSIONS.filter(
+      (p) => PHASE_3_OWNER_ONLY_SET.has(p) && PHASE_3_BURSAR_SET.has(p),
+    );
+    expect(overlap).toEqual([]);
+  });
+
+  // The mechanical audit itself: every PHASE_3_PERMISSIONS string bursar does
+  // NOT hold must appear on this named, reasoned exclusion list. A future
+  // slice that adds a permission to PHASE_3_PERMISSIONS without an explicit
+  // bursar decision fails this test (the new string is "unaccounted for")
+  // instead of silently defaulting to excluded-and-forgotten.
+  const KNOWN_BURSAR_EXCLUSIONS = new Set<string>([
+    "auth.2fa.manage", // owner-only, auth surface
+    "auth.2fa.read", // admin oversight of other users' 2FA, auth surface
+    "payment.refund", // highest-trust mutation, owner+admin only
+    "staff-bvn.manage-others", // HR-adjacent staff-payroll surface
+    "staff-bvn.read",
+    "staff-bvn.reveal",
+  ]);
+
+  it("every Phase 3 permission bursar lacks is on the named, reasoned exclusion list", () => {
+    const unaccounted = PHASE_3_PERMISSIONS.filter(
+      (p) => !PHASE_3_BURSAR_SET.has(p) && !KNOWN_BURSAR_EXCLUSIONS.has(p),
+    );
+    expect(unaccounted, `permission(s) excluded from bursar with no recorded reason: ${unaccounted.join(", ")}`).toEqual(
+      [],
+    );
   });
 });

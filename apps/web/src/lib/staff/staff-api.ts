@@ -11,11 +11,10 @@
 // come from @school-kit/types so the client can't drift from the server
 // contract.
 //
-// Note on `inviteStaff`: POST /users/invite is hardcoded to roleKey="admin"
-// server-side (Phase 0; inviteAdminSchema has no roleKey field). cp3 is
-// web-only, so the single-invite form creates an ADMIN. Teachers are invited
-// in bulk via the CSV import wizard (which mints roleKey="teacher"
-// invitations). See docs/deferred.md ("single teacher invite needs roleKey").
+// Note on `inviteStaff`: POST /users/invite accepts roleKey "admin" | "bursar"
+// (Phase 3 slice 15). Teachers are still invited in bulk via the CSV import
+// wizard (which mints roleKey="teacher" invitations) — a single teacher
+// invite remains a separate, still-open deferred.md item.
 
 import type {
   CreateTeacherAssignmentInput,
@@ -58,8 +57,9 @@ export function listStaffInvitations(): Promise<PendingInvitationDto[]> {
   });
 }
 
-// POST /users/invite — creates an ADMIN invitation (server hardcodes the
-// role). Returns the raw accept URL once; it's not recoverable afterwards.
+// POST /users/invite — creates an admin or bursar invitation per
+// input.roleKey. Returns the raw accept URL once; it's not recoverable
+// afterwards.
 export function inviteStaff(
   input: InviteAdminInput,
 ): Promise<InviteAdminResponse> {

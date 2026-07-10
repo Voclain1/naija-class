@@ -316,18 +316,22 @@ Format:
   rls.spec.ts at 63 tests.
 
 - [ ] Single teacher invite via the UI needs a `roleKey` on `POST
-  /users/invite`. Slice 10 cp3's `/staff/invite` form is ADMIN-ONLY:
-  `inviteAdminSchema` has no `roleKey` field and `UsersService.invite`
-  hardcodes `roleKey: "admin"` (Phase 0). cp3 was web-only, so the form
-  cannot create a teacher invitation — and passing a "teacher" role that the
-  endpoint ignores would silently grant ADMIN (privilege escalation), so the
-  form has no role dropdown at all. Teachers are invited in bulk via
-  `/staff/import` (the CSV path mints `roleKey="teacher"` invitations through
-  `commit-teachers.row.ts`). To support a single teacher invite from the UI,
-  either add an optional `roleKey` (enum of seeded roles) to the invite
-  schema + service with a role-grant check, or add a dedicated
-  `POST /staff/invite` endpoint. Trigger: an admin who needs to invite one
-  teacher without building a one-row CSV. (slice 10 cp3.)
+  /users/invite`. Slice 10 cp3's `/staff/invite` form was ADMIN-ONLY:
+  `inviteAdminSchema` had no `roleKey` field and `UsersService.invite`
+  hardcoded `roleKey: "admin"` (Phase 0).
+  **PARTIALLY RESOLVED (Phase 3 slice 15 cp2):** `inviteAdminSchema` now
+  carries `roleKey: z.enum(["admin", "bursar"]).default("admin")`,
+  `UsersService.invite` re-validates it server-side, and `/staff/invite` has
+  a Role dropdown — but the enum is deliberately **admin | bursar only**.
+  Teacher is still excluded: TeacherProfile fields (staffNumber, specialty)
+  aren't on the invite-accept path (see the "Teacher CSV import" deferred
+  item above), so a single teacher invite still can't carry them, and
+  teachers are invited in bulk via `/staff/import` (the CSV path mints
+  `roleKey="teacher"` invitations through `commit-teachers.row.ts`). Extending
+  the enum to include `"teacher"` needs that staging mechanism first, not
+  just a dropdown option. Trigger: an admin who needs to invite one teacher
+  without building a one-row CSV. (slice 10 cp3; partially resolved slice 15
+  cp2.)
   - ALSO BLOCKS a clean E2E path: slice 11 cp4's `inviteAndAcceptTeacher`
     fixture (`e2e/fixtures/teacher.ts` + `db.ts`) seeds the `roleKey='teacher'`
     Invitation row directly via `withTenant` precisely because no API mints
@@ -412,6 +416,34 @@ Format:
   API contract change (`GET /payments/:id/receipt` returns a signed URL
   regardless of MIME type). Trigger: first bursar who finds the browser-print
   path inadequate. Zero schema change needed.
+
+- [ ] Full payroll — salary structure + deductions → net, Paystack staff
+  transfers, payslip PDF, structured qualifications. Phase 3 / Slice 12 was
+  scoped down at build time (2026-07-08) to BVN capture/reveal only
+  (`encrypt_bvn`/`decrypt_bvn` pgcrypto functions) — the rest of "basic
+  payroll" per phase-3.md §6.10 was never built and this is the first place
+  it's tracked as deferred (flagged during slice 15 close-out; previously an
+  undocumented gap between the slice table's original scope and what
+  actually shipped). Trigger: first pilot school that needs the platform to
+  run payroll rather than just store BVNs.
+
+- [ ] `audit-coverage.spec.ts` extended for `finance.*` mutations. The file
+  is still Phase-1-only ("every Phase 1 mutation writes one audit row");
+  Phase 3's finance mutations write their audit rows correctly (each
+  service spec asserts its own row inline, e.g.
+  `expense-category.service.spec.ts`'s "writes an audit log row" tests) but
+  there is no centralized regression lock for finance the way slice 13
+  built for Phase 1. phase-3.md's acceptance criterion #10 names this
+  explicitly; flagged unmet at slice 15 close-out rather than silently
+  checked off. Trigger: before Phase 3 is considered fully accepted, or the
+  first time a finance audit-row regression actually slips through.
+
+- [ ] Re-confirm the render-memory in-container gate (phase-3.md acceptance
+  criterion #14) — the existing deferred.md item above ("Re-validate the
+  report-card PDF memory gate IN A FLY.IO CONTAINER...") covers the actual
+  work; this entry just cross-references it so slice 15's close-out pass
+  doesn't silently imply criterion #14 is met when the container
+  re-validation hasn't happened yet.
 
 - [ ] Paystack webhook URL — must be configured in the Paystack dashboard
   (Settings → API Keys & Webhooks → Webhook URL) pointing to

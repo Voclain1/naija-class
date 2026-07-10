@@ -245,6 +245,51 @@ describe("UsersService (Slice 7)", () => {
       ).rejects.toMatchObject({ code: "INVITATION_ALREADY_PENDING" });
     });
 
+    it("roleKey: 'bursar' — creates a bursar invitation (slice 15)", async () => {
+      const { authCtx, schoolId } = await createActiveSchool("inv-bursar");
+
+      const result = await usersService.invite(
+        authCtx,
+        { email: `bursar-invitee-${runId}@example.test`, roleKey: "bursar" },
+        ctx,
+      );
+
+      expect(result.invitation.roleKey).toBe("bursar");
+
+      const audit = await withTenant(schoolId, (db) =>
+        db.auditLog.findFirst({ where: { schoolId, action: "user.invite", entityId: result.invitation.id } }),
+      );
+      const meta = audit!.metadata as Record<string, unknown>;
+      expect(meta.roleKey).toBe("bursar");
+    });
+
+    it("roleKey omitted — defaults to admin (unchanged pre-slice-15 behaviour)", async () => {
+      const { authCtx } = await createActiveSchool("inv-default-role");
+
+      const result = await usersService.invite(
+        authCtx,
+        { email: `default-role-${runId}@example.test` },
+        ctx,
+      );
+
+      expect(result.invitation.roleKey).toBe("admin");
+    });
+
+    it("roleKey outside the allow-list — ValidationError INVALID_ROLE_KEY (defence-in-depth for direct callers bypassing the Zod pipe)", async () => {
+      const { authCtx } = await createActiveSchool("inv-bad-role");
+
+      await expect(
+        usersService.invite(
+          authCtx,
+          // @ts-expect-error — deliberately passing a value outside the TS union
+          // to exercise the runtime allow-list re-check a raw/untyped caller
+          // (or a stale client) could otherwise slip past.
+          { email: `bad-role-${runId}@example.test`, roleKey: "owner" },
+          ctx,
+        ),
+      ).rejects.toMatchObject({ code: "INVALID_ROLE_KEY" });
+    });
+
     it("accept URL respects WEB_BASE_URL env var", async () => {
       const { authCtx } = await createActiveSchool("inv-url");
 

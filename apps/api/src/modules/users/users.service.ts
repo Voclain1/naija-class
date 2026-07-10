@@ -5,6 +5,7 @@ import { Prisma, basePrisma, withTenant } from "@school-kit/db";
 import {
   ConflictError,
   NotFoundError,
+  ValidationError,
   type InviteAdminInput,
   type InviteAdminResponse,
   type InvitationCreatedDto,
@@ -106,15 +107,20 @@ export class UsersService {
     });
   }
 
-  // POST /users/invite — owner|admin invites a new admin.
+  // POST /users/invite — owner|admin invites a new admin or bursar (slice 15
+  // added roleKey; teacher still goes through the bulk CSV import).
   //
-  // Five gates, in order, before any write:
+  // Six gates, in order, before any write:
   //   1. role check (owner|admin), with belt-and-braces is_active re-check
-  //   2. school must be ACTIVE (not still ONBOARDING) — onboarding invites
+  //   2. roleKey re-validated against the known allow-list server-side —
+  //      never trust the client's value, even though ZodValidationPipe
+  //      already restricts it to the enum at the HTTP boundary (direct
+  //      service callers bypass the pipe entirely)
+  //   3. school must be ACTIVE (not still ONBOARDING) — onboarding invites
   //      go through POST /onboarding/3 specifically
-  //   3. email must not match an existing user in this school
-  //   4. email must not match an outstanding (pending+unexpired) invitation
-  //   5. the raw token is generated; the hash is stored
+  //   4. email must not match an existing user in this school
+  //   5. email must not match an outstanding (pending+unexpired) invitation
+  //   6. the raw token is generated; the hash is stored
   //
   // Atomicity: invitation row + audit row write inside one withTenant
   // transaction so a failure rolls both back. The console log happens AFTER
@@ -126,6 +132,17 @@ export class UsersService {
     reqCtx: RequestContext,
   ): Promise<InviteAdminResponse> {
     await assertUserActiveAndHasOneOf(authCtx, ["owner", "admin"]);
+
+    const roleKey = input.roleKey ?? "admin";
+    if (roleKey !== "admin" && roleKey !== "bursar") {
+      // Unreachable via the HTTP path (ZodValidationPipe/inviteAdminSchema
+      // already rejects anything outside the enum) — this is the
+      // defence-in-depth check for direct service callers.
+      throw new ValidationError(
+        "INVALID_ROLE_KEY",
+        "roleKey must be 'admin' or 'bursar'.",
+      );
+    }
 
     const school = await basePrisma.school.findUnique({
       where: { id: authCtx.schoolId },
@@ -180,7 +197,7 @@ export class UsersService {
           email: input.email,
           firstName: input.firstName ?? null,
           lastName: input.lastName ?? null,
-          roleKey: "admin",
+          roleKey,
           tokenHash,
           invitedBy: authCtx.userId,
           expiresAt,
@@ -198,7 +215,7 @@ export class UsersService {
           ipAddress: reqCtx.ipAddress,
           metadata: {
             email: redactEmail(input.email),
-            roleKey: "admin",
+            roleKey,
             // firstName / lastName intentionally not in audit metadata —
             // they're on the invitation row directly now.
           },
