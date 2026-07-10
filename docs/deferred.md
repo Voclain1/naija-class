@@ -444,6 +444,31 @@ Format:
   doesn't silently imply criterion #14 is met when the container
   re-validation hasn't happened yet.
 
+- [x] `DevStorageController` hardcoded `Content-Type: application/pdf` and
+  `Content-Disposition: attachment` for every file it serves, regardless of
+  what was actually stored — `FilesystemStorageDriver.put()` discards the
+  contentType/contentDisposition it's given (dev-only, no metadata
+  sidecar), so this dev-only signed-URL endpoint had no way to know better.
+  Silently correct for report-card PDFs (the original use case); silently
+  **wrong** for payment-receipt/expense-receipt HTML — a browser hitting a
+  receipt's signed URL got a forced "download" of a mislabeled PDF instead
+  of the HTML rendering inline. Nobody caught it because prior manual gates
+  checked byte-fidelity of the stored file, not the Content-Type header the
+  signed URL actually served. **DONE** (Payroll CP3, 2026-07-10): both
+  headers are now derived from the path extension (`.html` → `text/html` +
+  inline, `.pdf` → `application/pdf` + attachment, unchanged) — discovered
+  because the payslip's "HTML renders in browser" manual-gate step failed
+  against the old hardcoded value.
+  **STILL OPEN**: `expense-receipt` is deliberately extensionless (Content-Type
+  meant to travel as object metadata per storage.types.ts) — with no sidecar
+  to read it from, it now falls through to `application/octet-stream`
+  (triggers an honest download) rather than the previous always-wrong `pdf`
+  label. A real fix needs the filesystem driver to persist a metadata
+  sidecar file, or for dev-storage to accept an R2-like HEAD-first content
+  type lookup. Trigger: first dev workflow that needs an expense receipt to
+  render inline (photos/PDFs already download fine either way — this only
+  bites a browser trying to preview rather than save).
+
 - [ ] Paystack webhook URL — must be configured in the Paystack dashboard
   (Settings → API Keys & Webhooks → Webhook URL) pointing to
   `https://school-kit-api.fly.dev/api/v1/payments/paystack/webhook` before

@@ -41,6 +41,7 @@ import { PaymentPlansController } from "../modules/payments/payment-plans.contro
 import { PaymentsController } from "../modules/payments/payments.controller";
 import { PaystackController } from "../modules/payments/paystack.controller";
 import { RefundsController } from "../modules/payments/refunds.controller";
+import { PayrollController } from "../modules/payroll/payroll.controller";
 import { BvnController } from "../modules/users/bvn.controller";
 
 // Static RBAC safety net (slice 13). Every route handler on a Phase 1
@@ -524,6 +525,54 @@ describe("Phase 3 RBAC coverage: expense route handlers declare @Permissions", (
 });
 
 // ---------------------------------------------------------------------------
+// Payroll CP3 — PayrollController coverage. list/findById gate on
+// payroll.read; create/update/approve/generatePayslip gate on
+// payroll.process (no separate payroll.approve permission — the approve
+// transition is covered by payroll.process, same as create/update).
+// ---------------------------------------------------------------------------
+
+const PHASE_3_PAYROLL_CONTROLLERS: Array<[string, Ctor]> = [
+  ["PayrollController", PayrollController],
+];
+
+describe("Phase 3 RBAC coverage: payroll route handlers declare @Permissions", () => {
+  assertCoverage(PHASE_3_PAYROLL_CONTROLLERS);
+
+  it("every Phase 3 payroll @Permissions value is a known Phase 3 permission", () => {
+    const unknown: string[] = [];
+    for (const [name, ctor] of PHASE_3_PAYROLL_CONTROLLERS) {
+      for (const p of handlerPermissions(ctor)) {
+        if (!PHASE_3_SET.has(p)) unknown.push(`${name}:${p}`);
+      }
+    }
+    expect(unknown, `unknown Phase 3 permission(s): ${unknown.join(", ")}`).toEqual([]);
+  });
+
+  it("list/findById carry payroll.read; create/update/approve/generatePayslip carry payroll.process", () => {
+    const proto = PayrollController.prototype as unknown as Record<string, unknown>;
+    expect(Reflect.getMetadata(PERMISSIONS_METADATA_KEY, proto["list"] as object)).toEqual(["payroll.read"]);
+    expect(Reflect.getMetadata(PERMISSIONS_METADATA_KEY, proto["findById"] as object)).toEqual(["payroll.read"]);
+    expect(Reflect.getMetadata(PERMISSIONS_METADATA_KEY, proto["create"] as object)).toEqual(["payroll.process"]);
+    expect(Reflect.getMetadata(PERMISSIONS_METADATA_KEY, proto["update"] as object)).toEqual(["payroll.process"]);
+    expect(Reflect.getMetadata(PERMISSIONS_METADATA_KEY, proto["approve"] as object)).toEqual(["payroll.process"]);
+    expect(Reflect.getMetadata(PERMISSIONS_METADATA_KEY, proto["generatePayslip"] as object)).toEqual([
+      "payroll.process",
+    ]);
+  });
+
+  it("admin and bursar are granted payroll.read + payroll.process; bursar lacks payroll.transfer", () => {
+    const adminPerms = new Set(roleSeed("admin").permissions);
+    const bursarPerms = new Set(roleSeed("bursar").permissions);
+    expect(adminPerms.has("payroll.read")).toBe(true);
+    expect(adminPerms.has("payroll.process")).toBe(true);
+    expect(adminPerms.has("payroll.transfer")).toBe(true);
+    expect(bursarPerms.has("payroll.read")).toBe(true);
+    expect(bursarPerms.has("payroll.process")).toBe(true);
+    expect(bursarPerms.has("payroll.transfer")).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Phase 3 / Slice 15 — RBAC close-out. The bursar role's exact grant, a
 // re-assertion that admin still holds every Phase 3 permission except the
 // owner-only set, and a mechanical audit that every PHASE_3_PERMISSIONS
@@ -598,6 +647,7 @@ describe("Phase 3 RBAC close-out: seeded role grants", () => {
     "staff-bvn.manage-others", // HR-adjacent staff-payroll surface
     "staff-bvn.read",
     "staff-bvn.reveal",
+    "payroll.transfer", // highest-trust money-movement mutation, owner+admin only
   ]);
 
   it("every Phase 3 permission bursar lacks is on the named, reasoned exclusion list", () => {

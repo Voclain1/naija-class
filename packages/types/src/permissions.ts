@@ -313,6 +313,16 @@ export const PHASE_3_PERMISSIONS = [
   // Slice 14 — finance dashboard. Read-only aggregation, not a highest-trust
   // surface — no owner-only restriction.
   "finance.dashboard.read",
+
+  // Slice 12 CP3/CP4 — payroll. payroll.read/process cover the routine
+  // run (create/update/approve/payslip) and are bursar-accessible.
+  // payroll.transfer (moving real money to a bank account) mirrors
+  // payment.refund/staff-bvn.reveal — admin+owner only, bursar excluded.
+  // No separate payroll.approve string: the approve transition is gated
+  // by payroll.process, same as create/update.
+  "payroll.read",
+  "payroll.process",
+  "payroll.transfer",
 ] as const;
 
 export const PHASE_3_OWNER_ONLY_PERMISSIONS = ["auth.2fa.manage"] as const;
@@ -324,12 +334,12 @@ export const PHASE_3_OWNER_ONLY_PERMISSIONS = ["auth.2fa.manage"] as const;
 // decision, whereas an exclusion filter would silently grant it.
 //
 // Deliberately excluded: auth.2fa.* (auth surface, not finance),
-// staff-bvn.* (HR-adjacent staff-payroll surface), payment.refund (highest-
-// trust mutation — owner+admin only), and every Phase 0/1/2 permission
-// (academics, roster, staff, school settings). "payroll.*" from phase-3.md's
-// original RBAC table isn't listed below because no payroll permission was
-// ever built — Phase 3's payroll slice was narrowed to BVN capture/reveal
-// only, so there is nothing to grant.
+// staff-bvn.* (HR-adjacent staff-payroll surface), payment.refund AND
+// payroll.transfer (both highest-trust money-movement mutations — owner+admin
+// only), and every Phase 0/1/2 permission (academics, roster, staff, school
+// settings). payroll.read/payroll.process ARE included — running payroll
+// (create/update/approve/payslip) is routine bursar work; only the actual
+// bank transfer is excluded.
 export const PHASE_3_BURSAR_PERMISSIONS = [
   "fee-category.read",
   "fee-category.create",
@@ -369,6 +379,9 @@ export const PHASE_3_BURSAR_PERMISSIONS = [
   "expense.delete",
 
   "finance.dashboard.read",
+
+  "payroll.read",
+  "payroll.process",
 ] as const;
 
 // The Phase 2 subset granted to the `teacher` role at the GUARD level. The
