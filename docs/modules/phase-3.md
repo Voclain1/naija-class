@@ -20,7 +20,7 @@ bank-transfer recorded manually). Parents get receipts; they don't log in.
 - **SaaS subscription billing (school → us) is deferred to Phase 4+** (Q7). Phase 3 is school→parent fee collection only.
 - **Thin payroll is in** (Q8) per §6.10 "basic payroll": per-staff salary, deductions, Paystack transfers, payslip PDF, BVN capture, structured qualifications.
 - **Online + offline payments** (Q9): Paystack is the online rail; admin records cash/POS/bank-transfer manually (receipt generated, no portal processing).
-- **`bursar` role ships** (Q10): finance.* for bursar; admin gets finance minus `billing.delete`.
+- **`bursar` role ships** (Q10): finance.* for bursar, minus refunds; admin gets every finance permission. (`billing.delete` retired at slice-15 close-out — see §8.)
 - **Auth hardening is a prerequisite slice** (Q11) — 2FA, cookie auth, rate-limiting, password policy land *before* the first finance slice ("before finance goes live", phase-0.md:534).
 
 ## Sequencing principle (de-risk early)
@@ -73,20 +73,20 @@ estimates assume Phase-2 velocity.
 | # | Slice | Why it ships independently | cps | Size |
 |---|---|---|---|---|
 | 1 ✓ | **Pre-deploy infra** — `apps/api/Dockerfile` (Chromium provisioning), **in-container PDF memory gate** (40-card batch on 512MB/1GB), prod DB (Neon/Supabase) + RLS roles, prod R2 bucket, Vercel + Fly.io setup, `staging` env, rollback runbook | Nothing else is safe to deploy until the render-memory unknown is settled and an environment exists. The single biggest technical risk. | 2-3 | 4 days |
-| 2 | **Auth hardening** — 2FA (owner), password complexity policy, login + invitation rate-limiting, localStorage → httpOnly cookie auth, Better Auth migration per ADR-001 if needed | "Before finance goes live." Real money raises the auth bar; isolate it before any money endpoint exists. | 2 | 3 days |
-| 3 | **Audit-log partitioning** — convert `audit_logs` to `PARTITION BY RANGE(created_at)` monthly, with a partition-creation job; includes a **backfill strategy** (existing `audit_logs` rows distributed into the appropriate monthly partitions during migration — runs as part of the migration; acceptable dev downtime, no prod downtime since prod doesn't exist yet) | Land before finance write-volume hits the table (noted since Phase 0; finance forces it). Pure infra, testable alone. | 1 | 2 days |
+| 2 ✓ | **Auth hardening** — 2FA (owner), password complexity policy, login + invitation rate-limiting, localStorage → httpOnly cookie auth, Better Auth migration per ADR-001 if needed | "Before finance goes live." Real money raises the auth bar; isolate it before any money endpoint exists. | 2 | 3 days |
+| 3 ✓ | **Audit-log partitioning** — convert `audit_logs` to `PARTITION BY RANGE(created_at)` monthly, with a partition-creation job; includes a **backfill strategy** (existing `audit_logs` rows distributed into the appropriate monthly partitions during migration — runs as part of the migration; acceptable dev downtime, no prod downtime since prod doesn't exist yet) | Land before finance write-volume hits the table (noted since Phase 0; finance forces it). Pure infra, testable alone. | 1 | 2 days |
 | 4 ✓ | **Fee catalog** — `FeeCategory` (school-defined) + `FeeItem` with optional scope (level / arm / term / year), migration, RLS, admin CRUD UI | The flexible fee skeleton everything hangs off. Demoable: a school names its own fees and scopes them. | 2 | 3 days |
 | 5 ✓ | **Discount rules** — `DiscountRule` (5 curated rule types, typed jsonb params), per-type server-side eval functions, RLS, admin CRUD UI | Curated flexibility without a DSL. Each rule type tested individually. | 2 | 3 days |
 | 6 ✓ | **Invoice generation (snapshot-on-issue)** — `Invoice` with denormalized item+discount snapshot, generation by student's (level, arm, term, year), RLS, admin issue/preview UI | The freeze point — invoices stop tracking live fee/discount edits. The core correctness property. | 2 | 3 days |
 | 7 ✓ | **Manual payment recording + receipts** — `Payment` (cash/POS/bank-transfer), receipt generation (**HTML on R2**, signed URL via `GET /payments/:id/receipt`), `computeInvoiceStatus` pure fn, RLS, bursar UI embedded in invoice detail page | Schools can collect + receipt money with zero Paystack dependency. Ships before the online rail. | 2 | 3 days |
 | 8 ✓ | **Paystack integration** — init + redirect + **webhook + reconciliation + idempotency keys + signature verification**, `Payment` online path, sandbox integration tests | The meaty, riskiest finance surface — real money, async, replay-safe. | 3 | 5 days |
-| 9 | **Installment plans + partial payments** — `PaymentPlan` (+ installment rows), partial-payment allocation against an invoice, status transitions | Nigerian schools commonly take fees in tranches. Builds on the invoice + payment base. | 2 | 3 days |
-| 10 | **Debtor list + email reminders** — outstanding-balance query, reminder schedule, **email via Resend** (SMS deferred to Phase 4 — guardians aren't users yet) | The "who owes" operational surface. Email-only keeps it inside Phase-3 channels. | 1 | 2 days |
+| 9 ✓ | **Installment plans + partial payments** — `PaymentPlan` (+ installment rows), partial-payment allocation against an invoice, status transitions | Nigerian schools commonly take fees in tranches. Builds on the invoice + payment base. | 2 | 3 days |
+| 10 ✓ | **Debtor list + email reminders** — outstanding-balance query, reminder schedule, **email via Resend** (SMS deferred to Phase 4 — guardians aren't users yet) | The "who owes" operational surface. Email-only keeps it inside Phase-3 channels. | 1 | 2 days |
 | 11 ✓ | **Refunds** — `Refund` with audit trail, Paystack refund path + manual refund recording, owner/admin-gated | Money leaves the school; the highest-trust mutation. Isolated + heavily audited. | 1 | 2 days |
-| 12 | **Basic payroll** — `PayrollItem`, salary structure + deductions, **Paystack transfers**, payslip PDF, staff **BVN capture** + structured qualifications | The "basic payroll" §6.10 line. Pulls in BVN + qualification data-model work. | 3 | 4 days |
-| 13 | **Expense tracking** — `Expense` (+ categories), CRUD, RLS, admin UI | Completes the P&L inputs. Smallest finance slice; a deferral candidate if the timeline tightens. | 1 | 2 days |
-| 14 | **Finance dashboard** — collections vs target, debtor totals, expense totals, basic P&L (all server-computed) | The owner/admin money view. Read-only aggregation; a deferral/trim candidate. | 1 | 2 days |
-| 15 | **Phase 3 close** — `PHASE_3_PERMISSIONS` rollup + `bursar` role wire-up + admin/owner grant updates + idempotent role migration; finance audit-coverage; cross-tenant + bursar-scope E2E; finance manual gates | The slice-9 equivalent for Phase 3. Closes the phase; all gates green. | 2 | 3 days |
+| 12 ✓* | **Basic payroll** — ~~`PayrollItem`, salary structure + deductions, **Paystack transfers**, payslip PDF~~, staff **BVN capture** + SECURITY DEFINER encrypt/decrypt only | The "basic payroll" §6.10 line. Pulls in BVN + qualification data-model work. **Narrowed at build time (2026-07-08):** shipped BVN capture/reveal (`encrypt_bvn`/`decrypt_bvn`, pgcrypto) only — salary structure, deductions, Paystack transfers, payslip PDF, and structured qualifications were never built and are **not tracked in `docs/deferred.md`** as of this close-out pass (a gap this note now flags; add them there before Phase 3 is considered fully accepted). | 3 | 4 days |
+| 13 ✓ | **Expense tracking** — `Expense` (+ categories), CRUD, RLS, admin UI | Completes the P&L inputs. Smallest finance slice; a deferral candidate if the timeline tightens. | 1 | 2 days |
+| 14 ✓ | **Finance dashboard** — collections vs target, debtor totals, expense totals, basic P&L (all server-computed) | The owner/admin money view. Read-only aggregation; a deferral/trim candidate. | 1 | 2 days |
+| 15 ✓ | **Phase 3 close** — `PHASE_3_PERMISSIONS` rollup + `bursar` role wire-up + admin/owner grant updates + idempotent role migration; finance audit-coverage; cross-tenant + bursar-scope E2E; finance manual gates | The slice-9 equivalent for Phase 3. Closes the phase; all gates green. | 2 | 3 days |
 
 Total: **~27-30 cps**, **~48 build days** raw before trimming.
 
@@ -446,15 +446,29 @@ Mirrors the Phase-2 slice-9 rollup machinery (`PHASE_3_PERMISSIONS` flat const +
 
 | Role | Phase 3 grant |
 |---|---|
-| `owner` | `["*"]` — unchanged; includes `billing.delete`. |
-| `admin` | all finance permissions **except** `billing.delete` (the owner-only hard-delete of finance records — refunds/cancels are sensitive but allowed; destructive deletion is owner-only, per ARCHITECTURE "admin.* — all except billing.delete"). |
-| **`bursar`** (NEW) | `finance.*` only — fee/discount/invoice/payment/payroll/expense/dashboard read+write, **minus** `billing.delete`. No academic, roster, or settings access. |
+| `owner` | `["*"]` — unchanged. |
+| `admin` | every `PHASE_3_PERMISSIONS` string except `PHASE_3_OWNER_ONLY_PERMISSIONS` (`auth.2fa.manage`). |
+| **`bursar`** (NEW, slice 15) | `PHASE_3_BURSAR_PERMISSIONS` — fee catalog, discount rules, invoices, payments (excluding refunds), payment plans, debtor reminders, expenses, and the finance dashboard. No academic, roster, staff, or school-settings access. Also excludes `auth.2fa.*` and `staff-bvn.*` (out of scope for a finance-only role). |
 
 Indicative permission strings: `fee-category.*`, `fee-item.*`, `discount-rule.*`,
 `invoice.read/issue/cancel`, `payment.read/record`, `payment.refund`,
-`payroll.read/process`, `expense.*`, `finance.dashboard.read`, `billing.delete`
-(owner-only). `@Permissions` on every finance endpoint (defence-in-depth atop the
-service role+scope gate), guarded by `permissions-coverage.spec.ts`.
+`expense.*`, `finance.dashboard.read`. `@Permissions` on every finance
+endpoint (defence-in-depth atop the service role+scope gate), guarded by
+`permissions-coverage.spec.ts`.
+
+**`billing.delete` retired (slice 15 close-out):** earlier drafts of this
+table named a coarse `billing.delete` owner-only gate for "hard-delete of
+finance records." By slice 15 every actual finance hard-delete
+(`fee-category.delete`, `fee-item.delete`, `expense-category.delete`,
+`expense.delete`, `payment-plan.delete`) already existed as its own granular,
+admin-accessible permission — locked decisions from slices 4/9/13, each
+explicitly asserted "no owner-only restriction" in
+`permissions-coverage.spec.ts`. `billing.delete` was never wired to an
+endpoint. Slice 15 retires the placeholder rather than adding an unused
+permission string or retrofitting owner-only onto three already-shipped,
+already-tested admin-accessible deletes. "Payroll" permissions are likewise
+absent from the table above: Phase 3's payroll slice was narrowed to BVN
+capture/reveal only, so there is no `payroll.*` permission to grant anyone.
 
 ## 9. Audit additions
 
@@ -601,12 +615,12 @@ Specific, not vague:
 6. **School-defined flexibility works** — a school names its own categories, scopes fees by level/arm/term/year, and applies each of the 5 curated discount types (integration tests per rule type).
 7. **Paystack webhook handling is idempotent + signature-verified** — duplicate/forged/out-of-order webhooks don't corrupt balances (sandbox integration test).
 8. **Manual + online payments both produce receipts**; debtor list reflects outstanding balances.
-9. **Basic payroll** runs: salary + deductions → net, Paystack transfer, payslip PDF; BVN captured + redacted in logs.
-10. **`audit-coverage.spec.ts` extended for `finance.*`** — every finance mutation writes its row.
-11. **Cross-tenant E2E extended for finance** — School B cannot read/write School A finance; **bursar-scope** negative walk passes.
-12. **Every finance endpoint carries `@Permissions`**; **`bursar` role grants verified** via `permissions-coverage.spec.ts`; `billing.delete` is owner-only.
-13. **Audit-log partitioning live** — `audit_logs` partitioned by month, partition-creation job running.
-14. **Render-memory in-container gate passes** (or external-render fallback confirmed working).
+9. ⚠️ **PARTIALLY MET.** **Basic payroll** runs: salary + deductions → net, Paystack transfer, payslip PDF; BVN captured + redacted in logs. Slice 12 was narrowed at build time (2026-07-08) to BVN capture/reveal only (see §3 row 12) — salary/deductions/transfer/payslip were never built. Now tracked in `docs/deferred.md`. Flagged at slice-15 close-out rather than silently checked off; Phase 3 is not fully accepted against the letter of this criterion until a product decision is made (ship the rest, or amend this criterion to drop it).
+10. ⚠️ **NOT MET as literally stated.** **`audit-coverage.spec.ts` extended for `finance.*`** — every finance mutation writes its row. In practice every finance mutation writes its audit row (individually asserted per-service, e.g. `expense-category.service.spec.ts`), but the centralized Phase-1-style regression lock was never built for finance — `audit-coverage.spec.ts` is still Phase-1-only. Now tracked in `docs/deferred.md`.
+11. **Cross-tenant E2E extended for finance** — School B cannot read/write School A finance (asserted per-service, e.g. `expense.service.spec.ts`, `refunds.service.spec.ts`); **bursar-scope** negative walk passes (`bursar-scope.spec.ts`, slice 15 cp3).
+12. **Every finance endpoint carries `@Permissions`**; **`bursar` role grants verified** via `permissions-coverage.spec.ts` (exact `PHASE_3_BURSAR_PERMISSIONS` subset — no more, no less). `billing.delete` was retired at slice-15 close-out in favor of the granular per-resource delete permissions already shipped in slices 4/9/13 (see §8).
+13. **Audit-log partitioning live** — `audit_logs` partitioned by month, partition-creation job running (`PartitionService`, confirmed live in dev — creates `audit_logs_2026_07/08/09` on boot).
+14. ⚠️ **STATUS UNCONFIRMED.** **Render-memory in-container gate passes** (or external-render fallback confirmed working). The Fly.io in-container re-validation named in `docs/deferred.md` ("Re-validate the report-card PDF memory gate IN A FLY.IO CONTAINER...") has not been re-confirmed as part of this close-out pass — only the Windows-dev measurement from Phase 2 exists. Cross-referenced in `docs/deferred.md`.
 15. **Auth hardening complete** — 2FA, cookie auth, password policy, rate-limiting; ADR-001 updated.
 16. **SECURITY DEFINER count** accounted for (was 4 at Phase-2 close; any new function triggers the deferred inventory refactor).
 

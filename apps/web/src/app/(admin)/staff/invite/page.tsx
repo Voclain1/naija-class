@@ -15,18 +15,18 @@ import { Label } from "@/components/ui/label";
 import { ApiError } from "@/lib/api-client";
 import { inviteStaff } from "@/lib/staff/staff-api";
 
-// /staff/invite — Slice 10 cp3.
+// /staff/invite — Slice 10 cp3, role dropdown added Phase 3 slice 15 cp2.
 //
-// IMPORTANT (cp3 divergence from the plan, web-only constraint):
-// POST /users/invite is hardcoded to roleKey="admin" server-side
-// (inviteAdminSchema has no roleKey field; UsersService.invite sets
-// roleKey: "admin"). cp3 ships no API changes, so the single-invite form
-// can ONLY create an administrator. Inviting a teacher with a "teacher"
-// role here is impossible without an API change — and sending the invite
-// anyway would silently grant ADMIN to someone meant to be a teacher, a
-// privilege-escalation bug. So there is NO role dropdown: this form invites
-// an admin, full stop, and points teachers at the bulk CSV import (which
-// mints roleKey="teacher" invitations). Tracked in docs/deferred.md.
+// Originally cp3 shipped no role field: POST /users/invite hardcoded
+// roleKey="admin" server-side, so this form could only create an
+// administrator (a role dropdown would have been a silent privilege-
+// escalation bug — passing "teacher" would have been ignored server-side
+// and granted ADMIN instead). Slice 15 added a real roleKey field to
+// inviteAdminSchema/UsersService.invite, but ONLY for "admin" | "bursar" —
+// teacher still goes through the bulk CSV import (a separate, still-open
+// deferred.md item, since TeacherProfile fields aren't on this path), so
+// the dropdown below intentionally offers just the two roles the API
+// actually accepts.
 //
 // Form-class protection (yesterday's class-arm lesson):
 //   (a) Local `inviteFormSchema` matches FormValues exactly (all strings;
@@ -43,6 +43,7 @@ const inviteFormSchema = z.object({
     .email("Enter a valid email address."),
   firstName: z.string().trim().max(60, "First name is too long."),
   lastName: z.string().trim().max(60, "Last name is too long."),
+  roleKey: z.enum(["admin", "bursar"]),
 });
 
 type FormValues = z.infer<typeof inviteFormSchema>;
@@ -53,9 +54,11 @@ export default function InviteStaffPage() {
 
   const form = useForm<FormValues>({
     resolver: zodResolver(inviteFormSchema),
-    defaultValues: { email: "", firstName: "", lastName: "" },
+    defaultValues: { email: "", firstName: "", lastName: "", roleKey: "admin" },
     mode: "onSubmit",
   });
+
+  const roleKey = form.watch("roleKey");
 
   const onSubmit = form.handleSubmit(async (values) => {
     try {
@@ -65,11 +68,12 @@ export default function InviteStaffPage() {
         email: values.email,
         firstName: values.firstName ? values.firstName : undefined,
         lastName: values.lastName ? values.lastName : undefined,
+        roleKey: values.roleKey,
       };
       const res = await inviteStaff(payload);
       setCreated(res);
       setCopied(false);
-      form.reset({ email: "", firstName: "", lastName: "" });
+      form.reset({ email: "", firstName: "", lastName: "", roleKey: "admin" });
     } catch (error) {
       if (error instanceof ApiError) {
         if (error.code === "EMAIL_TAKEN") {
@@ -167,11 +171,11 @@ export default function InviteStaffPage() {
     <div className="mx-auto flex w-full max-w-xl flex-col gap-6">
       <header className="flex flex-col gap-1">
         <h1 className="text-2xl font-semibold tracking-tight">
-          Invite an administrator
+          Invite a staff member
         </h1>
         <p className="text-sm text-muted-foreground">
           They&apos;ll get a link to set their password and join your school
-          as an admin.
+          as {roleKey === "bursar" ? "a bursar" : "an admin"}.
         </p>
       </header>
 
@@ -210,6 +214,18 @@ export default function InviteStaffPage() {
               {form.formState.errors.email.message}
             </p>
           )}
+        </div>
+
+        <div className="flex flex-col gap-1">
+          <Label htmlFor="invite-role">Role</Label>
+          <select
+            id="invite-role"
+            className="rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+            {...form.register("roleKey")}
+          >
+            <option value="admin">Admin</option>
+            <option value="bursar">Bursar</option>
+          </select>
         </div>
 
         <div className="flex gap-3">

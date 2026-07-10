@@ -156,13 +156,48 @@ The high-level entity map. Full schema lives in `packages/db/prisma/schema.prism
 **Permissions matrix** (lives in code, not DB, for performance):
 ```
 owner.*           — all
-admin.*           — all except billing.delete
+admin.*           — all except the owner-only set (see permissions.ts)
 teacher.class:*   — only for their assigned classes
 teacher.subject:* — only for their assigned subjects
 parent.student:*  — only for their linked students
 student.self:*    — only their own records
-bursar.finance:* — finance module only
+bursar.finance:* — finance module only, minus refunds and BVN
 ```
+Illustrative pseudocode, not literal permission strings — the actual grants are
+per-resource (`fee-category.delete`, `payment.refund`, etc.), enumerated in
+`packages/types/src/permissions.ts` and enforced by `PermissionsGuard`.
+
+**`bursar`'s final grant list** (`PHASE_3_BURSAR_PERMISSIONS`, locked at Phase 3
+/ Slice 15 close-out — explicit inclusion list, not "admin minus a few"):
+```
+fee-category.{read,create,update,delete}
+fee-item.{read,create,update,delete}
+discount-rule.{read,create,update,deactivate}
+invoice.{read,issue,cancel}
+payment.{read,record}                    — NOT payment.refund
+payment-plan.{create,read,delete}
+finance.debtors.{read,remind}
+expense-category.{read,create,update,delete}
+expense.{read,create,update,delete}
+finance.dashboard.read
+```
+No academic, roster, staff, or school-settings access — and no `auth.2fa.*`
+or `staff-bvn.*` (those are auth/HR-adjacent surfaces, not finance, and
+`staff-bvn.reveal`/`payment.refund` are deliberately admin+owner-only as the
+two highest-trust mutations in the finance surface). Verified exact-match
+(no more, no less) by `permissions-coverage.spec.ts`'s "Phase 3 RBAC
+close-out" block and exercised end-to-end by `bursar-scope.spec.ts`.
+
+Retired (Phase 3 / Slice 15 close-out): earlier drafts of this matrix named a
+coarse `billing.delete` owner-only gate for "hard-delete of finance records."
+By slice 15 every actual finance hard-delete (fee-category, fee-item,
+expense-category, expense, payment-plan) already existed as its own granular,
+admin-accessible permission — locked decisions from Phase 3 slices 4/9/13,
+each explicitly tested as "no owner-only restriction." `billing.delete` was
+never wired to an endpoint; slice 15 retired the placeholder rather than
+adding an unused permission string or retrofitting owner-only onto three
+already-shipped, already-tested deletes. See `docs/modules/phase-3.md` §15 and
+the audit note in `packages/types/src/permissions.ts`.
 
 ### 6.2 School setup
 

@@ -12,6 +12,7 @@ import {
   PHASE_2_OWNER_ONLY_PERMISSIONS,
   PHASE_2_PERMISSIONS,
   PHASE_2_TEACHER_PERMISSIONS,
+  PHASE_3_BURSAR_PERMISSIONS,
   PHASE_3_OWNER_ONLY_PERMISSIONS,
   PHASE_3_PERMISSIONS,
 } from "@school-kit/types";
@@ -92,5 +93,20 @@ export const SYSTEM_ROLE_SEEDS: SystemRoleSeed[] = [
       // to the teacher's own (arm, subject). See PHASE_2_TEACHER_PERMISSIONS.
       ...PHASE_2_TEACHER_PERMISSIONS,
     ],
+  },
+  // Phase 3 / Slice 15 — `bursar` role wire-up + RBAC close-out. Finance-only
+  // system role: fee catalog, discounts, invoices, payments (not refunds),
+  // payment plans, debtor reminders, expenses, and the finance dashboard —
+  // no academic, roster, staff, or school-settings access. Brand-new role row
+  // (unlike the admin/refund/BVN migrations, which UPDATE an existing row),
+  // so it needs an INSERT-if-not-exists migration for already-provisioned
+  // DBs alongside this seed entry. See PHASE_3_BURSAR_PERMISSIONS for the
+  // exclusion rationale (auth.2fa.*, staff-bvn.*, payment.refund).
+  {
+    key: "bursar",
+    name: "Bursar",
+    description:
+      "Finance operator — fee catalog, discounts, invoices, payments (excluding refunds), payment plans, debtor reminders, expenses, and the finance dashboard. No academic, roster, staff, or school-settings access. Phase 3 slice 15 RBAC close-out.",
+    permissions: [...PHASE_3_BURSAR_PERMISSIONS],
   },
 ];

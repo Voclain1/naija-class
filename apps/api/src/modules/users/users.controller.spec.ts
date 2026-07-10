@@ -117,6 +117,32 @@ describe("Users endpoints (controller integration)", () => {
     expect(res.body.error?.code).toBe("VALIDATION_ERROR");
   });
 
+  it("POST /users/invite — roleKey: 'bursar' returns 201 with invitation.roleKey === 'bursar' (slice 15)", async () => {
+    const res = await request(app.getHttpServer())
+      .post("/api/v1/users/invite")
+      .set("Authorization", `Bearer ${ownerToken}`)
+      .send({
+        email: `ctrl-bursar-${runId}@example.test`,
+        roleKey: "bursar",
+      });
+
+    expect(res.status).toBe(201);
+    expect(res.body.invitation?.roleKey).toBe("bursar");
+  });
+
+  it("POST /users/invite — unknown roleKey returns 400 VALIDATION_ERROR (enum rejects it before the service runs)", async () => {
+    const res = await request(app.getHttpServer())
+      .post("/api/v1/users/invite")
+      .set("Authorization", `Bearer ${ownerToken}`)
+      .send({
+        email: `ctrl-badrole-${runId}@example.test`,
+        roleKey: "owner",
+      });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error?.code).toBe("VALIDATION_ERROR");
+  });
+
   // -----------------------------------------------------------------------
   // GET /users
   // -----------------------------------------------------------------------
