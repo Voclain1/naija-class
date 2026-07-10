@@ -427,16 +427,15 @@ Format:
   actually shipped). Trigger: first pilot school that needs the platform to
   run payroll rather than just store BVNs.
 
-- [ ] `audit-coverage.spec.ts` extended for `finance.*` mutations. The file
-  is still Phase-1-only ("every Phase 1 mutation writes one audit row");
-  Phase 3's finance mutations write their audit rows correctly (each
-  service spec asserts its own row inline, e.g.
-  `expense-category.service.spec.ts`'s "writes an audit log row" tests) but
-  there is no centralized regression lock for finance the way slice 13
-  built for Phase 1. phase-3.md's acceptance criterion #10 names this
-  explicitly; flagged unmet at slice 15 close-out rather than silently
-  checked off. Trigger: before Phase 3 is considered fully accepted, or the
-  first time a finance audit-row regression actually slips through.
+- [x] `audit-coverage.spec.ts` extended for `finance.*` mutations. **DONE**
+  (Phase 3 cleanup pass, 2026-07-10). Flagged unmet at slice 15 close-out;
+  a "Phase 3 Finance audit coverage" describe block was added mirroring the
+  Phase 1/2 blocks' pattern — one or two mutations per resource, not
+  exhaustive edge cases (those live in the per-service specs). Covers
+  `fee-category.{create,delete}`, `fee-item.{create,delete}`,
+  `discount-rule.{create,deactivate}`, `invoice.issue`, `payment.record`,
+  `refund.create`, `expense.{create,delete}`, and
+  `staff-bvn.{update,reveal}`.
 
 - [ ] Re-confirm the render-memory in-container gate (phase-3.md acceptance
   criterion #14) — the existing deferred.md item above ("Re-validate the
