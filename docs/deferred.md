@@ -13,6 +13,27 @@ Format:
 
 - [ ] Phone uniqueness on `users` will need re-thinking in Phase 4 when guardians arrive. Multiple parents may share one phone number. Consider moving phone to a Guardian table or relaxing uniqueness. — currently `@unique` on `users.phone` — Phase 4 trigger.
 
+- [ ] Recurring dev-server bootstrap hang on Windows: `node dist/main.js`
+  intermittently hangs right after `PartitionService`'s three "Partition
+  ensured" debug logs and never reaches `app.listen()` (no port bound, no
+  error, no crash — just stuck). Route mapping (`RoutesResolver`/
+  `RouterExplorer`) always completes first, so it's specifically the gap
+  between the last module's `onModuleInit` and the `NestFactory.create()`
+  promise resolving, or `app.listen()` itself. Observed across three
+  separate sessions (Slice 15's manual gate, Payroll CP3's manual gate,
+  Payroll CP4a's manual gate); the first two resolved after a kill+retry and
+  enough wall-clock patience (30–90s), the third did not resolve after ~4
+  minutes and 3 attempts with Docker/Postgres/Redis confirmed healthy
+  throughout. Never reproduced in the actual `pnpm test` suite (real
+  Postgres integration tests run fine) — only in a standalone compiled
+  server process. Never root-caused; no code fix applied because there's no
+  code path implicated (the hang is before/at `app.listen`, after every
+  module's own initialization already logged success). Trigger: if this
+  starts blocking CI (it hasn't — CI runs on Linux, this is Windows-dev-only)
+  or if it becomes reproducible enough to bisect (try running under
+  `--trace-warnings` / with BullMQ's queues disabled to narrow whether a
+  queue's Redis connection is the actual blocker).
+
 - [ ] Convert from `dotenv-cli` test wrapper to a shared test bootstrap that loads env the same way Nest does — keeps test and runtime env-loading aligned. — Phase 1 or before, low priority.
 
 - [ ] Migrate from bearer-token sessions to full Better Auth integration (cookies, OAuth, magic links, 2FA). Captured in ADR-001. Trigger: before parent OTP flows ship in Phase 4, or when a school owner asks for SSO.
