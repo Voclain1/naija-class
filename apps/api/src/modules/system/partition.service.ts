@@ -3,6 +3,15 @@ import { Cron } from "@nestjs/schedule";
 
 import { basePrisma } from "@school-kit/db";
 
+// onModuleInit must never block NestFactory.create() indefinitely — a slow
+// or saturated dev DB connection pool at startup previously produced a
+// silent, unbounded hang (app.listen() never reached, no error, no crash;
+// see docs/deferred.md's "recurring dev-server bootstrap hang" entry). This
+// is a fixed ceiling on how long the startup partition check may take, not a
+// tuned value — the monthly cron (createNextMonthPartitions) is the durable
+// path; onModuleInit is a best-effort cold-start convenience on top of it.
+const ON_MODULE_INIT_TIMEOUT_MS = 5000;
+
 @Injectable()
 export class PartitionService implements OnModuleInit {
   private readonly logger = new Logger(PartitionService.name);
@@ -10,8 +19,33 @@ export class PartitionService implements OnModuleInit {
   // On startup: ensure the current month and next 2 months always have a
   // named partition. Protects against cold-starts after a deployment gap
   // (e.g. app was down over a month boundary).
+  //
+  // Deliberately non-fatal: if the DB is slow/unreachable at boot, this logs
+  // a warning and lets NestJS finish starting rather than hanging forever or
+  // crashing the process. The @Cron job below retries monthly regardless, so
+  // a school running through the current + next 2 months without this
+  // startup check succeeding is the worst case, not data loss — a missing
+  // partition only bites if a row is ever inserted for that unlisted month,
+  // which create_audit_log_partition's caller (audit writes) would then
+  // surface as a real, visible error, not a silent gap.
   async onModuleInit() {
-    await this.ensurePartitionsForNextMonths(2);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([
+        this.ensurePartitionsForNextMonths(2),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(
+            () => reject(new Error(`timed out after ${ON_MODULE_INIT_TIMEOUT_MS}ms`)),
+            ON_MODULE_INIT_TIMEOUT_MS,
+          );
+        }),
+      ]);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.warn(`PartitionService.onModuleInit failed (non-fatal): ${message}`);
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   // Runs on the 20th of each month at midnight UTC. Creates the partition for

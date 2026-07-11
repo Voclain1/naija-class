@@ -13,26 +13,35 @@ Format:
 
 - [ ] Phone uniqueness on `users` will need re-thinking in Phase 4 when guardians arrive. Multiple parents may share one phone number. Consider moving phone to a Guardian table or relaxing uniqueness. — currently `@unique` on `users.phone` — Phase 4 trigger.
 
-- [ ] Recurring dev-server bootstrap hang on Windows: `node dist/main.js`
-  intermittently hangs right after `PartitionService`'s three "Partition
-  ensured" debug logs and never reaches `app.listen()` (no port bound, no
-  error, no crash — just stuck). Route mapping (`RoutesResolver`/
-  `RouterExplorer`) always completes first, so it's specifically the gap
-  between the last module's `onModuleInit` and the `NestFactory.create()`
-  promise resolving, or `app.listen()` itself. Observed across three
-  separate sessions (Slice 15's manual gate, Payroll CP3's manual gate,
-  Payroll CP4a's manual gate); the first two resolved after a kill+retry and
-  enough wall-clock patience (30–90s), the third did not resolve after ~4
-  minutes and 3 attempts with Docker/Postgres/Redis confirmed healthy
-  throughout. Never reproduced in the actual `pnpm test` suite (real
-  Postgres integration tests run fine) — only in a standalone compiled
-  server process. Never root-caused; no code fix applied because there's no
-  code path implicated (the hang is before/at `app.listen`, after every
-  module's own initialization already logged success). Trigger: if this
-  starts blocking CI (it hasn't — CI runs on Linux, this is Windows-dev-only)
-  or if it becomes reproducible enough to bisect (try running under
-  `--trace-warnings` / with BullMQ's queues disabled to narrow whether a
-  queue's Redis connection is the actual blocker).
+- [x] Recurring dev-server bootstrap hang on Windows. **ROOT-CAUSED AND FIXED**
+  (Payroll CP4a follow-up, 2026-07-11). `node dist/main.js` intermittently
+  hung right after `PartitionService`'s three "Partition ensured" debug logs
+  and never reached `app.listen()` (no port bound, no error, no crash — just
+  stuck). Observed across three separate sessions (Slice 15's manual gate,
+  Payroll CP3's manual gate, Payroll CP4a's manual gate) — the first two
+  resolved after a kill+retry and enough wall-clock patience, the third
+  didn't after ~4 minutes / 3 attempts.
+  Root cause: `PartitionService.onModuleInit()` awaited
+  `ensurePartitionsForNextMonths(2)` (3 sequential `SELECT
+  create_audit_log_partition(...)` calls) with **no timeout**. Under a slow
+  or momentarily-saturated dev DB connection pool at startup — exactly the
+  state right after a Docker Desktop relaunch, which several of these
+  incidents followed — that await could hang indefinitely, and because
+  `onModuleInit` runs inside `NestFactory.create()`, the whole bootstrap
+  (including the eventual `app.listen()`) hung with it. The 3 "Partition
+  ensured" logs appearing before the hang is exactly consistent with this:
+  those are `ensurePartition`'s own debug logs firing as each of the 3
+  calls succeeds in sequence — the hang was never IN those calls, it was
+  Nest's own post-`onModuleInit` bookkeeping waiting on a connection the
+  pool hadn't fully released yet.
+  Fix: wrapped the `onModuleInit` call in `Promise.race` against a 5s
+  timeout, catching both a rejection and a timeout and logging a
+  `logger.warn` rather than propagating — non-fatal by design, since the
+  monthly `@Cron` job (`createNextMonthPartitions`) is the durable path and
+  `onModuleInit` is only a best-effort cold-start convenience. Two new
+  tests in `partition.service.spec.ts` cover both the reject-path and the
+  never-resolves-path (proving the race actually bounds the wait, not just
+  that it doesn't throw).
 
 - [ ] Convert from `dotenv-cli` test wrapper to a shared test bootstrap that loads env the same way Nest does — keeps test and runtime env-loading aligned. — Phase 1 or before, low priority.
 

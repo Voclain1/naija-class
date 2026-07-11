@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { Test } from "@nestjs/testing";
 import { ScheduleModule } from "@nestjs/schedule";
 
@@ -75,5 +75,42 @@ describe("PartitionService (integration)", () => {
 
   it("onModuleInit ensures the current and next 2 months without throwing", async () => {
     await expect(service.onModuleInit()).resolves.not.toThrow();
+  });
+
+  describe("onModuleInit — non-fatal on DB failure or timeout (fix for the startup hang)", () => {
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it("resolves (never throws) and logs a warning when the DB call rejects", async () => {
+      const dbError = new Error("connection terminated unexpectedly");
+      vi.spyOn(service, "ensurePartitionsForNextMonths").mockRejectedValueOnce(dbError);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const warnSpy = vi.spyOn((service as any).logger, "warn");
+
+      await expect(service.onModuleInit()).resolves.toBeUndefined();
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+      expect(warnSpy.mock.calls[0]![0]).toContain("connection terminated unexpectedly");
+    });
+
+    it("resolves within the timeout ceiling (never hangs) when the DB call never settles", async () => {
+      vi.spyOn(service, "ensurePartitionsForNextMonths").mockReturnValueOnce(
+        new Promise(() => {
+          /* never resolves — simulates a saturated connection pool at startup */
+        }),
+      );
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const warnSpy = vi.spyOn((service as any).logger, "warn");
+
+      const start = Date.now();
+      await expect(service.onModuleInit()).resolves.toBeUndefined();
+      const elapsed = Date.now() - start;
+
+      // Bounded, not instant and not indefinite — proves the race actually
+      // raced rather than the mock coincidentally resolving fast.
+      expect(elapsed).toBeGreaterThanOrEqual(4900);
+      expect(elapsed).toBeLessThan(8000);
+      expect(warnSpy.mock.calls[0]![0]).toContain("timed out");
+    });
   });
 });
