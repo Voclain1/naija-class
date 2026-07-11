@@ -11,3 +11,4 @@ export * from "./payment-plan.dto.js";
 export * from "./payment.dto.js";
 export * from "./payroll.dto.js";
 export * from "./refund.dto.js";
+export * from "./staff-bank-account.dto.js";

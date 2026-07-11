@@ -42,6 +42,7 @@ import { PaymentsController } from "../modules/payments/payments.controller";
 import { PaystackController } from "../modules/payments/paystack.controller";
 import { RefundsController } from "../modules/payments/refunds.controller";
 import { PayrollController } from "../modules/payroll/payroll.controller";
+import { StaffBankAccountController } from "../modules/staff-bank-accounts/staff-bank-account.controller";
 import { BvnController } from "../modules/users/bvn.controller";
 
 // Static RBAC safety net (slice 13). Every route handler on a Phase 1
@@ -569,6 +570,42 @@ describe("Phase 3 RBAC coverage: payroll route handlers declare @Permissions", (
     expect(bursarPerms.has("payroll.read")).toBe(true);
     expect(bursarPerms.has("payroll.process")).toBe(true);
     expect(bursarPerms.has("payroll.transfer")).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Payroll CP4a — StaffBankAccountController coverage. Gated by
+// payroll.process throughout (not a new permission string) — setting up
+// WHERE a staff member's salary goes is routine payroll administration, the
+// same tier as creating/approving a PayrollItem; only payroll.transfer (the
+// actual money movement) is admin+owner only.
+// ---------------------------------------------------------------------------
+
+const PHASE_3_STAFF_BANK_ACCOUNT_CONTROLLERS: Array<[string, Ctor]> = [
+  ["StaffBankAccountController", StaffBankAccountController],
+];
+
+describe("Phase 3 RBAC coverage: staff bank account route handlers declare @Permissions", () => {
+  assertCoverage(PHASE_3_STAFF_BANK_ACCOUNT_CONTROLLERS);
+
+  it("every staff bank account @Permissions value is a known Phase 3 permission", () => {
+    const unknown: string[] = [];
+    for (const [name, ctor] of PHASE_3_STAFF_BANK_ACCOUNT_CONTROLLERS) {
+      for (const p of handlerPermissions(ctor)) {
+        if (!PHASE_3_SET.has(p)) unknown.push(`${name}:${p}`);
+      }
+    }
+    expect(unknown, `unknown Phase 3 permission(s): ${unknown.join(", ")}`).toEqual([]);
+  });
+
+  it("verify/create/findByUser/deactivate all carry payroll.process", () => {
+    const proto = StaffBankAccountController.prototype as unknown as Record<string, unknown>;
+    for (const handler of ["verify", "create", "findByUser", "deactivate"]) {
+      expect(
+        Reflect.getMetadata(PERMISSIONS_METADATA_KEY, proto[handler] as object),
+        `${handler} @Permissions`,
+      ).toEqual(["payroll.process"]);
+    }
   });
 });
 

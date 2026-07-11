@@ -1529,6 +1529,43 @@ model PayrollItem {
   @@map("payroll_items")
 }
 
+// Current bank details for a staff member — NOT a history table. One row per
+// (schoolId, userId); changing banks updates the row in place, same mutable-
+// fields convention as TeacherProfile. Reused across every monthly payroll
+// run, which is why this isn't a column on PayrollItem (would mean
+// re-entering bank details every period) or on User (would push a Phase-3
+// finance concern onto a Phase-0 foundational table shared by every future
+// user type). userId is a plain FK (no relation) — same convention as
+// Expense.categoryId and PayrollItem.userId; the service validates
+// existence + same-school before writing.
+//
+// accountName is Paystack's OWN resolved name from the /bank/resolve call,
+// never a user-typed value — the operator sees it and confirms before
+// saving (Payroll CP4 plan-first D1's "verify" UX step), and the server
+// independently re-resolves and compares at create time rather than
+// trusting the client's echoed value.
+//
+// paystackRecipientCode is created EAGERLY at save time (plan-first D2), not
+// lazily at first transfer — a bad account number surfaces during this
+// low-stakes "add bank details" step, not during a time-pressured payroll
+// run. `active` soft-disables an account (staff left, account compromised)
+// without losing the history of what was on file.
+model StaffBankAccount {
+  id                    String   @id @default(uuid())
+  schoolId              String   @map("school_id")
+  userId                String   @map("user_id") // plain FK -> users.id — the staff member
+  bankCode              String   @map("bank_code")
+  accountNumber         String   @map("account_number")
+  accountName           String   @map("account_name") // Paystack-resolved, never user-typed
+  paystackRecipientCode String   @map("paystack_recipient_code")
+  active                Boolean  @default(true)
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @updatedAt @map("updated_at")
+
+  @@unique([schoolId, userId]) // one current bank account per staff member per school
+  @@map("staff_bank_accounts")
+}
+
 // ---------- Subject-period attendance (Phase 2 / Slice 8 — opt-in) ----------
 
 // Subject-period attendance. SEPARATE table from daily — period-level semantics,
