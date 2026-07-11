@@ -9,4 +9,5 @@ export * from "./fee-item.dto.js";
 export * from "./invoice.dto.js";
 export * from "./payment-plan.dto.js";
 export * from "./payment.dto.js";
+export * from "./payroll.dto.js";
 export * from "./refund.dto.js";

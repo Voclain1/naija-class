@@ -1481,6 +1481,54 @@ model Expense {
   @@map("expenses")
 }
 
+// ---------- Payroll (Phase 3 / Slice 12 CP3+CP4) ----------------------------
+//
+// CP3 (this migration): DRAFT -> APPROVED, no money movement. PAID is set by
+// CP4 once Paystack transfers land — paystackTransferCode stays null until
+// then. FAILED covers a CP4 transfer rejection; CP3 never produces it.
+//
+// grossSalary/deductions are entered fresh per period (no reusable "salary
+// structure" table — see the plan-first D2: build one only if schools prove
+// they want a prefill shortcut). deductions is a flat line-item list
+// ([{ name, amount }] kobo), NOT a Nigerian PAYE tax-bracket engine (D3) —
+// the bursar computes/enters PAYE externally as one of the line items.
+// netSalary is computed server-side (grossSalary - sum(deductions)) and
+// stored, same "compute once, store the result" discipline as Invoice's
+// totalDue snapshot.
+//
+// userId is a plain FK (no relation) — same convention as Expense.categoryId
+// and FeeItem's scope columns; the service validates existence + same-school
+// before writing.
+enum PayrollStatus {
+  DRAFT
+  APPROVED
+  PAID
+  FAILED
+}
+
+model PayrollItem {
+  id                   String        @id @default(uuid())
+  schoolId             String        @map("school_id")
+  userId               String        @map("user_id") // plain FK -> users.id — the staff member being paid
+  period               String // e.g. "2026-07" — free-text, not a Term/AcademicYear FK (payroll runs monthly, terms don't)
+  grossSalary          Int           @map("gross_salary") // kobo — never Float (CLAUDE.md money hard rule)
+  deductions           Json // [{ name: string, amount: Int }] kobo — flat line items, not a tax engine (see header)
+  netSalary            Int           @map("net_salary") // computed: grossSalary - sum(deductions), stored
+  status               PayrollStatus @default(DRAFT)
+  payslipUrl           String?       @map("payslip_url") // R2 canonical path — signed on demand; see storage.types.ts "payroll-payslip"
+  approvedBy           String?       @map("approved_by") // userId of the admin/owner/bursar who approved
+  approvedAt           DateTime?     @map("approved_at")
+  paystackTransferCode String?       @map("paystack_transfer_code") // null until CP4
+  createdBy            String        @map("created_by")
+  createdAt            DateTime      @default(now()) @map("created_at")
+  updatedAt            DateTime      @updatedAt @map("updated_at")
+
+  @@unique([schoolId, userId, period]) // one payroll item per staff member per period
+  @@index([schoolId, period])
+  @@index([schoolId, userId])
+  @@map("payroll_items")
+}
+
 // ---------- Subject-period attendance (Phase 2 / Slice 8 — opt-in) ----------
 
 // Subject-period attendance. SEPARATE table from daily — period-level semantics,

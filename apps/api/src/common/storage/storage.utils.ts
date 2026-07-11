@@ -50,6 +50,12 @@ export function pathFor(schoolId: string, key: StorageObjectKey): string {
       }
       return `schools/${schoolId}/expenses/${key.expenseId}/receipt`;
     }
+    case "payroll-payslip": {
+      if (!UUID_RE.test(key.payrollItemId)) {
+        throw new Error(`storage: payrollItemId is not a UUID: ${redact(key.payrollItemId)}`);
+      }
+      return `schools/${schoolId}/payslips/${key.payrollItemId}.html`;
+    }
   }
 }
 

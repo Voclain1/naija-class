@@ -72,6 +72,19 @@ describe("storage.utils — pathFor() / importPrefixFor() refuse anything but UU
       pathFor(VALID_SCHOOL, { kind: "expense-receipt", expenseId: "../escape" }),
     ).toThrow(/expenseId/);
   });
+
+  it("returns the canonical .html layout for payroll-payslip", () => {
+    const key: StorageObjectKey = { kind: "payroll-payslip", payrollItemId: VALID_JOB };
+    expect(pathFor(VALID_SCHOOL, key)).toBe(
+      `schools/${VALID_SCHOOL}/payslips/${VALID_JOB}.html`,
+    );
+  });
+
+  it("refuses a non-UUID payrollItemId on pathFor()", () => {
+    expect(() =>
+      pathFor(VALID_SCHOOL, { kind: "payroll-payslip", payrollItemId: "../escape" }),
+    ).toThrow(/payrollItemId/);
+  });
 });
 
 describe("FilesystemStorageDriver — tenant path segregation + no raw-path escape", () => {

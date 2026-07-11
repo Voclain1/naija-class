@@ -25,7 +25,12 @@ export type StorageObjectKey =
   // here would require persisting it back on the Expense row just so a
   // later get()/signUrl()/delete() call could reconstruct the same key —
   // an extensionless path avoids that entirely.
-  | { kind: "expense-receipt"; expenseId: string };
+  | { kind: "expense-receipt"; expenseId: string }
+  // Phase 3 / Payroll CP3 — HTML payslip. Layout:
+  // schools/<schoolId>/payslips/<payrollItemId>.html
+  // Same shape as payment-receipt: always .html, canonical path persisted
+  // on PayrollItem.payslipUrl, signed on demand for viewing.
+  | { kind: "payroll-payslip"; payrollItemId: string };
 
 export type StorageDriverKind = "filesystem" | "r2";
 

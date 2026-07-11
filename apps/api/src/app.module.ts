@@ -30,6 +30,7 @@ import { GradingModule } from "./modules/grading/grading.module";
 import { GuardiansModule } from "./modules/guardians/guardians.module";
 import { ImportsModule } from "./modules/imports/imports.module";
 import { InvitationsModule } from "./modules/invitations/invitations.module";
+import { PayrollModule } from "./modules/payroll/payroll.module";
 import { ReportCardsModule } from "./modules/report-cards/report-cards.module";
 import { SchoolsModule } from "./modules/schools/schools.module";
 import { SystemModule } from "./modules/system/system.module";
@@ -103,6 +104,7 @@ const isProd = process.env.NODE_ENV === "production";
     PaymentsModule,
     FinanceModule,
     ExpensesModule,
+    PayrollModule,
     ...(isProd ? [] : [DebugModule]),
   ],
   controllers: [HealthController],
