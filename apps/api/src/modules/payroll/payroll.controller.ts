@@ -18,6 +18,7 @@ import {
   type PayrollItemDto,
   type PayrollStatus,
   type PayslipUrlDto,
+  type TransferPayrollResultDto,
   type UpdatePayrollItemInput,
 } from "@school-kit/types";
 
@@ -105,5 +106,18 @@ export class PayrollController {
     @Ip() ip: string,
   ): Promise<PayslipUrlDto> {
     return this.service.generatePayslip(authCtx, id, { ipAddress: ip });
+  }
+
+  // payroll.transfer is owner+admin only — excluded from bursar in
+  // PHASE_3_BURSAR_PERMISSIONS (see permissions.ts), asserted in
+  // permissions-coverage.spec.ts's KNOWN_BURSAR_EXCLUSIONS.
+  @Post(":id/transfer")
+  @Permissions("payroll.transfer")
+  async transfer(
+    @Param("id") id: string,
+    @CurrentUser() authCtx: AuthContext,
+    @Ip() ip: string,
+  ): Promise<TransferPayrollResultDto> {
+    return this.service.transfer(authCtx, id, { ipAddress: ip });
   }
 }
