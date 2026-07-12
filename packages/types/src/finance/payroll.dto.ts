@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const payrollStatusValues = ["DRAFT", "APPROVED", "PAID", "FAILED"] as const;
+export const payrollStatusValues = ["DRAFT", "APPROVED", "PROCESSING", "PAID", "FAILED"] as const;
 export type PayrollStatus = (typeof payrollStatusValues)[number];
 
 // Flat line item — NOT a Nigerian PAYE tax-bracket engine (plan-first D3).
@@ -60,4 +60,14 @@ export interface ListPayrollQuery {
 export interface PayslipUrlDto {
   url: string;
   expiresAt: Date;
+}
+
+// POST /payroll/:id/transfer response — status is always "PROCESSING" at
+// this point (PAID/FAILED only arrive later, via the transfer.success/
+// failed/reversed webhook). transferCode is Paystack's own transfer_code,
+// exposed so the operator's UI can show which Paystack transfer this
+// PayrollItem is now waiting on.
+export interface TransferPayrollResultDto {
+  status: Extract<PayrollStatus, "PROCESSING">;
+  transferCode: string;
 }

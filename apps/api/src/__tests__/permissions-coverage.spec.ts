@@ -559,6 +559,11 @@ describe("Phase 3 RBAC coverage: payroll route handlers declare @Permissions", (
     expect(Reflect.getMetadata(PERMISSIONS_METADATA_KEY, proto["generatePayslip"] as object)).toEqual([
       "payroll.process",
     ]);
+    // CP4b: transfer carries the separate, higher-trust payroll.transfer
+    // permission — not payroll.process — since it's owner+admin only.
+    expect(Reflect.getMetadata(PERMISSIONS_METADATA_KEY, proto["transfer"] as object)).toEqual([
+      "payroll.transfer",
+    ]);
   });
 
   it("admin and bursar are granted payroll.read + payroll.process; bursar lacks payroll.transfer", () => {

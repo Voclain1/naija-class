@@ -43,6 +43,46 @@ Format:
   never-resolves-path (proving the race actually bounds the wait, not just
   that it doesn't throw).
 
+  **CORRECTION (Payroll CP4b, 2026-07-12):** the PartitionService fix above
+  is real and correct, but it was NOT the whole story. The live manual gate
+  for CP4b hit the same "hangs after PartitionService's logs" symptom again
+  even with the timeout fix in place — it wasn't hanging, it was just very
+  slow: `FinanceService.onModuleInit()` unconditionally calls
+  `transitionOverdueInvoices()` at boot, which sweeps every `ACTIVE` school
+  with no bound. The dev DB had accumulated **54,106 schools** since
+  2026-05-14 (54,095 matching the Vitest spec-fixture slug pattern
+  `<module>-<suffix>-<runId>`, owner emails on `@example.test`) — two
+  months of integration-test schools that each spec file's `afterAll()`
+  is supposed to delete but clearly isn't fully doing, session over
+  session. The sweep over that backlog took **3m16s** on the CP4b boot
+  (log: `OVERDUE transition: 7 invoice(s) marked across 50524 school(s)`
+  immediately followed by `Nest application successfully started`) — not
+  infinite, just long enough that every prior attempt (including two of
+  mine) gave up first and misattributed the wait entirely to
+  PartitionService. Pruned the accumulated test schools (see the CP4b PR)
+  as the immediate fix; `FinanceService.onModuleInit()` itself still has
+  no timeout/bound and would slow-start again given enough accumulated
+  data (dev or, less plausibly, a very large real school count in prod) —
+  worth the same `Promise.race`-with-timeout treatment PartitionService
+  got, as a follow-up.
+
+  **Why the backlog kept accumulating, found while pruning it:**
+  `User.school` (`schema.prisma:108`) has no `onDelete: Cascade` — Postgres
+  confirms `users_school_id_fkey` is plain `RESTRICT` (`confdeltype = 'r'`),
+  unlike the ~26 other School-owned relations that do cascade. Every spec
+  file's `afterAll(() => basePrisma.school.delete({ where: { id } }).catch(()
+  => undefined))` has therefore been silently failing on the FK violation
+  for the project's entire history — the `.catch` swallows it, the test
+  reports green, and the school row (plus its users) never actually goes
+  away. That's the real mechanism behind the 54k backlog, not a one-off.
+  Pruning it required an explicit dependency-ordered delete (null
+  `class_arms.class_teacher_id` first — `NO ACTION` from User — then
+  `users`, then `schools`) rather than a single cascading `DELETE FROM
+  schools`. Left as-is for now (adding `onDelete: Cascade` to `User.school`
+  touches a Phase-0 foundational model, out of scope for a payroll slice) —
+  worth a dedicated migration + RLS-spec re-check before the backlog
+  re-accumulates.
+
 - [ ] Convert from `dotenv-cli` test wrapper to a shared test bootstrap that loads env the same way Nest does — keeps test and runtime env-loading aligned. — Phase 1 or before, low priority.
 
 - [ ] Migrate from bearer-token sessions to full Better Auth integration (cookies, OAuth, magic links, 2FA). Captured in ADR-001. Trigger: before parent OTP flows ship in Phase 4, or when a school owner asks for SSO.

@@ -22,6 +22,7 @@ import { Permissions } from "../../common/auth/permissions.decorator.js";
 import { PermissionsGuard } from "../../common/auth/permissions.guard.js";
 import { PaystackWebhookGuard } from "../../common/paystack/paystack-webhook.guard.js";
 import { ZodValidationPipe } from "../../common/zod-validation.pipe.js";
+import { PayrollService } from "../payroll/payroll.service.js";
 import { PaymentsService } from "./payments.service.js";
 
 // Paystack-specific endpoints are on a SEPARATE controller (not a sub-route of
@@ -34,7 +35,10 @@ import { PaymentsService } from "./payments.service.js";
 
 @Controller("payments/paystack")
 export class PaystackController {
-  constructor(private readonly service: PaymentsService) {}
+  constructor(
+    private readonly service: PaymentsService,
+    private readonly payrollService: PayrollService,
+  ) {}
 
   // POST /payments/paystack/init
   // Initiates a Paystack inline checkout. Returns an authorization_url for the
@@ -54,11 +58,20 @@ export class PaystackController {
   // Receives Paystack webhook events. Always returns 200 — non-2xx triggers
   // Paystack retries. Authenticated via HMAC-SHA512 signature (PaystackWebhookGuard);
   // no user session required.
+  //
+  // Routes by event-name prefix: charge.* events are student-fee payments
+  // (PaymentsService), transfer.* events are staff salary payouts
+  // (PayrollService, added CP4b). Same webhook endpoint for both — Paystack
+  // sends every event type to the one URL configured in the dashboard.
   @Post("webhook")
   @HttpCode(200)
   @UseGuards(PaystackWebhookGuard)
   async handleWebhook(@Body() event: PaystackWebhookEvent): Promise<{ status: string }> {
-    await this.service.handleWebhook(event);
+    if (event.event.startsWith("transfer.")) {
+      await this.payrollService.handleTransferWebhook(event);
+    } else {
+      await this.service.handleWebhook(event);
+    }
     return { status: "ok" };
   }
 

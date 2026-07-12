@@ -10,18 +10,43 @@ import { ConflictError, NotFoundError } from "@school-kit/types";
 import { FilesystemStorageDriver } from "../../common/storage/filesystem-storage.driver";
 import { StorageService } from "../../common/storage/storage.service";
 import { AuthService } from "../auth/auth.service";
-import { PayrollService } from "./payroll.service";
+import { PayrollService, parsePayrollTransferReference } from "./payroll.service";
 
-// Phase 3 / Payroll CP3 — payroll integration spec. Real DB + RLS + real
+// Phase 3 / Payroll CP3+CP4b — payroll integration spec. Real DB + RLS + real
 // filesystem storage driver (mocking Prisma or storage here would defeat the
-// point — the whole feature is "does the round-trip actually work").
+// point — the whole feature is "does the round-trip actually work"), but
+// PaystackService IS stubbed for the transfer/webhook tests — same
+// precedent payments.service.spec.ts and staff-bank-account.service.spec.ts
+// already established (makePaystackStub): a hand-rolled object implementing
+// the method surface, injected via the constructor, no real network calls.
+//
 // Covers: create (happy, netSalary computation, duplicate period rejected,
 // unknown staff rejected), update (DRAFT only, netSalary recomputed), approve
 // (DRAFT -> APPROVED, audit row, cannot re-approve), payslip generation
-// (APPROVED-only guard, URL persisted + signed), cross-tenant isolation.
-//
-// No CP4 (Paystack transfer) coverage here — paystackTransferCode/PAID/FAILED
-// are out of scope until that checkpoint lands.
+// (APPROVED-only guard, URL persisted + signed), cross-tenant isolation,
+// transfer (happy path, insufficient balance, wrong status, no bank
+// account), and the transfer.success/failed/reversed webhook (including
+// idempotency on an already-terminal row).
+
+// Stub PaystackService so integration tests don't hit the real Paystack API.
+// Overrides allow individual tests to simulate an insufficient balance or a
+// transfer-initiation failure.
+function makePaystackStub(overrides: {
+  getBalance?: (...args: unknown[]) => Promise<unknown>;
+  initiateTransfer?: (...args: unknown[]) => Promise<unknown>;
+} = {}) {
+  return {
+    getBalance: overrides.getBalance ?? (async () => ({ currency: "NGN", balance: 100_000_000_00 })),
+    initiateTransfer:
+      overrides.initiateTransfer ??
+      (async ({ reference }: { reference: string }) => ({
+        transfer_code: `TRF_${Math.random().toString(36).slice(2)}`,
+        status: "pending",
+        reference,
+        amount: 0,
+      })),
+  };
+}
 
 let phoneCounter = 0;
 function randomPhone(): string {
@@ -37,11 +62,44 @@ function ctx(schoolId: string, userId: string) {
   return { sessionId: "sess", userId, schoolId };
 }
 
+describe("parsePayrollTransferReference", () => {
+  const schoolId = "550e8400-e29b-41d4-a716-446655440000";
+  const payrollItemId = "660f9511-f3ac-52e5-b827-557766551111";
+
+  it("parses a well-formed reference", () => {
+    const ref = `PAY-${schoolId}-${payrollItemId}`;
+    expect(parsePayrollTransferReference(ref)).toEqual({ schoolId, payrollItemId });
+  });
+
+  it("returns null for a string without the PAY- prefix", () => {
+    expect(parsePayrollTransferReference(`${schoolId}-${payrollItemId}`)).toBeNull();
+  });
+
+  it("returns null for an empty string", () => {
+    expect(parsePayrollTransferReference("")).toBeNull();
+  });
+
+  it("returns null when the schoolId portion is not a valid UUID", () => {
+    expect(parsePayrollTransferReference(`PAY-not-a-uuid-${payrollItemId}`)).toBeNull();
+  });
+
+  it("returns null when the payrollItemId portion is not a valid UUID", () => {
+    expect(parsePayrollTransferReference(`PAY-${schoolId}-not-a-uuid`)).toBeNull();
+  });
+
+  it("returns null for a truncated reference", () => {
+    expect(parsePayrollTransferReference(`PAY-${schoolId}`)).toBeNull();
+  });
+});
+
 describe("PayrollService", () => {
   const runId = Math.random().toString(36).slice(2, 8);
   const auth = new AuthService();
   const storageRoot = mkdtempSync(join(tmpdir(), "schoolkit-payroll-storage-"));
-  const svc = new PayrollService(new StorageService(new FilesystemStorageDriver(storageRoot)));
+  const svc = new PayrollService(
+    new StorageService(new FilesystemStorageDriver(storageRoot)),
+    makePaystackStub() as never,
+  );
   const schoolIds = new Set<string>();
 
   afterAll(async () => {
@@ -88,6 +146,40 @@ describe("PayrollService", () => {
       });
       return u.id;
     });
+  }
+
+  // Direct insert, bypassing StaffBankAccountService — these tests only need
+  // an active recipient code present, not the verify/create round-trip
+  // (already covered by staff-bank-account.service.spec.ts).
+  async function makeBankAccount(schoolId: string, userId: string, opts: { active?: boolean } = {}): Promise<void> {
+    await withTenant(schoolId, (db) =>
+      db.staffBankAccount.create({
+        data: {
+          schoolId,
+          userId,
+          bankCode: "058",
+          accountNumber: "0123456789",
+          accountName: "Sam Staff",
+          paystackRecipientCode: `RCP_${Math.random().toString(36).slice(2)}`,
+          active: opts.active ?? true,
+        },
+      }),
+    );
+  }
+
+  async function makeApprovedPayrollItem(
+    schoolId: string,
+    ownerId: string,
+    staffId: string,
+    period = "2026-09",
+  ): Promise<string> {
+    const created = await svc.create(
+      ctx(schoolId, ownerId),
+      { userId: staffId, period, grossSalary: 300_000_00, deductions: [] },
+      reqCtx,
+    );
+    await svc.approve(ctx(schoolId, ownerId), created.id, reqCtx);
+    return created.id;
   }
 
   describe("create", () => {
@@ -338,6 +430,218 @@ describe("PayrollService", () => {
 
       const listB = await svc.findAll(ctx(b.schoolId, b.ownerId), { period: "2026-08" });
       expect(listB).toHaveLength(0);
+    });
+  });
+
+  describe("transfer", () => {
+    it("happy path: APPROVED -> PROCESSING, transfer initiated, transferCode stored, audit written", async () => {
+      const { schoolId, ownerId } = await makeSchool("t1");
+      const staffId = await makeStaff(schoolId, "t1");
+      await makeBankAccount(schoolId, staffId);
+      const itemId = await makeApprovedPayrollItem(schoolId, ownerId, staffId, "2026-09");
+
+      const svcWithStack = new PayrollService(
+        new StorageService(new FilesystemStorageDriver(storageRoot)),
+        makePaystackStub() as never,
+      );
+      const result = await svcWithStack.transfer(ctx(schoolId, ownerId), itemId, reqCtx);
+
+      expect(result.status).toBe("PROCESSING");
+      expect(result.transferCode).toMatch(/^TRF_/);
+
+      const row = await withTenant(schoolId, (db) =>
+        db.payrollItem.findUniqueOrThrow({ where: { id: itemId } }),
+      );
+      expect(row.status).toBe("PROCESSING");
+      expect(row.paystackTransferCode).toBe(result.transferCode);
+
+      const audit = await withTenant(schoolId, (db) =>
+        db.auditLog.findFirst({ where: { action: "payroll.transfer", entityId: itemId } }),
+      );
+      expect(audit).toBeTruthy();
+      expect((audit!.metadata as Record<string, unknown>).paystackTransferCode).toBe(result.transferCode);
+      // No salary amount in this audit row, by design.
+      expect((audit!.metadata as Record<string, unknown>).netSalary).toBeUndefined();
+    });
+
+    it("insufficient balance: throws ConflictError, status untouched", async () => {
+      const { schoolId, ownerId } = await makeSchool("t2");
+      const staffId = await makeStaff(schoolId, "t2");
+      await makeBankAccount(schoolId, staffId);
+      const itemId = await makeApprovedPayrollItem(schoolId, ownerId, staffId, "2026-09");
+
+      const svcLowBalance = new PayrollService(
+        new StorageService(new FilesystemStorageDriver(storageRoot)),
+        makePaystackStub({ getBalance: async () => ({ currency: "NGN", balance: 0 }) }) as never,
+      );
+
+      await expect(
+        svcLowBalance.transfer(ctx(schoolId, ownerId), itemId, reqCtx),
+      ).rejects.toBeInstanceOf(ConflictError);
+
+      const row = await withTenant(schoolId, (db) =>
+        db.payrollItem.findUniqueOrThrow({ where: { id: itemId } }),
+      );
+      expect(row.status).toBe("APPROVED");
+    });
+
+    it("wrong status: rejects transferring a DRAFT item", async () => {
+      const { schoolId, ownerId } = await makeSchool("t3");
+      const staffId = await makeStaff(schoolId, "t3");
+      await makeBankAccount(schoolId, staffId);
+      const created = await svc.create(
+        ctx(schoolId, ownerId),
+        { userId: staffId, period: "2026-09", grossSalary: 300_000_00, deductions: [] },
+        reqCtx,
+      );
+
+      await expect(
+        svc.transfer(ctx(schoolId, ownerId), created.id, reqCtx),
+      ).rejects.toBeInstanceOf(ConflictError);
+    });
+
+    it("no bank account: rejects with ConflictError", async () => {
+      const { schoolId, ownerId } = await makeSchool("t4");
+      const staffId = await makeStaff(schoolId, "t4");
+      const itemId = await makeApprovedPayrollItem(schoolId, ownerId, staffId, "2026-09");
+
+      await expect(
+        svc.transfer(ctx(schoolId, ownerId), itemId, reqCtx),
+      ).rejects.toBeInstanceOf(ConflictError);
+    });
+
+    it("no bank account: an inactive account also rejects with ConflictError", async () => {
+      const { schoolId, ownerId } = await makeSchool("t5");
+      const staffId = await makeStaff(schoolId, "t5");
+      await makeBankAccount(schoolId, staffId, { active: false });
+      const itemId = await makeApprovedPayrollItem(schoolId, ownerId, staffId, "2026-09");
+
+      await expect(
+        svc.transfer(ctx(schoolId, ownerId), itemId, reqCtx),
+      ).rejects.toBeInstanceOf(ConflictError);
+    });
+  });
+
+  describe("handleTransferWebhook", () => {
+    async function makeProcessingPayrollItem(
+      schoolId: string,
+      ownerId: string,
+      staffId: string,
+      period: string,
+    ): Promise<{ itemId: string; reference: string }> {
+      await makeBankAccount(schoolId, staffId);
+      const itemId = await makeApprovedPayrollItem(schoolId, ownerId, staffId, period);
+      const svcWithStack = new PayrollService(
+        new StorageService(new FilesystemStorageDriver(storageRoot)),
+        makePaystackStub() as never,
+      );
+      await svcWithStack.transfer(ctx(schoolId, ownerId), itemId, reqCtx);
+      return { itemId, reference: `PAY-${schoolId}-${itemId}` };
+    }
+
+    it("transfer.success: PROCESSING -> PAID, audit written", async () => {
+      const { schoolId, ownerId } = await makeSchool("w1");
+      const staffId = await makeStaff(schoolId, "w1");
+      const { itemId, reference } = await makeProcessingPayrollItem(schoolId, ownerId, staffId, "2026-09");
+
+      await svc.handleTransferWebhook({
+        event: "transfer.success",
+        data: { reference, status: "success", amount: 300_000_00, paid_at: new Date().toISOString() },
+      });
+
+      const row = await withTenant(schoolId, (db) => db.payrollItem.findUniqueOrThrow({ where: { id: itemId } }));
+      expect(row.status).toBe("PAID");
+
+      const audit = await withTenant(schoolId, (db) =>
+        db.auditLog.findFirst({ where: { action: "payroll.transfer.success", entityId: itemId } }),
+      );
+      expect(audit).toBeTruthy();
+    });
+
+    it("transfer.failed: PROCESSING -> FAILED, audit written", async () => {
+      const { schoolId, ownerId } = await makeSchool("w2");
+      const staffId = await makeStaff(schoolId, "w2");
+      const { itemId, reference } = await makeProcessingPayrollItem(schoolId, ownerId, staffId, "2026-09");
+
+      await svc.handleTransferWebhook({
+        event: "transfer.failed",
+        data: { reference, status: "failed", amount: 300_000_00, paid_at: null },
+      });
+
+      const row = await withTenant(schoolId, (db) => db.payrollItem.findUniqueOrThrow({ where: { id: itemId } }));
+      expect(row.status).toBe("FAILED");
+
+      const audit = await withTenant(schoolId, (db) =>
+        db.auditLog.findFirst({ where: { action: "payroll.transfer.failed", entityId: itemId } }),
+      );
+      expect(audit).toBeTruthy();
+    });
+
+    it("transfer.reversed: PAID -> FAILED, audit written (distinction preserved in action name)", async () => {
+      const { schoolId, ownerId } = await makeSchool("w3");
+      const staffId = await makeStaff(schoolId, "w3");
+      const { itemId, reference } = await makeProcessingPayrollItem(schoolId, ownerId, staffId, "2026-09");
+
+      // First the transfer succeeds...
+      await svc.handleTransferWebhook({
+        event: "transfer.success",
+        data: { reference, status: "success", amount: 300_000_00, paid_at: new Date().toISOString() },
+      });
+      // ...then Paystack reverses it.
+      await svc.handleTransferWebhook({
+        event: "transfer.reversed",
+        data: { reference, status: "reversed", amount: 300_000_00, paid_at: null },
+      });
+
+      const row = await withTenant(schoolId, (db) => db.payrollItem.findUniqueOrThrow({ where: { id: itemId } }));
+      expect(row.status).toBe("FAILED");
+
+      const audit = await withTenant(schoolId, (db) =>
+        db.auditLog.findFirst({ where: { action: "payroll.transfer.reversed", entityId: itemId } }),
+      );
+      expect(audit).toBeTruthy();
+    });
+
+    it("idempotency: already PAID, transfer.success redelivery is skipped (no error, no duplicate audit)", async () => {
+      const { schoolId, ownerId } = await makeSchool("w4");
+      const staffId = await makeStaff(schoolId, "w4");
+      const { itemId, reference } = await makeProcessingPayrollItem(schoolId, ownerId, staffId, "2026-09");
+
+      await svc.handleTransferWebhook({
+        event: "transfer.success",
+        data: { reference, status: "success", amount: 300_000_00, paid_at: new Date().toISOString() },
+      });
+
+      // Redeliver the same event.
+      await expect(
+        svc.handleTransferWebhook({
+          event: "transfer.success",
+          data: { reference, status: "success", amount: 300_000_00, paid_at: new Date().toISOString() },
+        }),
+      ).resolves.toBeUndefined();
+
+      const auditRows = await withTenant(schoolId, (db) =>
+        db.auditLog.findMany({ where: { action: "payroll.transfer.success", entityId: itemId } }),
+      );
+      expect(auditRows).toHaveLength(1);
+    });
+
+    it("unrecognized reference format: no-op, does not throw", async () => {
+      await expect(
+        svc.handleTransferWebhook({
+          event: "transfer.success",
+          data: { reference: "NOT-A-REAL-REFERENCE", status: "success", amount: 0, paid_at: null },
+        }),
+      ).resolves.toBeUndefined();
+    });
+
+    it("unhandled event type: no-op, does not throw", async () => {
+      await expect(
+        svc.handleTransferWebhook({
+          event: "transfer.reversal_failed" as never,
+          data: { reference: "PAY-anything", status: "unknown", amount: 0, paid_at: null },
+        }),
+      ).resolves.toBeUndefined();
     });
   });
 });
