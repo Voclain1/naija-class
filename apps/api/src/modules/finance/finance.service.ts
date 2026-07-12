@@ -13,6 +13,16 @@ import {
 
 import type { AuthContext } from "../../common/auth/auth-context.js";
 
+// onModuleInit must never block NestFactory.create() indefinitely. Same fix
+// as PartitionService (see docs/deferred.md's "recurring dev-server bootstrap
+// hang" entry) — transitionOverdueInvoices() sweeps every ACTIVE school with
+// no bound, and a large school count (54,106 accumulated test schools were
+// found doing exactly this during Payroll CP4b's manual gate) makes this the
+// slow-startup path, not PartitionService. 10s, not 5s: this sweep
+// legitimately has more work per call (a school loop, not 3 fixed calls), so
+// it gets more headroom before we give up and let boot continue anyway.
+const ON_MODULE_INIT_TIMEOUT_MS = 10000;
+
 // ---------------------------------------------------------------------------
 // FinanceService — cross-entity aggregation: debtor list, OVERDUE cron, email
 // ---------------------------------------------------------------------------
@@ -28,8 +38,29 @@ export class FinanceService implements OnModuleInit {
     : null;
 
   // On startup: catch any invoices that went overdue while the API was down.
+  // Deliberately non-fatal, same reasoning as PartitionService: the daily
+  // @Cron below (5 0 * * *) is the durable path; onModuleInit is only a
+  // best-effort cold-start convenience on top of it. A slow/huge sweep here
+  // logs a warning and lets NestJS finish starting rather than hanging or
+  // crashing boot.
   async onModuleInit() {
-    await this.transitionOverdueInvoices();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([
+        this.transitionOverdueInvoices(),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(
+            () => reject(new Error(`timed out after ${ON_MODULE_INIT_TIMEOUT_MS}ms`)),
+            ON_MODULE_INIT_TIMEOUT_MS,
+          );
+        }),
+      ]);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.warn(`FinanceService.onModuleInit failed (non-fatal): ${message}`);
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   // ─── Debtor list ──────────────────────────────────────────────────────────
