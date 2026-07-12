@@ -1,4 +1,4 @@
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 
 import { basePrisma, withTenant } from "@school-kit/db";
 import { NotFoundError, type InvoiceStatus } from "@school-kit/types";
@@ -229,6 +229,52 @@ describe("FinanceService (integration)", () => {
       db.invoice.findUniqueOrThrow({ where: { id: invoiceId }, select: { status: true } }),
     );
     expect(invoice.status).toBe("ISSUED");
+  });
+
+  // ── onModuleInit — non-fatal on DB failure or timeout (mirrors ────────────
+  // PartitionService's fix; see docs/deferred.md's "recurring dev-server
+  // bootstrap hang" entry — this sweep, not PartitionService, turned out to
+  // be the slow-startup path once the dev DB accumulated enough schools) ───
+
+  describe("onModuleInit", () => {
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it("resolves (never throws) and logs a warning when the sweep rejects", async () => {
+      const svc = new FinanceService();
+      const dbError = new Error("connection terminated unexpectedly");
+      vi.spyOn(svc, "transitionOverdueInvoices").mockRejectedValueOnce(dbError);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const warnSpy = vi.spyOn((svc as any).logger, "warn");
+
+      await expect(svc.onModuleInit()).resolves.toBeUndefined();
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+      expect(warnSpy.mock.calls[0]![0]).toContain("connection terminated unexpectedly");
+    });
+
+    it("resolves within the timeout ceiling (never hangs) when the sweep never settles", async () => {
+      const svc = new FinanceService();
+      vi.spyOn(svc, "transitionOverdueInvoices").mockReturnValueOnce(
+        new Promise(() => {
+          /* never resolves — simulates an unbounded sweep over a huge schools table */
+        }),
+      );
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const warnSpy = vi.spyOn((svc as any).logger, "warn");
+
+      const start = Date.now();
+      await expect(svc.onModuleInit()).resolves.toBeUndefined();
+      const elapsed = Date.now() - start;
+
+      // Bounded, not instant and not indefinite — proves the race actually
+      // raced rather than the mock coincidentally resolving fast. 10s ceiling
+      // here (vs PartitionService's 5s) — see the ON_MODULE_INIT_TIMEOUT_MS
+      // comment in finance.service.ts for why.
+      expect(elapsed).toBeGreaterThanOrEqual(9900);
+      expect(elapsed).toBeLessThan(13000);
+      expect(warnSpy.mock.calls[0]![0]).toContain("timed out");
+    });
   });
 
   // ── listDebtors ──────────────────────────────────────────────────────────
