@@ -4,16 +4,23 @@
 # Usage:
 #   SMOKE_API_URL=https://school-kit-api.fly.dev bash scripts/smoke-test.sh
 #
-# Five ops:
+# Six ops:
 #   1. GET  /api/v1/health             → 200
 #   2. GET  /api/v1/health/db          → 200, role == "app_user"
 #   3. POST /api/v1/auth/signup-owner  → 201 (timestamp-suffixed smoke school)
 #   4. POST /api/v1/auth/login         → 200, body contains .token
 #   5. GET  /api/v1/schools/me         → 200, body.slug == smoke school slug
+#   6. GET  <portal>/api/health        → 200 (Phase 4 slice 1, apps/portal)
 #
 # Any failure exits non-zero. The deploy workflow auto-rolls back on failure.
 # Smoke schools (slug pattern: smoke-<unix-timestamp>) accumulate in staging.
 # Clean them with:  pnpm db:prune-smoke   (see scripts/prune-smoke-schools.sql)
+#
+# Op 6 targets SMOKE_PORTAL_URL if set, else the Vercel preview URL
+# (school-kit-portal.vercel.app) — swap the default to https://portal.schoolkit.ng
+# once CP2's manual gate confirms the custom domain serves the app correctly.
+# Not yet wired into deploy-staging.yml (phase-4.md D3: Vercel's own Git
+# integration deploys apps/portal independently of that workflow).
 
 set -euo pipefail
 
@@ -93,5 +100,19 @@ RETURNED_SLUG=$(printf '%s' "${SCHOOL_BODY}" | jq -r '.slug // empty')
 [[ "${RETURNED_SLUG}" == "${SLUG}" ]] || fail "op 5" "slug mismatch — expected '${SLUG}', got '${RETURNED_SLUG}'"
 echo "[OK] op 5 — GET /schools/me → 200 (slug=${RETURNED_SLUG})"
 
+
+# ── Op 6: portal health (Phase 4 slice 1) ───────────────────────────────────
+PORTAL_BASE="${SMOKE_PORTAL_URL:-https://school-kit-portal.vercel.app}"
+for i in $(seq 1 10); do
+  PORTAL_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "${PORTAL_BASE}/api/health")
+  if [[ "${PORTAL_STATUS}" == "200" ]]; then
+    break
+  fi
+  echo "  portal health check attempt ${i}/10 — got ${PORTAL_STATUS}, retrying in 5s..."
+  sleep 5
+done
+[[ "${PORTAL_STATUS}" == "200" ]] || fail "op 6" "GET ${PORTAL_BASE}/api/health expected 200, got ${PORTAL_STATUS} after 10 attempts"
+echo "[OK] op 6 — GET ${PORTAL_BASE}/api/health → 200"
+
 echo ""
-echo "Smoke test passed (5/5 ops). Smoke school: ${SLUG}"
+echo "Smoke test passed (6/6 ops). Smoke school: ${SLUG}"

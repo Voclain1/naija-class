@@ -518,6 +518,34 @@ When working on a module, prompt Claude Code: "Read `docs/modules/attendance.md`
 5. **WhatsApp vs SMS primacy** — WhatsApp Business has stricter rules but parents prefer it. Start with both via Termii.
 6. **AI cost subsidy** — bake AI costs into per-student pricing or meter them separately. The student tutor can get expensive at scale.
 
+## 12. Cookie and session strategy
+
+**Every session cookie is scoped to its exact serving subdomain — never a
+wildcard parent domain.** Different apps under `schoolkit.ng` are different
+trust boundaries (staff vs parents), even though they share a registrable
+domain. A cookie set with `Domain=.schoolkit.ng` would be sent to — and
+readable by — every current and future subdomain (a marketing site, a
+future school-branded subdomain, anything); scoping to the exact host
+(`Domain=portal.schoolkit.ng`, not `.schoolkit.ng`) means a session issued by
+one app is structurally never sent to another, with no reliance on
+application-level code to enforce it.
+
+**Per-app policy:**
+
+| App | Session mechanism | Cookie domain |
+|---|---|---|
+| `apps/web` (admin/teacher) | httpOnly `sk_token` cookie via Next.js proxy routes (ADR-002); `AuthGuard` on `apps/api` reads `Authorization: Bearer` — the proxy is what holds the cookie, not the API | Vercel-assigned or a future custom subdomain — not yet locked to a specific `*.schoolkit.ng` host in this doc. Whichever host it ends up on, the same exact-match rule applies. |
+| `apps/portal` (parent) | httpOnly session cookie, own session table (`GuardianSession`, phase-4.md §3) — separate from `apps/web`'s mechanism entirely, not a shared cookie | **`portal.schoolkit.ng` explicitly — not `.schoolkit.ng`.** Locked at Phase 4 slice 1's plan-first (2026-07-12). The portal's session cookie must not be readable by any other subdomain, and no other subdomain's cookie is readable by the portal. |
+| `apps/mobile` | `Authorization: Bearer` header only (ADR-002) | N/A — no cookies, no domain concern. |
+
+Phase 4 slice 1 ships a throwaway verification route
+(`apps/portal/app/api/dev-cookie-check/route.ts`) that sets and reads back a
+test cookie scoped to `portal.schoolkit.ng` against the real production
+domain (not a Vercel preview URL — the `Domain` attribute must match the
+*actual* serving host or the browser silently refuses to set it, differently
+and more confusingly on a preview URL than on the intended domain). See
+phase-4.md's slice 1 plan-first for the concrete implementation.
+
 ---
 
 *End of document. Update as decisions are made and modules ship.*

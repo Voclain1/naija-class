@@ -125,6 +125,7 @@ jobs:
           API_PORT=4000
           API_URL=http://localhost:4000
           CORS_ORIGIN=http://localhost:3001
+          CORS_ORIGIN_PORTAL=http://localhost:3002
           WEB_BASE_URL=http://localhost:3001
           NEXT_PUBLIC_API_URL=http://localhost:4000/api/v1
           ANTHROPIC_API_KEY=sk-ant-not-used-in-ci
@@ -198,6 +199,12 @@ jobs:
 
       - name: Build (web)
         run: pnpm --filter @school-kit/web build
+
+      # Phase 4 slice 1 CP1 — apps/portal has no dependent tests/E2E yet, but
+      # a build-passes check is the cheapest possible regression gate for a
+      # brand-new Next.js app until slice 2 gives it real logic to test.
+      - name: Build (portal)
+        run: pnpm --filter @school-kit/portal build
 
   # Slice 9 — Playwright E2E smoke. Closes Phase 0 acceptance criterion #8.
   # Runs sequentially after `ci` (needs: ci) — Phase 0 wall-clock isn't
