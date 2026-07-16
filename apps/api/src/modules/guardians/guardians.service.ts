@@ -1,15 +1,18 @@
-import { Injectable } from "@nestjs/common";
+import * as crypto from "node:crypto";
+import { Injectable, Logger } from "@nestjs/common";
 
 import { Prisma, withTenant } from "@school-kit/db";
 import {
   ConflictError,
   NotFoundError,
+  ValidationError,
   type CreateGuardianInput,
   type CreateAndLinkGuardianInput,
   type CreateStudentGuardianLinkResponse,
   type GuardianDetailDto,
   type GuardianDto,
   type GuardianListResponse,
+  type InviteGuardianResponse,
   type LinkExistingGuardianInput,
   type ListGuardiansQuery,
   type UpdateGuardianInput,
@@ -18,6 +21,7 @@ import {
 
 import type { AuthContext } from "../../common/auth/auth-context";
 import { assertUserActiveAndHasOneOf } from "../../common/auth/role-check";
+import { redactEmail } from "../../common/redact";
 
 interface RequestContext {
   ipAddress: string | null;
@@ -32,6 +36,7 @@ const AUDIT = {
   guardianCreate: "guardian.create",
   guardianUpdate: "guardian.update",
   guardianDelete: "guardian.delete",
+  guardianInvite: "guardian.invite",
   linkCreate: "student-guardian.create",
   linkUpdate: "student-guardian.update",
   linkDelete: "student-guardian.delete",
@@ -40,8 +45,24 @@ const AUDIT = {
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 200;
 
+// Phase 4 / Slice 2 — same 7-day TTL as staff invitations (users.service.ts),
+// same reasoning: a week of inbox attention is plenty. Not shared as an
+// import between the two services — genuinely independent constants that
+// happen to agree, same precedent as the onboarding-step-3 copy
+// users.service.ts already documents.
+const GUARDIAN_INVITATION_TTL_MS = 1000 * 60 * 60 * 24 * 7;
+
+// Where the guardian portal accept URL points. Mirrors users.service.ts's
+// webBaseUrl() exactly — same "don't throw on missing env, just build a
+// wrong-but-recoverable URL" reasoning.
+function portalBaseUrl(): string {
+  return process.env.PORTAL_BASE_URL ?? "http://localhost:3002";
+}
+
 @Injectable()
 export class GuardiansService {
+  private readonly logger = new Logger(GuardiansService.name);
+
   // ----------------------------------------------------------------------
   // list — cursor-paginated, id ASC. Search OR'd across firstName,
   // lastName, phone (case-insensitive). studentId filter joins via the
@@ -206,6 +227,92 @@ export class GuardiansService {
 
       return toGuardianDto(updated);
     });
+  }
+
+  // ----------------------------------------------------------------------
+  // invite — POST /guardians/:id/invite (Phase 4 / Slice 2, D2). Admin
+  // triggers a guardian portal invitation. No request body — the guardian's
+  // email is already on the row; there is nothing else to submit.
+  // ----------------------------------------------------------------------
+  async invite(
+    authCtx: AuthContext,
+    id: string,
+    reqCtx: RequestContext,
+  ): Promise<InviteGuardianResponse> {
+    await assertUserActiveAndHasOneOf(authCtx, ["owner", "admin"]);
+
+    const rawToken = crypto.randomBytes(32).toString("base64url");
+    const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
+
+    const portalInvitedAt = await withTenant(authCtx.schoolId, async (db) => {
+      const existing = await db.guardian.findUnique({
+        where: { id },
+        select: { id: true, email: true },
+      });
+      if (!existing) throw new NotFoundError("Guardian not found.");
+      if (!existing.email) {
+        throw new ValidationError(
+          "GUARDIAN_HAS_NO_EMAIL",
+          "This guardian has no email on file. Add one before sending a portal invitation.",
+        );
+      }
+
+      // Reject a second invite while one is still outstanding. Guardian
+      // has no unique constraint that would enforce this at the DB level
+      // (unlike staff, where the email+outstanding-invitation check in
+      // UsersService.invite serves the same purpose) — checked explicitly.
+      const outstanding = await db.guardianInvitation.findFirst({
+        where: { guardianId: id, acceptedAt: null, expiresAt: { gt: new Date() } },
+        select: { id: true },
+      });
+      if (outstanding) {
+        throw new ConflictError(
+          "INVITATION_ALREADY_PENDING",
+          "This guardian already has an outstanding portal invitation.",
+        );
+      }
+
+      const now = new Date();
+
+      await db.guardianInvitation.create({
+        data: {
+          schoolId: authCtx.schoolId,
+          guardianId: id,
+          tokenHash,
+          invitedBy: authCtx.userId,
+          expiresAt: new Date(now.getTime() + GUARDIAN_INVITATION_TTL_MS),
+        },
+      });
+
+      const updated = await db.guardian.update({
+        where: { id },
+        data: { portalInvitedAt: now },
+        select: { portalInvitedAt: true },
+      });
+
+      await db.auditLog.create({
+        data: {
+          schoolId: authCtx.schoolId,
+          userId: authCtx.userId,
+          action: AUDIT.guardianInvite,
+          entityType: "guardian",
+          entityId: id,
+          ipAddress: reqCtx.ipAddress,
+          metadata: { email: redactEmail(existing.email) },
+        },
+      });
+
+      return updated.portalInvitedAt as Date;
+    });
+
+    // Resend delivery is deferred (docs/deferred.md "Wire Resend for real
+    // invitation email delivery") — same console-log + admin-UI-shows-the-
+    // link pattern as UsersService.invite. Only the URL is logged, not the
+    // raw token in isolation, matching that file's reasoning exactly.
+    const acceptUrl = `${portalBaseUrl()}/invitations/${rawToken}`;
+    this.logger.log(`[GUARDIAN INVITATION] ${acceptUrl}`);
+
+    return { guardianId: id, portalInvitedAt, acceptUrl };
   }
 
   // ----------------------------------------------------------------------

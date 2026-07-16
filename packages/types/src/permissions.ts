@@ -327,6 +327,14 @@ export const PHASE_3_PERMISSIONS = [
 
 export const PHASE_3_OWNER_ONLY_PERMISSIONS = ["auth.2fa.manage"] as const;
 
+// Phase 4 / Slice 2 — guardian portal auth. guardian.invite is the only
+// admin-facing action this slice adds; the portal-side endpoints
+// (POST /portal/login, GET/POST /portal/invitations/:token[/accept]) are
+// PUBLIC (pre-auth, same as staff's /invitations/:token) and carry no
+// @Permissions — asserted via toBeUndefined() in permissions-coverage.spec.ts,
+// the same documented-exception pattern used for the Paystack webhook.
+export const PHASE_4_PERMISSIONS = ["guardian.invite"] as const;
+
 // Phase 3 / Slice 15 — the `bursar` role's exact grant. Explicit inclusion
 // list (mirrors PHASE_2_TEACHER_PERMISSIONS), not "admin minus a few" — finance
 // is a strict subset of admin's permissions, and an inclusion list fails
@@ -413,6 +421,7 @@ export const ALL_PERMISSIONS = [
   ...PHASE_1_PERMISSIONS,
   ...PHASE_2_PERMISSIONS,
   ...PHASE_3_PERMISSIONS,
+  ...PHASE_4_PERMISSIONS,
   /* extend per phase */
 ] as const;
 

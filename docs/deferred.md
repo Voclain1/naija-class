@@ -539,6 +539,30 @@ Format:
   render inline (photos/PDFs already download fine either way — this only
   bites a browser trying to preview rather than save).
 
+- [ ] `schema.prisma` has drifted from applied migration history on three
+  unrelated index/constraint names — discovered 2026-07-16 while generating
+  the Phase 4 slice 2 (guardian auth) migration via `prisma migrate diff
+  --from-url $DIRECT_URL --to-schema-datamodel prisma/schema.prisma --script`
+  against local dev (which `prisma migrate status` confirmed was fully
+  up-to-date on all 46 prior migrations — so this is real schema.prisma vs.
+  migration-history divergence, not a missing-migration gap). The diff
+  included, alongside the intended guardian changes: `ALTER TABLE
+  "audit_logs" RENAME CONSTRAINT "audit_logs_new_pkey" TO "audit_logs_pkey"`,
+  a new `audit_logs_school_id_created_at_idx` index, a renamed
+  `fee_items_school_id_class_level_id_term_id_academic_year_id_idx` (from
+  some shorter prior name), and a `payments_school_id_paystack_reference_key`
+  unique index — none of which touch `guardians`/`guardian_sessions`/
+  `guardian_invitations`, so they were excluded from that migration rather
+  than folded in blind. Needs its own investigation: either schema.prisma
+  was hand-edited without a matching migration at some point (a real gap to
+  close with a follow-up migration), or Prisma's auto-generated index-naming
+  is non-deterministic in a way that makes `migrate diff` an unreliable
+  source for isolating a single model's changes going forward (a tooling
+  footgun worth knowing about even if no actual DB fix is needed). Trigger:
+  before the next migration that touches `audit_logs`, `payments`, or
+  `fee_items`, since a naive `migrate diff` for that change would pull in
+  this same unrelated noise again.
+
 - [ ] Paystack webhook URL — must be configured in the Paystack dashboard
   (Settings → API Keys & Webhooks → Webhook URL) pointing to
   `https://school-kit-api.fly.dev/api/v1/payments/paystack/webhook` before

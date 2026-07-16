@@ -150,6 +150,9 @@ Discipline for every function in this category:
 | `create_audit_log_partition(p_year, p_month)` | `20260628000000_phase_3_slice_3_audit_partitioning` | Called by `PartitionService` at startup and on the monthly cron; creates the named monthly child partition of `audit_logs`. `app_user` cannot `CREATE TABLE` directly; this runs as `school_kit`. | Returns VOID. Table name derived from integer arithmetic only; quoted via `%I` in the function body — no caller input reaches the DDL string. |
 | `encrypt_bvn(p_bvn_plaintext)` | `20260708010000_phase_3_slice_12_bvn_encryption_functions` | Wraps `pgp_sym_encrypt` for staff BVN capture (`BvnService.captureBvn`). `pgp_sym_encrypt`/`pgp_sym_decrypt` have EXECUTE revoked from PUBLIC in the same migration, so this is the only path to producing BVN ciphertext. Pure crypto primitive — no table access, no school_id/user_id params; the row UPDATE stays ordinary `app_user` SQL under `withTenant`/RLS. | Nothing beyond the ciphertext — there is no row here. |
 | `decrypt_bvn(p_bvn_encrypted)` | `20260708010000_phase_3_slice_12_bvn_encryption_functions` | Wraps `pgp_sym_decrypt` for `BvnService.revealBvn`. Same PUBLIC-revoked pgcrypto primitive as above. | Nothing beyond the plaintext BVN string — the service layer (not this function) is responsible for auditing every call and never logging the return value. |
+| `auth_resolve_guardian_session(token_hash)` | `20260716000000_phase_4_slice_2_guardian_auth` | Portal AuthGuard-equivalent session lookup pre-tenant; resolves bearer token to `{ session_id, guardian_id, school_id, expires_at }`. | `password_hash`, email/phone/names. `guardian_sessions` has no `school_id` column (mirrors staff `sessions`); `school_id` comes from the join to `guardians`. |
+| `auth_lookup_guardians_for_login(email)` | `20260716000000_phase_4_slice_2_guardian_auth` | **Multi-row**, unlike every other lookup function in this table. `Guardian.email` is unique only per-school (Decision C), so the same email can match guardians at multiple schools; the login service tries `argon2.verify` against each returned `password_hash` in turn (interim strategy, option ii, approved 2026-07-16 — see `docs/modules/phase-4.md` slice 2 plan-first). Returns `{ guardian_id, school_id, password_hash }` per match. | phone, names, `email_verified` (redundant — always true whenever `password_hash` is set). |
+| `auth_resolve_guardian_invitation_by_token_hash(token_hash)` | `20260716000000_phase_4_slice_2_guardian_auth` | Public guardian portal invitation-accept endpoints resolve a token hash to `{ invitation_id, school_id, guardian_id, first_name, last_name, email, invited_by, expires_at, accepted_at }` before `withTenant()` can apply. Unlike the staff equivalent, contact fields are read via a join to `guardians` — `guardian_invitations` stores no redundant copies (Decision: option b, new parallel table, not a reuse of `invitations`). | `token_hash`, `phone`, `created_at`. |
 
 **SECURITY DEFINER inventory audit (Phase 3 / Slice 12, 2026-07-08):** reviewed
 all 5 pre-existing functions for consolidation when the count crossed the
@@ -178,7 +181,20 @@ human-memory threshold — with a standing gate that holds at any count.
 Table-review cadence: revisit this table's shape every +3 functions; the
 conformance spec itself never needs a count bump.
 
-**Current count: 7.**
+**Phase 4 / Slice 2 (2026-07-16):** added three functions for guardian portal
+auth (`auth_resolve_guardian_session`, `auth_lookup_guardians_for_login`,
+`auth_resolve_invitation_by_token_hash`'s guardian equivalent) — count moves
+7 → 10, crossing the "+3" cadence trigger set at the Slice 12 audit (due at
+8). The shape review itself has not been done yet — flagged as due, not
+completed, in this PR. `auth_lookup_guardians_for_login` is also a shape
+outlier worth specific attention at that review: it's the only function in
+this table that returns multiple rows rather than zero-or-one, a direct
+consequence of Decision C's per-school (not global) email uniqueness for
+guardians. Documented as an interim strategy — see its own row above and the
+migration's header comment — pending a real fix (e.g. a school selector in
+the portal login flow) at a later slice.
+
+**Current count: 10.**
 
 ### ESM module resolution
 
@@ -358,6 +374,7 @@ SENTRY_ENVIRONMENT
 NEXT_PUBLIC_POSTHOG_KEY
 NEXT_PUBLIC_POSTHOG_HOST
 WEB_BASE_URL
+PORTAL_BASE_URL
 ```
 
 Never commit. Never log. Test keys and live keys are different env files.
@@ -366,6 +383,29 @@ Never commit. Never log. Test keys and live keys are different env files.
 user-facing URLs (invitation accept links, password reset links, etc.). The
 API never follows these URLs; it only constructs them for delivery. Production
 must set this explicitly; dev defaults to `http://localhost:3001`.
+
+`PORTAL_BASE_URL` — same purpose as `WEB_BASE_URL`, for guardian portal
+invitation accept links (`POST /guardians/:id/invite`). Production must set
+this explicitly to `https://portal.schoolkit.ng`; dev defaults to
+`http://localhost:3002` (apps/portal's dev port, D9 in phase-4.md §7).
+
+**There is no isolated staging environment (confirmed 2026-07-16).** `deploy-
+staging.yml` and the `STAGING_*` GitHub secret names (`STAGING_DATABASE_URL`,
+`STAGING_DIRECT_URL`, etc.) are a naming convention, not a separate
+infrastructure tier — this project has exactly one Neon project/branch
+(`school-kit-prod`), one `school-kit-api` Fly app, and one `school-kit-
+render-worker` Fly app (see `docs/runbooks/neon-prod-setup.md` — the only
+provisioning runbook, note its own title). Every "staging" deploy is a
+production deploy against the same database real schools' data lives in.
+`SENTRY_ENVIRONMENT=staging` is the only thing that distinguishes a
+"staging" event from a "prod" one in Sentry — a label, not a boundary.
+Practical consequence: `deploy-staging.yml`'s auto-rollback-on-smoke-failure
+only rolls back the Fly API release, not a migration that already ran — so
+there is no soak period protecting real data from a bad migration. Treat
+every migration's RLS/SECURITY DEFINER correctness accordingly. (This note
+is docs-only — the `STAGING_*` secret names and the `deploy-staging.yml`
+filename are intentionally NOT being renamed/restructured as part of this
+fix; that's a separate, larger change if ever done.)
 
 ## When asking Claude Code for help
 

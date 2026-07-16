@@ -510,18 +510,86 @@ model Guardian {
   relationship Relationship
   phone        String // NOT globally unique — see header comment
   email        String?
-  occupation   String?
-  employer     String?
-  address      String?
-  notes        String?
-  createdAt    DateTime     @default(now()) @map("created_at")
-  updatedAt    DateTime     @updatedAt @map("updated_at")
 
-  students StudentGuardian[]
+  // Phase 4 / Slice 2 — portal auth (Decision A, docs/modules/phase-4.md §3/§4).
+  // Guardian is extended directly rather than a companion table, mirroring how
+  // User already blends profile + auth in one row. All four nullable except
+  // emailVerified — every pre-Phase-4 guardian was never invited, never
+  // logged in, which NULL/false both represent correctly with no backfill.
+  passwordHash    String?   @map("password_hash")
+  emailVerified   Boolean   @default(false) @map("email_verified")
+  lastLoginAt     DateTime? @map("last_login_at")
+  portalInvitedAt DateTime? @map("portal_invited_at")
 
+  occupation String?
+  employer   String?
+  address    String?
+  notes      String?
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  students    StudentGuardian[]
+  sessions    GuardianSession[]
+  invitations GuardianInvitation[]
+
+  // Decision C (phase-4.md) — scoped per school, not global. A guardian with
+  // children at two schools gets two separate portal accounts (intentional).
+  // Postgres treats multiple NULLs as distinct, so uninvited guardians
+  // (email IS NULL) never collide against this constraint. Confirmed clean
+  // against local dev + Neon production data before adding (0 duplicate
+  // (school_id, email) pairs in either — see phase-4.md slice 2 plan-first).
+  @@unique([schoolId, email])
   @@index([schoolId])
   @@index([schoolId, phone]) // backs the link-existing picker's phone search
   @@map("guardians")
+}
+
+// Phase 4 / Slice 2 — guardian portal session storage. Deliberately mirrors
+// `Session` (staff) exactly, including the absence of a schoolId column —
+// tenancy is resolved by joining through guardianId, same chicken-and-egg
+// reasoning as staff sessions (see auth_resolve_guardian_session below). A
+// parallel table, not a reuse of `Session`: Session.userId is a non-nullable
+// FK to User, and widening it to cover guardians would drag the staff RBAC/
+// permissions machinery into a user class that never needs it.
+model GuardianSession {
+  id         String   @id @default(uuid())
+  guardianId String   @map("guardian_id")
+  tokenHash  String   @unique @map("token_hash")
+  ipAddress  String?  @map("ip_address")
+  userAgent  String?  @map("user_agent")
+  expiresAt  DateTime @map("expires_at")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  guardian Guardian @relation(fields: [guardianId], references: [id], onDelete: Cascade)
+
+  @@index([guardianId])
+  @@map("guardian_sessions")
+}
+
+// Phase 4 / Slice 2 — admin-initiated guardian portal invitations (D2). A
+// parallel table to `Invitation`, not a reuse: unlike a staff invite (where
+// the User doesn't exist yet), the Guardian row already exists before this
+// flow starts — created earlier when the student was linked — so this table
+// carries only the invitation-specific fields (token, expiry, acceptance),
+// not redundant name/email/phone copies. schoolId is denormalised for direct
+// RLS, same pattern as StudentGuardian; cleanup cascades through guardianId
+// rather than a direct FK to School (Guardian itself has no FK to School
+// either — consistent with existing convention, not a new gap).
+model GuardianInvitation {
+  id         String    @id @default(uuid())
+  schoolId   String    @map("school_id")
+  guardianId String    @map("guardian_id")
+  tokenHash  String    @unique @map("token_hash")
+  invitedBy  String    @map("invited_by")
+  expiresAt  DateTime  @map("expires_at")
+  acceptedAt DateTime? @map("accepted_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  guardian Guardian @relation(fields: [guardianId], references: [id], onDelete: Cascade)
+
+  @@index([schoolId])
+  @@index([guardianId])
+  @@map("guardian_invitations")
 }
 
 enum Relationship {

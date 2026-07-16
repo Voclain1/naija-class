@@ -194,6 +194,9 @@ importers:
 
   apps/portal:
     dependencies:
+      '@hookform/resolvers':
+        specifier: ^5.2.2
+        version: 5.2.2(react-hook-form@7.76.0(react@19.2.6))
       '@school-kit/types':
         specifier: workspace:*
         version: link:../../packages/types
@@ -218,6 +221,9 @@ importers:
       react-dom:
         specifier: ^19.0.0
         version: 19.2.6(react@19.2.6)
+      react-hook-form:
+        specifier: ^7.76.0
+        version: 7.76.0(react@19.2.6)
       tailwind-merge:
         specifier: ^3.6.0
         version: 3.6.0
@@ -227,6 +233,9 @@ importers:
       tailwindcss-animate:
         specifier: ^1.0.7
         version: 1.0.7(tailwindcss@3.4.19(tsx@4.22.0))
+      zod:
+        specifier: ^3.23.8
+        version: 3.25.76
     devDependencies:
       '@school-kit/config':
         specifier: workspace:*
