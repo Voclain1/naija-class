@@ -151,6 +151,14 @@ export const baseConfig = [
       // all schools. It uses basePrisma to fetch the school list, then calls withTenant
       // per school for the actual invoice updates. No tenant data is accessed via basePrisma.
       "**/modules/finance/finance.service.ts",
+      // Phase 4 / Slice 2 — guardian portal auth. Same category as the
+      // staff auth.guard.ts / auth.service.ts / invitations.service.ts
+      // entries above: guardian_sessions/guardian_invitations are FORCE
+      // RLS, and both call sites resolve a bearer token or an invitation
+      // token PRE-tenant via a SECURITY DEFINER function (there is no
+      // schoolId to scope to until after the lookup).
+      "**/common/auth/guardian-auth.guard.ts",
+      "**/modules/portal-auth/portal-auth.service.ts",
     ],
     rules: {
       "no-restricted-imports": "off",

@@ -25,6 +25,7 @@ import {
   type GuardianDetailDto,
   type GuardianDto,
   type GuardianListResponse,
+  type InviteGuardianResponse,
   type LinkExistingGuardianInput,
   type ListGuardiansQuery,
   type UpdateGuardianInput,
@@ -98,6 +99,20 @@ export class GuardiansController {
     @Req() req: Request,
   ): Promise<GuardianDto> {
     return this.service.update(authCtx, id, dto, requestContext(ip, req));
+  }
+
+  // Phase 4 / Slice 2 — admin-triggered guardian portal invitation (D2).
+  // No request body — see GuardiansService.invite's own comment.
+  @Post("guardians/:id/invite")
+  @HttpCode(200)
+  @Permissions("guardian.invite")
+  async invite(
+    @Param("id") id: string,
+    @CurrentUser() authCtx: AuthContext,
+    @Ip() ip: string,
+    @Req() req: Request,
+  ): Promise<InviteGuardianResponse> {
+    return this.service.invite(authCtx, id, requestContext(ip, req));
   }
 
   @Delete("guardians/:id")

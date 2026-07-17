@@ -92,6 +92,7 @@ jobs:
           API_URL=https://placeholder
           CORS_ORIGIN=https://placeholder
           WEB_BASE_URL=https://placeholder
+          PORTAL_BASE_URL=https://placeholder
           NEXT_PUBLIC_API_URL=https://placeholder/api/v1
           ANTHROPIC_API_KEY=sk-ant-placeholder
           PAYSTACK_SECRET_KEY=sk_test_placeholder

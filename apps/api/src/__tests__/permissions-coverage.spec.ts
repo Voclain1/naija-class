@@ -7,6 +7,7 @@ import {
   PHASE_3_BURSAR_PERMISSIONS,
   PHASE_3_OWNER_ONLY_PERMISSIONS,
   PHASE_3_PERMISSIONS,
+  PHASE_4_PERMISSIONS,
 } from "@school-kit/types";
 import { describe, expect, it } from "vitest";
 
@@ -44,6 +45,7 @@ import { RefundsController } from "../modules/payments/refunds.controller";
 import { PayrollController } from "../modules/payroll/payroll.controller";
 import { StaffBankAccountController } from "../modules/staff-bank-accounts/staff-bank-account.controller";
 import { BvnController } from "../modules/users/bvn.controller";
+import { PortalAuthController } from "../modules/portal-auth/portal-auth.controller";
 
 // Static RBAC safety net (slice 13). Every route handler on a Phase 1
 // controller MUST declare @Permissions — the PermissionsGuard fails closed,
@@ -699,5 +701,76 @@ describe("Phase 3 RBAC close-out: seeded role grants", () => {
     expect(unaccounted, `permission(s) excluded from bursar with no recorded reason: ${unaccounted.join(", ")}`).toEqual(
       [],
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 4 / Slice 2 — guardian portal auth.
+//
+// guardian.invite lands on the EXISTING GuardiansController, already covered
+// generically by PHASE_1_CONTROLLERS' assertCoverage() above — the new
+// `invite` handler is automatically included in "all route handlers carry a
+// non-empty @Permissions". This block adds the specific pinned assertion
+// (mirrors the PaystackController-style per-handler pin) and the "known
+// permission" check assertCoverage doesn't do on its own.
+//
+// PortalAuthController cannot use assertCoverage(): all three handlers
+// (login, getInvitation, acceptInvitation) are PUBLIC and deliberately carry
+// NO @Permissions — same documented-exception pattern as PaystackController's
+// handleWebhook, for the same reason InvitationsController's staff
+// equivalents carry none: there is no session yet by definition.
+// ---------------------------------------------------------------------------
+
+const PHASE_4_SET = new Set<string>(PHASE_4_PERMISSIONS);
+
+describe("Phase 4 RBAC coverage: guardian.invite on GuardiansController", () => {
+  it("invite carries @Permissions('guardian.invite')", () => {
+    const proto = GuardiansController.prototype as unknown as Record<string, unknown>;
+    const perms = Reflect.getMetadata(PERMISSIONS_METADATA_KEY, proto["invite"] as object);
+    expect(perms).toEqual(["guardian.invite"]);
+  });
+
+  it("guardian.invite is a known Phase 4 permission", () => {
+    expect(PHASE_4_SET.has("guardian.invite")).toBe(true);
+  });
+});
+
+describe("Phase 4 RBAC coverage: PortalAuthController handler permissions", () => {
+  it("PortalAuthController has at least one route handler", () => {
+    expect(routeHandlers(PortalAuthController).length).toBeGreaterThan(0);
+  });
+
+  it("login carries NO @Permissions (public — no session exists yet)", () => {
+    const proto = PortalAuthController.prototype as unknown as Record<string, unknown>;
+    const perms = Reflect.getMetadata(PERMISSIONS_METADATA_KEY, proto["login"] as object);
+    expect(perms).toBeUndefined();
+  });
+
+  it("getInvitation carries NO @Permissions (public accept-page metadata)", () => {
+    const proto = PortalAuthController.prototype as unknown as Record<string, unknown>;
+    const perms = Reflect.getMetadata(PERMISSIONS_METADATA_KEY, proto["getInvitation"] as object);
+    expect(perms).toBeUndefined();
+  });
+
+  it("acceptInvitation carries NO @Permissions (public — the token is the authorization)", () => {
+    const proto = PortalAuthController.prototype as unknown as Record<string, unknown>;
+    const perms = Reflect.getMetadata(PERMISSIONS_METADATA_KEY, proto["acceptInvitation"] as object);
+    expect(perms).toBeUndefined();
+  });
+});
+
+describe("Phase 4 RBAC coverage: seeded role grants match the spec", () => {
+  it("owner has guardian.invite via the '*' wildcard", () => {
+    expect(roleSeed("owner").permissions).toEqual(["*"]);
+  });
+
+  it("admin grants guardian.invite (no owner-only restriction in Phase 4)", () => {
+    const adminPerms = new Set(roleSeed("admin").permissions);
+    expect(adminPerms.has("guardian.invite")).toBe(true);
+  });
+
+  it("bursar does NOT grant guardian.invite (finance-only role; guardian portal management is not a finance action)", () => {
+    const bursarPerms = new Set(roleSeed("bursar").permissions);
+    expect(bursarPerms.has("guardian.invite")).toBe(false);
   });
 });

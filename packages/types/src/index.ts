@@ -6,6 +6,7 @@ export * from './permissions.js';
 export * from './auth/index.js';
 export * from './onboarding/index.js';
 export * from './invitations/index.js';
+export * from './portal-auth/index.js';
 export * from './academic-years/index.js';
 export * from './class-levels/index.js';
 export * from './class-arms/index.js';

@@ -26,6 +26,10 @@ const SECURITY_DEFINER_FUNCTIONS = [
   "create_audit_log_partition",
   "encrypt_bvn",
   "decrypt_bvn",
+  // Phase 4 / Slice 2 — guardian portal auth (2026-07-16).
+  "auth_resolve_guardian_session",
+  "auth_lookup_guardians_for_login",
+  "auth_resolve_guardian_invitation_by_token_hash",
 ] as const;
 
 interface SecurityDefinerRow {

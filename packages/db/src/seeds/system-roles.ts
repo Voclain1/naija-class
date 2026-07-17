@@ -15,6 +15,7 @@ import {
   PHASE_3_BURSAR_PERMISSIONS,
   PHASE_3_OWNER_ONLY_PERMISSIONS,
   PHASE_3_PERMISSIONS,
+  PHASE_4_PERMISSIONS,
 } from "@school-kit/types";
 
 export interface SystemRoleSeed {
@@ -41,6 +42,9 @@ const ADMIN_PERMISSIONS: readonly string[] = [
   ...PHASE_3_PERMISSIONS.filter(
     (p) => !(PHASE_3_OWNER_ONLY_PERMISSIONS as readonly string[]).includes(p),
   ),
+  // Phase 4 / Slice 2 — guardian.invite. No owner-only subset to exclude
+  // (unlike Phases 1-3, this phase hasn't needed one yet).
+  ...PHASE_4_PERMISSIONS,
 ];
 
 // System roles are global (school_id = NULL, is_system = true) and referenced
@@ -61,7 +65,7 @@ export const SYSTEM_ROLE_SEEDS: SystemRoleSeed[] = [
     key: "admin",
     name: "Administrator",
     description:
-      "School administrator — every Phase 0 + Phase 1 + Phase 2 + Phase 3 permission except the owner-only ones (history-bearing deletes, report-card.reopen, auth.2fa.manage) and school deletion (TODO when school.delete lands).",
+      "School administrator — every Phase 0 + Phase 1 + Phase 2 + Phase 3 + Phase 4 permission except the owner-only ones (history-bearing deletes, report-card.reopen, auth.2fa.manage) and school deletion (TODO when school.delete lands).",
     permissions: ADMIN_PERMISSIONS,
   },
   // Phase 1 / Slice 10 — minimal `teacher` role. Read-scoped access to a
