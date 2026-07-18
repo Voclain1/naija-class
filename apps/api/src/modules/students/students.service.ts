@@ -126,7 +126,10 @@ export class StudentsService {
   // Returns guardians as StudentGuardianRefDto[] — the "guardian from a
   // student's POV" shape declared in StudentDetailDto. Phone is included
   // because the admin detail view needs it for the "call this guardian"
-  // contact card; the redactor masks it before Sentry ships it.
+  // contact card; the redactor masks it before Sentry ships it. Email is
+  // included so the Guardians tab can disable the portal-invite action
+  // with an explanation instead of round-tripping to learn
+  // GUARDIAN_HAS_NO_EMAIL.
   // ----------------------------------------------------------------------
   async findById(authCtx: AuthContext, id: string): Promise<StudentDetailDto> {
     await assertUserActiveAndHasOneOf(authCtx, ["owner", "admin"]);
@@ -148,6 +151,7 @@ export class StudentsService {
                   lastName: true,
                   relationship: true,
                   phone: true,
+                  email: true,
                 },
               },
             },
@@ -170,6 +174,7 @@ export class StudentsService {
           lastName: link.guardian.lastName,
           relationship: link.guardian.relationship,
           phone: link.guardian.phone,
+          email: link.guardian.email,
           isPrimary: link.isPrimary,
           canPickup: link.canPickup,
         })),

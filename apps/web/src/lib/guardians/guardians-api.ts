@@ -13,6 +13,7 @@ import type {
   GuardianDetailDto,
   GuardianDto,
   GuardianListResponse,
+  InviteGuardianResponse,
   LinkExistingGuardianInput,
   ListGuardiansQuery,
   UpdateGuardianInput,
@@ -61,6 +62,15 @@ export function updateGuardian(
 
 export function deleteGuardian(id: string): Promise<void> {
   return apiFetch<void>(`/guardians/${id}`, { method: "DELETE" });
+}
+
+// POST /guardians/:id/invite — sends a portal invitation. owner/admin only
+// server-side (guardian.invite); no request body. Throws ApiError with
+// code GUARDIAN_HAS_NO_EMAIL (400) or INVITATION_ALREADY_PENDING (409).
+export function inviteGuardian(id: string): Promise<InviteGuardianResponse> {
+  return apiFetch<InviteGuardianResponse>(`/guardians/${id}/invite`, {
+    method: "POST",
+  });
 }
 
 // Link an existing guardian to a student.
