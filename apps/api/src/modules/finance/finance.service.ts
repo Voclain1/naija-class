@@ -1,6 +1,5 @@
 import { Injectable, Logger, OnModuleInit } from "@nestjs/common";
 import { Cron } from "@nestjs/schedule";
-import { Resend } from "resend";
 
 import { basePrisma, withTenant } from "@school-kit/db";
 import {
@@ -12,6 +11,10 @@ import {
 } from "@school-kit/types";
 
 import type { AuthContext } from "../../common/auth/auth-context.js";
+import { EmailService } from "../../common/email/email.service.js";
+import { redactPhone } from "../../common/redact.js";
+import { normalizeNigerianPhone, TermiiService } from "../../common/termii/termii.service.js";
+import { NotificationPreferencesService } from "../notifications/notification-preferences.service.js";
 
 // onModuleInit must never block NestFactory.create() indefinitely. Same fix
 // as PartitionService (see docs/deferred.md's "recurring dev-server bootstrap
@@ -31,11 +34,16 @@ const ON_MODULE_INIT_TIMEOUT_MS = 10000;
 export class FinanceService implements OnModuleInit {
   private readonly logger = new Logger(FinanceService.name);
 
-  // Lazy-initialised: if RESEND_API_KEY is absent the app still boots and
-  // sendReminders returns { sent: 0, skipped: all } with a warning log.
-  private readonly resend = process.env.RESEND_API_KEY
-    ? new Resend(process.env.RESEND_API_KEY)
-    : null;
+  // Phase 4 / Slice 6 — email/SMS send paths + preference enforcement moved
+  // to shared services (see docs/modules/phase-4.md §8 D5). Previously this
+  // field held FinanceService's own `new Resend(...)` client, constructed
+  // straight from process.env; EmailService centralises that so guardian-
+  // invite email (also Slice 6) shares the same tested send path.
+  constructor(
+    private readonly email: EmailService,
+    private readonly termii: TermiiService,
+    private readonly notificationPreferences: NotificationPreferencesService,
+  ) {}
 
   // On startup: catch any invoices that went overdue while the API was down.
   // Deliberately non-fatal, same reasoning as PartitionService: the daily
@@ -224,14 +232,34 @@ export class FinanceService implements OnModuleInit {
     });
   }
 
-  // ─── Send email reminders ─────────────────────────────────────────────────
-
+  // ─── Send reminders (email + SMS) ──────────────────────────────────────────
+  //
+  // Phase 4 / Slice 6 extends this Phase 3 Slice 10 cron/admin-triggered
+  // action two ways (docs/modules/phase-4.md §8 D2): (1) both channels are
+  // now gated by the school's NotificationPreference — the acceptance
+  // criterion this whole slice hinges on ("a school with SMS disabled sends
+  // no Termii messages regardless of event type") applies here as much as
+  // to guardian invites; (2) SMS is a real second channel, not just email.
+  //
+  // A student counts as "sent" if AT LEAST ONE enabled channel reached the
+  // guardian; "skipped" covers no-invoice, no-contact-info-on-the-enabled-
+  // channels, and every-attempted-channel-failed. SendRemindersResult's
+  // {sent, skipped} shape is unchanged — deliberately coarse, matching its
+  // pre-existing per-student (not per-channel) granularity.
   async sendReminders(
     authCtx: AuthContext,
     dto: SendRemindersInput,
   ): Promise<SendRemindersResult> {
-    if (!this.resend) {
-      this.logger.warn("RESEND_API_KEY is not configured — reminder emails skipped");
+    const channels = await this.notificationPreferences.getEnabledChannels(authCtx.schoolId);
+    const emailAttemptable = channels.email && this.email.isConfigured;
+    const smsAttemptable = channels.sms && this.termii.isConfigured;
+
+    if (!emailAttemptable && !smsAttemptable) {
+      this.logger.warn(
+        `Reminders skipped for school ${authCtx.schoolId} — no enabled/configured channel ` +
+          `(emailEnabled=${channels.email}, emailConfigured=${this.email.isConfigured}, ` +
+          `smsEnabled=${channels.sms}, smsConfigured=${this.termii.isConfigured})`,
+      );
       return { sent: 0, skipped: dto.studentIds.length };
     }
 
@@ -259,20 +287,24 @@ export class FinanceService implements OnModuleInit {
           continue;
         }
 
-        // Load the student name for the email body.
+        // Load the student name for the message body.
         const student = await db.student.findUnique({
           where: { id: studentId },
           select: { firstName: true, lastName: true },
         });
 
-        // Load primary guardian email (same pattern as Slice 8 initPaystack).
+        // Load primary guardian contact info (same pattern as Slice 8 initPaystack).
         const guardianLink = await db.studentGuardian.findFirst({
           where: { studentId, isPrimary: true },
-          select: { guardian: { select: { email: true, firstName: true } } },
+          select: { guardian: { select: { email: true, phone: true, firstName: true } } },
         });
         const guardianEmail = guardianLink?.guardian?.email;
-        if (!guardianEmail) {
-          this.logger.warn(`No guardian email for student ${studentId} — skipping`);
+        const guardianPhone = guardianLink?.guardian?.phone;
+
+        if ((!emailAttemptable || !guardianEmail) && (!smsAttemptable || !guardianPhone)) {
+          this.logger.warn(
+            `No usable guardian contact info on an enabled channel for student ${studentId} — skipping`,
+          );
           skipped++;
           continue;
         }
@@ -288,25 +320,50 @@ export class FinanceService implements OnModuleInit {
         const studentName = student
           ? `${student.firstName} ${student.lastName}`
           : "your child";
+        const guardianFirstName = guardianLink?.guardian?.firstName ?? "Parent/Guardian";
 
-        try {
-          await this.resend!.emails.send({
-            from: "no-reply@schoolkit.ng",
-            to: guardianEmail,
-            subject: `Fee reminder from ${school.name}`,
-            html: buildReminderHtml({
-              guardianFirstName: guardianLink?.guardian?.firstName ?? "Parent/Guardian",
-              studentName,
-              schoolName: school.name,
-              balance,
-              dueDate: dueDateStr,
-            }),
-          });
-          sent++;
-        } catch (err) {
-          this.logger.error(`Failed to send reminder to ${guardianEmail}: ${String(err)}`);
-          skipped++;
+        let sentAny = false;
+
+        if (emailAttemptable && guardianEmail) {
+          try {
+            await this.email.send({
+              to: guardianEmail,
+              subject: `Fee reminder from ${school.name}`,
+              html: buildReminderHtml({
+                guardianFirstName,
+                studentName,
+                schoolName: school.name,
+                balance,
+                dueDate: dueDateStr,
+              }),
+            });
+            sentAny = true;
+          } catch (err) {
+            this.logger.error(`Failed to email reminder to ${guardianEmail}: ${String(err)}`);
+          }
         }
+
+        if (smsAttemptable && guardianPhone) {
+          const normalized = normalizeNigerianPhone(guardianPhone);
+          if (!normalized) {
+            this.logger.warn(
+              `Reminder SMS skipped — unrecognized phone format (${redactPhone(guardianPhone)})`,
+            );
+          } else {
+            try {
+              await this.termii.sendSms(
+                normalized,
+                buildReminderSms({ studentName, schoolName: school.name, balance, dueDate: dueDateStr }),
+              );
+              sentAny = true;
+            } catch (err) {
+              this.logger.error(`Failed to SMS reminder to ${redactPhone(guardianPhone)}: ${String(err)}`);
+            }
+          }
+        }
+
+        if (sentAny) sent++;
+        else skipped++;
       }
 
       this.logger.log(`Reminders: sent=${sent} skipped=${skipped} school=${authCtx.schoolId}`);
@@ -412,4 +469,17 @@ function buildReminderHtml(opts: {
   <p style="color:#6b7280;font-size:13px">This message was sent by ${opts.schoolName} via School Kit.</p>
 </body>
 </html>`;
+}
+
+// SMS body — plain text, kept short (Termii bills per 160-character page,
+// special characters drop that to 70 — see docs/modules/phase-4.md §8 D6).
+// No greeting/sign-off flourish the email version has room for.
+function buildReminderSms(opts: {
+  studentName: string;
+  schoolName: string;
+  balance: number;
+  dueDate: string | null;
+}): string {
+  const dueClause = opts.dueDate ? ` Due ${opts.dueDate}.` : "";
+  return `${opts.schoolName}: ${formatKoboForEmail(opts.balance)} outstanding for ${opts.studentName}.${dueClause} Contact the bursar to pay.`;
 }

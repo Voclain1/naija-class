@@ -78,6 +78,10 @@ export interface StudentGuardianRefDto {
   lastName: string;
   relationship: string;
   phone: string;
+  // Added Phase 4 / guardian-invite UI: lets the Guardians tab disable the
+  // invite action with an explanation instead of round-tripping to the
+  // server just to learn GUARDIAN_HAS_NO_EMAIL.
+  email: string | null;
   isPrimary: boolean;
   canPickup: boolean;
 }

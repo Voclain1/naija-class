@@ -26,6 +26,7 @@ import { FeeCategoryService } from "../modules/fee-catalog/fee-category.service"
 import { FeeItemService } from "../modules/fee-catalog/fee-item.service";
 import { GradingService } from "../modules/grading/grading.service";
 import { GuardiansService } from "../modules/guardians/guardians.service";
+import { NotificationPreferencesService } from "../modules/notifications/notification-preferences.service";
 import { InvoiceGenerationService } from "../modules/invoices/invoice-generation.service";
 import { PaymentPlanService } from "../modules/payments/payment-plan.service";
 import { PaymentsService } from "../modules/payments/payments.service";
@@ -75,7 +76,14 @@ describe("Phase 1 audit coverage — every mutation writes one audit row", () =>
   const subjects = new SubjectsService();
   const classSubjects = new ClassSubjectsService();
   const students = new StudentsService();
-  const guardians = new GuardiansService();
+  // GuardiansService's Phase 4 / Slice 6 delivery deps — this file doesn't
+  // exercise invite(), so inert stubs are enough (mirrors
+  // guardians.service.spec.ts's makeXStub() shape without needing spies).
+  const guardians = new GuardiansService(
+    { send: async () => undefined } as never,
+    { sendSms: async () => undefined } as never,
+    { getEnabledChannels: async () => ({ email: false, sms: false }) } as never,
+  );
   const enrollments = new EnrollmentsService();
   const teacherProfiles = new TeacherProfilesService();
   const teacherAssignments = new TeacherAssignmentsService();
@@ -1087,5 +1095,65 @@ describe("Phase 3 Finance audit coverage — key finance mutations write their a
 
     await bvn.revealBvn(ownerCtx, ownerCtx.userId);
     await expectFinanceAudit("staff-bvn.reveal", ownerCtx.userId);
+  });
+});
+
+describe("Phase 4 / Slice 6 audit coverage — notification-preferences.update writes an audit row", () => {
+  const runId = Math.random().toString(36).slice(2, 8);
+  const reqCtx = { ipAddress: "127.0.0.1", userAgent: "vitest" };
+
+  const auth = new AuthService();
+  const notificationPreferences = new NotificationPreferencesService();
+
+  let schoolId: string;
+  let ownerCtx: { sessionId: string; userId: string; schoolId: string };
+  const schoolIdsToCleanup = new Set<string>();
+
+  beforeAll(async () => {
+    const signed = await auth.signupOwner(
+      {
+        schoolName: `Audit Notif Prefs ${runId}`,
+        schoolSlug: `audit-notif-${runId}`,
+        ownerFirstName: "Owen",
+        ownerLastName: "Owner",
+        ownerEmail: `audit-notif-${runId}@example.test`,
+        ownerPhone: randomPhone(),
+        password: "Correct-Horse-9",
+        ndprConsent: true,
+      },
+      reqCtx,
+    );
+    schoolId = signed.school.id;
+    schoolIdsToCleanup.add(schoolId);
+    await basePrisma.school.update({
+      where: { id: schoolId },
+      data: { status: "ACTIVE", onboardingStep: 5 },
+    });
+    ownerCtx = { sessionId: "sess", userId: signed.user.id, schoolId };
+  });
+
+  afterAll(async () => {
+    for (const id of schoolIdsToCleanup) {
+      await basePrisma.school.delete({ where: { id } }).catch(() => undefined);
+    }
+    await basePrisma.$disconnect();
+  });
+
+  it("notification-preferences: update", async () => {
+    const result = await notificationPreferences.update(
+      ownerCtx,
+      { emailEnabled: false, smsEnabled: true },
+      reqCtx,
+    );
+
+    const rows = await withTenant(schoolId, (db) =>
+      db.auditLog.findMany({
+        where: { action: "notification-preferences.update", schoolId },
+      }),
+    );
+    expect(rows.length, "audit rows for notification-preferences.update").toBe(1);
+    expect(rows[0].entityId).toBeTruthy();
+    expect(rows[0].metadata).toMatchObject({ emailEnabled: false, smsEnabled: true });
+    expect(result.emailEnabled).toBe(false);
   });
 });

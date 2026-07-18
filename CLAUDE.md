@@ -363,6 +363,7 @@ PAYSTACK_SECRET_KEY
 PAYSTACK_PUBLIC_KEY
 TERMII_API_KEY
 TERMII_SENDER_ID
+TERMII_BASE_URL
 RESEND_API_KEY
 R2_ACCOUNT_ID
 R2_ACCESS_KEY_ID
@@ -388,6 +389,16 @@ must set this explicitly; dev defaults to `http://localhost:3001`.
 invitation accept links (`POST /guardians/:id/invite`). Production must set
 this explicitly to `https://portal.schoolkit.ng`; dev defaults to
 `http://localhost:3002` (apps/portal's dev port, D9 in phase-4.md §7).
+
+`TERMII_BASE_URL` — unlike Paystack's fixed `api.paystack.co`, Termii's API
+base URL is **per-account** (dashboard-assigned), not a global constant.
+`.env.example` defaults to `https://api.ng.termii.com` (the commonly-
+documented Nigeria-region value), but this must be confirmed against the
+actual provisioned account before any production SMS send — see
+`docs/modules/phase-4.md` §8 D6 for the research trail. `TermiiService`
+(`apps/api/src/common/termii/termii.service.ts`) reads it via `ConfigService`
+with that same default, so a missing env var doesn't break dev/test, only a
+wrong one silently misroutes production sends.
 
 **There is no isolated staging environment (confirmed 2026-07-16).** `deploy-
 staging.yml` and the `STAGING_*` GitHub secret names (`STAGING_DATABASE_URL`,

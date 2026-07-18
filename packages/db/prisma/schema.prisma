@@ -592,6 +592,25 @@ model GuardianInvitation {
   @@map("guardian_invitations")
 }
 
+// Phase 4 / Slice 6 — Notifications (D3). Per-school channel toggles.
+// pushEnabled is dark until the mobile phase — no code reads it yet.
+// smsEnabled defaults false: Termii costs money per message, unlike email,
+// so SMS is opt-in rather than opt-out. No `school School @relation(...)` —
+// schoolId is a plain scoping column, same convention as GradingScheme and
+// Guardian itself (neither declares a School relation either).
+model NotificationPreference {
+  id           String   @id @default(uuid())
+  schoolId     String   @map("school_id")
+  emailEnabled Boolean  @default(true) @map("email_enabled")
+  smsEnabled   Boolean  @default(false) @map("sms_enabled")
+  pushEnabled  Boolean  @default(false) @map("push_enabled")
+  updatedBy    String   @map("updated_by")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@unique([schoolId])
+  @@map("notification_preferences")
+}
+
 enum Relationship {
   FATHER
   MOTHER

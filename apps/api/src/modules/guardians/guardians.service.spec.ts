@@ -1,11 +1,33 @@
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
 
 import { basePrisma, withTenant } from "@school-kit/db";
 import { ConflictError, ForbiddenError, NotFoundError } from "@school-kit/types";
 
+import type { EmailService } from "../../common/email/email.service.js";
+import type { TermiiService } from "../../common/termii/termii.service.js";
+import type { NotificationPreferencesService } from "../notifications/notification-preferences.service";
 import { AuthService } from "../auth/auth.service";
 import { StudentsService } from "../students/students.service";
 import { GuardiansService } from "./guardians.service";
+
+// Stubs for GuardiansService's Phase 4 / Slice 6 delivery dependencies —
+// mirrors payments.service.spec.ts's makePaystackStub() pattern: a plain
+// object with overridable methods, injected in place of the real service,
+// rather than mocking fetch/HTTP or standing up NestJS DI in a test.
+function makeEmailStub(overrides: Partial<EmailService> = {}): EmailService {
+  return { send: vi.fn(async () => undefined), ...overrides } as EmailService;
+}
+function makeTermiiStub(overrides: Partial<TermiiService> = {}): TermiiService {
+  return { sendSms: vi.fn(async () => undefined), ...overrides } as TermiiService;
+}
+function makeNotificationPreferencesStub(
+  overrides: Partial<NotificationPreferencesService> = {},
+): NotificationPreferencesService {
+  return {
+    getEnabledChannels: vi.fn(async () => ({ email: true, sms: false })),
+    ...overrides,
+  } as NotificationPreferencesService;
+}
 
 // Integration spec — real DB, real RLS, real audit. Mirrors students.service
 // .spec.ts shape. Slice 5 adds two tables, two units of post-RLS error
@@ -28,7 +50,11 @@ describe("GuardiansService", () => {
   const reqCtx = { ipAddress: "127.0.0.1", userAgent: "vitest" };
   const authService = new AuthService();
   const studentsService = new StudentsService();
-  const service = new GuardiansService();
+  const service = new GuardiansService(
+    makeEmailStub(),
+    makeTermiiStub(),
+    makeNotificationPreferencesStub(),
+  );
   const schoolIdsToCleanup = new Set<string>();
 
   afterAll(async () => {
@@ -832,6 +858,154 @@ describe("GuardiansService", () => {
           reqCtx,
         ),
       ).rejects.toBeInstanceOf(NotFoundError);
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // invite — Phase 4 / Slice 6. Each test builds its own GuardiansService
+  // with tailored Email/Termii/NotificationPreferences stubs, mirroring
+  // payments.service.spec.ts's per-test makePaystackStub() shape, rather
+  // than reusing the describe-level `service` (whose stubs are inert
+  // defaults suitable for the non-invite tests above).
+  // -----------------------------------------------------------------------
+
+  describe("invite", () => {
+    it("GUARDIAN_HAS_NO_EMAIL when the guardian has no email on file", async () => {
+      const { authCtx } = await createActiveSchool("inv-noemail");
+      const g = await service.create(authCtx, guardianFields("g1000001"), reqCtx);
+
+      await expect(service.invite(authCtx, g.id, reqCtx)).rejects.toMatchObject({
+        code: "GUARDIAN_HAS_NO_EMAIL",
+      });
+    });
+
+    it("unknown id → NotFoundError", async () => {
+      const { authCtx } = await createActiveSchool("inv-nf");
+      await expect(
+        service.invite(authCtx, "00000000-0000-0000-0000-000000000000", reqCtx),
+      ).rejects.toBeInstanceOf(NotFoundError);
+    });
+
+    it("a second invite while one is outstanding → INVITATION_ALREADY_PENDING", async () => {
+      const { authCtx } = await createActiveSchool("inv-pending");
+      const g = await service.create(
+        authCtx,
+        { ...guardianFields("g1000002"), email: `pending-${runId}@example.test` },
+        reqCtx,
+      );
+
+      await service.invite(authCtx, g.id, reqCtx);
+      await expect(service.invite(authCtx, g.id, reqCtx)).rejects.toMatchObject({
+        code: "INVITATION_ALREADY_PENDING",
+      });
+    });
+
+    it("sends a real email via EmailService when emailEnabled and the guardian has an email", async () => {
+      const { authCtx } = await createActiveSchool("inv-email");
+      const email = `invite-email-${runId}@example.test`;
+      const g = await service.create(
+        authCtx,
+        { ...guardianFields("g1000003"), email },
+        reqCtx,
+      );
+
+      const emailStub = makeEmailStub();
+      const svc = new GuardiansService(
+        emailStub,
+        makeTermiiStub(),
+        makeNotificationPreferencesStub({
+          getEnabledChannels: vi.fn(async () => ({ email: true, sms: false })),
+        }),
+      );
+
+      const res = await svc.invite(authCtx, g.id, reqCtx);
+
+      expect(emailStub.send).toHaveBeenCalledTimes(1);
+      expect(emailStub.send).toHaveBeenCalledWith(
+        expect.objectContaining({ to: email }),
+      );
+      expect(res.acceptUrl).toContain("/invitations/");
+    });
+
+    it("sends a real SMS via TermiiService when smsEnabled and the guardian has a phone", async () => {
+      const { authCtx } = await createActiveSchool("inv-sms");
+      const email = `invite-sms-${runId}@example.test`;
+      // guardianFields()'s phone is built from a suffix that's routinely
+      // non-numeric elsewhere in this file (e.g. "f1000000") — fine for
+      // tests that never read the phone, but this one needs a value
+      // normalizeNigerianPhone actually recognizes, so it's overridden here.
+      const g = await service.create(
+        authCtx,
+        { ...guardianFields("g1000004"), email, phone: "+2348012345678" },
+        reqCtx,
+      );
+
+      const termiiStub = makeTermiiStub();
+      const svc = new GuardiansService(
+        makeEmailStub(),
+        termiiStub,
+        makeNotificationPreferencesStub({
+          getEnabledChannels: vi.fn(async () => ({ email: false, sms: true })),
+        }),
+      );
+
+      await svc.invite(authCtx, g.id, reqCtx);
+
+      // guardianFields() produces "+2348" + an 8-digit suffix — Termii wants
+      // no leading '+', country code intact (normalizeNigerianPhone).
+      expect(termiiStub.sendSms).toHaveBeenCalledTimes(1);
+      expect(termiiStub.sendSms).toHaveBeenCalledWith(
+        expect.stringMatching(/^234\d{10}$/),
+        expect.any(String),
+      );
+    });
+
+    it("acceptance criterion: a school with both channels disabled sends neither email nor SMS", async () => {
+      const { authCtx } = await createActiveSchool("inv-disabled");
+      const email = `invite-disabled-${runId}@example.test`;
+      const g = await service.create(
+        authCtx,
+        { ...guardianFields("g1000005"), email },
+        reqCtx,
+      );
+
+      const emailStub = makeEmailStub();
+      const termiiStub = makeTermiiStub();
+      const svc = new GuardiansService(
+        emailStub,
+        termiiStub,
+        makeNotificationPreferencesStub({
+          getEnabledChannels: vi.fn(async () => ({ email: false, sms: false })),
+        }),
+      );
+
+      const res = await svc.invite(authCtx, g.id, reqCtx);
+
+      expect(emailStub.send).not.toHaveBeenCalled();
+      expect(termiiStub.sendSms).not.toHaveBeenCalled();
+      // The manual-copy fallback is unaffected by channel preferences.
+      expect(res.acceptUrl).toContain("/invitations/");
+    });
+
+    it("an EmailService failure is swallowed — invite still succeeds with acceptUrl", async () => {
+      const { authCtx } = await createActiveSchool("inv-email-fail");
+      const email = `invite-fail-${runId}@example.test`;
+      const g = await service.create(
+        authCtx,
+        { ...guardianFields("g1000006"), email },
+        reqCtx,
+      );
+
+      const svc = new GuardiansService(
+        makeEmailStub({ send: vi.fn(async () => { throw new Error("Resend down"); }) }),
+        makeTermiiStub(),
+        makeNotificationPreferencesStub({
+          getEnabledChannels: vi.fn(async () => ({ email: true, sms: false })),
+        }),
+      );
+
+      const res = await svc.invite(authCtx, g.id, reqCtx);
+      expect(res.acceptUrl).toContain("/invitations/");
     });
   });
 });

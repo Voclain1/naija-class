@@ -1,10 +1,13 @@
 "use client";
 
 import {
+  Check,
+  Copy,
   FileSpreadsheet,
   Loader2,
   PlusCircle,
   Search,
+  Send,
   Star,
   StarOff,
   Unlink,
@@ -27,14 +30,23 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ApiError } from "@/lib/api-client";
+import { useAuth } from "@/lib/auth/use-auth";
 import {
   createAndLinkGuardian,
+  inviteGuardian,
   linkExistingGuardian,
   listGuardians,
   unlinkStudentGuardian,
   updateStudentGuardianLink,
 } from "@/lib/guardians/guardians-api";
 import { cn } from "@/lib/utils";
+
+// Duplicated per-file rather than a shared hook — same pattern already used
+// in finance/payroll/page.tsx and staff/bvn-section.tsx. See docs/deferred.md
+// ("Shared usePermissions hook") for the case to extract it.
+function hasPermission(permissions: string[], perm: string): boolean {
+  return permissions.includes("*") || permissions.includes(perm);
+}
 
 interface Props {
   studentId: string;
@@ -58,12 +70,18 @@ const RELATIONSHIP_LABELS: Record<RelationshipDto, string> = {
 // Admin UI: phones shown in full (NOT redacted — admins need to call
 // guardians). The redactor (apps/api/src/observability/redact.ts) still
 // masks phones in logs/Sentry; this is the only authorised view path.
-export function GuardiansTab({ studentId, guardians, onGuardiansChanged }: Props) {
+export function GuardiansTab({
+  studentId,
+  guardians,
+  onGuardiansChanged,
+}: Props) {
   const [showAdd, setShowAdd] = useState(false);
 
   const guardiansSorted = [...guardians].sort((a, b) => {
     if (a.isPrimary !== b.isPrimary) return a.isPrimary ? -1 : 1;
-    return `${a.lastName}${a.firstName}`.localeCompare(`${b.lastName}${b.firstName}`);
+    return `${a.lastName}${a.firstName}`.localeCompare(
+      `${b.lastName}${b.firstName}`,
+    );
   });
 
   return (
@@ -147,8 +165,24 @@ function GuardianRow({
   guardians,
   onGuardiansChanged,
 }: GuardianRowProps) {
-  const [busy, setBusy] = useState<null | "primary" | "pickup" | "unlink">(null);
+  const { permissions } = useAuth();
+  const canInvite = hasPermission(permissions, "guardian.invite");
+
+  const [busy, setBusy] = useState<
+    null | "primary" | "pickup" | "unlink" | "invite"
+  >(null);
   const [confirmUnlink, setConfirmUnlink] = useState(false);
+
+  // Reactive-only invite status (see docs/journal — Phase 4 slice 2
+  // follow-up plan-first, option B): we don't proactively know whether a
+  // guardian already has a pending invitation, only after the server tells
+  // us via INVITATION_ALREADY_PENDING. "invited" covers the just-sent case
+  // this session, when the one-time accept link is still visible below.
+  const [inviteStatus, setInviteStatus] = useState<
+    "idle" | "pending" | "invited"
+  >("idle");
+  const [acceptUrl, setAcceptUrl] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
 
   const onPromote = useCallback(async () => {
     if (guardian.isPrimary || busy) return;
@@ -164,7 +198,9 @@ function GuardianRow({
     onGuardiansChanged(optimistic);
     try {
       await updateStudentGuardianLink(guardian.linkId, { isPrimary: true });
-      toast.success(`${guardian.firstName} ${guardian.lastName} is now primary.`);
+      toast.success(
+        `${guardian.firstName} ${guardian.lastName} is now primary.`,
+      );
     } catch (e) {
       onGuardiansChanged(previous);
       toast.error(
@@ -189,7 +225,9 @@ function GuardianRow({
     } catch (e) {
       onGuardiansChanged(previous);
       toast.error(
-        e instanceof ApiError ? e.message : "Could not update pickup permission.",
+        e instanceof ApiError
+          ? e.message
+          : "Could not update pickup permission.",
       );
     } finally {
       setBusy(null);
@@ -218,74 +256,194 @@ function GuardianRow({
     }
   }, [busy, guardian, guardians, onGuardiansChanged]);
 
+  const onInvite = useCallback(async () => {
+    if (busy || !guardian.email) return;
+    setBusy("invite");
+    try {
+      const res = await inviteGuardian(guardian.id);
+      setAcceptUrl(res.acceptUrl);
+      setInviteStatus("invited");
+      toast.success(
+        `Invitation sent to ${guardian.firstName} ${guardian.lastName}.`,
+      );
+    } catch (e) {
+      if (e instanceof ApiError && e.code === "INVITATION_ALREADY_PENDING") {
+        setInviteStatus("pending");
+        toast.error(
+          "This guardian already has an outstanding portal invitation.",
+        );
+      } else if (e instanceof ApiError && e.code === "GUARDIAN_HAS_NO_EMAIL") {
+        // Shouldn't happen — the button is disabled whenever email is
+        // missing — but the server is the source of truth if the guardian's
+        // email was removed elsewhere between render and click.
+        toast.error(
+          "This guardian has no email on file. Add one before sending a portal invitation.",
+        );
+      } else {
+        toast.error(
+          e instanceof ApiError ? e.message : "Could not send the invitation.",
+        );
+      }
+    } finally {
+      setBusy(null);
+    }
+  }, [busy, guardian]);
+
+  const onCopyInviteLink = useCallback(async () => {
+    if (!acceptUrl) return;
+    try {
+      await navigator.clipboard.writeText(acceptUrl);
+      setCopied(true);
+    } catch {
+      // Clipboard API unavailable (insecure context / permissions) — the
+      // link is still visible in the input for manual selection.
+      setCopied(false);
+    }
+  }, [acceptUrl]);
+
   return (
-    <li className="flex flex-col gap-3 rounded-md border bg-card p-4 sm:flex-row sm:items-center sm:justify-between">
-      <div className="flex flex-col gap-0.5">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="font-medium">
-            {guardian.firstName} {guardian.lastName}
-          </span>
-          <span className="text-xs text-muted-foreground">
-            {RELATIONSHIP_LABELS[guardian.relationship as RelationshipDto] ??
-              guardian.relationship}
-          </span>
-          {guardian.isPrimary && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-900">
-              <Star className="h-3 w-3 fill-current" />
-              Primary
+    <li className="flex flex-col gap-3 rounded-md border bg-card p-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-0.5">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-medium">
+              {guardian.firstName} {guardian.lastName}
             </span>
-          )}
+            <span className="text-xs text-muted-foreground">
+              {RELATIONSHIP_LABELS[guardian.relationship as RelationshipDto] ??
+                guardian.relationship}
+            </span>
+            {guardian.isPrimary && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-900">
+                <Star className="h-3 w-3 fill-current" />
+                Primary
+              </span>
+            )}
+          </div>
+          <span className="font-mono text-sm text-muted-foreground">
+            {guardian.phone}
+          </span>
         </div>
-        <span className="font-mono text-sm text-muted-foreground">
-          {guardian.phone}
-        </span>
-      </div>
 
-      <div className="flex flex-wrap items-center gap-2">
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={onPromote}
-          disabled={guardian.isPrimary || busy !== null}
-          title={guardian.isPrimary ? "Already primary" : "Make primary"}
-        >
-          {busy === "primary" ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : guardian.isPrimary ? (
-            <Star className="h-4 w-4 fill-current text-amber-500" />
-          ) : (
-            <StarOff className="h-4 w-4" />
-          )}
-          {guardian.isPrimary ? "Primary" : "Make primary"}
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={onPromote}
+            disabled={guardian.isPrimary || busy !== null}
+            title={guardian.isPrimary ? "Already primary" : "Make primary"}
+          >
+            {busy === "primary" ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : guardian.isPrimary ? (
+              <Star className="h-4 w-4 fill-current text-amber-500" />
+            ) : (
+              <StarOff className="h-4 w-4" />
+            )}
+            {guardian.isPrimary ? "Primary" : "Make primary"}
+          </Button>
 
-        <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-input px-3 py-1.5 text-sm">
-          <input
-            type="checkbox"
-            checked={guardian.canPickup}
-            onChange={onTogglePickup}
+          <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-input px-3 py-1.5 text-sm">
+            <input
+              type="checkbox"
+              checked={guardian.canPickup}
+              onChange={onTogglePickup}
+              disabled={busy !== null}
+              className="h-4 w-4 cursor-pointer"
+            />
+            Can pick up
+            {busy === "pickup" && (
+              <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
+            )}
+          </label>
+
+          {canInvite &&
+            (() => {
+              const noEmail = !guardian.email;
+              const disabled =
+                noEmail || inviteStatus !== "idle" || busy !== null;
+              const label =
+                inviteStatus === "invited"
+                  ? "Invitation sent"
+                  : inviteStatus === "pending"
+                    ? "Invitation pending"
+                    : "Invite to portal";
+              const title = noEmail
+                ? "Add an email to this guardian to invite them to the parent portal."
+                : inviteStatus === "pending"
+                  ? "This guardian already has an outstanding portal invitation."
+                  : inviteStatus === "invited"
+                    ? "Invitation sent — the accept link is shown below."
+                    : "Send a parent-portal invitation to this guardian's email.";
+              return (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={onInvite}
+                  disabled={disabled}
+                  title={title}
+                >
+                  {busy === "invite" ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : inviteStatus === "invited" ? (
+                    <Check className="h-4 w-4" />
+                  ) : (
+                    <Send className="h-4 w-4" />
+                  )}
+                  {label}
+                </Button>
+              );
+            })()}
+
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => setConfirmUnlink(true)}
             disabled={busy !== null}
-            className="h-4 w-4 cursor-pointer"
-          />
-          Can pick up
-          {busy === "pickup" && (
-            <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
-          )}
-        </label>
-
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={() => setConfirmUnlink(true)}
-          disabled={busy !== null}
-          className="text-rose-700 hover:bg-rose-50"
-        >
-          <Unlink className="mr-1 h-4 w-4" />
-          Unlink
-        </Button>
+            className="text-rose-700 hover:bg-rose-50"
+          >
+            <Unlink className="mr-1 h-4 w-4" />
+            Unlink
+          </Button>
+        </div>
       </div>
+
+      {inviteStatus === "invited" && acceptUrl && (
+        <div className="flex flex-col gap-2 rounded-md border bg-muted/30 p-3">
+          <Label htmlFor={`invite-url-${guardian.linkId}`} className="text-xs">
+            Portal invite link for {guardian.firstName} {guardian.lastName}
+          </Label>
+          <div className="flex gap-2">
+            <Input
+              id={`invite-url-${guardian.linkId}`}
+              readOnly
+              value={acceptUrl}
+              className="font-mono text-xs"
+              onFocus={(e) => e.currentTarget.select()}
+            />
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={onCopyInviteLink}
+            >
+              {copied ? (
+                <Check className="h-4 w-4" />
+              ) : (
+                <Copy className="h-4 w-4" />
+              )}
+              {copied ? "Copied" : "Copy"}
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            We don&apos;t store this link — once you leave this page it
+            can&apos;t be shown again.
+          </p>
+        </div>
+      )}
 
       {confirmUnlink && (
         <ConfirmUnlinkDialog
@@ -434,6 +592,7 @@ function LinkExistingForm({
         lastName: res.guardian.lastName,
         relationship: res.guardian.relationship,
         phone: res.guardian.phone,
+        email: res.guardian.email,
         isPrimary: res.link.isPrimary,
         canPickup: res.link.canPickup,
       };
@@ -648,10 +807,13 @@ function CreateAndLinkForm({
         phone: values.phone.trim(),
         email: values.email.trim() === "" ? undefined : values.email.trim(),
         occupation:
-          values.occupation.trim() === "" ? undefined : values.occupation.trim(),
+          values.occupation.trim() === ""
+            ? undefined
+            : values.occupation.trim(),
         employer:
           values.employer.trim() === "" ? undefined : values.employer.trim(),
-        address: values.address.trim() === "" ? undefined : values.address.trim(),
+        address:
+          values.address.trim() === "" ? undefined : values.address.trim(),
         notes: values.notes.trim() === "" ? undefined : values.notes.trim(),
         isPrimary: values.isPrimary,
         canPickup: values.canPickup,
@@ -664,6 +826,7 @@ function CreateAndLinkForm({
         lastName: res.guardian.lastName,
         relationship: res.guardian.relationship,
         phone: res.guardian.phone,
+        email: res.guardian.email,
         isPrimary: res.link.isPrimary,
         canPickup: res.link.canPickup,
       };
@@ -896,8 +1059,8 @@ function ConfirmUnlinkDialog({
           Unlink guardian
         </h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          {guardianName} will no longer be linked to this student. The
-          guardian record itself is preserved and can be re-linked later.
+          {guardianName} will no longer be linked to this student. The guardian
+          record itself is preserved and can be re-linked later.
         </p>
 
         <div className="mt-4 flex gap-2">

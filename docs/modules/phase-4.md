@@ -99,6 +99,19 @@ This table is a draft, not a lock — call out slice reordering or splitting at
 each slice's own plan-first, same as Phase 3 did (e.g. Phase 3 slice 12 was
 narrowed mid-build).
 
+**Reorder, confirmed at Slice 6's plan-first (2026-07-18):** Slice 6
+(notifications) was built immediately after Slice 2 (guardian auth),
+*before* Slices 3-5 (guardian-to-student authorization, read-only invoice
+view, Paystack payments). This is consistent with the dependency column
+above — Slice 6 lists only Slice 2 as a dependency, not Slices 3-5 — so the
+reorder doesn't violate anything already locked, it just executes the
+table's own stated parallelism ("can build in parallel with slices 2-5")
+early rather than after. Slices 3-5 remain unbuilt as of this note. Flagging
+explicitly because the *request* that kicked off Slice 6's build referred to
+it informally as "Slice 3," which doesn't match this table — recorded here
+so a future reader hitting that mismatch in a commit message, PR title, or
+journal entry doesn't mistake it for undocumented drift.
+
 ## 3. Data model — first-cut, confirm at each slice's plan-first
 
 ### Guardian auth (slice 2) — locked (Decisions A & C, 2026-07-12)
@@ -253,6 +266,10 @@ two separate portal accounts — intentional, not a gap to close later.
    further. WhatsApp Business API approval is an external, non-controllable
    timeline (CLAUDE.md's "not covered yet" list) — worth confirming this
    doesn't gate slice 6's start date before locking that slice's scope.
+   **Resolved for slice 6's actual scope (2026-07-18): SMS only, via
+   Termii's `dnd` channel.** Not a decision against WhatsApp permanently —
+   just not this slice, consistent with §5's existing "carries forward as
+   deferred" framing. Revisit once/if WhatsApp Business approval lands.
 4. **`apps/portal` in CLAUDE.md's monorepo layout** — CLAUDE.md's `apps/`
    diagram currently lists only `web`/`mobile`/`api`. Needs a documentation
    update in the same PR as slice 1, not left implicit.
@@ -411,9 +428,116 @@ portal` gets `next dev --port 3002`; `pnpm dev:portal` added to the root
 
 ---
 
+## 8. Slice 6 plan-first decisions (locked 2026-07-18)
+
+Built immediately after Slice 2, ahead of Slices 3-5 — see the reorder note
+under §2. Scope narrowed from the full "Slice 6" description in §2/§3: this
+pass covers channel infrastructure and one real trigger, not every
+notification type D3 names.
+
+**D1 — Channel scope: email + SMS only, no WhatsApp, no push.** WhatsApp
+resolved out of this slice's scope (§4 "still open" item 3, updated
+2026-07-18) — SMS via Termii's `dnd` (transactional) channel covers D3's
+SMS requirement without the WhatsApp Business approval dependency. Push
+stays a dark `pushEnabled` column per D3, unchanged.
+
+**D2 — Trigger scope: guardian-invite email/SMS + extend the existing
+overdue-reminder cron. `invoice issued`/`payment received` hooks and the
+`Announcement` model/CRUD/guardian-read screen deferred.** Neither of the
+latter two exists as a hook anywhere in the finance module yet, and
+`Announcement` is a full new feature (schema + admin UI + a portal-facing
+read screen the portal doesn't otherwise have before slice 4's dashboard)
+bundled into §2's Slice 6 description alongside what's really "wire the
+channels" work. Splitting keeps this pass to: (a) guardian invite finally
+sends real email (closes `docs/deferred.md`'s "Wire Resend for real
+invitation email delivery") and SMS, both gated by preference; (b)
+`FinanceService.sendReminders` (Phase 3 Slice 10, currently unconditional)
+now checks `NotificationPreference` before sending, and gains an SMS
+variant. `invoice issued`/`payment received` triggers and `Announcement`
+remain open — carried forward as their own follow-up slice, not silently
+dropped.
+
+**D3 — `NotificationPreference` as a separate table, matching §3's
+first-cut sketch.** First departure from the flat-column-on-`School`
+pattern (`subjectAttendanceEnabled` is the only prior per-school toggle,
+and it's a bare column) — justified here by the `updatedBy`/`updatedAt`
+audit fields, which don't fit cleanly as bare `School` columns. RLS ships
+inline in the migration SQL (the `packages/db/prisma/policies/` directory
+stopped being updated after Phase 2 — pre-existing gap, not fixed by this
+slice), following the `grading_schemes` flat-`school_id` tenant-isolation
+pattern. No SECURITY DEFINER function needed — ordinary tenant-scoped
+table, count stays at 10.
+
+**D4 — Termii credentials: platform-wide, one account.** Mirrors
+`PAYSTACK_SECRET_KEY` (single platform key, not per-school). No signal in
+D3 or ARCHITECTURE.md suggests per-school Termii accounts; per-school SMS
+credential provisioning would be a real operational burden the phase
+doesn't otherwise ask for. `.env.example`'s existing `TERMII_API_KEY`/
+`TERMII_SENDER_ID` slots are used as-is; a school just toggles `smsEnabled`
+and the platform bears the Termii cost (billing that back to schools is a
+business-model question, out of scope here).
+
+**D5 — New `apps/api/src/modules/notifications/` module, not grown inside
+`finance.service.ts`.** `finance.service.ts` is the highest-churn file in
+`apps/api/src/modules` (touched in nearly every recent Phase 3 commit) and
+notification dispatch/preferences is a distinct bounded concern from
+finance calculation — a new module reduces collision risk and keeps the
+boundary clean. `FinanceService.sendReminders` calls into the new module
+rather than the reverse.
+
+**D6 — Termii wrapper, confirmed against live docs before writing code
+(per instruction, not assumed from training data):**
+- Endpoint: `POST {TERMII_BASE_URL}/api/sms/send`. **Base URL is
+  per-account** (Termii dashboard-assigned, not a fixed global constant
+  like Paystack's `api.paystack.co`) — new env var `TERMII_BASE_URL`,
+  defaulting to `https://api.ng.termii.com` (the commonly-documented
+  Nigeria-region value) but must be confirmed against the actual
+  provisioned account before a real send is attempted in any environment.
+- Body: `{ api_key, to, from, sms, type: "plain", channel: "dnd" }`. `dnd`
+  (transactional), not `generic` (promotional-only, Termii's own docs warn
+  it silently fails DND-registered numbers and shouldn't carry OTP/
+  transactional content) — every message this slice sends (invite links,
+  fee reminders) is transactional.
+- `to` must be international format with **no leading `+`** (e.g.
+  `2347015250000`). **Real gap found while confirming this: `Guardian.phone`
+  has zero format validation** (`z.string().trim().min(1).max(30)` —
+  `packages/types/src/guardians/create-guardian.dto.ts:27`), so stored
+  values could be local (`080...`), international with or without `+`, or
+  malformed. The wrapper needs its own normalization (strip non-digits,
+  handle a leading `0` → `234` swap for the common Nigerian-local case,
+  strip a leading `234`'s redundant `+`) and must treat unrecognized shapes
+  as a send failure to log, not a garbage request to Termii.
+- Success shape: `{ code: "ok", balance, message_id, message, user,
+  message_id_str }`. Failure signal is layered: non-2xx HTTP status is
+  authoritative (Termii's own docs: 2xx/4xx/5xx are meaningful), but a 2xx
+  response can still carry a non-`"ok"` `code` — check both, matching how
+  `PaystackService` checks `res.ok` then `json.status`.
+- `from` (sender ID) reuses `TERMII_SENDER_ID=SchoolKit` already in
+  `.env.example` (8 chars, within Termii's 3-11 char alphanumeric limit).
+- No delivery-status webhook this slice — §3's "TBD" on a send-log table
+  resolved as: stay ephemeral (fire-and-forget, rely on Termii's own
+  dashboard), matching Paystack's no-retry precedent.
+
+**D7 — Testing without live Termii credentials: stub-at-consumer, mirroring
+`payments.service.spec.ts`'s `makePaystackStub()`.** No HTTP mocking
+library, no live sandbox account in this environment (`.env.example`'s
+`TERMII_API_KEY=replace-me` is still a placeholder). Consumers
+(guardian-invite service, reminder service) get a hand-built stub object
+with overridable methods injected in place of the real `TermiiService`/
+`ResendService`. Preference-enforcement logic itself (the phase's
+acceptance criterion — §6 item 6) needs zero external dependency and gets
+the most direct coverage. Also closes a pre-existing gap:
+`FinanceService.sendReminders`'s real `resend.emails.send` call
+(Phase 3 Slice 10) has never had a test asserting the actual send path,
+only the "skipped, no key" branch — this slice's tests cover it where the
+old finance spec didn't.
+
+---
+
 *Per-slice plan-firsts happen as each slice approaches — this doc is the
 phase map, not the slice specs. Decisions A-C (§4) unblock slice 1's
 plan-first, now locked above. The remaining "still open" items in §4 don't
 block slice 1 — they block slice 2 (session mechanism) and slice 7
 (messaging) respectively, and should be settled at those slices' own
-plan-firsts.*
+plan-firsts. Slice 6's own plan-first decisions are locked in §8, reordered
+ahead of slices 3-5 per the note under §2.*

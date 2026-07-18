@@ -333,7 +333,15 @@ export const PHASE_3_OWNER_ONLY_PERMISSIONS = ["auth.2fa.manage"] as const;
 // PUBLIC (pre-auth, same as staff's /invitations/:token) and carry no
 // @Permissions — asserted via toBeUndefined() in permissions-coverage.spec.ts,
 // the same documented-exception pattern used for the Paystack webhook.
-export const PHASE_4_PERMISSIONS = ["guardian.invite"] as const;
+//
+// Phase 4 / Slice 6 — notifications. notification-preferences.read/update
+// gate the school-level channel-toggle settings screen. Not a highest-trust
+// surface (no owner-only restriction) — same reasoning as grading-scheme.*.
+export const PHASE_4_PERMISSIONS = [
+  "guardian.invite",
+  "notification-preferences.read",
+  "notification-preferences.update",
+] as const;
 
 // Phase 3 / Slice 15 — the `bursar` role's exact grant. Explicit inclusion
 // list (mirrors PHASE_2_TEACHER_PERMISSIONS), not "admin minus a few" — finance

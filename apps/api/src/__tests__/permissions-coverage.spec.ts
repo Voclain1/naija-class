@@ -46,6 +46,7 @@ import { PayrollController } from "../modules/payroll/payroll.controller";
 import { StaffBankAccountController } from "../modules/staff-bank-accounts/staff-bank-account.controller";
 import { BvnController } from "../modules/users/bvn.controller";
 import { PortalAuthController } from "../modules/portal-auth/portal-auth.controller";
+import { NotificationPreferencesController } from "../modules/notifications/notification-preferences.controller";
 
 // Static RBAC safety net (slice 13). Every route handler on a Phase 1
 // controller MUST declare @Permissions — the PermissionsGuard fails closed,
@@ -772,5 +773,61 @@ describe("Phase 4 RBAC coverage: seeded role grants match the spec", () => {
   it("bursar does NOT grant guardian.invite (finance-only role; guardian portal management is not a finance action)", () => {
     const bursarPerms = new Set(roleSeed("bursar").permissions);
     expect(bursarPerms.has("guardian.invite")).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 4 / Slice 6 — notification channels (D3). NotificationPreferencesController
+// is a brand-new controller (unlike guardian.invite, which landed on the
+// existing GuardiansController) — same assertCoverage()-plus-known-permission
+// pattern as PHASE_3_FEE_CONTROLLERS above, plus the per-handler pin and role-
+// grant checks in the guardian.invite style.
+// ---------------------------------------------------------------------------
+
+const PHASE_4_SLICE_6_CONTROLLERS: Array<[string, Ctor]> = [
+  ["NotificationPreferencesController", NotificationPreferencesController],
+];
+
+describe("Phase 4 / Slice 6 RBAC coverage: NotificationPreferencesController", () => {
+  assertCoverage(PHASE_4_SLICE_6_CONTROLLERS);
+
+  it("every @Permissions value is a known Phase 4 permission", () => {
+    const unknown: string[] = [];
+    for (const [name, ctor] of PHASE_4_SLICE_6_CONTROLLERS) {
+      for (const p of handlerPermissions(ctor)) {
+        if (!PHASE_4_SET.has(p)) unknown.push(`${name}:${p}`);
+      }
+    }
+    expect(unknown, `unknown Phase 4 permission(s): ${unknown.join(", ")}`).toEqual([]);
+  });
+
+  it("get carries @Permissions('notification-preferences.read')", () => {
+    const proto = NotificationPreferencesController.prototype as unknown as Record<string, unknown>;
+    const perms = Reflect.getMetadata(PERMISSIONS_METADATA_KEY, proto["get"] as object);
+    expect(perms).toEqual(["notification-preferences.read"]);
+  });
+
+  it("update carries @Permissions('notification-preferences.update')", () => {
+    const proto = NotificationPreferencesController.prototype as unknown as Record<string, unknown>;
+    const perms = Reflect.getMetadata(PERMISSIONS_METADATA_KEY, proto["update"] as object);
+    expect(perms).toEqual(["notification-preferences.update"]);
+  });
+});
+
+describe("Phase 4 / Slice 6 RBAC coverage: seeded role grants match the spec", () => {
+  it("owner has notification-preferences.* via the '*' wildcard", () => {
+    expect(roleSeed("owner").permissions).toEqual(["*"]);
+  });
+
+  it("admin grants notification-preferences.read/update (no owner-only restriction)", () => {
+    const adminPerms = new Set(roleSeed("admin").permissions);
+    expect(adminPerms.has("notification-preferences.read")).toBe(true);
+    expect(adminPerms.has("notification-preferences.update")).toBe(true);
+  });
+
+  it("bursar does NOT grant notification-preferences.* (finance-only role; not a finance action)", () => {
+    const bursarPerms = new Set(roleSeed("bursar").permissions);
+    expect(bursarPerms.has("notification-preferences.read")).toBe(false);
+    expect(bursarPerms.has("notification-preferences.update")).toBe(false);
   });
 });

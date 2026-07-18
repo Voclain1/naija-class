@@ -42,8 +42,9 @@ const ADMIN_PERMISSIONS: readonly string[] = [
   ...PHASE_3_PERMISSIONS.filter(
     (p) => !(PHASE_3_OWNER_ONLY_PERMISSIONS as readonly string[]).includes(p),
   ),
-  // Phase 4 / Slice 2 — guardian.invite. No owner-only subset to exclude
-  // (unlike Phases 1-3, this phase hasn't needed one yet).
+  // Phase 4 / Slice 2 — guardian.invite; Slice 6 — notification-preferences.
+  // read/update. No owner-only subset to exclude (unlike Phases 1-3, this
+  // phase hasn't needed one yet).
   ...PHASE_4_PERMISSIONS,
 ];
 
