@@ -407,6 +407,31 @@ is docs-only — the `STAGING_*` secret names and the `deploy-staging.yml`
 filename are intentionally NOT being renamed/restructured as part of this
 fix; that's a separate, larger change if ever done.)
 
+**Recreating a Vercel project does NOT carry over its environment
+variables (confirmed 2026-07-17).** `school-kit-portal` was deleted and
+recreated during Slice 1 CP2 troubleshooting (to fix a stuck Root
+Directory/Build Command setting) — the new project silently started with
+zero environment variables. `NEXT_PUBLIC_API_URL` was missing for 5+ days
+before it surfaced as a real bug: the guardian-invite manual test's
+accept-invite page 500'd with `ECONNREFUSED 127.0.0.1:4000`, because the
+portal's Next.js proxy route fell back to its local-dev default with no
+production API URL configured. Nothing caught this earlier because the
+portal's own health check (`GET /api/health`) doesn't call the API at all —
+only routes that actually proxy to `apps/api` would ever have exposed the
+gap. **Always run `vercel env ls` on a project immediately after recreating
+it**, and don't assume "the build succeeded" or "the health check passed"
+means env vars survived.
+
+The `PORTAL_BASE_URL` Fly secret being missed entirely during the Slice 2
+migration pass (added to `.env.example`/CI, never actually set via `flyctl
+secrets set` on the running `school-kit-api` app, so `POST /guardians/:id/
+invite` built accept URLs pointing at `localhost:3002` in production) is
+the same failure category, on the other platform: config added to the repo
+but never verified against the actual deployed environment. Both bugs
+shipped invisibly past CI, both were only caught by an end-to-end manual
+test, not by any automated check — worth remembering when a slice touches
+either platform's config surface.
+
 ## When asking Claude Code for help
 
 Open with the relevant spec. Example:
