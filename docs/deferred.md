@@ -305,6 +305,37 @@ Format:
   and see the new guardians on the Guardians tab. Trigger: when slice
   11+ ships `/guardians` and `/guardians/[id]`, swap the CTA target.
 
+- [ ] Bulk "invite all imported guardians with an email" CTA on the CSV
+  import done page (`/guardians/import/[jobId]/done`). Scoped into the
+  guardian-invite plan-first as an approved follow-up to the per-guardian
+  invite action, then dropped mid-implementation: `ImportJob`
+  (`schema.prisma:660`) tracks only aggregate counts
+  (`committedRows`/`validRows`/etc.), not which Guardian rows a job actually
+  created or matched — there's no `importJobId` FK or join table, and a
+  `createdAt`-window heuristic would be unsound (dedup-matched guardians
+  from earlier imports aren't freshly created, so they wouldn't show a
+  recent `createdAt` even though this job touched them). Building the CTA
+  as originally scoped needs real per-row tracking (nullable `importJobId`
+  on `Guardian`, or a join table) — a schema change, not the UI-only work
+  the rest of this pass was. Decision: skip it here; the `/guardians`
+  roster page (slice 11, see the item above) will need bulk-select
+  machinery anyway and can invite whatever's selected without needing
+  per-job tracking at all. Trigger: slice 11, or sooner if a pilot school
+  does frequent large guardian CSV imports and manually inviting one-by-one
+  becomes a real pain point.
+
+- [ ] Shared `usePermissions` hook for `apps/web`. The 2-line
+  `hasPermission(permissions, perm)` helper (checks `permissions.includes("*")
+  || permissions.includes(perm)`) is duplicated per-file rather than shared:
+  `finance/payroll/page.tsx`, `staff/bvn-section.tsx`,
+  `components/students/guardians-tab.tsx` (guardian-invite button, gating
+  `guardian.invite` to owner/admin — hide, not disable, for everyone else),
+  and now `settings/notifications/page.tsx` (same hide-not-disable gate on
+  `notification-preferences.read`/`update`). No divergence yet, just
+  copy-paste. **Trigger condition has now fired (4th site, 2026-07-18)** —
+  next touch of any of these four files is a reasonable point to actually
+  extract the hook, rather than adding a 5th copy.
+
 - [ ] Cross-cutting unsaved-changes guard for the class-subject matrix.
   Slice 3 cp3 ships a two-layer guard: `beforeunload` (catches close /
   refresh / URL-bar navigation) plus a `MatrixDirtyContext` that the
