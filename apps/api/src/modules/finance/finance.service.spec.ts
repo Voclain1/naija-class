@@ -3,8 +3,42 @@ import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import { basePrisma, withTenant } from "@school-kit/db";
 import { NotFoundError, type InvoiceStatus } from "@school-kit/types";
 
+import type { EmailService } from "../../common/email/email.service.js";
+import type { TermiiService } from "../../common/termii/termii.service.js";
+import type { NotificationPreferencesService } from "../notifications/notification-preferences.service.js";
 import { AuthService } from "../auth/auth.service.js";
 import { FinanceService } from "./finance.service.js";
+
+// Phase 4 / Slice 6 stubs — mirrors guardians.service.spec.ts's shape.
+// Defaults (isConfigured: false) preserve every pre-Slice-6 test's exact
+// prior behavior: sendReminders' early-return path fires exactly like the
+// old "no RESEND_API_KEY" branch did, for the 17 call sites below that
+// don't care about reminder delivery at all.
+function makeEmailStub(overrides: Partial<EmailService> = {}): EmailService {
+  return { isConfigured: false, send: vi.fn(async () => undefined), ...overrides } as EmailService;
+}
+function makeTermiiStub(overrides: Partial<TermiiService> = {}): TermiiService {
+  return { isConfigured: false, sendSms: vi.fn(async () => undefined), ...overrides } as TermiiService;
+}
+function makeNotificationPreferencesStub(
+  overrides: Partial<NotificationPreferencesService> = {},
+): NotificationPreferencesService {
+  return {
+    getEnabledChannels: vi.fn(async () => ({ email: true, sms: false })),
+    ...overrides,
+  } as NotificationPreferencesService;
+}
+function makeFinanceService(overrides?: {
+  email?: Partial<EmailService>;
+  termii?: Partial<TermiiService>;
+  notificationPreferences?: Partial<NotificationPreferencesService>;
+}): FinanceService {
+  return new FinanceService(
+    makeEmailStub(overrides?.email),
+    makeTermiiStub(overrides?.termii),
+    makeNotificationPreferencesStub(overrides?.notificationPreferences),
+  );
+}
 
 // Phase 3 / Slice 10 — FinanceService integration spec.
 // Phase 3 / Slice 14 adds the getDashboard block.
@@ -145,7 +179,7 @@ describe("FinanceService (integration)", () => {
   // ── transitionOverdueInvoices ────────────────────────────────────────────
 
   it("ISSUED invoice with past dueDate transitions to OVERDUE", async () => {
-    const svc = new FinanceService();
+    const svc = makeFinanceService();
     const { schoolId, ownerId } = await makeSchool("ov-issued");
     const { termId: _termId, invoiceId } = await makeInvoice(schoolId, ownerId, {
       totalDue: 100_000,
@@ -162,7 +196,7 @@ describe("FinanceService (integration)", () => {
   });
 
   it("PARTIALLY_PAID invoice with past dueDate transitions to OVERDUE", async () => {
-    const svc = new FinanceService();
+    const svc = makeFinanceService();
     const { schoolId, ownerId } = await makeSchool("ov-partial");
     const { invoiceId } = await makeInvoice(schoolId, ownerId, {
       totalDue: 100_000,
@@ -180,7 +214,7 @@ describe("FinanceService (integration)", () => {
   });
 
   it("PAID invoice with past dueDate is NOT transitioned to OVERDUE", async () => {
-    const svc = new FinanceService();
+    const svc = makeFinanceService();
     const { schoolId, ownerId } = await makeSchool("ov-paid");
     const { invoiceId } = await makeInvoice(schoolId, ownerId, {
       totalDue: 100_000,
@@ -198,7 +232,7 @@ describe("FinanceService (integration)", () => {
   });
 
   it("ISSUED invoice with null dueDate is NOT transitioned to OVERDUE", async () => {
-    const svc = new FinanceService();
+    const svc = makeFinanceService();
     const { schoolId, ownerId } = await makeSchool("ov-nodate");
     const { invoiceId } = await makeInvoice(schoolId, ownerId, {
       totalDue: 100_000,
@@ -215,7 +249,7 @@ describe("FinanceService (integration)", () => {
   });
 
   it("ISSUED invoice with future dueDate is NOT transitioned to OVERDUE", async () => {
-    const svc = new FinanceService();
+    const svc = makeFinanceService();
     const { schoolId, ownerId } = await makeSchool("ov-future");
     const { invoiceId } = await makeInvoice(schoolId, ownerId, {
       totalDue: 100_000,
@@ -242,7 +276,7 @@ describe("FinanceService (integration)", () => {
     });
 
     it("resolves (never throws) and logs a warning when the sweep rejects", async () => {
-      const svc = new FinanceService();
+      const svc = makeFinanceService();
       const dbError = new Error("connection terminated unexpectedly");
       vi.spyOn(svc, "transitionOverdueInvoices").mockRejectedValueOnce(dbError);
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -254,7 +288,7 @@ describe("FinanceService (integration)", () => {
     });
 
     it("resolves within the timeout ceiling (never hangs) when the sweep never settles", async () => {
-      const svc = new FinanceService();
+      const svc = makeFinanceService();
       vi.spyOn(svc, "transitionOverdueInvoices").mockReturnValueOnce(
         new Promise(() => {
           /* never resolves — simulates an unbounded sweep over a huge schools table */
@@ -280,7 +314,7 @@ describe("FinanceService (integration)", () => {
   // ── listDebtors ──────────────────────────────────────────────────────────
 
   it("listDebtors returns ISSUED, PARTIALLY_PAID, and OVERDUE invoices for the term", async () => {
-    const svc = new FinanceService();
+    const svc = makeFinanceService();
     const { schoolId, ownerId } = await makeSchool("ld-all");
 
     // All three in same school → must share the same term.
@@ -335,7 +369,7 @@ describe("FinanceService (integration)", () => {
   });
 
   it("listDebtors sorts OVERDUE first, PARTIALLY_PAID second, ISSUED third", async () => {
-    const svc = new FinanceService();
+    const svc = makeFinanceService();
     const { schoolId, ownerId } = await makeSchool("ld-sort");
 
     // Create all invoices in the same term so the sort can be verified.
@@ -388,7 +422,7 @@ describe("FinanceService (integration)", () => {
   });
 
   it("listDebtors computes balance = totalDue − totalPaid server-side", async () => {
-    const svc = new FinanceService();
+    const svc = makeFinanceService();
     const { schoolId, ownerId } = await makeSchool("ld-balance");
     const { termId, invoiceId: _id } = await makeInvoice(schoolId, ownerId, {
       totalDue: 150_000,
@@ -408,7 +442,7 @@ describe("FinanceService (integration)", () => {
   it("sendReminders returns skipped=1 when no guardian email is configured (no Resend key needed)", async () => {
     // FinanceService will be constructed without RESEND_API_KEY set in test env —
     // but even if it were, we skip because there's no guardian email to send to.
-    const svc = new FinanceService();
+    const svc = makeFinanceService();
     const { schoolId, ownerId } = await makeSchool("remind");
     const { termId, studentId } = await makeInvoice(schoolId, ownerId, {
       totalDue: 100_000,
@@ -425,6 +459,139 @@ describe("FinanceService (integration)", () => {
     // or no guardian email (skipped=1). Both outcomes satisfy the assertion.
     expect(result.sent).toBe(0);
     expect(result.skipped).toBe(1);
+  });
+
+  // Phase 4 / Slice 6 — links a primary guardian with the given contact
+  // info to an already-created student, for reminder-delivery tests.
+  async function linkPrimaryGuardian(
+    schoolId: string,
+    studentId: string,
+    contact: { email?: string | null; phone?: string | null },
+  ): Promise<void> {
+    await withTenant(schoolId, async (db) => {
+      const guardian = await db.guardian.create({
+        data: {
+          schoolId,
+          firstName: "Guardian",
+          lastName: `Remind-${runId}`,
+          relationship: "MOTHER",
+          phone: contact.phone ?? randomPhone(),
+          email: contact.email ?? null,
+        },
+        select: { id: true },
+      });
+      await db.studentGuardian.create({
+        data: { schoolId, studentId, guardianId: guardian.id, isPrimary: true },
+      });
+    });
+  }
+
+  describe("sendReminders — Phase 4 / Slice 6 channel preferences", () => {
+    it("sends email via EmailService when emailEnabled and configured", async () => {
+      const { schoolId, ownerId } = await makeSchool("remind-email");
+      const { termId, studentId } = await makeInvoice(schoolId, ownerId, {
+        totalDue: 100_000,
+        status: "ISSUED",
+      });
+      const email = `remind-${runId}@example.test`;
+      await linkPrimaryGuardian(schoolId, studentId, { email });
+
+      const emailStub = makeEmailStub({ isConfigured: true });
+      const svc = makeFinanceService({
+        email: { isConfigured: true, send: emailStub.send },
+        notificationPreferences: {
+          getEnabledChannels: vi.fn(async () => ({ email: true, sms: false })),
+        },
+      });
+
+      const result = await svc.sendReminders(ctx(schoolId, ownerId), { termId, studentIds: [studentId] });
+
+      expect(result.sent).toBe(1);
+      expect(result.skipped).toBe(0);
+      expect(emailStub.send).toHaveBeenCalledWith(expect.objectContaining({ to: email }));
+    });
+
+    it("sends SMS via TermiiService when smsEnabled and configured", async () => {
+      const { schoolId, ownerId } = await makeSchool("remind-sms");
+      const { termId, studentId } = await makeInvoice(schoolId, ownerId, {
+        totalDue: 100_000,
+        status: "ISSUED",
+      });
+      await linkPrimaryGuardian(schoolId, studentId, { phone: "+2348012345678" });
+
+      const termiiStub = makeTermiiStub({ isConfigured: true });
+      const svc = makeFinanceService({
+        termii: { isConfigured: true, sendSms: termiiStub.sendSms },
+        notificationPreferences: {
+          getEnabledChannels: vi.fn(async () => ({ email: false, sms: true })),
+        },
+      });
+
+      const result = await svc.sendReminders(ctx(schoolId, ownerId), { termId, studentIds: [studentId] });
+
+      expect(result.sent).toBe(1);
+      expect(termiiStub.sendSms).toHaveBeenCalledWith(
+        expect.stringMatching(/^234\d{10}$/),
+        expect.any(String),
+      );
+    });
+
+    it("acceptance criterion: both channels disabled sends neither email nor SMS, regardless of configuration", async () => {
+      const { schoolId, ownerId } = await makeSchool("remind-both-off");
+      const { termId, studentId } = await makeInvoice(schoolId, ownerId, {
+        totalDue: 100_000,
+        status: "ISSUED",
+      });
+      await linkPrimaryGuardian(schoolId, studentId, {
+        email: `remind-off-${runId}@example.test`,
+        phone: "+2348012345678",
+      });
+
+      const emailStub = makeEmailStub({ isConfigured: true });
+      const termiiStub = makeTermiiStub({ isConfigured: true });
+      const svc = makeFinanceService({
+        email: { isConfigured: true, send: emailStub.send },
+        termii: { isConfigured: true, sendSms: termiiStub.sendSms },
+        notificationPreferences: {
+          getEnabledChannels: vi.fn(async () => ({ email: false, sms: false })),
+        },
+      });
+
+      const result = await svc.sendReminders(ctx(schoolId, ownerId), { termId, studentIds: [studentId] });
+
+      expect(emailStub.send).not.toHaveBeenCalled();
+      expect(termiiStub.sendSms).not.toHaveBeenCalled();
+      expect(result.sent).toBe(0);
+      expect(result.skipped).toBe(1);
+    });
+
+    it("counts as sent when email fails but SMS succeeds (per-student, not per-channel)", async () => {
+      const { schoolId, ownerId } = await makeSchool("remind-partial");
+      const { termId, studentId } = await makeInvoice(schoolId, ownerId, {
+        totalDue: 100_000,
+        status: "ISSUED",
+      });
+      await linkPrimaryGuardian(schoolId, studentId, {
+        email: `remind-partial-${runId}@example.test`,
+        phone: "+2348012345678",
+      });
+
+      const svc = makeFinanceService({
+        email: {
+          isConfigured: true,
+          send: vi.fn(async () => { throw new Error("Resend down"); }),
+        },
+        termii: { isConfigured: true, sendSms: vi.fn(async () => undefined) },
+        notificationPreferences: {
+          getEnabledChannels: vi.fn(async () => ({ email: true, sms: true })),
+        },
+      });
+
+      const result = await svc.sendReminders(ctx(schoolId, ownerId), { termId, studentIds: [studentId] });
+
+      expect(result.sent).toBe(1);
+      expect(result.skipped).toBe(0);
+    });
   });
 
   // ── getDashboard ─────────────────────────────────────────────────────────
@@ -496,7 +663,7 @@ describe("FinanceService (integration)", () => {
   }
 
   it("throws NotFoundError for an unknown termId", async () => {
-    const svc = new FinanceService();
+    const svc = makeFinanceService();
     const { schoolId, ownerId } = await makeSchool("dash-notfound");
     await expect(
       svc.getDashboard(ctx(schoolId, ownerId), "00000000-0000-0000-0000-000000000000"),
@@ -504,7 +671,7 @@ describe("FinanceService (integration)", () => {
   });
 
   it("totalInvoiced/totalCollected/collectionRatePercent cover ISSUED/PARTIALLY_PAID/PAID/OVERDUE and exclude DRAFT/CANCELLED", async () => {
-    const svc = new FinanceService();
+    const svc = makeFinanceService();
     const { schoolId, ownerId } = await makeSchool("dash-invoiced");
     const { termId, invoiceId: firstId } = await makeInvoice(schoolId, ownerId, {
       totalDue: 100_000,
@@ -553,7 +720,7 @@ describe("FinanceService (integration)", () => {
     // the invoice to the terminal REFUNDED status. REFUNDED is NOT one of
     // the debtor-set statuses (ISSUED/PARTIALLY_PAID/OVERDUE) — it's not
     // collectible, so it must not appear as outstanding either.
-    const svc = new FinanceService();
+    const svc = makeFinanceService();
     const { schoolId, ownerId } = await makeSchool("dash-refunded");
     const { termId } = await makeInvoice(schoolId, ownerId, {
       totalDue: 100_000,
@@ -570,7 +737,7 @@ describe("FinanceService (integration)", () => {
   });
 
   it("outstandingBalance and debtorCount count only ISSUED/PARTIALLY_PAID/OVERDUE", async () => {
-    const svc = new FinanceService();
+    const svc = makeFinanceService();
     const { schoolId, ownerId } = await makeSchool("dash-outstanding");
     const { termId, invoiceId: _issuedId } = await makeInvoice(schoolId, ownerId, {
       totalDue: 100_000,
@@ -605,7 +772,7 @@ describe("FinanceService (integration)", () => {
   });
 
   it("collectionRatePercent is 0 when totalInvoiced is 0 (no divide-by-zero)", async () => {
-    const svc = new FinanceService();
+    const svc = makeFinanceService();
     const { schoolId, ownerId } = await makeSchool("dash-zero");
     // Only a DRAFT invoice exists — contributes nothing to totalInvoiced.
     const { termId } = await makeInvoice(schoolId, ownerId, {
@@ -620,7 +787,7 @@ describe("FinanceService (integration)", () => {
   });
 
   it("totalExpenses includes expenses within the term's date range (inclusive boundaries) and excludes those outside", async () => {
-    const svc = new FinanceService();
+    const svc = makeFinanceService();
     const { schoolId, ownerId } = await makeSchool("dash-expenses");
     const { termId } = await makeInvoice(schoolId, ownerId, { totalDue: 100_000, status: "ISSUED" });
     const term = await withTenant(schoolId, (db) =>
@@ -642,7 +809,7 @@ describe("FinanceService (integration)", () => {
   });
 
   it("netPosition = totalCollected - totalExpenses", async () => {
-    const svc = new FinanceService();
+    const svc = makeFinanceService();
     const { schoolId, ownerId } = await makeSchool("dash-net");
     const { termId } = await makeInvoice(schoolId, ownerId, {
       totalDue: 100_000,
@@ -661,7 +828,7 @@ describe("FinanceService (integration)", () => {
   });
 
   it("is isolated per school (RLS) — a term id from another school is treated as not found", async () => {
-    const svc = new FinanceService();
+    const svc = makeFinanceService();
     const a = await makeSchool("dash-iso-a");
     const b = await makeSchool("dash-iso-b");
     const { termId: termIdA } = await makeInvoice(a.schoolId, a.ownerId, {

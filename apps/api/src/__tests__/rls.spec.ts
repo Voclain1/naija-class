@@ -2954,3 +2954,103 @@ describe("multi-tenant isolation — Phase 2 / Slice 8 (subject_attendance_recor
     expect(rows).toHaveLength(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Phase 4 / Slice 6 isolation — notification_preferences
+//
+// Flat direct-column RLS, same cheap pattern as grading_schemes — also
+// @@unique([schoolId]), one row per school. Proves: each school sees only
+// its own preference row, cross-tenant findUnique returns null, a
+// cross-tenant INSERT is rejected by WITH CHECK, and an unset GUC returns
+// zero rows (FORCE RLS fails closed).
+// ---------------------------------------------------------------------------
+
+describe("multi-tenant isolation — Phase 4 / Slice 6 (notification_preferences)", () => {
+  const runId = Math.random().toString(36).slice(2, 8);
+  let schoolA: { id: string };
+  let schoolB: { id: string };
+  let prefA: { id: string };
+  let prefB: { id: string };
+
+  beforeAll(async () => {
+    schoolA = await basePrisma.school.create({
+      data: { name: "School P4S6A", slug: `rls-p4s6a-${runId}` },
+      select: { id: true },
+    });
+    schoolB = await basePrisma.school.create({
+      data: { name: "School P4S6B", slug: `rls-p4s6b-${runId}` },
+      select: { id: true },
+    });
+
+    prefA = await withTenant(schoolA.id, (db) =>
+      db.notificationPreference.create({
+        data: { schoolId: schoolA.id, updatedBy: `u-a-${runId}` },
+        select: { id: true },
+      }),
+    );
+    prefB = await withTenant(schoolB.id, (db) =>
+      db.notificationPreference.create({
+        data: { schoolId: schoolB.id, updatedBy: `u-b-${runId}` },
+        select: { id: true },
+      }),
+    );
+  });
+
+  afterAll(async () => {
+    if (schoolA?.id) {
+      await basePrisma.school.delete({ where: { id: schoolA.id } }).catch(() => undefined);
+    }
+    if (schoolB?.id) {
+      await basePrisma.school.delete({ where: { id: schoolB.id } }).catch(() => undefined);
+    }
+    await basePrisma.$disconnect();
+  });
+
+  it("School A sees its own notification_preference only", async () => {
+    const rows = await withTenant(schoolA.id, (db) =>
+      db.notificationPreference.findMany({ where: { updatedBy: { contains: runId } } }),
+    );
+    const ids = rows.map((r) => r.id);
+    expect(ids).toContain(prefA.id);
+    expect(ids).not.toContain(prefB.id);
+  });
+
+  it("School B sees its own notification_preference only", async () => {
+    const rows = await withTenant(schoolB.id, (db) =>
+      db.notificationPreference.findMany({ where: { updatedBy: { contains: runId } } }),
+    );
+    const ids = rows.map((r) => r.id);
+    expect(ids).toContain(prefB.id);
+    expect(ids).not.toContain(prefA.id);
+  });
+
+  it("findUnique across tenants returns null", async () => {
+    const leak = await withTenant(schoolA.id, (db) =>
+      db.notificationPreference.findUnique({ where: { id: prefB.id } }),
+    );
+    expect(leak).toBeNull();
+  });
+
+  it("INSERT with another school's school_id fails the WITH CHECK clause", async () => {
+    // Scoped to A, write a row carrying B's school_id. WITH CHECK is the
+    // second-line defence (the school_id unique would also block a second
+    // A-preference row, so we use B's id, same mischief-test shape as
+    // grading_schemes).
+    await expect(
+      withTenant(schoolA.id, (db) =>
+        db.notificationPreference.create({
+          data: { schoolId: schoolB.id, updatedBy: `bad-${runId}` },
+        }),
+      ),
+    ).rejects.toThrow();
+  });
+
+  it("raw SQL with unset GUC returns zero rows from notification_preferences (FORCE RLS)", async () => {
+    const rows = await basePrisma.$transaction(async (tx) => {
+      return tx.$queryRaw<Array<{ id: string }>>`
+        SELECT id FROM notification_preferences WHERE updated_by LIKE ${"%" + runId + "%"}
+      `;
+    });
+    expect(rows).toHaveLength(0);
+  });
+});

@@ -21,7 +21,10 @@ import {
 
 import type { AuthContext } from "../../common/auth/auth-context";
 import { assertUserActiveAndHasOneOf } from "../../common/auth/role-check";
-import { redactEmail } from "../../common/redact";
+import { EmailService } from "../../common/email/email.service.js";
+import { redactEmail, redactPhone } from "../../common/redact";
+import { normalizeNigerianPhone, TermiiService } from "../../common/termii/termii.service.js";
+import { NotificationPreferencesService } from "../notifications/notification-preferences.service";
 
 interface RequestContext {
   ipAddress: string | null;
@@ -62,6 +65,15 @@ function portalBaseUrl(): string {
 @Injectable()
 export class GuardiansService {
   private readonly logger = new Logger(GuardiansService.name);
+
+  // Phase 4 / Slice 6 — invite() sends real email/SMS through these,
+  // gated by NotificationPreferencesService.getEnabledChannels. See
+  // docs/modules/phase-4.md §8 D5.
+  constructor(
+    private readonly email: EmailService,
+    private readonly termii: TermiiService,
+    private readonly notificationPreferences: NotificationPreferencesService,
+  ) {}
 
   // ----------------------------------------------------------------------
   // list — cursor-paginated, id ASC. Search OR'd across firstName,
@@ -244,10 +256,10 @@ export class GuardiansService {
     const rawToken = crypto.randomBytes(32).toString("base64url");
     const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
 
-    const portalInvitedAt = await withTenant(authCtx.schoolId, async (db) => {
+    const result = await withTenant(authCtx.schoolId, async (db) => {
       const existing = await db.guardian.findUnique({
         where: { id },
-        select: { id: true, email: true },
+        select: { id: true, email: true, phone: true, firstName: true },
       });
       if (!existing) throw new NotFoundError("Guardian not found.");
       if (!existing.email) {
@@ -302,17 +314,89 @@ export class GuardiansService {
         },
       });
 
-      return updated.portalInvitedAt as Date;
+      const school = await db.school.findUniqueOrThrow({
+        where: { id: authCtx.schoolId },
+        select: { name: true },
+      });
+
+      return {
+        portalInvitedAt: updated.portalInvitedAt as Date,
+        email: existing.email,
+        phone: existing.phone,
+        firstName: existing.firstName,
+        schoolName: school.name,
+      };
     });
 
-    // Resend delivery is deferred (docs/deferred.md "Wire Resend for real
-    // invitation email delivery") — same console-log + admin-UI-shows-the-
-    // link pattern as UsersService.invite. Only the URL is logged, not the
-    // raw token in isolation, matching that file's reasoning exactly.
+    // The URL is always logged (not the raw token in isolation) as the
+    // manual-copy fallback the admin UI already relies on — see
+    // guardians-tab.tsx's inline copy-link panel. Real delivery (below) is
+    // best-effort on top of that fallback, not a replacement for it: the
+    // invitation row + audit log are already committed by this point, and
+    // acceptUrl is always returned regardless of send outcome, so a Resend/
+    // Termii failure never breaks the endpoint's response contract.
     const acceptUrl = `${portalBaseUrl()}/invitations/${rawToken}`;
     this.logger.log(`[GUARDIAN INVITATION] ${acceptUrl}`);
 
-    return { guardianId: id, portalInvitedAt, acceptUrl };
+    await this.deliverInvitation({
+      schoolId: authCtx.schoolId,
+      schoolName: result.schoolName,
+      firstName: result.firstName,
+      email: result.email,
+      phone: result.phone,
+      acceptUrl,
+    });
+
+    return { guardianId: id, portalInvitedAt: result.portalInvitedAt, acceptUrl };
+  }
+
+  // Phase 4 / Slice 6 — best-effort email/SMS delivery of the invite link,
+  // gated per-channel by the school's NotificationPreference. Runs after
+  // the invitation row is already committed (see invite() above) — a send
+  // failure here is logged, never thrown, and never rolls back the
+  // invitation or removes acceptUrl from the response.
+  private async deliverInvitation(params: {
+    schoolId: string;
+    schoolName: string;
+    firstName: string;
+    email: string | null;
+    phone: string | null;
+    acceptUrl: string;
+  }): Promise<void> {
+    const { email: emailEnabled, sms: smsEnabled } =
+      await this.notificationPreferences.getEnabledChannels(params.schoolId);
+
+    if (emailEnabled && params.email) {
+      try {
+        await this.email.send({
+          to: params.email,
+          subject: `You're invited to ${params.schoolName}'s parent portal`,
+          html: `<p>Hi ${params.firstName},</p><p>${params.schoolName} has invited you to the School Kit parent portal. Use the link below to set your password and log in — it expires in 7 days.</p><p><a href="${params.acceptUrl}">${params.acceptUrl}</a></p>`,
+        });
+      } catch (err) {
+        this.logger.warn(
+          `Guardian invite email failed for ${redactEmail(params.email)}: ${String(err)}`,
+        );
+      }
+    }
+
+    if (smsEnabled && params.phone) {
+      const normalized = normalizeNigerianPhone(params.phone);
+      if (!normalized) {
+        this.logger.warn(`Guardian invite SMS skipped — unrecognized phone format (${redactPhone(params.phone)})`);
+      } else {
+        try {
+          await this.termii.sendSms(
+            normalized,
+            `${params.schoolName}: You've been invited to the parent portal. Set your password: ${params.acceptUrl}`,
+          );
+        } catch (err) {
+          this.logger.warn(
+            `Guardian invite SMS failed for ${redactPhone(params.phone)}: ${String(err)}`,
+          );
+        }
+      }
+    }
   }
 
   // ----------------------------------------------------------------------

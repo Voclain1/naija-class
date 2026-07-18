@@ -25,3 +25,4 @@ export * from './report-cards/index.js';
 export * from './attendance/index.js';
 export * from './subject-attendance/index.js';
 export * from './finance/index.js';
+export * from './notifications/index.js';

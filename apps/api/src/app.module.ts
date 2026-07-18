@@ -4,7 +4,9 @@ import { ConfigModule } from "@nestjs/config";
 import { ScheduleModule } from "@nestjs/schedule";
 import { ThrottlerGuard, ThrottlerModule } from "@nestjs/throttler";
 
+import { EmailModule } from "./common/email/email.module.js";
 import { PaystackModule } from "./common/paystack/paystack.module.js";
+import { TermiiModule } from "./common/termii/termii.module.js";
 import { RedisAuthModule } from "./common/auth/redis-auth.module";
 import { RedisThrottlerStorage } from "./common/auth/redis-throttler-storage";
 import { HealthController } from "./health/health.controller";
@@ -30,6 +32,7 @@ import { GradingModule } from "./modules/grading/grading.module";
 import { GuardiansModule } from "./modules/guardians/guardians.module";
 import { ImportsModule } from "./modules/imports/imports.module";
 import { InvitationsModule } from "./modules/invitations/invitations.module";
+import { NotificationsModule } from "./modules/notifications/notifications.module";
 import { PayrollModule } from "./modules/payroll/payroll.module";
 import { PortalAuthModule } from "./modules/portal-auth/portal-auth.module";
 import { ReportCardsModule } from "./modules/report-cards/report-cards.module";
@@ -71,12 +74,16 @@ const isProd = process.env.NODE_ENV === "production";
     }),
     // Globals first: QueueModule wires BullMQ to Redis; StorageModule
     // picks the storage driver; PaystackModule wraps the Paystack API and
-    // provides PaystackService to PaymentsModule. All three must be imported
-    // before the feature modules that consume them.
+    // provides PaystackService to PaymentsModule. EmailModule/TermiiModule
+    // (Phase 4 / Slice 6) provide EmailService/TermiiService to
+    // GuardiansModule, FinanceModule, and NotificationsModule. All must be
+    // imported before the feature modules that consume them.
     ScheduleModule.forRoot(),
     QueueModule,
     StorageModule,
     PaystackModule,
+    EmailModule,
+    TermiiModule,
     SystemModule,
     AuthModule,
     SchoolsModule,
@@ -89,6 +96,7 @@ const isProd = process.env.NODE_ENV === "production";
     SubjectsModule,
     ClassSubjectsModule,
     StudentsModule,
+    NotificationsModule,
     GuardiansModule,
     EnrollmentsModule,
     TeacherProfilesModule,
