@@ -28,6 +28,16 @@ const COOKIE_NAME = "sk_portal_session";
 const COOKIE_MAX_AGE = 2_592_000; // 30 days — matches GUARDIAN_SESSION_TTL_MS server-side
 const PRODUCTION_HOST = "portal.schoolkit.ng";
 
+// Bug found 2026-07-17 during the guardian-invite manual test: a
+// misconfigured NEXT_PUBLIC_API_URL made this route's fetch() fail with
+// ECONNREFUSED, which was uncaught here, so Next.js returned its own
+// generic (non-JSON) 500 page. The frontend's error handling then fell back
+// to a generic "invitation not valid" message — actively misleading, since
+// the real problem was this route never reaching the API at all, not a bad
+// token. Catching it here and returning the same { error: { code, message
+// } } envelope the rest of the app uses means the frontend's existing
+// error-message parsing (which already reads body.error.message) surfaces
+// the true cause instead of guessing.
 async function forward(
   method: string,
   subPath: string,
@@ -35,17 +45,46 @@ async function forward(
   sessionToken: string | undefined,
   host: string,
 ): Promise<NextResponse> {
-  const resp = await fetch(`${API_BASE}/portal/${subPath}`, {
-    method,
-    headers: {
-      "Content-Type": "application/json",
-      ...(sessionToken ? { Authorization: `Bearer ${sessionToken}` } : {}),
-    },
-    ...(body !== undefined ? { body } : {}),
-  });
+  let resp: Response;
+  let text: string;
+  try {
+    resp = await fetch(`${API_BASE}/portal/${subPath}`, {
+      method,
+      headers: {
+        "Content-Type": "application/json",
+        ...(sessionToken ? { Authorization: `Bearer ${sessionToken}` } : {}),
+      },
+      ...(body !== undefined ? { body } : {}),
+    });
+    text = await resp.text();
+  } catch (err) {
+    console.error("[portal proxy] upstream fetch failed", err);
+    return NextResponse.json(
+      {
+        error: {
+          code: "UPSTREAM_UNREACHABLE",
+          message: "Could not reach the server. Try again in a moment.",
+        },
+      },
+      { status: 502 },
+    );
+  }
 
-  const text = await resp.text();
-  const data: unknown = text ? JSON.parse(text) : null;
+  let data: unknown;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch (err) {
+    console.error("[portal proxy] upstream returned a non-JSON response", err);
+    return NextResponse.json(
+      {
+        error: {
+          code: "UPSTREAM_UNREACHABLE",
+          message: "Could not reach the server. Try again in a moment.",
+        },
+      },
+      { status: 502 },
+    );
+  }
 
   // login and invitations/:token/accept both return { token: string, ... }
   // on success. GET invitations/:token never has a token field, so the

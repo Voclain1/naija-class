@@ -74,3 +74,4 @@ apps/mobile/*.orig.*
 # uses STORAGE_DRIVER=r2 and this directory never appears.
 .storage/
 
+.vercel
