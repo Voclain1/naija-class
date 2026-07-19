@@ -831,3 +831,59 @@ describe("Phase 4 / Slice 6 RBAC coverage: seeded role grants match the spec", (
     expect(bursarPerms.has("notification-preferences.update")).toBe(false);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Phase 4 / Slice 8 — RBAC close-out. Same shape as Phase 3 Slice 15's
+// close-out block above: a re-assertion that admin still holds every Phase
+// 4 permission, and a mechanical audit that every PHASE_4_PERMISSIONS
+// string bursar does NOT hold is accounted for by a named, reasoned
+// exclusion — not silently defaulting to excluded-and-forgotten. Unlike
+// Phase 3, there is no PHASE_4_OWNER_ONLY_PERMISSIONS set (no owner-only
+// permission exists in Phase 4 yet) and no PHASE_4_BURSAR_PERMISSIONS
+// inclusion list (bursar holds none of PHASE_4_PERMISSIONS) — both existing
+// permission-level tests above already established this individually; this
+// block is the standing gate that catches a FUTURE Phase 4 permission added
+// without a bursar decision, at any count, same as the Phase 3 spec's own
+// "past 5, refactor" → "gate at any count" upgrade (CLAUDE.md's SECURITY
+// DEFINER inventory note documents the identical shift for that table).
+// ---------------------------------------------------------------------------
+
+describe("Phase 4 RBAC close-out: seeded role grants", () => {
+  it("owner is still the wildcard role", () => {
+    expect(roleSeed("owner").permissions).toEqual(["*"]);
+  });
+
+  it("admin grants every Phase 4 permission (no owner-only permission exists in Phase 4 yet)", () => {
+    const adminPerms = new Set(roleSeed("admin").permissions);
+    for (const p of PHASE_4_PERMISSIONS) {
+      expect(adminPerms.has(p), `admin should have ${p}`).toBe(true);
+    }
+  });
+
+  // Every PHASE_4_PERMISSIONS string bursar does NOT hold must appear on
+  // this named, reasoned exclusion list — currently all three, since
+  // guardian-portal management and notification preferences are neither
+  // one a finance action.
+  const KNOWN_BURSAR_EXCLUSIONS = new Set<string>([
+    "guardian.invite", // finance-only role; guardian portal management is not a finance action
+    "notification-preferences.read", // not a finance action
+    "notification-preferences.update", // not a finance action
+  ]);
+
+  it("bursar grants no Phase 4 permission (finance-only role, no guardian-portal/notification access)", () => {
+    const bursarPerms = new Set(roleSeed("bursar").permissions);
+    for (const p of PHASE_4_PERMISSIONS) {
+      expect(bursarPerms.has(p), `bursar should NOT have ${p}`).toBe(false);
+    }
+  });
+
+  it("every Phase 4 permission bursar lacks is on the named, reasoned exclusion list", () => {
+    const bursarPerms = new Set(roleSeed("bursar").permissions);
+    const unaccounted = PHASE_4_PERMISSIONS.filter(
+      (p) => !bursarPerms.has(p) && !KNOWN_BURSAR_EXCLUSIONS.has(p),
+    );
+    expect(unaccounted, `permission(s) excluded from bursar with no recorded reason: ${unaccounted.join(", ")}`).toEqual(
+      [],
+    );
+  });
+});

@@ -31,6 +31,7 @@ import { InvoiceGenerationService } from "../modules/invoices/invoice-generation
 import { PaymentPlanService } from "../modules/payments/payment-plan.service";
 import { PaymentsService } from "../modules/payments/payments.service";
 import { RefundsService } from "../modules/payments/refunds.service";
+import { PortalAuthService } from "../modules/portal-auth/portal-auth.service";
 import { PortalPaymentsService } from "../modules/portal-payments/portal-payments.service";
 import { ReportCardService } from "../modules/report-cards/report-card.service";
 import { ReportCardWorkflowService } from "../modules/report-cards/workflow/report-card-workflow.service";
@@ -1269,5 +1270,133 @@ describe("Phase 4 / Slice 5 audit coverage — payment.guardian-init writes an a
     expect(rows[0].userId).toBe(guardianId);
     expect(rows[0].entityId).toBeTruthy();
     expect(rows[0].metadata).toMatchObject({ invoiceId, amount: 100_000_00 });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 4 / Slice 8 — audit coverage close-out. guardian.invite,
+// guardian.login, and guardian-invitation.accept (all Slice 2) had no
+// audit-coverage.spec.ts test — Slice 2 predates the "add the
+// audit-coverage test in the same slice" discipline Slices 5 and 6 both
+// then followed (see payment.guardian-init and notification-preferences
+// .update blocks above). Composed as one real flow (invite → accept →
+// login) rather than three isolated setups, since each action's audit row
+// depends on state the previous action created (an outstanding invitation,
+// then an accepted one).
+// ---------------------------------------------------------------------------
+
+describe("Phase 4 / Slice 2 audit coverage — guardian.invite, guardian-invitation.accept, guardian.login", () => {
+  const runId = Math.random().toString(36).slice(2, 8);
+  const reqCtx = { ipAddress: "127.0.0.1", userAgent: "vitest" };
+
+  const auth = new AuthService();
+  // Stubs for GuardiansService's Slice 6 delivery dependencies — same
+  // shape as guardians.service.spec.ts's own makeEmailStub/makeTermiiStub
+  // /makeNotificationPreferencesStub (not imported from that spec file;
+  // redefined locally, same as this file's own paystackStub above).
+  const guardians = new GuardiansService(
+    { send: async () => undefined } as never,
+    { sendSms: async () => undefined } as never,
+    { getEnabledChannels: async () => ({ email: true, sms: false }) } as never,
+  );
+  const portalAuth = new PortalAuthService();
+
+  let schoolId: string;
+  let ownerId: string;
+  let guardianId: string;
+  const guardianEmail = `audit-ginvite-${runId}@example.test`;
+  const guardianPassword = "Correct-Horse-9";
+  const schoolIdsToCleanup = new Set<string>();
+
+  beforeAll(async () => {
+    const signed = await auth.signupOwner(
+      {
+        schoolName: `Audit Guardian Invite ${runId}`,
+        schoolSlug: `audit-ginvite-${runId}`,
+        ownerFirstName: "Owen",
+        ownerLastName: "Owner",
+        ownerEmail: `audit-ginvite-owner-${runId}@example.test`,
+        ownerPhone: randomPhone(),
+        password: "Correct-Horse-9",
+        ndprConsent: true,
+      },
+      reqCtx,
+    );
+    schoolId = signed.school.id;
+    ownerId = signed.user.id;
+    schoolIdsToCleanup.add(schoolId);
+    await basePrisma.school.update({
+      where: { id: schoolId },
+      data: { status: "ACTIVE", onboardingStep: 5 },
+    });
+
+    await withTenant(schoolId, async (db) => {
+      const student = await db.student.create({
+        data: { schoolId, admissionNumber: `ADM-AUDIT-GINV-${runId}`, firstName: "Audit", lastName: `Student-${runId}`, dateOfBirth: new Date("2015-01-01"), gender: "MALE" },
+        select: { id: true },
+      });
+      const guardian = await db.guardian.create({
+        data: { schoolId, firstName: "Audit", lastName: `Guardian-${runId}`, relationship: "FATHER", phone: randomPhone(), email: guardianEmail },
+        select: { id: true },
+      });
+      await db.studentGuardian.create({
+        data: { schoolId, studentId: student.id, guardianId: guardian.id, isPrimary: true, canPickup: true },
+      });
+      guardianId = guardian.id;
+    });
+  });
+
+  afterAll(async () => {
+    for (const id of schoolIdsToCleanup) {
+      await basePrisma.school.delete({ where: { id } }).catch(() => undefined);
+    }
+    await basePrisma.$disconnect();
+  });
+
+  it("guardian.invite, guardian-invitation.accept, and guardian.login each write exactly one audit row", async () => {
+    const authCtx = { sessionId: "sess", userId: ownerId, schoolId };
+
+    // 1. Admin invites the guardian.
+    const invited = await guardians.invite(authCtx, guardianId, reqCtx);
+    const inviteRows = await withTenant(schoolId, (db) =>
+      db.auditLog.findMany({ where: { action: "guardian.invite", schoolId } }),
+    );
+    expect(inviteRows.length, "audit rows for guardian.invite").toBe(1);
+    expect(inviteRows[0].userId).toBe(ownerId);
+    expect(inviteRows[0].entityId).toBe(guardianId);
+    expect(inviteRows[0].metadata).toMatchObject({ email: expect.any(String) });
+
+    const rawToken = invited.acceptUrl.split("/invitations/")[1];
+    expect(rawToken, "acceptUrl should contain the raw token").toBeTruthy();
+
+    const invitationRow = await withTenant(schoolId, (db) =>
+      db.guardianInvitation.findFirstOrThrow({ where: { guardianId }, select: { id: true } }),
+    );
+
+    // 2. Guardian accepts — sets password, verifies email.
+    const accepted = await portalAuth.acceptInvitation(
+      rawToken,
+      { password: guardianPassword, ndprConsent: true },
+      reqCtx,
+    );
+    const acceptRows = await withTenant(schoolId, (db) =>
+      db.auditLog.findMany({ where: { action: "guardian-invitation.accept", schoolId } }),
+    );
+    expect(acceptRows.length, "audit rows for guardian-invitation.accept").toBe(1);
+    // Guardian id, not a User id — audit_logs.user_id carries no FK
+    // constraint (see portal-auth.service.ts's own login/accept audit
+    // writes, the precedent this and payment.guardian-init both follow).
+    expect(acceptRows[0].userId).toBe(guardianId);
+    expect(acceptRows[0].entityId).toBe(invitationRow.id);
+    expect(accepted.guardian.id).toBe(guardianId);
+
+    // 3. Guardian logs in.
+    await portalAuth.login({ email: guardianEmail, password: guardianPassword }, reqCtx);
+    const loginRows = await withTenant(schoolId, (db) =>
+      db.auditLog.findMany({ where: { action: "guardian.login", schoolId } }),
+    );
+    expect(loginRows.length, "audit rows for guardian.login").toBe(1);
+    expect(loginRows[0].userId).toBe(guardianId);
+    expect(loginRows[0].entityId).toBe(guardianId);
   });
 });
