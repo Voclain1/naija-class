@@ -27,3 +27,4 @@ export * from './subject-attendance/index.js';
 export * from './finance/index.js';
 export * from './notifications/index.js';
 export * from './portal-students/index.js';
+export * from './portal-finance/index.js';

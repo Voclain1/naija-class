@@ -35,6 +35,7 @@ import { InvitationsModule } from "./modules/invitations/invitations.module";
 import { NotificationsModule } from "./modules/notifications/notifications.module";
 import { PayrollModule } from "./modules/payroll/payroll.module";
 import { PortalAuthModule } from "./modules/portal-auth/portal-auth.module";
+import { PortalFinanceModule } from "./modules/portal-finance/portal-finance.module";
 import { PortalStudentsModule } from "./modules/portal-students/portal-students.module";
 import { ReportCardsModule } from "./modules/report-cards/report-cards.module";
 import { SchoolsModule } from "./modules/schools/schools.module";
@@ -119,6 +120,7 @@ const isProd = process.env.NODE_ENV === "production";
     StaffBankAccountModule,
     PortalAuthModule,
     PortalStudentsModule,
+    PortalFinanceModule,
     ...(isProd ? [] : [DebugModule]),
   ],
   controllers: [HealthController],
