@@ -3,6 +3,7 @@
 // Phase 4 / Slice 4 — per-child detail: profile summary + every invoice
 // (each invoice's `items` array IS the fee structure as applied to that
 // term — no separate fee-structure fetch, see this slice's plan-first §2).
+// Slice 5 adds the "Pay" action itself (InvoiceCard below).
 //
 // Fetches GET /api/portal/students/:id and .../invoices in parallel. A 403
 // here means this guardian isn't linked to this student (withGuardian on
@@ -14,7 +15,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
-import type { PortalInvoiceDto, PortalStudentDto } from "@school-kit/types";
+import type { PaystackInitResponseDto, PortalInvoiceDto, PortalStudentDto } from "@school-kit/types";
 
 type LoadState =
   | { kind: "loading" }
@@ -167,62 +168,128 @@ export default function StudentDetailPage() {
             )}
 
             {state.invoices.map((invoice) => (
-              <div key={invoice.id} className="flex flex-col gap-3 rounded-lg border bg-card p-4 shadow-sm">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex flex-col gap-0.5">
-                    <span className="font-medium">{invoice.term.name}</span>
-                    {invoice.dueDate && (
-                      <span className="text-xs text-muted-foreground">Due {invoice.dueDate}</span>
-                    )}
-                  </div>
-                  <span
-                    className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_STYLES[invoice.status]}`}
-                  >
-                    {STATUS_LABELS[invoice.status]}
-                  </span>
-                </div>
-
-                <ul className="flex flex-col gap-1 text-sm">
-                  {invoice.items.map((item, idx) => (
-                    <li key={item.feeItemId + idx} className="flex flex-col gap-0.5">
-                      <div className="flex items-center justify-between">
-                        <span>
-                          {item.categoryName} — {item.feeName}
-                        </span>
-                        <span>{formatNaira(item.amount)}</span>
-                      </div>
-                      {item.discountsApplied.map((discount) => (
-                        <div
-                          key={discount.ruleId}
-                          className="flex items-center justify-between pl-4 text-xs text-emerald-600"
-                        >
-                          <span>{discount.ruleName}</span>
-                          <span>-{formatNaira(discount.discountAmount)}</span>
-                        </div>
-                      ))}
-                    </li>
-                  ))}
-                </ul>
-
-                <div className="flex flex-col gap-1 border-t pt-3 text-sm">
-                  <div className="flex items-center justify-between font-medium">
-                    <span>Total due</span>
-                    <span>{formatNaira(invoice.totalDue)}</span>
-                  </div>
-                  <div className="flex items-center justify-between text-muted-foreground">
-                    <span>Paid so far</span>
-                    <span>{formatNaira(invoice.totalPaid)}</span>
-                  </div>
-                  <div className="flex items-center justify-between font-medium">
-                    <span>Balance</span>
-                    <span>{formatNaira(invoice.totalDue - invoice.totalPaid)}</span>
-                  </div>
-                </div>
-              </div>
+              <InvoiceCard key={invoice.id} invoice={invoice} />
             ))}
           </section>
         </>
       )}
     </main>
+  );
+}
+
+type PayState =
+  | { kind: "idle" }
+  | { kind: "starting" }
+  | { kind: "error"; message: string };
+
+// Phase 4 / Slice 5 — the "Pay" action. No amount input: the server always
+// charges the exact outstanding balance (see PortalPaymentsService's own
+// comment on why), so this is a single button, not a form. A 409 here
+// (INVOICE_ALREADY_PAID, PAYMENT_ALREADY_IN_PROGRESS) is a normal, expected
+// outcome — e.g. a second tab, or a page the guardian didn't realise was
+// already paid — shown inline via the server's own message, not a generic
+// failure, matching how INVOICE_ALREADY_PAID's error message reads as
+// production copy already ("This invoice is already fully paid.").
+function InvoiceCard({ invoice }: { invoice: PortalInvoiceDto }) {
+  const [payState, setPayState] = useState<PayState>({ kind: "idle" });
+  const balance = invoice.totalDue - invoice.totalPaid;
+
+  async function onPay() {
+    setPayState({ kind: "starting" });
+    try {
+      const res = await fetch(
+        `/api/portal/students/${invoice.studentId}/invoices/${invoice.id}/pay`,
+        { method: "POST" },
+      );
+      const body: unknown = await res.json().catch(() => null);
+      if (!res.ok) {
+        const message =
+          body !== null && typeof body === "object" && "error" in body
+            ? ((body as { error?: { message?: string } }).error?.message ??
+                "Something went wrong. Try again.")
+            : "Could not reach the server. Try again in a moment.";
+        setPayState({ kind: "error", message });
+        return;
+      }
+      const { authorizationUrl } = body as PaystackInitResponseDto;
+      window.location.href = authorizationUrl;
+    } catch {
+      setPayState({
+        kind: "error",
+        message: "Could not reach the server. Try again in a moment.",
+      });
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-3 rounded-lg border bg-card p-4 shadow-sm">
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex flex-col gap-0.5">
+          <span className="font-medium">{invoice.term.name}</span>
+          {invoice.dueDate && (
+            <span className="text-xs text-muted-foreground">Due {invoice.dueDate}</span>
+          )}
+        </div>
+        <span
+          className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_STYLES[invoice.status]}`}
+        >
+          {STATUS_LABELS[invoice.status]}
+        </span>
+      </div>
+
+      <ul className="flex flex-col gap-1 text-sm">
+        {invoice.items.map((item, idx) => (
+          <li key={item.feeItemId + idx} className="flex flex-col gap-0.5">
+            <div className="flex items-center justify-between">
+              <span>
+                {item.categoryName} — {item.feeName}
+              </span>
+              <span>{formatNaira(item.amount)}</span>
+            </div>
+            {item.discountsApplied.map((discount) => (
+              <div
+                key={discount.ruleId}
+                className="flex items-center justify-between pl-4 text-xs text-emerald-600"
+              >
+                <span>{discount.ruleName}</span>
+                <span>-{formatNaira(discount.discountAmount)}</span>
+              </div>
+            ))}
+          </li>
+        ))}
+      </ul>
+
+      <div className="flex flex-col gap-1 border-t pt-3 text-sm">
+        <div className="flex items-center justify-between font-medium">
+          <span>Total due</span>
+          <span>{formatNaira(invoice.totalDue)}</span>
+        </div>
+        <div className="flex items-center justify-between text-muted-foreground">
+          <span>Paid so far</span>
+          <span>{formatNaira(invoice.totalPaid)}</span>
+        </div>
+        <div className="flex items-center justify-between font-medium">
+          <span>Balance</span>
+          <span>{formatNaira(balance)}</span>
+        </div>
+      </div>
+
+      {payState.kind === "error" && (
+        <p role="alert" className="text-sm text-destructive">
+          {payState.message}
+        </p>
+      )}
+
+      {balance > 0 && (
+        <button
+          type="button"
+          onClick={onPay}
+          disabled={payState.kind === "starting"}
+          className="h-10 rounded-md bg-primary text-sm font-medium text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {payState.kind === "starting" ? "Redirecting to payment…" : `Pay ${formatNaira(balance)}`}
+        </button>
+      )}
+    </div>
   );
 }
