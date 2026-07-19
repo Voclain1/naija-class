@@ -112,6 +112,22 @@ it informally as "Slice 3," which doesn't match this table — recorded here
 so a future reader hitting that mismatch in a commit message, PR title, or
 journal entry doesn't mistake it for undocumented drift.
 
+**Slice 7 deferred, confirmed at Slice 8's plan-first (2026-07-19):**
+Phase 4 closes (Slice 8) without Slice 7 (in-app messaging) having been
+built. This table's "Depends on" column for Slice 8 still literally reads
+"All prior slices," which on a strict reading includes 7 — that phrasing
+was never updated when Slice 7 turned out to need its own deferral, and is
+now known-stale, not a live blocker. Two things support closing without
+it: §6's acceptance criteria (the actual definition of "Phase 4 done") name
+guardian auth, authorization, invoices, payments, notifications, and their
+`@Permissions`/audit coverage — nothing about messaging; and this doc's own
+"Sequencing principle" section already frames messaging as deliberately
+last and lowest-priority ("zero prior art... least specified... last, so
+its design isn't rushed to unblock anything else"). Same treatment as the
+WhatsApp deferral in §4 item 3 and §5 — carried forward as an explicit,
+named follow-up, not silently dropped or retroactively folded into Slice 8's
+scope.
+
 ## 3. Data model — first-cut, confirm at each slice's plan-first
 
 ### Guardian auth (slice 2) — locked (Decisions A & C, 2026-07-12)
@@ -534,10 +550,93 @@ old finance spec didn't.
 
 ---
 
+## 9. Slice 8 plan-first decisions (locked 2026-07-19)
+
+The Phase-3-slice-15 equivalent. Closes Phase 4 without Slice 7 (messaging)
+— see the deferral note under §2's table.
+
+**D1 — Slice 7 deferred, not folded into this slice's scope.** Recorded in
+full under §2's table (2026-07-19 note). Phase 4 is considered closed
+without in-app messaging; Slice 7 becomes its own follow-up whenever it's
+prioritized, same standing as the WhatsApp deferral.
+
+**D2 — Admin `@Permissions` audit: add a Phase 4 RBAC close-out block,
+mirroring Phase 3 Slice 15's mechanical completeness audit.** Walked every
+Phase 4 staff-facing controller first — `guardian.invite` (Slice 2) and
+`notification-preferences.read`/`.update` (Slice 6) already carry full
+per-handler-pin + known-permission + role-grant coverage in
+`permissions-coverage.spec.ts`, added in the same slice each shipped. No
+missing `@Permissions` found. The one structural gap: no standing
+completeness gate across all of `PHASE_4_PERMISSIONS` (Phase 3's
+`KNOWN_BURSAR_EXCLUSIONS`-style block, which fails loudly if a future
+permission is added without a bursar decision) existed yet for Phase 4.
+Added as a "Phase 4 RBAC close-out" describe block, same shape as Phase
+3's. `send announcement`, named in this table's row 8 description, does
+not exist — `Announcement` was deferred out of Slice 6's actual scope (§8
+D2) and confirmed still entirely unbuilt (no matches anywhere in
+`apps/api/src`) — so there is no `@Permissions` gap to close for it; the
+row's own wording is aspirational against Slice 6's original full
+description, not this slice's actual audit surface.
+
+**D3 — Audit coverage: three real gaps found and closed, all from Slice
+2.** Cross-referenced every `auditLog.create` call added Slices 2-6
+against `audit-coverage.spec.ts`. `payment.guardian-init` (Slice 5) and
+`notification-preferences.update` (Slice 6) were already covered — added
+in the same slice each shipped, per that slice's own plan-first
+instruction. `guardian.invite`, `guardian.login`, and
+`guardian-invitation.accept` (all Slice 2) had no audit-coverage.spec.ts
+test — `guardian.invite` had `@Permissions` coverage but not an audit-row
+test; the other two had neither. Slice 2 predates the "add the
+audit-coverage test in the same slice" discipline Slices 5 and 6 both then
+followed. All three added as a new "Phase 4 / Slice 2 audit coverage"
+block, same shape as the existing Slice 5/6 blocks.
+
+**D4 — Cross-tenant + cross-family negative-walk E2E: a composed rollup,
+mirroring Phase 2's `phase-2-e2e.spec.ts` shape, not Phase 3's
+`bursar-scope.spec.ts` shape.** Two prior close-out precedents exist in
+this codebase and they differ: Phase 2's is a genuine composed journey
+(WALK 1 happy path + WALK 2 cross-tenant + WALK 3 in-tenant scope
+negatives, service-level, no dev-seed) — Phase 3's is a narrower
+`guard.canActivate()` role-scope check, no composed journey. Decision B
+(§3/§4) explicitly names "guardian A cannot see guardian B's child in the
+same school" as `withGuardian`'s own acceptance bar, and the phase-4.md
+table's wording ("cross-tenant + cross-family negative-walk E2E") reads
+closer to Phase 2's shape — so `phase-4-e2e.spec.ts` was built mirroring
+`phase-2-e2e.spec.ts` exactly: WALK 1 (one full real guardian journey,
+invite → accept → login → view children → view invoice → pay, composed
+through real services), WALK 2 (a second school's guardian against the
+first school's data at every step), WALK 3 (a second, same-school family's
+guardian against the first family's child at every step). Explicitly not
+new bug-catching surface — Slices 3-5 each already built their own
+per-endpoint negative-walk tests proving the same boundaries individually
+— this is confirmation that the full sequence stays correctly scoped when
+chained, plus a canonical rollup artifact matching Phase 2's, not a gap
+fill.
+
+**D5 — Manual gates: a human click-through checklist, not automated.**
+Same "no isolated staging" reality CLAUDE.md documents — every gate below
+runs against the real deployed environment, same as Slice 1 CP2's cookie-
+domain proof and every Phase 3 slice's own manual gate.
+1. Real browser: guardian invite email round-trip (real Resend send, not
+   the stub) → click link on `portal.schoolkit.ng` → accept → set password
+   → land logged in.
+2. Real browser: guardian payment via Paystack **sandbox** checkout (not
+   the test-double) → redirect to `/payments/callback` → confirm the
+   active-verify path (Slice 5) resolves for real.
+3. Toggle a school's SMS preference off → trigger a reminder → confirm no
+   real Termii send fires (§6 acceptance criterion 6 — previously only
+   proven at the unit-stub level).
+4. Re-confirm Slice 1 CP2's cookie-domain negative check still holds after
+   five more slices of changes (portal cookie not readable from
+   `apps/web`'s origin).
+
+---
+
 *Per-slice plan-firsts happen as each slice approaches — this doc is the
 phase map, not the slice specs. Decisions A-C (§4) unblock slice 1's
 plan-first, now locked above. The remaining "still open" items in §4 don't
 block slice 1 — they block slice 2 (session mechanism) and slice 7
 (messaging) respectively, and should be settled at those slices' own
 plan-firsts. Slice 6's own plan-first decisions are locked in §8, reordered
-ahead of slices 3-5 per the note under §2.*
+ahead of slices 3-5 per the note under §2. Slice 8's own plan-first
+decisions — closing the phase without slice 7 — are locked in §9.*
