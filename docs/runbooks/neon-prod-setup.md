@@ -201,8 +201,8 @@ flyctl secrets set \
   BETTER_AUTH_SECRET="$(openssl rand -hex 32)" \
   BETTER_AUTH_URL="https://school-kit-api.fly.dev" \
   API_PORT="4000" \
-  CORS_ORIGIN="https://<vercel-web-url>" \
-  WEB_BASE_URL="https://<vercel-web-url>" \
+  CORS_ORIGIN="https://<web-url>" \
+  WEB_BASE_URL="https://<web-url>" \
   ANTHROPIC_API_KEY="sk-ant-..." \
   PAYSTACK_SECRET_KEY="sk_test_..." \
   PAYSTACK_PUBLIC_KEY="pk_test_..." \
@@ -217,6 +217,25 @@ flyctl secrets set \
   RENDER_WORKER_URL="http://school-kit-render-worker.internal:4001" \
   --app school-kit-api
 ```
+
+**`<web-url>` gotcha (found 2026-07-19, see `docs/deferred.md`'s `CORS_ORIGIN`/`WEB_BASE_URL`
+entry for the full incident):** use the app's real serving domain — a
+custom domain if one is attached (e.g. `https://app.schoolkit.ng`), not
+whatever raw platform URL (`https://school-kit-web.vercel.app`) it happened
+to be assigned before a custom domain existed. Two failure modes stack
+here: (1) `CORS_ORIGIN` is matched by exact string against the browser's
+`Origin` header — no trailing slash, no path, and the wrong domain fails
+silently (no error in this app's own logs; the browser just blocks the
+response, which surfaces to the frontend as a generic, hard-to-diagnose
+error). (2) if a custom domain gets attached to the Vercel project
+*after* this command was first run, nothing re-prompts you to update these
+two secrets — re-run this section's `CORS_ORIGIN`/`WEB_BASE_URL` lines
+whenever a custom domain is attached or changed. `CORS_ORIGIN_PORTAL`/
+`PORTAL_BASE_URL` (set separately, not templated in this runbook — see
+`CLAUDE.md`'s env var notes) carry the identical exact-match risk; they
+happened to be set correctly because `portal.schoolkit.ng` was attached
+*before* those secrets were first configured, not because of any
+process difference from `CORS_ORIGIN`/`WEB_BASE_URL`'s mistake here.
 
 ### school-kit-render-worker
 
