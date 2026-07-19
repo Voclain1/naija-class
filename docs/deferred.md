@@ -601,3 +601,33 @@ Format:
   it, `charge.success` events are never delivered and the verify endpoint
   (`GET /payments/paystack/verify/:reference`) is the only self-heal path.
   Trigger: before any school goes live on Paystack.
+
+- [ ] Double-PENDING-row overpayment risk in `PaymentsService.initPaystack`
+  (Phase 3 Slice 8) and its guardian-facing counterpart,
+  `PortalPaymentsService.initiate` (Phase 4 Slice 5). Found while building
+  Slice 5, pre-existing in Phase 3 — not introduced by this slice. Neither
+  `initPaystack` call site checks for an already-outstanding PENDING
+  Paystack payment on the same invoice before creating a new one; the
+  overpayment guard only runs at *init* time (comparing the requested
+  amount against `totalDue - totalPaid` as it stood then), never at
+  *webhook-apply* time. Two PENDING rows can exist simultaneously, each
+  with its own valid Paystack reference — if both are actually completed
+  (e.g. two browser tabs, or a staff member and a guardian both initiating
+  a payment for the same invoice around the same time), `applyPaystackSuccess`
+  processes each webhook independently and `totalPaid` recomputes as the
+  sum of both, a real overpayment applied to the invoice with no guard
+  catching it. Slice 5 added a narrow, guardian-endpoint-only mitigation
+  (`PortalPaymentsService.initiate` rejects a second attempt while a
+  PENDING Paystack payment for the same invoice was created within the
+  last 30 minutes — see `IN_FLIGHT_WINDOW_MS`), which closes the
+  double-click/multi-tab case for a single guardian but does NOT close the
+  cross-actor case (a guardian and a staff member, or two different
+  guardians on a multi-guardian student, both initiating around the same
+  time) or fix the underlying webhook-apply-time gap. A real fix means
+  either the same in-flight check inside the staff `initPaystack` path too
+  (closes same-actor races only) or re-validating `remaining >= amount`
+  inside `applyPaystackSuccess` itself and capping/rejecting an
+  overpayment-causing webhook application (closes the general case, but
+  touches the most heavily-tested Phase 3 money code). Trigger: a pilot
+  school reports an actual overpayment, or before this becomes higher-
+  volume than pilot scale.

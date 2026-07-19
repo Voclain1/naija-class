@@ -31,6 +31,7 @@ import { InvoiceGenerationService } from "../modules/invoices/invoice-generation
 import { PaymentPlanService } from "../modules/payments/payment-plan.service";
 import { PaymentsService } from "../modules/payments/payments.service";
 import { RefundsService } from "../modules/payments/refunds.service";
+import { PortalPaymentsService } from "../modules/portal-payments/portal-payments.service";
 import { ReportCardService } from "../modules/report-cards/report-card.service";
 import { ReportCardWorkflowService } from "../modules/report-cards/workflow/report-card-workflow.service";
 import { SchoolsService } from "../modules/schools/schools.service";
@@ -1155,5 +1156,118 @@ describe("Phase 4 / Slice 6 audit coverage — notification-preferences.update w
     expect(rows[0].entityId).toBeTruthy();
     expect(rows[0].metadata).toMatchObject({ emailEnabled: false, smsEnabled: true });
     expect(result.emailEnabled).toBe(false);
+  });
+});
+
+describe("Phase 4 / Slice 5 audit coverage — payment.guardian-init writes an audit row", () => {
+  const runId = Math.random().toString(36).slice(2, 8);
+  const reqCtx = { ipAddress: "127.0.0.1", userAgent: "vitest" };
+
+  const auth = new AuthService();
+  // No live Paystack call needed for an audit-row assertion — stubbed,
+  // same makePaystackStub() shape used throughout the payments specs.
+  // Same stub instance is threaded into PaymentsService too, since
+  // PortalPaymentsService.verify now delegates to
+  // PaymentsService.verifyAndApply for this audit-row assertion's own
+  // "initiate" path — verifyAndApply is never actually invoked here (only
+  // initiate() is exercised in this block), so its Paystack calls
+  // never fire.
+  const paystackStub = {
+    initializeTransaction: async ({ reference }: { reference: string }) => ({
+      authorization_url: `https://checkout.paystack.com/${reference}`,
+      access_code: `ac_${reference}`,
+      reference,
+    }),
+  } as never;
+  // storage: null — this block only exercises initiate(), never
+  // verify()/verifyAndApply(), so PaymentsService's receipt-generation
+  // path (the only thing that touches storage) never runs.
+  const portalPayments = new PortalPaymentsService(
+    paystackStub,
+    new PaymentsService(null as never, paystackStub, new PaymentPlanService()),
+  );
+
+  let schoolId: string;
+  let guardianId: string;
+  let studentId: string;
+  let invoiceId: string;
+  const schoolIdsToCleanup = new Set<string>();
+
+  beforeAll(async () => {
+    const signed = await auth.signupOwner(
+      {
+        schoolName: `Audit Guardian Pay ${runId}`,
+        schoolSlug: `audit-gpay-${runId}`,
+        ownerFirstName: "Owen",
+        ownerLastName: "Owner",
+        ownerEmail: `audit-gpay-${runId}@example.test`,
+        ownerPhone: randomPhone(),
+        password: "Correct-Horse-9",
+        ndprConsent: true,
+      },
+      reqCtx,
+    );
+    schoolId = signed.school.id;
+    schoolIdsToCleanup.add(schoolId);
+    await basePrisma.school.update({
+      where: { id: schoolId },
+      data: { status: "ACTIVE", onboardingStep: 5 },
+    });
+
+    await withTenant(schoolId, async (db) => {
+      const year = await db.academicYear.create({
+        data: { schoolId, label: `2025/2026-audit-gpay-${runId}`, startDate: new Date("2025-09-01"), endDate: new Date("2026-07-31") },
+        select: { id: true },
+      });
+      const term = await db.term.create({
+        data: { schoolId, academicYearId: year.id, sequence: 1, name: "First Term", startDate: new Date("2025-09-01"), endDate: new Date("2025-12-15") },
+        select: { id: true },
+      });
+      const guardian = await db.guardian.create({
+        data: { schoolId, firstName: "Audit", lastName: `Guardian-${runId}`, relationship: "MOTHER", phone: randomPhone() },
+        select: { id: true },
+      });
+      const student = await db.student.create({
+        data: { schoolId, admissionNumber: `ADM-AUDIT-GPAY-${runId}`, firstName: "Audit", lastName: `Student-${runId}`, dateOfBirth: new Date("2015-01-01"), gender: "FEMALE" },
+        select: { id: true },
+      });
+      await db.studentGuardian.create({
+        data: { schoolId, studentId: student.id, guardianId: guardian.id, isPrimary: true, canPickup: true },
+      });
+      const invoice = await db.invoice.create({
+        data: {
+          schoolId, studentId: student.id, termId: term.id, academicYearId: year.id,
+          status: "ISSUED", items: [], totalAmount: 100_000_00, totalDiscount: 0,
+          totalDue: 100_000_00, totalPaid: 0, issuedAt: new Date(),
+        },
+        select: { id: true },
+      });
+      guardianId = guardian.id;
+      studentId = student.id;
+      invoiceId = invoice.id;
+    });
+  });
+
+  afterAll(async () => {
+    for (const id of schoolIdsToCleanup) {
+      await basePrisma.school.delete({ where: { id } }).catch(() => undefined);
+    }
+    await basePrisma.$disconnect();
+  });
+
+  it("payment.guardian-init", async () => {
+    const guardianCtx = { sessionId: "sess", guardianId, schoolId };
+    await portalPayments.initiate(guardianCtx, studentId, invoiceId, reqCtx);
+
+    const rows = await withTenant(schoolId, (db) =>
+      db.auditLog.findMany({ where: { action: "payment.guardian-init", schoolId } }),
+    );
+    expect(rows.length, "audit rows for payment.guardian-init").toBe(1);
+    // Guardian id, not a User id — audit_logs.user_id carries no FK
+    // constraint (see portal-auth.service.ts's login/accept audit writes
+    // for the identical precedent this follows).
+    expect(rows[0].userId).toBe(guardianId);
+    expect(rows[0].entityId).toBeTruthy();
+    expect(rows[0].metadata).toMatchObject({ invoiceId, amount: 100_000_00 });
   });
 });

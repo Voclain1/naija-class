@@ -457,21 +457,56 @@ export class PaymentsService {
 
   // ─── Verify Paystack payment (self-heal) ───────────────────────────────────
 
-  async verifyPaystack(authCtx: AuthContext, reference: string): Promise<PaymentDto> {
+  // Public — Phase 4 / Slice 5. "Check Paystack, apply the result if not
+  // already applied," shared by BOTH the staff-facing verifyPaystack
+  // (below, a thin wrapper) and PortalPaymentsService.verify. Deliberately
+  // takes a plain schoolId, not an AuthContext — the guardian caller has a
+  // GuardianAuthContext instead, and the cross-tenant check here (does this
+  // reference actually belong to the caller's school) applies identically
+  // to both; guardian-specific authorization (does THIS guardian own the
+  // specific student this payment belongs to) is the caller's job, checked
+  // BEFORE this method is ever called — this method has no concept of a
+  // guardian at all.
+  //
+  // Safe to call repeatedly and concurrently for the same reference — two
+  // layers, not one:
+  //   1. A terminal-status short-circuit BEFORE calling Paystack at all
+  //      (new in this refactor — the original single-caller version only
+  //      checked terminal status AFTER the Paystack call, which was fine
+  //      when this was called once per staff checkout, but wasteful now
+  //      that a guardian's browser polls this up to ~8 times per payment
+  //      attempt) and again after, in case status flipped in between (e.g.
+  //      the webhook landed while the Paystack call was in flight).
+  //   2. applyPaystackSuccess/applyPaystackFailed's own atomic
+  //      updateMany({ where: { status: "PENDING" } }) guard (see those
+  //      methods) — THIS is what actually closes the race window, for the
+  //      case where two concurrent calls (e.g. a guardian poll and the
+  //      webhook) both pass the terminal-status check above before either
+  //      commits. Without it, both would re-run the receipt-generation/
+  //      recompute/audit-log sequence — harmless to totalPaid (the
+  //      recompute-from-rows aggregate is correct either way) but would
+  //      write a duplicate audit_log row. See this slice's own concurrency
+  //      test for what's actually proven, not just asserted here.
+  async verifyAndApply(schoolId: string, reference: string): Promise<PaymentDto> {
     const parsed = parsePaystackReference(reference);
-    if (!parsed) {
+    if (!parsed || parsed.schoolId !== schoolId) {
       throw new NotFoundError("Payment not found.");
     }
 
-    // Cross-school guard: schoolId in reference must match the authenticated user's school.
-    if (parsed.schoolId !== authCtx.schoolId) {
+    const existing = await withTenant(schoolId, (db) =>
+      db.payment.findUnique({ where: { id: parsed.paymentId } }),
+    );
+    if (!existing || existing.schoolId !== schoolId) {
       throw new NotFoundError("Payment not found.");
+    }
+    if (existing.status === "SUCCESS" || existing.status === "FAILED" || existing.status === "REVERSED") {
+      return toDto(existing as PaymentRow);
     }
 
     // Call Paystack verify outside a DB transaction (avoids holding connection during network I/O).
     const verifyData = await this.paystack.verifyTransaction(reference);
 
-    return withTenant(authCtx.schoolId, async (db) => {
+    return withTenant(schoolId, async (db) => {
       const payment = await db.payment.findUnique({
         where: { id: parsed.paymentId },
         select: {
@@ -485,11 +520,13 @@ export class PaymentsService {
         },
       });
 
-      if (!payment || payment.schoolId !== authCtx.schoolId) {
+      if (!payment || payment.schoolId !== schoolId) {
         throw new NotFoundError("Payment not found.");
       }
 
-      // Idempotency: if already terminal, return current state without re-applying.
+      // Re-check: status may have flipped between the fast-path read above
+      // and now (e.g. the webhook landed while verifyTransaction was in
+      // flight).
       if (
         payment.status === "SUCCESS" ||
         payment.status === "FAILED" ||
@@ -514,6 +551,10 @@ export class PaymentsService {
       const row = await db.payment.findUniqueOrThrow({ where: { id: payment.id } });
       return toDto(row as PaymentRow);
     });
+  }
+
+  async verifyPaystack(authCtx: AuthContext, reference: string): Promise<PaymentDto> {
+    return this.verifyAndApply(authCtx.schoolId, reference);
   }
 
   // ─── List payments ─────────────────────────────────────────────────────────
@@ -581,15 +622,31 @@ export class PaymentsService {
     paystackData: Record<string, unknown>,
     paidAt: Date,
   ): Promise<void> {
-    // 1. Transition payment to SUCCESS and store Paystack payload.
-    await db.payment.update({
-      where: { id: payment.id },
+    // 1. Transition payment to SUCCESS and store Paystack payload — an
+    // ATOMIC conditional update (updateMany + a status: "PENDING" filter),
+    // not a plain update. This is what actually closes the race window
+    // callers' own terminal-status checks can't: two concurrent calls
+    // (verifyAndApply from a guardian poll, and the webhook, or two
+    // overlapping polls) can both pass their own "is this already
+    // terminal?" read before either commits. Only one of two concurrent
+    // updateMany calls with this WHERE clause can affect the row; the
+    // loser gets count: 0 and bails out here, before any of steps 2-7
+    // (receipt generation, recompute, audit log) run a second time. Added
+    // specifically for Slice 5's guardian-facing verifyAndApply, which
+    // introduced the first caller that can genuinely race the webhook —
+    // the original single staff-triggered call site never needed this.
+    const claim = await db.payment.updateMany({
+      where: { id: payment.id, status: "PENDING" },
       data: {
         status: "SUCCESS",
         paidAt,
         paystackData: paystackData as object,
       },
     });
+    if (claim.count === 0) {
+      this.logger.log(`Payment ${payment.id} already claimed by a concurrent apply — skipping`);
+      return;
+    }
 
     // 2. Generate and upload receipt HTML.
     const receiptNumber = receiptNumberFor(payment.id);
@@ -659,10 +716,15 @@ export class PaymentsService {
   // ─── Private: apply Paystack failed ───────────────────────────────────────
 
   private async applyPaystackFailed(db: PrismaClient, payment: PaymentCore): Promise<void> {
-    await db.payment.update({
-      where: { id: payment.id },
+    // Same atomic-claim reasoning as applyPaystackSuccess above.
+    const claim = await db.payment.updateMany({
+      where: { id: payment.id, status: "PENDING" },
       data: { status: "FAILED" },
     });
+    if (claim.count === 0) {
+      this.logger.log(`Payment ${payment.id} already claimed by a concurrent apply — skipping`);
+      return;
+    }
 
     await db.auditLog.create({
       data: {
