@@ -45,9 +45,16 @@ primary_region = "jnb"
   force_https          = true
   auto_stop_machines   = "stop"
   auto_start_machines  = true
-  # staging: scale to zero between requests to save cost.
-  # prod: raise to 1 so the first request after idle isn't a cold start.
-  min_machines_running = 0
+  # Raised 0 -> 1 (2026-07-19): this app IS production (see CLAUDE.md's
+  # "no isolated staging environment" note — there is no separate staging
+  # tier to have left this at the cost-saving value for). min_machines_
+  # running = 0 meant every idle-then-first-request cycle paid a ~22s cold
+  # start (measured directly against school-kit-api.fly.dev), which
+  # surfaced to guardian-creation (and any other) admin UI action as a
+  # generic, unhelpful client-side error rather than a slow-but-working
+  # request. Keeping 1 machine warm trades a small always-on cost for
+  # removing that failure mode entirely.
+  min_machines_running = 1
 
   [[http_service.checks]]
     grace_period = "10s"
