@@ -206,12 +206,14 @@ flyctl secrets set \
   ANTHROPIC_API_KEY="sk-ant-..." \
   PAYSTACK_SECRET_KEY="sk_test_..." \
   PAYSTACK_PUBLIC_KEY="pk_test_..." \
+  RESEND_API_KEY="re_..." \
   TERMII_API_KEY="..." \
   TERMII_SENDER_ID="SchoolKit" \
   R2_ACCOUNT_ID="..." \
   R2_ACCESS_KEY_ID="..." \
   R2_SECRET_ACCESS_KEY="..." \
   R2_BUCKET="school-kit-staging" \
+  STORAGE_DRIVER="r2" \
   SENTRY_DSN_API="..." \
   SENTRY_ENVIRONMENT="staging" \
   RENDER_WORKER_URL="http://school-kit-render-worker.internal:4001" \
@@ -237,6 +239,56 @@ happened to be set correctly because `portal.schoolkit.ng` was attached
 *before* those secrets were first configured, not because of any
 process difference from `CORS_ORIGIN`/`WEB_BASE_URL`'s mistake here.
 
+**`RESEND_API_KEY` was missing from this template entirely until
+2026-07-21** (see `docs/deferred.md`'s "Wire Resend for real invitation
+email delivery" entry for the full incident) — not a wrong value like the
+`<web-url>` gotcha above, a genuine omission: this line simply didn't
+exist, so anyone who ran this runbook exactly as written never set the key
+at all. `EmailService` degrades silently by design when it's absent
+(`GuardiansService.deliverInvitation`'s try/catch logs a `WARN` and moves
+on, never blocking the invitation itself) — so the guardian-invite flow
+looked completely successful (invite created, accept link worked, login
+worked) while zero email was ever actually sent, for as long as this key
+was missing. Silent-by-design failure modes like this are exactly why a
+missing line in this template is dangerous: there is no error anywhere
+that points back to "the secret isn't set" unless someone reads the
+Fly logs for the specific `WARN` line or manually checks a real inbox.
+When adding a new third-party integration to this codebase, add its
+secret to this template in the same PR — don't rely on a later runbook
+edit to catch the gap, since nothing forces this file to be re-read once
+a Fly app is already provisioned.
+
+**`STORAGE_DRIVER` was missing from this template entirely until
+2026-07-21, on both `school-kit-api` and `school-kit-render-worker`**
+(found the same investigation session as the `RESEND_API_KEY` gap above —
+see `docs/deferred.md`'s R2/storage entry for the full incident). The
+`R2_*` credential lines were already templated, but with no
+`STORAGE_DRIVER=r2` line to activate them, `storage.module.ts`'s own
+fallback (`config.get<string>("STORAGE_DRIVER") ?? "filesystem"`) meant
+production ran on the **filesystem driver** the entire time — writing
+report-card PDFs and payment/expense receipts to the Fly machine's own
+ephemeral container disk, which has no mounted volume, so every file
+written is lost on the next deploy or restart. Worse, the filesystem
+driver's *serving* mechanism (`DevStorageController`, which proxies bytes
+for locally-served download links) is deliberately dev-only —
+`isProd ? [] : [DevStorageController]` in this same module — so even a
+file that happened to survive until the next request had no route to be
+fetched through in production; confirmed directly with `GET /api/v1/
+dev-storage/...` against the live API returning `404`. Investigated for
+real damage before fixing: **zero real files were ever lost** — every
+`Payment.receiptUrl` and `ReportCard.artifactUrl` in production is
+`null`, because (per the `NEXT_PUBLIC_API_URL` incident above) every
+school in the database is a smoke-test artifact; nothing has ever
+exercised the real write path. Purely a forward-looking fix, not a
+recovery. Once real R2 credentials are set, `STORAGE_DRIVER=r2` switches
+both the write target (a real Cloudflare R2 bucket) and the serve
+mechanism (native presigned URLs from `R2StorageDriver.signUrl()` — the
+browser fetches directly from R2, no app-side proxy controller needed in
+production, unlike dev) in one flip, with zero application code changes.
+Verify with a real end-to-end write+fetch after switching, not just that
+the secrets are present — presence was never the failure mode for `R2_*`
+here, activation was.
+
 ### school-kit-render-worker
 
 ```bash
@@ -248,6 +300,7 @@ flyctl secrets set \
   R2_ACCESS_KEY_ID="..." \
   R2_SECRET_ACCESS_KEY="..." \
   R2_BUCKET="school-kit-staging" \
+  STORAGE_DRIVER="r2" \
   SENTRY_DSN_API="..." \
   SENTRY_ENVIRONMENT="staging" \
   --app school-kit-render-worker
