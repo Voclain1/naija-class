@@ -212,7 +212,7 @@ flyctl secrets set \
   R2_ACCOUNT_ID="..." \
   R2_ACCESS_KEY_ID="..." \
   R2_SECRET_ACCESS_KEY="..." \
-  R2_BUCKET="school-kit-staging" \
+  R2_BUCKET="school-kit-prod" \
   STORAGE_DRIVER="r2" \
   SENTRY_DSN_API="..." \
   SENTRY_ENVIRONMENT="staging" \
@@ -289,6 +289,23 @@ Verify with a real end-to-end write+fetch after switching, not just that
 the secrets are present — presence was never the failure mode for `R2_*`
 here, activation was.
 
+**The bucket name in this template was also wrong — fixed 2026-07-23.**
+This template (and the original Slice 1b provisioning journal it was
+copied from) suggested `school-kit-staging`, but that bucket does not
+exist under the real account: confirmed by calling R2's S3-compatible API
+directly with the real credentials — `ListBuckets` itself came back `403`
+(the token is scoped to a single bucket, not account-wide; a permissions
+rejection, not a signature failure, so this didn't mean the credentials
+were bad), then `HeadBucket`/`ListObjectsV2` against candidate names
+confirmed the real bucket is **`school-kit-prod`** (`school-kit-staging`,
+`school-kit-api`, and bare `school-kit` all `403`). Caught before use this
+time — worth flagging as the fifth instance of the same "documented value
+never verified against what was actually provisioned" pattern this
+project has hit in a week, this one just found proactively instead of via
+a bug report. `.env.example`'s own `R2_BUCKET=school-kit-dev` is a
+genuinely different, correct value (the local-dev bucket, not this one) —
+left untouched.
+
 ### school-kit-render-worker
 
 ```bash
@@ -299,7 +316,7 @@ flyctl secrets set \
   R2_ACCOUNT_ID="..." \
   R2_ACCESS_KEY_ID="..." \
   R2_SECRET_ACCESS_KEY="..." \
-  R2_BUCKET="school-kit-staging" \
+  R2_BUCKET="school-kit-prod" \
   STORAGE_DRIVER="r2" \
   SENTRY_DSN_API="..." \
   SENTRY_ENVIRONMENT="staging" \
