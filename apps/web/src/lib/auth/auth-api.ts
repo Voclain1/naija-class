@@ -8,9 +8,13 @@
 //     Used for everything else (me, 2fa management endpoints).
 
 import type {
+  ForgotPasswordInput,
+  ForgotPasswordResponse,
   LoginInput,
   LoginResponse,
   MeResponse,
+  ResetPasswordInput,
+  ResetPasswordResponse,
   SignupOwnerInput,
   SignupOwnerResponse,
   TotpChallengeInput,
@@ -107,4 +111,27 @@ export function twoFactorDisableRequest(input: TotpDisableInput): Promise<void> 
   // not an expired session. The caller (security-settings.tsx) catches the error and
   // shows an inline field error; letting the global 401 handler fire would log the user out.
   return apiFetch<void>("/auth/2fa", { method: "DELETE", body: input, notifyOnUnauthorized: false });
+}
+
+// Both public — no session exists yet (forgot-password) or is being
+// deliberately NOT auto-created (reset-password; see auth.service.ts's
+// resetPassword() for why). Plain apiFetch, not proxyFetch: unlike login/
+// signup/logout/2fa-challenge, neither of these mutates the sk_session
+// cookie, so there is nothing for the Next.js proxy route to manage. Same
+// notifyOnUnauthorized:false reasoning as the invitations endpoints — a 401
+// from a public endpoint would never be a real session expiry.
+export function forgotPasswordRequest(input: ForgotPasswordInput): Promise<ForgotPasswordResponse> {
+  return apiFetch<ForgotPasswordResponse>("/auth/forgot-password", {
+    method: "POST",
+    body: input,
+    notifyOnUnauthorized: false,
+  });
+}
+
+export function resetPasswordRequest(input: ResetPasswordInput): Promise<ResetPasswordResponse> {
+  return apiFetch<ResetPasswordResponse>("/auth/reset-password", {
+    method: "POST",
+    body: input,
+    notifyOnUnauthorized: false,
+  });
 }

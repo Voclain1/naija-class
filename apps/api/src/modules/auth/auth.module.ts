@@ -2,12 +2,16 @@ import { Module } from "@nestjs/common";
 
 import { AuthGuard } from "../../common/auth/auth.guard";
 import { PermissionsGuard } from "../../common/auth/permissions.guard";
+import { EmailModule } from "../../common/email/email.module.js";
 import { RateLimitByEmailGuard } from "../../common/guards/rate-limit-by-email.guard";
 import { AuthController } from "./auth.controller";
 import { AuthService } from "./auth.service";
 import { TotpService } from "./totp.service";
 
 @Module({
+  // EmailModule — forgot/reset-password (2026-07-24) sends the reset link
+  // through the same EmailService/Resend path guardian invites already use.
+  imports: [EmailModule],
   controllers: [AuthController],
   // AuthGuard is provided here (rather than as a global guard) so other
   // modules opt in explicitly via @UseGuards(AuthGuard). Phase 0 routes

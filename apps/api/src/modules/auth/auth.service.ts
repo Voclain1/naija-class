@@ -1,6 +1,6 @@
 import * as crypto from "node:crypto";
 
-import { Inject, Injectable } from "@nestjs/common";
+import { Inject, Injectable, Logger } from "@nestjs/common";
 import type Redis from "ioredis";
 
 import {
@@ -14,13 +14,19 @@ import {
 } from "@school-kit/db";
 import {
   ConflictError,
+  GoneError,
   InternalError,
+  NotFoundError,
   UnauthorizedError,
   ValidationError,
   type AuthMeRoleDto,
+  type ForgotPasswordInput,
+  type ForgotPasswordResponse,
   type LoginInput,
   type LoginResponse,
   type MeResponse,
+  type ResetPasswordInput,
+  type ResetPasswordResponse,
   type SignupOwnerInput,
   type SignupOwnerResponse,
   type TotpChallengeInput,
@@ -31,6 +37,7 @@ import {
 } from "@school-kit/types";
 
 import type { AuthContext } from "../../common/auth/auth-context";
+import { EmailService } from "../../common/email/email.service.js";
 import { REDIS_AUTH_CLIENT } from "../../common/auth/redis-auth.provider.js";
 // Indirect through password.ts so tests can spy on hashPassword / verifyPassword.
 // The argon2 package's CJS exports are non-configurable.
@@ -45,9 +52,27 @@ const LOGIN_2FA_AUDIT_ACTION = "auth.login_2fa";
 const LOGOUT_AUDIT_ACTION = "auth.logout";
 const TOTP_ENABLE_AUDIT_ACTION = "auth.2fa.enable";
 const TOTP_DISABLE_AUDIT_ACTION = "auth.2fa.disable";
+const PASSWORD_RESET_REQUESTED_AUDIT_ACTION = "auth.password_reset_requested";
+const PASSWORD_RESET_AUDIT_ACTION = "auth.password_reset";
 
 const CHALLENGE_TTL_SECONDS = 300;
 const CHALLENGE_KEY_PREFIX = "2fa:challenge:";
+
+// Short-lived by design — much shorter than the 7-day invitation TTL.
+// Industry-standard reasoning: a reset link is issued to prove control of an
+// inbox RIGHT NOW, not "at some point this week"; a long-lived link sitting
+// unused in an inbox is a bigger compromise window than a short one that
+// just gets re-requested if missed.
+const PASSWORD_RESET_TTL_MS = 1000 * 60 * 60; // 1 hour
+
+// Same purpose as users.service.ts's webBaseUrl() / commit-teachers.row.ts's
+// copy — duplicated rather than shared, matching this codebase's existing
+// convention for this exact one-liner (see both call sites for the same
+// "why not shared" non-reasoning: it's genuinely one line, not worth an
+// import for two other modules to already duplicate).
+function webBaseUrl(): string {
+  return process.env.WEB_BASE_URL ?? "http://localhost:3001";
+}
 
 // Fixed argon2id hash used as a target when login is attempted against an
 // unknown email or a user without a password_hash. Verifying against it
@@ -78,17 +103,34 @@ interface LookupUserForLoginRow {
   is_active: boolean;
 }
 
+interface LookupUserForPasswordResetRow {
+  user_id: string;
+  school_id: string;
+  is_active: boolean;
+}
+
+interface ResolvePasswordResetTokenRow {
+  reset_id: string;
+  user_id: string;
+  school_id: string;
+  expires_at: Date;
+  used_at: Date | null;
+}
+
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   // Default parameters allow `new AuthService()` in integration tests that
   // bypass the DI container. In production NestJS resolves both via DI:
-  // TotpService from providers, REDIS_AUTH_CLIENT from RedisAuthModule.
-  // Tests that call 2FA methods (setup/confirm/disable) receive real objects;
-  // tests that only call signup/login get the cheap defaults and never touch
-  // the Redis path.
+  // TotpService/EmailService from providers, REDIS_AUTH_CLIENT from
+  // RedisAuthModule. Tests that call 2FA/password-reset methods receive real
+  // objects; tests that only call signup/login get the cheap defaults and
+  // never touch the Redis/email paths.
   constructor(
     private readonly totpService: TotpService = new TotpService(),
     @Inject(REDIS_AUTH_CLIENT) private readonly redis: Redis = null as unknown as Redis,
+    private readonly email: EmailService = null as unknown as EmailService,
   ) {}
 
   // Creates: School → User → UserRole (owner) → AuditLog in a single
@@ -481,6 +523,172 @@ export class AuthService {
         },
       });
     });
+  }
+
+  // POST /auth/forgot-password — PUBLIC. Issues a reset token if (and only
+  // if) the email matches an active user, but ALWAYS returns the same
+  // generic response either way — the account-enumeration guard here is
+  // "the response never varies", same spirit as login()'s dummy-hash trick,
+  // just applied to control flow instead of timing (no dummy-latency step:
+  // unlike login, nothing here is comparing a caller-supplied secret, so the
+  // stakes of a minor timing difference are much lower — see
+  // auth_lookup_user_for_password_reset's migration header for the same
+  // point made at the SQL layer).
+  async forgotPassword(input: ForgotPasswordInput, ctx: RequestContext): Promise<ForgotPasswordResponse> {
+    const GENERIC_RESPONSE: ForgotPasswordResponse = {
+      message: "If an account exists for that email, we've sent password reset instructions.",
+    };
+
+    const rows = await basePrisma.$queryRaw<LookupUserForPasswordResetRow[]>`
+      SELECT * FROM auth_lookup_user_for_password_reset(${input.email})
+    `;
+    const row = rows[0];
+
+    // Unknown email or deactivated account: same non-committal response,
+    // no token issued, no email sent. Deactivated is treated the same as
+    // unknown for the same reason login() treats it the same as a wrong
+    // password — we do not want this endpoint to reveal account state.
+    if (!row || !row.is_active) {
+      return GENERIC_RESPONSE;
+    }
+
+    const rawToken = crypto.randomBytes(32).toString("base64url");
+    const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
+    const expiresAt = new Date(Date.now() + PASSWORD_RESET_TTL_MS);
+
+    await withTenant(row.school_id, async (db) => {
+      await db.passwordResetToken.create({
+        data: {
+          schoolId: row.school_id,
+          userId: row.user_id,
+          tokenHash,
+          expiresAt,
+        },
+      });
+
+      await db.auditLog.create({
+        data: {
+          schoolId: row.school_id,
+          userId: row.user_id,
+          action: PASSWORD_RESET_REQUESTED_AUDIT_ACTION,
+          entityType: "user",
+          entityId: row.user_id,
+          ipAddress: ctx.ipAddress,
+          metadata: {
+            email: redactEmail(input.email),
+            userAgent: ctx.userAgent,
+          },
+        },
+      });
+    });
+
+    const resetUrl = `${webBaseUrl()}/reset-password/${rawToken}`;
+    // Manual-copy fallback, same established pattern as guardian invite's
+    // `[GUARDIAN INVITATION]` log line (guardians.service.ts) — logged
+    // unconditionally, before the best-effort send below, so a Resend
+    // outage never loses the link entirely.
+    this.logger.log(`[PASSWORD RESET] ${resetUrl}`);
+
+    try {
+      await this.email.send({
+        to: input.email,
+        subject: "Reset your School Kit password",
+        html: `<p>We received a request to reset your School Kit password. This link expires in 1 hour and can only be used once.</p><p><a href="${resetUrl}">${resetUrl}</a></p><p>If you didn't request this, you can safely ignore this email.</p>`,
+      });
+    } catch (err) {
+      // Best-effort — same as guardian invite delivery. The token row is
+      // already committed; a Resend failure here is logged, never thrown,
+      // and never surfaced to the caller (which would leak account
+      // existence via a differently-shaped error response).
+      this.logger.warn(`Password reset email failed for ${redactEmail(input.email)}: ${String(err)}`);
+    }
+
+    return GENERIC_RESPONSE;
+  }
+
+  // POST /auth/reset-password — PUBLIC. Validates the token, overwrites
+  // passwordHash, invalidates every existing session for the user (a stale
+  // session surviving a password reset would defeat the point of resetting
+  // it — e.g. a stolen session on a shared computer), and returns a plain
+  // success message.
+  //
+  // Deliberately does NOT auto-login (unlike InvitationsService.accept,
+  // which effectively is "create user + log in"). Two reasons: (1) if the
+  // account has 2FA enabled, silently issuing a session here would bypass
+  // that second factor entirely — reset-password proves control of an
+  // inbox, not control of the authenticator app, and those are not the same
+  // guarantee login() makes. Re-implementing login()'s totpEnabled branch
+  // here just to preserve it would duplicate that logic for no real UX win.
+  // (2) forcing a fresh sign-in after a reset is the conventional pattern
+  // (and arguably the more honest one: "your password changed, prove you
+  // know the new one before we trust this device again").
+  async resetPassword(input: ResetPasswordInput, ctx: RequestContext): Promise<ResetPasswordResponse> {
+    const tokenHash = crypto.createHash("sha256").update(input.token).digest("hex");
+    const rows = await basePrisma.$queryRaw<ResolvePasswordResetTokenRow[]>`
+      SELECT * FROM auth_resolve_password_reset_token(${tokenHash})
+    `;
+    const row = rows[0];
+
+    if (!row) {
+      throw new NotFoundError("Password reset link not found.");
+    }
+    // Order matters, same rationale as InvitationsService.resolveOrThrow:
+    // already-used takes precedence over expired so a user who already used
+    // the link but comes back after it would also have expired sees the
+    // more useful "already used" message.
+    if (row.used_at !== null) {
+      throw new GoneError(
+        "PASSWORD_RESET_ALREADY_USED",
+        "This password reset link has already been used.",
+      );
+    }
+    if (row.expires_at.getTime() <= Date.now()) {
+      throw new GoneError(
+        "PASSWORD_RESET_EXPIRED",
+        "This password reset link has expired. Request a new one.",
+      );
+    }
+
+    const passwordHash = await password.hashPassword(input.password);
+
+    await withTenant(row.school_id, async (db) => {
+      // Atomic claim, same race-safe pattern as InvitationsService.accept —
+      // updateMany's WHERE includes usedAt: null, so a concurrent reset
+      // attempt that already claimed the token produces count=0 here.
+      const claim = await db.passwordResetToken.updateMany({
+        where: { id: row.reset_id, usedAt: null },
+        data: { usedAt: new Date() },
+      });
+      if (claim.count !== 1) {
+        throw new GoneError(
+          "PASSWORD_RESET_ALREADY_USED",
+          "This password reset link has already been used.",
+        );
+      }
+
+      await db.user.update({
+        where: { id: row.user_id },
+        data: { passwordHash },
+      });
+
+      // Kill every existing session for this user — see method-level
+      // comment for why this matters.
+      await db.session.deleteMany({ where: { userId: row.user_id } });
+
+      await db.auditLog.create({
+        data: {
+          schoolId: row.school_id,
+          userId: row.user_id,
+          action: PASSWORD_RESET_AUDIT_ACTION,
+          entityType: "user",
+          entityId: row.user_id,
+          ipAddress: ctx.ipAddress,
+          metadata: { userAgent: ctx.userAgent },
+        },
+      });
+    });
+
+    return { message: "Password reset. Please sign in with your new password." };
   }
 
   // Returns the authenticated user, their school, and their roles +
