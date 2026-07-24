@@ -653,3 +653,23 @@ Format:
   touches the most heavily-tested Phase 3 money code). Trigger: a pilot
   school reports an actual overpayment, or before this becomes higher-
   volume than pilot scale.
+
+- [ ] Audit the whole app for orphaned pages — backend + UI built and working,
+  but no discoverable nav link to reach them. Found three in one day
+  (2026-07-24): the guardian-invite button (`GuardiansTab`, fixed same day),
+  the `/finance/*` sub-pages (invoices/debtors/expenses/payroll — only
+  `/finance/dashboard` was linked from the sidebar, fixed via PR #110's
+  `FinanceSubNav`), and `/settings/finance/fees` +
+  `/settings/finance/discounts` (Fee catalog + discount rules — fully built
+  per `docs/modules/phase-3.md` slices 4/5, but absent from the `/settings`
+  hub's `LINKS` array; this is what blocked Arinzechukwu's Gate 2 invoice
+  test, since he had no way to configure a non-zero fee item). All three were
+  found one at a time via manual testing hitting a dead end, not by any
+  systematic check. Worth a dedicated pass: enumerate every page under
+  `apps/web/src/app/(admin)/**/page.tsx` and `(teacher)/**/page.tsx`, then
+  grep for a `Link`/`href` reference to each route from the sidebar, a
+  settings hub, or a sub-nav — anything with zero inbound references is a
+  candidate. Trigger: next time a "feature already exists but nobody can
+  find it" report comes in, or as a standalone housekeeping pass before
+  broader user testing (parent/guardian portal, bursar role) surfaces more
+  of these.

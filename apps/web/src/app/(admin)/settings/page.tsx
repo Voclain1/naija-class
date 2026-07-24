@@ -1,4 +1,4 @@
-import { BarChart3, Bell, CalendarCheck, ShieldCheck, SlidersHorizontal, User, Users, type LucideIcon } from "lucide-react";
+import { BarChart3, Bell, CalendarCheck, Percent, ShieldCheck, SlidersHorizontal, User, Users, Wallet, type LucideIcon } from "lucide-react";
 import Link from "next/link";
 
 // /settings — a small hub linking the settings areas. (Previously a bare
@@ -15,6 +15,18 @@ const LINKS: SettingsLink[] = [
   { label: "Users", href: "/settings/users", description: "Staff accounts, roles, and invitations.", icon: Users },
   { label: "Academics", href: "/settings/academic", description: "Years, terms, levels, arms, and subjects.", icon: BarChart3 },
   { label: "Grading", href: "/settings/grading", description: "Component weights and grade boundaries.", icon: SlidersHorizontal },
+  {
+    label: "Fee catalog",
+    href: "/settings/finance/fees",
+    description: "Fee categories and items, with optional class/term scope.",
+    icon: Wallet,
+  },
+  {
+    label: "Discounts",
+    href: "/settings/finance/discounts",
+    description: "Per-student discount rules applied to invoiced fees.",
+    icon: Percent,
+  },
   {
     label: "Attendance",
     href: "/settings/attendance",
