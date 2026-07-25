@@ -7,6 +7,7 @@ import {
   LayoutDashboard,
   Settings,
   SlidersHorizontal,
+  UserPlus,
   Users,
   Wallet,
   type LucideIcon,
@@ -30,6 +31,7 @@ interface NavItem {
 const NAV_ITEMS: NavItem[] = [
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard, enabled: true },
   { label: "Students", href: "/students", icon: GraduationCap, enabled: true },
+  { label: "Enrollments", href: "/enrollments", icon: UserPlus, enabled: true },
   { label: "Staff", href: "/staff", icon: Users, enabled: true },
   { label: "Academics", href: "/settings/academic", icon: BarChart3, enabled: true },
   { label: "Grading", href: "/settings/grading", icon: SlidersHorizontal, enabled: true },
