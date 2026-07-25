@@ -153,6 +153,8 @@ Discipline for every function in this category:
 | `auth_resolve_guardian_session(token_hash)` | `20260716000000_phase_4_slice_2_guardian_auth` | Portal AuthGuard-equivalent session lookup pre-tenant; resolves bearer token to `{ session_id, guardian_id, school_id, expires_at }`. | `password_hash`, email/phone/names. `guardian_sessions` has no `school_id` column (mirrors staff `sessions`); `school_id` comes from the join to `guardians`. |
 | `auth_lookup_guardians_for_login(email)` | `20260716000000_phase_4_slice_2_guardian_auth` | **Multi-row**, unlike every other lookup function in this table. `Guardian.email` is unique only per-school (Decision C), so the same email can match guardians at multiple schools; the login service tries `argon2.verify` against each returned `password_hash` in turn (interim strategy, option ii, approved 2026-07-16 — see `docs/modules/phase-4.md` slice 2 plan-first). Returns `{ guardian_id, school_id, password_hash }` per match. | phone, names, `email_verified` (redundant — always true whenever `password_hash` is set). |
 | `auth_resolve_guardian_invitation_by_token_hash(token_hash)` | `20260716000000_phase_4_slice_2_guardian_auth` | Public guardian portal invitation-accept endpoints resolve a token hash to `{ invitation_id, school_id, guardian_id, first_name, last_name, email, invited_by, expires_at, accepted_at }` before `withTenant()` can apply. Unlike the staff equivalent, contact fields are read via a join to `guardians` — `guardian_invitations` stores no redundant copies (Decision: option b, new parallel table, not a reuse of `invitations`). | `token_hash`, `phone`, `created_at`. |
+| `auth_lookup_user_for_password_reset(email)` | `20260724000000_password_reset_tokens` | `POST /auth/forgot-password` looks up a user by email pre-tenant to `{ user_id, school_id, is_active }`. Deliberately separate from `auth_lookup_user_for_login` even though both key off email — that function returns `password_hash`, which forgot-password has no reason to ever hold. | `password_hash`, phone, names. |
+| `auth_resolve_password_reset_token(token_hash)` | `20260724000000_password_reset_tokens` | `POST /auth/reset-password` resolves a token hash to `{ reset_id, user_id, school_id, expires_at, used_at }` before `withTenant()` can apply — same chicken-and-egg problem as invitation accept. | `token_hash`, email, names — the reset form has nothing to pre-fill. |
 
 **SECURITY DEFINER inventory audit (Phase 3 / Slice 12, 2026-07-08):** reviewed
 all 5 pre-existing functions for consolidation when the count crossed the
@@ -194,7 +196,18 @@ guardians. Documented as an interim strategy — see its own row above and the
 migration's header comment — pending a real fix (e.g. a school selector in
 the portal login flow) at a later slice.
 
-**Current count: 10.**
+**Phase 0 gap closed (2026-07-24):** added two functions closing out the
+forgot/reset-password flow that Phase 0 specced but never built
+(`auth_lookup_user_for_password_reset`, `auth_resolve_password_reset_token`)
+— count moves 10 → 12, further past the "+3" cadence trigger that was
+already flagged as due at 8 during Phase 4/Slice 2 and still hasn't
+happened. Still not done by this PR either — flagged again, not resolved.
+Both new functions follow the narrow-single-caller discipline the Slice 12
+audit settled on: neither reuses `auth_lookup_user_for_login`'s wider
+`password_hash`-bearing return shape, even though the lookup key (email) is
+the same.
+
+**Current count: 12.**
 
 ### ESM module resolution
 

@@ -30,6 +30,9 @@ const SECURITY_DEFINER_FUNCTIONS = [
   "auth_resolve_guardian_session",
   "auth_lookup_guardians_for_login",
   "auth_resolve_guardian_invitation_by_token_hash",
+  // Phase 0 gap closed — forgot/reset password flow (2026-07-24).
+  "auth_lookup_user_for_password_reset",
+  "auth_resolve_password_reset_token",
 ] as const;
 
 interface SecurityDefinerRow {

@@ -256,12 +256,33 @@ All under `/api/v1`. Auth required except `/auth/*` (signup/login) and `/health`
 POST   /auth/signup-owner
 POST   /auth/login
 POST   /auth/logout
-POST   /auth/forgot-password
-POST   /auth/reset-password
+POST   /auth/forgot-password        — IMPLEMENTED 2026-07-24 (see note below)
+POST   /auth/reset-password         — IMPLEMENTED 2026-07-24 (see note below)
 POST   /auth/request-otp           — SMS OTP for parents
 POST   /auth/verify-otp
 GET    /auth/me                    — current user with roles + school
 ```
+
+**Forgot/reset password — closed 2026-07-24.** Specced here at Phase 0
+planning but never actually implemented (confirmed by a codebase-wide grep
+turning up zero routes/DTOs before that date) — it sat as a documented gap
+until a real "I forgot my password" request surfaced it. Implementation
+mirrors the invitation token pattern (`packages/db/prisma/migrations/
+20260724000000_password_reset_tokens`): a `PasswordResetToken` row (schoolId
++ unique tokenHash + expiresAt + nullable usedAt) resolved pre-tenant via two
+new SECURITY DEFINER functions (`auth_lookup_user_for_password_reset`,
+`auth_resolve_password_reset_token` — see CLAUDE.md's inventory table).
+`POST /auth/forgot-password` always returns the same generic response
+regardless of whether the email matched an account (no enumeration);
+`POST /auth/reset-password` does NOT auto-login on success — it invalidates
+every existing session for the user and requires a fresh sign-in, so a 2FA-
+enabled account can't have its second factor bypassed by an inbox
+compromise. Reset links are 1-hour lived (short-lived by design, unlike the
+7-day invitation TTL) and delivered via the same `EmailService`/Resend path
+guardian invites use. Web UI: `/forgot-password` and
+`/reset-password/[token]`, both in the `(auth)` route group alongside
+`/login`/`/signup`. See `apps/api/src/modules/auth/auth.service.ts`
+(`forgotPassword`/`resetPassword`) and `auth.password-reset.spec.ts`.
 
 Example request shape:
 
