@@ -4,7 +4,7 @@ import { apiMe, createApiContext } from "./api.js";
 import { seedTeacherInvitation } from "./db.js";
 import { uniqueSuffix } from "./unique.js";
 
-const AUTH_TOKEN_STORAGE_KEY = "sk_auth_token";
+const SESSION_COOKIE_NAME = "sk_session";
 
 export interface InvitedTeacher {
   userId: string;
@@ -31,10 +31,15 @@ export interface InvitedTeacher {
 //      to /dashboard.
 //
 // The new user's id (needed as teacherId for assignments) is read race-free via
-// GET /auth/me against the token the accept stored — NOT the accept response
-// body, which the form's hard-navigation discards. The returned context is
-// authenticated (token in localStorage) and ready to browse the teacher portal;
-// the returned email + password also feed loginAsTeacher() for a fresh context.
+// GET /auth/me against the token the accept minted — NOT the accept response
+// body, which the form's hard-navigation discards. That token now lives in the
+// sk_session HttpOnly cookie (set by the /api/invitations/:token/accept proxy
+// route), not localStorage — httpOnly cookies aren't readable via
+// page.evaluate/document.cookie by design, so we read it back through
+// Playwright's own context.cookies() (browser-automation level, not page JS).
+// The returned context is authenticated and ready to browse the teacher
+// portal; the returned email + password also feed loginAsTeacher() for a
+// fresh context.
 export async function inviteAndAcceptTeacher(
   browser: Browser,
   opts: {
@@ -88,12 +93,10 @@ export async function inviteAndAcceptTeacher(
   ]);
 
   // The created teacher's id is needed as teacherId for assignments. Read the
-  // freshly-stored session token from localStorage and resolve it via
-  // GET /auth/me — this also proves the session the accept minted is valid.
-  const token = await page.evaluate(
-    (key) => window.localStorage.getItem(key),
-    AUTH_TOKEN_STORAGE_KEY,
-  );
+  // freshly-minted sk_session cookie and resolve it via GET /auth/me — this
+  // also proves the session the accept minted is valid.
+  const cookies = await context.cookies();
+  const token = cookies.find((c) => c.name === SESSION_COOKIE_NAME)?.value;
   if (!token) {
     throw new Error("inviteAndAcceptTeacher: no session token after accept");
   }

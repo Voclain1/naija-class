@@ -123,3 +123,29 @@ export async function apiFetch<T>(
 
   return parsed as T;
 }
+
+// Thin wrapper for Next.js proxy routes under /api/* (relative paths, no
+// auth header — the route handler reads/writes the sk_session cookie
+// server-side). Used for every session-mutating call: login, signup,
+// logout, 2fa/challenge (all under /api/auth/*), and invitation-accept
+// (/api/invitations/:token/accept) — anything that mints or clears a
+// session must go through one of these proxy routes, never plain apiFetch,
+// or the sk_session cookie never gets set/cleared on the web origin.
+export async function proxyFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const res = await fetch(path, {
+    ...init,
+    headers: { "Content-Type": "application/json", ...(init.headers ?? {}) },
+  });
+  if (res.status === 204) return undefined as T;
+  const text = await res.text();
+  const parsed: unknown = text ? JSON.parse(text) : null;
+  if (!res.ok) {
+    const err =
+      (parsed as { error?: ErrorBody } | null)?.error ?? {
+        code: "UNKNOWN_ERROR",
+        message: res.statusText,
+      };
+    throw new ApiError(res.status, err);
+  }
+  return parsed as T;
+}

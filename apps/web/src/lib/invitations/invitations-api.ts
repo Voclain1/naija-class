@@ -1,7 +1,14 @@
-// Typed wrappers around the public invitation endpoints. Both calls are
-// public — apiFetch will still send the Authorization header if a token
-// happens to be in localStorage (e.g. someone clicks an invite while
-// already logged in), but the server endpoints don't require it.
+// Typed wrappers around the public invitation endpoints.
+//
+// getInvitation is a plain read — apiFetch straight to NestJS, no session
+// implications. acceptInvitation mints a real session (same shape as
+// login/signup: { user, school, token }), so — like login/signup/logout/
+// 2fa-challenge — it MUST go through a Next.js proxy route that sets the
+// sk_session HttpOnly cookie, not plain apiFetch direct to NestJS. Calling
+// NestJS directly here was the root cause of a ~4-week-old e2e hang: no
+// cookie meant AcceptInvitationForm's post-accept hard navigation to
+// /dashboard had nothing to authenticate with, so middleware.ts bounced it
+// straight back to /login every single time (see docs/deferred.md).
 
 import type {
   AcceptInvitationInput,
@@ -9,7 +16,7 @@ import type {
   PublicInvitationDto,
 } from "@school-kit/types";
 
-import { apiFetch } from "../api-client";
+import { apiFetch, proxyFetch } from "../api-client";
 
 // notifyOnUnauthorized=false: a 401 here would never come from the public
 // endpoint itself (it requires no auth) but defending against a future
@@ -26,12 +33,11 @@ export function acceptInvitation(
   token: string,
   input: AcceptInvitationInput,
 ): Promise<AcceptInvitationResponse> {
-  return apiFetch<AcceptInvitationResponse>(
-    `/invitations/${encodeURIComponent(token)}/accept`,
+  return proxyFetch<AcceptInvitationResponse>(
+    `/api/invitations/${encodeURIComponent(token)}/accept`,
     {
       method: "POST",
-      body: input,
-      notifyOnUnauthorized: false,
+      body: JSON.stringify(input),
     },
   );
 }
