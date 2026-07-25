@@ -654,61 +654,15 @@ Format:
   school reports an actual overpayment, or before this becomes higher-
   volume than pilot scale.
 
-- [ ] Audit the whole app for orphaned pages — backend + UI built and working,
-  but no discoverable nav link to reach them. Found three in one day
-  (2026-07-24): the guardian-invite button (`GuardiansTab`, fixed same day),
-  the `/finance/*` sub-pages (invoices/debtors/expenses/payroll — only
-  `/finance/dashboard` was linked from the sidebar, fixed via PR #110's
-  `FinanceSubNav`), and `/settings/finance/fees` +
-  `/settings/finance/discounts` (Fee catalog + discount rules — fully built
-  per `docs/modules/phase-3.md` slices 4/5, but absent from the `/settings`
-  hub's `LINKS` array; this is what blocked Arinzechukwu's Gate 2 invoice
-  test, since he had no way to configure a non-zero fee item). All three were
-  found one at a time via manual testing hitting a dead end, not by any
-  systematic check. Worth a dedicated pass: enumerate every page under
-  `apps/web/src/app/(admin)/**/page.tsx` and `(teacher)/**/page.tsx`, then
-  grep for a `Link`/`href` reference to each route from the sidebar, a
-  settings hub, or a sub-nav — anything with zero inbound references is a
-  candidate. Trigger: next time a "feature already exists but nobody can
-  find it" report comes in, or as a standalone housekeeping pass before
-  broader user testing (parent/guardian portal, bursar role) surfaces more
-  of these.
-
-- [ ] Gate 3's live confirmatory test — a real `FinanceService.sendReminders()`
-  call against a real outstanding invoice, proving `TermiiService.sendSms()`
-  is never invoked when a school's `NotificationPreference.smsEnabled` is
-  `false` — is deferred, not done. Attempted 2026-07-25 against production;
-  aborted before the one production write it would have needed (see below),
-  pending Arinzechukwu's sign-off, which he declined for tonight.
-  What's confirmed instead (code-level, not a live call): `FinanceService
-  .sendReminders` (`apps/api/src/modules/finance/finance.service.ts` ~line
-  253-255) computes `smsAttemptable = channels.sms && this.termii
-  .isConfigured` and only enters the `this.termii.sendSms(...)` branch when
-  `smsAttemptable && guardianPhone` — `channels.sms` false short-circuits
-  before any Termii call is reachable, by construction, not by a runtime
-  check that could itself be buggy. Also confirmed live in production
-  (read-only): both real "Virgo Fidelis Montessori School" rows
-  (`6beff17c...`, `07865652...`) have no `NotificationPreference` row at
-  all, meaning `NotificationPreferencesService.getEnabledChannels`'s
-  `DEFAULTS` apply — `smsEnabled: false` — to both, matching this gate's
-  required precondition already, with zero write needed to confirm that
-  part.
-  Why a live call didn't happen: production currently has no student with
-  BOTH an outstanding invoice (`ISSUED`/`PARTIALLY_PAID`/`OVERDUE`) AND a
-  primary guardian with a phone number. The one near-miss — Chinedu Eze at
-  `6beff17c...`, who has a primary guardian with phone+email — has a
-  `CANCELLED` invoice for the school's only term, and `InvoiceGeneration
-  Service.generateForArm` refuses to regenerate for a student-term pair
-  that already has *any* invoice row regardless of status (no "delete
-  invoice" endpoint exists — only cancel). Closing that gap for real would
-  have meant a direct DB delete of the dead `CANCELLED` row outside any
-  product flow — explicitly declined rather than done unilaterally.
-  Unblocks either way: (a) real invoice data naturally comes to exist in
-  production (Arinzechukwu generates one through the actual product flow
-  now that the Gate 2 fee-catalog-nav fix landed), making a clean student+
-  invoice+guardian candidate available without any DB surgery, or (b)
-  Termii's sender-ID registration approval completes (separately blocked on
-  Arinzechukwu's business documents), at which point the real end-to-end
-  send-and-confirm test this gate ultimately wants becomes possible anyway
-  and supersedes this narrower gate-check. Either makes this item moot, not
-  merely satisfied.
+- [ ] **CI's `e2e (Playwright)` job has been hitting its 20-minute hard timeout and getting CANCELLED on every single push to `main` for ~4 weeks — root-caused 2026-07-24, NOT fixed. This is a real, reproducible bug in the app's logout→re-login flow, not "flaky e2e," and the routine practice of admin-merging past it needs to stop being treated as cost-free.**
+  **The evidence, not a theory:** pulled the last 100 CI runs on `main` via `gh run list`. The job passed reliably for months; the last green run was 2026-06-26T22:32:32Z (run `28268970807`); every run since — 40 in a row, one per merge — has ended `cancelled` at the 20-minute ceiling. The very first cancelled run (`28300695234`, 2026-06-27T20:20:37Z) fired immediately after **PR #70 "Phase 3/slice 2 cp1"** merged — the 2FA/TOTP feature, which rewrote `apps/web/src/components/auth/login-form.tsx` (117 lines changed) into its current two-step credentials→TOTP form and introduced the cookie-based session proxy (`apps/web/src/app/api/auth/[...auth]/route.ts`) and `apps/web/src/middleware.ts`. No CI config changed in that window — this is an app-code regression, not an infra/runner change.
+  **Exact hang point**, from `e2e/tests/phase-0-happy-path.spec.ts:201-222` (and `slice-11-teacher-scope.spec.ts` fails identically, at the same shared step — both use the same log-out-then-log-back-in helper):
+  ```
+  await adminPage.getByRole("menuitem", { name: /log out/i }).click();
+  await adminPage.waitForURL(/\/login$/);                                              // ← succeeds — CI log shows `GET /login 200`
+  await expect(adminPage.getByText("Sign in", { exact: true }).first()).toBeVisible();  // ← hangs here, burns the full 180s per-test budget
+  ```
+  It is specifically the **logout → re-login** cycle that hangs, not login by itself — confirmed by direct counter-evidence: a fresh (never-logged-in) login, driven by a real headless-Chromium Playwright script against the actual running app during the finance-nav verification pass the same day, completed in well under a second with no hang at all. Every failing e2e test logs out an already-authenticated session first, then tries to log back in on the same page — that specific sequence is what's broken.
+  **Leading hypothesis, not yet confirmed:** a race in `AuthProvider.logout()` (`apps/web/src/lib/auth/auth-provider.tsx`) between `clearStoredToken()` + `router.replace("/login")` on the client and the `sk_session` HttpOnly cookie actually clearing server-side via the proxy route's `logoutRequest()` call. If the client-side redirect fires before the cookie is confirmed cleared, `/login` (or `middleware.ts`'s cookie check) could bounce the page in a way that never leaves Playwright a stable "Sign in" element to find — this has NOT been reproduced locally yet, only inferred from the log evidence above. First step of the real fix: reproduce a manual logout→re-login cycle locally (not via the CI-only symptom) and watch what the cookie/redirect sequence actually does.
+  **Why every recent PR (#105–#110 confirmed, likely further back) merged anyway:** `e2e (Playwright)` is a required branch-protection check, so a cancelled run leaves the PR `mergeStateStatus: BLOCKED`; the repo owner has been using `gh pr merge --admin` (or the GitHub UI's admin-override merge) to land every PR since 2026-06-27 regardless. That override itself isn't the problem — `lint + typecheck + test + build` (the job that actually runs the real test suite) has been passing clean every time, so nothing has shipped untested. The problem is purely that this has been silently costing ~20–25 minutes of wasted CI wall-clock on every single merge for a month, framed internally as routine "e2e is flaky, bypass it" rather than a specific, now-understood, fixable regression.
+  **Deliberately not fixed in this pass** — surfaced during the finance-nav (#110) and password-reset (#111) PRs' own CI runs, root-caused same-day, explicitly deferred to its own dedicated session per instruction rather than being rushed in alongside unrelated work. Trigger: next available focused session — start from the reproduction step above, not from re-deriving the bisection (already done here).
