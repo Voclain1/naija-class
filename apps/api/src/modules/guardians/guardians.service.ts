@@ -176,10 +176,15 @@ export class GuardiansService {
     await assertUserActiveAndHasOneOf(authCtx, ["owner", "admin"]);
 
     return withTenant(authCtx.schoolId, async (db) => {
-      const created = await db.guardian.create({
-        data: guardianCreateData(authCtx.schoolId, input),
-        select: GUARDIAN_SELECT,
-      });
+      let created;
+      try {
+        created = await db.guardian.create({
+          data: guardianCreateData(authCtx.schoolId, input),
+          select: GUARDIAN_SELECT,
+        });
+      } catch (e) {
+        throw mapGuardianEmailUniqueViolation(e);
+      }
 
       await writeGuardianCreateAudit(db, authCtx, reqCtx, created.id, created.relationship);
 
@@ -188,8 +193,13 @@ export class GuardiansService {
   }
 
   // ----------------------------------------------------------------------
-  // update — partial. No P2002 mapping needed: Guardian has zero unique
-  // constraints (spec — phone explicitly shareable; see schema.prisma).
+  // update — partial. Phone has no unique constraint (spec — explicitly
+  // shareable). Email does: Phase 4 / Slice 2 added @@unique([schoolId,
+  // email]) on Guardian for portal login (schema.prisma ~line 571). This
+  // comment used to say "zero unique constraints" — that was true before
+  // Slice 2 and was never updated, which is exactly how create()/
+  // createAndLink() shipped without P2002 handling too (fixed alongside
+  // this comment — see mapGuardianEmailUniqueViolation).
   // ----------------------------------------------------------------------
   async update(
     authCtx: AuthContext,
@@ -217,11 +227,16 @@ export class GuardiansService {
       if (input.address !== undefined) data.address = input.address;
       if (input.notes !== undefined) data.notes = input.notes;
 
-      const updated = await db.guardian.update({
-        where: { id },
-        data,
-        select: GUARDIAN_SELECT,
-      });
+      let updated;
+      try {
+        updated = await db.guardian.update({
+          where: { id },
+          data,
+          select: GUARDIAN_SELECT,
+        });
+      } catch (e) {
+        throw mapGuardianEmailUniqueViolation(e);
+      }
 
       await db.auditLog.create({
         data: {
@@ -538,10 +553,15 @@ export class GuardiansService {
       const isPrimary = isPrimaryIn ?? false;
       const canPickup = canPickupIn ?? true;
 
-      const guardian = await db.guardian.create({
-        data: guardianCreateData(authCtx.schoolId, guardianInput),
-        select: GUARDIAN_SELECT,
-      });
+      let guardian;
+      try {
+        guardian = await db.guardian.create({
+          data: guardianCreateData(authCtx.schoolId, guardianInput),
+          select: GUARDIAN_SELECT,
+        });
+      } catch (e) {
+        throw mapGuardianEmailUniqueViolation(e);
+      }
 
       await writeGuardianCreateAudit(db, authCtx, reqCtx, guardian.id, guardian.relationship);
 
@@ -813,6 +833,26 @@ async function writeLinkCreateAudit(
       },
     },
   });
+}
+
+// guardians has one unique constraint: (school_id, email) — added Phase 4 /
+// Slice 2 for portal login (schema.prisma ~line 571), after create()/update()/
+// createAndLink() were already written assuming Guardian had none. Same
+// single-constraint discriminator reasoning as mapStudentGuardianLinkUnique
+// Violation below: school_id is fixed per-call, so any P2002 here is
+// unambiguously "this email is already used by another guardian at this
+// school." Without this mapping the raw PrismaClientKnownRequestError falls
+// through HttpExceptionFilter's catch-all branch as a generic 500 — this is
+// the fix for the "unexpected error" report when creating a guardian whose
+// email collides with an existing one at the same school.
+function mapGuardianEmailUniqueViolation(e: unknown): unknown {
+  if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+    return new ConflictError(
+      "GUARDIAN_EMAIL_ALREADY_EXISTS",
+      "A guardian with this email already exists at this school.",
+    );
+  }
+  return e;
 }
 
 // student_guardians has one unique constraint: (student_id, guardian_id).

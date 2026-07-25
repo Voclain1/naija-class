@@ -11,14 +11,20 @@ import {
 } from "@nestjs/common";
 import { Throttle } from "@nestjs/throttler";
 import {
+  forgotPasswordSchema,
   loginSchema,
+  resetPasswordSchema,
   signupOwnerSchema,
   totpChallengeSchema,
   totpConfirmSchema,
   totpDisableSchema,
+  type ForgotPasswordInput,
+  type ForgotPasswordResponse,
   type LoginInput,
   type LoginResponse,
   type MeResponse,
+  type ResetPasswordInput,
+  type ResetPasswordResponse,
   type SignupOwnerInput,
   type SignupOwnerResponse,
   type TotpChallengeInput,
@@ -73,6 +79,47 @@ export class AuthController {
     @Req() req: Request,
   ): Promise<LoginResponse> {
     return this.authService.login(dto, {
+      ipAddress: ip,
+      userAgent: req.header("user-agent") ?? null,
+    });
+  }
+
+  // Public endpoint. 200 always, regardless of whether the email matched an
+  // account — the response is deliberately identical either way (see
+  // AuthService.forgotPassword's own comment). Throttle is deliberately
+  // tighter than login's (5/min vs 10/min): unlike a wrong-password guess,
+  // every hit here that matches a real account sends an email, so this
+  // endpoint is the one an attacker could otherwise use to spam a victim's
+  // inbox. RateLimitByEmailGuard adds the same per-email 20/15min cap login
+  // uses, since it reads generically off `body.email`.
+  @Post("forgot-password")
+  @HttpCode(200)
+  @Throttle({ default: { ttl: 60000, limit: 5 } })
+  @UseGuards(RateLimitByEmailGuard)
+  async forgotPassword(
+    @Body(new ZodValidationPipe(forgotPasswordSchema)) dto: ForgotPasswordInput,
+    @Ip() ip: string,
+    @Req() req: Request,
+  ): Promise<ForgotPasswordResponse> {
+    return this.authService.forgotPassword(dto, {
+      ipAddress: ip,
+      userAgent: req.header("user-agent") ?? null,
+    });
+  }
+
+  // Public endpoint. Throttle mirrors the invitation-accept endpoint's
+  // 20/min per-IP limit (CLAUDE.md's rate-limit note) — the 32-byte random
+  // token space makes brute-forcing the token itself low-risk; this limit
+  // purely caps abuse volume.
+  @Post("reset-password")
+  @HttpCode(200)
+  @Throttle({ default: { ttl: 60000, limit: 20 } })
+  async resetPassword(
+    @Body(new ZodValidationPipe(resetPasswordSchema)) dto: ResetPasswordInput,
+    @Ip() ip: string,
+    @Req() req: Request,
+  ): Promise<ResetPasswordResponse> {
+    return this.authService.resetPassword(dto, {
       ipAddress: ip,
       userAgent: req.header("user-agent") ?? null,
     });

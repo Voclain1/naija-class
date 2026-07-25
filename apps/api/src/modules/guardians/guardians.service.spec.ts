@@ -224,6 +224,35 @@ describe("GuardiansService", () => {
         service.create(noRoleCtx, guardianFields("33333333"), reqCtx),
       ).rejects.toBeInstanceOf(ForbiddenError);
     });
+
+    it("two guardians with the same email in the same school → GUARDIAN_EMAIL_ALREADY_EXISTS (P2002 mapped)", async () => {
+      const { authCtx } = await createActiveSchool("dup-email");
+      const sharedEmail = "shared-parent@example.test";
+      await service.create(
+        authCtx,
+        { ...guardianFields("E1"), firstName: "Bola", email: sharedEmail },
+        reqCtx,
+      );
+      await expect(
+        service.create(
+          authCtx,
+          { ...guardianFields("E2"), firstName: "Tunde", email: sharedEmail },
+          reqCtx,
+        ),
+      ).rejects.toMatchObject({ code: "GUARDIAN_EMAIL_ALREADY_EXISTS" });
+    });
+
+    it("two guardians with no email (null) in the same school are allowed — Postgres treats NULLs as distinct", async () => {
+      const { authCtx } = await createActiveSchool("dup-null-email");
+      await service.create(authCtx, guardianFields("E3"), reqCtx);
+      await expect(
+        service.create(
+          authCtx,
+          { ...guardianFields("E4"), firstName: "Tunde" },
+          reqCtx,
+        ),
+      ).resolves.toBeTruthy();
+    });
   });
 
   // -----------------------------------------------------------------------
@@ -427,6 +456,21 @@ describe("GuardiansService", () => {
           reqCtx,
         ),
       ).rejects.toBeInstanceOf(NotFoundError);
+    });
+
+    it("updating email to one already used by another guardian at the same school → GUARDIAN_EMAIL_ALREADY_EXISTS (P2002 mapped)", async () => {
+      const { authCtx } = await createActiveSchool("upd-dup-email");
+      const takenEmail = "taken@example.test";
+      await service.create(
+        authCtx,
+        { ...guardianFields("F1"), email: takenEmail },
+        reqCtx,
+      );
+      const g2 = await service.create(authCtx, guardianFields("F2"), reqCtx);
+
+      await expect(
+        service.update(authCtx, g2.id, { email: takenEmail }, reqCtx),
+      ).rejects.toMatchObject({ code: "GUARDIAN_EMAIL_ALREADY_EXISTS" });
     });
   });
 
@@ -723,6 +767,26 @@ describe("GuardiansService", () => {
       );
       // No Guardian row was committed (transaction rolled back).
       expect(orphans).toHaveLength(0);
+    });
+
+    it("email already used by another guardian at the same school → GUARDIAN_EMAIL_ALREADY_EXISTS (P2002 mapped)", async () => {
+      const { authCtx } = await createActiveSchool("cnl-dup-email");
+      const student = await createStudent(authCtx, "N3");
+      const takenEmail = "cnl-taken@example.test";
+      await service.create(
+        authCtx,
+        { ...guardianFields("d4000000"), email: takenEmail },
+        reqCtx,
+      );
+
+      await expect(
+        service.createAndLink(
+          authCtx,
+          student.id,
+          { ...guardianFields("d4000001"), email: takenEmail },
+          reqCtx,
+        ),
+      ).rejects.toMatchObject({ code: "GUARDIAN_EMAIL_ALREADY_EXISTS" });
     });
   });
 
