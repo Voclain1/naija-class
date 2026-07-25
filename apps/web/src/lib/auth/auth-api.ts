@@ -24,26 +24,7 @@ import type {
   TotpStatusDto,
 } from "@school-kit/types";
 
-import { ApiError, apiFetch } from "../api-client";
-
-// Thin wrapper for Next.js proxy routes (relative paths, no auth header —
-// the route handler reads/writes the sk_session cookie server-side).
-async function proxyFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const res = await fetch(path, {
-    ...init,
-    headers: { "Content-Type": "application/json", ...(init.headers ?? {}) },
-  });
-  if (res.status === 204) return undefined as T;
-  const text = await res.text();
-  const parsed: unknown = text ? JSON.parse(text) : null;
-  if (!res.ok) {
-    const err =
-      (parsed as { error?: { code: string; message: string; details?: unknown } } | null)
-        ?.error ?? { code: "UNKNOWN_ERROR", message: res.statusText };
-    throw new ApiError(res.status, err);
-  }
-  return parsed as T;
-}
+import { apiFetch, proxyFetch } from "../api-client";
 
 // ---- Session-mutating calls (via Next.js proxy — cookie managed server-side) ----
 

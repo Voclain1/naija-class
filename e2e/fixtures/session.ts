@@ -13,24 +13,35 @@ import {
 } from "./api.js";
 import { uniquePhone, uniqueSuffix } from "./unique.js";
 
-// The web app authenticates with a bearer token in localStorage under this
-// exact key (apps/web/src/lib/api-client.ts → AUTH_TOKEN_STORAGE_KEY). On cold
-// boot, AuthProvider reads it and calls GET /auth/me to hydrate. We inject the
-// token via addInitScript so it is present BEFORE any page script runs on every
-// navigation in the context — no UI login round-trip, no race.
-const AUTH_TOKEN_STORAGE_KEY = "sk_auth_token";
-
+// The web app authenticates via the sk_session HttpOnly cookie (see
+// apps/web/src/lib/server/session-cookie.ts) — AuthProvider's cold-boot
+// hydration reads it server-side through GET /api/auth/session, then calls
+// GET /auth/me. We inject the cookie directly via addCookies so it's present
+// BEFORE any page load in this context — no UI login round-trip, no race.
+//
+// This used to inject a bearer token into localStorage under a
+// "sk_auth_token" key, which was the pre-PR-#70 auth mechanism (localStorage
+// bearer token, no cookie/proxy layer). apps/web/src/lib/api-client.ts now
+// actively deletes that key on every page load as one-time cleanup, so the
+// old injection was silently a no-op: every "authenticated" context here was
+// actually rendering as a guest and getting redirected to /login by
+// middleware.ts. Fixed alongside the invitation-accept session-cookie bug
+// (docs/deferred.md) since both are instances of the same root cause — a
+// call site that never migrated onto the cookie-based session mechanism.
 async function authedContext(
   browser: Browser,
   token: string,
 ): Promise<{ context: BrowserContext; page: Page }> {
   const context = await browser.newContext();
-  await context.addInitScript(
-    ([key, value]) => {
-      window.localStorage.setItem(key, value);
+  await context.addCookies([
+    {
+      name: "sk_session",
+      value: token,
+      url: "http://localhost:3001",
+      httpOnly: true,
+      sameSite: "Lax",
     },
-    [AUTH_TOKEN_STORAGE_KEY, token] as const,
-  );
+  ]);
   const page = await context.newPage();
   return { context, page };
 }

@@ -23,7 +23,7 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ApiError, setStoredToken } from "@/lib/api-client";
+import { ApiError } from "@/lib/api-client";
 import { acceptInvitation } from "@/lib/invitations/invitations-api";
 import { track } from "@/lib/observability/events";
 
@@ -101,13 +101,12 @@ export function AcceptInvitationForm({ token, invitation }: Props) {
         roleKey: "admin",
       });
 
-      // Store the bearer token, then push to /dashboard. The admin layout's
-      // RequireAuth gate will rehydrate via /auth/me — but the AuthProvider
-      // only hydrates on initial mount, so a same-tab redirect from this
-      // public page would land on /dashboard with state still "guest" and
-      // bounce to /login. Hard navigation forces a fresh mount, which
-      // re-reads the token from localStorage and resolves to "authed".
-      setStoredToken(res.token);
+      // Hard-navigate to /dashboard. acceptInvitation() went through the
+      // /api/invitations/:token/accept proxy route, which already set the
+      // sk_session HttpOnly cookie (and deliberately stripped the raw token
+      // from this response body — nothing here reads res.token) — the
+      // cookie is what survives the reload and lets middleware.ts and the
+      // fresh AuthProvider mount both see a real session.
       window.location.href = "/dashboard";
     } catch (error) {
       if (error instanceof ApiError) {

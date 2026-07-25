@@ -10,9 +10,13 @@
 import { cookies } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
 
+import {
+  clearSessionCookie,
+  SESSION_COOKIE_NAME,
+  setSessionCookie,
+} from "@/lib/server/session-cookie";
+
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api/v1";
-const COOKIE_NAME = "sk_session";
-const COOKIE_MAX_AGE = 2_592_000; // 30 days
 
 async function forward(
   method: string,
@@ -31,7 +35,7 @@ async function forward(
 
   if (resp.status === 204) {
     const out = new NextResponse(null, { status: 204 });
-    if (subPath === "logout") out.cookies.delete(COOKIE_NAME);
+    if (subPath === "logout") clearSessionCookie(out);
     return out;
   }
 
@@ -52,15 +56,9 @@ async function forward(
         ? (data as { token: string }).token
         : null;
     if (maybeToken) {
-      out.cookies.set(COOKIE_NAME, maybeToken, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
-        sameSite: "lax",
-        path: "/",
-        maxAge: COOKIE_MAX_AGE,
-      });
+      setSessionCookie(out, maybeToken);
     }
-    if (subPath === "logout") out.cookies.delete(COOKIE_NAME);
+    if (subPath === "logout") clearSessionCookie(out);
   }
 
   return out;
@@ -72,7 +70,7 @@ export async function GET(req: NextRequest, ctx: Context): Promise<NextResponse>
   const { auth } = await ctx.params;
   const subPath = auth.join("/");
   const cookieStore = await cookies();
-  const sessionToken = cookieStore.get(COOKIE_NAME)?.value;
+  const sessionToken = cookieStore.get(SESSION_COOKIE_NAME)?.value;
 
   // Special non-proxy route: return the token from the cookie so the client
   // can seed its in-memory activeToken on cold boot without ever touching
@@ -88,7 +86,7 @@ export async function POST(req: NextRequest, ctx: Context): Promise<NextResponse
   const { auth } = await ctx.params;
   const subPath = auth.join("/");
   const cookieStore = await cookies();
-  const sessionToken = cookieStore.get(COOKIE_NAME)?.value;
+  const sessionToken = cookieStore.get(SESSION_COOKIE_NAME)?.value;
   const body = await req.text();
   return forward("POST", subPath, body, sessionToken);
 }
@@ -97,7 +95,7 @@ export async function DELETE(req: NextRequest, ctx: Context): Promise<NextRespon
   const { auth } = await ctx.params;
   const subPath = auth.join("/");
   const cookieStore = await cookies();
-  const sessionToken = cookieStore.get(COOKIE_NAME)?.value;
+  const sessionToken = cookieStore.get(SESSION_COOKIE_NAME)?.value;
   const body = await req.text();
   return forward("DELETE", subPath, body || undefined, sessionToken);
 }
