@@ -673,3 +673,42 @@ Format:
   find it" report comes in, or as a standalone housekeeping pass before
   broader user testing (parent/guardian portal, bursar role) surfaces more
   of these.
+
+- [ ] Gate 3's live confirmatory test — a real `FinanceService.sendReminders()`
+  call against a real outstanding invoice, proving `TermiiService.sendSms()`
+  is never invoked when a school's `NotificationPreference.smsEnabled` is
+  `false` — is deferred, not done. Attempted 2026-07-25 against production;
+  aborted before the one production write it would have needed (see below),
+  pending Arinzechukwu's sign-off, which he declined for tonight.
+  What's confirmed instead (code-level, not a live call): `FinanceService
+  .sendReminders` (`apps/api/src/modules/finance/finance.service.ts` ~line
+  253-255) computes `smsAttemptable = channels.sms && this.termii
+  .isConfigured` and only enters the `this.termii.sendSms(...)` branch when
+  `smsAttemptable && guardianPhone` — `channels.sms` false short-circuits
+  before any Termii call is reachable, by construction, not by a runtime
+  check that could itself be buggy. Also confirmed live in production
+  (read-only): both real "Virgo Fidelis Montessori School" rows
+  (`6beff17c...`, `07865652...`) have no `NotificationPreference` row at
+  all, meaning `NotificationPreferencesService.getEnabledChannels`'s
+  `DEFAULTS` apply — `smsEnabled: false` — to both, matching this gate's
+  required precondition already, with zero write needed to confirm that
+  part.
+  Why a live call didn't happen: production currently has no student with
+  BOTH an outstanding invoice (`ISSUED`/`PARTIALLY_PAID`/`OVERDUE`) AND a
+  primary guardian with a phone number. The one near-miss — Chinedu Eze at
+  `6beff17c...`, who has a primary guardian with phone+email — has a
+  `CANCELLED` invoice for the school's only term, and `InvoiceGeneration
+  Service.generateForArm` refuses to regenerate for a student-term pair
+  that already has *any* invoice row regardless of status (no "delete
+  invoice" endpoint exists — only cancel). Closing that gap for real would
+  have meant a direct DB delete of the dead `CANCELLED` row outside any
+  product flow — explicitly declined rather than done unilaterally.
+  Unblocks either way: (a) real invoice data naturally comes to exist in
+  production (Arinzechukwu generates one through the actual product flow
+  now that the Gate 2 fee-catalog-nav fix landed), making a clean student+
+  invoice+guardian candidate available without any DB surgery, or (b)
+  Termii's sender-ID registration approval completes (separately blocked on
+  Arinzechukwu's business documents), at which point the real end-to-end
+  send-and-confirm test this gate ultimately wants becomes possible anyway
+  and supersedes this narrower gate-check. Either makes this item moot, not
+  merely satisfied.
