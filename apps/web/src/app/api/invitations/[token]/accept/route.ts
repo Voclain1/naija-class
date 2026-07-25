@@ -17,6 +17,18 @@
 // No bearer/cookie forwarding needed on the request side — accepting an
 // invitation is a public, unauthenticated action; the token param IS the
 // credential.
+//
+// The raw token is stripped from the body returned to the browser — same
+// discipline as apps/portal/src/app/api/portal/[...portal]/route.ts, whose
+// own comment flags that apps/web's routes (this one included, until now)
+// don't do this: the httpOnly cookie set above is the only place the token
+// should live client-side, or an XSS gets a second way to steal it.
+// AcceptInvitationForm never reads the token past this point (the very next
+// line after receiving it is a hard navigation that wipes all in-memory JS
+// state anyway), so there's nothing that depends on it surviving in the
+// response body. login/signup-owner/2fa-challenge under /api/auth/* still
+// return the raw token in their bodies — that's an existing, separate
+// pattern deliberately left untouched here; see docs/deferred.md.
 import { NextRequest, NextResponse } from "next/server";
 
 import { setSessionCookie } from "@/lib/server/session-cookie";
@@ -37,19 +49,27 @@ export async function POST(req: NextRequest, ctx: Context): Promise<NextResponse
 
   const text = await resp.text();
   const data: unknown = text ? JSON.parse(text) : null;
-  const out = NextResponse.json(data, { status: resp.status });
 
-  if (resp.ok) {
-    const maybeToken =
-      data !== null &&
-      typeof data === "object" &&
-      "token" in (data as object) &&
-      typeof (data as { token: unknown }).token === "string"
-        ? (data as { token: string }).token
-        : null;
-    if (maybeToken) {
-      setSessionCookie(out, maybeToken);
-    }
+  const maybeToken =
+    resp.ok &&
+    data !== null &&
+    typeof data === "object" &&
+    "token" in (data as object) &&
+    typeof (data as { token: unknown }).token === "string"
+      ? (data as { token: string }).token
+      : null;
+
+  // Strip the raw token from the body the browser receives — see the
+  // header comment. A no-op when there's no token to strip (every error
+  // path, since resp.ok gates maybeToken above).
+  const bodyForClient = maybeToken
+    ? Object.fromEntries(Object.entries(data as object).filter(([key]) => key !== "token"))
+    : data;
+
+  const out = NextResponse.json(bodyForClient, { status: resp.status });
+
+  if (maybeToken) {
+    setSessionCookie(out, maybeToken);
   }
 
   return out;

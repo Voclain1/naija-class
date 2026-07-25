@@ -23,7 +23,7 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ApiError, setStoredToken } from "@/lib/api-client";
+import { ApiError } from "@/lib/api-client";
 import { acceptInvitation } from "@/lib/invitations/invitations-api";
 import { track } from "@/lib/observability/events";
 
@@ -101,16 +101,12 @@ export function AcceptInvitationForm({ token, invitation }: Props) {
         roleKey: "admin",
       });
 
-      // Store the in-memory bearer token (for any apiFetch call this same
-      // JS context makes before the reload below), then hard-navigate to
-      // /dashboard. acceptInvitation() went through the /api/invitations/
-      // :token/accept proxy route, which already set the sk_session
-      // HttpOnly cookie — that's what survives the reload and lets
-      // middleware.ts and the fresh AuthProvider mount both see a real
-      // session. (setStoredToken alone would NOT survive: a hard navigation
-      // wipes all in-memory JS state, cookie included is the only thing
-      // that persists.)
-      setStoredToken(res.token);
+      // Hard-navigate to /dashboard. acceptInvitation() went through the
+      // /api/invitations/:token/accept proxy route, which already set the
+      // sk_session HttpOnly cookie (and deliberately stripped the raw token
+      // from this response body — nothing here reads res.token) — the
+      // cookie is what survives the reload and lets middleware.ts and the
+      // fresh AuthProvider mount both see a real session.
       window.location.href = "/dashboard";
     } catch (error) {
       if (error instanceof ApiError) {
