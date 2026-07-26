@@ -1,6 +1,7 @@
 "use client";
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { ThemeProvider } from "next-themes";
 import { useState } from "react";
 import type { ReactNode } from "react";
 
@@ -28,15 +29,17 @@ export function Providers({ children }: { children: ReactNode }) {
   );
 
   return (
-    <QueryClientProvider client={queryClient}>
-      <PostHogProvider>
-        {/* AuthProvider sits INSIDE PostHogProvider so its identify/reset
-            calls can rely on the SDK being mounted. PostHogProvider
-            renders children unwrapped when the key is blank, so the
-            no-key dev path costs zero. */}
-        <AuthProvider>{children}</AuthProvider>
-      </PostHogProvider>
-      <Toaster />
-    </QueryClientProvider>
+    <ThemeProvider attribute="class" defaultTheme="light" enableSystem>
+      <QueryClientProvider client={queryClient}>
+        <PostHogProvider>
+          {/* AuthProvider sits INSIDE PostHogProvider so its identify/reset
+              calls can rely on the SDK being mounted. PostHogProvider
+              renders children unwrapped when the key is blank, so the
+              no-key dev path costs zero. */}
+          <AuthProvider>{children}</AuthProvider>
+        </PostHogProvider>
+        <Toaster />
+      </QueryClientProvider>
+    </ThemeProvider>
   );
 }

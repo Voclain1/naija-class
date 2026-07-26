@@ -24,6 +24,14 @@ const config: Config = {
       screens: { "2xl": "1400px" },
     },
     extend: {
+      fontFamily: {
+        // Hanken Grotesk (sans) + Fraunces (editorial serif for headings and
+        // KPI numerals) — loaded via next/font/google in app/layout.tsx,
+        // exposed as CSS vars there and re-mapped to token names in
+        // globals.css. See CLAUDE.md's "Design system" section.
+        sans: ["var(--font-sans)", "ui-sans-serif", "system-ui", "sans-serif"],
+        serif: ["var(--font-serif)", "ui-serif", "Georgia", "serif"],
+      },
       colors: {
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",

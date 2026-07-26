@@ -20,6 +20,7 @@ import { AuthModule } from "./modules/auth/auth.module";
 import { ClassArmsModule } from "./modules/class-arms/class-arms.module";
 import { ClassLevelsModule } from "./modules/class-levels/class-levels.module";
 import { ClassSubjectsModule } from "./modules/class-subjects/class-subjects.module";
+import { DashboardModule } from "./modules/dashboard/dashboard.module";
 import { DebugModule } from "./modules/debug/debug.module";
 import { DiscountsModule } from "./modules/discounts/discounts.module";
 import { FeeCatalogModule } from "./modules/fee-catalog/fee-catalog.module";
@@ -116,6 +117,7 @@ const isProd = process.env.NODE_ENV === "production";
     InvoicesModule,
     PaymentsModule,
     FinanceModule,
+    DashboardModule,
     ExpensesModule,
     PayrollModule,
     StaffBankAccountModule,

@@ -343,6 +343,14 @@ export const PHASE_4_PERMISSIONS = [
   "notification-preferences.update",
 ] as const;
 
+// Visual/UX overhaul initiative — admin dashboard rebuild. Not tied to a
+// numbered Phase (Phase 4 is closed; Phase 5 is the AI layer). Cross-module
+// read-only aggregation (enrollment, finance, attendance, report cards,
+// invitations) — same "not a highest-trust surface" reasoning as
+// finance.dashboard.read, so no owner-only carve-out; admin gets it via the
+// ALL_PERMISSIONS-minus-owner-only assembly in packages/db/src/seeds/system-roles.ts.
+export const ADMIN_DASHBOARD_PERMISSIONS = ["dashboard.read"] as const;
+
 // Phase 3 / Slice 15 — the `bursar` role's exact grant. Explicit inclusion
 // list (mirrors PHASE_2_TEACHER_PERMISSIONS), not "admin minus a few" — finance
 // is a strict subset of admin's permissions, and an inclusion list fails
@@ -430,6 +438,7 @@ export const ALL_PERMISSIONS = [
   ...PHASE_2_PERMISSIONS,
   ...PHASE_3_PERMISSIONS,
   ...PHASE_4_PERMISSIONS,
+  ...ADMIN_DASHBOARD_PERMISSIONS,
   /* extend per phase */
 ] as const;
 

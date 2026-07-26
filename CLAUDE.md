@@ -338,6 +338,56 @@ to test against the production server. In prod, errors go straight to
 `global-error.tsx` and `Sentry.captureException` fires from inside that
 boundary's useEffect.
 
+## Design system
+
+**Visual/UX overhaul initiative (started with the admin dashboard rebuild,
+2026-07-26).** `apps/web` shipped on stock, unmodified shadcn/ui defaults
+(pure white background, near-black slate primary, no dark mode) up to this
+point — the tokens below are the first real brand identity applied, starting
+with `apps/web/src/app/(admin)/dashboard`. Other pages restyle in later
+passes; until then they keep the shadcn defaults.
+
+**Color tokens** (source hex — the shadcn `hsl(var(--x))` HSL conversions
+live in `apps/web/src/app/globals.css`, which is the values source of truth;
+this table documents the decision, not a second copy of the numbers):
+
+| Name | Hex | Role |
+|---|---|---|
+| Paper | `#F7F5EF` | `--background` / `--card` — warm cream, not stark white |
+| Ink | `#13262E` | `--foreground` — body text on Paper |
+| Deep Emerald | `#0E5C43` | `--primary` (light mode) — progress bars, links, active nav |
+| Bright Emerald | `#3FB68B` | `--primary` (dark mode only — better contrast on a dark surface than Deep Emerald) |
+| Gold Spark | `#E0A52E` | `--secondary` — used sparingly (one metric's progress bar, a summary row), not a second primary |
+
+Typefaces: **Fraunces** (serif — large KPI numerals, page headings, the
+dashboard's greeting line) paired with **Hanken Grotesk** (sans — body text,
+labels, nav). Both loaded via `next/font/google` in `apps/web/src/app/
+layout.tsx` (self-hosted by Next at build time, no runtime call to Google's
+CDN), exposed as `--font-hanken-grotesk`/`--font-fraunces` and re-mapped to
+`--font-sans`/`--font-serif` in `globals.css`. Dark mode (`next-themes`,
+`attribute="class"`, matching the existing `darkMode: ["class"]` Tailwind
+config) is genuinely new — it did not exist before this initiative.
+
+**"Groups" API shape — the single-school-now/multi-campus-later pattern.**
+`Branch` has existed in the schema since Phase 0 (full CRUD, RLS, permissions)
+but no operational table (`Student`, `Enrollment`, `Invoice`, `AttendanceRecord`,
+`TeacherProfile`) carries a `branchId` — multi-campus is a real future feature,
+not built yet. Rather than adding `branchId` speculatively, any dashboard/
+report endpoint that would eventually break down by campus returns a generic
+`{ groupId, label, ... }[]` shape instead of a flat object — see
+`DashboardCollectionGroupDto` in `packages/types/src/dashboard/admin-dashboard.dto.ts`.
+Today `groupId` is a `ClassLevel.id` (the closest real breakdown dimension for
+a single-campus school); when multi-campus ships, the same query re-keys on
+`Branch.id` with zero frontend contract change. Apply this pattern to any
+future per-school-structure aggregation before reaching for a flat shape.
+
+**Permission naming for work that isn't a numbered Phase.** Not everything is
+Phase-1-through-5 — this initiative isn't Phase 5 (that's reserved for the AI
+layer, see `docs/deferred.md`) and Phase 4 is already closed. Permissions for
+cross-cutting initiatives like this one get their own descriptively-named
+constant (e.g. `ADMIN_DASHBOARD_PERMISSIONS`) spliced into `ALL_PERMISSIONS`,
+rather than being force-fit into an adjacent phase's array.
+
 ## Adding a new module
 
 1. Read or write `docs/modules/<module>.md` (purpose, entities, endpoints, screens, tests).
