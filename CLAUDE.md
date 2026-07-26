@@ -388,6 +388,39 @@ cross-cutting initiatives like this one get their own descriptively-named
 constant (e.g. `ADMIN_DASHBOARD_PERMISSIONS`) spliced into `ALL_PERMISSIONS`,
 rather than being force-fit into an adjacent phase's array.
 
+**Real logo upload (2026-07-26), replacing the raw URL text field the school
+logo had shipped with since Phase 0** — see `docs/deferred.md` for the full
+history of that gap (the spec named logo upload as the ONE upload feature
+Phase 0 had to ship; the shipped code silently substituted a URL text field
+instead, and that substitution was never tracked anywhere until this fix).
+Two conventions this established, worth reusing for any future "small,
+frequently-displayed branding/media asset" case:
+- **Serving pattern**: `GET /schools/me/logo-url` returns `{ url }` in
+  ordinary JSON (Bearer-authenticated, works exactly like any other
+  `apiFetch` call), and the frontend sets that URL directly as an `<img
+  src>`. This deliberately avoids two more complex alternatives: (a) making
+  the object *actually* public in R2 (a real bucket-policy/CORS change we
+  didn't want to make to the storage layer we'd just finished hardening),
+  and (b) a `fetch()` + blob-URL dance (unnecessary — a plain `<img src>` /
+  `window.open()` browser-native resource load is NOT subject to CORS the
+  way `fetch()`/XHR are, so a presigned URL works directly with zero CORS
+  configuration; `getExpenseReceiptUrl` already relied on this same fact via
+  `window.open()`, this just extends it to `<img>`). TTL is long (1 hour)
+  relative to receipts' 15 minutes — a logo is displayed for the life of a
+  session, not fetched once for a single click-through.
+- **Extension-bearing storage key**: unlike `expense-receipt` (extensionless
+  — its Content-Type travels as upload-time object metadata only), a key
+  meant to work correctly in **dev** (the filesystem driver) needs a real
+  file extension, because `FilesystemStorageDriver.put()` discards the
+  `contentType` it's given entirely (no metadata sidecar) and
+  `DevStorageController` can only recover the right `Content-Type` from the
+  path extension. `{ kind: "school-logo"; ext: "png" | "jpg" | "webp" }` is
+  the template — see `storage.types.ts`'s header comment on that key for the
+  full reasoning, including why a re-upload with a *different* extension
+  needs an explicit `storage.delete()` of the old object first (an
+  extension-bearing key doesn't self-overwrite the way expense-receipt's
+  extensionless one does).
+
 ## Adding a new module
 
 1. Read or write `docs/modules/<module>.md` (purpose, entities, endpoints, screens, tests).

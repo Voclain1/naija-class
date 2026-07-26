@@ -30,7 +30,23 @@ export type StorageObjectKey =
   // schools/<schoolId>/payslips/<payrollItemId>.html
   // Same shape as payment-receipt: always .html, canonical path persisted
   // on PayrollItem.payslipUrl, signed on demand for viewing.
-  | { kind: "payroll-payslip"; payrollItemId: string };
+  | { kind: "payroll-payslip"; payrollItemId: string }
+  // Visual/UX overhaul initiative — school branding logo. Layout:
+  // schools/<schoolId>/logo.<ext>
+  // Deliberately EXTENSION-BEARING, unlike expense-receipt — two reasons:
+  // (1) the filesystem (dev) driver's put() discards contentType entirely
+  // (no metadata sidecar — see filesystem-storage.driver.ts), so
+  // DevStorageController's contentTypeFor() can ONLY recover the right
+  // Content-Type from the path extension; an extensionless key would
+  // silently serve every dev-uploaded logo as octet-stream (the same gap
+  // expense-receipt has, tracked in docs/deferred.md — this key avoids it
+  // rather than reproducing it). (2) a logo is a mutable "current branding"
+  // singleton, not an immutable historical record, so re-uploads with a
+  // different image format need the OLD extensioned object deleted
+  // explicitly (schools.service.ts's uploadLogo does this) — an
+  // extensionless key would just self-overwrite, but we've chosen the
+  // extension-bearing shape for reason (1) above, so cleanup is on us.
+  | { kind: "school-logo"; ext: "png" | "jpg" | "webp" };
 
 export type StorageDriverKind = "filesystem" | "r2";
 

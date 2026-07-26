@@ -1,5 +1,7 @@
 import { expect, test } from "@playwright/test";
 
+import { TINY_PNG_BUFFER } from "../fixtures/image.js";
+
 // Phase 0 happy path:
 //   owner signs up → completes the 5-step onboarding wizard → invites
 //   an admin from /settings/users → admin accepts the invitation in a
@@ -92,17 +94,26 @@ test("Phase 0 happy path: signup -> onboarding -> invite -> accept -> login", as
   // indicator's step-2 label (tiny span) and the CardTitle div. Take
   // .last() — the CardTitle renders after the progress indicator.
   //
-  // We have to fill VALID values rather than leaving blank. The form's
-  // schema (packages/types/src/onboarding/step2-branding.dto.ts) treats
-  // an empty string as a string (so .url()/.regex() reject it) and
-  // .optional() only accepts undefined. The form's onSubmit converts
-  // "" → undefined, but Zod validation runs BEFORE onSubmit. Existing
-  // app bug — flagged for follow-up; using valid filler values keeps
-  // this test on the happy path.
+  // Logo is a real upload now (resolved 2026-07-26 — see
+  // step2-branding.dto.ts's header comment for the full history), not a
+  // URL text field, so this exercises the real multipart upload path
+  // through the browser rather than just filling a string. It uploads
+  // immediately on file selection (LogoUpload), independent of this
+  // step's own Continue submit — we wait for the upload's own success
+  // toast before continuing, so a slow upload can't race the click.
+  //
+  // primaryColor still has the pre-existing app bug where an empty
+  // string is rejected by .regex() before the form's ""→undefined
+  // coercion runs (Zod validation runs first) — flagged for follow-up,
+  // unrelated to this change; filling a valid value keeps this test on
+  // the happy path exactly as before.
   await expect(
     ownerPage.getByText("Branding", { exact: true }).last(),
   ).toBeVisible();
-  await ownerPage.getByLabel("Logo URL (optional)").fill("https://example.com/logo.png");
+  await ownerPage
+    .locator('input[type="file"]')
+    .setInputFiles({ name: "logo.png", mimeType: "image/png", buffer: TINY_PNG_BUFFER });
+  await expect(ownerPage.getByText("Logo uploaded.")).toBeVisible();
   await ownerPage.getByLabel("Primary colour (optional)").fill("#1A2B3C");
   await ownerPage.getByRole("button", { name: "Continue" }).click();
   await ownerPage.waitForURL(/\/onboarding\/3$/);

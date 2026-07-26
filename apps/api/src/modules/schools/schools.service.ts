@@ -13,14 +13,31 @@ import {
   type OnboardingStep5Input,
   type OnboardingStepResponse,
   type PatchSchoolInput,
+  type SchoolLogoUrlDto,
   type SchoolMeDto,
 } from "@school-kit/types";
 
 import type { AuthContext } from "../../common/auth/auth-context";
 import { assertUserActiveAndHasOneOf } from "../../common/auth/role-check";
 import { redactEmail } from "../../common/redact";
+import { StorageService } from "../../common/storage/storage.service";
 
 const INVITATION_TTL_MS = 1000 * 60 * 60 * 24 * 7; // 7 days
+
+// Visual/UX overhaul initiative (2026-07-26) — real logo upload, replacing
+// the raw URL text field. See step2-branding.dto.ts's header comment for
+// the full history of why this existed as a text field for so long.
+export const LOGO_MAX_FILE_SIZE_BYTES = 2 * 1024 * 1024; // 2 MB — a logo, not a document
+const LOGO_EXT_BY_MIME = {
+  "image/png": "png",
+  "image/jpeg": "jpg",
+  "image/webp": "webp",
+} as const satisfies Record<string, "png" | "jpg" | "webp">;
+type LogoExt = (typeof LOGO_EXT_BY_MIME)[keyof typeof LOGO_EXT_BY_MIME];
+// Long relative to receipts' 15 minutes — a logo is displayed persistently
+// in the topbar for the life of a session, not fetched once for a single
+// click-through. See SchoolLogoUrlDto's own comment in school.dto.ts.
+const LOGO_URL_TTL_SECONDS = 60 * 60;
 
 interface RequestContext {
   ipAddress: string | null;
@@ -40,6 +57,8 @@ export type OnboardingStepPayload =
 
 @Injectable()
 export class SchoolsService {
+  constructor(private readonly storage: StorageService) {}
+
   // GET /schools/me — owner/admin only (Phase 2 slice 9 cp2, WS4). Returns the
   // authed user's school config. Teachers don't need it: the topbar reads the
   // school name from /auth/me (authCtx.school) and the subject-attendance flag
@@ -77,7 +96,6 @@ export class SchoolsService {
     if (input.address !== undefined) data.address = input.address;
     if (input.phone !== undefined) data.phone = input.phone;
     if (input.email !== undefined) data.email = input.email;
-    if (input.logoUrl !== undefined) data.logoUrl = input.logoUrl;
     if (input.primaryColor !== undefined) data.primaryColor = input.primaryColor;
     // Slice 8 — the subject-attendance opt-in rides this same PATCH (owner/admin,
     // school.update audit). Reaching this endpoint is itself the enable path, so
@@ -174,21 +192,20 @@ export class SchoolsService {
     data: OnboardingStep2Input,
     reqCtx: RequestContext,
   ): Promise<OnboardingStepResponse> {
-    // Both fields are optional. An empty payload {} is a valid advance —
-    // a school with no logo and no chosen colour still moves on. We use
-    // ?? null for the same reason as step 1: explicit-null overwrites the
-    // existing value if the user is editing rather than creating.
+    // primaryColor is optional. An empty payload {} is a valid advance — a
+    // school with no chosen colour still moves on. Logo is no longer part of
+    // this step's payload at all — it's uploaded via the separate
+    // POST /schools/me/logo (see uploadLogo() below), which the form calls
+    // independently the moment a file is picked, same as expense receipts.
     const school = await this.updateSchoolWithAudit(
       authCtx,
       {
-        logoUrl: data.logoUrl ?? null,
         primaryColor: data.primaryColor ?? null,
         onboardingStep: 2,
       },
       "onboarding.step2_complete",
       reqCtx,
       {
-        logoUrl: data.logoUrl ?? null,
         primaryColor: data.primaryColor ?? null,
       },
     );
@@ -302,6 +319,89 @@ export class SchoolsService {
     return { school };
   }
 
+  // POST /schools/me/logo — owner or admin. Multipart upload, separate from
+  // patchMe/onboarding the same way expense.receiptUrl is separate from
+  // expense create/update — mixing a multipart file with JSON fields in one
+  // request is the complexity NestJS's file-upload story handles badly.
+  async uploadLogo(
+    authCtx: AuthContext,
+    file: { buffer: Buffer; mimetype: string },
+    reqCtx: RequestContext,
+  ): Promise<SchoolMeDto> {
+    await assertUserActiveAndHasOneOf(authCtx, ["owner", "admin"]);
+
+    const ext = (LOGO_EXT_BY_MIME as Record<string, LogoExt | undefined>)[file.mimetype];
+    if (!ext) {
+      throw new ValidationError(
+        "INVALID_LOGO_TYPE",
+        `Logo must be one of: ${Object.keys(LOGO_EXT_BY_MIME).join(", ")}.`,
+      );
+    }
+
+    return withTenant(authCtx.schoolId, async (db) => {
+      const existing = await db.school.findUniqueOrThrow({
+        where: { id: authCtx.schoolId },
+        select: { logoUrl: true },
+      });
+
+      // school-logo is an extension-bearing key (storage.types.ts explains
+      // why) — re-uploading with a DIFFERENT image format leaves the old
+      // object behind unless we delete it explicitly first. Same extension
+      // (or no previous logo) needs no cleanup: put() overwrites in place.
+      const previousExt = parseLogoExt(existing.logoUrl);
+      if (previousExt && previousExt !== ext) {
+        await this.storage.delete(authCtx.schoolId, { kind: "school-logo", ext: previousExt });
+      }
+
+      const logoUrl = await this.storage.put(
+        authCtx.schoolId,
+        { kind: "school-logo", ext },
+        file.buffer,
+        file.mimetype,
+      );
+
+      const updated = await db.school.update({
+        where: { id: authCtx.schoolId },
+        data: { logoUrl },
+        select: SCHOOL_RESPONSE_SELECT,
+      });
+
+      await db.auditLog.create({
+        data: {
+          schoolId: authCtx.schoolId,
+          userId: authCtx.userId,
+          action: "school.logo_upload",
+          entityType: "school",
+          entityId: authCtx.schoolId,
+          ipAddress: reqCtx.ipAddress,
+          metadata: { mimetype: file.mimetype, size: file.buffer.length },
+        },
+      });
+
+      return toSchoolMeDto(updated);
+    });
+  }
+
+  // GET /schools/me/logo-url — any authenticated user of the school. No
+  // owner/admin gate: this is read-only branding display (the topbar, for
+  // every role), not sensitive config like findMe/patchMe guard.
+  async getLogoUrl(authCtx: AuthContext): Promise<SchoolLogoUrlDto> {
+    const school = await basePrisma.school.findUnique({
+      where: { id: authCtx.schoolId },
+      select: { logoUrl: true },
+    });
+    const ext = parseLogoExt(school?.logoUrl ?? null);
+    if (!ext) {
+      throw new NotFoundError("No logo has been uploaded for this school.");
+    }
+    const url = await this.storage.signUrl(
+      authCtx.schoolId,
+      { kind: "school-logo", ext },
+      LOGO_URL_TTL_SECONDS,
+    );
+    return { url };
+  }
+
   // Shared write helper: schools table update + audit row in one withTenant
   // transaction. schools is NOT under RLS, so the update itself doesn't need
   // the tenant GUC, but audit_logs IS, so we run both inside withTenant so
@@ -381,6 +481,16 @@ function toSchoolMeDto(school: SchoolRow): SchoolMeDto {
     createdAt: school.createdAt,
     updatedAt: school.updatedAt,
   };
+}
+
+// Recovers the school-logo StorageObjectKey's `ext` from the canonical path
+// persisted on School.logoUrl (e.g. "schools/<id>/logo.png" -> "png").
+// Defensive on any non-logo value: logoUrl should only ever be written by
+// uploadLogo() above, but a stray/legacy value shouldn't 500 the caller.
+function parseLogoExt(logoUrl: string | null | undefined): LogoExt | null {
+  if (!logoUrl) return null;
+  const ext = logoUrl.split(".").pop();
+  return ext === "png" || ext === "jpg" || ext === "webp" ? ext : null;
 }
 
 async function loadSchoolOrThrow(schoolId: string): Promise<SchoolMeDto> {

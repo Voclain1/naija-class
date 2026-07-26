@@ -85,6 +85,14 @@ describe("storage.utils — pathFor() / importPrefixFor() refuse anything but UU
       pathFor(VALID_SCHOOL, { kind: "payroll-payslip", payrollItemId: "../escape" }),
     ).toThrow(/payrollItemId/);
   });
+
+  it("returns the extension-bearing canonical layout for school-logo, one per ext", () => {
+    for (const ext of ["png", "jpg", "webp"] as const) {
+      expect(pathFor(VALID_SCHOOL, { kind: "school-logo", ext })).toBe(
+        `schools/${VALID_SCHOOL}/logo.${ext}`,
+      );
+    }
+  });
 });
 
 describe("FilesystemStorageDriver — tenant path segregation + no raw-path escape", () => {

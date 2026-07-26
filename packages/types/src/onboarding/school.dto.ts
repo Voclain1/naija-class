@@ -13,6 +13,11 @@ export interface SchoolMeDto {
   name: string;
   slug: string;
   motto: string | null;
+  // Canonical storage path (e.g. "schools/<id>/logo.png"), or null if no
+  // logo has been uploaded — NOT a directly browsable URL. Same convention
+  // as Expense.receiptUrl. Fetch a real, freshly-signed image URL from
+  // `GET /schools/me/logo-url` (SchoolLogoUrlDto below) to actually display
+  // it; set upload-only via `POST /schools/me/logo`, never via PATCH.
   logoUrl: string | null;
   address: string | null;
   phone: string | null;
@@ -35,4 +40,14 @@ export interface SchoolMeDto {
 // `{ school, invitationIds }`) without a breaking shape change.
 export interface OnboardingStepResponse {
   school: SchoolMeDto;
+}
+
+// GET /schools/me/logo-url response — a freshly-signed, directly displayable
+// image URL (same "return a URL in JSON, let the caller set it as an <img>/
+// <a> src directly" shape as ExpenseReceiptUrlDto). TTL is long (an hour)
+// relative to receipts' 15 minutes: a logo is persistently displayed in the
+// topbar for the life of a session, not fetched once for a single click-
+// through, so it needs to survive much longer between re-fetches.
+export interface SchoolLogoUrlDto {
+  url: string;
 }

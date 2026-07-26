@@ -9,8 +9,12 @@ import {
   Patch,
   Post,
   Req,
+  UploadedFile,
+  UseFilters,
   UseGuards,
+  UseInterceptors,
 } from "@nestjs/common";
+import { FileInterceptor } from "@nestjs/platform-express";
 import {
   ValidationError,
   onboardingStep1Schema,
@@ -21,6 +25,7 @@ import {
   patchSchoolSchema,
   type OnboardingStepResponse,
   type PatchSchoolInput,
+  type SchoolLogoUrlDto,
   type SchoolMeDto,
 } from "@school-kit/types";
 import type { Request } from "express";
@@ -29,8 +34,10 @@ import type { ZodError, ZodSchema } from "zod";
 import type { AuthContext } from "../../common/auth/auth-context";
 import { AuthGuard } from "../../common/auth/auth.guard";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
+import { UploadErrorFilter } from "../../common/upload-error.filter";
 import { ZodValidationPipe } from "../../common/zod-validation.pipe";
 import {
+  LOGO_MAX_FILE_SIZE_BYTES,
   SchoolsService,
   type OnboardingStepPayload,
 } from "./schools.service";
@@ -61,6 +68,44 @@ export class SchoolsController {
       ipAddress: ip,
       userAgent: req.header("user-agent") ?? null,
     });
+  }
+
+  // POST /schools/me/logo — owner or admin. multipart/form-data with a
+  // `file` field. Replaces the old raw logoUrl text field entirely — see
+  // step2-branding.dto.ts's header comment for the full history.
+  @Post("me/logo")
+  @HttpCode(200)
+  @UseInterceptors(
+    FileInterceptor("file", {
+      limits: { fileSize: LOGO_MAX_FILE_SIZE_BYTES },
+    }),
+  )
+  @UseFilters(new UploadErrorFilter("2 MB"))
+  async uploadLogo(
+    @CurrentUser() authCtx: AuthContext,
+    @UploadedFile() file: Express.Multer.File | undefined,
+    @Ip() ip: string,
+    @Req() req: Request,
+  ): Promise<SchoolMeDto> {
+    if (!file) {
+      throw new ValidationError(
+        "INVALID_UPLOAD",
+        "No file uploaded. Use multipart/form-data with a 'file' field.",
+      );
+    }
+    return this.schoolsService.uploadLogo(
+      authCtx,
+      { buffer: file.buffer, mimetype: file.mimetype },
+      { ipAddress: ip, userAgent: req.header("user-agent") ?? null },
+    );
+  }
+
+  // GET /schools/me/logo-url — any authenticated user of the school (read-
+  // only branding display; no owner/admin gate). Returns a freshly-signed,
+  // directly displayable image URL — see SchoolLogoUrlDto's comment.
+  @Get("me/logo-url")
+  async getLogoUrl(@CurrentUser() authCtx: AuthContext): Promise<SchoolLogoUrlDto> {
+    return this.schoolsService.getLogoUrl(authCtx);
   }
 
   // POST /schools/me/onboarding/:step — owner-only.

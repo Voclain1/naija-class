@@ -15,6 +15,52 @@ Format:
 
 - [ ] Admin dashboard aggregation queries (`DashboardService.getAdminDashboard`) have no dedicated index — whole-school "attendance today" (`AttendanceRecord` filtered by `date` alone) and the 8-week trend (`date >= ...` with no `schoolId`/`termId` prefix) both fall back to the existing `[schoolId, classArmId, date]` / `[schoolId, termId]` indexes, neither of which matches this access pattern. Fine at pilot scale (hundreds of students); flagged now per the dashboard rebuild's own risk callout rather than discovered later as a slow-page complaint. Trigger: a pilot school's dashboard load noticeably slows, or student count crosses a few thousand. Candidate fix: a `[schoolId, date]` composite index on `attendance_records`.
 
+- [x] **School logo upload — "the one thing Phase 0 must ship" was silently downgraded, and nobody tracked it. FIXED 2026-07-26.**
+  `docs/modules/phase-0.md` named this feature twice, unambiguously: Step 2 of
+  onboarding is specced as "branding: **logo upload (to R2)**" (§ screens),
+  and the deferred-features list for that phase says outright "File upload
+  to R2 — **only logo upload in Phase 0**; everything else later" — i.e.
+  logo upload wasn't just in-scope, it was named as the one upload feature
+  that phase was explicitly meant to deliver, with every other upload
+  capability deferred around it.
+  What actually shipped instead: a plain `logoUrl: z.string().url()` text
+  input the school owner had to fill in with a URL to an image already
+  hosted somewhere else. The code's own comments (`step2-branding.dto.ts`,
+  pre-fix) said "real R2 upload is Phase 2 — see docs/deferred.md" — **but
+  no entry existed here recording that decision.** The substitution was
+  never logged as a scope change anywhere: not in this file, not in
+  phase-0.md's own "what's deferred" section, nowhere. Found only when a
+  live design-review pass asked "why does nobody ever set a school logo?"
+  and the investigation traced back to this gap.
+  **Fixed**: `POST /schools/me/logo` (real multipart upload to the existing
+  R2/filesystem storage layer, same discipline as `expense-receipt` and
+  `payment-receipt`) + `GET /schools/me/logo-url` (freshly-signed display
+  URL), wired into both the signup wizard's branding step AND a new
+  `/settings/school` page (which phase-0.md *also* specced — "edit school
+  details, owner/admin only" — and which likewise had never been built).
+  `logoUrl` is no longer PATCH-able as a raw string anywhere (same
+  treatment `Expense.receiptUrl` already gets).
+  See CLAUDE.md's "Design system" / storage sections for the technical
+  shape (extension-bearing `StorageObjectKey`, long-TTL signed display URL
+  vs. receipts' short one).
+
+- [ ] **Process pattern worth naming generally, not just this one instance**:
+  a module spec explicitly naming ONE feature as "the thing this phase must
+  ship" — not a nice-to-have, the one deliverable everything else in that
+  phase's deferred list was deferred *around* — got silently swapped for a
+  lesser placeholder during implementation, and that swap was never logged
+  anywhere as a scope change. Nobody caught it until a live product-review
+  session asked why the feature didn't seem to actually work, months later.
+  The specific instance (school logo) is fixed above. **Not chasing down
+  whether this happened anywhere else right now** — this entry exists so the
+  pattern itself is on record: when a spec calls out ONE deliverable that
+  explicitly, a silent downgrade of exactly that one thing is a higher-
+  severity drift than an ordinary scope cut, and deserves an explicit
+  deferred.md entry at the moment the substitution is made, not months
+  later when someone notices the feature doesn't work. Trigger for revisit:
+  any future phase-close retro, or if another "spec named this as the one
+  must-ship thing" gap surfaces the same way this one did.
+
 - [x] Recurring dev-server bootstrap hang on Windows. **ROOT-CAUSED AND FIXED**
   (Payroll CP4a follow-up, 2026-07-11). `node dist/main.js` intermittently
   hung right after `PartitionService`'s three "Partition ensured" debug logs
