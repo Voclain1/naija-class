@@ -654,6 +654,87 @@ Format:
   school reports an actual overpayment, or before this becomes higher-
   volume than pilot scale.
 
+- [x] **Audit the whole app for orphaned pages — backend + UI built and
+  working, but no discoverable nav link to reach them. DONE 2026-07-26.**
+  Found four in total, all fixed same-day-to-next-day, all found one at a
+  time via manual testing hitting a dead end before the systematic pass:
+  the guardian-invite button (`GuardiansTab`, 2026-07-24), the `/finance/*`
+  sub-pages (invoices/debtors/expenses/payroll — only `/finance/dashboard`
+  was linked from the sidebar, fixed via PR #110's `FinanceSubNav`,
+  2026-07-24), `/settings/finance/fees` + `/settings/finance/discounts`
+  (Fee catalog + discount rules — fully built per `docs/modules/phase-3.md`
+  slices 4/5 but absent from the `/settings` hub's `LINKS` array; this is
+  what blocked Arinzechukwu's Gate 2 invoice test, since he had no way to
+  configure a non-zero fee item — PR #113, 2026-07-24), and `/enrollments`
+  (Phase 1 / Slice 9 cp2 — current-term roster grouped by class arm, with
+  bulk-enroll at `/enrollments/bulk` — zero inbound references anywhere in
+  `apps/web/src`, not even a button on `/students` or `/dashboard`; PR
+  #117, 2026-07-26).
+  **The systematic pass itself (2026-07-26):** enumerated every `page.tsx`
+  under `apps/web/src/app/` (69 routes) and `apps/portal/src/app/` (5
+  routes) via `Glob`, then cross-referenced every one against every
+  `href`/`router.push`/`router.replace` target anywhere in `apps/web/src`
+  and `apps/portal/src` — persistent nav components (both sidebars, the
+  settings hub, three sub-navs) *and* in-page buttons on other pages, not
+  just nav. Dynamic detail pages (`/students/[id]`, `/staff/[userId]`,
+  import-wizard `[jobId]` steps, etc.) were excluded — those are reached via
+  a specific record's link, not a persistent nav item, and that's correct
+  by design. `/enrollments` was the only genuine orphan the systematic pass
+  turned up beyond the three already fixed; `apps/portal` had none at all
+  (only 5 routes, a simple linear graph, too small/new to have accumulated
+  this drift). A few routes that looked orphaned on first pass turned out
+  fine on inspection — `/debug/sentry` self-documents as intentionally
+  unlinked (`notFound()` in production, explicit comment), `/finance/
+  payments/callback` is a Paystack redirect landing page never meant for
+  nav, `/teacher/attendance/summary` and `/teacher/attendance/subject/
+  summary` are in-page sub-views linked from their parent pages rather than
+  hubs needing their own nav entry.
+  **Confirmed: no further instances remain in `apps/web` or `apps/portal`**
+  as of this pass. New drift is always possible as new modules ship —
+  re-run the same methodology (enumerate routes, cross-reference every nav
+  component + in-page link, exclude dynamic detail pages) if another
+  "feature exists but nobody can find it" report comes in, rather than
+  assuming this list is permanently exhaustive.
+
+- [ ] Gate 3's live confirmatory test — a real `FinanceService.sendReminders()`
+  call against a real outstanding invoice, proving `TermiiService.sendSms()`
+  is never invoked when a school's `NotificationPreference.smsEnabled` is
+  `false` — is deferred, not done. Attempted 2026-07-25 against production;
+  aborted before the one production write it would have needed (see below),
+  pending Arinzechukwu's sign-off, which he declined for tonight.
+  What's confirmed instead (code-level, not a live call): `FinanceService
+  .sendReminders` (`apps/api/src/modules/finance/finance.service.ts` ~line
+  253-255) computes `smsAttemptable = channels.sms && this.termii
+  .isConfigured` and only enters the `this.termii.sendSms(...)` branch when
+  `smsAttemptable && guardianPhone` — `channels.sms` false short-circuits
+  before any Termii call is reachable, by construction, not by a runtime
+  check that could itself be buggy. Also confirmed live in production
+  (read-only): both real "Virgo Fidelis Montessori School" rows
+  (`6beff17c...`, `07865652...`) have no `NotificationPreference` row at
+  all, meaning `NotificationPreferencesService.getEnabledChannels`'s
+  `DEFAULTS` apply — `smsEnabled: false` — to both, matching this gate's
+  required precondition already, with zero write needed to confirm that
+  part.
+  Why a live call didn't happen: production currently has no student with
+  BOTH an outstanding invoice (`ISSUED`/`PARTIALLY_PAID`/`OVERDUE`) AND a
+  primary guardian with a phone number. The one near-miss — Chinedu Eze at
+  `6beff17c...`, who has a primary guardian with phone+email — has a
+  `CANCELLED` invoice for the school's only term, and `InvoiceGeneration
+  Service.generateForArm` refuses to regenerate for a student-term pair
+  that already has *any* invoice row regardless of status (no "delete
+  invoice" endpoint exists — only cancel). Closing that gap for real would
+  have meant a direct DB delete of the dead `CANCELLED` row outside any
+  product flow — explicitly declined rather than done unilaterally.
+  Unblocks either way: (a) real invoice data naturally comes to exist in
+  production (Arinzechukwu generates one through the actual product flow
+  now that the Gate 2 fee-catalog-nav fix landed), making a clean student+
+  invoice+guardian candidate available without any DB surgery, or (b)
+  Termii's sender-ID registration approval completes (separately blocked on
+  Arinzechukwu's business documents), at which point the real end-to-end
+  send-and-confirm test this gate ultimately wants becomes possible anyway
+  and supersedes this narrower gate-check. Either makes this item moot, not
+  merely satisfied.
+
 - [x] **CI's `e2e (Playwright)` job has been hitting its 20-minute hard timeout and getting CANCELLED on every single push to `main` for ~4 weeks — root-caused 2026-07-24, FIXED 2026-07-25.** This was a real, reproducible bug, not "flaky e2e" — but NOT in the logout→re-login flow the entry below originally hypothesized. See the **CORRECTION** block below for the confirmed root cause and fix; the original bisection evidence is left in place because it's still accurate, only the hypothesis paragraph was wrong.
   **The evidence, not a theory:** pulled the last 100 CI runs on `main` via `gh run list`. The job passed reliably for months; the last green run was 2026-06-26T22:32:32Z (run `28268970807`); every run since — 40 in a row, one per merge — has ended `cancelled` at the 20-minute ceiling. The very first cancelled run (`28300695234`, 2026-06-27T20:20:37Z) fired immediately after **PR #70 "Phase 3/slice 2 cp1"** merged — the 2FA/TOTP feature, which rewrote `apps/web/src/components/auth/login-form.tsx` (117 lines changed) into its current two-step credentials→TOTP form and introduced the cookie-based session proxy (`apps/web/src/app/api/auth/[...auth]/route.ts`) and `apps/web/src/middleware.ts`. No CI config changed in that window — this is an app-code regression, not an infra/runner change.
   **Exact hang point**, from `e2e/tests/phase-0-happy-path.spec.ts:201-222` (and `slice-11-teacher-scope.spec.ts` fails identically, at the same shared step — both use the same log-out-then-log-back-in helper):
