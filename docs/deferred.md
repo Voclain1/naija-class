@@ -13,6 +13,8 @@ Format:
 
 - [ ] Phone uniqueness on `users` will need re-thinking in Phase 4 when guardians arrive. Multiple parents may share one phone number. Consider moving phone to a Guardian table or relaxing uniqueness. — currently `@unique` on `users.phone` — Phase 4 trigger.
 
+- [ ] Admin dashboard aggregation queries (`DashboardService.getAdminDashboard`) have no dedicated index — whole-school "attendance today" (`AttendanceRecord` filtered by `date` alone) and the 8-week trend (`date >= ...` with no `schoolId`/`termId` prefix) both fall back to the existing `[schoolId, classArmId, date]` / `[schoolId, termId]` indexes, neither of which matches this access pattern. Fine at pilot scale (hundreds of students); flagged now per the dashboard rebuild's own risk callout rather than discovered later as a slow-page complaint. Trigger: a pilot school's dashboard load noticeably slows, or student count crosses a few thousand. Candidate fix: a `[schoolId, date]` composite index on `attendance_records`.
+
 - [x] Recurring dev-server bootstrap hang on Windows. **ROOT-CAUSED AND FIXED**
   (Payroll CP4a follow-up, 2026-07-11). `node dist/main.js` intermittently
   hung right after `PartitionService`'s three "Partition ensured" debug logs

@@ -2,28 +2,68 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ---------------------------------------------------------------------------
+ * Design tokens — visual/UX overhaul initiative (first applied: admin
+ * dashboard rebuild). Source palette (hex) is documented in CLAUDE.md's
+ * "Design system" section — Deep Emerald #0E5C43, Bright Emerald #3FB68B,
+ * Gold Spark #E0A52E, Ink #13262E, Paper #F7F5EF. Values below are those five
+ * hex colors converted to the H S% L% triplets shadcn's `hsl(var(--x))`
+ * convention expects — this file is the token source of truth, CLAUDE.md
+ * documents the *decision*, not a second copy of the numbers.
+ *
+ * Dark mode is a genuinely new addition (previously undefined despite
+ * `darkMode: ["class"]` being configured) — built from the same five colors,
+ * not new hex values: Ink becomes the background, Bright Emerald (lighter,
+ * better contrast on a dark surface than Deep Emerald) becomes primary.
+ * ------------------------------------------------------------------------- */
+
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
-    --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
-    --primary: 222.2 47.4% 11.2%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
+    --background: 45 33% 95%; /* Paper #F7F5EF */
+    --foreground: 198 42% 13%; /* Ink #13262E */
+    --card: 45 33% 95%;
+    --card-foreground: 198 42% 13%;
+    --popover: 45 33% 97%;
+    --popover-foreground: 198 42% 13%;
+    --primary: 161 74% 21%; /* Deep Emerald #0E5C43 */
+    --primary-foreground: 45 33% 97%;
+    --secondary: 40 74% 53%; /* Gold Spark #E0A52E — used sparingly per the mockup */
+    --secondary-foreground: 198 42% 13%;
+    --muted: 45 15% 90%;
+    --muted-foreground: 198 15% 40%;
+    --accent: 45 20% 88%;
+    --accent-foreground: 198 42% 13%;
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 210 40% 98%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 222.2 84% 4.9%;
-    --radius: 0.5rem;
+    --border: 45 15% 85%;
+    --input: 45 15% 85%;
+    --ring: 161 74% 21%;
+    --radius: 0.75rem;
+
+    --font-sans: var(--font-hanken-grotesk);
+    --font-serif: var(--font-fraunces);
+  }
+
+  .dark {
+    --background: 198 35% 10%;
+    --foreground: 45 20% 92%;
+    --card: 198 32% 13%;
+    --card-foreground: 45 20% 92%;
+    --popover: 198 32% 13%;
+    --popover-foreground: 45 20% 92%;
+    --primary: 158 49% 48%; /* Bright Emerald #3FB68B */
+    --primary-foreground: 198 42% 10%;
+    --secondary: 40 74% 53%; /* Gold Spark, unchanged — reads fine on dark too */
+    --secondary-foreground: 198 42% 10%;
+    --muted: 198 25% 18%;
+    --muted-foreground: 45 12% 65%;
+    --accent: 198 25% 20%;
+    --accent-foreground: 45 20% 92%;
+    --destructive: 0 62.8% 45%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 198 20% 22%;
+    --input: 198 20% 22%;
+    --ring: 158 49% 48%;
   }
 }
 

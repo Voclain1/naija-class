@@ -550,6 +550,115 @@ async function main() {
     }
   }
 
+  // 13. Dashboard-demo data — visual/UX overhaul initiative (2026-07-26). The
+  //     dashboard rebuild needs a school with REAL non-zero numbers across
+  //     every card, not just the gradebook data steps 1-12 already provide.
+  //     Reuses the same 5 students / JSS 2 A arm / current term — no new
+  //     tenant, so the existing dev-owner login shows the populated
+  //     dashboard directly. `items: []` on Invoice is a valid raw snapshot
+  //     (Json, no FeeItem FK required) — same pattern finance.service.spec.ts
+  //     uses for its own invoice fixtures.
+  const INVOICE_TOTAL_DUE = 15_000_000; // ₦150,000, kobo
+  const in20Days = dayOffset(20);
+  const yesterdaySeed = dayOffset(-1);
+  const INVOICES: Array<{
+    admissionNumber: string;
+    status: "PAID" | "PARTIALLY_PAID" | "ISSUED" | "OVERDUE";
+    totalPaid: number;
+    dueDate: Date | null;
+  }> = [
+    { admissionNumber: "NJC/2025/001", status: "PAID", totalPaid: INVOICE_TOTAL_DUE, dueDate: in20Days },
+    { admissionNumber: "NJC/2025/002", status: "PARTIALLY_PAID", totalPaid: 9_000_000, dueDate: in20Days },
+    { admissionNumber: "NJC/2025/003", status: "ISSUED", totalPaid: 0, dueDate: in20Days },
+    { admissionNumber: "NJC/2025/004", status: "OVERDUE", totalPaid: 0, dueDate: yesterdaySeed },
+    { admissionNumber: "NJC/2025/005", status: "PARTIALLY_PAID", totalPaid: 5_000_000, dueDate: in20Days },
+  ];
+  for (const inv of INVOICES) {
+    const studentId = studentIdByAdmission.get(inv.admissionNumber)!;
+    await prisma.invoice.upsert({
+      where: { schoolId_studentId_termId: { schoolId, studentId, termId: currentTermId } },
+      update: { status: inv.status, totalPaid: inv.totalPaid, dueDate: inv.dueDate },
+      create: {
+        schoolId,
+        studentId,
+        termId: currentTermId,
+        academicYearId: year.id,
+        status: inv.status,
+        items: [],
+        totalAmount: INVOICE_TOTAL_DUE,
+        totalDiscount: 0,
+        totalDue: INVOICE_TOTAL_DUE,
+        totalPaid: inv.totalPaid,
+        dueDate: inv.dueDate,
+        issuedAt: seedToday,
+        issuedBy: owner.id,
+      },
+    });
+  }
+
+  // Attendance for the last 40 days + today — safely inside the current
+  // term's [-45,+45] window (see step 6) so every row's termId is correct.
+  // NJC/2025/001 absent every 7th day, NJC/2025/004 absent every 5th day —
+  // deterministic (idempotent re-seed produces the same numbers) but not
+  // flat, so the 8-week trend sparkline shows real week-to-week variation
+  // rather than a constant 100% or 0% line.
+  for (let d = -40; d <= 0; d++) {
+    const date = dayOffset(d);
+    for (const s of STUDENTS) {
+      const studentId = studentIdByAdmission.get(s.admissionNumber)!;
+      const absentWeekly = s.admissionNumber === "NJC/2025/001" && d % 7 === 0;
+      const absentOften = s.admissionNumber === "NJC/2025/004" && d % 5 === 0;
+      const status = absentWeekly || absentOften ? "ABSENT" : "PRESENT";
+      await prisma.attendanceRecord.upsert({
+        where: { schoolId_studentId_date: { schoolId, studentId, date } },
+        update: { status, classArmId: targetArmId, termId: currentTermId },
+        create: {
+          schoolId,
+          studentId,
+          classArmId: targetArmId,
+          termId: currentTermId,
+          date,
+          status,
+          markedBy: owner.id,
+        },
+      });
+    }
+  }
+
+  // One report card sitting FORM_REVIEWED — populates the "needs you today"
+  // pending-approval alert.
+  const reportCardStudentId = studentIdByAdmission.get("NJC/2025/002")!;
+  await prisma.reportCard.upsert({
+    where: {
+      schoolId_studentId_termId: { schoolId, studentId: reportCardStudentId, termId: currentTermId },
+    },
+    update: { status: "FORM_REVIEWED" },
+    create: {
+      schoolId,
+      studentId: reportCardStudentId,
+      termId: currentTermId,
+      academicYearId: year.id,
+      classArmId: targetArmId,
+      status: "FORM_REVIEWED",
+    },
+  });
+
+  // One pending (unaccepted, unexpired) staff invitation — populates the
+  // "needs you today" pending-invitations alert. Stable tokenHash so re-
+  // seeding upserts the same row instead of accumulating duplicates.
+  await prisma.invitation.upsert({
+    where: { tokenHash: `dev-seed-pending-invite-${schoolId}` },
+    update: { expiresAt: dayOffset(7), acceptedAt: null },
+    create: {
+      schoolId,
+      email: "dev-pending-teacher@test.naija-class.local",
+      roleKey: "teacher",
+      tokenHash: `dev-seed-pending-invite-${schoolId}`,
+      invitedBy: owner.id,
+      expiresAt: dayOffset(7),
+    },
+  });
+
   // --------------------------------------------------------------------------
   /* eslint-disable no-console */
   console.log("");
@@ -561,6 +670,9 @@ async function main() {
   console.log(`Arm with scores: ${TARGET_ARM_NAME} (Mathematics + English Language, current term)`);
   console.log("dev-teacher also has SUBJECT assignments in JSS 2 A (Maths + English)");
   console.log("Now go to /report-cards as owner");
+  console.log("Dashboard demo data: 5 invoices (1 paid, 2 partial, 1 issued, 1 overdue),");
+  console.log("  41 days of attendance, 1 report card awaiting approval, 1 pending invite.");
+  console.log("Go to /dashboard as owner to see it populated.");
   console.log("");
   /* eslint-enable no-console */
 }
