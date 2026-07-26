@@ -99,6 +99,23 @@ infra/      Terraform / Pulumi
 - Every call to `claudeClient.messages.create` must log to the `ai_generations` table: model, prompt name + version, input/output tokens, latency, cost estimate, success/error.
 - Per-school monthly token budget enforced before the call, not after.
 
+**`AIInteractionLog` (`ai_interaction_logs`, shipped Phase 1 / Slice 12) vs
+`AIGeneration` (`ai_generations`, not yet built — Phase 5) are deliberately
+two different tables, not a naming drift to reconcile** (resolved 2026-07-26,
+closing the blocker tracked in `docs/deferred.md`). `AIInteractionLog` is a
+session/interaction **content** record — `sessionRef` groups rows into a
+conversation or feature-level interaction, `studentId` is nullable
+(teacher-driven sessions have no student), `payload` is a loose, PII-free
+JSON envelope. `AIGeneration` is the per-call **cost/compliance ledger** the
+hard rule above mandates — one flat, typed row per `claudeClient.messages.create`
+call (model, prompt name + version, token counts, latency, cost, success/
+error), shaped for the budget-enforcement query that rule requires, not for
+holding conversation content. A single tutor session (one `AIInteractionLog`
+group) will span multiple underlying calls, each logged separately to
+`ai_generations`. Do not rename or merge one into the other. `AIGeneration`'s
+exact schema — including the cost-estimate currency/unit decision — is still
+owned by Phase 5's own plan-first; see `docs/deferred.md` for the draft.
+
 ### Git
 
 - Never commit to `main`. PR per module.
