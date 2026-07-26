@@ -1,12 +1,14 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { Test } from "@nestjs/testing";
 import { APP_FILTER } from "@nestjs/core";
+import { ConfigModule } from "@nestjs/config";
 import { Global, Module, INestApplication } from "@nestjs/common";
 import request from "supertest";
 
 import { basePrisma } from "@school-kit/db";
 
 import { REDIS_AUTH_CLIENT } from "../../common/auth/redis-auth.provider";
+import { StorageModule } from "../../common/storage/storage.module";
 import { AuthModule } from "../auth/auth.module";
 import { SchoolsModule } from "./schools.module";
 import { HttpExceptionFilter } from "../../common/http-exception.filter";
@@ -40,7 +42,11 @@ describe("SchoolsController (Slice 6)", () => {
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
-      imports: [MockRedisAuthModule, AuthModule, SchoolsModule],
+      // ConfigModule.forRoot + StorageModule: SchoolsService now depends on
+      // the real (globally-registered) StorageService for the logo-upload
+      // endpoints this spec exercises below. Mirrors portal-payments.controller.spec.ts's
+      // own wiring for the same reason.
+      imports: [ConfigModule.forRoot({ isGlobal: true }), StorageModule, MockRedisAuthModule, AuthModule, SchoolsModule],
       providers: [{ provide: APP_FILTER, useClass: HttpExceptionFilter }],
     }).compile();
     app = moduleRef.createNestApplication();
@@ -229,5 +235,60 @@ describe("SchoolsController (Slice 6)", () => {
     expect(res.status).toBe(200);
     expect(res.body.school?.status).toBe("ACTIVE");
     expect(res.body.school?.onboardingStep).toBe(5);
+  });
+
+  // ---------------------------------------------------------------------
+  // POST /schools/me/logo + GET /schools/me/logo-url — visual/UX overhaul
+  // initiative (2026-07-26). Real multipart upload through the real
+  // (filesystem-driver) StorageModule this testing module now imports.
+  // ---------------------------------------------------------------------
+
+  const PNG_MAGIC_BYTES = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
+  it("POST /schools/me/logo without a file — 400 INVALID_UPLOAD", async () => {
+    const res = await request(app.getHttpServer())
+      .post("/api/v1/schools/me/logo")
+      .set(withAuth(ownerToken));
+    expect(res.status).toBe(400);
+    expect(res.body.error?.code).toBe("INVALID_UPLOAD");
+  });
+
+  it("POST /schools/me/logo with a disallowed mimetype — 400 INVALID_LOGO_TYPE", async () => {
+    const res = await request(app.getHttpServer())
+      .post("/api/v1/schools/me/logo")
+      .set(withAuth(ownerToken))
+      .attach("file", Buffer.from("%PDF-1.4"), { filename: "logo.pdf", contentType: "application/pdf" });
+    expect(res.status).toBe(400);
+    expect(res.body.error?.code).toBe("INVALID_LOGO_TYPE");
+  });
+
+  it("GET /schools/me/logo-url before any upload — 404", async () => {
+    const res = await request(app.getHttpServer())
+      .get("/api/v1/schools/me/logo-url")
+      .set(withAuth(ownerToken));
+    expect(res.status).toBe(404);
+  });
+
+  it("POST /schools/me/logo with a real PNG, then GET /schools/me/logo-url returns a URL", async () => {
+    const uploadRes = await request(app.getHttpServer())
+      .post("/api/v1/schools/me/logo")
+      .set(withAuth(ownerToken))
+      .attach("file", PNG_MAGIC_BYTES, { filename: "logo.png", contentType: "image/png" });
+    expect(uploadRes.status).toBe(200);
+    expect(uploadRes.body.logoUrl).toMatch(/logo\.png$/);
+
+    const urlRes = await request(app.getHttpServer())
+      .get("/api/v1/schools/me/logo-url")
+      .set(withAuth(ownerToken));
+    expect(urlRes.status).toBe(200);
+    expect(typeof urlRes.body.url).toBe("string");
+    expect(urlRes.body.url.length).toBeGreaterThan(0);
+  });
+
+  it("POST /schools/me/logo without a bearer token — 401", async () => {
+    const res = await request(app.getHttpServer())
+      .post("/api/v1/schools/me/logo")
+      .attach("file", PNG_MAGIC_BYTES, { filename: "logo.png", contentType: "image/png" });
+    expect(res.status).toBe(401);
   });
 });

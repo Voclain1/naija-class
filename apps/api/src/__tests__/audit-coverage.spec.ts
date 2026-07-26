@@ -499,10 +499,10 @@ describe("Phase 2 audit coverage — every mutation writes an audit row", () => 
   const aggregation = new AggregationService();
   const attendance = new AttendanceService();
   const subjectAttendance = new SubjectAttendanceService();
-  const schools = new SchoolsService();
 
   let storageRoot: string;
   let storage: StorageService;
+  let schools: SchoolsService;
   let queue: Queue;
   let reportCards: ReportCardService;
   let workflow: ReportCardWorkflowService;
@@ -580,6 +580,7 @@ describe("Phase 2 audit coverage — every mutation writes an audit row", () => 
   beforeAll(async () => {
     storageRoot = await mkdtemp(join(tmpdir(), "audit-p2-"));
     storage = new StorageService(new FilesystemStorageDriver(storageRoot));
+    schools = new SchoolsService(storage);
     // Isolated queue NAME so a stray dev:api worker can't steal the enqueued jobs.
     queue = new Queue(`${REPORT_CARDS_QUEUE}-audit-${runId}`, { connection: redisConnection() });
     await queue.obliterate({ force: true });

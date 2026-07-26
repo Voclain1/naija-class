@@ -28,12 +28,22 @@ import { DEV_STORAGE_PATH, DEV_STORAGE_SECRET, STORAGE_FS_ROOT, verifyDevStorage
 // it from, it falls through to octet-stream here (triggers a download rather
 // than a wrong-looking inline render). Pre-existing gap, not something this
 // fix closes; tracked in docs/deferred.md.
+// school-logo (visual/UX overhaul initiative) is deliberately EXTENSION-
+// BEARING for exactly this function's benefit — see storage.types.ts's
+// header comment. png/jpg/webp resolve correctly here instead of falling
+// through to octet-stream the way extensionless expense-receipt does.
 function contentTypeFor(canonical: string): string {
   switch (extname(canonical)) {
     case ".pdf":
       return "application/pdf";
     case ".html":
       return "text/html; charset=utf-8";
+    case ".png":
+      return "image/png";
+    case ".jpg":
+      return "image/jpeg";
+    case ".webp":
+      return "image/webp";
     default:
       return "application/octet-stream";
   }
@@ -46,7 +56,7 @@ function contentTypeFor(canonical: string): string {
 // "attachment" for everything. HTML is the only kind callers ever request
 // inline for; PDFs/unknown types keep the original attachment behavior.
 function contentDispositionFor(canonical: string): "inline" | "attachment" {
-  return extname(canonical) === ".html" ? "inline" : "attachment";
+  return [".html", ".png", ".jpg", ".webp"].includes(extname(canonical)) ? "inline" : "attachment";
 }
 
 @Controller(DEV_STORAGE_PATH)

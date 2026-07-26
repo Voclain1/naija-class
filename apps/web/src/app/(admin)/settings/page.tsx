@@ -1,4 +1,4 @@
-import { BarChart3, Bell, CalendarCheck, Percent, ShieldCheck, SlidersHorizontal, User, Users, Wallet, type LucideIcon } from "lucide-react";
+import { BarChart3, Bell, Building2, CalendarCheck, Percent, ShieldCheck, SlidersHorizontal, User, Users, Wallet, type LucideIcon } from "lucide-react";
 import Link from "next/link";
 
 // /settings — a small hub linking the settings areas. (Previously a bare
@@ -12,6 +12,12 @@ interface SettingsLink {
 }
 
 const LINKS: SettingsLink[] = [
+  {
+    label: "School details",
+    href: "/settings/school",
+    description: "Name, contact info, and logo shown across the app.",
+    icon: Building2,
+  },
   { label: "Users", href: "/settings/users", description: "Staff accounts, roles, and invitations.", icon: Users },
   { label: "Academics", href: "/settings/academic", description: "Years, terms, levels, arms, and subjects.", icon: BarChart3 },
   { label: "Grading", href: "/settings/grading", description: "Component weights and grade boundaries.", icon: SlidersHorizontal },

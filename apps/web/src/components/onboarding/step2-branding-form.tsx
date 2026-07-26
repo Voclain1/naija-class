@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { LogoUpload } from "@/components/school/logo-upload";
 import { ApiError } from "@/lib/api-client";
 import { useAuth } from "@/lib/auth/use-auth";
 import { track } from "@/lib/observability/events";
@@ -29,14 +30,18 @@ import { advanceStep2 } from "@/lib/onboarding/onboarding-api";
 
 import { OnboardingProgress } from "./progress-indicator";
 
-// Slice 6 branding form. logoUrl is a plain text input by spec — real R2
-// upload is Phase 2 (see docs/deferred.md). primaryColor is a hex string;
-// the colour doesn't yet drive any theming, but capturing it now means
-// Phase 2 only has to wire the consumer side.
+// Slice 6 branding form. Logo is now a real upload (LogoUpload, resolved
+// 2026-07-26 — see step2-branding.dto.ts's header comment for the full
+// history of the raw-URL-text-field gap this replaced) — it uploads
+// immediately on file selection, independent of this form's own Continue
+// submit, same as the settings/school page's copy of the same widget.
+// primaryColor is a hex string; the colour doesn't yet drive any theming,
+// but capturing it now means a later slice only has to wire the consumer
+// side.
 //
-// Both fields optional — the user can click Continue with an empty form.
-// We coerce empty strings to undefined before submitting so the Zod
-// `.optional()` is satisfied instead of failing the URL/regex checks on "".
+// primaryColor is optional — the user can click Continue with an empty
+// form. We coerce an empty string to undefined before submitting so the Zod
+// `.optional()` is satisfied instead of failing the regex check on "".
 export function Step2BrandingForm() {
   const { school, setSchool } = useAuth();
   const router = useRouter();
@@ -45,7 +50,6 @@ export function Step2BrandingForm() {
   const form = useForm<OnboardingStep2Input>({
     resolver: zodResolver(onboardingStep2Schema),
     defaultValues: {
-      logoUrl: school?.logoUrl ?? undefined,
       primaryColor: school?.primaryColor ?? undefined,
     },
     mode: "onSubmit",
@@ -55,7 +59,6 @@ export function Step2BrandingForm() {
     setSubmitting(true);
     try {
       const payload: OnboardingStep2Input = {
-        logoUrl: values.logoUrl?.trim() || undefined,
         primaryColor: values.primaryColor?.trim() || undefined,
       };
       const res = await advanceStep2(payload);
@@ -87,19 +90,8 @@ export function Step2BrandingForm() {
       <CardContent>
         <form onSubmit={onSubmit} className="flex flex-col gap-4" noValidate>
           <div className="flex flex-col gap-2">
-            <Label htmlFor="logoUrl">Logo URL (optional)</Label>
-            <Input
-              id="logoUrl"
-              type="url"
-              placeholder="https://example.com/logo.png"
-              {...form.register("logoUrl")}
-              aria-invalid={Boolean(form.formState.errors.logoUrl)}
-            />
-            {form.formState.errors.logoUrl && (
-              <p className="text-sm text-destructive">
-                {form.formState.errors.logoUrl.message}
-              </p>
-            )}
+            <Label>Logo (optional)</Label>
+            <LogoUpload />
           </div>
           <div className="flex flex-col gap-2">
             <Label htmlFor="primaryColor">Primary colour (optional)</Label>

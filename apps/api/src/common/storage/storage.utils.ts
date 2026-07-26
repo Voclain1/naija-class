@@ -56,6 +56,9 @@ export function pathFor(schoolId: string, key: StorageObjectKey): string {
       }
       return `schools/${schoolId}/payslips/${key.payrollItemId}.html`;
     }
+    case "school-logo": {
+      return `schools/${schoolId}/logo.${key.ext}`;
+    }
   }
 }
 

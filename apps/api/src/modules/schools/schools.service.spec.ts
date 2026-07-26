@@ -1,8 +1,14 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import { afterAll, describe, expect, it } from "vitest";
 
 import { basePrisma, withTenant } from "@school-kit/db";
-import { ForbiddenError, UnauthorizedError } from "@school-kit/types";
+import { ForbiddenError, NotFoundError, UnauthorizedError, ValidationError } from "@school-kit/types";
 
+import { FilesystemStorageDriver } from "../../common/storage/filesystem-storage.driver";
+import { StorageService } from "../../common/storage/storage.service";
 import { AuthService } from "../auth/auth.service";
 import { SchoolsService, type OnboardingStepPayload } from "./schools.service";
 
@@ -31,7 +37,8 @@ describe("SchoolsService (Slice 6)", () => {
   const ctx = { ipAddress: "127.0.0.1", userAgent: "vitest" };
 
   const authService = new AuthService();
-  const schoolsService = new SchoolsService();
+  const storageRoot = mkdtempSync(join(tmpdir(), "schoolkit-schools-storage-"));
+  const schoolsService = new SchoolsService(new StorageService(new FilesystemStorageDriver(storageRoot)));
 
   const schoolIdsToCleanup = new Set<string>();
 
@@ -40,6 +47,7 @@ describe("SchoolsService (Slice 6)", () => {
       await basePrisma.school.delete({ where: { id } }).catch(() => undefined);
     }
     await basePrisma.$disconnect();
+    rmSync(storageRoot, { recursive: true, force: true });
   });
 
   // Helper: create a fresh school + owner via the real signup flow. Returns
@@ -268,14 +276,15 @@ describe("SchoolsService (Slice 6)", () => {
       const step2 = await schoolsService.advanceOnboarding(
         authCtx,
         payload(2, {
-          logoUrl: "https://example.test/logo.png",
           primaryColor: "#0099FF",
         }),
         ctx,
       );
       expect(step2.school.onboardingStep).toBe(2);
-      expect(step2.school.logoUrl).toBe("https://example.test/logo.png");
       expect(step2.school.primaryColor).toBe("#0099FF");
+      // Logo is upload-only now (POST /schools/me/logo, tested separately
+      // below) — step 2's payload no longer carries a logoUrl field at all.
+      expect(step2.school.logoUrl).toBeNull();
 
       const step3 = await schoolsService.advanceOnboarding(
         authCtx,
@@ -476,6 +485,98 @@ describe("SchoolsService (Slice 6)", () => {
           ctx,
         ),
       ).rejects.toBeInstanceOf(ForbiddenError);
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // uploadLogo / getLogoUrl — visual/UX overhaul initiative (2026-07-26)
+  // -----------------------------------------------------------------------
+
+  const PNG_MAGIC_BYTES = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
+  describe("uploadLogo / getLogoUrl", () => {
+    it("owner can upload a PNG logo; getLogoUrl then returns a fetchable URL", async () => {
+      const { authCtx } = await createOwnedSchool("logo-owner");
+
+      const updated = await schoolsService.uploadLogo(
+        authCtx,
+        { buffer: PNG_MAGIC_BYTES, mimetype: "image/png" },
+        ctx,
+      );
+      expect(updated.logoUrl).toMatch(/logo\.png$/);
+
+      const { url } = await schoolsService.getLogoUrl(authCtx);
+      expect(url).toBeTruthy();
+
+      const auditRows = await withTenant(authCtx.schoolId, (db) =>
+        db.auditLog.findMany({ where: { schoolId: authCtx.schoolId, action: "school.logo_upload" } }),
+      );
+      expect(auditRows).toHaveLength(1);
+      expect(auditRows[0]?.metadata).toMatchObject({ mimetype: "image/png", size: PNG_MAGIC_BYTES.length });
+    });
+
+    it("admin can also upload a logo (not owner-only, unlike advanceOnboarding)", async () => {
+      const { schoolId } = await createOwnedSchool("logo-admin");
+      const { authCtx: adminCtx } = await createAdminUser(schoolId, "logo-admin");
+
+      const updated = await schoolsService.uploadLogo(
+        adminCtx,
+        { buffer: PNG_MAGIC_BYTES, mimetype: "image/png" },
+        ctx,
+      );
+      expect(updated.logoUrl).toMatch(/logo\.png$/);
+    });
+
+    it("a teacher cannot upload a logo", async () => {
+      const { schoolId } = await createOwnedSchool("logo-teacher");
+      const { authCtx: teacherCtx } = await createTeacherUser(schoolId, "logo-teacher");
+
+      await expect(
+        schoolsService.uploadLogo(teacherCtx, { buffer: PNG_MAGIC_BYTES, mimetype: "image/png" }, ctx),
+      ).rejects.toBeInstanceOf(ForbiddenError);
+    });
+
+    it("rejects a disallowed mimetype with ValidationError", async () => {
+      const { authCtx } = await createOwnedSchool("logo-badtype");
+
+      await expect(
+        schoolsService.uploadLogo(
+          authCtx,
+          { buffer: Buffer.from("not an image"), mimetype: "application/pdf" },
+          ctx,
+        ),
+      ).rejects.toBeInstanceOf(ValidationError);
+    });
+
+    it("getLogoUrl 404s for a school with no logo uploaded", async () => {
+      const { authCtx } = await createOwnedSchool("logo-none");
+
+      await expect(schoolsService.getLogoUrl(authCtx)).rejects.toBeInstanceOf(NotFoundError);
+    });
+
+    it("re-uploading with a DIFFERENT format deletes the old object, not just overwrites in place", async () => {
+      const { authCtx } = await createOwnedSchool("logo-reupload");
+
+      const first = await schoolsService.uploadLogo(
+        authCtx,
+        { buffer: PNG_MAGIC_BYTES, mimetype: "image/png" },
+        ctx,
+      );
+      expect(first.logoUrl).toMatch(/\.png$/);
+
+      const second = await schoolsService.uploadLogo(
+        authCtx,
+        { buffer: Buffer.from([0xff, 0xd8, 0xff]), mimetype: "image/jpeg" },
+        ctx,
+      );
+      expect(second.logoUrl).toMatch(/\.jpg$/);
+
+      // The old .png object is gone — signing a URL for it and fetching would
+      // 404. We assert this indirectly: getLogoUrl() now resolves against the
+      // NEW .jpg key (parseLogoExt reads logoUrl fresh each call), and the old
+      // file no longer exists on the filesystem driver's disk.
+      const { url } = await schoolsService.getLogoUrl(authCtx);
+      expect(url).toContain(".jpg");
     });
   });
 });

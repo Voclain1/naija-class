@@ -77,10 +77,10 @@ describe("Phase 2 E2E rollup (slice 9 cp3)", () => {
   const aggregation = new AggregationService();
   const attendance = new AttendanceService();
   const subjectAttendance = new SubjectAttendanceService();
-  const schools = new SchoolsService();
 
   let storageRoot: string;
   let storage: StorageService;
+  let schools: SchoolsService;
   let queue: Queue;
   let reportCards: ReportCardService;
   let workflow: ReportCardWorkflowService;
@@ -90,6 +90,7 @@ describe("Phase 2 E2E rollup (slice 9 cp3)", () => {
   beforeAll(async () => {
     storageRoot = await mkdtemp(join(tmpdir(), "p2-e2e-"));
     storage = new StorageService(new FilesystemStorageDriver(storageRoot));
+    schools = new SchoolsService(storage);
     queue = new Queue(`${REPORT_CARDS_QUEUE}-e2e-${runId}`, { connection: redisConnection() });
     await queue.obliterate({ force: true });
     reportCards = new ReportCardService(aggregation, storage, queue);
