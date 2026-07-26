@@ -945,12 +945,14 @@ model TeacherAssignment {
 //     The inline-vs-R2 storage tradeoff (cost/PII/eval) is a Phase-5 decision
 //     made when there is a real payload — not pre-built here.
 //
-// NAMING DRIFT (reconcile in Phase 5): ARCHITECTURE.md §5/§7 and CLAUDE.md's
-// AI hard rules name the LLM-call log `AIGeneration`/`ai_generations`; this
-// table is `AIInteractionLog`/`ai_interaction_logs`. Phase 5 MUST rename/
-// absorb one into the other (or define the boundary between them) BEFORE
-// building the claudeClient call-logger, so we don't end up with two
-// overlapping tables. Tracked in docs/deferred.md.
+// NAMING (resolved 2026-07-26, see docs/deferred.md): ARCHITECTURE.md §5/§7
+// and CLAUDE.md's AI hard rules name the LLM-call log `AIGeneration`/
+// `ai_generations` — a separate table from this one, not a drift to
+// reconcile. This table (`AIInteractionLog`/`ai_interaction_logs`) is a
+// session/interaction content record; `AIGeneration` (not yet built) is the
+// per-call cost/compliance ledger the hard rule requires. Phase 5 builds
+// `AIGeneration` fresh per the draft schema in docs/deferred.md — no rename
+// or merge of this table.
 //
 // Both tables carry their OWN school_id (despite the studentId FK) → flat
 // direct-column RLS, same cheap pattern as student_guardians (see

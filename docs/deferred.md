@@ -197,21 +197,68 @@ Format:
   owned by Phase 5. _(Shipped as `AIInteractionLog` /
   `ai_interaction_logs`, slice 12.)_
 
-## Phase 5 — AI table naming reconciliation (BLOCKER for the call-logger)
-- [ ] `AIInteractionLog` vs `AIGeneration` naming drift. Slice 12 shipped
-  `ai_interaction_logs`, but ARCHITECTURE.md §5/§7 and CLAUDE.md's AI hard
+## Phase 5 — AI table naming reconciliation (RESOLVED 2026-07-26)
+- [x] `AIInteractionLog` vs `AIGeneration` naming drift. Slice 12 shipped
+  `ai_interaction_logs`, while ARCHITECTURE.md §5/§7 and CLAUDE.md's AI hard
   rule ("every `claudeClient.messages.create` must log to the
   `ai_generations` table") name the LLM-call log `AIGeneration` /
-  `ai_generations`. ARCHITECTURE.md §5 also lists `CurriculumChunk` +
-  `TutorSession` as the other two AI tables — neither is `MasteryRecord`,
-  which §5 doesn't list at all. Phase 5 MUST, BEFORE building the call-
-  logger, either (a) rename/absorb `AIInteractionLog` → `AIGeneration`, or
-  (b) define a clear boundary between an interaction log and a generation
-  log — otherwise we end up with two overlapping tables doing the same job.
-  Decide alongside the `AIInteractionLog.payload` / `MasteryRecord.status`
-  taxonomy (the inline-vs-R2 payload storage tradeoff is part of this).
-  Trigger: first Phase 5 slice that writes an LLM call. Flagged in the
-  slice-12 schema + migration headers.
+  `ai_generations`. Investigated pre-Phase-5 (no code anywhere reads or
+  writes `AIInteractionLog` today — only the RLS policy and the Slice 12
+  isolation spec touch it — so there was no live-data risk either way).
+  **Decision: keep both, as genuinely different tables — not a rename, not
+  a merge.** The two schemas already point at different jobs: `payload`
+  (loose JSON) + nullable `studentId` + `sessionRef` grouping on
+  `AIInteractionLog` is shaped for session/interaction **content**
+  (conversation/feature transcript, replay, audit); the hard rule's
+  required fields for `ai_generations` (model, prompt name+version, token
+  counts, latency, cost, success/error) are shaped for a flat, typed,
+  cheaply-aggregable per-call **cost/compliance ledger** that the
+  budget-enforcement query needs. Renaming `AIInteractionLog` →
+  `AIGeneration` would not have closed the gap — none of the hard rule's
+  required columns exist on `AIInteractionLog`, so it would still need
+  every one of them bolted on afterward. One tutor session (one
+  `AIInteractionLog` group) is expected to span multiple underlying calls,
+  each logged separately to `ai_generations`. Boundary now documented in
+  CLAUDE.md's AI hard-rules section. `ARCHITECTURE.md §5`'s naming of
+  `CurriculumChunk` + `TutorSession` (neither shipped, neither is
+  `MasteryRecord`) is unaffected by this decision — those remain
+  unbuilt/unnamed-in-schema until their own Phase 5 slices.
+
+  **Not yet done — Phase 5's own plan-first still owns finalizing this**
+  (schema drafted here, migration deliberately NOT applied by this PR):
+  ```prisma
+  model AIGeneration {
+    id               String   @id @default(uuid())
+    schoolId         String   @map("school_id")
+    interactionLogId String?  @map("interaction_log_id") // nullable: not every call is session-scoped
+    model            String
+    promptName       String   @map("prompt_name")
+    promptVersion    String   @map("prompt_version")
+    inputTokens      Int      @map("input_tokens")
+    outputTokens     Int      @map("output_tokens")
+    latencyMs        Int      @map("latency_ms")
+    costEstimate     Int      @map("cost_estimate") // money: kobo, per CLAUDE.md's Money hard rule — see open question below
+    success          Boolean
+    errorMessage     String?  @map("error_message") // redacted; no secrets/PII, per CLAUDE.md
+    createdAt        DateTime @default(now()) @map("created_at")
+
+    interactionLog AIInteractionLog? @relation(fields: [interactionLogId], references: [id], onDelete: SetNull)
+
+    @@index([schoolId])
+    @@index([schoolId, createdAt])
+    @@map("ai_generations")
+  }
+  ```
+  Open questions for that plan-first: (1) **cost-estimate currency/unit** —
+  Anthropic bills in USD; CLAUDE.md's Money rule says kobo/`Int` in DB, which
+  means either converting USD→kobo at write time (needs an FX-rate source
+  and a rounding policy) or accepting `costEstimate` is the one deliberate
+  exception to the kobo rule (needs its own explicit carve-out, not a silent
+  one). (2) whether `promptVersion` should be a free string or reference a
+  versioned prompt registry in `packages/ai/prompts/`. (3) retention/
+  partitioning policy once volume is non-trivial (the `audit_logs`
+  partitioning precedent from Phase 3 Slice 3 may be the template).
+  Trigger: first Phase 5 slice that writes an LLM call.
 
 ## Roadmap / strategy — REVISIT with live market research (not decided)
 - [ ] CBT / online exams (JAMB/WAEC/UTME prep) — competitors lead with
