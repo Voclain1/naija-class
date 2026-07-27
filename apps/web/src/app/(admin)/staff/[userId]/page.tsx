@@ -13,6 +13,7 @@ import type {
 
 import { BvnSection } from "@/components/staff/bvn-section";
 import { TeacherAssignmentsSection } from "@/components/staff/teacher-assignments-section";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ApiError } from "@/lib/api-client";
 import { listClassArms } from "@/lib/class-arms/class-arms-api";
@@ -146,25 +147,17 @@ export default function StaffDetailPage() {
 
       <header className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex flex-col gap-1">
-          <h1 className="text-2xl font-semibold tracking-tight">
+          <h1 className="font-serif text-2xl font-medium tracking-tight text-foreground">
             {fullName(user.firstName, user.lastName)}
           </h1>
           <p className="text-sm text-muted-foreground">{user.email ?? "—"}</p>
           <div className="mt-1 flex flex-wrap items-center gap-2">
-            <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-xs font-medium">
-              {roleLabel}
-            </span>
-            <span className="inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800">
-              Invitation accepted
-            </span>
+            <Badge variant="muted">{roleLabel}</Badge>
+            <Badge variant="success">Invitation accepted</Badge>
             {user.isActive ? (
-              <span className="inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800">
-                Active
-              </span>
+              <Badge variant="success">Active</Badge>
             ) : (
-              <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
-                Inactive
-              </span>
+              <Badge variant="muted">Inactive</Badge>
             )}
           </div>
         </div>

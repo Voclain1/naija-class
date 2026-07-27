@@ -16,7 +16,7 @@ export default function NewStudentPage() {
         Back to roster
       </Link>
       <header className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold tracking-tight">Add student</h1>
+        <h1 className="font-serif text-2xl font-medium tracking-tight text-foreground">Add student</h1>
         <p className="text-sm text-muted-foreground">
           Required fields: admission number, name, date of birth, and gender.
           You can fill the rest later.

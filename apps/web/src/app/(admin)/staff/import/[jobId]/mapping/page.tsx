@@ -13,7 +13,9 @@ import {
   type TeacherImportTargetField,
 } from "@school-kit/types";
 
+import { IMPORT_WIZARD_STEPS, WizardStepper } from "@/components/shared/wizard-stepper";
 import { Button } from "@/components/ui/button";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ApiError } from "@/lib/api-client";
 import {
   applyTeachersImportMapping,
@@ -233,19 +235,12 @@ export default function ImportTeachersMappingPage() {
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-6">
-      <header className="flex flex-col gap-2">
-        <p className="text-xs uppercase tracking-wide text-muted-foreground">
-          Step 2 of 4
-        </p>
-        <h1 className="text-2xl font-semibold tracking-tight">
-          Map your columns
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          We&apos;ve guessed where we can — review each row, then validate.
-          Your file has <strong>{session.totalRows}</strong>{" "}
-          {session.totalRows === 1 ? "row" : "rows"}.
-        </p>
-      </header>
+      <WizardStepper steps={IMPORT_WIZARD_STEPS} currentStep={2} title="Map your columns" />
+      <p className="text-sm text-muted-foreground">
+        We&apos;ve guessed where we can — review each row, then validate.
+        Your file has <strong>{session.totalRows}</strong>{" "}
+        {session.totalRows === 1 ? "row" : "rows"}.
+      </p>
 
       <section className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <div className="flex flex-col gap-1">
@@ -290,15 +285,15 @@ export default function ImportTeachersMappingPage() {
       )}
 
       <div className="overflow-hidden rounded-md border">
-        <table className="w-full text-sm">
-          <thead className="bg-muted/30 text-left text-xs uppercase text-muted-foreground">
-            <tr>
-              <th className="px-3 py-2 font-medium">CSV column</th>
-              <th className="px-3 py-2 font-medium">First 3 values</th>
-              <th className="px-3 py-2 font-medium">Maps to</th>
-            </tr>
-          </thead>
-          <tbody>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>CSV column</TableHead>
+              <TableHead>First 3 values</TableHead>
+              <TableHead>Maps to</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {session.headers.map((header) => (
               <MappingRow
                 key={header}
@@ -315,8 +310,8 @@ export default function ImportTeachersMappingPage() {
                 }
               />
             ))}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
       </div>
 
       <div className="flex flex-col items-center justify-between gap-3 sm:flex-row">
@@ -369,11 +364,11 @@ function MappingRow({
 }: MappingRowProps) {
   const isDuplicate = value !== null && (usedFields.get(value) ?? 0) > 1;
   return (
-    <tr className="border-t">
-      <td className="px-3 py-2 align-top">
+    <TableRow>
+      <TableCell className="align-top">
         <span className="font-mono text-xs">{header || "(blank)"}</span>
-      </td>
-      <td className="px-3 py-2 align-top">
+      </TableCell>
+      <TableCell className="align-top">
         <ul className="flex flex-col gap-0.5 text-xs text-muted-foreground">
           {samples.map((s, i) => (
             <li key={i} className="truncate">
@@ -382,8 +377,8 @@ function MappingRow({
           ))}
           {samples.length === 0 && <li className="italic">(no sample rows)</li>}
         </ul>
-      </td>
-      <td className="px-3 py-2 align-top">
+      </TableCell>
+      <TableCell className="align-top">
         <select
           className={`h-9 w-full max-w-xs rounded-md border bg-background px-3 text-sm ${
             isDuplicate
@@ -411,7 +406,7 @@ function MappingRow({
             </p>
           </div>
         )}
-      </td>
-    </tr>
+      </TableCell>
+    </TableRow>
   );
 }

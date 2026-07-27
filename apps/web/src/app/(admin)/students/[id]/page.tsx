@@ -110,7 +110,7 @@ export default function StudentDetailPage() {
             size="lg"
           />
           <div className="flex flex-col gap-1">
-            <h1 className="text-2xl font-semibold tracking-tight">
+            <h1 className="font-serif text-2xl font-medium tracking-tight text-foreground">
               {student.firstName}
               {student.middleName ? ` ${student.middleName}` : ""}{" "}
               {student.lastName}

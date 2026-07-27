@@ -1,13 +1,14 @@
 "use client";
 
-import { GraduationCap, Loader2, LogOut, RotateCcw, X } from "lucide-react";
+import { GraduationCap, Loader2, LogOut, RotateCcw } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
 
 import type { StudentDto } from "@school-kit/types";
 
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ApiError } from "@/lib/api-client";
@@ -33,15 +34,6 @@ export function StudentStatusActions({ student, onChanged }: Props) {
   const [reason, setReason] = useState("");
   const [eventDate, setEventDate] = useState(""); // YYYY-MM-DD; blank = "now"
   const [submitting, setSubmitting] = useState(false);
-
-  useEffect(() => {
-    if (!action) return;
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !submitting) closeDialog();
-    };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [action, submitting]);
 
   function closeDialog() {
     setAction(null);
@@ -138,112 +130,87 @@ export function StudentStatusActions({ student, onChanged }: Props) {
         )}
       </div>
 
-      {action && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/30 p-4"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="status-dialog-title"
-          onClick={(e) => {
-            if (e.target === e.currentTarget && !submitting) closeDialog();
-          }}
-        >
-          <div className="w-full max-w-md rounded-lg border bg-card p-6 shadow-lg">
-            <div className="mb-4 flex items-start justify-between">
-              <div>
-                <h2
-                  id="status-dialog-title"
-                  className="text-lg font-semibold"
-                >
-                  {action === "withdraw" && "Withdraw student"}
-                  {action === "graduate" && "Graduate student"}
-                  {action === "reactivate" && "Reactivate student"}
-                </h2>
-                <p className="text-sm text-muted-foreground">
-                  {action === "withdraw" &&
-                    `Mark ${student.firstName} ${student.lastName} as withdrawn. They will no longer appear in the active roster.`}
-                  {action === "graduate" &&
-                    `Mark ${student.firstName} ${student.lastName} as graduated. They will move to the graduated cohort.`}
-                  {action === "reactivate" &&
-                    `Return ${student.firstName} ${student.lastName} to the active roster. Any withdrawal or graduation date will be cleared.`}
-                </p>
-              </div>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={closeDialog}
-                disabled={submitting}
-                aria-label="Close dialog"
-              >
-                <X className="h-4 w-4" />
-              </Button>
-            </div>
+      <Dialog open={action !== null} onOpenChange={(next) => { if (!next && !submitting) closeDialog(); }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {action === "withdraw" && "Withdraw student"}
+              {action === "graduate" && "Graduate student"}
+              {action === "reactivate" && "Reactivate student"}
+            </DialogTitle>
+            <p className="text-sm text-muted-foreground">
+              {action === "withdraw" &&
+                `Mark ${student.firstName} ${student.lastName} as withdrawn. They will no longer appear in the active roster.`}
+              {action === "graduate" &&
+                `Mark ${student.firstName} ${student.lastName} as graduated. They will move to the graduated cohort.`}
+              {action === "reactivate" &&
+                `Return ${student.firstName} ${student.lastName} to the active roster. Any withdrawal or graduation date will be cleared.`}
+            </p>
+          </DialogHeader>
 
-            <div className="flex flex-col gap-3">
-              {action !== "reactivate" && (
-                <div className="flex flex-col gap-1">
-                  <Label htmlFor="status-eventDate">
-                    {action === "withdraw" ? "Withdrawal date" : "Graduation date"}{" "}
-                    (optional)
-                  </Label>
-                  <Input
-                    id="status-eventDate"
-                    type="date"
-                    value={eventDate}
-                    onChange={(e) => setEventDate(e.target.value)}
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Leave blank to use today.
-                  </p>
-                </div>
-              )}
-
+          <div className="flex flex-col gap-3">
+            {action !== "reactivate" && (
               <div className="flex flex-col gap-1">
-                <Label htmlFor="status-reason">Reason (optional)</Label>
-                <textarea
-                  id="status-reason"
-                  rows={3}
-                  className="rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                  value={reason}
-                  onChange={(e) => setReason(e.target.value)}
-                  maxLength={500}
+                <Label htmlFor="status-eventDate">
+                  {action === "withdraw" ? "Withdrawal date" : "Graduation date"}{" "}
+                  (optional)
+                </Label>
+                <Input
+                  id="status-eventDate"
+                  type="date"
+                  value={eventDate}
+                  onChange={(e) => setEventDate(e.target.value)}
                 />
                 <p className="text-xs text-muted-foreground">
-                  Logged to the audit trail. Up to 500 characters.
+                  Leave blank to use today.
                 </p>
               </div>
-            </div>
+            )}
 
-            <div className="mt-4 flex gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={closeDialog}
-                disabled={submitting}
-                className="flex-1"
-              >
-                Cancel
-              </Button>
-              <Button
-                type="button"
-                onClick={onConfirm}
-                disabled={submitting}
-                className="flex-1"
-              >
-                {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
-                {submitting
-                  ? "Saving…"
-                  : action === "withdraw"
-                    ? "Withdraw"
-                    : action === "graduate"
-                      ? "Graduate"
-                      : "Reactivate"}
-              </Button>
+            <div className="flex flex-col gap-1">
+              <Label htmlFor="status-reason">Reason (optional)</Label>
+              <textarea
+                id="status-reason"
+                rows={3}
+                className="rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                maxLength={500}
+              />
+              <p className="text-xs text-muted-foreground">
+                Logged to the audit trail. Up to 500 characters.
+              </p>
             </div>
           </div>
-        </div>
-      )}
+
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={closeDialog}
+              disabled={submitting}
+              className="flex-1"
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={onConfirm}
+              disabled={submitting}
+              className="flex-1"
+            >
+              {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
+              {submitting
+                ? "Saving…"
+                : action === "withdraw"
+                  ? "Withdraw"
+                  : action === "graduate"
+                    ? "Graduate"
+                    : "Reactivate"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

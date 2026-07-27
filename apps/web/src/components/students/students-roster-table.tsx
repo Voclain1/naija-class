@@ -8,6 +8,7 @@ import type { StudentDto } from "@school-kit/types";
 import { StudentAvatar } from "@/components/students/student-avatar";
 import { StudentStatusBadge } from "@/components/students/student-status-badge";
 import { Button } from "@/components/ui/button";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 interface Props {
   students: StudentDto[];
@@ -21,20 +22,20 @@ interface Props {
 export function StudentsRosterTable({ students }: Props) {
   return (
     <div className="overflow-hidden rounded-md border">
-      <table className="w-full text-sm">
-        <thead className="bg-muted/30 text-left text-xs uppercase text-muted-foreground">
-          <tr>
-            <th className="px-3 py-2 font-medium">Student</th>
-            <th className="px-3 py-2 font-medium">Admission #</th>
-            <th className="px-3 py-2 font-medium">Class</th>
-            <th className="px-3 py-2 font-medium">Status</th>
-            <th className="px-3 py-2 font-medium" aria-label="Actions" />
-          </tr>
-        </thead>
-        <tbody>
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Student</TableHead>
+            <TableHead>Admission #</TableHead>
+            <TableHead>Class</TableHead>
+            <TableHead>Status</TableHead>
+            <TableHead aria-label="Actions" />
+          </TableRow>
+        </TableHeader>
+        <TableBody>
           {students.map((s) => (
-            <tr key={s.id} className="border-t">
-              <td className="px-3 py-2">
+            <TableRow key={s.id}>
+              <TableCell>
                 <div className="flex items-center gap-3">
                   <StudentAvatar
                     firstName={s.firstName}
@@ -47,11 +48,11 @@ export function StudentsRosterTable({ students }: Props) {
                     {s.middleName ? ` ${s.middleName.charAt(0)}.` : ""}
                   </span>
                 </div>
-              </td>
-              <td className="px-3 py-2 font-mono text-xs text-muted-foreground">
+              </TableCell>
+              <TableCell className="font-mono text-xs text-muted-foreground">
                 {s.admissionNumber}
-              </td>
-              <td className="px-3 py-2 text-xs">
+              </TableCell>
+              <TableCell className="text-xs">
                 {s.currentEnrollment ? (
                   <span>
                     <span className="font-medium">
@@ -64,11 +65,11 @@ export function StudentsRosterTable({ students }: Props) {
                 ) : (
                   <span className="text-muted-foreground">—</span>
                 )}
-              </td>
-              <td className="px-3 py-2">
+              </TableCell>
+              <TableCell>
                 <StudentStatusBadge status={s.status} />
-              </td>
-              <td className="px-3 py-2 text-right">
+              </TableCell>
+              <TableCell className="text-right">
                 <Button
                   asChild
                   variant="outline"
@@ -80,11 +81,11 @@ export function StudentsRosterTable({ students }: Props) {
                     View
                   </Link>
                 </Button>
-              </td>
-            </tr>
+              </TableCell>
+            </TableRow>
           ))}
-        </tbody>
-      </table>
+        </TableBody>
+      </Table>
     </div>
   );
 }

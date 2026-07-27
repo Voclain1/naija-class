@@ -8,6 +8,7 @@ import { toast } from "sonner";
 
 import type { ImportJobDto } from "@school-kit/types";
 
+import { IMPORT_WIZARD_STEPS, WizardStepper } from "@/components/shared/wizard-stepper";
 import { Button } from "@/components/ui/button";
 import { ApiError } from "@/lib/api-client";
 import { downloadErrorReportCsv, getImportJob } from "@/lib/imports/api";
@@ -127,7 +128,7 @@ export default function ImportTeachersDonePage() {
   if (job.status === "COMMITTING") {
     return (
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
-        <Wizard.Header step={4} title="Sending invitations" />
+        <WizardStepper steps={IMPORT_WIZARD_STEPS} currentStep={4} title="Sending invitations" />
         <Wizard.PollingSkeleton
           label={`Inviting ${job.validRows} ${
             job.validRows === 1 ? "teacher" : "teachers"
@@ -141,7 +142,7 @@ export default function ImportTeachersDonePage() {
   if (job.status === "FAILED") {
     return (
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
-        <Wizard.Header step={4} title="Import failed" />
+        <WizardStepper steps={IMPORT_WIZARD_STEPS} currentStep={4} title="Import failed" />
         <div className="rounded-md border border-destructive/40 bg-destructive/5 p-4 text-sm">
           <p className="font-medium text-destructive">
             We couldn&apos;t finish this import.
@@ -163,7 +164,7 @@ export default function ImportTeachersDonePage() {
   if (job.status !== "COMPLETED") {
     return (
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
-        <Wizard.Header step={4} title="Import isn't ready yet" />
+        <WizardStepper steps={IMPORT_WIZARD_STEPS} currentStep={4} title="Import isn't ready yet" />
         <div className="rounded-md border border-amber-300 bg-amber-50 p-4 text-sm">
           This import is currently <strong>{job.status.toLowerCase()}</strong>.
           You can&apos;t see results until it finishes.
@@ -180,7 +181,7 @@ export default function ImportTeachersDonePage() {
 
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
-      <Wizard.Header step={4} title="Invitations sent" />
+      <WizardStepper steps={IMPORT_WIZARD_STEPS} currentStep={4} title="Invitations sent" />
 
       <div className="flex flex-col gap-4 rounded-md border border-emerald-300 bg-emerald-50 p-6 text-emerald-900">
         <div className="flex items-start gap-3">

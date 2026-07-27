@@ -10,7 +10,9 @@ import type {
   UserListItemDto,
 } from "@school-kit/types";
 
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ApiError } from "@/lib/api-client";
 import {
   listStaff,
@@ -151,7 +153,7 @@ export default function StaffRosterPage() {
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-6">
       <header className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Staff</h1>
+          <h1 className="font-serif text-2xl font-medium tracking-tight text-foreground">Staff</h1>
           <p className="text-sm text-muted-foreground">
             Teachers and administrators in your school. Invite an admin
             directly, or bulk-invite teachers from a CSV.
@@ -282,58 +284,51 @@ export default function StaffRosterPage() {
 
 function StaffTable({ rows }: { rows: StaffRow[] }) {
   return (
-    <div className="overflow-x-auto rounded-md border">
-      <table className="w-full text-sm">
-        <thead className="bg-muted/30 text-left text-xs uppercase text-muted-foreground">
-          <tr>
-            <th className="px-3 py-2 font-medium">Name</th>
-            <th className="px-3 py-2 font-medium">Email</th>
-            <th className="px-3 py-2 font-medium">Role</th>
-            <th className="px-3 py-2 font-medium">Profile</th>
-            <th className="px-3 py-2 font-medium">Status</th>
-            <th className="px-3 py-2" />
-          </tr>
-        </thead>
-        <tbody>
+    <div className="overflow-hidden rounded-md border">
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Name</TableHead>
+            <TableHead>Email</TableHead>
+            <TableHead>Role</TableHead>
+            <TableHead>Profile</TableHead>
+            <TableHead>Status</TableHead>
+            <TableHead />
+          </TableRow>
+        </TableHeader>
+        <TableBody>
           {rows.map((r) => (
-            <tr key={`${r.kind}:${r.id}`} className="border-t">
-              <td className="px-3 py-2 font-medium">{r.name}</td>
-              <td className="px-3 py-2 text-muted-foreground">
+            <TableRow key={`${r.kind}:${r.id}`}>
+              <TableCell className="font-medium">{r.name}</TableCell>
+              <TableCell className="text-muted-foreground">
                 {r.email || "—"}
-              </td>
-              <td className="px-3 py-2">{r.roleLabel}</td>
-              <td className="px-3 py-2">
+              </TableCell>
+              <TableCell>{r.roleLabel}</TableCell>
+              <TableCell>
                 {r.kind === "invitation" ? (
                   <span className="text-xs text-muted-foreground">—</span>
                 ) : r.hasProfile ? (
-                  <span className="inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800">
-                    Has profile
-                  </span>
+                  <Badge variant="success">Has profile</Badge>
                 ) : (
-                  <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
-                    Pending profile
-                  </span>
+                  <Badge variant="warning">Pending profile</Badge>
                 )}
-              </td>
-              <td className="px-3 py-2">
+              </TableCell>
+              <TableCell>
                 {r.kind === "invitation" ? (
-                  <span
-                    className="inline-flex items-center rounded-full bg-sky-100 px-2 py-0.5 text-xs font-medium text-sky-800"
+                  <Badge
+                    variant="outline"
+                    className="border-transparent bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300"
                     title="Invitation sent — awaiting acceptance. The accept link was shown when the invite was created."
                   >
                     Invited
-                  </span>
+                  </Badge>
                 ) : r.isActive ? (
-                  <span className="inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800">
-                    Active
-                  </span>
+                  <Badge variant="success">Active</Badge>
                 ) : (
-                  <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
-                    Inactive
-                  </span>
+                  <Badge variant="muted">Inactive</Badge>
                 )}
-              </td>
-              <td className="px-3 py-2 text-right">
+              </TableCell>
+              <TableCell className="text-right">
                 {r.kind === "user" ? (
                   <Link
                     href={`/staff/${r.id}`}
@@ -346,11 +341,11 @@ function StaffTable({ rows }: { rows: StaffRow[] }) {
                     Pending
                   </span>
                 )}
-              </td>
-            </tr>
+              </TableCell>
+            </TableRow>
           ))}
-        </tbody>
-      </table>
+        </TableBody>
+      </Table>
     </div>
   );
 }

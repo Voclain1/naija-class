@@ -3,6 +3,8 @@
 import { Loader2 } from "lucide-react";
 import { type ReactNode } from "react";
 
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+
 // Shared wizard chrome — extracted slice 8 cp2 from the slice 6/7 student
 // wizard. Slice 6 cp4 kept these components inline because there was only
 // one wizard; slice 8 adds a second (guardian) wizard, slice 10 will add
@@ -113,20 +115,20 @@ export interface WizardBadRow {
 export function WizardBadRowsTable({ rows }: { rows: WizardBadRow[] }) {
   return (
     <div className="overflow-hidden rounded-md border">
-      <table className="w-full text-sm">
-        <thead className="bg-muted/30 text-left text-xs uppercase text-muted-foreground">
-          <tr>
-            <th className="px-3 py-2 font-medium">Row</th>
-            <th className="px-3 py-2 font-medium">What needs fixing</th>
-          </tr>
-        </thead>
-        <tbody>
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Row</TableHead>
+            <TableHead>What needs fixing</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
           {rows.map((r) => (
-            <tr key={r.rowNumber} className="border-t align-top">
-              <td className="px-3 py-2 font-mono text-xs text-muted-foreground">
+            <TableRow key={r.rowNumber} className="align-top">
+              <TableCell className="font-mono text-xs text-muted-foreground">
                 {r.rowNumber}
-              </td>
-              <td className="px-3 py-2">
+              </TableCell>
+              <TableCell>
                 <ul className="flex flex-col gap-1 text-sm">
                   {r.errors.map((err, i) => (
                     <li key={i}>
@@ -137,11 +139,11 @@ export function WizardBadRowsTable({ rows }: { rows: WizardBadRow[] }) {
                     </li>
                   ))}
                 </ul>
-              </td>
-            </tr>
+              </TableCell>
+            </TableRow>
           ))}
-        </tbody>
-      </table>
+        </TableBody>
+      </Table>
     </div>
   );
 }

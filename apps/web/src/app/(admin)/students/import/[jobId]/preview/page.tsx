@@ -8,7 +8,9 @@ import { toast } from "sonner";
 
 import type { ImportJobDto } from "@school-kit/types";
 
+import { IMPORT_WIZARD_STEPS, WizardStepper } from "@/components/shared/wizard-stepper";
 import { Button } from "@/components/ui/button";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ApiError } from "@/lib/api-client";
 import {
   deleteImportJob,
@@ -206,7 +208,7 @@ export default function ImportStudentsPreviewPage() {
   if (job.status === "VALIDATING") {
     return (
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
-        <Wizard.Header step={3} title="Validating your rows" />
+        <WizardStepper steps={IMPORT_WIZARD_STEPS} currentStep={3} title="Validating your rows" />
         <Wizard.PollingSkeleton
           label={`Validating ${job.totalRows} ${
             job.totalRows === 1 ? "row" : "rows"
@@ -232,7 +234,7 @@ export default function ImportStudentsPreviewPage() {
   if (job.status === "FAILED") {
     return (
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
-        <Wizard.Header step={3} title="Validation failed" />
+        <WizardStepper steps={IMPORT_WIZARD_STEPS} currentStep={3} title="Validation failed" />
         <div className="rounded-md border border-destructive/40 bg-destructive/5 p-4 text-sm">
           <p className="font-medium text-destructive">
             We couldn&apos;t finish validating this file.
@@ -263,7 +265,7 @@ export default function ImportStudentsPreviewPage() {
     // (Server Components hydration race) or is blocked.
     return (
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
-        <Wizard.Header step={3} title="Import already in progress" />
+        <WizardStepper steps={IMPORT_WIZARD_STEPS} currentStep={3} title="Import already in progress" />
         <div className="rounded-md border bg-muted/30 p-4 text-sm">
           This import is{" "}
           <strong>
@@ -286,7 +288,7 @@ export default function ImportStudentsPreviewPage() {
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-6">
-      <Wizard.Header step={3} title="Review and import" />
+      <WizardStepper steps={IMPORT_WIZARD_STEPS} currentStep={3} title="Review and import" />
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Wizard.SummaryCard
@@ -411,43 +413,43 @@ interface GoodRow {
 
 function GoodRowsTable({ rows }: { rows: GoodRow[] }) {
   return (
-    <div className="overflow-x-auto rounded-md border">
-      <table className="w-full text-sm">
-        <thead className="bg-muted/30 text-left text-xs uppercase text-muted-foreground">
-          <tr>
-            <th className="px-3 py-2 font-medium">Row</th>
-            <th className="px-3 py-2 font-medium">Admission #</th>
-            <th className="px-3 py-2 font-medium">Name</th>
-            <th className="px-3 py-2 font-medium">DOB</th>
-            <th className="px-3 py-2 font-medium">Gender</th>
-          </tr>
-        </thead>
-        <tbody>
+    <div className="overflow-hidden rounded-md border">
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Row</TableHead>
+            <TableHead>Admission #</TableHead>
+            <TableHead>Name</TableHead>
+            <TableHead>DOB</TableHead>
+            <TableHead>Gender</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
           {rows.map((r) => (
-            <tr key={r.rowNumber} className="border-t">
-              <td className="px-3 py-2 font-mono text-xs text-muted-foreground">
+            <TableRow key={r.rowNumber}>
+              <TableCell className="font-mono text-xs text-muted-foreground">
                 {r.rowNumber}
-              </td>
-              <td className="px-3 py-2 font-mono text-xs">
+              </TableCell>
+              <TableCell className="font-mono text-xs">
                 {String(r.parsedRow.admissionNumber ?? "")}
-              </td>
-              <td className="px-3 py-2">
+              </TableCell>
+              <TableCell>
                 {String(r.parsedRow.lastName ?? "")},{" "}
                 {String(r.parsedRow.firstName ?? "")}
                 {r.parsedRow.middleName
                   ? ` ${String(r.parsedRow.middleName).charAt(0)}.`
                   : ""}
-              </td>
-              <td className="px-3 py-2 text-xs">
+              </TableCell>
+              <TableCell className="text-xs">
                 {formatDob(r.parsedRow.dateOfBirth)}
-              </td>
-              <td className="px-3 py-2 text-xs">
+              </TableCell>
+              <TableCell className="text-xs">
                 {String(r.parsedRow.gender ?? "")}
-              </td>
-            </tr>
+              </TableCell>
+            </TableRow>
           ))}
-        </tbody>
-      </table>
+        </TableBody>
+      </Table>
     </div>
   );
 }

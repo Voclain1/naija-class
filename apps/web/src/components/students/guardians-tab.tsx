@@ -27,6 +27,7 @@ import {
 } from "@school-kit/types";
 
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ApiError } from "@/lib/api-client";
@@ -1021,8 +1022,9 @@ function LinkFlags({
 }
 
 // -------------------------------------------------------------------------
-// Confirm-unlink dialog — Tailwind overlay + Escape handler. Matches the
-// StudentStatusActions confirm-dialog shape.
+// Confirm-unlink dialog — migrated onto the shared Dialog primitive during
+// the Students & Staff restyle (Phase 2), same pass that migrated the
+// StudentStatusActions confirm-dialog this one was written to match.
 // -------------------------------------------------------------------------
 
 function ConfirmUnlinkDialog({
@@ -1036,34 +1038,18 @@ function ConfirmUnlinkDialog({
   onCancel: () => void;
   onConfirm: () => void;
 }) {
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !submitting) onCancel();
-    };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [onCancel, submitting]);
-
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/30 p-4"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="unlink-dialog-title"
-      onClick={(e) => {
-        if (e.target === e.currentTarget && !submitting) onCancel();
-      }}
-    >
-      <div className="w-full max-w-md rounded-lg border bg-card p-6 shadow-lg">
-        <h2 id="unlink-dialog-title" className="text-lg font-semibold">
-          Unlink guardian
-        </h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          {guardianName} will no longer be linked to this student. The guardian
-          record itself is preserved and can be re-linked later.
-        </p>
+    <Dialog open onOpenChange={(next) => { if (!next && !submitting) onCancel(); }}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Unlink guardian</DialogTitle>
+          <p className="text-sm text-muted-foreground">
+            {guardianName} will no longer be linked to this student. The guardian
+            record itself is preserved and can be re-linked later.
+          </p>
+        </DialogHeader>
 
-        <div className="mt-4 flex gap-2">
+        <DialogFooter>
           <Button
             type="button"
             variant="outline"
@@ -1082,8 +1068,8 @@ function ConfirmUnlinkDialog({
             {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
             {submitting ? "Unlinking…" : "Unlink"}
           </Button>
-        </div>
-      </div>
-    </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

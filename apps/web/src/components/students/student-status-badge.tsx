@@ -2,6 +2,7 @@
 
 import type { StudentStatusDto } from "@school-kit/types";
 
+import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -9,12 +10,24 @@ interface Props {
   className?: string;
 }
 
-const STYLES: Record<StudentStatusDto, string> = {
-  ACTIVE: "bg-emerald-100 text-emerald-700",
-  INACTIVE: "bg-muted text-muted-foreground",
-  SUSPENDED: "bg-amber-100 text-amber-800",
-  WITHDRAWN: "bg-rose-100 text-rose-700",
-  GRADUATED: "bg-sky-100 text-sky-700",
+// Migrated onto the shared Badge primitive during the Students & Staff
+// restyle (Phase 2) — badge.tsx's own comment flagged this file (and
+// report-cards/status-badges.tsx) as the intended drop-in migration once
+// their section's turn came. WITHDRAWN/GRADUATED have no dedicated Badge
+// variant (Badge only ships success/warning/muted/destructive/outline), so
+// those two keep their own rose/sky tone via `className` on top of
+// `outline` — same override mechanism StatCard uses for positive/negative.
+const VARIANTS: Record<StudentStatusDto, "success" | "muted" | "warning" | "outline"> = {
+  ACTIVE: "success",
+  INACTIVE: "muted",
+  SUSPENDED: "warning",
+  WITHDRAWN: "outline",
+  GRADUATED: "outline",
+};
+
+const TONE_OVERRIDES: Partial<Record<StudentStatusDto, string>> = {
+  WITHDRAWN: "border-transparent bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300",
+  GRADUATED: "border-transparent bg-sky-100 text-sky-700 dark:bg-sky-950 dark:text-sky-300",
 };
 
 const LABELS: Record<StudentStatusDto, string> = {
@@ -27,14 +40,8 @@ const LABELS: Record<StudentStatusDto, string> = {
 
 export function StudentStatusBadge({ status, className }: Props) {
   return (
-    <span
-      className={cn(
-        "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium",
-        STYLES[status],
-        className,
-      )}
-    >
+    <Badge variant={VARIANTS[status]} className={cn(TONE_OVERRIDES[status], className)}>
       {LABELS[status]}
-    </span>
+    </Badge>
   );
 }
