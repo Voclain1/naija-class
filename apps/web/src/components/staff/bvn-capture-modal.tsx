@@ -1,17 +1,21 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { KeyRound, Loader2, X } from "lucide-react";
+import { KeyRound, Loader2 } from "lucide-react";
 import { useEffect } from "react";
 import { useForm } from "react-hook-form";
 
 import { captureBvnSchema, type CaptureBvnInput } from "@school-kit/types";
 
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 
-// Phase 3 / Slice 12 — capture/update BVN modal. Lightweight inline overlay
-// (the app has no shared Dialog primitive yet — same pattern as ReopenModal).
+// Phase 3 / Slice 12 — capture/update BVN modal. Migrated onto the shared
+// Dialog primitive during the Students & Staff restyle (Phase 2) — this file
+// was explicitly named (alongside ReopenModal) in the Finance restyle's
+// expense-categories-modal.tsx comment as still on the old inline-overlay
+// pattern "until their own section's restyle pass" — this is that pass.
 // captureBvnSchema is a plain object schema (not .strict()) with exactly the
 // one field this form has, so it's safe to reuse directly as the resolver.
 export function BvnCaptureModal({
@@ -34,8 +38,6 @@ export function BvnCaptureModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
-  if (!open) return null;
-
   const submit = form.handleSubmit(async (values) => {
     try {
       await onSubmit(values.bvn);
@@ -48,32 +50,16 @@ export function BvnCaptureModal({
   });
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-      role="dialog"
-      aria-modal="true"
-      onClick={onClose}
-    >
-      <div
-        className="w-full max-w-sm rounded-lg border bg-background p-5 shadow-lg"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-start justify-between gap-3">
-          <h2 className="flex items-center gap-2 text-lg font-semibold">
+    <Dialog open={open} onOpenChange={(next) => { if (!next) onClose(); }}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
             <KeyRound className="h-5 w-5 text-muted-foreground" />
             Bank Verification Number
-          </h2>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-md p-1 text-muted-foreground hover:bg-accent"
-            aria-label="Close"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
+          </DialogTitle>
+        </DialogHeader>
 
-        <form onSubmit={submit} className="mt-4 flex flex-col gap-3" noValidate>
+        <form onSubmit={submit} className="flex flex-col gap-3" noValidate>
           {form.formState.errors.root && (
             <div className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">
               {form.formState.errors.root.message}
@@ -112,7 +98,7 @@ export function BvnCaptureModal({
             </Button>
           </div>
         </form>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

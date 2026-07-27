@@ -12,6 +12,7 @@ import type {
   TermDto,
 } from "@school-kit/types";
 
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ApiError } from "@/lib/api-client";
 import { listTerms } from "@/lib/academic-years/academic-years-api";
@@ -426,10 +427,8 @@ function StatusPill({ status }: { status: EnrollmentStatusDto }) {
           ? "border-blue-300 bg-blue-50 text-blue-900"
           : "border-amber-300 bg-amber-50 text-amber-900";
   return (
-    <span
-      className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ${tone}`}
-    >
+    <Badge variant="outline" className={tone}>
       {status.toLowerCase()}
-    </span>
+    </Badge>
   );
 }

@@ -8,7 +8,9 @@ import { toast } from "sonner";
 
 import type { ImportJobDto } from "@school-kit/types";
 
+import { IMPORT_WIZARD_STEPS, WizardStepper } from "@/components/shared/wizard-stepper";
 import { Button } from "@/components/ui/button";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ApiError } from "@/lib/api-client";
 import {
   deleteImportJob,
@@ -182,7 +184,7 @@ export default function ImportTeachersPreviewPage() {
   if (job.status === "VALIDATING") {
     return (
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
-        <Wizard.Header step={3} title="Validating your rows" />
+        <WizardStepper steps={IMPORT_WIZARD_STEPS} currentStep={3} title="Validating your rows" />
         <Wizard.PollingSkeleton
           label={`Validating ${job.totalRows} ${
             job.totalRows === 1 ? "row" : "rows"
@@ -208,7 +210,7 @@ export default function ImportTeachersPreviewPage() {
   if (job.status === "FAILED") {
     return (
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
-        <Wizard.Header step={3} title="Validation failed" />
+        <WizardStepper steps={IMPORT_WIZARD_STEPS} currentStep={3} title="Validation failed" />
         <div className="rounded-md border border-destructive/40 bg-destructive/5 p-4 text-sm">
           <p className="font-medium text-destructive">
             We couldn&apos;t finish validating this file.
@@ -235,7 +237,7 @@ export default function ImportTeachersPreviewPage() {
   if (job.status === "COMMITTING" || job.status === "COMPLETED") {
     return (
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
-        <Wizard.Header step={3} title="Import already in progress" />
+        <WizardStepper steps={IMPORT_WIZARD_STEPS} currentStep={3} title="Import already in progress" />
         <div className="rounded-md border bg-muted/30 p-4 text-sm">
           This import is{" "}
           <strong>
@@ -256,7 +258,7 @@ export default function ImportTeachersPreviewPage() {
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-6">
-      <Wizard.Header step={3} title="Review and invite" />
+      <WizardStepper steps={IMPORT_WIZARD_STEPS} currentStep={3} title="Review and invite" />
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Wizard.SummaryCard
@@ -379,35 +381,35 @@ interface GoodRow {
 
 function GoodRowsTable({ rows }: { rows: GoodRow[] }) {
   return (
-    <div className="overflow-x-auto rounded-md border">
-      <table className="w-full text-sm">
-        <thead className="bg-muted/30 text-left text-xs uppercase text-muted-foreground">
-          <tr>
-            <th className="px-3 py-2 font-medium">Row</th>
-            <th className="px-3 py-2 font-medium">Email</th>
-            <th className="px-3 py-2 font-medium">First name</th>
-            <th className="px-3 py-2 font-medium">Surname</th>
-          </tr>
-        </thead>
-        <tbody>
+    <div className="overflow-hidden rounded-md border">
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Row</TableHead>
+            <TableHead>Email</TableHead>
+            <TableHead>First name</TableHead>
+            <TableHead>Surname</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
           {rows.map((r) => (
-            <tr key={r.rowNumber} className="border-t">
-              <td className="px-3 py-2 font-mono text-xs text-muted-foreground">
+            <TableRow key={r.rowNumber}>
+              <TableCell className="font-mono text-xs text-muted-foreground">
                 {r.rowNumber}
-              </td>
-              <td className="px-3 py-2 font-mono text-xs">
+              </TableCell>
+              <TableCell className="font-mono text-xs">
                 {String(r.parsedRow.email ?? "")}
-              </td>
-              <td className="px-3 py-2">
+              </TableCell>
+              <TableCell>
                 {String(r.parsedRow.firstName ?? "")}
-              </td>
-              <td className="px-3 py-2">
+              </TableCell>
+              <TableCell>
                 {String(r.parsedRow.lastName ?? "")}
-              </td>
-            </tr>
+              </TableCell>
+            </TableRow>
           ))}
-        </tbody>
-      </table>
+        </TableBody>
+      </Table>
     </div>
   );
 }

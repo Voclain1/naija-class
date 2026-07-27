@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useRef, useState } from "react";
 
+import { IMPORT_WIZARD_STEPS, WizardStepper } from "@/components/shared/wizard-stepper";
 import { Button } from "@/components/ui/button";
 import { ApiError } from "@/lib/api-client";
 import { uploadTeachersCsv } from "@/lib/imports/api";
@@ -73,19 +74,12 @@ export default function ImportTeachersUploadPage() {
 
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
-      <header className="flex flex-col gap-2">
-        <p className="text-xs uppercase tracking-wide text-muted-foreground">
-          Step 1 of 4
-        </p>
-        <h1 className="text-2xl font-semibold tracking-tight">
-          Import teachers from CSV
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          Upload a CSV of your teachers&apos; names and emails. Each one gets
-          an invitation to join and set their own password. You&apos;ll map
-          columns on the next screen, then review what&apos;s ready to send.
-        </p>
-      </header>
+      <WizardStepper steps={IMPORT_WIZARD_STEPS} currentStep={1} title="Import teachers from CSV" />
+      <p className="text-sm text-muted-foreground">
+        Upload a CSV of your teachers&apos; names and emails. Each one gets
+        an invitation to join and set their own password. You&apos;ll map
+        columns on the next screen, then review what&apos;s ready to send.
+      </p>
 
       <div className="flex items-center justify-between rounded-md border bg-muted/30 px-4 py-3">
         <div className="flex items-center gap-3">

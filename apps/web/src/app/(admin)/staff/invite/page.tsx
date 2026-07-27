@@ -119,7 +119,7 @@ export default function InviteStaffPage() {
     return (
       <div className="mx-auto flex w-full max-w-xl flex-col gap-6">
         <header className="flex flex-col gap-1">
-          <h1 className="text-2xl font-semibold tracking-tight">
+          <h1 className="font-serif text-2xl font-medium tracking-tight text-foreground">
             Invitation created
           </h1>
           <p className="text-sm text-muted-foreground">
@@ -170,7 +170,7 @@ export default function InviteStaffPage() {
   return (
     <div className="mx-auto flex w-full max-w-xl flex-col gap-6">
       <header className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold tracking-tight">
+        <h1 className="font-serif text-2xl font-medium tracking-tight text-foreground">
           Invite a staff member
         </h1>
         <p className="text-sm text-muted-foreground">

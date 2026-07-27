@@ -49,7 +49,7 @@ export default function EditStudentPage() {
       </Link>
 
       <header className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold tracking-tight">Edit student</h1>
+        <h1 className="font-serif text-2xl font-medium tracking-tight text-foreground">Edit student</h1>
         <p className="text-sm text-muted-foreground">
           Updates apply immediately. Status transitions (withdraw, graduate,
           reactivate) live on the detail page.
