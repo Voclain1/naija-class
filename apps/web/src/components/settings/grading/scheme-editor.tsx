@@ -12,8 +12,10 @@ import {
   type ReplaceGradingComponentsInput,
 } from "@school-kit/types";
 
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ApiError } from "@/lib/api-client";
 import { replaceComponents } from "@/lib/grading/grading-api";
 import { cn } from "@/lib/utils";
@@ -158,22 +160,22 @@ export function SchemeEditor({ scheme }: Props) {
       )}
 
       <div className="overflow-hidden rounded-md border">
-        <table className="w-full text-sm">
-          <thead className="bg-muted/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
-            <tr>
-              <th className="px-3 py-2 font-medium">Order</th>
-              <th className="px-3 py-2 font-medium">Key</th>
-              <th className="px-3 py-2 font-medium">Label</th>
-              <th className="px-3 py-2 font-medium">Weight</th>
-              <th className="px-3 py-2" />
-            </tr>
-          </thead>
-          <tbody>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Order</TableHead>
+              <TableHead>Key</TableHead>
+              <TableHead>Label</TableHead>
+              <TableHead>Weight</TableHead>
+              <TableHead />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {fields.map((field, index) => {
               const rowErrors = form.formState.errors.components?.[index];
               return (
-                <tr key={field.id} className="border-t align-top">
-                  <td className="px-3 py-2">
+                <TableRow key={field.id} className="align-top">
+                  <TableCell>
                     <div className="flex items-center gap-1 pt-2">
                       <span className="w-4 text-xs text-muted-foreground">{index + 1}</span>
                       <button
@@ -195,8 +197,8 @@ export function SchemeEditor({ scheme }: Props) {
                         <ArrowDown className="h-3.5 w-3.5" />
                       </button>
                     </div>
-                  </td>
-                  <td className="px-3 py-2">
+                  </TableCell>
+                  <TableCell>
                     <Input
                       aria-label={`Component ${index + 1} key`}
                       placeholder="ca1"
@@ -206,8 +208,8 @@ export function SchemeEditor({ scheme }: Props) {
                     {rowErrors?.key && (
                       <p className="mt-1 text-xs text-destructive">{rowErrors.key.message}</p>
                     )}
-                  </td>
-                  <td className="px-3 py-2">
+                  </TableCell>
+                  <TableCell>
                     <Input
                       aria-label={`Component ${index + 1} label`}
                       placeholder="First CA"
@@ -217,8 +219,8 @@ export function SchemeEditor({ scheme }: Props) {
                     {rowErrors?.label && (
                       <p className="mt-1 text-xs text-destructive">{rowErrors.label.message}</p>
                     )}
-                  </td>
-                  <td className="px-3 py-2">
+                  </TableCell>
+                  <TableCell>
                     <Input
                       aria-label={`Component ${index + 1} weight`}
                       inputMode="numeric"
@@ -230,8 +232,8 @@ export function SchemeEditor({ scheme }: Props) {
                     {rowErrors?.weight && (
                       <p className="mt-1 text-xs text-destructive">{rowErrors.weight.message}</p>
                     )}
-                  </td>
-                  <td className="px-3 py-2">
+                  </TableCell>
+                  <TableCell>
                     <button
                       type="button"
                       aria-label={`Remove component ${index + 1}`}
@@ -241,12 +243,12 @@ export function SchemeEditor({ scheme }: Props) {
                     >
                       <Trash2 className="h-4 w-4" />
                     </button>
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               );
             })}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
       </div>
 
       {componentsMessage && <p className="text-sm text-destructive">{componentsMessage}</p>}
@@ -263,18 +265,17 @@ export function SchemeEditor({ scheme }: Props) {
             Add component
           </Button>
 
-          <span
+          <Badge
+            variant="outline"
             className={cn(
-              "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-sm font-medium",
-              totalOk
-                ? "bg-emerald-50 text-emerald-700"
-                : "bg-destructive/10 text-destructive",
+              "gap-1.5 border-transparent text-sm",
+              totalOk ? "bg-emerald-50 text-emerald-700" : "bg-destructive/10 text-destructive",
             )}
             aria-live="polite"
           >
             {totalOk ? <Check className="h-4 w-4" /> : <X className="h-4 w-4" />}
             Weights total: {liveTotal} / 100
-          </span>
+          </Badge>
         </div>
 
         <Button type="submit" disabled={!totalOk || form.formState.isSubmitting}>

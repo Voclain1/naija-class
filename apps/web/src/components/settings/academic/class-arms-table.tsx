@@ -4,7 +4,9 @@ import { Edit, ListPlus, Trash2 } from "lucide-react";
 
 import type { ClassArmDto, ClassLevelDto } from "@school-kit/types";
 
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 interface Props {
   levels: ClassLevelDto[];
@@ -69,28 +71,28 @@ export function ClassArmsTable({
                 No arms yet for {level.name}.
               </p>
             ) : (
-              <table className="w-full text-sm">
-                <thead className="text-left text-xs uppercase text-muted-foreground">
-                  <tr>
-                    <th className="px-3 py-2 font-medium">Name</th>
-                    <th className="px-3 py-2 font-medium">Code</th>
-                    <th className="px-3 py-2 font-medium">Capacity</th>
-                    <th className="px-3 py-2 font-medium">Class teacher</th>
-                    <th className="px-3 py-2 font-medium">Status</th>
-                    <th className="px-3 py-2 font-medium">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Name</TableHead>
+                    <TableHead>Code</TableHead>
+                    <TableHead>Capacity</TableHead>
+                    <TableHead>Class teacher</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
                   {levelArms.map((arm) => (
-                    <tr key={arm.id} className="border-t">
-                      <td className="px-3 py-2 font-medium">{arm.name}</td>
-                      <td className="px-3 py-2 font-mono text-xs text-muted-foreground">
+                    <TableRow key={arm.id}>
+                      <TableCell className="font-medium">{arm.name}</TableCell>
+                      <TableCell className="font-mono text-xs text-muted-foreground">
                         {arm.code}
-                      </td>
-                      <td className="px-3 py-2 text-muted-foreground">
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
                         {arm.capacity ?? "—"}
-                      </td>
-                      <td className="px-3 py-2 text-muted-foreground">
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
                         {arm.classTeacherId ? (
                           <span className="font-mono text-xs">
                             {arm.classTeacherId.slice(0, 8)}…
@@ -98,19 +100,15 @@ export function ClassArmsTable({
                         ) : (
                           "—"
                         )}
-                      </td>
-                      <td className="px-3 py-2">
+                      </TableCell>
+                      <TableCell>
                         {arm.isActive ? (
-                          <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs text-emerald-700">
-                            Active
-                          </span>
+                          <Badge variant="success">Active</Badge>
                         ) : (
-                          <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-                            Inactive
-                          </span>
+                          <Badge variant="muted">Inactive</Badge>
                         )}
-                      </td>
-                      <td className="flex gap-1 px-3 py-2">
+                      </TableCell>
+                      <TableCell className="flex gap-1">
                         <Button
                           type="button"
                           variant="outline"
@@ -133,11 +131,11 @@ export function ClassArmsTable({
                           <Trash2 className="mr-1 h-3 w-3" />
                           Delete
                         </Button>
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   ))}
-                </tbody>
-              </table>
+                </TableBody>
+              </Table>
             )}
           </section>
         );

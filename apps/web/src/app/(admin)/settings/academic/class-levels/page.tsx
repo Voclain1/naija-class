@@ -85,7 +85,7 @@ export default function ClassLevelsPage() {
     <div className="flex w-full flex-col gap-8">
       <header className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Class levels</h1>
+          <h1 className="font-serif text-2xl font-medium tracking-tight text-foreground">Class levels</h1>
           <p className="text-sm text-muted-foreground">
             The 14 standard Nigerian levels (KG 1 through SSS 3) are seeded
             automatically. Add custom levels or rename the defaults to match

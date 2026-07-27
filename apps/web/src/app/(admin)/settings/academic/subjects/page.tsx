@@ -74,7 +74,7 @@ export default function SubjectsPage() {
     <div className="flex w-full flex-col gap-8">
       <header className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Subjects</h1>
+          <h1 className="font-serif text-2xl font-medium tracking-tight text-foreground">Subjects</h1>
           <p className="text-sm text-muted-foreground">
             Define every subject your school teaches. Then link them to the
             appropriate class levels in the Matrix tab.

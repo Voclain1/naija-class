@@ -36,7 +36,7 @@ export default function GradeBoundariesPage() {
   return (
     <div className="flex w-full flex-col gap-8">
       <header className="flex flex-col gap-2">
-        <h1 className="text-2xl font-semibold tracking-tight">Grade boundaries</h1>
+        <h1 className="font-serif text-2xl font-medium tracking-tight text-foreground">Grade boundaries</h1>
         <p className="text-sm text-muted-foreground">
           Map total scores to letter grades. The bands must cover 0–100 with no
           gaps or overlaps. The default is the WAEC nine-point scale — edit it to

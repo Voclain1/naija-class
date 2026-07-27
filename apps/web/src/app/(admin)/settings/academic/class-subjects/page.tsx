@@ -138,7 +138,7 @@ export default function ClassSubjectsMatrixPage() {
     <MatrixDirtyProvider value={dirtyContextValue}>
       <div className="flex w-full flex-col gap-6">
         <header>
-          <h1 className="text-2xl font-semibold tracking-tight">
+          <h1 className="font-serif text-2xl font-medium tracking-tight text-foreground">
             Class-subject matrix
           </h1>
           <p className="text-sm text-muted-foreground">

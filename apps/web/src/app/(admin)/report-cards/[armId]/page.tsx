@@ -10,6 +10,8 @@ import type { ReportCardBoardRowDto, ReportCardStatusDto } from "@school-kit/typ
 
 import { PdfStatusBadge, WorkflowStatusBadge } from "@/components/report-cards/status-badges";
 import { ReopenModal } from "@/components/report-cards/reopen-modal";
+import { Button } from "@/components/ui/button";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { listAcademicYears, listTerms } from "@/lib/academic-years/academic-years-api";
 import { ApiError } from "@/lib/api-client";
 import { useAuth } from "@/lib/auth/use-auth";
@@ -324,7 +326,7 @@ export default function ReportCardBoardPage() {
         <>
           <header className="flex flex-col gap-3">
             <div className="flex flex-col gap-1">
-              <h1 className="text-2xl font-semibold tracking-tight">{status.armName}</h1>
+              <h1 className="font-serif text-2xl font-medium tracking-tight text-foreground">{status.armName}</h1>
               <p className="text-sm text-muted-foreground">
                 {status.termName} · {rows.length} report card{rows.length === 1 ? "" : "s"}
                 {lastBuilt ? ` · last built ${formatStamp(new Date(lastBuilt))}` : ""}
@@ -334,15 +336,10 @@ export default function ReportCardBoardPage() {
             <div className="flex flex-wrap items-center gap-3">
               {/* Build — only when the board is empty (owner/admin). */}
               {canManage && rows.length === 0 && (
-                <button
-                  type="button"
-                  onClick={onBuild}
-                  disabled={building}
-                  className="inline-flex items-center gap-2 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
-                >
+                <Button type="button" onClick={onBuild} disabled={building}>
                   {building ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
                   {building ? "Building…" : "Build report cards"}
-                </button>
+                </Button>
               )}
 
               {armStatus === "MIXED" && (
@@ -355,67 +352,48 @@ export default function ReportCardBoardPage() {
               {/* Form-review — DRAFT / SUBJECT_REVIEWED. owner/admin OR form teacher
                   (anyone who can open this board), gated server-side. */}
               {(armStatus === "DRAFT" || armStatus === "SUBJECT_REVIEWED") && (
-                <button
-                  type="button"
-                  onClick={onFormReview}
-                  disabled={workflowBusy || shouldPoll}
-                  className="inline-flex items-center gap-2 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
-                >
+                <Button type="button" onClick={onFormReview} disabled={workflowBusy || shouldPoll}>
                   {workflowBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
                   Form-review arm
-                </button>
+                </Button>
               )}
 
               {/* Approve — FORM_REVIEWED (owner/admin). */}
               {armStatus === "FORM_REVIEWED" && canManage && (
-                <button
-                  type="button"
-                  onClick={onApprove}
-                  disabled={workflowBusy || shouldPoll}
-                  className="inline-flex items-center gap-2 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
-                >
+                <Button type="button" onClick={onApprove} disabled={workflowBusy || shouldPoll}>
                   {workflowBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
                   Approve arm
-                </button>
+                </Button>
               )}
 
               {/* Release — PRINCIPAL_APPROVED (owner/admin). */}
               {armStatus === "PRINCIPAL_APPROVED" && canManage && (
-                <button
-                  type="button"
-                  onClick={onRelease}
-                  disabled={workflowBusy || shouldPoll}
-                  className="inline-flex items-center gap-2 rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
-                >
+                <Button type="button" onClick={onRelease} disabled={workflowBusy || shouldPoll}>
                   {workflowBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
                   Release arm
-                </button>
+                </Button>
               )}
 
               {/* Render all PDFs — RELEASED, re-render existing artifacts (owner/admin). */}
               {armStatus === "RELEASED" && canManage && (
-                <button
-                  type="button"
-                  onClick={onRenderAll}
-                  disabled={rendering || shouldPoll}
-                  className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-medium transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
-                >
+                <Button type="button" variant="outline" onClick={onRenderAll} disabled={rendering || shouldPoll}>
                   {rendering ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
                   {rendering ? "Enqueueing…" : "Render all PDFs"}
-                </button>
+                </Button>
               )}
 
               {/* Reopen — OWNER only (admin excluded), from any finalised state. */}
               {isOwner && (armStatus === "FORM_REVIEWED" || armStatus === "PRINCIPAL_APPROVED" || armStatus === "RELEASED") && (
-                <button
+                <Button
                   type="button"
+                  variant="outline"
                   onClick={() => setReopenOpen(true)}
                   disabled={workflowBusy || shouldPoll}
-                  className="inline-flex items-center gap-2 rounded-md border border-amber-300 px-3 py-2 text-sm font-medium text-amber-800 transition-colors hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="border-amber-300 text-amber-800 hover:bg-amber-50"
                 >
                   <RotateCcw className="h-4 w-4" />
                   Reopen arm
-                </button>
+                </Button>
               )}
             </div>
 
@@ -446,38 +424,38 @@ export default function ReportCardBoardPage() {
               </p>
             </div>
           ) : (
-            <div className="overflow-x-auto rounded-md border">
-              <table className="w-full border-collapse text-sm">
-                <thead>
-                  <tr className="border-b bg-muted/40 text-left text-xs uppercase text-muted-foreground">
-                    <th className="px-3 py-2 font-medium">Student</th>
-                    <th className="px-3 py-2 font-medium text-center">Subjects</th>
-                    <th className="px-3 py-2 font-medium text-center">Total</th>
-                    <th className="px-3 py-2 font-medium text-center">Average</th>
-                    <th className="px-3 py-2 font-medium text-center">Position</th>
-                    <th className="px-3 py-2 font-medium">Status</th>
-                    <th className="px-3 py-2 font-medium">PDF</th>
-                    <th className="px-3 py-2 font-medium text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y">
+            <div className="overflow-hidden rounded-md border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Student</TableHead>
+                    <TableHead className="text-center">Subjects</TableHead>
+                    <TableHead className="text-center">Total</TableHead>
+                    <TableHead className="text-center">Average</TableHead>
+                    <TableHead className="text-center">Position</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>PDF</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
                   {rows.map(({ student, reportCard }) => (
-                    <tr key={reportCard.id} className="hover:bg-accent/20">
-                      <td className="px-3 py-2">
+                    <TableRow key={reportCard.id}>
+                      <TableCell>
                         <div className="font-medium">{fullStudentName(student)}</div>
                         <div className="text-xs text-muted-foreground">{student.admissionNumber}</div>
-                      </td>
-                      <td className="px-3 py-2 text-center tabular-nums">{formatInt(reportCard.subjectsCount)}</td>
-                      <td className="px-3 py-2 text-center tabular-nums">{formatInt(reportCard.overallTotal)}</td>
-                      <td className="px-3 py-2 text-center tabular-nums">{formatAverage(reportCard.overallAverage)}</td>
-                      <td className="px-3 py-2 text-center tabular-nums">{formatOrdinal(reportCard.overallPosition)}</td>
-                      <td className="px-3 py-2">
+                      </TableCell>
+                      <TableCell className="text-center tabular-nums">{formatInt(reportCard.subjectsCount)}</TableCell>
+                      <TableCell className="text-center tabular-nums">{formatInt(reportCard.overallTotal)}</TableCell>
+                      <TableCell className="text-center tabular-nums">{formatAverage(reportCard.overallAverage)}</TableCell>
+                      <TableCell className="text-center tabular-nums">{formatOrdinal(reportCard.overallPosition)}</TableCell>
+                      <TableCell>
                         <WorkflowStatusBadge status={reportCard.status} />
-                      </td>
-                      <td className="px-3 py-2">
+                      </TableCell>
+                      <TableCell>
                         <PdfStatusBadge status={reportCard.pdfStatus} />
-                      </td>
-                      <td className="px-3 py-2">
+                      </TableCell>
+                      <TableCell>
                         <div className="flex items-center justify-end gap-2">
                           <Link
                             href={`/report-cards/${armId}/${reportCard.id}`}
@@ -486,31 +464,35 @@ export default function ReportCardBoardPage() {
                             View
                           </Link>
                           {reportCard.pdfStatus === "GENERATED" && (
-                            <button
+                            <Button
                               type="button"
+                              variant="ghost"
+                              size="sm"
                               onClick={() => void onDownload(reportCard.id)}
-                              className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-emerald-700 hover:bg-emerald-50"
+                              className="h-7 gap-1 px-2 text-xs text-emerald-700 hover:bg-emerald-50 hover:text-emerald-700"
                             >
                               <Download className="h-3.5 w-3.5" />
                               PDF
-                            </button>
+                            </Button>
                           )}
                           {canManage && (reportCard.pdfStatus === "GENERATED" || reportCard.pdfStatus === "FAILED") && (
-                            <button
+                            <Button
                               type="button"
+                              variant="ghost"
+                              size="sm"
                               onClick={() => void onRegenerate(reportCard.id)}
-                              className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
+                              className="h-7 gap-1 px-2 text-xs"
                             >
                               <RefreshCw className="h-3.5 w-3.5" />
                               Regenerate
-                            </button>
+                            </Button>
                           )}
                         </div>
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   ))}
-                </tbody>
-              </table>
+                </TableBody>
+              </Table>
             </div>
           )}
         </>

@@ -96,7 +96,7 @@ export default function ClassArmsPage() {
     <div className="flex w-full flex-col gap-8">
       <header className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Class arms</h1>
+          <h1 className="font-serif text-2xl font-medium tracking-tight text-foreground">Class arms</h1>
           <p className="text-sm text-muted-foreground">
             Each class level can have multiple arms (e.g. JSS 1A, JSS 1B).
             Assign a class teacher and an optional capacity per arm.

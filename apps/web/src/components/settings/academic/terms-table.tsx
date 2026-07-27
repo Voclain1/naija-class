@@ -4,7 +4,9 @@ import { Check, Edit, Trash2 } from "lucide-react";
 
 import type { TermDto } from "@school-kit/types";
 
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 interface Props {
   terms: TermDto[];
@@ -29,36 +31,32 @@ export function TermsTable({ terms, onEdit, onSetCurrent, onDelete }: Props) {
 
   return (
     <div className="overflow-hidden rounded-md border">
-      <table className="w-full text-sm">
-        <thead className="bg-muted/50 text-left text-xs uppercase text-muted-foreground">
-          <tr>
-            <th className="px-3 py-2 font-medium">#</th>
-            <th className="px-3 py-2 font-medium">Name</th>
-            <th className="px-3 py-2 font-medium">Starts</th>
-            <th className="px-3 py-2 font-medium">Ends</th>
-            <th className="px-3 py-2 font-medium">Status</th>
-            <th className="px-3 py-2 font-medium">Actions</th>
-          </tr>
-        </thead>
-        <tbody>
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>#</TableHead>
+            <TableHead>Name</TableHead>
+            <TableHead>Starts</TableHead>
+            <TableHead>Ends</TableHead>
+            <TableHead>Status</TableHead>
+            <TableHead>Actions</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
           {terms.map((t) => (
-            <tr key={t.id} className="border-t">
-              <td className="px-3 py-2 font-mono text-muted-foreground">{t.sequence}</td>
-              <td className="px-3 py-2 font-medium">{t.name}</td>
-              <td className="px-3 py-2 text-muted-foreground">{fmtDate(t.startDate)}</td>
-              <td className="px-3 py-2 text-muted-foreground">{fmtDate(t.endDate)}</td>
-              <td className="px-3 py-2">
+            <TableRow key={t.id}>
+              <TableCell className="font-mono text-muted-foreground">{t.sequence}</TableCell>
+              <TableCell className="font-medium">{t.name}</TableCell>
+              <TableCell className="text-muted-foreground">{fmtDate(t.startDate)}</TableCell>
+              <TableCell className="text-muted-foreground">{fmtDate(t.endDate)}</TableCell>
+              <TableCell>
                 {t.isCurrent ? (
-                  <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs text-emerald-700">
-                    Current
-                  </span>
+                  <Badge variant="success">Current</Badge>
                 ) : (
-                  <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-                    Not current
-                  </span>
+                  <Badge variant="muted">Not current</Badge>
                 )}
-              </td>
-              <td className="flex gap-1 px-3 py-2">
+              </TableCell>
+              <TableCell className="flex gap-1">
                 {!t.isCurrent && (
                   <Button
                     type="button"
@@ -94,11 +92,11 @@ export function TermsTable({ terms, onEdit, onSetCurrent, onDelete }: Props) {
                   <Trash2 className="mr-1 h-3 w-3" />
                   Delete
                 </Button>
-              </td>
-            </tr>
+              </TableCell>
+            </TableRow>
           ))}
-        </tbody>
-      </table>
+        </TableBody>
+      </Table>
     </div>
   );
 }

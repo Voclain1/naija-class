@@ -37,7 +37,7 @@ export default function GradingSchemePage() {
   return (
     <div className="flex w-full flex-col gap-8">
       <header className="flex flex-col gap-2">
-        <h1 className="text-2xl font-semibold tracking-tight">Grading scheme</h1>
+        <h1 className="font-serif text-2xl font-medium tracking-tight text-foreground">Grading scheme</h1>
         <p className="text-sm text-muted-foreground">
           Define how each subject&apos;s term score is split across continuous
           assessment and exams. Weights must total exactly 100. This scheme

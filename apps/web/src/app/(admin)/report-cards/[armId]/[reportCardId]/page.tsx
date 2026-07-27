@@ -9,6 +9,9 @@ import { toast } from "sonner";
 import type { ReportCardDetailDto } from "@school-kit/types";
 
 import { PdfStatusBadge, WorkflowStatusBadge } from "@/components/report-cards/status-badges";
+import { StatCard } from "@/components/shared/stat-card";
+import { Button } from "@/components/ui/button";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ApiError } from "@/lib/api-client";
 import { useAuth } from "@/lib/auth/use-auth";
 import {
@@ -203,7 +206,7 @@ function ReportCardDetail({
       <header className="flex flex-col gap-3">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="flex flex-col gap-1">
-            <h1 className="text-2xl font-semibold tracking-tight">{fullStudentName(student)}</h1>
+            <h1 className="font-serif text-2xl font-medium tracking-tight text-foreground">{fullStudentName(student)}</h1>
             <p className="text-sm text-muted-foreground">{student.admissionNumber}</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -214,24 +217,21 @@ function ReportCardDetail({
 
         <div className="flex flex-wrap items-center gap-3">
           {reportCard.pdfStatus === "GENERATED" && (
-            <button
+            <Button
               type="button"
+              variant="outline"
               onClick={onDownload}
-              className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-medium text-emerald-700 transition-colors hover:bg-emerald-50"
+              className="text-emerald-700 hover:bg-emerald-50 hover:text-emerald-700"
             >
               <Download className="h-4 w-4" />
               Download PDF
-            </button>
+            </Button>
           )}
           {canManage && (reportCard.pdfStatus === "GENERATED" || reportCard.pdfStatus === "FAILED") && (
-            <button
-              type="button"
-              onClick={onRegenerate}
-              className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-medium transition-colors hover:bg-accent"
-            >
+            <Button type="button" variant="outline" onClick={onRegenerate}>
               <RefreshCw className="h-4 w-4" />
               Regenerate
-            </button>
+            </Button>
           )}
         </div>
       </header>
@@ -244,47 +244,47 @@ function ReportCardDetail({
       ) : (
         <>
           {/* Per-subject breakdown */}
-          <div className="overflow-x-auto rounded-md border">
-            <table className="w-full border-collapse text-sm">
-              <thead>
-                <tr className="border-b bg-muted/40 text-left text-xs uppercase text-muted-foreground">
-                  <th className="px-3 py-2 font-medium">Subject</th>
+          <div className="overflow-hidden rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Subject</TableHead>
                   {componentLabels.map((label) => (
-                    <th key={label} className="px-3 py-2 font-medium text-center">
+                    <TableHead key={label} className="text-center">
                       {label}
-                    </th>
+                    </TableHead>
                   ))}
-                  <th className="px-3 py-2 font-medium text-center">Total</th>
-                  <th className="px-3 py-2 font-medium text-center">Grade</th>
-                  <th className="px-3 py-2 font-medium text-center">Position</th>
-                  <th className="px-3 py-2 font-medium">Comment</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y">
+                  <TableHead className="text-center">Total</TableHead>
+                  <TableHead className="text-center">Grade</TableHead>
+                  <TableHead className="text-center">Position</TableHead>
+                  <TableHead>Comment</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {subjects.map((subject) => (
-                  <tr key={subject.subjectId} className="hover:bg-accent/20">
-                    <td className="px-3 py-2 font-medium">{subject.subjectName}</td>
+                  <TableRow key={subject.subjectId}>
+                    <TableCell className="font-medium">{subject.subjectName}</TableCell>
                     {subject.components.map((c) => (
-                      <td key={c.componentId} className="px-3 py-2 text-center tabular-nums">
+                      <TableCell key={c.componentId} className="text-center tabular-nums">
                         {formatInt(c.score)}
-                      </td>
+                      </TableCell>
                     ))}
-                    <td className="px-3 py-2 text-center font-semibold tabular-nums">{subject.totalScore}</td>
-                    <td className="px-3 py-2 text-center">{subject.letterGrade ?? "—"}</td>
-                    <td className="px-3 py-2 text-center tabular-nums">{formatOrdinal(subject.subjectPosition)}</td>
-                    <td className="px-3 py-2 text-muted-foreground">{subject.subjectComment ?? "—"}</td>
-                  </tr>
+                    <TableCell className="text-center font-semibold tabular-nums">{subject.totalScore}</TableCell>
+                    <TableCell className="text-center">{subject.letterGrade ?? "—"}</TableCell>
+                    <TableCell className="text-center tabular-nums">{formatOrdinal(subject.subjectPosition)}</TableCell>
+                    <TableCell className="text-muted-foreground">{subject.subjectComment ?? "—"}</TableCell>
+                  </TableRow>
                 ))}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
           </div>
 
           {/* Rollup */}
           <section className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <RollupBox label="Subjects" value={formatInt(reportCard.subjectsCount)} />
-            <RollupBox label="Total score" value={formatInt(reportCard.overallTotal)} />
-            <RollupBox label="Average" value={formatAverage(reportCard.overallAverage)} />
-            <RollupBox label="Position in class" value={formatOrdinal(reportCard.overallPosition)} />
+            <StatCard label="Subjects" value={formatInt(reportCard.subjectsCount)} />
+            <StatCard label="Total score" value={formatInt(reportCard.overallTotal)} />
+            <StatCard label="Average" value={formatAverage(reportCard.overallAverage)} />
+            <StatCard label="Position in class" value={formatOrdinal(reportCard.overallPosition)} />
           </section>
         </>
       )}
@@ -361,25 +361,11 @@ function EditableComment({
         className="w-full rounded-md border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
       />
       <div className="flex justify-end">
-        <button
-          type="button"
-          onClick={() => void save()}
-          disabled={!changed || saving}
-          className="inline-flex items-center gap-2 rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
-        >
+        <Button type="button" size="sm" onClick={() => void save()} disabled={!changed || saving}>
           {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
           Save
-        </button>
+        </Button>
       </div>
-    </div>
-  );
-}
-
-function RollupBox({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-md border p-3">
-      <div className="text-xs uppercase text-muted-foreground">{label}</div>
-      <div className="mt-1 text-xl font-semibold tabular-nums">{value}</div>
     </div>
   );
 }

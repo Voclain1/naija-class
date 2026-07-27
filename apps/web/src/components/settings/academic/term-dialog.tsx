@@ -1,7 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Loader2, X } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
@@ -13,6 +13,7 @@ import {
 } from "@school-kit/types";
 
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ApiError } from "@/lib/api-client";
@@ -85,17 +86,6 @@ export function TermDialog({
     }
   }, [open, existing, suggestedSequence, form]);
 
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [open, onClose]);
-
-  if (!open) return null;
-
   const onSubmit = form.handleSubmit(async (values) => {
     try {
       const input: CreateTermInput = {
@@ -132,29 +122,14 @@ export function TermDialog({
   });
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/30 p-4"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="term-dialog-title"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
-      <div className="w-full max-w-md rounded-lg border bg-card p-6 shadow-lg">
-        <div className="mb-4 flex items-start justify-between">
-          <div>
-            <h2 id="term-dialog-title" className="text-lg font-semibold">
-              {existing ? "Edit term" : "Add term"}
-            </h2>
-            <p className="text-sm text-muted-foreground">
-              Sequences 1-3 only. Dates must fall inside the academic year.
-            </p>
-          </div>
-          <Button type="button" variant="ghost" size="sm" onClick={onClose} aria-label="Close dialog">
-            <X className="h-4 w-4" />
-          </Button>
-        </div>
+    <Dialog open={open} onOpenChange={(next) => { if (!next) onClose(); }}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>{existing ? "Edit term" : "Add term"}</DialogTitle>
+          <p className="text-sm text-muted-foreground">
+            Sequences 1-3 only. Dates must fall inside the academic year.
+          </p>
+        </DialogHeader>
 
         <form onSubmit={onSubmit} className="flex flex-col gap-3" noValidate>
           <div className="flex gap-2">
@@ -220,7 +195,7 @@ export function TermDialog({
             </Button>
           </div>
         </form>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
