@@ -7,7 +7,9 @@ import { toast } from "sonner";
 import type { PayrollItemDto, UserListItemDto } from "@school-kit/types";
 
 import { PayrollFormModal } from "@/components/finance/payroll-form-modal";
+import { Badge, type BadgeProps } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ApiError } from "@/lib/api-client";
 import { useAuth } from "@/lib/auth/use-auth";
 import { formatKobo } from "@/lib/finance/format";
@@ -40,12 +42,15 @@ function currentPeriod(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
-const STATUS_STYLES: Record<string, string> = {
-  DRAFT: "bg-muted text-muted-foreground",
-  APPROVED: "bg-blue-500/10 text-blue-600 dark:text-blue-400",
-  PROCESSING: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
-  PAID: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
-  FAILED: "bg-destructive/10 text-destructive",
+// "outline" for APPROVED (rather than "default"/primary) so it stays visually
+// distinct from PAID's "success" — both would otherwise render in the same
+// emerald family and make the two statuses hard to tell apart at a glance.
+const STATUS_VARIANTS: Record<string, BadgeProps["variant"]> = {
+  DRAFT: "muted",
+  APPROVED: "outline",
+  PROCESSING: "warning",
+  PAID: "success",
+  FAILED: "destructive",
 };
 
 export default function PayrollPage() {
@@ -179,7 +184,7 @@ export default function PayrollPage() {
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-6">
       <header className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Payroll</h1>
+          <h1 className="font-serif text-2xl font-medium tracking-tight text-foreground">Payroll</h1>
           <p className="text-sm text-muted-foreground">
             Run monthly payroll, approve, and transfer staff salaries.
           </p>
@@ -218,28 +223,28 @@ export default function PayrollPage() {
         </div>
       ) : (
         <div className="rounded-lg border">
-          <table className="w-full text-sm">
-            <thead className="border-b bg-muted/40">
-              <tr>
-                <th className="px-4 py-2 text-left font-medium">Staff</th>
-                <th className="px-4 py-2 text-right font-medium">Gross</th>
-                <th className="px-4 py-2 text-right font-medium">Net</th>
-                <th className="px-4 py-2 text-left font-medium">Status</th>
-                <th className="px-4 py-2" />
-              </tr>
-            </thead>
-            <tbody className="divide-y">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Staff</TableHead>
+                <TableHead className="text-right">Gross</TableHead>
+                <TableHead className="text-right">Net</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {items.map((item) => (
-                <tr key={item.id} className="hover:bg-muted/20">
-                  <td className="px-4 py-2">{staffName(item.userId)}</td>
-                  <td className="px-4 py-2 text-right tabular-nums">{formatKobo(item.grossSalary)}</td>
-                  <td className="px-4 py-2 text-right tabular-nums">{formatKobo(item.netSalary)}</td>
-                  <td className="px-4 py-2">
-                    <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_STYLES[item.status] ?? ""}`}>
+                <TableRow key={item.id}>
+                  <TableCell>{staffName(item.userId)}</TableCell>
+                  <TableCell className="text-right tabular-nums">{formatKobo(item.grossSalary)}</TableCell>
+                  <TableCell className="text-right tabular-nums">{formatKobo(item.netSalary)}</TableCell>
+                  <TableCell>
+                    <Badge variant={STATUS_VARIANTS[item.status]}>
                       {item.status === "PROCESSING" ? "Processing…" : item.status}
-                    </span>
-                  </td>
-                  <td className="px-4 py-2">
+                    </Badge>
+                  </TableCell>
+                  <TableCell>
                     <div className="flex items-center justify-end gap-2">
                       {item.status === "DRAFT" && (
                         <Button
@@ -282,11 +287,11 @@ export default function PayrollPage() {
                         </Button>
                       )}
                     </div>
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
       )}
 

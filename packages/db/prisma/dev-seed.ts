@@ -596,14 +596,26 @@ async function main() {
     });
   }
 
-  // Attendance for the last 40 days + today — safely inside the current
-  // term's [-45,+45] window (see step 6) so every row's termId is correct.
+  // Attendance for the last 63 days + today (9 weeks — one week of buffer
+  // beyond the dashboard trend's TREND_WEEKS=8 / 56-day window, see
+  // buildAttendanceTrend in apps/api/src/modules/dashboard/dashboard.service.ts,
+  // since that query's weekStart() rounds down to Monday and can reach up to
+  // 6 days earlier than 56 days back). Previously this only went back 40
+  // days, so the trend's oldest ~2 weeks had zero records and rendered as a
+  // hard-coded 0% (buildAttendanceTrend's `bucket.total > 0 ? … : 0`),
+  // producing a flat-0 → sharp-jump → flat-high "elbow" in the sparkline
+  // instead of a real trend line.
+  // 63 days reaches back past Second Term's start (day -45, see step 6), so
+  // dates before that get First Term's id instead of the current term's —
+  // otherwise those rows would carry a termId whose date range doesn't
+  // contain them.
   // NJC/2025/001 absent every 7th day, NJC/2025/004 absent every 5th day —
   // deterministic (idempotent re-seed produces the same numbers) but not
   // flat, so the 8-week trend sparkline shows real week-to-week variation
   // rather than a constant 100% or 0% line.
-  for (let d = -40; d <= 0; d++) {
+  for (let d = -63; d <= 0; d++) {
     const date = dayOffset(d);
+    const termIdForDate = d < -45 ? firstTermId : currentTermId;
     for (const s of STUDENTS) {
       const studentId = studentIdByAdmission.get(s.admissionNumber)!;
       const absentWeekly = s.admissionNumber === "NJC/2025/001" && d % 7 === 0;
@@ -611,12 +623,12 @@ async function main() {
       const status = absentWeekly || absentOften ? "ABSENT" : "PRESENT";
       await prisma.attendanceRecord.upsert({
         where: { schoolId_studentId_date: { schoolId, studentId, date } },
-        update: { status, classArmId: targetArmId, termId: currentTermId },
+        update: { status, classArmId: targetArmId, termId: termIdForDate },
         create: {
           schoolId,
           studentId,
           classArmId: targetArmId,
-          termId: currentTermId,
+          termId: termIdForDate,
           date,
           status,
           markedBy: owner.id,
@@ -671,7 +683,7 @@ async function main() {
   console.log("dev-teacher also has SUBJECT assignments in JSS 2 A (Maths + English)");
   console.log("Now go to /report-cards as owner");
   console.log("Dashboard demo data: 5 invoices (1 paid, 2 partial, 1 issued, 1 overdue),");
-  console.log("  41 days of attendance, 1 report card awaiting approval, 1 pending invite.");
+  console.log("  64 days of attendance, 1 report card awaiting approval, 1 pending invite.");
   console.log("Go to /dashboard as owner to see it populated.");
   console.log("");
   /* eslint-enable no-console */

@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import type { ExpenseCategoryDto } from "@school-kit/types";
 
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ApiError } from "@/lib/api-client";
 import {
   createExpenseCategory,
@@ -18,8 +19,10 @@ import {
 // categories are flat (name + active, no scope fields), so this earns an
 // inline modal rather than a dedicated settings screen — unlike fee catalog's
 // /settings/finance/fees, which needed a full page for the scope-picker
-// complexity FeeItem has. Same inline-overlay pattern as ReopenModal/
-// BvnCaptureModal (no shared Dialog primitive yet).
+// complexity FeeItem has. Migrated onto the shared Dialog primitive during
+// the Finance restyle (Phase 1) — previously predated it, same as
+// ReopenModal/BvnCaptureModal (still on the old inline-overlay pattern until
+// their own sections' restyle passes).
 export function ExpenseCategoriesModal({
   open,
   onClose,
@@ -44,8 +47,6 @@ export function ExpenseCategoriesModal({
       setEditingId(null);
     }
   }, [open]);
-
-  if (!open) return null;
 
   async function handleCreate() {
     if (!newName.trim()) return;
@@ -114,29 +115,13 @@ export function ExpenseCategoriesModal({
   }
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-      role="dialog"
-      aria-modal="true"
-      onClick={onClose}
-    >
-      <div
-        className="w-full max-w-md rounded-lg border bg-background p-5 shadow-lg"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-start justify-between gap-3">
-          <h2 className="text-lg font-semibold">Expense categories</h2>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-md p-1 text-muted-foreground hover:bg-accent"
-            aria-label="Close"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
+    <Dialog open={open} onOpenChange={(next) => { if (!next) onClose(); }}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Expense categories</DialogTitle>
+        </DialogHeader>
 
-        <ul className="mt-4 flex flex-col divide-y rounded-md border">
+        <ul className="flex flex-col divide-y rounded-md border">
           {categories.length === 0 && (
             <li className="px-3 py-4 text-center text-sm text-muted-foreground">
               No categories yet.
@@ -218,12 +203,12 @@ export function ExpenseCategoriesModal({
           </Button>
         )}
 
-        <div className="mt-5 flex justify-end">
+        <DialogFooter>
           <Button variant="ghost" onClick={onClose}>
             Done
           </Button>
-        </div>
-      </div>
-    </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

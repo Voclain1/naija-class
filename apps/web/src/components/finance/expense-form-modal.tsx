@@ -1,11 +1,12 @@
 "use client";
 
-import { Loader2, X } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import type { ExpenseCategoryDto, ExpenseDto } from "@school-kit/types";
 
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { ApiError } from "@/lib/api-client";
 
@@ -57,8 +58,6 @@ export function ExpenseFormModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, editing]);
 
-  if (!open) return null;
-
   const canSubmit = categoryId && amountNaira && !isNaN(parseFloat(amountNaira)) && incurredAt;
 
   async function submit() {
@@ -75,29 +74,13 @@ export function ExpenseFormModal({
   }
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-      role="dialog"
-      aria-modal="true"
-      onClick={onClose}
-    >
-      <div
-        className="w-full max-w-lg rounded-lg border bg-background p-6 shadow-xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-start justify-between gap-3">
-          <h2 className="text-lg font-semibold">{editing ? "Edit expense" : "New expense"}</h2>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-md p-1 text-muted-foreground hover:bg-accent"
-            aria-label="Close"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
+    <Dialog open={open} onOpenChange={(next) => { if (!next) onClose(); }}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{editing ? "Edit expense" : "New expense"}</DialogTitle>
+        </DialogHeader>
 
-        <div className="mt-4 flex flex-col gap-3">
+        <div className="flex flex-col gap-3">
           {error && (
             <div className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">
               {error}
@@ -163,7 +146,7 @@ export function ExpenseFormModal({
           </div>
         </div>
 
-        <div className="mt-5 flex justify-end gap-2">
+        <DialogFooter>
           <Button variant="outline" onClick={onClose} disabled={submitting}>
             Cancel
           </Button>
@@ -171,8 +154,8 @@ export function ExpenseFormModal({
             {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
             Save
           </Button>
-        </div>
-      </div>
-    </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

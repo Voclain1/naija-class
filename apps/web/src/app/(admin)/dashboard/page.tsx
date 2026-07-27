@@ -9,6 +9,9 @@ import type { AdminDashboardDto, DashboardAlertType } from "@school-kit/types";
 
 import { AttendanceSparkline } from "@/components/admin/attendance-sparkline";
 import { CommandDialog } from "@/components/admin/command-dialog";
+import { AlertList } from "@/components/shared/alert-list";
+import { ProgressMeter } from "@/components/shared/progress-meter";
+import { StatCard } from "@/components/shared/stat-card";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { getAdminDashboard } from "@/lib/dashboard/dashboard-api";
@@ -160,7 +163,7 @@ export default function DashboardPage() {
 
       {/* KPI row */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <KpiCard
+        <StatCard
           label="Enrolled"
           value={String(dashboard.enrolled.count)}
           context={
@@ -169,17 +172,17 @@ export default function DashboardPage() {
               : `${enrolledDelta >= 0 ? "+" : ""}${enrolledDelta} vs last term`
           }
         />
-        <KpiCard
+        <StatCard
           label="Fees collected"
           value={formatKobo(dashboard.fees.collected)}
           context={`${dashboard.fees.percent}% of ${formatKobo(dashboard.fees.billed)} billed`}
         />
-        <KpiCard
+        <StatCard
           label="Attendance today"
           value={`${dashboard.attendanceToday.percentPresent}%`}
           context={`${dashboard.attendanceToday.absentCount} absent of ${dashboard.attendanceToday.totalMarked} marked`}
         />
-        <KpiCard
+        <StatCard
           label="Outstanding"
           value={formatKobo(dashboard.outstanding.amount)}
           context={`${dashboard.outstanding.debtorCount} in arrears`}
@@ -199,18 +202,7 @@ export default function DashboardPage() {
               <p className="text-sm text-muted-foreground">No invoices issued this term yet.</p>
             )}
             {dashboard.collectionByGroup.map((group) => (
-              <div key={group.groupId}>
-                <div className="mb-1 flex items-baseline justify-between text-sm">
-                  <span className="font-medium text-foreground">{group.label}</span>
-                  <span className="text-muted-foreground">{group.percent}%</span>
-                </div>
-                <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
-                  <div
-                    className="h-full rounded-full bg-primary transition-[width]"
-                    style={{ width: `${Math.min(100, Math.max(0, group.percent))}%` }}
-                  />
-                </div>
-              </div>
+              <ProgressMeter key={group.groupId} label={group.label} percent={group.percent} />
             ))}
           </CardContent>
         </Card>
@@ -220,24 +212,15 @@ export default function DashboardPage() {
             <CardTitle className="text-base">Needs you today</CardTitle>
             <CardDescription>Real, current-state items — not scoped to the term above.</CardDescription>
           </CardHeader>
-          <CardContent className="flex flex-col gap-1">
-            {dashboard.needsYouToday.every((a) => a.count === 0) && (
-              <p className="text-sm text-muted-foreground">All caught up — nothing needs attention today.</p>
-            )}
-            {dashboard.needsYouToday
-              .filter((a) => a.count > 0)
-              .map((alert) => (
-                <Link
-                  key={alert.type}
-                  href={alert.href}
-                  className="flex items-center justify-between rounded-md px-2 py-2 text-sm hover:bg-accent hover:text-accent-foreground"
-                >
-                  <span className="text-foreground">{ALERT_LABELS[alert.type]}</span>
-                  <span className="rounded-full bg-secondary px-2 py-0.5 text-xs font-medium text-secondary-foreground">
-                    {alert.count}
-                  </span>
-                </Link>
-              ))}
+          <CardContent>
+            <AlertList
+              items={dashboard.needsYouToday.map((alert) => ({
+                key: alert.type,
+                label: ALERT_LABELS[alert.type],
+                count: alert.count,
+                href: alert.href,
+              }))}
+            />
           </CardContent>
         </Card>
       </div>
@@ -254,33 +237,5 @@ export default function DashboardPage() {
 
       <CommandDialog open={commandOpen} onOpenChange={setCommandOpen} />
     </div>
-  );
-}
-
-function KpiCard({
-  label,
-  value,
-  context,
-  tone = "default",
-}: {
-  label: string;
-  value: string;
-  context: string;
-  tone?: "default" | "warning";
-}) {
-  return (
-    <Card>
-      <CardContent className="pt-6">
-        <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{label}</p>
-        <p
-          className={`mt-1 font-serif text-3xl font-medium ${
-            tone === "warning" ? "text-secondary-foreground" : "text-foreground"
-          }`}
-        >
-          {value}
-        </p>
-        <p className="mt-1 text-xs text-muted-foreground">{context}</p>
-      </CardContent>
-    </Card>
   );
 }

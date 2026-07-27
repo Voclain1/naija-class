@@ -11,10 +11,15 @@ import type {
   ManualPaymentMethod,
   PaymentDto,
   PaymentPlanDto,
+  PaymentStatus,
   StudentDetailDto,
   TermDto,
 } from "@school-kit/types";
 
+import { Badge, type BadgeProps } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { listTerms } from "@/lib/academic-years/academic-years-api";
 import { formatKobo } from "@/lib/finance/format";
 import { cancelInvoice, getInvoice } from "@/lib/finance/invoices-api";
@@ -36,14 +41,22 @@ const STATUS_LABELS: Record<InvoiceStatus, string> = {
   REFUNDED: "Refunded",
 };
 
-const STATUS_COLOURS: Record<InvoiceStatus, string> = {
-  DRAFT: "bg-gray-100 text-gray-500",
-  ISSUED: "bg-blue-100 text-blue-700",
-  PARTIALLY_PAID: "bg-yellow-100 text-yellow-700",
-  PAID: "bg-green-100 text-green-700",
-  OVERDUE: "bg-red-100 text-red-700",
-  CANCELLED: "bg-gray-100 text-gray-400",
-  REFUNDED: "bg-purple-100 text-purple-700",
+// Same mapping as /finance/invoices and /finance/debtors.
+const STATUS_VARIANTS: Record<InvoiceStatus, BadgeProps["variant"]> = {
+  DRAFT: "muted",
+  ISSUED: "default",
+  PARTIALLY_PAID: "warning",
+  PAID: "success",
+  OVERDUE: "destructive",
+  CANCELLED: "muted",
+  REFUNDED: "outline",
+};
+
+const PAYMENT_STATUS_VARIANTS: Record<PaymentStatus, BadgeProps["variant"]> = {
+  PENDING: "warning",
+  SUCCESS: "success",
+  FAILED: "destructive",
+  REVERSED: "destructive",
 };
 
 const CANCELLABLE: Set<InvoiceStatus> = new Set(["ISSUED", "DRAFT", "OVERDUE"]);
@@ -55,6 +68,9 @@ const METHOD_LABELS: Record<ManualPaymentMethod, string> = {
   POS: "POS",
   BANK_TRANSFER: "Bank transfer",
 };
+
+const INPUT_CLASSES =
+  "h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
 function nowLocalDatetimeValue(): string {
   const d = new Date();
@@ -311,11 +327,11 @@ export default function InvoiceDetailPage() {
   }
 
   if (loading) {
-    return <div className="p-6 text-gray-400">Loading…</div>;
+    return <div className="p-6 text-muted-foreground">Loading…</div>;
   }
 
   if (error || !invoice) {
-    return <div className="p-6 text-red-600">{error ?? "Invoice not found."}</div>;
+    return <div className="p-6 text-destructive">{error ?? "Invoice not found."}</div>;
   }
 
   const studentLabel = student
@@ -330,21 +346,21 @@ export default function InvoiceDetailPage() {
   const hasSuccessPayment = payments.some((p) => p.status === "SUCCESS");
 
   return (
-    <div className="p-6 space-y-6 max-w-4xl">
+    <div className="max-w-4xl space-y-6 p-6">
       {/* Header */}
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold">Invoice</h1>
-          <p className="text-sm font-mono text-gray-400 mt-0.5">{invoice.id}</p>
+          <h1 className="font-serif text-2xl font-medium tracking-tight text-foreground">Invoice</h1>
+          <p className="mt-0.5 font-mono text-sm text-muted-foreground">{invoice.id}</p>
         </div>
-        <span className={`px-3 py-1 rounded-full text-sm font-medium ${STATUS_COLOURS[invoice.status]}`}>
+        <Badge variant={STATUS_VARIANTS[invoice.status]} className="px-3 py-1 text-sm">
           {STATUS_LABELS[invoice.status]}
-        </span>
+        </Badge>
       </div>
 
       {/* Snapshot banner */}
       {invoice.issuedAt && (
-        <div className="rounded border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-700">
+        <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-700 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-300">
           Snapshot frozen as of {new Date(invoice.issuedAt).toLocaleString("en-NG")}.
           Fee catalog changes after this date do not affect this invoice.
         </div>
@@ -353,44 +369,44 @@ export default function InvoiceDetailPage() {
       {/* Meta */}
       <dl className="grid grid-cols-2 gap-x-8 gap-y-2 text-sm">
         <div>
-          <dt className="text-gray-500">Student</dt>
+          <dt className="text-muted-foreground">Student</dt>
           <dd>{studentLabel}</dd>
         </div>
         <div>
-          <dt className="text-gray-500">Term</dt>
+          <dt className="text-muted-foreground">Term</dt>
           <dd>{termLabel}</dd>
         </div>
         <div>
-          <dt className="text-gray-500">Due date</dt>
+          <dt className="text-muted-foreground">Due date</dt>
           <dd>{invoice.dueDate ?? "Not set"}</dd>
         </div>
         <div>
-          <dt className="text-gray-500">Issued by</dt>
+          <dt className="text-muted-foreground">Issued by</dt>
           <dd className="font-mono">{invoice.issuedBy ?? "—"}</dd>
         </div>
       </dl>
 
       {/* Line items */}
-      <div className="border rounded-lg overflow-hidden">
-        <table className="w-full text-sm">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="text-left px-4 py-2 font-medium">Category</th>
-              <th className="text-left px-4 py-2 font-medium">Fee</th>
-              <th className="text-right px-4 py-2 font-medium">Amount</th>
-              <th className="text-right px-4 py-2 font-medium">Discount</th>
-              <th className="text-right px-4 py-2 font-medium">Net</th>
-            </tr>
-          </thead>
-          <tbody>
+      <div className="rounded-lg border">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Category</TableHead>
+              <TableHead>Fee</TableHead>
+              <TableHead className="text-right">Amount</TableHead>
+              <TableHead className="text-right">Discount</TableHead>
+              <TableHead className="text-right">Net</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {invoice.items.map((item) => {
               const displayDiscount = item.amount - item.netAmount;
               return (
-                <tr key={item.feeItemId} className="border-t hover:bg-gray-50">
-                  <td className="px-4 py-2 text-gray-500">{item.categoryName}</td>
-                  <td className="px-4 py-2">{item.feeName}</td>
-                  <td className="px-4 py-2 text-right font-mono">{formatKobo(item.amount)}</td>
-                  <td className="px-4 py-2 text-right font-mono text-red-600">
+                <TableRow key={item.feeItemId}>
+                  <TableCell className="text-muted-foreground">{item.categoryName}</TableCell>
+                  <TableCell>{item.feeName}</TableCell>
+                  <TableCell className="text-right font-mono tabular-nums">{formatKobo(item.amount)}</TableCell>
+                  <TableCell className="text-right font-mono tabular-nums text-destructive">
                     {displayDiscount > 0 ? (
                       <span
                         title={item.discountsApplied
@@ -402,53 +418,59 @@ export default function InvoiceDetailPage() {
                     ) : (
                       "—"
                     )}
-                  </td>
-                  <td className="px-4 py-2 text-right font-mono font-medium">{formatKobo(item.netAmount)}</td>
-                </tr>
+                  </TableCell>
+                  <TableCell className="text-right font-mono tabular-nums font-medium">
+                    {formatKobo(item.netAmount)}
+                  </TableCell>
+                </TableRow>
               );
             })}
-          </tbody>
-          <tfoot className="bg-gray-50 font-semibold">
-            <tr className="border-t">
-              <td colSpan={2} className="px-4 py-2">Totals</td>
-              <td className="px-4 py-2 text-right font-mono">{formatKobo(invoice.totalAmount)}</td>
-              <td className="px-4 py-2 text-right font-mono text-red-600">
+          </TableBody>
+          <tfoot className="border-t bg-muted/40 font-semibold">
+            <tr>
+              <td colSpan={2} className="p-4">Totals</td>
+              <td className="p-4 text-right font-mono tabular-nums">{formatKobo(invoice.totalAmount)}</td>
+              <td className="p-4 text-right font-mono tabular-nums text-destructive">
                 {invoice.totalDiscount > 0 ? `−${formatKobo(invoice.totalDiscount)}` : "—"}
               </td>
-              <td className="px-4 py-2 text-right font-mono">{formatKobo(grandTotal)}</td>
+              <td className="p-4 text-right font-mono tabular-nums">{formatKobo(grandTotal)}</td>
             </tr>
           </tfoot>
-        </table>
+        </Table>
       </div>
 
       {/* Payment summary */}
       <dl className="flex gap-8 text-sm">
         <div>
-          <dt className="text-gray-500">Total due</dt>
-          <dd className="font-mono font-semibold text-lg">{formatKobo(invoice.totalDue)}</dd>
+          <dt className="text-muted-foreground">Total due</dt>
+          <dd className="font-mono text-lg font-semibold tabular-nums">{formatKobo(invoice.totalDue)}</dd>
         </div>
         <div>
-          <dt className="text-gray-500">Paid</dt>
-          <dd className="font-mono font-semibold text-lg text-green-700">{formatKobo(invoice.totalPaid)}</dd>
+          <dt className="text-muted-foreground">Paid</dt>
+          <dd className="font-mono text-lg font-semibold tabular-nums text-emerald-700 dark:text-emerald-400">
+            {formatKobo(invoice.totalPaid)}
+          </dd>
         </div>
         <div>
-          <dt className="text-gray-500">Balance</dt>
-          <dd className="font-mono font-semibold text-lg">{formatKobo(invoice.totalDue - invoice.totalPaid)}</dd>
+          <dt className="text-muted-foreground">Balance</dt>
+          <dd className="font-mono text-lg font-semibold tabular-nums">
+            {formatKobo(invoice.totalDue - invoice.totalPaid)}
+          </dd>
         </div>
       </dl>
 
       {/* Discount rule breakdown (if any discounts) */}
       {invoice.items.some((item) => item.discountsApplied.length > 0) && (
         <details className="text-sm">
-          <summary className="cursor-pointer text-gray-500 hover:text-gray-700">
+          <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
             Discount breakdown
           </summary>
-          <div className="mt-2 space-y-1 pl-4 border-l-2 border-gray-200">
+          <div className="mt-2 space-y-1 border-l-2 pl-4">
             {invoice.items.flatMap((item) =>
               item.discountsApplied.map((d) => (
-                <div key={`${item.feeItemId}-${d.ruleId}`} className="flex justify-between gap-4 text-gray-600">
+                <div key={`${item.feeItemId}-${d.ruleId}`} className="flex justify-between gap-4 text-muted-foreground">
                   <span>{d.ruleName} → {item.feeName}</span>
-                  <span className="font-mono text-red-600">−{formatKobo(d.discountAmount)}</span>
+                  <span className="font-mono tabular-nums text-destructive">−{formatKobo(d.discountAmount)}</span>
                 </div>
               )),
             )}
@@ -458,132 +480,132 @@ export default function InvoiceDetailPage() {
 
       {/* Payment history */}
       <div>
-        <h2 className="text-base font-semibold mb-3">Payments</h2>
+        <h2 className="mb-3 text-base font-semibold text-foreground">Payments</h2>
         {payments.length === 0 ? (
-          <p className="text-sm text-gray-400">No payments recorded.</p>
+          <p className="text-sm text-muted-foreground">No payments recorded.</p>
         ) : (
-          <div className="border rounded-lg overflow-hidden">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="text-left px-4 py-2 font-medium">Date</th>
-                  <th className="text-left px-4 py-2 font-medium">Method</th>
-                  <th className="text-left px-4 py-2 font-medium">Reference</th>
-                  <th className="text-right px-4 py-2 font-medium">Amount</th>
-                  <th className="text-left px-4 py-2 font-medium">Status</th>
-                  <th className="px-4 py-2" />
-                </tr>
-              </thead>
-              <tbody>
+          <div className="rounded-lg border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Date</TableHead>
+                  <TableHead>Method</TableHead>
+                  <TableHead>Reference</TableHead>
+                  <TableHead className="text-right">Amount</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {payments.map((p) => (
-                  <tr key={p.id} className={`border-t hover:bg-gray-50 ${p.status === "REVERSED" ? "opacity-50" : ""}`}>
-                    <td className="px-4 py-2 text-gray-500">
+                  <TableRow key={p.id} className={p.status === "REVERSED" ? "opacity-50" : undefined}>
+                    <TableCell className="text-muted-foreground">
                       {p.paidAt ? new Date(p.paidAt).toLocaleString("en-NG", { dateStyle: "medium", timeStyle: "short" }) : "—"}
-                    </td>
-                    <td className="px-4 py-2">{METHOD_LABELS[p.method as ManualPaymentMethod] ?? p.method}</td>
-                    <td className="px-4 py-2 text-gray-500 font-mono text-xs">{p.reference ?? "—"}</td>
-                    <td className={`px-4 py-2 text-right font-mono font-medium ${p.status === "REVERSED" ? "line-through text-gray-400" : ""}`}>
+                    </TableCell>
+                    <TableCell>{METHOD_LABELS[p.method as ManualPaymentMethod] ?? p.method}</TableCell>
+                    <TableCell className="font-mono text-xs text-muted-foreground">{p.reference ?? "—"}</TableCell>
+                    <TableCell
+                      className={`text-right font-mono tabular-nums font-medium ${p.status === "REVERSED" ? "text-muted-foreground line-through" : ""}`}
+                    >
                       {formatKobo(p.amount)}
-                    </td>
-                    <td className="px-4 py-2 text-xs text-gray-500">
-                      {p.status === "REVERSED" ? (
-                        <span className="text-red-500 font-medium">Reversed</span>
-                      ) : p.status}
-                    </td>
-                    <td className="px-4 py-2 text-right space-x-3">
-                      {p.receiptUrl && (
-                        <button
-                          onClick={() => handleOpenReceipt(p.id)}
-                          className="text-xs text-blue-600 hover:underline"
-                        >
-                          Receipt
-                        </button>
-                      )}
-                      {p.status === "SUCCESS" && (
-                        <button
-                          onClick={() => openRefundDialog(p.id, p.amount)}
-                          className="text-xs text-red-600 hover:underline"
-                        >
-                          Reverse
-                        </button>
-                      )}
-                    </td>
-                  </tr>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={PAYMENT_STATUS_VARIANTS[p.status]}>
+                        {p.status === "REVERSED" ? "Reversed" : p.status}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex justify-end gap-3">
+                        {p.receiptUrl && (
+                          <button
+                            onClick={() => handleOpenReceipt(p.id)}
+                            className="text-xs text-primary hover:underline"
+                          >
+                            Receipt
+                          </button>
+                        )}
+                        {p.status === "SUCCESS" && (
+                          <button
+                            onClick={() => openRefundDialog(p.id, p.amount)}
+                            className="text-xs text-destructive hover:underline"
+                          >
+                            Reverse
+                          </button>
+                        )}
+                      </div>
+                    </TableCell>
+                  </TableRow>
                 ))}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
           </div>
         )}
       </div>
 
       {/* Installment plan */}
       <div>
-        <h2 className="text-base font-semibold mb-3">Installment plan</h2>
+        <h2 className="mb-3 text-base font-semibold text-foreground">Installment plan</h2>
 
         {/* Plan exists — show table */}
         {plan ? (
           <div className="space-y-3">
-            <p className="text-sm text-gray-500">{plan.name}</p>
-            <div className="border rounded-lg overflow-hidden">
-              <table className="w-full text-sm">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="text-left px-4 py-2 font-medium">Due date</th>
-                    <th className="text-right px-4 py-2 font-medium">Amount</th>
-                    <th className="text-center px-4 py-2 font-medium">Status</th>
-                  </tr>
-                </thead>
-                <tbody>
+            <p className="text-sm text-muted-foreground">{plan.name}</p>
+            <div className="rounded-lg border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Due date</TableHead>
+                    <TableHead className="text-right">Amount</TableHead>
+                    <TableHead className="text-center">Status</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
                   {plan.installments.map((inst) => (
-                    <tr key={inst.id} className="border-t hover:bg-gray-50">
-                      <td className={`px-4 py-2 ${inst.isOverdue ? "text-red-600 font-medium" : "text-gray-700"}`}>
+                    <TableRow key={inst.id}>
+                      <TableCell className={inst.isOverdue ? "font-medium text-destructive" : "text-muted-foreground"}>
                         {inst.dueDate}
                         {inst.isOverdue && (
-                          <span className="ml-2 text-xs bg-red-100 text-red-600 rounded px-1.5 py-0.5">Overdue</span>
+                          <Badge variant="destructive" className="ml-2">Overdue</Badge>
                         )}
-                      </td>
-                      <td className="px-4 py-2 text-right font-mono">{formatKobo(inst.amount)}</td>
-                      <td className="px-4 py-2 text-center">
+                      </TableCell>
+                      <TableCell className="text-right font-mono tabular-nums">{formatKobo(inst.amount)}</TableCell>
+                      <TableCell className="text-center">
                         {inst.paid ? (
-                          <span className="text-green-600 font-medium">✓ Paid</span>
+                          <Badge variant="success">✓ Paid</Badge>
                         ) : (
-                          <span className="text-gray-400">Pending</span>
+                          <Badge variant="muted">Pending</Badge>
                         )}
-                      </td>
-                    </tr>
+                      </TableCell>
+                    </TableRow>
                   ))}
-                </tbody>
-              </table>
+                </TableBody>
+              </Table>
             </div>
             {!hasSuccessPayment && (
               <div className="flex items-center gap-3">
-                <button
-                  onClick={handleDeletePlan}
-                  disabled={planDeleting}
-                  className="px-3 py-1.5 bg-red-600 text-white text-sm rounded hover:bg-red-700 disabled:opacity-50"
-                >
+                <Button variant="destructive" size="sm" disabled={planDeleting} onClick={handleDeletePlan}>
                   {planDeleting ? "Deleting…" : "Delete plan"}
-                </button>
-                {planDeleteError && <p className="text-sm text-red-600">{planDeleteError}</p>}
+                </Button>
+                {planDeleteError && <p className="text-sm text-destructive">{planDeleteError}</p>}
               </div>
             )}
           </div>
         ) : plan === null && PLANNABLE.has(invoice.status) ? (
           /* No plan yet, invoice is plannable — show setup form */
-          <form onSubmit={handleCreatePlan} className="border rounded-lg p-4 space-y-4">
+          <form onSubmit={handleCreatePlan} className="space-y-4 rounded-lg border p-4">
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm text-gray-600 mb-1">Plan name</label>
+                <label className="mb-1 block text-sm text-muted-foreground">Plan name</label>
                 <input
                   type="text"
                   required
                   value={planName}
                   onChange={(e) => setPlanName(e.target.value)}
-                  className="w-full border rounded px-3 py-1.5 text-sm"
+                  className={INPUT_CLASSES}
                 />
               </div>
               <div>
-                <label className="block text-sm text-gray-600 mb-1">Number of installments</label>
+                <label className="mb-1 block text-sm text-muted-foreground">Number of installments</label>
                 <input
                   type="number"
                   min={1}
@@ -612,43 +634,45 @@ export default function InvoiceDetailPage() {
                       }
                     }
                   }}
-                  className="w-full border rounded px-3 py-1.5 text-sm"
+                  className={INPUT_CLASSES}
                 />
               </div>
             </div>
 
             <div className="flex gap-3">
-              <button
+              <Button
                 type="button"
+                size="sm"
+                variant={planMode === "auto" ? "default" : "outline"}
                 onClick={() => {
                   setPlanMode("auto");
                   setPlanRows(buildAutoSplit(planCount, invoice.totalDue));
                 }}
-                className={`px-3 py-1.5 text-sm rounded border ${planMode === "auto" ? "bg-blue-50 border-blue-400 text-blue-700" : "border-gray-300 text-gray-600"}`}
               >
                 Auto-split equally
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
+                size="sm"
+                variant={planMode === "manual" ? "default" : "outline"}
                 onClick={() => {
                   setPlanMode("manual");
                   if (planRows.length !== planCount) {
                     setPlanRows(Array.from({ length: planCount }, () => ({ amount: "", dueDate: "" })));
                   }
                 }}
-                className={`px-3 py-1.5 text-sm rounded border ${planMode === "manual" ? "bg-blue-50 border-blue-400 text-blue-700" : "border-gray-300 text-gray-600"}`}
               >
                 Set amounts manually
-              </button>
+              </Button>
             </div>
 
             {/* Installment rows */}
             <div className="space-y-2">
               {planRows.map((row, i) => (
-                <div key={i} className="grid grid-cols-[auto_1fr_1fr] gap-3 items-center">
-                  <span className="text-sm text-gray-500 w-6">{i + 1}.</span>
+                <div key={i} className="grid grid-cols-[auto_1fr_1fr] items-center gap-3">
+                  <span className="w-6 text-sm text-muted-foreground">{i + 1}.</span>
                   <div>
-                    <label className="block text-xs text-gray-500 mb-0.5">Amount (₦)</label>
+                    <label className="mb-0.5 block text-xs text-muted-foreground">Amount (₦)</label>
                     <input
                       type="number"
                       step="0.01"
@@ -657,49 +681,47 @@ export default function InvoiceDetailPage() {
                       readOnly={planMode === "auto"}
                       value={row.amount}
                       onChange={(e) => handlePlanRowChange(i, "amount", e.target.value)}
-                      className={`w-full border rounded px-2 py-1 text-sm ${planMode === "auto" ? "bg-gray-50 text-gray-500" : ""}`}
+                      className={`${INPUT_CLASSES} ${planMode === "auto" ? "bg-muted text-muted-foreground" : ""}`}
                     />
                   </div>
                   <div>
-                    <label className="block text-xs text-gray-500 mb-0.5">Due date</label>
+                    <label className="mb-0.5 block text-xs text-muted-foreground">Due date</label>
                     <input
                       type="date"
                       required
                       min={todayIso()}
                       value={row.dueDate}
                       onChange={(e) => handlePlanRowChange(i, "dueDate", e.target.value)}
-                      className="w-full border rounded px-2 py-1 text-sm"
+                      className={INPUT_CLASSES}
                     />
                   </div>
                 </div>
               ))}
             </div>
 
-            {planError && <p className="text-sm text-red-600">{planError}</p>}
-            <button
-              type="submit"
-              disabled={planSubmitting}
-              className="px-4 py-2 bg-indigo-600 text-white text-sm rounded hover:bg-indigo-700 disabled:opacity-50"
-            >
+            {planError && <p className="text-sm text-destructive">{planError}</p>}
+            <Button type="submit" disabled={planSubmitting}>
               {planSubmitting ? "Creating plan…" : "Set up payment plan"}
-            </button>
+            </Button>
           </form>
         ) : plan === null ? (
-          <p className="text-sm text-gray-400">No installment plan. Plans can only be created on issued or partially-paid invoices.</p>
+          <p className="text-sm text-muted-foreground">
+            No installment plan. Plans can only be created on issued or partially-paid invoices.
+          </p>
         ) : (
           /* plan === undefined = still loading */
-          <p className="text-sm text-gray-400">Loading…</p>
+          <p className="text-sm text-muted-foreground">Loading…</p>
         )}
       </div>
 
       {/* Record payment form */}
       {PAYABLE.has(invoice.status) && (
-        <div className="border rounded-lg p-4 space-y-4">
-          <h2 className="text-base font-semibold">Record payment</h2>
+        <div className="space-y-4 rounded-lg border p-4">
+          <h2 className="text-base font-semibold text-foreground">Record payment</h2>
           <form onSubmit={handleRecordPayment} className="space-y-3">
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm text-gray-600 mb-1">Amount (₦)</label>
+                <label className="mb-1 block text-sm text-muted-foreground">Amount (₦)</label>
                 <input
                   type="number"
                   step="0.01"
@@ -708,15 +730,15 @@ export default function InvoiceDetailPage() {
                   value={form.amount}
                   onChange={(e) => setForm((f) => ({ ...f, amount: e.target.value }))}
                   placeholder={`Max ${(invoice.totalDue - invoice.totalPaid) / 100}`}
-                  className="w-full border rounded px-3 py-1.5 text-sm"
+                  className={INPUT_CLASSES}
                 />
               </div>
               <div>
-                <label className="block text-sm text-gray-600 mb-1">Method</label>
+                <label className="mb-1 block text-sm text-muted-foreground">Method</label>
                 <select
                   value={form.method}
                   onChange={(e) => setForm((f) => ({ ...f, method: e.target.value as ManualPaymentMethod }))}
-                  className="w-full border rounded px-3 py-1.5 text-sm bg-white"
+                  className={INPUT_CLASSES}
                 >
                   <option value="CASH">Cash</option>
                   <option value="POS">POS</option>
@@ -724,135 +746,112 @@ export default function InvoiceDetailPage() {
                 </select>
               </div>
               <div>
-                <label className="block text-sm text-gray-600 mb-1">Date paid</label>
+                <label className="mb-1 block text-sm text-muted-foreground">Date paid</label>
                 <input
                   type="datetime-local"
                   required
                   value={form.paidAt}
                   onChange={(e) => setForm((f) => ({ ...f, paidAt: e.target.value }))}
-                  className="w-full border rounded px-3 py-1.5 text-sm"
+                  className={INPUT_CLASSES}
                 />
               </div>
               <div>
-                <label className="block text-sm text-gray-600 mb-1">Reference (optional)</label>
+                <label className="mb-1 block text-sm text-muted-foreground">Reference (optional)</label>
                 <input
                   type="text"
                   maxLength={200}
                   value={form.reference}
                   onChange={(e) => setForm((f) => ({ ...f, reference: e.target.value }))}
                   placeholder="Bank ref, POS txn ID…"
-                  className="w-full border rounded px-3 py-1.5 text-sm"
+                  className={INPUT_CLASSES}
                 />
               </div>
             </div>
-            {recordError && <p className="text-sm text-red-600">{recordError}</p>}
-            <button
-              type="submit"
-              disabled={recording}
-              className="px-4 py-2 bg-green-600 text-white text-sm rounded hover:bg-green-700 disabled:opacity-50"
-            >
+            {recordError && <p className="text-sm text-destructive">{recordError}</p>}
+            <Button type="submit" disabled={recording}>
               {recording ? "Recording…" : "Record payment"}
-            </button>
+            </Button>
           </form>
         </div>
       )}
 
       {/* Pay via Paystack */}
       {PAYABLE.has(invoice.status) && (
-        <div className="border rounded-lg p-4 space-y-3">
+        <div className="space-y-3 rounded-lg border p-4">
           <div>
-            <h2 className="text-base font-semibold">Pay via Paystack</h2>
-            <p className="text-sm text-gray-500 mt-0.5">
+            <h2 className="text-base font-semibold text-foreground">Pay via Paystack</h2>
+            <p className="mt-0.5 text-sm text-muted-foreground">
               Redirects to Paystack checkout for the outstanding balance of{" "}
-              <span className="font-mono font-medium">
+              <span className="font-mono font-medium tabular-nums">
                 {formatKobo(invoice.totalDue - invoice.totalPaid)}
               </span>.
               Payment is confirmed automatically via webhook.
             </p>
           </div>
-          {paystackError && <p className="text-sm text-red-600">{paystackError}</p>}
-          <button
-            onClick={handlePayViaPaystack}
-            disabled={initiatingPaystack}
-            className="px-4 py-2 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 disabled:opacity-50"
-          >
+          {paystackError && <p className="text-sm text-destructive">{paystackError}</p>}
+          <Button onClick={handlePayViaPaystack} disabled={initiatingPaystack}>
             {initiatingPaystack ? "Redirecting…" : "Pay outstanding balance"}
-          </button>
+          </Button>
         </div>
       )}
 
       {/* Cancel */}
       {CANCELLABLE.has(invoice.status) && (
         <div className="flex items-center gap-4">
-          <button
-            disabled={cancelling}
-            onClick={handleCancel}
-            className="px-4 py-2 bg-red-600 text-white text-sm rounded hover:bg-red-700 disabled:opacity-50"
-          >
+          <Button variant="destructive" disabled={cancelling} onClick={handleCancel}>
             {cancelling ? "Cancelling…" : "Cancel invoice"}
-          </button>
-          {cancelError && <p className="text-sm text-red-600">{cancelError}</p>}
+          </Button>
+          {cancelError && <p className="text-sm text-destructive">{cancelError}</p>}
         </div>
       )}
 
       <div className="pt-2">
-        <Link href="/finance/invoices" className="text-sm text-blue-600 hover:underline">
+        <Link href="/finance/invoices" className="text-sm text-primary hover:underline">
           ← Back to invoices
         </Link>
       </div>
 
       {/* Refund confirmation dialog */}
-      {refundPaymentId && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl w-full max-w-md p-6 space-y-4">
-            <h2 className="text-lg font-semibold text-gray-900">Reverse payment</h2>
-            <p className="text-sm text-gray-600">
-              This will reverse the{" "}
-              <span className="font-mono font-medium">{formatKobo(refundAmount)}</span> payment
-              and update the invoice balance.{" "}
-              {invoice?.status === "PAID" && (
-                <span className="text-red-600 font-medium">The invoice will become REFUNDED.</span>
-              )}
-            </p>
-            <form onSubmit={handleRefund} className="space-y-3">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Reason <span className="text-red-500">*</span>
-                </label>
-                <textarea
-                  required
-                  maxLength={500}
-                  rows={3}
-                  value={refundReason}
-                  onChange={(e) => setRefundReason(e.target.value)}
-                  placeholder="e.g. Payment recorded in error, parent requested refund…"
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
-                />
-              </div>
-              {refundError && (
-                <p className="text-sm text-red-600">{refundError}</p>
-              )}
-              <div className="flex gap-3 justify-end">
-                <button
-                  type="button"
-                  onClick={() => setRefundPaymentId(null)}
-                  disabled={refunding}
-                  className="px-4 py-2 text-sm border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={refunding || !refundReason.trim()}
-                  className="px-4 py-2 text-sm bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50"
-                >
-                  {refunding ? "Reversing…" : "Confirm reversal"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      <Dialog open={refundPaymentId !== null} onOpenChange={(next) => { if (!next) setRefundPaymentId(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Reverse payment</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            This will reverse the{" "}
+            <span className="font-mono font-medium tabular-nums text-foreground">{formatKobo(refundAmount)}</span>{" "}
+            payment and update the invoice balance.{" "}
+            {invoice.status === "PAID" && (
+              <span className="font-medium text-destructive">The invoice will become REFUNDED.</span>
+            )}
+          </p>
+          <form onSubmit={handleRefund} className="space-y-3">
+            <div>
+              <label className="mb-1 block text-sm font-medium text-foreground">
+                Reason <span className="text-destructive">*</span>
+              </label>
+              <textarea
+                required
+                maxLength={500}
+                rows={3}
+                value={refundReason}
+                onChange={(e) => setRefundReason(e.target.value)}
+                placeholder="e.g. Payment recorded in error, parent requested refund…"
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-destructive"
+              />
+            </div>
+            {refundError && <p className="text-sm text-destructive">{refundError}</p>}
+            <DialogFooter>
+              <Button type="button" variant="outline" disabled={refunding} onClick={() => setRefundPaymentId(null)}>
+                Cancel
+              </Button>
+              <Button type="submit" variant="destructive" disabled={refunding || !refundReason.trim()}>
+                {refunding ? "Reversing…" : "Confirm reversal"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
