@@ -11,6 +11,10 @@ import type {
   TermDto,
 } from "@school-kit/types";
 
+import { Badge, type BadgeProps } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { listAcademicYears, listTerms } from "@/lib/academic-years/academic-years-api";
 import { listClassArms } from "@/lib/class-arms/class-arms-api";
 import { formatKobo } from "@/lib/finance/format";
@@ -31,15 +35,21 @@ const STATUS_LABELS: Record<InvoiceStatus, string> = {
   REFUNDED: "Refunded",
 };
 
-const STATUS_COLOURS: Record<InvoiceStatus, string> = {
-  DRAFT: "bg-gray-100 text-gray-500",
-  ISSUED: "bg-blue-100 text-blue-700",
-  PARTIALLY_PAID: "bg-yellow-100 text-yellow-700",
-  PAID: "bg-green-100 text-green-700",
-  OVERDUE: "bg-red-100 text-red-700",
-  CANCELLED: "bg-gray-100 text-gray-400",
-  REFUNDED: "bg-purple-100 text-purple-700",
+// Same status set as /finance/debtors and the invoice detail page — kept as
+// three separate maps (not a shared constant) because each screen's status
+// subset differs slightly and the type each keys off does too.
+const STATUS_VARIANTS: Record<InvoiceStatus, BadgeProps["variant"]> = {
+  DRAFT: "muted",
+  ISSUED: "default",
+  PARTIALLY_PAID: "warning",
+  PAID: "success",
+  OVERDUE: "destructive",
+  CANCELLED: "muted",
+  REFUNDED: "outline",
 };
+
+const SELECT_CLASSES =
+  "h-9 rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50";
 
 type Tab = "generate" | "list";
 
@@ -167,18 +177,14 @@ export default function InvoicesPage() {
   const previewTotalDue = preview?.reduce((s, r) => s + r.totalDue, 0) ?? 0;
 
   return (
-    <div className="p-6 space-y-6 max-w-6xl">
-      <h1 className="text-2xl font-semibold">Invoices</h1>
+    <div className="max-w-6xl space-y-6 p-6">
+      <h1 className="font-serif text-2xl font-medium tracking-tight text-foreground">Invoices</h1>
 
       {/* Term + arm picker */}
-      <div className="flex flex-wrap gap-3 items-end">
+      <div className="flex flex-wrap items-end gap-3">
         <div>
-          <label className="block text-sm font-medium mb-1">Academic year</label>
-          <select
-            className="border rounded px-3 py-2 text-sm w-48"
-            value={yearId}
-            onChange={(e) => setYearId(e.target.value)}
-          >
+          <label className="mb-1 block text-sm font-medium text-foreground">Academic year</label>
+          <select className={SELECT_CLASSES} value={yearId} onChange={(e) => setYearId(e.target.value)}>
             <option value="">— year —</option>
             {years.map((y) => (
               <option key={y.id} value={y.id}>{y.label}</option>
@@ -187,9 +193,9 @@ export default function InvoicesPage() {
         </div>
 
         <div>
-          <label className="block text-sm font-medium mb-1">Term</label>
+          <label className="mb-1 block text-sm font-medium text-foreground">Term</label>
           <select
-            className="border rounded px-3 py-2 text-sm w-44 disabled:bg-gray-100 disabled:text-gray-400"
+            className={SELECT_CLASSES}
             disabled={!yearId}
             value={termId}
             onChange={(e) => setTermId(e.target.value)}
@@ -202,12 +208,8 @@ export default function InvoicesPage() {
         </div>
 
         <div>
-          <label className="block text-sm font-medium mb-1">Class arm</label>
-          <select
-            className="border rounded px-3 py-2 text-sm w-44"
-            value={armId}
-            onChange={(e) => setArmId(e.target.value)}
-          >
+          <label className="mb-1 block text-sm font-medium text-foreground">Class arm</label>
+          <select className={SELECT_CLASSES} value={armId} onChange={(e) => setArmId(e.target.value)}>
             <option value="">— arm —</option>
             {arms.map((a) => (
               <option key={a.id} value={a.id}>{a.name}</option>
@@ -216,125 +218,103 @@ export default function InvoicesPage() {
         </div>
       </div>
 
-      {/* Tabs */}
-      <div className="flex gap-1 border-b">
-        {(["generate", "list"] as Tab[]).map((t) => (
-          <button
-            key={t}
-            onClick={() => setTab(t)}
-            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
-              tab === t
-                ? "border-blue-600 text-blue-600"
-                : "border-transparent text-gray-500 hover:text-gray-700"
-            }`}
-          >
-            {t === "generate" ? "Generate" : "Invoice list"}
-          </button>
-        ))}
-      </div>
+      <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)}>
+        <TabsList>
+          <TabsTrigger value="generate">Generate</TabsTrigger>
+          <TabsTrigger value="list">Invoice list</TabsTrigger>
+        </TabsList>
 
-      {/* ── Generate tab ── */}
-      {tab === "generate" && (
-        <div className="space-y-4">
-          <div className="flex flex-wrap gap-3 items-end">
+        {/* ── Generate tab ── */}
+        <TabsContent value="generate" className="space-y-4">
+          <div className="flex flex-wrap items-end gap-3">
             <div>
-              <label className="block text-sm font-medium mb-1">Due date (optional)</label>
+              <label className="mb-1 block text-sm font-medium text-foreground">Due date (optional)</label>
               <input
                 type="date"
-                className="border rounded px-3 py-2 text-sm"
+                className={SELECT_CLASSES}
                 value={dueDate}
                 onChange={(e) => setDueDate(e.target.value)}
               />
             </div>
 
-            <button
-              disabled={!pickerReady || previewLoading}
-              onClick={handlePreview}
-              className="px-4 py-2 border rounded text-sm hover:bg-gray-50 disabled:opacity-50"
-            >
+            <Button variant="outline" disabled={!pickerReady || previewLoading} onClick={handlePreview}>
               {previewLoading ? "Loading…" : "Preview"}
-            </button>
+            </Button>
 
-            <button
-              disabled={!pickerReady || generating}
-              onClick={handleGenerate}
-              className="px-4 py-2 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 disabled:opacity-50"
-            >
+            <Button disabled={!pickerReady || generating} onClick={handleGenerate}>
               {generating ? "Generating…" : "Generate invoices"}
-            </button>
+            </Button>
           </div>
 
-          {generateError && (
-            <p className="text-sm text-red-600">{generateError}</p>
-          )}
+          {generateError && <p className="text-sm text-destructive">{generateError}</p>}
 
           {generateResult && (
-            <div className="rounded border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
+            <div className="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-300">
               Done — {generateResult.created} invoice(s) created, {generateResult.skipped} skipped (already issued).
             </div>
           )}
 
           {preview && (
             <div className="space-y-2">
-              <p className="text-sm text-gray-500">
+              <p className="text-sm text-muted-foreground">
                 Advisory preview — {preview.length} student(s). Clicking
                 &ldquo;Generate invoices&rdquo; recomputes from current fee catalog.
               </p>
-              <div className="border rounded-lg overflow-hidden">
-                <table className="w-full text-sm">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="text-left px-4 py-2 font-medium">Student ID</th>
-                      <th className="text-right px-4 py-2 font-medium">Fee items</th>
-                      <th className="text-right px-4 py-2 font-medium">Gross</th>
-                      <th className="text-right px-4 py-2 font-medium">Discount</th>
-                      <th className="text-right px-4 py-2 font-medium">Due</th>
-                    </tr>
-                  </thead>
-                  <tbody>
+              <div className="rounded-lg border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Student ID</TableHead>
+                      <TableHead className="text-right">Fee items</TableHead>
+                      <TableHead className="text-right">Gross</TableHead>
+                      <TableHead className="text-right">Discount</TableHead>
+                      <TableHead className="text-right">Due</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
                     {preview.map((row) => (
-                      <tr key={row.studentId} className="border-t hover:bg-gray-50">
-                        <td className="px-4 py-2 font-mono text-xs text-gray-500">{row.studentId}</td>
-                        <td className="px-4 py-2 text-right">{row.feeItemCount}</td>
-                        <td className="px-4 py-2 text-right font-mono">{formatKobo(row.totalAmount)}</td>
-                        <td className="px-4 py-2 text-right font-mono text-red-600">
+                      <TableRow key={row.studentId}>
+                        <TableCell className="font-mono text-xs text-muted-foreground">{row.studentId}</TableCell>
+                        <TableCell className="text-right">{row.feeItemCount}</TableCell>
+                        <TableCell className="text-right font-mono tabular-nums">{formatKobo(row.totalAmount)}</TableCell>
+                        <TableCell className="text-right font-mono tabular-nums text-destructive">
                           {row.totalDiscount > 0 ? `−${formatKobo(row.totalDiscount)}` : "—"}
-                        </td>
-                        <td className="px-4 py-2 text-right font-mono font-medium">{formatKobo(row.totalDue)}</td>
-                      </tr>
+                        </TableCell>
+                        <TableCell className="text-right font-mono tabular-nums font-medium">
+                          {formatKobo(row.totalDue)}
+                        </TableCell>
+                      </TableRow>
                     ))}
-                  </tbody>
-                  <tfoot className="bg-gray-50 font-medium">
+                  </TableBody>
+                  <tfoot className="border-t bg-muted/40 font-medium">
                     <tr>
-                      <td colSpan={4} className="px-4 py-2 text-right">Total due</td>
-                      <td className="px-4 py-2 text-right font-mono">{formatKobo(previewTotalDue)}</td>
+                      <td colSpan={4} className="p-4 text-right">Total due</td>
+                      <td className="p-4 text-right font-mono tabular-nums">{formatKobo(previewTotalDue)}</td>
                     </tr>
                   </tfoot>
-                </table>
+                </Table>
               </div>
             </div>
           )}
 
           {!preview && !previewLoading && !generateResult && pickerReady && (
-            <p className="text-sm text-gray-400">
+            <p className="text-sm text-muted-foreground">
               Click &ldquo;Preview&rdquo; to see projected totals before generating.
             </p>
           )}
 
           {!pickerReady && (
-            <p className="text-sm text-gray-400">Select a term and class arm to continue.</p>
+            <p className="text-sm text-muted-foreground">Select a term and class arm to continue.</p>
           )}
-        </div>
-      )}
+        </TabsContent>
 
-      {/* ── List tab ── */}
-      {tab === "list" && (
-        <div className="space-y-4">
-          <div className="flex flex-wrap gap-3 items-end">
+        {/* ── List tab ── */}
+        <TabsContent value="list" className="space-y-4">
+          <div className="flex flex-wrap items-end gap-3">
             <div>
-              <label className="block text-sm font-medium mb-1">Status</label>
+              <label className="mb-1 block text-sm font-medium text-foreground">Status</label>
               <select
-                className="border rounded px-3 py-2 text-sm w-44"
+                className={SELECT_CLASSES}
                 value={statusFilter}
                 onChange={(e) => { setStatusFilter(e.target.value as InvoiceStatus | ""); setPage(1); }}
               >
@@ -346,53 +326,53 @@ export default function InvoicesPage() {
             </div>
           </div>
 
-          <div className="border rounded-lg overflow-hidden">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="text-left px-4 py-2 font-medium">Invoice ID</th>
-                  <th className="text-left px-4 py-2 font-medium">Student</th>
-                  <th className="text-left px-4 py-2 font-medium">Status</th>
-                  <th className="text-right px-4 py-2 font-medium">Total due</th>
-                  <th className="text-right px-4 py-2 font-medium">Paid</th>
-                  <th className="text-left px-4 py-2 font-medium">Due date</th>
-                  <th className="w-32" />
-                </tr>
-              </thead>
-              <tbody>
+          <div className="rounded-lg border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Invoice ID</TableHead>
+                  <TableHead>Student</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="text-right">Total due</TableHead>
+                  <TableHead className="text-right">Paid</TableHead>
+                  <TableHead>Due date</TableHead>
+                  <TableHead className="w-32" />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {listLoading && (
-                  <tr>
-                    <td colSpan={7} className="px-4 py-6 text-center text-gray-400">Loading…</td>
-                  </tr>
+                  <TableRow>
+                    <TableCell colSpan={7} className="py-6 text-center text-muted-foreground">Loading…</TableCell>
+                  </TableRow>
                 )}
                 {!listLoading && invoices.length === 0 && (
-                  <tr>
-                    <td colSpan={7} className="px-4 py-6 text-center text-gray-400">
+                  <TableRow>
+                    <TableCell colSpan={7} className="py-6 text-center text-muted-foreground">
                       No invoices found.
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                 )}
                 {invoices.map((inv) => (
-                  <tr key={inv.id} className="border-t hover:bg-gray-50">
-                    <td className="px-4 py-2 font-mono text-xs text-gray-500">
-                      <a href={`/finance/invoices/${inv.id}`} className="underline text-blue-600 hover:text-blue-800">
+                  <TableRow key={inv.id}>
+                    <TableCell className="font-mono text-xs text-muted-foreground">
+                      <a href={`/finance/invoices/${inv.id}`} className="text-primary underline hover:text-primary/80">
                         {inv.id.slice(0, 8)}…
                       </a>
-                    </td>
-                    <td className="px-4 py-2 font-mono text-xs text-gray-500">{inv.studentId.slice(0, 8)}…</td>
-                    <td className="px-4 py-2">
-                      <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${STATUS_COLOURS[inv.status]}`}>
-                        {STATUS_LABELS[inv.status]}
-                      </span>
-                    </td>
-                    <td className="px-4 py-2 text-right font-mono">{formatKobo(inv.totalDue)}</td>
-                    <td className="px-4 py-2 text-right font-mono text-green-700">{formatKobo(inv.totalPaid)}</td>
-                    <td className="px-4 py-2 text-gray-500">{inv.dueDate ?? "—"}</td>
-                    <td className="px-4 py-2 text-right">
-                      <div className="flex gap-2 justify-end">
+                    </TableCell>
+                    <TableCell className="font-mono text-xs text-muted-foreground">{inv.studentId.slice(0, 8)}…</TableCell>
+                    <TableCell>
+                      <Badge variant={STATUS_VARIANTS[inv.status]}>{STATUS_LABELS[inv.status]}</Badge>
+                    </TableCell>
+                    <TableCell className="text-right font-mono tabular-nums">{formatKobo(inv.totalDue)}</TableCell>
+                    <TableCell className="text-right font-mono tabular-nums text-emerald-700 dark:text-emerald-400">
+                      {formatKobo(inv.totalPaid)}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">{inv.dueDate ?? "—"}</TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex justify-end gap-3">
                         <a
                           href={`/finance/invoices/${inv.id}`}
-                          className="text-blue-600 hover:text-blue-800 text-xs underline"
+                          className="text-xs text-primary underline hover:text-primary/80"
                         >
                           View
                         </a>
@@ -400,43 +380,40 @@ export default function InvoicesPage() {
                           <button
                             disabled={cancelling === inv.id}
                             onClick={() => handleCancel(inv.id)}
-                            className="text-red-500 hover:text-red-700 text-xs disabled:opacity-50"
+                            className="text-xs text-destructive hover:text-destructive/80 disabled:opacity-50"
                           >
                             {cancelling === inv.id ? "…" : "Cancel"}
                           </button>
                         )}
                       </div>
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                 ))}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
           </div>
 
           {/* Pagination */}
           {total > 50 && (
             <div className="flex items-center gap-3 text-sm">
-              <button
-                disabled={page <= 1}
-                onClick={() => setPage((p) => p - 1)}
-                className="px-3 py-1 border rounded disabled:opacity-40"
-              >
+              <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
                 ← Prev
-              </button>
-              <span className="text-gray-500">
+              </Button>
+              <span className="text-muted-foreground">
                 Page {page} of {Math.ceil(total / 50)} ({total} total)
               </span>
-              <button
+              <Button
+                variant="outline"
+                size="sm"
                 disabled={page >= Math.ceil(total / 50)}
                 onClick={() => setPage((p) => p + 1)}
-                className="px-3 py-1 border rounded disabled:opacity-40"
               >
                 Next →
-              </button>
+              </Button>
             </div>
           )}
-        </div>
-      )}
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

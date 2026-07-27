@@ -4,6 +4,9 @@ import { useEffect, useState } from "react";
 
 import type { AcademicYearDto, DebtorDto, TermDto } from "@school-kit/types";
 
+import { Badge, type BadgeProps } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { listAcademicYears, listTerms } from "@/lib/academic-years/academic-years-api";
 import { formatKobo } from "@/lib/finance/format";
 import { listDebtors, sendReminders } from "@/lib/finance/finance-api";
@@ -16,11 +19,14 @@ const STATUS_LABELS: Record<Status, string> = {
   OVERDUE: "Overdue",
 };
 
-const STATUS_COLOURS: Record<Status, string> = {
-  ISSUED: "bg-blue-100 text-blue-700",
-  PARTIALLY_PAID: "bg-yellow-100 text-yellow-700",
-  OVERDUE: "bg-red-100 text-red-700",
+const STATUS_VARIANTS: Record<Status, BadgeProps["variant"]> = {
+  ISSUED: "default",
+  PARTIALLY_PAID: "warning",
+  OVERDUE: "destructive",
 };
+
+const SELECT_CLASSES =
+  "rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50";
 
 export default function DebtorsPage() {
   const [years, setYears] = useState<AcademicYearDto[]>([]);
@@ -104,18 +110,14 @@ export default function DebtorsPage() {
   const totalBalance = debtors.reduce((sum, d) => sum + d.balance, 0);
 
   return (
-    <div className="max-w-5xl mx-auto py-8 px-4 space-y-6">
-      <h1 className="text-2xl font-semibold text-gray-900">Debtor list</h1>
+    <div className="mx-auto max-w-5xl space-y-6 px-4 py-8">
+      <h1 className="font-serif text-2xl font-medium tracking-tight text-foreground">Debtor list</h1>
 
       {/* Term selector */}
-      <div className="flex gap-4 items-end flex-wrap">
+      <div className="flex flex-wrap items-end gap-4">
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Academic year</label>
-          <select
-            className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            value={yearId}
-            onChange={(e) => setYearId(e.target.value)}
-          >
+          <label className="mb-1 block text-sm font-medium text-foreground">Academic year</label>
+          <select className={SELECT_CLASSES} value={yearId} onChange={(e) => setYearId(e.target.value)}>
             <option value="">Select year…</option>
             {years.map((y) => (
               <option key={y.id} value={y.id}>{y.label}</option>
@@ -124,9 +126,9 @@ export default function DebtorsPage() {
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Term</label>
+          <label className="mb-1 block text-sm font-medium text-foreground">Term</label>
           <select
-            className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className={SELECT_CLASSES}
             value={termId}
             onChange={(e) => setTermId(e.target.value)}
             disabled={!yearId}
@@ -141,113 +143,108 @@ export default function DebtorsPage() {
 
       {/* Error */}
       {error && (
-        <div className="rounded-md bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
+        <div className="rounded-md border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm text-destructive">
           {error}
         </div>
       )}
 
       {/* Reminder result */}
       {reminderResult && (
-        <div className="rounded-md bg-green-50 border border-green-200 px-4 py-3 text-sm text-green-700">
+        <div className="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-300">
           Reminders sent: <strong>{reminderResult.sent}</strong>
           {reminderResult.skipped > 0 && ` (${reminderResult.skipped} skipped — no guardian email)`}
         </div>
       )}
 
       {/* Loading */}
-      {loading && <p className="text-sm text-gray-500">Loading…</p>}
+      {loading && <p className="text-sm text-muted-foreground">Loading…</p>}
 
       {/* No term selected */}
       {!termId && !loading && (
-        <p className="text-sm text-gray-500">Select an academic year and term to view the debtor list.</p>
+        <p className="text-sm text-muted-foreground">Select an academic year and term to view the debtor list.</p>
       )}
 
       {/* Empty state */}
       {termId && !loading && debtors.length === 0 && (
-        <p className="text-sm text-gray-500">No outstanding invoices for this term.</p>
+        <p className="text-sm text-muted-foreground">No outstanding invoices for this term.</p>
       )}
 
       {/* Table */}
       {debtors.length > 0 && (
         <>
           {/* Summary + actions bar */}
-          <div className="flex items-center justify-between gap-4 flex-wrap">
-            <p className="text-sm text-gray-600">
-              <strong>{debtors.length}</strong> outstanding invoice{debtors.length !== 1 ? "s" : ""} —
-              total balance <strong>{formatKobo(totalBalance)}</strong>
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <p className="text-sm text-muted-foreground">
+              <strong className="text-foreground">{debtors.length}</strong> outstanding invoice{debtors.length !== 1 ? "s" : ""} —
+              total balance <strong className="text-foreground">{formatKobo(totalBalance)}</strong>
             </p>
-            <button
-              onClick={handleRemind}
-              disabled={reminding || selected.size === 0}
-              className="px-4 py-2 text-sm font-medium rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
+            <Button onClick={handleRemind} disabled={reminding || selected.size === 0}>
               {reminding
                 ? "Sending…"
                 : selected.size === 0
                   ? "Send reminder (select rows)"
                   : `Send reminder to ${selected.size} family${selected.size !== 1 ? "ies" : "y"}`}
-            </button>
+            </Button>
           </div>
 
-          <div className="overflow-x-auto rounded-lg border border-gray-200">
-            <table className="min-w-full divide-y divide-gray-200 text-sm">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="w-10 px-3 py-3">
+          <div className="overflow-x-auto rounded-lg border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-10">
                     <input
                       type="checkbox"
                       className="rounded"
                       checked={selected.size === debtors.length}
                       onChange={toggleSelectAll}
                     />
-                  </th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-600">Student</th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-600">Class</th>
-                  <th className="px-4 py-3 text-right font-medium text-gray-600">Total due</th>
-                  <th className="px-4 py-3 text-right font-medium text-gray-600">Paid</th>
-                  <th className="px-4 py-3 text-right font-medium text-gray-600">Balance</th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-600">Due date</th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-600">Status</th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-600">Plan</th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-100">
+                  </TableHead>
+                  <TableHead>Student</TableHead>
+                  <TableHead>Class</TableHead>
+                  <TableHead className="text-right">Total due</TableHead>
+                  <TableHead className="text-right">Paid</TableHead>
+                  <TableHead className="text-right">Balance</TableHead>
+                  <TableHead>Due date</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Plan</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {debtors.map((d) => (
-                  <tr
+                  <TableRow
                     key={d.invoiceId}
-                    className={`hover:bg-gray-50 ${selected.has(d.studentId) ? "bg-blue-50" : ""}`}
+                    className={selected.has(d.studentId) ? "cursor-pointer bg-primary/5" : "cursor-pointer"}
                     onClick={() => toggleSelect(d.studentId)}
-                    style={{ cursor: "pointer" }}
                   >
-                    <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
+                    <TableCell onClick={(e) => e.stopPropagation()}>
                       <input
                         type="checkbox"
                         className="rounded"
                         checked={selected.has(d.studentId)}
                         onChange={() => toggleSelect(d.studentId)}
                       />
-                    </td>
-                    <td className="px-4 py-3">
-                      <p className="font-medium text-gray-900">{d.studentName}</p>
-                      <p className="text-xs text-gray-500">{d.admissionNumber}</p>
-                    </td>
-                    <td className="px-4 py-3 text-gray-700">{d.classArm}</td>
-                    <td className="px-4 py-3 text-right text-gray-700">{formatKobo(d.totalDue)}</td>
-                    <td className="px-4 py-3 text-right text-gray-700">{formatKobo(d.totalPaid)}</td>
-                    <td className="px-4 py-3 text-right font-medium text-gray-900">{formatKobo(d.balance)}</td>
-                    <td className="px-4 py-3 text-gray-700">{d.dueDate ?? "—"}</td>
-                    <td className="px-4 py-3">
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${STATUS_COLOURS[d.status]}`}>
-                        {STATUS_LABELS[d.status]}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-gray-500 text-xs">
+                    </TableCell>
+                    <TableCell>
+                      <p className="font-medium text-foreground">{d.studentName}</p>
+                      <p className="text-xs text-muted-foreground">{d.admissionNumber}</p>
+                    </TableCell>
+                    <TableCell>{d.classArm}</TableCell>
+                    <TableCell className="text-right tabular-nums">{formatKobo(d.totalDue)}</TableCell>
+                    <TableCell className="text-right tabular-nums">{formatKobo(d.totalPaid)}</TableCell>
+                    <TableCell className="text-right font-medium tabular-nums text-foreground">
+                      {formatKobo(d.balance)}
+                    </TableCell>
+                    <TableCell>{d.dueDate ?? "—"}</TableCell>
+                    <TableCell>
+                      <Badge variant={STATUS_VARIANTS[d.status]}>{STATUS_LABELS[d.status]}</Badge>
+                    </TableCell>
+                    <TableCell className="text-xs text-muted-foreground">
                       {d.hasPaymentPlan ? "✓ Plan" : "—"}
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                 ))}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
           </div>
         </>
       )}

@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 
 import type { AcademicYearDto, FinanceDashboardDto, TermDto } from "@school-kit/types";
 
+import { StatCard } from "@/components/shared/stat-card";
+import { Card, CardContent } from "@/components/ui/card";
 import { listAcademicYears, listTerms } from "@/lib/academic-years/academic-years-api";
 import { getFinanceDashboard } from "@/lib/finance/finance-api";
 import { formatKobo } from "@/lib/finance/format";
@@ -73,7 +75,7 @@ export default function FinanceDashboardPage() {
 
   return (
     <div className="mx-auto max-w-5xl space-y-6 px-4 py-8">
-      <h1 className="text-2xl font-semibold text-foreground">Finance dashboard</h1>
+      <h1 className="font-serif text-2xl font-medium tracking-tight text-foreground">Finance dashboard</h1>
 
       {/* Term selector — identical pattern to /finance/debtors */}
       <div className="flex flex-wrap items-end gap-4">
@@ -132,36 +134,38 @@ export default function FinanceDashboardPage() {
           </p>
 
           {/* Collection rate meter — a single ratio against a limit */}
-          <div className="rounded-lg border bg-card p-4">
-            <div className="mb-2 flex items-baseline justify-between">
-              <span className="text-sm font-medium text-foreground">Collection rate</span>
-              <span className="text-2xl font-semibold text-foreground">
-                {dashboard.collectionRatePercent}%
-              </span>
-            </div>
-            <div className="h-2.5 w-full overflow-hidden rounded-full bg-primary/15">
-              <div
-                className="h-full rounded-full bg-primary transition-[width]"
-                style={{ width: `${Math.min(100, Math.max(0, dashboard.collectionRatePercent))}%` }}
-              />
-            </div>
-            <p className="mt-2 text-xs text-muted-foreground">
-              {formatKobo(dashboard.totalCollected)} collected of {formatKobo(dashboard.totalInvoiced)} invoiced
-            </p>
-          </div>
+          <Card>
+            <CardContent className="pt-6">
+              <div className="mb-2 flex items-baseline justify-between">
+                <span className="text-sm font-medium text-foreground">Collection rate</span>
+                <span className="font-serif text-3xl font-medium text-foreground">
+                  {dashboard.collectionRatePercent}%
+                </span>
+              </div>
+              <div className="h-2.5 w-full overflow-hidden rounded-full bg-primary/15">
+                <div
+                  className="h-full rounded-full bg-primary transition-[width]"
+                  style={{ width: `${Math.min(100, Math.max(0, dashboard.collectionRatePercent))}%` }}
+                />
+              </div>
+              <p className="mt-2 text-xs text-muted-foreground">
+                {formatKobo(dashboard.totalCollected)} collected of {formatKobo(dashboard.totalInvoiced)} invoiced
+              </p>
+            </CardContent>
+          </Card>
 
           {/* KPI row — plain descriptive numbers, text tokens throughout */}
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-            <StatTile label="Total invoiced" value={formatKobo(dashboard.totalInvoiced)} />
-            <StatTile label="Total collected" value={formatKobo(dashboard.totalCollected)} />
-            <StatTile
+            <StatCard label="Total invoiced" value={formatKobo(dashboard.totalInvoiced)} />
+            <StatCard label="Total collected" value={formatKobo(dashboard.totalCollected)} />
+            <StatCard
               label="Outstanding balance"
               value={formatKobo(dashboard.outstandingBalance)}
               tone={dashboard.outstandingBalance > 0 ? "warning" : "default"}
             />
-            <StatTile label="Debtor count" value={String(dashboard.debtorCount)} />
-            <StatTile label="Total expenses" value={formatKobo(dashboard.totalExpenses)} />
-            <StatTile
+            <StatCard label="Debtor count" value={String(dashboard.debtorCount)} />
+            <StatCard label="Total expenses" value={formatKobo(dashboard.totalExpenses)} />
+            <StatCard
               label="Net position"
               value={formatKobo(dashboard.netPosition)}
               tone={dashboard.netPosition >= 0 ? "positive" : "negative"}
@@ -169,30 +173,6 @@ export default function FinanceDashboardPage() {
           </div>
         </div>
       )}
-    </div>
-  );
-}
-
-function StatTile({
-  label,
-  value,
-  tone = "default",
-}: {
-  label: string;
-  value: string;
-  tone?: "default" | "positive" | "negative" | "warning";
-}) {
-  const toneClasses: Record<typeof tone, string> = {
-    default: "text-foreground",
-    positive: "text-emerald-700 dark:text-emerald-400",
-    negative: "text-red-700 dark:text-red-400",
-    warning: "text-amber-700 dark:text-amber-400",
-  };
-
-  return (
-    <div className="rounded-lg border bg-card p-4">
-      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
-      <p className={`mt-1 text-xl font-semibold ${toneClasses[tone]}`}>{value}</p>
     </div>
   );
 }

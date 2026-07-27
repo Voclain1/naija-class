@@ -14,6 +14,8 @@ import type {
 } from "@school-kit/types";
 
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { listAcademicYears, listTerms } from "@/lib/academic-years/academic-years-api";
 import { ApiError } from "@/lib/api-client";
 import { listArmsForLevel } from "@/lib/class-arms/class-arms-api";
@@ -287,7 +289,7 @@ export default function FeesPage() {
   return (
     <div className="flex w-full flex-col gap-6">
       <header>
-        <h1 className="text-2xl font-semibold tracking-tight">Fee catalog</h1>
+        <h1 className="font-serif text-2xl font-medium tracking-tight text-foreground">Fee catalog</h1>
         <p className="text-sm text-muted-foreground">
           Define fee categories (e.g. Tuition, PTA Levy) and the items within
           each — with optional scope to a class level, arm, term, or academic year.
@@ -334,52 +336,50 @@ export default function FeesPage() {
           )}
         </aside>
 
-        {/* ── Category form (inline panel) ───────────────────────────── */}
-        {catFormOpen && (
-          <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40">
-            <div className="w-full max-w-sm rounded-lg border bg-background p-6 shadow-xl">
-              <h3 className="mb-4 text-base font-semibold">
-                {editingCat ? "Edit category" : "New category"}
-              </h3>
-              <div className="space-y-3">
-                <div>
-                  <label className="mb-1 block text-sm font-medium">Name</label>
-                  <input
-                    autoFocus
-                    className="w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                    value={catName}
-                    onChange={(e) => setCatName(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && void saveCat()}
-                    placeholder="e.g. Tuition Fees"
-                    maxLength={100}
-                  />
-                </div>
-                <div>
-                  <label className="mb-1 block text-sm font-medium">
-                    Description <span className="font-normal text-muted-foreground">(optional)</span>
-                  </label>
-                  <textarea
-                    className="w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                    value={catDesc}
-                    onChange={(e) => setCatDesc(e.target.value)}
-                    placeholder="Brief description"
-                    rows={2}
-                    maxLength={500}
-                  />
-                </div>
+        {/* ── Category form ─────────────────────────────────────────────── */}
+        <Dialog open={catFormOpen} onOpenChange={setCatFormOpen}>
+          <DialogContent className="max-w-sm">
+            <DialogHeader>
+              <DialogTitle>{editingCat ? "Edit category" : "New category"}</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-3">
+              <div>
+                <label className="mb-1 block text-sm font-medium text-foreground">Name</label>
+                <input
+                  autoFocus
+                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                  value={catName}
+                  onChange={(e) => setCatName(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && void saveCat()}
+                  placeholder="e.g. Tuition Fees"
+                  maxLength={100}
+                />
               </div>
-              <div className="mt-4 flex justify-end gap-2">
-                <Button variant="outline" onClick={() => setCatFormOpen(false)}>
-                  Cancel
-                </Button>
-                <Button onClick={() => void saveCat()} disabled={catSaving || !catName.trim()}>
-                  {catSaving && <Loader2 className="mr-1 h-4 w-4 animate-spin" />}
-                  Save
-                </Button>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-foreground">
+                  Description <span className="font-normal text-muted-foreground">(optional)</span>
+                </label>
+                <textarea
+                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                  value={catDesc}
+                  onChange={(e) => setCatDesc(e.target.value)}
+                  placeholder="Brief description"
+                  rows={2}
+                  maxLength={500}
+                />
               </div>
             </div>
-          </div>
-        )}
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setCatFormOpen(false)}>
+                Cancel
+              </Button>
+              <Button onClick={() => void saveCat()} disabled={catSaving || !catName.trim()}>
+                {catSaving && <Loader2 className="mr-1 h-4 w-4 animate-spin" />}
+                Save
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         {/* ── Items panel ────────────────────────────────────────────── */}
         <div className="flex-1 min-w-0">
@@ -428,34 +428,34 @@ export default function FeesPage() {
                 </div>
               ) : (
                 <div className="rounded-lg border">
-                  <table className="w-full text-sm">
-                    <thead className="border-b bg-muted/40">
-                      <tr>
-                        <th className="px-4 py-2 text-left font-medium">Name</th>
-                        <th className="px-4 py-2 text-right font-medium">Amount</th>
-                        <th className="px-4 py-2 text-left font-medium">Scope</th>
-                        <th className="px-4 py-2 text-center font-medium">Active</th>
-                        <th className="px-4 py-2" />
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Name</TableHead>
+                        <TableHead className="text-right">Amount</TableHead>
+                        <TableHead>Scope</TableHead>
+                        <TableHead className="text-center">Active</TableHead>
+                        <TableHead />
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
                       {items.map((item) => (
-                        <tr key={item.id} className="hover:bg-muted/20">
-                          <td className="px-4 py-2 font-medium">{item.name}</td>
-                          <td className="px-4 py-2 text-right tabular-nums">
+                        <TableRow key={item.id}>
+                          <TableCell className="font-medium">{item.name}</TableCell>
+                          <TableCell className="text-right tabular-nums">
                             {formatKobo(item.amount)}
-                          </td>
-                          <td className="px-4 py-2 text-muted-foreground text-xs">
+                          </TableCell>
+                          <TableCell className="text-xs text-muted-foreground">
                             {scopeLabel(item, levels, arms, years, terms)}
-                          </td>
-                          <td className="px-4 py-2 text-center">
+                          </TableCell>
+                          <TableCell className="text-center">
                             {item.active ? (
-                              <Check className="mx-auto h-4 w-4 text-green-600" />
+                              <Check className="mx-auto h-4 w-4 text-emerald-700 dark:text-emerald-400" />
                             ) : (
                               <X className="mx-auto h-4 w-4 text-muted-foreground" />
                             )}
-                          </td>
-                          <td className="px-4 py-2">
+                          </TableCell>
+                          <TableCell>
                             <div className="flex items-center justify-end gap-1">
                               <button
                                 onClick={() => openItemEdit(item)}
@@ -472,11 +472,11 @@ export default function FeesPage() {
                                 <Trash2 className="h-3.5 w-3.5" />
                               </button>
                             </div>
-                          </td>
-                        </tr>
+                          </TableCell>
+                        </TableRow>
                       ))}
-                    </tbody>
-                  </table>
+                    </TableBody>
+                  </Table>
                 </div>
               )}
             </div>
@@ -485,156 +485,154 @@ export default function FeesPage() {
       </div>
 
       {/* ── Item form modal ──────────────────────────────────────────── */}
-      {itemFormOpen && (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40">
-          <div className="w-full max-w-lg rounded-lg border bg-background p-6 shadow-xl">
-            <h3 className="mb-4 text-base font-semibold">
-              {editingItem ? "Edit fee item" : "New fee item"}
-            </h3>
-            <div className="space-y-3">
-              {/* Name */}
-              <div>
-                <label className="mb-1 block text-sm font-medium">Name</label>
-                <input
-                  autoFocus
-                  className="w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                  value={itemForm.name}
-                  onChange={(e) => setItemForm((f) => ({ ...f, name: e.target.value }))}
-                  placeholder="e.g. First Term Tuition"
-                  maxLength={200}
-                />
-              </div>
-
-              {/* Amount in naira */}
-              <div>
-                <label className="mb-1 block text-sm font-medium">
-                  Amount <span className="font-normal text-muted-foreground">(₦ naira)</span>
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  className="w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                  value={itemForm.amountNaira}
-                  onChange={(e) => setItemForm((f) => ({ ...f, amountNaira: e.target.value }))}
-                  placeholder="e.g. 15000"
-                />
-                {itemForm.amountNaira && !isNaN(parseFloat(itemForm.amountNaira)) && (
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    Stored as {(Math.round(parseFloat(itemForm.amountNaira) * 100)).toLocaleString()} kobo
-                  </p>
-                )}
-              </div>
-
-              {/* Scope section */}
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide pt-1">
-                Scope (all optional — leave blank for school-wide)
-              </p>
-
-              {/* Class level */}
-              <div>
-                <label className="mb-1 block text-sm font-medium">Class level</label>
-                <select
-                  className="w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                  value={itemForm.classLevelId}
-                  onChange={(e) =>
-                    setItemForm((f) => ({
-                      ...f,
-                      classLevelId: e.target.value,
-                      classArmId: "", // reset arm when level changes
-                    }))
-                  }
-                >
-                  <option value="">— Any level —</option>
-                  {levels.map((l) => (
-                    <option key={l.id} value={l.id}>
-                      {l.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Class arm — disabled until level selected */}
-              <div>
-                <label className="mb-1 block text-sm font-medium">Class arm</label>
-                <select
-                  className="w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
-                  value={itemForm.classArmId}
-                  onChange={(e) => setItemForm((f) => ({ ...f, classArmId: e.target.value }))}
-                  disabled={!itemForm.classLevelId}
-                >
-                  <option value="">— Any arm —</option>
-                  {arms.map((a) => (
-                    <option key={a.id} value={a.id}>
-                      {a.name}
-                    </option>
-                  ))}
-                </select>
-                {!itemForm.classLevelId && (
-                  <p className="mt-0.5 text-xs text-muted-foreground">Select a class level first.</p>
-                )}
-              </div>
-
-              {/* Academic year */}
-              <div>
-                <label className="mb-1 block text-sm font-medium">Academic year</label>
-                <select
-                  className="w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                  value={itemForm.academicYearId}
-                  onChange={(e) =>
-                    setItemForm((f) => ({
-                      ...f,
-                      academicYearId: e.target.value,
-                      termId: "", // reset term when year changes
-                    }))
-                  }
-                >
-                  <option value="">— Any year —</option>
-                  {years.map((y) => (
-                    <option key={y.id} value={y.id}>
-                      {y.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Term — disabled until year selected */}
-              <div>
-                <label className="mb-1 block text-sm font-medium">Term</label>
-                <select
-                  className="w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
-                  value={itemForm.termId}
-                  onChange={(e) => setItemForm((f) => ({ ...f, termId: e.target.value }))}
-                  disabled={!itemForm.academicYearId}
-                >
-                  <option value="">— Any term —</option>
-                  {terms.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.name}
-                    </option>
-                  ))}
-                </select>
-                {!itemForm.academicYearId && (
-                  <p className="mt-0.5 text-xs text-muted-foreground">Select an academic year first.</p>
-                )}
-              </div>
+      <Dialog open={itemFormOpen} onOpenChange={setItemFormOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{editingItem ? "Edit fee item" : "New fee item"}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            {/* Name */}
+            <div>
+              <label className="mb-1 block text-sm font-medium text-foreground">Name</label>
+              <input
+                autoFocus
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                value={itemForm.name}
+                onChange={(e) => setItemForm((f) => ({ ...f, name: e.target.value }))}
+                placeholder="e.g. First Term Tuition"
+                maxLength={200}
+              />
             </div>
 
-            <div className="mt-5 flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setItemFormOpen(false)}>
-                Cancel
-              </Button>
-              <Button
-                onClick={() => void saveItem()}
-                disabled={itemSaving || !itemForm.name.trim() || !itemForm.amountNaira}
+            {/* Amount in naira */}
+            <div>
+              <label className="mb-1 block text-sm font-medium text-foreground">
+                Amount <span className="font-normal text-muted-foreground">(₦ naira)</span>
+              </label>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                value={itemForm.amountNaira}
+                onChange={(e) => setItemForm((f) => ({ ...f, amountNaira: e.target.value }))}
+                placeholder="e.g. 15000"
+              />
+              {itemForm.amountNaira && !isNaN(parseFloat(itemForm.amountNaira)) && (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Stored as {(Math.round(parseFloat(itemForm.amountNaira) * 100)).toLocaleString()} kobo
+                </p>
+              )}
+            </div>
+
+            {/* Scope section */}
+            <p className="pt-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Scope (all optional — leave blank for school-wide)
+            </p>
+
+            {/* Class level */}
+            <div>
+              <label className="mb-1 block text-sm font-medium text-foreground">Class level</label>
+              <select
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                value={itemForm.classLevelId}
+                onChange={(e) =>
+                  setItemForm((f) => ({
+                    ...f,
+                    classLevelId: e.target.value,
+                    classArmId: "", // reset arm when level changes
+                  }))
+                }
               >
-                {itemSaving && <Loader2 className="mr-1 h-4 w-4 animate-spin" />}
-                Save
-              </Button>
+                <option value="">— Any level —</option>
+                {levels.map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {l.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Class arm — disabled until level selected */}
+            <div>
+              <label className="mb-1 block text-sm font-medium text-foreground">Class arm</label>
+              <select
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
+                value={itemForm.classArmId}
+                onChange={(e) => setItemForm((f) => ({ ...f, classArmId: e.target.value }))}
+                disabled={!itemForm.classLevelId}
+              >
+                <option value="">— Any arm —</option>
+                {arms.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.name}
+                  </option>
+                ))}
+              </select>
+              {!itemForm.classLevelId && (
+                <p className="mt-0.5 text-xs text-muted-foreground">Select a class level first.</p>
+              )}
+            </div>
+
+            {/* Academic year */}
+            <div>
+              <label className="mb-1 block text-sm font-medium text-foreground">Academic year</label>
+              <select
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                value={itemForm.academicYearId}
+                onChange={(e) =>
+                  setItemForm((f) => ({
+                    ...f,
+                    academicYearId: e.target.value,
+                    termId: "", // reset term when year changes
+                  }))
+                }
+              >
+                <option value="">— Any year —</option>
+                {years.map((y) => (
+                  <option key={y.id} value={y.id}>
+                    {y.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Term — disabled until year selected */}
+            <div>
+              <label className="mb-1 block text-sm font-medium text-foreground">Term</label>
+              <select
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
+                value={itemForm.termId}
+                onChange={(e) => setItemForm((f) => ({ ...f, termId: e.target.value }))}
+                disabled={!itemForm.academicYearId}
+              >
+                <option value="">— Any term —</option>
+                {terms.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name}
+                  </option>
+                ))}
+              </select>
+              {!itemForm.academicYearId && (
+                <p className="mt-0.5 text-xs text-muted-foreground">Select an academic year first.</p>
+              )}
             </div>
           </div>
-        </div>
-      )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setItemFormOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              onClick={() => void saveItem()}
+              disabled={itemSaving || !itemForm.name.trim() || !itemForm.amountNaira}
+            >
+              {itemSaving && <Loader2 className="mr-1 h-4 w-4 animate-spin" />}
+              Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

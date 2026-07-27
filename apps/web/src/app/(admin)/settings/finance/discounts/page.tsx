@@ -11,6 +11,10 @@ import type {
   TermDto,
 } from "@school-kit/types";
 
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { listAcademicYears, listTerms } from "@/lib/academic-years/academic-years-api";
 import { listFeeCategories, listFeeItems } from "@/lib/finance/fee-catalog-api";
 import { formatKobo } from "@/lib/finance/format";
@@ -50,6 +54,9 @@ const EMPTY_FORM: FormState = {
   yearId: "",
   termId: "",
 };
+
+const SELECT_CLASSES =
+  "w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50";
 
 export default function DiscountsPage() {
   // Reference data (loaded on mount)
@@ -204,22 +211,18 @@ export default function DiscountsPage() {
   const selectedStudent = students.find((s) => s.id === selectedStudentId);
 
   return (
-    <div className="p-6 space-y-6 max-w-5xl">
-      <h1 className="text-2xl font-semibold">Discount Rules</h1>
-      <p className="text-sm text-gray-500">
+    <div className="max-w-5xl space-y-6 p-6">
+      <h1 className="font-serif text-2xl font-medium tracking-tight text-foreground">Discount Rules</h1>
+      <p className="text-sm text-muted-foreground">
         Manually assign fee discounts to individual students. Each rule targets
         one fee item or one fee category for a specified duration.
       </p>
 
       {/* Student picker */}
-      <div className="flex gap-3 items-end">
+      <div className="flex items-end gap-3">
         <div className="w-80">
-          <label className="block text-sm font-medium mb-1">Student</label>
-          <select
-            className="w-full border rounded px-3 py-2 text-sm"
-            value={selectedStudentId}
-            onChange={(e) => setSelectedStudentId(e.target.value)}
-          >
+          <label className="mb-1 block text-sm font-medium text-foreground">Student</label>
+          <select className={SELECT_CLASSES} value={selectedStudentId} onChange={(e) => setSelectedStudentId(e.target.value)}>
             <option value="">— choose a student —</option>
             {students.map((s) => (
               <option key={s.id} value={s.id}>
@@ -229,359 +232,330 @@ export default function DiscountsPage() {
           </select>
         </div>
         {selectedStudentId && (
-          <button
+          <Button
             onClick={() => {
               setForm(EMPTY_FORM);
               setFormError(null);
               setShowForm(true);
             }}
-            className="px-4 py-2 bg-blue-600 text-white text-sm rounded hover:bg-blue-700"
           >
             Assign discount
-          </button>
+          </Button>
         )}
       </div>
 
       {/* Rules table */}
       {selectedStudentId && (
-        <div className="border rounded-lg overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="text-left px-4 py-2 font-medium">Name</th>
-                <th className="text-left px-4 py-2 font-medium">Type</th>
-                <th className="text-left px-4 py-2 font-medium">Value</th>
-                <th className="text-left px-4 py-2 font-medium">Scope</th>
-                <th className="text-left px-4 py-2 font-medium">Duration</th>
-                <th className="text-left px-4 py-2 font-medium">Status</th>
-                <th className="w-20" />
-              </tr>
-            </thead>
-            <tbody>
+        <div className="rounded-lg border">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Name</TableHead>
+                <TableHead>Type</TableHead>
+                <TableHead>Value</TableHead>
+                <TableHead>Scope</TableHead>
+                <TableHead>Duration</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead className="w-20" />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {loadingRules && (
-                <tr>
-                  <td colSpan={7} className="px-4 py-6 text-center text-gray-400 text-sm">
+                <TableRow>
+                  <TableCell colSpan={7} className="py-6 text-center text-muted-foreground">
                     Loading…
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               )}
               {!loadingRules && rules.length === 0 && (
-                <tr>
-                  <td colSpan={7} className="px-4 py-6 text-center text-gray-400 text-sm">
+                <TableRow>
+                  <TableCell colSpan={7} className="py-6 text-center text-muted-foreground">
                     No discount rules assigned to this student.
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               )}
               {rules.map((rule) => (
-                <tr key={rule.id} className="border-t hover:bg-gray-50">
-                  <td className="px-4 py-2">{rule.name}</td>
-                  <td className="px-4 py-2 text-gray-600">
+                <TableRow key={rule.id}>
+                  <TableCell>{rule.name}</TableCell>
+                  <TableCell className="text-muted-foreground">
                     {rule.discountType === "PERCENTAGE"
                       ? "Percentage"
                       : rule.discountType === "FIXED_AMOUNT"
                       ? "Fixed amount"
                       : "Full waiver"}
-                  </td>
-                  <td className="px-4 py-2 font-mono">{formatValue(rule)}</td>
-                  <td className="px-4 py-2 text-gray-600">{scopeLabel(rule)}</td>
-                  <td className="px-4 py-2 text-gray-600">{durationLabel(rule)}</td>
-                  <td className="px-4 py-2">
-                    <span
-                      className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${
-                        rule.active
-                          ? "bg-green-100 text-green-700"
-                          : "bg-gray-100 text-gray-500"
-                      }`}
-                    >
+                  </TableCell>
+                  <TableCell className="font-mono tabular-nums">{formatValue(rule)}</TableCell>
+                  <TableCell className="text-muted-foreground">{scopeLabel(rule)}</TableCell>
+                  <TableCell className="text-muted-foreground">{durationLabel(rule)}</TableCell>
+                  <TableCell>
+                    <Badge variant={rule.active ? "success" : "muted"}>
                       {rule.active ? "Active" : "Inactive"}
-                    </span>
-                  </td>
-                  <td className="px-4 py-2">
+                    </Badge>
+                  </TableCell>
+                  <TableCell>
                     {rule.active && (
                       <button
                         onClick={() => handleDeactivate(rule.id)}
-                        className="text-red-500 hover:text-red-700 text-xs"
+                        className="text-xs text-destructive hover:text-destructive/80"
                       >
                         Deactivate
                       </button>
                     )}
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
       )}
 
       {/* Assign discount modal */}
-      {showForm && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg p-6 space-y-4 overflow-y-auto max-h-[90vh]">
-            <div className="flex justify-between items-center">
-              <h2 className="font-semibold text-lg">
-                Assign discount —{" "}
-                {selectedStudent
-                  ? `${selectedStudent.firstName} ${selectedStudent.lastName}`
-                  : "Student"}
-              </h2>
-              <button
-                onClick={() => setShowForm(false)}
-                className="text-gray-400 hover:text-gray-600 text-2xl leading-none"
-              >
-                ×
-              </button>
+      <Dialog open={showForm} onOpenChange={setShowForm}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>
+              Assign discount —{" "}
+              {selectedStudent
+                ? `${selectedStudent.firstName} ${selectedStudent.lastName}`
+                : "Student"}
+            </DialogTitle>
+          </DialogHeader>
+
+          <form onSubmit={handleSubmit} className="space-y-4">
+            {/* Name */}
+            <div>
+              <label className="mb-1 block text-sm font-medium text-foreground">
+                Label / description
+              </label>
+              <input
+                required
+                className={SELECT_CLASSES}
+                placeholder="e.g. Staff child reduction, Scholarship"
+                value={form.name}
+                onChange={(e) => patch({ name: e.target.value })}
+              />
             </div>
 
-            <form onSubmit={handleSubmit} className="space-y-4">
-              {/* Name */}
-              <div>
-                <label className="block text-sm font-medium mb-1">
-                  Label / description
-                </label>
-                <input
-                  required
-                  className="w-full border rounded px-3 py-2 text-sm"
-                  placeholder="e.g. Staff child reduction, Scholarship"
-                  value={form.name}
-                  onChange={(e) => patch({ name: e.target.value })}
-                />
-              </div>
-
-              {/* Discount type */}
-              <div>
-                <label className="block text-sm font-medium mb-2">
-                  Discount type
-                </label>
-                <div className="flex gap-4">
-                  {(
-                    [
-                      ["PERCENTAGE", "Percentage"],
-                      ["FIXED_AMOUNT", "Fixed amount"],
-                      ["FULL_WAIVER", "Full waiver"],
-                    ] as const
-                  ).map(([val, label]) => (
-                    <label
-                      key={val}
-                      className="flex items-center gap-1.5 text-sm cursor-pointer"
-                    >
-                      <input
-                        type="radio"
-                        name="discountType"
-                        value={val}
-                        checked={form.discountType === val}
-                        onChange={() =>
-                          patch({ discountType: val, valuePercent: "", valueNaira: "" })
-                        }
-                      />
-                      {label}
-                    </label>
-                  ))}
-                </div>
-              </div>
-
-              {/* Value — conditional on discount type */}
-              {form.discountType === "PERCENTAGE" && (
-                <div>
-                  <label className="block text-sm font-medium mb-1">
-                    Discount (%)
-                  </label>
-                  <div className="flex items-center gap-2">
+            {/* Discount type */}
+            <div>
+              <label className="mb-2 block text-sm font-medium text-foreground">
+                Discount type
+              </label>
+              <div className="flex gap-4">
+                {(
+                  [
+                    ["PERCENTAGE", "Percentage"],
+                    ["FIXED_AMOUNT", "Fixed amount"],
+                    ["FULL_WAIVER", "Full waiver"],
+                  ] as const
+                ).map(([val, label]) => (
+                  <label key={val} className="flex cursor-pointer items-center gap-1.5 text-sm text-foreground">
                     <input
-                      required
-                      type="number"
-                      min="0.01"
-                      max="99.99"
-                      step="0.01"
-                      className="w-28 border rounded px-3 py-2 text-sm"
-                      placeholder="10"
-                      value={form.valuePercent}
-                      onChange={(e) => patch({ valuePercent: e.target.value })}
+                      type="radio"
+                      name="discountType"
+                      value={val}
+                      checked={form.discountType === val}
+                      onChange={() =>
+                        patch({ discountType: val, valuePercent: "", valueNaira: "" })
+                      }
                     />
-                    <span className="text-xs text-gray-500">
-                      {form.valuePercent
-                        ? `= ${Math.round(parseFloat(form.valuePercent) * 100)} basis points`
-                        : "(max 99.99%)"}
-                    </span>
-                  </div>
-                </div>
-              )}
-
-              {form.discountType === "FIXED_AMOUNT" && (
-                <div>
-                  <label className="block text-sm font-medium mb-1">
-                    Amount (₦)
+                    {label}
                   </label>
+                ))}
+              </div>
+            </div>
+
+            {/* Value — conditional on discount type */}
+            {form.discountType === "PERCENTAGE" && (
+              <div>
+                <label className="mb-1 block text-sm font-medium text-foreground">
+                  Discount (%)
+                </label>
+                <div className="flex items-center gap-2">
                   <input
                     required
                     type="number"
                     min="0.01"
+                    max="99.99"
                     step="0.01"
-                    className="w-44 border rounded px-3 py-2 text-sm"
-                    placeholder="5000.00"
-                    value={form.valueNaira}
-                    onChange={(e) => patch({ valueNaira: e.target.value })}
+                    className={`w-28 ${SELECT_CLASSES}`}
+                    placeholder="10"
+                    value={form.valuePercent}
+                    onChange={(e) => patch({ valuePercent: e.target.value })}
                   />
+                  <span className="text-xs text-muted-foreground">
+                    {form.valuePercent
+                      ? `= ${Math.round(parseFloat(form.valuePercent) * 100)} basis points`
+                      : "(max 99.99%)"}
+                  </span>
                 </div>
-              )}
+              </div>
+            )}
 
-              {/* Target: fee item or category */}
+            {form.discountType === "FIXED_AMOUNT" && (
               <div>
-                <label className="block text-sm font-medium mb-2">
-                  Applies to
+                <label className="mb-1 block text-sm font-medium text-foreground">
+                  Amount (₦)
                 </label>
-                <div className="flex gap-4 mb-2">
-                  <label className="flex items-center gap-1.5 text-sm cursor-pointer">
-                    <input
-                      type="radio"
-                      name="targetType"
-                      value="feeItem"
-                      checked={form.targetType === "feeItem"}
-                      onChange={() =>
-                        patch({ targetType: "feeItem", feeCategoryId: "" })
-                      }
-                    />
-                    Specific fee item
-                  </label>
-                  <label className="flex items-center gap-1.5 text-sm cursor-pointer">
-                    <input
-                      type="radio"
-                      name="targetType"
-                      value="feeCategory"
-                      checked={form.targetType === "feeCategory"}
-                      onChange={() =>
-                        patch({ targetType: "feeCategory", feeItemId: "" })
-                      }
-                    />
-                    Entire fee category
-                  </label>
-                </div>
+                <input
+                  required
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  className={`w-44 ${SELECT_CLASSES}`}
+                  placeholder="5000.00"
+                  value={form.valueNaira}
+                  onChange={(e) => patch({ valueNaira: e.target.value })}
+                />
+              </div>
+            )}
 
-                {form.targetType === "feeItem" && (
-                  <select
-                    required
-                    className="w-full border rounded px-3 py-2 text-sm"
-                    value={form.feeItemId}
-                    onChange={(e) => patch({ feeItemId: e.target.value })}
-                  >
-                    <option value="">— select fee item —</option>
-                    {feeItems.map((i) => (
-                      <option key={i.id} value={i.id}>
-                        {i.name} ({formatKobo(i.amount)})
-                      </option>
-                    ))}
-                  </select>
-                )}
-
-                {form.targetType === "feeCategory" && (
-                  <select
-                    required
-                    className="w-full border rounded px-3 py-2 text-sm"
-                    value={form.feeCategoryId}
-                    onChange={(e) => patch({ feeCategoryId: e.target.value })}
-                  >
-                    <option value="">— select fee category —</option>
-                    {feeCategories.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name}
-                      </option>
-                    ))}
-                  </select>
-                )}
+            {/* Target: fee item or category */}
+            <div>
+              <label className="mb-2 block text-sm font-medium text-foreground">
+                Applies to
+              </label>
+              <div className="mb-2 flex gap-4">
+                <label className="flex cursor-pointer items-center gap-1.5 text-sm text-foreground">
+                  <input
+                    type="radio"
+                    name="targetType"
+                    value="feeItem"
+                    checked={form.targetType === "feeItem"}
+                    onChange={() =>
+                      patch({ targetType: "feeItem", feeCategoryId: "" })
+                    }
+                  />
+                  Specific fee item
+                </label>
+                <label className="flex cursor-pointer items-center gap-1.5 text-sm text-foreground">
+                  <input
+                    type="radio"
+                    name="targetType"
+                    value="feeCategory"
+                    checked={form.targetType === "feeCategory"}
+                    onChange={() =>
+                      patch({ targetType: "feeCategory", feeItemId: "" })
+                    }
+                  />
+                  Entire fee category
+                </label>
               </div>
 
-              {/* Duration */}
-              <div>
-                <label className="block text-sm font-medium mb-2">Duration</label>
-                <div className="flex gap-4 mb-2">
-                  {(
-                    [
-                      ["TERM", "Single term"],
-                      ["SESSION", "Full session"],
-                      ["LIFETIME", "Lifetime"],
-                    ] as const
-                  ).map(([val, label]) => (
-                    <label
-                      key={val}
-                      className="flex items-center gap-1.5 text-sm cursor-pointer"
-                    >
-                      <input
-                        type="radio"
-                        name="duration"
-                        value={val}
-                        checked={form.duration === val}
-                        onChange={() =>
-                          patch({ duration: val, yearId: "", termId: "" })
-                        }
-                      />
-                      {label}
-                    </label>
+              {form.targetType === "feeItem" && (
+                <select
+                  required
+                  className={SELECT_CLASSES}
+                  value={form.feeItemId}
+                  onChange={(e) => patch({ feeItemId: e.target.value })}
+                >
+                  <option value="">— select fee item —</option>
+                  {feeItems.map((i) => (
+                    <option key={i.id} value={i.id}>
+                      {i.name} ({formatKobo(i.amount)})
+                    </option>
                   ))}
-                </div>
+                </select>
+              )}
 
-                {(form.duration === "TERM" || form.duration === "SESSION") && (
-                  <div className="space-y-2">
+              {form.targetType === "feeCategory" && (
+                <select
+                  required
+                  className={SELECT_CLASSES}
+                  value={form.feeCategoryId}
+                  onChange={(e) => patch({ feeCategoryId: e.target.value })}
+                >
+                  <option value="">— select fee category —</option>
+                  {feeCategories.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+
+            {/* Duration */}
+            <div>
+              <label className="mb-2 block text-sm font-medium text-foreground">Duration</label>
+              <div className="mb-2 flex gap-4">
+                {(
+                  [
+                    ["TERM", "Single term"],
+                    ["SESSION", "Full session"],
+                    ["LIFETIME", "Lifetime"],
+                  ] as const
+                ).map(([val, label]) => (
+                  <label key={val} className="flex cursor-pointer items-center gap-1.5 text-sm text-foreground">
+                    <input
+                      type="radio"
+                      name="duration"
+                      value={val}
+                      checked={form.duration === val}
+                      onChange={() =>
+                        patch({ duration: val, yearId: "", termId: "" })
+                      }
+                    />
+                    {label}
+                  </label>
+                ))}
+              </div>
+
+              {(form.duration === "TERM" || form.duration === "SESSION") && (
+                <div className="space-y-2">
+                  <select
+                    required
+                    className={SELECT_CLASSES}
+                    value={form.yearId}
+                    onChange={(e) =>
+                      patch({ yearId: e.target.value, termId: "" })
+                    }
+                  >
+                    <option value="">— select academic year —</option>
+                    {years.map((y) => (
+                      <option key={y.id} value={y.id}>
+                        {y.label}
+                      </option>
+                    ))}
+                  </select>
+
+                  {form.duration === "TERM" && (
                     <select
                       required
-                      className="w-full border rounded px-3 py-2 text-sm"
-                      value={form.yearId}
-                      onChange={(e) =>
-                        patch({ yearId: e.target.value, termId: "" })
-                      }
+                      disabled={!form.yearId}
+                      className={SELECT_CLASSES}
+                      value={form.termId}
+                      onChange={(e) => patch({ termId: e.target.value })}
                     >
-                      <option value="">— select academic year —</option>
-                      {years.map((y) => (
-                        <option key={y.id} value={y.id}>
-                          {y.label}
+                      <option value="">
+                        {form.yearId ? "— select term —" : "Select a year first"}
+                      </option>
+                      {terms.map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.name}
                         </option>
                       ))}
                     </select>
-
-                    {form.duration === "TERM" && (
-                      <select
-                        required
-                        disabled={!form.yearId}
-                        className="w-full border rounded px-3 py-2 text-sm disabled:bg-gray-100 disabled:text-gray-400"
-                        value={form.termId}
-                        onChange={(e) => patch({ termId: e.target.value })}
-                      >
-                        <option value="">
-                          {form.yearId ? "— select term —" : "Select a year first"}
-                        </option>
-                        {terms.map((t) => (
-                          <option key={t.id} value={t.id}>
-                            {t.name}
-                          </option>
-                        ))}
-                      </select>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              {formError && (
-                <p className="text-sm text-red-500">{formError}</p>
+                  )}
+                </div>
               )}
+            </div>
 
-              <div className="flex justify-end gap-3 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setShowForm(false)}
-                  className="px-4 py-2 border rounded text-sm hover:bg-gray-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  className="px-4 py-2 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 disabled:opacity-50"
-                >
-                  {submitting ? "Saving…" : "Assign discount"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+            {formError && (
+              <p className="text-sm text-destructive">{formError}</p>
+            )}
+
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setShowForm(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={submitting}>
+                {submitting ? "Saving…" : "Assign discount"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

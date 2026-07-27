@@ -9,6 +9,7 @@ import type { ExpenseCategoryDto, ExpenseDto } from "@school-kit/types";
 import { ExpenseCategoriesModal } from "@/components/finance/expense-categories-modal";
 import { ExpenseFormModal } from "@/components/finance/expense-form-modal";
 import { Button } from "@/components/ui/button";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ApiError } from "@/lib/api-client";
 import {
   createExpense,
@@ -165,7 +166,7 @@ export default function ExpensesPage() {
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-6">
       <header className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Expenses</h1>
+          <h1 className="font-serif text-2xl font-medium tracking-tight text-foreground">Expenses</h1>
           <p className="text-sm text-muted-foreground">
             Record school outgoings — utilities, repairs, supplies, and anything
             else that feeds the P&amp;L.
@@ -217,25 +218,25 @@ export default function ExpensesPage() {
         </div>
       ) : (
         <div className="rounded-lg border">
-          <table className="w-full text-sm">
-            <thead className="border-b bg-muted/40">
-              <tr>
-                <th className="px-4 py-2 text-left font-medium">Date</th>
-                <th className="px-4 py-2 text-left font-medium">Category</th>
-                <th className="px-4 py-2 text-right font-medium">Amount</th>
-                <th className="px-4 py-2 text-left font-medium">Description</th>
-                <th className="px-4 py-2 text-center font-medium">Receipt</th>
-                <th className="px-4 py-2" />
-              </tr>
-            </thead>
-            <tbody className="divide-y">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Date</TableHead>
+                <TableHead>Category</TableHead>
+                <TableHead className="text-right">Amount</TableHead>
+                <TableHead>Description</TableHead>
+                <TableHead className="text-center">Receipt</TableHead>
+                <TableHead />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {expenses.map((expense) => (
-                <tr key={expense.id} className="hover:bg-muted/20">
-                  <td className="px-4 py-2 whitespace-nowrap">{formatDate(expense.incurredAt)}</td>
-                  <td className="px-4 py-2">{categoryName(expense.categoryId)}</td>
-                  <td className="px-4 py-2 text-right tabular-nums">{formatKobo(expense.amount)}</td>
-                  <td className="px-4 py-2 text-muted-foreground">{expense.description || "—"}</td>
-                  <td className="px-4 py-2 text-center">
+                <TableRow key={expense.id}>
+                  <TableCell className="whitespace-nowrap">{formatDate(expense.incurredAt)}</TableCell>
+                  <TableCell>{categoryName(expense.categoryId)}</TableCell>
+                  <TableCell className="text-right tabular-nums">{formatKobo(expense.amount)}</TableCell>
+                  <TableCell className="text-muted-foreground">{expense.description || "—"}</TableCell>
+                  <TableCell className="text-center">
                     {expense.receiptUrl ? (
                       <button
                         type="button"
@@ -265,8 +266,8 @@ export default function ExpensesPage() {
                         )}
                       </button>
                     )}
-                  </td>
-                  <td className="px-4 py-2">
+                  </TableCell>
+                  <TableCell>
                     <div className="flex items-center justify-end gap-1">
                       <button
                         onClick={() => openEdit(expense)}
@@ -283,11 +284,11 @@ export default function ExpensesPage() {
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>
                     </div>
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
       )}
 

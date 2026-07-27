@@ -80,8 +80,8 @@ export function TeacherSidebar() {
   }
 
   return (
-    <aside className="hidden w-60 shrink-0 border-r bg-card md:flex md:flex-col">
-      <div className="flex h-14 items-center border-b px-4 font-semibold">
+    <aside className="hidden w-60 shrink-0 border-r border-border bg-card md:flex md:flex-col">
+      <div className="flex h-14 items-center border-b border-border px-4 font-serif text-lg font-medium text-foreground">
         School Kit
       </div>
       <nav className="flex flex-1 flex-col gap-1 p-2">
