@@ -5,7 +5,9 @@ import Link from "next/link";
 
 import type { AcademicYearDto } from "@school-kit/types";
 
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 interface Props {
   years: AcademicYearDto[];
@@ -30,41 +32,37 @@ export function AcademicYearsTable({ years, onEdit, onSetCurrent, onDelete }: Pr
 
   return (
     <div className="overflow-hidden rounded-md border">
-      <table className="w-full text-sm">
-        <thead className="bg-muted/50 text-left text-xs uppercase text-muted-foreground">
-          <tr>
-            <th className="px-3 py-2 font-medium">Label</th>
-            <th className="px-3 py-2 font-medium">Starts</th>
-            <th className="px-3 py-2 font-medium">Ends</th>
-            <th className="px-3 py-2 font-medium">Status</th>
-            <th className="px-3 py-2 font-medium">Actions</th>
-          </tr>
-        </thead>
-        <tbody>
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Label</TableHead>
+            <TableHead>Starts</TableHead>
+            <TableHead>Ends</TableHead>
+            <TableHead>Status</TableHead>
+            <TableHead>Actions</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
           {years.map((y) => (
-            <tr key={y.id} className="border-t">
-              <td className="px-3 py-2 font-medium">
+            <TableRow key={y.id}>
+              <TableCell className="font-medium">
                 <Link
                   href={`/settings/academic/years/${y.id}/terms`}
                   className="hover:underline"
                 >
                   {y.label}
                 </Link>
-              </td>
-              <td className="px-3 py-2 text-muted-foreground">{fmtDate(y.startDate)}</td>
-              <td className="px-3 py-2 text-muted-foreground">{fmtDate(y.endDate)}</td>
-              <td className="px-3 py-2">
+              </TableCell>
+              <TableCell className="text-muted-foreground">{fmtDate(y.startDate)}</TableCell>
+              <TableCell className="text-muted-foreground">{fmtDate(y.endDate)}</TableCell>
+              <TableCell>
                 {y.isCurrent ? (
-                  <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs text-emerald-700">
-                    Current
-                  </span>
+                  <Badge variant="success">Current</Badge>
                 ) : (
-                  <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-                    Not current
-                  </span>
+                  <Badge variant="muted">Not current</Badge>
                 )}
-              </td>
-              <td className="flex gap-1 px-3 py-2">
+              </TableCell>
+              <TableCell className="flex gap-1">
                 {!y.isCurrent && (
                   <Button
                     type="button"
@@ -100,11 +98,11 @@ export function AcademicYearsTable({ years, onEdit, onSetCurrent, onDelete }: Pr
                   <Trash2 className="mr-1 h-3 w-3" />
                   Delete
                 </Button>
-              </td>
-            </tr>
+              </TableCell>
+            </TableRow>
           ))}
-        </tbody>
-      </table>
+        </TableBody>
+      </Table>
     </div>
   );
 }

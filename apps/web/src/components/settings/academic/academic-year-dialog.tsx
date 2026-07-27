@@ -1,7 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Loader2, X } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
@@ -13,6 +13,7 @@ import {
 } from "@school-kit/types";
 
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ApiError } from "@/lib/api-client";
@@ -22,10 +23,10 @@ import {
 } from "@/lib/academic-years/academic-years-api";
 
 // Create-OR-edit dialog: when `existing` is undefined we POST, otherwise we
-// PATCH. Shape matches InviteAdminDialog (inline overlay, Escape closes,
-// backdrop click closes). The same pattern will be reused by Slice 2's
-// ClassLevel dialog and Slice 9's Enrollment dialog — keep behaviours
-// aligned across phase 1.
+// PATCH. Migrated onto the shared Dialog primitive (Phase 3 restyle) — was
+// an inline overlay predating it, same family as the Students/Staff BVN
+// modals migrated in Phase 2. ClassArm/ClassLevel/Subject/Term dialogs share
+// this exact shape and move onto Dialog in the same pass.
 //
 // Date inputs are HTML5 <input type="date">, which sends "YYYY-MM-DD"
 // strings. The Zod schema's z.coerce.date() converts to a Date at validate
@@ -72,17 +73,6 @@ export function AcademicYearDialog({ open, existing, onClose, onSaved }: Props) 
     }
   }, [open, existing, form]);
 
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [open, onClose]);
-
-  if (!open) return null;
-
   const onSubmit = form.handleSubmit(async (values) => {
     try {
       const input: CreateAcademicYearInput = {
@@ -118,30 +108,15 @@ export function AcademicYearDialog({ open, existing, onClose, onSaved }: Props) 
   });
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/30 p-4"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="ay-dialog-title"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
-      <div className="w-full max-w-md rounded-lg border bg-card p-6 shadow-lg">
-        <div className="mb-4 flex items-start justify-between">
-          <div>
-            <h2 id="ay-dialog-title" className="text-lg font-semibold">
-              {existing ? "Edit academic year" : "Add academic year"}
-            </h2>
-            <p className="text-sm text-muted-foreground">
-              Examples: <span className="font-mono">2025/2026</span>,{" "}
-              <span className="font-mono">2025-26</span>.
-            </p>
-          </div>
-          <Button type="button" variant="ghost" size="sm" onClick={onClose} aria-label="Close dialog">
-            <X className="h-4 w-4" />
-          </Button>
-        </div>
+    <Dialog open={open} onOpenChange={(next) => { if (!next) onClose(); }}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>{existing ? "Edit academic year" : "Add academic year"}</DialogTitle>
+          <p className="text-sm text-muted-foreground">
+            Examples: <span className="font-mono">2025/2026</span>,{" "}
+            <span className="font-mono">2025-26</span>.
+          </p>
+        </DialogHeader>
 
         <form onSubmit={onSubmit} className="flex flex-col gap-3" noValidate>
           <div className="flex flex-col gap-1">
@@ -195,7 +170,7 @@ export function AcademicYearDialog({ open, existing, onClose, onSaved }: Props) 
             </Button>
           </div>
         </form>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

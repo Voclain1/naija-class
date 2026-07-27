@@ -12,8 +12,10 @@ import {
   type ReplaceGradeBoundariesInput,
 } from "@school-kit/types";
 
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ApiError } from "@/lib/api-client";
 import { replaceBoundaries } from "@/lib/grading/grading-api";
 import { cn } from "@/lib/utils";
@@ -165,22 +167,22 @@ export function BoundariesEditor({ boundaries }: Props) {
       )}
 
       <div className="overflow-hidden rounded-md border">
-        <table className="w-full text-sm">
-          <thead className="bg-muted/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
-            <tr>
-              <th className="px-3 py-2 font-medium">Grade</th>
-              <th className="px-3 py-2 font-medium">Min</th>
-              <th className="px-3 py-2 font-medium">Max</th>
-              <th className="px-3 py-2 font-medium">Remark</th>
-              <th className="px-3 py-2" />
-            </tr>
-          </thead>
-          <tbody>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Grade</TableHead>
+              <TableHead>Min</TableHead>
+              <TableHead>Max</TableHead>
+              <TableHead>Remark</TableHead>
+              <TableHead />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {fields.map((field, index) => {
               const rowErrors = form.formState.errors.boundaries?.[index];
               return (
-                <tr key={field.id} className="border-t align-top">
-                  <td className="px-3 py-2">
+                <TableRow key={field.id} className="align-top">
+                  <TableCell>
                     <Input
                       aria-label={`Band ${index + 1} grade`}
                       className="w-20"
@@ -191,8 +193,8 @@ export function BoundariesEditor({ boundaries }: Props) {
                     {rowErrors?.letter && (
                       <p className="mt-1 text-xs text-destructive">{rowErrors.letter.message}</p>
                     )}
-                  </td>
-                  <td className="px-3 py-2">
+                  </TableCell>
+                  <TableCell>
                     <Input
                       aria-label={`Band ${index + 1} minimum`}
                       inputMode="numeric"
@@ -204,8 +206,8 @@ export function BoundariesEditor({ boundaries }: Props) {
                     {rowErrors?.minScore && (
                       <p className="mt-1 text-xs text-destructive">{rowErrors.minScore.message}</p>
                     )}
-                  </td>
-                  <td className="px-3 py-2">
+                  </TableCell>
+                  <TableCell>
                     <Input
                       aria-label={`Band ${index + 1} maximum`}
                       inputMode="numeric"
@@ -217,8 +219,8 @@ export function BoundariesEditor({ boundaries }: Props) {
                     {rowErrors?.maxScore && (
                       <p className="mt-1 text-xs text-destructive">{rowErrors.maxScore.message}</p>
                     )}
-                  </td>
-                  <td className="px-3 py-2">
+                  </TableCell>
+                  <TableCell>
                     <Input
                       aria-label={`Band ${index + 1} remark`}
                       placeholder="Excellent"
@@ -228,8 +230,8 @@ export function BoundariesEditor({ boundaries }: Props) {
                     {rowErrors?.remark && (
                       <p className="mt-1 text-xs text-destructive">{rowErrors.remark.message}</p>
                     )}
-                  </td>
-                  <td className="px-3 py-2">
+                  </TableCell>
+                  <TableCell>
                     <button
                       type="button"
                       aria-label={`Remove band ${index + 1}`}
@@ -239,12 +241,12 @@ export function BoundariesEditor({ boundaries }: Props) {
                     >
                       <Trash2 className="h-4 w-4" />
                     </button>
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               );
             })}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-4">
@@ -259,16 +261,17 @@ export function BoundariesEditor({ boundaries }: Props) {
             Add band
           </Button>
 
-          <span
+          <Badge
+            variant="outline"
             className={cn(
-              "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-sm font-medium",
+              "gap-1.5 border-transparent text-sm",
               tilingOk ? "bg-emerald-50 text-emerald-700" : "bg-destructive/10 text-destructive",
             )}
             aria-live="polite"
           >
             {tilingOk ? <Check className="h-4 w-4" /> : <X className="h-4 w-4" />}
             {tilingOk ? "Ranges tile 0–100" : `Ranges don't tile 0–100${tilingError ? ` — ${tilingError}` : ""}`}
-          </span>
+          </Badge>
         </div>
 
         <Button type="submit" disabled={!tilingOk || form.formState.isSubmitting}>

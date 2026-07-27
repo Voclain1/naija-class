@@ -2,11 +2,18 @@ import { CircleDashed, Download, Loader2, TriangleAlert } from "lucide-react";
 
 import type { ReportCardPdfStatusDto, ReportCardStatusDto } from "@school-kit/types";
 
+import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
-const PILL = "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium";
+const PILL = "gap-1.5 border-transparent";
 
 // Workflow status badge — renders every state in the slice-6 approval lifecycle.
+// Migrated onto the shared Badge primitive (Phase 3 restyle) — the tone map
+// below is untouched from before the migration. Every color here signals a
+// real workflow state (draft vs. reviewed vs. approved vs. released); the
+// swap changes only the wrapper (rounded-md pill → shared Badge component,
+// same shape unification Students/Staff went through), never which color
+// maps to which state.
 export function WorkflowStatusBadge({ status }: { status: ReportCardStatusDto }) {
   const label: Record<ReportCardStatusDto, string> = {
     DRAFT: "Draft",
@@ -23,39 +30,44 @@ export function WorkflowStatusBadge({ status }: { status: ReportCardStatusDto })
     PRINCIPAL_APPROVED: "bg-violet-50 text-violet-700",
     RELEASED: "bg-emerald-50 text-emerald-700",
   };
-  return <span className={cn(PILL, tone[status])}>{label[status]}</span>;
+  return (
+    <Badge variant="outline" className={cn(PILL, tone[status])}>
+      {label[status]}
+    </Badge>
+  );
 }
 
-// PDF generation status badge — the live signal the board polls on.
+// PDF generation status badge — the live signal the board polls on. Same
+// migration, same discipline: colors and icons preserved exactly per state.
 export function PdfStatusBadge({ status }: { status: ReportCardPdfStatusDto }) {
   switch (status) {
     case "PENDING":
       return (
-        <span className={cn(PILL, "bg-muted text-muted-foreground")}>
+        <Badge variant="outline" className={cn(PILL, "bg-muted text-muted-foreground")}>
           <CircleDashed className="h-3.5 w-3.5" />
           Not generated
-        </span>
+        </Badge>
       );
     case "GENERATING":
       return (
-        <span className={cn(PILL, "bg-amber-50 text-amber-700")}>
+        <Badge variant="outline" className={cn(PILL, "bg-amber-50 text-amber-700")}>
           <Loader2 className="h-3.5 w-3.5 animate-spin" />
           Generating…
-        </span>
+        </Badge>
       );
     case "GENERATED":
       return (
-        <span className={cn(PILL, "bg-emerald-50 text-emerald-700")}>
+        <Badge variant="outline" className={cn(PILL, "bg-emerald-50 text-emerald-700")}>
           <Download className="h-3.5 w-3.5" />
           Ready
-        </span>
+        </Badge>
       );
     case "FAILED":
       return (
-        <span className={cn(PILL, "bg-destructive/10 text-destructive")}>
+        <Badge variant="outline" className={cn(PILL, "bg-destructive/10 text-destructive")}>
           <TriangleAlert className="h-3.5 w-3.5" />
           Failed
-        </span>
+        </Badge>
       );
   }
 }

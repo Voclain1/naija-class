@@ -95,7 +95,7 @@ export default function AcademicYearsPage() {
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-8">
       <header className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Academic years</h1>
+          <h1 className="font-serif text-2xl font-medium tracking-tight text-foreground">Academic years</h1>
           <p className="text-sm text-muted-foreground">
             Define each academic year and its three terms. Slice 1 of Phase 1.
           </p>
