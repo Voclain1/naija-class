@@ -7,42 +7,55 @@ import {
   ClipboardList,
   LayoutDashboard,
   UserCircle,
-  type LucideIcon,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 
+import type { NavItem } from "@/components/admin/nav-items";
 import { getMyScope } from "@/lib/teacher/teacher-scope-api";
 import { cn } from "@/lib/utils";
-
-interface NavItem {
-  label: string;
-  href: string;
-  icon: LucideIcon;
-}
 
 // The teacher portal's MINIMAL nav. Dashboard / Classes / Profile shipped in
 // slice 11 cp3; Gradebook in Phase 2 / Slice 3; Attendance in Slice 7. The
 // "Subject attendance" entry (Slice 8) is conditional — only rendered when the
 // school has opted into subject-period attendance (School.subjectAttendanceEnabled).
+//
+// Reuses admin's NavItem shape (label/href/icon/enabled) so the same list can
+// be handed to the shared NavList/MobileNav (components/admin/nav-list.tsx,
+// mobile-nav.tsx) via components/teacher/topbar.tsx — every teacher item is
+// `enabled: true` (no "coming soon" entries on this portal).
 const BASE_ITEMS: NavItem[] = [
-  { label: "Dashboard", href: "/teacher/dashboard", icon: LayoutDashboard },
-  { label: "Classes", href: "/teacher/classes", icon: BookOpen },
-  { label: "Gradebook", href: "/teacher/gradebook", icon: ClipboardList },
-  { label: "Attendance", href: "/teacher/attendance", icon: CalendarCheck },
+  { label: "Dashboard", href: "/teacher/dashboard", icon: LayoutDashboard, enabled: true },
+  { label: "Classes", href: "/teacher/classes", icon: BookOpen, enabled: true },
+  { label: "Gradebook", href: "/teacher/gradebook", icon: ClipboardList, enabled: true },
+  { label: "Attendance", href: "/teacher/attendance", icon: CalendarCheck, enabled: true },
 ];
 
 const SUBJECT_ITEM: NavItem = {
   label: "Subject attendance",
   href: "/teacher/attendance/subject",
   icon: CalendarClock,
+  enabled: true,
 };
 
-const PROFILE_ITEM: NavItem = { label: "Profile", href: "/teacher/profile", icon: UserCircle };
+const PROFILE_ITEM: NavItem = {
+  label: "Profile",
+  href: "/teacher/profile",
+  icon: UserCircle,
+  enabled: true,
+};
 
-export function TeacherSidebar() {
-  const pathname = usePathname();
+// Shared between TeacherSidebar (desktop rail, below) and TeacherTopbar
+// (components/teacher/topbar.tsx, which hands the same list to the shared
+// AdminTopbar/MobileNav for the mobile drawer) — one "what are my nav items"
+// computation, two render targets. Previously this lived only inside
+// TeacherSidebar, and TeacherLayout rendered the plain AdminTopbar with no
+// items at all, which silently fell back to MobileNav's admin default — a
+// teacher's mobile hamburger drawer showed admin's Students/Staff/Finance/
+// Settings instead of their own nav (docs/deferred.md "Teacher portal mobile
+// nav shows admin items", a regression from PR #120's MobileNav addition).
+export function useTeacherNavItems(): NavItem[] {
   // The school's subject-attendance opt-in rides on /teacher-scope/me (the plan-
   // first decision) so teachers can read it without school-settings access.
   // Default hidden until it resolves / on error. /teacher-scope/me is gated to
@@ -62,11 +75,12 @@ export function TeacherSidebar() {
     };
   }, []);
 
-  const items: NavItem[] = [
-    ...BASE_ITEMS,
-    ...(subjectEnabled ? [SUBJECT_ITEM] : []),
-    PROFILE_ITEM,
-  ];
+  return [...BASE_ITEMS, ...(subjectEnabled ? [SUBJECT_ITEM] : []), PROFILE_ITEM];
+}
+
+export function TeacherSidebar() {
+  const pathname = usePathname();
+  const items = useTeacherNavItems();
 
   // Disambiguate the daily vs subject attendance entries so both don't light up
   // on the /teacher/attendance/subject sub-tree.

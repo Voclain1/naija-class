@@ -18,9 +18,22 @@ import { SchoolLogo } from "@/components/school/school-logo";
 import { CommandDialog, useCommandDialogHotkey } from "./command-dialog";
 import { DashboardTermSelector } from "./dashboard-term-selector";
 import { MobileNav } from "./mobile-nav";
+import type { NavItem } from "./nav-items";
 import { ThemeToggle } from "./theme-toggle";
 
-export function AdminTopbar() {
+// `navItems`/`navLaterPhaseItems` pass straight through to MobileNav
+// (undefined -> its admin defaults). The (admin) layout renders
+// `<AdminTopbar />` with neither prop, unchanged. The teacher portal renders
+// `<TeacherTopbar />` (components/teacher/topbar.tsx) instead, which supplies
+// its own nav list here — see nav-list.tsx's header comment for why this
+// exists.
+export function AdminTopbar({
+  navItems,
+  navLaterPhaseItems,
+}: {
+  navItems?: NavItem[];
+  navLaterPhaseItems?: NavItem[];
+} = {}) {
   const { school, user, logout } = useAuth();
   const [commandOpen, setCommandOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
@@ -28,7 +41,7 @@ export function AdminTopbar() {
 
   return (
     <header className="flex h-16 items-center gap-2 border-b border-border bg-card px-3 sm:gap-4 sm:px-6">
-      <MobileNav />
+      <MobileNav items={navItems} laterPhaseItems={navLaterPhaseItems} />
 
       <div className="hidden min-w-0 items-center gap-2 sm:flex">
         <SchoolLogo className="h-7 w-7 shrink-0 rounded object-contain" />

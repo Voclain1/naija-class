@@ -8,19 +8,43 @@ import { LATER_PHASE_ITEMS, NAV_ITEMS, type NavItem } from "./nav-items";
 
 // Shared between the desktop rail (sidebar.tsx) and the mobile drawer
 // (mobile-nav.tsx) — one nav-rendering implementation, two containers.
-export function NavList({ pathname, onNavigate }: { pathname: string; onNavigate?: () => void }) {
+//
+// `items`/`laterPhaseItems` default to the admin nav (NAV_ITEMS/
+// LATER_PHASE_ITEMS) so every existing admin call site (AdminSidebar,
+// MobileNav via AdminTopbar) keeps rendering exactly as before with no
+// props passed. The teacher portal passes its own list explicitly instead —
+// see components/teacher/sidebar.tsx's useTeacherNavItems() and
+// components/teacher/topbar.tsx. Previously this was hardcoded to the admin
+// list unconditionally, so a teacher's mobile hamburger drawer showed
+// admin's Students/Staff/Finance/Settings instead of their own nav (see
+// docs/deferred.md "Teacher portal mobile nav shows admin items").
+export function NavList({
+  pathname,
+  onNavigate,
+  items = NAV_ITEMS,
+  laterPhaseItems = LATER_PHASE_ITEMS,
+}: {
+  pathname: string;
+  onNavigate?: () => void;
+  items?: NavItem[];
+  laterPhaseItems?: NavItem[];
+}) {
   return (
     <nav className="flex flex-1 flex-col gap-1 overflow-y-auto p-3">
-      {NAV_ITEMS.map((item) => (
+      {items.map((item) => (
         <NavLink key={item.href} item={item} pathname={pathname} onNavigate={onNavigate} />
       ))}
 
-      <div className="mb-1 mt-5 px-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70">
-        Later phases
-      </div>
-      {LATER_PHASE_ITEMS.map((item) => (
-        <NavLink key={item.href} item={item} pathname={pathname} onNavigate={onNavigate} />
-      ))}
+      {laterPhaseItems.length > 0 && (
+        <>
+          <div className="mb-1 mt-5 px-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+            Later phases
+          </div>
+          {laterPhaseItems.map((item) => (
+            <NavLink key={item.href} item={item} pathname={pathname} onNavigate={onNavigate} />
+          ))}
+        </>
+      )}
     </nav>
   );
 }
