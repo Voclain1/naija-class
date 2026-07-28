@@ -416,6 +416,21 @@ export const PHASE_3_BURSAR_PERMISSIONS = [
 // legitimate form teachers (the service checks ClassArm.classTeacherId).
 // subject-attendance.* is granted unconditionally here; the service's opt-in
 // (assertEnabled) 404s when the school hasn't turned the feature on.
+//
+// `grading-scheme.read` — added 2026-07-28. Missing since this const was
+// authored at the Phase 2 slice 9 RBAC rollup (PR #55, 2026-06-10): every
+// teacher's gradebook grid (GradebookGridPage) unconditionally calls
+// GET /grading-scheme to read the components/weights it renders, but that
+// endpoint requires `grading-scheme.read`, which no teacher role held — a
+// 403 the moment any real teacher opened a subject's gradebook. Found during
+// the Phase 4 design-system restyle's mandatory live-verification pass; see
+// docs/deferred.md and [[project_phase4_restyle]]. Read-only: teachers must
+// NOT get `grading-scheme.update` (scheme/weight configuration stays
+// owner/admin). Audited the rest of this list against every teacher-facing
+// frontend call site at the same time (apps/web/src/app/(teacher)/** and
+// components/teacher/**) — no other permission gap found; every other API
+// call teacher pages make is already covered by this const or the Phase 1
+// teacher grant in packages/db/src/seeds/system-roles.ts.
 export const PHASE_2_TEACHER_PERMISSIONS = [
   "assessment.read",
   "assessment-score.read",
@@ -430,6 +445,7 @@ export const PHASE_2_TEACHER_PERMISSIONS = [
   "report-card.read",
   "report-card.form-review",
   "report-card.comment",
+  "grading-scheme.read",
 ] as const;
 
 export const ALL_PERMISSIONS = [

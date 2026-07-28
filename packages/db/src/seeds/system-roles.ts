@@ -78,12 +78,15 @@ export const SYSTEM_ROLE_SEEDS: SystemRoleSeed[] = [
   // prisma/migrations/20260530120000_phase_1_slice_10_teacher_profiles
   // (the migration covers existing/CI DBs via `migrate deploy`; this covers a
   // fresh `db:seed`). If you edit one permission list, edit both. The Phase 2
-  // additions land via the slice-9 RBAC rollup migration.
+  // additions land via the slice-9 RBAC rollup migration; `grading-scheme.read`
+  // was added to PHASE_2_TEACHER_PERMISSIONS on 2026-07-28 (a slice-9 gap, not
+  // a new grant here) via the 20260728000000_teacher_grading_scheme_read_permission
+  // migration — see that const's own header comment for why.
   {
     key: "teacher",
     name: "Teacher",
     description:
-      "Teaching staff — read-scoped access to their assigned arms, subjects, and roster, self-service on their own profile, plus the Phase 2 score/attendance/report-card actions for their own arms (the service narrows these to scope). Phase 2 slice 9 RBAC rollup.",
+      "Teaching staff — read-scoped access to their assigned arms, subjects, and roster, self-service on their own profile, plus the Phase 2 score/attendance/report-card actions for their own arms (the service narrows these to scope). Phase 2 slice 9 RBAC rollup (grading-scheme.read added 2026-07-28, closing a slice-9 gap).",
     permissions: [
       "class-arm.read",
       "class-level.read",
