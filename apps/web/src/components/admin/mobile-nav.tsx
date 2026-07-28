@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 
+import type { NavItem } from "./nav-items";
 import { NavList } from "./nav-list";
 
 // Mobile-only equivalent of AdminSidebar — a hamburger trigger (visible only
@@ -15,7 +16,18 @@ import { NavList } from "./nav-list";
 // md the sidebar disappears entirely with no replacement, so narrow
 // viewports had zero navigation and the topbar's own content overflowed
 // rather than reflowing. This closes the navigation half of that gap.
-export function MobileNav() {
+//
+// `items`/`laterPhaseItems` pass straight through to NavList (undefined ->
+// NavList's own admin defaults) — see nav-list.tsx's header comment. Lets a
+// non-admin caller (the teacher portal, via AdminTopbar) supply its own nav
+// list instead of silently inheriting admin's.
+export function MobileNav({
+  items,
+  laterPhaseItems,
+}: {
+  items?: NavItem[];
+  laterPhaseItems?: NavItem[];
+}) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
 
@@ -63,7 +75,12 @@ export function MobileNav() {
                   <X className="h-4 w-4" />
                 </Button>
               </div>
-              <NavList pathname={pathname} onNavigate={() => setOpen(false)} />
+              <NavList
+                pathname={pathname}
+                onNavigate={() => setOpen(false)}
+                items={items}
+                laterPhaseItems={laterPhaseItems}
+              />
             </div>
           </div>,
           document.body,
