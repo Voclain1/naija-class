@@ -24,6 +24,7 @@ import {
   twoFactorSetupRequest,
   twoFactorStatusRequest,
 } from "@/lib/auth/auth-api";
+import { cn } from "@/lib/utils";
 
 // Three phases of the enable flow:
 //   idle       — not yet started (show "Set up" button)
@@ -135,16 +136,20 @@ export function SecuritySettings() {
 
   return (
     <div className="flex max-w-lg flex-col gap-6">
-      {/* Status banner */}
+      {/* Status banner — emerald tone matches the Badge "success" variant and
+          Badge/StatCard's positive-state convention used everywhere else in
+          the app; the prior green-* classes predated that convention and had
+          no dark-mode variant at all. */}
       <div
-        className={`flex items-center gap-3 rounded-md border p-4 ${
+        className={cn(
+          "flex items-center gap-3 rounded-md border p-4",
           enabled
-            ? "border-green-200 bg-green-50 text-green-800"
-            : "border-border bg-muted/40 text-muted-foreground"
-        }`}
+            ? "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-300"
+            : "border-border bg-muted/40 text-muted-foreground",
+        )}
       >
         {enabled ? (
-          <ShieldCheck className="h-5 w-5 shrink-0 text-green-600" />
+          <ShieldCheck className="h-5 w-5 shrink-0 text-emerald-600 dark:text-emerald-400" />
         ) : (
           <ShieldOff className="h-5 w-5 shrink-0" />
         )}
@@ -287,7 +292,7 @@ export function SecuritySettings() {
       {/* Success confirmation (after enable) */}
       {enabled && !showDisableForm && (
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <CheckCircle2 className="h-4 w-4 text-green-600" />
+          <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
           Every sign-in will now require a code from your authenticator app.
         </div>
       )}

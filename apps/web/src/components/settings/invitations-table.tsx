@@ -6,6 +6,7 @@ import { useState } from "react";
 import type { PendingInvitationDto } from "@school-kit/types";
 
 import { Button } from "@/components/ui/button";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 // Map of invitation-id → accept URL for invitations just created during
 // this page mount. The raw token is single-use and not persisted, so we
@@ -47,33 +48,33 @@ export function InvitationsTable({ invitations, copyableUrls }: Props) {
 
   return (
     <div className="overflow-hidden rounded-md border">
-      <table className="w-full text-sm">
-        <thead className="bg-muted/50 text-left text-xs uppercase text-muted-foreground">
-          <tr>
-            <th className="px-3 py-2 font-medium">Email</th>
-            <th className="px-3 py-2 font-medium">Invited by</th>
-            <th className="px-3 py-2 font-medium">Sent</th>
-            <th className="px-3 py-2 font-medium">Expires</th>
-            <th className="px-3 py-2 font-medium">Link</th>
-          </tr>
-        </thead>
-        <tbody>
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Email</TableHead>
+            <TableHead>Invited by</TableHead>
+            <TableHead>Sent</TableHead>
+            <TableHead>Expires</TableHead>
+            <TableHead>Link</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
           {invitations.map((inv) => {
             const url = copyableUrls[inv.id];
             const isCopied = copiedId === inv.id;
             return (
-              <tr key={inv.id} className="border-t">
-                <td className="px-3 py-2">{inv.email}</td>
-                <td className="px-3 py-2 text-muted-foreground">
+              <TableRow key={inv.id}>
+                <TableCell>{inv.email}</TableCell>
+                <TableCell className="text-muted-foreground">
                   {inv.invitedBy.firstName} {inv.invitedBy.lastName}
-                </td>
-                <td className="px-3 py-2 text-muted-foreground">
+                </TableCell>
+                <TableCell className="text-muted-foreground">
                   {new Date(inv.createdAt).toLocaleString()}
-                </td>
-                <td className="px-3 py-2 text-muted-foreground">
+                </TableCell>
+                <TableCell className="text-muted-foreground">
                   {new Date(inv.expiresAt).toLocaleString()}
-                </td>
-                <td className="px-3 py-2">
+                </TableCell>
+                <TableCell>
                   {url ? (
                     <Button
                       type="button"
@@ -102,12 +103,12 @@ export function InvitationsTable({ invitations, copyableUrls }: Props) {
                       Link unavailable
                     </span>
                   )}
-                </td>
-              </tr>
+                </TableCell>
+              </TableRow>
             );
           })}
-        </tbody>
-      </table>
+        </TableBody>
+      </Table>
     </div>
   );
 }

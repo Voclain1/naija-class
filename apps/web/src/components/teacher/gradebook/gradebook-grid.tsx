@@ -8,8 +8,10 @@ import { toast } from "sonner";
 
 import type { AssessmentFeedResponse, GradingSchemeDto } from "@school-kit/types";
 
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ApiError } from "@/lib/api-client";
 import {
   aggregateScores,
@@ -229,10 +231,10 @@ export function GradebookGrid({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3 text-sm">
           {isSignedOff && (
-            <span className="inline-flex items-center gap-1.5 rounded-md bg-emerald-50 px-2.5 py-1 font-medium text-emerald-700">
+            <Badge variant="success" className="gap-1.5 py-1">
               <Check className="h-4 w-4" />
               Signed off {formatStamp(signedOffStamp)}
-            </span>
+            </Badge>
           )}
           {reopened && (
             <span className="text-xs text-amber-700">Sign-off will clear on save.</span>
@@ -301,41 +303,41 @@ export function GradebookGrid({
         </div>
       )}
 
-      <div className="overflow-x-auto rounded-md border">
-        <table className="w-full border-collapse text-sm">
-          <thead className="bg-muted/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
-            <tr>
-              <th className="sticky left-0 z-10 bg-muted/40 px-3 py-2 font-medium">Student</th>
+      <div className="overflow-hidden rounded-md border">
+        <Table>
+          <TableHeader className="[&_tr]:bg-muted/40">
+            <TableRow>
+              <TableHead className="sticky left-0 z-10 bg-muted/40">Student</TableHead>
               {components.map((c) => (
-                <th key={c.id} className="px-3 py-2 font-medium">
+                <TableHead key={c.id}>
                   {c.label}
                   <span className="ml-1 font-normal normal-case text-muted-foreground/70">/{c.weight}</span>
-                </th>
+                </TableHead>
               ))}
-              <th className="px-3 py-2 font-medium">Total</th>
-              <th className="px-3 py-2 font-medium">Grade</th>
-              <th className="px-3 py-2 font-medium">Position</th>
-            </tr>
-          </thead>
-          <tbody>
+              <TableHead>Total</TableHead>
+              <TableHead>Grade</TableHead>
+              <TableHead>Position</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {fields.map((field, i) => {
               const row = feed.data[i];
               if (!row) return null; // fields and feed.data are built in lockstep
               const assessment = row.assessment;
               const rowErrors = form.formState.errors.rows?.[i]?.scores;
               return (
-                <tr key={field.id} className="border-t">
-                  <td className="sticky left-0 z-10 bg-background px-3 py-2">
+                <TableRow key={field.id}>
+                  <TableCell className="sticky left-0 z-10 bg-background">
                     <div className="font-medium">
                       {row.student.lastName}, {row.student.firstName}
                     </div>
                     <div className="text-xs text-muted-foreground">{row.student.admissionNumber}</div>
-                  </td>
+                  </TableCell>
 
                   {components.map((c) => {
                     const cellErr = rowErrors?.[c.id];
                     return (
-                      <td key={c.id} className="px-2 py-2 align-top">
+                      <TableCell key={c.id} className="align-top">
                         <Input
                           aria-label={`${row.student.lastName} ${c.label}`}
                           inputMode="numeric"
@@ -348,21 +350,21 @@ export function GradebookGrid({
                           {...form.register(`rows.${i}.scores.${c.id}`)}
                         />
                         {cellErr && <p className="mt-1 text-xs text-destructive">{cellErr.message}</p>}
-                      </td>
+                      </TableCell>
                     );
                   })}
 
                   {/* Read-only, server-computed — never summed client-side. */}
-                  <td className="px-3 py-2 font-medium tabular-nums">
+                  <TableCell className="font-medium tabular-nums">
                     {assessment ? assessment.totalScore : "—"}
-                  </td>
-                  <td className="px-3 py-2">{assessment?.letterGrade ?? "—"}</td>
-                  <td className="px-3 py-2 tabular-nums">{assessment?.subjectPosition ?? "—"}</td>
-                </tr>
+                  </TableCell>
+                  <TableCell>{assessment?.letterGrade ?? "—"}</TableCell>
+                  <TableCell className="tabular-nums">{assessment?.subjectPosition ?? "—"}</TableCell>
+                </TableRow>
               );
             })}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
       </div>
     </div>
   );

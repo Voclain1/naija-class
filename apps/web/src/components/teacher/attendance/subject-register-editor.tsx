@@ -8,6 +8,7 @@ import type { AttendanceStatusDto, SubjectAttendanceRegisterResponse } from "@sc
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ApiError } from "@/lib/api-client";
 import { getSubjectRegister, markSubjectAttendance } from "@/lib/subject-attendance/subject-attendance-api";
 import { cn } from "@/lib/utils";
@@ -198,23 +199,23 @@ export function SubjectRegisterEditor({ classArmId, subjectId, date, period, onL
         </Button>
       </div>
 
-      <div className="overflow-x-auto rounded-md border">
-        <table className="w-full border-collapse text-sm">
-          <thead className="bg-muted/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
-            <tr>
-              <th className="px-3 py-2 font-medium">Student</th>
-              <th className="px-3 py-2 font-medium">Status</th>
-              <th className="px-3 py-2 font-medium">Note</th>
-            </tr>
-          </thead>
-          <tbody>
+      <div className="overflow-hidden rounded-md border">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Student</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead>Note</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {status.data.rows.map((row) => (
-              <tr key={row.studentId} className="border-t">
-                <td className="px-3 py-2">
+              <TableRow key={row.studentId}>
+                <TableCell>
                   <div className="font-medium">{row.fullName}</div>
                   <div className="text-xs text-muted-foreground">{row.admissionNumber}</div>
-                </td>
-                <td className="px-3 py-2">
+                </TableCell>
+                <TableCell>
                   <div className="inline-flex overflow-hidden rounded-md border">
                     {STATUS_ORDER.map((s) => {
                       const meta = STATUS_META[s];
@@ -237,8 +238,8 @@ export function SubjectRegisterEditor({ classArmId, subjectId, date, period, onL
                       );
                     })}
                   </div>
-                </td>
-                <td className="px-3 py-2">
+                </TableCell>
+                <TableCell>
                   <Input
                     aria-label={`Note for ${row.fullName}`}
                     value={row.note}
@@ -248,11 +249,11 @@ export function SubjectRegisterEditor({ classArmId, subjectId, date, period, onL
                     className="h-8 w-full max-w-xs"
                     onChange={(e) => patchRow(row.studentId, { note: e.target.value })}
                   />
-                </td>
-              </tr>
+                </TableCell>
+              </TableRow>
             ))}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
       </div>
 
       {dirty.length > 0 && (

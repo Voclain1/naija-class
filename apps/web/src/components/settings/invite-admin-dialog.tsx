@@ -1,7 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Loader2, X } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
@@ -13,15 +13,17 @@ import {
 } from "@school-kit/types";
 
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ApiError } from "@/lib/api-client";
 import { inviteAdmin } from "@/lib/users/users-api";
 
-// Inline modal — deliberately not pulling in @radix-ui/react-dialog for a
-// single-form-three-field use case. Tailwind overlay + a centred card +
-// an Escape-key handler is plenty. If a second dialog appears anywhere
-// else, swap to Radix Dialog at that point.
+// Migrated onto the shared Dialog primitive (Phase 4 restyle) — was an inline
+// overlay predating it (see academic-year-dialog.tsx for the same family of
+// migration in Phase 3). Radix Dialog now owns focus trap, Escape-to-close,
+// and backdrop click — the manual keydown listener and backdrop onClick this
+// used to hand-roll are gone because Dialog already does them.
 interface Props {
   open: boolean;
   onClose: () => void;
@@ -40,19 +42,6 @@ export function InviteAdminDialog({ open, onClose, onCreated }: Props) {
   useEffect(() => {
     if (open) form.reset({ email: "", firstName: "", lastName: "" });
   }, [open, form]);
-
-  // Esc closes the dialog. Effect only runs when the dialog is open so we
-  // don't leave a global handler installed on every page.
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [open, onClose]);
-
-  if (!open) return null;
 
   const onSubmit = form.handleSubmit(async (values) => {
     try {
@@ -91,36 +80,14 @@ export function InviteAdminDialog({ open, onClose, onCreated }: Props) {
   });
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/30 p-4"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="invite-dialog-title"
-      onClick={(e) => {
-        // Click on the backdrop (not the card itself) closes the dialog.
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
-      <div className="w-full max-w-sm rounded-lg border bg-card p-6 shadow-lg">
-        <div className="mb-4 flex items-start justify-between">
-          <div>
-            <h2 id="invite-dialog-title" className="text-lg font-semibold">
-              Invite an admin
-            </h2>
-            <p className="text-sm text-muted-foreground">
-              They&apos;ll get a link to set their password and join your school.
-            </p>
-          </div>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={onClose}
-            aria-label="Close dialog"
-          >
-            <X className="h-4 w-4" />
-          </Button>
-        </div>
+    <Dialog open={open} onOpenChange={(next) => { if (!next) onClose(); }}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Invite an admin</DialogTitle>
+          <DialogDescription>
+            They&apos;ll get a link to set their password and join your school.
+          </DialogDescription>
+        </DialogHeader>
 
         <form onSubmit={onSubmit} className="flex flex-col gap-3" noValidate>
           <div className="flex flex-col gap-1">
@@ -162,7 +129,7 @@ export function InviteAdminDialog({ open, onClose, onCreated }: Props) {
             </Button>
           </div>
         </form>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

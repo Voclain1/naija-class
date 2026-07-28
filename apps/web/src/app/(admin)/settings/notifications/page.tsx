@@ -87,7 +87,7 @@ export default function NotificationSettingsPage() {
     return (
       <div className="flex w-full max-w-2xl flex-col gap-4">
         <header className="flex flex-col gap-2">
-          <h1 className="text-2xl font-semibold tracking-tight">Notifications</h1>
+          <h1 className="font-serif text-2xl font-medium tracking-tight text-foreground">Notifications</h1>
         </header>
         <div className="rounded-md border border-dashed bg-muted/30 p-4 text-sm text-muted-foreground">
           You don&apos;t have access to this setting.
@@ -99,7 +99,7 @@ export default function NotificationSettingsPage() {
   return (
     <div className="flex w-full max-w-2xl flex-col gap-8">
       <header className="flex flex-col gap-2">
-        <h1 className="text-2xl font-semibold tracking-tight">Notifications</h1>
+        <h1 className="font-serif text-2xl font-medium tracking-tight text-foreground">Notifications</h1>
         <p className="text-sm text-muted-foreground">
           Choose which channels School Kit uses to reach guardians — portal
           invitations and fee reminders both respect these settings.
@@ -163,7 +163,7 @@ function ToggleRow({
   onChange: (next: boolean) => void;
 }) {
   return (
-    <div className="flex items-center justify-between rounded-md border p-4">
+    <div className="flex items-center justify-between rounded-md border bg-card p-4">
       <div className="flex flex-col gap-0.5">
         <span className="text-sm font-medium">{label}</span>
         <span className="text-xs text-muted-foreground">{description}</span>

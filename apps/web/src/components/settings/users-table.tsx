@@ -1,5 +1,8 @@
 import type { UserListItemDto } from "@school-kit/types";
 
+import { Badge } from "@/components/ui/badge";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+
 // Compact responsive table. Phase 0 doesn't have a deactivate/edit
 // affordance yet — that's docs/modules/phase-0.md "users" coverage that
 // lands later; the table here exists so the admin can SEE who's been
@@ -20,48 +23,40 @@ export function UsersTable({ users }: Props) {
 
   return (
     <div className="overflow-hidden rounded-md border">
-      <table className="w-full text-sm">
-        <thead className="bg-muted/50 text-left text-xs uppercase text-muted-foreground">
-          <tr>
-            <th className="px-3 py-2 font-medium">Name</th>
-            <th className="px-3 py-2 font-medium">Email</th>
-            <th className="px-3 py-2 font-medium">Roles</th>
-            <th className="px-3 py-2 font-medium">Last login</th>
-            <th className="px-3 py-2 font-medium">Status</th>
-          </tr>
-        </thead>
-        <tbody>
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Name</TableHead>
+            <TableHead>Email</TableHead>
+            <TableHead>Roles</TableHead>
+            <TableHead>Last login</TableHead>
+            <TableHead>Status</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
           {users.map((u) => (
-            <tr key={u.id} className="border-t">
-              <td className="px-3 py-2">
+            <TableRow key={u.id}>
+              <TableCell className="font-medium">
                 {u.firstName} {u.lastName}
-              </td>
-              <td className="px-3 py-2 text-muted-foreground">{u.email ?? "—"}</td>
-              <td className="px-3 py-2">
-                {u.roles.length === 0
-                  ? "—"
-                  : u.roles.map((r) => r.name).join(", ")}
-              </td>
-              <td className="px-3 py-2 text-muted-foreground">
-                {u.lastLoginAt
-                  ? new Date(u.lastLoginAt).toLocaleString()
-                  : "Never"}
-              </td>
-              <td className="px-3 py-2">
+              </TableCell>
+              <TableCell className="text-muted-foreground">{u.email ?? "—"}</TableCell>
+              <TableCell>
+                {u.roles.length === 0 ? "—" : u.roles.map((r) => r.name).join(", ")}
+              </TableCell>
+              <TableCell className="text-muted-foreground">
+                {u.lastLoginAt ? new Date(u.lastLoginAt).toLocaleString() : "Never"}
+              </TableCell>
+              <TableCell>
                 {u.isActive ? (
-                  <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs text-emerald-700">
-                    Active
-                  </span>
+                  <Badge variant="success">Active</Badge>
                 ) : (
-                  <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-                    Inactive
-                  </span>
+                  <Badge variant="muted">Inactive</Badge>
                 )}
-              </td>
-            </tr>
+              </TableCell>
+            </TableRow>
           ))}
-        </tbody>
-      </table>
+        </TableBody>
+      </Table>
     </div>
   );
 }

@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import type { TeacherScopeDto } from "@school-kit/types";
 
+import { Badge } from "@/components/ui/badge";
 import { ApiError } from "@/lib/api-client";
 import { useAuth } from "@/lib/auth/use-auth";
 import { getMyScope } from "@/lib/teacher/teacher-scope-api";
@@ -46,7 +47,7 @@ export default function TeacherDashboardPage() {
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
       <header className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold tracking-tight">
+        <h1 className="font-serif text-2xl font-medium tracking-tight text-foreground">
           Welcome{user?.firstName ? `, ${user.firstName}` : ""}.
         </h1>
         <p className="text-sm text-muted-foreground">
@@ -89,12 +90,9 @@ export default function TeacherDashboardPage() {
                 ) : (
                   <div className="flex flex-wrap gap-1">
                     {subjects.map((s) => (
-                      <span
-                        key={s.id}
-                        className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-xs font-medium"
-                      >
+                      <Badge key={s.id} variant="muted">
                         {s.name}
-                      </span>
+                      </Badge>
                     ))}
                   </div>
                 )}

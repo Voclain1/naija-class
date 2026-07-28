@@ -58,7 +58,7 @@ export default function AttendanceSettingsPage() {
   return (
     <div className="flex w-full max-w-2xl flex-col gap-8">
       <header className="flex flex-col gap-2">
-        <h1 className="text-2xl font-semibold tracking-tight">Subject-period attendance</h1>
+        <h1 className="font-serif text-2xl font-medium tracking-tight text-foreground">Subject-period attendance</h1>
         <p className="text-sm text-muted-foreground">
           Enable to let subject teachers mark per-period attendance for their assigned subjects, in
           addition to the universal daily register. Disabling hides the feature from teachers; any
@@ -77,7 +77,7 @@ export default function AttendanceSettingsPage() {
         </div>
       ) : (
         <div className="flex flex-col gap-6">
-          <div className="flex items-center justify-between rounded-md border p-4">
+          <div className="flex items-center justify-between rounded-md border bg-card p-4">
             <div className="flex flex-col gap-0.5">
               <span className="text-sm font-medium">Subject-period attendance</span>
               <span className="text-xs text-muted-foreground">{draft ? "Enabled" : "Disabled"}</span>

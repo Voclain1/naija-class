@@ -64,7 +64,7 @@ export default function SchoolSettingsPage() {
   return (
     <div className="flex w-full max-w-2xl flex-col gap-8">
       <header className="flex flex-col gap-2">
-        <h1 className="text-2xl font-semibold tracking-tight">School details</h1>
+        <h1 className="font-serif text-2xl font-medium tracking-tight text-foreground">School details</h1>
         <p className="text-sm text-muted-foreground">
           Basic information and branding shown across the app.
         </p>
