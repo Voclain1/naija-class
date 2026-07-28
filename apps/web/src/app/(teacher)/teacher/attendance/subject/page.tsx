@@ -86,7 +86,7 @@ export default function SubjectAttendancePage() {
 
       <header className="flex flex-col gap-1">
         <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-semibold tracking-tight">Subject attendance</h1>
+          <h1 className="font-serif text-2xl font-medium tracking-tight text-foreground">Subject attendance</h1>
           <Link href="/teacher/attendance/subject/summary" className="text-sm text-muted-foreground hover:text-foreground">
             Term summary →
           </Link>

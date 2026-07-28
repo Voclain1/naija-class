@@ -7,7 +7,7 @@ export default function SecurityPage() {
   return (
     <div className="mx-auto flex w-full max-w-2xl flex-col gap-6">
       <header className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold tracking-tight">Security</h1>
+        <h1 className="font-serif text-2xl font-medium tracking-tight text-foreground">Security</h1>
         <p className="text-sm text-muted-foreground">
           Manage two-factor authentication for your account.
         </p>

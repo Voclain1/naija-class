@@ -94,7 +94,7 @@ export default function SettingsUsersPage() {
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-8">
       <header className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Users</h1>
+          <h1 className="font-serif text-2xl font-medium tracking-tight text-foreground">Users</h1>
           <p className="text-sm text-muted-foreground">
             Manage admins for your school.
           </p>

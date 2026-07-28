@@ -13,7 +13,9 @@ import type {
 
 import { StudentAvatar } from "@/components/students/student-avatar";
 import { StudentStatusBadge } from "@/components/students/student-status-badge";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ApiError } from "@/lib/api-client";
 import { getMyArmRoster, getMyScope } from "@/lib/teacher/teacher-scope-api";
 
@@ -129,7 +131,7 @@ export default function TeacherArmRosterPage() {
       </div>
 
       <header className="flex flex-col gap-2">
-        <h1 className="text-2xl font-semibold tracking-tight">
+        <h1 className="font-serif text-2xl font-medium tracking-tight text-foreground">
           {arm?.name ?? "Class"}
         </h1>
         {subjects.length === 0 ? (
@@ -140,12 +142,9 @@ export default function TeacherArmRosterPage() {
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-sm text-muted-foreground">You teach:</span>
             {subjects.map((s) => (
-              <span
-                key={s.id}
-                className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-xs font-medium"
-              >
+              <Badge key={s.id} variant="muted">
                 {s.name}
-              </span>
+              </Badge>
             ))}
           </div>
         )}
@@ -161,18 +160,18 @@ export default function TeacherArmRosterPage() {
           </div>
         ) : (
           <div className="overflow-hidden rounded-md border">
-            <table className="w-full text-sm">
-              <thead className="bg-muted/30 text-left text-xs uppercase text-muted-foreground">
-                <tr>
-                  <th className="px-3 py-2 font-medium">Student</th>
-                  <th className="px-3 py-2 font-medium">Admission #</th>
-                  <th className="px-3 py-2 font-medium">Status</th>
-                </tr>
-              </thead>
-              <tbody>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Student</TableHead>
+                  <TableHead>Admission #</TableHead>
+                  <TableHead>Status</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {students.map((s) => (
-                  <tr key={s.id} className="border-t">
-                    <td className="px-3 py-2">
+                  <TableRow key={s.id}>
+                    <TableCell>
                       <div className="flex items-center gap-3">
                         <StudentAvatar
                           firstName={s.firstName}
@@ -184,17 +183,17 @@ export default function TeacherArmRosterPage() {
                           {s.lastName}, {s.firstName}
                         </span>
                       </div>
-                    </td>
-                    <td className="px-3 py-2 font-mono text-xs text-muted-foreground">
+                    </TableCell>
+                    <TableCell className="font-mono text-xs text-muted-foreground">
                       {s.admissionNumber}
-                    </td>
-                    <td className="px-3 py-2">
+                    </TableCell>
+                    <TableCell>
                       <StudentStatusBadge status={s.status} />
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                 ))}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
           </div>
         )}
       </section>

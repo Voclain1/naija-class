@@ -7,6 +7,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { AttendanceSummaryResponse } from "@school-kit/types";
 
 import { useAttendanceScope } from "@/components/teacher/attendance/use-attendance-scope";
+import { Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ApiError } from "@/lib/api-client";
 import { getSummary } from "@/lib/attendance/attendance-api";
 import { formatAverage } from "@/lib/report-cards/format";
@@ -69,7 +70,7 @@ export default function AttendanceSummaryPage() {
       </Link>
 
       <header className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold tracking-tight">Attendance summary</h1>
+        <h1 className="font-serif text-2xl font-medium tracking-tight text-foreground">Attendance summary</h1>
         <p className="text-sm text-muted-foreground">
           Per-student attendance for the term, with the class rate.
         </p>
@@ -183,48 +184,48 @@ function SummaryBody({ state }: { state: SummaryState }) {
 
   const { summary, armSummary } = state.data;
   return (
-    <div className="overflow-x-auto rounded-md border">
-      <table className="w-full border-collapse text-sm">
-        <thead className="bg-muted/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
-          <tr>
-            <th className="px-3 py-2 font-medium">Student</th>
-            <th className="px-3 py-2 text-right font-medium">Days marked</th>
-            <th className="px-3 py-2 text-right font-medium">Present</th>
-            <th className="px-3 py-2 text-right font-medium">Absent</th>
-            <th className="px-3 py-2 text-right font-medium">Late</th>
-            <th className="px-3 py-2 text-right font-medium">Excused</th>
-            <th className="px-3 py-2 text-right font-medium">Rate</th>
-          </tr>
-        </thead>
-        <tbody>
+    <div className="overflow-hidden rounded-md border">
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Student</TableHead>
+            <TableHead className="text-right">Days marked</TableHead>
+            <TableHead className="text-right">Present</TableHead>
+            <TableHead className="text-right">Absent</TableHead>
+            <TableHead className="text-right">Late</TableHead>
+            <TableHead className="text-right">Excused</TableHead>
+            <TableHead className="text-right">Rate</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
           {summary.map((r) => (
-            <tr key={r.studentId} className="border-t">
-              <td className="px-3 py-2">
+            <TableRow key={r.studentId}>
+              <TableCell>
                 <div className="font-medium">{r.fullName}</div>
                 <div className="text-xs text-muted-foreground">{r.admissionNumber}</div>
-              </td>
-              <td className="px-3 py-2 text-right tabular-nums">{r.daysMarked}</td>
-              <td className="px-3 py-2 text-right tabular-nums">{r.presentCount}</td>
-              <td className="px-3 py-2 text-right tabular-nums">{r.absentCount}</td>
-              <td className="px-3 py-2 text-right tabular-nums">{r.lateCount}</td>
-              <td className="px-3 py-2 text-right tabular-nums">{r.excusedCount}</td>
-              <td className="px-3 py-2 text-right font-medium tabular-nums">
+              </TableCell>
+              <TableCell className="text-right tabular-nums">{r.daysMarked}</TableCell>
+              <TableCell className="text-right tabular-nums">{r.presentCount}</TableCell>
+              <TableCell className="text-right tabular-nums">{r.absentCount}</TableCell>
+              <TableCell className="text-right tabular-nums">{r.lateCount}</TableCell>
+              <TableCell className="text-right tabular-nums">{r.excusedCount}</TableCell>
+              <TableCell className="text-right font-medium tabular-nums">
                 {formatAverage(r.attendanceRate)}
-              </td>
-            </tr>
+              </TableCell>
+            </TableRow>
           ))}
-        </tbody>
-        <tfoot className="border-t bg-muted/30 text-sm">
-          <tr>
-            <td className="px-3 py-2 font-medium" colSpan={6}>
+        </TableBody>
+        <TableFooter>
+          <TableRow>
+            <TableCell className="font-medium" colSpan={6}>
               {armSummary.totalDaysOperated} day{armSummary.totalDaysOperated === 1 ? "" : "s"} operated
-            </td>
-            <td className="px-3 py-2 text-right font-semibold tabular-nums">
+            </TableCell>
+            <TableCell className="text-right font-semibold tabular-nums">
               {formatAverage(armSummary.armAttendanceRate)}
-            </td>
-          </tr>
-        </tfoot>
-      </table>
+            </TableCell>
+          </TableRow>
+        </TableFooter>
+      </Table>
     </div>
   );
 }

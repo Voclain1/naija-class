@@ -43,7 +43,7 @@ export default function GradebookPickerPage() {
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
       <header className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold tracking-tight">Gradebook</h1>
+        <h1 className="font-serif text-2xl font-medium tracking-tight text-foreground">Gradebook</h1>
         <p className="text-sm text-muted-foreground">
           Pick a class and subject to enter scores for the current term.
         </p>

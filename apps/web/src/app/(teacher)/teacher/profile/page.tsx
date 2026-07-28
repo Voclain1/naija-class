@@ -154,7 +154,7 @@ export default function TeacherProfilePage() {
     return (
       <div className="mx-auto flex w-full max-w-2xl flex-col gap-6">
         <header className="flex flex-col gap-1">
-          <h1 className="text-2xl font-semibold tracking-tight">My profile</h1>
+          <h1 className="font-serif text-2xl font-medium tracking-tight text-foreground">My profile</h1>
         </header>
         {/* BVN lives on User, not TeacherProfile — available regardless of
             whether an admin has set up the HR profile yet. */}
@@ -174,7 +174,7 @@ export default function TeacherProfilePage() {
   if (loadError || !profile) {
     return (
       <div className="mx-auto flex w-full max-w-2xl flex-col gap-4">
-        <h1 className="text-2xl font-semibold tracking-tight">My profile</h1>
+        <h1 className="font-serif text-2xl font-medium tracking-tight text-foreground">My profile</h1>
         <BvnSection mode="self" />
         <div className="rounded-md border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive">
           {loadError ?? "Could not load your profile."}
@@ -186,7 +186,7 @@ export default function TeacherProfilePage() {
   return (
     <div className="mx-auto flex w-full max-w-2xl flex-col gap-6">
       <header className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold tracking-tight">My profile</h1>
+        <h1 className="font-serif text-2xl font-medium tracking-tight text-foreground">My profile</h1>
         <p className="text-sm text-muted-foreground">
           Keep your specialty and qualifications up to date. Your staff number
           and NUT number are managed by your administrator.
