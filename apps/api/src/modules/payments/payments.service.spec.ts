@@ -474,6 +474,13 @@ describe("PaymentsService — Paystack methods (integration)", () => {
     }
   });
 
+  // Every school defaults to manual-only (paystackPaymentsEnabled: false —
+  // see the compressed plan-first, 2026-07-31). This describe block tests
+  // the Paystack flow itself, so its fixture pre-configures a subaccount and
+  // enables it directly via basePrisma (bypassing the real save-time
+  // getSubaccount verification, which is SchoolsService's concern, not
+  // this one) — the gate itself is tested separately below with
+  // makeSchool2WithoutPaystack.
   async function makeSchool2(suffix: string): Promise<{ schoolId: string; ownerId: string }> {
     const signed = await auth.signupOwner(
       {
@@ -482,6 +489,35 @@ describe("PaymentsService — Paystack methods (integration)", () => {
         ownerFirstName: "Amaka",
         ownerLastName: "Boss",
         ownerEmail: `psk-${suffix}-${runId2}@example.test`,
+        ownerPhone: randomPhone(),
+        password: "Correct-Horse-9",
+        ndprConsent: true,
+      },
+      reqCtx,
+    );
+    schoolIds2.add(signed.school.id);
+    await basePrisma.school.update({
+      where: { id: signed.school.id },
+      data: {
+        status: "ACTIVE",
+        onboardingStep: 5,
+        paystackPaymentsEnabled: true,
+        paystackSubaccountCode: `ACCT_test_${suffix}_${runId2}`,
+      },
+    });
+    return { schoolId: signed.school.id, ownerId: signed.user.id };
+  }
+
+  // Manual-only school (the real default) — used to test the new server-side
+  // gate that blocks initPaystack when Paystack hasn't been enabled.
+  async function makeSchool2WithoutPaystack(suffix: string): Promise<{ schoolId: string; ownerId: string }> {
+    const signed = await auth.signupOwner(
+      {
+        schoolName: `PSK-manual ${suffix} ${runId2}`,
+        schoolSlug: `psk-manual-${suffix}-${runId2}`,
+        ownerFirstName: "Amaka",
+        ownerLastName: "Boss",
+        ownerEmail: `psk-manual-${suffix}-${runId2}@example.test`,
         ownerPhone: randomPhone(),
         password: "Correct-Horse-9",
         ndprConsent: true,
@@ -573,7 +609,12 @@ describe("PaymentsService — Paystack methods (integration)", () => {
 
   it("initPaystack: happy path → creates PENDING row, returns authorizationUrl + reference + paymentId", async () => {
     const { PaymentsService, storage } = await makeSvcWithStorage("init-happy");
-    const stub = makePaystackStub();
+    const initSpy = vi.fn(async ({ reference }: { reference: string }) => ({
+      authorization_url: `https://checkout.paystack.com/${reference}`,
+      access_code: `ac_${reference}`,
+      reference,
+    }));
+    const stub = makePaystackStub({ initializeTransaction: initSpy });
     const svc = new PaymentsService(storage, stub as never, new PaymentPlanService());
 
     const { schoolId, ownerId } = await makeSchool2("init-happy");
@@ -595,6 +636,33 @@ describe("PaymentsService — Paystack methods (integration)", () => {
     expect(payment.status).toBe("PENDING");
     expect(payment.method).toBe("PAYSTACK");
     expect(payment.paystackReference).toBe(result.reference);
+
+    // Subaccount routing (compressed plan-first, 2026-07-31): the school's
+    // subaccount code must be passed through to Paystack on every call.
+    expect(initSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ subaccount: `ACCT_test_init-happy_${runId2}` }),
+    );
+  });
+
+  it("initPaystack: rejects when Paystack is not enabled for the school (manual-only default)", async () => {
+    const { PaymentsService, storage } = await makeSvcWithStorage("init-disabled");
+    const initSpy = vi.fn();
+    const svc = new PaymentsService(storage, makePaystackStub({ initializeTransaction: initSpy }) as never, new PaymentPlanService());
+
+    const { schoolId, ownerId } = await makeSchool2WithoutPaystack("init-disabled");
+    const { invoiceId } = await makeIssuedInvoice2(schoolId, ownerId, 50_000_00, "idis");
+
+    await expect(
+      svc.initPaystack(ctx(schoolId, ownerId), { invoiceId, amount: 50_000_00 }),
+    ).rejects.toMatchObject({ code: "PAYSTACK_NOT_ENABLED" });
+
+    // Must reject BEFORE ever calling Paystack, and without leaving a
+    // dangling PENDING payment row behind.
+    expect(initSpy).not.toHaveBeenCalled();
+    const rows = await withTenant(schoolId, (db) =>
+      db.payment.findMany({ where: { invoiceId }, select: { id: true } }),
+    );
+    expect(rows).toHaveLength(0);
   });
 
   it("initPaystack: rejects payment on CANCELLED invoice", async () => {

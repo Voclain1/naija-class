@@ -83,7 +83,7 @@ export class PortalPaymentsService {
     invoiceId: string,
     reqCtx: RequestContext,
   ): Promise<PaystackInitResponseDto> {
-    const { paymentId, customerEmail, amount } = await withTenant(
+    const { paymentId, customerEmail, amount, subaccountCode } = await withTenant(
       guardianCtx.schoolId,
       (db) =>
         withGuardian(guardianCtx.guardianId, studentId, db, async (db2) => {
@@ -101,6 +101,21 @@ export class PortalPaymentsService {
             throw new ConflictError(
               "INVOICE_NOT_PAYABLE",
               `Invoice cannot accept payments in status ${invoice.status}.`,
+            );
+          }
+
+          // Paystack subaccount routing (compressed plan-first, 2026-07-31) —
+          // same server-side gate as the staff-facing PaymentsService.initPaystack.
+          // A manual-only school (the default) must reject this at the API
+          // layer, not just hide the "Pay with Paystack" button in the portal.
+          const school = await db2.school.findUnique({
+            where: { id: guardianCtx.schoolId },
+            select: { paystackPaymentsEnabled: true, paystackSubaccountCode: true },
+          });
+          if (!school?.paystackPaymentsEnabled || !school.paystackSubaccountCode) {
+            throw new ConflictError(
+              "PAYSTACK_NOT_ENABLED",
+              "Paystack payments are not enabled for this school. Please pay by cash, POS, or bank transfer instead.",
             );
           }
 
@@ -168,7 +183,12 @@ export class PortalPaymentsService {
             },
           });
 
-          return { paymentId: payment.id, customerEmail: resolvedEmail, amount: remaining };
+          return {
+            paymentId: payment.id,
+            customerEmail: resolvedEmail,
+            amount: remaining,
+            subaccountCode: school.paystackSubaccountCode,
+          };
         }),
     );
 
@@ -182,6 +202,7 @@ export class PortalPaymentsService {
         amount,
         email: customerEmail,
         reference: paystackReference,
+        subaccount: subaccountCode,
         // The one real divergence from the staff call site, which passes
         // no callbackUrl and relies on Paystack's dashboard-configured
         // default (apps/web) — that default would land a guardian on the

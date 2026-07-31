@@ -90,7 +90,7 @@ describe("Phase 2 E2E rollup (slice 9 cp3)", () => {
   beforeAll(async () => {
     storageRoot = await mkdtemp(join(tmpdir(), "p2-e2e-"));
     storage = new StorageService(new FilesystemStorageDriver(storageRoot));
-    schools = new SchoolsService(storage);
+    schools = new SchoolsService(storage, undefined as never);
     queue = new Queue(`${REPORT_CARDS_QUEUE}-e2e-${runId}`, { connection: redisConnection() });
     await queue.obliterate({ force: true });
     reportCards = new ReportCardService(aggregation, storage, queue);

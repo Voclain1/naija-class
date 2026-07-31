@@ -3,7 +3,7 @@ import * as crypto from "node:crypto";
 import { Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 
-import { InternalError } from "@school-kit/types";
+import { ConflictError, InternalError } from "@school-kit/types";
 
 // ---------------------------------------------------------------------------
 // Paystack API response shapes (only the fields we use)
@@ -105,6 +105,28 @@ interface PaystackBalanceResponse {
 }
 
 // ---------------------------------------------------------------------------
+// Subaccount routing (compressed plan-first, 2026-07-31) — school pastes a
+// code created in their own Paystack dashboard. GET /subaccount/:code is used
+// ONLY as an eager, save-time sanity check (mirrors resolveAccount/
+// createTransferRecipient's "verify at the low-stakes save step, not later"
+// pattern) — it is never used to derive a split, since the split decision
+// (0% platform cut) makes the subaccount's own stored percentage_charge
+// irrelevant. See PaystackInitParams.bearer below for why.
+// ---------------------------------------------------------------------------
+
+export interface PaystackSubaccountData {
+  subaccount_code: string;
+  business_name: string;
+  active: boolean;
+}
+
+interface PaystackSubaccountResponse {
+  status: boolean;
+  message: string;
+  data: PaystackSubaccountData;
+}
+
+// ---------------------------------------------------------------------------
 // Params for initializeTransaction
 // ---------------------------------------------------------------------------
 
@@ -114,6 +136,24 @@ export interface PaystackInitParams {
   reference: string;
   callbackUrl?: string;
   metadata?: Record<string, unknown>;
+  // Subaccount routing — omit entirely for a manual-only school (never pass
+  // an empty/undefined subaccount string; Paystack treats presence of the
+  // key as "split this transaction").
+  //
+  // No transaction_charge is ever passed: the business decision (2026-07-31)
+  // is a 0% platform cut, so there is nothing for SchoolKit's main account to
+  // take — 100% goes to the subaccount via whatever percentage_charge the
+  // school configured on their own Paystack dashboard (which for a 0%-cut
+  // subaccount the school would leave at 0, since there's no split partner
+  // to configure a percentage for).
+  subaccount?: string;
+  // Paystack's own transaction fee is borne by the subaccount, not
+  // SchoolKit's main account — matches "the school gets 100%, same fee
+  // they'd pay using Paystack directly with no middleman." Only meaningful
+  // when `subaccount` is set; defaults to Paystack's own default ("account")
+  // if omitted, which would incorrectly make SchoolKit absorb the fee for a
+  // 0%-cut arrangement.
+  bearer?: "account" | "subaccount";
 }
 
 // ---------------------------------------------------------------------------
@@ -147,6 +187,10 @@ export class PaystackService {
     };
     if (params.callbackUrl) body.callback_url = params.callbackUrl;
     if (params.metadata) body.metadata = params.metadata;
+    if (params.subaccount) {
+      body.subaccount = params.subaccount;
+      body.bearer = params.bearer ?? "subaccount";
+    }
 
     const res = await fetch(`${this.baseUrl}/transaction/initialize`, {
       method: "POST",
@@ -394,6 +438,48 @@ export class PaystackService {
     if (!json.status) {
       this.logger.error(`Paystack transfer initiation rejected: ${json.message}`);
       throw new InternalError("PAYSTACK_TRANSFER_FAILED", json.message);
+    }
+
+    return json.data;
+  }
+
+  // ─── Subaccount lookup (eager verification at save-time) ──────────────────
+
+  // GET /subaccount/:code — called from SchoolsService.patchMe whenever a
+  // school (re)pastes their subaccount code, so a typo or dead/deactivated
+  // code is caught at the low-stakes settings-save step, not the first time
+  // a parent tries to pay. Returns business_name so the admin can visually
+  // confirm "is this actually my school's Paystack account" before saving.
+  async getSubaccount(code: string): Promise<PaystackSubaccountData> {
+    if (!this.secretKey) {
+      throw new Error("PAYSTACK_SECRET_KEY is not configured on this server");
+    }
+    const encodedCode = encodeURIComponent(code);
+    const res = await fetch(`${this.baseUrl}/subaccount/${encodedCode}`, {
+      headers: { Authorization: `Bearer ${this.secretKey}` },
+    });
+
+    if (!res.ok) {
+      const text = await res.text().catch(() => "<no body>");
+      this.logger.warn(`Paystack subaccount lookup failed: ${res.status} ${text}`);
+      // ConflictError (not InternalError) deliberately — unlike every other
+      // Paystack failure in this file, this is a client mistake (a typo'd or
+      // stale code), not our server or Paystack breaking. ConflictError's
+      // (code, message) constructor also puts the friendly sentence in
+      // `.message` rather than `.details`, so the admin settings page (which
+      // just displays ApiError.message) shows real guidance, not a bare code
+      // string — InternalError has no such constructor and would show
+      // "PAYSTACK_SUBACCOUNT_NOT_FOUND" verbatim to the user.
+      throw new ConflictError(
+        "PAYSTACK_SUBACCOUNT_NOT_FOUND",
+        `Could not find a Paystack subaccount with code "${code}". Double-check the code from your Paystack dashboard.`,
+      );
+    }
+
+    const json = (await res.json()) as PaystackSubaccountResponse;
+    if (!json.status) {
+      this.logger.warn(`Paystack subaccount lookup rejected: ${json.message}`);
+      throw new ConflictError("PAYSTACK_SUBACCOUNT_NOT_FOUND", json.message);
     }
 
     return json.data;

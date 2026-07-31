@@ -1,4 +1,4 @@
-import { BarChart3, Bell, Building2, CalendarCheck, Percent, ShieldCheck, SlidersHorizontal, User, Users, Wallet, type LucideIcon } from "lucide-react";
+import { BarChart3, Bell, Building2, CalendarCheck, CreditCard, Percent, ShieldCheck, SlidersHorizontal, User, Users, Wallet, type LucideIcon } from "lucide-react";
 import Link from "next/link";
 
 // /settings — a small hub linking the settings areas. (Previously a bare
@@ -32,6 +32,12 @@ const LINKS: SettingsLink[] = [
     href: "/settings/finance/discounts",
     description: "Per-student discount rules applied to invoiced fees.",
     icon: Percent,
+  },
+  {
+    label: "Payments",
+    href: "/settings/finance/payments",
+    description: "Connect your Paystack subaccount, or collect fees manually.",
+    icon: CreditCard,
   },
   {
     label: "Attendance",

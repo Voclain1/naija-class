@@ -44,6 +44,19 @@ model School {
   // Opt-in to subject-period attendance (Phase 2 / Slice 8). Default false:
   // the subject-attendance surface 404s until a school turns it on.
   subjectAttendanceEnabled Boolean @default(false) @map("subject_attendance_enabled")
+  // Paystack subaccount routing (compressed plan-first, 2026-07-31). The
+  // school creates its own subaccount in its own Paystack dashboard and
+  // pastes the code here — SchoolKit never captures or verifies bank
+  // details directly. paystackPaymentsEnabled defaults false (manual-only:
+  // CASH/POS/BANK_TRANSFER) for every school, including existing ones, and
+  // can only be flipped true once paystackSubaccountCode is set (enforced
+  // in SchoolsService.patchMe, not at the schema level). Split model is 0%
+  // platform cut — 100% of every Paystack transaction goes to the school's
+  // subaccount; SchoolKit's revenue is subscription-only. See
+  // apps/api/src/common/paystack/paystack.service.ts for why no
+  // transaction_charge/bearer split math is needed given that decision.
+  paystackSubaccountCode  String?  @map("paystack_subaccount_code")
+  paystackPaymentsEnabled Boolean  @default(false) @map("paystack_payments_enabled")
   createdAt      DateTime     @default(now()) @map("created_at")
   updatedAt      DateTime     @updatedAt @map("updated_at")
 

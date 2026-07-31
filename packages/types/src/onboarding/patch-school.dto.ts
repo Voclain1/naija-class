@@ -17,9 +17,15 @@ import { onboardingStep2Schema } from "./step2-branding.dto.js";
 // partial — so we tack a refine on the bottom.
 // School-level settings editable via the same PATCH (Phase 2 / Slice 8 adds the
 // subject-attendance opt-in here rather than a new endpoint — same owner/admin
-// gate, same school.update audit).
+// gate, same school.update audit). Paystack subaccount routing (compressed
+// plan-first, 2026-07-31) follows the same pattern. paystackSubaccountCode is
+// nullable so a school can clear a previously-pasted code; the "enabling
+// requires a code" rule is a cross-field check the schema can't express, so
+// it lives in SchoolsService.patchMe instead.
 const schoolSettingsSchema = z.object({
   subjectAttendanceEnabled: z.boolean(),
+  paystackSubaccountCode: z.string().trim().min(1, "subaccount code cannot be blank").nullable(),
+  paystackPaymentsEnabled: z.boolean(),
 });
 
 export const patchSchoolSchema = onboardingStep1Schema

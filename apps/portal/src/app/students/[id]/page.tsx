@@ -47,6 +47,18 @@ function formatNaira(kobo: number): string {
   return `₦${(kobo / 100).toLocaleString("en-NG", { minimumFractionDigits: 2 })}`;
 }
 
+// Paystack subaccount routing launched (2026-07-31) while Paystack's
+// business review is still pending — no live key available yet, an
+// external dependency outside our control. Online payments run for real
+// against Paystack's TEST mode until that clears; real fee collection in
+// the meantime is cash/POS/bank transfer. This flag drives a visible
+// "Test Mode" indicator so a parent never mistakes a test checkout for a
+// real payment. Defaults to true (fail toward showing the notice) so a
+// missing/misconfigured env var doesn't silently drop it — flip to
+// "false" via NEXT_PUBLIC_PAYSTACK_TEST_MODE once the live key lands,
+// same NEXT_PUBLIC_* pattern as NEXT_PUBLIC_API_URL above.
+const PAYSTACK_TEST_MODE = process.env.NEXT_PUBLIC_PAYSTACK_TEST_MODE !== "false";
+
 async function parseErrorMessage(res: Response): Promise<string> {
   const body: unknown = await res.json().catch(() => null);
   return body !== null && typeof body === "object" && "error" in body
@@ -160,6 +172,18 @@ export default function StudentDetailPage() {
 
           <section className="flex flex-col gap-3">
             <h2 className="text-lg font-semibold tracking-tight">Invoices</h2>
+
+            {PAYSTACK_TEST_MODE && state.invoices.some((i) => i.totalDue - i.totalPaid > 0) && (
+              <div
+                role="status"
+                className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-700"
+              >
+                <span className="font-medium">Online payment is in test mode.</span>{" "}
+                We&apos;re finishing setup with our payment provider — clicking &quot;Pay&quot;
+                below won&apos;t charge real money. For now, please continue paying school
+                fees by cash, POS, or bank transfer at the school office.
+              </div>
+            )}
 
             {state.invoices.length === 0 && (
               <div className="rounded-lg border border-dashed bg-card p-6 text-center text-sm text-muted-foreground">
@@ -281,14 +305,21 @@ function InvoiceCard({ invoice }: { invoice: PortalInvoiceDto }) {
       )}
 
       {balance > 0 && (
-        <button
-          type="button"
-          onClick={onPay}
-          disabled={payState.kind === "starting"}
-          className="h-10 rounded-md bg-primary text-sm font-medium text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {payState.kind === "starting" ? "Redirecting to payment…" : `Pay ${formatNaira(balance)}`}
-        </button>
+        <div className="flex flex-col gap-1.5">
+          <button
+            type="button"
+            onClick={onPay}
+            disabled={payState.kind === "starting"}
+            className="h-10 rounded-md bg-primary text-sm font-medium text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {payState.kind === "starting" ? "Redirecting to payment…" : `Pay ${formatNaira(balance)}`}
+          </button>
+          {PAYSTACK_TEST_MODE && (
+            <p className="text-center text-xs text-amber-700">
+              Test mode — no real payment will be processed.
+            </p>
+          )}
+        </div>
       )}
     </div>
   );

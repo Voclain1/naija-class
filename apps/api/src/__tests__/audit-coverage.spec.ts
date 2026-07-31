@@ -580,7 +580,7 @@ describe("Phase 2 audit coverage — every mutation writes an audit row", () => 
   beforeAll(async () => {
     storageRoot = await mkdtemp(join(tmpdir(), "audit-p2-"));
     storage = new StorageService(new FilesystemStorageDriver(storageRoot));
-    schools = new SchoolsService(storage);
+    schools = new SchoolsService(storage, undefined as never);
     // Isolated queue NAME so a stray dev:api worker can't steal the enqueued jobs.
     queue = new Queue(`${REPORT_CARDS_QUEUE}-audit-${runId}`, { connection: redisConnection() });
     await queue.obliterate({ force: true });
@@ -1213,7 +1213,16 @@ describe("Phase 4 / Slice 5 audit coverage — payment.guardian-init writes an a
     schoolIdsToCleanup.add(schoolId);
     await basePrisma.school.update({
       where: { id: schoolId },
-      data: { status: "ACTIVE", onboardingStep: 5 },
+      data: {
+        status: "ACTIVE",
+        onboardingStep: 5,
+        // Paystack subaccount routing (compressed plan-first, 2026-07-31) —
+        // this block exercises the guardian-facing initiate() flow, so the
+        // fixture needs Paystack enabled (every school otherwise defaults
+        // to manual-only).
+        paystackPaymentsEnabled: true,
+        paystackSubaccountCode: `ACCT_test_audit_gpay_${runId}`,
+      },
     });
 
     await withTenant(schoolId, async (db) => {

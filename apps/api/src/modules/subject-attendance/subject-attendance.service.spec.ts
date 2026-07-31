@@ -46,7 +46,7 @@ describe("SubjectAttendanceService (cp1 — opt-in, scope, register, mark, summa
   const runId = Math.random().toString(36).slice(2, 8);
   const auth = new AuthService();
   const storageRoot = mkdtempSync(join(tmpdir(), "schoolkit-subject-attendance-storage-"));
-  const schools = new SchoolsService(new StorageService(new FilesystemStorageDriver(storageRoot)));
+  const schools = new SchoolsService(new StorageService(new FilesystemStorageDriver(storageRoot)), undefined as never);
   const service = new SubjectAttendanceService();
   const schoolIds = new Set<string>();
 
