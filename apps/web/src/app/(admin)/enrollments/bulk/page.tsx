@@ -403,14 +403,11 @@ export default function BulkEnrollmentWizardPage() {
           <AlertTriangle className="mt-0.5 h-5 w-5 text-amber-700" />
           <div>
             <p className="font-medium text-amber-900">
-              Cross-year carry-over isn&apos;t supported in Phase 1.
+              Carrying students over from a previous year isn&apos;t supported yet.
             </p>
             <p className="mt-1 text-amber-900/80">
-              The previous term is in a different academic year. Promotion
-              between years (next class level, repeated, etc.) needs the
-              promotion engine which arrives in Phase 2/3. For now,
-              enroll each student individually for this term or wait for
-              the promotion engine.
+              The previous term is in a different academic year. You&apos;ll
+              need to re-enroll these students manually for the new year.
             </p>
           </div>
         </div>

@@ -210,7 +210,9 @@ export default function DashboardPage() {
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Needs you today</CardTitle>
-            <CardDescription>Real, current-state items — not scoped to the term above.</CardDescription>
+            <CardDescription>
+              Overdue invoices, pending approvals, and staff invitations that need action.
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <AlertList
