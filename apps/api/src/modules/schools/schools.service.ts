@@ -19,6 +19,7 @@ import {
 
 import type { AuthContext } from "../../common/auth/auth-context";
 import { assertUserActiveAndHasOneOf } from "../../common/auth/role-check";
+import { PaystackService } from "../../common/paystack/paystack.service";
 import { redactEmail } from "../../common/redact";
 import { StorageService } from "../../common/storage/storage.service";
 
@@ -57,7 +58,10 @@ export type OnboardingStepPayload =
 
 @Injectable()
 export class SchoolsService {
-  constructor(private readonly storage: StorageService) {}
+  constructor(
+    private readonly storage: StorageService,
+    private readonly paystack: PaystackService,
+  ) {}
 
   // GET /schools/me — owner/admin only (Phase 2 slice 9 cp2, WS4). Returns the
   // authed user's school config. Teachers don't need it: the topbar reads the
@@ -102,6 +106,66 @@ export class SchoolsService {
     // it carries no opt-in gate.
     if (input.subjectAttendanceEnabled !== undefined) {
       data.subjectAttendanceEnabled = input.subjectAttendanceEnabled;
+    }
+
+    // Paystack subaccount routing (compressed plan-first, 2026-07-31).
+    // "Enabling requires a valid code" is a cross-field rule the Zod schema
+    // can't express, so it's checked here against the EFFECTIVE post-update
+    // state (this payload's values where sent, the existing row otherwise) —
+    // covers both "enable with no code ever configured" and "clear the code
+    // while enabled is already true and this payload doesn't touch it."
+    if (input.paystackSubaccountCode !== undefined || input.paystackPaymentsEnabled !== undefined) {
+      const current = await basePrisma.school.findUnique({
+        where: { id: authCtx.schoolId },
+        select: { paystackSubaccountCode: true, paystackPaymentsEnabled: true },
+      });
+      const effectiveCode =
+        input.paystackSubaccountCode !== undefined
+          ? input.paystackSubaccountCode
+          : (current?.paystackSubaccountCode ?? null);
+      const effectiveEnabled =
+        input.paystackPaymentsEnabled !== undefined
+          ? input.paystackPaymentsEnabled
+          : (current?.paystackPaymentsEnabled ?? false);
+
+      if (effectiveEnabled && !effectiveCode) {
+        throw new ConflictError(
+          "PAYSTACK_NOT_CONFIGURED",
+          "Cannot enable Paystack payments without a valid subaccount code configured first.",
+        );
+      }
+
+      // Eager verification at save-time (not first-payment-time) — a typo'd
+      // or dead code fails here, in the low-stakes settings screen, mirroring
+      // resolveAccount/createTransferRecipient's identical pattern in the
+      // payroll module. Skipped when the caller is clearing the code (null).
+      //
+      // business_name is surfaced back on the response (see the return
+      // below) so the admin can visually confirm "is this actually my
+      // school's Paystack account" — a wrong-but-real code (someone else's
+      // subaccount) is syntactically valid and would pass the lookup alone;
+      // the business name is the only signal that catches THAT mistake.
+      // Deliberately NOT persisted to the school row or returned by GET
+      // /schools/me afterward — it's a point-in-time confirmation of this
+      // save, not a cached fact that could drift if the Paystack business
+      // is later renamed.
+      let verifiedBusinessName: string | null = null;
+      if (input.paystackSubaccountCode !== undefined && input.paystackSubaccountCode !== null) {
+        const subaccount = await this.paystack.getSubaccount(input.paystackSubaccountCode);
+        verifiedBusinessName = subaccount.business_name;
+      }
+
+      if (input.paystackSubaccountCode !== undefined) {
+        data.paystackSubaccountCode = input.paystackSubaccountCode;
+      }
+      if (input.paystackPaymentsEnabled !== undefined) {
+        data.paystackPaymentsEnabled = input.paystackPaymentsEnabled;
+      }
+
+      const school = await this.updateSchoolWithAudit(authCtx, data, "school.update", reqCtx, {
+        changed: Object.keys(data),
+      });
+      return { ...school, paystackSubaccountBusinessName: verifiedBusinessName };
     }
 
     return this.updateSchoolWithAudit(authCtx, data, "school.update", reqCtx, {
@@ -456,6 +520,8 @@ const SCHOOL_RESPONSE_SELECT = {
   ndprConsent: true,
   ndprConsentAt: true,
   subjectAttendanceEnabled: true,
+  paystackSubaccountCode: true,
+  paystackPaymentsEnabled: true,
   createdAt: true,
   updatedAt: true,
 } satisfies Prisma.SchoolSelect;
@@ -478,6 +544,11 @@ function toSchoolMeDto(school: SchoolRow): SchoolMeDto {
     ndprConsent: school.ndprConsent,
     ndprConsentAt: school.ndprConsentAt,
     subjectAttendanceEnabled: school.subjectAttendanceEnabled,
+    paystackSubaccountCode: school.paystackSubaccountCode,
+    paystackPaymentsEnabled: school.paystackPaymentsEnabled,
+    // Only patchMe's own return (above) ever overrides this to a real value
+    // — see SchoolMeDto's field comment.
+    paystackSubaccountBusinessName: null,
     createdAt: school.createdAt,
     updatedAt: school.updatedAt,
   };

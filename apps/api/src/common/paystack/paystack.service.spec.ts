@@ -81,3 +81,119 @@ describe("PaystackService constructor", () => {
     ).rejects.toThrow("PAYSTACK_SECRET_KEY is not configured");
   });
 });
+
+// Subaccount routing (compressed plan-first, 2026-07-31). initializeTransaction
+// must pass `subaccount`/`bearer` through to Paystack's request body ONLY
+// when a subaccount is actually supplied — a manual-only school's payment
+// (no subaccount) must never accidentally include a stray split param.
+describe("PaystackService.initializeTransaction — subaccount routing", () => {
+  it("includes subaccount + bearer:subaccount in the request body when subaccount is passed", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          status: true,
+          message: "ok",
+          data: { authorization_url: "https://checkout.paystack.com/x", access_code: "ac_x", reference: "ref" },
+        }),
+        { status: 200 },
+      ),
+    );
+
+    await makeService().initializeTransaction({
+      email: "test@test.com",
+      amount: 100,
+      reference: "ref",
+      subaccount: "ACCT_abc123",
+    });
+
+    const body = JSON.parse(String(fetchSpy.mock.calls[0]?.[1]?.body));
+    expect(body.subaccount).toBe("ACCT_abc123");
+    expect(body.bearer).toBe("subaccount");
+    fetchSpy.mockRestore();
+  });
+
+  it("respects an explicit bearer override", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          status: true,
+          message: "ok",
+          data: { authorization_url: "https://checkout.paystack.com/x", access_code: "ac_x", reference: "ref" },
+        }),
+        { status: 200 },
+      ),
+    );
+
+    await makeService().initializeTransaction({
+      email: "test@test.com",
+      amount: 100,
+      reference: "ref",
+      subaccount: "ACCT_abc123",
+      bearer: "account",
+    });
+
+    const body = JSON.parse(String(fetchSpy.mock.calls[0]?.[1]?.body));
+    expect(body.bearer).toBe("account");
+    fetchSpy.mockRestore();
+  });
+
+  it("omits subaccount/bearer entirely for a manual-only payment (no subaccount passed)", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          status: true,
+          message: "ok",
+          data: { authorization_url: "https://checkout.paystack.com/x", access_code: "ac_x", reference: "ref" },
+        }),
+        { status: 200 },
+      ),
+    );
+
+    await makeService().initializeTransaction({ email: "test@test.com", amount: 100, reference: "ref" });
+
+    const body = JSON.parse(String(fetchSpy.mock.calls[0]?.[1]?.body));
+    expect(body.subaccount).toBeUndefined();
+    expect(body.bearer).toBeUndefined();
+    fetchSpy.mockRestore();
+  });
+});
+
+describe("PaystackService.getSubaccount", () => {
+  it("returns the subaccount data on a successful lookup", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          status: true,
+          message: "ok",
+          data: { subaccount_code: "ACCT_abc123", business_name: "Test School Ventures", active: true },
+        }),
+        { status: 200 },
+      ),
+    );
+
+    const result = await makeService().getSubaccount("ACCT_abc123");
+
+    expect(result).toEqual({ subaccount_code: "ACCT_abc123", business_name: "Test School Ventures", active: true });
+    fetchSpy.mockRestore();
+  });
+
+  it("throws PAYSTACK_SUBACCOUNT_NOT_FOUND when Paystack returns a non-ok response (typo'd/dead code)", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("not found", { status: 404 }));
+
+    // ConflictError (not InternalError) — see getSubaccount's own comment:
+    // a typo'd/dead code is a client mistake, and ConflictError's
+    // (code, message) shape puts a real sentence in `.message`, which is
+    // what the admin settings page actually displays.
+    await expect(makeService().getSubaccount("ACCT_bogus")).rejects.toMatchObject({
+      code: "PAYSTACK_SUBACCOUNT_NOT_FOUND",
+      message: expect.stringContaining("ACCT_bogus"),
+    });
+    fetchSpy.mockRestore();
+  });
+
+  it("throws at call time if PAYSTACK_SECRET_KEY is not set", async () => {
+    const config = { get: (_key: string) => undefined } as never;
+    const service = new PaystackService(config);
+    await expect(service.getSubaccount("ACCT_x")).rejects.toThrow("PAYSTACK_SECRET_KEY is not configured");
+  });
+});

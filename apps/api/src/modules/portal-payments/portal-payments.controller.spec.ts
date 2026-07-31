@@ -91,15 +91,30 @@ describe("PortalPaymentsController (Phase 4 / Slice 5)", () => {
     app.setGlobalPrefix("api/v1");
     await app.init();
 
+    // Paystack subaccount routing (compressed plan-first, 2026-07-31) —
+    // every school defaults to manual-only, so this spec's fixture schools
+    // (which exercise the guardian-facing Paystack checkout flow) need it
+    // pre-enabled directly via basePrisma. The gate that rejects a
+    // manual-only school is covered separately below (schoolC).
     const schoolRowA = await basePrisma.school.create({
-      data: { name: `Portal Payments Spec A ${runId}`, slug: `portal-payments-a-${runId}` },
+      data: {
+        name: `Portal Payments Spec A ${runId}`,
+        slug: `portal-payments-a-${runId}`,
+        paystackPaymentsEnabled: true,
+        paystackSubaccountCode: `ACCT_test_ppay_a_${runId}`,
+      },
       select: { id: true },
     });
     schoolA = schoolRowA.id;
     schoolIdsToCleanup.add(schoolA);
 
     const schoolRowB = await basePrisma.school.create({
-      data: { name: `Portal Payments Spec B ${runId}`, slug: `portal-payments-b-${runId}` },
+      data: {
+        name: `Portal Payments Spec B ${runId}`,
+        slug: `portal-payments-b-${runId}`,
+        paystackPaymentsEnabled: true,
+        paystackSubaccountCode: `ACCT_test_ppay_b_${runId}`,
+      },
       select: { id: true },
     });
     schoolB = schoolRowB.id;
@@ -298,6 +313,67 @@ describe("PortalPaymentsController (Phase 4 / Slice 5)", () => {
       `/api/v1/portal/students/${studentA1}/invoices/${invoiceA1}/pay`,
     );
     expect(res.status).toBe(401);
+  });
+
+  it("PAYSTACK_NOT_ENABLED: a manual-only school (the real default) rejects the pay endpoint server-side", async () => {
+    // Fresh school WITHOUT the fixture's paystackPaymentsEnabled override —
+    // this is what every real school looks like until an owner/admin
+    // configures + enables a subaccount (compressed plan-first, 2026-07-31).
+    const schoolC = await basePrisma.school.create({
+      data: { name: `Portal Payments Spec C ${runId}`, slug: `portal-payments-c-${runId}` },
+      select: { id: true },
+    });
+    schoolIdsToCleanup.add(schoolC.id);
+
+    const { studentId, invoiceId, guardianId } = await withTenant(schoolC.id, async (db) => {
+      const year = await db.academicYear.create({
+        data: { schoolId: schoolC.id, label: `2025/2026-ppay-c-${runId}`, startDate: new Date("2025-09-01"), endDate: new Date("2026-07-31") },
+        select: { id: true },
+      });
+      const term = await db.term.create({
+        data: { schoolId: schoolC.id, academicYearId: year.id, sequence: 1, name: "First Term", startDate: new Date("2025-09-01"), endDate: new Date("2025-12-15") },
+        select: { id: true },
+      });
+      const guardian = await db.guardian.create({
+        data: { schoolId: schoolC.id, firstName: "Chika", lastName: `GuardianC-${runId}`, relationship: "MOTHER", phone: `+234805${runId}9` },
+        select: { id: true },
+      });
+      const student = await db.student.create({
+        data: { schoolId: schoolC.id, admissionNumber: `ADM-PP-C-${runId}`, firstName: "Student", lastName: `C-${runId}`, dateOfBirth: new Date("2015-01-01"), gender: "MALE" },
+        select: { id: true },
+      });
+      await db.studentGuardian.create({
+        data: { schoolId: schoolC.id, studentId: student.id, guardianId: guardian.id, isPrimary: true, canPickup: true },
+      });
+      const invoice = await db.invoice.create({
+        data: {
+          schoolId: schoolC.id, studentId: student.id, termId: term.id, academicYearId: year.id,
+          status: "ISSUED", items: [], totalAmount: 75_000_00, totalDiscount: 0,
+          totalDue: 75_000_00, totalPaid: 0, issuedAt: new Date(),
+        },
+        select: { id: true },
+      });
+      return { studentId: student.id, invoiceId: invoice.id, guardianId: guardian.id };
+    });
+
+    const { rawToken: tokenC } = await createGuardianSession(schoolC.id, guardianId, {
+      ipAddress: "127.0.0.1",
+      userAgent: "vitest",
+    });
+
+    const callsBefore = paystackStub.initializeTransaction.mock.calls.length;
+    const res = await request(app.getHttpServer())
+      .post(`/api/v1/portal/students/${studentId}/invoices/${invoiceId}/pay`)
+      .set("Authorization", `Bearer ${tokenC}`);
+
+    expect(res.status).toBe(409);
+    expect(res.body.error.code).toBe("PAYSTACK_NOT_ENABLED");
+    // Rejected before ever calling Paystack, and no dangling PENDING row.
+    expect(paystackStub.initializeTransaction.mock.calls.length).toBe(callsBefore);
+    const rows = await withTenant(schoolC.id, (db) =>
+      db.payment.findMany({ where: { invoiceId }, select: { id: true } }),
+    );
+    expect(rows).toHaveLength(0);
   });
 
   it("marks the payment FAILED and returns an error if the Paystack API call itself fails", async () => {

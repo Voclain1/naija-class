@@ -746,7 +746,9 @@ export class AuthService {
     }
     const permissions = flat.has("*") ? ["*"] : Array.from(flat).sort();
 
-    return { user, school, roles, permissions };
+    // paystackSubaccountBusinessName is never persisted — only PATCH
+    // /schools/me's own return populates it, right after a fresh verify.
+    return { user, school: { ...school, paystackSubaccountBusinessName: null }, roles, permissions };
   }
 
   // Returns whether 2FA is currently enabled for the authenticated user.
@@ -935,6 +937,8 @@ const SCHOOL_RESPONSE_SELECT = {
   ndprConsent: true,
   ndprConsentAt: true,
   subjectAttendanceEnabled: true,
+  paystackSubaccountCode: true,
+  paystackPaymentsEnabled: true,
   createdAt: true,
   updatedAt: true,
 } satisfies Prisma.SchoolSelect;

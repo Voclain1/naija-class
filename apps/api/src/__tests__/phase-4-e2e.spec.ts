@@ -135,7 +135,19 @@ describe("Phase 4 E2E rollup (slice 8)", () => {
     const schoolId = signed.school.id;
     const ownerId = signed.user.id;
     schoolIds.add(schoolId);
-    await basePrisma.school.update({ where: { id: schoolId }, data: { status: "ACTIVE", onboardingStep: 5 } });
+    await basePrisma.school.update({
+      where: { id: schoolId },
+      data: {
+        status: "ACTIVE",
+        onboardingStep: 5,
+        // Paystack subaccount routing (compressed plan-first, 2026-07-31) —
+        // this fixture drives the real guardian-pay walk end-to-end, so
+        // Paystack must be enabled (every school otherwise defaults to
+        // manual-only).
+        paystackPaymentsEnabled: true,
+        paystackSubaccountCode: `ACCT_test_e2e4_${suffix}_${runId}`,
+      },
+    });
 
     const guardianEmail = `e2e4-guardian-${suffix}-${runId}@example.test`;
     const invoiceDue = 300_000_00;

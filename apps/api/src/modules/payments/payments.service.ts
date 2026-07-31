@@ -319,7 +319,7 @@ export class PaymentsService {
     dto: InitPaystackPaymentInput,
   ): Promise<PaystackInitResponseDto> {
     // Phase 1: validate and create PENDING payment row (short DB transaction).
-    const { paymentId, customerEmail } = await withTenant(authCtx.schoolId, async (db) => {
+    const { paymentId, customerEmail, subaccountCode } = await withTenant(authCtx.schoolId, async (db) => {
       const invoice = await db.invoice.findUnique({
         where: { id: dto.invoiceId },
         select: { id: true, schoolId: true, studentId: true, status: true, totalDue: true, totalPaid: true },
@@ -331,6 +331,22 @@ export class PaymentsService {
         throw new ConflictError(
           "INVOICE_NOT_PAYABLE",
           `Invoice cannot accept payments in status ${invoice.status}.`,
+        );
+      }
+
+      // Paystack subaccount routing (compressed plan-first, 2026-07-31) —
+      // server-side gate, not just a hidden UI button. A manual-only school
+      // (the default for every school) must reject this at the API layer;
+      // checked before creating the PENDING payment row so a disabled school
+      // doesn't accumulate doomed rows.
+      const school = await db.school.findUnique({
+        where: { id: authCtx.schoolId },
+        select: { paystackPaymentsEnabled: true, paystackSubaccountCode: true },
+      });
+      if (!school?.paystackPaymentsEnabled || !school.paystackSubaccountCode) {
+        throw new ConflictError(
+          "PAYSTACK_NOT_ENABLED",
+          "Paystack payments are not enabled for this school. Use a manual payment method (cash, POS, or bank transfer) instead.",
         );
       }
 
@@ -366,7 +382,11 @@ export class PaymentsService {
       const resolvedEmail =
         guardianLink?.guardian?.email ?? `noreply-${payment.id.slice(0, 8)}@schoolkit.ng`;
 
-      return { paymentId: payment.id, customerEmail: resolvedEmail };
+      return {
+        paymentId: payment.id,
+        customerEmail: resolvedEmail,
+        subaccountCode: school.paystackSubaccountCode,
+      };
     });
 
     // Phase 2: call Paystack API (outside DB transaction — avoids holding a
@@ -378,6 +398,7 @@ export class PaymentsService {
         amount: dto.amount,
         email: customerEmail,
         reference: paystackReference,
+        subaccount: subaccountCode,
       });
     } catch (err) {
       // Paystack API failed — mark the PENDING row as FAILED so it does not linger.

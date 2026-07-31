@@ -30,6 +30,22 @@ export interface SchoolMeDto {
   // Opt-in to subject-period attendance (Phase 2 / Slice 8). The admin settings
   // page reads + toggles this; the teacher portal learns it via /teacher-scope/me.
   subjectAttendanceEnabled: boolean;
+  // Paystack subaccount routing (compressed plan-first, 2026-07-31). The raw
+  // code is safe to echo back — it's an opaque Paystack identifier, not a
+  // secret (same trust level as a bank account's last-4, not its full BVN).
+  // paystackPaymentsEnabled can only be true when this is non-null (enforced
+  // in SchoolsService.patchMe, not by the DB).
+  paystackSubaccountCode: string | null;
+  paystackPaymentsEnabled: boolean;
+  // Populated ONLY in the PATCH /schools/me response, and only when that
+  // call just verified a new/changed subaccount code against Paystack —
+  // the business name Paystack has on file for it, so the admin can
+  // confirm "is this really my school's account" (a syntactically valid
+  // but WRONG code — e.g. someone else's — passes the code-exists check
+  // alone; the business name is what catches that). Always null on GET
+  // /schools/me and on any PATCH that didn't touch the code — this is a
+  // point-in-time confirmation, not a cached/persisted fact.
+  paystackSubaccountBusinessName: string | null;
   createdAt: string | Date;
   updatedAt: string | Date;
 }
