@@ -74,6 +74,21 @@ const STUDENTS = [
   { admissionNumber: "NJC/2025/005", firstName: "Funmi", lastName: "Adesanya", gender: "FEMALE", dob: "2012-09-18" },
 ] as const;
 
+// JSS 1 A roster — dev-teacher's form-teacher class (see step 7). Continues
+// the NJC/2025/NNN admission-number sequence used by the JSS 2 A fixture
+// above. No scores/attendance fixture for this arm (yet) — this roster
+// exists for manual roster/attendance/gradebook UI testing, not the
+// aggregation demo the JSS 2 A students back.
+const JSS1_STUDENTS = [
+  { admissionNumber: "NJC/2025/006", firstName: "Ngozi", lastName: "Chukwuemeka", gender: "FEMALE", dob: "2013-02-11" },
+  { admissionNumber: "NJC/2025/007", firstName: "Emeka", lastName: "Obi", gender: "MALE", dob: "2013-05-27" },
+  { admissionNumber: "NJC/2025/008", firstName: "Amina", lastName: "Bello", gender: "FEMALE", dob: "2013-09-03" },
+  { admissionNumber: "NJC/2025/009", firstName: "Tunde", lastName: "Bakare", gender: "MALE", dob: "2013-01-19" },
+  { admissionNumber: "NJC/2025/010", firstName: "Blessing", lastName: "Ojo", gender: "FEMALE", dob: "2013-06-30" },
+  { admissionNumber: "NJC/2025/011", firstName: "Ibrahim", lastName: "Suleiman", gender: "MALE", dob: "2013-11-08" },
+  { admissionNumber: "NJC/2025/012", firstName: "Kemi", lastName: "Afolabi", gender: "FEMALE", dob: "2013-04-16" },
+] as const;
+
 // Per-component marks (out of each component's weight: ca1≤20, ca2≤20, exam≤60).
 // Maths and English are deliberately DIFFERENT so per-subject positions diverge
 // (and English has a 79/79 tie → exercises sparse "2,2,4" ranking).
@@ -409,6 +424,38 @@ async function main() {
     });
   }
 
+  // 9b. JSS 1 A roster (7 students, no scores/attendance fixture — see the
+  //     JSS1_STUDENTS comment above).
+  const jss1ArmId = armIdByLevelCode.get("jss1")!;
+  for (const s of JSS1_STUDENTS) {
+    const student = await prisma.student.upsert({
+      where: { schoolId_admissionNumber: { schoolId, admissionNumber: s.admissionNumber } },
+      update: { firstName: s.firstName, lastName: s.lastName },
+      create: {
+        schoolId,
+        admissionNumber: s.admissionNumber,
+        firstName: s.firstName,
+        lastName: s.lastName,
+        gender: s.gender,
+        dateOfBirth: new Date(s.dob),
+      },
+      select: { id: true },
+    });
+    await prisma.enrollment.upsert({
+      where: { schoolId_studentId_termId: { schoolId, studentId: student.id, termId: currentTermId } },
+      update: { classArmId: jss1ArmId, status: "ENROLLED", enrolledAt: yearStart },
+      create: {
+        schoolId,
+        studentId: student.id,
+        termId: currentTermId,
+        academicYearId: year.id,
+        classArmId: jss1ArmId,
+        status: "ENROLLED",
+        enrolledAt: yearStart,
+      },
+    });
+  }
+
   // 10. Teacher profile + subject assignments (JSS 2 A × Maths, English). NOT a
   //     form teacher (so the subject-vs-form-teacher gate is testable).
   await prisma.teacherProfile.upsert({
@@ -681,6 +728,7 @@ async function main() {
   console.log("Form teachers: owner → JSS 2 A, dev-teacher → JSS 1 A");
   console.log(`Arm with scores: ${TARGET_ARM_NAME} (Mathematics + English Language, current term)`);
   console.log("dev-teacher also has SUBJECT assignments in JSS 2 A (Maths + English)");
+  console.log("JSS 1 A: 7 students enrolled (roster/attendance/gradebook testing, no scores yet)");
   console.log("Now go to /report-cards as owner");
   console.log("Dashboard demo data: 5 invoices (1 paid, 2 partial, 1 issued, 1 overdue),");
   console.log("  64 days of attendance, 1 report card awaiting approval, 1 pending invite.");

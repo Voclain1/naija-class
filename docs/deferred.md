@@ -246,6 +246,24 @@ Format:
   - **Revocation correctness proven with a real Redis + real Postgres integration spec** (`apps/api/src/modules/auth/session-cache-revocation.spec.ts`, deliberately NOT using the mocked Redis every other controller-integration spec uses): warms the cache, confirms the entry exists in Redis directly, triggers each revocation path, confirms the cache entry is gone, and confirms an immediate retry with the same token gets rejected (`INVALID_SESSION` / `USER_INACTIVE`) rather than a stale-valid 200. All 4 tests pass. Fixing this required updating the Redis mock in 5 other controller-integration spec files (`users`, `invitations`, `schools`, `auth.controller`, `auth.session`) plus `auth.password-reset.spec.ts` (needed a real Redis client — it genuinely exercises kill-all-sessions) and `portal-payments.controller.spec.ts` (needed *a* Redis provider at all, even though its routes don't go through the staff `AuthGuard`, because Nest's DI still has to construct `AuthGuard` as a global `APP_GUARD`). Full suite: 1337 passed, 2 pre-existing skipped, 0 failed.
   - **Latency measurement — honest limitation, not swept under the rug.** Attempted the same before/after methodology as the original investigation, against the local dev server: results were flat (~11–20ms for every call, cache hit or miss) because local dev has no Neon-equivalent cross-continent network hop — Docker Postgres on the same machine is already too fast for the DB-round-trip cost to be the dominant factor, so local numbers can't reproduce the production signal. **Did not fabricate a misleading local number.** What's verified instead: the caching *mechanism* itself is correct and complete (the 4 revocation-correctness tests above are real evidence, not "should work"), and the structural argument holds regardless of environment — a cache hit is one Redis GET against `REDIS_AUTH_CLIENT` (Fly Redis, same region as the API), while a cache miss is one Postgres query across the documented Fly(Johannesburg)→Neon(Frankfurt) cross-continent hop that Cause 1's original 150–350ms measurement was against. The real before/after production number is a fast-follow once this is deployed — same `GET /health/db`-style probe the original investigation used, now against a warm cache.
   Trigger for Cause 2: real revenue to justify a Neon plan upgrade, or a pilot school reporting the residual first-after-idle stall as a real problem before then.
+  **Shipped and deployed 2026-07-31**: PR #130, merged after a genuine (non-timeout) e2e pass (12m49s), `deploy-staging` succeeded, `school-kit-api` confirmed running the new release (v76, both machines) via `flyctl releases`/`flyctl status`.
+  **Real production before/after latency — the fast-follow promised above, now measured.** Against the live API, same GET-based methodology as the original investigation: created one minimal test school (`Latency Probe Test School`, same accepted pattern as `deploy-staging.yml`'s own smoke-test signup — no `DELETE /schools/:id` endpoint exists to clean it up, matching the already-tracked smoke-test-accumulation item above), got a real bearer token, hit `GET /auth/me` 8 times with the same token, twice (two independent passes, both consistent): **first call (cache miss) ~3.0–3.1s; every subsequent call within the 30s TTL (cache hit) ~1.9–2.1s — a reproducible ~1.0–1.1s improvement, every single time, across both passes.** `GET /health/db` (unauthenticated, unaffected by this fix, measured in the same session for context) sat at ~0.9–1.0s steady-state — confirming Neon is currently running measurably slower than during the original investigation (consistent with Cause 2's autosuspend still being live and unaddressed; `/health/db`'s own first-call-of-session spike hit 3.03s during this same test run, matching the original 2.33s cold-start signature). `GET /auth/me`'s cached-call floor (~2s) stays well above `/health`'s plain ~650-850ms baseline because that handler does its own additional DB work (fetching user/school/roles/permissions) that this fix doesn't touch — only the session-resolution step inside `AuthGuard` is cached. The ~1.0-1.1s delta is specifically what this fix removed, isolated from that other cost. — reported as a bug, root-caused to a discoverability gap, not a defect. Investigated and fixed 2026-07-31.** Drove the actual Add Term and Edit Term flows in a real browser (logged in as dev-owner, created a fresh academic year, opened its terms page): both `POST /academic-years/:id/terms` and `PATCH /terms/:id` returned clean 2xx responses, dialogs closed, toasts fired, table updated — no `.strict()`-resolver silent-rejection bug like the one that broke the class-arm dialog (the flagged-but-unaudited `docs/deferred.md` concern about all 5 academic dialogs' `zodResolver(schema) as never` casts). Term's `FormValues` has no nullable-number-from-blank-string field like class-arm's `capacity`, so it doesn't hit that failure mode.
+  **Real cause, found once Arinzechukwu described what he actually saw:** `AcademicYearsTable` (`apps/web/src/components/settings/academic/academic-years-table.tsx`) put the year label itself behind a bare `<Link>` with only `hover:underline` — the *only* way to reach the terms page (and therefore the Add/Edit Term dialogs) was clicking plain text with zero visual affordance that it was interactive. Every other row-to-detail-page navigation in the app (Students roster, Staff roster) uses an explicit outlined button with an icon and "View" label in the Actions column — this table was the one place that broke that convention. An admin who never discovered the label was clickable would never reach the term dialogs at all, which reads exactly like "the button doesn't work."
+  **Fixed**: replaced the bare label link with a plain text cell, and added an explicit "View terms" button (`Eye` icon, outline variant, same `h-7`/`size="sm"` shape as Students/Staff's "View" buttons) in the Actions column, consistent with the rest of the app. Considered converting to an inline-expand row instead (showing terms without any navigation) — rejected: there is no expand/collapse pattern anywhere else in this codebase, and the Terms page carries its own header, back-link, and Add/Edit/Delete term actions that would need duplicating inline; the explicit-button fix matches an existing, already-consistent pattern instead of introducing a new one for a single table.
+  Verified via a real Playwright-driven browser session against the dev server (screenshot confirms the button renders correctly with Edit/Delete alongside it, and clicking it navigates to the terms sub-page) — not just a code read.
+
+- [x] **Bulk student add via spreadsheet-like grid — shipped 2026-07-31.**
+  `/students/new/bulk` — bio-only fields (no photo, no class arm, no
+  guardian, matching the precedent set by both the single-add form and the
+  CSV import path, neither of which bundle those either), 3 starting rows,
+  sequential looped `POST /students` calls (no new bulk endpoint, no
+  BullMQ), per-row inline errors. Verified end-to-end against the dev
+  server with real data: a forced duplicate-admission-number conflict
+  showed inline without losing the other already-created rows, a retry
+  after fixing the conflicting row correctly skipped re-creating the
+  already-successful ones, all three students appeared correctly in the
+  roster and one was spot-checked on its detail page. See
+  `apps/web/src/components/students/bulk-student-form.tsx`.
 
 ## Phase 1 — AI foundation tables (DONE — slice 12, 2026-06-01)
 - [x] Mastery-tracking table: thin/additive-friendly, school_id + RLS,
@@ -548,29 +566,45 @@ Format:
   pattern as teacher_assignments). All 15 Phase 1 tables now covered;
   rls.spec.ts at 63 tests.
 
-- [ ] Single teacher invite via the UI needs a `roleKey` on `POST
-  /users/invite`. Slice 10 cp3's `/staff/invite` form was ADMIN-ONLY:
-  `inviteAdminSchema` had no `roleKey` field and `UsersService.invite`
-  hardcoded `roleKey: "admin"` (Phase 0).
-  **PARTIALLY RESOLVED (Phase 3 slice 15 cp2):** `inviteAdminSchema` now
-  carries `roleKey: z.enum(["admin", "bursar"]).default("admin")`,
-  `UsersService.invite` re-validates it server-side, and `/staff/invite` has
-  a Role dropdown — but the enum is deliberately **admin | bursar only**.
-  Teacher is still excluded: TeacherProfile fields (staffNumber, specialty)
-  aren't on the invite-accept path (see the "Teacher CSV import" deferred
-  item above), so a single teacher invite still can't carry them, and
-  teachers are invited in bulk via `/staff/import` (the CSV path mints
-  `roleKey="teacher"` invitations through `commit-teachers.row.ts`). Extending
-  the enum to include `"teacher"` needs that staging mechanism first, not
-  just a dropdown option. Trigger: an admin who needs to invite one teacher
-  without building a one-row CSV. (slice 10 cp3; partially resolved slice 15
-  cp2.)
-  - ALSO BLOCKS a clean E2E path: slice 11 cp4's `inviteAndAcceptTeacher`
-    fixture (`e2e/fixtures/teacher.ts` + `db.ts`) seeds the `roleKey='teacher'`
-    Invitation row directly via `withTenant` precisely because no API mints
-    one. When this lands, swap `seedTeacherInvitation` for the new endpoint —
-    the fixture's accept+login half is already production-faithful. (slice 11
-    cp4.)
+- [x] **Single teacher invite via the UI needs a `roleKey` on `POST
+  /users/invite`. FULLY RESOLVED 2026-07-31.** Slice 10 cp3's `/staff/invite`
+  form was ADMIN-ONLY: `inviteAdminSchema` had no `roleKey` field and
+  `UsersService.invite` hardcoded `roleKey: "admin"` (Phase 0).
+  **PARTIALLY RESOLVED (Phase 3 slice 15 cp2):** `inviteAdminSchema` gained
+  `roleKey: z.enum(["admin", "bursar"]).default("admin")` and a Role dropdown
+  on `/staff/invite` — but the enum was deliberately **admin | bursar only**,
+  on the stated assumption that extending it to `"teacher"` needed a staging
+  mechanism first (a way to carry `staffNumber`/`specialty` across invite→
+  accept, since `Invitation` has no columns for them).
+  **That assumption turned out to be wrong when actually investigated.**
+  Re-read `InvitationsService.accept()` (`apps/api/src/modules/invitations/
+  invitations.service.ts`) directly: it resolves `roleKey` against ANY seeded
+  system role by key and grants it — it never creates or touches
+  `TeacherProfile` for any role, admin/bursar included. The bulk CSV import
+  path (`commit-teachers.row.ts`) already proved this out for teachers
+  specifically: it mints a plain `roleKey="teacher"` invitation with **no**
+  TeacherProfile, and the admin creates that profile afterward via the
+  existing `/staff/[userId]/edit` page (which gates profile-creation on the
+  user already holding the `teacher` role, not on how they were created).
+  So a single teacher invite needed zero new plumbing — just the same
+  allow-list extension slice 15 already did for bursar.
+  **Fixed:** `inviteAdminSchema`'s enum is now `["admin", "bursar",
+  "teacher"]`; `UsersService.invite`'s defence-in-depth re-check updated to
+  match; `/staff/invite`'s Role dropdown has a "Teacher" option (with a
+  contextual note pointing at CSV import for bulk onboarding instead); the
+  staff roster's CTA relabeled "Invite staff" (was "Invite admin") since it
+  no longer implies admin-only. New tests added mirroring the existing
+  bursar coverage: `users.service.spec.ts` ("roleKey: 'teacher' — creates a
+  teacher invitation") and `users.controller.spec.ts` (`POST /users/invite`
+  201 with `roleKey: "teacher"`). TeacherProfile capture remains a deliberate
+  post-accept step, identical for both onboarding paths — not a gap.
+  - Also unblocks slice 11 cp4's `inviteAndAcceptTeacher` fixture
+    (`e2e/fixtures/teacher.ts` + `db.ts`), which seeded the `roleKey='teacher'`
+    `Invitation` row directly via `withTenant` because no API minted one —
+    swapping `seedTeacherInvitation` for the real endpoint is a fast-follow,
+    not done in this pass (the fixture's accept+login half was already
+    production-faithful either way, so this is a cleanliness win, not a
+    correctness fix).
 
 - [ ] Staff roster has no server-side pagination. `/staff` (slice 10 cp3)
   loads the FULL set from `GET /users` + `GET /users/invitations` (neither is
@@ -885,3 +919,267 @@ Format:
 - [x] **Teacher portal mobile nav shows admin's nav items, not the teacher's own. FIXED 2026-07-28 (PR #127).** Found during the same Phase 4 restyle live-verification pass (2026-07-28). `TeacherLayout` (`apps/web/src/app/(teacher)/layout.tsx`) reused `AdminTopbar` (`apps/web/src/components/admin/topbar.tsx`), which renders `<MobileNav>`; `MobileNav`/`NavList` hardcoded `NAV_ITEMS`/`LATER_PHASE_ITEMS` from `components/admin/nav-items.ts` (admin-specific) rather than accepting the caller's own item list. A teacher on a narrow viewport saw Students/Staff/Finance/Settings in the hamburger drawer instead of their own Dashboard/Classes/Gradebook/Attendance/Profile.
   **A real regression, not a pre-existing gap — introduced by PR #120** (`feat(web): admin dashboard rebuild — design system, real KPIs, mobile nav`, commit `3cab59b`, 2026-07-26). `TeacherLayout` has used `AdminTopbar` since PR #29 (slice 11 cp3, well before this), but `AdminTopbar` had no mobile nav at all before #120 — its own commit message says so explicitly ("the sidebar previously had no equivalent below the md breakpoint at all"). #120 added `<MobileNav>` to `AdminTopbar` for the admin dashboard rebuild without adding a props path for `TeacherLayout`'s distinct nav list, so every consumer of `AdminTopbar` — including the teacher portal, a pre-existing consumer it didn't intend to change — silently inherited admin's hamburger menu two days before this gap was noticed.
   **Fixed (PR #127, 2026-07-28)**: `NavList`/`MobileNav`/`AdminTopbar` now accept optional `items`/`laterPhaseItems` props, defaulting to the admin list so the `(admin)` layout's `<AdminTopbar />` call site is unchanged. Extracted `TeacherSidebar`'s item computation (including the async `subjectAttendanceEnabled` fetch) into a shared `useTeacherNavItems()` hook, and added `TeacherTopbar` (`components/teacher/topbar.tsx`) — a thin client wrapper supplying the teacher's own items to `AdminTopbar` — for `TeacherLayout` to render instead of `AdminTopbar` directly. Verified live in a real browser (Playwright, 375px viewport, real cookie-based sessions): the admin mobile drawer still shows every admin item plus "Later phases" unchanged; the teacher mobile drawer now shows exactly Dashboard/Classes/Gradebook/Attendance/Profile with no admin items and no "Later phases" section.
+
+## Future feature ideas — captured 2026-07-31, long-range roadmap (not scoped)
+
+Arinzechukwu's longer-range feature wishlist, captured pre-launch (Saturday
+2026-08-01 deadline) as a pure backlog dump — **none of these have been
+scoped, investigated, or estimated.** This is intentionally just a list so
+the ideas aren't lost; do not start building any of them off this entry
+alone. Cross-references to `docs/ARCHITECTURE.md` are given where a phase
+already sketches the feature, so a future plan-first has a starting point,
+not a commitment to that phase's exact shape or timing.
+
+- [ ] Lesson notes and lesson plans — ARCHITECTURE.md §6.5 (Academic
+  management, Phase 2 per §9) already names both explicitly ("Weekly lesson
+  plans with learning objectives," "Lesson notes (delivered content)"), plus
+  an AI hook in §7 ("generate lesson plan from a topic"). Nothing built yet.
+
+- [ ] Student profiles (badges, achievements, milestones) — not named
+  anywhere in ARCHITECTURE.md. Closest existing concepts are the plain
+  `Student` profile (§5, §6.3) and the merit/demerit point system under
+  Behaviour (§6.15, Phase 7 per §9) — but gamification (badges/milestones)
+  is a distinct product idea from either, not a documented feature. Needs
+  its own decision on scope before it maps to a phase.
+
+- [ ] Timetable generator — ARCHITECTURE.md §6.5 lists a "Visual timetable
+  builder with conflict detection" under Academic management, but this
+  file's own "Roadmap / strategy" section (above) separately lists
+  "Timetable, transport, library, hostel — Phase 7." The two docs disagree
+  on which phase owns it — flagging the discrepancy here rather than
+  resolving it; whoever scopes this should reconcile §6.5 vs. the Phase 7
+  roadmap note first.
+
+- [ ] Clinic/health records — ARCHITECTURE.md §6.14 (Health records) is
+  fully specified conceptually (medical profile, sickbay log, medication/
+  vaccination tracking, auto-alert on sickbay visit) and named under Phase
+  7 ("auxiliary modules — rolling, ship as schools ask") in §9. Nothing
+  built yet.
+
+- [ ] Inventory management — not named anywhere in ARCHITECTURE.md. Net-new
+  idea, no existing phase or module maps to it.
+
+- [ ] AI-assisted result compilation — ARCHITECTURE.md §6.7 (Assessment and
+  grading) and §7's "Report card comment generator" AI hook cover adjacent
+  ground (report-card comments, at-risk flagging), but "compiling results"
+  specifically (aggregating scores into a finished report card via AI) isn't
+  spelled out as its own capability. Phase 5 (AI layer) is the natural home
+  per §9. Reminder per CLAUDE.md's AI hard rules: any such feature needs a
+  teacher-approval gate before finalizing — never auto-final on grades.
+
+- [ ] Homework and assignments — ARCHITECTURE.md §6.8 (Assignments and
+  homework) is fully specified (creation, submission incl. file/photo
+  upload, auto-grading for MCQ, AI-assisted essay grading with teacher
+  approval, plagiarism flag) and matches Phase 6 ("assignments and student
+  portal") in §9. Nothing built yet.
+
+- [ ] Exam management, including AI-generated exam questions — overlaps two
+  existing docs: ARCHITECTURE.md §6.7 (Assessment and grading, Phase 2) for
+  the exam-recording side, and §7's "Quiz mode: generates MCQ + short-answer
+  questions with mark scheme" (Phase 5 AI layer) for the generation side.
+  Also adjacent to (but distinct from) this file's own still-undecided
+  "CBT / online exams (JAMB/WAEC/UTME prep)" roadmap item under "Roadmap /
+  strategy — REVISIT with live market research" (above) — that item is
+  about full online exam-taking/proctoring, this ask is narrower (AI-
+  generated question banks for a school's own exams). Worth reconciling
+  scope with that item when this is picked up, not building in parallel.
+
+- [ ] Digital ID cards — not named anywhere in ARCHITECTURE.md. Net-new
+  idea; would likely need a print-layout/PDF-render capability similar to
+  report cards' (`RenderService`) but no existing module claims it.
+
+- [ ] Result checker (likely a public/parent-facing lookup, no login) —
+  adjacent to but distinct from ARCHITECTURE.md §6.18 Parent portal's
+  "Child dashboard" (which is authenticated). A public lookup-by-reference-
+  number flow (WAEC-checker-style) isn't specified anywhere and raises its
+  own auth/tenancy questions (how does an unauthenticated lookup stay
+  scoped to the right school, what proves the requester is entitled to see
+  that result) — flag for a real plan-first, not a quick add, given
+  CLAUDE.md's multi-tenancy and PII hard rules.
+
+- [ ] AI study assistant — ARCHITECTURE.md §7's "Student tutor" is the
+  matching spec (curriculum-grounded via RAG/pgvector, conversation history
+  in `TutorSession`, daily message cap, "exam practice" mode). `TutorSession`
+  is already named in the Phase 1 data model (§5) as AI-owned/Phase-5-shaped
+  per the `AIInteractionLog`/`AIGeneration` precedent elsewhere in this file
+  — Phase 5 (AI layer) per §9. Nothing built yet.
+
+- [ ] Internal messaging — **do not duplicate; this is already tracked.**
+  Same feature as Phase 4 Slice 7 (in-app messaging), confirmed deferred at
+  Slice 8's plan-first (`docs/modules/phase-4.md` §2, "Slice 7 deferred,
+  confirmed at Slice 8's plan-first (2026-07-19)") and carried in this
+  file's own Roadmap section implicitly via ARCHITECTURE.md §6.9
+  (Communication). See that phase-4.md note for why it was deliberately
+  deferred (framed as "last and lowest-priority," zero prior art). This
+  entry exists only as a pointer so the wishlist capture doesn't fork a
+  second, disconnected tracking spot for the same ask.
+
+- [ ] WhatsApp integration — **do not duplicate; this is already tracked.**
+  Same item as the still-open WhatsApp deferral: `docs/modules/phase-4.md`
+  §4 item 3 and §8 D1 ("Channel scope: email + SMS only, no WhatsApp, no
+  push... WhatsApp Business API approval is an external, non-controllable
+  dependency"), and ARCHITECTURE.md's own open question #5 ("WhatsApp vs
+  SMS primacy"). Revisit trigger already documented there: once/if WhatsApp
+  Business API approval lands. This entry is a pointer, not a new item.
+
+- [ ] Event calendar — ARCHITECTURE.md §6.16 (Events and calendar) is
+  specified (term calendar with holidays/breaks, events, parent RSVP, push
+  reminders) and falls under Phase 7 ("auxiliary modules — rolling") per
+  §9. Nothing built yet.
+
+- [ ] **Possible navigation race on `/dashboard`: clicking a sidebar link
+  very shortly after landing on the dashboard can silently cancel that
+  navigation and revert to `/dashboard?termId=...` instead.** Found
+  2026-07-31 while testing the new `NavigationProgress` global loading
+  indicator (`components/navigation-progress.tsx`) — reproduced
+  independently of that new component, so it's a pre-existing behavior, not
+  something introduced by it: a bare `<Link>` click to `/students` fired
+  immediately after `waitForURL(/\/dashboard/)` landed back on
+  `/dashboard?termId=...` instead, with zero interception or throttling
+  involved. Root cause (not fully confirmed, inferred from the dashboard's
+  own code): `apps/web/src/app/(admin)/dashboard/page.tsx`'s comment at line
+  88 says "The term selector lives in the topbar and writes `?termId=` once
+  it resolves the school's current term" — an async effect that calls
+  `router.replace()` shortly after the dashboard mounts. If a user clicks
+  away before that resolves, the two navigation intents can race, and the
+  replace appears to win, reverting the in-flight navigation. Waiting
+  ~1.5s after landing on the dashboard before clicking away reliably avoided
+  it in testing — suggesting this is a narrow window (most real users don't
+  click within a second of a fresh page load) rather than a constant
+  problem, but it's real and worth a proper fix rather than staying
+  anecdotal. Trigger: a user report of "I clicked X and it took me back to
+  the dashboard instead," or a dedicated session on dashboard navigation
+  correctness. Candidate fix: the term-selector's `router.replace()` should
+  probably be a no-op (or at least not clobber an already-in-flight
+  navigation) if the pathname has already changed away from `/dashboard` by
+  the time it resolves.
+
+## AI & advanced feature wishlist — captured 2026-07-31, tiered (not scoped)
+
+Arinzechukwu's longer-range AI/advanced-feature wishlist, separate from the
+"Future feature ideas" list above — captured the same day, same rule
+applies: **none of these are scoped, investigated, or committed to a phase.**
+Grouped into the three tiers he assessed them at, not by build order.
+
+### Strong candidates — natural fit with existing AI-architecture plans
+
+- [ ] AI Principal Dashboard — plain-English questions over school data.
+  Adjacent to ARCHITECTURE.md §7's "Insights for admins" ("Which classes
+  are underperforming this term?", "Which students are at risk of
+  failing?") but broader in scope (open-ended Q&A vs. two fixed pre-
+  computed queries) — Phase 5 territory, needs its own plan-first for the
+  query-generation/guardrails approach before it maps onto that section.
+
+- [ ] Voice-to-report-card comments — adjacent to §7's "Report card comment
+  generator" (currently spec'd as score/attendance/behaviour → text). Adds
+  a voice-input capture step ahead of that same generation pipeline;
+  doesn't change the generator itself, just how the teacher's raw input
+  arrives. Same teacher-approval-gate hard rule applies regardless.
+
+- [ ] Predictive fee collection analysis — direct match for §7's "Insights
+  for admins" AI hook: "predict which families are likely to default based
+  on payment history" (§6.10 Finance's own AI-hooks line). Already named,
+  not yet built.
+
+- [ ] School reputation dashboard / benchmarking against similar schools —
+  not named anywhere in ARCHITECTURE.md. Cross-school benchmarking implies
+  aggregating data ACROSS tenants for comparison, which is a real tension
+  with this project's core multi-tenancy/RLS model (CLAUDE.md: "never
+  expose any ID from one school to a user from another") — needs a
+  specific anonymization/aggregation design before scoping, not a
+  straightforward per-school query.
+
+- [ ] Parent satisfaction surveys with AI analysis — adjacent to §6.18
+  Parent portal and §7's sentiment-adjacent AI hooks, but surveys
+  themselves aren't named anywhere yet. New data model (survey + response)
+  needed regardless of the AI-analysis layer on top.
+
+- [ ] Smart timetable optimization — extends the **already-logged**
+  "Timetable generator" item in the "Future feature ideas" section above
+  (this same file) — see that entry for the existing §6.5-vs-Phase-7
+  discrepancy between ARCHITECTURE.md and this file's own roadmap section,
+  which needs resolving before either the base generator or this AI-
+  optimization layer on top of it gets scoped. Not a duplicate entry —
+  cross-referenced.
+
+- [ ] Offline-first architecture — flagged by Arinzechukwu as **core
+  infrastructure for the Nigerian context specifically, not a nice-to-have
+  feature.** ARCHITECTURE.md §11 open question #4 ("Offline strategy depth
+  — full offline-first sync (CRDTs, complex) vs basic offline cache for
+  reads only") already names this as an unresolved architectural question,
+  not a feature request — this wishlist entry reinforces that it should be
+  weighted as such when §11 is finally resolved, not deprioritized as a
+  bolt-on. No phase currently owns it.
+
+- [ ] Multi-language support — **do not duplicate; already named in
+  ARCHITECTURE.md's Phase 5 scope.** §6.9 Communication's AI hooks ("translate
+  teacher messages into Yoruba, Igbo, Hausa, or Nigerian Pidgin") and §7's
+  Parent progress summary ("Translation to Yoruba, Igbo, Hausa, or Nigerian
+  Pidgin on request") both already specify this under Phase 5. This entry
+  is a pointer, not a new item.
+
+### Worth including, with real caveats
+
+- [ ] Voice attendance — **verify it's actually faster/better than manual
+  marking before assuming value.** ARCHITECTURE.md §6.6 already specs
+  "mobile-first marking (teacher taps through class register)" as the
+  baseline UX; voice would need to beat that on real classroom speed/
+  accuracy (background noise, accents, a moving line of students), not
+  just sound futuristic. Prototype-and-measure before scoping as a real
+  feature.
+
+- [ ] AI phone assistant for parents — **flag as expensive: telephony
+  infrastructure + ongoing per-call cost, not a one-time build.** Needs its
+  own cost-modeled scoping (call volume estimate × per-minute rate, plus
+  whichever telephony/voice-AI vendor) before it's bundled casually
+  alongside the other AI hooks in §7, none of which carry a comparable
+  ongoing per-interaction infrastructure cost.
+
+- [ ] Face recognition attendance — **flag explicitly: this is biometric
+  data collection on children.** Needs a real NDPR consent/safety review
+  before any scoping work, not just a feature-build discussion — CLAUDE.md's
+  existing hard rules on student PII (never send full name/DOB/contact info
+  to the LLM, redact PII in logs) are calibrated for text/contact data, not
+  biometric capture, and don't automatically cover this case. Do not treat
+  as a normal attendance-method option until that review happens.
+
+- [ ] Live classroom observation records — **needs real definition before
+  it's a scoped feature.** Unanswered as of this capture: what's actually
+  recorded (video? audio? structured notes?), by whom (peer teacher?
+  admin? automated?), stored where and for how long, and who can access it
+  later. Not adjacent to any existing ARCHITECTURE.md section — closest is
+  §6.4 Staff management's "performance tracking (peer reviews, aggregated
+  parent feedback)," which is explicitly NOT the same thing (no recording
+  implied there). Do not scope further without answering the above.
+
+- [ ] AI discipline monitoring — **flagged as vague; concerns children —
+  do not scope further without clarity on what "monitoring" actually
+  means.** §6.15 Behaviour and discipline already specs a concrete,
+  narrow feature (merit/demerit points, incident logging, a warning→
+  suspension→expulsion workflow) with no AI or monitoring component. This
+  wishlist item as stated could mean anything from "AI-summarize existing
+  incident logs" (low-risk, adjacent to §6.15) to "proactively surveil
+  student behavior" (a fundamentally different, much higher-risk category
+  needing its own ethics/consent/NDPR treatment, similar in kind to the
+  face-recognition item above). Get a concrete definition from Arinzechukwu
+  before this is anything more than a name on a list.
+
+### Business/structural — not really AI features, track separately from the AI roadmap
+
+- [ ] Franchise school management — not named anywhere in ARCHITECTURE.md.
+  Business-model feature (managing a chain/franchise of schools under one
+  operator), not an AI capability — belongs on a separate business-roadmap
+  track from the Phase 5 AI-layer list above, whenever that track exists.
+
+- [ ] Alumni networking platform — not named anywhere in ARCHITECTURE.md.
+  Same category as franchise management: a real product idea, but
+  structurally a different kind of feature (community/social, not
+  academic/AI) — track separately, not folded into the AI roadmap.
+
+- [ ] Multi-campus management — **do not duplicate; already tracked.**
+  CLAUDE.md's "Groups API shape — the single-school-now/multi-campus-later
+  pattern" section documents the existing `Branch` model (full CRUD, RLS,
+  permissions since Phase 0) and the `{ groupId, label, ... }[]` dashboard
+  shape already built to re-key onto `Branch.id` with zero frontend
+  contract change once multi-campus ships. This entry is a pointer, not a
+  new item.

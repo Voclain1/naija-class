@@ -36,9 +36,10 @@ import {
 // lookup — captured as a future concern, not a silent cap (we surface a note
 // when the lookup hits the page limit).
 //
-// Single-invite is admin-only (POST /users/invite hardcodes roleKey="admin");
-// teachers are invited in bulk via the CSV import wizard. The two CTAs at the
-// top reflect that split honestly.
+// Single-invite supports admin/bursar/teacher (POST /users/invite, roleKey
+// selectable since 2026-07-31); the CSV import wizard remains the faster path
+// for bulk-onboarding many teachers at once. The two CTAs at the top reflect
+// that split.
 
 type RoleFilter = "" | "teacher" | "admin" | "owner";
 type StatusFilter = "all" | "active" | "invited";
@@ -155,7 +156,7 @@ export default function StaffRosterPage() {
         <div>
           <h1 className="font-serif text-2xl font-medium tracking-tight text-foreground">Staff</h1>
           <p className="text-sm text-muted-foreground">
-            Teachers and administrators in your school. Invite an admin
+            Teachers and administrators in your school. Invite one person
             directly, or bulk-invite teachers from a CSV.
           </p>
         </div>
@@ -169,7 +170,7 @@ export default function StaffRosterPage() {
           <Button asChild>
             <Link href="/staff/invite">
               <UserPlus className="mr-1 h-4 w-4" />
-              Invite admin
+              Invite staff
             </Link>
           </Button>
         </div>
@@ -244,7 +245,7 @@ export default function StaffRosterPage() {
           <UserCog className="h-8 w-8 text-muted-foreground" />
           <p className="text-sm font-medium">No staff yet.</p>
           <p className="text-sm text-muted-foreground">
-            Invite an administrator, or bulk-invite your teachers from a CSV.
+            Invite a staff member, or bulk-invite your teachers from a CSV.
           </p>
           <div className="mt-2 flex flex-wrap justify-center gap-2">
             <Button asChild variant="outline">
@@ -256,7 +257,7 @@ export default function StaffRosterPage() {
             <Button asChild>
               <Link href="/staff/invite">
                 <UserPlus className="mr-1 h-4 w-4" />
-                Invite admin
+                Invite staff
               </Link>
             </Button>
           </div>
