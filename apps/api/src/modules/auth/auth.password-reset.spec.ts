@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import Redis from "ioredis";
 
 import { basePrisma, withTenant } from "@school-kit/db";
 import {
@@ -11,16 +12,21 @@ import {
 
 import { AuthService } from "./auth.service";
 
-// Integration spec — real Postgres, same style as auth.login.spec.ts. Covers
-// the Phase 0 gap closed 2026-07-24: forgot/reset password never had any
-// implementation before this PR.
+// Integration spec — real Postgres + real Redis (added 2026-07-31, same
+// style as auth.totp-login.spec.ts): resetPassword's "kill all sessions"
+// step now also invalidates the AuthGuard session cache (session-cache.ts),
+// so this needs a real Redis client, not the `null` default — see
+// AuthService's constructor comment ("Tests that call 2FA/password-reset
+// methods receive real objects"). Covers the Phase 0 gap closed 2026-07-24:
+// forgot/reset password never had any implementation before this PR.
 
 describe("AuthService.forgotPassword / resetPassword", () => {
   const runId = Math.random().toString(36).slice(2, 8);
   const phoneSuffix = Math.floor(Math.random() * 1_000_000)
     .toString()
     .padStart(6, "0");
-  const service = new AuthService();
+  const redisClient = new Redis(process.env.REDIS_URL ?? "redis://localhost:6379");
+  const service = new AuthService(undefined, redisClient);
   const ctx = { ipAddress: "127.0.0.1", userAgent: "vitest" };
 
   const schoolIdsToCleanup = new Set<string>();
@@ -51,6 +57,9 @@ describe("AuthService.forgotPassword / resetPassword", () => {
       await basePrisma.school.delete({ where: { id } }).catch(() => undefined);
     }
     await basePrisma.$disconnect();
+    // quit (not disconnect) so pending commands flush before the connection
+    // closes — same rationale as auth.totp-login.spec.ts.
+    await redisClient.quit();
   });
 
   // AuthService.forgotPassword never returns its raw token (it only ever

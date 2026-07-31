@@ -11,7 +11,17 @@ import { AuthModule } from "../auth/auth.module";
 import { HttpExceptionFilter } from "../../common/http-exception.filter";
 import { UsersModule } from "./users.module";
 
-const mockRedis = { incr: vi.fn().mockResolvedValue(1), expire: vi.fn().mockResolvedValue(1) };
+// get always misses (null) — forces every AuthGuard check through the real
+// DB path unchanged, matching this spec's existing pass/fail expectations;
+// set/del are no-ops. Session-cache HIT/invalidation behavior is covered by
+// its own spec against a real Redis client (session-cache-revocation.spec.ts).
+const mockRedis = {
+  incr: vi.fn().mockResolvedValue(1),
+  expire: vi.fn().mockResolvedValue(1),
+  get: vi.fn().mockResolvedValue(null),
+  set: vi.fn().mockResolvedValue("OK"),
+  del: vi.fn().mockResolvedValue(1),
+};
 @Global()
 @Module({
   providers: [{ provide: REDIS_AUTH_CLIENT, useValue: mockRedis }],

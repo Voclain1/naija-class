@@ -1,11 +1,14 @@
 import * as crypto from "node:crypto";
-import { CanActivate, ExecutionContext, Injectable } from "@nestjs/common";
+import { CanActivate, ExecutionContext, Inject, Injectable } from "@nestjs/common";
 import type { Request } from "express";
+import type Redis from "ioredis";
 
 import { basePrisma } from "@school-kit/db";
 import { UnauthorizedError } from "@school-kit/types";
 
 import type { AuthContext } from "./auth-context";
+import { REDIS_AUTH_CLIENT } from "./redis-auth.provider.js";
+import { getCachedSession, setCachedSession } from "./session-cache.js";
 
 // Bearer-token AuthGuard. Strictly case-sensitive `Bearer ` prefix.
 //
@@ -24,6 +27,16 @@ import type { AuthContext } from "./auth-context";
 // What we DELIBERATELY DON'T: roles, permissions, email, name. Handlers
 // that need permissions re-fetch via withTenant, which means a role
 // revocation takes effect on the next request, not after the token expires.
+//
+// Redis session cache (2026-07-31, closing the #4 production-stall
+// investigation in docs/deferred.md): every request used to pay a live
+// Postgres round-trip here — measured as a consistent 150-350ms tax on
+// EVERY call, not occasionally. Now checks the cache first; on a miss it
+// falls back to the exact same DB path and populates the cache before
+// returning. 30s TTL (session-cache.ts) is a safety net, not the primary
+// revocation mechanism — logout, password-reset, and user deactivation all
+// call invalidateSessionCache() directly so a revoked session stops working
+// immediately. See session-cache.ts for the full reasoning.
 const BEARER_PREFIX = "Bearer ";
 
 interface ResolveSessionRow {
@@ -36,6 +49,8 @@ interface ResolveSessionRow {
 
 @Injectable()
 export class AuthGuard implements CanActivate {
+  constructor(@Inject(REDIS_AUTH_CLIENT) private readonly redis: Redis) {}
+
   async canActivate(ctx: ExecutionContext): Promise<boolean> {
     const req = ctx.switchToHttp().getRequest<Request & { user?: AuthContext }>();
 
@@ -51,12 +66,38 @@ export class AuthGuard implements CanActivate {
 
     const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
 
-    // SECURITY DEFINER function — bypasses RLS for this lookup ONLY.
-    // Returns at most one row.
-    const rows = await basePrisma.$queryRaw<ResolveSessionRow[]>`
-      SELECT * FROM auth_resolve_session(${tokenHash})
-    `;
-    const row = rows[0];
+    let row: ResolveSessionRow | null = null;
+
+    const cached = await getCachedSession(this.redis, tokenHash);
+    if (cached) {
+      row = {
+        session_id: cached.session_id,
+        user_id: cached.user_id,
+        school_id: cached.school_id,
+        expires_at: new Date(cached.expires_at),
+        user_is_active: cached.user_is_active,
+      };
+    } else {
+      // SECURITY DEFINER function — bypasses RLS for this lookup ONLY.
+      // Returns at most one row.
+      const rows = await basePrisma.$queryRaw<ResolveSessionRow[]>`
+        SELECT * FROM auth_resolve_session(${tokenHash})
+      `;
+      row = rows[0] ?? null;
+      if (row) {
+        // Only positive results are cached — an invalid/unknown token always
+        // re-checks the DB, so this cache can never mask a session that was
+        // never valid in the first place.
+        await setCachedSession(this.redis, tokenHash, {
+          session_id: row.session_id,
+          user_id: row.user_id,
+          school_id: row.school_id,
+          expires_at: row.expires_at.toISOString(),
+          user_is_active: row.user_is_active,
+        });
+      }
+    }
+
     if (!row) {
       throw new UnauthorizedError("INVALID_SESSION", "Session is invalid or has been revoked.");
     }

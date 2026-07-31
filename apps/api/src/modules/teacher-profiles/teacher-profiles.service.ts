@@ -1,4 +1,5 @@
-import { Injectable } from "@nestjs/common";
+import { Inject, Injectable } from "@nestjs/common";
+import type Redis from "ioredis";
 
 import { Prisma, withTenant, type PrismaClient } from "@school-kit/db";
 import {
@@ -14,7 +15,9 @@ import {
 } from "@school-kit/types";
 
 import type { AuthContext } from "../../common/auth/auth-context";
+import { REDIS_AUTH_CLIENT } from "../../common/auth/redis-auth.provider.js";
 import { assertUserActiveAndHasOneOf } from "../../common/auth/role-check";
+import { invalidateSessionCache } from "../../common/auth/session-cache.js";
 
 interface RequestContext {
   ipAddress: string | null;
@@ -41,6 +44,13 @@ const ADMIN_ROLES = ["owner", "admin"] as const;
 
 @Injectable()
 export class TeacherProfilesService {
+  // Default matches AuthService's pattern: specs that `new` this directly
+  // without going through Nest DI (and don't exercise a path with sessions
+  // to invalidate) don't need a real Redis client.
+  constructor(
+    @Inject(REDIS_AUTH_CLIENT) private readonly redis: Redis = null as unknown as Redis,
+  ) {}
+
   // ----------------------------------------------------------------------
   // list — cursor-paginated by id ASC. search matches staffNumber OR the
   // user's first/last name; specialty is an ILIKE contains. Pilot-scale
@@ -227,6 +237,17 @@ export class TeacherProfilesService {
   // PRESERVED (per phase-1.md:782). Deactivating the user is what actually
   // removes their access (AuthGuard + assertUserActiveAndHasOneOf reject
   // !isActive); the profile is kept as a staff record.
+  //
+  // Session cache invalidation (2026-07-31): this does NOT delete the
+  // user's `sessions` rows (only isActive flips) — AuthGuard's live re-check
+  // of user_is_active used to catch a deactivated user's existing bearer
+  // token immediately on the very next request. Now that AuthGuard caches
+  // resolved sessions for 30s (session-cache.ts), that same token would
+  // otherwise keep authenticating as active from cache for up to 30s after
+  // this call. Select this user's current session tokenHashes and clear
+  // their cache entries too — the session rows themselves are left alone
+  // (deliberately not deleted here, unchanged behaviour), only their cached
+  // "is active" answer is invalidated.
   // ----------------------------------------------------------------------
   async delete(
     authCtx: AuthContext,
@@ -235,7 +256,7 @@ export class TeacherProfilesService {
   ): Promise<void> {
     await assertUserActiveAndHasOneOf(authCtx, ADMIN_ROLES);
 
-    await withTenant(authCtx.schoolId, async (db) => {
+    const deactivatedUserTokenHashes = await withTenant(authCtx.schoolId, async (db) => {
       const existing = await db.teacherProfile.findUnique({
         where: { id },
         select: { id: true, userId: true, staffNumber: true },
@@ -245,6 +266,11 @@ export class TeacherProfilesService {
       await db.user.update({
         where: { id: existing.userId },
         data: { isActive: false },
+      });
+
+      const sessions = await db.session.findMany({
+        where: { userId: existing.userId },
+        select: { tokenHash: true },
       });
 
       await db.auditLog.create({
@@ -262,7 +288,11 @@ export class TeacherProfilesService {
           },
         },
       });
+
+      return sessions.map((s) => s.tokenHash);
     });
+
+    await invalidateSessionCache(this.redis, deactivatedUserTokenHashes);
   }
 
   // ----------------------------------------------------------------------
