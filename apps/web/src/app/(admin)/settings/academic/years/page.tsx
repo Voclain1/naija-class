@@ -17,9 +17,12 @@ import {
 } from "@/lib/academic-years/academic-years-api";
 
 // /settings/academic/years — wrapped by the (admin) layout so RequireAuth
-// has already run. List + create + edit + set-current + delete. The
-// underlying table links each row to /settings/academic/years/[id]/terms
-// for the term-management sub-page.
+// has already run. List + create + edit + set-current + delete. Each row has
+// an explicit "View terms" button (Actions column) linking to
+// /settings/academic/years/[id]/terms for the term-management sub-page —
+// discoverability fix 2026-07-31: the year label used to be the only way in,
+// a bare clickable text with no visual affordance, which is what an admin
+// mistook for the "Add/Edit term" flow being broken (docs/deferred.md).
 export default function AcademicYearsPage() {
   const [years, setYears] = useState<AcademicYearDto[]>([]);
   const [loading, setLoading] = useState(true);

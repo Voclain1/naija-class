@@ -107,8 +107,10 @@ export class UsersService {
     });
   }
 
-  // POST /users/invite — owner|admin invites a new admin or bursar (slice 15
-  // added roleKey; teacher still goes through the bulk CSV import).
+  // POST /users/invite — owner|admin invites a new admin, bursar, or teacher
+  // (slice 15 added roleKey for admin/bursar; teacher added 2026-07-31 —
+  // see inviteAdminSchema's header comment for why this needed no new
+  // plumbing beyond the allow-list).
   //
   // Six gates, in order, before any write:
   //   1. role check (owner|admin), with belt-and-braces is_active re-check
@@ -134,13 +136,13 @@ export class UsersService {
     await assertUserActiveAndHasOneOf(authCtx, ["owner", "admin"]);
 
     const roleKey = input.roleKey ?? "admin";
-    if (roleKey !== "admin" && roleKey !== "bursar") {
+    if (roleKey !== "admin" && roleKey !== "bursar" && roleKey !== "teacher") {
       // Unreachable via the HTTP path (ZodValidationPipe/inviteAdminSchema
       // already rejects anything outside the enum) — this is the
       // defence-in-depth check for direct service callers.
       throw new ValidationError(
         "INVALID_ROLE_KEY",
-        "roleKey must be 'admin' or 'bursar'.",
+        "roleKey must be 'admin', 'bursar', or 'teacher'.",
       );
     }
 

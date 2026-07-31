@@ -2,9 +2,10 @@
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ThemeProvider } from "next-themes";
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import type { ReactNode } from "react";
 
+import { NavigationProgress } from "@/components/navigation-progress";
 import { Toaster } from "@/components/ui/sonner";
 
 import { AuthProvider } from "./auth/auth-provider";
@@ -38,6 +39,12 @@ export function Providers({ children }: { children: ReactNode }) {
               no-key dev path costs zero. */}
           <AuthProvider>{children}</AuthProvider>
         </PostHogProvider>
+        {/* useSearchParams() requires a Suspense boundary or Next fails the
+            build ("should be wrapped in a suspense boundary") — null fallback
+            is fine, NavigationProgress renders nothing until a click pends. */}
+        <Suspense fallback={null}>
+          <NavigationProgress />
+        </Suspense>
         <Toaster />
       </QueryClientProvider>
     </ThemeProvider>

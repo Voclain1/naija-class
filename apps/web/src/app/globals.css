@@ -18,6 +18,10 @@
  * ------------------------------------------------------------------------- */
 
 @layer base {
+  html {
+    font-size: 17px; /* base bump from Tailwind's 16px default — cascades via rem to every text utility */
+  }
+
   :root {
     --background: 45 33% 95%; /* Paper #F7F5EF */
     --foreground: 198 42% 13%; /* Ink #13262E */

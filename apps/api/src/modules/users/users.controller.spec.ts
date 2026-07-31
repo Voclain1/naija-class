@@ -140,6 +140,19 @@ describe("Users endpoints (controller integration)", () => {
     expect(res.body.invitation?.roleKey).toBe("bursar");
   });
 
+  it("POST /users/invite — roleKey: 'teacher' returns 201 with invitation.roleKey === 'teacher' (2026-07-31)", async () => {
+    const res = await request(app.getHttpServer())
+      .post("/api/v1/users/invite")
+      .set("Authorization", `Bearer ${ownerToken}`)
+      .send({
+        email: `ctrl-teacher-${runId}@example.test`,
+        roleKey: "teacher",
+      });
+
+    expect(res.status).toBe(201);
+    expect(res.body.invitation?.roleKey).toBe("teacher");
+  });
+
   it("POST /users/invite — unknown roleKey returns 400 VALIDATION_ERROR (enum rejects it before the service runs)", async () => {
     const res = await request(app.getHttpServer())
       .post("/api/v1/users/invite")

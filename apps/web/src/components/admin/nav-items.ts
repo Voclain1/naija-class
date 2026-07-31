@@ -1,8 +1,13 @@
 import {
   BarChart3,
+  CalendarClock,
+  CalendarDays,
+  ClipboardList,
+  FileSearch,
   FileText,
   GraduationCap,
   LayoutDashboard,
+  NotebookText,
   Settings,
   Sparkles,
   SlidersHorizontal,
@@ -27,7 +32,13 @@ export interface NavItem {
 // four are real, shipped features in THIS codebase (Phase 2-4) — greying them
 // out here would be a functional regression dressed up as a restyle, not a
 // visual change. Only what's genuinely unbuilt goes in LATER_PHASE_ITEMS:
-// Reports (pre-existing disabled item) and AI Tutor (Phase 5, not started).
+// Reports (pre-existing disabled item), AI Tutor (Phase 5, not started), and
+// five items added 2026-07-31 (Arinzechukwu's request) — Lesson notes,
+// Timetable generator, Event calendar, Assessments & exams, Result checker —
+// all still-unbuilt features tracked in docs/deferred.md's "Future feature
+// ideas" section. Same treatment: greyed out, non-clickable (NavList's
+// `!item.enabled` branch renders a non-link span with `title="Coming soon"`),
+// no functionality behind them yet.
 export const NAV_ITEMS: NavItem[] = [
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard, enabled: true },
   { label: "Students", href: "/students", icon: GraduationCap, enabled: true },
@@ -43,4 +54,9 @@ export const NAV_ITEMS: NavItem[] = [
 export const LATER_PHASE_ITEMS: NavItem[] = [
   { label: "Reports", href: "/reports", icon: BarChart3, enabled: false },
   { label: "AI Tutor", href: "/ai-tutor", icon: Sparkles, enabled: false },
+  { label: "Lesson Notes", href: "/lesson-notes", icon: NotebookText, enabled: false },
+  { label: "Timetable", href: "/timetable", icon: CalendarClock, enabled: false },
+  { label: "Event Calendar", href: "/events", icon: CalendarDays, enabled: false },
+  { label: "Assessments & Exams", href: "/exams", icon: ClipboardList, enabled: false },
+  { label: "Result Checker", href: "/result-checker", icon: FileSearch, enabled: false },
 ];

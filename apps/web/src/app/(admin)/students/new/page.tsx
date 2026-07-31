@@ -19,7 +19,11 @@ export default function NewStudentPage() {
         <h1 className="font-serif text-2xl font-medium tracking-tight text-foreground">Add student</h1>
         <p className="text-sm text-muted-foreground">
           Required fields: admission number, name, date of birth, and gender.
-          You can fill the rest later.
+          You can fill the rest later. Adding several at once?{" "}
+          <Link href="/students/new/bulk" className="underline underline-offset-2">
+            Use the grid
+          </Link>
+          .
         </p>
       </header>
       <StudentForm />

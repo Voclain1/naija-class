@@ -15,18 +15,21 @@ import { Label } from "@/components/ui/label";
 import { ApiError } from "@/lib/api-client";
 import { inviteStaff } from "@/lib/staff/staff-api";
 
-// /staff/invite — Slice 10 cp3, role dropdown added Phase 3 slice 15 cp2.
+// /staff/invite — Slice 10 cp3, role dropdown added Phase 3 slice 15 cp2,
+// teacher option added 2026-07-31 (closing the deferred.md "single teacher
+// invite" gap).
 //
 // Originally cp3 shipped no role field: POST /users/invite hardcoded
 // roleKey="admin" server-side, so this form could only create an
-// administrator (a role dropdown would have been a silent privilege-
-// escalation bug — passing "teacher" would have been ignored server-side
-// and granted ADMIN instead). Slice 15 added a real roleKey field to
-// inviteAdminSchema/UsersService.invite, but ONLY for "admin" | "bursar" —
-// teacher still goes through the bulk CSV import (a separate, still-open
-// deferred.md item, since TeacherProfile fields aren't on this path), so
-// the dropdown below intentionally offers just the two roles the API
-// actually accepts.
+// administrator. Slice 15 added a real roleKey field to
+// inviteAdminSchema/UsersService.invite for "admin" | "bursar". Teacher was
+// excluded at the time on the assumption that TeacherProfile fields needed
+// their own staging mechanism first — turned out not to be true: the accept
+// flow never touches TeacherProfile for ANY role, so a directly-invited
+// teacher lands exactly where a CSV-imported one does (teacher role granted,
+// no profile yet) and picks up their staffNumber/specialty afterward via the
+// existing "Create teacher profile" flow at /staff/[userId]/edit — no new
+// plumbing required. CSV import remains available for bulk onboarding.
 //
 // Form-class protection (yesterday's class-arm lesson):
 //   (a) Local `inviteFormSchema` matches FormValues exactly (all strings;
@@ -43,7 +46,7 @@ const inviteFormSchema = z.object({
     .email("Enter a valid email address."),
   firstName: z.string().trim().max(60, "First name is too long."),
   lastName: z.string().trim().max(60, "Last name is too long."),
-  roleKey: z.enum(["admin", "bursar"]),
+  roleKey: z.enum(["admin", "bursar", "teacher"]),
 });
 
 type FormValues = z.infer<typeof inviteFormSchema>;
@@ -175,23 +178,32 @@ export default function InviteStaffPage() {
         </h1>
         <p className="text-sm text-muted-foreground">
           They&apos;ll get a link to set their password and join your school
-          as {roleKey === "bursar" ? "a bursar" : "an admin"}.
+          as{" "}
+          {roleKey === "bursar"
+            ? "a bursar"
+            : roleKey === "teacher"
+              ? "a teacher"
+              : "an admin"}
+          .
         </p>
       </header>
 
-      <div className="rounded-md border bg-muted/30 p-3 text-sm">
-        <p className="font-medium">Inviting a teacher?</p>
-        <p className="mt-0.5 text-xs text-muted-foreground">
-          Teachers join through the bulk CSV import — they receive an invite
-          link and set their own password.{" "}
-          <Link
-            href="/staff/import"
-            className="text-foreground underline underline-offset-2"
-          >
-            Import teachers from CSV →
-          </Link>
-        </p>
-      </div>
+      {roleKey === "teacher" && (
+        <div className="rounded-md border bg-muted/30 p-3 text-sm">
+          <p className="font-medium">Onboarding several teachers at once?</p>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            The CSV import is faster for bulk onboarding.{" "}
+            <Link
+              href="/staff/import"
+              className="text-foreground underline underline-offset-2"
+            >
+              Import teachers from CSV →
+            </Link>{" "}
+            Either way, staff number and specialty are added afterward from
+            the staff member&apos;s profile page.
+          </p>
+        </div>
+      )}
 
       <form onSubmit={onSubmit} className="flex flex-col gap-4" noValidate>
         {form.formState.errors.root && (
@@ -225,6 +237,7 @@ export default function InviteStaffPage() {
           >
             <option value="admin">Admin</option>
             <option value="bursar">Bursar</option>
+            <option value="teacher">Teacher</option>
           </select>
         </div>
 

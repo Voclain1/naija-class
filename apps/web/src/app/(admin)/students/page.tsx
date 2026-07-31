@@ -1,6 +1,6 @@
 "use client";
 
-import { FileUp, Loader2, UserPlus } from "lucide-react";
+import { FileUp, Loader2, Rows3, UserPlus } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
@@ -115,6 +115,12 @@ export default function StudentsRosterPage() {
               Import students
             </Link>
           </Button>
+          <Button asChild variant="outline">
+            <Link href="/students/new/bulk">
+              <Rows3 className="mr-1 h-4 w-4" />
+              Add multiple
+            </Link>
+          </Button>
           <Button asChild>
             <Link href="/students/new">
               <UserPlus className="mr-1 h-4 w-4" />
@@ -161,6 +167,12 @@ export default function StudentsRosterPage() {
                 <Link href="/students/import">
                   <FileUp className="mr-1 h-4 w-4" />
                   Import students
+                </Link>
+              </Button>
+              <Button asChild variant="outline">
+                <Link href="/students/new/bulk">
+                  <Rows3 className="mr-1 h-4 w-4" />
+                  Add multiple
                 </Link>
               </Button>
               <Button asChild>

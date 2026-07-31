@@ -263,6 +263,24 @@ describe("UsersService (Slice 7)", () => {
       expect(meta.roleKey).toBe("bursar");
     });
 
+    it("roleKey: 'teacher' — creates a teacher invitation (2026-07-31)", async () => {
+      const { authCtx, schoolId } = await createActiveSchool("inv-teacher");
+
+      const result = await usersService.invite(
+        authCtx,
+        { email: `teacher-invitee-${runId}@example.test`, roleKey: "teacher" },
+        ctx,
+      );
+
+      expect(result.invitation.roleKey).toBe("teacher");
+
+      const audit = await withTenant(schoolId, (db) =>
+        db.auditLog.findFirst({ where: { schoolId, action: "user.invite", entityId: result.invitation.id } }),
+      );
+      const meta = audit!.metadata as Record<string, unknown>;
+      expect(meta.roleKey).toBe("teacher");
+    });
+
     it("roleKey omitted — defaults to admin (unchanged pre-slice-15 behaviour)", async () => {
       const { authCtx } = await createActiveSchool("inv-default-role");
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, Edit, Trash2 } from "lucide-react";
+import { Check, Edit, Eye, Trash2 } from "lucide-react";
 import Link from "next/link";
 
 import type { AcademicYearDto } from "@school-kit/types";
@@ -45,14 +45,7 @@ export function AcademicYearsTable({ years, onEdit, onSetCurrent, onDelete }: Pr
         <TableBody>
           {years.map((y) => (
             <TableRow key={y.id}>
-              <TableCell className="font-medium">
-                <Link
-                  href={`/settings/academic/years/${y.id}/terms`}
-                  className="hover:underline"
-                >
-                  {y.label}
-                </Link>
-              </TableCell>
+              <TableCell className="font-medium">{y.label}</TableCell>
               <TableCell className="text-muted-foreground">{fmtDate(y.startDate)}</TableCell>
               <TableCell className="text-muted-foreground">{fmtDate(y.endDate)}</TableCell>
               <TableCell>
@@ -62,7 +55,19 @@ export function AcademicYearsTable({ years, onEdit, onSetCurrent, onDelete }: Pr
                   <Badge variant="muted">Not current</Badge>
                 )}
               </TableCell>
-              <TableCell className="flex gap-1">
+              <TableCell className="flex flex-wrap gap-1">
+                <Button
+                  asChild
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-7"
+                >
+                  <Link href={`/settings/academic/years/${y.id}/terms`}>
+                    <Eye className="mr-1 h-3 w-3" />
+                    View terms
+                  </Link>
+                </Button>
                 {!y.isCurrent && (
                   <Button
                     type="button"
