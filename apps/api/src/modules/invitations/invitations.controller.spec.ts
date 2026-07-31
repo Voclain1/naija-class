@@ -22,7 +22,17 @@ import { UsersModule } from "../users/users.module";
 // instantiated without a real Redis connection in the test environment.
 // @Global() is required — it mirrors RedisAuthModule's real-app role and
 // makes the token visible to AuthModule's own injector scope.
-const mockRedis = { incr: vi.fn().mockResolvedValue(1), expire: vi.fn().mockResolvedValue(1) };
+// get always misses (null) — forces every AuthGuard check through the real
+// DB path unchanged, matching this spec's existing pass/fail expectations;
+// set/del are no-ops. Session-cache HIT/invalidation behavior is covered by
+// its own spec against a real Redis client (session-cache-revocation.spec.ts).
+const mockRedis = {
+  incr: vi.fn().mockResolvedValue(1),
+  expire: vi.fn().mockResolvedValue(1),
+  get: vi.fn().mockResolvedValue(null),
+  set: vi.fn().mockResolvedValue("OK"),
+  del: vi.fn().mockResolvedValue(1),
+};
 @Global()
 @Module({
   providers: [{ provide: REDIS_AUTH_CLIENT, useValue: mockRedis }],

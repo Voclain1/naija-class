@@ -2,16 +2,37 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { Test } from "@nestjs/testing";
 import { ConfigModule } from "@nestjs/config";
 import { APP_FILTER } from "@nestjs/core";
-import { INestApplication } from "@nestjs/common";
+import { Global, INestApplication, Module } from "@nestjs/common";
 import request from "supertest";
 
 import { basePrisma, withTenant } from "@school-kit/db";
 
 import { HttpExceptionFilter } from "../../common/http-exception.filter";
 import { createGuardianSession } from "../../common/auth/guardian-sessions";
+import { REDIS_AUTH_CLIENT } from "../../common/auth/redis-auth.provider";
 import { PaystackService } from "../../common/paystack/paystack.service";
 import { StorageModule } from "../../common/storage/storage.module";
 import { PortalPaymentsModule } from "./portal-payments.module";
+
+// This module tree doesn't route through the staff AuthGuard at all (this
+// spec's routes go through GuardianAuthGuard) — but AuthGuard is still
+// globally registered as APP_GUARD in production wiring, and Nest's DI
+// discovers/constructs every provider it can reach, so its REDIS_AUTH_CLIENT
+// dependency (added 2026-07-31 for the session cache) still needs to
+// resolve here even though nothing in this spec exercises it. get always
+// misses (null); set/del are no-ops — same pattern as the controller specs
+// that DO route through AuthGuard.
+const mockRedis = {
+  get: vi.fn().mockResolvedValue(null),
+  set: vi.fn().mockResolvedValue("OK"),
+  del: vi.fn().mockResolvedValue(1),
+};
+@Global()
+@Module({
+  providers: [{ provide: REDIS_AUTH_CLIENT, useValue: mockRedis }],
+  exports: [REDIS_AUTH_CLIENT],
+})
+class MockRedisAuthModule {}
 
 // Phase 4 / Slice 5 — same real-HTTP-through-GuardianAuthGuard discipline
 // as Slices 3/4, plus payment-specific correctness this slice's plan-first
@@ -81,7 +102,12 @@ describe("PortalPaymentsController (Phase 4 / Slice 5)", () => {
       // success path generates a real receipt on disk, exercised by this
       // spec's own concurrency tests below. Mirrors AppModule's own
       // ConfigModule.forRoot + StorageModule wiring (see app.module.ts).
-      imports: [ConfigModule.forRoot({ isGlobal: true }), StorageModule, PortalPaymentsModule],
+      imports: [
+        ConfigModule.forRoot({ isGlobal: true }),
+        MockRedisAuthModule,
+        StorageModule,
+        PortalPaymentsModule,
+      ],
       providers: [{ provide: APP_FILTER, useClass: HttpExceptionFilter }],
     })
       .overrideProvider(PaystackService)

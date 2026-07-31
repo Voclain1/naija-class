@@ -43,6 +43,7 @@ import { REDIS_AUTH_CLIENT } from "../../common/auth/redis-auth.provider.js";
 // The argon2 package's CJS exports are non-configurable.
 import * as password from "../../common/auth/password";
 import { createSession } from "../../common/auth/sessions";
+import { invalidateSessionCache } from "../../common/auth/session-cache.js";
 import { redactEmail } from "../../common/redact";
 import { TotpService } from "./totp.service.js";
 
@@ -505,8 +506,19 @@ export class AuthService {
   // rather than throwing on missing rows), so a double-logout from two tabs
   // does not 500 the second one — though the second request's AuthGuard
   // will have already rejected with INVALID_SESSION before reaching here.
+  //
+  // Session cache invalidation (2026-07-31): AuthGuard now caches resolved
+  // sessions for 30s (session-cache.ts). Without an explicit DEL here, a
+  // logged-out session's bearer token would keep authenticating from cache
+  // for up to 30s — select the tokenHash BEFORE the delete (the row is
+  // about to disappear) so we can clear its cache entry too.
   async logout(authCtx: AuthContext, reqCtx: RequestContext): Promise<void> {
-    await withTenant(authCtx.schoolId, async (db) => {
+    const tokenHash = await withTenant(authCtx.schoolId, async (db) => {
+      const existing = await db.session.findUnique({
+        where: { id: authCtx.sessionId },
+        select: { tokenHash: true },
+      });
+
       await db.session.deleteMany({ where: { id: authCtx.sessionId } });
 
       await db.auditLog.create({
@@ -522,7 +534,13 @@ export class AuthService {
           },
         },
       });
+
+      return existing?.tokenHash ?? null;
     });
+
+    if (tokenHash) {
+      await invalidateSessionCache(this.redis, [tokenHash]);
+    }
   }
 
   // POST /auth/forgot-password — PUBLIC. Issues a reset token if (and only
@@ -651,7 +669,7 @@ export class AuthService {
 
     const passwordHash = await password.hashPassword(input.password);
 
-    await withTenant(row.school_id, async (db) => {
+    const killedTokenHashes = await withTenant(row.school_id, async (db) => {
       // Atomic claim, same race-safe pattern as InvitationsService.accept —
       // updateMany's WHERE includes usedAt: null, so a concurrent reset
       // attempt that already claimed the token produces count=0 here.
@@ -672,7 +690,15 @@ export class AuthService {
       });
 
       // Kill every existing session for this user — see method-level
-      // comment for why this matters.
+      // comment for why this matters. Select tokenHashes BEFORE the delete
+      // (the rows are about to disappear); the cache DEL itself happens
+      // AFTER this transaction commits (see below), same pattern as
+      // logout() — a Redis round-trip has no reason to extend how long this
+      // Postgres transaction stays open.
+      const killedSessions = await db.session.findMany({
+        where: { userId: row.user_id },
+        select: { tokenHash: true },
+      });
       await db.session.deleteMany({ where: { userId: row.user_id } });
 
       await db.auditLog.create({
@@ -686,7 +712,15 @@ export class AuthService {
           metadata: { userAgent: ctx.userAgent },
         },
       });
+
+      return killedSessions.map((s) => s.tokenHash);
     });
+
+    // Without this, a stolen session on a shared computer would keep
+    // authenticating from the 30s session cache (session-cache.ts) even
+    // after the "kill all sessions" reset above — defeating the whole
+    // point of that step.
+    await invalidateSessionCache(this.redis, killedTokenHashes);
 
     return { message: "Password reset. Please sign in with your new password." };
   }
