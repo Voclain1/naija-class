@@ -46,6 +46,14 @@
 
     --font-sans: var(--font-hanken-grotesk);
     --font-serif: var(--font-fraunces);
+
+    /* Bright Emerald #3FB68B — the SchoolKit wordmark's "kit" accent, per the
+       brand sheet (apps/web/public/brand/schoolkit-brand-sheet.png, 2026-08-01).
+       Deliberately NOT `--primary`: primary flips Deep/Bright Emerald by theme,
+       but the delivered lockup art keeps "kit" this same green in both the
+       light and dark reference lockups, so this is its own fixed token,
+       defined once here and inherited into .dark (no override below). */
+    --brand-accent: 158 49% 48%;
   }
 
   .dark {
