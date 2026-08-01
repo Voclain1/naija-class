@@ -2,7 +2,7 @@
 
 import { Edit, ListPlus, Trash2 } from "lucide-react";
 
-import type { ClassArmDto, ClassLevelDto } from "@school-kit/types";
+import type { ClassArmDto, ClassLevelDto, UserListItemDto } from "@school-kit/types";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -11,6 +11,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 interface Props {
   levels: ClassLevelDto[];
   arms: ClassArmDto[];
+  /** Active teacher-role staff — used to resolve classTeacherId to a name.
+   *  A teacher who's since been deactivated/reassigned away from the role
+   *  falls back to the raw id so the column never silently goes blank. */
+  teachers: UserListItemDto[];
   onAdd: (level: ClassLevelDto) => void;
   onEdit: (arm: ClassArmDto) => void;
   onDelete: (arm: ClassArmDto) => void;
@@ -22,10 +26,16 @@ interface Props {
 export function ClassArmsTable({
   levels,
   arms,
+  teachers,
   onAdd,
   onEdit,
   onDelete,
 }: Props) {
+  const teacherName = (id: string) => {
+    const t = teachers.find((u) => u.id === id);
+    return t ? `${t.firstName} ${t.lastName}` : `${id.slice(0, 8)}…`;
+  };
+
   if (levels.length === 0) {
     return (
       <p className="rounded-md border border-dashed bg-muted/30 p-6 text-center text-sm text-muted-foreground">
@@ -93,13 +103,7 @@ export function ClassArmsTable({
                         {arm.capacity ?? "—"}
                       </TableCell>
                       <TableCell className="text-muted-foreground">
-                        {arm.classTeacherId ? (
-                          <span className="font-mono text-xs">
-                            {arm.classTeacherId.slice(0, 8)}…
-                          </span>
-                        ) : (
-                          "—"
-                        )}
+                        {arm.classTeacherId ? teacherName(arm.classTeacherId) : "—"}
                       </TableCell>
                       <TableCell>
                         {arm.isActive ? (
