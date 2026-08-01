@@ -14,7 +14,7 @@ export default function HomePage() {
       <div>
         <h1 className="text-3xl font-semibold tracking-tight">School Kit</h1>
         <p className="mt-2 text-muted-foreground">
-          Phase 0 — auth and admin shell live. Marketing landing comes later.
+          Log in to your school, or create a new one to get started.
         </p>
       </div>
       <div className="flex gap-2">

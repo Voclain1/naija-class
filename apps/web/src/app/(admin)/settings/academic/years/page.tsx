@@ -100,7 +100,7 @@ export default function AcademicYearsPage() {
         <div>
           <h1 className="font-serif text-2xl font-medium tracking-tight text-foreground">Academic years</h1>
           <p className="text-sm text-muted-foreground">
-            Define each academic year and its three terms. Slice 1 of Phase 1.
+            Define each academic year and its three terms.
           </p>
         </div>
         <Button
