@@ -12,6 +12,7 @@ import {
   type ClassArmDto,
   type ClassLevelDto,
   type CreateClassArmInput,
+  type UserListItemDto,
 } from "@school-kit/types";
 
 import { Button } from "@/components/ui/button";
@@ -29,6 +30,9 @@ interface Props {
   /** Available levels for the level select. Required even when editing
    *  (just for the disabled-display value). */
   levels: ClassLevelDto[];
+  /** Active staff holding the `teacher` role — options for the class-teacher
+   *  select. Empty list falls back to the "invite a teacher first" copy. */
+  teachers: UserListItemDto[];
   /** Pre-selected level for create. Ignored when `existing` is set. */
   defaultLevelId?: string;
   existing?: ClassArmDto;
@@ -41,6 +45,7 @@ interface FormValues {
   name: string;
   code: string;
   capacity: number | "";
+  classTeacherId: string;
   isActive: boolean;
 }
 
@@ -64,18 +69,19 @@ const classArmFormSchema = z.object({
   capacity: z
     .union([z.literal(""), z.coerce.number().int().min(0).max(10_000)])
     .optional(),
+  classTeacherId: z.string(),
   isActive: z.boolean().optional(),
 });
 
-// Class-teacher dropdown is intentionally NOT populated in cp3 — there is
-// no /users?role=teacher endpoint yet, and signup seeds only the owner.
-// The empty state below tells the admin to invite a teacher first; the
-// link goes to /settings/users (the existing Phase 0 invitation flow) —
-// teachers are Users, so the route is real. Slice 10/13 will replace the
-// stub with a populated <select>.
+// Class-teacher select is populated from `teachers` (active staff holding
+// the `teacher` role, fetched via GET /users on the parent page — see
+// staff-api.ts's listStaff). "" means "no class teacher" and is coerced to
+// null on submit; a real value is a user id, validated server-side by
+// class-arms.service.ts's assertUserIsTeacher.
 export function ClassArmDialog({
   open,
   levels,
+  teachers,
   defaultLevelId,
   existing,
   onClose,
@@ -88,6 +94,7 @@ export function ClassArmDialog({
       name: "",
       code: "",
       capacity: "",
+      classTeacherId: "",
       isActive: true,
     },
     mode: "onSubmit",
@@ -101,6 +108,7 @@ export function ClassArmDialog({
         name: existing.name,
         code: existing.code,
         capacity: existing.capacity ?? "",
+        classTeacherId: existing.classTeacherId ?? "",
         isActive: existing.isActive,
       });
     } else {
@@ -109,6 +117,7 @@ export function ClassArmDialog({
         name: "",
         code: "",
         capacity: "",
+        classTeacherId: "",
         isActive: true,
       });
     }
@@ -122,6 +131,7 @@ export function ClassArmDialog({
         name: values.name,
         code: values.code,
         capacity,
+        classTeacherId: values.classTeacherId === "" ? null : values.classTeacherId,
         isActive: values.isActive,
       };
       const saved = existing
@@ -230,17 +240,32 @@ export function ClassArmDialog({
           </div>
 
           <div className="flex flex-col gap-1">
-            <Label>Class teacher</Label>
-            <div className="rounded-md border border-dashed bg-muted/30 p-3 text-sm text-muted-foreground">
-              <p>No teachers have been invited yet.</p>
-              <Link
-                href="/settings/users"
-                className="mt-1 inline-block text-foreground underline"
-                onClick={onClose}
+            <Label htmlFor="arm-class-teacher">Class teacher</Label>
+            {teachers.length > 0 ? (
+              <select
+                id="arm-class-teacher"
+                className="h-9 rounded-md border bg-background px-2 text-sm"
+                {...form.register("classTeacherId")}
               >
-                Invite a teacher →
-              </Link>
-            </div>
+                <option value="">— None —</option>
+                {teachers.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.firstName} {t.lastName}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <div className="rounded-md border border-dashed bg-muted/30 p-3 text-sm text-muted-foreground">
+                <p>No teachers have been invited yet.</p>
+                <Link
+                  href="/staff/invite"
+                  className="mt-1 inline-block text-foreground underline"
+                  onClick={onClose}
+                >
+                  Invite a teacher →
+                </Link>
+              </div>
+            )}
           </div>
 
           {existing && (

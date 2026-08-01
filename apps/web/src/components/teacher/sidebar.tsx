@@ -5,6 +5,7 @@ import {
   CalendarCheck,
   CalendarClock,
   ClipboardList,
+  FileText,
   LayoutDashboard,
   UserCircle,
 } from "lucide-react";
@@ -30,6 +31,7 @@ const BASE_ITEMS: NavItem[] = [
   { label: "Dashboard", href: "/teacher/dashboard", icon: LayoutDashboard, enabled: true },
   { label: "Classes", href: "/teacher/classes", icon: BookOpen, enabled: true },
   { label: "Gradebook", href: "/teacher/gradebook", icon: ClipboardList, enabled: true },
+  { label: "Report Cards", href: "/teacher/report-cards", icon: FileText, enabled: true },
   { label: "Attendance", href: "/teacher/attendance", icon: CalendarCheck, enabled: true },
 ];
 

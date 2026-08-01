@@ -4,7 +4,7 @@ import { ListPlus, Loader2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 
-import type { ClassArmDto, ClassLevelDto } from "@school-kit/types";
+import type { ClassArmDto, ClassLevelDto, UserListItemDto } from "@school-kit/types";
 
 import { ClassArmDialog } from "@/components/settings/academic/class-arm-dialog";
 import { ClassArmsTable } from "@/components/settings/academic/class-arms-table";
@@ -15,6 +15,7 @@ import {
   listClassArms,
 } from "@/lib/class-arms/class-arms-api";
 import { listClassLevels } from "@/lib/class-levels/class-levels-api";
+import { listStaff } from "@/lib/staff/staff-api";
 
 // /settings/academic/class-arms — admin manages arms grouped by their
 // parent class level. Loads levels + arms in parallel; renders a section
@@ -28,6 +29,7 @@ import { listClassLevels } from "@/lib/class-levels/class-levels-api";
 export default function ClassArmsPage() {
   const [levels, setLevels] = useState<ClassLevelDto[]>([]);
   const [arms, setArms] = useState<ClassArmDto[]>([]);
+  const [teachers, setTeachers] = useState<UserListItemDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [includeInactive, setIncludeInactive] = useState(false);
@@ -41,11 +43,12 @@ export default function ClassArmsPage() {
     setLoading(true);
     setError(null);
     try {
-      const [lvls, a] = await Promise.all([
+      const [lvls, a, staff] = await Promise.all([
         // Include inactive levels too — they may still own arms historically;
         // we want them visible while editing.
         listClassLevels({ includeInactive: true }),
         listClassArms({ includeInactive }),
+        listStaff(),
       ]);
       setLevels(
         [...lvls].sort(
@@ -54,6 +57,14 @@ export default function ClassArmsPage() {
         ),
       );
       setArms(a);
+      // Class-teacher select/display only offers active staff holding the
+      // `teacher` role — mirrors class-arms.service.ts's assertUserIsTeacher
+      // gate, so nothing selectable here can fail server-side validation.
+      setTeachers(
+        staff.filter(
+          (u) => u.isActive && u.roles.some((r) => r.key === "teacher"),
+        ),
+      );
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Could not load class arms.");
     } finally {
@@ -141,6 +152,7 @@ export default function ClassArmsPage() {
         <ClassArmsTable
           levels={levels}
           arms={arms}
+          teachers={teachers}
           onAdd={(level) => {
             setEditing(undefined);
             setDefaultLevelId(level.id);
@@ -158,6 +170,7 @@ export default function ClassArmsPage() {
       <ClassArmDialog
         open={dialogOpen}
         levels={levels}
+        teachers={teachers}
         defaultLevelId={defaultLevelId}
         existing={editing}
         onClose={() => setDialogOpen(false)}
