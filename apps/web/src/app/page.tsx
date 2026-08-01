@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 
+import { SchoolKitWordmark } from "@/components/brand/schoolkit-mark";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth/use-auth";
 
@@ -12,7 +13,7 @@ export default function HomePage() {
   return (
     <main className="mx-auto flex min-h-screen max-w-3xl flex-col items-start justify-center gap-6 p-8">
       <div>
-        <h1 className="text-3xl font-semibold tracking-tight">School Kit</h1>
+        <SchoolKitWordmark iconSize={36} textClassName="text-3xl" />
         <p className="mt-2 text-muted-foreground">
           Log in to your school, or create a new one to get started.
         </p>

@@ -20,7 +20,7 @@ const fraunces = Fraunces({
 });
 
 export const metadata: Metadata = {
-  title: "School Kit",
+  title: "schoolkit",
   description: "Multi-tenant school management for Nigerian private schools.",
   icons: {
     icon: [

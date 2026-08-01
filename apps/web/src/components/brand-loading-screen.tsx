@@ -9,7 +9,7 @@ import { SchoolKitIcon } from "@/components/brand/schoolkit-mark";
 // this component doesn't need to know which theme it's in.
 export function BrandMark({ size = 32 }: { size?: number }) {
   return (
-    <div className="flex flex-col items-center gap-3">
+    <div className="flex flex-col items-center gap-3" data-testid="brand-preloader">
       <div className="animate-pulse">
         <SchoolKitIcon size={size} />
       </div>
