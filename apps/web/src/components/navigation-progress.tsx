@@ -132,7 +132,7 @@ export function NavigationProgress() {
       aria-live="polite"
       className="fixed inset-0 z-[100] flex items-center justify-center bg-background/70 backdrop-blur-sm"
     >
-      <BrandMark size="text-2xl" />
+      <BrandMark size={48} />
     </div>
   );
 }

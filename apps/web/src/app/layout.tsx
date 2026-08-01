@@ -22,6 +22,16 @@ const fraunces = Fraunces({
 export const metadata: Metadata = {
   title: "School Kit",
   description: "Multi-tenant school management for Nigerian private schools.",
+  icons: {
+    icon: [
+      { url: "/brand/schoolkit-favicon-32.png", sizes: "32x32", type: "image/png" },
+      { url: "/brand/schoolkit-favicon-64.png", sizes: "64x64", type: "image/png" },
+      { url: "/brand/schoolkit-favicon-128.png", sizes: "128x128", type: "image/png" },
+      { url: "/brand/schoolkit-favicon-256.png", sizes: "256x256", type: "image/png" },
+    ],
+    shortcut: "/brand/schoolkit-favicon-32.png",
+    apple: "/brand/schoolkit-favicon-256.png",
+  },
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

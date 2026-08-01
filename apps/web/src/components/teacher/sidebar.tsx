@@ -13,6 +13,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import type { NavItem } from "@/components/admin/nav-items";
+import { SchoolKitWordmark } from "@/components/brand/schoolkit-mark";
 import { getMyScope } from "@/lib/teacher/teacher-scope-api";
 import { cn } from "@/lib/utils";
 
@@ -95,8 +96,8 @@ export function TeacherSidebar() {
 
   return (
     <aside className="hidden w-60 shrink-0 border-r border-border bg-card md:flex md:flex-col">
-      <div className="flex h-14 items-center border-b border-border px-4 font-serif text-lg font-medium text-foreground">
-        School Kit
+      <div className="flex h-14 items-center border-b border-border px-4">
+        <SchoolKitWordmark iconSize={26} textClassName="text-base" />
       </div>
       <nav className="flex flex-1 flex-col gap-1 p-2">
         {items.map((item) => {

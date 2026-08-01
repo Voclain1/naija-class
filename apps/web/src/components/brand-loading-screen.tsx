@@ -1,19 +1,18 @@
 import { Loader2 } from "lucide-react";
 
-// The brand mark itself — same font-serif/font-medium treatment as the real
-// sidebar wordmark (see admin/sidebar.tsx, teacher/sidebar.tsx: "font-serif
-// text-lg font-medium") so the loading state reads as the same brand, not a
-// generic spinner. Pulses gently while loading; this project has no separate
-// icon/logo asset (no favicon, no SVG mark) — the wordmark IS the logo in
-// this design system, so it's the loading indicator.
-export function BrandMark({ size = "text-lg" }: { size?: string }) {
+import { SchoolKitIcon } from "@/components/brand/schoolkit-mark";
+
+// The brand mark itself — real icon graphic (2026-08-01), replacing the
+// pulsing text wordmark this used before any brand asset existed. Pulses
+// gently while loading, same as the old text version. SchoolKitIcon already
+// picks the light/dark-appropriate badge variant via its own dark: swap, so
+// this component doesn't need to know which theme it's in.
+export function BrandMark({ size = 32 }: { size?: number }) {
   return (
     <div className="flex flex-col items-center gap-3">
-      <p
-        className={`animate-pulse font-serif ${size} font-medium tracking-tight text-foreground`}
-      >
-        School Kit
-      </p>
+      <div className="animate-pulse">
+        <SchoolKitIcon size={size} />
+      </div>
       <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" aria-label="Loading" />
     </div>
   );
@@ -25,7 +24,7 @@ export function BrandMark({ size = "text-lg" }: { size?: string }) {
 export function BrandLoadingScreen() {
   return (
     <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-background">
-      <BrandMark size="text-2xl" />
+      <BrandMark size={48} />
     </div>
   );
 }
@@ -37,7 +36,7 @@ export function BrandLoadingScreen() {
 export function BrandLoadingInline() {
   return (
     <div className="flex min-h-[50vh] flex-col items-center justify-center gap-4">
-      <BrandMark size="text-lg" />
+      <BrandMark size={32} />
     </div>
   );
 }

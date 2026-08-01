@@ -2,6 +2,8 @@
 
 import { usePathname } from "next/navigation";
 
+import { SchoolKitWordmark } from "@/components/brand/schoolkit-mark";
+
 import { NavList } from "./nav-list";
 
 // Desktop-only persistent rail — hidden below md. Below md, mobile-nav.tsx's
@@ -11,8 +13,8 @@ export function AdminSidebar() {
 
   return (
     <aside className="hidden w-64 shrink-0 border-r border-border bg-card md:flex md:flex-col">
-      <div className="flex h-14 items-center border-b border-border px-5 font-serif text-lg font-medium text-foreground">
-        School Kit
+      <div className="flex h-14 items-center border-b border-border px-5">
+        <SchoolKitWordmark iconSize={26} textClassName="text-base" />
       </div>
       <NavList pathname={pathname} />
     </aside>
