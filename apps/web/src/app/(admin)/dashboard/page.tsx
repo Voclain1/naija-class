@@ -9,6 +9,7 @@ import type { AdminDashboardDto, DashboardAlertType } from "@school-kit/types";
 
 import { AttendanceSparkline } from "@/components/admin/attendance-sparkline";
 import { CommandDialog } from "@/components/admin/command-dialog";
+import { BrandLoadingInline } from "@/components/brand-loading-screen";
 import { AlertList } from "@/components/shared/alert-list";
 import { ProgressMeter } from "@/components/shared/progress-meter";
 import { StatCard } from "@/components/shared/stat-card";
@@ -87,8 +88,20 @@ export default function DashboardPage() {
 
   // The term selector lives in the topbar and writes ?termId= once it
   // resolves the school's current term — until then, this page just waits.
+  //
+  // Branded (not bare-text) loading state, 2026-08-02: this page does real
+  // server-side aggregation (enrollment + fees + attendance + report-card +
+  // invitation counts in one call) and is the most-viewed page in the app,
+  // so a slow fetch here — e.g. a Neon free-tier cold-start reconnect — is
+  // the worst place to show a frozen/blank screen. `loading` already tracks
+  // the real fetch's actual pending duration exactly (set true immediately
+  // before getAdminDashboard(), false in its .finally()), so rendering
+  // BrandLoadingInline here for as long as this condition holds is honest by
+  // construction — no artificial minimum duration, no fixed timer. This is
+  // an interim mitigation for the Neon autosuspend issue, not a fix for it —
+  // see docs/deferred.md.
   if (!termId || loading) {
-    return <p className="text-sm text-muted-foreground">Loading…</p>;
+    return <BrandLoadingInline />;
   }
 
   if (error) {

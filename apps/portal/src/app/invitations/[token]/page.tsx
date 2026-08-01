@@ -133,7 +133,7 @@ export default function AcceptGuardianInvitationPage() {
     <main className="flex min-h-screen flex-col items-center justify-center gap-8 px-4">
       <div className="flex flex-col items-center gap-1 text-center">
         <h1 className="text-2xl font-semibold tracking-tight">
-          Join {invitation.schoolName} on School Kit
+          Join {invitation.schoolName} on schoolkit
         </h1>
         <p className="text-sm text-muted-foreground">
           Hi {invitation.firstName}, {invitation.invitedByName} invited you to the parent portal.
@@ -171,7 +171,7 @@ export default function AcceptGuardianInvitationPage() {
             {...form.register("ndprConsent")}
           />
           <label htmlFor="ndprConsent" className="text-sm text-muted-foreground">
-            I consent to School Kit processing my data to provide the parent portal, in line with
+            I consent to schoolkit processing my data to provide the parent portal, in line with
             NDPR.
           </label>
         </div>

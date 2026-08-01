@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 
 import type { AcademicYearDto, FinanceDashboardDto, TermDto } from "@school-kit/types";
 
+import { BrandLoadingInline } from "@/components/brand-loading-screen";
 import { StatCard } from "@/components/shared/stat-card";
 import { Card, CardContent } from "@/components/ui/card";
 import { listAcademicYears, listTerms } from "@/lib/academic-years/academic-years-api";
@@ -119,7 +120,13 @@ export default function FinanceDashboardPage() {
         </div>
       )}
 
-      {loading && <p className="text-sm text-muted-foreground">Loading…</p>}
+      {/* Branded (not bare-text) loading state, matching the admin dashboard
+          fix, 2026-08-02: this page is also real server-side aggregation
+          (getFinanceDashboard), and `loading` already tracks that fetch's
+          genuine pending duration exactly — honest by construction, no
+          artificial minimum. Interim mitigation for Neon autosuspend cold
+          starts (docs/deferred.md), not a fix for the underlying issue. */}
+      {loading && <BrandLoadingInline />}
 
       {!termId && !loading && (
         <p className="text-sm text-muted-foreground">

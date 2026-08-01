@@ -62,14 +62,14 @@ export function Step4NdprForm() {
         <div className="mt-4">
           <CardTitle>Data protection consent</CardTitle>
           <CardDescription>
-            Confirm you understand how School Kit handles your school&apos;s data.
+            Confirm you understand how schoolkit handles your school&apos;s data.
           </CardDescription>
         </div>
       </CardHeader>
       <CardContent>
         <form onSubmit={onSubmit} className="flex flex-col gap-4">
           <div className="space-y-2 rounded-md border bg-muted/30 p-3 text-sm">
-            <p className="font-medium">School Kit will:</p>
+            <p className="font-medium">schoolkit will:</p>
             <ul className="list-disc space-y-1 pl-5 text-muted-foreground">
               <li>Store your students&apos;, staff&apos;s, and parents&apos; details to deliver the service.</li>
               <li>Only share data with payment, SMS, and email providers when you trigger an action that requires it.</li>

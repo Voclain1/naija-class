@@ -101,7 +101,7 @@ export default function NotificationSettingsPage() {
       <header className="flex flex-col gap-2">
         <h1 className="font-serif text-2xl font-medium tracking-tight text-foreground">Notifications</h1>
         <p className="text-sm text-muted-foreground">
-          Choose which channels School Kit uses to reach guardians — portal
+          Choose which channels schoolkit uses to reach guardians — portal
           invitations and fee reminders both respect these settings.
         </p>
       </header>

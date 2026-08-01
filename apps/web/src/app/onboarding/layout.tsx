@@ -1,5 +1,7 @@
 import type { ReactNode } from "react";
 
+import { SchoolKitWordmark } from "@/components/brand/schoolkit-mark";
+
 // Onboarding wizard layout. Centered card layout like (auth), no admin
 // chrome (sidebar/topbar) since the user has not finished setup yet.
 //
@@ -9,8 +11,8 @@ import type { ReactNode } from "react";
 export default function OnboardingLayout({ children }: { children: ReactNode }) {
   return (
     <div className="flex min-h-screen flex-col items-center justify-center bg-muted/40 p-4">
-      <div className="mb-6 text-center">
-        <h1 className="text-2xl font-semibold tracking-tight">School Kit</h1>
+      <div className="mb-6 flex flex-col items-center gap-2 text-center">
+        <SchoolKitWordmark iconSize={32} textClassName="text-2xl" />
         <p className="text-sm text-muted-foreground">Let&apos;s set up your school.</p>
       </div>
       {children}
