@@ -1,6 +1,6 @@
 import { afterAll, describe, expect, it } from "vitest";
 
-import { DEFAULT_CLASS_LEVELS, basePrisma, withTenant } from "@school-kit/db";
+import { DEFAULT_CLASS_LEVELS, basePrisma, defaultArmFor, withTenant } from "@school-kit/db";
 import { ConflictError, ForbiddenError, NotFoundError } from "@school-kit/types";
 
 import { AuthService } from "../auth/auth.service";
@@ -104,6 +104,38 @@ describe("ClassLevelsService", () => {
       });
     });
 
+    it("fresh signup also auto-creates one default arm per seeded level (e.g. \"JSS 1\" -> \"JSS 1A\")", async () => {
+      // 2026-08-02: each of the 14 seeded levels now gets exactly one arm at
+      // signup, so a single-arm school can enroll students without a manual
+      // "create an arm" step. Query class_arms directly rather than through
+      // ClassArmsService — this spec is about ClassLevelsService's (and
+      // AuthService's) responsibility for making this true, not that
+      // service's own behavior.
+      const { authCtx, schoolId } = await createActiveSchool("seed-arms");
+      const levels = await service.list(authCtx);
+      expect(levels).toHaveLength(14);
+
+      const arms = await withTenant(schoolId, (db) =>
+        db.classArm.findMany({ where: { schoolId }, select: { classLevelId: true, name: true, code: true } }),
+      );
+      expect(arms).toHaveLength(14);
+
+      for (const level of levels) {
+        const arm = arms.find((a) => a.classLevelId === level.id);
+        expect(arm, `level ${level.code} should have exactly one default arm`).toBeTruthy();
+        const expected = defaultArmFor(level);
+        expect(arm!.name).toBe(expected.name);
+        expect(arm!.code).toBe(expected.code);
+      }
+
+      // Signup bootstrap attributes the whole seed to auth.signup_owner, not
+      // one audit row per arm (same precedent as the level seed itself).
+      const armAuditRows = await withTenant(schoolId, (db) =>
+        db.auditLog.count({ where: { schoolId, action: "class-arm.create" } }),
+      );
+      expect(armAuditRows).toBe(0);
+    });
+
     it("two separate signups each get their own 14 — no cross-tenant leakage", async () => {
       const a = await createActiveSchool("iso-a");
       const b = await createActiveSchool("iso-b");
@@ -153,6 +185,28 @@ describe("ClassLevelsService", () => {
         }),
       );
       expect(audit).toBeTruthy();
+
+      // Default arm was also created — "Crèche" -> "CrècheA" / "creche-a" —
+      // and unlike the signup-bootstrap seed, THIS path (a standalone admin
+      // mutation) writes its own class-arm.create audit row, tagged
+      // autoCreated so it's distinguishable from one typed in by hand.
+      const arm = await withTenant(schoolId, (db) =>
+        db.classArm.findFirst({ where: { schoolId, classLevelId: created.id } }),
+      );
+      expect(arm).toBeTruthy();
+      expect(arm!.name).toBe("CrècheA");
+      expect(arm!.code).toBe("creche-a");
+      expect(arm!.classTeacherId).toBeNull();
+      expect(arm!.capacity).toBeNull();
+      expect(arm!.isActive).toBe(true);
+
+      const armAudit = await withTenant(schoolId, (db) =>
+        db.auditLog.findFirst({
+          where: { schoolId, action: "class-arm.create", entityId: arm!.id },
+        }),
+      );
+      expect(armAudit).toBeTruthy();
+      expect((armAudit!.metadata as { autoCreated?: boolean }).autoCreated).toBe(true);
     });
 
     it("duplicate code per school → ConflictError CODE_TAKEN", async () => {
@@ -264,14 +318,32 @@ describe("ClassLevelsService", () => {
   // ----------------------------------------------------------------------
 
   describe("delete", () => {
-    it("hard-deletes a level and removes it from the list (slice-3 will add a dependent-arms guard)", async () => {
-      const { authCtx } = await createActiveSchool("del");
+    it("hard-deletes a level, removes it from the list, and cascades to its default arm", async () => {
+      // Every level now has a default arm (2026-08-02), so this also proves
+      // ClassArm's onDelete: Cascade FK still holds rather than blocking the
+      // delete with an FK violation — there is no application-level
+      // dependent-arms guard (the commented-out one in class-levels.service.ts
+      // was never built, and building it now would need to explicitly
+      // special-case "just the default arm" or every level would become
+      // undeletable).
+      const { authCtx, schoolId } = await createActiveSchool("del");
       const list = await service.list(authCtx);
       const sss3 = list.find((l) => l.code === "sss3")!;
+      const armBefore = await withTenant(schoolId, (db) =>
+        db.classArm.findFirst({ where: { schoolId, classLevelId: sss3.id } }),
+      );
+      expect(armBefore).toBeTruthy();
+
       await service.delete(authCtx, sss3.id, reqCtx);
+
       const after = await service.list(authCtx);
       expect(after.map((l) => l.id)).not.toContain(sss3.id);
       expect(after).toHaveLength(13);
+
+      const armAfter = await withTenant(schoolId, (db) =>
+        db.classArm.findUnique({ where: { id: armBefore!.id } }),
+      );
+      expect(armAfter).toBeNull();
     });
 
     it("delete unknown id → NotFoundError", async () => {

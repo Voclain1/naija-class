@@ -139,7 +139,10 @@ describe("ClassArmsService", () => {
 
   async function firstSeededLevel(schoolId: string): Promise<string> {
     // Every signed-up school gets the 14-level seed; pick KG 1 (code "kg1",
-    // orderIndex 1) — stable across runs.
+    // orderIndex 1) — stable across runs. Since 2026-08-02, KG 1 also
+    // already has a default arm at code "kg1-a" (name "KG 1A") from the
+    // signup seed itself — every test below that manually creates a SECOND
+    // arm under this level uses "kg1-b"/"KG 1B" to avoid colliding with it.
     const row = await withTenant(schoolId, (db) =>
       db.classLevel.findFirst({
         where: { code: "kg1" },
@@ -162,7 +165,7 @@ describe("ClassArmsService", () => {
       const created = await service.create(
         authCtx,
         levelId,
-        { name: "KG 1A", code: "kg1-a", capacity: 25 },
+        { name: "KG 1B", code: "kg1-b", capacity: 25 },
         reqCtx,
       );
 
@@ -183,6 +186,25 @@ describe("ClassArmsService", () => {
         }),
       );
       expect(audit).toBeTruthy();
+    });
+
+    it("KG 1 already has its default arm right after signup — no manual create needed", async () => {
+      // The actual point of the 2026-08-02 change: a fresh school can list
+      // (and enroll into) an arm for every seeded level without ever calling
+      // create() first.
+      const { authCtx, schoolId } = await createActiveSchool("default-arm");
+      const levelId = await firstSeededLevel(schoolId);
+      const nested = await service.listForLevel(authCtx, levelId);
+      expect(nested).toHaveLength(1);
+      expect(nested[0]!.name).toBe("KG 1A");
+      expect(nested[0]!.code).toBe("kg1-a");
+      expect(nested[0]!.classLevelId).toBe(levelId);
+
+      // Manually adding a second arm alongside it still works with zero
+      // friction — the default arm is a starting point, not a constraint.
+      const second = await service.create(authCtx, levelId, { name: "KG 1B", code: "kg1-b" }, reqCtx);
+      const nestedAfter = await service.listForLevel(authCtx, levelId);
+      expect(nestedAfter.map((a) => a.id).sort()).toEqual([nested[0]!.id, second.id].sort());
     });
 
     it("create under non-existent parent level → NotFoundError", async () => {
@@ -241,7 +263,7 @@ describe("ClassArmsService", () => {
       const created = await service.create(
         authCtx,
         levelId,
-        { name: "KG 1A", code: "kg1-a", classTeacherId: teacherId },
+        { name: "KG 1B", code: "kg1-b", classTeacherId: teacherId },
         reqCtx,
       );
       expect(created.classTeacherId).toBe(teacherId);
@@ -256,7 +278,7 @@ describe("ClassArmsService", () => {
         service.create(
           authCtx,
           levelId,
-          { name: "KG 1A", code: "kg1-a", classTeacherId: nonTeacherId },
+          { name: "KG 1B", code: "kg1-b", classTeacherId: nonTeacherId },
           reqCtx,
         ),
       ).rejects.toMatchObject({
@@ -278,8 +300,8 @@ describe("ClassArmsService", () => {
           authCtx,
           levelId,
           {
-            name: "KG 1A",
-            code: "kg1-a",
+            name: "KG 1B",
+            code: "kg1-b",
             classTeacherId: "00000000-0000-0000-0000-000000000000",
           },
           reqCtx,
@@ -305,7 +327,7 @@ describe("ClassArmsService", () => {
         service.create(
           a.authCtx,
           levelA,
-          { name: "KG 1A", code: "kg1-a", classTeacherId: teacherInB },
+          { name: "KG 1B", code: "kg1-b", classTeacherId: teacherInB },
           reqCtx,
         ),
       ).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
@@ -314,7 +336,7 @@ describe("ClassArmsService", () => {
     it("PATCH classTeacherId revalidates on update", async () => {
       const { authCtx, schoolId } = await createActiveSchool("teach-patch");
       const levelId = await firstSeededLevel(schoolId);
-      const arm = await service.create(authCtx, levelId, { name: "KG 1A", code: "kg1-a" }, reqCtx);
+      const arm = await service.create(authCtx, levelId, { name: "KG 1B", code: "kg1-b" }, reqCtx);
       const teacherId = await createTeacher(schoolId, "patch-ok");
       const nonTeacherId = await createNonTeacherUser(schoolId, "patch-not");
 
@@ -348,7 +370,7 @@ describe("ClassArmsService", () => {
     it("renames an arm and bumps audit log", async () => {
       const { authCtx, schoolId } = await createActiveSchool("upd");
       const levelId = await firstSeededLevel(schoolId);
-      const arm = await service.create(authCtx, levelId, { name: "KG 1A", code: "kg1-a" }, reqCtx);
+      const arm = await service.create(authCtx, levelId, { name: "KG 1B", code: "kg1-b" }, reqCtx);
       const renamed = await service.update(authCtx, arm.id, { name: "Kindergarten 1A" }, reqCtx);
       expect(renamed.name).toBe("Kindergarten 1A");
     });

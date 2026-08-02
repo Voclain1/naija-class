@@ -115,9 +115,11 @@ Click **Create term**.
 
 The 14 standard Nigerian levels (KG 1 through SSS 3) are already there — seeded automatically when your school was created. You only need this page if you want to add a custom level or rename a default one. Click **Add class level** and fill in **Name**, **Code**, **Stage** (Nursery / Primary / JSS / SSS), and **Order**.
 
+**Every level — seeded or custom — already has one arm.** A default arm (e.g. "JSS 1" gets "JSS 1A") is created automatically the moment a level exists, so if your school runs one stream per level, you can go straight to enrolling students without visiting Class Arms at all. It's an ordinary arm like any other — rename it, deactivate it, or add more arms alongside it any time.
+
 ### Class arms (`/settings/academic/class-arms`)
 
-An arm is a specific class, e.g. "JSS 1A". Click **Add class arm** and fill in:
+An arm is a specific class, e.g. "JSS 1A". You only need this page if you want to **rename the auto-created default arm** or **add a second (or third) arm** under a level — e.g. "JSS 1A" and "JSS 1B" for a two-stream school. Click **Add class arm** and fill in:
 - **Class level** — pick from your existing levels (you need at least one level before this button is enabled)
 - **Name** — e.g. `JSS 1A`
 - **Code**
