@@ -114,6 +114,18 @@ export async function apiMe(
   return unwrap(await api.get("auth/me"), "auth/me");
 }
 
+// Pre-dismisses the first-login product tour for a fixture-provisioned
+// admin/owner. Every existing spec here is testing something else (roster,
+// invitations, teacher scope...) — none of them are the tour's own test —
+// so loginAsAdmin calls this right after activation, the same way a test
+// suite would dismiss an unrelated cookie banner in setup rather than
+// special-case every test around it. The tour's own coverage drives a
+// deliberately tour-pending account instead (see docs/onboarding-guide.md's
+// PR / the tour feature's own verification pass).
+export async function apiCompleteTour(api: APIRequestContext): Promise<void> {
+  await unwrap(await api.post("users/me/complete-tour", { data: {} }), "complete-tour");
+}
+
 // Drive the five onboarding steps to flip the school from ONBOARDING to ACTIVE.
 // Each step gates on the previous one (the API enforces step order), so this
 // runs strictly sequentially. The school must be ACTIVE before invitations may

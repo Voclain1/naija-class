@@ -15,6 +15,7 @@ import {
 import * as password from "../../common/auth/password";
 import { createSession } from "../../common/auth/sessions";
 import { redactEmail } from "../../common/redact";
+import { USER_RESPONSE_SELECT } from "../auth/auth.service";
 
 const ACCEPT_AUDIT_ACTION = "invitation.accept";
 
@@ -237,23 +238,11 @@ export class InvitationsService {
   }
 }
 
-// Mirrors the auth.service shape so the response from accept is identical
-// to login/signup. Selects are explicit so a future schema addition doesn't
-// silently leak through.
-
-const USER_RESPONSE_SELECT = {
-  id: true,
-  schoolId: true,
-  email: true,
-  phone: true,
-  firstName: true,
-  lastName: true,
-  isActive: true,
-  emailVerified: true,
-  phoneVerified: true,
-  createdAt: true,
-  updatedAt: true,
-} satisfies Prisma.UserSelect;
+// USER_RESPONSE_SELECT imported from auth.service (was a local duplicate
+// here, drifted the moment tourCompletedAt was added there but not here —
+// see git history around 2026-08-01 for the fix). Single source of truth
+// now, so the response from accept stays identical to login/signup by
+// construction, not by two comments promising to keep two copies in sync.
 
 const SCHOOL_RESPONSE_SELECT = {
   id: true,

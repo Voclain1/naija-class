@@ -10,6 +10,7 @@ import {
   type InviteAdminResponse,
   type InvitationCreatedDto,
   type PendingInvitationDto,
+  type SignupOwnerUserDto,
   type UserListItemDto,
   type UserRoleDto,
 } from "@school-kit/types";
@@ -17,6 +18,7 @@ import {
 import type { AuthContext } from "../../common/auth/auth-context";
 import { assertUserActiveAndHasOneOf } from "../../common/auth/role-check";
 import { redactEmail } from "../../common/redact";
+import { USER_RESPONSE_SELECT } from "../auth/auth.service";
 
 // 7 days. Slice 6's onboarding step 3 uses the same value inline; both copies
 // agree because both copies derive from "1 week of inbox attention is plenty
@@ -243,6 +245,19 @@ export class UsersService {
       token: rawToken,
       acceptUrl,
     };
+  }
+
+  // POST /users/me/complete-tour — no role gate: every authenticated user
+  // (owner, admin, teacher, bursar) may mark their own tour done. Self-
+  // scoped by authCtx.userId, never a body-supplied id.
+  async completeTour(authCtx: AuthContext): Promise<SignupOwnerUserDto> {
+    return withTenant(authCtx.schoolId, async (db) => {
+      return db.user.update({
+        where: { id: authCtx.userId },
+        data: { tourCompletedAt: new Date() },
+        select: USER_RESPONSE_SELECT,
+      });
+    });
   }
 }
 

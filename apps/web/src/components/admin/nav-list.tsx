@@ -79,6 +79,7 @@ function NavLink({
     <Link
       href={item.href}
       onClick={onNavigate}
+      data-tour-target={item.href}
       className={cn(
         baseClasses,
         active

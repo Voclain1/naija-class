@@ -13,6 +13,7 @@ import {
   type InviteAdminInput,
   type InviteAdminResponse,
   type PendingInvitationDto,
+  type SignupOwnerUserDto,
   type UserListItemDto,
 } from "@school-kit/types";
 import type { Request } from "express";
@@ -57,5 +58,14 @@ export class UsersController {
       ipAddress: ip,
       userAgent: req.header("user-agent") ?? null,
     });
+  }
+
+  // POST /users/me/complete-tour — any authenticated user marks the
+  // first-login product tour finished or skipped (both call this; there is
+  // no separate "skipped" state — see User.tourCompletedAt's schema
+  // comment). Idempotent: calling it again just re-stamps "now".
+  @Post("me/complete-tour")
+  async completeTour(@CurrentUser() authCtx: AuthContext): Promise<SignupOwnerUserDto> {
+    return this.usersService.completeTour(authCtx);
   }
 }

@@ -52,6 +52,10 @@ export interface SignupOwnerUserDto {
   isActive: boolean;
   emailVerified: boolean;
   phoneVerified: boolean;
+  // Null until the owner/admin finishes or skips the first-login product
+  // tour; either action stamps it, so this is also "has seen the tour",
+  // not literally "completed every step."
+  tourCompletedAt: string | Date | null;
   createdAt: string | Date;
   updatedAt: string | Date;
 }

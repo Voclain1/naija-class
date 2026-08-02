@@ -52,6 +52,9 @@ export interface AuthContextValue extends AuthState {
   // Called by the onboarding flow to keep the auth context's school in sync
   // after each POST /onboarding/:step without a full /auth/me round-trip.
   setSchool: (school: SchoolMeDto) => void;
+  // Called after POST /users/me/complete-tour so the first-login tour's
+  // "don't show again" state is reflected immediately, no /auth/me re-fetch.
+  setUser: (user: SignupOwnerUserDto) => void;
 }
 
 const initialState: AuthState = {
@@ -198,6 +201,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setState((prev) => ({ ...prev, school }));
   }, []);
 
+  const setUser = useCallback((user: SignupOwnerUserDto) => {
+    setState((prev) => ({ ...prev, user }));
+  }, []);
+
   const signup = useCallback(async (input: SignupOwnerInput) => {
     const response = await signupOwnerRequest(input);
     // Proxy set the sk_session cookie. Also seed in-memory for immediate use.
@@ -230,7 +237,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ ...state, login, loginWithChallenge, signup, logout, setSchool }}
+      value={{ ...state, login, loginWithChallenge, signup, logout, setSchool, setUser }}
     >
       {children}
     </AuthContext.Provider>

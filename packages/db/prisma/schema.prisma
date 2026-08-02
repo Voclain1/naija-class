@@ -107,6 +107,13 @@ model User {
   totpSecret          String?   @map("totp_secret")
   totpEnabled         Boolean   @default(false) @map("totp_enabled")
 
+  // First-login product tour (owner/admin shell). Null until the user
+  // finishes or skips it; either action stamps "now" — there is no
+  // separate "skipped" state, since the tour never reappears automatically
+  // either way. A "Replay tour" affordance re-shows it without touching
+  // this column (replay is a local UI action, not a state reset).
+  tourCompletedAt     DateTime? @map("tour_completed_at")
+
   // Phase 3 / Slice 12 — encrypted BVN (Bank Verification Number), staff/
   // payroll PII, not student/guardian data. bvnEncrypted is pgcrypto
   // ciphertext, only ever produced/consumed via the encrypt_bvn/decrypt_bvn

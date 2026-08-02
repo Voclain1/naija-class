@@ -145,6 +145,19 @@ test("Phase 0 happy path: signup -> onboarding -> invite -> accept -> login", as
     ownerPage.getByRole("heading", { name: "Dashboard", level: 1 }),
   ).toBeVisible();
 
+  // 6b. First-login product tour auto-shows here — a real owner landing on
+  //     /dashboard for the first time sees it too, and its backdrop blocks
+  //     interaction with the page underneath until dismissed. Skip it so
+  //     the rest of this test (a different flow entirely) can proceed —
+  //     the tour's own behaviour has its own dedicated verification pass.
+  await expect(
+    ownerPage.getByRole("heading", { name: "Welcome to schoolkit" }),
+  ).toBeVisible();
+  await ownerPage.getByRole("button", { name: "Skip tour", exact: true }).click();
+  await expect(
+    ownerPage.getByRole("heading", { name: "Welcome to schoolkit" }),
+  ).toHaveCount(0);
+
   // 7. Invite the admin from /settings/users. We intercept the API
   //    response to extract acceptUrl — the UI only exposes it via a
   //    transient "Copy link" affordance (apps/web/src/components/
@@ -208,6 +221,17 @@ test("Phase 0 happy path: signup -> onboarding -> invite -> accept -> login", as
   await expect(
     adminPage.getByRole("heading", { name: "Dashboard", level: 1 }),
   ).toBeVisible();
+
+  // 8b. This invited admin is also a first-time /dashboard visitor — their
+  //     own account independently gets the first-login tour (it's per-User,
+  //     not per-School). Dismiss it, same as the owner above.
+  await expect(
+    adminPage.getByRole("heading", { name: "Welcome to schoolkit" }),
+  ).toBeVisible();
+  await adminPage.getByRole("button", { name: "Skip tour", exact: true }).click();
+  await expect(
+    adminPage.getByRole("heading", { name: "Welcome to schoolkit" }),
+  ).toHaveCount(0);
 
   // 9. Log out via the topbar dropdown, then log back in via /login.
   //    Per the spec criterion, "admin logs in" is a distinct step from

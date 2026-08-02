@@ -933,7 +933,10 @@ export class AuthService {
 // Selects — explicit so we never accidentally leak passwordHash, internal
 // flags, or anything else added to the model in a future migration.
 
-const USER_RESPONSE_SELECT = {
+// Exported so other modules (e.g. UsersService.completeTour) return the
+// exact same public-safe user shape instead of hand-rolling a second select
+// that could drift (leak a field, or omit one the DTO expects).
+export const USER_RESPONSE_SELECT = {
   id: true,
   schoolId: true,
   email: true,
@@ -943,6 +946,7 @@ const USER_RESPONSE_SELECT = {
   isActive: true,
   emailVerified: true,
   phoneVerified: true,
+  tourCompletedAt: true,
   createdAt: true,
   updatedAt: true,
 } satisfies Prisma.UserSelect;
