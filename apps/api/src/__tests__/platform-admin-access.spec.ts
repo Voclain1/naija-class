@@ -1,6 +1,5 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { fileURLToPath } from "node:url";
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Test } from "@nestjs/testing";
@@ -25,8 +24,10 @@ import { PlatformAdminModule } from "../modules/platform-admin/platform-admin.mo
 // proof, allow-listed-shape assertion, import-boundary check, audit
 // logging.
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+// apps/api compiles under CommonJS (NestJS/webpack) — __dirname is a
+// native CommonJS global here, unlike the workspace's ESM packages
+// (see CLAUDE.md's "ESM module resolution" note, which is about
+// packages/*, not apps/api itself).
 
 let phoneCounter = 0;
 function randomPhone(): string {
