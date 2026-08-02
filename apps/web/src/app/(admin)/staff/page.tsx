@@ -10,10 +10,13 @@ import type {
   UserListItemDto,
 } from "@school-kit/types";
 
+import { ExportCsvButton } from "@/components/shared/export-csv-button";
+import { PrintButton } from "@/components/shared/print-button";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ApiError } from "@/lib/api-client";
+import { exportRowsAsCsv, type CsvColumn } from "@/lib/csv-export";
 import {
   listStaff,
   listStaffInvitations,
@@ -66,6 +69,23 @@ const ROLE_NAMES: Record<string, string> = {
 function fullName(first: string | null, last: string | null): string {
   return [first, last].filter(Boolean).join(" ").trim() || "(no name)";
 }
+
+// Exports whatever rows are currently on screen (already-loaded, already
+// filtered by search/role/status) — no extra fetch, same GET /users +
+// /users/invitations reads the page already made.
+const STAFF_EXPORT_COLUMNS: CsvColumn<StaffRow>[] = [
+  { header: "Name", accessor: (r) => r.name },
+  { header: "Email", accessor: (r) => r.email },
+  { header: "Role", accessor: (r) => r.roleLabel },
+  {
+    header: "Status",
+    accessor: (r) => (r.kind === "invitation" ? "Invited" : r.isActive ? "Active" : "Inactive"),
+  },
+  {
+    header: "Profile",
+    accessor: (r) => (r.kind === "invitation" ? "" : r.hasProfile ? "Has profile" : "Pending profile"),
+  },
+];
 
 export default function StaffRosterPage() {
   const [users, setUsers] = useState<UserListItemDto[]>([]);
@@ -155,12 +175,17 @@ export default function StaffRosterPage() {
       <header className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="font-serif text-2xl font-medium tracking-tight text-foreground">Staff</h1>
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-muted-foreground print:hidden">
             Teachers and administrators in your school. Invite one person
             directly, or bulk-invite teachers from a CSV.
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-2 print:hidden">
+          <ExportCsvButton
+            onExport={() => exportRowsAsCsv("staff.csv", filtered, STAFF_EXPORT_COLUMNS)}
+            disabled={filtered.length === 0}
+          />
+          <PrintButton />
           <Button asChild variant="outline">
             <Link href="/staff/import">
               <FileUp className="mr-1 h-4 w-4" />
@@ -177,14 +202,14 @@ export default function StaffRosterPage() {
       </header>
 
       {profileLookupTruncated && (
-        <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900">
+        <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900 print:hidden">
           Showing teacher-profile status for the first 200 teachers only.
           Profiles beyond that may show as &ldquo;Pending profile&rdquo; here
           even when one exists — open the staff member to confirm.
         </div>
       )}
 
-      <section className="flex flex-col gap-3 sm:flex-row sm:items-end">
+      <section className="flex flex-col gap-3 sm:flex-row sm:items-end print:hidden">
         <div className="flex flex-1 flex-col gap-1">
           <label htmlFor="staff-search" className="text-sm font-medium">
             Search
@@ -294,7 +319,7 @@ function StaffTable({ rows }: { rows: StaffRow[] }) {
             <TableHead>Role</TableHead>
             <TableHead>Profile</TableHead>
             <TableHead>Status</TableHead>
-            <TableHead />
+            <TableHead className="print:hidden" />
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -329,7 +354,7 @@ function StaffTable({ rows }: { rows: StaffRow[] }) {
                   <Badge variant="muted">Inactive</Badge>
                 )}
               </TableCell>
-              <TableCell className="text-right">
+              <TableCell className="text-right print:hidden">
                 {r.kind === "user" ? (
                   <Link
                     href={`/staff/${r.id}`}

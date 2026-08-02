@@ -4,12 +4,27 @@ import { useEffect, useState } from "react";
 
 import type { AcademicYearDto, DebtorDto, TermDto } from "@school-kit/types";
 
+import { ExportCsvButton } from "@/components/shared/export-csv-button";
+import { PrintButton } from "@/components/shared/print-button";
 import { Badge, type BadgeProps } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { listAcademicYears, listTerms } from "@/lib/academic-years/academic-years-api";
+import { exportRowsAsCsv, type CsvColumn } from "@/lib/csv-export";
 import { formatKobo } from "@/lib/finance/format";
 import { listDebtors, sendReminders } from "@/lib/finance/finance-api";
+
+const DEBTOR_EXPORT_COLUMNS: CsvColumn<DebtorDto>[] = [
+  { header: "Student", accessor: (d) => d.studentName },
+  { header: "Admission Number", accessor: (d) => d.admissionNumber },
+  { header: "Class", accessor: (d) => d.classArm },
+  { header: "Total Due", accessor: (d) => formatKobo(d.totalDue) },
+  { header: "Paid", accessor: (d) => formatKobo(d.totalPaid) },
+  { header: "Balance", accessor: (d) => formatKobo(d.balance) },
+  { header: "Due Date", accessor: (d) => d.dueDate ?? "" },
+  { header: "Status", accessor: (d) => STATUS_LABELS[d.status] },
+  { header: "Payment Plan", accessor: (d) => (d.hasPaymentPlan ? "Yes" : "No") },
+];
 
 type Status = "ISSUED" | "PARTIALLY_PAID" | "OVERDUE";
 
@@ -114,7 +129,7 @@ export default function DebtorsPage() {
       <h1 className="font-serif text-2xl font-medium tracking-tight text-foreground">Debtor list</h1>
 
       {/* Term selector */}
-      <div className="flex flex-wrap items-end gap-4">
+      <div className="flex flex-wrap items-end gap-4 print:hidden">
         <div>
           <label className="mb-1 block text-sm font-medium text-foreground">Academic year</label>
           <select className={SELECT_CLASSES} value={yearId} onChange={(e) => setYearId(e.target.value)}>
@@ -178,20 +193,26 @@ export default function DebtorsPage() {
               <strong className="text-foreground">{debtors.length}</strong> outstanding invoice{debtors.length !== 1 ? "s" : ""} —
               total balance <strong className="text-foreground">{formatKobo(totalBalance)}</strong>
             </p>
-            <Button onClick={handleRemind} disabled={reminding || selected.size === 0}>
-              {reminding
-                ? "Sending…"
-                : selected.size === 0
-                  ? "Send reminder (select rows)"
-                  : `Send reminder to ${selected.size} family${selected.size !== 1 ? "ies" : "y"}`}
-            </Button>
+            <div className="flex gap-2 print:hidden">
+              <ExportCsvButton
+                onExport={() => exportRowsAsCsv("debtors.csv", debtors, DEBTOR_EXPORT_COLUMNS)}
+              />
+              <PrintButton />
+              <Button onClick={handleRemind} disabled={reminding || selected.size === 0}>
+                {reminding
+                  ? "Sending…"
+                  : selected.size === 0
+                    ? "Send reminder (select rows)"
+                    : `Send reminder to ${selected.size} family${selected.size !== 1 ? "ies" : "y"}`}
+              </Button>
+            </div>
           </div>
 
           <div className="overflow-x-auto rounded-lg border">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-10">
+                  <TableHead className="w-10 print:hidden">
                     <input
                       type="checkbox"
                       className="rounded"
@@ -216,7 +237,7 @@ export default function DebtorsPage() {
                     className={selected.has(d.studentId) ? "cursor-pointer bg-primary/5" : "cursor-pointer"}
                     onClick={() => toggleSelect(d.studentId)}
                   >
-                    <TableCell onClick={(e) => e.stopPropagation()}>
+                    <TableCell className="print:hidden" onClick={(e) => e.stopPropagation()}>
                       <input
                         type="checkbox"
                         className="rounded"

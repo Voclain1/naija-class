@@ -10,12 +10,40 @@ import type {
   StudentStatusDto,
 } from "@school-kit/types";
 
+import { ExportCsvButton } from "@/components/shared/export-csv-button";
+import { PrintButton } from "@/components/shared/print-button";
 import { StudentsListControls } from "@/components/students/students-list-controls";
 import { StudentsRosterTable } from "@/components/students/students-roster-table";
 import { Button } from "@/components/ui/button";
 import { ApiError } from "@/lib/api-client";
 import { listClassArms } from "@/lib/class-arms/class-arms-api";
 import { listStudents } from "@/lib/students/students-api";
+import { exportRowsAsCsv, type CsvColumn } from "@/lib/csv-export";
+
+// Export reuses the same GET /students query the page already runs (same
+// filters, same permission) — it just loops the cursor at the endpoint's max
+// page size (200) instead of stopping after one page like "Load more" does.
+// Capped at 100 pages (20,000 students) purely as a runaway-loop guard; no
+// real school roster gets remotely close to that.
+const STUDENT_EXPORT_COLUMNS: CsvColumn<StudentDto>[] = [
+  { header: "Admission Number", accessor: (s) => s.admissionNumber },
+  { header: "Last Name", accessor: (s) => s.lastName },
+  { header: "First Name", accessor: (s) => s.firstName },
+  { header: "Middle Name", accessor: (s) => s.middleName },
+  { header: "Gender", accessor: (s) => s.gender },
+  { header: "Date of Birth", accessor: (s) => String(s.dateOfBirth).slice(0, 10) },
+  {
+    header: "Class",
+    accessor: (s) =>
+      s.currentEnrollment
+        ? `${s.currentEnrollment.classArm.classLevel.name} ${s.currentEnrollment.classArm.name}`
+        : "",
+  },
+  { header: "Status", accessor: (s) => s.status },
+  { header: "Phone", accessor: (s) => s.phone },
+  { header: "Email", accessor: (s) => s.email },
+  { header: "Admitted At", accessor: (s) => String(s.admittedAt).slice(0, 10) },
+];
 
 // /students — Phase 1 / Slice 4 cp3.
 //
@@ -98,17 +126,38 @@ export default function StudentsRosterPage() {
     }
   }, [cursor, search, status, classArmId]);
 
+  const onExport = useCallback(async () => {
+    const rows: StudentDto[] = [];
+    let exportCursor: string | undefined;
+    let pages = 0;
+    do {
+      const res = await listStudents({
+        search: search || undefined,
+        status: status || undefined,
+        classArmId: classArmId || undefined,
+        cursor: exportCursor,
+        limit: 200,
+      });
+      rows.push(...res.data);
+      exportCursor = res.meta.cursor;
+      pages += 1;
+    } while (exportCursor && pages < 100);
+    exportRowsAsCsv("students.csv", rows, STUDENT_EXPORT_COLUMNS);
+  }, [search, status, classArmId]);
+
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-6">
       <header className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="font-serif text-2xl font-medium tracking-tight text-foreground">Students</h1>
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-muted-foreground print:hidden">
             Your school&apos;s roster. Add students one-by-one or import them
             in bulk from a CSV.
           </p>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-2 print:hidden">
+          <ExportCsvButton onExport={onExport} disabled={students.length === 0} />
+          <PrintButton />
           <Button asChild variant="outline">
             <Link href="/students/import">
               <FileUp className="mr-1 h-4 w-4" />
@@ -130,15 +179,17 @@ export default function StudentsRosterPage() {
         </div>
       </header>
 
-      <StudentsListControls
-        search={search}
-        status={status}
-        classArmId={classArmId}
-        arms={arms}
-        onSearchChange={setSearch}
-        onStatusChange={setStatus}
-        onClassArmChange={setClassArmId}
-      />
+      <div className="print:hidden">
+        <StudentsListControls
+          search={search}
+          status={status}
+          classArmId={classArmId}
+          arms={arms}
+          onSearchChange={setSearch}
+          onStatusChange={setStatus}
+          onClassArmChange={setClassArmId}
+        />
+      </div>
 
       {loading ? (
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -188,7 +239,7 @@ export default function StudentsRosterPage() {
         <>
           <StudentsRosterTable students={students} />
           {cursor && (
-            <div className="flex justify-center">
+            <div className="flex justify-center print:hidden">
               <Button
                 type="button"
                 variant="outline"
@@ -200,7 +251,7 @@ export default function StudentsRosterPage() {
               </Button>
             </div>
           )}
-          <p className="text-center text-xs text-muted-foreground">
+          <p className="text-center text-xs text-muted-foreground print:hidden">
             {students.length} {students.length === 1 ? "student" : "students"}
             {cursor ? " · more available" : ""}
           </p>

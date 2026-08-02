@@ -64,14 +64,18 @@ function AdminShell({
 
   return (
     <div className="flex min-h-screen bg-muted/30">
-      <AdminSidebar />
+      <div className="print:hidden">
+        <AdminSidebar />
+      </div>
       <div className="flex min-w-0 flex-1 flex-col">
-        <AdminTopbar
-          mobileNavOpen={mobileNavOpen}
-          onMobileNavOpenChange={handleMobileNavOpenChange}
-          onReplayTour={startReplay}
-        />
-        <main className="min-w-0 flex-1 overflow-x-hidden p-4 sm:p-6">{children}</main>
+        <div className="print:hidden">
+          <AdminTopbar
+            mobileNavOpen={mobileNavOpen}
+            onMobileNavOpenChange={handleMobileNavOpenChange}
+            onReplayTour={startReplay}
+          />
+        </div>
+        <main className="min-w-0 flex-1 overflow-x-hidden p-4 sm:p-6 print:p-0">{children}</main>
       </div>
     </div>
   );

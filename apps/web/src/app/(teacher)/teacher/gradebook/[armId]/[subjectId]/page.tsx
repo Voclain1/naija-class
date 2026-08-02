@@ -95,7 +95,7 @@ export default function GradebookGridPage() {
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-6">
       <Link
         href="/teacher/gradebook"
-        className="inline-flex w-fit items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+        className="inline-flex w-fit items-center gap-1 text-sm text-muted-foreground hover:text-foreground print:hidden"
       >
         <ArrowLeft className="h-4 w-4" />
         All classes
