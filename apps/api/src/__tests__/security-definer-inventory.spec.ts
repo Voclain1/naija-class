@@ -33,6 +33,11 @@ const SECURITY_DEFINER_FUNCTIONS = [
   // Phase 0 gap closed — forgot/reset password flow (2026-07-24).
   "auth_lookup_user_for_password_reset",
   "auth_resolve_password_reset_token",
+  // Platform super-admin — internal, read-only, cross-tenant admin surface
+  // (2026-08-02).
+  "platform_admin_resolve_session",
+  "platform_admin_list_schools",
+  "platform_admin_list_users",
 ] as const;
 
 interface SecurityDefinerRow {

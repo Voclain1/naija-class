@@ -172,6 +172,9 @@ Discipline for every function in this category:
 | `auth_resolve_guardian_invitation_by_token_hash(token_hash)` | `20260716000000_phase_4_slice_2_guardian_auth` | Public guardian portal invitation-accept endpoints resolve a token hash to `{ invitation_id, school_id, guardian_id, first_name, last_name, email, invited_by, expires_at, accepted_at }` before `withTenant()` can apply. Unlike the staff equivalent, contact fields are read via a join to `guardians` — `guardian_invitations` stores no redundant copies (Decision: option b, new parallel table, not a reuse of `invitations`). | `token_hash`, `phone`, `created_at`. |
 | `auth_lookup_user_for_password_reset(email)` | `20260724000000_password_reset_tokens` | `POST /auth/forgot-password` looks up a user by email pre-tenant to `{ user_id, school_id, is_active }`. Deliberately separate from `auth_lookup_user_for_login` even though both key off email — that function returns `password_hash`, which forgot-password has no reason to ever hold. | `password_hash`, phone, names. |
 | `auth_resolve_password_reset_token(token_hash)` | `20260724000000_password_reset_tokens` | `POST /auth/reset-password` resolves a token hash to `{ reset_id, user_id, school_id, expires_at, used_at }` before `withTenant()` can apply — same chicken-and-egg problem as invitation accept. | `token_hash`, email, names — the reset form has nothing to pre-fill. |
+| `platform_admin_resolve_session(token_hash)` | `20260802000000_platform_admin` | PlatformAdminGuard's session lookup. Deliberately reuses the same `sessions` table every staff session lives in — the security boundary is the returned `is_platform_admin` column, re-read from `users` on every request, not a separate credential system. | `school_id` (platform-admin identity is cross-tenant by definition), `user_is_active` (no platform-admin deactivation flow exists yet — flagged, not built), `password_hash`, email/phone/names. |
+| `platform_admin_list_schools()` | `20260802000000_platform_admin` | Cross-tenant school roster for the platform-admin dashboard: `{ school_id, name, created_at, is_active, student_count, staff_count }`. Aggregate counts only. | slug, address, phone, email, primaryColor, logoUrl, onboardingStep, ndprConsent, Paystack fields — none of this is "basic metadata"; financial/config detail is out of this surface's scope. |
+| `platform_admin_list_users(school_id?)` | `20260802000000_platform_admin` | Cross-tenant (or single-school, when `p_school_id` is given) staff-account roster: `{ user_id, school_id, first_name, last_name, role_names, created_at, last_login_at, is_active }`. | email, phone, `password_hash`, totp*/bvn* fields, and — deliberately — `is_platform_admin` itself, so this read surface can't double as a way to enumerate who else holds platform-admin access. |
 
 **SECURITY DEFINER inventory audit (Phase 3 / Slice 12, 2026-07-08):** reviewed
 all 5 pre-existing functions for consolidation when the count crossed the
@@ -224,7 +227,18 @@ audit settled on: neither reuses `auth_lookup_user_for_login`'s wider
 `password_hash`-bearing return shape, even though the lookup key (email) is
 the same.
 
-**Current count: 12.**
+**Platform super-admin (2026-08-02):** added three functions for the new
+internal, read-only, cross-tenant admin surface — count moves 12 → 15,
+further past the "+3" cadence trigger set at the Slice 12 audit (due at 8,
+already flagged again at 12, still not done by this PR either). This PR's
+three functions follow the narrow-single-caller discipline directly:
+`platform_admin_resolve_session` deliberately omits `school_id` (the one
+function in this table whose subject is cross-tenant by definition, not
+tenant-scoped), and both list functions omit every field outside the
+approved "names, signup dates, status, basic counts" scope (no financial
+data, no student PII beyond basic metadata, no phone/BVN).
+
+**Current count: 15.**
 
 ### ESM module resolution
 
