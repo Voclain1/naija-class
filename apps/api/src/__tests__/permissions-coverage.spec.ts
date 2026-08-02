@@ -658,8 +658,14 @@ describe("Phase 3 RBAC close-out: seeded role grants", () => {
     }
   });
 
-  it("bursar holds no Phase 0/1/2 permission (finance-only role, no academic/roster/staff/settings access)", () => {
+  it("bursar holds exactly three Phase 1 permissions (academic-year.read/term.read/class-arm.read, added 2026-08-02 as read-only finance-page scoping context) and no other Phase 0/1/2 permission", () => {
     const bursarPerms = new Set(roleSeed("bursar").permissions);
+    for (const p of ["academic-year.read", "term.read", "class-arm.read"]) {
+      expect(bursarPerms.has(p), `bursar should have ${p}`).toBe(true);
+    }
+    // PHASE_3_BURSAR_PERMISSIONS itself carries these three (see its header
+    // comment's 2026-08-02 addendum) — this equality still catches any OTHER
+    // Phase 0/1/2 permission sneaking onto the seeded row.
     expect(bursarPerms.size).toBe(PHASE_3_BURSAR_PERMISSIONS.length);
   });
 

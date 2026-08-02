@@ -8,6 +8,9 @@ import { ForbiddenError } from "@school-kit/types";
 import type { AuthContext } from "../common/auth/auth-context";
 import { PermissionsGuard } from "../common/auth/permissions.guard";
 import { AuthService } from "../modules/auth/auth.service";
+import { AcademicYearsController } from "../modules/academic-years/academic-years.controller";
+import { ClassArmsController } from "../modules/class-arms/class-arms.controller";
+import { TermsController } from "../modules/terms/terms.controller";
 import { BvnController } from "../modules/users/bvn.controller";
 import { FinanceController } from "../modules/finance/finance.controller";
 import { InvoicesController } from "../modules/invoices/invoices.controller";
@@ -158,6 +161,26 @@ describe("Bursar-scope negative walk (Phase 3 slice 15 cp3)", () => {
     ).resolves.toBe(true);
     await expect(
       guard.canActivate(makeCtx(InvoicesController.prototype.list, InvoicesController, bursar)),
+    ).resolves.toBe(true);
+  });
+
+  // Regression test for the 2026-08-02 gap fix: bursar held every finance.*
+  // permission from Slice 15 but none of academic-year.read/term.read/
+  // class-arm.read, so the year/term/class-arm selector on every finance page
+  // (dashboard, invoice generation, invoice list, debtors) 403'd in practice
+  // even though the finance endpoints themselves were reachable. These three
+  // are read-only scoping context, not academic module access.
+  it("bursar CAN read academic years, terms, and class arms (read-only scoping context for finance pages)", async () => {
+    const { schoolId } = await createSchoolWithOwner("scoping");
+    const bursar = await createBursar(schoolId, "scoping");
+    await expect(
+      guard.canActivate(makeCtx(AcademicYearsController.prototype.list, AcademicYearsController, bursar)),
+    ).resolves.toBe(true);
+    await expect(
+      guard.canActivate(makeCtx(TermsController.prototype.listForYear, TermsController, bursar)),
+    ).resolves.toBe(true);
+    await expect(
+      guard.canActivate(makeCtx(ClassArmsController.prototype.list, ClassArmsController, bursar)),
     ).resolves.toBe(true);
   });
 });

@@ -364,6 +364,18 @@ export const ADMIN_DASHBOARD_PERMISSIONS = ["dashboard.read"] as const;
 // settings). payroll.read/payroll.process ARE included — running payroll
 // (create/update/approve/payslip) is routine bursar work; only the actual
 // bank transfer is excluded.
+//
+// Gap closed 2026-08-02: academic-year.read, term.read, and class-arm.read
+// added. These are read-only scoping context, not "academics access" — every
+// finance screen (dashboard, invoice generation, invoice list, debtors) needs
+// a year/term/class-arm to scope its query against, the same way `teacher`
+// already holds class-arm.read/class-level.read/etc. despite having no
+// academic edit rights (see PHASE_2_TEACHER_PERMISSIONS below). Without these,
+// bursar could reach the finance shell (fixed same day — see (admin)/layout.tsx)
+// but every finance page's year/term/class-arm selector 403'd, making the role
+// non-functional end-to-end despite holding every finance.* permission it
+// needed. Missed at Slice 15 because bursar-scope.spec.ts's negative walk
+// never exercised these three endpoints.
 export const PHASE_3_BURSAR_PERMISSIONS = [
   "fee-category.read",
   "fee-category.create",
@@ -406,6 +418,10 @@ export const PHASE_3_BURSAR_PERMISSIONS = [
 
   "payroll.read",
   "payroll.process",
+
+  "academic-year.read",
+  "term.read",
+  "class-arm.read",
 ] as const;
 
 // The Phase 2 subset granted to the `teacher` role at the GUARD level. The

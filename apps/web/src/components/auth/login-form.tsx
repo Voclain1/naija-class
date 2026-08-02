@@ -22,6 +22,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ApiError } from "@/lib/api-client";
+import { homeRouteForRoles } from "@/lib/auth/home-route";
 import { useAuth } from "@/lib/auth/use-auth";
 
 // Two-step login: credentials → (if 2FA enabled) TOTP code.
@@ -59,10 +60,10 @@ export function LoginForm() {
     setSubmitting(true);
     try {
       const result = await login(values);
-      if (result?.requiresTwoFactor) {
+      if (result.requiresTwoFactor) {
         setStep({ kind: "totp", challengeToken: result.challengeToken });
       } else {
-        router.replace("/dashboard");
+        router.replace(homeRouteForRoles(result.roles));
       }
     } catch (error) {
       if (error instanceof ApiError && error.code === "INVALID_CREDENTIALS") {
@@ -84,8 +85,8 @@ export function LoginForm() {
     if (step.kind !== "totp") return;
     setSubmitting(true);
     try {
-      await loginWithChallenge({ challengeToken: step.challengeToken, code: values.code });
-      router.replace("/dashboard");
+      const roles = await loginWithChallenge({ challengeToken: step.challengeToken, code: values.code });
+      router.replace(homeRouteForRoles(roles));
     } catch (error) {
       if (error instanceof ApiError && error.code === "INVALID_2FA_CODE") {
         totpForm.setError("code", {
