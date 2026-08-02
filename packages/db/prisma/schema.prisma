@@ -100,6 +100,13 @@ model User {
   lastName      String    @map("last_name")
   passwordHash        String?   @map("password_hash")
   isActive            Boolean   @default(true) @map("is_active")
+  // Platform super-admin flag (added for the internal, read-only cross-
+  // tenant admin surface — see CLAUDE.md's SECURITY DEFINER inventory,
+  // platform_admin_* functions). Granted ONLY via a direct DB UPDATE — no
+  // self-serve UI, no invite flow. Checked fresh from the DB on every
+  // platform-admin request (PlatformAdminGuard), never trusted from a
+  // token/session payload, same discipline as `isActive` above.
+  isPlatformAdmin     Boolean   @default(false) @map("is_platform_admin")
   emailVerified       Boolean   @default(false) @map("email_verified")
   phoneVerified       Boolean   @default(false) @map("phone_verified")
   lastLoginAt         DateTime? @map("last_login_at")

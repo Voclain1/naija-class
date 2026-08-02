@@ -159,6 +159,14 @@ export const baseConfig = [
       // schoolId to scope to until after the lookup).
       "**/common/auth/guardian-auth.guard.ts",
       "**/modules/portal-auth/portal-auth.service.ts",
+      // Platform super-admin — same category as the staff/guardian pairs
+      // above: platform-admin.guard.ts resolves a bearer token PRE-tenant
+      // via a SECURITY DEFINER function (platform_admin_resolve_session),
+      // and platform-admin.service.ts's reads are cross-tenant BY DEFINITION
+      // (platform_admin_list_schools/list_users) — there is no single
+      // schoolId to scope a withTenant call to.
+      "**/common/auth/platform-admin.guard.ts",
+      "**/modules/platform-admin/platform-admin.service.ts",
     ],
     rules: {
       "no-restricted-imports": "off",
