@@ -7,6 +7,7 @@ import {
 
 import {
   apiActivateSchool,
+  apiCompleteTour,
   apiLogin,
   apiSignupOwner,
   createApiContext,
@@ -117,6 +118,8 @@ export async function loginAsAdmin(
     phone: "+2348012345678",
     email: `e2e-school-${suffix}@school-kit.test`,
   });
+  // Pre-dismiss the first-login tour — see apiCompleteTour's header comment.
+  await apiCompleteTour(api);
 
   const { context, page } = await authedContext(browser, signup.token);
   return {

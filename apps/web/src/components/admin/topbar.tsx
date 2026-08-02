@@ -27,21 +27,41 @@ import { ThemeToggle } from "./theme-toggle";
 // `<TeacherTopbar />` (components/teacher/topbar.tsx) instead, which supplies
 // its own nav list here — see nav-list.tsx's header comment for why this
 // exists.
+//
+// `mobileNavOpen`/`onMobileNavOpenChange` (both optional): lets a caller take
+// over MobileNav's open state instead of this component owning it locally.
+// Only the (admin) layout does this, so FirstLoginTour can force the drawer
+// open/closed on mobile viewports where there's no persistent sidebar to
+// spotlight directly. Omitted (TeacherTopbar's case, and any future caller
+// that doesn't need this) -> falls back to an internal useState, identical
+// to this component's behaviour before the tour existed.
 export function AdminTopbar({
   navItems,
   navLaterPhaseItems,
+  mobileNavOpen: mobileNavOpenProp,
+  onMobileNavOpenChange,
 }: {
   navItems?: NavItem[];
   navLaterPhaseItems?: NavItem[];
+  mobileNavOpen?: boolean;
+  onMobileNavOpenChange?: (open: boolean) => void;
 } = {}) {
   const { school, user, logout } = useAuth();
   const [commandOpen, setCommandOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [internalMobileNavOpen, setInternalMobileNavOpen] = useState(false);
+  const mobileNavOpen = mobileNavOpenProp ?? internalMobileNavOpen;
+  const setMobileNavOpen = onMobileNavOpenChange ?? setInternalMobileNavOpen;
   useCommandDialogHotkey(() => setCommandOpen(true));
 
   return (
     <header className="flex h-16 items-center gap-2 border-b border-border bg-card px-3 sm:gap-4 sm:px-6">
-      <MobileNav items={navItems} laterPhaseItems={navLaterPhaseItems} />
+      <MobileNav
+        items={navItems}
+        laterPhaseItems={navLaterPhaseItems}
+        open={mobileNavOpen}
+        onOpenChange={setMobileNavOpen}
+      />
 
       <div className="hidden min-w-0 items-center gap-2 sm:flex">
         <SchoolLogo className="h-7 w-7 shrink-0 rounded object-contain" />

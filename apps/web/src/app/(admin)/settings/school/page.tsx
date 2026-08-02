@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { LogoUpload } from "@/components/school/logo-upload";
+import { useTour } from "@/components/tour/first-login-tour";
 import { ApiError } from "@/lib/api-client";
 import { useAuth } from "@/lib/auth/use-auth";
 import { patchSchoolMe } from "@/lib/onboarding/schools-api";
@@ -18,6 +19,7 @@ import { patchSchoolMe } from "@/lib/onboarding/schools-api";
 // house). Owner/admin only — PATCH /schools/me enforces it server-side.
 export default function SchoolSettingsPage() {
   const { school, setSchool } = useAuth();
+  const { startReplay } = useTour();
 
   const [name, setName] = useState(school?.name ?? "");
   const [motto, setMotto] = useState(school?.motto ?? "");
@@ -104,6 +106,16 @@ export default function SchoolSettingsPage() {
           {saving ? "Saving…" : "Save"}
         </Button>
         {dirty && <span className="text-xs text-amber-700">Unsaved change.</span>}
+      </div>
+
+      <div className="flex flex-col gap-2 border-t border-border pt-6">
+        <Label>Getting-started tour</Label>
+        <p className="text-sm text-muted-foreground">
+          The quick walkthrough of where things live, shown on your first visit.
+        </p>
+        <Button type="button" variant="outline" className="self-start" onClick={startReplay}>
+          Replay tour
+        </Button>
       </div>
     </div>
   );
