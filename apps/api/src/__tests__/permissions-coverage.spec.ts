@@ -1,6 +1,7 @@
 import { PATH_METADATA } from "@nestjs/common/constants";
 import { SYSTEM_ROLE_SEEDS } from "@school-kit/db";
 import {
+  PHASE_0_PERMISSIONS,
   PHASE_2_OWNER_ONLY_PERMISSIONS,
   PHASE_2_PERMISSIONS,
   PHASE_2_TEACHER_PERMISSIONS,
@@ -45,6 +46,7 @@ import { RefundsController } from "../modules/payments/refunds.controller";
 import { PayrollController } from "../modules/payroll/payroll.controller";
 import { StaffBankAccountController } from "../modules/staff-bank-accounts/staff-bank-account.controller";
 import { BvnController } from "../modules/users/bvn.controller";
+import { UsersController } from "../modules/users/users.controller";
 import { PortalAuthController } from "../modules/portal-auth/portal-auth.controller";
 import { NotificationPreferencesController } from "../modules/notifications/notification-preferences.controller";
 
@@ -482,6 +484,63 @@ describe("Phase 3 RBAC coverage: BvnController handler permissions", () => {
     expect(adminPerms.has("staff-bvn.manage-others")).toBe(true);
     expect(adminPerms.has("staff-bvn.read")).toBe(true);
     expect(adminPerms.has("staff-bvn.reveal")).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// UsersController coverage — closes the gap found 2026-08-02 during the
+// export/print feature review. list()/listInvitations() relied solely on the
+// service-layer assertUserActiveAndHasOneOf(['owner','admin']) check (a real,
+// working gate — the service throws before any query runs, so this was never
+// an actual data leak); they now also carry PermissionsGuard/@Permissions as
+// the codebase's standard first gate, same defense-in-depth shape as every
+// other module. invite()/completeTour() are NOT covered here — invite() is
+// still on the old single-gate pattern (a separate, not-yet-fixed instance of
+// the same deferral) and completeTour() is deliberately self-service with no
+// role check. Cannot use assertCoverage() for the same reason as
+// BvnController above: this controller mixes guarded and unguarded handlers.
+// ---------------------------------------------------------------------------
+
+const PHASE_0_SET = new Set<string>(PHASE_0_PERMISSIONS);
+
+describe("Users staff-roster read gate: UsersController handler permissions", () => {
+  it("UsersController has at least one route handler", () => {
+    expect(routeHandlers(UsersController).length).toBeGreaterThan(0);
+  });
+
+  it("list carries @Permissions('user.read')", () => {
+    const proto = UsersController.prototype as unknown as Record<string, unknown>;
+    const perms = Reflect.getMetadata(PERMISSIONS_METADATA_KEY, proto["list"] as object);
+    expect(perms).toEqual(["user.read"]);
+  });
+
+  it("listInvitations carries @Permissions('user.read')", () => {
+    const proto = UsersController.prototype as unknown as Record<string, unknown>;
+    const perms = Reflect.getMetadata(PERMISSIONS_METADATA_KEY, proto["listInvitations"] as object);
+    expect(perms).toEqual(["user.read"]);
+  });
+
+  it.each([
+    "invite",
+    "completeTour",
+  ])("%s carries NO @Permissions (not yet retrofitted / self-service — documented, not an oversight)", (handlerName) => {
+    const proto = UsersController.prototype as unknown as Record<string, unknown>;
+    const perms = Reflect.getMetadata(PERMISSIONS_METADATA_KEY, proto[handlerName] as object);
+    expect(perms).toBeUndefined();
+  });
+
+  it("user.read is a known Phase 0 permission", () => {
+    expect(PHASE_0_SET.has("user.read")).toBe(true);
+  });
+
+  it("owner (wildcard) and admin are granted user.read; teacher and bursar are not", () => {
+    expect(roleSeed("owner").permissions).toEqual(["*"]);
+    const adminPerms = new Set(roleSeed("admin").permissions);
+    const teacherPerms = new Set(roleSeed("teacher").permissions);
+    const bursarPerms = new Set(roleSeed("bursar").permissions);
+    expect(adminPerms.has("user.read")).toBe(true);
+    expect(teacherPerms.has("user.read")).toBe(false);
+    expect(bursarPerms.has("user.read")).toBe(false);
   });
 });
 

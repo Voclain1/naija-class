@@ -9,6 +9,7 @@ import { basePrisma } from "@school-kit/db";
 import { REDIS_AUTH_CLIENT } from "../../common/auth/redis-auth.provider";
 import { AuthModule } from "../auth/auth.module";
 import { HttpExceptionFilter } from "../../common/http-exception.filter";
+import { InvitationsModule } from "../invitations/invitations.module";
 import { UsersModule } from "./users.module";
 
 // get always misses (null) — forces every AuthGuard check through the real
@@ -47,7 +48,7 @@ describe("Users endpoints (controller integration)", () => {
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
-      imports: [MockRedisAuthModule, AuthModule, UsersModule],
+      imports: [MockRedisAuthModule, AuthModule, UsersModule, InvitationsModule],
       providers: [{ provide: APP_FILTER, useClass: HttpExceptionFilter }],
     }).compile();
     app = moduleRef.createNestApplication();
@@ -182,6 +183,12 @@ describe("Users endpoints (controller integration)", () => {
     expect(res.body.every((u: { id: string }) => u.id !== undefined)).toBe(true);
   });
 
+  it("GET /users — missing auth returns 401", async () => {
+    const res = await request(app.getHttpServer()).get("/api/v1/users");
+
+    expect(res.status).toBe(401);
+  });
+
   // -----------------------------------------------------------------------
   // GET /users/invitations
   // -----------------------------------------------------------------------
@@ -201,5 +208,43 @@ describe("Users endpoints (controller integration)", () => {
     expect(inv.invitedBy?.firstName).toBe("Una");
     // tokenHash MUST NOT leak through the listing endpoint.
     expect(inv.tokenHash).toBeUndefined();
+  });
+
+  // -----------------------------------------------------------------------
+  // user.read gate — negative walk (2026-08-02 fix). A teacher (no
+  // `user.read`) must be rejected by PermissionsGuard on both read routes,
+  // not merely fall through to an empty/filtered result. Real invite-and-
+  // accept flow, not a fabricated token, so this exercises the actual grant
+  // resolution path (userRole -> role.permissions) PermissionsGuard reads.
+  // -----------------------------------------------------------------------
+
+  it("GET /users and GET /users/invitations — a teacher session (no user.read) gets 403 on both", async () => {
+    const teacherEmail = `ctrl-teacher-perm-${runId}@example.test`;
+    const inviteRes = await request(app.getHttpServer())
+      .post("/api/v1/users/invite")
+      .set("Authorization", `Bearer ${ownerToken}`)
+      .send({ email: teacherEmail, roleKey: "teacher" });
+    expect(inviteRes.status).toBe(201);
+
+    const acceptRes = await request(app.getHttpServer())
+      .post(`/api/v1/invitations/${inviteRes.body.token}/accept`)
+      .send({
+        firstName: "Perm",
+        lastName: "Teacher",
+        password: "Strong-Pass-9",
+        ndprConsent: true,
+      });
+    expect(acceptRes.status).toBe(200);
+    const teacherToken = acceptRes.body.token as string;
+
+    const listRes = await request(app.getHttpServer())
+      .get("/api/v1/users")
+      .set("Authorization", `Bearer ${teacherToken}`);
+    expect(listRes.status).toBe(403);
+
+    const invitationsRes = await request(app.getHttpServer())
+      .get("/api/v1/users/invitations")
+      .set("Authorization", `Bearer ${teacherToken}`);
+    expect(invitationsRes.status).toBe(403);
   });
 });
