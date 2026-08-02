@@ -8,6 +8,7 @@ import {
   DEFAULT_GRADE_BOUNDARIES,
   DEFAULT_GRADING_COMPONENTS,
   DEFAULT_GRADING_SCHEME_NAME,
+  DEFAULT_SUBJECTS,
   Prisma,
   basePrisma,
   defaultArmFor,
@@ -259,6 +260,29 @@ export class AuthService {
               code: arm.code,
             };
           }),
+          skipDuplicates: true,
+        });
+
+        // Seed a short, track-independent core subject catalogue (English
+        // Language, Mathematics, Civic Education) — the only subjects that
+        // are both WAEC-compulsory for every SSS track and the same subject
+        // at every level from JSS through SSS; see DEFAULT_SUBJECTS's own
+        // header comment for the candidates considered and rejected. Same
+        // `tx` + already-satisfied RLS GUC as the class-level seed above, and
+        // same `skipDuplicates` idempotency stance against the school's
+        // (school_id, code) unique index. No ClassSubject rows are created —
+        // these are bare catalogue entries; linking to specific levels stays
+        // a manual step via the existing class-subject matrix, and rename/
+        // deactivate/delete all go through the existing subject CRUD UI. No
+        // separate audit row, matching the class-level and grading seeds
+        // above — attributed to the auth.signup_owner entry written below.
+        await tx.subject.createMany({
+          data: DEFAULT_SUBJECTS.map((subject) => ({
+            schoolId: school.id,
+            code: subject.code,
+            name: subject.name,
+            category: subject.category,
+          })),
           skipDuplicates: true,
         });
 
