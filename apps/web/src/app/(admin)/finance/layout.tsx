@@ -14,7 +14,9 @@ export default function FinanceLayout({
 }) {
   return (
     <div className="flex flex-col gap-4">
-      <FinanceSubNav />
+      <div className="print:hidden">
+        <FinanceSubNav />
+      </div>
       {children}
     </div>
   );

@@ -87,3 +87,22 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Browser-native print support for list/table pages (Students, Staff,
+ * Gradebook, Finance). No backend PDF pipeline here — report cards already
+ * own that heavier path; this is deliberately just print:hidden chrome
+ * (see (admin)/layout.tsx and (teacher)/layout.tsx) plus page setup, driven
+ * by each page's PrintButton calling window.print(). Force light background
+ * regardless of dark mode — printers waste ink/toner on dark UI chrome. */
+@media print {
+  @page {
+    margin: 1.5cm;
+  }
+  html {
+    font-size: 12px;
+  }
+  body {
+    background: #fff !important;
+    color: #000 !important;
+  }
+}

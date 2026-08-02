@@ -31,10 +31,14 @@ export default function TeacherLayout({ children }: { children: ReactNode }) {
   return (
     <RequireAuth>
       <div className="flex min-h-screen bg-muted/30">
-        <TeacherSidebar />
+        <div className="print:hidden">
+          <TeacherSidebar />
+        </div>
         <div className="flex flex-1 flex-col">
-          <TeacherTopbar />
-          <main className="flex-1 p-6">{children}</main>
+          <div className="print:hidden">
+            <TeacherTopbar />
+          </div>
+          <main className="flex-1 p-6 print:p-0">{children}</main>
         </div>
       </div>
     </RequireAuth>

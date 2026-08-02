@@ -8,9 +8,12 @@ import type { ExpenseCategoryDto, ExpenseDto } from "@school-kit/types";
 
 import { ExpenseCategoriesModal } from "@/components/finance/expense-categories-modal";
 import { ExpenseFormModal } from "@/components/finance/expense-form-modal";
+import { ExportCsvButton } from "@/components/shared/export-csv-button";
+import { PrintButton } from "@/components/shared/print-button";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ApiError } from "@/lib/api-client";
+import { exportRowsAsCsv, type CsvColumn } from "@/lib/csv-export";
 import {
   createExpense,
   deleteExpense,
@@ -73,6 +76,13 @@ export default function ExpensesPage() {
   }, [load]);
 
   const categoryName = (id: string) => categories.find((c) => c.id === id)?.name ?? "Unknown category";
+
+  const exportColumns: CsvColumn<ExpenseDto>[] = [
+    { header: "Date", accessor: (e) => formatDate(e.incurredAt) },
+    { header: "Category", accessor: (e) => categoryName(e.categoryId) },
+    { header: "Amount", accessor: (e) => formatKobo(e.amount) },
+    { header: "Description", accessor: (e) => e.description ?? "" },
+  ];
 
   function openCreate() {
     setEditing(null);
@@ -167,12 +177,17 @@ export default function ExpensesPage() {
       <header className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 className="font-serif text-2xl font-medium tracking-tight text-foreground">Expenses</h1>
-          <p className="text-sm text-muted-foreground">
+          <p className="text-sm text-muted-foreground print:hidden">
             Record school outgoings — utilities, repairs, supplies, and anything
             else that feeds the P&amp;L.
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 print:hidden">
+          <ExportCsvButton
+            onExport={() => exportRowsAsCsv("expenses.csv", expenses, exportColumns)}
+            disabled={expenses.length === 0}
+          />
+          <PrintButton disabled={expenses.length === 0} />
           <Button variant="outline" size="sm" onClick={() => setShowCategories(true)}>
             <Settings2 className="h-4 w-4" />
             Manage categories
@@ -184,7 +199,7 @@ export default function ExpensesPage() {
         </div>
       </header>
 
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 print:hidden">
         <label htmlFor="category-filter" className="text-sm font-medium">
           Category
         </label>
@@ -225,8 +240,8 @@ export default function ExpensesPage() {
                 <TableHead>Category</TableHead>
                 <TableHead className="text-right">Amount</TableHead>
                 <TableHead>Description</TableHead>
-                <TableHead className="text-center">Receipt</TableHead>
-                <TableHead />
+                <TableHead className="text-center print:hidden">Receipt</TableHead>
+                <TableHead className="print:hidden" />
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -236,7 +251,7 @@ export default function ExpensesPage() {
                   <TableCell>{categoryName(expense.categoryId)}</TableCell>
                   <TableCell className="text-right tabular-nums">{formatKobo(expense.amount)}</TableCell>
                   <TableCell className="text-muted-foreground">{expense.description || "—"}</TableCell>
-                  <TableCell className="text-center">
+                  <TableCell className="text-center print:hidden">
                     {expense.receiptUrl ? (
                       <button
                         type="button"
@@ -267,7 +282,7 @@ export default function ExpensesPage() {
                       </button>
                     )}
                   </TableCell>
-                  <TableCell>
+                  <TableCell className="print:hidden">
                     <div className="flex items-center justify-end gap-1">
                       <button
                         onClick={() => openEdit(expense)}

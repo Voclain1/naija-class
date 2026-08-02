@@ -29,7 +29,7 @@ export function StudentsRosterTable({ students }: Props) {
             <TableHead>Admission #</TableHead>
             <TableHead>Class</TableHead>
             <TableHead>Status</TableHead>
-            <TableHead aria-label="Actions" />
+            <TableHead aria-label="Actions" className="print:hidden" />
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -69,7 +69,7 @@ export function StudentsRosterTable({ students }: Props) {
               <TableCell>
                 <StudentStatusBadge status={s.status} />
               </TableCell>
-              <TableCell className="text-right">
+              <TableCell className="text-right print:hidden">
                 <Button
                   asChild
                   variant="outline"

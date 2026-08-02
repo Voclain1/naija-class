@@ -6,8 +6,9 @@ import { useCallback, useEffect, useState } from "react";
 import { useFieldArray, useForm } from "react-hook-form";
 import { toast } from "sonner";
 
-import type { AssessmentFeedResponse, GradingSchemeDto } from "@school-kit/types";
+import type { AssessmentFeedResponse, AssessmentFeedRowDto, GradingSchemeDto } from "@school-kit/types";
 
+import { ExportCsvButton } from "@/components/shared/export-csv-button";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,6 +21,7 @@ import {
   getGradebookFeed,
   signOffColumn,
 } from "@/lib/assessment/assessment-api";
+import { exportRowsAsCsv, type CsvColumn } from "@/lib/csv-export";
 import { cn } from "@/lib/utils";
 
 import {
@@ -30,6 +32,25 @@ import {
   makeGradebookSchema,
   type GradebookFormValues,
 } from "./gradebook-form";
+import { PrintButton } from "@/components/shared/print-button";
+
+// Export reuses the read-only, server-computed feed already held in state —
+// Total/Grade/Position are never recomputed client-side (same rule the grid
+// itself follows, see the cp2 comment above this component).
+function buildExportColumns(components: GradingSchemeDto["components"]): CsvColumn<AssessmentFeedRowDto>[] {
+  return [
+    { header: "Admission Number", accessor: (r) => r.student.admissionNumber },
+    { header: "Last Name", accessor: (r) => r.student.lastName },
+    { header: "First Name", accessor: (r) => r.student.firstName },
+    ...components.map((c): CsvColumn<AssessmentFeedRowDto> => ({
+      header: c.label,
+      accessor: (r) => r.scores.find((s) => s.componentId === c.id)?.score ?? "",
+    })),
+    { header: "Total", accessor: (r) => r.assessment?.totalScore ?? "" },
+    { header: "Grade", accessor: (r) => r.assessment?.letterGrade ?? "" },
+    { header: "Position", accessor: (r) => r.assessment?.subjectPosition ?? "" },
+  ];
+}
 
 interface Props {
   scheme: GradingSchemeDto;
@@ -228,7 +249,7 @@ export function GradebookGrid({
   return (
     <div className="flex flex-col gap-4">
       {/* Action bar — always visible above the (potentially tall) grid. */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
         <div className="flex items-center gap-3 text-sm">
           {isSignedOff && (
             <Badge variant="success" className="gap-1.5 py-1">
@@ -252,6 +273,11 @@ export function GradebookGrid({
         </div>
 
         <div className="flex items-center gap-2">
+          <ExportCsvButton
+            onExport={() => exportRowsAsCsv("gradebook.csv", feed.data, buildExportColumns(components))}
+            disabled={feed.data.length === 0}
+          />
+          <PrintButton disabled={feed.data.length === 0} />
           {canAggregate && (
             <Button
               type="button"
@@ -298,12 +324,51 @@ export function GradebookGrid({
       </div>
 
       {banner && (
-        <div className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">
+        <div className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive print:hidden">
           {banner}
         </div>
       )}
 
-      <div className="overflow-hidden rounded-md border">
+      {/* Print-only static table — the live grid below is a form (editable
+          <Input> cells), which prints poorly; this mirrors the same rows as
+          plain text instead. Hidden on screen, shown only in print media. */}
+      <div className="hidden print:block">
+        <table className="w-full border-collapse text-sm">
+          <thead>
+            <tr className="border-b border-black/20">
+              <th className="p-2 text-left">Student</th>
+              {components.map((c) => (
+                <th key={c.id} className="p-2 text-left">
+                  {c.label} /{c.weight}
+                </th>
+              ))}
+              <th className="p-2 text-left">Total</th>
+              <th className="p-2 text-left">Grade</th>
+              <th className="p-2 text-left">Position</th>
+            </tr>
+          </thead>
+          <tbody>
+            {feed.data.map((row) => (
+              <tr key={row.student.id} className="border-b border-black/10">
+                <td className="p-2">
+                  {row.student.lastName}, {row.student.firstName}
+                  <div className="text-xs">{row.student.admissionNumber}</div>
+                </td>
+                {components.map((c) => (
+                  <td key={c.id} className="p-2">
+                    {row.scores.find((s) => s.componentId === c.id)?.score ?? "—"}
+                  </td>
+                ))}
+                <td className="p-2">{row.assessment?.totalScore ?? "—"}</td>
+                <td className="p-2">{row.assessment?.letterGrade ?? "—"}</td>
+                <td className="p-2">{row.assessment?.subjectPosition ?? "—"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="overflow-hidden rounded-md border print:hidden">
         <Table>
           <TableHeader className="[&_tr]:bg-muted/40">
             <TableRow>

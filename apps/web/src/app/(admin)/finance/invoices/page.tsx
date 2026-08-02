@@ -11,12 +11,15 @@ import type {
   TermDto,
 } from "@school-kit/types";
 
+import { ExportCsvButton } from "@/components/shared/export-csv-button";
+import { PrintButton } from "@/components/shared/print-button";
 import { Badge, type BadgeProps } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { listAcademicYears, listTerms } from "@/lib/academic-years/academic-years-api";
 import { listClassArms } from "@/lib/class-arms/class-arms-api";
+import { exportRowsAsCsv, type CsvColumn } from "@/lib/csv-export";
 import { formatKobo } from "@/lib/finance/format";
 import {
   cancelInvoice,
@@ -24,6 +27,20 @@ import {
   listInvoices,
   previewInvoices,
 } from "@/lib/finance/invoices-api";
+
+// Export reuses GET /invoices with the same filters currently applied to the
+// list tab, looping the page number (limit 200/page) until every page is
+// fetched — same permission-guarded endpoint, no new backend route. Capped
+// at 100 pages (20,000 invoices) as a runaway-loop guard.
+const INVOICE_EXPORT_COLUMNS: CsvColumn<InvoiceDto>[] = [
+  { header: "Invoice ID", accessor: (i) => i.id },
+  { header: "Student ID", accessor: (i) => i.studentId },
+  { header: "Status", accessor: (i) => STATUS_LABELS[i.status] },
+  { header: "Total Due", accessor: (i) => formatKobo(i.totalDue) },
+  { header: "Paid", accessor: (i) => formatKobo(i.totalPaid) },
+  { header: "Balance", accessor: (i) => formatKobo(i.totalDue - i.totalPaid) },
+  { header: "Due Date", accessor: (i) => i.dueDate ?? "" },
+];
 
 const STATUS_LABELS: Record<InvoiceStatus, string> = {
   DRAFT: "Draft",
@@ -126,6 +143,25 @@ export default function InvoicesPage() {
 
   const pickerReady = !!termId && !!armId;
 
+  async function handleExport() {
+    const rows: InvoiceDto[] = [];
+    let exportPage = 1;
+    let seenTotal = Infinity;
+    while (rows.length < seenTotal && exportPage <= 100) {
+      const res = await listInvoices({
+        termId: termId || undefined,
+        classArmId: armId || undefined,
+        status: statusFilter || undefined,
+        page: exportPage,
+        limit: 200,
+      });
+      rows.push(...res.data);
+      seenTotal = res.total;
+      exportPage += 1;
+    }
+    exportRowsAsCsv("invoices.csv", rows, INVOICE_EXPORT_COLUMNS);
+  }
+
   async function handlePreview() {
     if (!pickerReady) return;
     setPreviewLoading(true);
@@ -181,7 +217,7 @@ export default function InvoicesPage() {
       <h1 className="font-serif text-2xl font-medium tracking-tight text-foreground">Invoices</h1>
 
       {/* Term + arm picker */}
-      <div className="flex flex-wrap items-end gap-3">
+      <div className="flex flex-wrap items-end gap-3 print:hidden">
         <div>
           <label className="mb-1 block text-sm font-medium text-foreground">Academic year</label>
           <select className={SELECT_CLASSES} value={yearId} onChange={(e) => setYearId(e.target.value)}>
@@ -219,7 +255,7 @@ export default function InvoicesPage() {
       </div>
 
       <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)}>
-        <TabsList>
+        <TabsList className="print:hidden">
           <TabsTrigger value="generate">Generate</TabsTrigger>
           <TabsTrigger value="list">Invoice list</TabsTrigger>
         </TabsList>
@@ -310,7 +346,7 @@ export default function InvoicesPage() {
 
         {/* ── List tab ── */}
         <TabsContent value="list" className="space-y-4">
-          <div className="flex flex-wrap items-end gap-3">
+          <div className="flex flex-wrap items-end justify-between gap-3 print:hidden">
             <div>
               <label className="mb-1 block text-sm font-medium text-foreground">Status</label>
               <select
@@ -324,6 +360,10 @@ export default function InvoicesPage() {
                 ))}
               </select>
             </div>
+            <div className="flex gap-2">
+              <ExportCsvButton onExport={handleExport} disabled={invoices.length === 0} />
+              <PrintButton disabled={invoices.length === 0} />
+            </div>
           </div>
 
           <div className="rounded-lg border">
@@ -336,7 +376,7 @@ export default function InvoicesPage() {
                   <TableHead className="text-right">Total due</TableHead>
                   <TableHead className="text-right">Paid</TableHead>
                   <TableHead>Due date</TableHead>
-                  <TableHead className="w-32" />
+                  <TableHead className="w-32 print:hidden" />
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -368,7 +408,7 @@ export default function InvoicesPage() {
                       {formatKobo(inv.totalPaid)}
                     </TableCell>
                     <TableCell className="text-muted-foreground">{inv.dueDate ?? "—"}</TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="text-right print:hidden">
                       <div className="flex justify-end gap-3">
                         <a
                           href={`/finance/invoices/${inv.id}`}
@@ -395,7 +435,7 @@ export default function InvoicesPage() {
 
           {/* Pagination */}
           {total > 50 && (
-            <div className="flex items-center gap-3 text-sm">
+            <div className="flex items-center gap-3 text-sm print:hidden">
               <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
                 ← Prev
               </Button>
