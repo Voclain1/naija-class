@@ -14,10 +14,18 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   return (
-    // Owner/admin only — a teacher hitting any (admin) route bounces to /teacher
-    // (the server re-checks every mutation; this keeps the admin shell from
-    // rendering for the wrong role).
-    <RequireAuth roles={["owner", "admin"]}>
+    // Owner/admin/bursar — a teacher hitting any (admin) route bounces to
+    // /teacher (the server re-checks every mutation; this keeps the admin
+    // shell from rendering for the wrong role). Bursar was added here
+    // 2026-08-02: the role shipped in Phase 3/Slice 15 with real finance
+    // permissions, but this gate was never updated to match, so a bursar
+    // hitting /finance/* (or any other (admin) route) got redirected to
+    // /teacher/dashboard with no way back in — a real functional bug, not a
+    // deliberate scope decision. useVisibleAdminNavItems() (sidebar.tsx) is
+    // the other half of the fix: it filters NAV_ITEMS by permission so a
+    // bursar who now reaches this shell only sees Finance, not
+    // Students/Staff/Academics/Settings they have no permission for.
+    <RequireAuth roles={["owner", "admin", "bursar"]}>
       <TourProvider mobileNavOpen={mobileNavOpen} setMobileNavOpen={setMobileNavOpen}>
         <AdminShell mobileNavOpen={mobileNavOpen} setMobileNavOpen={setMobileNavOpen}>
           {children}
@@ -39,7 +47,7 @@ function AdminShell({
   setMobileNavOpen: (open: boolean) => void;
   children: ReactNode;
 }) {
-  const { active: tourActive, skip: skipTour } = useTour();
+  const { active: tourActive, skip: skipTour, startReplay } = useTour();
 
   // Every MobileNav-originated dismiss (Escape, backdrop click, route
   // change, the X button) calls this with `false`. While the tour is
@@ -58,7 +66,11 @@ function AdminShell({
     <div className="flex min-h-screen bg-muted/30">
       <AdminSidebar />
       <div className="flex min-w-0 flex-1 flex-col">
-        <AdminTopbar mobileNavOpen={mobileNavOpen} onMobileNavOpenChange={handleMobileNavOpenChange} />
+        <AdminTopbar
+          mobileNavOpen={mobileNavOpen}
+          onMobileNavOpenChange={handleMobileNavOpenChange}
+          onReplayTour={startReplay}
+        />
         <main className="min-w-0 flex-1 overflow-x-hidden p-4 sm:p-6">{children}</main>
       </div>
     </div>

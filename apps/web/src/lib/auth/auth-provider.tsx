@@ -41,12 +41,21 @@ export interface AuthState {
 }
 
 export interface AuthContextValue extends AuthState {
-  // Returns void when login completes normally.
   // Returns { requiresTwoFactor: true; challengeToken } when 2FA is needed;
   // the caller (LoginForm) is responsible for collecting the TOTP code and
-  // calling loginWithChallenge.
-  login: (input: LoginInput) => Promise<void | { requiresTwoFactor: true; challengeToken: string }>;
-  loginWithChallenge: (input: TotpChallengeInput) => Promise<void>;
+  // calling loginWithChallenge. Returns { requiresTwoFactor: false; roles }
+  // when login completes normally — LoginForm needs `roles` synchronously
+  // (not by reading useAuth() again right after awaiting this) to pick the
+  // post-login redirect target via homeRouteForRoles(), since a closure over
+  // this hook's own `roles` would still hold the pre-login (empty) value at
+  // that point in the render that captured it.
+  login: (
+    input: LoginInput,
+  ) => Promise<{ requiresTwoFactor: true; challengeToken: string } | { requiresTwoFactor: false; roles: AuthMeRoleDto[] }>;
+  // Always succeeds or throws (the 2FA challenge endpoint never itself asks
+  // for a further challenge) — returns the resolved roles for the same
+  // reason `login()` does above.
+  loginWithChallenge: (input: TotpChallengeInput) => Promise<AuthMeRoleDto[]>;
   signup: (input: SignupOwnerInput) => Promise<void>;
   logout: () => Promise<void>;
   // Called by the onboarding flow to keep the auth context's school in sync
@@ -148,7 +157,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = useCallback(
     async (
       input: LoginInput,
-    ): Promise<void | { requiresTwoFactor: true; challengeToken: string }> => {
+    ): Promise<
+      { requiresTwoFactor: true; challengeToken: string } | { requiresTwoFactor: false; roles: AuthMeRoleDto[] }
+    > => {
       const response = await loginRequest(input);
 
       if (response.requiresTwoFactor) {
@@ -173,11 +184,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         schoolId: me.school.id,
         role: me.roles[0]?.key ?? "unknown",
       });
+      return { requiresTwoFactor: false, roles: me.roles };
     },
     [],
   );
 
-  const loginWithChallenge = useCallback(async (input: TotpChallengeInput): Promise<void> => {
+  const loginWithChallenge = useCallback(async (input: TotpChallengeInput): Promise<AuthMeRoleDto[]> => {
     const response = await twoFactorChallengeRequest(input);
     // The challenge endpoint always returns requiresTwoFactor: false.
     if (response.requiresTwoFactor) {
@@ -195,6 +207,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       schoolId: me.school.id,
       role: me.roles[0]?.key ?? "unknown",
     });
+    return me.roles;
   }, []);
 
   const setSchool = useCallback((school: SchoolMeDto) => {

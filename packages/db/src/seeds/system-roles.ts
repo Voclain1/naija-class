@@ -111,12 +111,15 @@ export const SYSTEM_ROLE_SEEDS: SystemRoleSeed[] = [
   // migrations, which UPDATE an existing row), so it needs an
   // INSERT-if-not-exists migration for already-provisioned DBs alongside
   // this seed entry. See PHASE_3_BURSAR_PERMISSIONS for the exclusion
-  // rationale (auth.2fa.*, staff-bvn.*, payment.refund, payroll.transfer).
+  // rationale (auth.2fa.*, staff-bvn.*, payment.refund, payroll.transfer) and
+  // its 2026-08-02 addendum (academic-year.read/term.read/class-arm.read —
+  // read-only scoping context every finance page's year/term/class-arm
+  // selector needs; not "academic access").
   {
     key: "bursar",
     name: "Bursar",
     description:
-      "Finance operator — fee catalog, discounts, invoices, payments (excluding refunds), payment plans, debtor reminders, expenses, the finance dashboard, and running payroll (excluding the actual bank transfer). No academic, roster, staff, or school-settings access. Phase 3 slice 15 RBAC close-out, extended payroll CP3.",
+      "Finance operator — fee catalog, discounts, invoices, payments (excluding refunds), payment plans, debtor reminders, expenses, the finance dashboard, and running payroll (excluding the actual bank transfer). Read-only access to academic years/terms/class arms to scope finance work. No staff or school-settings access. Phase 3 slice 15 RBAC close-out, extended payroll CP3.",
     permissions: [...PHASE_3_BURSAR_PERMISSIONS],
   },
 ];

@@ -1,6 +1,7 @@
 "use client";
 
-import { Bell, LogOut, Search, User as UserIcon } from "lucide-react";
+import { Bell, HelpCircle, LogOut, Search, User as UserIcon } from "lucide-react";
+import Link from "next/link";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -19,6 +20,7 @@ import { CommandDialog, useCommandDialogHotkey } from "./command-dialog";
 import { DashboardTermSelector } from "./dashboard-term-selector";
 import { MobileNav } from "./mobile-nav";
 import type { NavItem } from "./nav-items";
+import { useVisibleAdminNavItems } from "./sidebar";
 import { ThemeToggle } from "./theme-toggle";
 
 // `navItems`/`navLaterPhaseItems` pass straight through to MobileNav
@@ -35,30 +37,56 @@ import { ThemeToggle } from "./theme-toggle";
 // spotlight directly. Omitted (TeacherTopbar's case, and any future caller
 // that doesn't need this) -> falls back to an internal useState, identical
 // to this component's behaviour before the tour existed.
+//
+// `onReplayTour` (optional): passed only by the (admin) layout's AdminShell,
+// which already sits inside <TourProvider> and can call useTour() safely.
+// AdminTopbar deliberately does NOT call useTour() itself — it also renders
+// inside the teacher portal (via TeacherTopbar), which has no TourProvider
+// ancestor, so an unconditional useTour() call here would throw for every
+// teacher session. TeacherTopbar simply never passes this prop, so the Help
+// menu's "Replay tour" item has nothing to call there and stays hidden — see
+// its render check below, which also restricts it to owner/admin even when
+// the prop IS present (bursar reaches this same admin shell as of 2026-08-02
+// but the tour's steps spotlight admin-only nav items bursar's own filtered
+// sidebar doesn't have, so replaying it would spotlight nothing real; a
+// bursar/teacher-scoped tour is a separate follow-up, not built yet).
 export function AdminTopbar({
   navItems,
   navLaterPhaseItems,
   mobileNavOpen: mobileNavOpenProp,
   onMobileNavOpenChange,
+  onReplayTour,
 }: {
   navItems?: NavItem[];
   navLaterPhaseItems?: NavItem[];
   mobileNavOpen?: boolean;
   onMobileNavOpenChange?: (open: boolean) => void;
+  onReplayTour?: () => void;
 } = {}) {
-  const { school, user, logout } = useAuth();
+  const { school, user, roles, logout } = useAuth();
   const [commandOpen, setCommandOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
+  const canReplayTour = Boolean(onReplayTour) && roles.some((r) => r.key === "owner" || r.key === "admin");
   const [internalMobileNavOpen, setInternalMobileNavOpen] = useState(false);
   const mobileNavOpen = mobileNavOpenProp ?? internalMobileNavOpen;
   const setMobileNavOpen = onMobileNavOpenChange ?? setInternalMobileNavOpen;
   useCommandDialogHotkey(() => setCommandOpen(true));
 
+  // Only the (admin) layout renders this with neither `navItems` nor
+  // `navLaterPhaseItems` set (TeacherTopbar always supplies its own) — so
+  // this hook call's result is only ever used in that admin-shell case. It
+  // still runs unconditionally (React hook rules), which is fine: it's a
+  // cheap filter over useAuth()'s already-loaded permissions/roles.
+  const visibleAdminNav = useVisibleAdminNavItems();
+  const effectiveNavItems = navItems ?? visibleAdminNav.items;
+  const effectiveLaterPhaseItems = navLaterPhaseItems ?? visibleAdminNav.laterPhaseItems;
+
   return (
     <header className="flex h-16 items-center gap-2 border-b border-border bg-card px-3 sm:gap-4 sm:px-6">
       <MobileNav
-        items={navItems}
-        laterPhaseItems={navLaterPhaseItems}
+        items={effectiveNavItems}
+        laterPhaseItems={effectiveLaterPhaseItems}
         open={mobileNavOpen}
         onOpenChange={setMobileNavOpen}
       />
@@ -85,6 +113,29 @@ export function AdminTopbar({
 
       <div className="flex shrink-0 items-center gap-1 sm:gap-2">
         <DashboardTermSelector />
+
+        <DropdownMenu open={helpOpen} onOpenChange={setHelpOpen}>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="icon" aria-label="Help">
+              <HelpCircle className="h-4 w-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-64">
+            <DropdownMenuItem asChild>
+              <Link href="/help/guide">Getting started guide</Link>
+            </DropdownMenuItem>
+            {canReplayTour && (
+              <DropdownMenuItem
+                onSelect={() => {
+                  setHelpOpen(false);
+                  onReplayTour?.();
+                }}
+              >
+                Replay tour
+              </DropdownMenuItem>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
 
         <div className="relative">
           <Button
