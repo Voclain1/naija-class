@@ -4,6 +4,13 @@ This guide walks a school owner through setting up schoolkit for the first time,
 
 Every screen name, button label, and field name below is taken directly from the live app, not from memory — if something on your screen doesn't match this guide exactly, check the [Troubleshooting & FAQ](#troubleshooting--faq) section first, then ask for help.
 
+**Bursar or teacher? Most of this guide is the owner/admin setup sequence — here's what's actually yours:**
+
+- **Bursar** — start at [Fee catalog](#9-fee-catalog) and [Generate invoices](#10-generate-invoices) (payments, installment plans, and cancel/reverse all live on an individual invoice page there too). The [Troubleshooting & FAQ](#troubleshooting--faq) entries on Paystack test mode and recording payments are yours as well.
+- **Teacher** — start at [Report cards: build → score entry → sign-off → approval → release](#13-report-cards-build--score-entry--sign-off--approval--release) for the Gradebook and Report Cards workflow. The FAQ entry "A teacher can't see their class in the gradebook" is yours too.
+
+Everything else below (signup, the setup wizard, academic structure, staff invites, students, fee catalog *setup*, guardian invites) is owner/admin work — useful background if you're curious how the school got configured, but not something you'll do day to day.
+
 **Where you are in this process at a glance:**
 
 1. [Create your account](#1-create-your-account)

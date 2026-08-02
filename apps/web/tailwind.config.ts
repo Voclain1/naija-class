@@ -10,6 +10,7 @@ import type { Config } from "tailwindcss";
 // not defined in that scope — see CLAUDE.md "ESM module resolution" for
 // the project-wide rule.
 import tailwindcssAnimate from "tailwindcss-animate";
+import typography from "@tailwindcss/typography";
 
 const config: Config = {
   darkMode: ["class"],
@@ -89,7 +90,7 @@ const config: Config = {
       },
     },
   },
-  plugins: [tailwindcssAnimate],
+  plugins: [tailwindcssAnimate, typography],
 };
 
 export default config;
