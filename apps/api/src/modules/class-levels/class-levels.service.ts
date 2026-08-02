@@ -1,6 +1,6 @@
 import { Injectable } from "@nestjs/common";
 
-import { Prisma, withTenant } from "@school-kit/db";
+import { Prisma, defaultArmFor, withTenant } from "@school-kit/db";
 import {
   ConflictError,
   NotFoundError,
@@ -23,6 +23,14 @@ const AUDIT = {
   create: "class-level.create",
   update: "class-level.update",
   delete: "class-level.delete",
+  // Unlike the signup bootstrap's 14 seeded levels (auth.service.ts, whose
+  // default arms are attributed to the auth.signup_owner entry with no
+  // per-row audit — see that call site's own comment), a level created here
+  // is a standalone admin mutation, so its accompanying default arm gets its
+  // own ordinary class-arm.create row, same as if the admin had opened the
+  // Class Arms dialog and typed it in by hand. metadata.autoCreated
+  // distinguishes it from a manually-created arm for anyone reading the log.
+  armCreate: "class-arm.create",
 } as const;
 
 @Injectable()
@@ -98,6 +106,38 @@ export class ClassLevelsService {
               name: created.name,
               stage: created.stage,
               orderIndex: created.orderIndex,
+            },
+          },
+        });
+
+        // Default arm — see AUDIT.armCreate's comment above for why this
+        // gets its own audit row (unlike the signup-bootstrap path). Same
+        // transaction as the level itself (this whole method body runs
+        // inside withTenant's single $transaction), so a level is never
+        // left without its default arm from a partial failure.
+        const defaultArm = defaultArmFor(created);
+        const createdArm = await db.classArm.create({
+          data: {
+            schoolId: authCtx.schoolId,
+            classLevelId: created.id,
+            name: defaultArm.name,
+            code: defaultArm.code,
+          },
+          select: { id: true, name: true, code: true },
+        });
+        await db.auditLog.create({
+          data: {
+            schoolId: authCtx.schoolId,
+            userId: authCtx.userId,
+            action: AUDIT.armCreate,
+            entityType: "class_arm",
+            entityId: createdArm.id,
+            ipAddress: reqCtx.ipAddress,
+            metadata: {
+              classLevelId: created.id,
+              code: createdArm.code,
+              name: createdArm.name,
+              autoCreated: true,
             },
           },
         });

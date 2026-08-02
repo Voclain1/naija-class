@@ -10,6 +10,7 @@ import {
   DEFAULT_GRADING_SCHEME_NAME,
   Prisma,
   basePrisma,
+  defaultArmFor,
   withTenant,
 } from "@school-kit/db";
 import {
@@ -226,6 +227,38 @@ export class AuthService {
             stage: level.stage,
             orderIndex: level.orderIndex,
           })),
+          skipDuplicates: true,
+        });
+
+        // Give each seeded level one default arm (e.g. "JSS 1" -> "JSS 1A")
+        // so a single-arm school (the common case for a private school with
+        // one stream per level) can enroll students immediately, without a
+        // separate manual "create an arm" step first. `createMany` above
+        // doesn't return the created rows, so re-fetch ids by the code we
+        // just inserted them with. Same `tx` + already-satisfied RLS GUC as
+        // the class-level seed above, and same "no separate audit row"
+        // treatment: this is bootstrap, attributed to the auth.signup_owner
+        // entry below, not a standalone mutation. NOT idempotency-fragile
+        // like the level seed's skipDuplicates: a level's default arm uses
+        // a code namespaced to that level ("jss1-a"), so it can never
+        // collide with a school-level admin-created arm under a DIFFERENT
+        // level reusing the same suffix — but `skipDuplicates` here too,
+        // matching the level seed's own defensive stance on a hypothetical
+        // signup-tx retry.
+        const seededLevels = await tx.classLevel.findMany({
+          where: { schoolId: school.id, code: { in: DEFAULT_CLASS_LEVELS.map((l) => l.code) } },
+          select: { id: true, code: true, name: true },
+        });
+        await tx.classArm.createMany({
+          data: seededLevels.map((level) => {
+            const arm = defaultArmFor(level);
+            return {
+              schoolId: school.id,
+              classLevelId: level.id,
+              name: arm.name,
+              code: arm.code,
+            };
+          }),
           skipDuplicates: true,
         });
 

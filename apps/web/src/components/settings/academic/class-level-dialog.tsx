@@ -117,6 +117,7 @@ export function ClassLevelDialog({ open, existing, onClose, onSaved }: Props) {
           <DialogTitle>{existing ? "Edit class level" : "Add class level"}</DialogTitle>
           <p className="text-sm text-muted-foreground">
             Levels group your classes (e.g. JSS 1, Primary 4).
+            {!existing && " A default arm (e.g. \"JSS 1A\") is created automatically — rename it or add more arms afterward from Class Arms."}
           </p>
         </DialogHeader>
 
