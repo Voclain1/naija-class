@@ -74,7 +74,13 @@ export async function setupAcademicStructure(
 ): Promise<AcademicStructure> {
   const arms = opts?.arms ?? [{ name: "JSS 2 A", code: "jss2a" }];
   const subjectName = opts?.subjectName ?? "Mathematics";
-  const subjectCode = opts?.subjectCode ?? "math";
+  // Every school is now auto-seeded with a "math"-coded core subject at
+  // signup (packages/db/src/seeds/subjects.ts) — this fixture's default
+  // code can no longer be "math" without colliding (409 CODE_TAKEN) on a
+  // fresh school. `name` stays "Mathematics" (tests assert on the visible
+  // name, e.g. slice-11-teacher-scope.spec.ts's `getByText("Mathematics")`)
+  // — only the internal code needs to differ from the seeded one.
+  const subjectCode = opts?.subjectCode ?? "math-e2e";
   const yearLabel = opts?.yearLabel ?? "2025/2026";
   const reuse = opts?.skipIfExists ?? false;
 

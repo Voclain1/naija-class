@@ -7,6 +7,7 @@ export {
   type DefaultClassLevel,
 } from "./seeds/class-levels.js";
 export { defaultArmFor, type DefaultArm, type DefaultArmSourceLevel } from "./seeds/class-arms.js";
+export { DEFAULT_SUBJECTS, type DefaultSubject } from "./seeds/subjects.js";
 export {
   DEFAULT_GRADING_SCHEME_NAME,
   DEFAULT_GRADING_COMPONENTS,

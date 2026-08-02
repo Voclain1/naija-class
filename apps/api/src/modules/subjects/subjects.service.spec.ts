@@ -89,12 +89,12 @@ describe("SubjectsService", () => {
 
       const created = await service.create(
         authCtx,
-        { name: "Mathematics", code: "math" },
+        { name: "Geography", code: "geo" },
         reqCtx,
       );
 
       expect(created.id).toBeTruthy();
-      expect(created.name).toBe("Mathematics");
+      expect(created.name).toBe("Geography");
       expect(created.category).toBe("CORE");
       expect(created.isActive).toBe(true);
 
@@ -114,18 +114,18 @@ describe("SubjectsService", () => {
 
     it("duplicate code per school → ConflictError CODE_TAKEN", async () => {
       const { authCtx } = await createActiveSchool("dup-code");
-      await service.create(authCtx, { name: "Math", code: "math" }, reqCtx);
+      await service.create(authCtx, { name: "Geography", code: "geo" }, reqCtx);
       await expect(
-        service.create(authCtx, { name: "Mathematics", code: "math" }, reqCtx),
+        service.create(authCtx, { name: "Geography II", code: "geo" }, reqCtx),
       ).rejects.toMatchObject({ code: "CODE_TAKEN" });
     });
 
     it("same code allowed in different schools", async () => {
       const a = await createActiveSchool("samecode-a");
       const b = await createActiveSchool("samecode-b");
-      await service.create(a.authCtx, { name: "Math", code: "math" }, reqCtx);
+      await service.create(a.authCtx, { name: "Geography", code: "geo" }, reqCtx);
       await expect(
-        service.create(b.authCtx, { name: "Math", code: "math" }, reqCtx),
+        service.create(b.authCtx, { name: "Geography", code: "geo" }, reqCtx),
       ).resolves.toBeTruthy();
     });
 
@@ -156,7 +156,7 @@ describe("SubjectsService", () => {
 
     it("list defaults to active-only; includeInactive returns soft-deleted rows too", async () => {
       const { authCtx } = await createActiveSchool("inactive");
-      const active = await service.create(authCtx, { name: "Math", code: "math" }, reqCtx);
+      const active = await service.create(authCtx, { name: "Geography", code: "geo" }, reqCtx);
       const soft = await service.create(authCtx, { name: "Music", code: "music" }, reqCtx);
       await service.update(authCtx, soft.id, { isActive: false }, reqCtx);
 
@@ -176,17 +176,17 @@ describe("SubjectsService", () => {
   describe("update", () => {
     it("renames a subject and bumps audit log", async () => {
       const { authCtx } = await createActiveSchool("upd");
-      const s = await service.create(authCtx, { name: "Maths", code: "math" }, reqCtx);
-      const renamed = await service.update(authCtx, s.id, { name: "Mathematics" }, reqCtx);
-      expect(renamed.name).toBe("Mathematics");
+      const s = await service.create(authCtx, { name: "Geog", code: "geo" }, reqCtx);
+      const renamed = await service.update(authCtx, s.id, { name: "Geography" }, reqCtx);
+      expect(renamed.name).toBe("Geography");
     });
 
     it("rename to existing code → ConflictError CODE_TAKEN", async () => {
       const { authCtx } = await createActiveSchool("upd-dup");
-      await service.create(authCtx, { name: "Math", code: "math" }, reqCtx);
+      await service.create(authCtx, { name: "Geography", code: "geo" }, reqCtx);
       const other = await service.create(authCtx, { name: "Music", code: "music" }, reqCtx);
       await expect(
-        service.update(authCtx, other.id, { code: "math" }, reqCtx),
+        service.update(authCtx, other.id, { code: "geo" }, reqCtx),
       ).rejects.toMatchObject({ code: "CODE_TAKEN" });
     });
   });
