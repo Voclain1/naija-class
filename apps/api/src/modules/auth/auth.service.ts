@@ -61,6 +61,21 @@ const PASSWORD_RESET_AUDIT_ACTION = "auth.password_reset";
 const CHALLENGE_TTL_SECONDS = 300;
 const CHALLENGE_KEY_PREFIX = "2fa:challenge:";
 
+// Explicit override for signupOwner's $transaction below — Prisma's
+// interactive-transaction default is 5000ms. Production incident
+// 2026-08-02/03: that transaction runs ~12 sequential round-trips (school/
+// user/role creation, class-level + class-arm + subject-catalogue +
+// grading-scheme + grading-component + grade-boundary seeding, audit log),
+// and real Neon latency (not the near-zero round-trip time of local Docker
+// Postgres) pushed elapsed time to 5172ms — 172ms over the default —
+// failing every signup with a 500 for ~2 hours before this fix. Prisma's
+// own error message recommends exactly this remedy. 20s is generous
+// headroom against Neon cold-start latency (CLAUDE.md's "Neon's 5-minute
+// autosuspend" note) without holding a bootstrap-only, low-frequency
+// transaction open dangerously long — signup has no concurrent writers to
+// a brand-new school's rows to block.
+const SIGNUP_TRANSACTION_TIMEOUT_MS = 20_000;
+
 // Short-lived by design — much shorter than the 7-day invitation TTL.
 // Industry-standard reasoning: a reset link is issued to prove control of an
 // inbox RIGHT NOW, not "at some point this week"; a long-lived link sitting
@@ -164,6 +179,8 @@ export class AuthService {
     };
 
     try {
+      // Explicit timeout override — see SIGNUP_TRANSACTION_TIMEOUT_MS above
+      // for why the 5000ms Prisma default isn't enough here.
       created = await basePrisma.$transaction(async (tx) => {
         const school = await tx.school.create({
           data: {
@@ -359,7 +376,7 @@ export class AuthService {
           school,
           user,
         };
-      });
+      }, { timeout: SIGNUP_TRANSACTION_TIMEOUT_MS });
     } catch (err) {
       throw translatePrismaError(err);
     }
