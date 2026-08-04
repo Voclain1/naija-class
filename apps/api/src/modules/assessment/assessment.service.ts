@@ -1,4 +1,5 @@
 import { Injectable } from "@nestjs/common";
+import * as crypto from "node:crypto";
 
 import { Prisma, withTenant } from "@school-kit/db";
 import {
@@ -38,6 +39,24 @@ const AUDIT = {
   scoreUpdate: "assessment-score.update",
   signOff: "assessment.sign-off",
 } as const;
+
+// Explicit override for bulkUpsertScores's withTenant transaction below —
+// Prisma's interactive-transaction default is 5000ms. Production incident
+// 2026-08-04: that transaction chains term/component/enrollment/scope/
+// released-card checks, a per-row score write, and a per-student
+// materialize pass, and real Neon latency pushed elapsed time past 5000ms
+// even for a 2-student save — failing every save with the same
+// "Transaction already closed"/"Transaction not found" error signature as
+// the 2026-08-02/03 signup incident (see SIGNUP_TRANSACTION_TIMEOUT_MS in
+// auth.service.ts). 15s (not signup's 20s) — this is a high-frequency,
+// multi-teacher-concurrent endpoint rather than a one-time bootstrap, so
+// less headroom is deliberately traded for less time holding a connection
+// under contention. This is a backstop on TOP OF, not instead of, cutting
+// the round-trip count itself (see materializeSummaryBatch and the raw
+// multi-row score upsert below) — the round-trip cuts are what keep the
+// normal case fast; this timeout only protects against a genuine cold-start
+// latency spike.
+const BULK_SAVE_TRANSACTION_TIMEOUT_MS = 15_000;
 
 // The tenant-scoped Prisma handle (the `db` passed into withTenant's callback).
 type TenantDb = Parameters<Parameters<typeof withTenant>[1]>[0];
@@ -339,45 +358,49 @@ export class AssessmentService {
       // have a RELEASED card for the term.
       await assertNoReleasedCards(db, input.termId, studentIds);
 
-      // f) all validation passed — atomic write of every row.
-      for (const r of input.rows) {
-        await db.assessmentScore.upsert({
-          where: {
-            schoolId_studentId_subjectId_termId_componentId: {
-              schoolId: authCtx.schoolId,
-              studentId: r.studentId,
-              subjectId: input.subjectId,
-              termId: input.termId,
-              componentId: r.componentId,
-            },
-          },
-          create: {
-            schoolId: authCtx.schoolId,
-            studentId: r.studentId,
-            subjectId: input.subjectId,
-            termId: input.termId,
-            componentId: r.componentId,
-            score: r.score,
-            enteredBy: authCtx.userId,
-          },
-          update: { score: r.score, enteredBy: authCtx.userId, enteredAt: new Date() },
-          select: { id: true },
-        });
-      }
+      // f) all validation passed — atomic write of every row, ONE round-trip
+      // regardless of row count (2026-08-04 perf fix — see
+      // BULK_SAVE_TRANSACTION_TIMEOUT_MS above for the incident this closes).
+      // Was a per-row upsert() loop (N round-trips); collapsed into a single
+      // multi-row INSERT ... ON CONFLICT DO UPDATE. Every interpolated value
+      // is a Prisma.sql tagged-template parameter (never string-concatenated
+      // into the SQL text), so this carries the same injection safety as an
+      // ordinary Prisma call — see the raw-SQL correctness/safety tests in
+      // assessment.service.spec.ts.
+      const now = new Date();
+      const scoreRows = input.rows.map(
+        (r) =>
+          Prisma.sql`(${crypto.randomUUID()}, ${authCtx.schoolId}, ${r.studentId}, ${input.subjectId}, ${input.termId}, ${r.componentId}, ${r.score}, ${authCtx.userId}, ${now}, ${now})`,
+      );
+      await db.$executeRaw`
+        INSERT INTO assessment_scores
+          (id, school_id, student_id, subject_id, term_id, component_id, score, entered_by, entered_at, updated_at)
+        VALUES ${Prisma.join(scoreRows)}
+        ON CONFLICT (school_id, student_id, subject_id, term_id, component_id)
+        DO UPDATE SET
+          score = EXCLUDED.score,
+          entered_by = EXCLUDED.entered_by,
+          entered_at = EXCLUDED.entered_at,
+          updated_at = EXCLUDED.updated_at
+      `;
 
-      // materialize ONE summary per distinct student (not per row).
-      let clearedSignOffCount = 0;
-      for (const studentId of studentIds) {
-        const enrollment = enrollByStudent.get(studentId)!;
-        const { clearedSignOff } = await this.materializeSummary(db, authCtx.schoolId, {
-          studentId,
-          subjectId: input.subjectId,
-          termId: input.termId,
-          classArmId: enrollment.classArmId,
-          academicYearId: enrollment.academicYearId,
-        });
-        if (clearedSignOff) clearedSignOffCount += 1;
-      }
+      // materialize ONE summary per distinct student (not per row) — batched,
+      // not looped: materializeSummary (used by the single-score endpoints)
+      // re-fetches grade boundaries and does a per-student existing-signoff
+      // lookup on EVERY call, which is a real N+1 across a whole class when
+      // called in a loop. materializeSummaryBatch hoists the parts that are
+      // identical (boundaries) or batchable (current scores, prior sign-off
+      // state) across every student in the batch out of the loop, and only
+      // loops for the one thing that's genuinely per-student: the
+      // assessment.upsert() write itself.
+      const { clearedSignOffCount } = await this.materializeSummaryBatch(
+        db,
+        authCtx.schoolId,
+        input.subjectId,
+        input.termId,
+        studentIds,
+        enrollByStudent,
+      );
 
       // g) single audit row (Phase-1 bulk convention).
       const classArmIds = [...new Set([...enrollByStudent.values()].map((e) => e.classArmId))];
@@ -396,7 +419,7 @@ export class AssessmentService {
         classArmId: classArmIds[0]!,
         subjectId: input.subjectId,
       });
-    });
+    }, { timeoutMs: BULK_SAVE_TRANSACTION_TIMEOUT_MS });
   }
 
   // =========================================================================
@@ -755,15 +778,10 @@ export class AssessmentService {
       where: { studentId, subjectId, termId },
       select: { score: true },
     });
-    const totalScore = sumComponentScores(scores.map((s) => s.score));
-
     const boundaries = await db.gradeBoundary.findMany({
       select: { letter: true, minScore: true, maxScore: true, remark: true },
     });
-    const letterGrade = resolveLetterGrade(totalScore, boundaries);
-    const remark = letterGrade
-      ? boundaries.find((b) => b.letter === letterGrade)?.remark ?? null
-      : null;
+    const { totalScore, letterGrade, remark } = computeSummaryFields(scores, boundaries);
 
     const existing = await db.assessment.findUnique({
       where: { schoolId_studentId_subjectId_termId: { schoolId, studentId, subjectId, termId } },
@@ -771,7 +789,111 @@ export class AssessmentService {
     });
     const clearedSignOff = Boolean(existing?.subjectSignedOffAt);
 
-    const assessment = await db.assessment.upsert({
+    const assessment = await this.upsertAssessment(db, {
+      schoolId,
+      studentId,
+      subjectId,
+      termId,
+      classArmId,
+      academicYearId,
+      totalScore,
+      letterGrade,
+      remark,
+    });
+
+    return { assessment: toAssessmentDto(assessment), clearedSignOff };
+  }
+
+  // Bulk materialization (2026-08-04 perf fix — see BULK_SAVE_TRANSACTION_
+  // TIMEOUT_MS above for the incident this closes). Same end result as
+  // calling materializeSummary once per student, but hoists the two reads
+  // that materializeSummary redundantly repeats on EVERY call — grade
+  // boundaries (identical for every student; re-fetching per student is a
+  // straight N+1) and the current score set / prior sign-off state (both
+  // batchable across students in one `studentId: { in }` query each) — out
+  // of the loop. The only genuinely per-student work left is the
+  // assessment.upsert() write itself, whose create/update data differs per
+  // student. Returns only what the bulk caller needs (a count, for the audit
+  // row) — the full AssessmentDto per student isn't needed here because
+  // bulkUpsertScores's response comes from buildColumnFeed's fresh read
+  // afterward, not from this method's return value.
+  private async materializeSummaryBatch(
+    db: TenantDb,
+    schoolId: string,
+    subjectId: string,
+    termId: string,
+    studentIds: string[],
+    enrollByStudent: Map<string, { classArmId: string; academicYearId: string }>,
+  ): Promise<{ clearedSignOffCount: number }> {
+    const [allScores, boundaries, existingAssessments] = await Promise.all([
+      db.assessmentScore.findMany({
+        where: { subjectId, termId, studentId: { in: studentIds } },
+        select: { studentId: true, score: true },
+      }),
+      db.gradeBoundary.findMany({
+        select: { letter: true, minScore: true, maxScore: true, remark: true },
+      }),
+      db.assessment.findMany({
+        where: { schoolId, subjectId, termId, studentId: { in: studentIds } },
+        select: { studentId: true, subjectSignedOffAt: true },
+      }),
+    ]);
+
+    const scoresByStudent = new Map<string, { score: number }[]>();
+    for (const s of allScores) {
+      const list = scoresByStudent.get(s.studentId) ?? [];
+      list.push({ score: s.score });
+      scoresByStudent.set(s.studentId, list);
+    }
+    const wasSignedOffByStudent = new Map(
+      existingAssessments.map((a) => [a.studentId, Boolean(a.subjectSignedOffAt)]),
+    );
+
+    let clearedSignOffCount = 0;
+    for (const studentId of studentIds) {
+      const { classArmId, academicYearId } = enrollByStudent.get(studentId)!;
+      const { totalScore, letterGrade, remark } = computeSummaryFields(
+        scoresByStudent.get(studentId) ?? [],
+        boundaries,
+      );
+      if (wasSignedOffByStudent.get(studentId)) clearedSignOffCount += 1;
+
+      await this.upsertAssessment(db, {
+        schoolId,
+        studentId,
+        subjectId,
+        termId,
+        classArmId,
+        academicYearId,
+        totalScore,
+        letterGrade,
+        remark,
+      });
+    }
+
+    return { clearedSignOffCount };
+  }
+
+  // The one write materializeSummary and materializeSummaryBatch share —
+  // extracted so the create/update shape (including the implicit sign-off
+  // unlock, Q6) can never drift between the single-score and bulk paths.
+  private async upsertAssessment(
+    db: TenantDb,
+    params: {
+      schoolId: string;
+      studentId: string;
+      subjectId: string;
+      termId: string;
+      classArmId: string;
+      academicYearId: string;
+      totalScore: number;
+      letterGrade: string | null;
+      remark: string | null;
+    },
+  ): Promise<AssessmentRow> {
+    const { schoolId, studentId, subjectId, termId, classArmId, academicYearId, totalScore, letterGrade, remark } =
+      params;
+    return db.assessment.upsert({
       where: { schoolId_studentId_subjectId_termId: { schoolId, studentId, subjectId, termId } },
       create: {
         schoolId,
@@ -799,8 +921,6 @@ export class AssessmentService {
       },
       select: ASSESSMENT_SELECT,
     });
-
-    return { assessment: toAssessmentDto(assessment), clearedSignOff };
   }
 
   // Compose the (summary + component breakdown) response from the current rows.
@@ -888,6 +1008,21 @@ const FEED_STUDENT_SELECT = {
 
 type ScoreRow = Prisma.AssessmentScoreGetPayload<{ select: typeof SCORE_SELECT }>;
 type AssessmentRow = Prisma.AssessmentGetPayload<{ select: typeof ASSESSMENT_SELECT }>;
+
+// Pure: total + letter grade + remark from a set of component scores and the
+// school's grade-boundary bands. Shared by materializeSummary (single-score
+// path) and materializeSummaryBatch (bulk path) so the grading math can never
+// diverge between them — see the "single vs batch produce identical output"
+// spec in assessment.service.spec.ts.
+function computeSummaryFields(
+  scores: { score: number }[],
+  boundaries: { letter: string; minScore: number; maxScore: number; remark: string | null }[],
+): { totalScore: number; letterGrade: string | null; remark: string | null } {
+  const totalScore = sumComponentScores(scores.map((s) => s.score));
+  const letterGrade = resolveLetterGrade(totalScore, boundaries);
+  const remark = letterGrade ? boundaries.find((b) => b.letter === letterGrade)?.remark ?? null : null;
+  return { totalScore, letterGrade, remark };
+}
 
 function toScoreDto(row: ScoreRow): AssessmentScoreDto {
   return {
