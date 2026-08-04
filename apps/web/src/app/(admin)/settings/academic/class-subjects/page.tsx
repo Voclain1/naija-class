@@ -22,6 +22,12 @@ import {
   listClassSubjectsForLevel,
 } from "@/lib/class-subjects/class-subjects-api";
 import { listSubjects } from "@/lib/subjects/subjects-api";
+import { mapWithConcurrency } from "@/lib/concurrency";
+
+// Cap on simultaneous listClassSubjectsForLevel requests in loadAll() below.
+// See @/lib/concurrency's header comment for why this isn't a plain
+// Promise.all.
+const LEVEL_FETCH_CONCURRENCY = 3;
 
 // /settings/academic/class-subjects — the class-subject matrix.
 //
@@ -69,16 +75,20 @@ export default function ClassSubjectsMatrixPage() {
         a.name.localeCompare(b.name),
       );
 
-      // Parallel listForLevel for every level — N round-trips for N levels,
-      // but each is small (rows for one level only) and they share no
-      // dependencies. For the 14-level Phase-1 spec target this is fine;
-      // if the matrix ever needs to handle hundreds of levels, the API
-      // can grow a "list all class_subjects for the school" endpoint.
-      const perLevel = await Promise.all(
-        orderedLevels.map(async (lvl) => ({
+      // listForLevel for every level, capped at LEVEL_FETCH_CONCURRENCY
+      // concurrent requests — see that constant's comment for why this
+      // isn't a plain Promise.all. Each round-trip is small (rows for one
+      // level only) and they share no dependencies. For the 14-level
+      // Phase-1 spec target this is fine; if the matrix ever needs to
+      // handle hundreds of levels, the API can grow a "list all
+      // class_subjects for the school" endpoint.
+      const perLevel = await mapWithConcurrency(
+        orderedLevels,
+        LEVEL_FETCH_CONCURRENCY,
+        async (lvl) => ({
           levelId: lvl.id,
           rows: await listClassSubjectsForLevel(lvl.id),
-        })),
+        }),
       );
 
       const snap = new Map<string, Map<string, CellSnapshot>>();

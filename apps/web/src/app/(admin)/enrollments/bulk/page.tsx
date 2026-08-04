@@ -26,6 +26,7 @@ import { ApiError } from "@/lib/api-client";
 import { listTerms } from "@/lib/academic-years/academic-years-api";
 import { listClassArms } from "@/lib/class-arms/class-arms-api";
 import { listClassLevels } from "@/lib/class-levels/class-levels-api";
+import { mapWithConcurrency } from "@/lib/concurrency";
 import {
   bulkCreateEnrollments,
   listEnrollments,
@@ -64,6 +65,7 @@ interface CandidateRow {
   admissionNumber: string;
   group: Group;
   meta?: string; // e.g. "Admitted 2026-01-15"
+  lookupFailed: boolean; // batchStudentLookup couldn't resolve this id
 }
 
 export default function BulkEnrollmentWizardPage() {
@@ -253,6 +255,7 @@ export default function BulkEnrollmentWizardPage() {
               : `student ${enr.studentId.slice(0, 8)}`,
             admissionNumber: s?.admissionNumber ?? "—",
             group: "carried",
+            lookupFailed: !s,
           });
         }
         for (const enr of withdrewRaw.data) {
@@ -264,6 +267,7 @@ export default function BulkEnrollmentWizardPage() {
               : `student ${enr.studentId.slice(0, 8)}`,
             admissionNumber: s?.admissionNumber ?? "—",
             group: "withdrew",
+            lookupFailed: !s,
           });
         }
         for (const ad of admittedAfter) {
@@ -276,6 +280,7 @@ export default function BulkEnrollmentWizardPage() {
             admissionNumber: s?.admissionNumber ?? "—",
             group: "admitted",
             meta: `Admitted ${ad.admittedAt.toISOString().slice(0, 10)}`,
+            lookupFailed: !s,
           });
         }
         setCandidates(rows);
@@ -628,7 +633,20 @@ function CandidateGroup({
                   checked={checked.get(row.studentId) ?? false}
                   onChange={() => onToggle(row.studentId)}
                 />
-                <span className="flex-1">{row.studentLabel}</span>
+                <span className="flex flex-1 items-center gap-1">
+                  {row.studentLabel}
+                  {row.lookupFailed && (
+                    <span
+                      className="inline-flex shrink-0"
+                      title="Couldn't load this student's details — showing a partial ID"
+                    >
+                      <AlertTriangle
+                        className="h-3 w-3 text-amber-600"
+                        aria-label="Couldn't load this student's details — showing a partial ID"
+                      />
+                    </span>
+                  )}
+                </span>
                 <span className="font-mono text-xs text-muted-foreground">
                   {row.admissionNumber}
                 </span>
@@ -665,22 +683,28 @@ async function batchStudentLookup(
   // Look up each student id directly — there are typically only a few
   // dozen carry-over candidates per arm, and per-id GET is faster than
   // paging through a large /students list. Falls back to the label
-  // "student abcd1234..." in the consumer if a lookup fails.
+  // "student abcd1234..." in the consumer if a lookup fails (and the
+  // consumer marks that row's lookupFailed so the UI can flag it).
+  //
+  // Capped concurrency, not a plain Promise.all — see @/lib/concurrency's
+  // header comment. "A few dozen" simultaneous withTenant() transactions is
+  // exactly the fan-out size that outran packages/db/tenant-client.ts's
+  // single retry during a cold Neon start; this is the highest-N instance
+  // of that pattern in the app (root-caused 2026-08-04, see
+  // docs/deferred.md).
   const wanted = Array.from(new Set(studentIds));
-  await Promise.all(
-    wanted.map(async (id) => {
-      try {
-        const s: StudentDto = await getStudent(id);
-        map.set(s.id, {
-          firstName: s.firstName,
-          lastName: s.lastName,
-          admissionNumber: s.admissionNumber,
-        });
-      } catch {
-        // Swallow — the row renders the fallback label.
-      }
-    }),
-  );
+  await mapWithConcurrency(wanted, 3, async (id) => {
+    try {
+      const s: StudentDto = await getStudent(id);
+      map.set(s.id, {
+        firstName: s.firstName,
+        lastName: s.lastName,
+        admissionNumber: s.admissionNumber,
+      });
+    } catch {
+      // Swallow — the row renders the fallback label with a lookupFailed flag.
+    }
+  });
   return map;
 }
 
