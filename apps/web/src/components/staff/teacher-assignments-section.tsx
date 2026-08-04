@@ -20,6 +20,7 @@ import { Label } from "@/components/ui/label";
 import { listAcademicYears, listTerms } from "@/lib/academic-years/academic-years-api";
 import { ApiError } from "@/lib/api-client";
 import { listClassArms } from "@/lib/class-arms/class-arms-api";
+import { mapWithConcurrency } from "@/lib/concurrency";
 import {
   createTeacherAssignment,
   deleteTeacherAssignment,
@@ -99,9 +100,12 @@ export function TeacherAssignmentsSection({ teacherId }: Props) {
       setSubjects(subjectRows);
       setYears(yearRows);
       // Terms are nested under years; fetch each year's terms (years are few
-      // at pilot scale — 1–3). Flatten into one list for client-side filter.
-      const termLists = await Promise.all(
-        yearRows.map((y) => listTerms(y.id)),
+      // at pilot scale — 1–3, but not hard-capped). Concurrency-limited
+      // rather than a plain Promise.all — see @/lib/concurrency's header
+      // comment for why an unbounded per-item fan-out is a cold-Neon-start
+      // risk. Flatten into one list for client-side filter.
+      const termLists = await mapWithConcurrency(yearRows, 3, (y) =>
+        listTerms(y.id),
       );
       setTerms(termLists.flat());
     } catch (e) {

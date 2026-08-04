@@ -18,6 +18,7 @@ import { ApiError } from "@/lib/api-client";
 import { listTerms } from "@/lib/academic-years/academic-years-api";
 import { listClassArms } from "@/lib/class-arms/class-arms-api";
 import { listClassLevels } from "@/lib/class-levels/class-levels-api";
+import { mapWithConcurrency } from "@/lib/concurrency";
 import {
   createEnrollment,
   listEnrollments,
@@ -109,13 +110,15 @@ export function EnrollmentsTab({ studentId }: Props) {
       if (currentYear) yearIdsToFetch.add(currentYear.id);
       for (const e of enrRes.data) yearIdsToFetch.add(e.academicYearId);
 
+      // Concurrency-limited, not a plain Promise.all — see
+      // @/lib/concurrency's header comment for why an unbounded per-item
+      // fan-out is a cold-Neon-start risk, even though yearIdsToFetch is
+      // small in practice (current year + this student's enrollment years).
       const termMap = new Map<string, TermDto>();
-      await Promise.all(
-        [...yearIdsToFetch].map(async (yid) => {
-          const terms = await listTerms(yid);
-          for (const t of terms) termMap.set(t.id, t);
-        }),
-      );
+      await mapWithConcurrency([...yearIdsToFetch], 3, async (yid) => {
+        const terms = await listTerms(yid);
+        for (const t of terms) termMap.set(t.id, t);
+      });
 
       const armM = new Map(arms.map((a) => [a.id, a]));
       const levelM = new Map(levels.map((l) => [l.id, l]));
