@@ -641,8 +641,14 @@ describe("AssessmentService (cp2 — score entry + materialization)", () => {
 
   it("bulk: a materialization failure rolls back ALL upserts (no orphans)", async () => {
     const f = await fullFixture("bulk-atomic");
+    // The bulk path calls materializeSummaryBatch (not materializeSummary,
+    // which is only used by the single-score endpoints) — see the 2026-08-04
+    // perf fix that split them.
     const spy = vi
-      .spyOn(service as unknown as { materializeSummary: () => Promise<unknown> }, "materializeSummary")
+      .spyOn(
+        service as unknown as { materializeSummaryBatch: () => Promise<unknown> },
+        "materializeSummaryBatch",
+      )
       .mockRejectedValueOnce(new Error("boom"));
     await expect(
       service.bulkUpsertScores(
@@ -665,7 +671,7 @@ describe("AssessmentService (cp2 — score entry + materialization)", () => {
     expect(count).toBe(0);
   });
 
-  it("bulk: one scope call + one enrollment query regardless of batch size (N+1 guard)", async () => {
+  it("bulk: one scope call + one enrollment query + one materialize-batch call regardless of batch size (N+1 guard)", async () => {
     const f = await fullFixture("bulk-n1");
     const s2 = await enroll(f.schoolId, {
       classArmId: f.armId,
@@ -680,6 +686,14 @@ describe("AssessmentService (cp2 — score entry + materialization)", () => {
     const enrSpy = vi.spyOn(
       service as unknown as { loadEnrollmentsForTerm: () => Promise<unknown> },
       "loadEnrollmentsForTerm",
+    );
+    // 2026-08-04 perf fix: materializeSummaryBatch replaces a per-student
+    // materializeSummary loop specifically to stop re-fetching grade
+    // boundaries (and re-checking prior sign-off) once per student — assert
+    // it's called exactly once for a 2-student batch, not once per student.
+    const batchSpy = vi.spyOn(
+      service as unknown as { materializeSummaryBatch: () => Promise<unknown> },
+      "materializeSummaryBatch",
     );
     await service.bulkUpsertScores(
       ctx(f.schoolId, f.teacherId),
@@ -697,8 +711,185 @@ describe("AssessmentService (cp2 — score entry + materialization)", () => {
     );
     expect(scopeSpy).toHaveBeenCalledTimes(1);
     expect(enrSpy).toHaveBeenCalledTimes(1);
+    expect(batchSpy).toHaveBeenCalledTimes(1);
     scopeSpy.mockRestore();
     enrSpy.mockRestore();
+    batchSpy.mockRestore();
+  });
+
+  // ---------------------------------------------------------------------
+  // 2026-08-04 perf fix: raw multi-row upsert + batched materialize.
+  // Correctness of the $executeRaw INSERT ... ON CONFLICT DO UPDATE, and
+  // parity between the single-score path (materializeSummary) and the bulk
+  // path (materializeSummaryBatch) it replaced.
+  // ---------------------------------------------------------------------
+
+  it("bulk raw upsert: a fresh batch creates exactly one row per (student, component), no duplicates", async () => {
+    const f = await fullFixture("bulk-raw-create");
+    const s2 = await enroll(f.schoolId, {
+      classArmId: f.armId,
+      termId: f.termId,
+      academicYearId: f.yearId,
+      suffix: "bulk-raw-create-2",
+    });
+    await service.bulkUpsertScores(
+      ctx(f.schoolId, f.teacherId),
+      { termId: f.termId, subjectId: f.subjectId, rows: [...fullColumn(f), ...fullColumn(f, s2)] },
+      reqCtx,
+    );
+    const rows = await withTenant(f.schoolId, (db) =>
+      db.assessmentScore.findMany({
+        where: { subjectId: f.subjectId, termId: f.termId },
+        select: { studentId: true, componentId: true, score: true, enteredBy: true },
+      }),
+    );
+    expect(rows).toHaveLength(6); // 2 students × 3 components, no duplicates
+    for (const row of rows) {
+      expect(row.enteredBy).toBe(f.teacherId);
+    }
+  });
+
+  it("bulk raw upsert: re-saving an existing row UPDATES score/enteredBy/enteredAt in place (no new row)", async () => {
+    const f = await fullFixture("bulk-raw-update");
+    await service.bulkUpsertScores(
+      ctx(f.schoolId, f.teacherId),
+      { termId: f.termId, subjectId: f.subjectId, rows: [{ studentId: f.studentId, componentId: f.ca1.id, score: 10 }] },
+      reqCtx,
+    );
+    const original = await withTenant(f.schoolId, (db) =>
+      db.assessmentScore.findFirstOrThrow({
+        where: { studentId: f.studentId, componentId: f.ca1.id },
+        select: { id: true, score: true, enteredAt: true, enteredBy: true },
+      }),
+    );
+
+    // Re-save the SAME cell with a different actor (owner override) and score.
+    await new Promise((r) => setTimeout(r, 5)); // ensure a distinguishable enteredAt
+    await service.bulkUpsertScores(
+      ctx(f.schoolId, f.ownerId),
+      { termId: f.termId, subjectId: f.subjectId, rows: [{ studentId: f.studentId, componentId: f.ca1.id, score: 17 }] },
+      reqCtx,
+    );
+
+    const count = await withTenant(f.schoolId, (db) =>
+      db.assessmentScore.count({ where: { studentId: f.studentId, componentId: f.ca1.id } }),
+    );
+    expect(count).toBe(1); // no duplicate row — same id, updated in place
+
+    const updated = await withTenant(f.schoolId, (db) =>
+      db.assessmentScore.findUniqueOrThrow({
+        where: { id: original.id },
+        select: { id: true, score: true, enteredAt: true, enteredBy: true },
+      }),
+    );
+    expect(updated.id).toBe(original.id);
+    expect(updated.score).toBe(17);
+    expect(updated.enteredBy).toBe(f.ownerId);
+    expect(updated.enteredAt.getTime()).toBeGreaterThan(original.enteredAt.getTime());
+  });
+
+  it("bulk raw upsert: a single batch mixing NEW and EXISTING (student, component) cells handles both correctly", async () => {
+    const f = await fullFixture("bulk-raw-mixed");
+    // Pre-save CA1 only.
+    await service.bulkUpsertScores(
+      ctx(f.schoolId, f.teacherId),
+      { termId: f.termId, subjectId: f.subjectId, rows: [{ studentId: f.studentId, componentId: f.ca1.id, score: 10 }] },
+      reqCtx,
+    );
+    // One batch: re-save CA1 (existing → update) AND enter CA2 + Exam (new → insert) together.
+    const feed = await service.bulkUpsertScores(
+      ctx(f.schoolId, f.teacherId),
+      {
+        termId: f.termId,
+        subjectId: f.subjectId,
+        rows: [
+          { studentId: f.studentId, componentId: f.ca1.id, score: 20 }, // update
+          { studentId: f.studentId, componentId: f.ca2.id, score: 15 }, // insert
+          { studentId: f.studentId, componentId: f.exam.id, score: 45 }, // insert
+        ],
+      },
+      reqCtx,
+    );
+    const row = feed.data.find((r) => r.student.id === f.studentId)!;
+    expect(row.scores).toHaveLength(3);
+    expect(row.assessment?.totalScore).toBe(80); // 20 + 15 + 45
+    const count = await withTenant(f.schoolId, (db) =>
+      db.assessmentScore.count({ where: { studentId: f.studentId, subjectId: f.subjectId } }),
+    );
+    expect(count).toBe(3); // still 3 rows — the update did not create a 4th
+  });
+
+  it("bulk raw upsert: score values round-trip exactly at the component-weight boundaries (0 and max)", async () => {
+    const f = await fullFixture("bulk-raw-boundary");
+    await service.bulkUpsertScores(
+      ctx(f.schoolId, f.teacherId),
+      {
+        termId: f.termId,
+        subjectId: f.subjectId,
+        rows: [
+          { studentId: f.studentId, componentId: f.ca1.id, score: 0 },
+          { studentId: f.studentId, componentId: f.exam.id, score: 50 }, // exam weight is 50
+        ],
+      },
+      reqCtx,
+    );
+    const rows = await withTenant(f.schoolId, (db) =>
+      db.assessmentScore.findMany({
+        where: { studentId: f.studentId },
+        select: { componentId: true, score: true },
+      }),
+    );
+    expect(rows.find((r) => r.componentId === f.ca1.id)?.score).toBe(0);
+    expect(rows.find((r) => r.componentId === f.exam.id)?.score).toBe(50);
+  });
+
+  it("materializeSummaryBatch and materializeSummary agree: same total/grade whether entered via single-score or bulk path", async () => {
+    const single = await fullFixture("parity-single");
+    const bulk = await fullFixture("parity-bulk");
+
+    // Same 3 scores, one school via createScore (single-score path), the
+    // other via bulkUpsertScores (batch path).
+    for (const c of [
+      { id: single.ca1.id, score: 15 },
+      { id: single.ca2.id, score: 15 },
+      { id: single.exam.id, score: 50 },
+    ]) {
+      await service.createScore(
+        ctx(single.schoolId, single.teacherId),
+        { studentId: single.studentId, subjectId: single.subjectId, termId: single.termId, componentId: c.id, score: c.score },
+        reqCtx,
+      );
+    }
+    const bulkFeed = await service.bulkUpsertScores(
+      ctx(bulk.schoolId, bulk.teacherId),
+      { termId: bulk.termId, subjectId: bulk.subjectId, rows: fullColumn(bulk) },
+      reqCtx,
+    );
+
+    const singleAssessment = await withTenant(single.schoolId, (db) =>
+      db.assessment.findFirstOrThrow({
+        where: { studentId: single.studentId, subjectId: single.subjectId, termId: single.termId },
+        select: { totalScore: true, letterGrade: true, remark: true },
+      }),
+    );
+    const bulkRow = bulkFeed.data.find((r) => r.student.id === bulk.studentId)!;
+
+    expect(bulkRow.assessment?.totalScore).toBe(singleAssessment.totalScore);
+    expect(bulkRow.assessment?.letterGrade).toBe(singleAssessment.letterGrade);
+  });
+
+  it("bulk save honors an explicit withTenant timeout override without changing behavior (regression guard)", async () => {
+    // bulkUpsertScores now passes { timeoutMs: BULK_SAVE_TRANSACTION_TIMEOUT_MS }
+    // to withTenant — this is a plain functional regression check that a
+    // generous explicit timeout doesn't change correctness for an ordinary,
+    // fast save (the timeout only matters when the transaction body is slow).
+    const f = await fullFixture("bulk-timeout-regress");
+    const feed = await service.bulkUpsertScores(
+      ctx(f.schoolId, f.teacherId),
+      { termId: f.termId, subjectId: f.subjectId, rows: fullColumn(f) },
+      reqCtx,
+    );
+    expect(feed.data[0].assessment?.totalScore).toBe(80);
   });
 
   // =======================================================================
