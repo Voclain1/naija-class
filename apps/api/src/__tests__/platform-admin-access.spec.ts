@@ -14,6 +14,7 @@ import { createSession } from "../common/auth/sessions";
 
 import { HttpExceptionFilter } from "../common/http-exception.filter";
 import { PlatformAdminModule } from "../modules/platform-admin/platform-admin.module";
+import { InvitationsModule } from "../modules/invitations/invitations.module";
 
 // Platform super-admin — internal, read-only, cross-tenant admin surface
 // (2026-08-02). Same real-HTTP-through-the-real-guard discipline as
@@ -60,7 +61,7 @@ describe("Platform admin access (2026-08-02)", () => {
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
-      imports: [ConfigModule.forRoot({ isGlobal: true }), PlatformAdminModule],
+      imports: [ConfigModule.forRoot({ isGlobal: true }), PlatformAdminModule, InvitationsModule],
       providers: [{ provide: APP_FILTER, useClass: HttpExceptionFilter }],
     }).compile();
     app = moduleRef.createNestApplication();
@@ -261,7 +262,16 @@ describe("Platform admin access (2026-08-02)", () => {
     const row = res.body.find((r: { schoolId: string }) => r.schoolId === schoolA);
     expect(row).toBeDefined();
     expect(Object.keys(row).sort()).toEqual(
-      ["createdAt", "isActive", "name", "schoolId", "staffCount", "studentCount"].sort(),
+      [
+        "createdAt",
+        "isActive",
+        "name",
+        "ownerInviteExpiresAt",
+        "ownerInvitePending",
+        "schoolId",
+        "staffCount",
+        "studentCount",
+      ].sort(),
     );
     // Basic count sanity: schoolA has 1 student and >= 5 staff users seeded above.
     expect(row.studentCount).toBe(1);
@@ -308,7 +318,121 @@ describe("Platform admin access (2026-08-02)", () => {
     }
   });
 
-  it("every platform-admin read writes an audit_logs row namespaced platform_admin.*", async () => {
+  describe("POST /platform-admin/schools — provisioning (2026-08-07)", () => {
+    it("happy path: creates a School + owner Invitation, and the returned acceptUrl's token actually works against POST /invitations/:token/accept", async () => {
+      const ownerEmail = `provisioned-owner-${runId}@example.test`;
+      const res = await request(app.getHttpServer())
+        .post("/api/v1/platform-admin/schools")
+        .set("Authorization", `Bearer ${platformAdminToken}`)
+        .send({ schoolName: `Provisioned School ${runId}`, ownerEmail });
+      expect(res.status).toBe(201); // NestJS default for @Post() is 201 (no @HttpCode override here)
+      expect(res.body.schoolId).toEqual(expect.any(String));
+      expect(res.body.schoolSlug).toMatch(/^[a-z0-9](?:[a-z0-9-]{1,38}[a-z0-9])$/);
+      expect(res.body.ownerEmail).toBe(ownerEmail);
+      expect(typeof res.body.acceptUrl).toBe("string");
+      schoolIdsToCleanup.add(res.body.schoolId);
+
+      // The school shows as owner-invite-pending in the list read.
+      const listRes = await request(app.getHttpServer())
+        .get("/api/v1/platform-admin/schools")
+        .set("Authorization", `Bearer ${platformAdminToken}`);
+      const row = listRes.body.find((r: { schoolId: string }) => r.schoolId === res.body.schoolId);
+      expect(row.ownerInvitePending).toBe(true);
+      expect(typeof row.ownerInviteExpiresAt).toBe("string");
+
+      // The acceptUrl's token is real and works, end to end, through the
+      // unmodified generic invitations accept endpoint.
+      const token = res.body.acceptUrl.split("/invitations/")[1];
+      expect(token).toBeTruthy();
+
+      const getRes = await request(app.getHttpServer()).get(`/api/v1/invitations/${token}`);
+      expect(getRes.status).toBe(200);
+      expect(getRes.body.roleKey).toBe("owner");
+      expect(getRes.body.schoolName).toBe(`Provisioned School ${runId}`);
+      // The platform admin's own User row lives in schoolA, not the new
+      // school — the tenant-scoped inviter lookup correctly finds nothing
+      // and falls back to the documented "An administrator" label.
+      expect(getRes.body.invitedByName).toBe("An administrator");
+
+      const acceptRes = await request(app.getHttpServer())
+        .post(`/api/v1/invitations/${token}/accept`)
+        .send({
+          firstName: "New",
+          lastName: "Owner",
+          password: "Correct-Horse-NewOwner-9",
+          ndprConsent: true,
+        });
+      expect(acceptRes.status).toBe(200);
+      expect(acceptRes.body.school.id).toBe(res.body.schoolId);
+      expect(acceptRes.body.school.status).toBe("ONBOARDING");
+      expect(typeof acceptRes.body.token).toBe("string");
+      userIdsForAuditCleanup.add(acceptRes.body.user.id);
+
+      // Owner-invite-pending flips false once accepted.
+      const listAfterRes = await request(app.getHttpServer())
+        .get("/api/v1/platform-admin/schools")
+        .set("Authorization", `Bearer ${platformAdminToken}`);
+      const rowAfter = listAfterRes.body.find(
+        (r: { schoolId: string }) => r.schoolId === res.body.schoolId,
+      );
+      expect(rowAfter.ownerInvitePending).toBe(false);
+    });
+
+    it("duplicate email — an existing User's email is rejected with 409 EMAIL_TAKEN", async () => {
+      // ownerA (seeded in beforeAll) already has a real User row.
+      const res = await request(app.getHttpServer())
+        .post("/api/v1/platform-admin/schools")
+        .set("Authorization", `Bearer ${platformAdminToken}`)
+        .send({ schoolName: "Should Not Be Created", ownerEmail: `owner-a-${runId}@example.test` });
+      expect(res.status).toBe(409);
+      expect(res.body.error.code).toBe("EMAIL_TAKEN");
+    });
+
+    it("duplicate email — a pending owner invite from an earlier provisioning call is rejected with 409 INVITE_PENDING", async () => {
+      const ownerEmail = `dup-pending-owner-${runId}@example.test`;
+      const first = await request(app.getHttpServer())
+        .post("/api/v1/platform-admin/schools")
+        .set("Authorization", `Bearer ${platformAdminToken}`)
+        .send({ schoolName: `Dup Pending First ${runId}`, ownerEmail });
+      expect(first.status).toBe(201);
+      schoolIdsToCleanup.add(first.body.schoolId);
+
+      const second = await request(app.getHttpServer())
+        .post("/api/v1/platform-admin/schools")
+        .set("Authorization", `Bearer ${platformAdminToken}`)
+        .send({ schoolName: `Dup Pending Second ${runId}`, ownerEmail });
+      expect(second.status).toBe(409);
+      expect(second.body.error.code).toBe("INVITE_PENDING");
+    });
+
+    it("slug collision — two schools whose names slugify identically get distinct slugs", async () => {
+      const first = await request(app.getHttpServer())
+        .post("/api/v1/platform-admin/schools")
+        .set("Authorization", `Bearer ${platformAdminToken}`)
+        .send({
+          schoolName: `Slug Collision ${runId}`,
+          ownerEmail: `slug-collision-1-${runId}@example.test`,
+        });
+      expect(first.status).toBe(201);
+      schoolIdsToCleanup.add(first.body.schoolId);
+
+      const second = await request(app.getHttpServer())
+        .post("/api/v1/platform-admin/schools")
+        .set("Authorization", `Bearer ${platformAdminToken}`)
+        .send({
+          // Same name -> same base slug -> must collide and retry.
+          schoolName: `Slug Collision ${runId}`,
+          ownerEmail: `slug-collision-2-${runId}@example.test`,
+        });
+      expect(second.status).toBe(201);
+      schoolIdsToCleanup.add(second.body.schoolId);
+
+      expect(second.body.schoolSlug).not.toBe(first.body.schoolSlug);
+      expect(second.body.schoolSlug.startsWith(first.body.schoolSlug)).toBe(true);
+    });
+  });
+
+  it("every platform-admin read/write writes an audit_logs row namespaced platform_admin.*", async () => {
     const rows = await basePrisma.auditLog.findMany({
       where: { userId: platformAdminUserId, action: { startsWith: "platform_admin." } },
       select: { action: true },
@@ -317,6 +441,7 @@ describe("Platform admin access (2026-08-02)", () => {
     expect(actions.has("platform_admin.login")).toBe(true);
     expect(actions.has("platform_admin.schools.list")).toBe(true);
     expect(actions.has("platform_admin.users.list")).toBe(true);
+    expect(actions.has("platform_admin.schools.create")).toBe(true);
   });
 
   it("import-boundary: the platform-admin service never imports withTenant or references Invoice/Payment/Student Prisma delegates", () => {

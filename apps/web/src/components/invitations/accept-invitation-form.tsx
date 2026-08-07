@@ -50,6 +50,16 @@ interface Props {
 // returns a timestamp; we render the rounded-up day count because that's
 // what an invitation recipient actually cares about. Hours-only fallback for
 // the last day so it doesn't read "expires in 0 days" when it expires today.
+// roleKey -> heading copy. 'owner' gets its own phrasing ("set up", not
+// "join") since a platform-admin-provisioned invite lands on an empty
+// school with no one else in it yet — "join" implies an existing team.
+// Unrecognized roleKeys (future roles) fall back to the generic "as {role}"
+// form rather than guessing.
+function describeInvitationHeading(schoolName: string, roleKey: string): string {
+  if (roleKey === "owner") return `Set up ${schoolName}`;
+  return `Join ${schoolName} as ${roleKey}`;
+}
+
 function describeExpiry(expiresAt: string | Date): string {
   const expiry = typeof expiresAt === "string" ? new Date(expiresAt) : expiresAt;
   const msLeft = expiry.getTime() - Date.now();
@@ -94,11 +104,14 @@ export function AcceptInvitationForm({ token, invitation }: Props) {
       // Track the acceptance BEFORE the hard navigation. PostHog buffers
       // events and flushes on `pagehide`, so the event will still ship,
       // but firing pre-navigate makes the order deterministic for tests.
-      // The accepted role is always 'admin' at Phase 0 — invitation_sent
-      // and invitation_accepted carry the same roleKey for funnel matching.
+      // roleKey reads from the invitation itself (not hardcoded — 2026-08-07
+      // fix: platform-admin-provisioned owner invites carry roleKey='owner',
+      // and the previous hardcoded "admin" here silently mislabeled every
+      // such acceptance). invitation_sent and invitation_accepted carry the
+      // same roleKey for funnel matching.
       track("invitation_accepted", {
         schoolId: res.school.id,
-        roleKey: "admin",
+        roleKey: invitation.roleKey,
       });
 
       // Hard-navigate to /dashboard. acceptInvitation() went through the
@@ -138,7 +151,7 @@ export function AcceptInvitationForm({ token, invitation }: Props) {
   return (
     <Card className="w-full max-w-md">
       <CardHeader>
-        <CardTitle>Join {invitation.schoolName} as admin</CardTitle>
+        <CardTitle>{describeInvitationHeading(invitation.schoolName, invitation.roleKey)}</CardTitle>
         <CardDescription>
           Invited by {invitation.invitedByName}. {describeExpiry(invitation.expiresAt)}.
         </CardDescription>

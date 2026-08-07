@@ -1,12 +1,21 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type FormEvent } from "react";
+import { toast } from "sonner";
 
-import type { PlatformAdminSchoolDto, PlatformAdminUserDto } from "@school-kit/types";
+import type {
+  PlatformAdminCreateSchoolInput,
+  PlatformAdminCreateSchoolResponse,
+  PlatformAdminSchoolDto,
+  PlatformAdminUserDto,
+} from "@school-kit/types";
 
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Table,
   TableBody,
@@ -17,12 +26,12 @@ import {
 } from "@/components/ui/table";
 import { ApiError, proxyFetch } from "@/lib/api-client";
 
-// Read-only view — schools + users, basic metadata only (see CLAUDE.md's
-// "Platform super-admin" note for the exact allow-listed shape). No
-// cross-tenant writes and no "act as this school" affordance exist here by
-// design; this page can never grow one without also growing the underlying
-// SECURITY DEFINER functions, which is the actual enforcement point, not
-// this UI.
+// Cross-tenant view — schools + users, basic metadata only (see CLAUDE.md's
+// "Platform super-admin" note for the exact allow-listed shape), PLUS one
+// write: provisioning a new school (added 2026-08-07, the surface's first).
+// No "act as this school" affordance exists here, and none should ever be
+// added without also growing the underlying SECURITY DEFINER functions,
+// which is the actual enforcement point, not this UI.
 export function PlatformAdminDashboard() {
   const router = useRouter();
   const [schools, setSchools] = useState<PlatformAdminSchoolDto[] | null>(null);
@@ -30,7 +39,13 @@ export function PlatformAdminDashboard() {
   const [selectedSchoolId, setSelectedSchoolId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  const [schoolName, setSchoolName] = useState("");
+  const [ownerEmail, setOwnerEmail] = useState("");
+  const [provisioning, setProvisioning] = useState(false);
+  const [provisionError, setProvisionError] = useState<string | null>(null);
+  const [lastAcceptUrl, setLastAcceptUrl] = useState<string | null>(null);
+
+  const refreshSchools = () => {
     proxyFetch<PlatformAdminSchoolDto[]>("/api/platform-admin/schools")
       .then(setSchools)
       .catch((err: unknown) => {
@@ -40,7 +55,34 @@ export function PlatformAdminDashboard() {
         }
         setError(err instanceof ApiError ? err.message : "Could not load schools.");
       });
-  }, [router]);
+  };
+
+  useEffect(refreshSchools, [router]);
+
+  const onProvision = async (e: FormEvent) => {
+    e.preventDefault();
+    setProvisionError(null);
+    setLastAcceptUrl(null);
+    setProvisioning(true);
+    try {
+      const payload: PlatformAdminCreateSchoolInput = { schoolName, ownerEmail };
+      const res = await proxyFetch<PlatformAdminCreateSchoolResponse>("/api/platform-admin/schools", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+      toast.success(`${res.schoolName} created — invite sent to ${res.ownerEmail}.`);
+      setLastAcceptUrl(res.acceptUrl);
+      setSchoolName("");
+      setOwnerEmail("");
+      refreshSchools();
+    } catch (err) {
+      setProvisionError(
+        err instanceof ApiError ? err.message : "Could not reach the server. Try again in a moment.",
+      );
+    } finally {
+      setProvisioning(false);
+    }
+  };
 
   useEffect(() => {
     const qs = selectedSchoolId ? `?schoolId=${encodeURIComponent(selectedSchoolId)}` : "";
@@ -57,6 +99,53 @@ export function PlatformAdminDashboard() {
 
   return (
     <div className="flex w-full max-w-5xl flex-col gap-6">
+      <Card>
+        <CardHeader>
+          <CardTitle>Provision a school</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={onProvision} className="flex flex-col gap-4">
+            <div className="flex flex-col gap-3 sm:flex-row">
+              <div className="flex flex-1 flex-col gap-1">
+                <Label htmlFor="schoolName">School name</Label>
+                <Input
+                  id="schoolName"
+                  value={schoolName}
+                  onChange={(e) => setSchoolName(e.target.value)}
+                  required
+                  minLength={2}
+                  maxLength={120}
+                />
+              </div>
+              <div className="flex flex-1 flex-col gap-1">
+                <Label htmlFor="ownerEmail">Owner email</Label>
+                <Input
+                  id="ownerEmail"
+                  type="email"
+                  value={ownerEmail}
+                  onChange={(e) => setOwnerEmail(e.target.value)}
+                  required
+                />
+              </div>
+              <div className="flex items-end">
+                <Button type="submit" disabled={provisioning}>
+                  {provisioning ? "Creating…" : "Create & invite"}
+                </Button>
+              </div>
+            </div>
+            {provisionError && <p className="text-sm text-destructive">{provisionError}</p>}
+            {lastAcceptUrl && (
+              <p className="text-sm text-muted-foreground">
+                Invite link (fallback if the email doesn&apos;t arrive):{" "}
+                <a href={lastAcceptUrl} className="underline" target="_blank" rel="noreferrer">
+                  {lastAcceptUrl}
+                </a>
+              </p>
+            )}
+          </form>
+        </CardContent>
+      </Card>
+
       <Card>
         <CardHeader>
           <CardTitle>Schools</CardTitle>
@@ -80,7 +169,15 @@ export function PlatformAdminDashboard() {
                 {schools.map((school) => (
                   <TableRow key={school.schoolId}>
                     <TableCell>{school.name}</TableCell>
-                    <TableCell>{school.isActive ? "Active" : "Inactive"}</TableCell>
+                    <TableCell>
+                      {school.ownerInvitePending ? (
+                        <Badge variant="warning">Pending owner</Badge>
+                      ) : (
+                        <Badge variant={school.isActive ? "success" : "muted"}>
+                          {school.isActive ? "Active" : "Inactive"}
+                        </Badge>
+                      )}
+                    </TableCell>
                     <TableCell>{school.studentCount}</TableCell>
                     <TableCell>{school.staffCount}</TableCell>
                     <TableCell>{new Date(school.createdAt).toLocaleDateString()}</TableCell>

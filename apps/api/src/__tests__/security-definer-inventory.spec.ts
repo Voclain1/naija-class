@@ -38,6 +38,9 @@ const SECURITY_DEFINER_FUNCTIONS = [
   "platform_admin_resolve_session",
   "platform_admin_list_schools",
   "platform_admin_list_users",
+  // Platform super-admin — school provisioning, the surface's first write
+  // (2026-08-07).
+  "platform_admin_check_owner_email_available",
 ] as const;
 
 interface SecurityDefinerRow {

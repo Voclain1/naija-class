@@ -9,4 +9,9 @@ export interface PlatformAdminSchoolDto {
   isActive: boolean;
   studentCount: number;
   staffCount: number;
+  // True iff an unaccepted, unexpired `owner`-role Invitation exists for
+  // this school — i.e. it was provisioned via POST /platform-admin/schools
+  // and the owner hasn't accepted yet. Always false for self-serve schools.
+  ownerInvitePending: boolean;
+  ownerInviteExpiresAt: string | null;
 }
