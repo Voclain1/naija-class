@@ -173,8 +173,9 @@ Discipline for every function in this category:
 | `auth_lookup_user_for_password_reset(email)` | `20260724000000_password_reset_tokens` | `POST /auth/forgot-password` looks up a user by email pre-tenant to `{ user_id, school_id, is_active }`. Deliberately separate from `auth_lookup_user_for_login` even though both key off email — that function returns `password_hash`, which forgot-password has no reason to ever hold. | `password_hash`, phone, names. |
 | `auth_resolve_password_reset_token(token_hash)` | `20260724000000_password_reset_tokens` | `POST /auth/reset-password` resolves a token hash to `{ reset_id, user_id, school_id, expires_at, used_at }` before `withTenant()` can apply — same chicken-and-egg problem as invitation accept. | `token_hash`, email, names — the reset form has nothing to pre-fill. |
 | `platform_admin_resolve_session(token_hash)` | `20260802000000_platform_admin` | PlatformAdminGuard's session lookup. Deliberately reuses the same `sessions` table every staff session lives in — the security boundary is the returned `is_platform_admin` column, re-read from `users` on every request, not a separate credential system. | `school_id` (platform-admin identity is cross-tenant by definition), `user_is_active` (no platform-admin deactivation flow exists yet — flagged, not built), `password_hash`, email/phone/names. |
-| `platform_admin_list_schools()` | `20260802000000_platform_admin` | Cross-tenant school roster for the platform-admin dashboard: `{ school_id, name, created_at, is_active, student_count, staff_count }`. Aggregate counts only. | slug, address, phone, email, primaryColor, logoUrl, onboardingStep, ndprConsent, Paystack fields — none of this is "basic metadata"; financial/config detail is out of this surface's scope. |
+| `platform_admin_list_schools()` | `20260802000000_platform_admin`; return shape extended `20260807000000_platform_admin_school_provisioning` | Cross-tenant school roster for the platform-admin dashboard: `{ school_id, name, created_at, is_active, student_count, staff_count, owner_invite_pending, owner_invite_expires_at }`. Aggregate counts only. The two `owner_invite_*` columns (added 2026-08-07) surface whether a school was provisioned via `POST /platform-admin/schools` and hasn't been accepted yet — deliberately not a new `SchoolStatus` value; see that PR's plan-first note. | slug, address, phone, email, primaryColor, logoUrl, onboardingStep, ndprConsent, Paystack fields — none of this is "basic metadata"; financial/config detail is out of this surface's scope. |
 | `platform_admin_list_users(school_id?)` | `20260802000000_platform_admin` | Cross-tenant (or single-school, when `p_school_id` is given) staff-account roster: `{ user_id, school_id, first_name, last_name, role_names, created_at, last_login_at, is_active }`. | email, phone, `password_hash`, totp*/bvn* fields, and — deliberately — `is_platform_admin` itself, so this read surface can't double as a way to enumerate who else holds platform-admin access. |
+| `platform_admin_check_owner_email_available(email)` | `20260807000000_platform_admin_school_provisioning` | Pre-write availability check for `POST /platform-admin/schools` (school provisioning — the surface's first write). Returns `{ is_available, reason }`, checking both `users.email` (global uniqueness) and any live `owner`-role `invitations` row for that email across all schools. | Row ids, names, school_id — returns only a boolean and a discriminator string. |
 
 **SECURITY DEFINER inventory audit (Phase 3 / Slice 12, 2026-07-08):** reviewed
 all 5 pre-existing functions for consolidation when the count crossed the
@@ -238,7 +239,26 @@ tenant-scoped), and both list functions omit every field outside the
 approved "names, signup dates, status, basic counts" scope (no financial
 data, no student PII beyond basic metadata, no phone/BVN).
 
-**Current count: 15.**
+**Platform super-admin school provisioning (2026-08-07):** added one
+function, `platform_admin_check_owner_email_available` — count moves 15 →
+16, further past the "+3" cadence trigger set at the Slice 12 audit (due at
+8, already flagged again at 12 and 15, still not done). This is the
+surface's first WRITE (`POST /platform-admin/schools`: super-admin supplies
+a school name + owner email, the API creates the `School` row and an
+`owner`-role `Invitation`, and the invitee gets a real email reusing the
+existing Invitation/accept/session machinery unchanged — no changes to
+`invitations.service.ts` were needed). The write itself needed no new
+SECURITY DEFINER function: `School`/`Invitation` creation reuses
+`AuthService.signupOwner`'s exact pattern (`basePrisma.$transaction` + raw
+`SET LOCAL app.current_school_id`), the same division of concerns as every
+other function in this table — SECURITY DEFINER is only for the pre-tenant
+availability read, which both `users` and `invitations` being under FORCE
+RLS makes otherwise unanswerable before a tenant (and therefore a GUC)
+exists. `platform_admin_list_schools`'s return shape also changed in this
+PR (see its own row above) — a DROP + CREATE, not a count-changing addition,
+since it's the same function name.
+
+**Current count: 16.**
 
 ### ESM module resolution
 

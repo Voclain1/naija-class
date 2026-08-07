@@ -1,8 +1,11 @@
 import { Body, Controller, Get, HttpCode, Ip, Post, Query, Req, UseGuards } from "@nestjs/common";
 import { Throttle } from "@nestjs/throttler";
 import {
+  platformAdminCreateSchoolSchema,
   platformAdminListUsersQuerySchema,
   platformAdminLoginSchema,
+  type PlatformAdminCreateSchoolInput,
+  type PlatformAdminCreateSchoolResponse,
   type PlatformAdminListUsersQuery,
   type PlatformAdminLoginInput,
   type PlatformAdminLoginResponse,
@@ -63,6 +66,25 @@ export class PlatformAdminController {
     @Req() req: Request,
   ): Promise<PlatformAdminUserDto[]> {
     return this.platformAdminService.listUsers(query.schoolId, adminCtx, {
+      ipAddress: ip,
+      userAgent: req.header("user-agent") ?? null,
+    });
+  }
+
+  // POST /platform-admin/schools — the surface's first write (2026-08-07).
+  // Tighter throttle than the read endpoints: a compromised platform-admin
+  // session can now trigger real school creation + real email sends to
+  // arbitrary addresses, not just read data — bound the blast radius.
+  @Post("schools")
+  @UseGuards(PlatformAdminGuard)
+  @Throttle({ default: { ttl: 60000, limit: 20 } })
+  async createSchool(
+    @Body(new ZodValidationPipe(platformAdminCreateSchoolSchema)) dto: PlatformAdminCreateSchoolInput,
+    @CurrentPlatformAdmin() adminCtx: PlatformAdminContext,
+    @Ip() ip: string,
+    @Req() req: Request,
+  ): Promise<PlatformAdminCreateSchoolResponse> {
+    return this.platformAdminService.createSchool(dto, adminCtx, {
       ipAddress: ip,
       userAgent: req.header("user-agent") ?? null,
     });

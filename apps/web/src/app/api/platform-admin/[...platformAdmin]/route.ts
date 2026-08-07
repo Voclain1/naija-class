@@ -13,6 +13,12 @@
 //                       it only stops this browser from presenting it.
 //   GET .../schools, GET .../users — proxied transparently with the cookie
 //                       as bearer.
+//   POST .../schools — proxied transparently, cookie as bearer, WITH the
+//                       request body (see forward()'s body param — added
+//                       2026-08-07 for school provisioning; previously
+//                       `login` was the only POST route and had its own
+//                       bespoke forwardLogin(), so forward() itself never
+//                       needed to read a body).
 
 import { cookies } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
@@ -30,6 +36,7 @@ async function forward(
   subPath: string,
   search: string,
   sessionToken: string | undefined,
+  body?: string,
 ): Promise<NextResponse> {
   const resp = await fetch(`${API_BASE}/platform-admin/${subPath}${search}`, {
     method,
@@ -37,6 +44,7 @@ async function forward(
       "Content-Type": "application/json",
       ...(sessionToken ? { Authorization: `Bearer ${sessionToken}` } : {}),
     },
+    ...(body !== undefined ? { body } : {}),
     cache: "no-store",
   });
 
@@ -106,7 +114,8 @@ export async function POST(req: NextRequest, ctx: Context): Promise<NextResponse
   }
   const cookieStore = await cookies();
   const sessionToken = cookieStore.get(PLATFORM_ADMIN_SESSION_COOKIE_NAME)?.value;
-  return forward("POST", subPath, "", sessionToken);
+  const body = await req.text();
+  return forward("POST", subPath, "", sessionToken, body);
 }
 
 export async function DELETE(_req: NextRequest, ctx: Context): Promise<NextResponse> {
