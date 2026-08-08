@@ -22,12 +22,34 @@ const HEX_COLOR_RE = /^#[0-9a-fA-F]{6}$/;
 // treatment Expense.receiptUrl already gets. Do not re-add a logoUrl string
 // field to this schema — that would silently reopen the exact gap this note
 // describes.
+// `.optional()` only rescues a genuinely absent field — an empty string
+// still reaches `.regex()` first and fails it, since Zod validates chained
+// checks in order before `.optional()` gets a say. A blank "Continue with
+// nothing filled in" submit sends `primaryColor: ""`, not an absent key, so
+// without the preprocess below this "optional" field was not actually
+// skippable (docs/deferred.md's step-2 branding entry). Preprocessing ""
+// to undefined here fixes both the frontend zodResolver gate and the
+// PATCH /schools/me validation (patch-school.dto.ts merges this schema) in
+// one place — same fix class as the student-form.tsx resolution, applied at
+// the schema instead of the call site since this schema is shared.
 export const onboardingStep2Schema = z.object({
-  primaryColor: z
-    .string()
-    .trim()
-    .regex(HEX_COLOR_RE, "primaryColor must be a 6-digit hex colour, e.g. #1A2B3C")
-    .optional(),
+  primaryColor: z.preprocess(
+    (value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+    z
+      .string()
+      .trim()
+      .regex(HEX_COLOR_RE, "primaryColor must be a 6-digit hex colour, e.g. #1A2B3C")
+      .optional(),
+  ),
 });
 
 export type OnboardingStep2Input = z.infer<typeof onboardingStep2Schema>;
+
+// The preprocess above makes this schema's Input genuinely differ from its
+// Output (Input allows the raw `""` a text field submits; Output is always
+// a valid hex string or undefined) — react-hook-form's zodResolver needs
+// the FORM's field-values type to match Input, not Output, or its generic
+// inference breaks (see step2-branding-form.tsx's useForm<> call, which
+// uses this type for TFieldValues and OnboardingStep2Input for
+// TTransformedValues).
+export type OnboardingStep2FormInput = z.input<typeof onboardingStep2Schema>;

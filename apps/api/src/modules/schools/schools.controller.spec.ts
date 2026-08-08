@@ -164,6 +164,36 @@ describe("SchoolsController (Slice 6)", () => {
     expect(res.body.motto).toBe("Patched motto.");
   });
 
+  it("PATCH /schools/me with primaryColor: '' — 200, not a validation error (field left unchanged)", async () => {
+    // patchSchoolSchema merges onboardingStep2Schema — same preprocess fix,
+    // same regression this guards against (docs/deferred.md): pre-fix, this
+    // 400'd on the empty-string regex instead of ever reaching the service.
+    //
+    // Post-fix, "" and an omitted key both parse to undefined, and patchMe's
+    // `input.primaryColor !== undefined` gate (schools.service.ts) treats
+    // that as "don't touch this field" — correct PATCH partial-update
+    // semantics (same as motto/address never overwriting with NULL just
+    // because a caller left them out). So this does NOT clear an
+    // already-set colour; it's a no-op that no longer errors. Clearing a
+    // set colour via PATCH isn't wired yet (no `.nullable()` on this field,
+    // unlike paystackSubaccountCode's explicit-null-to-clear pattern above)
+    // — out of scope for this fix, which is about the onboarding wizard
+    // blocking a first-time skip, not about clearing an existing value.
+    const set = await request(app.getHttpServer())
+      .patch("/api/v1/schools/me")
+      .set(withAuth(ownerToken))
+      .send({ primaryColor: "#123456" });
+    expect(set.status).toBe(200);
+    expect(set.body.primaryColor).toBe("#123456");
+
+    const noOp = await request(app.getHttpServer())
+      .patch("/api/v1/schools/me")
+      .set(withAuth(ownerToken))
+      .send({ primaryColor: "" });
+    expect(noOp.status).toBe(200);
+    expect(noOp.body.primaryColor).toBe("#123456");
+  });
+
   // ---------------------------------------------------------------------
   // POST /schools/me/onboarding/:step
   // ---------------------------------------------------------------------
@@ -201,6 +231,48 @@ describe("SchoolsController (Slice 6)", () => {
     expect(res.status).toBe(200);
     expect(res.body.school?.onboardingStep).toBe(2);
     expect(res.body.school?.logoUrl).toBeNull();
+    expect(res.body.school?.primaryColor).toBeNull();
+  });
+
+  // Regression for docs/deferred.md's "Step 2 branding form: empty fields
+  // fail Zod validation" — a real browser submit sends primaryColor: "" (the
+  // input's empty string), not an absent key, so the {} case above alone
+  // doesn't prove the bug is fixed. Fresh signup + own token: the shared
+  // ownerToken above is already past step 2 by this point in the file's
+  // sequential walk, so this reproduces the wizard from scratch instead.
+  it("POST /schools/me/onboarding/2 with primaryColor: '' — 200, treated as skipped (not a validation error)", async () => {
+    const emptyColorEmail = `empty-color-${runId}@example.test`;
+    const signupRes = await request(app.getHttpServer())
+      .post("/api/v1/auth/signup-owner")
+      .send({
+        schoolName: "Empty Colour Academy",
+        schoolSlug: `empty-color-${runId}`,
+        ownerFirstName: "Empty",
+        ownerLastName: "Colour",
+        ownerEmail: emptyColorEmail,
+        ownerPhone: `+23484${phoneSuffix}`,
+        password: ownerPassword,
+        ndprConsent: true,
+      });
+    expect(signupRes.status).toBe(201);
+    const token = signupRes.body.token;
+    schoolIdsToCleanup.add(signupRes.body.school.id);
+
+    await request(app.getHttpServer())
+      .post("/api/v1/schools/me/onboarding/1")
+      .set(withAuth(token))
+      .send({
+        name: "Empty Colour Academy",
+        phone: `+23485${phoneSuffix}`,
+        email: `empty-color-step1-${runId}@example.test`,
+      });
+
+    const res = await request(app.getHttpServer())
+      .post("/api/v1/schools/me/onboarding/2")
+      .set(withAuth(token))
+      .send({ primaryColor: "" });
+    expect(res.status).toBe(200);
+    expect(res.body.school?.onboardingStep).toBe(2);
     expect(res.body.school?.primaryColor).toBeNull();
   });
 

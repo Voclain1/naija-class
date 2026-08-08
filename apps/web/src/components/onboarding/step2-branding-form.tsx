@@ -9,6 +9,7 @@ import { toast } from "sonner";
 
 import {
   onboardingStep2Schema,
+  type OnboardingStep2FormInput,
   type OnboardingStep2Input,
 } from "@school-kit/types";
 
@@ -40,14 +41,20 @@ import { OnboardingProgress } from "./progress-indicator";
 // side.
 //
 // primaryColor is optional — the user can click Continue with an empty
-// form. We coerce an empty string to undefined before submitting so the Zod
-// `.optional()` is satisfied instead of failing the regex check on "".
+// form. onboardingStep2Schema itself preprocesses "" to undefined (see that
+// file's header comment), so the zodResolver below no longer blocks a blank
+// submit; values.primaryColor coming out of a successful submit is always
+// either undefined or an already-trimmed, already-valid hex string.
 export function Step2BrandingForm() {
   const { school, setSchool } = useAuth();
   const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
 
-  const form = useForm<OnboardingStep2Input>({
+  // Three generics: field values match the schema's Input (what a raw text
+  // field can submit, including ""), the third matches its Output (what
+  // reaches onSubmit after preprocess/validation) — see
+  // OnboardingStep2FormInput's own comment for why these must differ here.
+  const form = useForm<OnboardingStep2FormInput, unknown, OnboardingStep2Input>({
     resolver: zodResolver(onboardingStep2Schema),
     defaultValues: {
       primaryColor: school?.primaryColor ?? undefined,
@@ -58,10 +65,7 @@ export function Step2BrandingForm() {
   const onSubmit = form.handleSubmit(async (values) => {
     setSubmitting(true);
     try {
-      const payload: OnboardingStep2Input = {
-        primaryColor: values.primaryColor?.trim() || undefined,
-      };
-      const res = await advanceStep2(payload);
+      const res = await advanceStep2(values);
       setSchool(res.school);
       track("onboarding_step_completed", { schoolId: res.school.id, step: 2 });
       router.replace("/onboarding/3");
