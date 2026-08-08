@@ -29,7 +29,7 @@ import {
   type SchoolMeDto,
 } from "@school-kit/types";
 import type { Request } from "express";
-import type { ZodError, ZodSchema } from "zod";
+import type { ZodError, ZodType, ZodTypeDef } from "zod";
 
 import type { AuthContext } from "../../common/auth/auth-context";
 import { AuthGuard } from "../../common/auth/auth.guard";
@@ -160,7 +160,13 @@ function parseStepPayload(step: number, raw: unknown): OnboardingStepPayload {
   }
 }
 
-function parseOrThrow<T>(schema: ZodSchema<T>, raw: unknown): T {
+// `ZodType<T, ZodTypeDef, any>` (not the `ZodSchema<T>` shorthand, which
+// fixes Input === Output === T) — onboardingStep2Schema's primaryColor now
+// uses `z.preprocess`, so its Input ("" | undefined | unknown) genuinely
+// differs from its Output (string | undefined). Forcing Input === T made
+// every step-2 payload infer as `unknown` here, which is why the empty-
+// string branding fix needed this generic loosened alongside it.
+function parseOrThrow<T>(schema: ZodType<T, ZodTypeDef, unknown>, raw: unknown): T {
   const result = schema.safeParse(raw);
   if (result.success) return result.data;
   throw new ValidationError("Invalid request payload", formatZodIssues(result.error));
