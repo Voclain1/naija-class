@@ -57,6 +57,15 @@ model School {
   // transaction_charge/bearer split math is needed given that decision.
   paystackSubaccountCode  String?  @map("paystack_subaccount_code")
   paystackPaymentsEnabled Boolean  @default(false) @map("paystack_payments_enabled")
+  // Onboarding-nudge email (2026-08-08): stamped once, the first (and only,
+  // v1) time OnboardingNudgeService emails a school's owner that finished
+  // the 5-step wizard but never came back to add an academic year or
+  // students — see that service's own header comment for the full trigger
+  // rule. Same "stamp once, no separate skipped state" shape as
+  // User.tourCompletedAt: set unconditionally after the send attempt
+  // (success or logged failure) so a Resend outage doesn't cause a resend
+  // storm once it clears.
+  onboardingNudgeSentAt DateTime? @map("onboarding_nudge_sent_at")
   createdAt      DateTime     @default(now()) @map("created_at")
   updatedAt      DateTime     @updatedAt @map("updated_at")
 
