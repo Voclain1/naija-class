@@ -151,6 +151,13 @@ export const baseConfig = [
       // all schools. It uses basePrisma to fetch the school list, then calls withTenant
       // per school for the actual invoice updates. No tenant data is accessed via basePrisma.
       "**/modules/finance/finance.service.ts",
+      // onboarding-nudge.service.ts — same category as finance.service.ts's
+      // entry directly above: sendPendingNudges is a system cron that
+      // iterates all ACTIVE schools. It uses basePrisma to fetch the
+      // candidate school list, then calls withTenant per school for the
+      // actual audit-log/academic-year/student reads and the nudge-sent
+      // stamp. No tenant data is accessed via basePrisma.
+      "**/modules/onboarding-nudge/onboarding-nudge.service.ts",
       // Phase 4 / Slice 2 — guardian portal auth. Same category as the
       // staff auth.guard.ts / auth.service.ts / invitations.service.ts
       // entries above: guardian_sessions/guardian_invitations are FORCE

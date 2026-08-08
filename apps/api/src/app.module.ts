@@ -34,6 +34,7 @@ import { GuardiansModule } from "./modules/guardians/guardians.module";
 import { ImportsModule } from "./modules/imports/imports.module";
 import { InvitationsModule } from "./modules/invitations/invitations.module";
 import { NotificationsModule } from "./modules/notifications/notifications.module";
+import { OnboardingNudgeModule } from "./modules/onboarding-nudge/onboarding-nudge.module.js";
 import { PayrollModule } from "./modules/payroll/payroll.module";
 import { PlatformAdminModule } from "./modules/platform-admin/platform-admin.module";
 import { PortalAuthModule } from "./modules/portal-auth/portal-auth.module";
@@ -118,6 +119,7 @@ const isProd = process.env.NODE_ENV === "production";
     InvoicesModule,
     PaymentsModule,
     FinanceModule,
+    OnboardingNudgeModule,
     DashboardModule,
     ExpensesModule,
     PayrollModule,
