@@ -107,6 +107,12 @@ export function parsePersistedMapping(raw: unknown): PersistedMapping {
     options: {
       dateFormat: opts?.dateFormat ?? "YYYY-MM-DD",
       treatBlankAs: opts?.treatBlankAs ?? "skip",
+      // No fallback: targetTermId is genuinely optional (only the student
+      // import's class-arm column uses it), and it must NOT acquire a
+      // default here. The "explicit choice required" rule is enforced once,
+      // at mapping-submit, where a bad value can still be reported to the
+      // admin — inventing one at worker time would defeat that.
+      targetTermId: opts?.targetTermId,
     },
   };
 }

@@ -93,7 +93,7 @@ export async function runStudentValidationEngine(
     externallyTakenSet = new Set(existing.map((s) => s.admissionNumber));
   }
 
-  const finalGood: StudentImportRowGood[] = [];
+  const dedupSurvivors: StudentImportRowGood[] = [];
   for (const g of inFileDedupSurvivors) {
     if (externallyTakenSet.has(g.parsedRow.admissionNumber)) {
       bad.push({
@@ -109,8 +109,87 @@ export async function runStudentValidationEngine(
         ],
       });
     } else {
-      finalGood.push(g);
+      dedupSurvivors.push(g);
     }
+  }
+
+  // -----------------------------------------------------------------------
+  // Class-arm resolution (2026-08-09; docs/modules/student-import-
+  // enrollment.md D1/D2). ONE query for the tenant's arms, then in-memory
+  // per-row resolution — not a query per row.
+  //
+  // The ambiguity case is the whole reason this is a resolution phase and
+  // not a lookup: ClassArm is @@unique on (schoolId, classLevelId, code) —
+  // on CODE, scoped PER LEVEL — and `name` has NO uniqueness constraint at
+  // all (the schema calls it "human-facing; renamable"). So "JSS 1A" can
+  // legitimately match zero, one, or several arms.
+  //
+  // Silently taking the first match would enrol children into the WRONG
+  // CLASS, and that propagates into attendance, gradebook, invoicing and
+  // report cards long before anyone notices. A loud row error is the only
+  // defensible behaviour (approved 2026-08-09).
+  //
+  // Rows whose classArm is absent (column unmapped, or cell blank) skip
+  // this phase untouched — that is today's exact behaviour, preserved.
+  const rowsWantingArm = dedupSurvivors.filter(
+    (g) => g.parsedRow.classArm !== undefined,
+  );
+
+  // name (lowercased) -> matching arms. Built once.
+  const armsByLowerName = new Map<string, { id: string; isActive: boolean }[]>();
+  if (rowsWantingArm.length > 0) {
+    const arms = await db.classArm.findMany({
+      select: { id: true, name: true, isActive: true },
+    });
+    for (const arm of arms) {
+      const key = arm.name.trim().toLowerCase();
+      const bucket = armsByLowerName.get(key);
+      if (bucket) bucket.push({ id: arm.id, isActive: arm.isActive });
+      else armsByLowerName.set(key, [{ id: arm.id, isActive: arm.isActive }]);
+    }
+  }
+
+  const finalGood: StudentImportRowGood[] = [];
+  for (const g of dedupSurvivors) {
+    const rawArm = g.parsedRow.classArm;
+    if (rawArm === undefined) {
+      finalGood.push(g);
+      continue;
+    }
+
+    const matches = armsByLowerName.get(rawArm.trim().toLowerCase()) ?? [];
+    const armError = (message: string) => {
+      bad.push({
+        rowNumber: g.rowNumber,
+        csvRow: rebuildCsvRowFromParsed(
+          g.parsedRow as unknown as Record<string, unknown>,
+        ),
+        errors: [{ field: "classArm", message }],
+      });
+    };
+
+    if (matches.length === 0) {
+      armError(
+        `Class arm "${rawArm}" not found. Check Settings → Academic → Class Arms for the exact name.`,
+      );
+      continue;
+    }
+    if (matches.length > 1) {
+      armError(
+        `Class arm "${rawArm}" is ambiguous — ${matches.length} arms share that name. ` +
+          `Rename one, or leave this column blank and enrol from the Enrollments page.`,
+      );
+      continue;
+    }
+    const [only] = matches;
+    if (!only.isActive) {
+      // Mirrors EnrollmentsService.bulkCreate's INACTIVE_CLASS_ARM rather
+      // than inventing a softer rule for the import path.
+      armError(`Class arm "${rawArm}" is not active.`);
+      continue;
+    }
+
+    finalGood.push(g);
   }
 
   // Sort bad rows back into original row order — dedup steps appended

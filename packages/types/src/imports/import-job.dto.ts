@@ -70,6 +70,13 @@ export interface ImportJobDto {
   validRows: number;
   invalidRows: number;
   committedRows: number;
+  // STUDENTS imports only (0 for other types): students created but NOT
+  // enrolled, because the class-arm cell was blank or the column wasn't
+  // mapped. Not a failure count — committedRows already includes these — so
+  // the done screen renders it as an informational line with a link to
+  // finish placing them, never as an error. See docs/modules/
+  // student-import-enrollment.md D7.
+  notEnrolledRows: number;
   previewSnapshot: ImportJobPreviewSnapshot | null;
   // True when status === COMPLETED and the commit worker wrote an
   // error-report.csv to storage. The wizard uses this to decide whether

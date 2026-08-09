@@ -209,7 +209,16 @@ Click **Add multiple**. This opens a spreadsheet-style grid starting with 3 blan
 
 Click **Import students**. Same 4-step wizard shape as the staff import: **Upload → Map columns → Review → Import**. Download the **Template CSV** if needed. On the mapping step, also set the **Date format** your CSV uses (defaults to `DD/MM/YYYY`, the Nigerian convention). Review the "Ready to import" vs. "Needs fixing" rows, then click **Commit N student(s)**.
 
-> None of these three paths enrolls a student into a class arm or links a guardian — those are separate steps: bulk class-arm enrollment lives at **/enrollments/bulk**, and guardians are added from each student's own page (see [§11](#11-invite-guardians-to-the-parent-portal)).
+**Putting students straight into their classes.** The template has a **Class Arm** column — fill it in with the class name exactly as it appears under **Settings → Academic → Class Arms** (e.g. `JSS 1A`), map it on the mapping step, and each student is enrolled into that class as they import. You'll be asked which **term** to enrol them into; there's no default, so pick it deliberately — every student in the file goes into the term you choose.
+
+This is by far the fastest way to set up a school with a lot of students: one file, and everyone lands in the right class.
+
+A few things worth knowing:
+- **The column is optional.** Leave it out (or leave a cell blank) and that student is imported without a class, exactly as before. The final screen tells you how many are unplaced and links you to where you can place them.
+- **Class names must be unique.** If two classes share a name, the import can't tell which one you meant and will flag those rows rather than guess. Rename one under **Settings → Academic → Class Arms**.
+- **Spelling must match**, but capitals don't — `jss 1a` and `JSS 1A` both work; `JSS1A` doesn't.
+
+> Importing a student doesn't link a guardian — that's a separate step, from each student's own page (see [§11](#11-invite-guardians-to-the-parent-portal)). The **Add student** and **Add multiple** paths above also don't enrol into a class; for those, use bulk enrollment at **/enrollments/bulk** afterwards.
 
 ---
 

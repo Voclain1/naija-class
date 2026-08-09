@@ -1,0 +1,21 @@
+-- Student CSV import: class-arm column + enrollment creation (2026-08-09).
+-- Plan-first: docs/modules/student-import-enrollment.md
+--
+-- One additive column. `classArm` itself needs NO schema change — it is a
+-- CSV column mapped onto the existing Student/Enrollment models, and the
+-- enrollment it produces is an ordinary Enrollment row.
+--
+-- not_enrolled_rows counts students an import created successfully but did
+-- NOT enrol, because the class-arm cell was blank or the column was
+-- unmapped. Not an error (a school mid-admission legitimately has unplaced
+-- students) — it drives an aggregate line on the import's done screen so the
+-- admin knows to finish placing them.
+--
+-- DEFAULT 0 rather than nullable: 0 is meaningful and correct for every
+-- pre-existing row (no import before this migration created enrollments at
+-- all, so "none were left unenrolled by the arm feature" is accurate), and
+-- it keeps the column non-null like every other count on this table.
+--
+-- Always 0 for GUARDIANS/TEACHERS imports, which have no enrollment step.
+
+ALTER TABLE "import_jobs" ADD COLUMN "not_enrolled_rows" INTEGER NOT NULL DEFAULT 0;
