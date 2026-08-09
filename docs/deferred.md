@@ -224,6 +224,7 @@ Format:
   Fixed via `vercel env rm`/`vercel env add NEXT_PUBLIC_API_URL` (production + preview) set to `https://school-kit-api.fly.dev/api/v1`, then a forced fresh production build (`vercel --prod`) since the bad value was compiled into the already-live bundle and updating the dashboard value alone would not have taken effect until the next deploy anyway.
   **Exposure window and real-impact check:** the env var key itself is "created 38 days ago" per Vercel (no value-change history available via the CLI, so that's an upper bound, not a confirmed continuous-bad-value duration). Checked for real impact by querying every school in production: **every single school row is a `Smoke Test School` entry** created by `scripts/smoke-test.sh`'s own direct-to-Fly-API calls (which bypass this broken proxy entirely, explaining why smoke tests kept passing the whole time) — there is not one genuine, non-test school signup in the database. Combined with this project being pre-pilot (no onboarded customers), this confirms **no real customer was ever affected** — the only impact was blocking Arinzechukwu's own manual QA, which is exactly what surfaced it. See the smoke-test-school-accumulation item below, found via this same query.
 
+- [x] **FIXED 2026-08-09 (recurrence prevented; backlog drain is a one-time manual step, see below).** `deploy-staging.yml` now runs a `Prune smoke-test schools` step after the smoke test — `if: always()` (a failed smoke run can still have completed op 3, which is exactly the case that leaks a row) and `continue-on-error` (cleanup must never turn a healthy deploy into a failed one, or re-trigger the rollback path). It prunes every matching smoke school, not just the current run's, so the backlog drains itself once the step first runs. **The prune predicate was tightened in the same change and this is the load-bearing detail:** it was `slug LIKE 'smoke-%'`, which was fine as a manual dev-only chore but a live data-loss path once automated against production — `RESERVED_SLUGS` is an exact-match set of 39 names with no prefix matching, so a genuine school registering `smoke-academy` would have passed validation and then been silently destroyed, students/invoices/payments and all. It now requires BOTH a slug matching `^smoke-[0-9]+$` AND an owner user whose email ends in the RFC-2606-reserved `@smoke-test.invalid` domain. A read-only companion (`scripts/list-smoke-schools.sql`, `pnpm db:list-smoke`) previews exactly what would be deleted, including a "near-miss audit" listing any school the OLD predicate would have destroyed — run it before the prune, always. Backlog at time of fix: ~66 schools minimum, derived from 66 successful `deploy-staging.yml` runs since 2026-06-26 (plausibly 70-80 counting runs that failed after op 3); not directly counted, as production DB access was unavailable in that session. Original item follows. —
 - [ ] **Production `school-kit-api` DB accumulates an uncleaned `Smoke Test School` row on every single deploy.** Found 2026-07-20 while checking the `NEXT_PUBLIC_API_URL` incident above for real-user impact: `scripts/smoke-test.sh`'s `POST /auth/signup-owner` call (op 3 of the deploy smoke test, direct against the Fly API) creates a genuine `School`+owner `User` row on every successful `deploy-staging.yml` run and never deletes it — every production deploy leaves one more behind. At the time of that check, the 15 most recent schools in the entire production database were *all* smoke-test artifacts (`smoke-<epoch>` slugs), none cleaned up. Same failure category as the pre-existing "Dev DB cleanup — ~100 test schools" item above, except this one is in **production**, not dev. Fix options: (a) have the smoke test delete its own school at the end of the run (requires a delete path — see that item's own note that no `DELETE /schools/:id` API exists today), or (b) a scheduled cleanup job filtering on the `smoke-` slug prefix. — Trigger: before a real pilot school's data needs to coexist cleanly with these in any admin-facing school list, or whenever someone next touches `scripts/smoke-test.sh`.
 
 - [x] **`STORAGE_DRIVER=r2` was never set in production — `school-kit-api` and `school-kit-render-worker` were running the dev-only filesystem storage driver the entire time. Found 2026-07-21, FIXED and verified end-to-end 2026-07-23.** Found while spot-checking other third-party secrets after the `RESEND_API_KEY` incident above turned up the same "documented/coded but never verified live" pattern a third time in two days. `docs/runbooks/neon-prod-setup.md` §5 already templated the four `R2_*` credential lines (unlike the Resend gap, those weren't missing from the template) — but `STORAGE_DRIVER` itself, the switch that actually selects the R2 driver, was nowhere in the template on either app. `storage.module.ts`'s own fallback (`config.get<string>("STORAGE_DRIVER") ?? "filesystem"`) meant both apps silently ran the filesystem driver in production this whole time, and confirmed via `flyctl secrets list` that the `R2_*` credentials were never actually set either — so this was two compounding gaps (no real credentials AND no switch to use them), not just one.
@@ -348,6 +349,11 @@ Format:
 ## Roadmap / strategy — REVISIT with live market research (not decided)
 - [ ] CBT / online exams (JAMB/WAEC/UTME prep) — competitors lead with
   this. Decide in/defer based on pilot-school demand + current market.
+  **A full capability assessment (what exists, what's missing, the
+  two-question clarification to put to any lead who asks, and time
+  estimates) was written 2026-08-09 — see "CBT / online exams — capability
+  assessment" at the end of this file. This line stays as the
+  market-research placeholder; that section is the engineering reality.**
 - [ ] Predictive AI (at-risk-student early warning from attendance+grade
   trend, enrollment forecasting, auto billing reminders) — high-value,
   data already collected. Verify market framing before Phase 5.
@@ -1187,3 +1193,302 @@ Grouped into the three tiers he assessed them at, not by build order.
   shape already built to re-key onto `Branch.id` with zero frontend
   contract change once multi-campus ships. This entry is a pointer, not a
   new item.
+
+---
+
+## Pre-Phase-5 readiness sweep — captured 2026-08-09
+
+Findings from the pre-Phase-5 cleanup/readiness investigation. The actioned
+part of that sweep (packages/ai ESM fix, production env-var gaps, smoke-school
+cleanup, doc corrections, the early-access flag, this file's new sections) is
+not repeated here; what follows is the part deliberately logged rather than
+built, plus the open decisions the actioned work is buying time on.
+
+### Pricing / tier enforcement — flag shipped, every decision still open
+
+`School.earlyAccessGrantedAt` (nullable timestamp, migration
+`20260809000000_add_school_early_access_granted_at`) shipped 2026-08-09,
+settable from the super-admin school list via
+`PATCH /platform-admin/schools/:id/early-access`. **It is a marker and
+nothing more — no code anywhere reads it to make a decision.**
+
+Why it exists: before it, the platform had *no* mechanism distinguishing an
+early-access school from a later signup. Confirmed by grep — zero product
+code for `subscription|billing|pricing|tier|plan`; `SchoolStatus` is
+`ONBOARDING|ACTIVE|SUSPENDED|ARCHIVED` (lifecycle, not commercial); the only
+available discriminator was `created_at`. That is inadequate on three counts:
+it forces grandfathering to be purely temporal (cannot honour "I promised this
+school free access on a call" for a school signing up next month); it cannot
+separate a genuine pilot from a smoke-test artifact or a provisioning test;
+and it cannot distinguish "early and still active" from "early and churned".
+Adding the column costs ~30 minutes now and becomes a per-row judgement call
+later, after schools have onboarded — hence doing it before more schools
+arrive rather than after.
+
+Note the tension this is a placeholder for: the Paystack integration takes a
+**0% platform cut** (100% of every transaction routes to the school's own
+subaccount — see `School.paystackSubaccountCode`'s schema comment), so
+SchoolKit's revenue is subscription-only. The revenue model the business
+depends on has no schema representation beyond this one flag.
+
+Still undecided, all of it:
+
+- [ ] Tier shape — per-student vs flat, and how many tiers. Named in
+  CLAUDE.md's own "Things this file does not cover yet" list since Phase 0.
+- [ ] What early-access actually *grants* — free forever, free for N months,
+  a discount, or a feature ceiling. The flag deliberately does not encode
+  this; it only records who qualifies.
+- [ ] Enforcement points — what a school past its tier limit actually
+  experiences (soft warning, blocked writes, read-only, nothing). Touches
+  every module, so it needs its own plan-first, not a rider on a feature PR.
+- [ ] Whether `earlyAccessGrantedAt` should be backfilled for the schools
+  that exist when tiers ship, or left to manual marking. The migration
+  deliberately does NOT backfill — see its header for why.
+- [ ] Re-stamping behaviour: setting `true` on an already-marked school
+  overwrites the original timestamp rather than preserving it. Deliberate
+  (hiding operator mistakes is worse, and the audit log records every
+  transition) but worth revisiting if the original date ever becomes
+  contractually meaningful.
+
+Trigger: whenever paid tiers move from idea to decision. Do NOT build
+enforcement off the flag alone without settling the four items above.
+
+### Platform super-admin — expansion scope
+
+Promoted into this file 2026-08-09. Until then this scope existed **only in
+Claude Code's session memory** — `docs/deferred.md` had zero hits for
+`super-admin`, `platform admin`, or `impersonat`, so the repo itself carried
+no record of it at all.
+
+What exists today (do not re-scope these): the read-only cross-tenant surface
+(PR #142, 2026-08-02 — schools + staff roster, names/signup dates/status/
+basic counts only) and school provisioning (PR #149, 2026-08-07 —
+`POST /platform-admin/schools`), plus the early-access toggle above. Gating
+is `User.isPlatformAdmin`, granted only by direct DB `UPDATE`, re-read live
+from the DB by `PlatformAdminGuard` on every request.
+
+Future workstreams, none scoped or estimated:
+
+- [ ] **School lifecycle management** — suspend, reactivate, archive, and
+  hard-delete a school from the super-admin surface. Note there is still no
+  `DELETE /schools/:id` anywhere in the API (the gap that made smoke-school
+  cleanup a SQL script rather than an API call). `SchoolStatus` already has
+  `SUSPENDED`/`ARCHIVED` values that nothing currently transitions to.
+- [ ] **Billing management** — depends entirely on the pricing decisions
+  above; there is nothing to manage until tiers exist.
+- [ ] **User management** — today `listUsers` is read-only and deliberately
+  omits `is_platform_admin` so the surface cannot enumerate who else holds
+  access. Two known gaps already flagged in migration headers: no
+  platform-admin *deactivation* flow, and no resend/revoke for a pending
+  owner invitation (an explicit scope cut in PR #149).
+- [ ] **Platform analytics** — cross-tenant aggregates (signups over time,
+  activation funnel, feature adoption). Note the tension already documented
+  for the "school reputation dashboard / benchmarking" wishlist item:
+  anything aggregating across tenants needs a deliberate anonymization
+  design, not just a query.
+- [ ] **Impersonation ("act as this school")** — **a decision, not a
+  feature.** Currently exists nowhere: not built, not decided, not written
+  down until this entry. It lets a platform admin read (and potentially
+  write) a specific school's real data including student PII, which puts it
+  squarely against CLAUDE.md's multi-tenancy hard rules and carries real NDPR
+  weight. `platform-admin-dashboard.tsx`'s own header comment already warns
+  that no "act as this school" affordance should be added without growing the
+  underlying SECURITY DEFINER functions, "which is the actual enforcement
+  point, not this UI". Minimum before any build: decide whether it is
+  read-only or read-write, whether the impersonated school is notified, what
+  the audit trail looks like, and whether consent is required.
+
+### CBT / online exams — capability assessment (2026-08-09)
+
+Written up in response to a direct question from a lead. Expands the one-line
+"CBT / online exams (JAMB/WAEC/UTME prep)" entry under "Roadmap / strategy"
+above, which stays as the market-research placeholder. **No build, no
+commitment — this is the honest assessment so the next person does not have to
+re-derive it.**
+
+**Ask the lead which CBT they mean before quoting anything.** The two are
+conflated everywhere and differ by an order of magnitude:
+
+- **(a) Exam-prep CBT** (JAMB/WAEC/UTME practice) — what competitors lead
+  with. **Content-acquisition-bound, not engineering-bound**: the hard problem
+  is who authors or licenses 10,000+ past questions with mark schemes, and
+  under what rights (see CLAUDE.md's open "Curriculum content licensing"
+  item). The engineering is a subset of (b).
+- **(b) The school's own exams, delivered online** — the school authors its
+  own questions, students sit them in the lab, results flow into the existing
+  gradebook. Straight engineering.
+
+Most Nigerian private-school leads asking "do you have CBT?" mean (a).
+
+**What exists and genuinely helps** — the *results* half is strong and
+shipped: `GradingScheme`/`GradingComponent` (per-school CA/exam weights
+summing to exactly 100), `GradeBoundary` (WAEC nine-point scale, seeded),
+`AssessmentScore` (raw marks, score within [0, component.weight]),
+`Assessment` (materialized per-student/subject/term rollup plus positions),
+the gradebook grid, the sign-off → form-review → approve → release workflow,
+and BullMQ/R2 PDF rendering.
+
+**Be precise about what that is: a system for recording and processing marks
+that already exist.** It has no concept of a question and no concept of a
+student *doing* anything. The model named `Assessment` is a term rollup, not
+a test — that name will mislead anyone skimming the schema.
+
+The gap:
+
+1. **Student identity and auth — the largest blocker, and it is not an exam
+   feature.** No `Student.passwordHash`, no `StudentSession`, no student auth
+   SD function, no student-facing app (`apps/mobile` is a two-file Expo
+   stub). Guardians got a full portal in Phase 4; students got nothing.
+   Building it is essentially a re-run of Phase 4 / Slice 2, plus a wrinkle
+   that slice did not have: these are minors, so credential issuance, reset
+   and recovery cannot assume a private email inbox.
+2. Student-facing exam surface, built for shared lab machines and low-end
+   tablets rather than the admin shell.
+3. Question bank — `Question`, `QuestionOption`, subject/level/topic/
+   difficulty tagging, media, and **versioning (a question that has been
+   answered can never be mutated in place)**. The authoring UI is the real
+   adoption risk, not the schema: no teacher will type 500 questions into a
+   web form, so bulk import and/or AI generation is what makes it usable —
+   and AI generation is Phase 5 with a mandatory teacher-approval gate.
+4. Exam definition — sections, fixed-set vs randomized-pool selection,
+   per-question marks, duration, availability window, shuffle, attempts.
+5. Delivery runtime — `ExamAttempt`/`ExamResponse`, a **server-authoritative**
+   timer (never the client clock), per-answer autosave, and correct resume
+   after a tab close, browser crash or power cut. Looks trivial in a demo;
+   this is where real implementations bleed.
+6. Auto-grading — trivial for MCQ/true-false, real work for short-answer;
+   essay is Phase 5 plus the approval gate.
+7. Grade integration — the one place existing infra pays off, and mostly
+   easy. One catch: `AssessmentScore.score` is capped at `component.weight`
+   (already-weighted units), so an exam marked out of 100 needs explicit
+   scaling plus a teacher-approval step before it lands.
+8. **Anti-cheating — set expectations honestly.** Achievable in-browser:
+   per-student randomized question/option order, one question at a time,
+   tab-blur logging, copy/paste suppression, server-side timing, device/IP
+   logging. All **deterrent, not prevention**. Real proctoring (lockdown
+   browser, webcam, screen recording) is a different product and, for
+   children, lands in the same biometric/NDPR territory already flagged for
+   the face-recognition attendance wishlist item — a consent/safety review,
+   not just a build.
+9. **Infrastructure — the most under-appreciated item.** Every request the
+   platform serves today is low-concurrency admin/teacher CRUD. A live exam
+   is 40-200 students hitting the API simultaneously for 45 minutes with
+   continuous autosave writes. Current measured production reality (see the
+   Neon latency entries above): autosuspend still live, ~2s authenticated
+   request latency, one real Postgres transaction per request via
+   `withTenant()`, a single Fly machine, and a retry-once band-aid added
+   2026-08-03 because connections were dying under *ordinary* load. **An exam
+   session would be the first genuine load event this platform has ever seen,
+   and the honest expectation is that it fails.** CBT therefore drags in a
+   connection-pooling / Neon-plan / scaling workstream that must be scoped
+   separately — plus Nigerian power and connectivity reality, which reopens
+   ARCHITECTURE.md §11 open question #4 (offline strategy depth).
+
+Estimate, calibrated against this repo's own history (Phase 4 was ~6 slices,
+Phase 2 ~8):
+
+| Scope | Estimate |
+|---|---|
+| Demo only (one subject, MCQ, fake student login, no persistence guarantees) | ~1 week |
+| Minimum credible CBT (MCQ + true/false, teacher-authored bank, timed exam, auto-score, results into gradebook, basic deterrents, no proctoring, no offline) | **6-9 slices, roughly 4-8 weeks** |
+| Infra hardening plus a real load test before any school runs a live exam | **+1-2 weeks, not optional** |
+| Exam-prep content product, option (a) | engineering is a subset of the above; **content licensing is the actual project**, unestimated |
+
+Positioning for a lead: the full loop from marks → WAEC-scale grading →
+positions → signed-off report cards → PDFs is built and working, and that is
+the differentiator today. Online exam delivery is roadmap, not started. If
+CBT is a hard requirement for a given school, it is a 1-2 month build, not a
+next-sprint item.
+
+Related existing entries, do not fork new ones: "Exam management, including
+AI-generated exam questions" and "Result checker" under "Future feature
+ideas"; "CBT / online exams (JAMB/WAEC/UTME prep)" under "Roadmap /
+strategy". The sidebar already shows **Assessments & Exams** and **Result
+Checker** as greyed-out "Coming soon" items, so a lead who has seen a demo has
+seen those.
+
+### Bulk student add — ranked follow-ups
+
+The highest-leverage fix (**a class-arm column on the student CSV import,
+creating the `Enrollment` alongside the `Student` in the same per-row
+transaction**) is approved and tracked separately — it is NOT in this list.
+What follows is everything deliberately not built.
+
+Context on what is actually slow, so this is not re-investigated:
+
+- `/students/new/bulk` submits a **sequential loop of individual
+  `POST /students` calls**, one HTTP round-trip per student, awaited one at a
+  time. Sequential is deliberate (`bulk-student-form.tsx`, lines 44-50) — it
+  makes within-batch duplicate admission numbers reject correctly for free.
+  At production's ~1-2s per authenticated request, 100 students is 2-4
+  minutes of a browser tab that must stay open.
+- All grid state is in React memory. A refresh, crash or accidental
+  navigation loses every not-yet-created row.
+- CSV import is the architecturally sound path (BullMQ worker, bad-rows CSV,
+  10k-row / 5 MB caps that are nowhere near binding). Its commit loop runs one
+  `withTenant()` transaction per row sequentially — the ~10ms/row estimate in
+  `commit.handler.ts` was measured against local Docker Postgres and is
+  realistically 50-200ms against Neon, but it is a background job, so this is
+  the least broken path.
+
+Ranked, highest value-per-effort first:
+
+- [ ] **Paste-from-Excel into the bulk grid.** A paste handler splitting on
+  tabs/newlines to populate rows. Cheap, and removes both the "click Add row
+  97 times" problem (the grid starts at 3 rows) and most of the typing.
+  Someone adding 100 students already has them in a spreadsheet.
+- [ ] **Bounded-parallel submission in the grid.** `mapWithConcurrency`
+  already exists (`apps/web/src/lib/concurrency.ts`, written after the
+  2026-08-04 Matrix-page incident) and is already used by
+  `/enrollments/bulk`. Concurrency 4-6 is a roughly 4-6x wall-clock win.
+  **Caveat: it forfeits the free within-batch duplicate handling the
+  sequential loop buys**, so it needs a client-side cross-row duplicate check
+  first. Not a one-line change.
+- [ ] **A real `POST /students/bulk` endpoint** — one request, one
+  transaction, `createMany`. Biggest raw win (100 round-trips down to 1),
+  most work: new DTO, new service path, and per-row error reporting so
+  partial failures stay actionable.
+- [ ] **Draft persistence for the grid** (sessionStorage, keyed the way
+  `lib/imports/session.ts` already does it). Does not make anything faster;
+  removes the catastrophic-loss failure mode.
+
+Trigger: the first school onboarding with 100+ students, or the first admin
+complaint about the grid.
+
+### Known debt, acknowledged not actioned (2026-08-09)
+
+- [ ] **SECURITY DEFINER table-shape review is overdue by 8 functions.** The
+  "+3" cadence trigger set at the Phase 3 / Slice 12 audit came due at 8; the
+  count is now **16**, and CLAUDE.md's own inventory notes it as due-not-done
+  at 12, 15 and 16. Nothing is broken — `security-definer-inventory.spec.ts`
+  is a mechanical conformance gate that still passes on every CI run — but the
+  *human* shape review keeps sliding. `auth_lookup_guardians_for_login` is the
+  specific outlier waiting on it: the only multi-row function in the table, an
+  explicitly interim strategy pending a real fix (e.g. a school selector in
+  portal login). Note the 2026-08-09 early-access work changed
+  `platform_admin_list_schools()`'s return shape again but added no new
+  function, so the count stays at 16. Trigger: schedule it as its own session;
+  it will not happen as a rider on a feature PR, which is precisely why it has
+  slipped four times.
+- [ ] **`docs/journal/` stops at 2026-07-24.** Unjournaled since: the platform
+  super-admin surface (2026-08-02), school provisioning (2026-08-07), the
+  onboarding-nudge email (2026-08-08), the admin dashboard restyle, and this
+  sweep. Given how much of this project's real decision history lives in the
+  journal rather than in commit messages, this is a growing hole in exactly
+  the record needed to pick Phase 5 up cold.
+- [ ] **`packages/ui` still points `main`/`types`/`exports` at `src/`** — the
+  same shape as the `packages/ai` violation fixed 2026-08-09, deliberately
+  left alone. It is consumed only by the two Next apps, which list it in
+  `transpilePackages` and bundle it from source, so it never reaches Node's
+  own resolver and the ESM rule's rationale does not apply. Revisit only if
+  something outside Next (the API, a script, a worker) ever imports it.
+- [ ] **`RESERVED_SLUGS` is exact-match only, with no prefix reservation.**
+  Surfaced 2026-08-09 while automating smoke-school cleanup: a real school
+  could register `smoke-academy` and, under the old `LIKE 'smoke-%'` prune
+  predicate, have been silently deleted with all its data. Closed for that
+  specific case by tightening the prune predicate (slug matching
+  `^smoke-[0-9]+$` AND an owner email at the RFC-2606-reserved
+  `@smoke-test.invalid` domain), not by changing slug validation. The general
+  gap remains: no prefix is reserved, so any future "system-owned slug
+  pattern" carries the same hazard. Trigger: before introducing any other
+  reserved slug *pattern*.

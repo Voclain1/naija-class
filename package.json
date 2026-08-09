@@ -25,6 +25,7 @@
     "db:seed:prod": "pnpm --filter @school-kit/db seed:prod",
     "dev:seed": "pnpm --filter @school-kit/db dev:seed",
     "db:studio": "pnpm --filter @school-kit/db studio",
+    "db:list-smoke": "pnpm --filter @school-kit/db list-smoke",
     "db:prune-smoke": "pnpm --filter @school-kit/db prune-smoke",
     "ai:eval": "pnpm --filter @school-kit/ai eval",
     "clean": "turbo run clean && rm -rf node_modules",

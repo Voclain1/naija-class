@@ -66,6 +66,22 @@ model School {
   // (success or logged failure) so a Resend outage doesn't cause a resend
   // storm once it clears.
   onboardingNudgeSentAt DateTime? @map("onboarding_nudge_sent_at")
+  // Early-access marker (2026-08-09). Nullable stamp, NO enforcement logic
+  // anywhere — deliberately just the flag, set by hand from the platform-admin
+  // school list. Exists now because the platform has no concept of a plan,
+  // tier, or subscription at all (grep confirms: zero product code), while
+  // SchoolKit's revenue model is subscription-only (see paystackSubaccount-
+  // Code's note — the Paystack split is 0% platform cut). When paid tiers
+  // eventually ship, "who was here early and should be grandfathered" has to
+  // be answerable, and the only alternative discriminator is created_at —
+  // which cannot tell a genuine pilot school from a smoke-test artifact or a
+  // provisioning test, and cannot express "I promised THIS school free access
+  // on a call" for a school that signs up later.
+  //
+  // Shape matches onboardingNudgeSentAt / ndprConsentAt: a timestamp, not a
+  // boolean (the extra information is free) and not an enum (naming the tiers
+  // before they are decided just buys a migration later).
+  earlyAccessGrantedAt DateTime? @map("early_access_granted_at")
   createdAt      DateTime     @default(now()) @map("created_at")
   updatedAt      DateTime     @updatedAt @map("updated_at")
 

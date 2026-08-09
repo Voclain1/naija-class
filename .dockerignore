@@ -14,13 +14,21 @@
 
 # ── Non-API app source ────────────────────────────────────────────────────────
 # We exclude source directories rather than the whole app folder so that each
-# app's package.json remains in the build context — pnpm --frozen-lockfile
-# requires every workspace importer's package.json to match the lockfile
-# (apps/web, apps/mobile, and e2e are all declared importers in pnpm-lock.yaml).
+# member's package.json remains in the build context — pnpm --frozen-lockfile
+# requires every workspace importer's package.json to match the lockfile.
+# The full importer list in pnpm-lock.yaml is: apps/api, apps/mobile,
+# apps/portal, apps/web, e2e, packages/ai, packages/config, packages/db,
+# packages/types, packages/ui. (This comment previously named only apps/web,
+# apps/mobile and e2e — corrected 2026-08-09 alongside the matching COPY-list
+# gap in apps/api/Dockerfile{,.render}. packages/ai, packages/ui and
+# apps/portal are never source-excluded here only because their source is
+# small; their manifests are what actually matter.)
 # Small config files (next.config.mjs, tailwind.config.ts, etc.) stay in the
 # context but are never COPY'd into the image, so they cost nothing in image size.
 apps/web/src
 apps/web/public
+apps/portal/src
+apps/portal/public
 apps/mobile/app
 e2e/tests
 e2e/fixtures

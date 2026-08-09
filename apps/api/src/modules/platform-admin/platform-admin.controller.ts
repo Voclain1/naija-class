@@ -1,15 +1,30 @@
-import { Body, Controller, Get, HttpCode, Ip, Post, Query, Req, UseGuards } from "@nestjs/common";
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  Ip,
+  Param,
+  Patch,
+  Post,
+  Query,
+  Req,
+  UseGuards,
+} from "@nestjs/common";
 import { Throttle } from "@nestjs/throttler";
 import {
   platformAdminCreateSchoolSchema,
   platformAdminListUsersQuerySchema,
   platformAdminLoginSchema,
+  platformAdminSetEarlyAccessSchema,
   type PlatformAdminCreateSchoolInput,
   type PlatformAdminCreateSchoolResponse,
   type PlatformAdminListUsersQuery,
   type PlatformAdminLoginInput,
   type PlatformAdminLoginResponse,
   type PlatformAdminSchoolDto,
+  type PlatformAdminSetEarlyAccessInput,
+  type PlatformAdminSetEarlyAccessResponse,
   type PlatformAdminUserDto,
 } from "@school-kit/types";
 import type { Request } from "express";
@@ -85,6 +100,27 @@ export class PlatformAdminController {
     @Req() req: Request,
   ): Promise<PlatformAdminCreateSchoolResponse> {
     return this.platformAdminService.createSchool(dto, adminCtx, {
+      ipAddress: ip,
+      userAgent: req.header("user-agent") ?? null,
+    });
+  }
+
+  // PATCH /platform-admin/schools/:schoolId/early-access — sets/clears the
+  // early-access marker (2026-08-09). Marker only; nothing reads it to make a
+  // decision yet. Same throttle as createSchool: it's a write on a
+  // cross-tenant surface, even though a much smaller one.
+  @Patch("schools/:schoolId/early-access")
+  @UseGuards(PlatformAdminGuard)
+  @Throttle({ default: { ttl: 60000, limit: 20 } })
+  async setEarlyAccess(
+    @Param("schoolId") schoolId: string,
+    @Body(new ZodValidationPipe(platformAdminSetEarlyAccessSchema))
+    dto: PlatformAdminSetEarlyAccessInput,
+    @CurrentPlatformAdmin() adminCtx: PlatformAdminContext,
+    @Ip() ip: string,
+    @Req() req: Request,
+  ): Promise<PlatformAdminSetEarlyAccessResponse> {
+    return this.platformAdminService.setEarlyAccess(schoolId, dto, adminCtx, {
       ipAddress: ip,
       userAgent: req.header("user-agent") ?? null,
     });

@@ -118,6 +118,22 @@ export async function POST(req: NextRequest, ctx: Context): Promise<NextResponse
   return forward("POST", subPath, "", sessionToken, body);
 }
 
+// PATCH .../schools/:id/early-access — added 2026-08-09. This export has to
+// exist for the route to accept the verb at all: a Next.js Route Handler with
+// no PATCH export returns 405 regardless of what the NestJS API supports.
+// That is the same shape of failure as the pre-existing bug this file carried
+// until 2026-08-07, where forward() dropped the request body for every
+// platform-admin POST except login — the API was correct and the proxy
+// silently wasn't. Body forwarding is handled here from the start.
+export async function PATCH(req: NextRequest, ctx: Context): Promise<NextResponse> {
+  const { platformAdmin } = await ctx.params;
+  const subPath = platformAdmin.join("/");
+  const cookieStore = await cookies();
+  const sessionToken = cookieStore.get(PLATFORM_ADMIN_SESSION_COOKIE_NAME)?.value;
+  const body = await req.text();
+  return forward("PATCH", subPath, "", sessionToken, body);
+}
+
 export async function DELETE(_req: NextRequest, ctx: Context): Promise<NextResponse> {
   const { platformAdmin } = await ctx.params;
   const subPath = platformAdmin.join("/");

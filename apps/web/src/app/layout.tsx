@@ -21,7 +21,12 @@ const fraunces = Fraunces({
 
 export const metadata: Metadata = {
   title: "schoolkit",
-  description: "Multi-tenant school management for Nigerian private schools.",
+  // Shown in search results and link previews, so it is marketing copy, not a
+  // system description. Was "Multi-tenant school management for Nigerian
+  // private schools." until 2026-08-09 — "multi-tenant" is an architecture
+  // term no school owner searches for or understands.
+  description:
+    "Student records, fees, attendance and report cards for Nigerian private schools — in one place.",
   icons: {
     icon: [
       { url: "/brand/schoolkit-favicon-32.png", sizes: "32x32", type: "image/png" },

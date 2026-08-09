@@ -28,7 +28,14 @@ COPY packages/config/package.json ./packages/config/
 COPY packages/types/package.json  ./packages/types/
 COPY packages/db/package.json     ./packages/db/
 COPY apps/api/package.json        ./apps/api/
+# Non-API workspace members: manifests only — must cover every importer in
+# pnpm-lock.yaml. packages/ai, packages/ui and apps/portal were missing here
+# until 2026-08-09; see apps/api/Dockerfile's fuller note, including what to
+# change when Phase 5 makes apps/api depend on @school-kit/ai.
+COPY packages/ai/package.json ./packages/ai/
+COPY packages/ui/package.json ./packages/ui/
 COPY apps/web/package.json    ./apps/web/
+COPY apps/portal/package.json ./apps/portal/
 COPY apps/mobile/package.json ./apps/mobile/
 COPY e2e/package.json         ./e2e/
 

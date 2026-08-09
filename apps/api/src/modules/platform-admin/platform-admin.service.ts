@@ -5,6 +5,7 @@ import { basePrisma } from "@school-kit/db";
 import {
   ConflictError,
   InternalError,
+  NotFoundError,
   RESERVED_SLUGS,
   UnauthorizedError,
   type PlatformAdminCreateSchoolInput,
@@ -12,6 +13,8 @@ import {
   type PlatformAdminLoginInput,
   type PlatformAdminLoginResponse,
   type PlatformAdminSchoolDto,
+  type PlatformAdminSetEarlyAccessInput,
+  type PlatformAdminSetEarlyAccessResponse,
   type PlatformAdminUserDto,
 } from "@school-kit/types";
 
@@ -96,6 +99,7 @@ interface ListSchoolsRow {
   staff_count: bigint;
   owner_invite_pending: boolean;
   owner_invite_expires_at: Date | null;
+  early_access_granted_at: Date | null;
 }
 
 interface CheckOwnerEmailAvailableRow {
@@ -131,6 +135,7 @@ const LOGIN_AUDIT_ACTION = "platform_admin.login";
 const SCHOOLS_LIST_AUDIT_ACTION = "platform_admin.schools.list";
 const USERS_LIST_AUDIT_ACTION = "platform_admin.users.list";
 const SCHOOLS_CREATE_AUDIT_ACTION = "platform_admin.schools.create";
+const SCHOOLS_SET_EARLY_ACCESS_AUDIT_ACTION = "platform_admin.schools.set-early-access";
 
 @Injectable()
 export class PlatformAdminService {
@@ -218,7 +223,79 @@ export class PlatformAdminService {
       staffCount: Number(r.staff_count),
       ownerInvitePending: r.owner_invite_pending,
       ownerInviteExpiresAt: r.owner_invite_expires_at ? r.owner_invite_expires_at.toISOString() : null,
+      earlyAccessGrantedAt: r.early_access_granted_at
+        ? r.early_access_granted_at.toISOString()
+        : null,
     }));
+  }
+
+  // PATCH /platform-admin/schools/:schoolId/early-access — sets or clears the
+  // early-access marker. The surface's second write, and a much smaller one
+  // than createSchool: a single-column UPDATE plus an audit row.
+  //
+  // No SECURITY DEFINER function needed, and no GUC dance either: `schools`
+  // is the one table with no RLS policy at all (it IS the tenant table —
+  // every other table's policy keys off it), which is why
+  // generateUniqueSlug() above can already do plain basePrisma reads against
+  // it. So an ordinary basePrisma.school.update is both sufficient and
+  // consistent with what this module already does.
+  //
+  // Deliberately idempotent-ish rather than strictly idempotent: setting
+  // `true` on an already-early-access school RE-STAMPS the timestamp to now.
+  // That's a real (if minor) behaviour choice — the alternative (preserve the
+  // original stamp) hides operator mistakes, and the audit log records every
+  // transition either way. Flagged here rather than left implicit.
+  async setEarlyAccess(
+    schoolId: string,
+    input: PlatformAdminSetEarlyAccessInput,
+    adminCtx: PlatformAdminContext,
+    reqCtx: RequestContext,
+  ): Promise<PlatformAdminSetEarlyAccessResponse> {
+    const existing = await basePrisma.school.findUnique({
+      where: { id: schoolId },
+      select: { id: true, earlyAccessGrantedAt: true },
+    });
+    if (!existing) {
+      throw new NotFoundError("School not found.");
+    }
+
+    const nextValue = input.earlyAccess ? new Date() : null;
+
+    const updated = await basePrisma.school.update({
+      where: { id: schoolId },
+      data: { earlyAccessGrantedAt: nextValue },
+      select: { id: true, earlyAccessGrantedAt: true },
+    });
+
+    await basePrisma.auditLog.create({
+      data: {
+        // schoolId: null for the same reason as every other action on this
+        // surface — audit_logs' RLS policy only lets null-schoolId rows
+        // through a GUC-less read, and platform-admin reads are always
+        // GUC-less. The school is identified by entityId.
+        schoolId: null,
+        userId: adminCtx.userId,
+        action: SCHOOLS_SET_EARLY_ACCESS_AUDIT_ACTION,
+        entityType: "school",
+        entityId: schoolId,
+        ipAddress: reqCtx.ipAddress,
+        metadata: {
+          from: existing.earlyAccessGrantedAt
+            ? existing.earlyAccessGrantedAt.toISOString()
+            : null,
+          to: updated.earlyAccessGrantedAt
+            ? updated.earlyAccessGrantedAt.toISOString()
+            : null,
+        },
+      },
+    });
+
+    return {
+      schoolId: updated.id,
+      earlyAccessGrantedAt: updated.earlyAccessGrantedAt
+        ? updated.earlyAccessGrantedAt.toISOString()
+        : null,
+    };
   }
 
   // POST /platform-admin/schools — the surface's first write. Creates the

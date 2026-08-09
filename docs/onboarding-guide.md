@@ -175,7 +175,9 @@ Go to **Staff** (`/staff`).
 
 Click **Invite staff**. Fill in **Email**, **Role** (Admin / Bursar / Teacher), and optionally **First name** / **Last name**. Click **Send invitation**.
 
-There is no automated email delivery yet — after sending, you'll see an **Accept link** with a **Copy** button. Copy it and send it to the person yourself (WhatsApp, email, however you'd normally reach them). The link expires in 7 days and works once.
+**Staff invitations are not emailed automatically** — after sending, you'll see an **Accept link** with a **Copy** button. Copy it and send it to the person yourself (WhatsApp, email, however you'd normally reach them). The link expires in 7 days and works once.
+
+> This is the opposite of guardian invitations, which *are* emailed for you — see [§11](#11-invite-guardians-to-the-parent-portal). Don't assume a teacher received anything until you've sent them the link.
 
 ### Inviting many teachers at once
 
@@ -262,7 +264,13 @@ Tick **Set as primary guardian** and/or **Allowed to pick up** as appropriate, t
 
 ### Inviting them to the portal
 
-Once a guardian has an email on file, click **Invite to portal** on their row. This generates a one-time accept link — copy it (there's a **Copy** button) and send it to the guardian yourself; like staff invites, there's no automated email delivery yet, and **the link is shown only once** — if you navigate away before copying it, you'll need to invite again.
+Once a guardian has an email on file, click **Invite to portal** on their row. **schoolkit emails the invitation to the guardian automatically** — you don't need to send it yourself.
+
+The accept link is also shown to you on screen with a **Copy** button, as a backup for when a guardian says they never got the email (check their spam folder first). **That on-screen link is shown only once** — if you navigate away before copying it, just send a fresh invitation.
+
+> **Text-message invites** are supported but **off by default**. Turn them on under **Settings → Notifications** if you'd rather reach guardians by SMS as well as email.
+
+> **Staff invitations are different** — those are *not* emailed automatically, and you do have to copy the link and send it yourself. See [§7](#7-staff-and-teacher-assignment).
 
 ### Bulk guardian import
 
@@ -319,7 +327,12 @@ schoolkit's online payment integration is still going through provider approval.
 Check **Staff → [teacher] → Teaching assignments** — they need at least one assignment there (class arm + subject) for the current term/year. No assignment, no visible class.
 
 **Invitation links (staff or guardian) — where do they go, and can I get one back?**
-There's no automated email sending yet for either staff or guardian invitations. When you send an invite, the accept link is shown to you once on-screen with a **Copy** button — copy it immediately and forward it yourself. If you navigate away before copying, you can't retrieve that exact link again from the UI; send a fresh invite instead (you'll get an "invitation already pending" notice if one is still outstanding).
+The two work differently:
+
+- **Guardian invitations are emailed automatically.** The guardian gets the accept link in their inbox as soon as you click **Invite to portal**. (Text-message invites are also supported, but off unless you enable them under **Settings → Notifications**.)
+- **Staff invitations are not emailed.** When you invite an admin, bursar, or teacher, the accept link is shown to you on-screen with a **Copy** button — copy it and send it to them yourself, however you'd normally reach them.
+
+In both cases the on-screen link is shown **only once**. If you navigate away before copying it, you can't retrieve that exact link again — send a fresh invite instead (you'll get an "invitation already pending" notice if one is still outstanding). For guardians that's rarely a problem, since they were emailed the link anyway.
 
 **Something looks broken or won't save.**
 Refresh the page first — some screens (like the class-subject Matrix) warn you before you navigate away if you have unsaved changes, so check for that. If it persists, note the exact page and what you clicked, and reach out for support.

@@ -261,9 +261,19 @@ describe("Platform admin access (2026-08-02)", () => {
       .set("Authorization", `Bearer ${platformAdminToken}`);
     const row = res.body.find((r: { schoolId: string }) => r.schoolId === schoolA);
     expect(row).toBeDefined();
+    // This list is a deliberate allow-list, not a snapshot — it exists so that
+    // widening this cross-tenant surface can never happen silently. Every
+    // addition here should be a conscious decision recorded alongside the
+    // migration that changed platform_admin_list_schools()'s return shape:
+    //   - ownerInvite{Pending,ExpiresAt}  2026-08-07 (school provisioning)
+    //   - earlyAccessGrantedAt            2026-08-09 (early-access marker;
+    //     commercial status ABOUT the tenancy, in the same category as
+    //     isActive/ownerInvitePending — not the school's own financial
+    //     configuration, which stays out of scope per CLAUDE.md's inventory)
     expect(Object.keys(row).sort()).toEqual(
       [
         "createdAt",
+        "earlyAccessGrantedAt",
         "isActive",
         "name",
         "ownerInviteExpiresAt",
@@ -432,6 +442,63 @@ describe("Platform admin access (2026-08-02)", () => {
     });
   });
 
+  // ---- Early-access marker (2026-08-09) — the surface's second write ----
+  //
+  // Marker only: nothing in the platform reads earlyAccessGrantedAt to make a
+  // decision. These tests cover the two things that CAN go wrong regardless —
+  // an unguarded write on a cross-tenant surface, and a set/clear that doesn't
+  // round-trip through platform_admin_list_schools().
+  describe("PATCH /platform-admin/schools/:schoolId/early-access", () => {
+    it("an ordinary staff session gets a 403, and no token gets a 401", async () => {
+      const forbidden = await request(app.getHttpServer())
+        .patch(`/api/v1/platform-admin/schools/${schoolA}/early-access`)
+        .set("Authorization", `Bearer ${ownerAToken}`)
+        .send({ earlyAccess: true });
+      expect(forbidden.status).toBe(403);
+
+      const unauthorized = await request(app.getHttpServer())
+        .patch(`/api/v1/platform-admin/schools/${schoolA}/early-access`)
+        .send({ earlyAccess: true });
+      expect(unauthorized.status).toBe(401);
+    });
+
+    it("sets then clears the marker, and the change round-trips through the schools list", async () => {
+      const set = await request(app.getHttpServer())
+        .patch(`/api/v1/platform-admin/schools/${schoolA}/early-access`)
+        .set("Authorization", `Bearer ${platformAdminToken}`)
+        .send({ earlyAccess: true });
+      expect(set.status).toBe(200);
+      expect(set.body.earlyAccessGrantedAt).not.toBeNull();
+
+      const afterSet = await request(app.getHttpServer())
+        .get("/api/v1/platform-admin/schools")
+        .set("Authorization", `Bearer ${platformAdminToken}`);
+      const rowSet = afterSet.body.find((r: { schoolId: string }) => r.schoolId === schoolA);
+      expect(rowSet.earlyAccessGrantedAt).not.toBeNull();
+
+      const clear = await request(app.getHttpServer())
+        .patch(`/api/v1/platform-admin/schools/${schoolA}/early-access`)
+        .set("Authorization", `Bearer ${platformAdminToken}`)
+        .send({ earlyAccess: false });
+      expect(clear.status).toBe(200);
+      expect(clear.body.earlyAccessGrantedAt).toBeNull();
+
+      const afterClear = await request(app.getHttpServer())
+        .get("/api/v1/platform-admin/schools")
+        .set("Authorization", `Bearer ${platformAdminToken}`);
+      const rowClear = afterClear.body.find((r: { schoolId: string }) => r.schoolId === schoolA);
+      expect(rowClear.earlyAccessGrantedAt).toBeNull();
+    });
+
+    it("an unknown schoolId is a 404, not a silent no-op", async () => {
+      const res = await request(app.getHttpServer())
+        .patch("/api/v1/platform-admin/schools/does-not-exist/early-access")
+        .set("Authorization", `Bearer ${platformAdminToken}`)
+        .send({ earlyAccess: true });
+      expect(res.status).toBe(404);
+    });
+  });
+
   it("every platform-admin read/write writes an audit_logs row namespaced platform_admin.*", async () => {
     const rows = await basePrisma.auditLog.findMany({
       where: { userId: platformAdminUserId, action: { startsWith: "platform_admin." } },
@@ -442,6 +509,7 @@ describe("Platform admin access (2026-08-02)", () => {
     expect(actions.has("platform_admin.schools.list")).toBe(true);
     expect(actions.has("platform_admin.users.list")).toBe(true);
     expect(actions.has("platform_admin.schools.create")).toBe(true);
+    expect(actions.has("platform_admin.schools.set-early-access")).toBe(true);
   });
 
   it("import-boundary: the platform-admin service never imports withTenant or references Invoice/Payment/Student Prisma delegates", () => {
