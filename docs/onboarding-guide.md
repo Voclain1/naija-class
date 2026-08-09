@@ -268,7 +268,7 @@ Once a guardian has an email on file, click **Invite to portal** on their row. *
 
 The accept link is also shown to you on screen with a **Copy** button, as a backup for when a guardian says they never got the email (check their spam folder first). **That on-screen link is shown only once** — if you navigate away before copying it, just send a fresh invitation.
 
-> **Text-message invites** are supported but **off by default**. Turn them on under **Settings → Notifications** if you'd rather reach guardians by SMS as well as email.
+> **Text-message invites aren't available yet.** There's an SMS toggle under **Settings → Notifications**, but our SMS provider account is still being set up, so switching it on won't send anything for now. Email invitations work and are unaffected. We'll let you know when SMS is live.
 
 > **Staff invitations are different** — those are *not* emailed automatically, and you do have to copy the link and send it yourself. See [§7](#7-staff-and-teacher-assignment).
 
@@ -329,7 +329,7 @@ Check **Staff → [teacher] → Teaching assignments** — they need at least on
 **Invitation links (staff or guardian) — where do they go, and can I get one back?**
 The two work differently:
 
-- **Guardian invitations are emailed automatically.** The guardian gets the accept link in their inbox as soon as you click **Invite to portal**. (Text-message invites are also supported, but off unless you enable them under **Settings → Notifications**.)
+- **Guardian invitations are emailed automatically.** The guardian gets the accept link in their inbox as soon as you click **Invite to portal**. (There's an SMS toggle under **Settings → Notifications**, but text messages aren't live yet — see [§11](#11-invite-guardians-to-the-parent-portal).)
 - **Staff invitations are not emailed.** When you invite an admin, bursar, or teacher, the accept link is shown to you on-screen with a **Copy** button — copy it and send it to them yourself, however you'd normally reach them.
 
 In both cases the on-screen link is shown **only once**. If you navigate away before copying it, you can't retrieve that exact link again — send a fresh invite instead (you'll get an "invitation already pending" notice if one is still outstanding). For guardians that's rarely a problem, since they were emailed the link anyway.
