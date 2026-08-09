@@ -8,6 +8,8 @@ import type {
   PlatformAdminCreateSchoolInput,
   PlatformAdminCreateSchoolResponse,
   PlatformAdminSchoolDto,
+  PlatformAdminSetEarlyAccessInput,
+  PlatformAdminSetEarlyAccessResponse,
   PlatformAdminUserDto,
 } from "@school-kit/types";
 
@@ -44,6 +46,7 @@ export function PlatformAdminDashboard() {
   const [provisioning, setProvisioning] = useState(false);
   const [provisionError, setProvisionError] = useState<string | null>(null);
   const [lastAcceptUrl, setLastAcceptUrl] = useState<string | null>(null);
+  const [togglingSchoolId, setTogglingSchoolId] = useState<string | null>(null);
 
   const refreshSchools = () => {
     proxyFetch<PlatformAdminSchoolDto[]>("/api/platform-admin/schools")
@@ -81,6 +84,41 @@ export function PlatformAdminDashboard() {
       );
     } finally {
       setProvisioning(false);
+    }
+  };
+
+  // Marker only — this writes School.earlyAccessGrantedAt and nothing reads it
+  // to make any decision. It exists so that when paid tiers ship, "who was
+  // here early and should be grandfathered" comes from a deliberate flag
+  // rather than being reverse-engineered from createdAt (which cannot tell a
+  // real pilot school from a smoke-test artifact). See docs/deferred.md
+  // "Pricing / tier enforcement".
+  const onToggleEarlyAccess = async (schoolId: string, next: boolean) => {
+    setTogglingSchoolId(schoolId);
+    try {
+      const payload: PlatformAdminSetEarlyAccessInput = { earlyAccess: next };
+      const res = await proxyFetch<PlatformAdminSetEarlyAccessResponse>(
+        `/api/platform-admin/schools/${schoolId}/early-access`,
+        { method: "PATCH", body: JSON.stringify(payload) },
+      );
+      // Patch the one row in place rather than refetching the whole list —
+      // the response is authoritative for the only field that changed.
+      setSchools((current) =>
+        current === null
+          ? current
+          : current.map((s) =>
+              s.schoolId === schoolId
+                ? { ...s, earlyAccessGrantedAt: res.earlyAccessGrantedAt }
+                : s,
+            ),
+      );
+      toast.success(next ? "Marked as early access." : "Early access removed.");
+    } catch (err) {
+      toast.error(
+        err instanceof ApiError ? err.message : "Could not update early access.",
+      );
+    } finally {
+      setTogglingSchoolId(null);
     }
   };
 
@@ -162,6 +200,7 @@ export function PlatformAdminDashboard() {
                   <TableHead>Students</TableHead>
                   <TableHead>Staff</TableHead>
                   <TableHead>Signed up</TableHead>
+                  <TableHead>Early access</TableHead>
                   <TableHead />
                 </TableRow>
               </TableHeader>
@@ -181,6 +220,32 @@ export function PlatformAdminDashboard() {
                     <TableCell>{school.studentCount}</TableCell>
                     <TableCell>{school.staffCount}</TableCell>
                     <TableCell>{new Date(school.createdAt).toLocaleDateString()}</TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        {school.earlyAccessGrantedAt ? (
+                          <Badge variant="success">
+                            {new Date(school.earlyAccessGrantedAt).toLocaleDateString()}
+                          </Badge>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
+                        <Button
+                          type="button"
+                          variant="link"
+                          className="h-auto p-0 text-xs"
+                          disabled={togglingSchoolId === school.schoolId}
+                          onClick={() =>
+                            onToggleEarlyAccess(school.schoolId, !school.earlyAccessGrantedAt)
+                          }
+                        >
+                          {togglingSchoolId === school.schoolId
+                            ? "Saving…"
+                            : school.earlyAccessGrantedAt
+                              ? "Remove"
+                              : "Mark"}
+                        </Button>
+                      </div>
+                    </TableCell>
                     <TableCell>
                       <Button
                         type="button"

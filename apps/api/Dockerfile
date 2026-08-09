@@ -24,8 +24,23 @@ COPY packages/config/package.json ./packages/config/
 COPY packages/types/package.json  ./packages/types/
 COPY packages/db/package.json     ./packages/db/
 COPY apps/api/package.json        ./apps/api/
-# Non-API apps: manifests only — pnpm validates the full lockfile importer list.
+# Non-API workspace members: manifests only — pnpm validates the full lockfile
+# importer list. This block MUST cover every importer in pnpm-lock.yaml.
+# packages/ai, packages/ui and apps/portal were missing here until 2026-08-09
+# (the build tolerated it because --frozen-lockfile doesn't hard-fail on an
+# absent importer directory, so the omission was silent, not loud).
+#
+# packages/ai is manifest-only on purpose: apps/api does NOT depend on it yet.
+# When Phase 5 wires it in, THREE things change together —
+#   1. add "@school-kit/ai": "workspace:*" to apps/api/package.json
+#   2. add `COPY packages/ai/ ./packages/ai/` to the source block below
+#   3. add `RUN pnpm --filter @school-kit/ai build` to the build-order block
+# Miss (2)/(3) and the image builds clean but crash-loops at boot on
+# ERR_MODULE_NOT_FOUND — see CLAUDE.md "ESM module resolution".
+COPY packages/ai/package.json ./packages/ai/
+COPY packages/ui/package.json ./packages/ui/
 COPY apps/web/package.json    ./apps/web/
+COPY apps/portal/package.json ./apps/portal/
 COPY apps/mobile/package.json ./apps/mobile/
 COPY e2e/package.json         ./e2e/
 

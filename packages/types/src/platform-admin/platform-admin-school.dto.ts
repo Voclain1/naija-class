@@ -14,4 +14,11 @@ export interface PlatformAdminSchoolDto {
   // and the owner hasn't accepted yet. Always false for self-serve schools.
   ownerInvitePending: boolean;
   ownerInviteExpiresAt: string | null;
+  // When this school was marked early-access, or null (the default, and the
+  // overwhelming majority). Purely a marker today — NOTHING reads it to make
+  // a decision. It exists so that when paid tiers ship, "who was here early
+  // and should be grandfathered" is answerable from a deliberate flag rather
+  // than reverse-engineered from createdAt. See School.earlyAccessGrantedAt
+  // in schema.prisma and docs/deferred.md "Pricing / tier enforcement".
+  earlyAccessGrantedAt: string | null;
 }

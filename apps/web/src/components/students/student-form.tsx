@@ -432,7 +432,7 @@ export function StudentForm({ existing }: Props) {
               aria-invalid={Boolean(form.formState.errors.photoUrl)}
             />
             <p className="text-xs text-muted-foreground">
-              Paste an image URL — direct upload is arriving in a later phase.
+              Paste a link to an image. Uploading a photo directly is coming soon.
             </p>
             {form.formState.errors.photoUrl && (
               <p className="text-sm text-destructive">

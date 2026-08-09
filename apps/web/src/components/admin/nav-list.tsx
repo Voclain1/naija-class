@@ -38,7 +38,7 @@ export function NavList({
       {laterPhaseItems.length > 0 && (
         <>
           <div className="mb-1 mt-5 px-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70">
-            Later phases
+            Coming soon
           </div>
           {laterPhaseItems.map((item) => (
             <NavLink key={item.href} item={item} pathname={pathname} onNavigate={onNavigate} />
