@@ -94,8 +94,21 @@ const SYNONYMS: Record<StudentImportTargetField, string[]> = {
   ],
   stateOfOrigin: [
     "stateoforigin",
-    "state",
     "origin",
+  ],
+  // Note the ordering hazard this created: "class" normalises to the same
+  // token an admin might reasonably mean for either column, and
+  // stateOfOrigin previously claimed the bare "state". They don't collide
+  // (nobody heads a state column "class"), but "state" was dropped from
+  // stateOfOrigin's list anyway — it was the weakest synonym there and
+  // keeping the two sets disjoint avoids a first-match-wins surprise if
+  // this table ever gets reordered. Mapping is admin-overridable regardless.
+  classArm: [
+    "classarm",
+    "class",
+    "arm",
+    "classname",
+    "currentclass",
   ],
 };
 

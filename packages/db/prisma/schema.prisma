@@ -769,6 +769,16 @@ model ImportJob {
   validRows       Int             @default(0) @map("valid_rows")
   invalidRows     Int             @default(0) @map("invalid_rows")
   committedRows   Int             @default(0) @map("committed_rows")
+  // STUDENTS imports only: students created successfully but NOT enrolled,
+  // because their class-arm cell was blank or the column wasn't mapped
+  // (2026-08-09). Always 0 for GUARDIANS/TEACHERS.
+  //
+  // Not an error count — a school mid-admission legitimately has unplaced
+  // students — but the admin needs to know, so the done screen reports it as
+  // an aggregate. A real per-row warning tier was deliberately deferred; see
+  // docs/modules/student-import-enrollment.md D7. When that tier lands, this
+  // column stays: it is the cheap summary, not a substitute for the tier.
+  notEnrolledRows Int             @default(0) @map("not_enrolled_rows")
   errorReportUrl  String?         @map("error_report_url")
   previewSnapshot Json?           @map("preview_snapshot")
   failedReason    String?         @map("failed_reason")

@@ -883,8 +883,11 @@ Format:
   production (Arinzechukwu generates one through the actual product flow
   now that the Gate 2 fee-catalog-nav fix landed), making a clean student+
   invoice+guardian candidate available without any DB surgery, or (b)
-  Termii's sender-ID registration approval completes (separately blocked on
-  Arinzechukwu's business documents), at which point the real end-to-end
+  Termii's sender-ID registration approval completes (**blocked on CAC
+  registration — see "SMS is unshippable until CAC registration completes"
+  at the end of this file for the full writeup; that is the authoritative
+  entry, this parenthetical is just a pointer**), at which point the real
+  end-to-end
   send-and-confirm test this gate ultimately wants becomes possible anyway
   and supersedes this narrower gate-check. Either makes this item moot, not
   merely satisfied.
@@ -1492,3 +1495,57 @@ complaint about the grid.
   gap remains: no prefix is reserved, so any future "system-owned slug
   pattern" carries the same hazard. Trigger: before introducing any other
   reserved slug *pattern*.
+
+### SMS is unshippable until CAC registration completes — external blocker
+
+**This is a genuine external dependency with no engineering workaround. Do
+not re-investigate it as a config or code problem.** Logged 2026-08-09 after
+the pre-Phase-5 sweep flagged the missing production env vars and Arinzechukwu
+identified the actual cause.
+
+**The blocker:** Termii requires a registered business to approve a sender ID
+(the alphanumeric "from" name on a transactional SMS). That approval is
+gated on **CAC registration**, which is not yet complete. Until it is, there
+is no approved sender ID, so there is no usable Termii account, so
+`TERMII_API_KEY` / `TERMII_SENDER_ID` / `TERMII_BASE_URL` cannot be set to
+real values. Nothing in this repo can move that forward.
+
+**Current production state (confirmed 2026-08-09 via `flyctl secrets list -a
+school-kit-api`):** none of the three `TERMII_*` vars is set. The app is
+unaffected — see the impact analysis below.
+
+**Impact: none, by construction.** Verified at every call site rather than
+assumed:
+- `TermiiService`'s constructor logs a warning when the key is absent and
+  sets `apiKey = ""`. **It does not throw**, so the API boots normally.
+- `NotificationPreference.smsEnabled` defaults to **`false`** (schema
+  default AND `NotificationPreferencesService`'s own `DEFAULTS` constant, so
+  a school with no preference row is also `false`). Every SMS path is gated
+  on it.
+- `FinanceService.sendReminders` computes
+  `smsAttemptable = channels.sms && this.termii.isConfigured` and skips with
+  a log line — it never even attempts a send.
+- `GuardiansService.deliverInvitation` gates on `smsEnabled`, and its
+  `sendSms` call is inside a `try/catch` that logs a warning. A failure
+  never propagates: the invitation is already committed and the **email
+  still sends**.
+
+So: with SMS off (the default for every school), nothing is reachable. If a
+school turns it on before CAC clears, sends fail silently into the logs —
+which is why the onboarding guide was corrected in the same commit to say
+text messages aren't live yet, rather than inviting admins to enable a
+toggle that does nothing.
+
+**What unblocks this**, in order: CAC registration completes → Termii sender
+ID submitted and approved → confirm the account's real `TERMII_BASE_URL`
+(it is **per-account**, dashboard-assigned, NOT the documented
+`https://api.ng.termii.com` default — see CLAUDE.md's env var section and
+`docs/modules/phase-4.md` §8 D6) → `flyctl secrets set` all three →
+end-to-end send test → revert the guide's "not live yet" wording.
+
+**Related, do not duplicate:** the Gate-3 live-confirmatory-test item above
+already references this blocker in passing ("Termii's sender-ID registration
+approval completes (separately blocked on Arinzechukwu's business
+documents)") — that parenthetical is the same dependency, named vaguely and
+buried inside an unrelated item, which is why this entry exists. That gate
+becomes moot rather than merely satisfied once SMS is live.

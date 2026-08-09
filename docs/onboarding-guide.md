@@ -209,7 +209,16 @@ Click **Add multiple**. This opens a spreadsheet-style grid starting with 3 blan
 
 Click **Import students**. Same 4-step wizard shape as the staff import: **Upload → Map columns → Review → Import**. Download the **Template CSV** if needed. On the mapping step, also set the **Date format** your CSV uses (defaults to `DD/MM/YYYY`, the Nigerian convention). Review the "Ready to import" vs. "Needs fixing" rows, then click **Commit N student(s)**.
 
-> None of these three paths enrolls a student into a class arm or links a guardian — those are separate steps: bulk class-arm enrollment lives at **/enrollments/bulk**, and guardians are added from each student's own page (see [§11](#11-invite-guardians-to-the-parent-portal)).
+**Putting students straight into their classes.** The template has a **Class Arm** column — fill it in with the class name exactly as it appears under **Settings → Academic → Class Arms** (e.g. `JSS 1A`), map it on the mapping step, and each student is enrolled into that class as they import. You'll be asked which **term** to enrol them into; there's no default, so pick it deliberately — every student in the file goes into the term you choose.
+
+This is by far the fastest way to set up a school with a lot of students: one file, and everyone lands in the right class.
+
+A few things worth knowing:
+- **The column is optional.** Leave it out (or leave a cell blank) and that student is imported without a class, exactly as before. The final screen tells you how many are unplaced and links you to where you can place them.
+- **Class names must be unique.** If two classes share a name, the import can't tell which one you meant and will flag those rows rather than guess. Rename one under **Settings → Academic → Class Arms**.
+- **Spelling must match**, but capitals don't — `jss 1a` and `JSS 1A` both work; `JSS1A` doesn't.
+
+> Importing a student doesn't link a guardian — that's a separate step, from each student's own page (see [§11](#11-invite-guardians-to-the-parent-portal)). The **Add student** and **Add multiple** paths above also don't enrol into a class; for those, use bulk enrollment at **/enrollments/bulk** afterwards.
 
 ---
 
@@ -268,7 +277,7 @@ Once a guardian has an email on file, click **Invite to portal** on their row. *
 
 The accept link is also shown to you on screen with a **Copy** button, as a backup for when a guardian says they never got the email (check their spam folder first). **That on-screen link is shown only once** — if you navigate away before copying it, just send a fresh invitation.
 
-> **Text-message invites** are supported but **off by default**. Turn them on under **Settings → Notifications** if you'd rather reach guardians by SMS as well as email.
+> **Text-message invites aren't available yet.** There's an SMS toggle under **Settings → Notifications**, but our SMS provider account is still being set up, so switching it on won't send anything for now. Email invitations work and are unaffected. We'll let you know when SMS is live.
 
 > **Staff invitations are different** — those are *not* emailed automatically, and you do have to copy the link and send it yourself. See [§7](#7-staff-and-teacher-assignment).
 
@@ -329,7 +338,7 @@ Check **Staff → [teacher] → Teaching assignments** — they need at least on
 **Invitation links (staff or guardian) — where do they go, and can I get one back?**
 The two work differently:
 
-- **Guardian invitations are emailed automatically.** The guardian gets the accept link in their inbox as soon as you click **Invite to portal**. (Text-message invites are also supported, but off unless you enable them under **Settings → Notifications**.)
+- **Guardian invitations are emailed automatically.** The guardian gets the accept link in their inbox as soon as you click **Invite to portal**. (There's an SMS toggle under **Settings → Notifications**, but text messages aren't live yet — see [§11](#11-invite-guardians-to-the-parent-portal).)
 - **Staff invitations are not emailed.** When you invite an admin, bursar, or teacher, the accept link is shown to you on-screen with a **Copy** button — copy it and send it to them yourself, however you'd normally reach them.
 
 In both cases the on-screen link is shown **only once**. If you navigate away before copying it, you can't retrieve that exact link again — send a fresh invite instead (you'll get an "invitation already pending" notice if one is still outstanding). For guardians that's rarely a problem, since they were emailed the link anyway.
