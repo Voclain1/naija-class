@@ -33,6 +33,7 @@ export type CommitHandlerResult =
   | {
       status: "completed";
       committedRows: number;
+      notEnrolledRows: number;
       commitErrorCount: number;
       validateBadCount: number;
       totalRows: number;
@@ -193,11 +194,51 @@ export async function runCommitHandler(
     throw e;
   }
 
+  // Resolve the enrollment target ONCE, before the row loop — not per row.
+  //
+  // academicYearId is derived from the term here and passed down; it is
+  // never accepted from input, because Enrollment.academicYearId MUST stay
+  // consistent with term.academicYearId (see that model's schema comment).
+  // EnrollmentsService.bulkCreate resolves it identically.
+  //
+  // A targetTermId that no longer resolves is treated as "no enrollment
+  // target" rather than a job failure: the students still import (which is
+  // the behaviour the whole feature is built around preserving), and the
+  // not-enrolled count below surfaces it. ImportsService already rejected
+  // an unresolvable term at mapping-submit, so reaching here means the term
+  // was deleted mid-job — rare, and not worth losing 300 good student rows
+  // over.
+  let enrollmentTarget: { termId: string; academicYearId: string } | undefined;
+  if (type === "STUDENTS" && mapping.options.targetTermId) {
+    const term = await withTenant(schoolId, (db) =>
+      db.term.findUnique({
+        where: { id: mapping.options.targetTermId },
+        select: { id: true, academicYearId: true },
+      }),
+    );
+    if (term) {
+      enrollmentTarget = { termId: term.id, academicYearId: term.academicYearId };
+    } else {
+      logger.warn(
+        `commit: import ${jobId} targetTermId ${mapping.options.targetTermId} no longer resolves; committing students without enrollments`,
+      );
+    }
+  }
+
   // Step 5 — per-row commit. Each row gets its own withTenant tx so a
   // failure on one row doesn't roll back others. Per-row throughput:
   // ~10ms (students, single insert) / ~20-30ms (guardians, three
-  // operations). Within Phase 1's 10k cap.
+  // operations). Within Phase 1's 10k cap. A student row carrying a
+  // classArm adds one arm lookup + one enrollment insert to that same tx.
   let committedRows = 0;
+  // Students created WITHOUT an enrollment because their class-arm cell was
+  // blank (or the column was unmapped). Not an error — a school mid-
+  // admission legitimately has unplaced students — but the admin needs to
+  // know, so it is reported as an aggregate on the done screen rather than
+  // as a per-row warning. The pipeline has no warning tier; building one
+  // was deliberately deferred (docs/modules/student-import-enrollment.md
+  // D7, approved 2026-08-09).
+  let notEnrolledRows = 0;
   const commitErrors: ImportRowError[] = [];
 
   for (const good of engineResult.good) {
@@ -208,6 +249,7 @@ export async function runCommitHandler(
             good.parsedRow as StudentImportRow,
             schoolId,
             rowDb,
+            enrollmentTarget,
           );
         }
         if (type === "GUARDIANS") {
@@ -227,6 +269,15 @@ export async function runCommitHandler(
         );
       });
       committedRows += 1;
+      // Counted only AFTER the row actually committed — a row that failed
+      // created no student, so it is not an un-enrolled student.
+      if (
+        type === "STUDENTS" &&
+        ((good.parsedRow as StudentImportRow).classArm === undefined ||
+          enrollmentTarget === undefined)
+      ) {
+        notEnrolledRows += 1;
+      }
     } catch (e) {
       let field: string;
       let message: string;
@@ -290,6 +341,7 @@ export async function runCommitHandler(
       data: {
         status: "COMPLETED",
         committedRows,
+        notEnrolledRows,
         invalidRows: allBad.length,
         errorReportUrl,
         completedAt: new Date(),
@@ -323,6 +375,7 @@ export async function runCommitHandler(
   return {
     status: "completed",
     committedRows,
+    notEnrolledRows,
     commitErrorCount: commitErrors.length,
     validateBadCount: engineResult.bad.length,
     totalRows: engineResult.totalRows,

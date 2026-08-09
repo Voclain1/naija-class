@@ -367,6 +367,59 @@ export class ImportsService {
       | ApplyGuardianImportMappingInput
       | ApplyTeacherImportMappingInput = parsed.data;
 
+    // ----------------------------------------------------------------------
+    // Class-arm preconditions (2026-08-09; docs/modules/student-import-
+    // enrollment.md D3/D4).
+    //
+    // These are properties of the WHOLE JOB, not of any row, so they fail
+    // here — once, with an actionable message — rather than as N identical
+    // per-row errors the admin has to scroll through a preview to discover.
+    //
+    // targetTermId is REQUIRED whenever the classArm column is mapped, with
+    // no silent default to the current term (approved 2026-08-09). A silent
+    // default is most dangerous exactly when it is most likely wrong: a
+    // school onboarding mid-transition between terms would enrol its whole
+    // roster into the wrong one, and nothing downstream would flag it.
+    // ----------------------------------------------------------------------
+    const mapsClassArm =
+      type === "STUDENTS" &&
+      Object.values(input.columnMapping).some((target) => target === "classArm");
+
+    if (mapsClassArm) {
+      const targetTermId = input.options?.targetTermId;
+      if (!targetTermId) {
+        throw new ValidationError(
+          "TARGET_TERM_REQUIRED",
+          "Choose the term these students should be enrolled into. " +
+            "Alternatively, leave the class arm column unmapped to import students without enrolling them.",
+        );
+      }
+
+      await withTenant(authCtx.schoolId, async (db) => {
+        const term = await db.term.findUnique({
+          where: { id: targetTermId },
+          select: { id: true },
+        });
+        if (!term) {
+          throw new ValidationError(
+            "TARGET_TERM_NOT_FOUND",
+            "The selected term no longer exists. Pick another.",
+          );
+        }
+
+        // A school with no arms at all cannot satisfy any value in that
+        // column — every row would fail identically. Say so once.
+        const armCount = await db.classArm.count({ where: { isActive: true } });
+        if (armCount === 0) {
+          throw new ValidationError(
+            "NO_CLASS_ARMS",
+            "This school has no active class arms yet. " +
+              "Create them under Settings → Academic → Class Arms, or leave the class arm column unmapped.",
+          );
+        }
+      });
+    }
+
     await withTenant(authCtx.schoolId, async (db) => {
       // Re-fetch with the status guard inside the SAME tx as the update
       // so a concurrent applyMapping can't race past PENDING. (Belt-and-
@@ -889,6 +942,7 @@ const IMPORT_JOB_SELECT = {
   validRows: true,
   invalidRows: true,
   committedRows: true,
+  notEnrolledRows: true,
   previewSnapshot: true,
   // errorReportUrl is selected but NEVER exposed in the DTO — the wizard
   // gets a boolean (hasErrorReport) and the download flows through
@@ -914,6 +968,7 @@ function toImportJobDto(row: ImportJobRow): ImportJobDto {
     validRows: row.validRows,
     invalidRows: row.invalidRows,
     committedRows: row.committedRows,
+    notEnrolledRows: row.notEnrolledRows,
     previewSnapshot: (row.previewSnapshot ?? null) as ImportJobPreviewSnapshot | null,
     hasErrorReport: row.errorReportUrl !== null,
     failedReason: row.failedReason,

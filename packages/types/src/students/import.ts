@@ -134,6 +134,19 @@ export const studentImportRowSchema = z
     bloodGroup: z.string().trim().min(1).max(10).optional(),
     religion: z.string().trim().min(1).max(40).optional(),
     stateOfOrigin: z.string().trim().min(1).max(40).optional(),
+    // Class arm NAME as the admin sees it in Settings → Academic → Class
+    // Arms ("JSS 1A"). Optional: an unmapped column, or a blank cell, means
+    // "create the student, don't enrol them" — exactly today's behaviour.
+    //
+    // This is only the raw string. Resolving it to a ClassArm id happens in
+    // validate-students.engine.ts, because it needs a tenant-scoped DB read
+    // that a pure Zod schema has no business doing. Critically, `name`
+    // carries NO uniqueness constraint (ClassArm is unique on
+    // (schoolId, classLevelId, code) — on CODE, scoped PER LEVEL), so
+    // resolution can legitimately find more than one match and has to treat
+    // that as an error rather than guessing. See docs/modules/
+    // student-import-enrollment.md D1.
+    classArm: z.string().trim().min(1).max(60).optional(),
   })
   .strict();
 export type StudentImportRow = z.infer<typeof studentImportRowSchema>;
@@ -247,8 +260,20 @@ export const STUDENT_IMPORT_TARGET_FIELDS = [
   "bloodGroup",
   "religion",
   "stateOfOrigin",
+  "classArm",
 ] as const;
 export type StudentImportTargetField = (typeof STUDENT_IMPORT_TARGET_FIELDS)[number];
+
+// Header synonyms the mapping step auto-detects for the class-arm column.
+// Admins name this column all sorts of things; the mapping step lets them
+// correct any mis-detection anyway, so accepting several is free.
+export const STUDENT_IMPORT_CLASS_ARM_HEADER_ALIASES = [
+  "class arm",
+  "class_arm",
+  "classarm",
+  "class",
+  "arm",
+] as const;
 
 export const STUDENT_IMPORT_REQUIRED_FIELDS = [
   "admissionNumber",

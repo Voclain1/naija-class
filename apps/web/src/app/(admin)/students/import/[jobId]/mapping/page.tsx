@@ -30,6 +30,8 @@ import {
   type UploadSessionData,
 } from "@/lib/imports/session";
 import { guessTargetField } from "@/lib/imports/synonyms";
+import { listAcademicYears, listTerms } from "@/lib/academic-years/academic-years-api";
+import { mapWithConcurrency } from "@/lib/concurrency";
 
 // /students/import/[jobId]/mapping — Slice 6 cp4 step 2.
 //
@@ -53,11 +55,18 @@ const TARGET_FIELD_LABELS: Record<StudentImportTargetField, string> = {
   bloodGroup: "Blood group",
   religion: "Religion",
   stateOfOrigin: "State of origin",
+  classArm: "Class arm (enrols the student)",
 };
 
 const REQUIRED_FIELD_SET = new Set<StudentImportTargetField>(
   STUDENT_IMPORT_REQUIRED_FIELDS,
 );
+
+interface TermOption {
+  id: string;
+  label: string;
+  isCurrent: boolean;
+}
 
 const DATE_FORMAT_LABELS: Record<StudentImportDateFormat, string> = {
   "DD/MM/YYYY": "DD/MM/YYYY (15/09/2012)",
@@ -82,6 +91,21 @@ export default function ImportStudentsMappingPage() {
     useState<StudentImportDateFormat>("DD/MM/YYYY");
   const [treatBlankAs, setTreatBlankAs] =
     useState<StudentImportBlankHandling>("skip");
+
+  // Enrollment target for the optional class-arm column (2026-08-09).
+  // Starts EMPTY on purpose — no silent default to the current term. See
+  // docs/modules/student-import-enrollment.md D3: a default is most
+  // dangerous exactly when it is most likely wrong (a school onboarding
+  // mid-transition between terms would enrol its whole roster into the
+  // wrong one, with nothing downstream to flag it). The server enforces
+  // the same rule; this is just the friendlier half of it.
+  // Terms are nested under academic years, so the options list is built by
+  // fetching years then their terms. Labelled with the year ("2025/2026 —
+  // First Term") because a school onboarding mid-session may legitimately
+  // be enrolling into a term of a year that isn't the current one, and
+  // "First Term" alone would be ambiguous across years.
+  const [terms, setTerms] = useState<TermOption[] | null>(null);
+  const [targetTermId, setTargetTermId] = useState<string>("");
 
   const [submitting, setSubmitting] = useState(false);
   const [aborting, setAborting] = useState(false);
@@ -179,8 +203,53 @@ export default function ImportStudentsMappingPage() {
     [usedFields],
   );
 
+  // Is the class-arm column mapped? Drives both the term selector's
+  // visibility and whether a term is required before submitting.
+  const mapsClassArm = usedFields.has("classArm");
+
+  // Load terms lazily — only once the admin actually maps a class-arm
+  // column. Most imports never do, and this screen shouldn't pay for a
+  // request it doesn't need.
+  useEffect(() => {
+    if (!mapsClassArm || terms !== null) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const years = await listAcademicYears();
+        // Bounded fan-out, not Promise.all — same reason /enrollments/bulk
+        // uses this helper: a burst of simultaneous withTenant transactions
+        // can outrun the tenant client's retry budget when Neon is cold.
+        const perYear = await mapWithConcurrency(years, 4, async (year) => {
+          const yearTerms = await listTerms(year.id);
+          return yearTerms.map((term) => ({
+            id: term.id,
+            label: `${year.label} — ${term.name}`,
+            isCurrent: term.isCurrent,
+          }));
+        });
+        if (!cancelled) setTerms(perYear.flat());
+      } catch {
+        if (!cancelled) {
+          setTerms([]);
+          toast.error("Could not load terms. Reload the page to try again.");
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [mapsClassArm, terms]);
+
+  // No silent default: mapping the column WITHOUT choosing a term blocks
+  // the CTA. The server enforces the same rule (TARGET_TERM_REQUIRED) — this
+  // just surfaces it before a round-trip.
+  const needsTerm = mapsClassArm && targetTermId === "";
+
   const canValidate =
-    missingRequired.length === 0 && duplicates.length === 0 && !submitting;
+    missingRequired.length === 0 &&
+    duplicates.length === 0 &&
+    !needsTerm &&
+    !submitting;
 
   const handleChange = useCallback(
     (header: string, value: string) => {
@@ -198,7 +267,14 @@ export default function ImportStudentsMappingPage() {
     try {
       await applyStudentsImportMapping(jobId, {
         columnMapping: mapping,
-        options: { dateFormat, treatBlankAs },
+        options: {
+          dateFormat,
+          treatBlankAs,
+          // Only sent when the class-arm column is actually mapped —
+          // otherwise the field stays absent rather than being sent as an
+          // empty string, which the server's uuid() check would reject.
+          ...(mapsClassArm && targetTermId ? { targetTermId } : {}),
+        },
       });
       // Mapping accepted — server enqueued the validate worker. We can
       // safely drop the upload-session bridge; the preview page only
@@ -217,7 +293,16 @@ export default function ImportStudentsMappingPage() {
       }
       setSubmitting(false);
     }
-  }, [canValidate, jobId, mapping, dateFormat, treatBlankAs, router]);
+  }, [
+    canValidate,
+    jobId,
+    mapping,
+    dateFormat,
+    treatBlankAs,
+    mapsClassArm,
+    targetTermId,
+    router,
+  ]);
 
   const onAbort = useCallback(async () => {
     if (
@@ -328,8 +413,56 @@ export default function ImportStudentsMappingPage() {
         </div>
       </section>
 
-      {(missingRequired.length > 0 || duplicates.length > 0) && (
+      {/* Only rendered once a class-arm column is mapped. Deliberately has
+          no pre-selected value — see the targetTermId state declaration. */}
+      {mapsClassArm && (
+        <section className="rounded-md border border-primary/30 bg-primary/5 p-4">
+          <div className="flex flex-col gap-1">
+            <label htmlFor="targetTermId" className="text-sm font-medium">
+              Enrol these students into which term?
+            </label>
+            <select
+              id="targetTermId"
+              className="h-10 max-w-md rounded-md border border-input bg-background px-3 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              value={targetTermId}
+              onChange={(e) => setTargetTermId(e.target.value)}
+              disabled={terms === null}
+            >
+              <option value="">
+                {terms === null ? "Loading terms…" : "Choose a term…"}
+              </option>
+              {(terms ?? []).map((term) => (
+                <option key={term.id} value={term.id}>
+                  {term.label}
+                  {term.isCurrent ? " (current term)" : ""}
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-muted-foreground">
+              You mapped a <strong>Class arm</strong> column, so each student
+              will also be enrolled into that class. Every student in this
+              file goes into the term you pick here.
+            </p>
+            {terms !== null && terms.length === 0 && (
+              <p className="text-xs text-destructive">
+                This school has no terms yet. Create one under Settings →
+                Academic → Years, or unmap the class arm column to import
+                students without enrolling them.
+              </p>
+            )}
+          </div>
+        </section>
+      )}
+
+      {(missingRequired.length > 0 || duplicates.length > 0 || needsTerm) && (
         <div className="rounded-md border border-amber-300 bg-amber-50 p-4 text-sm">
+          {needsTerm && (
+            <p>
+              <strong>Choose a term</strong> above before continuing — you
+              mapped a class arm column, so we need to know which term to
+              enrol these students into.
+            </p>
+          )}
           {missingRequired.length > 0 && (
             <p>
               <strong>Required fields not yet mapped:</strong>{" "}

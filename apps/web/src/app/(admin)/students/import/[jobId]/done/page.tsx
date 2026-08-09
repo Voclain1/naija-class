@@ -239,6 +239,36 @@ export default function ImportStudentsDonePage() {
         </div>
       </div>
 
+      {/* Students created but not placed in a class. NOT an error — a school
+          mid-admission legitimately has unplaced students, and these rows
+          are already counted in committedRows above — so this renders as a
+          neutral, actionable note rather than in the error block.
+          Deliberately an aggregate: the import pipeline has no per-row
+          warning tier, and building one was scoped out (docs/modules/
+          student-import-enrollment.md D7). */}
+      {job.notEnrolledRows > 0 && (
+        <div className="flex flex-col items-stretch justify-between gap-3 rounded-md border bg-muted/30 p-4 sm:flex-row sm:items-center">
+          <div className="flex items-start gap-3 text-sm">
+            <Users className="mt-0.5 h-5 w-5 text-muted-foreground" />
+            <div className="flex flex-col">
+              <p className="font-medium">
+                {job.notEnrolledRows.toLocaleString()}{" "}
+                {job.notEnrolledRows === 1 ? "student is" : "students are"} not
+                in a class yet
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Their class arm cell was blank, or you didn&apos;t map a class
+                arm column. They were still imported — you can place them any
+                time.
+              </p>
+            </div>
+          </div>
+          <Button asChild variant="outline" size="sm">
+            <Link href="/enrollments">Place them in classes</Link>
+          </Button>
+        </div>
+      )}
+
       {job.hasErrorReport && (
         <div className="flex flex-col items-stretch justify-between gap-3 rounded-md border bg-muted/30 p-4 sm:flex-row sm:items-center">
           <div className="flex items-start gap-3 text-sm">
