@@ -213,6 +213,50 @@ jobs:
           echo "See docs/runbooks/deploy-rollback.md for next steps"
           exit 1
 
+      # Tear down the school this run's smoke test created (op 3 signs up a
+      # real School + owner User and, until 2026-08-09, never deleted it — the
+      # production database had accumulated one per successful deploy since
+      # 2026-06-26, ~66 of them, which by then were polluting the platform-admin
+      # school roster shipped 2026-08-02).
+      #
+      # Deliberate choices here:
+      #   - `if: always()` — runs even when the smoke test failed and the
+      #     rollback step above exited 1. A failed smoke run can still have
+      #     completed op 3, so skipping cleanup on failure is exactly the case
+      #     that leaks rows.
+      #   - `continue-on-error` — cleanup is housekeeping. A psql hiccup must
+      #     never turn a healthy deploy into a failed one, and must never
+      #     re-trigger the rollback path.
+      #   - It prunes EVERY matching smoke school, not just this run's, so the
+      #     backlog drains itself and stays drained.
+      #   - DIRECT_URL (school_kit migration role), not DATABASE_URL: the
+      #     script does `SET LOCAL session_replication_role = 'replica'`, which
+      #     app_user cannot do.
+      #
+      # The predicate is narrow by design — `^smoke-<digits>$` AND an owner
+      # email at the RFC-2606-reserved `@smoke-test.invalid` domain. See the
+      # header of scripts/prune-smoke-schools.sql for why a plain
+      # `LIKE 'smoke-%'` was too dangerous to automate against production.
+      - name: Prune smoke-test schools
+        if: always()
+        continue-on-error: true
+        env:
+          DIRECT_URL: ${{ secrets.STAGING_DIRECT_URL }}
+        run: |
+          if ! command -v psql >/dev/null 2>&1; then
+            echo "psql not available on this runner — skipping smoke-school cleanup."
+            echo "Run 'pnpm db:prune-smoke' manually with a DIRECT_URL if this persists."
+            exit 0
+          fi
+          if [ -z "${DIRECT_URL}" ]; then
+            echo "STAGING_DIRECT_URL not set — skipping smoke-school cleanup."
+            exit 0
+          fi
+          echo "--- Preview: what is about to be pruned ---"
+          psql "${DIRECT_URL}" -f scripts/list-smoke-schools.sql || true
+          echo "--- Pruning ---"
+          psql "${DIRECT_URL}" -v ON_ERROR_STOP=1 -f scripts/prune-smoke-schools.sql
+
       # cp4 placeholder: Sentry source map upload goes here.
       # Requires SENTRY_AUTH_TOKEN secret + sentry-cli install.
       # Tracked in slice 1b cp4.
