@@ -1,0 +1,282 @@
+import { Injectable, Logger } from "@nestjs/common";
+
+import {
+  LESSON_PLAN_PROMPT,
+  LESSON_PLAN_SCHEMA,
+  LESSON_PLAN_SYSTEM,
+  LESSON_QUIZ_PROMPT,
+  LESSON_QUIZ_SYSTEM,
+  renderLessonPlanPrompt,
+  renderLessonQuizPrompt,
+} from "@school-kit/ai";
+import { withTenant } from "@school-kit/db";
+import {
+  InternalError,
+  NotFoundError,
+  ValidationError,
+  type CreateLessonPlanInput,
+  type LessonPlanDto,
+  type LessonPlanSummaryDto,
+  type ListLessonPlansInput,
+  type UpdateLessonPlanInput,
+} from "@school-kit/types";
+
+import { AiGenerationService } from "../../common/ai/ai-generation.service.js";
+
+// ---------------------------------------------------------------------------
+// Lesson plan generator — Phase 5 / Slice 2, the first AI FEATURE.
+//
+// Every Claude call goes through AiGenerationService, which enforces the
+// per-school token budget BEFORE the call and writes the mandatory
+// ai_generations ledger row after it. This service never touches the Anthropic
+// SDK (and could not: an ESLint rule makes that a CI failure).
+//
+// NO TEACHER-APPROVAL GATE, deliberately. CLAUDE.md's AI hard rule requires one
+// for grades, report-card comments and behaviour records — student-facing
+// records where an unreviewed AI output would become part of a child's file. A
+// lesson plan is the teacher's own working document: they read it, edit it, and
+// teach from it. `status` (DRAFT/ACCEPTED) is a "done editing" marker, not an
+// approval boundary, and nothing downstream consumes an ACCEPTED plan
+// automatically.
+// ---------------------------------------------------------------------------
+
+interface GeneratedSections {
+  introduction: string;
+  mainContent: string;
+  activities: string;
+  assessment: string;
+  homework: string;
+}
+
+const SECTION_KEYS: Array<keyof GeneratedSections> = [
+  "introduction",
+  "mainContent",
+  "activities",
+  "assessment",
+  "homework",
+];
+
+@Injectable()
+export class LessonPlansService {
+  private readonly logger = new Logger(LessonPlansService.name);
+
+  constructor(private readonly ai: AiGenerationService) {}
+
+  // -------------------------------------------------------------------------
+  // Create + generate.
+  //
+  // The row is written BEFORE the generation and updated after. That ordering
+  // is deliberate: a generation that fails leaves an inspectable DRAFT with the
+  // teacher's inputs intact, so they can retry without retyping — rather than
+  // a 500 and nothing to show for it. It also means the ai_generations ledger
+  // row and the lesson_plans row can be correlated after the fact.
+  // -------------------------------------------------------------------------
+  async createAndGenerate(
+    schoolId: string,
+    userId: string,
+    input: CreateLessonPlanInput,
+  ): Promise<LessonPlanDto> {
+    const context = await withTenant(schoolId, async (db) => {
+      const [classLevel, subject] = await Promise.all([
+        db.classLevel.findUnique({
+          where: { id: input.classLevelId },
+          select: { id: true, name: true },
+        }),
+        db.subject.findUnique({
+          where: { id: input.subjectId },
+          select: { id: true, name: true },
+        }),
+      ]);
+      // RLS already scopes these reads to the caller's school, so a miss means
+      // "not in your school" and "does not exist" collapse into the same 404 —
+      // which is the correct behaviour, not a leak.
+      if (!classLevel) throw new NotFoundError("Class level not found.");
+      if (!subject) throw new NotFoundError("Subject not found.");
+
+      const created = await db.lessonPlan.create({
+        data: {
+          schoolId,
+          createdBy: userId,
+          classLevelId: input.classLevelId,
+          subjectId: input.subjectId,
+          topic: input.topic,
+          objectives: input.objectives ?? null,
+          durationMinutes: input.durationMinutes ?? null,
+        },
+        select: { id: true },
+      });
+
+      return { classLevel, subject, lessonPlanId: created.id };
+    });
+
+    // Outside the transaction — this is the reserve → call → settle boundary.
+    const result = await this.ai.generate({
+      schoolId,
+      userId,
+      prompt: LESSON_PLAN_PROMPT,
+      system: LESSON_PLAN_SYSTEM,
+      userContent: renderLessonPlanPrompt({
+        classLevel: context.classLevel.name,
+        subject: context.subject.name,
+        topic: input.topic,
+        objectives: input.objectives,
+        durationMinutes: input.durationMinutes,
+      }),
+      jsonSchema: LESSON_PLAN_SCHEMA,
+    });
+
+    const sections = this.parseSections(result.text, context.lessonPlanId);
+
+    await withTenant(schoolId, (db) =>
+      db.lessonPlan.update({ where: { id: context.lessonPlanId }, data: sections }),
+    );
+
+    return this.get(schoolId, context.lessonPlanId);
+  }
+
+  // Structured outputs constrains the response to LESSON_PLAN_SCHEMA, so this
+  // should always succeed. It is still checked rather than cast: a schema
+  // change, a refusal that slipped through, or a truncated response would
+  // otherwise write `undefined` into five columns and look like a successful
+  // generation to the teacher.
+  private parseSections(raw: string, lessonPlanId: string): GeneratedSections {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      this.logger.error(`Lesson plan ${lessonPlanId}: model output was not valid JSON`);
+      throw new InternalError("The generated lesson plan could not be read. Please try again.");
+    }
+
+    const obj = parsed as Record<string, unknown>;
+    const missing = SECTION_KEYS.filter((k) => typeof obj[k] !== "string" || !(obj[k] as string).trim());
+    if (missing.length) {
+      this.logger.error(`Lesson plan ${lessonPlanId}: missing sections ${missing.join(", ")}`);
+      throw new InternalError("The generated lesson plan was incomplete. Please try again.");
+    }
+
+    return {
+      introduction: obj.introduction as string,
+      mainContent: obj.mainContent as string,
+      activities: obj.activities as string,
+      assessment: obj.assessment as string,
+      homework: obj.homework as string,
+    };
+  }
+
+  // -------------------------------------------------------------------------
+  // Quiz mode — a SECOND generation against an existing plan.
+  // -------------------------------------------------------------------------
+  async generateQuiz(schoolId: string, userId: string, lessonPlanId: string): Promise<LessonPlanDto> {
+    const plan = await withTenant(schoolId, (db) =>
+      db.lessonPlan.findUnique({
+        where: { id: lessonPlanId },
+        include: { classLevel: { select: { name: true } }, subject: { select: { name: true } } },
+      }),
+    );
+    if (!plan) throw new NotFoundError("Lesson plan not found.");
+
+    const lessonContent = [plan.introduction, plan.mainContent, plan.activities]
+      .filter(Boolean)
+      .join("\n\n");
+    if (!lessonContent.trim()) {
+      throw new ValidationError("Generate the lesson plan before generating a quiz for it.");
+    }
+
+    const result = await this.ai.generate({
+      schoolId,
+      userId,
+      prompt: LESSON_QUIZ_PROMPT,
+      system: LESSON_QUIZ_SYSTEM,
+      userContent: renderLessonQuizPrompt({
+        classLevel: plan.classLevel.name,
+        subject: plan.subject.name,
+        topic: plan.topic,
+        lessonContent,
+      }),
+    });
+
+    await withTenant(schoolId, (db) =>
+      db.lessonPlan.update({ where: { id: lessonPlanId }, data: { quiz: result.text } }),
+    );
+
+    return this.get(schoolId, lessonPlanId);
+  }
+
+  // -------------------------------------------------------------------------
+  // Plain CRUD — no AI involved.
+  // -------------------------------------------------------------------------
+  async list(schoolId: string, userId: string, filters: ListLessonPlansInput): Promise<LessonPlanSummaryDto[]> {
+    const rows = await withTenant(schoolId, (db) =>
+      db.lessonPlan.findMany({
+        where: {
+          schoolId,
+          ...(filters.mine === false ? {} : { createdBy: userId }),
+          ...(filters.classLevelId ? { classLevelId: filters.classLevelId } : {}),
+          ...(filters.subjectId ? { subjectId: filters.subjectId } : {}),
+        },
+        include: { classLevel: { select: { name: true } }, subject: { select: { name: true } } },
+        orderBy: { createdAt: "desc" },
+      }),
+    );
+
+    return rows.map((r) => ({
+      id: r.id,
+      classLevelId: r.classLevelId,
+      classLevelName: r.classLevel.name,
+      subjectId: r.subjectId,
+      subjectName: r.subject.name,
+      topic: r.topic,
+      objectives: r.objectives,
+      durationMinutes: r.durationMinutes,
+      status: r.status,
+      createdBy: r.createdBy,
+      createdAt: r.createdAt,
+      updatedAt: r.updatedAt,
+      hasContent: Boolean(r.introduction),
+      hasQuiz: Boolean(r.quiz),
+    }));
+  }
+
+  async get(schoolId: string, id: string): Promise<LessonPlanDto> {
+    const row = await withTenant(schoolId, (db) =>
+      db.lessonPlan.findUnique({
+        where: { id },
+        include: { classLevel: { select: { name: true } }, subject: { select: { name: true } } },
+      }),
+    );
+    if (!row) throw new NotFoundError("Lesson plan not found.");
+
+    return {
+      id: row.id,
+      classLevelId: row.classLevelId,
+      classLevelName: row.classLevel.name,
+      subjectId: row.subjectId,
+      subjectName: row.subject.name,
+      topic: row.topic,
+      objectives: row.objectives,
+      durationMinutes: row.durationMinutes,
+      status: row.status,
+      introduction: row.introduction,
+      mainContent: row.mainContent,
+      activities: row.activities,
+      assessment: row.assessment,
+      homework: row.homework,
+      quiz: row.quiz,
+      createdBy: row.createdBy,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+    };
+  }
+
+  async update(schoolId: string, id: string, input: UpdateLessonPlanInput): Promise<LessonPlanDto> {
+    await this.get(schoolId, id); // 404s if it isn't this school's
+    await withTenant(schoolId, (db) => db.lessonPlan.update({ where: { id }, data: input }));
+    return this.get(schoolId, id);
+  }
+
+  async remove(schoolId: string, id: string): Promise<void> {
+    await this.get(schoolId, id);
+    await withTenant(schoolId, (db) => db.lessonPlan.delete({ where: { id } }));
+  }
+}

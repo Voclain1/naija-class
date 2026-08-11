@@ -10,19 +10,25 @@
       "default": "./dist/index.js"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "dev": "tsc -p tsconfig.json --watch --preserveWatchOutput",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "lint": "echo 'lint placeholder'",
     "test": "echo 'test placeholder'",
-    "eval": "echo 'eval placeholder — implemented in Phase 5'",
+    "eval": "tsx evals/run.ts",
     "clean": "rm -rf dist"
   },
   "devDependencies": {
     "@school-kit/config": "workspace:*",
     "@types/node": "^22.19.19",
+    "tsx": "^4.19.2",
     "typescript": "^5.6.3"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.116.0"
   }
 }

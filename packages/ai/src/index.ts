@@ -22,4 +22,40 @@
 // packages/ui still points at src/ deliberately — it is consumed only by the
 // two Next apps, which list it in `transpilePackages` and bundle it from
 // source. That never reaches Node's own resolver, so the rule doesn't apply.
-export {};
+//
+// Populated in Phase 5 / Slice 1 CP2. Relative imports carry `.js` extensions
+// per the note above — TypeScript preserves them and Node ESM requires them.
+
+export {
+  MODELS,
+  MODEL_PRICING,
+  PRICE_TABLE_VERSION,
+  estimateCostMicroUsd,
+  type ModelId,
+} from "./models.js";
+
+export {
+  createAnthropicClient,
+  type AiCallRequest,
+  type AiCallResult,
+  type AnthropicPort,
+} from "./client.js";
+
+export {
+  PROMPTS,
+  promptRef,
+  type PromptDefinition,
+  type PromptKey,
+  type PromptName,
+} from "./prompts/registry.js";
+
+export {
+  LESSON_PLAN_PROMPT,
+  LESSON_PLAN_SCHEMA,
+  LESSON_PLAN_SYSTEM,
+  LESSON_QUIZ_PROMPT,
+  LESSON_QUIZ_SYSTEM,
+  renderLessonPlanPrompt,
+  renderLessonQuizPrompt,
+  type LessonPlanInput,
+} from "./prompts/lesson-plan.js";

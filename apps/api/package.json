@@ -24,6 +24,7 @@
     "@nestjs/platform-express": "^10.4.15",
     "@nestjs/schedule": "^6.1.3",
     "@nestjs/throttler": "^6.4.0",
+    "@school-kit/ai": "workspace:^",
     "@school-kit/db": "workspace:*",
     "@school-kit/types": "workspace:*",
     "@sentry/nestjs": "^10.53.1",

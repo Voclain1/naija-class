@@ -16,6 +16,8 @@ import {
   PHASE_3_OWNER_ONLY_PERMISSIONS,
   PHASE_3_PERMISSIONS,
   PHASE_4_PERMISSIONS,
+  PHASE_5_PERMISSIONS,
+  PHASE_5_TEACHER_PERMISSIONS,
 } from "@school-kit/types";
 
 export interface SystemRoleSeed {
@@ -46,6 +48,9 @@ const ADMIN_PERMISSIONS: readonly string[] = [
   // read/update. No owner-only subset to exclude (unlike Phases 1-3, this
   // phase hasn't needed one yet).
   ...PHASE_4_PERMISSIONS,
+  // Phase 5 / Slice 2 — lesson-plan CRUD + ai-usage.read. No owner-only
+  // subset: nothing here moves money or deletes an academic record.
+  ...PHASE_5_PERMISSIONS,
 ];
 
 // System roles are global (school_id = NULL, is_system = true) and referenced
@@ -100,6 +105,10 @@ export const SYSTEM_ROLE_SEEDS: SystemRoleSeed[] = [
       // Phase 2 (slice 9) — granted at the guard; getTeacherScope narrows them
       // to the teacher's own (arm, subject). See PHASE_2_TEACHER_PERMISSIONS.
       ...PHASE_2_TEACHER_PERMISSIONS,
+      // Phase 5 / Slice 2 — the lesson-plan generator is teacher-facing by
+      // definition. Deliberately excludes ai-usage.read: school-level AI spend
+      // is operator information, not teaching workflow.
+      ...PHASE_5_TEACHER_PERMISSIONS,
     ],
   },
   // Phase 3 / Slice 15 — `bursar` role wire-up + RBAC close-out. Finance-only

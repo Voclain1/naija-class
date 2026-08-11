@@ -351,6 +351,41 @@ export const PHASE_4_PERMISSIONS = [
 // ALL_PERMISSIONS-minus-owner-only assembly in packages/db/src/seeds/system-roles.ts.
 export const ADMIN_DASHBOARD_PERMISSIONS = ["dashboard.read"] as const;
 
+// Phase 5 — AI layer. Landed REFERENCE-ONLY in slice 1 CP2 (pure
+// infrastructure, zero HTTP surface); PROMOTED in slice 2, which ships the
+// lesson-plan endpoints. This is the same rollup pattern as Phase 2 slice 9
+// and Phase 1 slice 13: spread into ALL_PERMISSIONS, granted in the seed AND
+// in a data migration for existing schools, and enforced by @Permissions on
+// the handlers.
+//
+// lesson-plan.* is teacher-facing by definition — a lesson plan generator only
+// admins could use would have no users — so `teacher` gets the full CRUD set
+// (see PHASE_5_TEACHER_PERMISSIONS below).
+//
+// ai-usage.read is deliberately NOT in the teacher set: it exposes
+// school-level AI spend and remaining budget, which is operator information,
+// not teaching workflow. The budget VALUE is set platform-side (there is no
+// plan/tier concept in the product code — see School.aiMonthlyTokenBudget), so
+// there is no school-facing ai-budget.update counterpart at all.
+export const PHASE_5_PERMISSIONS = [
+  "lesson-plan.read",
+  "lesson-plan.create",
+  "lesson-plan.update",
+  "lesson-plan.delete",
+  "ai-usage.read",
+] as const;
+
+// The `teacher` role's exact Phase 5 grant. Explicit inclusion list, mirroring
+// PHASE_2_TEACHER_PERMISSIONS / PHASE_3_BURSAR_PERMISSIONS: an inclusion list
+// fails loudly if a future Phase 5 permission is added without a teacher
+// decision, whereas an exclusion filter would silently grant it.
+export const PHASE_5_TEACHER_PERMISSIONS = [
+  "lesson-plan.read",
+  "lesson-plan.create",
+  "lesson-plan.update",
+  "lesson-plan.delete",
+] as const;
+
 // Phase 3 / Slice 15 — the `bursar` role's exact grant. Explicit inclusion
 // list (mirrors PHASE_2_TEACHER_PERMISSIONS), not "admin minus a few" — finance
 // is a strict subset of admin's permissions, and an inclusion list fails
@@ -471,6 +506,7 @@ export const ALL_PERMISSIONS = [
   ...PHASE_3_PERMISSIONS,
   ...PHASE_4_PERMISSIONS,
   ...ADMIN_DASHBOARD_PERMISSIONS,
+  ...PHASE_5_PERMISSIONS,
   /* extend per phase */
 ] as const;
 
