@@ -28,6 +28,7 @@ import { MODELS, type ModelId } from "../models.js";
 // type-only imports are erased at compile time, so there is no runtime cycle.
 import { LESSON_PLAN_PROMPT, LESSON_QUIZ_PROMPT } from "./lesson-plan.js";
 import { REPORT_CARD_COMMENT_PROMPT } from "./report-card-comment.js";
+import { REPORT_CARD_FORM_COMMENT_PROMPT } from "./report-card-form-comment.js";
 
 export interface PromptDefinition {
   readonly name: string;
@@ -56,6 +57,7 @@ export const PROMPTS = {
   LESSON_PLAN: LESSON_PLAN_PROMPT,
   LESSON_QUIZ: LESSON_QUIZ_PROMPT,
   REPORT_CARD_SUBJECT_COMMENT: REPORT_CARD_COMMENT_PROMPT,
+  REPORT_CARD_FORM_COMMENT: REPORT_CARD_FORM_COMMENT_PROMPT,
 } as const satisfies Record<string, PromptDefinition>;
 
 export type PromptKey = keyof typeof PROMPTS;

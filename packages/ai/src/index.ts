@@ -68,3 +68,12 @@ export {
   type ReportCardCommentComponent,
   type ReportCardCommentInput,
 } from "./prompts/report-card-comment.js";
+
+export {
+  REPORT_CARD_FORM_COMMENT_PROMPT,
+  REPORT_CARD_FORM_COMMENT_SCHEMA,
+  REPORT_CARD_FORM_COMMENT_SYSTEM,
+  renderReportCardFormCommentPrompt,
+  type FormCommentSubjectResult,
+  type ReportCardFormCommentInput,
+} from "./prompts/report-card-form-comment.js";

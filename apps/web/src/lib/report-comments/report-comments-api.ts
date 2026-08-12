@@ -8,8 +8,12 @@
 
 import type {
   AcceptSubjectCommentInput,
+  FormCommentRowDto,
+  GenerateFormCommentsInput,
+  GenerateFormCommentsResultDto,
   GenerateSubjectCommentsInput,
   GenerateSubjectCommentsResultDto,
+  ListFormCommentsInput,
   ListSubjectCommentsInput,
   SubjectCommentRowDto,
 } from "@school-kit/types";
@@ -45,6 +49,30 @@ export function acceptSubjectComment(
   input: AcceptSubjectCommentInput,
 ): Promise<SubjectCommentRowDto> {
   return apiFetch<SubjectCommentRowDto>("/report-card-comments/accept", {
+    method: "POST",
+    body: input,
+  });
+}
+
+// --- Form teacher's comment (slice 4) --------------------------------------
+//
+// There is deliberately no `acceptFormComment` here. That write already has a
+// client — `updateFormTeacherComment` in lib/report-cards/report-card-api.ts,
+// hitting PATCH /report-cards/:id, which has carried the auth, status gate and
+// audit row since Phase 2. The AI surface drafts; the existing endpoint accepts.
+
+export function listFormComments(query: ListFormCommentsInput): Promise<FormCommentRowDto[]> {
+  const params = new URLSearchParams({ classArmId: query.classArmId, termId: query.termId });
+  return apiFetch<FormCommentRowDto[]>(`/report-card-comments/form?${params.toString()}`, {
+    method: "GET",
+  });
+}
+
+// Enqueues one job per eligible card; returns a receipt, not results.
+export function generateFormComments(
+  input: GenerateFormCommentsInput,
+): Promise<GenerateFormCommentsResultDto> {
+  return apiFetch<GenerateFormCommentsResultDto>("/report-card-comments/form/generate", {
     method: "POST",
     body: input,
   });

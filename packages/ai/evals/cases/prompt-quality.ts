@@ -15,6 +15,7 @@
 
 import { LESSON_PLAN_SYSTEM, LESSON_QUIZ_SYSTEM } from "../../src/prompts/lesson-plan.js";
 import { REPORT_CARD_COMMENT_SYSTEM } from "../../src/prompts/report-card-comment.js";
+import { REPORT_CARD_FORM_COMMENT_SYSTEM } from "../../src/prompts/report-card-form-comment.js";
 import { check, warn, type EvalCase } from "../harness.js";
 
 // Dated pressure patterns. Not banned outright — emphasis is a legitimate,
@@ -90,7 +91,54 @@ export const promptQualityCase: EvalCase = {
       ...auditSystemPrompt("lesson-plan", LESSON_PLAN_SYSTEM),
       ...auditSystemPrompt("lesson-quiz", LESSON_QUIZ_SYSTEM),
       ...auditSystemPrompt("report-card-comment", REPORT_CARD_COMMENT_SYSTEM),
+      ...auditSystemPrompt("report-card-form-comment", REPORT_CARD_FORM_COMMENT_SYSTEM),
     ];
+
+    // ---- form comment: what makes it a FORM comment ----------------------
+    // These are the checks that keep it from collapsing into a longer subject
+    // comment. The two prompts are deliberately separate (different inputs,
+    // different author, independent quality regressions) and this is where that
+    // separation is enforced rather than assumed.
+    const formSystem = REPORT_CARD_FORM_COMMENT_SYSTEM;
+
+    results.push(
+      check(
+        "report-card-form-comment: forbids inventing a student name",
+        /never invent a name/i.test(formSystem),
+        "the model is given no name; without this it fills the gap with a plausible one",
+      ),
+      check(
+        "report-card-form-comment: forbids gendered pronouns",
+        /never use/i.test(formSystem) && /\bhe\b.*\bshe\b|gender/i.test(formSystem),
+        "gender is deliberately not sent, so any pronoun is a guess on a parent-facing record",
+      ),
+      check(
+        "report-card-form-comment: requires naming actual subjects",
+        /name actual subjects/i.test(formSystem),
+        'without this it produces "performed well in some subjects", which tells a parent nothing ' +
+          "the grade table beside it does not already say",
+      ),
+      check(
+        "report-card-form-comment: speaks to the overall picture, not one subject",
+        /overall/i.test(formSystem) && /position/i.test(formSystem),
+        "this is the whole-child comment; if it reads like a subject comment the slice has no reason to exist",
+      ),
+      check(
+        "report-card-form-comment: asks for a concrete next step",
+        /concrete, specific thing that would improve/i.test(formSystem),
+        "a comment with no actionable close leaves a parent knowing the result but not what to do",
+      ),
+      check(
+        "report-card-form-comment: bans the template openers",
+        /do not open with/i.test(formSystem),
+        "40 form comments in one arm opening identically is the failure a parent notices first",
+      ),
+      check(
+        "report-card-form-comment: instructs the model not to invent figures",
+        /never state or imply a figure you were not given/i.test(formSystem),
+        "the grade table sits beside this comment and will contradict a fabricated number",
+      ),
+    );
 
     // ---- report-card comment: the constraints that make it usable --------
     // This prompt runs once per student per subject. Its failure modes are

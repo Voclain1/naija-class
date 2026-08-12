@@ -4,6 +4,7 @@ import { Module } from "@nestjs/common";
 import { AiModule } from "../../common/ai/ai.module.js";
 import { AI_QUEUE } from "../../common/queue/index.js";
 import { AuthModule } from "../auth/auth.module.js";
+import { FormCommentsService } from "./form-comments.service.js";
 import { ReportCommentsController } from "./report-comments.controller.js";
 import { ReportCommentsService } from "./report-comments.service.js";
 import { SubjectCommentProcessor } from "./workers/subject-comment.processor.js";
@@ -33,7 +34,7 @@ import { SubjectCommentProcessor } from "./workers/subject-comment.processor.js"
     }),
   ],
   controllers: [ReportCommentsController],
-  providers: [ReportCommentsService, SubjectCommentProcessor],
-  exports: [ReportCommentsService],
+  providers: [ReportCommentsService, FormCommentsService, SubjectCommentProcessor],
+  exports: [ReportCommentsService, FormCommentsService],
 })
 export class ReportCommentsModule {}

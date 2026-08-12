@@ -2,7 +2,8 @@ import { OnWorkerEvent, Processor, WorkerHost } from "@nestjs/bullmq";
 import { Logger } from "@nestjs/common";
 import { Job } from "bullmq";
 
-import { AI_JOB_SUBJECT_COMMENT, AI_QUEUE } from "../../../common/queue/index.js";
+import { AI_JOB_FORM_COMMENT, AI_JOB_SUBJECT_COMMENT, AI_QUEUE } from "../../../common/queue/index.js";
+import { FormCommentsService, type FormCommentJobData } from "../form-comments.service.js";
 import { ReportCommentsService, type SubjectCommentJobData } from "../report-comments.service.js";
 
 // ---------------------------------------------------------------------------
@@ -34,13 +35,19 @@ import { ReportCommentsService, type SubjectCommentJobData } from "../report-com
 export class SubjectCommentProcessor extends WorkerHost {
   private readonly logger = new Logger(SubjectCommentProcessor.name);
 
-  constructor(private readonly comments: ReportCommentsService) {
+  constructor(
+    private readonly comments: ReportCommentsService,
+    private readonly formComments: FormCommentsService,
+  ) {
     super();
   }
 
   async process(job: Job): Promise<unknown> {
     if (job.name === AI_JOB_SUBJECT_COMMENT) {
       return this.handleSubjectComment(job as Job<SubjectCommentJobData>);
+    }
+    if (job.name === AI_JOB_FORM_COMMENT) {
+      return this.handleFormComment(job as Job<FormCommentJobData>);
     }
     throw new Error(`unknown job name on ai queue: ${job.name}`);
   }
@@ -53,6 +60,16 @@ export class SubjectCommentProcessor extends WorkerHost {
       );
     }
     await this.comments.generateForStudent(d);
+  };
+
+  private readonly handleFormComment = async (job: Job<FormCommentJobData>): Promise<void> => {
+    const d = job.data;
+    if (!d?.schoolId || !d?.studentId || !d?.termId || !d?.classArmId || !d?.reportCardId) {
+      throw new Error(
+        `form-comment: job ${job.id ?? "(no id)"} missing tenancy/target data; refusing to run`,
+      );
+    }
+    await this.formComments.generateForStudent(d);
   };
 
   // A failed generation leaves the student without a suggestion, which the
