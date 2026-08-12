@@ -8,6 +8,7 @@ import { toast } from "sonner";
 
 import type { ReportCardBoardRowDto, ReportCardStatusDto } from "@school-kit/types";
 
+import { FormComments } from "@/components/report-cards/form-comments";
 import { PdfStatusBadge, WorkflowStatusBadge } from "@/components/report-cards/status-badges";
 import { ReopenModal } from "@/components/report-cards/reopen-modal";
 import { Button } from "@/components/ui/button";
@@ -502,6 +503,20 @@ export function ReportCardBoard({ basePath }: { basePath: string }) {
           )}
         </>
       )}
+
+      {/* Phase 5 / Slice 4. Below the board deliberately: the comment
+          interprets the results and statuses shown above it, and the form
+          teacher is already on this screen when comments are due. Accepting
+          goes through the same PATCH the board's own workflow uses, so the
+          board is refreshed afterwards rather than holding a stale card. */}
+      {ready && rows.length > 0 ? (
+        <FormComments
+          termId={ready.termId}
+          classArmId={armId}
+          rows={rows}
+          onAccepted={() => void refreshRows(ready.termId)}
+        />
+      ) : null}
 
       <ReopenModal open={reopenOpen} onClose={() => setReopenOpen(false)} onSubmit={onReopen} />
     </div>

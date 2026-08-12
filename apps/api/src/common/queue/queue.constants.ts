@@ -26,3 +26,10 @@ export const REPORT_CARDS_JOB_RENDER = "render";
 // to compensate would break the memory gate that number exists to protect.
 export const AI_QUEUE = "ai";
 export const AI_JOB_SUBJECT_COMMENT = "subject-comment";
+// Slice 4 — the form teacher's whole-child comment. A second job NAME on the
+// same queue, not a second queue and not a second @Processor: @nestjs/bullmq
+// spawns one Worker per @Processor class, so a second class here would
+// load-balance AI jobs across competing workers. Job-name dispatch is the
+// pattern ImportsProcessor already established for one queue carrying several
+// job kinds.
+export const AI_JOB_FORM_COMMENT = "form-comment";

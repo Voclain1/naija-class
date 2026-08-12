@@ -16,6 +16,7 @@ import {
 import type { AuthContext } from "../../../common/auth/auth-context";
 import { assertUserActiveAndHasOneOf } from "../../../common/auth/role-check";
 import { REPORT_CARD_SELECT, ReportCardService, toReportCardDto } from "../report-card.service";
+import { assertOwnerAdminOrFormTeacher } from "./form-teacher-guard";
 import { assertNoReleasedCards } from "./released-guard";
 import { isArmFullySignedOff } from "./subject-reviewed-cascade";
 import { assertAllInState, distinctStatuses } from "./transitions";
@@ -352,27 +353,15 @@ export class ReportCardWorkflowService {
   // owner/admin manage any arm; a teacher only the arm they FORM-teach. A
   // stranger teacher gets 404 (mirrors ReportCardService.assertCanReadArm — we
   // don't reveal arms outside the caller's scope).
+  // Moved to ./form-teacher-guard.ts in Phase 5 slice 4 so the AI form-comment
+  // generator enforces the identical rule instead of a second copy. Kept as a
+  // thin private wrapper: every call site in this service reads unchanged.
   private async assertOwnerAdminOrFormTeacher(
     db: TenantDb,
     authCtx: AuthContext,
     classArmId: string,
   ): Promise<void> {
-    const arm = await db.classArm.findUnique({
-      where: { id: classArmId },
-      select: { id: true, classTeacherId: true },
-    });
-    if (!arm) throw new NotFoundError("Class arm not found.");
-
-    const roleKeys = (
-      await db.userRole.findMany({
-        where: { userId: authCtx.userId },
-        select: { role: { select: { key: true } } },
-      })
-    ).map((g) => g.role.key);
-
-    if (roleKeys.includes("owner") || roleKeys.includes("admin")) return;
-    if (roleKeys.includes("teacher") && arm.classTeacherId === authCtx.userId) return;
-    throw new NotFoundError("Class arm not found.");
+    return assertOwnerAdminOrFormTeacher(db, authCtx, classArmId);
   }
 
   private async writeAudit(
