@@ -80,9 +80,29 @@ export class UnauthorizedError extends BaseError {
   }
 }
 
+// Two constructor shapes, identical to UnauthorizedError directly above.
+// One-arg `(message, details?)` keeps code "FORBIDDEN" — every pre-Phase-5
+// call site uses this form and is unaffected. Two-arg `(subCode, message,
+// details?)` carries a stable sub-code so a client can branch without parsing
+// the message, the same reason ConflictError and GoneError carry one.
+//
+// Added in Phase 5 / Slice 1 CP2: the AI surface has three distinct
+// "unavailable" reasons — AI_DISABLED_PLATFORM, AI_DISABLED_SCHOOL and
+// AI_NOT_CONFIGURED — which a UI must tell apart (one is a per-school toggle
+// an admin can flip, one is a deployment-level fact they cannot). Collapsing
+// them into a bare "FORBIDDEN" would force message-string parsing.
 export class ForbiddenError extends BaseError {
-  readonly code = "FORBIDDEN";
   readonly httpStatus = 403;
+  readonly code: string;
+  constructor(codeOrMessage: string, message?: string, details?: unknown) {
+    if (message === undefined) {
+      super(codeOrMessage, details);
+      this.code = "FORBIDDEN";
+    } else {
+      super(message, details);
+      this.code = codeOrMessage;
+    }
+  }
 }
 
 export class NotFoundError extends BaseError {

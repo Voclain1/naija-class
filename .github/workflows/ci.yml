@@ -129,7 +129,15 @@ jobs:
           WEB_BASE_URL=http://localhost:3001
           PORTAL_BASE_URL=http://localhost:3002
           NEXT_PUBLIC_API_URL=http://localhost:4000/api/v1
-          ANTHROPIC_API_KEY=sk-ant-not-used-in-ci
+          # MUST contain the literal "placeholder": that substring is how
+          # AiGenerationService and the live-generation eval both decide a key
+          # is not real (apps/api/src/common/ai/ai-generation.service.ts).
+          # With any other value CI reports AI as CONFIGURED and builds a real
+          # Anthropic client around a bogus key — which is what broke
+          # ai.module.spec.ts on PR #158, and would send a live request the
+          # first time a CI test touches a generate path. Matches the value
+          # deploy-staging.yml already uses.
+          ANTHROPIC_API_KEY=sk-ant-placeholder-not-used-in-ci
           PAYSTACK_SECRET_KEY=sk_test_not_used_in_ci
           PAYSTACK_PUBLIC_KEY=pk_test_not_used_in_ci
           TERMII_API_KEY=not-used-in-ci
@@ -278,7 +286,15 @@ jobs:
           WEB_BASE_URL=http://localhost:3001
           PORTAL_BASE_URL=http://localhost:3002
           NEXT_PUBLIC_API_URL=http://localhost:4000/api/v1
-          ANTHROPIC_API_KEY=sk-ant-not-used-in-ci
+          # MUST contain the literal "placeholder": that substring is how
+          # AiGenerationService and the live-generation eval both decide a key
+          # is not real (apps/api/src/common/ai/ai-generation.service.ts).
+          # With any other value CI reports AI as CONFIGURED and builds a real
+          # Anthropic client around a bogus key — which is what broke
+          # ai.module.spec.ts on PR #158, and would send a live request the
+          # first time a CI test touches a generate path. Matches the value
+          # deploy-staging.yml already uses.
+          ANTHROPIC_API_KEY=sk-ant-placeholder-not-used-in-ci
           PAYSTACK_SECRET_KEY=sk_test_not_used_in_ci
           PAYSTACK_PUBLIC_KEY=pk_test_not_used_in_ci
           TERMII_API_KEY=not-used-in-ci

@@ -3054,3 +3054,232 @@ describe("multi-tenant isolation — Phase 4 / Slice 6 (notification_preferences
     expect(rows).toHaveLength(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Phase 5 / Slice 1 CP2 isolation — ai_generations, ai_budget_periods
+//
+// Both tables carry their own school_id, so the policy is the cheap flat
+// direct-column check (see packages/db/prisma/policies/phase-5.sql).
+//
+// RLS on ai_generations is doing more than tidiness here: the per-school
+// monthly budget is derived from tenant-scoped rows, so a tenancy leak on this
+// table would be a BILLING leak as well as a privacy one — school A's spend
+// could consume school B's cap. ai_budget_periods is the counter that gates
+// every AI call, so the same argument applies with the sign reversed: a leak
+// there lets one school's exhaustion block another's.
+// ---------------------------------------------------------------------------
+describe("multi-tenant isolation (Phase 5 slice 1 — AI ledger + budget)", () => {
+  const runId = Math.random().toString(36).slice(2, 8);
+  let schoolA: { id: string };
+  let schoolB: { id: string };
+  let genA: { id: string };
+  let genB: { id: string };
+
+  beforeAll(async () => {
+    schoolA = await basePrisma.school.create({
+      data: { name: "AI Gen A", slug: `rls-aigen-a-${runId}` },
+      select: { id: true },
+    });
+    schoolB = await basePrisma.school.create({
+      data: { name: "AI Gen B", slug: `rls-aigen-b-${runId}` },
+      select: { id: true },
+    });
+
+    const row = (schoolId: string) => ({
+      schoolId,
+      model: "claude-haiku-4-5",
+      promptName: `rls-${runId}`,
+      promptVersion: "1",
+      inputTokens: 10,
+      outputTokens: 5,
+      latencyMs: 1,
+      costMicroUsd: 35,
+      pricedAtVersion: "2026-08-10",
+      success: true,
+    });
+
+    genA = await withTenant(schoolA.id, (db) =>
+      db.aIGeneration.create({ data: row(schoolA.id), select: { id: true } }),
+    );
+    genB = await withTenant(schoolB.id, (db) =>
+      db.aIGeneration.create({ data: row(schoolB.id), select: { id: true } }),
+    );
+
+    const periodStart = new Date(Date.UTC(2026, 0, 1));
+    await withTenant(schoolA.id, (db) =>
+      db.aIBudgetPeriod.create({ data: { schoolId: schoolA.id, periodStart } }),
+    );
+    await withTenant(schoolB.id, (db) =>
+      db.aIBudgetPeriod.create({ data: { schoolId: schoolB.id, periodStart } }),
+    );
+  });
+
+  afterAll(async () => {
+    for (const s of [schoolA, schoolB]) {
+      if (!s?.id) continue;
+      await withTenant(s.id, async (db) => {
+        await db.aIGeneration.deleteMany({ where: { schoolId: s.id } });
+        await db.aIBudgetPeriod.deleteMany({ where: { schoolId: s.id } });
+      });
+      await basePrisma.school.delete({ where: { id: s.id } }).catch(() => undefined);
+    }
+  });
+
+  it("School A sees its own ai_generations only", async () => {
+    const rows = await withTenant(schoolA.id, (db) =>
+      db.aIGeneration.findMany({ where: { promptName: `rls-${runId}` } }),
+    );
+    const ids = rows.map((r) => r.id);
+    expect(ids).toContain(genA.id);
+    expect(ids).not.toContain(genB.id);
+  });
+
+  it("findUnique across tenants returns null for ai_generations", async () => {
+    const leak = await withTenant(schoolA.id, (db) =>
+      db.aIGeneration.findUnique({ where: { id: genB.id } }),
+    );
+    expect(leak).toBeNull();
+  });
+
+  it("INSERT into ai_generations with another school's school_id fails WITH CHECK", async () => {
+    await expect(
+      withTenant(schoolA.id, (db) =>
+        db.aIGeneration.create({
+          data: {
+            schoolId: schoolB.id,
+            model: "claude-haiku-4-5",
+            promptName: `bad-${runId}`,
+            promptVersion: "1",
+            inputTokens: 1,
+            outputTokens: 1,
+            latencyMs: 1,
+            costMicroUsd: 1,
+            pricedAtVersion: "2026-08-10",
+            success: true,
+          },
+        }),
+      ),
+    ).rejects.toThrow();
+  });
+
+  it("School A sees its own ai_budget_periods only", async () => {
+    const rows = await withTenant(schoolA.id, (db) => db.aIBudgetPeriod.findMany({}));
+    expect(rows.every((r) => r.schoolId === schoolA.id)).toBe(true);
+    expect(rows.some((r) => r.schoolId === schoolB.id)).toBe(false);
+  });
+
+  it("INSERT into ai_budget_periods with another school's school_id fails WITH CHECK", async () => {
+    await expect(
+      withTenant(schoolA.id, (db) =>
+        db.aIBudgetPeriod.create({
+          data: { schoolId: schoolB.id, periodStart: new Date(Date.UTC(2026, 5, 1)) },
+        }),
+      ),
+    ).rejects.toThrow();
+  });
+
+  it("raw SQL with unset GUC returns zero rows from both tables (FORCE RLS)", async () => {
+    const gens = await basePrisma.$transaction((tx) =>
+      tx.$queryRaw<Array<{ id: string }>>`
+        SELECT id FROM ai_generations WHERE prompt_name = ${`rls-${runId}`}
+      `,
+    );
+    expect(gens).toHaveLength(0);
+
+    const periods = await basePrisma.$transaction((tx) =>
+      tx.$queryRaw<Array<{ id: string }>>`
+        SELECT id FROM ai_budget_periods WHERE school_id IN (${schoolA.id}, ${schoolB.id})
+      `,
+    );
+    expect(periods).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 5 / Slice 2 isolation — lesson_plans
+// ---------------------------------------------------------------------------
+describe("multi-tenant isolation (Phase 5 slice 2 — lesson plans)", () => {
+  const runId = Math.random().toString(36).slice(2, 8);
+  let schoolA: { id: string };
+  let schoolB: { id: string };
+  let planA: { id: string };
+  let planB: { id: string };
+
+  async function seed(name: string, slug: string) {
+    const school = await basePrisma.school.create({ data: { name, slug }, select: { id: true } });
+    const plan = await withTenant(school.id, async (db) => {
+      const level = await db.classLevel.create({
+        data: { schoolId: school.id, name: "JSS 1", code: `j1-${slug}`, stage: "JSS", orderIndex: 1 },
+        select: { id: true },
+      });
+      const subject = await db.subject.create({
+        data: { schoolId: school.id, name: "Maths", code: `mth-${slug}` },
+        select: { id: true },
+      });
+      return db.lessonPlan.create({
+        data: {
+          schoolId: school.id,
+          createdBy: `user-${slug}`,
+          classLevelId: level.id,
+          subjectId: subject.id,
+          topic: `lp-${runId}`,
+        },
+        select: { id: true },
+      });
+    });
+    return { school, plan };
+  }
+
+  beforeAll(async () => {
+    const a = await seed("LP RLS A", `lp-rls-a-${runId}`);
+    const b = await seed("LP RLS B", `lp-rls-b-${runId}`);
+    schoolA = a.school;
+    planA = a.plan;
+    schoolB = b.school;
+    planB = b.plan;
+  });
+
+  afterAll(async () => {
+    for (const s of [schoolA, schoolB]) {
+      if (s?.id) await basePrisma.school.delete({ where: { id: s.id } }).catch(() => undefined);
+    }
+  });
+
+  it("School A sees its own lesson plans only", async () => {
+    const rows = await withTenant(schoolA.id, (db) =>
+      db.lessonPlan.findMany({ where: { topic: `lp-${runId}` } }),
+    );
+    const ids = rows.map((r) => r.id);
+    expect(ids).toContain(planA.id);
+    expect(ids).not.toContain(planB.id);
+  });
+
+  it("findUnique across tenants returns null", async () => {
+    const leak = await withTenant(schoolA.id, (db) =>
+      db.lessonPlan.findUnique({ where: { id: planB.id } }),
+    );
+    expect(leak).toBeNull();
+  });
+
+  it("UPDATE cannot reach another school's lesson plan", async () => {
+    const affected = await withTenant(schoolA.id, (db) =>
+      db.lessonPlan.updateMany({ where: { id: planB.id }, data: { topic: "hijacked" } }),
+    );
+    // RLS makes the row invisible, so the update matches nothing rather than
+    // erroring — the row must be untouched.
+    expect(affected.count).toBe(0);
+    const stillOk = await withTenant(schoolB.id, (db) =>
+      db.lessonPlan.findUnique({ where: { id: planB.id }, select: { topic: true } }),
+    );
+    expect(stillOk?.topic).toBe(`lp-${runId}`);
+  });
+
+  it("raw SQL with unset GUC returns zero rows from lesson_plans (FORCE RLS)", async () => {
+    const rows = await basePrisma.$transaction((tx) =>
+      tx.$queryRaw<Array<{ id: string }>>`
+        SELECT id FROM lesson_plans WHERE topic = ${`lp-${runId}`}
+      `,
+    );
+    expect(rows).toHaveLength(0);
+  });
+});

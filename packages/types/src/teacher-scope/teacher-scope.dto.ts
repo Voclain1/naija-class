@@ -15,6 +15,23 @@ export interface TeacherScopeArmDto {
   id: string;
   name: string;
   code: string;
+  // The arm's class LEVEL (Phase 5 / Slice 2). Curriculum lives at the level,
+  // not the arm — a JSS 2 lesson plan serves JSS 2 A and JSS 2 B alike — so
+  // the lesson-plan generator needs a classLevelId, and an arm id would be
+  // the wrong grain to model against.
+  //
+  // Carried here rather than by relaxing GET /class-levels, which is
+  // owner|admin at the service layer by the Q3a decision recorded at the top
+  // of this file ("teachers hit ONLY /teacher-scope/*"). Exactly the same
+  // reasoning, and the same resolution, as `currentTerm` below: a teacher
+  // surface needed an id it could not otherwise obtain, so it rides on the
+  // one-stop scope endpoint instead of adding a permission or a route.
+  //
+  // Not sensitive, by the same argument the file header already makes for
+  // arm/subject names: these are class-level identifiers every admin endpoint
+  // exposes, not student PII.
+  classLevelId: string;
+  classLevelName: string;
 }
 
 // A subject the teacher teaches in a given arm — same id + display fields.

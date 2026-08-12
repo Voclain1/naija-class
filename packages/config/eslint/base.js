@@ -23,6 +23,34 @@
 import tseslint from "typescript-eslint";
 import unusedImports from "eslint-plugin-unused-imports";
 
+// Two independent import bans share the single `no-restricted-imports` rule
+// key. They are declared as named constants because ESLint flat config has no
+// way to express "two separate instances of the same rule" — a later `files:`
+// block replaces the rule wholesale. So each allowlist block below has to
+// RE-ASSERT the ban it is NOT exempting, rather than switching the rule off.
+// Getting that wrong is silent: the exempted files simply stop being checked
+// for the other restriction too.
+
+const BASE_PRISMA_RESTRICTION = {
+  name: "@school-kit/db",
+  importNames: ["basePrisma"],
+  message:
+    "Use withTenant(schoolId, db => ...) for tenant-scoped access. basePrisma bypasses RLS — see CLAUDE.md 'Multi-tenancy' hard rules.",
+};
+
+// Phase 5 / Slice 1 CP2. CLAUDE.md's AI hard rules require that EVERY call to
+// messages.create logs to ai_generations and passes a per-school budget check
+// BEFORE the call. Both guarantees live in AiGenerationService, which is the
+// only consumer of packages/ai's AnthropicPort. If any module could construct
+// its own Anthropic client, those rules would be a convention rather than a
+// guarantee — exactly the failure this project already fixed once for
+// basePrisma/RLS. Same shape, same reasoning: make bypass a CI failure.
+const ANTHROPIC_SDK_RESTRICTION = {
+  name: "@anthropic-ai/sdk",
+  message:
+    "Do not construct an Anthropic client directly. Call AiGenerationService (apps/api/src/common/ai), which enforces the per-school token budget BEFORE the call and writes the required ai_generations ledger row after it — see CLAUDE.md 'AI' hard rules. The only permitted importer is packages/ai/src/client.ts.",
+};
+
 export const baseConfig = [
   ...tseslint.configs.recommended,
   {
@@ -70,16 +98,7 @@ export const baseConfig = [
       // be a CI failure, not a runtime hope.
       "no-restricted-imports": [
         "error",
-        {
-          paths: [
-            {
-              name: "@school-kit/db",
-              importNames: ["basePrisma"],
-              message:
-                "Use withTenant(schoolId, db => ...) for tenant-scoped access. basePrisma bypasses RLS — see CLAUDE.md 'Multi-tenancy' hard rules.",
-            },
-          ],
-        },
+        { paths: [BASE_PRISMA_RESTRICTION, ANTHROPIC_SDK_RESTRICTION] },
       ],
     },
   },
@@ -176,7 +195,34 @@ export const baseConfig = [
       "**/modules/platform-admin/platform-admin.service.ts",
     ],
     rules: {
-      "no-restricted-imports": "off",
+      // Exempts basePrisma ONLY. The Anthropic ban is deliberately re-asserted
+      // rather than dropped: nothing in this allowlist (auth guards, pre-tenant
+      // services, and — importantly — every *.spec.ts) has any business
+      // constructing an Anthropic client. Specs in particular must use the
+      // injected fake AnthropicPort, not the real SDK; a test that reaches the
+      // live API would burn real tokens and depend on a network call.
+      "no-restricted-imports": ["error", { paths: [ANTHROPIC_SDK_RESTRICTION] }],
+    },
+  },
+
+  // ---------------------------------------------------------------------
+  // Anthropic SDK allowlist — exactly one file.
+  //
+  // packages/ai/src/client.ts is the seam: it wraps the SDK behind the narrow
+  // AnthropicPort interface that AiGenerationService depends on. Adding a
+  // second entry to this list means someone can call Claude without a budget
+  // check or a ledger row, which violates two CLAUDE.md AI hard rules at once.
+  // There is no legitimate second importer — if a caller needs different
+  // request options (streaming, thinking, tools), widen AnthropicPort instead.
+  //
+  // Must come AFTER the basePrisma allowlist block above so it wins for this
+  // path; flat config resolves later blocks last.
+  // ---------------------------------------------------------------------
+  {
+    files: ["**/packages/ai/src/client.ts", "**/ai/src/client.ts"],
+    rules: {
+      // Exempts the Anthropic SDK ONLY — basePrisma stays banned here.
+      "no-restricted-imports": ["error", { paths: [BASE_PRISMA_RESTRICTION] }],
     },
   },
 ];

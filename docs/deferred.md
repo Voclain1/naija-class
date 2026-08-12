@@ -346,6 +346,44 @@ Format:
   partitioning precedent from Phase 3 Slice 3 may be the template).
   Trigger: first Phase 5 slice that writes an LLM call.
 
+## Phase 5 — `ai:eval` has no content-quality coverage (logged 2026-08-11)
+- [ ] `pnpm ai:eval` became a real gate in Slice 2 (it was
+  `echo 'eval placeholder'` — exit 0, asserting nothing — from Phase 0 until
+  then). It now runs 42 checks and fails the build on exit code. But every
+  one of those checks is **structural**, and the distinction matters more
+  than the number does:
+    * **PII safety (7)** and **prompt quality (13)** inspect *inputs* — the
+      rendered prompt string, and the system-prompt text we authored.
+    * **Registry + schema integrity (22)** inspects schema definitions and
+      registry metadata. It never sees a prompt, let alone a response.
+    * **`live-generation`** is the only suite that would inspect model
+      output — and **it has never executed once**, because no
+      `ANTHROPIC_API_KEY` has ever been configured (placeholder locally,
+      absent from Fly as of 2026-08-11).
+
+  So the suite proves the plumbing, the schema, and that no student PII can
+  reach the model through a renderer. It proves **nothing** about whether
+  generated content is on-topic, age-appropriate for the stated class level,
+  or pedagogically coherent. A model producing fluent, well-structured
+  nonsense passes all 42 checks.
+
+  Even once a key lands, `live-generation` is deliberately shape-and-floor
+  rather than judgement: not a refusal, not truncated, parses as JSON, each
+  section over 80 chars, and a regex for Nigerian localisation markers. That
+  catches a section coming back as a one-line stub, or the grounding
+  instruction being ignored wholesale. It cannot grade quality.
+
+  Closing this needs one of: golden reference outputs plus an LLM-judge
+  scoring rubric conformance, or a human review pass over a fixed fixture
+  set at each prompt-version bump. Both are real eval-design work with their
+  own decisions (who writes the references, what the rubric measures, what
+  score gates a merge) and neither belongs bolted onto a feature slice.
+
+  **Trigger: when `ANTHROPIC_API_KEY` is first configured and
+  `live-generation` actually runs.** That is the first moment anyone will
+  have seen real output from these prompts, and the right time to decide
+  what grading it deserves.
+
 ## Roadmap / strategy — REVISIT with live market research (not decided)
 - [ ] CBT / online exams (JAMB/WAEC/UTME prep) — competitors lead with
   this. Decide in/defer based on pilot-school demand + current market.
@@ -946,7 +984,17 @@ not a commitment to that phase's exact shape or timing.
 - [ ] Lesson notes and lesson plans — ARCHITECTURE.md §6.5 (Academic
   management, Phase 2 per §9) already names both explicitly ("Weekly lesson
   plans with learning objectives," "Lesson notes (delivered content)"), plus
-  an AI hook in §7 ("generate lesson plan from a topic"). Nothing built yet.
+  an AI hook in §7 ("generate lesson plan from a topic").
+  **Partly built as of Phase 5 / Slice 2 (2026-08-12)** — §7's AI hook
+  shipped: `POST /lesson-plans` generates the five sections from a free-text
+  topic, plus `/teacher/lesson-plans` for generate/edit/quiz/print. What
+  remains of this entry is the rest of §6.5, none of which Slice 2 touched:
+  **lesson notes (delivered content)** as a distinct entity, and the
+  **weekly/scheme-of-work** framing — a Slice 2 plan is a standalone
+  one-off keyed to a free-text topic, with no week, no sequence, and no
+  curriculum taxonomy behind it (D13). Whether those become a Phase 2
+  academic feature or an extension of `lesson_plans` is still unscoped, so
+  this stays on the wishlist rather than being ticked.
 
 - [ ] Student profiles (badges, achievements, milestones) — not named
   anywhere in ARCHITECTURE.md. Closest existing concepts are the plain

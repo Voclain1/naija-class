@@ -9,6 +9,8 @@ import {
   PHASE_3_OWNER_ONLY_PERMISSIONS,
   PHASE_3_PERMISSIONS,
   PHASE_4_PERMISSIONS,
+  PHASE_5_PERMISSIONS,
+  PHASE_5_TEACHER_PERMISSIONS,
 } from "@school-kit/types";
 import { describe, expect, it } from "vitest";
 
@@ -49,6 +51,7 @@ import { BvnController } from "../modules/users/bvn.controller";
 import { UsersController } from "../modules/users/users.controller";
 import { PortalAuthController } from "../modules/portal-auth/portal-auth.controller";
 import { NotificationPreferencesController } from "../modules/notifications/notification-preferences.controller";
+import { LessonPlansController } from "../modules/lesson-plans/lesson-plans.controller";
 
 // Static RBAC safety net (slice 13). Every route handler on a Phase 1
 // controller MUST declare @Permissions — the PermissionsGuard fails closed,
@@ -950,5 +953,53 @@ describe("Phase 4 RBAC close-out: seeded role grants", () => {
     expect(unaccounted, `permission(s) excluded from bursar with no recorded reason: ${unaccounted.join(", ")}`).toEqual(
       [],
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 5 / Slice 2 RBAC coverage — lesson plans.
+//
+// The Phase 5 rollup: PHASE_5_PERMISSIONS graduated from REFERENCE-ONLY (slice
+// 1 CP2 shipped no HTTP surface) to spread-into-ALL_PERMISSIONS + seeded +
+// guarded, here.
+// ---------------------------------------------------------------------------
+describe("Phase 5 RBAC coverage: lesson-plan route handlers declare @Permissions", () => {
+  const known = new Set<string>(PHASE_5_PERMISSIONS);
+
+  it("LessonPlansController has route handlers", () => {
+    expect(routeHandlers(LessonPlansController).length).toBeGreaterThan(0);
+  });
+
+  it("every handler carries a non-empty @Permissions", () => {
+    // One permission value per handler at minimum: PermissionsGuard fails
+    // closed, so a forgotten decorator 403s at runtime instead of here.
+    expect(handlerPermissions(LessonPlansController).length).toBeGreaterThanOrEqual(
+      routeHandlers(LessonPlansController).length,
+    );
+  });
+
+  it("every declared permission value is a known Phase 5 permission", () => {
+    const unknown = handlerPermissions(LessonPlansController).filter((p) => !known.has(p));
+    expect(unknown, `unknown Phase 5 permission(s): ${unknown.join(", ")}`).toEqual([]);
+  });
+});
+
+describe("Phase 5 RBAC coverage: seeded role grants match the spec", () => {
+  it("admin grants every Phase 5 permission", () => {
+    const adminPerms = new Set(roleSeed("admin").permissions);
+    for (const p of PHASE_5_PERMISSIONS) {
+      expect(adminPerms.has(p), `admin should have ${p}`).toBe(true);
+    }
+  });
+
+  it("teacher grants exactly the documented lesson-plan subset", () => {
+    const teacherPerms = new Set(roleSeed("teacher").permissions);
+    for (const p of PHASE_5_TEACHER_PERMISSIONS) {
+      expect(teacherPerms.has(p), `teacher should have ${p}`).toBe(true);
+    }
+    // ai-usage.read exposes school-level AI spend — operator information, not
+    // teaching workflow. If a future slice grants it to teachers, that should
+    // be a deliberate decision that fails here first.
+    expect(teacherPerms.has("ai-usage.read"), "teacher should NOT have ai-usage.read").toBe(false);
   });
 });

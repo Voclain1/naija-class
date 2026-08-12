@@ -82,6 +82,34 @@ model School {
   // boolean (the extra information is free) and not an enum (naming the tiers
   // before they are decided just buys a migration later).
   earlyAccessGrantedAt DateTime? @map("early_access_granted_at")
+  // Phase 5 / Slice 1 CP2 — AI cost controls. Two deliberately separate knobs:
+  //
+  //   aiEnabled              per-school kill switch. Flipping it false stops
+  //                          every AI feature for that school WITHOUT a deploy
+  //                          — the point is that a runaway cost or a bad prompt
+  //                          can be stopped in seconds from platform-admin.
+  //                          Defaults TRUE: AI is a headline feature, and a
+  //                          school that never opts in would otherwise silently
+  //                          never see it. The platform-wide equivalent is the
+  //                          AI_ENABLED env var (see AiGenerationService).
+  //
+  //   aiMonthlyTokenBudget   per-school monthly cap, in TOKENS not cost.
+  //                          Nullable = "use the platform default constant"
+  //                          (DEFAULT_MONTHLY_TOKEN_BUDGET), so the common case
+  //                          needs no per-school row edit and the default can be
+  //                          re-tuned in one place. Enforced in tokens rather
+  //                          than money on purpose: tokens are ground truth from
+  //                          the API response, whereas cost is derived from a
+  //                          price table that changes underneath us — see
+  //                          docs/modules/phase-5.md D3.
+  //
+  // Same flat per-school-toggle shape as subjectAttendanceEnabled /
+  // paystackPaymentsEnabled above. Deliberately NOT a plan/tier/subscription
+  // concept — none exists anywhere in the product code (see
+  // earlyAccessGrantedAt's note directly above), and inventing one to hold an
+  // AI budget would be the tail wagging the dog.
+  aiEnabled            Boolean   @default(true) @map("ai_enabled")
+  aiMonthlyTokenBudget Int?      @map("ai_monthly_token_budget")
   createdAt      DateTime     @default(now()) @map("created_at")
   updatedAt      DateTime     @updatedAt @map("updated_at")
 
@@ -376,6 +404,7 @@ model ClassLevel {
   // Phase 1 / Slice 3 back-relations.
   arms          ClassArm[]
   classSubjects ClassSubject[]
+  lessonPlans   LessonPlan[] // Phase 5 / Slice 2 back-relation.
 
   @@unique([schoolId, code])
   @@index([schoolId])
@@ -439,6 +468,7 @@ model Subject {
 
   classSubjects      ClassSubject[]
   teacherAssignments TeacherAssignment[] // Phase 1 / Slice 11 back-relation.
+  lessonPlans        LessonPlan[] // Phase 5 / Slice 2 back-relation.
 
   @@unique([schoolId, code])
   @@index([schoolId])
@@ -1047,12 +1077,215 @@ model AIInteractionLog {
   payload    Json // raw envelope; structure owned by Phase 5; MUST stay PII-free
   createdAt  DateTime @default(now()) @map("created_at")
 
-  student Student? @relation(fields: [studentId], references: [id], onDelete: SetNull)
+  student     Student?       @relation(fields: [studentId], references: [id], onDelete: SetNull)
+  generations AIGeneration[]
 
   @@index([schoolId])
   @@index([schoolId, createdAt])
   @@index([studentId])
   @@map("ai_interaction_logs")
+}
+
+// ---------- Phase 5 / Slice 1 CP2 — AI cost + compliance ledger ----------
+//
+// `ai_generations` is the per-call cost/compliance ledger CLAUDE.md's AI hard
+// rule mandates: "Every call to claudeClient.messages.create must log to the
+// ai_generations table: model, prompt name + version, input/output tokens,
+// latency, cost estimate, success/error."
+//
+// It is a DIFFERENT TABLE from AIInteractionLog, not a rename (resolved
+// 2026-07-26 — see CLAUDE.md's AI hard-rules section and docs/deferred.md).
+// AIInteractionLog is a session/interaction CONTENT record (loose `payload`
+// JSON, nullable studentId, sessionRef grouping). This is a flat, typed,
+// cheaply-aggregable row per underlying LLM call, shaped for the budget query.
+// One tutor session (one AIInteractionLog group) spans many rows here, which
+// is why interactionLogId is a nullable many-to-one back to it and not a 1:1.
+//
+// DELIBERATELY OMITTED: prompt text and completion text. They live in
+// AIInteractionLog.payload. ARCHITECTURE.md §5 currently describes this table
+// as logging "prompt, output" — that line is stale and is corrected as part of
+// this phase; a cost ledger that holds conversation content would both bloat
+// the aggregate query and duplicate the PII surface the AI hard rules exist to
+// keep narrow.
+//
+// COST UNIT — costMicroUsd is integer MICRO-US-DOLLARS, not kobo. This is a
+// deliberate, documented carve-out from CLAUDE.md's Money hard rule ("money is
+// Int kobo"), locked in docs/modules/phase-5.md D2. The Money rule exists so
+// that naira a school TRANSACTS never suffers float drift or display ambiguity
+// — fees, invoices, payments, refunds, payroll. This column is vendor-cost
+// telemetry: the school never sees it, no invoice references it, no
+// FinanceService path touches it, and no audit row depends on it. Converting
+// USD→kobo at write time would need an FX-rate source that does not exist in
+// this repo, plus a rounding policy, and would make the stored value
+// un-interpretable later (you cannot recover the USD figure without also
+// storing the rate — at which point you have stored USD with extra steps and a
+// permanent naira-devaluation artifact in the historical series). The rule's
+// actual intent — integers, never Float — is fully preserved. Int max is
+// ~2.1e9 µUSD ≈ $2,147 per row, three orders of magnitude above any single
+// generation. If AI cost is ever billed back to schools, FX conversion happens
+// at BILLING time with the rate recorded then, which is the only correct place
+// for it anyway.
+//
+// pricedAtVersion tags which price table produced costMicroUsd, so a pricing
+// change is re-derivable rather than silently mixing units across time.
+model AIGeneration {
+  id               String   @id @default(uuid())
+  schoolId         String   @map("school_id")
+  // Nullable: not every call is session-scoped (a one-shot lesson-plan
+  // generation has no conversation to group under). SetNull rather than
+  // Cascade — the cost ledger must survive content deletion, since it is the
+  // record that money was spent.
+  interactionLogId String?  @map("interaction_log_id")
+  // Nullable: system/cron-driven calls (weekly parent summaries) have no
+  // acting user. Populated for user-initiated calls so the per-user daily
+  // rate limit can count against it.
+  userId           String?  @map("user_id")
+  model            String
+  promptName       String   @map("prompt_name")
+  // Plain String, NOT an enum and NOT a FK to a prompt table. This is a
+  // historical record: it must be able to hold "report-card-subject-comment@3"
+  // forever, including after v3 is deleted from the registry in packages/ai.
+  // Enum-ing it would mean a migration per prompt version. Compile-time safety
+  // lives at the CALL SITE via the typed registry instead — see
+  // docs/modules/phase-5.md D8.
+  promptVersion    String   @map("prompt_version")
+  inputTokens      Int      @map("input_tokens")
+  outputTokens     Int      @map("output_tokens")
+  latencyMs        Int      @map("latency_ms")
+  costMicroUsd     Int      @map("cost_micro_usd")
+  pricedAtVersion  String   @map("priced_at_version")
+  success          Boolean
+  // Redacted before write — no secrets, no PII, no raw prompt echo.
+  errorMessage     String?  @map("error_message")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  interactionLog AIInteractionLog? @relation(fields: [interactionLogId], references: [id], onDelete: SetNull)
+
+  @@index([schoolId])
+  @@index([schoolId, createdAt])
+  // Serves the per-user daily rate-limit count in the reserve transaction.
+  @@index([schoolId, userId, createdAt])
+  @@map("ai_generations")
+}
+
+// Per-school monthly budget counter.
+//
+// WHY A COUNTER TABLE AND NOT `SUM(input_tokens + output_tokens)` OVER
+// ai_generations — three independent reasons, any one of which is sufficient
+// (docs/modules/phase-5.md D4):
+//   1. It is a growing-table aggregate on the hot path of EVERY AI call, on a
+//      database where ~2s authenticated latency is already normal.
+//   2. It would couple the budget to retention: any future pruning of
+//      ai_generations would silently reset every school's spend to zero.
+//   3. It cannot express a RESERVATION, and a pre-call budget check is
+//      fundamentally a reservation — the hard rule says the budget is
+//      "enforced before the call, not after", but the true token count is only
+//      known after.
+//
+// tokensReserved is the enforcement column (pessimistic: input estimate +
+// max_tokens). tokensActual is the truth, written at settle. The two converge
+// as calls settle; tokensReserved is always >= tokensActual.
+//
+// Carries its own school_id → flat direct-column RLS, the same cheap pattern as
+// notification_preferences and the two Phase 1 AI tables. No SECURITY DEFINER
+// function is needed (no pre-tenant access, every touch is inside withTenant),
+// so the inventory count stays at 16.
+model AIBudgetPeriod {
+  id       String @id @default(uuid())
+  schoolId String @map("school_id")
+  // First day of the UTC month this row counts. @db.Date, not DateTime: this
+  // is a calendar boundary, not a moment — same convention as academic-year /
+  // term dates (CLAUDE.md "Prisma column types in raw SQL").
+  periodStart    DateTime @map("period_start") @db.Date
+  tokensReserved Int      @default(0) @map("tokens_reserved")
+  tokensActual   Int      @default(0) @map("tokens_actual")
+  costMicroUsd   Int      @default(0) @map("cost_micro_usd")
+  callCount      Int      @default(0) @map("call_count")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  @@unique([schoolId, periodStart])
+  @@index([schoolId])
+  @@map("ai_budget_periods")
+}
+
+// ---------- Phase 5 / Slice 2 — Lesson plan generator ----------
+//
+// The first AI FEATURE, and deliberately the first one: it is the only one of
+// ARCHITECTURE.md §7's five that has ZERO dependency on data a school has
+// already entered. A school can use it on its first day, before a single
+// assessment score exists — which is why it leads (phase-5.md slice order).
+//
+// TOPIC IS FREE TEXT. There is no Topic table, no syllabus tree, no taxonomy
+// (phase-5.md D13). A teacher types "Photosynthesis" the same way they type it
+// into Word today. Inventing a canonical Nigerian curriculum topic tree is a
+// data model PLUS a content-sourcing problem PLUS an admin UI, and it would
+// retroactively define the meaning of MasteryRecord.topicRef — which carries a
+// live @@unique constraint. That work happens only when something needs stable
+// topic IDENTITY: RAG, mastery tracking, or a question bank. All deferred.
+//
+// The five content columns mirror ARCHITECTURE.md §7's specified output shape
+// ("intro, main content, activities, assessment, homework"). They are separate
+// columns rather than one JSON blob for two reasons: the teacher edits and
+// regenerates them INDIVIDUALLY (a JSON blob makes a per-section update a
+// read-modify-write race between two open tabs), and a per-section NOT NULL
+// story is clearer than validating blob shape at the service layer.
+//
+// quiz is nullable and separate: quiz mode is an optional second generation
+// against the same lesson plan, and its output is structured TEXT, not a
+// Question bank. A real question bank with per-option rows is CBT territory
+// (see docs/deferred.md's CBT capability assessment) and is not this slice.
+enum LessonPlanStatus {
+  // Generated (or hand-started) and still the teacher's working copy.
+  DRAFT
+  // Teacher has accepted it. Not an approval GATE in the report-card sense —
+  // a lesson plan is the teacher's own working document, not a student-facing
+  // record, so CLAUDE.md's teacher-approval hard rule (grades, report
+  // comments, behaviour) does not apply. This is a "done editing" marker.
+  ACCEPTED
+}
+
+model LessonPlan {
+  id           String @id @default(uuid())
+  schoolId     String @map("school_id")
+  // The authoring teacher. Plain scoping column, not a declared relation —
+  // same convention as AIGeneration.userId; a lesson plan outlives a staff
+  // member's account for record-keeping.
+  createdBy    String @map("created_by")
+  classLevelId String @map("class_level_id")
+  subjectId    String @map("subject_id")
+
+  // Free text. Deliberately NOT a FK — see the header note above.
+  topic           String
+  objectives      String?
+  durationMinutes Int?    @map("duration_minutes")
+
+  status LessonPlanStatus @default(DRAFT)
+
+  // Generated content. All nullable: a row exists from the moment generation
+  // is requested, so a failed generation leaves an inspectable record rather
+  // than vanishing.
+  introduction String?
+  mainContent  String? @map("main_content")
+  activities   String?
+  assessment   String?
+  homework     String?
+  quiz         String?
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Cascade matches ClassSubject's convention directly above: deleting a
+  // subject or class level already cascades class_subjects, and a lesson plan
+  // scoped to a level/subject that no longer exists is not recoverable
+  // content — it has no valid curriculum context to be read in.
+  classLevel ClassLevel @relation(fields: [classLevelId], references: [id], onDelete: Cascade)
+  subject    Subject    @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+
+  @@index([schoolId])
+  @@index([schoolId, createdBy])
+  @@index([schoolId, classLevelId, subjectId])
+  @@map("lesson_plans")
 }
 
 // ---------- Phase 2 / Slice 1 — Grading configuration ----------

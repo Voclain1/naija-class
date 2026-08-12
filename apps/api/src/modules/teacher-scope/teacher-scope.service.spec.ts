@@ -232,10 +232,16 @@ describe("TeacherScope (cp2 security matrix)", () => {
     });
 
     const scope = await withTenant(schoolId, (db) => getTeacherScope(db, teacher));
-    // Enriched shape: arms carry { id, name, code }.
+    // Enriched shape: arms carry { id, name, code, classLevelId, classLevelName }.
     expect(scope.classArms.map((a) => a.id)).toEqual([arm]);
     expect(scope.classArms[0].name).toBeTruthy();
     expect(scope.classArms[0].code).toBeTruthy();
+    // Phase 5 / Slice 2: the lesson-plan generator needs a classLevelId, and
+    // GET /class-levels is owner|admin by the Q3a decision — so the level
+    // rides here. Asserted on the subject-assignment path AND the homeroom
+    // path below, because the two build the arm object separately.
+    expect(scope.classArms[0].classLevelId).toBeTruthy();
+    expect(scope.classArms[0].classLevelName).toBeTruthy();
     const subs = scope.subjectsByArm.get(arm);
     expect(subs?.map((s) => s.id)).toEqual([subject]);
     expect(subs?.[0].name).toBeTruthy();
@@ -251,6 +257,10 @@ describe("TeacherScope (cp2 security matrix)", () => {
     expect(scope.classArms.map((a) => a.id)).toEqual([arm]);
     expect(scope.classArms[0].name).toBeTruthy();
     expect(scope.classArms[0].code).toBeTruthy();
+    // Homeroom-only arms are built by a separate branch of the helper, so the
+    // class level is asserted here independently of the assignment path above.
+    expect(scope.classArms[0].classLevelId).toBeTruthy();
+    expect(scope.classArms[0].classLevelName).toBeTruthy();
     expect(scope.subjectsByArm.has(arm)).toBe(false);
   });
 
