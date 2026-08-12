@@ -16,6 +16,7 @@
 // here immediately, because the leaked value is not in the sentinel set.
 
 import { renderLessonPlanPrompt, renderLessonQuizPrompt } from "../../src/prompts/lesson-plan.js";
+import { renderReportCardCommentPrompt } from "../../src/prompts/report-card-comment.js";
 import { check, type EvalCase } from "../harness.js";
 
 // Field names that must never appear in a rendered prompt. If a template ever
@@ -128,6 +129,92 @@ export const piiSafetyCase: EvalCase = {
       lessonContent: "SENTINEL_LESSON_CONTENT",
     });
     results.push(...assertNoForbidden("lesson-quiz", quizRendered));
+
+    // ---- report-card subject comment renderer ----------------------------
+    // The one prompt in the phase whose subject IS an individual student, so
+    // it is the one where a PII leak is a live risk rather than a theoretical
+    // one: the caller is holding a Student row when it builds this input.
+    // Note what the input type cannot express — there is no name, DOB, gender
+    // or contact field on ReportCardCommentInput at all, so a leak would
+    // require widening the interface, which fails here and is visible in
+    // review.
+    const commentRendered = renderReportCardCommentPrompt({
+      classLevel: "SENTINEL_LEVEL_JSS2",
+      subject: "SENTINEL_SUBJECT_MATHS",
+      components: [
+        { label: "SENTINEL_COMPONENT_CA1", score: 12, max: 20 },
+        { label: "SENTINEL_COMPONENT_EXAM", score: 44, max: 60 },
+      ],
+      totalScore: 56,
+      letterGrade: "C",
+      remark: "SENTINEL_REMARK_CREDIT",
+      subjectPosition: 8,
+      classSize: 34,
+      attendanceRate: 91,
+    });
+
+    results.push(...assertNoForbidden("report-card-comment", commentRendered));
+    results.push(
+      check(
+        "report-card-comment: renders all declared inputs",
+        [
+          "SENTINEL_LEVEL_JSS2",
+          "SENTINEL_SUBJECT_MATHS",
+          "SENTINEL_COMPONENT_CA1",
+          "SENTINEL_COMPONENT_EXAM",
+          "SENTINEL_REMARK_CREDIT",
+        ].every((s) => commentRendered.includes(s)),
+        "a declared input was silently dropped from the template",
+      ),
+    );
+    results.push(
+      check(
+        "report-card-comment: renderer is deterministic",
+        commentRendered ===
+          renderReportCardCommentPrompt({
+            classLevel: "SENTINEL_LEVEL_JSS2",
+            subject: "SENTINEL_SUBJECT_MATHS",
+            components: [
+              { label: "SENTINEL_COMPONENT_CA1", score: 12, max: 20 },
+              { label: "SENTINEL_COMPONENT_EXAM", score: 44, max: 60 },
+            ],
+            totalScore: 56,
+            letterGrade: "C",
+            remark: "SENTINEL_REMARK_CREDIT",
+            subjectPosition: 8,
+            classSize: 34,
+            attendanceRate: 91,
+          }),
+        "same input produced different output — a clock or env read has crept into the template",
+      ),
+    );
+
+    // The empty/null branch renders too. A student with no scores and no
+    // marked attendance is an ordinary mid-term state, not an error, and the
+    // renderer must not produce "undefined" or "null" in the prompt text.
+    const sparse = renderReportCardCommentPrompt({
+      classLevel: "JSS1",
+      subject: "Basic Science",
+      components: [],
+      totalScore: null,
+      letterGrade: null,
+      remark: null,
+      subjectPosition: null,
+      classSize: null,
+      attendanceRate: null,
+    });
+    results.push(
+      check(
+        "report-card-comment: null-heavy input renders without leaking undefined/null",
+        !/\b(undefined|null|NaN)\b/.test(sparse),
+        `rendered: ${JSON.stringify(sparse)}`,
+      ),
+      check(
+        "report-card-comment: states attendance is unrecorded rather than omitting it",
+        /not recorded/i.test(sparse),
+        "silently dropping the attendance line lets the model assume attendance was fine",
+      ),
+    );
 
     // ---- the adversarial case -------------------------------------------
     // A teacher CAN type student data into the free-text topic field. The

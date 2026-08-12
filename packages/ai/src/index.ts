@@ -59,3 +59,12 @@ export {
   renderLessonQuizPrompt,
   type LessonPlanInput,
 } from "./prompts/lesson-plan.js";
+
+export {
+  REPORT_CARD_COMMENT_PROMPT,
+  REPORT_CARD_COMMENT_SCHEMA,
+  REPORT_CARD_COMMENT_SYSTEM,
+  renderReportCardCommentPrompt,
+  type ReportCardCommentComponent,
+  type ReportCardCommentInput,
+} from "./prompts/report-card-comment.js";
