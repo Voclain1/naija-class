@@ -30,8 +30,13 @@ COPY packages/db/package.json     ./packages/db/
 COPY apps/api/package.json        ./apps/api/
 # Non-API workspace members: manifests only — must cover every importer in
 # pnpm-lock.yaml. packages/ai, packages/ui and apps/portal were missing here
-# until 2026-08-09; see apps/api/Dockerfile's fuller note, including what to
-# change when Phase 5 makes apps/api depend on @school-kit/ai.
+# until 2026-08-09; see apps/api/Dockerfile's fuller note.
+#
+# packages/ai is NOT manifest-only any more: this image builds @school-kit/api,
+# which imports it as of Phase 5 slice 1, so it needs source + build below too.
+# This file failed to reach the failure that broke the 2026-08-12 deploy only
+# because the API deploy step runs first and aborted the job — it would have
+# failed identically on the next line of the workflow.
 COPY packages/ai/package.json ./packages/ai/
 COPY packages/ui/package.json ./packages/ui/
 COPY apps/web/package.json    ./apps/web/
@@ -50,6 +55,7 @@ RUN pnpm install --frozen-lockfile
 
 COPY packages/config/ ./packages/config/
 COPY packages/types/  ./packages/types/
+COPY packages/ai/     ./packages/ai/
 COPY packages/db/     ./packages/db/
 COPY apps/api/        ./apps/api/
 
@@ -58,6 +64,7 @@ RUN DATABASE_URL="postgresql://x:x@localhost/x" \
     pnpm --filter @school-kit/db exec prisma generate --schema=./prisma/schema.prisma
 
 RUN pnpm --filter @school-kit/types build
+RUN pnpm --filter @school-kit/ai    build
 RUN pnpm --filter @school-kit/db    build
 RUN pnpm --filter @school-kit/api   build
 

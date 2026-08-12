@@ -30,13 +30,22 @@ COPY apps/api/package.json        ./apps/api/
 # (the build tolerated it because --frozen-lockfile doesn't hard-fail on an
 # absent importer directory, so the omission was silent, not loud).
 #
-# packages/ai is manifest-only on purpose: apps/api does NOT depend on it yet.
-# When Phase 5 wires it in, THREE things change together —
-#   1. add "@school-kit/ai": "workspace:*" to apps/api/package.json
-#   2. add `COPY packages/ai/ ./packages/ai/` to the source block below
-#   3. add `RUN pnpm --filter @school-kit/ai build` to the build-order block
-# Miss (2)/(3) and the image builds clean but crash-loops at boot on
-# ERR_MODULE_NOT_FOUND — see CLAUDE.md "ESM module resolution".
+# packages/ai IS a real apps/api dependency as of Phase 5 slice 1, so it now
+# needs its source and its build below, not just this manifest.
+#
+# That is exactly what the note here used to instruct, and slice 1 did step (1)
+# — adding the workspace dependency — without steps (2) and (3). The deploy
+# broke on the first push to main afterwards (run 31575051028, 2026-08-12),
+# and nothing before that point could have caught it: `pnpm build` at the repo
+# root goes through turbo, which builds every workspace package, while this
+# Dockerfile hand-lists them. So lint, typecheck, test AND build were all green
+# on a tree whose production image could not compile.
+#
+# The predicted symptom in the old note was a boot-time ERR_MODULE_NOT_FOUND.
+# The real one was louder and earlier — tsc failing the image build with TS2307
+# "Cannot find module '@school-kit/ai'" — because apps/api's build needs the
+# type declarations, not just the runtime files. Either way: any new workspace
+# package apps/api imports must be added in BOTH places below.
 COPY packages/ai/package.json ./packages/ai/
 COPY packages/ui/package.json ./packages/ui/
 COPY apps/web/package.json    ./apps/web/
@@ -58,6 +67,7 @@ RUN pnpm install --frozen-lockfile
 # Copy source after install so the dep layer stays cached on source-only changes.
 COPY packages/config/ ./packages/config/
 COPY packages/types/  ./packages/types/
+COPY packages/ai/     ./packages/ai/
 COPY packages/db/     ./packages/db/
 COPY apps/api/        ./apps/api/
 
@@ -66,8 +76,11 @@ RUN DATABASE_URL="postgresql://x:x@localhost/x" \
     DIRECT_URL="postgresql://x:x@localhost/x" \
     pnpm --filter @school-kit/db exec prisma generate --schema=./prisma/schema.prisma
 
-# Build in workspace dependency order.
+# Build in workspace dependency order. @school-kit/ai has no workspace
+# dependencies of its own (only @anthropic-ai/sdk), so it only has to precede
+# the api build.
 RUN pnpm --filter @school-kit/types build
+RUN pnpm --filter @school-kit/ai    build
 RUN pnpm --filter @school-kit/db    build
 RUN pnpm --filter @school-kit/api   build
 
