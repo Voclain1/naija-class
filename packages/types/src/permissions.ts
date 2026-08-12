@@ -373,6 +373,15 @@ export const PHASE_5_PERMISSIONS = [
   "lesson-plan.update",
   "lesson-plan.delete",
   "ai-usage.read",
+  // Slice 3 — report-card subject comments. Two permissions, not one,
+  // because the two actions have genuinely different stakes: `.generate`
+  // spends the school's AI budget (a whole arm is one call per student), while
+  // `.write` puts text into a student's permanent termly record. A school that
+  // wants comments drafted centrally but accepted by the subject teacher can
+  // express that with these two; a single `report-card-comment.manage` could
+  // not.
+  "report-card-comment.generate",
+  "report-card-comment.write",
 ] as const;
 
 // The `teacher` role's exact Phase 5 grant. Explicit inclusion list, mirroring
@@ -384,6 +393,13 @@ export const PHASE_5_TEACHER_PERMISSIONS = [
   "lesson-plan.create",
   "lesson-plan.update",
   "lesson-plan.delete",
+  // Both slice-3 permissions are teacher-facing: the subject teacher is the
+  // person who knows whether a drafted comment is true of the student in front
+  // of them, and CLAUDE.md's AI hard rule requires a human approval gate on
+  // report-card comments specifically. Granting `.generate` without `.write`
+  // would leave a teacher able to spend budget on drafts they cannot then use.
+  "report-card-comment.generate",
+  "report-card-comment.write",
 ] as const;
 
 // Phase 3 / Slice 15 — the `bursar` role's exact grant. Explicit inclusion

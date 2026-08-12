@@ -14,6 +14,7 @@
 //     over-triggering and rigid output rather than compliance.
 
 import { LESSON_PLAN_SYSTEM, LESSON_QUIZ_SYSTEM } from "../../src/prompts/lesson-plan.js";
+import { REPORT_CARD_COMMENT_SYSTEM } from "../../src/prompts/report-card-comment.js";
 import { check, warn, type EvalCase } from "../harness.js";
 
 // Dated pressure patterns. Not banned outright — emphasis is a legitimate,
@@ -88,7 +89,56 @@ export const promptQualityCase: EvalCase = {
     const results = [
       ...auditSystemPrompt("lesson-plan", LESSON_PLAN_SYSTEM),
       ...auditSystemPrompt("lesson-quiz", LESSON_QUIZ_SYSTEM),
+      ...auditSystemPrompt("report-card-comment", REPORT_CARD_COMMENT_SYSTEM),
     ];
+
+    // ---- report-card comment: the constraints that make it usable --------
+    // This prompt runs once per student per subject. Its failure modes are
+    // specific and each one is a real complaint a school would make, so they
+    // are gated individually rather than by a general "is it substantive"
+    // check.
+    const commentSystem = REPORT_CARD_COMMENT_SYSTEM;
+
+    results.push(
+      check(
+        "report-card-comment: forbids inventing a student name",
+        /never invent a name/i.test(commentSystem),
+        "the model is given no name; without this instruction it fills the gap with a plausible one, " +
+          "and a report card addressed to the wrong child is the worst output this feature can produce",
+      ),
+      check(
+        "report-card-comment: forbids gendered pronouns",
+        /\bhe\b.*\bshe\b|gender/i.test(commentSystem) && /never use/i.test(commentSystem),
+        "gender is deliberately not sent (PII), so any pronoun is a guess — a report calling a girl \"he\" " +
+          "is worse than one with no pronoun at all",
+      ),
+      check(
+        "report-card-comment: constrains length to a comment, not a paragraph",
+        /one to two sentences|1-2 sentences/i.test(commentSystem),
+        "an unconstrained comment overflows the report card layout and stops reading like a teacher wrote it",
+      ),
+      check(
+        "report-card-comment: bans the template openers that collapse a class set",
+        /this student|the student/i.test(commentSystem) && /do not open with/i.test(commentSystem),
+        "without this, 40 comments in one arm open identically and the whole feature reads as machine-written",
+      ),
+      check(
+        "report-card-comment: requires interpretation rather than restating figures",
+        /never restate the raw numbers|interpret them/i.test(commentSystem),
+        "the parent can already see the scores on the card; a comment that repeats them adds nothing",
+      ),
+      check(
+        "report-card-comment: requires honesty about weak performance",
+        /\bhonest\b/i.test(commentSystem) && /mislead/i.test(commentSystem),
+        "softening a failing grade into \"satisfactory progress\" is the failure mode that makes a school " +
+          "distrust every comment the system produces",
+      ),
+      check(
+        "report-card-comment: instructs the model not to invent figures",
+        /never state or imply a figure you were not given/i.test(commentSystem),
+        "a fabricated attendance percentage or score in a parent-facing record is a data-integrity incident",
+      ),
+    );
 
     const lessonLower = LESSON_PLAN_SYSTEM.toLowerCase();
     const reality = CLASSROOM_REALITY_MARKERS.filter((m) => lessonLower.includes(m));

@@ -12,6 +12,7 @@ import type {
 } from "@school-kit/types";
 
 import { GradebookGrid } from "@/components/teacher/gradebook/gradebook-grid";
+import { SubjectComments } from "@/components/teacher/gradebook/subject-comments";
 import { ApiError } from "@/lib/api-client";
 import { getGradebookFeed } from "@/lib/assessment/assessment-api";
 import { getGradingScheme } from "@/lib/grading/grading-api";
@@ -142,14 +143,25 @@ export default function GradebookGridPage() {
               Grading.
             </div>
           ) : (
-            <GradebookGrid
-              scheme={status.data.scheme}
-              initialFeed={status.data.feed}
-              termId={status.data.term.id}
-              classArmId={armId}
-              subjectId={subjectId}
-              canAggregate={status.data.canAggregate}
-            />
+            <>
+              <GradebookGrid
+                scheme={status.data.scheme}
+                initialFeed={status.data.feed}
+                termId={status.data.term.id}
+                classArmId={armId}
+                subjectId={subjectId}
+                canAggregate={status.data.canAggregate}
+              />
+              {/* Phase 5 / Slice 3. Below the grid deliberately: the comment
+                  interprets the scores above it, and a teacher writing comments
+                  wants to see the marks while they read each draft. */}
+              <SubjectComments
+                termId={status.data.term.id}
+                classArmId={armId}
+                subjectId={subjectId}
+                rows={status.data.feed.data}
+              />
+            </>
           )}
         </>
       )}
