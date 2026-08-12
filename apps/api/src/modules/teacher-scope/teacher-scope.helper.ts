@@ -60,7 +60,7 @@ export async function getTeacherScope(
       ...(academicYearId ? { academicYearId } : {}),
     },
     select: {
-      classArm: { select: { id: true, name: true, code: true } },
+      classArm: { select: { id: true, name: true, code: true, classLevelId: true, classLevel: { select: { name: true } } } },
       subject: { select: { id: true, name: true, code: true } },
     },
   });
@@ -69,7 +69,13 @@ export async function getTeacherScope(
   //    Active arms only; a deactivated arm shouldn't appear in scope.
   const homeroomArms = await db.classArm.findMany({
     where: { classTeacherId: teacherId, isActive: true },
-    select: { id: true, name: true, code: true },
+    select: {
+      id: true,
+      name: true,
+      code: true,
+      classLevelId: true,
+      classLevel: { select: { name: true } },
+    },
   });
 
   // Build subjectsByArm from the subject assignments (deduping subjects per
@@ -94,12 +100,20 @@ export async function getTeacherScope(
         id: a.classArm.id,
         name: a.classArm.name,
         code: a.classArm.code,
+        classLevelId: a.classArm.classLevelId,
+        classLevelName: a.classArm.classLevel.name,
       });
     }
   }
   for (const h of homeroomArms) {
     if (!armsById.has(h.id)) {
-      armsById.set(h.id, { id: h.id, name: h.name, code: h.code });
+      armsById.set(h.id, {
+        id: h.id,
+        name: h.name,
+        code: h.code,
+        classLevelId: h.classLevelId,
+        classLevelName: h.classLevel.name,
+      });
     }
   }
   const classArms = [...armsById.values()];

@@ -984,7 +984,17 @@ not a commitment to that phase's exact shape or timing.
 - [ ] Lesson notes and lesson plans — ARCHITECTURE.md §6.5 (Academic
   management, Phase 2 per §9) already names both explicitly ("Weekly lesson
   plans with learning objectives," "Lesson notes (delivered content)"), plus
-  an AI hook in §7 ("generate lesson plan from a topic"). Nothing built yet.
+  an AI hook in §7 ("generate lesson plan from a topic").
+  **Partly built as of Phase 5 / Slice 2 (2026-08-12)** — §7's AI hook
+  shipped: `POST /lesson-plans` generates the five sections from a free-text
+  topic, plus `/teacher/lesson-plans` for generate/edit/quiz/print. What
+  remains of this entry is the rest of §6.5, none of which Slice 2 touched:
+  **lesson notes (delivered content)** as a distinct entity, and the
+  **weekly/scheme-of-work** framing — a Slice 2 plan is a standalone
+  one-off keyed to a free-text topic, with no week, no sequence, and no
+  curriculum taxonomy behind it (D13). Whether those become a Phase 2
+  academic feature or an extension of `lesson_plans` is still unscoped, so
+  this stays on the wishlist rather than being ticked.
 
 - [ ] Student profiles (badges, achievements, milestones) — not named
   anywhere in ARCHITECTURE.md. Closest existing concepts are the plain

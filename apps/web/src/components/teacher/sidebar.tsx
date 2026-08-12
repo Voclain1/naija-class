@@ -4,6 +4,7 @@ import {
   BookOpen,
   CalendarCheck,
   CalendarClock,
+  Sparkles,
   ClipboardList,
   FileText,
   LayoutDashboard,
@@ -33,6 +34,10 @@ const BASE_ITEMS: NavItem[] = [
   { label: "Gradebook", href: "/teacher/gradebook", icon: ClipboardList, enabled: true },
   { label: "Report Cards", href: "/teacher/report-cards", icon: FileText, enabled: true },
   { label: "Attendance", href: "/teacher/attendance", icon: CalendarCheck, enabled: true },
+  // Phase 5 / Slice 2 — lesson plan generator. Unconditional: unlike subject
+  // attendance it needs no per-school opt-in, and unlike gradebook/report
+  // cards it needs no prior data, so it is usable by every school from day one.
+  { label: "Lesson plans", href: "/teacher/lesson-plans", icon: Sparkles, enabled: true },
 ];
 
 const SUBJECT_ITEM: NavItem = {
