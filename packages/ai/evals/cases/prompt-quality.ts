@@ -14,6 +14,11 @@
 //     over-triggering and rigid output rather than compliance.
 
 import { LESSON_PLAN_SYSTEM, LESSON_QUIZ_SYSTEM } from "../../src/prompts/lesson-plan.js";
+import {
+  INSIGHTS_NARRATION_SYSTEM,
+  INSIGHTS_ROUTER_SYSTEM,
+  buildInsightsRouterSchema,
+} from "../../src/prompts/insights.js";
 import { PARENT_WEEKLY_SUMMARY_SYSTEM } from "../../src/prompts/parent-weekly-summary.js";
 import { REPORT_CARD_COMMENT_SYSTEM } from "../../src/prompts/report-card-comment.js";
 import { REPORT_CARD_FORM_COMMENT_SYSTEM } from "../../src/prompts/report-card-form-comment.js";
@@ -94,7 +99,92 @@ export const promptQualityCase: EvalCase = {
       ...auditSystemPrompt("report-card-comment", REPORT_CARD_COMMENT_SYSTEM),
       ...auditSystemPrompt("report-card-form-comment", REPORT_CARD_FORM_COMMENT_SYSTEM),
       ...auditSystemPrompt("parent-weekly-summary", PARENT_WEEKLY_SUMMARY_SYSTEM),
+      // The router is deliberately NOT put through auditSystemPrompt: it is a
+      // classifier, not a writer. It has no reason to mention Nigeria, WAEC or
+      // British spelling, and forcing it to satisfy a prose-quality audit
+      // would mean padding a classification prompt with irrelevant text. Its
+      // own checks are below.
+      ...auditSystemPrompt("insights-narration", INSIGHTS_NARRATION_SYSTEM),
     ];
+
+    // ---- insights router: the closed output space -------------------------
+    // This prompt's entire safety property is that it chooses a label from a
+    // list and does nothing else. Each check below is one way that could be
+    // eroded by a well-meaning edit.
+    const routerSystem = INSIGHTS_ROUTER_SYSTEM;
+
+    results.push(
+      check(
+        "insights-router: forbids inventing a report name",
+        /never invent a report name/i.test(routerSystem),
+        "an invented intent name would fall through the service's switch and " +
+          "either crash or silently answer nothing",
+      ),
+      check(
+        "insights-router: prefers 'unsupported' over a poor match",
+        /do not force a poor match/i.test(routerSystem) && /unsupported/i.test(routerSystem),
+        "answering a different question than the one asked, confidently, is this " +
+          "feature's worst failure mode — worse than admitting the gap",
+      ),
+      check(
+        "insights-router: routes out-of-scope topics rather than approximating",
+        /fees or money/i.test(routerSystem) && /individual child/i.test(routerSystem),
+        "without naming them, finance and single-student questions get routed to " +
+          "the nearest academic report and answered wrongly",
+      ),
+      check(
+        "insights-router: does not answer the question itself",
+        /do not answer the question/i.test(routerSystem),
+        "a router that starts answering is a router producing numbers, which is " +
+          "the exact thing this design exists to prevent",
+      ),
+    );
+
+    // The schema IS the output space — a router whose schema lost its enum
+    // would accept any string, which is the same failure as an invented name.
+    const routerSchema = buildInsightsRouterSchema(["a", "b"]) as {
+      properties: { intent: { enum?: unknown[] } };
+    };
+    results.push(
+      check(
+        "insights-router: schema constrains intent to an enum",
+        Array.isArray(routerSchema.properties.intent.enum) &&
+          routerSchema.properties.intent.enum.length === 2,
+        "structured output is what makes the output space closed; without the enum " +
+          "the model can return any string",
+      ),
+    );
+
+    // ---- insights narration: the no-arithmetic rules ----------------------
+    const narrationSystem = INSIGHTS_NARRATION_SYSTEM;
+
+    results.push(
+      check(
+        "insights-narration: forbids numbers it was not given",
+        /never state, imply, estimate or round to a number you were not handed/i.test(
+          narrationSystem,
+        ),
+        "the whole design is that every figure comes from SQL — a model that " +
+          "derives its own puts an unchecked number in front of an owner",
+      ),
+      check(
+        "insights-narration: forbids naming a student",
+        /never name a student/i.test(narrationSystem),
+        "it is given no names; an invented one in a report an admin forwards is " +
+          "a serious error",
+      ),
+      check(
+        "insights-narration: forbids claiming a cause",
+        /never claim a cause/i.test(narrationSystem),
+        "these figures cannot distinguish teaching from timetabling from cohort, " +
+          "and a guessed cause in writing is how a teacher gets unfairly blamed",
+      ),
+      check(
+        "insights-narration: requires interpretation over recitation",
+        /interpret, don't recite/i.test(narrationSystem),
+        "the table is directly beside it; restating rows adds nothing",
+      ),
+    );
 
     // ---- parent weekly summary: the UNATTENDED-OUTPUT checks --------------
     // Every other prompt in this registry produces a draft that a teacher

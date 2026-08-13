@@ -389,6 +389,11 @@ export const PHASE_5_PERMISSIONS = [
   // and why the teacher grant below gets only the first.
   "parent-summary.read",
   "parent-summary.manage",
+  // Slice 8 — admin insights. Owner/admin only, and deliberately NOT in the
+  // teacher grant below: these reports rank classes and subjects against each
+  // other across the whole school, which is management information about
+  // colleagues' work rather than teaching workflow.
+  "insight.read",
 ] as const;
 
 // The `teacher` role's exact Phase 5 grant. Explicit inclusion list, mirroring

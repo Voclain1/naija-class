@@ -30,6 +30,7 @@ export * from './lesson-plans/index.js';
 export * from './report-comments/index.js';
 export * from './parent-summaries/index.js';
 export * from './ai-usage/index.js';
+export * from './insights/index.js';
 export * from './portal-students/index.js';
 export * from './portal-finance/index.js';
 export * from './portal-payments/index.js';

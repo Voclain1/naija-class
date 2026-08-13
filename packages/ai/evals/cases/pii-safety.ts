@@ -16,6 +16,10 @@
 // here immediately, because the leaked value is not in the sentinel set.
 
 import { renderLessonPlanPrompt, renderLessonQuizPrompt } from "../../src/prompts/lesson-plan.js";
+import {
+  renderInsightsNarrationPrompt,
+  renderInsightsRouterPrompt,
+} from "../../src/prompts/insights.js";
 import { renderParentWeeklySummaryPrompt } from "../../src/prompts/parent-weekly-summary.js";
 import { renderReportCardCommentPrompt } from "../../src/prompts/report-card-comment.js";
 import { renderReportCardFormCommentPrompt } from "../../src/prompts/report-card-form-comment.js";
@@ -346,6 +350,78 @@ export const piiSafetyCase: EvalCase = {
         "zero absences and a register nobody took read identically to the model unless the " +
           "renderer says which one happened — and telling a parent their child attended " +
           "every day when the register was never opened is a factual claim we cannot make",
+      ),
+    );
+
+    // ---- insights narration renderer -------------------------------------
+    // The narration prompt sits next to a table that DOES carry student names
+    // — they go straight from the API to the browser. This check is what keeps
+    // those two paths apart: the figures reaching the model are counts, class
+    // labels and percentages, never a row from that table. A future edit that
+    // "helpfully" passes the at-risk rows straight in fails here.
+    const narrationInput = {
+      question: "which classes are struggling?",
+      termName: "SENTINEL_TERM_THIRD",
+      reportLabel: "SENTINEL_REPORT_LABEL",
+      figures: [
+        "SENTINEL_ARM_SS2B: average 41%, attendance 68%, 34 students",
+        "SENTINEL_ARM_JSS1A: average 62%, attendance 91%, 30 students",
+      ],
+    };
+    const narrationRendered = renderInsightsNarrationPrompt(narrationInput);
+
+    results.push(...assertNoForbidden("insights-narration", narrationRendered));
+    results.push(
+      check(
+        "insights-narration: renders all declared inputs",
+        ["SENTINEL_TERM_THIRD", "SENTINEL_REPORT_LABEL", "SENTINEL_ARM_SS2B"].every((s) =>
+          narrationRendered.includes(s),
+        ),
+        "a declared input was silently dropped from the template",
+      ),
+      check(
+        "insights-narration: renderer is deterministic",
+        narrationRendered === renderInsightsNarrationPrompt(narrationInput),
+        "same input produced different output — a clock or env read has crept in",
+      ),
+      check(
+        "insights-narration: takes pre-formatted figure STRINGS, not row objects",
+        typeof narrationInput.figures[0] === "string",
+        "the renderer must not reach into row objects: if it did, adding a name " +
+          "column to a row type would silently start sending student names to the model",
+      ),
+    );
+
+    const emptyNarration = renderInsightsNarrationPrompt({
+      question: "which classes are struggling?",
+      termName: "First Term",
+      reportLabel: "Class performance",
+      figures: [],
+    });
+    results.push(
+      check(
+        "insights-narration: empty report renders without leaking undefined/null",
+        !/(undefined|null|NaN)/.test(emptyNarration),
+        `rendered: ${JSON.stringify(emptyNarration)}`,
+      ),
+    );
+
+    // ---- insights router renderer ----------------------------------------
+    // The router receives free text an admin typed. It cannot be sanitised
+    // here — same documented boundary as the lesson-plan topic field below.
+    // What CAN be asserted is that the renderer adds nothing of its own.
+    const routerRendered = renderInsightsRouterPrompt({
+      question: "SENTINEL_QUESTION_TEXT",
+      intents: [{ name: "SENTINEL_INTENT_NAME", description: "SENTINEL_INTENT_DESC" }],
+    });
+    results.push(...assertNoForbidden("insights-router", routerRendered));
+    results.push(
+      check(
+        "insights-router: renders the question and the intent catalogue",
+        ["SENTINEL_QUESTION_TEXT", "SENTINEL_INTENT_NAME", "SENTINEL_INTENT_DESC"].every((s) =>
+          routerRendered.includes(s),
+        ),
+        "a declared input was silently dropped from the template",
       ),
     );
 

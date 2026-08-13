@@ -35,6 +35,7 @@ import { ImportsModule } from "./modules/imports/imports.module";
 import { InvitationsModule } from "./modules/invitations/invitations.module";
 import { NotificationsModule } from "./modules/notifications/notifications.module";
 import { LessonPlansModule } from "./modules/lesson-plans/lesson-plans.module";
+import { InsightsModule } from "./modules/insights/insights.module";
 import { AiUsageModule } from "./modules/ai-usage/ai-usage.module";
 import { ParentSummariesModule } from "./modules/parent-summaries/parent-summaries.module";
 import { ReportCommentsModule } from "./modules/report-comments/report-comments.module";
@@ -112,6 +113,7 @@ const isProd = process.env.NODE_ENV === "production";
     ReportCommentsModule,
     ParentSummariesModule,
     AiUsageModule,
+    InsightsModule,
     GuardiansModule,
     EnrollmentsModule,
     TeacherProfilesModule,
