@@ -290,7 +290,12 @@ Example request shape:
 // POST /auth/signup-owner
 {
   schoolName: string,
-  schoolSlug: string,              // server validates uniqueness + format
+  schoolSlug?: string,             // OPTIONAL since 2026-08-12 — derived from
+                                   // schoolName when omitted (collisions get a
+                                   // numeric suffix). The signup form no longer
+                                   // collects it; scripted callers may still
+                                   // supply one, and it's validated for
+                                   // uniqueness + format when they do.
   ownerFirstName: string,
   ownerLastName: string,
   ownerEmail: string,
@@ -558,7 +563,7 @@ These belong in Phase 0 *eventually* but are deferred until they're actually nee
 ## Risks and gotchas
 
 - **RLS + connection pooling.** If you switch to PgBouncer in transaction mode, `SET LOCAL` still works; in statement mode it doesn't. Document the mode in `infra/`.
-- **Slug collisions.** `schoolkit.ng` subdomain space is small. Reserve common words (`admin`, `api`, `www`, `app`) in seed.
+- **Slug collisions.** `schoolkit.ng` subdomain space is small. Reserve common words (`admin`, `api`, `www`, `app`) in seed. *Update 2026-08-12:* users no longer pick their own slug, so a collision is no longer a user-facing error to recover from — `generateUniqueSchoolSlug()` (`apps/api/src/common/slug/school-slug.ts`) derives it from the school name, skips anything in `RESERVED_SLUGS`, and appends `-2`, `-3`, … until it finds a free one. Two schools genuinely called "Bright Star Academy" now both sign up successfully. The reserved-word list still matters, and is still the thing to extend.
 - **Invitation race conditions.** Two admins can simultaneously invite the same email. Treat the invitations table as the source of truth, dedupe on `(school_id, email)` with a unique partial index.
 - **Audit volume.** At scale, `audit_logs` grows fast. Plan partition-by-month from day one (`PARTITION BY RANGE (created_at)`).
 - **Phone uniqueness on `users`.** The Phase 0 schema makes `users.phone` globally unique, which works for owner/admin signup but breaks Phase 4 (guardians who may legitimately share a phone number — e.g. two siblings whose mother is the contact). Decide before Phase 4 whether to (a) drop the unique constraint and dedupe at the application layer, (b) make uniqueness conditional on a role/type column, or (c) move guardian phones to a separate contact table. Tracked from Phase 0 Prompt 3.

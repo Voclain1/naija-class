@@ -47,6 +47,7 @@ import * as password from "../../common/auth/password";
 import { createSession } from "../../common/auth/sessions";
 import { invalidateSessionCache } from "../../common/auth/session-cache.js";
 import { redactEmail } from "../../common/redact";
+import { generateUniqueSchoolSlug } from "../../common/slug/school-slug.js";
 import { TotpService } from "./totp.service.js";
 
 const SIGNUP_AUDIT_ACTION = "auth.signup_owner";
@@ -169,6 +170,14 @@ export class AuthService {
     // phone-taken. See migration 20260515000000_add_signup_uniqueness_function.
     await this.assertEmailAndPhoneAvailable(input.ownerEmail, input.ownerPhone);
 
+    // schoolSlug is optional on the wire (2026-08-12 — the signup form no
+    // longer asks for it; see signup-owner.dto.ts for why). Derive it from
+    // the school name when absent, using the same generator platform-admin
+    // provisioning uses so both paths produce the same slug for the same
+    // name. Done BEFORE the password hash for the same "cheap rejection
+    // stays cheap" reason the uniqueness pre-check above is.
+    const schoolSlug = input.schoolSlug ?? (await generateUniqueSchoolSlug(input.schoolName));
+
     const passwordHash = await password.hashPassword(input.password);
 
     let created: {
@@ -185,7 +194,7 @@ export class AuthService {
         const school = await tx.school.create({
           data: {
             name: input.schoolName,
-            slug: input.schoolSlug,
+            slug: schoolSlug,
             ndprConsent: true,
             ndprConsentAt: new Date(),
             // status, onboardingStep default per schema.

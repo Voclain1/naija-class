@@ -11,15 +11,29 @@ const PHONE_RE = /^\+?[0-9]{10,15}$/;
 
 export const signupOwnerSchema = z.object({
   schoolName: z.string().trim().min(2).max(120),
+  // OPTIONAL since 2026-08-12. The signup form no longer asks for it at all
+  // — "slug" was the field owners most often got stuck on, and it's an
+  // implementation detail they have no way to reason about at that moment.
+  // When omitted, AuthService.signupOwner derives one from schoolName via
+  // generateUniqueSchoolSlug() (the same generator platform-admin school
+  // provisioning already used), so a school named "Bright Star Academy"
+  // silently gets `bright-star-academy`.
+  //
+  // Kept as an accepted input rather than deleted outright: the API is a
+  // public surface with existing scripted callers (smoke-test.sh, the
+  // integration suites, anyone provisioning programmatically) that pick a
+  // deterministic slug on purpose. Supplying one still validates and still
+  // wins over the derived value.
   schoolSlug: z
     .string()
     .trim()
     // Strict: no .toLowerCase() normalization. Uppercase input fails the
-    // regex below rather than being silently lowered, so the user sees a
-    // clear validation error and realises the slug they typed is not the
-    // subdomain they'll get.
+    // regex below rather than being silently lowered, so a caller that
+    // explicitly supplies a slug sees a clear validation error rather than
+    // silently getting a different subdomain than the one it asked for.
     .regex(SLUG_RE, "lowercase letters, digits, hyphens; 3–40 chars; cannot start or end with a hyphen")
-    .refine((s: string) => !RESERVED_SLUGS.has(s), { message: "slug is reserved" }),
+    .refine((s: string) => !RESERVED_SLUGS.has(s), { message: "slug is reserved" })
+    .optional(),
   ownerFirstName: z.string().trim().min(1).max(60),
   ownerLastName: z.string().trim().min(1).max(60),
   ownerEmail: z.string().trim().toLowerCase().email(),

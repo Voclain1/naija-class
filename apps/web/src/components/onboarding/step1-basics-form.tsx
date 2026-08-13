@@ -30,7 +30,7 @@ import { advanceStep1 } from "@/lib/onboarding/onboarding-api";
 import { OnboardingProgress } from "./progress-indicator";
 
 export function Step1BasicsForm() {
-  const { school, setSchool } = useAuth();
+  const { school, user, setSchool } = useAuth();
   const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
 
@@ -40,12 +40,20 @@ export function Step1BasicsForm() {
     // is whatever the owner typed; the rest are blank. After a step 1
     // revisit (the user clicking back from step 3), the form shows the
     // previously-saved values so editing is a one-field touch-up.
+    //
+    // Phone and email fall back to the OWNER's own contact details (2026-08-12)
+    // rather than starting blank. These are the school's public contact
+    // fields, not the owner's account fields, so they stay separately
+    // editable — but for the single-owner private school that is nearly all
+    // of our users, they're the same two values the user typed sixty seconds
+    // earlier at signup, and re-typing them was pure friction. Anyone whose
+    // school has a distinct front-desk line just overwrites the prefill.
     defaultValues: {
       name: school?.name ?? "",
       motto: school?.motto ?? undefined,
       address: school?.address ?? undefined,
-      phone: school?.phone ?? "",
-      email: school?.email ?? "",
+      phone: school?.phone ?? user?.phone ?? "",
+      email: school?.email ?? user?.email ?? "",
     },
     mode: "onSubmit",
   });

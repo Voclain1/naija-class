@@ -4,9 +4,7 @@ import { Injectable, Logger } from "@nestjs/common";
 import { basePrisma } from "@school-kit/db";
 import {
   ConflictError,
-  InternalError,
   NotFoundError,
-  RESERVED_SLUGS,
   UnauthorizedError,
   type PlatformAdminCreateSchoolInput,
   type PlatformAdminCreateSchoolResponse,
@@ -23,6 +21,7 @@ import * as password from "../../common/auth/password";
 import { createSession } from "../../common/auth/sessions";
 import { EmailService } from "../../common/email/email.service";
 import { redactEmail } from "../../common/redact";
+import { generateUniqueSchoolSlug } from "../../common/slug/school-slug.js";
 
 // Cross-tenant service. Reads go through the platform_admin_* SECURITY
 // DEFINER functions (see CLAUDE.md's inventory) via basePrisma directly —
@@ -41,16 +40,10 @@ import { redactEmail } from "../../common/redact";
 // availability *read* (platform_admin_check_owner_email_available), same
 // division of concerns as every other function in the inventory.
 
-// Slug rules mirror signupOwnerSchema's SLUG_RE exactly (packages/types/src/
-// auth/signup-owner.dto.ts) — lowercase letters, digits, hyphens; cannot
-// start or end with a hyphen. Duplicated here (not exported/shared) because
-// signup's version is a Zod .regex() validating client input, while this is
-// a generator producing it — different shape, same rule, and the codebase's
-// low-abstraction posture doesn't ask for a shared home until a third
-// caller needs one.
-const SLUG_RE = /^[a-z0-9](?:[a-z0-9-]{1,38}[a-z0-9])$/;
-const MAX_SLUG_BASE_LENGTH = 30; // leaves room for a "-NN" collision suffix within the 40-char cap.
-const MAX_SLUG_COLLISION_ATTEMPTS = 50;
+// Slug derivation moved to ../../common/slug/school-slug.ts (2026-08-12)
+// when self-serve signup became a second generator caller — see that file's
+// header for why sharing became a correctness requirement rather than a
+// tidiness one.
 
 // 14 days — longer than the 7-day staff/guardian invitation precedent.
 // Standing up a whole school is a bigger commitment to act on than
@@ -66,17 +59,6 @@ function webBaseUrl(): string {
   return process.env.WEB_BASE_URL ?? "http://localhost:3001";
 }
 
-function slugify(schoolName: string): string {
-  const base = schoolName
-    .toLowerCase()
-    .normalize("NFKD")
-    .replace(/[̀-ͯ]/g, "") // strip diacritics (combining marks left by NFKD)
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, MAX_SLUG_BASE_LENGTH)
-    .replace(/-+$/g, "");
-  return base.length >= 3 ? base : `${base || "school"}-school`;
-}
 
 interface RequestContext {
   ipAddress: string | null;
@@ -342,7 +324,7 @@ export class PlatformAdminService {
       );
     }
 
-    const slug = await this.generateUniqueSlug(input.schoolName);
+    const slug = await generateUniqueSchoolSlug(input.schoolName);
 
     const rawToken = crypto.randomBytes(32).toString("base64url");
     const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
@@ -436,28 +418,6 @@ export class PlatformAdminService {
       invitationExpiresAt: expiresAt.toISOString(),
       acceptUrl,
     };
-  }
-
-  // Derives a slug from the school name (same rules as signupOwnerSchema's
-  // SLUG_RE) and retries with a numeric suffix on collision. School has no
-  // RLS, so these are plain basePrisma reads — no tenant context needed.
-  private async generateUniqueSlug(schoolName: string): Promise<string> {
-    const base = slugify(schoolName);
-    for (let attempt = 0; attempt < MAX_SLUG_COLLISION_ATTEMPTS; attempt++) {
-      const candidate = attempt === 0 ? base : `${base}-${attempt + 1}`;
-      if (!SLUG_RE.test(candidate) || RESERVED_SLUGS.has(candidate)) continue;
-      const existing = await basePrisma.school.findUnique({
-        where: { slug: candidate },
-        select: { id: true },
-      });
-      if (!existing) return candidate;
-    }
-    // Should never happen in practice — MAX_SLUG_COLLISION_ATTEMPTS collisions
-    // in a row on the same base slug. Fail loudly rather than create a school
-    // with a slug that silently doesn't match its name.
-    throw new InternalError(
-      `Could not generate a unique slug for "${schoolName}" after ${MAX_SLUG_COLLISION_ATTEMPTS} attempts.`,
-    );
   }
 
   async listUsers(

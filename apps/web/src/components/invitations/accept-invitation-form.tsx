@@ -211,7 +211,8 @@ export function AcceptInvitationForm({ token, invitation }: Props) {
               </p>
             )}
             <p className="text-xs text-muted-foreground">
-              At least 8 characters, with at least one letter and one digit.
+              At least 8 characters, with an uppercase letter, a lowercase
+              letter, a digit, and a symbol (e.g. !).
             </p>
           </div>
 

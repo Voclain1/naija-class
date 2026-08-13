@@ -37,12 +37,16 @@ Go to **/signup**.
 Fill in:
 
 - **School name**
-- **Slug (your subdomain)** — lowercase letters, digits, hyphens only. This becomes `your-slug.schoolkit.ng`.
 - **First name** / **Last name** (yours, as the school owner)
 - **Email**
-- **Phone** — include the country code, e.g. `+234...`
-- **Password** — at least 8 characters, with one letter and one digit
+- **Phone** — e.g. `08012345678` or `+2348012345678`
+- **Password** — at least 8 characters, with an uppercase letter, a lowercase letter, a digit, and a symbol
 - Tick the NDPR consent checkbox: *"I accept the data handling terms and confirm I'm authorised to create an account for this school under NDPR."*
+
+You are **not** asked for a subdomain slug. It's derived automatically from
+your school name — "Bright Star Academy" becomes
+`bright-star-academy.schoolkit.ng` — and if another school already took that,
+a number is appended for you. Nothing to type, nothing to get wrong.
 
 Click **Create school**.
 
@@ -59,15 +63,24 @@ Right after signup you land on **/onboarding/1**, a 5-step wizard. A progress in
 - **School name**
 - **Motto** (optional)
 - **Address** (optional)
-- **Phone**
-- **Email**
+- **Phone** — pre-filled with your own number
+- **Email** — pre-filled with your own email
+
+Phone and email here are the *school's* contact details, shown to parents on
+invoices and report cards. They're pre-filled with the ones you just signed
+up with, since for most schools they're the same. If your school has a
+separate front-desk line or office address, just type over them.
 
 Click **Continue**.
 
-### Step 2 — Branding (`/onboarding/2`)
+### Step 2 — Your school logo (`/onboarding/2`)
 
 - **Logo (optional)** — the logo uploader. Click it to choose an image file; it uploads immediately when you pick the file, separately from the rest of this form.
-- **Primary colour (optional)** — a hex code, e.g. `#1A2B3C`. This doesn't change how the app looks yet, but is saved for later.
+
+That's the whole step — click **Continue** to skip it entirely if you don't
+have a logo file to hand. (The primary-colour hex field that used to live
+here moved to **Settings → School**; it didn't change how anything looked
+yet, and hand-typing a hex code was the most confusing part of the wizard.)
 
 Both fields are optional — you can leave this step blank and add a logo later from **Settings → School**. Click **Continue**.
 
