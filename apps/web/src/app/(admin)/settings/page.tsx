@@ -1,4 +1,4 @@
-import { BarChart3, Bell, Building2, CalendarCheck, CreditCard, Percent, ShieldCheck, SlidersHorizontal, Sparkles, User, Users, Wallet, type LucideIcon } from "lucide-react";
+import { BarChart3, Bell, Building2, CalendarCheck, CreditCard, Gauge, Percent, ShieldCheck, SlidersHorizontal, Sparkles, User, Users, Wallet, type LucideIcon } from "lucide-react";
 import Link from "next/link";
 
 // /settings — a small hub linking the settings areas. (Previously a bare
@@ -56,6 +56,12 @@ const LINKS: SettingsLink[] = [
     href: "/settings/parent-summaries",
     description: "AI-written weekly notes to parents. Off until you switch it on.",
     icon: Sparkles,
+  },
+  {
+    label: "AI usage",
+    href: "/settings/ai-usage",
+    description: "What the AI features have used this month, and what's left.",
+    icon: Gauge,
   },
   {
     label: "Security",
