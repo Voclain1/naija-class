@@ -47,17 +47,19 @@ function formatNaira(kobo: number): string {
   return `₦${(kobo / 100).toLocaleString("en-NG", { minimumFractionDigits: 2 })}`;
 }
 
-// Paystack subaccount routing launched (2026-07-31) while Paystack's
-// business review is still pending — no live key available yet, an
-// external dependency outside our control. Online payments run for real
-// against Paystack's TEST mode until that clears; real fee collection in
-// the meantime is cash/POS/bank transfer. This flag drives a visible
-// "Test Mode" indicator so a parent never mistakes a test checkout for a
-// real payment. Defaults to true (fail toward showing the notice) so a
-// missing/misconfigured env var doesn't silently drop it — flip to
-// "false" via NEXT_PUBLIC_PAYSTACK_TEST_MODE once the live key lands,
-// same NEXT_PUBLIC_* pattern as NEXT_PUBLIC_API_URL above.
-const PAYSTACK_TEST_MODE = process.env.NEXT_PUBLIC_PAYSTACK_TEST_MODE !== "false";
+// Paystack's business review cleared and the live key is in place
+// (2026-08-13), so the "Test Mode" notice this page carried from
+// 2026-07-31 is gone, along with the NEXT_PUBLIC_PAYSTACK_TEST_MODE flag
+// that drove it. Removed rather than flipped to "false": that flag
+// defaulted to TRUE (fail toward showing the warning), which was right
+// while it existed but means a Vercel project that loses its env vars —
+// something that has already happened once on this project, see CLAUDE.md
+// on recreating a Vercel project — would put a "this is not a real
+// payment" banner back in front of paying parents. Deleting the flag is
+// the only way that cannot happen.
+//
+// Whether checkout is live or test is determined ENTIRELY by which
+// PAYSTACK_SECRET_KEY the API holds, never by anything in this file.
 
 async function parseErrorMessage(res: Response): Promise<string> {
   const body: unknown = await res.json().catch(() => null);
@@ -172,18 +174,6 @@ export default function StudentDetailPage() {
 
           <section className="flex flex-col gap-3">
             <h2 className="text-lg font-semibold tracking-tight">Invoices</h2>
-
-            {PAYSTACK_TEST_MODE && state.invoices.some((i) => i.totalDue - i.totalPaid > 0) && (
-              <div
-                role="status"
-                className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-700"
-              >
-                <span className="font-medium">Online payment is in test mode.</span>{" "}
-                We&apos;re finishing setup with our payment provider — clicking &quot;Pay&quot;
-                below won&apos;t charge real money. For now, please continue paying school
-                fees by cash, POS, or bank transfer at the school office.
-              </div>
-            )}
 
             {state.invoices.length === 0 && (
               <div className="rounded-lg border border-dashed bg-card p-6 text-center text-sm text-muted-foreground">
@@ -314,11 +304,6 @@ function InvoiceCard({ invoice }: { invoice: PortalInvoiceDto }) {
           >
             {payState.kind === "starting" ? "Redirecting to payment…" : `Pay ${formatNaira(balance)}`}
           </button>
-          {PAYSTACK_TEST_MODE && (
-            <p className="text-center text-xs text-amber-700">
-              Test mode — no real payment will be processed.
-            </p>
-          )}
         </div>
       )}
     </div>
