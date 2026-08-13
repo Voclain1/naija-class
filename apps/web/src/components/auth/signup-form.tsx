@@ -36,7 +36,9 @@ export function SignupForm() {
     resolver: zodResolver(signupOwnerSchema),
     defaultValues: {
       schoolName: "",
-      schoolSlug: "",
+      // schoolSlug is deliberately absent — the API derives it from
+      // schoolName (see signup-owner.dto.ts). Sending "" would fail the
+      // slug regex, so it must be omitted, not blanked.
       ownerFirstName: "",
       ownerLastName: "",
       ownerEmail: "",
@@ -56,14 +58,17 @@ export function SignupForm() {
       router.replace("/onboarding/1");
     } catch (error) {
       if (error instanceof ApiError) {
-        // SCHOOL_SLUG_TAKEN / EMAIL_TAKEN / PHONE_TAKEN — map to the
-        // offending field so the user can fix it without re-typing.
-        if (error.code === "SCHOOL_SLUG_TAKEN") {
-          form.setError("schoolSlug", {
-            type: "manual",
-            message: "That slug is taken. Try another.",
-          });
-        } else if (error.code === "EMAIL_TAKEN") {
+        // EMAIL_TAKEN / PHONE_TAKEN — map to the offending field so the
+        // user can fix it without re-typing.
+        //
+        // SCHOOL_SLUG_TAKEN is deliberately NOT handled here any more: this
+        // form doesn't collect a slug, so there's no field to attach the
+        // error to and nothing the user could do about it. The server
+        // resolves collisions itself by suffixing (bright-star-academy-2),
+        // so the code should be unreachable from this form; if it somehow
+        // fires, it falls through to the generic toast below rather than
+        // silently doing nothing.
+        if (error.code === "EMAIL_TAKEN") {
           form.setError("ownerEmail", {
             type: "manual",
             message: "An account already exists for this email.",
@@ -101,13 +106,6 @@ export function SignupForm() {
             error={form.formState.errors.schoolName?.message}
             autoFocus
           />
-          <Field
-            label="Slug (your subdomain)"
-            id="schoolSlug"
-            register={form.register("schoolSlug")}
-            error={form.formState.errors.schoolSlug?.message}
-            description="Lowercase letters, digits, hyphens. Used as your-slug.schoolkit.ng."
-          />
           <div className="flex gap-2">
             <div className="flex-1">
               <Field
@@ -143,7 +141,7 @@ export function SignupForm() {
             register={form.register("ownerPhone")}
             error={form.formState.errors.ownerPhone?.message}
             autoComplete="tel"
-            description="Include country code, e.g. +234..."
+            description="e.g. 08012345678 or +2348012345678."
           />
           <Field
             label="Password"
@@ -152,7 +150,7 @@ export function SignupForm() {
             register={form.register("password")}
             error={form.formState.errors.password?.message}
             autoComplete="new-password"
-            description="At least 8 characters with one letter and one digit."
+            description="At least 8 characters, with an uppercase letter, a lowercase letter, a digit, and a symbol (e.g. !)."
           />
 
           <label className="flex items-start gap-2 text-sm">

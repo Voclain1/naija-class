@@ -5,7 +5,10 @@
 
 import { cn } from "@/lib/utils";
 
-const STEP_LABELS = ["Basics", "Branding", "Invites", "NDPR", "Complete"];
+// Step 2 is labelled "Logo" rather than "Branding" since 2026-08-12 — the
+// primary-colour hex field moved to Settings and a logo upload is all that
+// step does now.
+const STEP_LABELS = ["Basics", "Logo", "Invites", "NDPR", "Complete"];
 
 export function OnboardingProgress({ currentStep }: { currentStep: number }) {
   return (

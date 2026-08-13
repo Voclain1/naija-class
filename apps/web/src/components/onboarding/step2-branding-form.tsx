@@ -1,17 +1,9 @@
 "use client";
 
-import { zodResolver } from "@hookform/resolvers/zod";
 import { Loader2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { useForm } from "react-hook-form";
 import { toast } from "sonner";
-
-import {
-  onboardingStep2Schema,
-  type OnboardingStep2FormInput,
-  type OnboardingStep2Input,
-} from "@school-kit/types";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -21,7 +13,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { LogoUpload } from "@/components/school/logo-upload";
 import { ApiError } from "@/lib/api-client";
@@ -31,41 +22,34 @@ import { advanceStep2 } from "@/lib/onboarding/onboarding-api";
 
 import { OnboardingProgress } from "./progress-indicator";
 
-// Slice 6 branding form. Logo is now a real upload (LogoUpload, resolved
+// Slice 6 branding form. Logo is a real upload (LogoUpload, resolved
 // 2026-07-26 — see step2-branding.dto.ts's header comment for the full
-// history of the raw-URL-text-field gap this replaced) — it uploads
+// history of the raw-URL-text-field gap this replaced); it uploads
 // immediately on file selection, independent of this form's own Continue
 // submit, same as the settings/school page's copy of the same widget.
-// primaryColor is a hex string; the colour doesn't yet drive any theming,
-// but capturing it now means a later slice only has to wire the consumer
-// side.
 //
-// primaryColor is optional — the user can click Continue with an empty
-// form. onboardingStep2Schema itself preprocesses "" to undefined (see that
-// file's header comment), so the zodResolver below no longer blocks a blank
-// submit; values.primaryColor coming out of a successful submit is always
-// either undefined or an already-trimmed, already-valid hex string.
+// The primary-colour input was REMOVED from this step (2026-08-12). It was
+// a raw hex text field ("#1A2B3C") — the single most confusing input in the
+// wizard, asking a school owner to hand-type a notation they have no reason
+// to know, for a value that doesn't yet drive any theming anywhere. It
+// remains on the Settings > School page for anyone who wants it, and the
+// step-2 payload still carries the field (onboardingStep2Schema is shared
+// with PATCH /schools/me), so nothing on the API side changed — this form
+// simply always submits it as absent.
+//
+// With the colour gone, react-hook-form/zodResolver went with it: there is
+// no field left to register, validate, or show an error for. A plain submit
+// handler posting `{}` is the whole form now.
 export function Step2BrandingForm() {
-  const { school, setSchool } = useAuth();
+  const { setSchool } = useAuth();
   const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
 
-  // Three generics: field values match the schema's Input (what a raw text
-  // field can submit, including ""), the third matches its Output (what
-  // reaches onSubmit after preprocess/validation) — see
-  // OnboardingStep2FormInput's own comment for why these must differ here.
-  const form = useForm<OnboardingStep2FormInput, unknown, OnboardingStep2Input>({
-    resolver: zodResolver(onboardingStep2Schema),
-    defaultValues: {
-      primaryColor: school?.primaryColor ?? undefined,
-    },
-    mode: "onSubmit",
-  });
-
-  const onSubmit = form.handleSubmit(async (values) => {
+  async function onSubmit(e: React.FormEvent) {
+    e.preventDefault();
     setSubmitting(true);
     try {
-      const res = await advanceStep2(values);
+      const res = await advanceStep2({});
       setSchool(res.school);
       track("onboarding_step_completed", { schoolId: res.school.id, step: 2 });
       router.replace("/onboarding/3");
@@ -78,16 +62,17 @@ export function Step2BrandingForm() {
     } finally {
       setSubmitting(false);
     }
-  });
+  }
 
   return (
     <Card className="w-full max-w-md">
       <CardHeader>
         <OnboardingProgress currentStep={2} />
         <div className="mt-4">
-          <CardTitle>Branding</CardTitle>
+          <CardTitle>Your school logo</CardTitle>
           <CardDescription>
-            Optional — you can add a logo and pick a colour later from Settings.
+            Optional — it appears on report cards and invoices. You can add or
+            change it any time from Settings.
           </CardDescription>
         </div>
       </CardHeader>
@@ -96,21 +81,6 @@ export function Step2BrandingForm() {
           <div className="flex flex-col gap-2">
             <Label>Logo (optional)</Label>
             <LogoUpload />
-          </div>
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="primaryColor">Primary colour (optional)</Label>
-            <Input
-              id="primaryColor"
-              type="text"
-              placeholder="#1A2B3C"
-              {...form.register("primaryColor")}
-              aria-invalid={Boolean(form.formState.errors.primaryColor)}
-            />
-            {form.formState.errors.primaryColor && (
-              <p className="text-sm text-destructive">
-                {form.formState.errors.primaryColor.message}
-              </p>
-            )}
           </div>
           <Button type="submit" disabled={submitting} className="mt-2">
             {submitting && <Loader2 className="h-4 w-4 animate-spin" />}

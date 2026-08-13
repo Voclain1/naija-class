@@ -279,6 +279,64 @@ describe("AuthService.signupOwner (Phase 0 Prompt 3)", () => {
     }
   });
 
+  // ------------------------------------------------------------------
+  // Slug is optional on the wire (2026-08-12) — the signup form stopped
+  // collecting it and the service derives one from schoolName instead.
+  // See signup-owner.dto.ts + common/slug/school-slug.ts.
+  // ------------------------------------------------------------------
+
+  it("omitted slug — ZodSchema accepts the payload with no schoolSlug at all", () => {
+    const { schoolSlug: _omitted, ...withoutSlug } = validInput();
+    const parsed = signupOwnerSchema.safeParse(withoutSlug);
+    expect(parsed.success).toBe(true);
+    if (parsed.success) {
+      expect(parsed.data.schoolSlug).toBeUndefined();
+    }
+  });
+
+  it("omitted slug — derives a slug from the school name, and suffixes it on collision", async () => {
+    // Two signups whose school names slugify identically. The first takes
+    // the bare derived slug; the second must NOT fail with
+    // SCHOOL_SLUG_TAKEN — it gets a "-2" suffix, invisibly to the user,
+    // which is the whole point of removing the field from the form.
+    const sharedName = `Bright Star Academy ${runId}`;
+    const expectedBase = `bright-star-academy-${runId}`;
+
+    const { schoolSlug: _a, ...firstInput } = validInput({
+      schoolName: sharedName,
+      ownerEmail: `derive-1-${runId}@example.test`,
+      ownerPhone: `+234806${phoneSuffix}`,
+    });
+    const first = await service.signupOwner(signupOwnerSchema.parse(firstInput), ctx);
+    schoolIdsToCleanup.add(first.school.id);
+    expect(first.school.slug).toBe(expectedBase);
+
+    const { schoolSlug: _b, ...secondInput } = validInput({
+      schoolName: sharedName,
+      ownerEmail: `derive-2-${runId}@example.test`,
+      ownerPhone: `+234807${phoneSuffix}`,
+    });
+    const second = await service.signupOwner(signupOwnerSchema.parse(secondInput), ctx);
+    schoolIdsToCleanup.add(second.school.id);
+    expect(second.school.slug).toBe(`${expectedBase}-2`);
+  });
+
+  it("omitted slug — a school named after a RESERVED slug does not get that slug", async () => {
+    // "Admin" slugifies to "admin", which is reserved (it's one of our own
+    // subdomains). generateUniqueSchoolSlug must skip it rather than hand
+    // the tenant a slug that collides with our routing.
+    const { schoolSlug: _omitted, ...input } = validInput({
+      schoolName: "Admin",
+      ownerEmail: `reserved-${runId}@example.test`,
+      ownerPhone: `+234808${phoneSuffix}`,
+    });
+    const result = await service.signupOwner(signupOwnerSchema.parse(input), ctx);
+    schoolIdsToCleanup.add(result.school.id);
+
+    expect(result.school.slug).not.toBe("admin");
+    expect(result.school.slug).toMatch(/^admin-\d+$/);
+  });
+
   it("ValidationError shape carries Zod issues in details", () => {
     // The pipe is what produces a ValidationError from the ZodError, but we
     // can sanity-check the constructor surface here.

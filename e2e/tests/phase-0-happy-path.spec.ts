@@ -24,7 +24,6 @@ const phoneRunId = Date.now().toString().slice(-9); // 9 numeric digits
 
 const owner = {
   schoolName: `E2E School ${runId}`,
-  schoolSlug: `e2e-${runId}`,
   firstName: "Eve",
   lastName: "Owner",
   email: `e2e-owner-${runId}@school-kit.test`,
@@ -67,7 +66,9 @@ test("Phase 0 happy path: signup -> onboarding -> invite -> accept -> login", as
   await expect(ownerPage.getByText("Create your school")).toBeVisible();
 
   await ownerPage.getByLabel("School name").fill(owner.schoolName);
-  await ownerPage.getByLabel("Slug (your subdomain)").fill(owner.schoolSlug);
+  // No slug field any more (2026-08-12) — the API derives the slug from the
+  // school name. `owner.schoolName` embeds runId, so the derived slug is
+  // unique per run without this test having to pick one.
   await ownerPage.getByLabel("First name").fill(owner.firstName);
   await ownerPage.getByLabel("Last name").fill(owner.lastName);
   await ownerPage.getByLabel("Email").fill(owner.email);
@@ -88,33 +89,24 @@ test("Phase 0 happy path: signup -> onboarding -> invite -> accept -> login", as
   await ownerPage.getByRole("button", { name: "Continue" }).click();
   await ownerPage.waitForURL(/\/onboarding\/2$/);
 
-  // 3. Onboarding step 2 — branding.
+  // 3. Onboarding step 2 — logo.
   //
-  // "Branding" appears twice in the DOM: the OnboardingProgress
-  // indicator's step-2 label (tiny span) and the CardTitle div. Take
-  // .last() — the CardTitle renders after the progress indicator.
+  // Logo is a real upload (resolved 2026-07-26 — see step2-branding.dto.ts's
+  // header comment for the full history), not a URL text field, so this
+  // exercises the real multipart upload path through the browser rather than
+  // just filling a string. It uploads immediately on file selection
+  // (LogoUpload), independent of this step's own Continue submit — we wait
+  // for the upload's own success toast before continuing, so a slow upload
+  // can't race the click.
   //
-  // Logo is a real upload now (resolved 2026-07-26 — see
-  // step2-branding.dto.ts's header comment for the full history), not a
-  // URL text field, so this exercises the real multipart upload path
-  // through the browser rather than just filling a string. It uploads
-  // immediately on file selection (LogoUpload), independent of this
-  // step's own Continue submit — we wait for the upload's own success
-  // toast before continuing, so a slow upload can't race the click.
-  //
-  // primaryColor still has the pre-existing app bug where an empty
-  // string is rejected by .regex() before the form's ""→undefined
-  // coercion runs (Zod validation runs first) — flagged for follow-up,
-  // unrelated to this change; filling a valid value keeps this test on
-  // the happy path exactly as before.
-  await expect(
-    ownerPage.getByText("Branding", { exact: true }).last(),
-  ).toBeVisible();
+  // The primary-colour hex field was removed from this step on 2026-08-12
+  // (it lives on Settings > School now), which also retires the pre-existing
+  // ""-rejected-by-.regex() bug this block used to work around.
+  await expect(ownerPage.getByText("Your school logo")).toBeVisible();
   await ownerPage
     .locator('input[type="file"]')
     .setInputFiles({ name: "logo.png", mimeType: "image/png", buffer: TINY_PNG_BUFFER });
   await expect(ownerPage.getByText("Logo uploaded.")).toBeVisible();
-  await ownerPage.getByLabel("Primary colour (optional)").fill("#1A2B3C");
   await ownerPage.getByRole("button", { name: "Continue" }).click();
   await ownerPage.waitForURL(/\/onboarding\/3$/);
 

@@ -193,6 +193,15 @@ export const baseConfig = [
       // schoolId to scope a withTenant call to.
       "**/common/auth/platform-admin.guard.ts",
       "**/modules/platform-admin/platform-admin.service.ts",
+      // School slug derivation (2026-08-12). Runs PRE-tenant by definition:
+      // it picks the slug for a school row that does not exist yet, so there
+      // is no schoolId to scope a withTenant call to. It reads exactly one
+      // table — `schools`, which has no RLS at all — and selects only `id`
+      // to answer "is this slug free?". Previously lived inline inside
+      // platform-admin.service.ts (already allowlisted above, same
+      // reasoning); it moved out when self-serve signup became a second
+      // caller.
+      "**/common/slug/school-slug.ts",
     ],
     rules: {
       // Exempts basePrisma ONLY. The Anthropic ban is deliberately re-asserted
