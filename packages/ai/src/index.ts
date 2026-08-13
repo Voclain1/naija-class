@@ -70,6 +70,15 @@ export {
 } from "./prompts/report-card-comment.js";
 
 export {
+  PARENT_WEEKLY_SUMMARY_PROMPT,
+  PARENT_WEEKLY_SUMMARY_SCHEMA,
+  PARENT_WEEKLY_SUMMARY_SYSTEM,
+  renderParentWeeklySummaryPrompt,
+  type ParentSummaryScore,
+  type ParentWeeklySummaryInput,
+} from "./prompts/parent-weekly-summary.js";
+
+export {
   REPORT_CARD_FORM_COMMENT_PROMPT,
   REPORT_CARD_FORM_COMMENT_SCHEMA,
   REPORT_CARD_FORM_COMMENT_SYSTEM,

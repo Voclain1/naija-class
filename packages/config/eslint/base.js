@@ -177,6 +177,14 @@ export const baseConfig = [
       // actual audit-log/academic-year/student reads and the nudge-sent
       // stamp. No tenant data is accessed via basePrisma.
       "**/modules/onboarding-nudge/onboarding-nudge.service.ts",
+      // parent-summaries.service.ts — Phase 5 / Slice 5. Same category again:
+      // sweepWeeklySummaries is a weekly system cron that iterates every
+      // ACTIVE school which has opted into parent summaries. basePrisma
+      // fetches ONLY the school id list (schools has no RLS); every read of
+      // student, attendance, score, guardian and summary data, and every
+      // write, goes through withTenant per school. No tenant data is accessed
+      // via basePrisma.
+      "**/modules/parent-summaries/parent-summaries.service.ts",
       // Phase 4 / Slice 2 — guardian portal auth. Same category as the
       // staff auth.guard.ts / auth.service.ts / invitations.service.ts
       // entries above: guardian_sessions/guardian_invitations are FORCE

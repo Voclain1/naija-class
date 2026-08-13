@@ -4,6 +4,7 @@ import { Module } from "@nestjs/common";
 import { AiModule } from "../../common/ai/ai.module.js";
 import { AI_QUEUE } from "../../common/queue/index.js";
 import { AuthModule } from "../auth/auth.module.js";
+import { ParentSummariesModule } from "../parent-summaries/parent-summaries.module.js";
 import { FormCommentsService } from "./form-comments.service.js";
 import { ReportCommentsController } from "./report-comments.controller.js";
 import { ReportCommentsService } from "./report-comments.service.js";
@@ -18,6 +19,10 @@ import { SubjectCommentProcessor } from "./workers/subject-comment.processor.js"
   imports: [
     AuthModule,
     AiModule,
+    // Slice 5: SubjectCommentProcessor is the sole @Processor on AI_QUEUE and
+    // now dispatches parent-summary jobs too, so it needs that service. One
+    // direction only — ParentSummariesModule does not import this one.
+    ParentSummariesModule,
     BullModule.registerQueue({
       name: AI_QUEUE,
       defaultJobOptions: {

@@ -3283,3 +3283,111 @@ describe("multi-tenant isolation (Phase 5 slice 2 — lesson plans)", () => {
     expect(rows).toHaveLength(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Phase 5 / Slice 5 isolation — parent_summaries
+// ---------------------------------------------------------------------------
+// Same flat direct-column policy as lesson_plans above, but this table earns
+// its own suite for a reason the others don't share: its rows are the only
+// AI-generated content in the product read by people OUTSIDE the school
+// (guardians, through the portal). A tenancy leak here would put one school's
+// note about one school's child in front of another school's parent.
+//
+// Note what this suite does NOT cover, deliberately: cross-FAMILY isolation
+// within one school. That is withGuardian()'s job, not RLS's — both schools'
+// rows here share nothing, but two families inside ONE school share a
+// school_id and RLS would happily return both. See phase-4.md Decision B and
+// ParentSummariesService.listForGuardian, which composes the two.
+describe("multi-tenant isolation (Phase 5 slice 5 — parent summaries)", () => {
+  const runId = Math.random().toString(36).slice(2, 8);
+  const WEEK = new Date("2026-08-03T00:00:00.000Z");
+  let schoolA: { id: string };
+  let schoolB: { id: string };
+  let summaryA: { id: string };
+  let summaryB: { id: string };
+
+  async function seed(name: string, slug: string) {
+    const school = await basePrisma.school.create({ data: { name, slug }, select: { id: true } });
+    const summary = await withTenant(school.id, async (db) => {
+      const student = await db.student.create({
+        data: {
+          schoolId: school.id,
+          firstName: "Kemi",
+          lastName: `Learner-${slug}`,
+          admissionNumber: `ADM-${slug}`,
+          dateOfBirth: new Date("2012-01-01"),
+          gender: "FEMALE",
+        },
+        select: { id: true },
+      });
+      return db.parentSummary.create({
+        data: {
+          schoolId: school.id,
+          studentId: student.id,
+          weekStart: WEEK,
+          summary: `ps-${runId}`,
+          promptVersion: "1",
+        },
+        select: { id: true },
+      });
+    });
+    return { school, summary };
+  }
+
+  beforeAll(async () => {
+    const a = await seed("PS RLS A", `ps-rls-a-${runId}`);
+    const b = await seed("PS RLS B", `ps-rls-b-${runId}`);
+    schoolA = a.school;
+    summaryA = a.summary;
+    schoolB = b.school;
+    summaryB = b.summary;
+  });
+
+  afterAll(async () => {
+    for (const s of [schoolA, schoolB]) {
+      if (s?.id) await basePrisma.school.delete({ where: { id: s.id } }).catch(() => undefined);
+    }
+  });
+
+  it("School A sees its own parent summaries only", async () => {
+    const rows = await withTenant(schoolA.id, (db) =>
+      db.parentSummary.findMany({ where: { summary: `ps-${runId}` } }),
+    );
+    const ids = rows.map((r) => r.id);
+    expect(ids).toContain(summaryA.id);
+    expect(ids).not.toContain(summaryB.id);
+  });
+
+  it("findUnique across tenants returns null", async () => {
+    const leak = await withTenant(schoolA.id, (db) =>
+      db.parentSummary.findUnique({ where: { id: summaryB.id } }),
+    );
+    expect(leak).toBeNull();
+  });
+
+  it("INSERT carrying another school's school_id fails WITH CHECK", async () => {
+    await expect(
+      withTenant(schoolA.id, async (db) => {
+        const student = await db.student.findFirstOrThrow({ select: { id: true } });
+        return db.parentSummary.create({
+          data: {
+            schoolId: schoolB.id,
+            studentId: student.id,
+            weekStart: new Date("2026-08-10T00:00:00.000Z"),
+            summary: "should never land",
+            promptVersion: "1",
+          },
+        });
+      }),
+    ).rejects.toThrow();
+  });
+
+  it("raw SQL with unset GUC returns zero rows from parent_summaries (FORCE RLS)", async () => {
+    const rows = await basePrisma.$transaction((tx) =>
+      tx.$queryRaw<Array<{ id: string }>>`
+        SELECT id FROM parent_summaries WHERE summary = ${`ps-${runId}`}
+      `,
+    );
+    expect(rows).toHaveLength(0);
+  });
+});

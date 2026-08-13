@@ -55,3 +55,25 @@ ALTER TABLE "lesson_plans" FORCE  ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation ON lesson_plans
   USING      (school_id::text = current_setting('app.current_school_id', true))
   WITH CHECK (school_id::text = current_setting('app.current_school_id', true));
+
+-- ---------------------------------------------------------------------
+-- Slice 5 — parent_summaries.
+--
+-- Carries its own school_id, so the same cheap flat check. No SECURITY
+-- DEFINER function: the weekly cron enters withTenant() with a schoolId it
+-- read from the school list, and the portal read is inside an authenticated
+-- guardian session that already resolved a schoolId. SD count stays at 16.
+--
+-- Unlike every other table in this file, these rows are read by people
+-- OUTSIDE the school — guardians, through the portal. RLS is the school-to-
+-- school boundary; withGuardian() is the family-to-family boundary within a
+-- school (phase-4.md Decision B). Both apply on the portal read path, and
+-- neither substitutes for the other.
+-- ---------------------------------------------------------------------
+
+ALTER TABLE "parent_summaries" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "parent_summaries" FORCE  ROW LEVEL SECURITY;
+
+CREATE POLICY tenant_isolation ON parent_summaries
+  USING      (school_id::text = current_setting('app.current_school_id', true))
+  WITH CHECK (school_id::text = current_setting('app.current_school_id', true));
