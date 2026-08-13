@@ -17,6 +17,7 @@
 
 import { renderLessonPlanPrompt, renderLessonQuizPrompt } from "../../src/prompts/lesson-plan.js";
 import { renderReportCardCommentPrompt } from "../../src/prompts/report-card-comment.js";
+import { renderReportCardFormCommentPrompt } from "../../src/prompts/report-card-form-comment.js";
 import { check, type EvalCase } from "../harness.js";
 
 // Field names that must never appear in a rendered prompt. If a template ever
@@ -213,6 +214,66 @@ export const piiSafetyCase: EvalCase = {
         "report-card-comment: states attendance is unrecorded rather than omitting it",
         /not recorded/i.test(sparse),
         "silently dropping the attendance line lets the model assume attendance was fine",
+      ),
+    );
+
+    // ---- report-card FORM comment renderer -------------------------------
+    // Same subject as the comment above — an individual student — but a wider
+    // input: every subject they took this term. More fields is more surface for
+    // a future edit to pull a student row through, so it gets the same
+    // sentinel treatment rather than being trusted by association.
+    const formInput = {
+      classLevel: "SENTINEL_LEVEL_SS2",
+      termName: "SENTINEL_TERM_SECOND",
+      subjects: [
+        { subject: "SENTINEL_SUBJECT_MATHS", score: 74, grade: "B" },
+        { subject: "SENTINEL_SUBJECT_ENGLISH", score: 41, grade: "E" },
+      ],
+      overallAverage: 58,
+      overallPosition: 12,
+      classSize: 31,
+      attendanceRate: 78,
+    };
+    const formRendered = renderReportCardFormCommentPrompt(formInput);
+
+    results.push(...assertNoForbidden("report-card-form-comment", formRendered));
+    results.push(
+      check(
+        "report-card-form-comment: renders all declared inputs",
+        [
+          "SENTINEL_LEVEL_SS2",
+          "SENTINEL_TERM_SECOND",
+          "SENTINEL_SUBJECT_MATHS",
+          "SENTINEL_SUBJECT_ENGLISH",
+        ].every((s) => formRendered.includes(s)),
+        "a declared input was silently dropped from the template",
+      ),
+      check(
+        "report-card-form-comment: renderer is deterministic",
+        formRendered === renderReportCardFormCommentPrompt(formInput),
+        "same input produced different output — a clock or env read has crept in",
+      ),
+    );
+
+    const sparseForm = renderReportCardFormCommentPrompt({
+      classLevel: "JSS1",
+      termName: "First Term",
+      subjects: [],
+      overallAverage: null,
+      overallPosition: null,
+      classSize: null,
+      attendanceRate: null,
+    });
+    results.push(
+      check(
+        "report-card-form-comment: null-heavy input renders without leaking undefined/null",
+        !/\b(undefined|null|NaN)\b/.test(sparseForm),
+        `rendered: ${JSON.stringify(sparseForm)}`,
+      ),
+      check(
+        "report-card-form-comment: states attendance is unrecorded rather than omitting it",
+        /not recorded/i.test(sparseForm),
+        "silently dropping the line lets the model assume attendance was fine",
       ),
     );
 
