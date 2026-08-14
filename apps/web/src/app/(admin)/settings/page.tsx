@@ -1,4 +1,4 @@
-import { BarChart3, Bell, Building2, CalendarCheck, CreditCard, Percent, ShieldCheck, SlidersHorizontal, User, Users, Wallet, type LucideIcon } from "lucide-react";
+import { BarChart3, Bell, Building2, CalendarCheck, CreditCard, Percent, ShieldCheck, SlidersHorizontal, Sparkles, User, Users, Wallet, type LucideIcon } from "lucide-react";
 import Link from "next/link";
 
 // /settings — a small hub linking the settings areas. (Previously a bare
@@ -50,6 +50,12 @@ const LINKS: SettingsLink[] = [
     href: "/settings/notifications",
     description: "Email and SMS channels for guardian invitations and reminders.",
     icon: Bell,
+  },
+  {
+    label: "Weekly parent updates",
+    href: "/settings/parent-summaries",
+    description: "AI-written weekly notes to parents. Off until you switch it on.",
+    icon: Sparkles,
   },
   {
     label: "Security",

@@ -2,7 +2,16 @@ import { OnWorkerEvent, Processor, WorkerHost } from "@nestjs/bullmq";
 import { Logger } from "@nestjs/common";
 import { Job } from "bullmq";
 
-import { AI_JOB_FORM_COMMENT, AI_JOB_SUBJECT_COMMENT, AI_QUEUE } from "../../../common/queue/index.js";
+import {
+  AI_JOB_FORM_COMMENT,
+  AI_JOB_PARENT_SUMMARY,
+  AI_JOB_SUBJECT_COMMENT,
+  AI_QUEUE,
+} from "../../../common/queue/index.js";
+import {
+  ParentSummariesService,
+  type ParentSummaryJobData,
+} from "../../parent-summaries/parent-summaries.service.js";
 import { FormCommentsService, type FormCommentJobData } from "../form-comments.service.js";
 import { ReportCommentsService, type SubjectCommentJobData } from "../report-comments.service.js";
 
@@ -38,6 +47,12 @@ export class SubjectCommentProcessor extends WorkerHost {
   constructor(
     private readonly comments: ReportCommentsService,
     private readonly formComments: FormCommentsService,
+    // Slice 5. This processor now serves a module it does not belong to,
+    // which is the cost of the one-@Processor-per-queue rule above. The
+    // dependency runs one way (report-comments → parent-summaries); if a
+    // fourth AI feature lands, the honest refactor is to move this dispatcher
+    // into common/ai rather than keep accreting cross-module injections here.
+    private readonly parentSummaries: ParentSummariesService,
   ) {
     super();
   }
@@ -48,6 +63,9 @@ export class SubjectCommentProcessor extends WorkerHost {
     }
     if (job.name === AI_JOB_FORM_COMMENT) {
       return this.handleFormComment(job as Job<FormCommentJobData>);
+    }
+    if (job.name === AI_JOB_PARENT_SUMMARY) {
+      return this.handleParentSummary(job as Job<ParentSummaryJobData>);
     }
     throw new Error(`unknown job name on ai queue: ${job.name}`);
   }
@@ -70,6 +88,16 @@ export class SubjectCommentProcessor extends WorkerHost {
       );
     }
     await this.formComments.generateForStudent(d);
+  };
+
+  private readonly handleParentSummary = async (job: Job<ParentSummaryJobData>): Promise<void> => {
+    const d = job.data;
+    if (!d?.schoolId || !d?.studentId || !d?.weekStart) {
+      throw new Error(
+        `parent-summary: job ${job.id ?? "(no id)"} missing tenancy/target data; refusing to run`,
+      );
+    }
+    await this.parentSummaries.generateForStudent(d);
   };
 
   // A failed generation leaves the student without a suggestion, which the

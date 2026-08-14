@@ -14,6 +14,7 @@
 //     over-triggering and rigid output rather than compliance.
 
 import { LESSON_PLAN_SYSTEM, LESSON_QUIZ_SYSTEM } from "../../src/prompts/lesson-plan.js";
+import { PARENT_WEEKLY_SUMMARY_SYSTEM } from "../../src/prompts/parent-weekly-summary.js";
 import { REPORT_CARD_COMMENT_SYSTEM } from "../../src/prompts/report-card-comment.js";
 import { REPORT_CARD_FORM_COMMENT_SYSTEM } from "../../src/prompts/report-card-form-comment.js";
 import { check, warn, type EvalCase } from "../harness.js";
@@ -92,7 +93,67 @@ export const promptQualityCase: EvalCase = {
       ...auditSystemPrompt("lesson-quiz", LESSON_QUIZ_SYSTEM),
       ...auditSystemPrompt("report-card-comment", REPORT_CARD_COMMENT_SYSTEM),
       ...auditSystemPrompt("report-card-form-comment", REPORT_CARD_FORM_COMMENT_SYSTEM),
+      ...auditSystemPrompt("parent-weekly-summary", PARENT_WEEKLY_SUMMARY_SYSTEM),
     ];
+
+    // ---- parent weekly summary: the UNATTENDED-OUTPUT checks --------------
+    // Every other prompt in this registry produces a draft that a teacher
+    // reads before anyone else does. This one's output goes to a parent with
+    // nobody in between (D16), so the instructions that keep it safe are not
+    // quality preferences — they are the only control on the output, and an
+    // edit that removes one must fail the build rather than ship quietly.
+    const summarySystem = PARENT_WEEKLY_SUMMARY_SYSTEM;
+
+    results.push(
+      check(
+        "parent-weekly-summary: forbids urgency and alarm",
+        /never tell the parent to act urgently/i.test(summarySystem) &&
+          /immediately/i.test(summarySystem),
+        "an unsupervised model telling a parent to come to the school immediately about their " +
+          "child is the specific harm D16's no-gate decision has to hold the line on — there is " +
+          "no teacher reading this before it sends",
+      ),
+      check(
+        "parent-weekly-summary: routes real concerns through the class teacher",
+        /class teacher/i.test(summarySystem),
+        "a concern with no named route out leaves a worried parent with nowhere to go",
+      ),
+      check(
+        "parent-weekly-summary: forbids over-reading a single data point",
+        /one low score is one low score/i.test(summarySystem),
+        "a week is a tiny sample; without this the model narrates one middling test as a trend, " +
+          "and no human will catch it before the parent reads it",
+      ),
+      check(
+        "parent-weekly-summary: forbids inventing a child's name",
+        /never invent a name/i.test(summarySystem),
+        "the model is given no name — and unlike a report card, nobody proofreads this one",
+      ),
+      check(
+        "parent-weekly-summary: forbids gendered pronouns",
+        /never use/i.test(summarySystem) && /\bhe\b.*\bshe\b|gender/i.test(summarySystem),
+        "gender is deliberately not sent, so any pronoun is a guess in a message to the child's own parent",
+      ),
+      check(
+        "parent-weekly-summary: bans teacher-register jargon",
+        /\bCA1\b/.test(summarySystem) && /do not say/i.test(summarySystem),
+        'the audience is a parent on a phone, not a staff room — "CA1 component weighting" is ' +
+          "the register this prompt exists to translate out of",
+      ),
+      check(
+        "parent-weekly-summary: asks for one concrete thing to do at home",
+        /doable thing the parent could do at home/i.test(summarySystem) &&
+          /monitor their progress/i.test(summarySystem),
+        'without a banned-example to anchor it the model closes on "continue to monitor their ' +
+          'progress", which is the filler phrase that makes a parent stop opening these',
+      ),
+      check(
+        "parent-weekly-summary: constrains length for a phone screen",
+        /three to four short sentences/i.test(summarySystem),
+        "this is read on a phone; an unconstrained note goes unread, which is a silent failure — " +
+          "the send still succeeds",
+      ),
+    );
 
     // ---- form comment: what makes it a FORM comment ----------------------
     // These are the checks that keep it from collapsing into a longer subject

@@ -110,6 +110,18 @@ model School {
   // AI budget would be the tail wagging the dog.
   aiEnabled            Boolean   @default(true) @map("ai_enabled")
   aiMonthlyTokenBudget Int?      @map("ai_monthly_token_budget")
+
+  //   parentSummaryEnabled   Phase 5 / Slice 5. Weekly AI progress summaries
+  //                          sent to guardians. Defaults FALSE — the opposite
+  //                          of aiEnabled directly above, and the difference is
+  //                          the whole of D16. Every other AI feature produces a
+  //                          draft a teacher reads before anyone else does; this
+  //                          one reaches a parent with nobody in between, so the
+  //                          school opts in deliberately having seen what it
+  //                          writes, rather than discovering it after a parent
+  //                          has already read one. Do not "make it consistent"
+  //                          with aiEnabled's default-true.
+  parentSummaryEnabled Boolean   @default(false) @map("parent_summary_enabled")
   createdAt      DateTime     @default(now()) @map("created_at")
   updatedAt      DateTime     @updatedAt @map("updated_at")
 
@@ -564,6 +576,7 @@ model Student {
   enrollments       Enrollment[]       // Phase 1 / Slice 9 back-relation.
   masteryRecords    MasteryRecord[]    // Phase 1 / Slice 12 back-relation.
   aiInteractionLogs AIInteractionLog[] // Phase 1 / Slice 12 back-relation.
+  parentSummaries   ParentSummary[]    // Phase 5 / Slice 5 back-relation.
 
   @@unique([schoolId, admissionNumber])
   @@index([schoolId])
@@ -2015,4 +2028,78 @@ model SubjectAttendanceRecord {
   @@index([schoolId, classArmId, subjectId, date], map: "subject_attendance_arm_subject_date_idx") // register query
   @@index([schoolId, classArmId, subjectId, termId], map: "subject_attendance_arm_subject_term_idx") // summary query (arm-keyed, mirrors slice 7's term index)
   @@map("subject_attendance_records")
+}
+
+// ---------- Phase 5 / Slice 5 — Weekly parent progress summary ----------
+//
+// One row per (student, week). The row IS the delivery record: the portal
+// reads it, the email send stamps it, and a re-run of the sweep finds it and
+// skips. There is no separate outbox table — one guardian-facing artifact per
+// child per week does not need one, and the @@unique below is what makes the
+// weekly cron idempotent (a retried or double-scheduled sweep cannot bill the
+// school twice for the same child's week).
+//
+// NO APPROVAL GATE, BY DECISION (phase-5.md D16) — and this table is where
+// that decision is most visible, because it is the ONE piece of AI output in
+// the product that has no accepted/suggested split. Slices 3 and 4 write a
+// suggestion to ai_interaction_logs and require a separate permissioned write
+// to reach a student's record; this row is written once and is immediately
+// readable by the parent. The control is School.parentSummaryEnabled
+// (default FALSE), not a human reviewer. If that ever feels too thin against
+// real output, the migration path is additive: a `releasedAt` column, null
+// until a form teacher releases the week, with the portal filtering on it.
+//
+// WHY A TABLE AND NOT ai_interaction_logs (which slices 3-4 reuse): those hold
+// SUGGESTIONS a teacher may never accept — loose payload, no uniqueness, no
+// delivery semantics. This is a delivered artifact a parent can re-read weeks
+// later, needs a stable per-week identity to be idempotent, and is queried by
+// the portal on a hot path (guardian opens a child's page). A typed table with
+// a real unique constraint is the right shape; a JSON payload keyed by a
+// loose sessionRef is not.
+//
+// weekStart is @db.Date and always a MONDAY (UTC), per CLAUDE.md's DATE
+// convention — a summary covers a calendar week, not a moment, and storing a
+// timestamp would reintroduce exactly the "midnight in which zone?" question
+// the convention exists to close.
+model ParentSummary {
+  id        String   @id @default(uuid())
+  schoolId  String   @map("school_id")
+  studentId String   @map("student_id")
+
+  // Monday of the covered week, UTC. The week covered is [weekStart,
+  // weekStart + 7 days).
+  weekStart DateTime @map("week_start") @db.Date
+
+  // The generated note. NOT nullable, unlike lesson_plans' content columns:
+  // there is no user-visible draft state here, so a row only exists once
+  // there is something to show. A failed generation writes no row and the
+  // next sweep retries the week.
+  summary String
+
+  // Which prompt revision wrote it. Same reasoning as ai_generations'
+  // promptVersion — a quality complaint about a specific week's note must be
+  // traceable to the prompt that produced it, and prompt versions bump often.
+  promptVersion String @map("prompt_version")
+
+  // Email delivery stamp. Null = generated but not emailed (either the
+  // school has email notifications off, no guardian has an email address, or
+  // the send failed — all three are ordinary states, not errors). The portal
+  // does not care: it reads the row regardless. This column exists so a
+  // re-run does not re-send, and so "did the parent actually get it?" is
+  // answerable.
+  emailedAt DateTime? @map("emailed_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // Cascade on the student: a deleted student's weekly notes are not
+  // recoverable content and have no reader once the child is gone. Contrast
+  // with ai_generations, which deliberately survives content deletion because
+  // it is the record that money was spent.
+  student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([schoolId, studentId, weekStart])
+  @@index([schoolId])
+  // The portal's read: one child's notes, newest first.
+  @@index([schoolId, studentId, weekStart])
+  @@map("parent_summaries")
 }

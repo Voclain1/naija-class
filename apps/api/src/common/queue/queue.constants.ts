@@ -33,3 +33,13 @@ export const AI_JOB_SUBJECT_COMMENT = "subject-comment";
 // pattern ImportsProcessor already established for one queue carrying several
 // job kinds.
 export const AI_JOB_FORM_COMMENT = "form-comment";
+// Slice 5 — one weekly parent summary. Third job NAME on the same queue, same
+// dispatcher, for the same reason as slice 4.
+//
+// Unlike the two comment jobs, these are produced by a CRON rather than a
+// teacher pressing a button, so the queue is doing a second job here: it is
+// what stops a Sunday-night sweep of every enrolled student in every school
+// from becoming one enormous synchronous loop inside a scheduled method. The
+// sweep enqueues and returns; the worker drains at concurrency 3 like
+// everything else on this queue.
+export const AI_JOB_PARENT_SUMMARY = "parent-summary";

@@ -382,6 +382,13 @@ export const PHASE_5_PERMISSIONS = [
   // not.
   "report-card-comment.generate",
   "report-card-comment.write",
+  // Slice 5 — weekly parent summaries. `.read` is "see what was sent to
+  // parents"; `.manage` is "decide whether unattended AI output reaches
+  // parents at all, and re-run a week". The second is an operator decision
+  // (D16), not a teaching one, which is why it is not folded into `.read`
+  // and why the teacher grant below gets only the first.
+  "parent-summary.read",
+  "parent-summary.manage",
 ] as const;
 
 // The `teacher` role's exact Phase 5 grant. Explicit inclusion list, mirroring
@@ -400,6 +407,12 @@ export const PHASE_5_TEACHER_PERMISSIONS = [
   // would leave a teacher able to spend budget on drafts they cannot then use.
   "report-card-comment.generate",
   "report-card-comment.write",
+  // Read-only on parent summaries, deliberately without `.manage`. A form
+  // teacher fielding "the school said my child was late twice last week"
+  // needs to read the note the parent is holding; deciding whether the
+  // school sends unattended AI notes to parents at all is not theirs to
+  // flip.
+  "parent-summary.read",
 ] as const;
 
 // Phase 3 / Slice 15 — the `bursar` role's exact grant. Explicit inclusion

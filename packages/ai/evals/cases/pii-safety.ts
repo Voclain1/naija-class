@@ -16,6 +16,7 @@
 // here immediately, because the leaked value is not in the sentinel set.
 
 import { renderLessonPlanPrompt, renderLessonQuizPrompt } from "../../src/prompts/lesson-plan.js";
+import { renderParentWeeklySummaryPrompt } from "../../src/prompts/parent-weekly-summary.js";
 import { renderReportCardCommentPrompt } from "../../src/prompts/report-card-comment.js";
 import { renderReportCardFormCommentPrompt } from "../../src/prompts/report-card-form-comment.js";
 import { check, type EvalCase } from "../harness.js";
@@ -274,6 +275,77 @@ export const piiSafetyCase: EvalCase = {
         "report-card-form-comment: states attendance is unrecorded rather than omitting it",
         /not recorded/i.test(sparseForm),
         "silently dropping the line lets the model assume attendance was fine",
+      ),
+    );
+
+    // ---- parent weekly summary renderer ----------------------------------
+    // The highest-stakes renderer in the phase for this check, for a reason
+    // that has nothing to do with its input shape: its output is delivered
+    // to a parent unattended (D16). Every other prompt's output passes a
+    // teacher who would notice a leaked name before it reached anyone. This
+    // one has no such reader, so the renderer is the only thing standing
+    // between a careless edit and a real disclosure.
+    const summaryInput = {
+      classLevel: "SENTINEL_LEVEL_JSS3",
+      daysMarked: 5,
+      daysPresent: 3,
+      daysAbsent: 1,
+      daysLate: 1,
+      scores: [
+        {
+          subject: "SENTINEL_SUBJECT_MATHS",
+          assessmentName: "SENTINEL_ASSESSMENT_TEST",
+          score: 15,
+          maxScore: 20,
+        },
+      ],
+    };
+    const summaryRendered = renderParentWeeklySummaryPrompt(summaryInput);
+
+    results.push(...assertNoForbidden("parent-weekly-summary", summaryRendered));
+    results.push(
+      check(
+        "parent-weekly-summary: renders all declared inputs",
+        [
+          "SENTINEL_LEVEL_JSS3",
+          "SENTINEL_SUBJECT_MATHS",
+          "SENTINEL_ASSESSMENT_TEST",
+        ].every((s) => summaryRendered.includes(s)),
+        "a declared input was silently dropped from the template",
+      ),
+      check(
+        "parent-weekly-summary: renderer is deterministic",
+        summaryRendered === renderParentWeeklySummaryPrompt(summaryInput),
+        "same input produced different output — a clock or env read has crept in. " +
+          "This renderer is a live risk for that specific bug: it summarises a WEEK, " +
+          "so reaching for `new Date()` to label the period would be an easy edit to make",
+      ),
+    );
+
+    // The quiet-week shape. The sweep is supposed to skip these before they
+    // reach the model at all, but the renderer must still produce sane text
+    // if one gets through — a "null out of null" in a note to a parent is a
+    // worse failure here than anywhere else in the phase.
+    const quietWeek = renderParentWeeklySummaryPrompt({
+      classLevel: "JSS1",
+      daysMarked: 0,
+      daysPresent: 0,
+      daysAbsent: 0,
+      daysLate: 0,
+      scores: [],
+    });
+    results.push(
+      check(
+        "parent-weekly-summary: empty week renders without leaking undefined/null",
+        !/\b(undefined|null|NaN)\b/.test(quietWeek),
+        `rendered: ${JSON.stringify(quietWeek)}`,
+      ),
+      check(
+        "parent-weekly-summary: distinguishes an unmarked register from perfect attendance",
+        /register was not taken/i.test(quietWeek),
+        "zero absences and a register nobody took read identically to the model unless the " +
+          "renderer says which one happened — and telling a parent their child attended " +
+          "every day when the register was never opened is a factual claim we cannot make",
       ),
     );
 

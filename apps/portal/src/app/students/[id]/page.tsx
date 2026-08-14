@@ -15,13 +15,29 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
-import type { PaystackInitResponseDto, PortalInvoiceDto, PortalStudentDto } from "@school-kit/types";
+import type {
+  PaystackInitResponseDto,
+  PortalInvoiceDto,
+  PortalParentSummaryDto,
+  PortalStudentDto,
+} from "@school-kit/types";
 
 type LoadState =
   | { kind: "loading" }
   | { kind: "not-found" }
   | { kind: "error"; message: string }
-  | { kind: "loaded"; student: PortalStudentDto; invoices: PortalInvoiceDto[] };
+  | {
+      kind: "loaded";
+      student: PortalStudentDto;
+      invoices: PortalInvoiceDto[];
+      // Phase 5 / Slice 5. Fetched alongside the other two, but its failure is
+      // NOT allowed to fail the page: a school that has never switched weekly
+      // summaries on returns an empty list, and a transient error on this one
+      // endpoint should not hide a parent's invoices. So it degrades to an
+      // empty array rather than an error state — the section simply doesn't
+      // render.
+      summaries: PortalParentSummaryDto[];
+    };
 
 const STATUS_LABELS: Record<PortalInvoiceDto["status"], string> = {
   DRAFT: "Draft",
@@ -42,6 +58,21 @@ const STATUS_STYLES: Record<PortalInvoiceDto["status"], string> = {
   CANCELLED: "bg-muted text-muted-foreground",
   REFUNDED: "bg-muted text-muted-foreground",
 };
+
+// weekStart is a DATE from the API (no time-of-day, no zone). Parsed with an
+// explicit UTC time and formatted in UTC so a guardian in Lagos (UTC+1) sees
+// the Monday the API meant, not the Sunday before it — the exact off-by-one
+// the DATE convention exists to avoid, which a naive `new Date(s)` +
+// toLocaleDateString would reintroduce here at the display layer.
+function formatWeek(weekStart: string | Date): string {
+  const d = typeof weekStart === "string" ? new Date(`${weekStart.slice(0, 10)}T00:00:00Z`) : weekStart;
+  return d.toLocaleDateString("en-NG", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
 
 function formatNaira(kobo: number): string {
   return `₦${(kobo / 100).toLocaleString("en-NG", { minimumFractionDigits: 2 })}`;
@@ -79,9 +110,13 @@ export default function StudentDetailPage() {
 
     async function load() {
       try {
-        const [studentRes, invoicesRes] = await Promise.all([
+        const [studentRes, invoicesRes, summariesRes] = await Promise.all([
           fetch(`/api/portal/students/${params.id}`),
           fetch(`/api/portal/students/${params.id}/invoices`),
+          // Deliberately not included in the status checks below. See the
+          // note on LoadState.summaries: this endpoint is additive, and a
+          // failure here must not take the page down.
+          fetch(`/api/portal/students/${params.id}/summaries`).catch(() => null),
         ]);
 
         if (studentRes.status === 401 || invoicesRes.status === 401) {
@@ -119,7 +154,18 @@ export default function StudentDetailPage() {
 
         const student = (await studentRes.json()) as PortalStudentDto;
         const invoices = ((await invoicesRes.json()) as { data: PortalInvoiceDto[] }).data;
-        if (!cancelled) setState({ kind: "loaded", student, invoices });
+
+        let summaries: PortalParentSummaryDto[] = [];
+        if (summariesRes?.ok) {
+          try {
+            summaries = ((await summariesRes.json()) as { data: PortalParentSummaryDto[] }).data;
+          } catch {
+            // Malformed body — same treatment as a failed fetch: no section.
+            summaries = [];
+          }
+        }
+
+        if (!cancelled) setState({ kind: "loaded", student, invoices, summaries });
       } catch {
         if (!cancelled) {
           setState({
@@ -171,6 +217,26 @@ export default function StudentDetailPage() {
                 : " · Not enrolled this term"}
             </p>
           </header>
+
+          {/* Weekly updates sit ABOVE invoices deliberately: a parent opening
+              their child's page is more often checking on the child than on a
+              bill, and this is the only section here that changes week to
+              week. The section is absent entirely when the school hasn't
+              switched the feature on — no empty state, because "your school
+              doesn't do this" is not something a parent needs told. */}
+          {state.summaries.length > 0 && (
+            <section className="flex flex-col gap-3">
+              <h2 className="text-lg font-semibold tracking-tight">Weekly updates</h2>
+              {state.summaries.map((s) => (
+                <article key={s.id} className="rounded-lg border bg-card p-4">
+                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    Week of {formatWeek(s.weekStart)}
+                  </p>
+                  <p className="mt-2 text-sm leading-relaxed">{s.summary}</p>
+                </article>
+              ))}
+            </section>
+          )}
 
           <section className="flex flex-col gap-3">
             <h2 className="text-lg font-semibold tracking-tight">Invoices</h2>
