@@ -72,7 +72,7 @@ list. Actuals and estimates:
 | 5 — Weekly parent progress summary | 4 days | ~1 day (2026-08-13) |
 | 6 — Curriculum ingestion / RAG | 8 days | — |
 | 7 — Student tutor | 8 days | — |
-| 8 — Admin insights | 4 days | — |
+| 8 — Admin insights | 4-5 days | ~1 day (2026-08-13) |
 
 Slices 1–4 came in at roughly the 4-week budget's first half. Slices 6–7
 are the ones that will blow it: RAG is a content-sourcing problem wearing an
@@ -114,6 +114,11 @@ whole-child comment, reusing slice 3's queue, suggestion-then-accept shape,
 and guard structure. Adds `AI_JOB_FORM_COMMENT` as a branch in the existing
 processor rather than a second `@Processor`.
 
+**Slice 8 — Admin insights (AI-led).** An admin types a question in their own
+words at `/insights`; the model ROUTES it to one of four fixed reports, SQL
+computes the report, and the model NARRATES over the computed figures. See
+D17 — the division of labour is the whole design.
+
 **Slice 5 — Weekly parent progress summary.** `parent_summaries` table,
 `schools.parent_summary_enabled` (default FALSE), a Monday-morning cron sweep
 that fans out to `AI_QUEUE`, email delivery through the existing notification
@@ -133,10 +138,9 @@ that is a decision with teeth.
 **Slice 7 — Student tutor.** Not scoped. Blocked on slice 6 and on a
 student-facing surface existing at all.
 
-**Slice 8 — Admin insights.** Not scoped. "Which classes are
-underperforming?", "which students are at risk?" — pre-computed weekly.
-Note this one may not need an LLM at all for v1; the queries are
-expressible in SQL and the AI adds phrasing, not analysis.
+With slice 8 shipped, these two are all that remain of ARCHITECTURE §7 for
+this phase — and they are the two that will decide whether Phase 5 runs long
+or slices 6–7 become their own phase.
 
 ---
 
@@ -467,6 +471,9 @@ POST   /report-card-comments/form/generate   report-card-comment.generate
 # AI usage (not a slice — closing slice 1's `ai-usage.read` gap)
 GET    /ai-usage                             ai-usage.read
 
+# Slice 8 — admin insights
+POST   /insights/ask                         insight.read            (owner/admin only)
+
 # Slice 5 — weekly parent summaries
 GET    /parent-summaries                     parent-summary.read     (staff view of what was sent)
 GET    /parent-summaries/settings            parent-summary.manage
@@ -499,6 +506,7 @@ the list endpoint and watches suggestions appear.
 | Form comment | in report-card board | as above, one row |
 | Weekly updates (admin) | `(admin)/settings/parent-summaries` | off, on, on-but-AI-disabled, on-but-AI-unconfigured, recent-notes list, run-now |
 | Weekly updates (guardian) | portal `students/[id]` | absent when none exist; list of notes newest first |
+| Insights | `(admin)/insights` | no term chosen, empty, thinking, unsupported question, answer + table, table-only (narration unavailable) |
 
 Every AI surface needs an explicit **disabled** state that reads sensibly for
 all five `AI_ERROR_CODES` — this is the visible half of D11 and D6, and it is
@@ -590,7 +598,13 @@ until that changes: do not switch a school on until `live-generation` has run
 and someone has read a batch of real output. The settings screen's "write last
 week's updates now" button exists for exactly that.
 
-**Four shipped features have never produced a generation.** Slices 2–5 are
+**Slice 8 is the first surface where the model DECIDES something** (which
+report answers the question) rather than only phrasing. D17 bounds that
+decision to a four-way enum with an explicit "unsupported" escape, and the
+routed report is always shown so a misroute is visible — but it is a real
+change in kind from slices 2-5, and worth watching once live output exists.
+
+**Five shipped features have never produced a generation.** Slices 2–5 are
 in production, live for six schools, and permanently in their
 `AI_NOT_CONFIGURED` state. Configuring the key locally does not change that
 — it needs `flyctl secrets set` on `school-kit-api` too, and this project has
@@ -670,6 +684,47 @@ Consequence for slice ordering: because nothing gates the output, the
 content-quality eval gap in §9 bites harder here than on any shipped slice.
 Turning this on for a school should not happen before `live-generation` has
 actually run at least once.
+
+### D17 — Insights: the model routes and narrates; SQL computes **[locked 2026-08-13]**
+
+Slice 8 is AI-led — the admin asks in free text rather than picking a report
+from a menu — but the model's output space is deliberately tiny:
+
+1. **Route.** Free-text question → one label from a closed enum of four
+   reports, plus an `unsupported` boolean. No parameters, no ids, no numbers.
+   An earlier shape had it emit `{ intent, params }`; that was dropped because
+   any id-shaped parameter is either invented (the model has never seen a
+   class-arm id) or an injection surface.
+2. **Compute.** Ordinary SQL in `InsightsService`, one method per intent.
+3. **Narrate.** Two to three sentences over the already-computed figures.
+
+**The model never produces a number.** This surface is read by an owner
+deciding which class needs another teacher; a wrong sentence is embarrassing,
+a wrong number is a staffing decision made on fiction. The rejected
+alternative — letting the model choose what to query — makes fabricated
+figures possible in principle, and this codebase has no content-quality evals
+that would catch one (§9).
+
+Consequences worth keeping:
+- **Two calls, not one.** A combined call would put the routing decision and
+  the prose in the same token stream, making a misroute invisible. Splitting
+  them also makes narration skippable: if it fails or the budget runs out, the
+  figures are already computed and still render with `answer: null`.
+- **The routed report name is echoed to the UI** and always displayed. A
+  misroute is this feature's most likely failure and prose alone would hide it.
+- **`unsupported` is a first-class answer.** Fees, individual children and
+  staff questions are refused rather than approximated by the nearest academic
+  report.
+- **The PII split is structural.** The at-risk table carries student names —
+  API to browser, never through a prompt. The narration input for that same
+  report is aggregate only ("12 students flagged, average 38%"), because a
+  per-student line is a student record reaching the model even without a name
+  attached.
+
+No new table: reports are computed live. A pre-computed weekly snapshot (which
+ARCHITECTURE §7 floats) would need its own staleness story, and a head teacher
+asking on a Wednesday wants Wednesday's answer. Revisit if the live queries get
+slow at real roll sizes.
 
 ### Remaining decisions — resolved by default, flagged for objection
 

@@ -70,6 +70,19 @@ export {
 } from "./prompts/report-card-comment.js";
 
 export {
+  INSIGHTS_NARRATION_PROMPT,
+  INSIGHTS_NARRATION_SCHEMA,
+  INSIGHTS_NARRATION_SYSTEM,
+  INSIGHTS_ROUTER_PROMPT,
+  INSIGHTS_ROUTER_SYSTEM,
+  buildInsightsRouterSchema,
+  renderInsightsNarrationPrompt,
+  renderInsightsRouterPrompt,
+  type InsightsNarrationInput,
+  type InsightsRouterInput,
+} from "./prompts/insights.js";
+
+export {
   PARENT_WEEKLY_SUMMARY_PROMPT,
   PARENT_WEEKLY_SUMMARY_SCHEMA,
   PARENT_WEEKLY_SUMMARY_SYSTEM,
