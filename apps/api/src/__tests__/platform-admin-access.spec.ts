@@ -278,8 +278,14 @@ describe("Platform admin access (2026-08-02)", () => {
     //     commercial status ABOUT the tenancy, in the same category as
     //     isActive/ownerInvitePending — not the school's own financial
     //     configuration, which stays out of scope per CLAUDE.md's inventory)
+    //   - aiEnabled                       2026-08-14 (per-school AI kill
+    //     switch; same category — platform status about the tenancy, set by
+    //     the operator. Note what did NOT come with it: aiMonthlyTokenBudget
+    //     is spend configuration and parentSummaryEnabled is the school's own
+    //     opt-in, and neither is needed to answer "is AI on here")
     expect(Object.keys(row).sort()).toEqual(
       [
+        "aiEnabled",
         "createdAt",
         "earlyAccessGrantedAt",
         "isActive",
@@ -603,6 +609,140 @@ describe("Platform admin access (2026-08-02)", () => {
     });
   });
 
+  // The per-school AI kill switch. Structurally the twin of early-access
+  // above, with one material difference: this flag is READ ON THE HOT PATH by
+  // AiGenerationService.reserve(), so these tests assert the value actually
+  // lands on the School row, not merely that the endpoint echoes it back.
+  describe("PATCH /platform-admin/schools/:schoolId/ai (2026-08-14)", () => {
+    it("an ordinary staff session gets a 403, and no token gets a 401", async () => {
+      const forbidden = await request(app.getHttpServer())
+        .patch(`/api/v1/platform-admin/schools/${schoolA}/ai`)
+        .set("Authorization", `Bearer ${ownerAToken}`)
+        .send({ aiEnabled: false });
+      expect(forbidden.status).toBe(403);
+
+      const unauthorized = await request(app.getHttpServer())
+        .patch(`/api/v1/platform-admin/schools/${schoolA}/ai`)
+        .send({ aiEnabled: false });
+      expect(unauthorized.status).toBe(401);
+
+      // Neither rejected call may have moved the underlying row.
+      const school = await basePrisma.school.findUnique({
+        where: { id: schoolA },
+        select: { aiEnabled: true },
+      });
+      expect(school?.aiEnabled).toBe(true);
+    });
+
+    it("disables then re-enables, and the value round-trips through both the School row and the schools list", async () => {
+      const off = await request(app.getHttpServer())
+        .patch(`/api/v1/platform-admin/schools/${schoolA}/ai`)
+        .set("Authorization", `Bearer ${platformAdminToken}`)
+        .send({ aiEnabled: false });
+      expect(off.status).toBe(200);
+      expect(off.body).toEqual({ schoolId: schoolA, aiEnabled: false });
+
+      // The row itself, not just the response — this is the value the AI gate
+      // reads.
+      const rowAfterOff = await basePrisma.school.findUnique({
+        where: { id: schoolA },
+        select: { aiEnabled: true },
+      });
+      expect(rowAfterOff?.aiEnabled).toBe(false);
+
+      const listAfterOff = await request(app.getHttpServer())
+        .get("/api/v1/platform-admin/schools")
+        .set("Authorization", `Bearer ${platformAdminToken}`);
+      expect(
+        listAfterOff.body.find((r: { schoolId: string }) => r.schoolId === schoolA).aiEnabled,
+      ).toBe(false);
+      // Scoped to the one school — the sibling tenant is untouched.
+      expect(
+        listAfterOff.body.find((r: { schoolId: string }) => r.schoolId === schoolB).aiEnabled,
+      ).toBe(true);
+
+      // Re-enabling is the whole point of this endpoint existing.
+      const on = await request(app.getHttpServer())
+        .patch(`/api/v1/platform-admin/schools/${schoolA}/ai`)
+        .set("Authorization", `Bearer ${platformAdminToken}`)
+        .send({ aiEnabled: true });
+      expect(on.status).toBe(200);
+      expect(on.body).toEqual({ schoolId: schoolA, aiEnabled: true });
+
+      const rowAfterOn = await basePrisma.school.findUnique({
+        where: { id: schoolA },
+        select: { aiEnabled: true },
+      });
+      expect(rowAfterOn?.aiEnabled).toBe(true);
+    });
+
+    it("is idempotent — setting the value it already holds succeeds and still writes an audit row recording the re-assertion", async () => {
+      const before = await basePrisma.auditLog.count({
+        where: { action: "platform_admin.schools.set-ai-enabled", entityId: schoolB },
+      });
+
+      const first = await request(app.getHttpServer())
+        .patch(`/api/v1/platform-admin/schools/${schoolB}/ai`)
+        .set("Authorization", `Bearer ${platformAdminToken}`)
+        .send({ aiEnabled: true });
+      expect(first.body.aiEnabled).toBe(true);
+
+      const after = await basePrisma.auditLog.count({
+        where: { action: "platform_admin.schools.set-ai-enabled", entityId: schoolB },
+      });
+      expect(after).toBe(before + 1);
+
+      // from === to distinguishes a re-assertion from a real transition.
+      const row = await basePrisma.auditLog.findFirst({
+        where: { action: "platform_admin.schools.set-ai-enabled", entityId: schoolB },
+        orderBy: { createdAt: "desc" },
+        select: { metadata: true, schoolId: true, entityType: true, userId: true },
+      });
+      expect(row?.metadata).toMatchObject({ field: "aiEnabled", from: true, to: true });
+      // Cross-tenant surface convention: schoolId null, school identified by
+      // entityId (see the service's comment for why).
+      expect(row?.schoolId).toBeNull();
+      expect(row?.entityType).toBe("school");
+      expect(row?.userId).toBe(platformAdminUserId);
+    });
+
+    it("records the real transition in the audit metadata when the value does move", async () => {
+      await request(app.getHttpServer())
+        .patch(`/api/v1/platform-admin/schools/${schoolB}/ai`)
+        .set("Authorization", `Bearer ${platformAdminToken}`)
+        .send({ aiEnabled: false });
+
+      const row = await basePrisma.auditLog.findFirst({
+        where: { action: "platform_admin.schools.set-ai-enabled", entityId: schoolB },
+        orderBy: { createdAt: "desc" },
+        select: { metadata: true },
+      });
+      expect(row?.metadata).toMatchObject({ field: "aiEnabled", from: true, to: false });
+
+      // Leave schoolB as we found it so test order stays irrelevant.
+      await request(app.getHttpServer())
+        .patch(`/api/v1/platform-admin/schools/${schoolB}/ai`)
+        .set("Authorization", `Bearer ${platformAdminToken}`)
+        .send({ aiEnabled: true });
+    });
+
+    it("rejects a non-boolean body — the Zod pipe, not a coerced truthy string", async () => {
+      const res = await request(app.getHttpServer())
+        .patch(`/api/v1/platform-admin/schools/${schoolA}/ai`)
+        .set("Authorization", `Bearer ${platformAdminToken}`)
+        .send({ aiEnabled: "yes" });
+      expect(res.status).toBe(400);
+    });
+
+    it("an unknown schoolId is a 404, not a silent no-op", async () => {
+      const res = await request(app.getHttpServer())
+        .patch("/api/v1/platform-admin/schools/does-not-exist/ai")
+        .set("Authorization", `Bearer ${platformAdminToken}`)
+        .send({ aiEnabled: true });
+      expect(res.status).toBe(404);
+    });
+  });
+
   it("every platform-admin read/write writes an audit_logs row namespaced platform_admin.*", async () => {
     const rows = await basePrisma.auditLog.findMany({
       where: { userId: platformAdminUserId, action: { startsWith: "platform_admin." } },
@@ -614,6 +754,7 @@ describe("Platform admin access (2026-08-02)", () => {
     expect(actions.has("platform_admin.users.list")).toBe(true);
     expect(actions.has("platform_admin.schools.create")).toBe(true);
     expect(actions.has("platform_admin.schools.set-early-access")).toBe(true);
+    expect(actions.has("platform_admin.schools.set-ai-enabled")).toBe(true);
   });
 
   it("import-boundary: the platform-admin service never imports withTenant or references Invoice/Payment/Student Prisma delegates", () => {

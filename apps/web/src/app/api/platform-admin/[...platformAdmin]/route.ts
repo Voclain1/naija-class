@@ -118,7 +118,9 @@ export async function POST(req: NextRequest, ctx: Context): Promise<NextResponse
   return forward("POST", subPath, "", sessionToken, body);
 }
 
-// PATCH .../schools/:id/early-access — added 2026-08-09. This export has to
+// PATCH .../schools/:id/early-access — added 2026-08-09; .../schools/:id/ai
+// added 2026-08-14 and needed no change here, the handler being generic over
+// subPath. This export has to
 // exist for the route to accept the verb at all: a Next.js Route Handler with
 // no PATCH export returns 405 regardless of what the NestJS API supports.
 // That is the same shape of failure as the pre-existing bug this file carried

@@ -8,6 +8,8 @@ import type {
   PlatformAdminCreateSchoolInput,
   PlatformAdminCreateSchoolResponse,
   PlatformAdminSchoolDto,
+  PlatformAdminSetAiEnabledInput,
+  PlatformAdminSetAiEnabledResponse,
   PlatformAdminSetEarlyAccessInput,
   PlatformAdminSetEarlyAccessResponse,
   PlatformAdminUserDto,
@@ -29,8 +31,11 @@ import {
 import { ApiError, proxyFetch } from "@/lib/api-client";
 
 // Cross-tenant view — schools + users, basic metadata only (see CLAUDE.md's
-// "Platform super-admin" note for the exact allow-listed shape), PLUS one
-// write: provisioning a new school (added 2026-08-07, the surface's first).
+// "Platform super-admin" note for the exact allow-listed shape), PLUS three
+// writes: provisioning a new school (2026-08-07, the surface's first),
+// the early-access marker (2026-08-09), and the per-school AI kill switch
+// (2026-08-14 — the only one of the three that changes runtime behaviour
+// rather than recording a fact).
 // No "act as this school" affordance exists here, and none should ever be
 // added without also growing the underlying SECURITY DEFINER functions,
 // which is the actual enforcement point, not this UI.
@@ -47,6 +52,9 @@ export function PlatformAdminDashboard() {
   const [provisionError, setProvisionError] = useState<string | null>(null);
   const [lastAcceptUrl, setLastAcceptUrl] = useState<string | null>(null);
   const [togglingSchoolId, setTogglingSchoolId] = useState<string | null>(null);
+  // Separate from togglingSchoolId so the two toggles on the same row don't
+  // disable each other mid-flight.
+  const [togglingAiSchoolId, setTogglingAiSchoolId] = useState<string | null>(null);
 
   const refreshSchools = () => {
     proxyFetch<PlatformAdminSchoolDto[]>("/api/platform-admin/schools")
@@ -119,6 +127,36 @@ export function PlatformAdminDashboard() {
       );
     } finally {
       setTogglingSchoolId(null);
+    }
+  };
+
+  // NOT a marker, unlike early access above — School.aiEnabled is read on the
+  // hot path by the API, so this toggle takes effect on the school's very next
+  // request with no deploy. Turning it ON asks for confirmation because it is
+  // the deliberate, one-school-at-a-time enablement step the whole rollout is
+  // built around; turning it OFF does not, because a kill switch you have to
+  // argue with is a broken kill switch.
+  const onToggleAi = async (schoolId: string, schoolName: string, next: boolean) => {
+    if (next && !window.confirm(`Enable AI features for ${schoolName}?`)) return;
+    setTogglingAiSchoolId(schoolId);
+    try {
+      const payload: PlatformAdminSetAiEnabledInput = { aiEnabled: next };
+      const res = await proxyFetch<PlatformAdminSetAiEnabledResponse>(
+        `/api/platform-admin/schools/${schoolId}/ai`,
+        { method: "PATCH", body: JSON.stringify(payload) },
+      );
+      setSchools((current) =>
+        current === null
+          ? current
+          : current.map((s) => (s.schoolId === schoolId ? { ...s, aiEnabled: res.aiEnabled } : s)),
+      );
+      toast.success(
+        next ? `AI enabled for ${schoolName}.` : `AI disabled for ${schoolName}.`,
+      );
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Could not update AI access.");
+    } finally {
+      setTogglingAiSchoolId(null);
     }
   };
 
@@ -201,6 +239,7 @@ export function PlatformAdminDashboard() {
                   <TableHead>Staff</TableHead>
                   <TableHead>Signed up</TableHead>
                   <TableHead>Early access</TableHead>
+                  <TableHead>AI</TableHead>
                   <TableHead />
                 </TableRow>
               </TableHeader>
@@ -243,6 +282,28 @@ export function PlatformAdminDashboard() {
                             : school.earlyAccessGrantedAt
                               ? "Remove"
                               : "Mark"}
+                        </Button>
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        {school.aiEnabled ? (
+                          <Badge variant="success">On</Badge>
+                        ) : (
+                          <Badge variant="muted">Off</Badge>
+                        )}
+                        <Button
+                          type="button"
+                          variant="link"
+                          className="h-auto p-0 text-xs"
+                          disabled={togglingAiSchoolId === school.schoolId}
+                          onClick={() => onToggleAi(school.schoolId, school.name, !school.aiEnabled)}
+                        >
+                          {togglingAiSchoolId === school.schoolId
+                            ? "Saving…"
+                            : school.aiEnabled
+                              ? "Disable"
+                              : "Enable"}
                         </Button>
                       </div>
                     </TableCell>
