@@ -24,6 +24,7 @@ import { assertUserActiveAndHasOneOf } from "../../common/auth/role-check";
 import { REPORT_CARDS_JOB_RENDER, REPORT_CARDS_QUEUE } from "../../common/queue";
 import { StorageService } from "../../common/storage";
 import { AggregationService } from "../assessment/aggregation.service";
+import { wakeRenderWorker } from "./render/wake-render-worker";
 
 interface RequestContext {
   ipAddress: string | null;
@@ -224,7 +225,7 @@ export class ReportCardService {
   ): Promise<RenderArmResultDto> {
     await assertUserActiveAndHasOneOf(authCtx, ["owner", "admin"]);
 
-    return withTenant(authCtx.schoolId, async (db) => {
+    const result = await withTenant(authCtx.schoolId, async (db) => {
       const arm = await db.classArm.findUnique({ where: { id: input.classArmId }, select: { id: true } });
       if (!arm) throw new NotFoundError("Class arm not found.");
 
@@ -256,6 +257,15 @@ export class ReportCardService {
 
       return { enqueuedCount };
     });
+
+    // Wake the render worker after commit. This path (the manual "Render arm"
+    // / per-card "Regenerate" action) had NO wake call at all until 2026-08-14
+    // — only release() did — so a regenerate against a stopped worker queued a
+    // job nothing would ever consume. Same reason and same constraints as the
+    // release-path call; see wake-render-worker.ts.
+    wakeRenderWorker("report-card manual render");
+
+    return result;
   }
 
   // Composable enqueue (Phase 2 / Slice 6 cp2): enqueue one render job per card

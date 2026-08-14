@@ -109,7 +109,10 @@ jobs:
           SENTRY_ENVIRONMENT=staging
           NEXT_PUBLIC_POSTHOG_KEY=
           NEXT_PUBLIC_POSTHOG_HOST=https://us.i.posthog.com
-          RENDER_WORKER_URL=http://school-kit-render-worker.internal:4001
+          # Runner-only placeholder. The DEPLOYED value lives in
+          # apps/api/fly.toml's [env] block — this heredoc writes a .env for
+          # the CI runner's build (source maps), and nothing here reaches Fly.
+          RENDER_WORKER_URL=http://not-used-by-runner:4001
           RENDER_WORKER_PORT=4001
           SENTRY_AUTH_TOKEN=
           ENVEOF
