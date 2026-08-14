@@ -29,6 +29,7 @@
     "db:prune-smoke": "pnpm --filter @school-kit/db prune-smoke",
     "db:backfill-school-defaults": "pnpm --filter @school-kit/db backfill-school-defaults",
     "db:disable-ai-per-school": "pnpm --filter @school-kit/db disable-ai-per-school",
+    "db:verify-disable-ai-audit": "pnpm --filter @school-kit/db verify-disable-ai-audit",
     "ai:eval": "pnpm --filter @school-kit/ai eval",
     "clean": "turbo run clean && rm -rf node_modules",
     "kill-ports": "npx kill-port 3001 3002 4000"
