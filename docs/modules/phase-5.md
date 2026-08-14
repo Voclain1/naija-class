@@ -82,6 +82,11 @@ Phase 0 — no screens). **Do not treat 4 weeks as the number for the full §7
 list.** Either the phase runs long or slices 6–8 move to their own phase;
 that call is due before slice 6 starts, not during it.
 
+**Called 2026-08-14: slices 6 and 7 moved to Phase 6** (slice 8 shipped
+inside Phase 5). See "Moved out — now Phase 6" at the end of §2. The
+prediction above held exactly — both moved for the two reasons named here,
+RAG's content/vendor problem and the tutor's missing student-facing surface.
+
 ---
 
 ## 2. Slice breakdown
@@ -129,18 +134,33 @@ see D16.
 
 ### Planned
 
-**Slice 6 — Curriculum ingestion / RAG.** Not scoped. `pgvector` is enabled
-in `schema.prisma` and used by nothing. This slice is where topic identity
-stops being free text (D13) and therefore where `MasteryRecord.topicRef`'s
-meaning finally gets defined — it carries a live `@@unique` constraint, so
-that is a decision with teeth.
+### Moved out — now Phase 6 **[decided 2026-08-14]**
 
-**Slice 7 — Student tutor.** Not scoped. Blocked on slice 6 and on a
-student-facing surface existing at all.
+**Phase 5 is scoped as slices 1–5 + 8. All are shipped. The phase is
+complete.** Slices 6 and 7 were formally moved to Phase 6, alongside the
+mobile app. This is the call §1 said was "due before slice 6 starts, not
+during it" — made, on schedule, rather than allowed to lapse into the phase
+quietly running long.
 
-With slice 8 shipped, these two are all that remain of ARCHITECTURE §7 for
-this phase — and they are the two that will decide whether Phase 5 runs long
-or slices 6–7 become their own phase.
+**Slice 6 — Curriculum ingestion / RAG → Phase 6.** Not scoped. `pgvector`
+is enabled in `schema.prisma` and used by nothing. This is where topic
+identity stops being free text (D13) and therefore where
+`MasteryRecord.topicRef`'s meaning finally gets defined — it carries a live
+`@@unique` constraint, so that is a decision with teeth. Moved because its
+real blocker is choosing an embeddings vendor, which is a procurement and
+cost-model initiative of its own, not a slice of the AI layer.
+
+**Slice 7 — Student tutor → Phase 6.** Not scoped. Blocked on slice 6 and on
+a student-facing surface existing at all. Moved because its only real
+surface is student-facing, and `apps/mobile` is still the bare Expo scaffold
+from Phase 0 — no screens. Grouping it with the mobile build puts the
+feature in the same phase as the thing it needs in order to exist.
+
+Both remain real, planned work with their decisions intact — D13's topic
+identity problem and the `MasteryRecord.topicRef` constraint do not go away
+by being renumbered. What changed is which phase carries them, and
+therefore what "Phase 5 is done" means: it now means what shipped, not what
+was once listed.
 
 ---
 
@@ -408,7 +428,9 @@ Inventing a canonical Nigerian curriculum topic tree is a data-model problem
 retroactively define the meaning of `MasteryRecord.topicRef` — which carries
 a live `@@unique` constraint. That work happens only when something needs
 stable topic **identity**: RAG, mastery tracking, or a question bank. All
-deferred, and all landing together in slice 6 if slice 6 happens.
+deferred, and all landing together in the RAG slice — which as of 2026-08-14
+is Phase 6 work, not Phase 5's slice 6. The dependency is unchanged; only
+the phase it sits in moved.
 
 ### D14 — Report-comment inputs are scores + attendance only **[recovered]**
 

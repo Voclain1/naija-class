@@ -383,10 +383,25 @@ Format:
   own decisions (who writes the references, what the rubric measures, what
   score gates a merge) and neither belongs bolted onto a feature slice.
 
-  **Trigger: when `ANTHROPIC_API_KEY` is first configured and
-  `live-generation` actually runs.** That is the first moment anyone will
-  have seen real output from these prompts, and the right time to decide
-  what grading it deserves.
+  **Trigger (restated 2026-08-14 — the original one has already half-fired).**
+  It read "when `ANTHROPIC_API_KEY` is first configured and `live-generation`
+  actually runs". The key IS now configured on `school-kit-api` and has been
+  verified with a live generation — but `live-generation` still has not run,
+  because `AI_ENABLED=false` holds every path short of the model. The two
+  halves came apart, so the trigger is now the second half alone: **when
+  `live-generation` actually executes**, which in practice means when
+  `AI_ENABLED` is flipped and the first pilot school generates real output.
+
+  **Status: DEFERRED, standing, no urgency — confirmed 2026-08-14.** This
+  explicitly does **not** block Phase 6. It is not a countdown and nothing is
+  waiting on it; it is recorded here so that the day someone reads a batch of
+  real output and asks "how would we know if this got worse?", the two
+  options above are already written down rather than rediscovered.
+
+  What DOES still gate a school going live is unchanged and much narrower:
+  do not switch a school on until someone has read a batch of its real
+  output (phase-5.md §9). That is a human step, not an eval, and it is
+  satisfied by the one-at-a-time rollout rather than by this item.
 
 ## Roadmap / strategy — REVISIT with live market research (not decided)
 - [ ] CBT / online exams (JAMB/WAEC/UTME prep) — competitors lead with
