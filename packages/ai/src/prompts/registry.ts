@@ -26,6 +26,7 @@
 import { MODELS, type ModelId } from "../models.js";
 // Runtime import; lesson-plan.ts imports only the TYPE back from here, and
 // type-only imports are erased at compile time, so there is no runtime cycle.
+import { INSIGHTS_NARRATION_PROMPT, INSIGHTS_ROUTER_PROMPT } from "./insights.js";
 import { LESSON_PLAN_PROMPT, LESSON_QUIZ_PROMPT } from "./lesson-plan.js";
 import { PARENT_WEEKLY_SUMMARY_PROMPT } from "./parent-weekly-summary.js";
 import { REPORT_CARD_COMMENT_PROMPT } from "./report-card-comment.js";
@@ -60,6 +61,8 @@ export const PROMPTS = {
   REPORT_CARD_SUBJECT_COMMENT: REPORT_CARD_COMMENT_PROMPT,
   REPORT_CARD_FORM_COMMENT: REPORT_CARD_FORM_COMMENT_PROMPT,
   PARENT_WEEKLY_SUMMARY: PARENT_WEEKLY_SUMMARY_PROMPT,
+  INSIGHTS_ROUTER: INSIGHTS_ROUTER_PROMPT,
+  INSIGHTS_NARRATION: INSIGHTS_NARRATION_PROMPT,
 } as const satisfies Record<string, PromptDefinition>;
 
 export type PromptKey = keyof typeof PROMPTS;

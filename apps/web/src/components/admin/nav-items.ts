@@ -61,6 +61,11 @@ export const NAV_ITEMS: NavItem[] = [
   { label: "Academics", href: "/settings/academic", icon: BarChart3, enabled: true, requiredPermission: "academic-year.create" },
   { label: "Grading", href: "/settings/grading", icon: SlidersHorizontal, enabled: true, requiredPermission: "grading-scheme.read" },
   { label: "Report Cards", href: "/report-cards", icon: FileText, enabled: true, requiredPermission: "report-card.read" },
+  // Phase 5 / Slice 8. Gated on insight.read, which admin/owner hold and
+  // bursar and teacher do not — these reports rank classes and subjects
+  // against each other across the school, which is management information
+  // about colleagues' work rather than teaching or finance workflow.
+  { label: "Insights", href: "/insights", icon: Sparkles, enabled: true, requiredPermission: "insight.read" },
   { label: "Finance", href: "/finance/dashboard", icon: Wallet, enabled: true, requiredPermission: "finance.dashboard.read" },
   { label: "Settings", href: "/settings", icon: Settings, enabled: true, requiredPermission: "school.read" },
 ];

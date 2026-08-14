@@ -7,11 +7,19 @@ import type { TermDto } from "@school-kit/types";
 
 import { listAcademicYears, listTerms } from "@/lib/academic-years/academic-years-api";
 
-// Lives in the topbar (per the mockup) but only means anything on /dashboard
-// today — the selected term is carried in the URL (?termId=) rather than a
-// new global "current term" context, so the dashboard page and this selector
-// share one source of truth without inventing app-wide term state ahead of
-// need. Renders nothing on any other route.
+// Lives in the topbar (per the mockup) and means something on the routes in
+// TERM_AWARE_ROUTES below — the selected term is carried in the URL
+// (?termId=) rather than a new global "current term" context, so those pages
+// and this selector share one source of truth without inventing app-wide term
+// state ahead of need. Renders nothing on any other route.
+//
+// Phase 5 / Slice 8 added /insights as the second such route. That is why the
+// redirects below target `pathname` rather than a hardcoded "/dashboard":
+// keeping the literal would have bounced an admin off /insights to the
+// dashboard the moment they changed term, which reads as the app losing their
+// place.
+const TERM_AWARE_ROUTES = ["/dashboard", "/insights"];
+
 export function DashboardTermSelector() {
   const pathname = usePathname();
   const router = useRouter();
@@ -20,11 +28,11 @@ export function DashboardTermSelector() {
   const [terms, setTerms] = useState<TermDto[]>([]);
   const [yearId, setYearId] = useState("");
 
-  const isDashboard = pathname === "/dashboard";
+  const isTermAware = TERM_AWARE_ROUTES.includes(pathname);
   const termId = searchParams.get("termId") ?? "";
 
   useEffect(() => {
-    if (!isDashboard) return;
+    if (!isTermAware) return;
     listAcademicYears()
       .then((rows) => {
         const current = rows.find((y) => y.isCurrent) ?? rows[0];
@@ -41,12 +49,12 @@ export function DashboardTermSelector() {
           // hits, not an edge case).
           const params = new URLSearchParams(searchParams.toString());
           params.set("noAcademicYear", "1");
-          router.replace(`/dashboard?${params.toString()}`);
+          router.replace(`${pathname}?${params.toString()}`);
         }
       })
       .catch(() => undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isDashboard]);
+  }, [isTermAware]);
 
   useEffect(() => {
     if (!yearId) return;
@@ -65,10 +73,10 @@ export function DashboardTermSelector() {
   function setTermForUrl(id: string) {
     const params = new URLSearchParams(searchParams.toString());
     params.set("termId", id);
-    router.replace(`/dashboard?${params.toString()}`);
+    router.replace(`${pathname}?${params.toString()}`);
   }
 
-  if (!isDashboard || terms.length === 0) return null;
+  if (!isTermAware || terms.length === 0) return null;
 
   return (
     <select
