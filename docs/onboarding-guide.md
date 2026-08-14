@@ -237,7 +237,8 @@ A few things worth knowing:
 
 ## 9. Fee catalog
 
-Go to **Settings → Finance → Fees** (`/settings/finance/fees`).
+Go to **Finance → Fee Catalog** (`/finance/fees`). It's also linked from the
+Settings hub, and the old `/settings/finance/fees` URL redirects here.
 
 This is a two-panel screen: **Categories** on the left, that category's **items** on the right.
 

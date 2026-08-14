@@ -21,15 +21,18 @@ const LINKS: SettingsLink[] = [
   { label: "Users", href: "/settings/users", description: "Staff accounts, roles, and invitations.", icon: Users },
   { label: "Academics", href: "/settings/academic", description: "Years, terms, levels, arms, and subjects.", icon: BarChart3 },
   { label: "Grading", href: "/settings/grading", description: "Component weights and grade boundaries.", icon: SlidersHorizontal },
+  // These two live under Finance now (2026-08-14) — the cards stay here
+  // because admins have looked for them in Settings since Phase 3, they just
+  // link across. The old /settings/finance/{fees,discounts} URLs redirect.
   {
     label: "Fee catalog",
-    href: "/settings/finance/fees",
+    href: "/finance/fees",
     description: "Fee categories and items, with optional class/term scope.",
     icon: Wallet,
   },
   {
     label: "Discounts",
-    href: "/settings/finance/discounts",
+    href: "/finance/discounts",
     description: "Per-student discount rules applied to invoiced fees.",
     icon: Percent,
   },
