@@ -15,6 +15,7 @@ import {
 
 import type { AuthContext } from "../../../common/auth/auth-context";
 import { assertUserActiveAndHasOneOf } from "../../../common/auth/role-check";
+import { wakeRenderWorker } from "../render/wake-render-worker";
 import { REPORT_CARD_SELECT, ReportCardService, toReportCardDto } from "../report-card.service";
 import { assertOwnerAdminOrFormTeacher } from "./form-teacher-guard";
 import { assertNoReleasedCards } from "./released-guard";
@@ -172,12 +173,11 @@ export class ReportCardWorkflowService {
     });
 
     // Wake the render worker machine after the tx commits (Fly scale-to-zero).
-    // Jobs wait in the BullMQ queue during cold start (~5–30 s); acceptable for
-    // batch rendering. Fire-and-forget: errors here don't fail the release.
-    const renderWorkerUrl = process.env.RENDER_WORKER_URL;
-    if (renderWorkerUrl) {
-      fetch(`${renderWorkerUrl}/health`).catch(() => {});
-    }
+    // Jobs wait in the BullMQ queue during cold start (~21 s measured);
+    // acceptable for batch rendering. See wake-render-worker.ts for why this
+    // is required at all, and why it must be after commit rather than inside
+    // enqueueArmRenderInTx() where both callers share code.
+    wakeRenderWorker("report-card release");
 
     return result;
   }

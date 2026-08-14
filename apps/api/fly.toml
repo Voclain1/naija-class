@@ -39,6 +39,21 @@ primary_region = "jnb"
   API_PORT    = "4000"
   # CORS_ORIGIN, DATABASE_URL, REDIS_URL, BETTER_AUTH_SECRET, etc. are
   # injected as Fly.io secrets — not here.
+  #
+  # RENDER_WORKER_URL lives HERE rather than in `flyctl secrets` on purpose
+  # (2026-08-14): it is a public hostname, not a credential, and putting it in
+  # version control is the whole fix. It had been "configured" only inside a
+  # heredoc in deploy-staging.yml that writes a .env on the CI RUNNER — so the
+  # deployed API never saw it, `if (renderWorkerUrl)` was always false, and the
+  # worker was never woken. Same failure shape as the PORTAL_BASE_URL miss:
+  # config that exists in the repo but was never set on the running app.
+  #
+  # Public hostname, not *.internal: `.internal` DNS only publishes RUNNING
+  # machines and bypasses Fly Proxy, which is the component that performs
+  # auto_start_machines — it needs the worker running in order to start it.
+  # Verified 2026-08-14 with both worker machines stopped: this URL returned
+  # 200 in 21.0s and both transitioned stopped -> started, checks 1/1.
+  RENDER_WORKER_URL = "https://school-kit-render-worker.fly.dev"
 
 [http_service]
   internal_port        = 4000
