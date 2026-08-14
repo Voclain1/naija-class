@@ -685,6 +685,23 @@ content-quality eval gap in §9 bites harder here than on any shipped slice.
 Turning this on for a school should not happen before `live-generation` has
 actually run at least once.
 
+**Amendment 2026-08-14 — `aiEnabled` now also defaults OFF, which does NOT
+collapse this decision into a single rule.** When D16 was locked, defaulting
+`parentSummaryEnabled` to false was notable precisely because it was the
+opposite of `aiEnabled`'s default-true, and the schema carried a warning not
+to "make it consistent". `aiEnabled` has since flipped to `@default(false)`
+(migration `20260814120000`) for an unrelated reason: AI is rolled out one
+school at a time from platform-admin, so a default-true column would have
+enabled every school the instant the platform-wide `AI_ENABLED` env var was
+flipped. That is a decision about **who authorises enablement**; D16 is a
+decision about **who reads the output**. The warning still stands in its real
+form — revisit either default on its own grounds, never "for consistency".
+
+The practical consequence is worth stating because it is easy to get wrong:
+turning `aiEnabled` on for a school does **not** start sending parent
+summaries. That still requires this separate, school-made opt-in, and the
+"don't enable before `live-generation` has run" condition above is unchanged.
+
 ### D17 — Insights: the model routes and narrates; SQL computes **[locked 2026-08-13]**
 
 Slice 8 is AI-led — the admin asks in free text rather than picking a report

@@ -88,10 +88,23 @@ model School {
   //                          every AI feature for that school WITHOUT a deploy
   //                          — the point is that a runaway cost or a bad prompt
   //                          can be stopped in seconds from platform-admin.
-  //                          Defaults TRUE: AI is a headline feature, and a
-  //                          school that never opts in would otherwise silently
-  //                          never see it. The platform-wide equivalent is the
-  //                          AI_ENABLED env var (see AiGenerationService).
+  //                          The platform-wide equivalent is the AI_ENABLED
+  //                          env var (see AiGenerationService); BOTH gates
+  //                          must be open for a school to generate anything.
+  //
+  //                          Defaults FALSE as of 2026-08-14. It shipped
+  //                          DEFAULT true (Slice 1 CP2) reasoning that "AI is
+  //                          a headline feature, and a school that never opts
+  //                          in would otherwise silently never see it." Both
+  //                          halves inverted: the rollout is deliberately one
+  //                          school at a time, so default-true would enable
+  //                          every school the instant AI_ENABLED flips; and
+  //                          "never opts in" stopped being a dead end when
+  //                          PATCH /platform-admin/schools/:schoolId/ai made
+  //                          enabling one audited click. Do not flip it back
+  //                          without also deciding what replaces the
+  //                          one-at-a-time rollout — see migration
+  //                          20260814120000 and docs/modules/phase-5.md D16.
   //
   //   aiMonthlyTokenBudget   per-school monthly cap, in TOKENS not cost.
   //                          Nullable = "use the platform default constant"
@@ -108,19 +121,32 @@ model School {
   // concept — none exists anywhere in the product code (see
   // earlyAccessGrantedAt's note directly above), and inventing one to hold an
   // AI budget would be the tail wagging the dog.
-  aiEnabled            Boolean   @default(true) @map("ai_enabled")
+  aiEnabled            Boolean   @default(false) @map("ai_enabled")
   aiMonthlyTokenBudget Int?      @map("ai_monthly_token_budget")
 
   //   parentSummaryEnabled   Phase 5 / Slice 5. Weekly AI progress summaries
-  //                          sent to guardians. Defaults FALSE — the opposite
-  //                          of aiEnabled directly above, and the difference is
-  //                          the whole of D16. Every other AI feature produces a
-  //                          draft a teacher reads before anyone else does; this
-  //                          one reaches a parent with nobody in between, so the
-  //                          school opts in deliberately having seen what it
-  //                          writes, rather than discovering it after a parent
-  //                          has already read one. Do not "make it consistent"
-  //                          with aiEnabled's default-true.
+  //                          sent to guardians. Defaults FALSE, and — since
+  //                          2026-08-14 — so does aiEnabled above. They are
+  //                          NOT one rule with one reason, and the original
+  //                          D16 warning ("do not make it consistent with
+  //                          aiEnabled's default-true") is preserved in
+  //                          substance here: whoever revisits either default
+  //                          must revisit it on its OWN grounds.
+  //                            aiEnabled is false because ENABLEMENT is an
+  //                          operator rollout decision — one school at a time,
+  //                          from platform-admin, so a platform-wide flip
+  //                          can't reach everyone at once.
+  //                            parentSummaryEnabled is false because of who
+  //                          READS the output. Every other AI feature produces
+  //                          a draft a teacher sees before anyone else does;
+  //                          this one reaches a parent with nobody in between,
+  //                          so the school opts in deliberately having seen
+  //                          what it writes, rather than discovering it after
+  //                          a parent has already read one.
+  //                            Consequence worth stating: turning aiEnabled on
+  //                          for a school does NOT start sending parent
+  //                          summaries. That still needs this second, separate
+  //                          opt-in, by the school itself.
   parentSummaryEnabled Boolean   @default(false) @map("parent_summary_enabled")
   createdAt      DateTime     @default(now()) @map("created_at")
   updatedAt      DateTime     @updatedAt @map("updated_at")

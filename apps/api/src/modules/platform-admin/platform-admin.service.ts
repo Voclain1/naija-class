@@ -424,6 +424,14 @@ export class PlatformAdminService {
           // status, onboardingStep default per schema (ONBOARDING, 0).
           // ndprConsent stays false here — it's stamped by onboarding step
           // 4 once the owner reaches it, same as a self-serve signup.
+          // aiEnabled explicit for the same reason as signupOwner's copy —
+          // see that call site's comment. Deliberately NOT pushed down into
+          // applySchoolDefaults(): that function seeds academic structure into
+          // an ALREADY-CREATED school and has a third caller,
+          // backfill-school-defaults.ts, which repairs live schools. Putting
+          // an aiEnabled write there would make a structure-repair script
+          // silently switch off AI on schools it was only asked to fix.
+          aiEnabled: false,
         },
         select: { id: true, name: true, slug: true },
       });

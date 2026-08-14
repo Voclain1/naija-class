@@ -74,7 +74,19 @@ function ctx(): AuthContext {
 describe("InsightsService", () => {
   beforeAll(async () => {
     const school = await basePrisma.school.create({
-      data: { name: `IN ${runId}`, slug: `in-${runId}`, status: "ACTIVE", aiMonthlyTokenBudget: 5_000_000 },
+      data: {
+        name: `IN ${runId}`,
+        slug: `in-${runId}`,
+        status: "ACTIVE",
+        aiMonthlyTokenBudget: 5_000_000,
+        // aiEnabled explicitly (2026-08-14): School.aiEnabled now defaults
+        // FALSE, and every generation in this suite goes through
+        // AiGenerationService.reserve(), which throws DISABLED_SCHOOL when it
+        // is off. AI being ON is a precondition of what these tests exercise,
+        // not an incidental default — same reasoning as the explicit
+        // aiMonthlyTokenBudget beside it.
+        aiEnabled: true,
+      },
       select: { id: true },
     });
     schoolId = school.id;

@@ -1,0 +1,37 @@
+-- schools.ai_enabled: DEFAULT true -> DEFAULT false (2026-08-14).
+--
+-- WHY. Two independent gates control AI: the platform-wide AI_ENABLED env var
+-- and this per-school kill switch. The column shipped `DEFAULT true` (Phase 5
+-- / Slice 1 CP2) on the reasoning that "AI is a headline feature, and a school
+-- that never opts in would otherwise silently never see it." Both halves of
+-- that reasoning have since inverted:
+--
+--   1. The rollout is deliberately one school at a time. With DEFAULT true,
+--      flipping AI_ENABLED would enable every school at once, which is the
+--      thing the rollout exists to prevent.
+--   2. "Never opts in" is no longer a dead end. PATCH /platform-admin/schools/
+--      :schoolId/ai (2026-08-14) makes enabling a school one audited click
+--      from the super-admin dashboard, so opting a school IN costs an operator
+--      nothing.
+--
+-- The concrete evidence that forced the decision rather than deferring it: the
+-- local database drifted from 275 schools to 278 in a single afternoon while
+-- this work was in progress, and all three new schools arrived with AI on —
+-- immediately re-opening the gate that packages/db/scripts/
+-- disable-ai-per-school.ts had just closed. A point-in-time backfill cannot
+-- hold a gate shut while the default keeps re-opening it.
+--
+-- EXISTING ROWS ARE NOT TOUCHED. ALTER COLUMN ... SET DEFAULT rewrites no
+-- rows and changes no existing value; it is a catalog-only change, instant on
+-- a table of any size. Schools already carrying `true` keep `true` until
+-- disable-ai-per-school.ts is run against them, which is deliberate: that
+-- script is dry-runnable, audited per school and reversible, and this
+-- migration is none of those things. Turning off a live school's AI is an
+-- operational act with an audit trail, not a schema change.
+--
+-- NOT a reversal of parentSummaryEnabled's DEFAULT false. Both columns now
+-- default false, but for different reasons, and schema.prisma's comment block
+-- is updated in the same commit to say so rather than leave the two looking
+-- like one rule. See docs/modules/phase-5.md D16.
+
+ALTER TABLE "schools" ALTER COLUMN "ai_enabled" SET DEFAULT false;

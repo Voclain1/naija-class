@@ -112,6 +112,12 @@ describe("AuthService.signupOwner (Phase 0 Prompt 3)", () => {
     const school = await basePrisma.school.findUnique({ where: { id: result.school.id } });
     expect(school?.ndprConsent).toBe(true);
     expect(school?.ndprConsentAt).toBeInstanceOf(Date);
+    // A self-serve school starts with AI OFF (2026-08-14) — AI is rolled out
+    // one school at a time from platform-admin. signupOwner states this
+    // explicitly rather than leaning on the schema default, so this assertion
+    // is what fails if that line is removed as "redundant" and the default
+    // later changes. Enable via PATCH /platform-admin/schools/:id/ai.
+    expect(school?.aiEnabled).toBe(false);
 
     await withTenant(result.school.id, async (db) => {
       // User row has a real argon2 hash, not the plaintext.

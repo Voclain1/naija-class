@@ -76,15 +76,31 @@ describe("Platform admin access (2026-08-02)", () => {
     app.setGlobalPrefix("api/v1");
     await app.init();
 
+    // aiEnabled is set EXPLICITLY on both fixtures (2026-08-14). These schools
+    // start with AI on so the toggle cases below have something real to turn
+    // off — and stating it here means the suite no longer silently inherits
+    // whatever School.aiEnabled's schema default happens to be. It did inherit
+    // it until the default flipped to false (migration 20260814120000), at
+    // which point three cases here failed on a change that was not about them.
     const schoolRowA = await basePrisma.school.create({
-      data: { name: `Platform Admin Spec A ${runId}`, slug: `platform-admin-a-${runId}`, status: "ACTIVE" },
+      data: {
+        name: `Platform Admin Spec A ${runId}`,
+        slug: `platform-admin-a-${runId}`,
+        status: "ACTIVE",
+        aiEnabled: true,
+      },
       select: { id: true },
     });
     schoolA = schoolRowA.id;
     schoolIdsToCleanup.add(schoolA);
 
     const schoolRowB = await basePrisma.school.create({
-      data: { name: `Platform Admin Spec B ${runId}`, slug: `platform-admin-b-${runId}`, status: "ACTIVE" },
+      data: {
+        name: `Platform Admin Spec B ${runId}`,
+        slug: `platform-admin-b-${runId}`,
+        status: "ACTIVE",
+        aiEnabled: true,
+      },
       select: { id: true },
     });
     schoolB = schoolRowB.id;
@@ -484,6 +500,17 @@ describe("Platform admin access (2026-08-02)", () => {
         components: await db.gradingComponent.count(),
         boundaries: await db.gradeBoundary.count(),
       }));
+
+      // A provisioned school starts with AI OFF (2026-08-14). Asserted on the
+      // REAL endpoint rather than trusting the schema default, because
+      // createSchool states `aiEnabled: false` explicitly — this is the test
+      // that would fail if someone removed that line believing the default
+      // covers it, and then later changed the default.
+      const provisioned = await basePrisma.school.findUniqueOrThrow({
+        where: { id: res.body.schoolId },
+        select: { aiEnabled: true },
+      });
+      expect(provisioned.aiEnabled).toBe(false);
 
       expect(seeded.levels).toBe(DEFAULT_CLASS_LEVELS.length);
       // One default arm per level — the specific thing whose absence blocks
