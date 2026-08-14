@@ -464,6 +464,9 @@ GET    /report-card-comments/form            report-card-comment.generate
 POST   /report-card-comments/form/generate   report-card-comment.generate
 (accept reuses POST /report-card-comments/accept)
 
+# AI usage (not a slice — closing slice 1's `ai-usage.read` gap)
+GET    /ai-usage                             ai-usage.read
+
 # Slice 5 — weekly parent summaries
 GET    /parent-summaries                     parent-summary.read     (staff view of what was sent)
 GET    /parent-summaries/settings            parent-summary.manage
@@ -557,9 +560,13 @@ deliberately: a form teacher fielding "the school said my child was late twice"
 needs to see the note the parent is holding, but deciding whether the school
 sends unattended AI notes to parents at all is not theirs to flip.
 
-`ai-usage.read` is admin/owner only and currently has **no endpoint**. It was
-landed with the reference-only permission block in slice 1 and is still
-waiting for a usage-visibility surface — flagged, not built.
+`ai-usage.read` is admin/owner only. **Closed 2026-08-13**, having sat with no
+endpoint behind it since slice 1: `GET /ai-usage` plus
+`/settings/ai-usage`. Headroom is reported from `tokensReserved`, not
+`tokensActual` — mid-flight reservations are real headroom a school cannot
+use, and reporting actuals would show room the budget check will refuse. The
+per-prompt breakdown counts failed generations, because a failed call was
+still paid for.
 
 ---
 
