@@ -11,6 +11,8 @@ import {
   type PlatformAdminLoginInput,
   type PlatformAdminLoginResponse,
   type PlatformAdminSchoolDto,
+  type PlatformAdminSetAiEnabledInput,
+  type PlatformAdminSetAiEnabledResponse,
   type PlatformAdminSetEarlyAccessInput,
   type PlatformAdminSetEarlyAccessResponse,
   type PlatformAdminUserDto,
@@ -96,6 +98,7 @@ interface ListSchoolsRow {
   owner_invite_pending: boolean;
   owner_invite_expires_at: Date | null;
   early_access_granted_at: Date | null;
+  ai_enabled: boolean;
 }
 
 interface CheckOwnerEmailAvailableRow {
@@ -132,6 +135,7 @@ const SCHOOLS_LIST_AUDIT_ACTION = "platform_admin.schools.list";
 const USERS_LIST_AUDIT_ACTION = "platform_admin.users.list";
 const SCHOOLS_CREATE_AUDIT_ACTION = "platform_admin.schools.create";
 const SCHOOLS_SET_EARLY_ACCESS_AUDIT_ACTION = "platform_admin.schools.set-early-access";
+const SCHOOLS_SET_AI_ENABLED_AUDIT_ACTION = "platform_admin.schools.set-ai-enabled";
 
 @Injectable()
 export class PlatformAdminService {
@@ -222,6 +226,7 @@ export class PlatformAdminService {
       earlyAccessGrantedAt: r.early_access_granted_at
         ? r.early_access_granted_at.toISOString()
         : null,
+      aiEnabled: r.ai_enabled,
     }));
   }
 
@@ -291,6 +296,73 @@ export class PlatformAdminService {
       earlyAccessGrantedAt: updated.earlyAccessGrantedAt
         ? updated.earlyAccessGrantedAt.toISOString()
         : null,
+    };
+  }
+
+  // PATCH /platform-admin/schools/:schoolId/ai — turns the per-school AI kill
+  // switch on or off. Structurally identical to setEarlyAccess above (single
+  // -column UPDATE on the RLS-free `schools` table + one audit row, no
+  // SECURITY DEFINER function and no GUC needed), but the two differ in one
+  // way worth stating plainly: early access is an inert marker, and this is
+  // not. School.aiEnabled is read on the hot path by
+  // AiGenerationService.reserve() and by ParentSummariesService, so setting
+  // it false stops every AI feature for that school within one request and
+  // no deploy — which is the entire point of it being a kill switch.
+  //
+  // Setting it TRUE does not by itself start anything: the platform-wide
+  // AI_ENABLED env var is a separate gate, and this endpoint deliberately
+  // does not read, report, or touch it. Conflating the two here would make a
+  // per-school action silently depend on process state the caller can't see.
+  //
+  // Genuinely idempotent, unlike setEarlyAccess (which re-stamps a timestamp
+  // on a repeat `true`): a boolean set to the value it already holds is a
+  // no-op. The audit row is still written on a no-change call — "an operator
+  // asserted this state at this time" is worth recording even when the value
+  // didn't move, and metadata carries both from and to so a reader can tell
+  // a real transition from a re-assertion.
+  async setAiEnabled(
+    schoolId: string,
+    input: PlatformAdminSetAiEnabledInput,
+    adminCtx: PlatformAdminContext,
+    reqCtx: RequestContext,
+  ): Promise<PlatformAdminSetAiEnabledResponse> {
+    const existing = await basePrisma.school.findUnique({
+      where: { id: schoolId },
+      select: { id: true, aiEnabled: true },
+    });
+    if (!existing) {
+      throw new NotFoundError("School not found.");
+    }
+
+    const updated = await basePrisma.school.update({
+      where: { id: schoolId },
+      data: { aiEnabled: input.aiEnabled },
+      select: { id: true, aiEnabled: true },
+    });
+
+    await basePrisma.auditLog.create({
+      data: {
+        // schoolId: null for the same reason as every other action on this
+        // surface — audit_logs' RLS policy only lets null-schoolId rows
+        // through a GUC-less read, and platform-admin reads are always
+        // GUC-less. The school is identified by entityId.
+        schoolId: null,
+        userId: adminCtx.userId,
+        action: SCHOOLS_SET_AI_ENABLED_AUDIT_ACTION,
+        entityType: "school",
+        entityId: schoolId,
+        ipAddress: reqCtx.ipAddress,
+        metadata: {
+          field: "aiEnabled",
+          from: existing.aiEnabled,
+          to: updated.aiEnabled,
+        },
+      },
+    });
+
+    return {
+      schoolId: updated.id,
+      aiEnabled: updated.aiEnabled,
     };
   }
 

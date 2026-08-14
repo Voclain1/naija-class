@@ -16,6 +16,7 @@ import {
   platformAdminCreateSchoolSchema,
   platformAdminListUsersQuerySchema,
   platformAdminLoginSchema,
+  platformAdminSetAiEnabledSchema,
   platformAdminSetEarlyAccessSchema,
   type PlatformAdminCreateSchoolInput,
   type PlatformAdminCreateSchoolResponse,
@@ -23,6 +24,8 @@ import {
   type PlatformAdminLoginInput,
   type PlatformAdminLoginResponse,
   type PlatformAdminSchoolDto,
+  type PlatformAdminSetAiEnabledInput,
+  type PlatformAdminSetAiEnabledResponse,
   type PlatformAdminSetEarlyAccessInput,
   type PlatformAdminSetEarlyAccessResponse,
   type PlatformAdminUserDto,
@@ -121,6 +124,32 @@ export class PlatformAdminController {
     @Req() req: Request,
   ): Promise<PlatformAdminSetEarlyAccessResponse> {
     return this.platformAdminService.setEarlyAccess(schoolId, dto, adminCtx, {
+      ipAddress: ip,
+      userAgent: req.header("user-agent") ?? null,
+    });
+  }
+
+  // PATCH /platform-admin/schools/:schoolId/ai — turns the per-school AI kill
+  // switch on or off (2026-08-14). Same throttle as the other two writes.
+  //
+  // Unlike early-access this one has real teeth: false stops every AI feature
+  // for the school within one request (AiGenerationService.reserve() reads it
+  // on the hot path), and true is how a school is opted INTO the one-at-a-time
+  // rollout that packages/db/scripts/disable-ai-per-school.ts prepares. It is
+  // still bounded by the platform-wide AI_ENABLED env var, which this
+  // endpoint deliberately neither reads nor reports.
+  @Patch("schools/:schoolId/ai")
+  @UseGuards(PlatformAdminGuard)
+  @Throttle({ default: { ttl: 60000, limit: 20 } })
+  async setAiEnabled(
+    @Param("schoolId") schoolId: string,
+    @Body(new ZodValidationPipe(platformAdminSetAiEnabledSchema))
+    dto: PlatformAdminSetAiEnabledInput,
+    @CurrentPlatformAdmin() adminCtx: PlatformAdminContext,
+    @Ip() ip: string,
+    @Req() req: Request,
+  ): Promise<PlatformAdminSetAiEnabledResponse> {
+    return this.platformAdminService.setAiEnabled(schoolId, dto, adminCtx, {
       ipAddress: ip,
       userAgent: req.header("user-agent") ?? null,
     });

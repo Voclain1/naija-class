@@ -21,4 +21,11 @@ export interface PlatformAdminSchoolDto {
   // than reverse-engineered from createdAt. See School.earlyAccessGrantedAt
   // in schema.prisma and docs/deferred.md "Pricing / tier enforcement".
   earlyAccessGrantedAt: string | null;
+  // The per-school AI kill switch (School.aiEnabled). Unlike
+  // earlyAccessGrantedAt above, this one is NOT inert — it is read on the hot
+  // path by AiGenerationService.reserve(). True here does not mean the school
+  // is actually generating anything: the platform-wide AI_ENABLED env var is
+  // a separate gate this field says nothing about. Toggled via
+  // PATCH /platform-admin/schools/:schoolId/ai.
+  aiEnabled: boolean;
 }
