@@ -16,3 +16,7 @@ export {
   type DefaultGradeBoundary,
 } from "./seeds/grading.js";
 export { SYSTEM_ROLE_SEEDS, type SystemRoleSeed } from "./seeds/system-roles.js";
+// The shared new-school bootstrap. Read its header before adding a caller —
+// it has a GUC precondition and a transaction-timeout requirement that are
+// not visible from the call site.
+export { applySchoolDefaults } from "./seeds/school-defaults.js";

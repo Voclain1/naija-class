@@ -3,17 +3,7 @@ import * as crypto from "node:crypto";
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import type Redis from "ioredis";
 
-import {
-  DEFAULT_CLASS_LEVELS,
-  DEFAULT_GRADE_BOUNDARIES,
-  DEFAULT_GRADING_COMPONENTS,
-  DEFAULT_GRADING_SCHEME_NAME,
-  DEFAULT_SUBJECTS,
-  Prisma,
-  basePrisma,
-  defaultArmFor,
-  withTenant,
-} from "@school-kit/db";
+import { Prisma, applySchoolDefaults, basePrisma, withTenant } from "@school-kit/db";
 import {
   ConflictError,
   GoneError,
@@ -237,122 +227,18 @@ export class AuthService {
           data: { userId: user.id, roleId: ownerRole.id },
         });
 
-        // Phase 1 / Slice 2 — seed the 14 standard Nigerian class levels
-        // (KG 1, KG 2, Primary 1–6, JSS 1–3, SSS 1–3). Uses `tx` directly,
-        // NOT withTenant: the GUC `app.current_school_id` was set on this
-        // tx at line ~101, so RLS WITH CHECK is already satisfied; wrapping
-        // in withTenant would open a second basePrisma.$transaction inside
-        // this one and Prisma does not support nested transactions (the
-        // call would hang). `skipDuplicates: true` makes the seed
-        // structurally idempotent against the (school_id, code) unique
-        // index — a hypothetical retry would no-op rather than throw.
-        await tx.classLevel.createMany({
-          data: DEFAULT_CLASS_LEVELS.map((level) => ({
-            schoolId: school.id,
-            code: level.code,
-            name: level.name,
-            stage: level.stage,
-            orderIndex: level.orderIndex,
-          })),
-          skipDuplicates: true,
-        });
-
-        // Give each seeded level one default arm (e.g. "JSS 1" -> "JSS 1A")
-        // so a single-arm school (the common case for a private school with
-        // one stream per level) can enroll students immediately, without a
-        // separate manual "create an arm" step first. `createMany` above
-        // doesn't return the created rows, so re-fetch ids by the code we
-        // just inserted them with. Same `tx` + already-satisfied RLS GUC as
-        // the class-level seed above, and same "no separate audit row"
-        // treatment: this is bootstrap, attributed to the auth.signup_owner
-        // entry below, not a standalone mutation. NOT idempotency-fragile
-        // like the level seed's skipDuplicates: a level's default arm uses
-        // a code namespaced to that level ("jss1-a"), so it can never
-        // collide with a school-level admin-created arm under a DIFFERENT
-        // level reusing the same suffix — but `skipDuplicates` here too,
-        // matching the level seed's own defensive stance on a hypothetical
-        // signup-tx retry.
-        const seededLevels = await tx.classLevel.findMany({
-          where: { schoolId: school.id, code: { in: DEFAULT_CLASS_LEVELS.map((l) => l.code) } },
-          select: { id: true, code: true, name: true },
-        });
-        await tx.classArm.createMany({
-          data: seededLevels.map((level) => {
-            const arm = defaultArmFor(level);
-            return {
-              schoolId: school.id,
-              classLevelId: level.id,
-              name: arm.name,
-              code: arm.code,
-            };
-          }),
-          skipDuplicates: true,
-        });
-
-        // Seed a short, track-independent core subject catalogue (English
-        // Language, Mathematics, Civic Education) — the only subjects that
-        // are both WAEC-compulsory for every SSS track and the same subject
-        // at every level from JSS through SSS; see DEFAULT_SUBJECTS's own
-        // header comment for the candidates considered and rejected. Same
-        // `tx` + already-satisfied RLS GUC as the class-level seed above, and
-        // same `skipDuplicates` idempotency stance against the school's
-        // (school_id, code) unique index. No ClassSubject rows are created —
-        // these are bare catalogue entries; linking to specific levels stays
-        // a manual step via the existing class-subject matrix, and rename/
-        // deactivate/delete all go through the existing subject CRUD UI. No
-        // separate audit row, matching the class-level and grading seeds
-        // above — attributed to the auth.signup_owner entry written below.
-        await tx.subject.createMany({
-          data: DEFAULT_SUBJECTS.map((subject) => ({
-            schoolId: school.id,
-            code: subject.code,
-            name: subject.name,
-            category: subject.category,
-          })),
-          skipDuplicates: true,
-        });
-
-        // Phase 2 / Slice 1 — seed the school's single grading scheme + its
-        // three default components (CA1/CA2/Exam = 20/20/60, Σ=100) and the
-        // nine WAEC grade boundaries (A1..F9). Same `tx` + GUC as the
-        // class-level seed above — NOT withTenant (a nested
-        // basePrisma.$transaction would hang; see the class-level note).
+        // Seed the class levels, default arms, subject catalogue and grading
+        // scheme/components/boundaries that make a brand-new school usable.
         //
-        // The scheme is UPSERTED (not created) on the (school_id) unique so a
-        // hypothetical signup-tx retry is idempotent — we need its id to attach
-        // components anyway. Components + boundaries use `skipDuplicates`
-        // against their unique indexes for the same belt-and-braces. No
-        // separate audit row: this is part of the signup bootstrap, attributed
-        // to the auth.signup_owner entry written below (mirrors the class-level
-        // seed, which also writes no audit of its own).
-        const gradingScheme = await tx.gradingScheme.upsert({
-          where: { schoolId: school.id },
-          update: {},
-          create: { schoolId: school.id, name: DEFAULT_GRADING_SCHEME_NAME },
-          select: { id: true },
-        });
-        await tx.gradingComponent.createMany({
-          data: DEFAULT_GRADING_COMPONENTS.map((component) => ({
-            schoolId: school.id,
-            schemeId: gradingScheme.id,
-            key: component.key,
-            label: component.label,
-            weight: component.weight,
-            orderIndex: component.orderIndex,
-          })),
-          skipDuplicates: true,
-        });
-        await tx.gradeBoundary.createMany({
-          data: DEFAULT_GRADE_BOUNDARIES.map((boundary) => ({
-            schoolId: school.id,
-            letter: boundary.letter,
-            minScore: boundary.minScore,
-            maxScore: boundary.maxScore,
-            remark: boundary.remark,
-            orderIndex: boundary.orderIndex,
-          })),
-          skipDuplicates: true,
-        });
+        // Extracted to packages/db 2026-08-14 and shared with platform-admin
+        // provisioning (PlatformAdminService.createSchool), which had been
+        // creating schools WITHOUT any of this since 2026-08-07 — see that
+        // file's header for the four schools it left unusable. Passing `tx`
+        // directly, not withTenant: the GUC was set above on this same tx, and
+        // a nested basePrisma.$transaction would hang. The 20s timeout this
+        // transaction already carries is a precondition of the call, not an
+        // incidental detail.
+        await applySchoolDefaults(tx, school.id);
 
         // Audit entry written inline rather than queued through BullMQ. Two
         // reasons: (1) signup is the bootstrap event for the tenant — there

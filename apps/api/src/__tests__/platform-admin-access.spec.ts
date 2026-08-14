@@ -8,7 +8,15 @@ import { APP_FILTER } from "@nestjs/core";
 import type { INestApplication } from "@nestjs/common";
 import request from "supertest";
 
-import { basePrisma, withTenant } from "@school-kit/db";
+import {
+  DEFAULT_CLASS_LEVELS,
+  DEFAULT_GRADE_BOUNDARIES,
+  DEFAULT_GRADING_COMPONENTS,
+  DEFAULT_SUBJECTS,
+  basePrisma,
+  withTenant,
+} from "@school-kit/db";
+import { AuthService } from "../modules/auth/auth.service";
 import * as password from "../common/auth/password";
 import { createSession } from "../common/auth/sessions";
 
@@ -439,6 +447,102 @@ describe("Platform admin access (2026-08-02)", () => {
 
       expect(second.body.schoolSlug).not.toBe(first.body.schoolSlug);
       expect(second.body.schoolSlug.startsWith(first.body.schoolSlug)).toBe(true);
+    });
+
+    // ---- Academic-structure seeding (2026-08-14) ----
+    //
+    // Regression cover for a real production defect: from this endpoint's
+    // first ship (2026-08-07) until 2026-08-14 it created a School and an
+    // Invitation and NOTHING else, because signupOwner's seeding block was
+    // inline in signupOwner rather than a shared callable. Four schools
+    // provisioned on 2026-08-08 were left with zero class levels, zero arms,
+    // zero subjects and no grading scheme — an owner could accept the invite,
+    // log in, and do nothing at all. One of those owners abandoned the school
+    // and re-registered through self-serve signup instead.
+    it("seeds the full academic structure — the gap that left four provisioned schools unusable", async () => {
+      const res = await request(app.getHttpServer())
+        .post("/api/v1/platform-admin/schools")
+        .set("Authorization", `Bearer ${platformAdminToken}`)
+        .send({
+          schoolName: `Seeded Provisioning ${runId}`,
+          ownerEmail: `seeded-provisioning-${runId}@example.test`,
+        });
+      expect(res.status).toBe(201);
+      schoolIdsToCleanup.add(res.body.schoolId);
+
+      const seeded = await withTenant(res.body.schoolId, async (db) => ({
+        levels: await db.classLevel.count(),
+        arms: await db.classArm.count(),
+        subjects: await db.subject.count(),
+        schemes: await db.gradingScheme.count(),
+        components: await db.gradingComponent.count(),
+        boundaries: await db.gradeBoundary.count(),
+      }));
+
+      expect(seeded.levels).toBe(DEFAULT_CLASS_LEVELS.length);
+      // One default arm per level — the specific thing whose absence blocks
+      // every enrollment workflow in the product.
+      expect(seeded.arms).toBe(DEFAULT_CLASS_LEVELS.length);
+      expect(seeded.subjects).toBe(DEFAULT_SUBJECTS.length);
+      expect(seeded.schemes).toBe(1);
+      expect(seeded.components).toBe(DEFAULT_GRADING_COMPONENTS.length);
+      expect(seeded.boundaries).toBe(DEFAULT_GRADE_BOUNDARIES.length);
+    });
+
+    // The test that actually prevents a recurrence. The bug was not "rows are
+    // missing" — it was "two code paths that must agree were free to drift".
+    // Asserting the two paths produce IDENTICAL structure fails if a future
+    // change seeds one and not the other, whatever the seed contents become.
+    it("produces structure identical to a self-serve signup (the drift this fix removes)", async () => {
+      const provisioned = await request(app.getHttpServer())
+        .post("/api/v1/platform-admin/schools")
+        .set("Authorization", `Bearer ${platformAdminToken}`)
+        .send({
+          schoolName: `Parity Provisioned ${runId}`,
+          ownerEmail: `parity-provisioned-${runId}@example.test`,
+        });
+      expect(provisioned.status).toBe(201);
+      schoolIdsToCleanup.add(provisioned.body.schoolId);
+
+      // Constructed directly, not through DI — signupOwner touches neither
+      // Redis nor email, and the class documents this exact usage.
+      const signedUp = await new AuthService().signupOwner(
+        {
+          schoolName: `Parity Signup ${runId}`,
+          ownerFirstName: "Parity",
+          ownerLastName: "Owner",
+          ownerEmail: `parity-signup-${runId}@example.test`,
+          ownerPhone: randomPhone(),
+          password: "Correct-Horse-Parity-9",
+          ndprConsent: true,
+        },
+        { ipAddress: null, userAgent: null },
+      );
+      schoolIdsToCleanup.add(signedUp.school.id);
+      userIdsForAuditCleanup.add(signedUp.user.id);
+
+      const structureOf = (schoolId: string) =>
+        withTenant(schoolId, async (db) => ({
+          levels: (
+            await db.classLevel.findMany({ select: { code: true }, orderBy: { code: "asc" } })
+          ).map((r) => r.code),
+          arms: (
+            await db.classArm.findMany({ select: { code: true }, orderBy: { code: "asc" } })
+          ).map((r) => r.code),
+          subjects: (
+            await db.subject.findMany({ select: { code: true }, orderBy: { code: "asc" } })
+          ).map((r) => r.code),
+          components: (
+            await db.gradingComponent.findMany({ select: { key: true }, orderBy: { key: "asc" } })
+          ).map((r) => r.key),
+          boundaries: (
+            await db.gradeBoundary.findMany({ select: { letter: true }, orderBy: { letter: "asc" } })
+          ).map((r) => r.letter),
+        }));
+
+      expect(await structureOf(provisioned.body.schoolId)).toEqual(
+        await structureOf(signedUp.school.id),
+      );
     });
   });
 
