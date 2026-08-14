@@ -400,8 +400,8 @@ GET    /finance/dashboard?termId=        — collections vs target, debtors, exp
 No mobile in Phase 3 (parent app is Phase 4). New screens under `(admin)` and a
 new `(bursar)` surface (or a Finance section gated by role).
 
-- `/settings/finance/fees` — fee category + FeeItem editor (with the scope picker: level / arm / term / year).
-- `/settings/finance/discounts` — discount-rule builder (pick a curated type, fill typed params).
+- `/finance/fees` — fee category + FeeItem editor (with the scope picker: level / arm / term / year). Shipped at `/settings/finance/fees`; moved into the Finance sub-nav 2026-08-14 (bursar can't see the Settings nav item), old URL redirects.
+- `/finance/discounts` — discount-rule builder (pick a curated type, fill typed params). Same move, same date.
 - `/finance/invoices` — generate per arm, preview the snapshot, issue, cancel; per-invoice detail with the frozen line items.
 - `/finance/payments` — record manual payment, view/print receipt; Paystack status.
 - `/finance/debtors` — outstanding list + send-reminder action.

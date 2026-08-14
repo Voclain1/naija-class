@@ -18,7 +18,7 @@ import {
 // Phase 3 / Slice 13 — lightweight category management modal. Expense
 // categories are flat (name + active, no scope fields), so this earns an
 // inline modal rather than a dedicated settings screen — unlike fee catalog's
-// /settings/finance/fees, which needed a full page for the scope-picker
+// /finance/fees, which needed a full page for the scope-picker
 // complexity FeeItem has. Migrated onto the shared Dialog primitive during
 // the Finance restyle (Phase 1) — previously predated it, same as
 // ReopenModal/BvnCaptureModal (still on the old inline-overlay pattern until
