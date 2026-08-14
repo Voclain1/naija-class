@@ -3,7 +3,7 @@
 // Paths are derived from the actual directory tree:
 //   (admin) route group → /dashboard, /settings/*, /students/*, /staff/*,
 //                          /guardians/*, /enrollments/*, /report-cards/*,
-//                          /finance/*
+//                          /finance/*, /insights/*
 //   (teacher) route group → /teacher/*
 //   super-admin/dashboard → the platform-admin surface (real URL segment,
 //                          not a route group — see CLAUDE.md's "Platform
@@ -64,6 +64,13 @@ export const config = {
     // Discounts here from /settings/finance/* — without this line that move
     // would have taken two pages OUT of the edge gate's coverage.
     "/finance/:path*",
+    // Same omission, found in the same sweep: /insights shipped in Phase 5 /
+    // Slice 8 and was never added here either. It reports class-and-subject
+    // rankings across the school — management information about colleagues'
+    // work, gated on `insight.read`, which neither bursar nor teacher holds.
+    // At this point every (admin) route IS listed; a new one should be added
+    // here in the same PR that creates it.
+    "/insights/:path*",
     "/teacher/:path*",
     "/super-admin/dashboard/:path*",
   ],
