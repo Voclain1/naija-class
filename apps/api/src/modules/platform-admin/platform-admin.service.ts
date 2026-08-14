@@ -1,7 +1,7 @@
 import * as crypto from "node:crypto";
 import { Injectable, Logger } from "@nestjs/common";
 
-import { basePrisma } from "@school-kit/db";
+import { applySchoolDefaults, basePrisma } from "@school-kit/db";
 import {
   ConflictError,
   NotFoundError,
@@ -50,6 +50,20 @@ import { generateUniqueSchoolSlug } from "../../common/slug/school-slug.js";
 // accepting a portal invite, and there's no self-serve resend on this
 // surface yet if it lapses (see CLAUDE.md's "Platform super-admin" note).
 const OWNER_INVITATION_TTL_MS = 1000 * 60 * 60 * 24 * 14;
+
+// Mirrors AuthService's SIGNUP_TRANSACTION_TIMEOUT_MS, and for the same
+// reason. Until 2026-08-14 createSchool's transaction was three quick writes
+// and ran fine on Prisma's 5000ms interactive-transaction default. Adding
+// applySchoolDefaults() puts ~8 more sequential round-trips inside that
+// boundary — which is exactly the shape that caused the 2026-08-02/03
+// production incident, where signupOwner's equivalent transaction measured
+// 5172ms against real Neon latency (172ms over the default) and failed every
+// signup with a 500 for roughly two hours. Provisioning is far lower-volume
+// than signup, but the failure mode is identical and the remedy is the same.
+// Deliberately a local constant rather than an import from auth.service.ts:
+// that one is module-private there, and this module's import-boundary spec
+// keeps platform-admin from reaching into other services.
+const CREATE_SCHOOL_TRANSACTION_TIMEOUT_MS = 20_000;
 
 // Same WEB_BASE_URL convention as UsersService.invite() / GuardiansService
 // (PORTAL_BASE_URL) — dev default matches the web dev port, production must
@@ -347,6 +361,21 @@ export class PlatformAdminService {
       // school's id as the current tenant (mirrors signupOwner exactly).
       await tx.$executeRaw`SELECT set_config('app.current_school_id', ${school.id}, true)`;
 
+      // Seed the same class levels, default arms, subject catalogue and
+      // grading scheme/components/boundaries a self-serve signup gets.
+      //
+      // MISSING FROM 2026-08-07 (this method's first ship) TO 2026-08-14.
+      // createSchool reused signupOwner's transaction *pattern* but not its
+      // seeding, because the seeding wasn't a callable unit — it was inline
+      // in signupOwner. Four schools provisioned on 2026-08-08 landed with no
+      // academic structure at all, and their owners could log in and do
+      // nothing; one re-registered through self-serve signup instead, leaving
+      // two school rows for one real school. Now shared: packages/db's
+      // applySchoolDefaults() is the single definition both paths call, so
+      // they cannot drift apart again. Requires the GUC set above and the
+      // raised transaction timeout below — see that function's header.
+      await applySchoolDefaults(tx, school.id);
+
       const invitation = await tx.invitation.create({
         data: {
           schoolId: school.id,
@@ -390,7 +419,7 @@ export class PlatformAdminService {
       });
 
       return { school };
-    });
+    }, { timeout: CREATE_SCHOOL_TRANSACTION_TIMEOUT_MS });
 
     const acceptUrl = `${webBaseUrl()}/invitations/${rawToken}`;
 
