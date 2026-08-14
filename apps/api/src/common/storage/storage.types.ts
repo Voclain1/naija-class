@@ -46,7 +46,25 @@ export type StorageObjectKey =
   // explicitly (schools.service.ts's uploadLogo does this) — an
   // extensionless key would just self-overwrite, but we've chosen the
   // extension-bearing shape for reason (1) above, so cleanup is on us.
-  | { kind: "school-logo"; ext: "png" | "jpg" | "webp" };
+  | { kind: "school-logo"; ext: "png" | "jpg" | "webp" }
+  // Student profile photo. Layout:
+  // schools/<schoolId>/students/<studentId>/photo.<ext>
+  //
+  // Mirrors school-logo exactly, for the same reasons: EXTENSION-BEARING so
+  // the dev filesystem driver can recover Content-Type from the path (its
+  // put() discards contentType — no metadata sidecar), and therefore a
+  // re-upload in a DIFFERENT format needs the old object deleted explicitly
+  // rather than self-overwriting.
+  //
+  // The studentId in the path is what keeps two students' photos apart — the
+  // key is bounded per student, so there is no shared object, no shared
+  // signed URL, and no way for one student's photo to be served for another.
+  // Every consumer signs from the student's own row.
+  //
+  // NOT public-read, unlike the logo's "branding is public anyway" posture:
+  // these are photographs of children, so the object stays private and every
+  // view is a short-TTL signed URL.
+  | { kind: "student-photo"; studentId: string; ext: "png" | "jpg" | "webp" };
 
 export type StorageDriverKind = "filesystem" | "r2";
 

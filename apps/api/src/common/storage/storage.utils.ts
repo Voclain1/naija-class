@@ -59,6 +59,17 @@ export function pathFor(schoolId: string, key: StorageObjectKey): string {
     case "school-logo": {
       return `schools/${schoolId}/logo.${key.ext}`;
     }
+    case "student-photo": {
+      // The studentId UUID check is what makes this key BOUNDED — it is the
+      // only part of the path that varies per student, so a malformed or
+      // attacker-supplied value must never reach the path string. Same guard
+      // every other id-bearing key here uses, and the reason two students can
+      // never collide on one object.
+      if (!UUID_RE.test(key.studentId)) {
+        throw new Error(`storage: studentId is not a UUID: ${redact(key.studentId)}`);
+      }
+      return `schools/${schoolId}/students/${key.studentId}/photo.${key.ext}`;
+    }
   }
 }
 

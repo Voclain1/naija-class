@@ -17,10 +17,17 @@ import {
 
 import type { AuthContext } from "../../common/auth/auth-context";
 import { assertUserActiveAndHasOneOf } from "../../common/auth/role-check";
+import { StorageService } from "../../common/storage";
 import {
   loadCurrentEnrollmentForStudent,
   loadCurrentEnrollmentsForStudents,
 } from "../enrollments/enrollments.service";
+import {
+  parseStudentPhotoPath,
+  resolveStudentPhotoUrl,
+  resolveStudentPhotoUrls,
+  STUDENT_PHOTO_URL_TTL_SECONDS,
+} from "./student-photo";
 
 interface RequestContext {
   ipAddress: string | null;
@@ -41,6 +48,12 @@ const MAX_LIMIT = 200;
 
 @Injectable()
 export class StudentsService {
+  // StorageService injected 2026-08-14 for the real photo upload. Every read
+  // path below resolves Student.photoUrl through student-photo.ts, which signs
+  // storage paths and passes external URLs through untouched — see that
+  // module for why both shapes exist and why nothing is cached.
+  constructor(private readonly storage: StorageService) {}
+
   // ----------------------------------------------------------------------
   // list — cursor-paginated, id ASC.
   //
@@ -110,11 +123,21 @@ export class StudentsService {
         studentIds,
       );
 
-      return {
-        data: page.map((row) => ({
+      // Sign any uploaded photos before the DTOs leave the service. Only rows
+      // whose photoUrl is a storage path cost a signature; external URLs and
+      // nulls are untouched. Resolved per row from that row's own studentId —
+      // deliberately uncached, see student-photo.ts.
+      const data = await resolveStudentPhotoUrls(
+        this.storage,
+        authCtx.schoolId,
+        page.map((row) => ({
           ...toStudentDto(row),
           currentEnrollment: currentEnrollments.get(row.id) ?? null,
         })),
+      );
+
+      return {
+        data,
         meta: cursor === undefined ? {} : { cursor },
       };
     });
