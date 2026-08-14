@@ -45,7 +45,24 @@ import type { PromptDefinition } from "./registry.js";
 
 export const REPORT_CARD_COMMENT_PROMPT: PromptDefinition = {
   name: "report-card-subject-comment",
-  version: "1",
+  // v2 (2026-08-14) — bumped after the FIRST real generations this prompt has
+  // ever produced, on the day an API key was finally configured. Two defects
+  // showed up immediately that 154 structural eval checks could not see,
+  // because in both cases the instruction was present and simply not followed:
+  //
+  //   1. It invented curriculum content. "Focused revision of fundamentals in
+  //      algebra and number work" — for a class whose syllabus it was never
+  //      told. On a termly report card a parent keeps, that makes a teacher
+  //      look careless about their own class.
+  //   2. It restated raw marks ("the exam performance of 33/60") despite
+  //      being told to interpret rather than restate. The old wording buried
+  //      that rule in a compound bullet with the don't-invent-figures rule;
+  //      v2 splits them and spells out the failure with examples.
+  //
+  // The lesson generalises beyond this prompt: an instruction being IN a
+  // system prompt is not evidence it is being followed, and only real output
+  // shows the difference. See phase-5.md §9.
+  version: "2",
   model: MODELS.HAIKU_4_5,
   // A report-card comment is one or two sentences. 200 is deliberately tight:
   // maxTokens is what the budget reservation is sized on, and at ~360 calls
@@ -62,11 +79,17 @@ Write ONE comment of one to two sentences (roughly 20-40 words).
 Ground it in the specific figures you are given:
 - Refer to what the component scores actually show — a strong exam after weak continuous assessment, a slide across the term, a consistent performance, a single component dragging the total down.
 - Mention attendance ONLY when it is poor enough to matter (below about 85%) and connect it to the performance.
-- Never state or imply a figure you were not given, and never restate the raw numbers — the parent can already see them on the card. Interpret them.
+- Never state or imply a figure you were not given.
+- Never repeat a score back as a number. Not "scored 33/60", not "the exam mark of 33", not "at 56%". The full table of marks is printed directly beside your comment; a comment that repeats it has said nothing. Describe what the pattern means instead.
+
+You do NOT know what this class was taught this term:
+- You are given a subject name and nothing else about the syllabus. Never name a topic, subtopic or skill — not "algebra", not "number work", not "essay structure", not "titration".
+- Naming one is a guess, and a wrong guess in front of a parent makes the teacher look careless about a class they actually taught.
+- When you recommend an improvement, make it about the work and the habits behind it, which you CAN see in the figures: revising the exam paper with the teacher, closing the gap between classwork and exam performance, more practice on the questions missed in class, steadier effort across the term rather than a late rush.
 
 How to write it:
 - You do NOT know the student's name or gender. Never invent a name. Never use "he", "she", "his" or "her". Write so that no pronoun is needed — start with the verb or the subject ("Shows a firm grasp of...", "Mathematics remains a challenge...", "A strong end to the term in...").
-- Be honest. A weak result described as "satisfactory progress" misleads a parent who needs to act. Say plainly what is weak, then give one concrete, specific thing that would improve it.
+- Be honest. A weak result described as "satisfactory progress" misleads a parent who needs to act. Say plainly what is weak, then give one concrete next step of the kind described above — specific about the work, never about a topic you were not told was taught.
 - For senior classes (SS1-SS3), where it is relevant to the figures, frame the comment against WAEC/NECO readiness — that is what a parent of a senior student is actually asking about. Do not force this into junior-class comments.
 - Do not open with "This student", "The student", or the grade band ("Excellent performance...", "Good effort..."). Those are the phrases that make a class set of 40 comments read as a template.
 - Use British spelling and the register of a Nigerian secondary school report card. Address the work, not the child's character.

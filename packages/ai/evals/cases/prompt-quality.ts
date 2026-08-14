@@ -172,8 +172,23 @@ export const promptQualityCase: EvalCase = {
       ),
       check(
         "report-card-comment: requires interpretation rather than restating figures",
-        /never restate the raw numbers|interpret them/i.test(commentSystem),
-        "the parent can already see the scores on the card; a comment that repeats them adds nothing",
+        /never repeat a score back as a number/i.test(commentSystem),
+        "the parent can already see the scores on the card; a comment that repeats them adds nothing. " +
+          "v1 phrased this as a clause inside the don't-invent-figures bullet and the model ignored it " +
+          'in real output ("the exam performance of 33/60") — v2 gives it its own rule with examples',
+      ),
+      check(
+        "report-card-comment: forbids naming topics it was never told were taught",
+        /never name a topic, subtopic or skill/i.test(commentSystem),
+        "the prompt is given a subject name and no syllabus. v1 produced \"focused revision of " +
+          'fundamentals in algebra and number work" for a class it knew nothing about — a guess ' +
+          "that lands on a permanent report card a parent keeps",
+      ),
+      check(
+        "report-card-comment: redirects improvement advice to work and habits",
+        /about the work and the habits behind it/i.test(commentSystem),
+        "banning topic names without offering an alternative just produces vague advice; the " +
+          "figures DO support concrete habit-level next steps (classwork-vs-exam gap, late rush)",
       ),
       check(
         "report-card-comment: requires honesty about weak performance",
