@@ -2,7 +2,8 @@
 //
 // Paths are derived from the actual directory tree:
 //   (admin) route group → /dashboard, /settings/*, /students/*, /staff/*,
-//                          /guardians/*, /enrollments/*, /report-cards/*
+//                          /guardians/*, /enrollments/*, /report-cards/*,
+//                          /finance/*, /insights/*
 //   (teacher) route group → /teacher/*
 //   super-admin/dashboard → the platform-admin surface (real URL segment,
 //                          not a route group — see CLAUDE.md's "Platform
@@ -54,6 +55,22 @@ export const config = {
     "/guardians/:path*",
     "/enrollments/:path*",
     "/report-cards/:path*",
+    // Added 2026-08-14. The whole (admin) Finance section had been missing
+    // from this matcher since Phase 3 — an omission, not a decision: every
+    // other (admin) path is listed, and /finance/* has no reason to be
+    // public. Nothing leaked (RequireAuth in (admin)/layout.tsx bounces the
+    // client, and the API rejects unauthenticated calls), but the edge gate
+    // was skipping the money pages. Surfaced while moving Fee Catalog and
+    // Discounts here from /settings/finance/* — without this line that move
+    // would have taken two pages OUT of the edge gate's coverage.
+    "/finance/:path*",
+    // Same omission, found in the same sweep: /insights shipped in Phase 5 /
+    // Slice 8 and was never added here either. It reports class-and-subject
+    // rankings across the school — management information about colleagues'
+    // work, gated on `insight.read`, which neither bursar nor teacher holds.
+    // At this point every (admin) route IS listed; a new one should be added
+    // here in the same PR that creates it.
+    "/insights/:path*",
     "/teacher/:path*",
     "/super-admin/dashboard/:path*",
   ],
