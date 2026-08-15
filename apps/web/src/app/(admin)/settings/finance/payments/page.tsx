@@ -1,44 +1,76 @@
 "use client";
 
 import { Loader2 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
 import { toast } from "sonner";
+
+import type { PaystackSetupRequestDto } from "@school-kit/types";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { ApiError } from "@/lib/api-client";
+import {
+  createPaystackSetupRequest,
+  getPaystackSetupRequest,
+} from "@/lib/finance/paystack-setup-api";
 import { getSchoolMe, patchSchoolMe } from "@/lib/onboarding/schools-api";
 import { cn } from "@/lib/utils";
 
-// /settings/finance/payments — Paystack subaccount routing (compressed
-// plan-first, 2026-07-31). Owner/admin only (the PATCH /schools/me gate
-// enforces it server-side, same as every other settings page here).
+// /settings/finance/payments — Paystack subaccount routing. Owner/admin only
+// (the PATCH /schools/me gate enforces it server-side, same as every other
+// settings page here).
 //
-// The school creates its own subaccount in its own Paystack dashboard and
-// pastes the resulting code here — SchoolKit never captures or verifies
-// bank details directly. Saving the code triggers a server-side lookup
-// (GET /subaccount/:code) so a typo or dead code is caught here, not the
-// first time a parent tries to pay. Enabling Paystack payments requires a
-// saved code first; every school defaults to manual-only (cash, POS, bank
-// transfer), which always remains available regardless of this toggle.
+// ASSISTED SETUP (2026-08-15), replacing the self-serve instructions this
+// page shipped with. A school CANNOT create a usable subaccount itself:
+// Paystack subaccounts belong to the integration that created them and the
+// API holds one platform-wide secret key, so a code from the school's own
+// dashboard is invisible to our save-time verification and always fails.
+// The school submits banking details here, we create the subaccount on
+// SchoolKit's integration, and send back the ACCT_ code to paste below.
+//
+// The paste-and-verify half is unchanged and deliberately so: saving a code
+// still triggers a live GET /subaccount/:code and shows the business name
+// back, which is the only check that catches a valid code belonging to
+// someone else. See docs/modules/paystack-assisted-setup.md.
 export default function PaymentsSettingsPage() {
   const [savedCode, setSavedCode] = useState<string | null>(null);
   const [savedEnabled, setSavedEnabled] = useState(false);
   const [codeDraft, setCodeDraft] = useState("");
   const [enabledDraft, setEnabledDraft] = useState(false);
+  const [request, setRequest] = useState<PaystackSetupRequestDto | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const [businessName, setBusinessName] = useState("");
+  const [bankName, setBankName] = useState("");
+  const [accountNumber, setAccountNumber] = useState("");
+  const [accountName, setAccountName] = useState("");
+  const [contactName, setContactName] = useState("");
+  const [contactEmail, setContactEmail] = useState("");
+  const [contactPhone, setContactPhone] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const school = await getSchoolMe();
+      const [school, existing] = await Promise.all([
+        getSchoolMe(),
+        getPaystackSetupRequest(),
+      ]);
       setSavedCode(school.paystackSubaccountCode);
       setSavedEnabled(school.paystackPaymentsEnabled);
       setCodeDraft(school.paystackSubaccountCode ?? "");
       setEnabledDraft(school.paystackPaymentsEnabled);
+      setRequest(existing);
+      // Prefill the business name from the school's own name — the common
+      // case — while leaving it editable, since a trading name and a
+      // registered banking name are not always the same string.
+      setBusinessName((current) => current || school.name);
+      setContactEmail((current) => current || (school.email ?? ""));
+      setContactPhone((current) => current || (school.phone ?? ""));
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Could not load settings.");
     } finally {
@@ -84,6 +116,35 @@ export default function PaymentsSettingsPage() {
     }
   }
 
+  async function onSubmitRequest(e: FormEvent): Promise<void> {
+    e.preventDefault();
+    setSubmitting(true);
+    try {
+      const created = await createPaystackSetupRequest({
+        businessName: businessName.trim(),
+        bankName: bankName.trim(),
+        accountNumber: accountNumber.trim(),
+        accountName: accountName.trim(),
+        contactName: contactName.trim(),
+        contactEmail: contactEmail.trim(),
+        contactPhone: contactPhone.trim(),
+      });
+      setRequest(created);
+      toast.success("Request sent. We'll email you the subaccount code shortly.");
+    } catch (e) {
+      toast.error(
+        e instanceof ApiError ? e.message : "Couldn't send the request — try again.",
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  // Show the request form only when there's nothing useful to show instead:
+  // no code saved, and no request already in flight or fulfilled.
+  const showRequestForm =
+    !savedCode && (request === null || request.status === "REJECTED");
+
   return (
     <div className="flex w-full max-w-2xl flex-col gap-8">
       <header className="flex flex-col gap-2">
@@ -106,14 +167,178 @@ export default function PaymentsSettingsPage() {
         </div>
       ) : (
         <div className="flex flex-col gap-6">
+          {request?.status === "REJECTED" && request.notes && (
+            <div className="rounded-md border border-destructive/40 bg-destructive/5 p-4 text-sm">
+              <p className="font-medium text-destructive">
+                We couldn&apos;t complete your last request
+              </p>
+              <p className="mt-1 text-muted-foreground">{request.notes}</p>
+              <p className="mt-1 text-muted-foreground">
+                Correct the details below and send it again.
+              </p>
+            </div>
+          )}
+
+          {showRequestForm ? (
+            <form
+              onSubmit={onSubmitRequest}
+              className="flex flex-col gap-4 rounded-md border bg-card p-4"
+            >
+              <div className="flex flex-col gap-1">
+                <h2 className="text-sm font-medium">Request Paystack setup</h2>
+                <p className="text-xs text-muted-foreground">
+                  We create the Paystack subaccount for you and send back a code to paste below.
+                  You can&apos;t create one yourself — a subaccount made in your own Paystack
+                  dashboard won&apos;t work with schoolkit. Money settles from Paystack straight
+                  to your bank account; it never passes through us, and we take no cut.
+                </p>
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <Label htmlFor="businessName">Business name</Label>
+                <Input
+                  id="businessName"
+                  value={businessName}
+                  onChange={(e) => setBusinessName(e.target.value)}
+                  required
+                  minLength={2}
+                  maxLength={120}
+                />
+                <p className="text-xs text-muted-foreground">
+                  What parents see on the Paystack checkout page and on your settlement
+                  statements.
+                </p>
+              </div>
+
+              <div className="flex flex-col gap-3 sm:flex-row">
+                <div className="flex flex-1 flex-col gap-1">
+                  <Label htmlFor="bankName">Bank</Label>
+                  <Input
+                    id="bankName"
+                    value={bankName}
+                    onChange={(e) => setBankName(e.target.value)}
+                    placeholder="e.g. GTBank"
+                    required
+                    minLength={2}
+                  />
+                </div>
+                <div className="flex flex-1 flex-col gap-1">
+                  <Label htmlFor="accountNumber">Account number</Label>
+                  <Input
+                    id="accountNumber"
+                    value={accountNumber}
+                    onChange={(e) => setAccountNumber(e.target.value.replace(/\D/g, ""))}
+                    inputMode="numeric"
+                    pattern="[0-9]{10}"
+                    maxLength={10}
+                    placeholder="10 digits"
+                    required
+                    className="font-mono"
+                  />
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-1">
+                <Label htmlFor="accountName">Name on the account</Label>
+                <Input
+                  id="accountName"
+                  value={accountName}
+                  onChange={(e) => setAccountName(e.target.value)}
+                  required
+                  minLength={2}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Paystack checks this against the bank. If it doesn&apos;t match exactly, setup
+                  fails — copy it from a bank statement rather than from memory.
+                </p>
+              </div>
+
+              <div className="flex flex-col gap-3 sm:flex-row">
+                <div className="flex flex-1 flex-col gap-1">
+                  <Label htmlFor="contactName">Finance contact</Label>
+                  <Input
+                    id="contactName"
+                    value={contactName}
+                    onChange={(e) => setContactName(e.target.value)}
+                    required
+                    minLength={2}
+                  />
+                </div>
+                <div className="flex flex-1 flex-col gap-1">
+                  <Label htmlFor="contactEmail">Contact email</Label>
+                  <Input
+                    id="contactEmail"
+                    type="email"
+                    value={contactEmail}
+                    onChange={(e) => setContactEmail(e.target.value)}
+                    required
+                  />
+                </div>
+                <div className="flex flex-1 flex-col gap-1">
+                  <Label htmlFor="contactPhone">Contact phone</Label>
+                  <Input
+                    id="contactPhone"
+                    value={contactPhone}
+                    onChange={(e) => setContactPhone(e.target.value)}
+                    required
+                  />
+                </div>
+              </div>
+
+              <div>
+                <Button type="submit" disabled={submitting}>
+                  {submitting && <Loader2 className="mr-1 h-4 w-4 animate-spin" />}
+                  {submitting ? "Sending…" : "Send request"}
+                </Button>
+              </div>
+            </form>
+          ) : request?.status === "PENDING" ? (
+            <div className="rounded-md border bg-card p-4 text-sm">
+              <p className="font-medium">Setup request received</p>
+              <p className="mt-1 text-muted-foreground">
+                Sent {new Date(request.submittedAt).toLocaleDateString()} for{" "}
+                <strong>{request.businessName}</strong>. We&apos;ll email your subaccount code
+                once the Paystack account is set up — then paste it below. Keep collecting cash,
+                POS, and bank transfer payments in the meantime; nothing is blocked.
+              </p>
+            </div>
+          ) : request?.status === "FULFILLED" && request.subaccountCode ? (
+            // Found by the browser pass (2026-08-15): without this branch, a
+            // school whose request was fulfilled saw NEITHER the form nor any
+            // status — just a bare code field with no explanation of where the
+            // code was meant to come from. Showing the issued code here also
+            // means losing the email is not a dead end.
+            <div className="rounded-md border border-emerald-600/40 bg-emerald-600/5 p-4 text-sm">
+              <p className="font-medium">Your Paystack subaccount is ready</p>
+              <p className="mt-1 text-muted-foreground">
+                Created for <strong>{request.businessName}</strong>. Your code is{" "}
+                <code className="font-mono">{request.subaccountCode}</code>
+                {savedCode === request.subaccountCode
+                  ? " — already saved below."
+                  : " — paste it below and save to finish connecting."}
+              </p>
+              {savedCode !== request.subaccountCode && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="mt-3"
+                  onClick={() => setCodeDraft(request.subaccountCode ?? "")}
+                >
+                  Fill it in for me
+                </Button>
+              )}
+            </div>
+          ) : null}
+
           <div className="flex flex-col gap-2 rounded-md border bg-card p-4">
-            <label htmlFor="subaccount-code" className="text-sm font-medium">
+            <Label htmlFor="subaccount-code" className="text-sm font-medium">
               Paystack subaccount code
-            </label>
+            </Label>
             <p className="text-xs text-muted-foreground">
-              Create a subaccount in your own Paystack dashboard (Settings → Subaccounts), then
-              paste the code here — it looks like <code>ACCT_xxxxxxxxxx</code>. We verify it with
-              Paystack when you save.
+              Paste the code we sent you — it looks like <code>ACCT_xxxxxxxxxx</code>. We check it
+              with Paystack when you save and show the business name back, so you can confirm
+              it&apos;s your school&apos;s account before it goes live.
             </p>
             <Input
               id="subaccount-code"

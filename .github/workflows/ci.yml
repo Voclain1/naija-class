@@ -140,6 +140,7 @@ jobs:
           ANTHROPIC_API_KEY=sk-ant-placeholder-not-used-in-ci
           PAYSTACK_SECRET_KEY=sk_test_not_used_in_ci
           PAYSTACK_PUBLIC_KEY=pk_test_not_used_in_ci
+          PAYSTACK_SETUP_EMAIL=payments-not-used-in-ci@schoolkit.ng
           TERMII_API_KEY=not-used-in-ci
           TERMII_SENDER_ID=SchoolKit
           RESEND_API_KEY=re_not_used_in_ci
@@ -297,6 +298,7 @@ jobs:
           ANTHROPIC_API_KEY=sk-ant-placeholder-not-used-in-ci
           PAYSTACK_SECRET_KEY=sk_test_not_used_in_ci
           PAYSTACK_PUBLIC_KEY=pk_test_not_used_in_ci
+          PAYSTACK_SETUP_EMAIL=payments-not-used-in-ci@schoolkit.ng
           TERMII_API_KEY=not-used-in-ci
           TERMII_SENDER_ID=SchoolKit
           RESEND_API_KEY=re_not_used_in_ci

@@ -277,21 +277,24 @@ Switch to the **Invoice list** tab to see everything generated, filterable by st
 
 Connecting is an **assisted setup**: we do the Paystack side for you, and you paste one code back in. It is not something you can complete on your own, and a subaccount you create in your own Paystack dashboard will **not** work here — the code has to be one we issue.
 
-1. **Email us to request setup** at **[payments contact address — TO BE CONFIRMED]**, from the school's own email address, with:
-   - **School business name** — exactly as it should appear to parents on the Paystack checkout page and on your settlement statements.
-   - **Bank name.**
-   - **Account number** — the school's own account, in the school's name. Paystack checks this number against the bank and resolves the account name automatically; if the bank and number don't match, setup fails, so double-check both before sending.
+1. **Send us the request from inside schoolkit.** Go to **Settings → Payments** (`/settings/finance/payments`) and fill in the **Request Paystack setup** form:
+   - **Business name** — exactly as it should appear to parents on the Paystack checkout page and on your settlement statements. We prefill your school's name; change it if your registered banking name differs.
+   - **Bank** and **account number** — the school's own account, in the school's name. Ten digits.
+   - **Name on the account** — Paystack checks this against the bank, and if it doesn't match exactly setup fails. Copy it from a bank statement rather than from memory.
    - **A contact name, email, and phone** for whoever handles school finances.
+
+   Submitting through the app rather than by email is deliberate: your account details go straight into schoolkit over a secure connection instead of sitting in an inbox. If you'd rather talk it through first, email **payments@schoolkit.ng** — but don't put your account number in that email; we'll point you back to the form.
 2. **We create the subaccount** and point it at your bank account, with a **0% platform cut** — 100% of every payment settles to you. Paystack's own transaction fee still applies, exactly as it would if you used Paystack directly; schoolkit takes nothing on top.
-3. **We send you back a subaccount code.** It looks like `ACCT_xxxxxxxxxx`.
-4. **Paste it in.** Go to **Settings → Payments** (`/settings/finance/payments`), put the code in **Paystack subaccount code**, switch **Accept Paystack payments** on, and click **Save**. The toggle stays disabled until a code is entered — that's deliberate.
+3. **We send you back a subaccount code.** It looks like `ACCT_xxxxxxxxxx`. It also appears on the same **Settings → Payments** page once we've set it up, so losing the email isn't a problem — there's a **Fill it in for me** button that drops it straight into the field.
+4. **Paste it in and save.** Put the code in **Paystack subaccount code**, switch **Accept Paystack payments** on, and click **Save**. The toggle stays disabled until a code is entered — that's deliberate.
 5. **Read the confirmation message.** On save, schoolkit checks the code with Paystack there and then, and shows *"Connected to "[your business name]" on Paystack."* **Check that it's your school's name.** This is your one chance to catch a valid code that belongs to somebody else — if the name isn't yours, clear the field, save again, and tell us. The name is shown only at that moment; it won't be there when you come back to the page.
 
 A few things worth knowing:
 
 - **The money never passes through schoolkit.** Paystack settles it from the parent straight to your school's bank account, on Paystack's normal settlement schedule.
 - **You can turn it off at any time** — switch **Accept Paystack payments** off and save. Recording manual payments is unaffected.
-- **If you see *"Could not find a Paystack subaccount with code …"***, the code was either mistyped or isn't one we issued. Check it against the email we sent you. Don't create a subaccount in your own Paystack dashboard to work around it — a code from a different Paystack account can't work here, and that error is exactly what it looks like.
+- **If you see *"Could not find a Paystack subaccount with code …"***, the code was either mistyped or isn't one we issued. Check it against the email we sent you, or use **Fill it in for me** on the same page. Don't create a subaccount in your own Paystack dashboard to work around it — a code from a different Paystack account can't work here, and that error is exactly what it looks like.
+- **If we can't complete your request** (usually the account name not matching the bank's records), the page shows the reason and the form comes back so you can correct the details and send it again.
 
 ---
 
