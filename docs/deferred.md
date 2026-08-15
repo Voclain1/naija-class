@@ -393,7 +393,10 @@ Format:
   `AI_ENABLED` is flipped and the first pilot school generates real output.
 
   **Status: DEFERRED, standing, no urgency — confirmed 2026-08-14.** This
-  explicitly does **not** block Phase 6. It is not a countdown and nothing is
+  explicitly does **not** block Phase 7 (renumbered from Phase 6 on
+  2026-08-15 — the AI work this refers to is RAG + tutor, now Phase 7). It
+  does not block Phase 6's mobile/student-portal work either, which ships no
+  AI output at all. It is not a countdown and nothing is
   waiting on it; it is recorded here so that the day someone reads a batch of
   real output and asks "how would we know if this got worse?", the two
   options above are already written down rather than rediscovered.
@@ -417,7 +420,8 @@ Format:
 - [ ] Agentic vs generative AI positioning — market may have shifted
   toward adaptive/agentic by Phase 5. Run live search before committing
   AI roadmap. Do NOT build multi-agent orchestration as solo founder.
-- [ ] Timetable, transport, library, hostel — Phase 7. Named so
+- [ ] Timetable, transport, library, hostel — Phase 9 (auxiliary
+  modules; renumbered from Phase 7 on 2026-08-15). Named so
   "do you have X?" has a clear deferred answer, not a blank.
 - [ ] WAEC/NECO localization is the moat (Khanmigo/Squirrel AI aren't
   localized) — keep leaning on it. Verify competitor claims when planning.
@@ -690,7 +694,8 @@ Format:
   Migrating to httpOnly cookie auth (or hybrid session lookup) would
   enable Server Components for SEO, smaller client bundle, server-
   side notFound() / redirect() flows. Cross-cutting refactor — likely
-  Phase 4 or Phase 7. Discovered slice 11 cp3.
+  Phase 4 or Phase 9 (auxiliary; renumbered from Phase 7 on
+  2026-08-15). Discovered slice 11 cp3.
 
 - [x] Student create/edit form rejects BLANK optional fields. The form
   (`apps/web/src/components/students/student-form.tsx`) validated raw form
@@ -1018,16 +1023,16 @@ not a commitment to that phase's exact shape or timing.
 - [ ] Student profiles (badges, achievements, milestones) — not named
   anywhere in ARCHITECTURE.md. Closest existing concepts are the plain
   `Student` profile (§5, §6.3) and the merit/demerit point system under
-  Behaviour (§6.15, Phase 7 per §9) — but gamification (badges/milestones)
+  Behaviour (§6.15, Phase 9 per §9 — renumbered from Phase 7 on 2026-08-15) — but gamification (badges/milestones)
   is a distinct product idea from either, not a documented feature. Needs
   its own decision on scope before it maps to a phase.
 
 - [ ] Timetable generator — ARCHITECTURE.md §6.5 lists a "Visual timetable
   builder with conflict detection" under Academic management, but this
   file's own "Roadmap / strategy" section (above) separately lists
-  "Timetable, transport, library, hostel — Phase 7." The two docs disagree
+  "Timetable, transport, library, hostel — Phase 9." The two docs disagree
   on which phase owns it — flagging the discrepancy here rather than
-  resolving it; whoever scopes this should reconcile §6.5 vs. the Phase 7
+  resolving it; whoever scopes this should reconcile §6.5 vs. the Phase 9
   roadmap note first.
 
 - [ ] Clinic/health records — ARCHITECTURE.md §6.14 (Health records) is
@@ -1050,8 +1055,10 @@ not a commitment to that phase's exact shape or timing.
 - [ ] Homework and assignments — ARCHITECTURE.md §6.8 (Assignments and
   homework) is fully specified (creation, submission incl. file/photo
   upload, auto-grading for MCQ, AI-assisted essay grading with teacher
-  approval, plagiarism flag) and matches Phase 6 ("assignments and student
-  portal") in §9. Nothing built yet.
+  approval, plagiarism flag). §9's original "Phase 6 — assignments and
+  student portal" was split on 2026-08-15: the student-portal half is now
+  Phase 6 (which builds the student principal assignments depend on), and
+  assignments themselves are **Phase 8**. Nothing built yet.
 
 - [ ] Exam management, including AI-generated exam questions — overlaps two
   existing docs: ARCHITECTURE.md §6.7 (Assessment and grading, Phase 2) for
@@ -1104,7 +1111,8 @@ not a commitment to that phase's exact shape or timing.
 
 - [ ] Event calendar — ARCHITECTURE.md §6.16 (Events and calendar) is
   specified (term calendar with holidays/breaks, events, parent RSVP, push
-  reminders) and falls under Phase 7 ("auxiliary modules — rolling") per
+  reminders) and falls under Phase 9 ("auxiliary modules — rolling"; renumbered from
+  Phase 7 on 2026-08-15) per
   §9. Nothing built yet.
 
 - [ ] **Possible navigation race on `/dashboard`: clicking a sidebar link

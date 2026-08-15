@@ -603,7 +603,7 @@ Specific, not vague:
 - **Bulk export / archiving of report cards (zip)** — held until an end-of-year archive request.
 - **Dedicated `principal` role** — held until the first pilot asks (Phase 2 maps to owner+admin).
 - **NG-only data residency** — held until a pilot demands it; default is Fly.io Joburg.
-- **GPS transport / library / hostel / behaviour** — Phase 7.
+- **GPS transport / library / hostel / behaviour** — Phase 9 (auxiliary modules; renumbered from Phase 7 on 2026-08-15).
 
 ## 15. Acceptance criteria — the bar for "Phase 3 done"
 
