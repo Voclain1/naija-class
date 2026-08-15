@@ -41,6 +41,16 @@ function RootNavigator() {
         screenOptions={{
           headerShown: false,
           contentStyle: { backgroundColor: colors.background },
+          // headerStyle/headerTintColor are NOT redundant with contentStyle:
+          // the native header is a separate surface and keeps its platform
+          // default (stark white) unless told otherwise. Verified visually on
+          // 2026-08-15 — the student detail screen, the one route that shows a
+          // header, rendered a white bar above a Paper page. The comment above
+          // had claimed the header was Paper since this file was written; only
+          // looking at a screenshot showed the code never implemented it.
+          headerStyle: { backgroundColor: colors.background },
+          headerTintColor: colors.foreground,
+          headerShadowVisible: false,
         }}
       />
     </>
