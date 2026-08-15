@@ -6,7 +6,7 @@ Every screen name, button label, and field name below is taken directly from the
 
 **Bursar or teacher? Most of this guide is the owner/admin setup sequence — here's what's actually yours:**
 
-- **Bursar** — start at [Fee catalog](#9-fee-catalog) and [Generate invoices](#10-generate-invoices) (payments, installment plans, and cancel/reverse all live on an individual invoice page there too). The [Troubleshooting & FAQ](#troubleshooting--faq) entries on Paystack test mode and recording payments are yours as well.
+- **Bursar** — start at [Fee catalog](#9-fee-catalog) and [Generate invoices](#10-generate-invoices) (payments, installment plans, and cancel/reverse all live on an individual invoice page there too). [Accepting online payments](#accepting-online-payments-connecting-paystack) is the one-time setup that has to happen before parents can pay by card at all. The [Troubleshooting & FAQ](#troubleshooting--faq) entries on online payments and recording payments are yours as well.
 - **Teacher** — start at [Report cards: build → score entry → sign-off → approval → release](#13-report-cards-build--score-entry--sign-off--approval--release) for the Gradebook and Report Cards workflow. The FAQ entry "A teacher can't see their class in the gradebook" is yours too.
 
 Everything else below (signup, the setup wizard, academic structure, staff invites, students, fee catalog *setup*, guardian invites) is owner/admin work — useful background if you're curious how the school got configured, but not something you'll do day to day.
@@ -22,7 +22,7 @@ Everything else below (signup, the setup wizard, academic structure, staff invit
 7. [Staff and teacher assignment](#7-staff-and-teacher-assignment)
 8. [Students: add or import](#8-students-add-or-import)
 9. [Fee catalog](#9-fee-catalog)
-10. [Generate invoices](#10-generate-invoices)
+10. [Generate invoices](#10-generate-invoices) — including [accepting online payments](#accepting-online-payments-connecting-paystack)
 11. [Invite guardians to the parent portal](#11-invite-guardians-to-the-parent-portal)
 12. [The guardian (parent) portal](#12-the-guardian-parent-portal)
 13. [Report cards: build → score entry → sign-off → approval → release](#13-report-cards-build--score-entry--sign-off--approval--release)
@@ -266,10 +266,32 @@ Go to **Finance → Invoices** (`/finance/invoices`), **Generate** tab (the defa
 Switch to the **Invoice list** tab to see everything generated, filterable by status (Draft, Issued, Partially paid, Paid, Overdue, Cancelled, Refunded). Click an invoice to open it.
 
 **On an individual invoice page** you can:
-- **Record payment** — for cash, POS, or bank transfer received outside the app. Enter **Amount (₦)**, **Method**, **Date paid**, and an optional **Reference**, then click **Record payment**. *(This is today's real-money path — see the [FAQ](#troubleshooting--faq) on Paystack.)*
-- **Pay via Paystack** — click **Pay outstanding balance** to send the parent-facing link, or use this yourself; currently in **test mode** (see FAQ).
+- **Record payment** — for cash, POS, or bank transfer received at the school. Enter **Amount (₦)**, **Method**, **Date paid**, and an optional **Reference**, then click **Record payment**. Use this for money that came in outside the app; payments made online through Paystack record themselves.
+- **Pay via Paystack** — click **Pay outstanding balance** to send the parent-facing link, or use it yourself. This charges real money and the invoice updates on its own once payment goes through (see the [FAQ](#troubleshooting--faq)). *This button only works once your school is connected to Paystack — see [Accepting online payments](#accepting-online-payments-connecting-paystack) directly below.*
 - Set up an **installment plan** if the family wants to pay in parts.
 - **Cancel invoice** or **Reverse** an individual payment (with a required reason), if needed.
+
+### Accepting online payments: connecting Paystack
+
+**Online payment is off by default for every school, including yours.** Until it's connected, **Pay via Paystack** on an invoice and the **Pay** button on the parent portal will both refuse, with a message telling you to use a manual method instead. Cash, POS, and bank transfer work from day one and never depend on any of this — connecting Paystack is optional, and you can run the whole term without it.
+
+Connecting is an **assisted setup**: we do the Paystack side for you, and you paste one code back in. It is not something you can complete on your own, and a subaccount you create in your own Paystack dashboard will **not** work here — the code has to be one we issue.
+
+1. **Email us to request setup** at **[payments contact address — TO BE CONFIRMED]**, from the school's own email address, with:
+   - **School business name** — exactly as it should appear to parents on the Paystack checkout page and on your settlement statements.
+   - **Bank name.**
+   - **Account number** — the school's own account, in the school's name. Paystack checks this number against the bank and resolves the account name automatically; if the bank and number don't match, setup fails, so double-check both before sending.
+   - **A contact name, email, and phone** for whoever handles school finances.
+2. **We create the subaccount** and point it at your bank account, with a **0% platform cut** — 100% of every payment settles to you. Paystack's own transaction fee still applies, exactly as it would if you used Paystack directly; schoolkit takes nothing on top.
+3. **We send you back a subaccount code.** It looks like `ACCT_xxxxxxxxxx`.
+4. **Paste it in.** Go to **Settings → Payments** (`/settings/finance/payments`), put the code in **Paystack subaccount code**, switch **Accept Paystack payments** on, and click **Save**. The toggle stays disabled until a code is entered — that's deliberate.
+5. **Read the confirmation message.** On save, schoolkit checks the code with Paystack there and then, and shows *"Connected to "[your business name]" on Paystack."* **Check that it's your school's name.** This is your one chance to catch a valid code that belongs to somebody else — if the name isn't yours, clear the field, save again, and tell us. The name is shown only at that moment; it won't be there when you come back to the page.
+
+A few things worth knowing:
+
+- **The money never passes through schoolkit.** Paystack settles it from the parent straight to your school's bank account, on Paystack's normal settlement schedule.
+- **You can turn it off at any time** — switch **Accept Paystack payments** off and save. Recording manual payments is unaffected.
+- **If you see *"Could not find a Paystack subaccount with code …"***, the code was either mistyped or isn't one we issued. Check it against the email we sent you. Don't create a subaccount in your own Paystack dashboard to work around it — a code from a different Paystack account can't work here, and that error is exactly what it looks like.
 
 ---
 
@@ -308,7 +330,7 @@ This is a separate app from the admin/teacher side, at the portal's own address 
 1. The guardian opens the accept link you sent, sets a password, ticks the NDPR consent checkbox, and clicks **Set password and continue**.
 2. From then on, they log in at the portal's **Log in** page with **Email** / **Password**.
 3. They land on **Your children** — a list of the students linked to them. Selecting a child shows that child's **Invoices**, each with a **Total due**, **Paid so far**, and **Balance**.
-4. If a balance is owed, a **Pay ₦[amount]** button appears — it always charges the full outstanding balance (there's no partial-amount entry) and redirects to Paystack checkout.
+4. If a balance is owed, a **Pay ₦[amount]** button appears — it always charges the full outstanding balance (there's no partial-amount entry) and redirects to Paystack checkout. This only works if your school is [connected to Paystack](#accepting-online-payments-connecting-paystack); if it isn't, the button turns the parent away with a message asking them to pay at the school instead, so connect it before you tell parents the portal can take payments.
 
 ---
 
@@ -342,9 +364,14 @@ Owner/admin work from **Report Cards** in the admin sidebar (`/report-cards`); a
 **The app is unusually slow the first time I open it after a while.**
 This is a known, current limitation: the database goes to sleep after about 5 minutes of no activity to save cost, and the very first request after that has to wake it back up, which can take longer than normal. It only affects the first load — everything after that is normal speed until it goes idle again. If a page seems stuck, wait a few extra seconds before assuming something's broken.
 
-**Online payment (Paystack) says "test mode" — what does that mean?**
-schoolkit's online payment integration is still going through provider approval. While it's in test mode, a parent clicking **Pay** on the portal will not actually be charged real money, and the portal shows a clear notice about this above any unpaid invoice. **Until this is switched on, use the school office for real payments**, and record them yourself:
-- On any invoice's page (**Finance → Invoices → [invoice]**), use the **Record payment** section to log cash, POS, or bank transfer payments as they come in. This immediately updates that invoice's balance and the guardian's view — it does not depend on Paystack at all.
+**Can parents actually pay online — is it real money?**
+Yes, once your school is connected. Online payment through Paystack is live: a parent clicking **Pay** on the portal is charged for real, the money settles to your school's own bank account, and the invoice balance updates by itself — nobody has to record it by hand.
+
+**It doesn't work until you connect your school, though, and that's a one-time step we do with you** — see [Accepting online payments](#accepting-online-payments-connecting-paystack). Until then the **Pay** buttons refuse rather than charge anyone, so nothing can go wrong by leaving it unconnected.
+
+Paying online is optional, not the only way. Parents who'd rather pay at the school office by cash, POS, or bank transfer can carry on doing exactly that, and plenty will:
+- On any invoice's page (**Finance → Invoices → [invoice]**), use the **Record payment** section to log cash, POS, or bank transfer payments as they come in. This immediately updates that invoice's balance and the guardian's view — it doesn't depend on Paystack at all.
+- Both routes land in the same place. An invoice doesn't care how it got paid, and you can mix the two — a parent can pay part at the office and the rest online.
 
 **A teacher can't see their class in the gradebook.**
 Check **Staff → [teacher] → Teaching assignments** — they need at least one assignment there (class arm + subject) for the current term/year. No assignment, no visible class.
