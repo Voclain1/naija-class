@@ -76,12 +76,14 @@ larger, for reasons named below.
 |---|---|---|
 | 1 — Mobile foundation | Dependency alignment, assets, EAS, API client, secure storage, nav, design tokens, offline cache layer, real CI gates | 6–8d |
 | 2 — Guardian mobile | Login + children + student detail + invoices + payment handoff, against the existing `/portal` API | 5–6d |
-| 3 — Student principal | Schema, `StudentSession`, 2 SECURITY DEFINER fns, guardian-mediated activation, login, RLS, permissions, tests | 6–8d |
+| 3 — Student principal | Schema, `StudentSession`, 2 SECURITY DEFINER fns, guardian-mediated activation **and deactivation**, login, RLS, tests, §14.9 verification bar. No permissions — see D17. | 7–10d |
 | 4 — Student mobile surface | Own results, attendance, fee status | 4–5d |
 | 5 — Push notifications | Expo Push, device registration, wire to the existing `notifications` module | 4–5d |
 | 6 — Store submission | Developer accounts, privacy labels, NDPR disclosures, build + submit | 3–5d eng |
 
-**≈ 28–37 engineering days ≈ 6–7.5 weeks of pure build.**
+**≈ 29–39 engineering days ≈ 6–8 weeks of pure build.** (Slice 3 moved
+6–8 → 7–10 at its 2026-08-15 review: D25's deactivation action plus
+§14.9's raised verification bar. See §14.10.)
 
 **Calibrated calendar estimate: 10–14 weeks.** Weight toward the top. The
 multiplier is not padding — it is this project's own measured behaviour, and
@@ -977,7 +979,7 @@ returned, and what is deliberately withheld.
 
 | Function | Returns | Deliberately omits |
 |---|---|---|
-| `auth_resolve_student_session(token_hash)` | `session_id, student_id, school_id, expires_at, student_status` | `password_hash`; names, DOB, photo, address, phone, email, medical notes, `notes` — the guard runs pre-tenant and its result is attached to the request, where PII does not belong |
+| `auth_resolve_student_session(token_hash)` | `session_id, student_id, school_id, expires_at, student_status, portal_enabled` | `password_hash` **itself** — `portal_enabled` is the boolean `password_hash IS NOT NULL`, never the hash. Also names, DOB, photo, address, phone, email, medical notes, `notes` — the guard runs pre-tenant and its result is attached to the request, where PII does not belong |
 | `auth_lookup_student_for_login(school_slug, admission_number)` | `student_id, school_id, password_hash, status` | everything else on a PII-dense row. Deliberately separate from the session resolver, which must never see `password_hash` — the same split `auth_lookup_user_for_password_reset` made from `auth_lookup_user_for_login` |
 
 `RETURNS TABLE`, `LANGUAGE sql`, `SECURITY DEFINER`,
@@ -1009,6 +1011,85 @@ This mirrors `AuthGuard`'s `user_is_active` check, which is the precedent —
 and it means the student surface ships with a revocation story the guardian
 surface still lacks.
 
+**Amended 2026-08-15 (see D25):** the resolver also returns `portal_enabled`
+(`password_hash IS NOT NULL`), and the guard rejects on **either** a
+non-`ACTIVE` status **or** `portal_enabled = false`. The two checks answer
+different questions and neither subsumes the other:
+
+- `status` is the **school's** judgement about enrolment — set by staff.
+- `portal_enabled` is the **guardian's** judgement about this child holding
+  credentials — set by a parent, and untouched by enrolment.
+
+A guardian deactivating their child does not, and must not, change the
+child's enrolment status. Without the second check, deactivation would rely
+entirely on `DELETE FROM student_sessions` having succeeded; with it, a
+surviving session row is still refused on the next request. Deactivation is
+therefore authoritative at the point of *authority* rather than at the point
+of *cleanup* — the same "re-read the truth every request" principle that
+makes the status check worth having at all.
+
+**D25 — A guardian-facing "turn off my child's account" action ships in THIS
+slice, not a later one. [proposed 2026-08-15, added at review]**
+
+**Requirement, as given:** credentials must not be activated in a slice that
+ships no way to turn them back off. Revocation was described in the original
+draft as a property of the guard; it was not an action any human could take.
+That gap is closed here.
+
+`POST /portal/students/:id/deactivate` — existing `/portal` surface, existing
+`GuardianAuthGuard`, same `StudentGuardian` link re-check inside the
+transaction as activation. Manually triggered by a guardian; nothing about it
+is automated, and it deliberately does not need to be.
+
+In one transaction it:
+
+1. sets `password_hash = NULL` — the login lookup requires a non-null hash,
+   so no future sign-in can succeed;
+2. `DELETE`s every `student_sessions` row for that student — existing
+   sessions die immediately rather than at their 30-day expiry;
+3. writes a `student.deactivate` audit row with the acting `guardianId`.
+
+`activated_at` is deliberately **left set**. It records that this child was
+once activated, which is history, not current state.
+
+**No new column.** Portal state is derived, and the three states are exactly
+distinguishable from the two columns already proposed in D18:
+
+| State | `activated_at` | `password_hash` |
+|---|---|---|
+| Never activated | NULL | NULL |
+| Active | set | set |
+| Deactivated by a guardian | set | NULL |
+
+*When* deactivation happened lives in `audit_logs`, which is the system of
+record for that question. A `deactivated_at` column would be a second,
+divergeable copy of something already written down.
+
+**Reactivation is just activation again.** D21 already specifies that
+activating an already-activated student is a password reset that revokes
+sessions; the same endpoint and the same code path bring a deactivated child
+back, with a fresh password the guardian sets. There is no separate
+"reactivate" verb, and therefore no state machine to get wrong.
+
+**Who may deactivate: any linked guardian**, matching the activation proposal
+in §14.10 Q4. Asymmetry here would be worse than the risk it prevents —
+requiring `isPrimary` to switch access *off* means the parent holding the
+phone at 10pm cannot act on a device they believe is compromised.
+
+**Deliberately NOT in scope**, and the boundary is worth stating precisely
+because "deactivation" is doing two jobs in ordinary speech:
+
+- **School-initiated** deactivation. Staff already have `Student.status`, and
+  D23's guard check honours it immediately. A school does not need this
+  endpoint.
+- **Automated lifecycle handling** — withdrawal, promotion between sessions,
+  graduation cascading to portal access. Deferred (see the amended §14.10),
+  and deferred now means *only* the automation: the manual guardian action
+  above is real, shipped, and testable in this slice.
+
+Cost: roughly half a day of the estimate, most of it tests rather than the
+endpoint.
+
 **D24 — Password policy: minimum 8 characters, no composition rules, no
 PIN. [proposed]**
 
@@ -1037,9 +1118,16 @@ POST   /student-portal/logout         (session-authenticated; deletes the row)
 GET    /student-portal/me
 
 # Guardian-authenticated (GuardianAuthGuard, existing /portal surface)
-POST   /portal/students/:id/activate  { password }
+POST   /portal/students/:id/activate    { password }   # also re-activates
+POST   /portal/students/:id/deactivate                 # D25
 GET    /portal/students/:id/portal-status
 ```
+
+`GET /portal/students/:id/portal-status` returns
+`{ state: "NEVER_ACTIVATED" | "ACTIVE" | "DEACTIVATED", activatedAt }` —
+derived from the two columns per D25's table, not stored. It is what makes
+the guardian-facing control renderable, so it ships with the two writes
+rather than after them.
 
 `GET /student-portal/me` returns `{ student: { id, firstName, lastName,
 admissionNumber, currentEnrollment }, school: { id, name, slug } }` —
@@ -1094,6 +1182,7 @@ this" is the intent):
 | `student.login-failed` | null | school + admission number, so a school can see enumeration against their roster |
 | `student.activate` | guardianId | the guardian is the actor, not the student |
 | `student.reactivate` | guardianId | distinct from first activation — it is a password reset and invalidates sessions |
+| `student.deactivate` | guardianId | D25. Metadata records how many sessions were revoked, so "did it actually take effect?" is answerable after the fact rather than inferred |
 | `student.logout` | studentId | |
 
 `student.login-failed` is a deliberate addition beyond what staff and
@@ -1115,6 +1204,17 @@ Unit and integration, mirroring `portal-auth.service.spec.ts` and
   whose status changes to `WITHDRAWN` **after** a session exists (D23)
 - activation: happy path; guardian not linked to the student (must 403);
   re-activation revokes existing sessions; password below policy rejected
+- **deactivation (D25)**: a live session stops working on the *next* request;
+  a subsequent login attempt with the correct old password fails with the
+  same generic `INVALID_CREDENTIALS`; `portal-status` reports `DEACTIVATED`;
+  re-activation restores access with a new password; deactivating an already
+  deactivated student is idempotent, not an error; a guardian not linked to
+  the child gets 403
+- **deactivation is authoritative even if cleanup fails**: with the session
+  row left in place artificially, the guard must still refuse on
+  `portal_enabled = false`. This is the check that makes D25 a revocation
+  rather than a best-effort delete, so it is tested directly rather than
+  assumed from the two mechanisms individually
 - isolation: a session for school A never resolves rows in school B
 - RLS: `student_sessions` with no GUC returns 0 rows; cross-tenant INSERT
   rejected by `WITH CHECK` — exercised as `app_user`, the pattern the
@@ -1156,7 +1256,63 @@ RLS boundary exercised as `app_user`.
 
 ---
 
-### 14.9 Estimate
+### 14.9 Verification bar — set at review, 2026-08-15
+
+This is the first surface in the project protecting **a child's own access,
+mediated by revocable parental trust**. The bar is therefore at least the
+platform-admin build's, and the three requirements below are gates on merge,
+not aspirations.
+
+**1. Negative-walk tests, cross-tenant and cross-family.** Structural tests
+prove the happy path is wired; a negative walk proves the wrong answer is
+actually refused. Every one of these is a written test, not a review
+comment:
+
+| Walk | Must produce |
+|---|---|
+| Student A's session used against student B's `/me` in the **same family** (siblings, one guardian) | B's data never returned — `/me` resolves from the session, so the attempt is unrepresentable, and the test asserts that rather than trusting the URL shape |
+| Student A's session, student B in the **same school**, different family | refused |
+| Student A's session, student B in a **different school** | refused; and the SD resolver returns no cross-tenant row |
+| Guardian G activating / deactivating a child they are **not** linked to | 403, at every one of activate, deactivate, portal-status |
+| Guardian G in school X acting on a student in school Y | 403, and no row read |
+| A deactivated student's surviving session (row left in place) | refused on `portal_enabled` |
+| A `WITHDRAWN` student's live session | refused on `status` |
+| `student_sessions` read as `app_user` with **no** GUC | 0 rows |
+| `student_sessions` cross-tenant INSERT as `app_user` | rejected by `WITH CHECK` |
+
+The sibling case is called out separately because it is the one an
+implementation is most likely to get wrong while looking correct: two
+students, one guardian, one school, one family — every tenant boundary
+satisfied, and the only thing standing between them is that `/me` resolves
+the student from the session and never from a path parameter.
+
+**2. The two SECURITY DEFINER functions are reviewed line by line, by the
+project owner, before merge.** Not "the migration passed CI" and not "the
+inventory spec is green" — a direct read of both function bodies, their
+`REVOKE`/`GRANT` lines, and their headers. The conformance spec checks
+*shape*; it cannot check whether the `WHERE` clause is right. The PR will
+present both functions in full in its description so the review does not
+require hunting through a migration file.
+
+**3. A genuine end-to-end manual walkthrough before ship**, in the same
+style as slice 2's live verification, exercising the full trust cycle on
+real data:
+
+```
+guardian signs in → activates child → child signs in with the new password
+→ child reads /me → guardian deactivates → child's live session dies on the
+next request → child cannot sign in again with the old password
+→ guardian re-activates with a new password → child signs in again
+```
+
+Structural tests can pass with all of that broken in ways only a human
+notices — the header-styling bug in slice 2 passed 57 unit tests, a clean
+typecheck and 11 browser assertions. The walkthrough is the step that
+catches the equivalent here.
+
+---
+
+### 14.10 Estimate
 
 §2 budgeted 6–8 engineering days. **Unchanged, with the range's shape
 revised**: D21 removes an expected SECURITY DEFINER function and an entire
@@ -1170,9 +1326,53 @@ Net: still 6–8 days, but more of it is now security hardening and less is
 plumbing — which is the better distribution for the riskiest slice, and
 worth saying out loud so the number is not mistaken for a coincidence.
 
+**Revised at review, 2026-08-15: 7–10 engineering days.** Two additions, and
+the second is the larger of the two by some margin:
+
+- **D25 (deactivation)** — about half a day. The endpoint is small; the
+  tests are most of it.
+- **§14.9's verification bar** — 1–2 days. Nine negative-walk tests, a PR
+  written to present both SECURITY DEFINER function bodies in full for
+  line-by-line review, and a scripted end-to-end manual walkthrough of the
+  activate → sign in → deactivate → re-activate cycle. This is deliberately
+  *not* absorbed into the existing range: pretending a raised evidence bar
+  is free is how a bar quietly stops being met.
+
 ---
 
-### 14.10 Open questions for review
+### 14.11 Explicitly deferred, with the boundary stated
+
+**Automated lifecycle handling — deferred.** Withdrawal, promotion between
+academic sessions, and graduation do not automatically propagate to portal
+credentials. A `WITHDRAWN` or `GRADUATED` student is already refused by
+D23's guard check on every request, so the *access* consequence is immediate
+and correct; what is deferred is the housekeeping — no job clears
+`password_hash`, deletes stale `student_sessions` rows, or notifies anyone.
+
+The boundary matters because "deactivation" means two different things in
+ordinary speech, and only one of them is deferred:
+
+| | Status |
+|---|---|
+| Guardian manually turns their child's account off | **Shipped in this slice** (D25) |
+| School turns a student's enrolment off | **Already works** — `Student.status` + D23 |
+| Automated propagation and cleanup on lifecycle events | **Deferred** |
+
+**Tutor-specific session scoping — deferred, and confirmed not precluded.**
+Phase 7's tutor may later want a session scope (a token that may reach the
+tutor but not, say, results). Confirming explicitly, as asked, that nothing
+in D19's design blocks that: `student_sessions` is an opaque-token table
+whose rows are resolved by a single SD function returning a fixed column
+set. Adding a `scope` column later is an additive migration with a
+backfillable default (`'full'`), one added field in the resolver's
+`RETURNS TABLE`, and one check in the guard. No table would need splitting,
+no token reissued, and no existing session invalidated. This is a
+confirmation, not a design — the scope taxonomy itself stays a Phase 7
+decision.
+
+---
+
+### 14.12 Open questions for review
 
 1. **Lockout threshold and duration** — proposed 10 failures / 15 minutes.
    Genuinely a product call: too aggressive and a class of children locks
