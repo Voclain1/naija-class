@@ -6,7 +6,7 @@ Every screen name, button label, and field name below is taken directly from the
 
 **Bursar or teacher? Most of this guide is the owner/admin setup sequence — here's what's actually yours:**
 
-- **Bursar** — start at [Fee catalog](#9-fee-catalog) and [Generate invoices](#10-generate-invoices) (payments, installment plans, and cancel/reverse all live on an individual invoice page there too). The [Troubleshooting & FAQ](#troubleshooting--faq) entries on Paystack test mode and recording payments are yours as well.
+- **Bursar** — start at [Fee catalog](#9-fee-catalog) and [Generate invoices](#10-generate-invoices) (payments, installment plans, and cancel/reverse all live on an individual invoice page there too). The [Troubleshooting & FAQ](#troubleshooting--faq) entries on online payments and recording payments are yours as well.
 - **Teacher** — start at [Report cards: build → score entry → sign-off → approval → release](#13-report-cards-build--score-entry--sign-off--approval--release) for the Gradebook and Report Cards workflow. The FAQ entry "A teacher can't see their class in the gradebook" is yours too.
 
 Everything else below (signup, the setup wizard, academic structure, staff invites, students, fee catalog *setup*, guardian invites) is owner/admin work — useful background if you're curious how the school got configured, but not something you'll do day to day.
@@ -266,8 +266,8 @@ Go to **Finance → Invoices** (`/finance/invoices`), **Generate** tab (the defa
 Switch to the **Invoice list** tab to see everything generated, filterable by status (Draft, Issued, Partially paid, Paid, Overdue, Cancelled, Refunded). Click an invoice to open it.
 
 **On an individual invoice page** you can:
-- **Record payment** — for cash, POS, or bank transfer received outside the app. Enter **Amount (₦)**, **Method**, **Date paid**, and an optional **Reference**, then click **Record payment**. *(This is today's real-money path — see the [FAQ](#troubleshooting--faq) on Paystack.)*
-- **Pay via Paystack** — click **Pay outstanding balance** to send the parent-facing link, or use this yourself; currently in **test mode** (see FAQ).
+- **Record payment** — for cash, POS, or bank transfer received at the school. Enter **Amount (₦)**, **Method**, **Date paid**, and an optional **Reference**, then click **Record payment**. Use this for money that came in outside the app; payments made online through Paystack record themselves.
+- **Pay via Paystack** — click **Pay outstanding balance** to send the parent-facing link, or use it yourself. This charges real money and the invoice updates on its own once payment goes through (see the [FAQ](#troubleshooting--faq)).
 - Set up an **installment plan** if the family wants to pay in parts.
 - **Cancel invoice** or **Reverse** an individual payment (with a required reason), if needed.
 
@@ -342,9 +342,12 @@ Owner/admin work from **Report Cards** in the admin sidebar (`/report-cards`); a
 **The app is unusually slow the first time I open it after a while.**
 This is a known, current limitation: the database goes to sleep after about 5 minutes of no activity to save cost, and the very first request after that has to wake it back up, which can take longer than normal. It only affects the first load — everything after that is normal speed until it goes idle again. If a page seems stuck, wait a few extra seconds before assuming something's broken.
 
-**Online payment (Paystack) says "test mode" — what does that mean?**
-schoolkit's online payment integration is still going through provider approval. While it's in test mode, a parent clicking **Pay** on the portal will not actually be charged real money, and the portal shows a clear notice about this above any unpaid invoice. **Until this is switched on, use the school office for real payments**, and record them yourself:
-- On any invoice's page (**Finance → Invoices → [invoice]**), use the **Record payment** section to log cash, POS, or bank transfer payments as they come in. This immediately updates that invoice's balance and the guardian's view — it does not depend on Paystack at all.
+**Can parents actually pay online — is it real money?**
+Yes. Online payment through Paystack is live: a parent clicking **Pay** on the portal is charged for real, the money settles to your school's account, and the invoice balance updates by itself — nobody has to record it by hand.
+
+Paying online is optional, not the only way. Parents who'd rather pay at the school office by cash, POS, or bank transfer can carry on doing exactly that, and plenty will:
+- On any invoice's page (**Finance → Invoices → [invoice]**), use the **Record payment** section to log cash, POS, or bank transfer payments as they come in. This immediately updates that invoice's balance and the guardian's view — it doesn't depend on Paystack at all.
+- Both routes land in the same place. An invoice doesn't care how it got paid, and you can mix the two — a parent can pay part at the office and the rest online.
 
 **A teacher can't see their class in the gradebook.**
 Check **Staff → [teacher] → Teaching assignments** — they need at least one assignment there (class arm + subject) for the current term/year. No assignment, no visible class.
