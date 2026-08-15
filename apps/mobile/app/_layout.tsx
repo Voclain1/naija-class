@@ -10,8 +10,10 @@ import {
   HankenGrotesk_600SemiBold,
 } from "@expo-google-fonts/hanken-grotesk";
 import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client";
+import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { ThemeProvider, useTheme } from "../src/theme/theme-provider";
+import { SessionProvider } from "../src/lib/auth/session";
 import { createQueryClient } from "../src/lib/query/client";
 import { persistOptions } from "../src/lib/query/persist";
 import { installOnlineManager } from "../src/lib/query/online-manager";
@@ -60,7 +62,9 @@ export default function RootLayout() {
 
   useEffect(() => {
     // Hydrate the bearer token from the OS keychain and hand the API client
-    // its provider. Must complete before the first authenticated request.
+    // its provider. MUST finish before the first authenticated request:
+    // rendering earlier would fire unauthenticated calls, take 401s, and
+    // bounce a user with a perfectly valid session to the login screen.
     initTokenStore().finally(() => setSessionReady(true));
   }, []);
 
@@ -80,9 +84,15 @@ export default function RootLayout() {
       client={queryClient}
       persistOptions={persistOptions}
     >
-      <ThemeProvider>
-        <RootNavigator />
-      </ThemeProvider>
+      {/* SessionProvider is INSIDE the query provider because signing out
+          wipes the query cache (D12) and therefore needs the client. */}
+      <SessionProvider>
+        <SafeAreaProvider>
+          <ThemeProvider>
+            <RootNavigator />
+          </ThemeProvider>
+        </SafeAreaProvider>
+      </SessionProvider>
     </PersistQueryClientProvider>
   );
 }

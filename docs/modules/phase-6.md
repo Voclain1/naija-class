@@ -1,6 +1,8 @@
 # Phase 6 — mobile app, student portal, guardian mobile
 
-**Status:** plan-first, awaiting review. Nothing implemented.
+**Status:** approved 2026-08-15. Decisions D1–D15 are `[locked]`.
+Slice 1 (mobile foundation) and slice 2 (guardian mobile) are built;
+slices 3–6 not started.
 **Created:** 2026-08-15
 
 ---
@@ -264,7 +266,7 @@ in parallel).
 
 ### Slice 2 — Guardian mobile
 
-**The API is already built.** Seven endpoints, all working in production:
+**The API is already built.** Eight endpoints, all working in production:
 
 ```
 POST /portal/login
@@ -284,6 +286,36 @@ it the cheapest slice with the highest proof value.
 
 Payment is a Paystack handoff, and it stays a handoff — see D9 and §7 on why
 a payment is never, under any circumstance, queued offline.
+
+**Delivered 2026-08-15.** D14 held: **not one API endpoint changed.** Two
+controller header comments did, because they claimed the portal endpoints
+were called only by `apps/portal`'s server-side proxy and `apps/mobile` is
+now a second, direct caller — true to ADR-002, but the comments would
+otherwise have become quietly false.
+
+Three things the slice taught, each recorded where it happened rather than
+smoothed over:
+
+1. **`formatKobo` moved to `packages/types`.** Its own header asserted it was
+   "the only place naira formatting lives in this codebase", and React Native
+   cannot import from `apps/web`. Copying it would have made that sentence
+   false on the day a second display layer appeared, so the function moved and
+   `apps/web/src/lib/finance/format.ts` became a re-export — its ten import
+   sites are untouched.
+2. **The payment-status enum is `PENDING | SUCCESS | FAILED | REVERSED`.**
+   The first cut of the poll loop invented `SUCCESSFUL`/`REFUNDED` and
+   typecheck caught it. `TERMINAL` is now annotated `readonly PaymentStatus[]`
+   so a future rename is a compile error rather than a loop that never exits.
+3. **`experiments.typedRoutes` is now `false`** — see D16, added by this
+   slice. Typed routes are generated only by the dev server into gitignored
+   `.expo/`, which made them a gate that was stricter on one laptop than in
+   CI, and stale enough to fail on routes that were correct.
+
+The Paystack checkout does not deep-link back into the app (the callback URL
+is a server-side constant pointing at the portal). Accepted for this slice
+and logged in `docs/deferred.md`; it is cosmetic, because the outcome is
+established by polling the API after the browser closes, never by the
+redirect.
 
 ### Slice 3 — Student principal
 
@@ -531,7 +563,9 @@ sites.
 
 ## 9. Decisions
 
-All `[proposed]` pending review.
+All **`[locked]` 2026-08-15**, approved as written. Where building against a
+decision has since taught us something, that is recorded on the decision
+itself rather than quietly amended.
 
 **D1 — Expo (React Native) confirmed; not re-litigated.** `ARCHITECTURE.md`
 §5 records the choice with rationale ("share types with web; one codebase
@@ -638,6 +672,31 @@ says "parent and student app" (singular). A shared family device means one
 install; the principal is chosen at login and drives routing. Two binaries
 would double the store submissions, the release cadence, and the review
 latency for no user benefit.
+
+**D16 — expo-router typed routes OFF; hrefs are plain strings.**
+**[added and locked 2026-08-15, during slice 2 — not in the original plan.]**
+
+`experiments.typedRoutes` was `true` from Phase 0, and `apps/mobile/
+tsconfig.json` included `.expo/types/**/*.ts` to pick up the generated
+declarations. That combination is a gate that behaves differently in three
+places, which is worse than no gate:
+
+- a developer who has run `expo start` typechecks against generated types;
+- a developer who has not, typechecks without them;
+- **CI never has them at all** — `.expo/` is gitignored, and `expo export`
+  does not generate them. Only the dev server does.
+
+It is also stale-prone, which is how it surfaced: slice 2's correct routes
+failed local typecheck against a months-old `router.d.ts` that had somehow
+captured paths from `apps/web`, on a commit CI would have passed. The
+project has been bitten before by "passes locally, differently in CI" (see
+`CLAUDE.md` on Vitest+SWC tolerating missing `dist/`), and the standing rule
+there applies here: the gate must be the same everywhere.
+
+Cost: a typo'd `href` is now a runtime 404 rather than a compile error. That
+is accepted for a route table this small. Revisit if Expo ships a standalone
+type-generation command that can run as a build step — at which point typed
+routes become generateable in CI and the objection disappears.
 
 ---
 

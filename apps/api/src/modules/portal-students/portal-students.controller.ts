@@ -8,8 +8,8 @@ import { PortalStudentsService } from "./portal-students.service";
 
 // Phase 4 / Slice 3 — the first real parent-facing data endpoints, guarded
 // by GuardianAuthGuard (not GuardiansController's staff AuthGuard). Same
-// "called only by apps/portal's own server-side proxy route, never
-// directly by a browser" note as PortalAuthController.
+// two-caller note as PortalAuthController: apps/portal via its server-side
+// proxy, and (since Phase 6 / Slice 2) apps/mobile directly over Bearer.
 @Controller("portal")
 @UseGuards(GuardianAuthGuard)
 export class PortalStudentsController {

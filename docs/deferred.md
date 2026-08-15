@@ -9,6 +9,25 @@ Format:
 
 ## Captured so far
 
+- [ ] **Paystack checkout does not return the user to the mobile app** (logged
+  2026-08-15, Phase 6 / Slice 2). `PortalPaymentsService.initiate` hardcodes
+  the Paystack callback to `${PORTAL_BASE_URL}/payments/callback` — a web URL.
+  `apps/mobile` opens the hosted checkout in an in-app browser, so after
+  paying the guardian lands on the portal's web callback page *inside that
+  browser* and has to close it manually, rather than being deep-linked back
+  into the app. Accepted deliberately for slice 2, whose whole premise is
+  that guardian mobile ships against the existing `/portal` API with **zero
+  server changes** — fixing this needs either a client-supplied callback URL
+  (a new input on a money endpoint, which wants its own threat model) or a
+  scheme-aware callback that branches on caller.
+  **This is cosmetic, not a correctness bug**: `runCheckout` never treats the
+  redirect as proof of payment. It polls `GET /portal/payments/:reference`
+  after the browser closes, because the authoritative signal is the Paystack
+  webhook — the same reason the portal's own callback page polls. A parent
+  who force-quits mid-checkout still gets the right answer on next open.
+  Trigger: first real guardian complaint about the flow, or whenever a slice
+  is already touching `portal-payments`.
+
 - [x] ~~Per-school AI enablement has no UI and no endpoint~~ — **built before this script ran, which was the point.** `PATCH /platform-admin/schools/:schoolId/ai` plus a toggle on the super-admin school row shipped 2026-08-14 (PR #173): same guard, throttle and audit-row shape as `PATCH …/early-access`, with `ai_enabled` added to `platform_admin_list_schools()` so the toggle isn't a blind write. Kept here rather than deleted because the sequencing is the lesson: `packages/db/scripts/disable-ai-per-school.ts` closes the per-school gate on every existing school, and closing a gate with no sanctioned way to reopen it would have forced the first pilot enablement to be a hand-written `UPDATE` with no audit row. Build the re-open path first.
 
 - [ ] `School.aiEnabled` still `@default(true)` for newly created schools — the backfill above is a point-in-time fix on the existing population. Every school created after it (signup or `POST /platform-admin/schools`) arrives with AI on, so the population drifts back open one school at a time and the backfill has to be re-run. Deliberately NOT changed by that script: the default-true is a considered decision documented in `schema.prisma` beside `parentSummaryEnabled`'s deliberately-opposite default-false, and reversing it is a product call, not a backfill's business. The argument for flipping it got stronger once the item above shipped: enabling a school is now a one-click, audited platform-admin action, so defaulting new schools to `false` costs an operator one click on a school they were already looking at — rather than the hand-written SQL it would have cost before.
