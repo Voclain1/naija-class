@@ -25,7 +25,9 @@ If the work touches multi-tenancy, money, or AI, also read the "Hard rules" sect
 - Prisma: 5.x
 - PostgreSQL: 16.x (with `pgvector` extension)
 - Redis: 7.x
-- Expo SDK: 52.x
+- Expo SDK: 57.x (React Native 0.86.x, React 19.2.x — upgraded from SDK 52 in
+  Phase 6 / Slice 1, 2026-08-15. SDK 52 was the last SDK on React 18, so this
+  is also what aligned `apps/mobile` with the monorepo's React 19.)
 - Tailwind CSS: 3.4+
 - shadcn/ui: latest
 - Anthropic SDK (`@anthropic-ai/sdk`): latest
