@@ -719,14 +719,24 @@ Extending `CLAUDE.md`'s rules to this phase's surfaces:
 
 ## 11. RBAC additions
 
-A new `student` system role with a deliberately minimal permission set —
+> **SUPERSEDED 2026-08-15 by D17 (§14).** This section proposed a `student`
+> system role with a `PHASE_6_STUDENT_PERMISSIONS` constant. Reading the
+> guardian portal implementation before writing slice 3 showed that is wrong:
+> guardians are a fully-shipped non-staff principal with **no role and no
+> permissions at all**, and students should follow that precedent rather than
+> the staff one. The original text is kept below, struck through, because the
+> reasoning that replaced it is the useful part.
+
+~~A new `student` system role with a deliberately minimal permission set —
 read own results, own attendance, own fees. Nothing else, and specifically
 no `.read` on any collection-scoped resource. Named
 `PHASE_6_STUDENT_PERMISSIONS` and spliced into `ALL_PERMISSIONS`, following
-the convention `CLAUDE.md` established for the admin-dashboard initiative.
+the convention `CLAUDE.md` established for the admin-dashboard initiative.~~
 
-`permissions-coverage.spec.ts` gets a "student grants exactly the documented
-Phase 6 subset" assertion, mirroring the teacher one.
+~~`permissions-coverage.spec.ts` gets a "student grants exactly the documented
+Phase 6 subset" assertion, mirroring the teacher one.~~
+
+**Actual RBAC additions: none.** See D17.
 
 ---
 
@@ -763,3 +773,418 @@ Phase 6 subset" assertion, mirroring the teacher one.
    keeping it.
 4. Minimum supported Android version — this drives device testing scope and
    is genuinely a market question, not a technical one.
+
+---
+
+## 14. Slice 3 plan-first — the student principal
+
+**Status: plan-first, awaiting review. No code written.**
+Written 2026-08-15, after reading the guardian portal's shipped
+implementation end to end rather than working from the summary in §6.
+
+This is the riskiest slice in the phase: it introduces a **third
+authenticated principal** to a system that has two, adds two SECURITY
+DEFINER functions, and touches FORCE-RLS tables — against a database with no
+isolated staging tier. It gets the same treatment as the guardian-portal
+auth build (phase-4.md §3/§4) and the platform-admin surface.
+
+### 14.1 Verified starting state
+
+Checked directly, not assumed:
+
+| Fact | Evidence |
+|---|---|
+| `Student` has no auth columns | `schema.prisma` — no `passwordHash`, no session relation |
+| No student principal anywhere | no `StudentSession`, no student guard, no student routes |
+| `student` role is a documented placeholder | `phase-0.md:420` and `phase-1.md:1108` both say "TBD Phase 6" |
+| `students` is under RLS already | `policies/phase-1.sql:104`, flat `school_id` policy |
+| Guardians have **no role and no permissions** | `GuardianAuthGuard` resolves a session; services scope by `guardianId`. No entry in `permissions.ts`. |
+| SECURITY DEFINER count is 17 | `security-definer-inventory.spec.ts` |
+| `School.slug` is globally unique | `schema.prisma` — already public-facing (`<slug>.schoolkit.ng`) |
+| `Student.status` exists | `ACTIVE / INACTIVE / WITHDRAWN / GRADUATED / SUSPENDED` |
+
+---
+
+### 14.2 The threat that shapes this whole slice
+
+**A student's login identity is enumerable by construction, and the guardian
+portal's is not.** This is the single most important difference between the
+two builds, and every decision below is downstream of it.
+
+Guardian login takes an email — a large, sparse, unguessable space. Student
+login cannot: most students have no email address (`Student.email` is
+nullable and non-unique, which is why D5 rejected it). The natural key is the
+admission number, and admission numbers are **sequential and formatted**:
+the dev seed's are `NJC/2025/001`, `NJC/2025/002`. Combined with a school
+slug that is deliberately public (it is a subdomain), an attacker can
+enumerate a school's entire student body with a script and a guess at the
+format.
+
+That does not make admission-number login wrong — there is no better
+identifier available, and the alternative (per-student generated usernames)
+trades an enumerable identifier for one children cannot remember. It means
+the **credential** and the **rate limiting** have to carry weight that the
+guardian flow could leave to the identifier's obscurity.
+
+Mitigations, all of which are part of this slice rather than follow-ups:
+
+1. **Unactivated students cannot log in at all.** `passwordHash IS NULL`
+   until a guardian activates the account. On a school with 400 students and
+   30 activated, enumeration finds 30 targets, not 400 — and the failure is
+   identical for "no such student" and "not activated" (below).
+2. **One generic failure for every cause.** Unknown school slug, unknown
+   admission number, unactivated account, wrong password, non-`ACTIVE`
+   status — all return the same `INVALID_CREDENTIALS`. The login path also
+   performs a dummy argon2 verify when no candidate is found, so the
+   zero-match and wrong-password cases take comparable time. This mirrors
+   `AuthService`/`PortalAuthService`'s existing `dummyVerifyHash` pattern.
+3. **Tighter throttling than either existing login.** Staff and guardian
+   login both use `@Throttle({ default: { ttl: 60000, limit: 10 } })`.
+   Student login gets **5/min per IP**, plus a per-`(schoolId,
+   admissionNumber)` counter in Redis — the second is what an IP-rotating
+   enumeration actually runs into. Redis is already provisioned and already
+   used for rate limiting (`redis-auth.module.ts`).
+4. **Lockout after repeated failures on one account** (proposed: 10 failures
+   then 15 minutes), recorded so a school can see it. Deliberately a lockout,
+   not a permanent disable: a locked-out child must not need an admin to get
+   back into their homework.
+
+**Explicitly accepted, not solved:** a guardian who activates a child's
+account knows that child's initial password and can therefore sign in as
+them. For a minor's account whose activation is deliberately parent-mediated
+(D6), that is the correct trust model, not a flaw — but it is stated here so
+nobody later mistakes it for an oversight.
+
+---
+
+### 14.3 Decisions
+
+**D17 — A student is a principal with a session, NOT a role.
+No permissions, no `ALL_PERMISSIONS` entry, no seed change. [proposed]**
+
+This supersedes §11. The instinct was to mirror `teacher`; the correct
+precedent is `guardian`. Guardians have shipped since Phase 4 as a fully
+authenticated principal with **zero** presence in `permissions.ts` — no
+role row, no grants, no `permissions-coverage.spec.ts` entry.
+`GuardianAuthGuard` resolves the session and each service scopes results to
+that guardian's own linked rows.
+
+The staff RBAC machinery exists to answer "which of the many things in this
+tenant may this staff member touch?". A student has exactly one answer —
+their own rows — and encoding that as three permission strings would create
+a grant that must be kept in sync while never varying. It is the same
+reasoning the guardian-auth migration used for declining to widen
+`Session.userId`: do not drag the staff permission model into a user class
+that never needs it.
+
+Consequence: `permissions.ts`, `system-roles.ts` and
+`permissions-coverage.spec.ts` are all untouched by this slice. The
+`student` "TBD Phase 6" placeholders in phase-0.md and phase-1.md get
+resolved by **deleting the expectation**, with a note pointing here.
+
+**D18 — Credentials live on `Student`; three columns, all nullable. [proposed]**
+
+```
+password_hash   TEXT          -- NULL until activated
+activated_at    TIMESTAMP(3)  -- event moment
+last_login_at   TIMESTAMP(3)  -- event moment
+```
+
+Directly mirrors Decision A of the guardian build, which added the same
+shape to `guardians` rather than a companion table, on the same reasoning
+(`User` already blends profile and auth in one row). All nullable, so there
+is **no backfill**: every existing student is correctly represented as
+"never activated, never logged in".
+
+Deliberately **not** added: an `email_verified` equivalent. Guardians need
+it because their identifier is an email. A student's identifier is their
+admission number, issued by the school — there is no address to verify, and
+a column that is always `false` invites someone to build a flow around it.
+
+**D19 — `StudentSession` is a new table mirroring `GuardianSession`,
+including no `school_id` column. [proposed]**
+
+```
+model StudentSession {
+  id         String   @id @default(uuid())
+  studentId  String   @map("student_id")
+  tokenHash  String   @unique @map("token_hash")
+  ipAddress  String?  @map("ip_address")
+  userAgent  String?  @map("user_agent")
+  expiresAt  DateTime @map("expires_at")
+  createdAt  DateTime @default(now()) @map("created_at")
+  student    Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  @@index([studentId])
+  @@map("student_sessions")
+}
+```
+
+RLS joins through `students.school_id`, the identical shape
+`guardian_sessions` uses through `guardians`. Consistency with **both**
+existing session tables beats saving one join, and a third session table
+with a different tenancy shape would make the next reader wonder which is
+correct.
+
+Token handling is `createGuardianSession`'s exactly: 32 random bytes,
+base64url, only the sha256 hash persisted, raw token returned once.
+`STUDENT_SESSION_TTL_MS` = 30 days, matching both existing surfaces.
+
+**D20 — Login identity is `School.slug` + `admissionNumber` + password. [proposed]**
+
+`School.slug` is the "school code" D5 referred to abstractly. It is already
+globally unique, already lowercase-normalised, already public (it is the
+subdomain), and already has a reserved-word list. Nothing new is invented.
+
+The decisive property is that `(school_id, admission_number)` carries a live
+`@@unique` constraint, so **the lookup is single-row by construction**. This
+is the one place slice 3 is structurally better than the guardian build: the
+inventory's only multi-row function, `auth_lookup_guardians_for_login`,
+exists because `Guardian.email` is unique only per school, forcing an
+argon2-verify loop across candidate schools and an
+`AMBIGUOUS_GUARDIAN_ACCOUNT` error for a guardian who did nothing wrong.
+Students cannot reproduce that: slug resolves one school, and
+`(school, admission)` resolves one student.
+
+**Do not copy the guardian login service's verify-loop.** It is documented
+as interim in its own migration header, and inheriting it here would be
+copying a known-suboptimal shape into a surface that does not need it.
+
+**D21 — Activation is guardian-mediated and needs NO new SECURITY DEFINER
+function. [proposed]**
+
+`POST /portal/students/:id/activate`, on the **existing** `/portal`
+controller surface, behind the **existing** `GuardianAuthGuard`.
+
+This is the structural payoff of doing guardian mobile first. The guardian
+is already authenticated, so their session has already resolved a
+`school_id` — the chicken-and-egg problem that forces SECURITY DEFINER
+everywhere else in the auth layer simply does not arise. Activation is an
+ordinary `withTenant` write, governed by RLS like any other tenant mutation.
+The service re-checks the `StudentGuardian` link inside the transaction; a
+guardian may only activate a child actually linked to them.
+
+Body: `{ password: string }`. Re-activation of an already-activated student
+is a **password reset**, allowed (a child forgetting their password is the
+common case and must not need school staff), audited distinctly from first
+activation, and it **revokes every existing `student_sessions` row** for
+that student.
+
+**D22 — Exactly two new SECURITY DEFINER functions. Count 17 to 19. [proposed]**
+
+Both follow the narrow-single-caller discipline the Slice 12 audit settled
+on, and both get a migration header covering why SD is needed, what is
+returned, and what is deliberately withheld.
+
+| Function | Returns | Deliberately omits |
+|---|---|---|
+| `auth_resolve_student_session(token_hash)` | `session_id, student_id, school_id, expires_at, student_status` | `password_hash`; names, DOB, photo, address, phone, email, medical notes, `notes` — the guard runs pre-tenant and its result is attached to the request, where PII does not belong |
+| `auth_lookup_student_for_login(school_slug, admission_number)` | `student_id, school_id, password_hash, status` | everything else on a PII-dense row. Deliberately separate from the session resolver, which must never see `password_hash` — the same split `auth_lookup_user_for_password_reset` made from `auth_lookup_user_for_login` |
+
+`RETURNS TABLE`, `LANGUAGE sql`, `SECURITY DEFINER`,
+`SET search_path = public, pg_temp`, `REVOKE ALL FROM PUBLIC`,
+`GRANT EXECUTE TO app_user`. Both are added to
+`SECURITY_DEFINER_FUNCTIONS` in the conformance spec and to CLAUDE.md's
+inventory table **in the same PR**, which is what that spec exists to force.
+
+**The cadence review is due at 20; this lands at 19.** Flagged now, in
+writing, for the fifth time in this table's history — because the previous
+four flags were each written by someone who also did not do it.
+
+**D23 — The session resolver returns `status`, and the guard rejects a
+student who is not `ACTIVE`. [proposed]**
+
+This closes, for students, the gap the guardian build explicitly flagged and
+left open. `auth_resolve_guardian_session`'s header records that `Guardian`
+has no `is_active` equivalent, so the only way to revoke portal access is
+clearing `password_hash`.
+
+`Student` already has `status`. A student who is `WITHDRAWN`, `GRADUATED`,
+`SUSPENDED` or `INACTIVE` must stop being able to sign in **and** must have
+live sessions rejected — a student expelled on Tuesday should not still be
+reading the portal on Wednesday because their 30-day token is valid. Doing
+the check in the guard (re-read every request, from the SD function's own
+return) rather than only at login is what makes revocation immediate.
+
+This mirrors `AuthGuard`'s `user_is_active` check, which is the precedent —
+and it means the student surface ships with a revocation story the guardian
+surface still lacks.
+
+**D24 — Password policy: minimum 8 characters, no composition rules, no
+PIN. [proposed]**
+
+A 4- or 6-digit PIN is tempting for a JSS1 student and is exactly wrong
+given §14.2: a numeric PIN over an enumerable username space is
+brute-forceable regardless of rate limiting. Eight characters minimum, no
+forced mixed-case/symbol rules (they produce `Password1!`, not entropy),
+reusing `packages/types`' existing password schema rather than inventing a
+second policy.
+
+The login DTO stays deliberately lenient (`min(1)`), matching
+`guardianLoginSchema`'s documented reasoning: validating policy at login
+would let an attacker probe compliance via 400-vs-401. Policy is enforced at
+**activation**, where it belongs.
+
+---
+
+### 14.4 API surface
+
+```
+# Public
+POST   /student-portal/login          { schoolSlug, admissionNumber, password }
+POST   /student-portal/logout         (session-authenticated; deletes the row)
+
+# Session-authenticated (StudentAuthGuard)
+GET    /student-portal/me
+
+# Guardian-authenticated (GuardianAuthGuard, existing /portal surface)
+POST   /portal/students/:id/activate  { password }
+GET    /portal/students/:id/portal-status
+```
+
+`GET /student-portal/me` returns `{ student: { id, firstName, lastName,
+admissionNumber, currentEnrollment }, school: { id, name, slug } }` —
+mirroring `GuardianLoginResponse`'s shape and, like it, excluding DOB,
+address, phone, medical notes and `notes`.
+
+**Slice 3 ships no data-reading routes.** Results, attendance and fees are
+slice 4. Slice 3's job is the principal, and stopping there keeps the
+reviewable surface to auth alone.
+
+There is deliberately **no** `/student-portal/students/:id`. Every future
+student route hangs off `/me`, so "can this student see this row?" is a
+question the URL shape makes unaskable rather than one answered correctly at
+six call sites.
+
+---
+
+### 14.5 RLS
+
+```sql
+ALTER TABLE student_sessions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE student_sessions FORCE ROW LEVEL SECURITY;
+
+CREATE POLICY tenant_isolation ON student_sessions
+  USING (EXISTS (
+    SELECT 1 FROM students
+    WHERE students.id = student_sessions.student_id
+      AND students.school_id::text = current_setting('app.current_school_id', true)
+  ))
+  WITH CHECK (EXISTS (
+    SELECT 1 FROM students
+    WHERE students.id = student_sessions.student_id
+      AND students.school_id::text = current_setting('app.current_school_id', true)
+  ));
+```
+
+Byte-for-byte the `guardian_sessions` policy with the join retargeted.
+`students` and `student_guardians` already have policies and are unchanged.
+
+---
+
+### 14.6 Audit
+
+Every action gets an `audit_logs` row inside the same transaction as the
+write, following `guardian.login`'s established pattern (`userId` carries
+the acting principal's id — the column has no FK constraint, and "who did
+this" is the intent):
+
+| Action | `userId` | Notes |
+|---|---|---|
+| `student.login` | studentId | metadata: admission number, user agent. **Never the password.** |
+| `student.login-failed` | null | school + admission number, so a school can see enumeration against their roster |
+| `student.activate` | guardianId | the guardian is the actor, not the student |
+| `student.reactivate` | guardianId | distinct from first activation — it is a password reset and invalidates sessions |
+| `student.logout` | studentId | |
+
+`student.login-failed` is a deliberate addition beyond what staff and
+guardian login record. It exists because §14.2's enumeration risk is only
+detectable if failures are written down.
+
+---
+
+### 14.7 Test plan
+
+Unit and integration, mirroring `portal-auth.service.spec.ts` and
+`portal-payments.controller.spec.ts`:
+
+- login: happy path; wrong password; unknown slug; unknown admission number;
+  **unactivated student**; each non-`ACTIVE` status — all asserting the
+  *identical* error body, since a divergent message is the enumeration leak
+- lookup is single-row: two schools, same admission number, correct student
+- guard: valid, expired, unknown, malformed, missing `Bearer`; and a student
+  whose status changes to `WITHDRAWN` **after** a session exists (D23)
+- activation: happy path; guardian not linked to the student (must 403);
+  re-activation revokes existing sessions; password below policy rejected
+- isolation: a session for school A never resolves rows in school B
+- RLS: `student_sessions` with no GUC returns 0 rows; cross-tenant INSERT
+  rejected by `WITH CHECK` — exercised as `app_user`, the pattern the
+  Paystack migration used
+- `security-definer-inventory.spec.ts` passes at 19 with both new functions
+  owned by `school_kit`, `search_path` pinned, PUBLIC revoked
+
+Plus the same **live round-trip** slice 2 just received, since that is now
+the standard: real login against a running API, real activation by a real
+guardian session, and a real rejection after a status change.
+
+---
+
+### 14.8 Migration and rollout safety
+
+`CLAUDE.md` is explicit that **there is no isolated staging** — every
+"staging" deploy runs against the one database real schools use, and
+`deploy-staging.yml`'s auto-rollback reverts the Fly release, not a
+migration that already ran.
+
+Properties that make this migration safe to run against live data:
+
+- **Additive only.** Three nullable columns and one new table. No column is
+  dropped, renamed or retyped; no existing row is rewritten.
+- **No backfill.** Nullable columns mean existing students are already
+  correctly represented.
+- **No behaviour change for anyone currently using the product.** No
+  existing endpoint, guard or policy is modified. Until a guardian activates
+  a child, the feature is inert.
+- **The unique index already exists.** `(school_id, admission_number)` is
+  from Phase 1; this slice adds no new constraint that could fail on live
+  data.
+
+Verification against a live database after applying, matching the standard
+the Paystack migration set: confirm both functions are `prosecdef`, owned by
+`school_kit`, `search_path` pinned, EXECUTE granted to `app_user` with
+PUBLIC absent, `count(*) WHERE prosecdef` returning exactly **19**, and the
+RLS boundary exercised as `app_user`.
+
+---
+
+### 14.9 Estimate
+
+§2 budgeted 6–8 engineering days. **Unchanged, with the range's shape
+revised**: D21 removes an expected SECURITY DEFINER function and an entire
+invitation/token/delivery flow (the guardian build needed
+`guardian_invitations`, a token table, an email, and an accept endpoint —
+none of which exist here, because the activating party is already
+authenticated). Against that, §14.2's rate-limiting, lockout and
+failed-login auditing are real work the original estimate did not name.
+
+Net: still 6–8 days, but more of it is now security hardening and less is
+plumbing — which is the better distribution for the riskiest slice, and
+worth saying out loud so the number is not mistaken for a coincidence.
+
+---
+
+### 14.10 Open questions for review
+
+1. **Lockout threshold and duration** — proposed 10 failures / 15 minutes.
+   Genuinely a product call: too aggressive and a class of children locks
+   itself out before an exam.
+2. **Should `student.login-failed` audit rows be capped or sampled?** A
+   sustained enumeration attempt would write one row per attempt into a
+   partitioned table. Rate-limiting rejects most of them before the service
+   runs, but the interaction is worth a decision rather than a discovery.
+3. **Does a `SUSPENDED` student keep read access?** D23 proposes no. There
+   is a real argument the opposite way — a suspended child arguably needs
+   their work more, not less — and it is a school-policy question, not a
+   technical one.
+4. **Should activation be available to any linked guardian, or only
+   `isPrimary`?** Proposed: any linked guardian, because requiring the
+   primary blocks the parent who actually has the phone.

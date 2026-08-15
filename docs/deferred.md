@@ -9,6 +9,21 @@ Format:
 
 ## Captured so far
 
+- [ ] **The Paystack leg of guardian mobile checkout has never been round-tripped**
+  (logged 2026-08-15, Phase 6 / Slice 2). **Gates "slice 2 is fully complete" —
+  explicitly NOT a blocker for slice 3**, which builds the auth/session
+  foundation and touches none of this. Live verification against a running API
+  proved everything up to the Paystack call: route, `GuardianAuthGuard`, bearer
+  auth, path params, and typed error mapping all work, and the refusal
+  (`409 PAYSTACK_NOT_ENABLED`) carries parent-safe copy with no key material —
+  asserted, not assumed. What is unproven is the call itself: the dev school has
+  no Paystack subaccount, so no `authorization_url` was ever requested and
+  `runCheckout`'s open-browser-then-poll cycle has never run against a real
+  hosted checkout. Closing it needs a Paystack **test-mode** subaccount attached
+  to the dev school — an outward-facing action against the real Paystack account,
+  which is why it was not done unprompted. Trigger: before slice 2 is called
+  done, or the first time anyone touches `portal-payments`.
+
 - [ ] **Paystack checkout does not return the user to the mobile app** (logged
   2026-08-15, Phase 6 / Slice 2). `PortalPaymentsService.initiate` hardcodes
   the Paystack callback to `${PORTAL_BASE_URL}/payments/callback` — a web URL.
