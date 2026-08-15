@@ -6,10 +6,15 @@ import {
   ConflictError,
   NotFoundError,
   UnauthorizedError,
+  type PaystackSetupStatus,
   type PlatformAdminCreateSchoolInput,
   type PlatformAdminCreateSchoolResponse,
   type PlatformAdminLoginInput,
   type PlatformAdminLoginResponse,
+  type PlatformAdminPaystackSetupRequestDto,
+  type PlatformAdminPaystackSetupRevealDto,
+  type PlatformAdminResolvePaystackSetupInput,
+  type PlatformAdminResolvePaystackSetupResponse,
   type PlatformAdminSchoolDto,
   type PlatformAdminSetAiEnabledInput,
   type PlatformAdminSetAiEnabledResponse,
@@ -101,6 +106,17 @@ interface ListSchoolsRow {
   ai_enabled: boolean;
 }
 
+// Mirrors platform_admin_list_paystack_setup_requests()'s columns.
+interface ListPaystackSetupRequestsRow {
+  request_id: string;
+  school_id: string;
+  school_name: string;
+  business_name: string;
+  status: PaystackSetupStatus;
+  submitted_at: Date;
+  contact_name: string;
+}
+
 interface CheckOwnerEmailAvailableRow {
   is_available: boolean;
   reason: "USER_EXISTS" | "INVITE_PENDING" | null;
@@ -123,6 +139,30 @@ interface ListUsersRow {
 // cached for the process lifetime; a local copy (not imported from
 // auth.service.ts) since that constant is module-private there.
 let dummyVerifyHash: string | undefined;
+// Resolves a setup request id to its school_id + status BEFORE any tenant
+// exists — the same chicken-and-egg the SECURITY DEFINER functions solve
+// elsewhere. paystack_setup_requests is under FORCE RLS, so a plain
+// basePrisma read with no GUC set returns nothing at all (verified against a
+// live database, see the migration's commit).
+//
+// Reuses the existing list function rather than adding a second SECURITY
+// DEFINER function for a single-row lookup: the queue is bounded by how many
+// schools are waiting on a human, and one more SD function to save a filter
+// would widen the inventory for no security benefit. Returns only the two
+// scalars the callers need, never the banking fields.
+async function resolvePaystackSetupRequestSchool(
+  requestId: string,
+): Promise<{ schoolId: string; status: PaystackSetupStatus }> {
+  const rows = await basePrisma.$queryRaw<ListPaystackSetupRequestsRow[]>`
+    SELECT * FROM platform_admin_list_paystack_setup_requests()
+  `;
+  const match = rows.find((r) => r.request_id === requestId);
+  if (!match) {
+    throw new NotFoundError("Paystack setup request not found.");
+  }
+  return { schoolId: match.school_id, status: match.status };
+}
+
 async function getDummyVerifyHash(): Promise<string> {
   if (!dummyVerifyHash) {
     dummyVerifyHash = await password.hashPassword("dummy-platform-admin-login-target");
@@ -136,6 +176,13 @@ const USERS_LIST_AUDIT_ACTION = "platform_admin.users.list";
 const SCHOOLS_CREATE_AUDIT_ACTION = "platform_admin.schools.create";
 const SCHOOLS_SET_EARLY_ACCESS_AUDIT_ACTION = "platform_admin.schools.set-early-access";
 const SCHOOLS_SET_AI_ENABLED_AUDIT_ACTION = "platform_admin.schools.set-ai-enabled";
+// Paystack assisted setup (2026-08-15). The reveal action is the important
+// one: it is the only path in the product that returns a school's bank
+// account number, and every single call writes one of these rows.
+const PAYSTACK_SETUP_LIST_AUDIT_ACTION = "platform_admin.paystack-setup.list";
+const PAYSTACK_SETUP_REVEAL_AUDIT_ACTION = "paystack-setup.reveal";
+const PAYSTACK_SETUP_FULFILLED_AUDIT_ACTION = "paystack-setup.fulfilled";
+const PAYSTACK_SETUP_REJECTED_AUDIT_ACTION = "paystack-setup.rejected";
 
 @Injectable()
 export class PlatformAdminService {
@@ -228,6 +275,166 @@ export class PlatformAdminService {
         : null,
       aiEnabled: r.ai_enabled,
     }));
+  }
+
+  // ─── Paystack assisted setup (2026-08-15) ─────────────────────────────────
+  //
+  // Three methods, deliberately split into a browse tier and a reveal tier.
+  // See docs/modules/paystack-assisted-setup.md §2 D4 and CLAUDE.md's
+  // inventory row for platform_admin_list_paystack_setup_requests.
+
+  // GET /platform-admin/paystack-setup-requests — the operator's queue.
+  // Carries NO banking fields: this renders on page load for every pending
+  // request whether or not the operator is acting on one.
+  async listPaystackSetupRequests(
+    adminCtx: PlatformAdminContext,
+    reqCtx: RequestContext,
+  ): Promise<PlatformAdminPaystackSetupRequestDto[]> {
+    const rows = await basePrisma.$queryRaw<ListPaystackSetupRequestsRow[]>`
+      SELECT * FROM platform_admin_list_paystack_setup_requests()
+    `;
+
+    await basePrisma.auditLog.create({
+      data: {
+        schoolId: null,
+        userId: adminCtx.userId,
+        action: PAYSTACK_SETUP_LIST_AUDIT_ACTION,
+        entityType: "paystack_setup_request",
+        ipAddress: reqCtx.ipAddress,
+        metadata: { resultCount: rows.length },
+      },
+    });
+
+    return rows.map((r) => ({
+      requestId: r.request_id,
+      schoolId: r.school_id,
+      schoolName: r.school_name,
+      businessName: r.business_name,
+      status: r.status,
+      submittedAt: r.submitted_at.toISOString(),
+      contactName: r.contact_name,
+    }));
+  }
+
+  // GET /platform-admin/paystack-setup-requests/:id/reveal — the ONLY path
+  // that returns a school's account number.
+  //
+  // Deliberately NOT a SECURITY DEFINER function. The list above has already
+  // resolved a school_id, so a tenant exists: set the GUC and let the
+  // ordinary RLS policy govern the read. That keeps banking data out of every
+  // SD return shape in the inventory and makes each access individually
+  // attributable. Mirrors BvnService.revealBvn's contract exactly — audit
+  // every call, record who and for whom, never the value.
+  //
+  // The school_id comes from the SD-listed row rather than from the caller,
+  // so a platform admin cannot use a guessed request id to set an arbitrary
+  // GUC: an unknown id resolves to no row and 404s before any GUC is set.
+  async revealPaystackSetupRequest(
+    requestId: string,
+    adminCtx: PlatformAdminContext,
+    reqCtx: RequestContext,
+  ): Promise<PlatformAdminPaystackSetupRevealDto> {
+    const owner = await resolvePaystackSetupRequestSchool(requestId);
+
+    const row = await basePrisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT set_config('app.current_school_id', ${owner.schoolId}, true)`;
+      return tx.paystackSetupRequest.findUnique({ where: { id: requestId } });
+    });
+
+    if (!row) {
+      throw new NotFoundError("Paystack setup request not found.");
+    }
+
+    await basePrisma.auditLog.create({
+      data: {
+        schoolId: null,
+        userId: adminCtx.userId,
+        action: PAYSTACK_SETUP_REVEAL_AUDIT_ACTION,
+        entityType: "paystack_setup_request",
+        entityId: requestId,
+        ipAddress: reqCtx.ipAddress,
+        // Never the account number. Last 4 is enough to correlate a reveal
+        // with the row it touched without the log becoming a second copy of
+        // the data the reveal exists to protect.
+        metadata: {
+          schoolId: owner.schoolId,
+          accountNumberLast4: row.accountNumber.slice(-4),
+        },
+      },
+    });
+
+    return {
+      requestId: row.id,
+      bankName: row.bankName,
+      accountNumber: row.accountNumber,
+      accountName: row.accountName,
+      contactEmail: row.contactEmail,
+      contactPhone: row.contactPhone,
+    };
+  }
+
+  // PATCH /platform-admin/paystack-setup-requests/:id — resolve a request as
+  // FULFILLED (with the ACCT_ code that was issued) or REJECTED (with a
+  // reason the school will see).
+  //
+  // This deliberately does NOT write School.paystackSubaccountCode. The
+  // school pastes the code into Settings -> Payments itself, which runs the
+  // save-time GET /subaccount/:code verification and shows the business name
+  // back for confirmation — the check that catches a valid code belonging to
+  // the wrong school. Writing it here would skip that entirely and make the
+  // operator's typo the school's silent problem.
+  async resolvePaystackSetupRequest(
+    requestId: string,
+    input: PlatformAdminResolvePaystackSetupInput,
+    adminCtx: PlatformAdminContext,
+    reqCtx: RequestContext,
+  ): Promise<PlatformAdminResolvePaystackSetupResponse> {
+    const owner = await resolvePaystackSetupRequestSchool(requestId);
+
+    if (owner.status !== "PENDING") {
+      throw new ConflictError(
+        "PAYSTACK_SETUP_ALREADY_RESOLVED",
+        `This request is already ${owner.status.toLowerCase()}.`,
+      );
+    }
+
+    const updated = await basePrisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT set_config('app.current_school_id', ${owner.schoolId}, true)`;
+      return tx.paystackSetupRequest.update({
+        where: { id: requestId },
+        data: {
+          status: input.status,
+          subaccountCode: input.status === "FULFILLED" ? input.subaccountCode : null,
+          notes: input.notes ?? null,
+          fulfilledBy: adminCtx.userId,
+          fulfilledAt: new Date(),
+        },
+      });
+    });
+
+    await basePrisma.auditLog.create({
+      data: {
+        schoolId: null,
+        userId: adminCtx.userId,
+        action:
+          input.status === "FULFILLED"
+            ? PAYSTACK_SETUP_FULFILLED_AUDIT_ACTION
+            : PAYSTACK_SETUP_REJECTED_AUDIT_ACTION,
+        entityType: "paystack_setup_request",
+        entityId: requestId,
+        ipAddress: reqCtx.ipAddress,
+        metadata: {
+          schoolId: owner.schoolId,
+          // The subaccount code is not a secret — it is an opaque routing
+          // identifier the school pastes into a settings field — and which
+          // code went to which school is the single most useful thing this
+          // audit row can record.
+          subaccountCode: updated.subaccountCode,
+        },
+      },
+    });
+
+    return { requestId: updated.id, status: updated.status };
   }
 
   // PATCH /platform-admin/schools/:schoolId/early-access — sets or clears the

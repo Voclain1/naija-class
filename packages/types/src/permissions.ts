@@ -351,6 +351,23 @@ export const PHASE_4_PERMISSIONS = [
 // ALL_PERMISSIONS-minus-owner-only assembly in packages/db/src/seeds/system-roles.ts.
 export const ADMIN_DASHBOARD_PERMISSIONS = ["dashboard.read"] as const;
 
+// Paystack assisted setup (2026-08-15) — cross-cutting initiative, not a
+// numbered Phase, so it gets its own descriptively-named constant per
+// CLAUDE.md's "Permission naming for work that isn't a numbered Phase".
+//
+// School side only. The platform-admin half of this feature is gated by
+// PlatformAdminGuard's is_platform_admin check, which is a different
+// mechanism entirely — platform admins hold no school-scoped roles.
+//
+// Bursar is deliberately NOT granted these in the seed even though this is
+// finance-adjacent: submitting bank details commits the school to where its
+// fee income lands, which is an owner/admin decision. Same reasoning that
+// keeps guardian.invite off the bursar role.
+export const PAYSTACK_SETUP_PERMISSIONS = [
+  "paystack-setup.read",
+  "paystack-setup.request",
+] as const;
+
 // Phase 5 — AI layer. Landed REFERENCE-ONLY in slice 1 CP2 (pure
 // infrastructure, zero HTTP surface); PROMOTED in slice 2, which ships the
 // lesson-plan endpoints. This is the same rollup pattern as Phase 2 slice 9
@@ -541,6 +558,7 @@ export const ALL_PERMISSIONS = [
   ...PHASE_4_PERMISSIONS,
   ...ADMIN_DASHBOARD_PERMISSIONS,
   ...PHASE_5_PERMISSIONS,
+  ...PAYSTACK_SETUP_PERMISSIONS,
   /* extend per phase */
 ] as const;
 
