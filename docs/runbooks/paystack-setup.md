@@ -8,8 +8,13 @@ Run these steps when provisioning a new environment that needs Paystack integrat
 
 ## 1. Obtain keys
 
-Log in to [dashboard.paystack.com](https://dashboard.paystack.com) under the
-school's account. Navigate to **Settings → API Keys & Webhooks**.
+Log in to [dashboard.paystack.com](https://dashboard.paystack.com) under
+**SchoolKit's own** Paystack account — there is one platform integration, not
+one per school. (Corrected 2026-08-15: this line previously said "the school's
+account", a leftover single-school framing. Schools never hold Paystack
+credentials; they receive a subaccount code created on this integration. See
+`docs/modules/paystack-assisted-setup.md`.) Navigate to **Settings → API Keys
+& Webhooks**.
 
 | Key | Where to use |
 |---|---|
@@ -89,7 +94,42 @@ bearer token to self-heal the PENDING payment.
 
 ---
 
-## 5. Local development
+## 5. Fulfilling a school's subaccount setup request
+
+Schools cannot create their own subaccount (see §1). They submit banking
+details via **Settings → Payments**, which lands in the platform-admin
+dashboard's *Pending Paystack setup requests* queue at
+`/super-admin/dashboard`.
+
+For each pending request:
+
+1. Click **Reveal details**. This writes a `paystack-setup.reveal` audit row
+   every time — it is the only path in the product that returns a school's
+   account number, so treat repeated reveals as something you'd have to
+   explain.
+2. In SchoolKit's Paystack dashboard, **Subaccounts → New Subaccount**. Enter
+   the revealed business name, bank, and account number. Paystack resolves the
+   account name itself — **if it does not match the name the school gave, stop
+   and reject the request with that as the reason** rather than guessing.
+3. Set the split so the school receives **100%** (0% platform cut). Confirm on
+   screen before saving; the dashboard's wording about which side the
+   percentage applies to is easy to read backwards.
+4. Copy the resulting `ACCT_…` code into the queue row and click **Mark
+   fulfilled**.
+
+The school then pastes that code into their own settings page, which runs the
+live `GET /subaccount/:code` verification and shows the business name back for
+confirmation. **Do not try to set the code on the school's behalf** — that
+check is the only thing standing between a mistyped code and a school's fees
+settling into a stranger's account.
+
+`PAYSTACK_SETUP_EMAIL` must be set for the "a school is waiting" notification
+to send. If it is unset, requests still land in the queue — the email is a
+nudge, not the mechanism — but nothing will tell you to look.
+
+---
+
+## 6. Local development
 
 Local dev does not receive Paystack webhooks directly. Use one of:
 

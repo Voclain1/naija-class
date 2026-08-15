@@ -41,6 +41,11 @@ const SECURITY_DEFINER_FUNCTIONS = [
   // Platform super-admin — school provisioning, the surface's first write
   // (2026-08-07).
   "platform_admin_check_owner_email_available",
+  // Paystack assisted setup — cross-tenant operator queue (2026-08-15).
+  // See docs/modules/paystack-assisted-setup.md §3: the banking-detail read
+  // deliberately does NOT get a second function (it runs under an ordinary
+  // GUC once the school is known), so this initiative adds exactly one.
+  "platform_admin_list_paystack_setup_requests",
 ] as const;
 
 interface SecurityDefinerRow {

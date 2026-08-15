@@ -44,10 +44,18 @@ model School {
   // Opt-in to subject-period attendance (Phase 2 / Slice 8). Default false:
   // the subject-attendance surface 404s until a school turns it on.
   subjectAttendanceEnabled Boolean @default(false) @map("subject_attendance_enabled")
-  // Paystack subaccount routing (compressed plan-first, 2026-07-31). The
-  // school creates its own subaccount in its own Paystack dashboard and
-  // pastes the code here — SchoolKit never captures or verifies bank
-  // details directly. paystackPaymentsEnabled defaults false (manual-only:
+  // Paystack subaccount routing (compressed plan-first, 2026-07-31).
+  //
+  // CORRECTED 2026-08-15: this comment used to say the school "creates its
+  // own subaccount in its own Paystack dashboard". It cannot — Paystack
+  // subaccounts belong to the integration that created them, and the API
+  // holds one platform-wide PAYSTACK_SECRET_KEY, so such a code always fails
+  // the save-time verification. Setup is assisted: the school submits banking
+  // details via PaystackSetupRequest (below), the operator creates the
+  // subaccount on SchoolKit's integration, and the school pastes the returned
+  // code here. See docs/modules/paystack-assisted-setup.md.
+  //
+  // paystackPaymentsEnabled defaults false (manual-only:
   // CASH/POS/BANK_TRANSFER) for every school, including existing ones, and
   // can only be flipped true once paystackSubaccountCode is set (enforced
   // in SchoolsService.patchMe, not at the schema level). Split model is 0%
@@ -2128,4 +2136,87 @@ model ParentSummary {
   // The portal's read: one child's notes, newest first.
   @@index([schoolId, studentId, weekStart])
   @@map("parent_summaries")
+}
+
+// ---------- Paystack assisted setup (2026-08-15) ----------------------------
+//
+// See docs/modules/paystack-assisted-setup.md for the full plan-first.
+//
+// Why this table exists: School.paystackSubaccountCode (2026-07-31) gave a
+// school somewhere to PUT a subaccount code, but no way to OBTAIN one.
+// Paystack subaccounts belong to the integration that created them, and the
+// API holds a single platform-wide PAYSTACK_SECRET_KEY (phase-4.md §8 D4) —
+// so a code a school creates in its own dashboard is invisible to our
+// GET /subaccount/:code check and can never be saved. Setup is therefore
+// assisted: the school submits its banking details here, the platform
+// operator creates the subaccount on SchoolKit's integration, and returns
+// the ACCT_ code for the school to paste into Settings -> Payments.
+//
+// D1: these fields are DATA-ONLY. The notification email to
+// PAYSTACK_SETUP_EMAIL carries school name + request id + a link, never any
+// field below. The platform-admin dashboard is the real review surface.
+//
+// D2: accountNumber is plaintext, matching StaffBankAccount.accountNumber
+// (Phase 3 / Slice 12 payroll) which already stores staff members' PERSONAL
+// account numbers in the clear. BVN is encrypted because it is a national
+// identifier; a business account number plus bank name enables paying money
+// IN, not taking it out. Encrypting here while payroll stays plaintext would
+// be inconsistent. Logs redact it and audit metadata stores last 4 only.
+// If pgcrypto is ever wanted, it applies to BOTH tables in one PR.
+//
+// A request has a lifecycle and can legitimately recur (typo, bank change,
+// re-submission after rejection), which is why this is its own table rather
+// than flat columns on School — same reasoning as NotificationPreference
+// (phase-4.md §8 D3). No school_id FK, same convention as
+// grading_schemes/guardians/notification_preferences.
+
+enum PaystackSetupStatus {
+  PENDING
+  FULFILLED
+  REJECTED
+}
+
+model PaystackSetupRequest {
+  id       String @id @default(uuid())
+  schoolId String @map("school_id")
+
+  // What the school typed. businessName is what parents see on the Paystack
+  // checkout page and on settlement statements — prefilled from School.name
+  // in the form, but editable, because a school's trading name and its
+  // registered banking name are not always the same string.
+  businessName String @map("business_name")
+  bankName     String @map("bank_name")
+  // NUBAN — 10 digits, validated at the DTO. Paystack independently resolves
+  // this against the bank at subaccount-creation time and fails on mismatch,
+  // which is the real check; this column is what the operator keys in.
+  accountNumber String @map("account_number")
+  accountName   String @map("account_name")
+
+  contactName  String @map("contact_name")
+  contactEmail String @map("contact_email")
+  contactPhone String @map("contact_phone")
+
+  status PaystackSetupStatus @default(PENDING)
+
+  // Set at fulfilment: WHICH code was issued against WHICH request. This is
+  // the audit trail of how School.paystackSubaccountCode came to hold what it
+  // holds — that column stays the operational value the payment path reads.
+  // Nothing reads this one to make a decision.
+  subaccountCode String? @map("subaccount_code")
+
+  // Operator's free text — why a request was rejected, or anything worth
+  // recording about a fulfilment. Never parsed.
+  notes String?
+
+  submittedBy String   @map("submitted_by") // userId — owner/admin who submitted
+  submittedAt DateTime @default(now()) @map("submitted_at")
+  // Null until the operator acts. fulfilledBy is a platform-admin userId,
+  // which is deliberately NOT in this school's users table.
+  fulfilledBy String?   @map("fulfilled_by")
+  fulfilledAt DateTime? @map("fulfilled_at")
+
+  // The one query the school side makes ("my latest request") and the one the
+  // operator makes ("everything still pending") both key off this pair.
+  @@index([schoolId, status])
+  @@map("paystack_setup_requests")
 }

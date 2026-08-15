@@ -17,14 +17,17 @@ import {
 import { FileInterceptor } from "@nestjs/platform-express";
 import {
   ValidationError,
+  createPaystackSetupRequestSchema,
   onboardingStep1Schema,
   onboardingStep2Schema,
   onboardingStep3Schema,
   onboardingStep4Schema,
   onboardingStep5Schema,
   patchSchoolSchema,
+  type CreatePaystackSetupRequestInput,
   type OnboardingStepResponse,
   type PatchSchoolInput,
+  type PaystackSetupRequestDto,
   type SchoolLogoUrlDto,
   type SchoolMeDto,
 } from "@school-kit/types";
@@ -36,6 +39,7 @@ import { AuthGuard } from "../../common/auth/auth.guard";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import { UploadErrorFilter } from "../../common/upload-error.filter";
 import { ZodValidationPipe } from "../../common/zod-validation.pipe";
+import { PaystackSetupService } from "./paystack-setup.service";
 import {
   LOGO_MAX_FILE_SIZE_BYTES,
   SchoolsService,
@@ -45,7 +49,10 @@ import {
 @Controller("schools")
 @UseGuards(AuthGuard)
 export class SchoolsController {
-  constructor(private readonly schoolsService: SchoolsService) {}
+  constructor(
+    private readonly schoolsService: SchoolsService,
+    private readonly paystackSetup: PaystackSetupService,
+  ) {}
 
   // GET /schools/me — any authed user can read their own school.
   @Get("me")
@@ -106,6 +113,34 @@ export class SchoolsController {
   @Get("me/logo-url")
   async getLogoUrl(@CurrentUser() authCtx: AuthContext): Promise<SchoolLogoUrlDto> {
     return this.schoolsService.getLogoUrl(authCtx);
+  }
+
+  // GET /schools/me/paystack-setup-request — owner/admin. Null when the
+  // school has never submitted one. Deliberately does not echo back the
+  // banking fields; see PaystackSetupRequestDto's comment.
+  @Get("me/paystack-setup-request")
+  async getPaystackSetupRequest(
+    @CurrentUser() authCtx: AuthContext,
+  ): Promise<PaystackSetupRequestDto | null> {
+    return this.paystackSetup.findLatest(authCtx);
+  }
+
+  // POST /schools/me/paystack-setup-request — owner/admin submits banking
+  // details so the platform operator can create the subaccount on SchoolKit's
+  // Paystack integration. 201: this genuinely creates a new resource, unlike
+  // the onboarding-step handler above.
+  @Post("me/paystack-setup-request")
+  async createPaystackSetupRequest(
+    @Body(new ZodValidationPipe(createPaystackSetupRequestSchema))
+    dto: CreatePaystackSetupRequestInput,
+    @CurrentUser() authCtx: AuthContext,
+    @Ip() ip: string,
+    @Req() req: Request,
+  ): Promise<PaystackSetupRequestDto> {
+    return this.paystackSetup.create(authCtx, dto, {
+      ipAddress: ip,
+      userAgent: req.header("user-agent") ?? null,
+    });
   }
 
   // POST /schools/me/onboarding/:step — owner-only.

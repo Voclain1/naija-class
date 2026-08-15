@@ -106,7 +106,17 @@ interface PaystackBalanceResponse {
 
 // ---------------------------------------------------------------------------
 // Subaccount routing (compressed plan-first, 2026-07-31) — school pastes a
-// code created in their own Paystack dashboard. GET /subaccount/:code is used
+// subaccount code into Settings -> Payments.
+//
+// CORRECTED 2026-08-15: this comment (and the settings page, and the schema)
+// used to say the school creates that subaccount in "their own Paystack
+// dashboard". It cannot. Paystack subaccounts belong to the integration that
+// created them, and this service authenticates with a single platform-wide
+// PAYSTACK_SECRET_KEY (phase-4.md §8 D4), so a code from a school's own
+// integration is invisible to the lookup below and always 404s. Setup is
+// assisted — see docs/modules/paystack-assisted-setup.md.
+//
+// GET /subaccount/:code is used
 // ONLY as an eager, save-time sanity check (mirrors resolveAccount/
 // createTransferRecipient's "verify at the low-stakes save step, not later"
 // pattern) — it is never used to derive a split, since the split decision
@@ -446,8 +456,9 @@ export class PaystackService {
   // ─── Subaccount lookup (eager verification at save-time) ──────────────────
 
   // GET /subaccount/:code — called from SchoolsService.patchMe whenever a
-  // school (re)pastes their subaccount code, so a typo or dead/deactivated
-  // code is caught at the low-stakes settings-save step, not the first time
+  // school (re)pastes the subaccount code we issued them, so a typo or
+  // dead/deactivated code is caught at the low-stakes settings-save step,
+  // not the first time
   // a parent tries to pay. Returns business_name so the admin can visually
   // confirm "is this actually my school's Paystack account" before saving.
   async getSubaccount(code: string): Promise<PaystackSubaccountData> {
@@ -472,7 +483,7 @@ export class PaystackService {
       // "PAYSTACK_SUBACCOUNT_NOT_FOUND" verbatim to the user.
       throw new ConflictError(
         "PAYSTACK_SUBACCOUNT_NOT_FOUND",
-        `Could not find a Paystack subaccount with code "${code}". Double-check the code from your Paystack dashboard.`,
+        `Could not find a Paystack subaccount with code "${code}". Check it against the code we sent you — a subaccount created in your own Paystack dashboard won't work here.`,
       );
     }
 

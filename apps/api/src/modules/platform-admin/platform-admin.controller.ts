@@ -16,6 +16,7 @@ import {
   platformAdminCreateSchoolSchema,
   platformAdminListUsersQuerySchema,
   platformAdminLoginSchema,
+  platformAdminResolvePaystackSetupSchema,
   platformAdminSetAiEnabledSchema,
   platformAdminSetEarlyAccessSchema,
   type PlatformAdminCreateSchoolInput,
@@ -23,6 +24,10 @@ import {
   type PlatformAdminListUsersQuery,
   type PlatformAdminLoginInput,
   type PlatformAdminLoginResponse,
+  type PlatformAdminPaystackSetupRequestDto,
+  type PlatformAdminPaystackSetupRevealDto,
+  type PlatformAdminResolvePaystackSetupInput,
+  type PlatformAdminResolvePaystackSetupResponse,
   type PlatformAdminSchoolDto,
   type PlatformAdminSetAiEnabledInput,
   type PlatformAdminSetAiEnabledResponse,
@@ -84,6 +89,59 @@ export class PlatformAdminController {
     @Req() req: Request,
   ): Promise<PlatformAdminUserDto[]> {
     return this.platformAdminService.listUsers(query.schoolId, adminCtx, {
+      ipAddress: ip,
+      userAgent: req.header("user-agent") ?? null,
+    });
+  }
+
+  // GET /platform-admin/paystack-setup-requests — the operator's queue of
+  // schools waiting on a subaccount. No banking fields; see the service.
+  @Get("paystack-setup-requests")
+  @UseGuards(PlatformAdminGuard)
+  async paystackSetupRequests(
+    @CurrentPlatformAdmin() adminCtx: PlatformAdminContext,
+    @Ip() ip: string,
+    @Req() req: Request,
+  ): Promise<PlatformAdminPaystackSetupRequestDto[]> {
+    return this.platformAdminService.listPaystackSetupRequests(adminCtx, {
+      ipAddress: ip,
+      userAgent: req.header("user-agent") ?? null,
+    });
+  }
+
+  // GET /platform-admin/paystack-setup-requests/:id/reveal — the only route
+  // in the product that returns a school's bank account number. Every call
+  // writes a `paystack-setup.reveal` audit row. Throttled like a write, not
+  // like a read: this is the one read whose repetition is itself a signal.
+  @Get("paystack-setup-requests/:id/reveal")
+  @UseGuards(PlatformAdminGuard)
+  @Throttle({ default: { ttl: 60000, limit: 20 } })
+  async revealPaystackSetupRequest(
+    @Param("id") id: string,
+    @CurrentPlatformAdmin() adminCtx: PlatformAdminContext,
+    @Ip() ip: string,
+    @Req() req: Request,
+  ): Promise<PlatformAdminPaystackSetupRevealDto> {
+    return this.platformAdminService.revealPaystackSetupRequest(id, adminCtx, {
+      ipAddress: ip,
+      userAgent: req.header("user-agent") ?? null,
+    });
+  }
+
+  // PATCH /platform-admin/paystack-setup-requests/:id — mark FULFILLED (with
+  // the issued ACCT_ code) or REJECTED (with a reason the school sees).
+  @Patch("paystack-setup-requests/:id")
+  @UseGuards(PlatformAdminGuard)
+  @Throttle({ default: { ttl: 60000, limit: 20 } })
+  async resolvePaystackSetupRequest(
+    @Param("id") id: string,
+    @Body(new ZodValidationPipe(platformAdminResolvePaystackSetupSchema))
+    dto: PlatformAdminResolvePaystackSetupInput,
+    @CurrentPlatformAdmin() adminCtx: PlatformAdminContext,
+    @Ip() ip: string,
+    @Req() req: Request,
+  ): Promise<PlatformAdminResolvePaystackSetupResponse> {
+    return this.platformAdminService.resolvePaystackSetupRequest(id, dto, adminCtx, {
       ipAddress: ip,
       userAgent: req.header("user-agent") ?? null,
     });

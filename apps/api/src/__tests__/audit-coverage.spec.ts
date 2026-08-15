@@ -2,11 +2,13 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import type { ConfigService } from "@nestjs/config";
 import { Queue } from "bullmq";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { basePrisma, withTenant } from "@school-kit/db";
 
+import type { EmailService } from "../common/email/email.service";
 import { REPORT_CARDS_QUEUE } from "../common/queue";
 import { FilesystemStorageDriver } from "../common/storage/filesystem-storage.driver";
 import { StorageService } from "../common/storage/storage.service";
@@ -35,6 +37,8 @@ import { PortalAuthService } from "../modules/portal-auth/portal-auth.service";
 import { PortalPaymentsService } from "../modules/portal-payments/portal-payments.service";
 import { ReportCardService } from "../modules/report-cards/report-card.service";
 import { ReportCardWorkflowService } from "../modules/report-cards/workflow/report-card-workflow.service";
+import { PaystackSetupService } from "../modules/schools/paystack-setup.service";
+import { PlatformAdminService } from "../modules/platform-admin/platform-admin.service";
 import { SchoolsService } from "../modules/schools/schools.service";
 import { StudentsService } from "../modules/students/students.service";
 import { SubjectAttendanceService } from "../modules/subject-attendance/subject-attendance.service";
@@ -1408,5 +1412,216 @@ describe("Phase 4 / Slice 2 audit coverage — guardian.invite, guardian-invitat
     expect(loginRows.length, "audit rows for guardian.login").toBe(1);
     expect(loginRows[0].userId).toBe(guardianId);
     expect(loginRows[0].entityId).toBe(guardianId);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Paystack assisted setup (2026-08-15) — four actions across two surfaces.
+//
+// The reveal case matters most: it is the only path in the product that
+// returns a school's bank account number, so "every call is audited, and the
+// audit never contains the number" is a security property, not a nicety.
+// ---------------------------------------------------------------------------
+describe("Paystack assisted setup audit coverage", () => {
+  const runId = Math.random().toString(36).slice(2, 8);
+  const reqCtx = { ipAddress: "127.0.0.1", userAgent: "vitest" };
+
+  const auth = new AuthService();
+  // EmailService is stubbed: this asserts audit behaviour, and D6 makes the
+  // notification explicitly best-effort. The "send failure must not lose the
+  // request" path is asserted separately below.
+  const emailStub = { send: async () => undefined } as unknown as EmailService;
+  const configStub = {
+    get: (key: string) =>
+      key === "PAYSTACK_SETUP_EMAIL" ? "payments@schoolkit.ng" : undefined,
+  } as unknown as ConfigService;
+  const paystackSetup = new PaystackSetupService(emailStub, configStub);
+  const platformAdmin = new PlatformAdminService(emailStub);
+
+  const ACCOUNT_NUMBER = "0123456789";
+
+  let schoolId: string;
+  let ownerCtx: { sessionId: string; userId: string; schoolId: string };
+  let adminCtx: { sessionId: string; userId: string };
+  let requestId: string;
+  const schoolIdsToCleanup = new Set<string>();
+
+  beforeAll(async () => {
+    const signed = await auth.signupOwner(
+      {
+        schoolName: `Audit Paystack Setup ${runId}`,
+        schoolSlug: `audit-pstk-${runId}`,
+        ownerFirstName: "Owen",
+        ownerLastName: "Owner",
+        ownerEmail: `audit-pstk-${runId}@example.test`,
+        ownerPhone: randomPhone(),
+        password: "Correct-Horse-9",
+        ndprConsent: true,
+      },
+      reqCtx,
+    );
+    schoolId = signed.school.id;
+    schoolIdsToCleanup.add(schoolId);
+    await basePrisma.school.update({
+      where: { id: schoolId },
+      data: { status: "ACTIVE", onboardingStep: 5 },
+    });
+    ownerCtx = { sessionId: "sess", userId: signed.user.id, schoolId };
+    // The platform admin is an ordinary user row flagged is_platform_admin;
+    // reusing the owner's id keeps this focused on audit behaviour rather
+    // than re-testing the guard, which platform-admin-access.spec.ts owns.
+    adminCtx = { sessionId: "sess", userId: signed.user.id };
+  });
+
+  afterAll(async () => {
+    for (const id of schoolIdsToCleanup) {
+      await basePrisma.school.delete({ where: { id } }).catch(() => undefined);
+    }
+    await basePrisma.$disconnect();
+  });
+
+  it("paystack.setup_requested: writes one audit row, with last-4 only", async () => {
+    const created = await paystackSetup.create(
+      ownerCtx,
+      {
+        businessName: "Audit Test School Ltd",
+        bankName: "GTBank",
+        accountNumber: ACCOUNT_NUMBER,
+        accountName: "Audit Test School Ltd",
+        contactName: "Ada Contact",
+        contactEmail: `bursar-${runId}@example.test`,
+        contactPhone: randomPhone(),
+      },
+      reqCtx,
+    );
+    requestId = created.id;
+
+    const rows = await withTenant(schoolId, (db) =>
+      db.auditLog.findMany({ where: { action: "paystack.setup_requested", schoolId } }),
+    );
+    expect(rows.length, "audit rows for paystack.setup_requested").toBe(1);
+    expect(rows[0].entityId).toBe(created.id);
+    expect(rows[0].metadata).toMatchObject({ accountNumberLast4: "6789" });
+    // The full account number must never reach the audit trail.
+    expect(JSON.stringify(rows[0].metadata)).not.toContain(ACCOUNT_NUMBER);
+  });
+
+  it("a second request while one is PENDING is rejected", async () => {
+    await expect(
+      paystackSetup.create(
+        ownerCtx,
+        {
+          businessName: "Audit Test School Ltd",
+          bankName: "Zenith",
+          accountNumber: "9999999999",
+          accountName: "Audit Test School Ltd",
+          contactName: "Ada Contact",
+          contactEmail: `bursar2-${runId}@example.test`,
+          contactPhone: randomPhone(),
+        },
+        reqCtx,
+      ),
+    ).rejects.toMatchObject({ code: "PAYSTACK_SETUP_REQUEST_PENDING" });
+  });
+
+  it("the school-side read never echoes back banking fields", async () => {
+    const latest = await paystackSetup.findLatest(ownerCtx);
+    expect(latest).not.toBeNull();
+    expect(JSON.stringify(latest)).not.toContain(ACCOUNT_NUMBER);
+    expect(JSON.stringify(latest)).not.toContain("GTBank");
+  });
+
+  it("paystack-setup.reveal: audited on every call, never carrying the number", async () => {
+    const first = await platformAdmin.revealPaystackSetupRequest(requestId, adminCtx, reqCtx);
+    expect(first.accountNumber).toBe(ACCOUNT_NUMBER);
+
+    // Two reveals must produce two rows — the point of the reveal tier is
+    // that repetition is visible.
+    await platformAdmin.revealPaystackSetupRequest(requestId, adminCtx, reqCtx);
+
+    const rows = await basePrisma.auditLog.findMany({
+      where: { action: "paystack-setup.reveal", entityId: requestId },
+    });
+    expect(rows.length, "audit rows for paystack-setup.reveal").toBe(2);
+    for (const row of rows) {
+      expect(row.metadata).toMatchObject({ accountNumberLast4: "6789" });
+      expect(JSON.stringify(row.metadata)).not.toContain(ACCOUNT_NUMBER);
+    }
+  });
+
+  it("the operator list carries no banking fields at all", async () => {
+    const list = await platformAdmin.listPaystackSetupRequests(adminCtx, reqCtx);
+    const mine = list.find((r) => r.requestId === requestId);
+    expect(mine).toBeDefined();
+    expect(JSON.stringify(list)).not.toContain(ACCOUNT_NUMBER);
+    expect(JSON.stringify(list)).not.toContain("GTBank");
+  });
+
+  it("paystack-setup.fulfilled: records which code went to which school", async () => {
+    const resolved = await platformAdmin.resolvePaystackSetupRequest(
+      requestId,
+      { status: "FULFILLED", subaccountCode: "ACCT_auditTest123" },
+      adminCtx,
+      reqCtx,
+    );
+    expect(resolved.status).toBe("FULFILLED");
+
+    const rows = await basePrisma.auditLog.findMany({
+      where: { action: "paystack-setup.fulfilled", entityId: requestId },
+    });
+    expect(rows.length, "audit rows for paystack-setup.fulfilled").toBe(1);
+    expect(rows[0].metadata).toMatchObject({ subaccountCode: "ACCT_auditTest123" });
+  });
+
+  it("resolving an already-resolved request is rejected", async () => {
+    await expect(
+      platformAdmin.resolvePaystackSetupRequest(
+        requestId,
+        { status: "REJECTED", notes: "changed my mind" },
+        adminCtx,
+        reqCtx,
+      ),
+    ).rejects.toMatchObject({ code: "PAYSTACK_SETUP_ALREADY_RESOLVED" });
+  });
+
+  it("fulfilment does NOT write School.paystackSubaccountCode", async () => {
+    // The school pastes the code itself so the save-time Paystack
+    // verification runs. Writing it here would skip that check entirely.
+    const school = await basePrisma.school.findUnique({
+      where: { id: schoolId },
+      select: { paystackSubaccountCode: true, paystackPaymentsEnabled: true },
+    });
+    expect(school?.paystackSubaccountCode).toBeNull();
+    expect(school?.paystackPaymentsEnabled).toBe(false);
+  });
+
+  it("a notification failure does NOT lose the request (D6 ordering)", async () => {
+    const throwingEmail = {
+      send: async () => {
+        throw new Error("Resend is down");
+      },
+    } as unknown as EmailService;
+    const service = new PaystackSetupService(throwingEmail, configStub);
+
+    const created = await service.create(
+      ownerCtx,
+      {
+        businessName: "Second Request Ltd",
+        bankName: "Access",
+        accountNumber: "1122334455",
+        accountName: "Second Request Ltd",
+        contactName: "Ada Contact",
+        contactEmail: `bursar3-${runId}@example.test`,
+        contactPhone: randomPhone(),
+      },
+      reqCtx,
+    );
+
+    // Committed despite the send blowing up.
+    const persisted = await withTenant(schoolId, (db) =>
+      db.paystackSetupRequest.findUnique({ where: { id: created.id } }),
+    );
+    expect(persisted).not.toBeNull();
+    expect(persisted?.status).toBe("PENDING");
   });
 });
