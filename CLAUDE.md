@@ -176,6 +176,7 @@ Discipline for every function in this category:
 | `platform_admin_list_schools()` | `20260802000000_platform_admin`; return shape extended `20260807000000_platform_admin_school_provisioning`, again `20260809000000_add_school_early_access_granted_at`, and again `20260814000000_platform_admin_ai_toggle` | Cross-tenant school roster for the platform-admin dashboard: `{ school_id, name, created_at, is_active, student_count, staff_count, owner_invite_pending, owner_invite_expires_at, early_access_granted_at, ai_enabled }`. Aggregate counts only. `ai_enabled` (added 2026-08-14) is the per-school AI kill switch, surfaced so `PATCH /platform-admin/schools/:schoolId/ai` isn't a blind write; it clears the omissions column on the same reasoning as `early_access_granted_at` — platform status about the tenancy, set by the operator, not the school's own configuration. `ai_monthly_token_budget` and `parent_summary_enabled` deliberately stay out: the first is spend configuration, the second is the school's own opt-in. The two `owner_invite_*` columns (added 2026-08-07) surface whether a school was provisioned via `POST /platform-admin/schools` and hasn't been accepted yet — deliberately not a new `SchoolStatus` value; see that PR's plan-first note. `early_access_granted_at` (added 2026-08-09) is a pure marker for future paid-tier grandfathering — nothing reads it to make a decision; it is commercial *status about the tenancy* (same category as `is_active`/`owner_invite_pending`), not the school's own financial configuration, which is why it doesn't breach the omissions column. | slug, address, phone, email, primaryColor, logoUrl, onboardingStep, ndprConsent, Paystack fields — none of this is "basic metadata"; financial/config detail is out of this surface's scope. |
 | `platform_admin_list_users(school_id?)` | `20260802000000_platform_admin` | Cross-tenant (or single-school, when `p_school_id` is given) staff-account roster: `{ user_id, school_id, first_name, last_name, role_names, created_at, last_login_at, is_active }`. | email, phone, `password_hash`, totp*/bvn* fields, and — deliberately — `is_platform_admin` itself, so this read surface can't double as a way to enumerate who else holds platform-admin access. |
 | `platform_admin_check_owner_email_available(email)` | `20260807000000_platform_admin_school_provisioning` | Pre-write availability check for `POST /platform-admin/schools` (school provisioning — the surface's first write). Returns `{ is_available, reason }`, checking both `users.email` (global uniqueness) and any live `owner`-role `invitations` row for that email across all schools. | Row ids, names, school_id — returns only a boolean and a discriminator string. |
+| `platform_admin_list_paystack_setup_requests()` | `20260815000000_paystack_assisted_setup` | The platform operator's cross-tenant queue of schools awaiting a Paystack subaccount: `{ request_id, school_id, school_name, business_name, status, submitted_at, contact_name }`. Cross-tenant by definition ("every pending request, all schools") against a FORCE-RLS table whose policy keys off a single-school GUC — same constraint as the two list functions above. `business_name`/`contact_name` are not omission violations: the first is the school's own trading name shown to parents at Paystack checkout, the second identifies who to call; both are what make a row recognisable at a glance. | `account_number`, `bank_name`, `account_name`, `contact_email`, `contact_phone` — every banking/contact field. This list renders on page load for every pending request whether or not the operator is acting on one, so account numbers here would spread through logs, browser memory, and anything on screen on every visit. Revealing them is a separate, individually-audited call (`paystack-setup.reveal`) that runs under an ordinary GUC — **deliberately not a second SECURITY DEFINER function**, since once this list resolves a `school_id` a tenant exists and RLS governs the read normally. Mirrors `BvnService.revealBvn`. |
 
 **SECURITY DEFINER inventory audit (Phase 3 / Slice 12, 2026-07-08):** reviewed
 all 5 pre-existing functions for consolidation when the count crossed the
@@ -277,7 +278,38 @@ plus an audit row is both sufficient and consistent with what this module
 already does. SECURITY DEFINER is only ever needed here for pre-tenant *reads*
 against FORCE-RLS tables.
 
-**Current count: 16.**
+**Paystack assisted setup (2026-08-15):** added one function,
+`platform_admin_list_paystack_setup_requests` — count moves 16 → 17. The
+initiative deliberately adds only one: the banking-detail reveal runs as an
+ordinary `basePrisma.$transaction` + `SET LOCAL app.current_school_id` read
+once the list has resolved a `school_id`, the same division of concerns
+`createSchool` established (SECURITY DEFINER only for the *pre-tenant* read).
+That keeps every account-number read inside RLS and individually audited,
+rather than widening a SECURITY DEFINER return shape to carry banking data.
+Verified against a live database after applying the migration: owner
+`school_kit`, `prosecdef = true`, `search_path=public, pg_temp` pinned,
+EXECUTE granted to `app_user` only with PUBLIC absent, `SELECT count(*) FROM
+pg_proc WHERE prosecdef` returning exactly 17, and the RLS boundary itself
+exercised as `app_user` (no-GUC read returns 0 rows; a school-A GUC sees only
+school A; a cross-tenant INSERT is rejected by the policy's WITH CHECK; the
+SD function returns both tenants' rows in the same session where the direct
+select returns none).
+
+**The "+3" cadence review is now DONE (2026-08-15)** — first carried out
+since it was set at the Slice 12 audit, having been flagged as due at 8 and
+missed at 12, 15 and 16. Outcome: **no consolidation**, same verdict and same
+reasoning as the original audit. The 17 functions fall into four
+non-overlapping families — pre-tenant auth lookups (7), pre-tenant guardian
+auth (3), platform-admin cross-tenant reads (4, now including this one), and
+domain primitives that aren't RLS escapes at all (`create_audit_log_partition`,
+`encrypt_bvn`, `decrypt_bvn`). Every function still has exactly one caller and
+a return shape narrowed to that caller's need; merging any two would either
+widen a return row or require a "which entity type" branch argument, both of
+which weaken the discipline the table exists to enforce. The real gate remains
+`security-definer-inventory.spec.ts`, which holds at any count. Next review
+due at 20.
+
+**Current count: 17.**
 
 ### ESM module resolution
 
