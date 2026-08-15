@@ -198,8 +198,69 @@ import, and a type error each produce a red build. A gate that has only ever
 been observed passing is not known to be a gate; that was the original
 defect.
 
-Remaining in slice 1: `eas.json` build profiles, the API client, secure token
-storage, the offline cache layer, navigation shell, and design tokens.
+#### Slice 1 — foundation modules **[DONE 2026-08-15]**
+
+- **Design tokens** (`src/theme/`) — the CLAUDE.md palette and type scale as
+  RN values, plus a `ThemeProvider` that follows the OS colour scheme.
+  Deliberately no in-app light/dark toggle: on a phone the OS setting *is*
+  the user's stated preference, and a second control mostly creates a way to
+  disagree with it. Web needs a toggle for reasons that don't apply here.
+- **API client** (`src/lib/api/client.ts`) — bearer-only per ADR-002, so no
+  server change was needed. Two deliberate departures from the web client:
+  the token arrives through an **injected provider** rather than a module
+  global, which keeps the file free of any React Native import and therefore
+  unit-testable; and unauthorized notification is a listener registry rather
+  than `window.dispatchEvent`. It also distinguishes `ApiNetworkError`
+  (request never reached the server) from `ApiError` (server considered and
+  rejected it) — collapsing those is how "you have no fees" gets rendered to
+  someone who simply has no signal.
+- **Secure token storage** (`src/lib/auth/token-store.ts`) —
+  `expo-secure-store` (Keychain/Keystore), never `AsyncStorage`, which is
+  plaintext on disk. Keeps an in-memory mirror so the API client can read the
+  token synchronously instead of putting a native round-trip in front of every
+  request. Boot hydration is timeout-guarded: the splash is held until it
+  resolves, so an unbounded keychain hang would be indistinguishable from a
+  crash.
+- **Offline cache layer** (`src/lib/query/`) — D9–D12. Policy is split from
+  storage wiring specifically so the policy is testable in node.
+- **Freshness** (`src/lib/freshness.ts`, `src/components/freshness-label.tsx`)
+  — D11's "as of <time>", as an always-visible line rather than a conditional
+  warning, since a banner that only appears when something is wrong trains
+  people not to look for it.
+- **Navigation shell** (`app/_layout.tsx`) — providers, brand fonts via
+  `@expo-google-fonts` (shipped as npm packages, so no runtime call to
+  Google's CDN — the same guarantee `next/font` gives web, by a different
+  mechanism), splash held until ready.
+- **`eas.json`** + `apps/mobile/BUILD.md` for the reasoning EAS's JSON can't
+  carry.
+
+**The D9 trap worth knowing about.** TanStack Query's *default* mutation
+`networkMode` is `"online"`, which **pauses** a mutation fired while offline
+and replays it on reconnect. That is an offline write queue — exactly what D9
+rules out — and it would have been switched on by default with no code of ours
+involved. Writes are set to `networkMode: "always"` so they fail immediately
+instead, `retry: 0` so a money-mutating request is never silently re-sent, and
+`shouldDehydrateMutation: () => false` so a paused mutation can't survive a
+restart. Three independent places, because the failure mode is a payment
+firing hours after the user tapped the button. `client.spec.ts` locks all of
+it in, and was verified to fail when the setting is removed.
+
+**A real bug caught by checking the render rather than the build.** `expo
+export` reported success and "Static routes (3)" while emitting pages with an
+**empty body** — the root layout holds rendering until an effect sets
+readiness, and effects don't run during prerendering. `web.output` moved from
+`"static"` to `"single"`, which is what an app behind a login actually is.
+Verified by serving the export and loading it in a real browser: content
+renders, Fraunces and Hanken Grotesk apply, Paper/Deep Emerald tokens are
+correct, zero page errors.
+
+**Slice 1 is complete.** Verification: `expo-doctor` 21/21 · `expo export`
+bundles (926 modules) · browser render confirmed · repo-wide `pnpm lint` 9/9,
+`typecheck` 14/14, `test` 13/13 tasks (1529 API + 48 mobile).
+
+Not done, and not slice 1's to do: `eas init` (needs the Apple/Google
+developer accounts, which have 1–3 week external latency and are being started
+in parallel).
 
 ### Slice 2 — Guardian mobile
 
