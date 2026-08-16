@@ -12,6 +12,8 @@ import {
   type StudentLoginResponse,
   type StudentMeResponse,
   type StudentPortalStudentDto,
+  type ReleasedResultDetailDto,
+  type ReleasedResultListResponse,
 } from "@school-kit/types";
 
 import * as password from "../../common/auth/password";
@@ -19,6 +21,7 @@ import { createStudentSession, hashStudentToken } from "../../common/auth/studen
 import { mayActivate, mayHoldSession } from "../../common/auth/student-portal-status";
 import type { StudentAuthContext } from "../../common/auth/student-auth-context";
 import { loadCurrentEnrollmentForStudent } from "../enrollments/enrollments.service";
+import { ReleasedResultsService } from "../report-cards/released-results.service";
 
 const LOGIN_AUDIT_ACTION = "student.login";
 const LOGIN_FAILED_AUDIT_ACTION = "student.login-failed";
@@ -81,6 +84,8 @@ function toStudentDto(
 
 @Injectable()
 export class StudentPortalService {
+  constructor(private readonly releasedResults: ReleasedResultsService) {}
+
   // POST /student-portal/login — PUBLIC.
   //
   // EVERY failure path below returns the SAME UnauthorizedError with the SAME
@@ -239,6 +244,24 @@ export class StudentPortalService {
       select: { id: true, name: true, slug: true },
     });
     return { student: toStudentDto(student.row, student.enrollment), school };
+  }
+
+  // Both results reads go through ReleasedResultsService — the SAME instance
+  // method the guardian portal calls. This service adds only the tenant
+  // transaction and the studentId, which comes from the session and never
+  // from the request. No RELEASED filter appears here; if one ever did, that
+  // would be the second filter D28 exists to prevent.
+  async listResults(ctx: StudentAuthContext): Promise<ReleasedResultListResponse> {
+    const data = await withTenant(ctx.schoolId, (db) =>
+      this.releasedResults.listForStudent(db, ctx.studentId),
+    );
+    return { data };
+  }
+
+  async getResult(ctx: StudentAuthContext, termId: string): Promise<ReleasedResultDetailDto> {
+    return withTenant(ctx.schoolId, (db) =>
+      this.releasedResults.getForStudent(db, ctx.studentId, termId),
+    );
   }
 
   async logout(ctx: StudentAuthContext): Promise<void> {

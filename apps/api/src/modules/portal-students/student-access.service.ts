@@ -9,9 +9,12 @@ import {
   type IssueStudentInvitationResponse,
   type StudentPortalState,
   type StudentPortalStatusDto,
+  type ReleasedResultDetailDto,
+  type ReleasedResultListResponse,
 } from "@school-kit/types";
 
 import type { GuardianAuthContext } from "../../common/auth/guardian-auth-context";
+import { ReleasedResultsService } from "../report-cards/released-results.service";
 
 // Phase 6 / Slice 3 — the guardian's controls over their child's portal
 // access: issue an invitation, read the state, and turn it off.
@@ -31,6 +34,8 @@ export const STUDENT_INVITATION_TTL_MS = 1000 * 60 * 60 * 24 * 7;
 
 @Injectable()
 export class StudentAccessService {
+  constructor(private readonly releasedResults: ReleasedResultsService) {}
+
   // ---------------------------------------------------------------------
   // D27 — authorization is an EXPLICIT check that RAISES, performed BEFORE
   // and SEPARATELY from the write. Never inferred from rowCount.
@@ -244,6 +249,49 @@ export class StudentAccessService {
         sessionsRevoked: sessions.count,
         invitationsRevoked: invitations.count,
       };
+    });
+  }
+
+  // ---------------------------------------------------------------------
+  // Phase 6 / Slice 4 — the GUARDIAN half of results (D29).
+  //
+  // These live here rather than in PortalStudentsService for one reason:
+  // assertLinked is private to this class, and cross-family authorization is
+  // the entire security question on this read. Reaching for it from another
+  // service would mean widening it to public, which is how a check that
+  // currently cannot be skipped becomes one that can.
+  //
+  // Both methods delegate to the SAME ReleasedResultsService instance method
+  // the student's own endpoints call. That shared call is what makes
+  // "nothing is shown to the student earlier than to the guardian" (D28)
+  // structural rather than a convention — no RELEASED filter appears in this
+  // file, and if one ever did, that would be the drift D28 exists to
+  // prevent.
+  //
+  // Note the ORDER: assertLinked runs before the read, inside the same
+  // transaction, exactly as it does for the three writes above. A read is
+  // where it is most tempting to fold the ownership check into the query's
+  // WHERE clause — which would collapse "not your child" and "no results
+  // yet" into the same empty list, and lose the 403 entirely.
+  // ---------------------------------------------------------------------
+  async listResults(
+    ctx: GuardianAuthContext,
+    studentId: string,
+  ): Promise<ReleasedResultListResponse> {
+    return withTenant(ctx.schoolId, async (db) => {
+      await this.assertLinked(db, ctx.guardianId, studentId);
+      return { data: await this.releasedResults.listForStudent(db, studentId) };
+    });
+  }
+
+  async getResult(
+    ctx: GuardianAuthContext,
+    studentId: string,
+    termId: string,
+  ): Promise<ReleasedResultDetailDto> {
+    return withTenant(ctx.schoolId, async (db) => {
+      await this.assertLinked(db, ctx.guardianId, studentId);
+      return this.releasedResults.getForStudent(db, studentId, termId);
     });
   }
 }
