@@ -16,6 +16,7 @@ import {
 
 import * as password from "../../common/auth/password";
 import { createStudentSession, hashStudentToken } from "../../common/auth/student-sessions";
+import { mayActivate, mayHoldSession } from "../../common/auth/student-portal-status";
 import type { StudentAuthContext } from "../../common/auth/student-auth-context";
 import { loadCurrentEnrollmentForStudent } from "../enrollments/enrollments.service";
 
@@ -43,8 +44,6 @@ interface ResolveStudentInvitationRow {
   student_id: string;
   expires_at: Date;
 }
-
-const PORTAL_ALLOWED_STATUS = "ACTIVE";
 
 // Fixed argon2id hash for the timing-attack defence when no candidate exists,
 // same pattern and rationale as AuthService.dummyVerifyHash and
@@ -139,7 +138,7 @@ export class StudentPortalService {
     // Status is checked AFTER the password, deliberately. Checking it first
     // would let an attacker who guessed an admission number distinguish
     // "enrolled" from "withdrawn" without knowing any password, by timing.
-    if (row.student_status !== PORTAL_ALLOWED_STATUS) {
+    if (!mayHoldSession(row.student_status)) {
       await this.recordFailedLogin(input, ctx, "NOT_ACTIVE", row.school_id, row.student_id);
       throw new UnauthorizedError("INVALID_CREDENTIALS", "Invalid sign-in details.");
     }
@@ -311,9 +310,13 @@ export class StudentPortalService {
       if (!target) {
         throw new NotFoundError("Student not found.");
       }
-      if (target.status !== PORTAL_ALLOWED_STATUS) {
-        // A student withdrawn between invitation and acceptance must not be
-        // able to complete setup.
+      if (!mayActivate(target.status)) {
+        // Deliberately the NARROWER set: a student who has left the school
+        // (WITHDRAWN/GRADUATED) may keep signing in to an account they
+        // already have, but may not obtain a FIRST credential here — there is
+        // no live school relationship left for a guardian to supervise. Also
+        // covers the plain race: a student withdrawn between invitation and
+        // acceptance must not be able to complete setup.
         throw new GoneError("INVITATION_NOT_AVAILABLE", "This link is no longer available.");
       }
 

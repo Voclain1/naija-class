@@ -1592,3 +1592,182 @@ the other parent set up — is real but is not solved by `isPrimary` either
 is addressed by the audit trail: every issue and every deactivation records
 **which** guardian acted, so a dispute is answerable after the fact. That is
 already implemented and tested.
+
+---
+
+## 15. Slice 4 plan-first — the student mobile surface
+
+Written 2026-08-16, after slices 1–3 shipped (PR #181) and the status
+asymmetry was corrected (PR #183).
+
+### 15.1 Two findings that change this slice before it starts
+
+The framing handed to this plan was: *student results must mirror the exact
+same gate already governing guardian visibility — nothing shown to the
+student earlier than what has been released for the guardian. Timetable is
+fine as a first, ungated surface.*
+
+The constraint is right and this plan adopts it in full. But both of its
+premises turn out to be false about the current codebase, and each one is
+load-bearing.
+
+**Finding 1 — there is no guardian results surface to mirror.** The guardian
+portal exposes exactly three domains: `portal-students`, `portal-finance`
+(invoices), `portal-payments`. There is no report-card or assessment
+endpoint anywhere behind `GuardianAuthGuard`. Verified by reading every
+route in `portal-students.controller.ts` and grepping both portal modules
+for `reportCard`/`assessment` — no hits.
+
+So "mirror the guardian gate" cannot be implemented as "call the same
+endpoint the guardian calls". **There is no such endpoint.** A parent today
+cannot see their child's results in School Kit at all.
+
+What *does* exist is the gate itself, and it is a good one:
+`ReportCardStatus` runs `DRAFT` → `SUBJECT_REVIEWED` → `FORM_REVIEWED` →
+`PRINCIPAL_APPROVED` → `RELEASED`, with `releasedAt` stamped at the final
+transition, a release endpoint restricted to owner/admin, and a
+`released-guard.ts` that freezes a released card. `RELEASED` is documented
+in the schema as literally "parent-visible". The gate is real, tested, and
+already the school's own definition of "ready to be seen". It has simply
+never had a reader attached to it.
+
+The constraint therefore restates as: **`RELEASED` is the gate, and the
+student and the guardian must read through one shared server-side helper —
+not two endpoints that happen to filter the same way today.** That is a
+stronger guarantee than mirroring an endpoint would have given, because it
+cannot drift.
+
+**Finding 2 — there is no timetable.** No `Timetable`, `Period`,
+`Schedule`, or `Lesson` model; no `dayOfWeek`, no `startTime` anywhere in
+`schema.prisma`. `LessonPlan` is content authoring (topic, objectives,
+generated sections) with no scheduling fields at all.
+
+"Timetable is fine as a first, ungated surface" assumes a timetable exists
+to render. Building one is not a screen — it is a feature: a period grid per
+class arm, day/time slots, subject-and-teacher assignment per slot, an admin
+authoring UI, and term-boundary behaviour. That is comparable in size to
+everything in slices 1–3 combined, and none of it is mobile work.
+
+### 15.2 What this means for scope — recommendation
+
+Slice 4 as conceived was "the easy ungated screen plus the hard gated one".
+In fact the ungated screen is the expensive one and the gated screen is
+nearly free, because its gate is already built and only needs a reader.
+
+**Recommended scope — build the results surface, drop the timetable.**
+
+| In | Out |
+|---|---|
+| Shared `RELEASED`-gated results reader | Timetable data model |
+| `GET /student-portal/results` (term list) | Timetable authoring UI |
+| `GET /student-portal/results/:termId` (one card) | Timetable screen |
+| `GET /portal/students/:id/results` — the guardian half, same helper | Report-card PDF download (see D31) |
+| Student mobile: results list + detail | |
+| Offline cache for both | |
+
+Two reasons to prefer this over building the timetable first:
+
+1. **Results are the reason a family opens the app.** A parent who cannot
+   see results in School Kit is the gap most visible to a paying customer,
+   and it exists today for guardians as much as students.
+2. **It closes an asymmetry that would otherwise ship.** Building the
+   student results screen alone would give a child access their own parent
+   does not have — which is the precise inversion of the supervision model
+   slice 3 was built on. The guardian half is not scope creep here; it is
+   what keeps the constraint coherent.
+
+If the timetable is wanted, it should be its own slice with its own
+plan-first, and it is genuinely a Phase-2-shaped feature (academic
+structure) that arrived late rather than a mobile one.
+
+### 15.3 Decisions
+
+**D28 — `RELEASED` is the only gate, and it is read in ONE place.**
+A single `loadReleasedReportCards(db, studentId, opts)` helper in a shared
+service, called by both the student and guardian controllers. Neither
+controller may query `report_cards` directly. The status filter is
+`status === "RELEASED"`, never `releasedAt !== null` — those are the same
+today, but the first is the school's decision and the second is a timestamp
+that a backfill or a data fix could set independently.
+
+Rationale: the constraint is "nothing shown to the student earlier than the
+guardian". Two endpoints filtering identically satisfy that on the day they
+are written and stop satisfying it the first time one is edited. One helper
+makes it structural — the same instinct as the cadence review's refusal to
+merge the session resolvers: put the guarantee where it cannot be forgotten.
+
+**D29 — the guardian results endpoint ships in this slice.**
+`GET /portal/students/:id/results`, behind `GuardianAuthGuard`, reusing
+`assertLinked` from `student-access.service.ts` so cross-family reads get
+the same 404-then-403 treatment D27 established for writes. Without this,
+slice 4 gives a child something their parent cannot see.
+
+**D30 — no separate "student results" DTO shape.**
+One `ReportCardSummaryDto` / `ReportCardDetailDto` in
+`packages/types/src/report-cards/`, used by both principals. If the two
+audiences ever need different fields, that is a deliberate later decision
+with a named reason, not an accident of two people writing two DTOs.
+
+**D31 — the PDF is out of scope for this slice.**
+`artifactUrl` points at R2 and rendering runs through the render worker,
+which `docs/deferred.md` records as having a broken wake path. Serving a PDF
+to a student would need a presigned-URL flow (the `getExpenseReceiptUrl` /
+school-logo pattern), a decision about TTL for a document a child may want
+to keep, and a working render worker. The structured card renders natively
+on mobile without any of that. Flagged, not built.
+
+**D32 — results are cached offline; they are the best possible cache
+candidate.** A released report card is immutable by `released-guard.ts`, so
+the usual staleness objection does not apply: a cached released card cannot
+be wrong, only absent. Cache with a long TTL and no background refetch on
+the detail screen. This is the first surface in the app where the offline
+layer from slice 2 earns its place rather than merely existing.
+
+**D33 — an empty results list is a first-class state, not an error.**
+Most students will have nothing released for most of the year. The screen
+says so plainly ("Nothing has been released yet") rather than showing a
+spinner, an empty table, or an error. Named here because it is the state the
+majority of users will see the majority of the time, and therefore the one
+most likely to be treated as an edge case and get the least care.
+
+### 15.4 Verification bar
+
+Same bar as slice 3, which means the negative walk is a deliverable, not an
+afterthought:
+
+1. A student CANNOT read a card in any of `DRAFT`, `SUBJECT_REVIEWED`,
+   `FORM_REVIEWED`, `PRINCIPAL_APPROVED` — one case per status, over real
+   HTTP, with a `RELEASED` **control** proving the endpoint works at all.
+2. A student cannot read another student's card in the same school (the D27
+   cross-family case, now on a read).
+3. A student cannot read across schools.
+4. A guardian sees exactly what their child sees — asserted by comparing the
+   two responses for equality in one test, not by two separate assertions
+   that could drift apart.
+5. A guardian cannot read a child they are not linked to (404/403 split).
+6. A `WITHDRAWN`/`GRADUATED` student can still read their released results —
+   the direct payoff of PR #183, and the case proving that fix was worth
+   making.
+7. Mutation check: reverting the status filter must fail the suite.
+
+### 15.5 Open questions
+
+1. **Does a released card become invisible if the school later reopens the
+   term?** `released-guard.ts` freezes edits, but reopening is a separate
+   flow. Recommended default: **stay visible.** A family that has seen a
+   result should not have it silently vanish; if a school must correct one,
+   that is a re-release, not a disappearance.
+2. **Should the student see their class position?** `overallPosition` is on
+   the model. Recommended default: **show it if the school released it** —
+   filtering fields per principal reintroduces exactly the drift D30 exists
+   to prevent. If a school does not want positions shown, that is a
+   school-level setting, not a student-vs-guardian distinction.
+
+### 15.6 Estimate
+
+Smaller than slice 3, because there is no new principal, no new session
+table, and no SECURITY DEFINER function — every read runs inside an existing
+guard under ordinary RLS. Roughly: shared helper and DTOs, two student
+endpoints, one guardian endpoint, two mobile screens, the offline wiring,
+and the seven-case negative walk. The gate already exists; this slice
+attaches a reader to it.
