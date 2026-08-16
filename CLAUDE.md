@@ -329,12 +329,86 @@ and vice versa, cross-tenant INSERTs are rejected by `WITH CHECK` on both
 new tables **with a valid GUC set**, and a control insert under the correct
 GUC succeeds so those rejections are not passing for the wrong reason.
 
-**The "+3" cadence review is DUE AT 20 and is therefore due with this
-migration** — flagged, and NOT yet performed. This is the sixth consecutive
-flag (8, 12, 15, 16, 19, 20), and the honest note is that the previous five
-were each written by someone who also did not do the review. It is called
-out here rather than quietly carried so that the next person reading this
-table knows the debt is real and current, not historical.
+**The "+3" cadence review was due at 20 and HAS NOW BEEN DONE** — see the
+review immediately below, carried out 2026-08-16 after five consecutive
+flags went unactioned (8, 12, 15, 16, 19).
+
+**THE "+3" CADENCE REVIEW IS DONE (2026-08-16), at count 20.** Performed
+against `pg_proc` — actual signatures and return shapes read from a live
+database, not from this table's description of them. Sixth time it was due;
+first time since the count-16/17 review that it was actually carried out.
+
+**Verdict: NO consolidation. The current shape is correct — and for the
+session family, consolidation would be an active security regression.**
+
+The 20 functions fall into five non-overlapping families:
+
+| Family | Count | Members |
+|---|---|---|
+| Session resolvers | 4 | `auth_resolve_session`, `auth_resolve_guardian_session`, `auth_resolve_student_session`, `platform_admin_resolve_session` |
+| Invitation / token resolvers | 4 | staff, guardian and student invitations, plus `auth_resolve_password_reset_token` |
+| Pre-tenant credential lookups | 4 | `auth_lookup_user_for_login`, `..._for_password_reset`, `auth_lookup_guardians_for_login`, `auth_lookup_student_for_login` |
+| Platform-admin cross-tenant reads | 5 | 3 list functions, `..._check_owner_email_available`, `auth_check_signup_uniqueness` |
+| Domain primitives (not RLS escapes) | 3 | `create_audit_log_partition`, `encrypt_bvn`, `decrypt_bvn` |
+
+**The session family is the strongest consolidation candidate on paper, and
+it must never be consolidated.** All four take an identical signature
+(`p_token_hash text`) and return overlapping shapes, which is exactly what a
+"merge these" instinct keys on. The reason to refuse is stronger than the
+"it would widen a return row" argument the previous two audits used:
+
+The three principal session tables are **separate tables** — `sessions`,
+`guardian_sessions`, `student_sessions`. Today, a student's bearer token
+presented to the staff `AuthGuard` resolves to **nothing**, because
+`auth_resolve_session` reads only `sessions`. Cross-principal token confusion
+is *structurally impossible*. A consolidated resolver would `UNION` across
+all three, making every token resolvable at every guard, and the boundary
+would survive only if each caller remembered to check a returned
+`principal_type`. That converts an impossibility into a convention — the same
+trade this codebase already refused for `basePrisma` and for the Anthropic
+client, and the wrong direction for the one boundary separating a child's
+session from a staff member's.
+
+The other families are unmergeable on plainer grounds: `auth_lookup_student_
+for_login` takes a different key entirely (`slug` + `admission_number`, not
+email); `auth_lookup_guardians_for_login` is multi-row; the student
+invitation resolver is deliberately far narrower than the staff and guardian
+ones (no name, no email — it backs a PUBLIC endpoint taking an
+attacker-supplied token) and filters liveness in its own `WHERE`; and
+`auth_lookup_user_for_password_reset` exists precisely so the reset path
+never sees `password_hash`.
+
+**The review's real finding is not about merging — it is that the four
+session resolvers DISAGREE ABOUT REVOCATION, and two of them cannot revoke
+at all:**
+
+| Resolver | Revocation signal returned |
+|---|---|
+| `auth_resolve_student_session` | `student_status` **and** `portal_enabled` — school-side and guardian-side, both re-read per request |
+| `auth_resolve_session` (staff) | `user_is_active` |
+| `auth_resolve_guardian_session` | **none** — `Guardian` has no `is_active`; clearing `password_hash` is the only lever, and it does not invalidate a live session |
+| `platform_admin_resolve_session` | **none** — no platform-admin deactivation flow exists |
+
+Slice 3 made this sharper rather than causing it: students now have the
+strongest revocation story in the system, and the two principals with the
+*most* access — a parent, and a cross-tenant platform admin — have the
+weakest. A guardian whose account should be cut off keeps a working session
+for up to 30 days.
+
+**Recommended, not done here** (out of slice 3's scope, and both are small):
+add an `is_active`-equivalent to `Guardian` and return it from
+`auth_resolve_guardian_session`; return `user_is_active` from
+`platform_admin_resolve_session`. Logged in `docs/deferred.md`.
+
+Also noted and deliberately NOT acted on: the invitation resolvers are
+inconsistently named (`auth_resolve_invitation_by_token_hash` and
+`auth_resolve_guardian_invitation_by_token_hash` carry a `_by_token_hash`
+suffix; `auth_resolve_student_invitation` does not). Renaming would touch
+every call site and the conformance spec's pinned name list, for zero
+behavioural gain. Recorded so the inconsistency reads as known rather than
+accidental.
+
+**Next review due at 23.**
 
 **Current count: 20.**
 

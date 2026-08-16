@@ -9,6 +9,24 @@ Format:
 
 ## Captured so far
 
+- [ ] **Two of the four session resolvers have no revocation signal at all**
+  (found by the SECURITY DEFINER cadence review, 2026-08-16). `auth_resolve_
+  student_session` returns `student_status` + `portal_enabled` and
+  `auth_resolve_session` returns `user_is_active`, so both staff and students
+  can be cut off mid-session. `auth_resolve_guardian_session` returns
+  neither — `Guardian` has no `is_active` column, and clearing
+  `password_hash` blocks future logins without touching a live session, so a
+  guardian who should lose access keeps it for up to 30 days.
+  `platform_admin_resolve_session` is the same, for the single most
+  privileged principal in the system.
+  Slice 3 sharpened this rather than causing it: the child now has the
+  strongest revocation story and the two principals with the most access have
+  the weakest. Fix is small in both cases — add an `is_active`-equivalent to
+  `Guardian` and return it; return `user_is_active` from the platform-admin
+  resolver — but each is a schema/behaviour change with its own blast radius,
+  so neither was smuggled into an unrelated slice. Trigger: before any real
+  guardian offboarding is needed, or the next time either resolver is touched.
+
 - [ ] **The Paystack leg of guardian mobile checkout has never been round-tripped**
   (logged 2026-08-15, Phase 6 / Slice 2). **Gates "slice 2 is fully complete" —
   explicitly NOT a blocker for slice 3**, which builds the auth/session

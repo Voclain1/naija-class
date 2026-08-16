@@ -1516,3 +1516,79 @@ decision.
 4. **Should activation be available to any linked guardian, or only
    `isPrimary`?** Proposed: any linked guardian, because requiring the
    primary blocks the parent who actually has the phone.
+
+---
+
+### 14.13 Recommended defaults for §14.12 — resolved 2026-08-16
+
+Written after building the surface, so these supersede the guesses in
+§14.12. **Two of the four reverse what that section proposed**, and both
+reversals come from the same place: the threat model looks different once the
+enumerable username space is real code rather than a paragraph.
+
+**Q1 — Lockout threshold. RECOMMENDATION: no account lockout at all.
+Per-`(school, admission)` throttling with escalating delay instead.
+[reverses §14.12's "10 failures / 15 minutes"]**
+
+Account lockout over an enumerable username space is a **denial-of-service
+handed to the attacker**. Admission numbers are sequential and school slugs
+are public; a script that can enumerate a roster can equally well lock every
+account in it. Ten deliberate failures per student, at 400 students, is a few
+thousand requests — a school's entire cohort locked out on the morning of an
+exam, by design, using the security control as the weapon.
+
+Instead: keep the 5/min per-IP throttle already shipped, and add a Redis
+counter keyed on `(schoolId, admissionNumber)` that **slows** rather than
+blocks — after 10 failures in 15 minutes, that pair is limited to roughly one
+attempt per minute for the next 15. A child retrying their own password gets
+in on the next try; an attacker's throughput collapses by two orders of
+magnitude; nobody is ever locked out of their own account by someone else's
+behaviour. The counter keys on the pair, not the IP, because IP rotation is
+the cheap part of this attack.
+
+**Q2 — Cap or sample `student.login-failed` rows? RECOMMENDATION: no. Keep
+1:1, and revisit only on evidence.**
+
+The concern assumed unbounded volume, and it is already bounded by the layer
+in front: throttled requests are rejected before the service runs, so they
+write nothing. With 5/min per IP the worst case is ~300 rows/hour/IP, into a
+table that is already monthly-partitioned. Sampling would trade a real
+capability — a school seeing that its roster is being walked — against a cost
+that has not been demonstrated. Revisit if a real incident produces real
+volume; do not pre-optimise the monitoring away before it has ever been used.
+
+**Q3 — Does a `SUSPENDED` student keep read access? RECOMMENDATION: YES.
+[reverses §14.12's proposed "no"]**
+
+Suspension is a **behavioural** sanction and is usually temporary. Cutting
+portal access converts it into an **academic** one — the suspended child, who
+is already missing lessons, also loses the results, timetable and fee
+information that would help them keep up. No school intends that when it
+suspends a pupil for a fortnight, and a system that quietly imposes it is
+making a disciplinary decision the school did not make.
+
+The other non-`ACTIVE` statuses should still lose access, and for a reason
+that separates them cleanly: `WITHDRAWN` and `GRADUATED` mean the child has
+**left the school**, and `INACTIVE` is an administrative hold. Those are
+"no longer our pupil"; `SUSPENDED` is "our pupil, currently in trouble".
+
+**This is a code change that has NOT been made.** `PORTAL_ALLOWED_STATUS` is
+currently the single value `ACTIVE`, in both `StudentAuthGuard` and
+`StudentPortalService.login`, so as shipped a suspended child IS locked out.
+It is a two-line change to a set plus test updates, and it is a product call,
+so it is proposed here rather than assumed.
+
+**Q4 — Any linked guardian, or only `isPrimary`? RECOMMENDATION: any linked
+guardian. [confirms §14.12]**
+
+Requiring `isPrimary` to switch access **off** is the wrong asymmetry: the
+parent holding the phone at 10pm, on a device they believe is compromised,
+must be able to act. Restricting the destructive direction is protection
+aimed at the wrong risk.
+
+The residual concern — one parent in a separated family switching off a child
+the other parent set up — is real but is not solved by `isPrimary` either
+(the primary is whoever the school recorded first, not whoever is right). It
+is addressed by the audit trail: every issue and every deactivation records
+**which** guardian acted, so a dispute is answerable after the fact. That is
+already implemented and tested.
