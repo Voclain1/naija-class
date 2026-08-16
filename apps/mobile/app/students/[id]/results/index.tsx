@@ -55,7 +55,7 @@ export default function ResultsListScreen() {
 
   return (
     <Screen>
-      <Stack.Screen options={{ title: "Results" }} />
+      <Stack.Screen options={{ headerShown: true, title: "Results" }} />
       <ScrollView contentContainerStyle={styles.content}>
         {resultsQuery.isPending && <CenteredMessage>Loading results…</CenteredMessage>}
 
