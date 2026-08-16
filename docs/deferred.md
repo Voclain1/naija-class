@@ -1676,3 +1676,70 @@ approval completes (separately blocked on Arinzechukwu's business
 documents)") — that parenthetical is the same dependency, named vaguely and
 buried inside an unrelated item, which is why this entry exists. That gate
 becomes moot rather than merely satisfied once SMS is live.
+
+---
+
+## Phase 6 / Slice 3 — student portal follow-ups (opened 2026-08-16, PR #181)
+
+Both of these were raised, argued and decided during the slice-3 review;
+neither blocked the merge. They are recorded here rather than in the PR
+body so they survive the merge being squashed.
+
+### Login lockout for the student portal — approved, NOT yet built
+
+`POST /student-portal/login` currently ships behind the ordinary per-IP
+throttle (5/min) and nothing else. Approved shape, per-`(school_id,
+admission_number)` in Redis:
+
+| Failures in window | Response |
+|---|---|
+| 1–5 | Normal, no delay |
+| 6–10 | `429` with `Retry-After`, escalating 5s → 15s → 30s → 60s → 120s |
+| 11+ | Hard lock, **15 minutes**, sliding on further attempts |
+
+Window 30 minutes; counter cleared on any successful login; key
+`student-login-fail:{schoolId}:{admissionNumber}`.
+
+**Two constraints that matter as much as the numbers, and are easy to get
+wrong:**
+
+1. **The counter must increment for admission numbers that do NOT exist.**
+   If it only counts against real students, the throttle becomes the
+   enumeration oracle that the uniform `INVALID_CREDENTIALS` response and
+   the dummy-argon2-verify path exist to prevent — an attacker learns a
+   valid admission number by observing which ones begin rate-limiting. Key
+   on the supplied string, never on a resolved student row.
+2. **The lock must NOT extend to invitation-accept.** Admission numbers are
+   sequential and school slugs are public, so a script can lock a whole
+   cohort. Leaving the accept path open means a locked-out child's
+   guardian can issue a fresh single-use invite and restore access
+   immediately, bounding the denial of service at "15 minutes, or less if
+   the parent acts". The accept path carries its own single-use token, so
+   this is not a bypass.
+
+The residual DoS is real and accepted: ~11 requests per student is enough
+to degrade a cohort's logins for 15 minutes. This is why the lock is
+sliding-but-temporary and why 15 minutes should not be raised.
+
+### `WITHDRAWN` / `GRADUATED` students lose access to their own records — OPEN product decision
+
+`PORTAL_ALLOWED_STATUS` is the single value `"ACTIVE"`, in three places:
+`StudentAuthGuard`, `StudentPortalService.login`, and the invitation-accept
+gate. Every non-`ACTIVE` status therefore loses portal access —
+`SUSPENDED`, `INACTIVE`, `WITHDRAWN` and `GRADUATED` alike.
+
+The slice-3 review debated `SUSPENDED` at length and settled on "suspended
+students lose access", which is what ships. **`WITHDRAWN` and `GRADUATED`
+were never separately considered** — they fall out of the same blanket
+gate. The practical consequence: a student loses their results and history
+the day the school marks them graduated, which is precisely when a
+school-leaver is most likely to want them.
+
+Shipped as-is deliberately: `ACTIVE`-only is the more restrictive setting,
+so it cannot leak anything, and widening it later is purely additive. But
+it is an inherited default, not a decision, and should become one.
+
+If widened, `PORTAL_ALLOWED_STATUS` becomes a set and all three call sites
+read from it — note that the invitation-accept gate is the one place where
+widening has a real security question attached (should a graduated student
+be able to *newly activate* an account, or only keep an existing one?).
