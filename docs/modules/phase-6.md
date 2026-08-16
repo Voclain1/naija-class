@@ -1090,6 +1090,133 @@ because "deactivation" is doing two jobs in ordinary speech:
 Cost: roughly half a day of the estimate, most of it tests rather than the
 endpoint.
 
+**D26 — Activation is a single-use INVITATION TOKEN issued by a guardian, not
+a password the guardian types. Deactivation burns the token.
+[approved 2026-08-15 at review — SUPERSEDES the activation half of D21, the
+"reactivation is just activation again" clause of D25, and D24's placement]**
+
+The earlier design had a guardian POST a password directly for their child.
+That is rejected, and the reasoning is worth keeping because it generalises:
+
+> A session-only "off" switch that a trivial re-scan defeats is a **false
+> safety control — worse than none at all**, because it tells a parent they
+> have revoked access when they have not.
+
+Under the old design, deactivation nulled `password_hash` and deleted
+sessions. But if the child still held anything reusable — a link, a code, a
+screenshot of one — the control was theatre. The fix is to make the thing
+the child holds **single-use**, and to make deactivation **burn it**.
+
+**The flow.**
+
+1. Guardian, on their child's detail page, taps *Invite to School Kit*.
+   `POST /portal/students/:id/portal-invitation` mints a token, returns the
+   raw value **once**, and stores only its sha256 hash.
+2. The child opens the link, and sets their own password on the accept page.
+   This mirrors the guardian's own accept flow exactly, which is the closest
+   precedent in the codebase (`/invitations/[token]`).
+3. Accepting **consumes** the token: `accepted_at` is stamped, and the
+   resolver will never return it again. A forwarded screenshot of an
+   already-used link is worth nothing — this is the specific scenario the
+   design is against, and it is common: parents forward things.
+4. Thereafter the child signs in with school slug + admission number +
+   password (D20 unchanged).
+
+**Deactivation (`POST /portal/students/:id/deactivate`) does three things in
+one transaction, and the third is the one this decision adds:**
+
+1. `password_hash = NULL` — no future sign-in;
+2. `DELETE` every `student_sessions` row — live sessions die on the next
+   request;
+3. `revoked_at = now()` on **every** outstanding un-accepted invitation for
+   that student — so nothing the child, or anyone they forwarded it to,
+   still holds can be replayed.
+
+**Reactivation is therefore NOT "activate again".** D25 said re-activation
+was the same endpoint with a new password; that is now wrong. A deactivated
+child comes back only when a guardian **deliberately issues a fresh
+invitation**. There is no path from "off" to "on" that does not pass through
+an explicit act by a parent — which is the entire point of the control.
+
+**Token properties.** 32 random bytes, base64url, sha256-hashed at rest,
+raw value returned exactly once (identical to session tokens and guardian
+invitations). Expiry 7 days — deliberately shorter than the guardian
+invitation's, because a child's link is more likely to sit unread in a
+family chat. Issuing a new invitation revokes any previous outstanding one,
+so at most one live token exists per student at any moment.
+
+**Consequence: a THIRD SECURITY DEFINER function, and the count lands on 20.**
+The child opening the invitation link has no session and no school context,
+so resolving the token is a pre-tenant read against a FORCE-RLS table — the
+same chicken-and-egg every other invitation lookup in this codebase has.
+`auth_resolve_student_invitation(token_hash)` is unavoidable. Count moves
+**17 → 20**, not 17 → 19.
+
+That is not a footnote: **20 is exactly the cadence-review trigger** CLAUDE.md
+set after the last review ("Next review due at 20"). It is due with this
+migration, not after it. See §14.13.
+
+**What D24 still governs**: the password policy (min 8, no composition rules,
+no PIN) is unchanged — it simply moves from the guardian's activation call to
+the child's accept call, which is where the password is now chosen. The login
+DTO stays lenient for the same anti-probing reason.
+
+**D27 — Authorization is an explicit link check that RAISES, before and
+separate from the write. Never inferred from rowCount.
+[approved 2026-08-16 at review — added after a live finding]**
+
+Established by testing the naive implementation against real RLS **before
+any service code existed**. Two facts, both measured as `app_user` with a
+valid school GUC — i.e. exactly a guardian's request context:
+
+**1. RLS does not protect one family from another.** A guardian not linked
+to a child in the *same school* can still see that child, and a plain
+`UPDATE students SET password_hash = NULL WHERE id = <other family's child>`
+**succeeds** (`UPDATE 1`). Every tenant boundary is satisfied; tenancy was
+never the boundary in question. The only thing that can stop this is a
+service-layer check.
+
+**2. The obvious "safe" fix hides an ambiguity.** Scoping the write by the
+link — `UPDATE ... WHERE id = ? AND EXISTS (link)` — yields:
+
+| Case | rowCount |
+|---|---|
+| Linked child, already deactivated | **1** |
+| Not linked (another family) | **0** |
+| Student does not exist | **0** |
+
+Worth recording precisely, because the first line disproves the obvious
+worry: already-deactivated returns **1**, not 0, since `UPDATE` counts rows
+*matched*, not rows *changed*. So rowCount does **not** conflate
+"unauthorized" with "already off".
+
+What it *does* conflate is **unauthorized** with **not found** — which must
+become **403** and **404**. Those are different answers to different
+questions, and a service that branches on `rowCount === 0` cannot tell them
+apart. It would either 404 a real authorization failure (leaking nothing, but
+misreporting) or 403 a typo'd id (leaking that the id is absent).
+
+**Therefore:**
+
+```
+1. Re-fetch the StudentGuardian link for (guardianId, studentId).
+2. No student row at all            -> NotFoundError    (404)
+3. Student exists, no link          -> ForbiddenError   (403)
+4. Only then perform the write, unscoped by the link.
+```
+
+The check **raises**, and it happens **before** the write and **separately**
+from it. The write is not defensively re-scoped, because a write whose safety
+depends on its own `WHERE` clause is a write whose safety cannot be asserted
+independently — and step 3 is the assertion. Both live in the same
+transaction, so the check cannot go stale between check and write.
+
+This applies to **every** guardian action on a child — `portal-invitation`,
+`deactivate`, `portal-status` — not just deactivation. It is the same shape
+`PortalStudentsService` already uses for reads; this decision makes it
+explicit and testable for writes, and gives the negative-walk suite a
+specific thing to assert rather than "returns an error".
+
 **D24 — Password policy: minimum 8 characters, no composition rules, no
 PIN. [proposed]**
 
@@ -1273,7 +1400,8 @@ comment:
 | Student A's session used against student B's `/me` in the **same family** (siblings, one guardian) | B's data never returned — `/me` resolves from the session, so the attempt is unrepresentable, and the test asserts that rather than trusting the URL shape |
 | Student A's session, student B in the **same school**, different family | refused |
 | Student A's session, student B in a **different school** | refused; and the SD resolver returns no cross-tenant row |
-| Guardian G activating / deactivating a child they are **not** linked to | 403, at every one of activate, deactivate, portal-status |
+| Guardian G acting on a child they are **not** linked to (same school, different family) | **403, not 404 and not a 200 with a 0-row no-op** (D27). RLS permits this write — only the service check stops it. |
+| Guardian G acting on a student id that does not exist | **404**, distinguishable from the 403 above even though the naive rowCount for both is 0 |
 | Guardian G in school X acting on a student in school Y | 403, and no row read |
 | A deactivated student's surviving session (row left in place) | refused on `portal_enabled` |
 | A `WITHDRAWN` student's live session | refused on `status` |

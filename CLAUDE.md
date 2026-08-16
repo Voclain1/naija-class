@@ -179,6 +179,9 @@ Discipline for every function in this category:
 | `platform_admin_list_users(school_id?)` | `20260802000000_platform_admin` | Cross-tenant (or single-school, when `p_school_id` is given) staff-account roster: `{ user_id, school_id, first_name, last_name, role_names, created_at, last_login_at, is_active }`. | email, phone, `password_hash`, totp*/bvn* fields, and — deliberately — `is_platform_admin` itself, so this read surface can't double as a way to enumerate who else holds platform-admin access. |
 | `platform_admin_check_owner_email_available(email)` | `20260807000000_platform_admin_school_provisioning` | Pre-write availability check for `POST /platform-admin/schools` (school provisioning — the surface's first write). Returns `{ is_available, reason }`, checking both `users.email` (global uniqueness) and any live `owner`-role `invitations` row for that email across all schools. | Row ids, names, school_id — returns only a boolean and a discriminator string. |
 | `platform_admin_list_paystack_setup_requests()` | `20260815000000_paystack_assisted_setup` | The platform operator's cross-tenant queue of schools awaiting a Paystack subaccount: `{ request_id, school_id, school_name, business_name, status, submitted_at, contact_name }`. Cross-tenant by definition ("every pending request, all schools") against a FORCE-RLS table whose policy keys off a single-school GUC — same constraint as the two list functions above. `business_name`/`contact_name` are not omission violations: the first is the school's own trading name shown to parents at Paystack checkout, the second identifies who to call; both are what make a row recognisable at a glance. | `account_number`, `bank_name`, `account_name`, `contact_email`, `contact_phone` — every banking/contact field. This list renders on page load for every pending request whether or not the operator is acting on one, so account numbers here would spread through logs, browser memory, and anything on screen on every visit. Revealing them is a separate, individually-audited call (`paystack-setup.reveal`) that runs under an ordinary GUC — **deliberately not a second SECURITY DEFINER function**, since once this list resolves a `school_id` a tenant exists and RLS governs the read normally. Mirrors `BvnService.revealBvn`. |
+| `auth_resolve_student_session(token_hash)` | `20260815120000_phase_6_slice_3_student_portal_auth` | StudentAuthGuard's session lookup — the third principal (staff, guardian, student). Resolves a bearer token to `{ session_id, student_id, school_id, expires_at, student_status, portal_enabled }`. Returns **two** authority signals, deliberately: `student_status` is the SCHOOL's judgement about enrolment, `portal_enabled` (`password_hash IS NOT NULL`) is the GUARDIAN's about credentials. Neither subsumes the other — a parent switching off their child's account must not alter enrolment, and a school withdrawal must not depend on a parent acting. The guard refuses on either, which also makes guardian deactivation authoritative even if the session-row DELETE did not take effect. | `password_hash` itself (only the derived boolean leaves the DB); first/last name, DOB, photo, address, phone, email, blood group, medical notes, admission number. The guard runs pre-tenant and attaches its result to the request — this is the most PII-dense row in the schema and almost none of it is the guard's business. |
+| `auth_lookup_student_for_login(school_slug, admission_number)` | `20260815120000_phase_6_slice_3_student_portal_auth` | Student login's pre-tenant lookup. Both `schools` and `students` must be read before a tenant is known: the caller supplies a school SLUG, so even the GUC's value is one of the things this resolves. **Single-row by construction** — `schools.slug` is globally unique and `students` carries `UNIQUE(school_id, admission_number)`. Deliberately does NOT copy `auth_lookup_guardians_for_login`'s multi-row shape or its argon2-verify loop: that exists only because `Guardian.email` is per-school unique, is documented as interim, and students cannot reproduce the ambiguity. Returns `{ student_id, school_id, password_hash, student_status, activated_at }`; `activated_at` is for AUDIT ONLY and must never change the response, since a divergent message is the enumeration leak this surface is most exposed to. | Names, DOB, contact details, medical notes — a login attempt is UNAUTHENTICATED, and admission numbers are sequential while school slugs are public, so returning PII here would hand it to anyone who can guess. Also the school's name/branding: nothing pre-auth needs it, and it would confirm a slug exists. |
+| `auth_resolve_student_invitation(token_hash)` | `20260815120000_phase_6_slice_3_student_portal_auth` | Resolves the single-use portal invitation a GUARDIAN issues for their child, for the two public endpoints a child hits before holding any credential. **Liveness is enforced in SQL, not in the service**: the WHERE clause requires `accepted_at IS NULL AND revoked_at IS NULL`, which is the enforcement point for both of D26's guarantees — single-use (an already-accepted token, e.g. a forwarded screenshot, resolves to nothing) and burnable (deactivation stamps `revoked_at` and this function stops returning it in the same transaction). In the service layer a future second caller could forget it, and "single-use" would become a convention rather than a property. Expiry is deliberately NOT in the WHERE clause — `expires_at` is returned so the caller can distinguish EXPIRED from INVALID, matching every other resolver here. | `token_hash` (the caller holds it); `issued_by`; `accepted_at`/`revoked_at` (never non-NULL in a returned row). And **the student's name** — the sharpest omission here: the accept page would read better as "Set a password for Adaeze", but this endpoint is public and takes an attacker-supplied token, so a name turns a leaked or brute-forced token into a disclosure of which child it belongs to. The page says "your password"; the child knows who they are. |
 
 **SECURITY DEFINER inventory audit (Phase 3 / Slice 12, 2026-07-08):** reviewed
 all 5 pre-existing functions for consolidation when the count crossed the
@@ -311,7 +314,29 @@ which weaken the discipline the table exists to enforce. The real gate remains
 `security-definer-inventory.spec.ts`, which holds at any count. Next review
 due at 20.
 
-**Current count: 17.**
+**Student portal auth (2026-08-15):** added three functions —
+`auth_resolve_student_session`, `auth_lookup_student_for_login`,
+`auth_resolve_student_invitation` — count moves **17 → 20**. The slice
+plan-first anticipated two; the third follows from D26 replacing
+guardian-typed passwords with a single-use invitation token, since a child
+opening that link has no session and no school context. Verified against a
+live database after applying: all three `prosecdef`, owned by `school_kit`,
+`search_path=public, pg_temp` pinned, EXECUTE granted to `app_user` with
+PUBLIC absent, `SELECT count(*) FROM pg_proc WHERE prosecdef` returning
+exactly 20, and the RLS boundary exercised as `app_user` — no-GUC reads
+return 0 rows, a school-A GUC sees only school A (0 school-B rows leaked)
+and vice versa, cross-tenant INSERTs are rejected by `WITH CHECK` on both
+new tables **with a valid GUC set**, and a control insert under the correct
+GUC succeeds so those rejections are not passing for the wrong reason.
+
+**The "+3" cadence review is DUE AT 20 and is therefore due with this
+migration** — flagged, and NOT yet performed. This is the sixth consecutive
+flag (8, 12, 15, 16, 19, 20), and the honest note is that the previous five
+were each written by someone who also did not do the review. It is called
+out here rather than quietly carried so that the next person reading this
+table knows the debt is real and current, not historical.
+
+**Current count: 20.**
 
 ### ESM module resolution
 

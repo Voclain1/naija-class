@@ -46,6 +46,7 @@ import { PortalAuthModule } from "./modules/portal-auth/portal-auth.module";
 import { PortalFinanceModule } from "./modules/portal-finance/portal-finance.module";
 import { PortalPaymentsModule } from "./modules/portal-payments/portal-payments.module";
 import { PortalStudentsModule } from "./modules/portal-students/portal-students.module";
+import { StudentPortalModule } from "./modules/student-portal/student-portal.module";
 import { ReportCardsModule } from "./modules/report-cards/report-cards.module";
 import { SchoolsModule } from "./modules/schools/schools.module";
 import { StaffBankAccountModule } from "./modules/staff-bank-accounts/staff-bank-account.module";
@@ -137,6 +138,7 @@ const isProd = process.env.NODE_ENV === "production";
     StaffBankAccountModule,
     PortalAuthModule,
     PortalStudentsModule,
+    StudentPortalModule,
     PortalFinanceModule,
     PortalPaymentsModule,
     PlatformAdminModule,

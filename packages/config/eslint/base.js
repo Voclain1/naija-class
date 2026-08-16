@@ -199,6 +199,16 @@ export const baseConfig = [
       // and platform-admin.service.ts's reads are cross-tenant BY DEFINITION
       // (platform_admin_list_schools/list_users) — there is no single
       // schoolId to scope a withTenant call to.
+      // Phase 6 / Slice 3 — student portal auth. Same category as the staff
+      // and guardian pairs above: student_sessions and
+      // student_portal_invitations are FORCE RLS, and both call sites resolve
+      // a bearer token or an invitation token PRE-TENANT via a SECURITY
+      // DEFINER function. There is no schoolId to scope a withTenant call to
+      // until after the lookup returns one — that is the whole reason those
+      // functions exist. Every subsequent read/write in both files goes
+      // through withTenant.
+      "**/common/auth/student-auth.guard.ts",
+      "**/modules/student-portal/student-portal.service.ts",
       "**/common/auth/platform-admin.guard.ts",
       "**/modules/platform-admin/platform-admin.service.ts",
       // School slug derivation (2026-08-12). Runs PRE-tenant by definition:
