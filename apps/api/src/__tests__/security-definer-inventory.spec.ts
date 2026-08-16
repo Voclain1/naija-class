@@ -46,6 +46,17 @@ const SECURITY_DEFINER_FUNCTIONS = [
   // deliberately does NOT get a second function (it runs under an ordinary
   // GUC once the school is known), so this initiative adds exactly one.
   "platform_admin_list_paystack_setup_requests",
+  // Phase 6 / Slice 3 — student portal auth (2026-08-15). THREE functions,
+  // not the two the slice plan-first anticipated: D26 replaced
+  // guardian-typed passwords with a single-use invitation token, and a child
+  // opening that link has no session and no school context, so resolving it
+  // is a pre-tenant read like every other invitation lookup here.
+  //
+  // This brings the count to 20 — exactly the cadence-review trigger set at
+  // the last review. That review is recorded in phase-6.md §14.13.
+  "auth_resolve_student_session",
+  "auth_lookup_student_for_login",
+  "auth_resolve_student_invitation",
 ] as const;
 
 interface SecurityDefinerRow {

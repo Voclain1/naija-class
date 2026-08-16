@@ -82,10 +82,14 @@ Phase 0 — no screens). **Do not treat 4 weeks as the number for the full §7
 list.** Either the phase runs long or slices 6–8 move to their own phase;
 that call is due before slice 6 starts, not during it.
 
-**Called 2026-08-14: slices 6 and 7 moved to Phase 6** (slice 8 shipped
-inside Phase 5). See "Moved out — now Phase 6" at the end of §2. The
-prediction above held exactly — both moved for the two reasons named here,
-RAG's content/vendor problem and the tutor's missing student-facing surface.
+**Called 2026-08-14: slices 6 and 7 moved out** (slice 8 shipped inside
+Phase 5). **Corrected 2026-08-15: they moved to Phase 7, not Phase 6.** See
+"Moved out — now Phase 7" at the end of §2. The prediction above held
+exactly — both moved for the two reasons named here, RAG's content/vendor
+problem and the tutor's missing student-facing surface. The correction
+separates those two reasons, which turn out to belong to different phases:
+the missing student-facing surface is Phase 6 (unblocked, buildable now),
+the content/vendor problem is Phase 7 (held pending a vendor decision).
 
 ---
 
@@ -134,31 +138,62 @@ see D16.
 
 ### Planned
 
-### Moved out — now Phase 6 **[decided 2026-08-14]**
+### Moved out — now Phase 7 **[decided 2026-08-14, corrected 2026-08-15]**
 
 **Phase 5 is scoped as slices 1–5 + 8. All are shipped. The phase is
-complete.** Slices 6 and 7 were formally moved to Phase 6, alongside the
-mobile app. This is the call §1 said was "due before slice 6 starts, not
-during it" — made, on schedule, rather than allowed to lapse into the phase
-quietly running long.
+complete.** Slices 6 and 7 were formally moved out. This is the call §1 said
+was "due before slice 6 starts, not during it" — made, on schedule, rather
+than allowed to lapse into the phase quietly running long.
 
-**Slice 6 — Curriculum ingestion / RAG → Phase 6.** Not scoped. `pgvector`
+**Correction (2026-08-15): they moved to Phase 7, not Phase 6.** The
+2026-08-14 call bundled RAG + tutor together with the mobile app under a
+single "Phase 6" label. That bundle was never one coherent initiative — it
+was this phase's overflow bolted onto a placeholder, and it inherited the
+placeholder's number. Two problems with it, both real:
+
+1. **It was already a numbering collision.** `ARCHITECTURE.md` §9 has
+   defined "Phase 6 — assignments and student portal (3 weeks)" since Phase
+   0. Two different Phase 6s, overlapping on the student portal, is exactly
+   how the `AIGeneration` / `AIInteractionLog` confusion started.
+2. **It bundled unblocked work with blocked work.** The mobile shell has no
+   exotic dependency and delivers standalone value. RAG/tutor is gated on a
+   real vendor-and-cost decision (below). Bundling them means the mobile app
+   is held hostage by a procurement negotiation — the precise failure mode
+   §1 predicted for slice 6 and this phase then lived through.
+
+The corrected split, which applies this phase's own "ship something real at
+each step" sequencing discipline rather than abandoning it at the boundary:
+
+- **Phase 6 = mobile shell + student portal + guardian mobile experience.**
+  Real, standalone value; no exotic blockers. Absorbs and supersedes
+  `ARCHITECTURE.md` §9's original Phase 6, closing the collision. See
+  `docs/modules/phase-6.md`.
+- **Phase 7 = curriculum RAG + student tutor.** Explicitly held, not
+  started, pending Arinzechukwu's decision on the embeddings vendor and its
+  cost model. "Held" means held: no schema, no migration, no ingestion
+  spike until that decision is deliberately made.
+
+**Slice 6 — Curriculum ingestion / RAG → Phase 7.** Not scoped. `pgvector`
 is enabled in `schema.prisma` and used by nothing. This is where topic
 identity stops being free text (D13) and therefore where
 `MasteryRecord.topicRef`'s meaning finally gets defined — it carries a live
 `@@unique` constraint, so that is a decision with teeth. Moved because its
 real blocker is choosing an embeddings vendor, which is a procurement and
-cost-model initiative of its own, not a slice of the AI layer.
+cost-model initiative of its own, not a slice of the AI layer. Confirmed
+2026-08-15: Anthropic still ships no embeddings API, so this genuinely
+requires a second AI vendor — a new API key, a new NDPR processor, and a
+new cost line. That is the decision being waited on.
 
-**Slice 7 — Student tutor → Phase 6.** Not scoped. Blocked on slice 6 and on
-a student-facing surface existing at all. Moved because its only real
-surface is student-facing, and `apps/mobile` is still the bare Expo scaffold
-from Phase 0 — no screens. Grouping it with the mobile build puts the
-feature in the same phase as the thing it needs in order to exist.
+**Slice 7 — Student tutor → Phase 7.** Not scoped. Blocked on slice 6 and on
+a student-facing surface existing at all. `apps/mobile` was the bare Expo
+scaffold from Phase 0 — no screens — and no student principal existed
+anywhere in the schema (`Student` has no `passwordHash`, no session
+relation). Phase 6 builds both of those. The tutor stays in Phase 7 with
+RAG, since it is useless without curriculum grounding.
 
 Both remain real, planned work with their decisions intact — D13's topic
 identity problem and the `MasteryRecord.topicRef` constraint do not go away
-by being renumbered. What changed is which phase carries them, and
+by being renumbered twice. What changed is which phase carries them, and
 therefore what "Phase 5 is done" means: it now means what shipped, not what
 was once listed.
 
@@ -429,13 +464,15 @@ retroactively define the meaning of `MasteryRecord.topicRef` — which carries
 a live `@@unique` constraint. That work happens only when something needs
 stable topic **identity**: RAG, mastery tracking, or a question bank. All
 deferred, and all landing together in the RAG slice — which as of 2026-08-14
-is Phase 6 work, not Phase 5's slice 6. The dependency is unchanged; only
-the phase it sits in moved.
+is no longer Phase 5's slice 6, and as of the 2026-08-15 correction sits in
+**Phase 7**, not Phase 6. The dependency is unchanged; only the phase it
+sits in moved (twice).
 
 ### D14 — Report-comment inputs are scores + attendance only **[recovered]**
 
 ARCHITECTURE §7 also lists **behaviour** as an input to report comments.
-There is no `Behaviour` model in this codebase (Phase 7). Stated as a
+There is no `Behaviour` model in this codebase (Phase 9 — renumbered from
+Phase 7 on 2026-08-15). Stated as a
 deliberate v1 omission rather than left for a reader to wonder about.
 
 The PII constraint is the harder half. `CLAUDE.md`: never send student PII to
@@ -645,11 +682,11 @@ first thing to reach for if real output reads repetitive.
 
 ## 10. Deferred to later phases
 
-- **Grading assistant** (essay + short-answer) — Phase 6, needs assignments.
+- **Grading assistant** (essay + short-answer) — Phase 8, needs assignments.
 - **Question bank / CBT** — see `docs/deferred.md`'s CBT capability
   assessment. Slice 2's `quiz` column is structured *text*, deliberately not
   a `Question` model with per-option rows.
-- **Behaviour as a report-comment input** — Phase 7, no model exists (D14).
+- **Behaviour as a report-comment input** — Phase 9, no model exists (D14).
 - **A/B testing framework for prompts** (ARCHITECTURE §7) — not built. The
   registry's versioning makes it possible; nothing routes traffic.
 - **Response caching** for repeated topic+level generations (ARCHITECTURE §7

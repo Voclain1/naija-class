@@ -9,6 +9,58 @@ Format:
 
 ## Captured so far
 
+- [ ] **Two of the four session resolvers have no revocation signal at all**
+  (found by the SECURITY DEFINER cadence review, 2026-08-16). `auth_resolve_
+  student_session` returns `student_status` + `portal_enabled` and
+  `auth_resolve_session` returns `user_is_active`, so both staff and students
+  can be cut off mid-session. `auth_resolve_guardian_session` returns
+  neither — `Guardian` has no `is_active` column, and clearing
+  `password_hash` blocks future logins without touching a live session, so a
+  guardian who should lose access keeps it for up to 30 days.
+  `platform_admin_resolve_session` is the same, for the single most
+  privileged principal in the system.
+  Slice 3 sharpened this rather than causing it: the child now has the
+  strongest revocation story and the two principals with the most access have
+  the weakest. Fix is small in both cases — add an `is_active`-equivalent to
+  `Guardian` and return it; return `user_is_active` from the platform-admin
+  resolver — but each is a schema/behaviour change with its own blast radius,
+  so neither was smuggled into an unrelated slice. Trigger: before any real
+  guardian offboarding is needed, or the next time either resolver is touched.
+
+- [ ] **The Paystack leg of guardian mobile checkout has never been round-tripped**
+  (logged 2026-08-15, Phase 6 / Slice 2). **Gates "slice 2 is fully complete" —
+  explicitly NOT a blocker for slice 3**, which builds the auth/session
+  foundation and touches none of this. Live verification against a running API
+  proved everything up to the Paystack call: route, `GuardianAuthGuard`, bearer
+  auth, path params, and typed error mapping all work, and the refusal
+  (`409 PAYSTACK_NOT_ENABLED`) carries parent-safe copy with no key material —
+  asserted, not assumed. What is unproven is the call itself: the dev school has
+  no Paystack subaccount, so no `authorization_url` was ever requested and
+  `runCheckout`'s open-browser-then-poll cycle has never run against a real
+  hosted checkout. Closing it needs a Paystack **test-mode** subaccount attached
+  to the dev school — an outward-facing action against the real Paystack account,
+  which is why it was not done unprompted. Trigger: before slice 2 is called
+  done, or the first time anyone touches `portal-payments`.
+
+- [ ] **Paystack checkout does not return the user to the mobile app** (logged
+  2026-08-15, Phase 6 / Slice 2). `PortalPaymentsService.initiate` hardcodes
+  the Paystack callback to `${PORTAL_BASE_URL}/payments/callback` — a web URL.
+  `apps/mobile` opens the hosted checkout in an in-app browser, so after
+  paying the guardian lands on the portal's web callback page *inside that
+  browser* and has to close it manually, rather than being deep-linked back
+  into the app. Accepted deliberately for slice 2, whose whole premise is
+  that guardian mobile ships against the existing `/portal` API with **zero
+  server changes** — fixing this needs either a client-supplied callback URL
+  (a new input on a money endpoint, which wants its own threat model) or a
+  scheme-aware callback that branches on caller.
+  **This is cosmetic, not a correctness bug**: `runCheckout` never treats the
+  redirect as proof of payment. It polls `GET /portal/payments/:reference`
+  after the browser closes, because the authoritative signal is the Paystack
+  webhook — the same reason the portal's own callback page polls. A parent
+  who force-quits mid-checkout still gets the right answer on next open.
+  Trigger: first real guardian complaint about the flow, or whenever a slice
+  is already touching `portal-payments`.
+
 - [x] ~~Per-school AI enablement has no UI and no endpoint~~ — **built before this script ran, which was the point.** `PATCH /platform-admin/schools/:schoolId/ai` plus a toggle on the super-admin school row shipped 2026-08-14 (PR #173): same guard, throttle and audit-row shape as `PATCH …/early-access`, with `ai_enabled` added to `platform_admin_list_schools()` so the toggle isn't a blind write. Kept here rather than deleted because the sequencing is the lesson: `packages/db/scripts/disable-ai-per-school.ts` closes the per-school gate on every existing school, and closing a gate with no sanctioned way to reopen it would have forced the first pilot enablement to be a hand-written `UPDATE` with no audit row. Build the re-open path first.
 
 - [ ] `School.aiEnabled` still `@default(true)` for newly created schools — the backfill above is a point-in-time fix on the existing population. Every school created after it (signup or `POST /platform-admin/schools`) arrives with AI on, so the population drifts back open one school at a time and the backfill has to be re-run. Deliberately NOT changed by that script: the default-true is a considered decision documented in `schema.prisma` beside `parentSummaryEnabled`'s deliberately-opposite default-false, and reversing it is a product call, not a backfill's business. The argument for flipping it got stronger once the item above shipped: enabling a school is now a one-click, audited platform-admin action, so defaulting new schools to `false` costs an operator one click on a school they were already looking at — rather than the hand-written SQL it would have cost before.
@@ -393,7 +445,10 @@ Format:
   `AI_ENABLED` is flipped and the first pilot school generates real output.
 
   **Status: DEFERRED, standing, no urgency — confirmed 2026-08-14.** This
-  explicitly does **not** block Phase 6. It is not a countdown and nothing is
+  explicitly does **not** block Phase 7 (renumbered from Phase 6 on
+  2026-08-15 — the AI work this refers to is RAG + tutor, now Phase 7). It
+  does not block Phase 6's mobile/student-portal work either, which ships no
+  AI output at all. It is not a countdown and nothing is
   waiting on it; it is recorded here so that the day someone reads a batch of
   real output and asks "how would we know if this got worse?", the two
   options above are already written down rather than rediscovered.
@@ -417,7 +472,8 @@ Format:
 - [ ] Agentic vs generative AI positioning — market may have shifted
   toward adaptive/agentic by Phase 5. Run live search before committing
   AI roadmap. Do NOT build multi-agent orchestration as solo founder.
-- [ ] Timetable, transport, library, hostel — Phase 7. Named so
+- [ ] Timetable, transport, library, hostel — Phase 9 (auxiliary
+  modules; renumbered from Phase 7 on 2026-08-15). Named so
   "do you have X?" has a clear deferred answer, not a blank.
 - [ ] WAEC/NECO localization is the moat (Khanmigo/Squirrel AI aren't
   localized) — keep leaning on it. Verify competitor claims when planning.
@@ -690,7 +746,8 @@ Format:
   Migrating to httpOnly cookie auth (or hybrid session lookup) would
   enable Server Components for SEO, smaller client bundle, server-
   side notFound() / redirect() flows. Cross-cutting refactor — likely
-  Phase 4 or Phase 7. Discovered slice 11 cp3.
+  Phase 4 or Phase 9 (auxiliary; renumbered from Phase 7 on
+  2026-08-15). Discovered slice 11 cp3.
 
 - [x] Student create/edit form rejects BLANK optional fields. The form
   (`apps/web/src/components/students/student-form.tsx`) validated raw form
@@ -1018,16 +1075,16 @@ not a commitment to that phase's exact shape or timing.
 - [ ] Student profiles (badges, achievements, milestones) — not named
   anywhere in ARCHITECTURE.md. Closest existing concepts are the plain
   `Student` profile (§5, §6.3) and the merit/demerit point system under
-  Behaviour (§6.15, Phase 7 per §9) — but gamification (badges/milestones)
+  Behaviour (§6.15, Phase 9 per §9 — renumbered from Phase 7 on 2026-08-15) — but gamification (badges/milestones)
   is a distinct product idea from either, not a documented feature. Needs
   its own decision on scope before it maps to a phase.
 
 - [ ] Timetable generator — ARCHITECTURE.md §6.5 lists a "Visual timetable
   builder with conflict detection" under Academic management, but this
   file's own "Roadmap / strategy" section (above) separately lists
-  "Timetable, transport, library, hostel — Phase 7." The two docs disagree
+  "Timetable, transport, library, hostel — Phase 9." The two docs disagree
   on which phase owns it — flagging the discrepancy here rather than
-  resolving it; whoever scopes this should reconcile §6.5 vs. the Phase 7
+  resolving it; whoever scopes this should reconcile §6.5 vs. the Phase 9
   roadmap note first.
 
 - [ ] Clinic/health records — ARCHITECTURE.md §6.14 (Health records) is
@@ -1050,8 +1107,10 @@ not a commitment to that phase's exact shape or timing.
 - [ ] Homework and assignments — ARCHITECTURE.md §6.8 (Assignments and
   homework) is fully specified (creation, submission incl. file/photo
   upload, auto-grading for MCQ, AI-assisted essay grading with teacher
-  approval, plagiarism flag) and matches Phase 6 ("assignments and student
-  portal") in §9. Nothing built yet.
+  approval, plagiarism flag). §9's original "Phase 6 — assignments and
+  student portal" was split on 2026-08-15: the student-portal half is now
+  Phase 6 (which builds the student principal assignments depend on), and
+  assignments themselves are **Phase 8**. Nothing built yet.
 
 - [ ] Exam management, including AI-generated exam questions — overlaps two
   existing docs: ARCHITECTURE.md §6.7 (Assessment and grading, Phase 2) for
@@ -1104,7 +1163,8 @@ not a commitment to that phase's exact shape or timing.
 
 - [ ] Event calendar — ARCHITECTURE.md §6.16 (Events and calendar) is
   specified (term calendar with holidays/breaks, events, parent RSVP, push
-  reminders) and falls under Phase 7 ("auxiliary modules — rolling") per
+  reminders) and falls under Phase 9 ("auxiliary modules — rolling"; renumbered from
+  Phase 7 on 2026-08-15) per
   §9. Nothing built yet.
 
 - [ ] **Possible navigation race on `/dashboard`: clicking a sidebar link

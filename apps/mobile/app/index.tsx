@@ -1,34 +1,20 @@
-import { StatusBar } from "expo-status-bar";
-import { StyleSheet, Text, View } from "react-native";
+import { Redirect } from "expo-router";
+import { useSession } from "../src/lib/auth/session";
 
-export default function HomeScreen() {
-  return (
-    <View style={styles.container}>
-      <Text style={styles.title}>School Kit</Text>
-      <Text style={styles.subtitle}>
-        Phase 0 — scaffold up. Parent and student features start Phase 4.
-      </Text>
-      <StatusBar style="auto" />
-    </View>
+// Route gate. The whole app is behind a guardian session, so the entry point
+// only decides which side of that line the user is on.
+//
+// Deliberately a <Redirect> rather than an imperative router.replace() in an
+// effect: expo-router resolves it during render, so there is no frame where a
+// signed-out user is looking at a screen they should not see.
+export default function Index() {
+  const { status } = useSession();
+
+  if (status === "loading") return null;
+
+  return status === "authenticated" ? (
+    <Redirect href="/students" />
+  ) : (
+    <Redirect href="/login" />
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#fff",
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 24,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: "600",
-    marginBottom: 8,
-  },
-  subtitle: {
-    fontSize: 16,
-    color: "#444",
-    textAlign: "center",
-  },
-});

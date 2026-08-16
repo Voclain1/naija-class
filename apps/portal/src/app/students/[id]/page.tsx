@@ -22,6 +22,8 @@ import type {
   PortalStudentDto,
 } from "@school-kit/types";
 
+import { StudentPortalAccess } from "@/components/student-portal-access";
+
 type LoadState =
   | { kind: "loading" }
   | { kind: "not-found" }
@@ -217,6 +219,16 @@ export default function StudentDetailPage() {
                 : " · Not enrolled this term"}
             </p>
           </header>
+
+          {/* Account access sits directly under the header, above both
+              weekly updates and invoices. It is the only control on this page
+              that changes what the child can DO, and a parent reaching for it
+              (often because something has gone wrong) should not have to
+              scroll past a bill to find it. */}
+          <StudentPortalAccess
+            studentId={state.student.id}
+            firstName={state.student.firstName}
+          />
 
           {/* Weekly updates sit ABOVE invoices deliberately: a parent opening
               their child's page is more often checking on the child than on a

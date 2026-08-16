@@ -16,7 +16,8 @@
     "./tsconfig.next.json": "./tsconfig.next.json",
     "./tsconfig.expo.json": "./tsconfig.expo.json",
     "./eslint/base": "./eslint/base.js",
-    "./eslint/next": "./eslint/next.js"
+    "./eslint/next": "./eslint/next.js",
+    "./eslint/expo": "./eslint/expo.js"
   },
   "scripts": {
     "lint": "echo 'lint placeholder (config-only package)'",

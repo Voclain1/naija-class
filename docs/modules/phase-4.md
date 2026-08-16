@@ -7,9 +7,9 @@ structure, pay via Paystack directly, and receive school communications
 (email, SMS, in-app). ARCHITECTURE §9 estimates 3 weeks; treat that the same
 way phase-3.md treated its own estimate — optimistic, not a ceiling.
 
-No AI features yet (Phase 5). No assignment/student-portal surface yet
-(Phase 6). Parents are the only new user type — staff-side admin/bursar/
-teacher flows are unchanged.
+No AI features yet (Phase 5). No student-portal surface yet (Phase 6) and no
+assignments (Phase 8). Parents are the only new user type — staff-side
+admin/bursar/teacher flows are unchanged.
 
 **Locked scope decisions (this phase):**
 
@@ -293,11 +293,11 @@ two separate portal accounts — intentional, not a gap to close later.
 ## 5. Deferred to later phases
 
 - **AI-assisted parent summaries / tutor** — Phase 5.
-- **Push notifications** — explicit in D3, deferred to the mobile app phase
-  (Phase 6 territory or later, whenever `apps/mobile` gets parent-facing
-  screens).
-- **Assignment visibility for parents** — Phase 6 (student portal phase)
-  owns assignments; Phase 4 is fee/communication only.
+- **Push notifications** — explicit in D3, deferred to the mobile app phase.
+  Now scheduled: **Phase 6, slice 5** (Expo Push), alongside the
+  parent-facing screens in `apps/mobile`.
+- **Assignment visibility for parents** — **Phase 8** owns assignments;
+  Phase 4 is fee/communication only.
 - **WhatsApp Business** (if not confirmed for slice 6 per §4's "still open"
   item 3) — carries forward as an explicit deferred item, not silently
   dropped.

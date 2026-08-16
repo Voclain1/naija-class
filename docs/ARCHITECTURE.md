@@ -469,16 +469,22 @@ Fee structure, invoices, Paystack integration, debtors, basic payroll. This is w
 **Phase 4 — communication and parent portal (3 weeks)**
 Parent app MVP, in-app messaging, SMS broadcasts, announcement board.
 
-**Phase 5 — AI layer (4 weeks)**
-Curriculum ingestion, student tutor, lesson plan generator, report comment generator, parent summaries. This is your differentiator.
+**Phase 5 — AI layer (4 weeks) — SHIPPED as slices 1–5 + 8**
+Lesson plan generator, report comment generator, parent summaries, admin insights. Curriculum ingestion and the student tutor moved out to Phase 7 — see `docs/modules/phase-5.md` §2. This is your differentiator.
 
-**Phase 6 — assignments and student portal (3 weeks)**
-Assignment creation, submission, AI-assisted grading.
+**Phase 6 — mobile app, student portal, guardian mobile (revised 2026-08-15)**
+Mobile shell (`apps/mobile` is the bare Phase 0 Expo scaffold), the student principal and student-facing surface, and the guardian experience on mobile. Offline resilience is a first-class design constraint, not a later pass. See `docs/modules/phase-6.md`.
 
-**Phase 7 — auxiliary modules (rolling)**
+**Phase 7 — curriculum RAG + student tutor (HELD)**
+Curriculum ingestion over `pgvector`, retrieval, and the curriculum-grounded student tutor. Held pending a deliberate decision on the embeddings vendor and its cost model — Anthropic ships no embeddings API, so this needs a second AI vendor. Not started until that decision is made.
+
+**Phase 8 — assignments (3 weeks)**
+Assignment creation, submission, AI-assisted grading. Was the original Phase 6; renumbered when the mobile/student-portal work took that slot. Its student-portal half is absorbed into Phase 6, which builds the student principal it depended on.
+
+**Phase 9 — auxiliary modules (rolling)**
 Library, transport, hostel, behaviour, health, full analytics. Ship as schools ask for them.
 
-Estimated solo timeline with Claude Code: **3-4 months** to end of Phase 3 (first paying customer). **6 months** to end of Phase 5. The rest is iteration based on customer feedback.
+Estimated solo timeline with Claude Code: **3-4 months** to end of Phase 3 (first paying customer). **6 months** to end of Phase 5. The rest is iteration based on customer feedback. Note the Phase 5 figure held for what shipped, not for the original §7 component list — see phase-5.md §1 for the recalibration.
 
 ## 10. Working with Claude Code
 

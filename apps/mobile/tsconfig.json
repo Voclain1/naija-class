@@ -1,14 +1,23 @@
 {
-  "extends": "expo/tsconfig.base",
-  "compilerOptions": {
-    "strict": true,
-    "esModuleInterop": true,
-    "skipLibCheck": true
-  },
-  "include": [
-    "**/*.ts",
-    "**/*.tsx",
-    ".expo/types/**/*.ts",
-    "expo-env.d.ts"
-  ]
+  "extends": ["expo/tsconfig.base", "@school-kit/config/tsconfig.expo.json"],
+  "//": [
+    ".expo/types is deliberately NOT included, and app.json sets",
+    "experiments.typedRoutes = false to match.",
+    "",
+    "expo-router's typed-route declarations are written to",
+    ".expo/types/router.d.ts by the DEV SERVER only — `expo export` does not",
+    "produce them — and .expo/ is gitignored. That made this a check that",
+    "behaved differently in three places: a developer who had run `expo start`",
+    "typechecked against a generated file, a developer who had not typechecked",
+    "without it, and CI never had it at all. Worse, the file goes stale: on",
+    "2026-08-15 the committed routes failed typecheck locally against a",
+    "months-old router.d.ts that had somehow captured paths from apps/web,",
+    "while CI would have passed the same commit.",
+    "",
+    "A gate that is stricter on one machine than in CI is not a gate. Routes",
+    "are plain strings until typed routes can be generated as part of the",
+    "build; revisit if Expo ships a standalone type-generation command."
+  ],
+  "include": ["**/*.ts", "**/*.tsx", "expo-env.d.ts"],
+  "exclude": ["node_modules", "dist", ".expo"]
 }

@@ -19,11 +19,20 @@ import { PortalAuthService } from "./portal-auth.service";
 // "no guard" precedent for the same reason: the token / credentials
 // themselves are the authorization.
 //
-// This controller is called ONLY by apps/portal's own Next.js server-side
-// proxy route (never directly by a browser) — see ARCHITECTURE.md §12 and
-// apps/portal/src/app/api/portal/[...portal]/route.ts. CORS_ORIGIN_PORTAL
-// exists as defense-in-depth in case that ever changes, not because the
-// browser is expected to call these directly.
+// TWO callers, and they reach this controller differently:
+//
+//   apps/portal  — via its own Next.js server-side proxy route, never
+//                  directly from a browser. See ARCHITECTURE.md §12 and
+//                  apps/portal/src/app/api/portal/[...portal]/route.ts.
+//                  CORS_ORIGIN_PORTAL is defense-in-depth in case that ever
+//                  changes, not because the browser is expected to call
+//                  these directly.
+//   apps/mobile  — DIRECTLY, with `Authorization: Bearer` and no proxy
+//                  (added Phase 6 / Slice 2, 2026-08-15). That is ADR-002's
+//                  mobile transport, not a hole in the above: there is no
+//                  cookie to protect and CORS is a browser concept that does
+//                  not apply to a native runtime. No endpoint changed to
+//                  support it.
 @Controller("portal")
 export class PortalAuthController {
   constructor(private readonly portalAuthService: PortalAuthService) {}
