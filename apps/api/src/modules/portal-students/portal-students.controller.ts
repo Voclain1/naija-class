@@ -5,6 +5,8 @@ import type {
   PortalStudentDto,
   PortalStudentListResponse,
   StudentPortalStatusDto,
+  ReleasedResultDetailDto,
+  ReleasedResultListResponse,
 } from "@school-kit/types";
 
 import type { GuardianAuthContext } from "../../common/auth/guardian-auth-context";
@@ -70,5 +72,26 @@ export class PortalStudentsController {
     @Ip() ip: string,
   ): Promise<DeactivateStudentPortalResponse> {
     return this.access.deactivate(guardianCtx, id, { ipAddress: ip });
+  }
+
+  // ---- Phase 6 / Slice 4 — the guardian's view of their child's results.
+  // Same two routes the student has on /student-portal/me/results, reaching
+  // the same ReleasedResultsService. The URL differs because a guardian must
+  // name WHICH child; the student's cannot, by design.
+  @Get("students/:id/results")
+  async results(
+    @CurrentGuardian() guardianCtx: GuardianAuthContext,
+    @Param("id") id: string,
+  ): Promise<ReleasedResultListResponse> {
+    return this.access.listResults(guardianCtx, id);
+  }
+
+  @Get("students/:id/results/:termId")
+  async result(
+    @CurrentGuardian() guardianCtx: GuardianAuthContext,
+    @Param("id") id: string,
+    @Param("termId") termId: string,
+  ): Promise<ReleasedResultDetailDto> {
+    return this.access.getResult(guardianCtx, id, termId);
   }
 }

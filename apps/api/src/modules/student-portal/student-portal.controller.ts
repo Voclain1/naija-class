@@ -9,6 +9,8 @@ import {
   type StudentLoginInput,
   type StudentLoginResponse,
   type StudentMeResponse,
+  type ReleasedResultDetailDto,
+  type ReleasedResultListResponse,
 } from "@school-kit/types";
 import type { Request } from "express";
 
@@ -76,6 +78,30 @@ export class StudentPortalController {
   @UseGuards(StudentAuthGuard)
   async me(@CurrentStudent() ctx: StudentAuthContext): Promise<StudentMeResponse> {
     return this.service.me(ctx);
+  }
+
+  // Results hang off /me for the reason stated above — the student id comes
+  // from the session, never from the URL, so "whose results are these?" is
+  // not a question this route can get wrong.
+  //
+  // Both handlers delegate to ReleasedResultsService, which is also what the
+  // guardian portal calls. That shared call is the whole mechanism behind
+  // "nothing is shown to the student earlier than to the guardian" (D28) —
+  // see released-results.service.ts for why it is one function and not two
+  // endpoints that filter alike.
+  @Get("me/results")
+  @UseGuards(StudentAuthGuard)
+  async results(@CurrentStudent() ctx: StudentAuthContext): Promise<ReleasedResultListResponse> {
+    return this.service.listResults(ctx);
+  }
+
+  @Get("me/results/:termId")
+  @UseGuards(StudentAuthGuard)
+  async result(
+    @CurrentStudent() ctx: StudentAuthContext,
+    @Param("termId") termId: string,
+  ): Promise<ReleasedResultDetailDto> {
+    return this.service.getResult(ctx, termId);
   }
 
   @Post("logout")
