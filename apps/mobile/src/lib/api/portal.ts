@@ -6,6 +6,8 @@ import type {
   PortalPaymentDto,
   PortalStudentDto,
   PortalStudentListResponse,
+  ReleasedResultDetailDto,
+  ReleasedResultListResponse,
 } from "@school-kit/types";
 import { apiFetch } from "./client";
 
@@ -87,5 +89,28 @@ export function initiatePayment(
 export function verifyPayment(reference: string): Promise<PortalPaymentDto> {
   return apiFetch<PortalPaymentDto>(
     `/portal/payments/${encodeURIComponent(reference)}`,
+  );
+}
+
+// Phase 6 / Slice 4 — released results.
+//
+// These two ARE new server surface, unlike everything above: they shipped in
+// the same slice (PR #184). Both hit ReleasedResultsService, the single place
+// the RELEASED gate is applied, which is also what the student endpoints call
+// — so a guardian and their child cannot be shown different things.
+export function listResults(
+  studentId: string,
+): Promise<ReleasedResultListResponse> {
+  return apiFetch<ReleasedResultListResponse>(
+    `/portal/students/${encodeURIComponent(studentId)}/results`,
+  );
+}
+
+export function getResult(
+  studentId: string,
+  termId: string,
+): Promise<ReleasedResultDetailDto> {
+  return apiFetch<ReleasedResultDetailDto>(
+    `/portal/students/${encodeURIComponent(studentId)}/results/${encodeURIComponent(termId)}`,
   );
 }
