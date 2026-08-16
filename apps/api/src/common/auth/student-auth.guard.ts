@@ -5,6 +5,7 @@ import { basePrisma } from "@school-kit/db";
 import { UnauthorizedError } from "@school-kit/types";
 
 import { hashStudentToken } from "./student-sessions";
+import { mayHoldSession } from "./student-portal-status";
 import type { StudentAuthContext } from "./student-auth-context";
 
 // Bearer-token guard for the student portal — the third principal after staff
@@ -37,8 +38,9 @@ import type { StudentAuthContext } from "./student-auth-context";
 // still refused here.
 const BEARER_PREFIX = "Bearer ";
 
-/** The only status permitted to hold a live portal session. */
-const PORTAL_ALLOWED_STATUS = "ACTIVE";
+// Which statuses may hold a session — and why that set is WIDER than the set
+// permitted to activate in the first place — lives in one place, shared with
+// StudentPortalService. See student-portal-status.ts.
 
 interface ResolveStudentSessionRow {
   session_id: string;
@@ -84,7 +86,7 @@ export class StudentAuthGuard implements CanActivate {
     // session. A child whose parent switched their account off should not
     // learn that from an API error code; the guardian tells them. This also
     // keeps the guard from becoming an oracle for account state.
-    if (!row.portal_enabled || row.student_status !== PORTAL_ALLOWED_STATUS) {
+    if (!row.portal_enabled || !mayHoldSession(row.student_status)) {
       throw new UnauthorizedError("INVALID_SESSION", "Session is invalid or has been revoked.");
     }
 

@@ -1721,7 +1721,31 @@ The residual DoS is real and accepted: ~11 requests per student is enough
 to degrade a cohort's logins for 15 minutes. This is why the lock is
 sliding-but-temporary and why 15 minutes should not be raised.
 
-### `WITHDRAWN` / `GRADUATED` students lose access to their own records — OPEN product decision
+### `WITHDRAWN` / `GRADUATED` students lose access to their own records — **DECIDED and FIXED 2026-08-16**
+
+**Outcome: keep vs obtain are now two different questions with two different
+answers.** `WITHDRAWN` and `GRADUATED` students keep signing in to an account
+they already have, and may NOT accept a fresh invitation to create a first
+one. `SUSPENDED` and `INACTIVE` remain excluded from both. The single
+`PORTAL_ALLOWED_STATUS` literal is gone, replaced by
+`PORTAL_SESSION_STATUSES` and `PORTAL_ACTIVATION_STATUSES` in
+`apps/api/src/common/auth/student-portal-status.ts`, which carries the
+reasoning.
+
+Rationale: a first credential is guardian-mediated supervision of a live
+school relationship, and once that relationship has ended there is no
+supervision left to mediate — so obtaining has a weaker justification than
+continuing. Proven by `student-portal.status-walk.spec.ts` (18 cases over
+real HTTP), including a control that an `ACTIVE` student CAN still accept
+(without it, every "cannot accept" case would pass if accept were simply
+broken) and a case pinning that a refused accept does not burn the
+invitation, so a student reinstated later does not find their link silently
+dead. Mutation-checked: reverting the widening fails 8 of the 18.
+
+The original entry follows, unedited, because it records why this was
+shipped one way and changed a day later.
+
+---
 
 `PORTAL_ALLOWED_STATUS` is the single value `"ACTIVE"`, in three places:
 `StudentAuthGuard`, `StudentPortalService.login`, and the invitation-accept
