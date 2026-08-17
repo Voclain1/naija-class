@@ -52,6 +52,7 @@
     "@babel/core": "^7.25.2",
     "@school-kit/config": "workspace:*",
     "@types/react": "~19.2.0",
+    "babel-preset-expo": "~57.0.7",
     "eas-cli": "^22.0.0",
     "eslint": "^9",
     "sharp": "^0.34.5",
