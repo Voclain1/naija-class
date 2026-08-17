@@ -34,6 +34,36 @@ type Status =
   | { kind: "error"; message: string }
   | { kind: "loaded"; status: StudentPortalStatusDto };
 
+// The proxy route (src/app/api/portal/[...portal]/route.ts) goes out of its
+// way to return a { error: { code, message } } envelope for EVERY failure,
+// including ones it generates itself — that was the fix for the 2026-07-17
+// guardian-invite bug, where a generic message sent someone hunting a bad
+// token when the real fault was the API being unreachable.
+//
+// Discarding that message here reintroduces exactly the bug the envelope was
+// added to prevent: "not linked to this student" (403), "could not reach the
+// server" (502) and a validation failure all collapse into one sentence that
+// tells the parent nothing and tells us less.
+async function readError(res: Response, fallback: string): Promise<string> {
+  try {
+    const body: unknown = await res.json();
+    if (
+      body !== null &&
+      typeof body === "object" &&
+      "error" in body &&
+      typeof (body as { error: unknown }).error === "object" &&
+      (body as { error: unknown }).error !== null
+    ) {
+      const err = (body as { error: { message?: unknown } }).error;
+      if (typeof err.message === "string" && err.message.length > 0) return err.message;
+    }
+  } catch {
+    // A non-JSON body means the failure happened before the API was reached.
+    // Fall through — the status code is still worth surfacing below.
+  }
+  return `${fallback} (error ${res.status})`;
+}
+
 function describeState(status: StudentPortalStatusDto, firstName: string): string {
   switch (status.state) {
     case "ACTIVE":
@@ -58,7 +88,7 @@ export function StudentPortalAccess({ studentId, firstName }: Props) {
     try {
       const res = await fetch(`/api/portal/students/${studentId}/portal-status`);
       if (!res.ok) {
-        setStatus({ kind: "error", message: "Could not load account status." });
+        setStatus({ kind: "error", message: await readError(res, "Could not load account status.") });
         return;
       }
       setStatus({ kind: "loaded", status: (await res.json()) as StudentPortalStatusDto });
@@ -79,7 +109,7 @@ export function StudentPortalAccess({ studentId, firstName }: Props) {
         method: "POST",
       });
       if (!res.ok) {
-        setActionError("Could not create an invite link. Please try again.");
+        setActionError(await readError(res, "Could not create an invite link."));
         return;
       }
       setIssued((await res.json()) as IssueStudentInvitationResponse);
@@ -99,7 +129,7 @@ export function StudentPortalAccess({ studentId, firstName }: Props) {
         method: "POST",
       });
       if (!res.ok) {
-        setActionError("Could not turn off access. Please try again.");
+        setActionError(await readError(res, "Could not turn off access."));
         return;
       }
       const body = (await res.json()) as DeactivateStudentPortalResponse;
