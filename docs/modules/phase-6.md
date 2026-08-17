@@ -331,6 +331,49 @@ profile editing. The surface exists to justify the principal, not to be
 comprehensive — and every additional endpoint is a new place to get "can
 this student see this row?" wrong.
 
+#### Slice 4 progress — student mobile principal **[DONE 2026-08-17]**
+
+The student principal now exists in `apps/mobile`: login, routing, home, and
+own-results screens, against the `/student-portal/*` surface slice 3 shipped.
+Results only — there are no attendance or fee endpoints on the student surface
+yet, so those parts of this slice's scope remain unbuilt.
+
+Four decisions worth keeping, none of which §6 had settled:
+
+- **One device, one signed-in account.** Not two concurrent sessions. The
+  shared family handset is the normal case (§7), and the rule there is that a
+  second person signing in must not see the first one's cached data. Two live
+  sessions would make that guarantee depend on every screen reading from the
+  right one, rather than on there being only one to read.
+- **The principal is stored beside the token, not derived from it.** The token
+  is opaque to the client, so after a cold start the app would otherwise know
+  it is authenticated but not which surface to ask. Guessing wrong means
+  firing a request guaranteed to 401 — and the central 401 handler would sign
+  out a user whose session was perfectly valid. Probing both surfaces was
+  considered and rejected: it doubles cold-start requests and a 401 from the
+  wrong one is indistinguishable from genuine expiry. A token written before
+  this slice has no principal key beside it and reads as `guardian`, which is
+  what it must be; `readStoredPrincipal` is a pure module precisely so that
+  rule is unit-testable (apps/mobile's Vitest is node-env with no React Native
+  transform, so anything importing `react-native` cannot be reached by a spec).
+- **A student lands on `/me`, never on `/students`.** Not merely a different
+  home screen: `/students/*` is keyed by a student id in the URL, and the
+  student API deliberately has no id-taking route (§8). Sending a student
+  there would ask the wrong question with the wrong credential.
+- **One login screen with a Parent/Student toggle**, rather than a chooser
+  screen in front of both forms. A parent and a child on one handset both
+  start here, and an extra step before either can see a form is a wall in
+  front of the only door.
+
+Verified by driving the real app under `expo start --web` with Playwright at a
+phone viewport, not by CI alone: a student signs in with school code +
+admission number + password, lands on `/me`, sees their own name, admission
+number and class, opens **My results** and sees only the RELEASED term (the
+DRAFT term is absent), and opens its detail. The guardian path was re-run in
+the same session as a regression check — parent still lands on `/students`,
+still sees their own name and not the child's, and sign-out returns to login
+with no identity left on screen.
+
 ### Slice 5 — Push notifications
 
 `ARCHITECTURE.md` §5 specifies Expo Push. Nothing exists yet — confirmed by
