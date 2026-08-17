@@ -149,12 +149,45 @@ stores require.
 `version` in `app.json` (currently `0.0.0`) is the user-facing marketing
 version and stays hand-managed.
 
+## EAS builds your WORKING TREE, not the commit it reports
+
+`eas build` prints a commit hash, and `eas build:view` records one. **Neither
+is what was built.** EAS uploads the working directory, uncommitted changes
+included, then labels the build with whatever commit you happened to be on.
+
+This is not theoretical — it happened on the first green Android build
+(2026-08-17). Two builds report the identical hash `5567e6f`: one failed at
+`:app:createBundleReleaseJsAndAssets`, the next succeeded. The only difference
+was an uncommitted `babel-preset-expo` declaration sitting in the working tree.
+The successful build's `READ_PACKAGE_JSON` phase shows it, so `5567e6f` itself
+does not build — a fresh clone of that commit fails.
+
+Two habits follow:
+
+- **Commit before building**, so the reported hash is the truth.
+- When a build's result surprises you, read `READ_PACKAGE_JSON` in its log
+  rather than trusting the hash. It contains the `package.json` EAS actually
+  read.
+
+Retrieving a log without the web UI:
+
+```bash
+pnpm exec eas build:view <build-id> --json     # .logFiles[0] is a signed URL
+curl -sS --compressed <url>                    # NDJSON, one object per line
+```
+
+Each line carries a `phase` field, so the phase list alone tells you how far a
+build got. `curl` without `--compressed` returns gzip and looks like binary
+noise.
+
 ## Prerequisites not yet done
 
 - Apple Developer Program and Google Play Console accounts (1–3 week external
   latency; being started in parallel with slice 1).
-- `eas init` to create the EAS project and write `extra.eas.projectId` into
-  `app.json`.
 - Store listing metadata, privacy nutrition labels, and NDPR disclosures.
   These are not a formality here: the app handles children's data, which
   triggers additional declarations on both stores.
+
+Done since this list was written: `eas init` (2026-08-17) — `expo.owner`
+(`voclains-team`) and `expo.extra.eas.projectId` are committed in `app.json`,
+and the first Android `preview` APK built successfully the same day.
