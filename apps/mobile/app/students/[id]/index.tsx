@@ -1,16 +1,16 @@
 import { useState } from "react";
-import { ScrollView, StyleSheet, View } from "react-native";
-import { Redirect, Stack, useLocalSearchParams } from "expo-router";
+import { Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { Link, Redirect, Stack, useLocalSearchParams } from "expo-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { formatKobo, type PortalInvoiceDto } from "@school-kit/types";
 
-import { getStudent, listInvoices } from "../../src/lib/api/portal";
-import { queryKeys } from "../../src/lib/query/keys";
-import { runCheckout } from "../../src/lib/payments/checkout";
-import { describeOutcome, type CheckoutOutcome } from "../../src/lib/payments/poll";
-import { ApiNetworkError } from "../../src/lib/api/client";
-import { useSession } from "../../src/lib/auth/session";
-import { spacing } from "../../src/theme/tokens";
+import { getStudent, listInvoices } from "../../../src/lib/api/portal";
+import { queryKeys } from "../../../src/lib/query/keys";
+import { runCheckout } from "../../../src/lib/payments/checkout";
+import { describeOutcome, type CheckoutOutcome } from "../../../src/lib/payments/poll";
+import { ApiNetworkError } from "../../../src/lib/api/client";
+import { useSession } from "../../../src/lib/auth/session";
+import { spacing } from "../../../src/theme/tokens";
 import {
   Body,
   Button,
@@ -20,8 +20,8 @@ import {
   Label,
   Notice,
   Screen,
-} from "../../src/components/ui";
-import { FreshnessLabel, useIsOnline } from "../../src/components/freshness-label";
+} from "../../../src/components/ui";
+import { FreshnessLabel, useIsOnline } from "../../../src/components/freshness-label";
 
 /** An invoice is payable when the school is still owed money on it. */
 function outstanding(invoice: PortalInvoiceDto): number {
@@ -117,6 +117,19 @@ export default function StudentDetailScreen() {
               : "You're offline and there's no saved copy of this page."}
           </Notice>
         )}
+
+        {/* Results sit above fees deliberately: a parent opening their
+            child's page is far more often checking how they did than paying
+            an invoice, and the results screen is the one thing this app can
+            show that nothing else in School Kit currently can. */}
+        <Link href={`/students/${studentId}/results`} asChild>
+          <Pressable>
+            <Card>
+              <Heading>Results</Heading>
+              <Body muted>Report cards the school has released.</Body>
+            </Card>
+          </Pressable>
+        </Link>
 
         {outcome ? (
           <Notice tone={describeOutcome(outcome).tone}>

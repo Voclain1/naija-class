@@ -16,4 +16,10 @@ export const queryKeys = {
   student: (studentId: string) => ["students", studentId] as const,
   invoices: (studentId: string) => ["students", studentId, "invoices"] as const,
   payment: (reference: string) => ["payments", reference] as const,
+  // Released results. Safe to persist and DELIBERATELY long-lived: a released
+  // report card is frozen by released-guard.ts on the server, so a cached one
+  // cannot be wrong, only absent (D32).
+  results: (studentId: string) => ["students", studentId, "results"] as const,
+  result: (studentId: string, termId: string) =>
+    ["students", studentId, "results", termId] as const,
 } as const;
