@@ -13,6 +13,7 @@ import type {
   GuardianLoginSchoolDto,
   GuardianLoginUserDto,
   StudentLoginInput,
+  StudentLoginResponse,
   StudentPortalSchoolDto,
   StudentPortalStudentDto,
 } from "@school-kit/types";
@@ -59,6 +60,16 @@ interface SessionValue {
   school: GuardianLoginSchoolDto | StudentPortalSchoolDto | null;
   signIn: (input: GuardianLoginInput) => Promise<void>;
   signInStudent: (input: StudentLoginInput) => Promise<void>;
+  /**
+   * Adopt a student session the caller already obtained.
+   *
+   * Exists for invitation accept, which returns the same payload as login —
+   * the child has just chosen a password and is, at that instant, signed in.
+   * Making them retype the credential they set two seconds ago on the very
+   * next screen would be a self-inflicted wound, and re-POSTing it to /login
+   * would send the password over the wire a second time for no reason.
+   */
+  adoptStudentSession: (response: StudentLoginResponse) => Promise<void>;
   signOut: () => Promise<void>;
 }
 
@@ -117,9 +128,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     [],
   );
 
-  const signInStudent = useCallback(
-    async (input: StudentLoginInput) => {
-      const response = await studentLogin(input);
+  const adoptStudentSession = useCallback(
+    async (response: StudentLoginResponse) => {
       // Same ordering rule as the guardian path above.
       await saveToken(response.token, "student");
       setPrincipal("student");
@@ -129,6 +139,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       setStatus("authenticated");
     },
     [],
+  );
+
+  const signInStudent = useCallback(
+    async (input: StudentLoginInput) => {
+      await adoptStudentSession(await studentLogin(input));
+    },
+    [adoptStudentSession],
   );
 
   useEffect(() => {
@@ -155,9 +172,20 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       school,
       signIn,
       signInStudent,
+      adoptStudentSession,
       signOut,
     }),
-    [status, principal, guardian, student, school, signIn, signInStudent, signOut],
+    [
+      status,
+      principal,
+      guardian,
+      student,
+      school,
+      signIn,
+      signInStudent,
+      adoptStudentSession,
+      signOut,
+    ],
   );
 
   return (

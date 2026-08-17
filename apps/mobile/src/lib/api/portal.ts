@@ -8,6 +8,9 @@ import type {
   PortalStudentListResponse,
   ReleasedResultDetailDto,
   ReleasedResultListResponse,
+  StudentPortalStatusDto,
+  IssueStudentInvitationResponse,
+  DeactivateStudentPortalResponse,
 } from "@school-kit/types";
 import { apiFetch } from "./client";
 
@@ -112,5 +115,40 @@ export function getResult(
 ): Promise<ReleasedResultDetailDto> {
   return apiFetch<ReleasedResultDetailDto>(
     `/portal/students/${encodeURIComponent(studentId)}/results/${encodeURIComponent(termId)}`,
+  );
+}
+
+// Phase 6 — the guardian's control over their child's portal access.
+//
+// All three are guardian-authenticated and take the child's id in the path,
+// because a guardian must name WHICH child. That is the exact opposite of the
+// student surface, where naming anyone is impossible by design.
+//
+// D27: the server raises 404 for an unknown student and 403 for one this
+// guardian is not linked to, rather than a silent no-op — so these can surface
+// a real failure instead of appearing to succeed.
+export function getPortalStatus(
+  studentId: string,
+): Promise<StudentPortalStatusDto> {
+  return apiFetch<StudentPortalStatusDto>(
+    `/portal/students/${encodeURIComponent(studentId)}/portal-status`,
+  );
+}
+
+export function issueStudentInvitation(
+  studentId: string,
+): Promise<IssueStudentInvitationResponse> {
+  return apiFetch<IssueStudentInvitationResponse>(
+    `/portal/students/${encodeURIComponent(studentId)}/portal-invitation`,
+    { method: "POST" },
+  );
+}
+
+export function deactivateStudentPortal(
+  studentId: string,
+): Promise<DeactivateStudentPortalResponse> {
+  return apiFetch<DeactivateStudentPortalResponse>(
+    `/portal/students/${encodeURIComponent(studentId)}/deactivate`,
+    { method: "POST" },
   );
 }

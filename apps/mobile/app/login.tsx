@@ -8,7 +8,7 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { Redirect } from "expo-router";
+import { Link, Redirect } from "expo-router";
 import { ApiError, ApiNetworkError } from "../src/lib/api/client";
 import { useSession } from "../src/lib/auth/session";
 import { useTheme } from "../src/theme/theme-provider";
@@ -227,6 +227,20 @@ export default function LoginScreen() {
             loading={submitting}
             disabled={!canSubmit}
           />
+
+          {/* First-time students have no password yet — they have an
+              invitation from their parent. Without this the activation flow
+              is unreachable on a device, because deep links are not wired up
+              yet (see app/activate/index.tsx). */}
+          {isStudent ? (
+            <Link href="/activate" asChild>
+              <Pressable style={styles.activateLink} disabled={submitting}>
+                <Text style={[styles.activateText, { color: colors.primary }]}>
+                  First time? Use your invitation
+                </Text>
+              </Pressable>
+            </Link>
+          ) : null}
         </View>
       </KeyboardAvoidingView>
     </Screen>
@@ -257,6 +271,15 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   switchLabel: {
+    fontFamily: fonts.sansSemibold,
+    fontSize: fontSizes.body,
+  },
+  activateLink: {
+    minHeight: 44,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  activateText: {
     fontFamily: fonts.sansSemibold,
     fontSize: fontSizes.body,
   },

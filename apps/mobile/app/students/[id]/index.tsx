@@ -22,6 +22,7 @@ import {
   Screen,
 } from "../../../src/components/ui";
 import { FreshnessLabel, useIsOnline } from "../../../src/components/freshness-label";
+import { StudentPortalAccess } from "../../../src/components/student-portal-access";
 
 /** An invoice is payable when the school is still owed money on it. */
 function outstanding(invoice: PortalInvoiceDto): number {
@@ -130,6 +131,13 @@ export default function StudentDetailScreen() {
             </Card>
           </Pressable>
         </Link>
+
+        {/* Portal access sits under Results and above Fees: it is a
+            one-off setup action, not something a parent returns to daily. */}
+        <StudentPortalAccess
+          studentId={studentId}
+          studentFirstName={student?.firstName ?? null}
+        />
 
         {outcome ? (
           <Notice tone={describeOutcome(outcome).tone}>
