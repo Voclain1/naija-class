@@ -222,3 +222,67 @@ describe("app.json — identity and linking", () => {
     ).toBe("#0e5c43");
   });
 });
+
+// ---------------------------------------------------------------------------
+// eas.json — build profiles
+//
+// Same reasoning as the asset gate above: nothing else in this repo reads
+// eas.json. typecheck does not, lint does not, and the only thing that would
+// catch a wrong value is a build — or, worse, a tester holding a phone that
+// silently talks to the wrong server.
+//
+// EXPO_PUBLIC_API_URL is baked into the JS bundle at build time (that is what
+// the EXPO_PUBLIC_ prefix means), so it cannot be corrected after the fact by
+// changing an env var. A preview APK built against localhost is not a
+// misconfiguration a tester can work around; it is an app that reaches nothing
+// and cannot be fixed without a new build.
+describe("eas.json — build profiles", () => {
+  const eas = JSON.parse(
+    readFileSync(path.join(MOBILE_ROOT, "eas.json"), "utf8"),
+  ) as {
+    cli?: { appVersionSource?: string };
+    build: Record<string, { env?: Record<string, string>; distribution?: string }>;
+  };
+
+  const PRODUCTION_API = "https://school-kit-api.fly.dev/api/v1";
+
+  it("defines the three profiles the build scripts invoke", () => {
+    // package.json's build:dev / build:preview / build:production name these
+    // by string. A renamed profile fails at build time with a message that
+    // does not obviously point back at package.json.
+    for (const profile of ["development", "preview", "production"]) {
+      expect(eas.build[profile], `missing profile: ${profile}`).toBeDefined();
+    }
+  });
+
+  it("points preview and production at the real API, never localhost", () => {
+    for (const profile of ["preview", "production"]) {
+      expect(eas.build[profile]?.env?.EXPO_PUBLIC_API_URL).toBe(PRODUCTION_API);
+    }
+  });
+
+  it("keeps the development profile off the production API", () => {
+    // A development build is the one handed round on a laptop with a debugger
+    // attached. Pointing it at production means every experiment writes to
+    // real schools' data — and there is no staging tier to fall back on
+    // (CLAUDE.md: "There is no isolated staging environment").
+    const devUrl = eas.build.development?.env?.EXPO_PUBLIC_API_URL ?? "";
+    expect(devUrl).not.toBe(PRODUCTION_API);
+    expect(devUrl).toMatch(/localhost|127\.0\.0\.1|10\.0\.2\.2/);
+  });
+
+  it("keeps development and preview off the public stores", () => {
+    // `internal` is what makes a build installable from a link. Dropping it
+    // routes the artifact at TestFlight/Play review instead, which is both
+    // slow and the wrong audience for a build meant for one tester.
+    expect(eas.build.development?.distribution).toBe("internal");
+    expect(eas.build.preview?.distribution).toBe("internal");
+  });
+
+  it("uses remote app version management", () => {
+    // With appVersionSource: "remote" EAS owns the build number, so two
+    // builds cannot collide on one version — which both stores reject at
+    // upload, after the build has already run.
+    expect(eas.cli?.appVersionSource).toBe("remote");
+  });
+});

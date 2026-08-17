@@ -10,12 +10,18 @@ import { extractToken } from "../../src/lib/auth/extract-token";
 
 // Manual entry for an invitation code.
 //
-// WHY THIS EXISTS AT ALL: deep linking is not configured yet (app.json sets
-// experiments.typedRoutes = false and there is no scheme/universal-link
-// setup — that lands with the build pipeline). So a link a parent sends over
-// WhatsApp will NOT open the app on a device today; it would open a browser.
-// Without this screen the entire activation flow is unreachable on a real
-// phone, which would make the student principal unusable by an actual child.
+// WHY THIS EXISTS AT ALL: a link a parent sends over WhatsApp will NOT open
+// the app on a device. app.json DOES declare a custom scheme (`schoolkit`,
+// asserted by __tests__/app-config.spec.ts), so `schoolkit://…` would open
+// it — but nobody sends that, and no messaging app makes it tappable. An
+// ordinary https:// link needs Universal Links (iOS `associatedDomains`) and
+// App Links (Android `intentFilters` plus a hosted assetlinks.json), none of
+// which are configured; they need a real signed build to set up, so they land
+// with the store submission work.
+//
+// Without this screen the entire activation flow is therefore unreachable on
+// a real phone, which would make the student principal unusable by an actual
+// child.
 //
 // It also survives deep linking arriving later: a child who taps a link gets
 // /activate/<token> directly, and a child whose link did not open the app can

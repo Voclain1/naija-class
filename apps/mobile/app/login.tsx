@@ -230,8 +230,9 @@ export default function LoginScreen() {
 
           {/* First-time students have no password yet — they have an
               invitation from their parent. Without this the activation flow
-              is unreachable on a device, because deep links are not wired up
-              yet (see app/activate/index.tsx). */}
+              is unreachable on a device, because an https link does not open
+              the app (see app/activate/index.tsx for exactly what is and is
+              not configured). */}
           {isStudent ? (
             <Link href="/activate" asChild>
               <Pressable style={styles.activateLink} disabled={submitting}>
