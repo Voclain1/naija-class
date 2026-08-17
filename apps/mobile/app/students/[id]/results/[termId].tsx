@@ -12,6 +12,7 @@ import {
   CenteredMessage,
   Heading,
   Label,
+  Notice,
   Screen,
 } from "../../../../src/components/ui";
 import { FreshnessLabel } from "../../../../src/components/freshness-label";
@@ -66,11 +67,17 @@ export default function ResultDetailScreen() {
         options={{ headerShown: true, title: result?.termName ?? "Results" }}
       />
       <ScrollView contentContainerStyle={styles.content}>
-        {resultQuery.isPending && <CenteredMessage>Loading…</CenteredMessage>}
+        {resultQuery.isPending && (
+          <CenteredMessage>
+            <Body muted>Loading…</Body>
+          </CenteredMessage>
+        )}
 
         {resultQuery.isError && !result && (
           <CenteredMessage>
-            We couldn&apos;t load this report card. Try again shortly.
+            <Notice tone="danger">
+              We couldn&apos;t load this report card. Try again shortly.
+            </Notice>
           </CenteredMessage>
         )}
 

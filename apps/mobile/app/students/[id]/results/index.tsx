@@ -13,6 +13,7 @@ import {
   CenteredMessage,
   Heading,
   Label,
+  Notice,
   Screen,
 } from "../../../../src/components/ui";
 import { FreshnessLabel } from "../../../../src/components/freshness-label";
@@ -57,11 +58,17 @@ export default function ResultsListScreen() {
     <Screen>
       <Stack.Screen options={{ headerShown: true, title: "Results" }} />
       <ScrollView contentContainerStyle={styles.content}>
-        {resultsQuery.isPending && <CenteredMessage>Loading results…</CenteredMessage>}
+        {resultsQuery.isPending && (
+          <CenteredMessage>
+            <Body muted>Loading results…</Body>
+          </CenteredMessage>
+        )}
 
         {resultsQuery.isError && !resultsQuery.data && (
           <CenteredMessage>
-            We couldn&apos;t load results. Pull down or try again shortly.
+            <Notice tone="danger">
+              We couldn&apos;t load results. Pull down or try again shortly.
+            </Notice>
           </CenteredMessage>
         )}
 
