@@ -36,10 +36,26 @@ function walkSchema(node: unknown, visit: (obj: Record<string, unknown>) => void
   Object.values(obj).forEach((v) => walkSchema(v, visit));
 }
 
-// The five lesson_plans content columns the schema must fill. Kept as a
-// literal list rather than imported from the DB layer: this file is the
-// contract check, and importing the thing under test would make it vacuous.
-const LESSON_PLAN_DB_COLUMNS = ["introduction", "mainContent", "activities", "assessment", "homework"];
+// The lesson_plans content columns the schema must fill — the standard
+// Nigerian lesson note sections (prompt v2, 2026-08-17). Kept as a literal
+// list rather than imported from the DB layer or from packages/ai: this file
+// is the contract check, and importing either side of the contract would make
+// it vacuous.
+//
+// `introduction` and `activities` are deliberately ABSENT. They still exist as
+// columns, holding pre-v2 lesson notes, but nothing generates them any more —
+// listing them here would demand the v2 schema re-emit the generic sections
+// the restructure removed.
+const LESSON_PLAN_DB_COLUMNS = [
+  "behaviouralObjectives",
+  "instructionalMaterials",
+  "previousKnowledge",
+  "referenceMaterials",
+  "mainContent",
+  "assessment",
+  "homework",
+  "conclusion",
+];
 
 export const registryIntegrityCase: EvalCase = {
   suite: "Registry + schema integrity",

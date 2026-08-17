@@ -34,14 +34,44 @@ import {
 // sidebar/topbar in print; everything interactive on THIS page —
 // back link, Save buttons, quiz/accept/delete actions — is print:hidden here.
 
-type SectionKey = "introduction" | "mainContent" | "activities" | "assessment" | "homework";
+type SectionKey =
+  | "behaviouralObjectives"
+  | "instructionalMaterials"
+  | "previousKnowledge"
+  | "referenceMaterials"
+  | "mainContent"
+  | "assessment"
+  | "homework"
+  | "conclusion"
+  // Legacy, pre-2026-08-17. Rendered only when the row actually has them.
+  | "introduction"
+  | "activities";
 
+// Standard Nigerian lesson note order. Matches LESSON_PLAN_SECTION_ORDER in
+// packages/ai (derived there from the output schema's `required` array) — the
+// labels are the ones a teacher expects to see in a scheme book, which is the
+// whole point of the v2 restructure.
 const SECTIONS: Array<{ key: SectionKey; label: string; hint: string }> = [
-  { key: "introduction", label: "Introduction", hint: "Hook, prior knowledge, objectives" },
-  { key: "mainContent", label: "Main content", hint: "What you teach, in order" },
-  { key: "activities", label: "Activities", hint: "Student work, timings, materials" },
-  { key: "assessment", label: "Assessment", hint: "Checking understanding" },
-  { key: "homework", label: "Homework", hint: "Task to set" },
+  {
+    key: "behaviouralObjectives",
+    label: "Behavioural objectives",
+    hint: "By the end of the lesson, pupils should be able to...",
+  },
+  { key: "instructionalMaterials", label: "Instructional materials", hint: "What to bring to class" },
+  { key: "previousKnowledge", label: "Previous knowledge", hint: "What pupils already know" },
+  { key: "referenceMaterials", label: "Reference materials", hint: "Textbooks and syllabus" },
+  { key: "mainContent", label: "Presentation", hint: "Step 1, Step 2, Step 3..." },
+  { key: "assessment", label: "Evaluation", hint: "Questions to check understanding" },
+  { key: "homework", label: "Assignment", hint: "Task to take home" },
+  { key: "conclusion", label: "Conclusion", hint: "How the lesson is closed" },
+];
+
+// Pre-v2 lesson notes only. Appended after the sections above, and only for
+// rows that actually carry them, so an old note still renders its content
+// instead of showing eight empty boxes. New generations never populate these.
+const LEGACY_SECTIONS: Array<{ key: SectionKey; label: string; hint: string }> = [
+  { key: "introduction", label: "Introduction (old format)", hint: "Written before 17 Aug 2026" },
+  { key: "activities", label: "Activities (old format)", hint: "Written before 17 Aug 2026" },
 ];
 
 export default function LessonPlanDetailPage() {
@@ -224,7 +254,17 @@ export default function LessonPlanDetailPage() {
     );
   }
 
-  const hasContent = Boolean(plan.introduction);
+  // Checks both shapes: v2 notes lead with behavioural objectives, pre-v2 ones
+  // only ever had an introduction. Keying on one would make every note of the
+  // other era show the "no generated content" warning.
+  const hasContent = Boolean(plan.behaviouralObjectives ?? plan.introduction);
+
+  // Legacy sections appear only when the row actually carries them, so a v2
+  // note doesn't render two permanently-empty "old format" boxes.
+  const visibleSections = [
+    ...SECTIONS,
+    ...LEGACY_SECTIONS.filter(({ key }) => Boolean(plan[key])),
+  ];
 
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-6">
@@ -243,7 +283,14 @@ export default function LessonPlanDetailPage() {
           <h1 className="font-serif text-2xl font-medium tracking-tight text-foreground">
             {plan.topic}
           </h1>
-          <p className="text-sm text-muted-foreground">
+          {/*
+            print:hidden — this line is the SCREEN summary of class, subject
+            and duration. In print the lesson-note header block below states
+            all three as labelled fields, so leaving this visible printed each
+            of them twice, once as a bullet-separated subtitle and once in the
+            header a teacher actually reads. Found in a real print preview.
+          */}
+          <p className="text-sm text-muted-foreground print:hidden">
             {plan.classLevelName} · {plan.subjectName}
             {plan.durationMinutes ? ` · ${plan.durationMinutes} minutes` : ""}
           </p>
@@ -269,6 +316,53 @@ export default function LessonPlanDetailPage() {
         </div>
       ) : null}
 
+      {/*
+        PRINT-ONLY lesson note header. The standard Nigerian lesson note opens
+        with Subject / Class / Date / Time / Duration before the topic, and
+        that block is what a head teacher checks first in a scheme book.
+        It is composed from the row rather than generated: subject, class and
+        duration are already structured columns, so asking the model to
+        restate them would let it contradict the record it is attached to.
+        Date and Time are deliberately blank rules — a lesson note is dated
+        when it is taught, not when it is drafted, and a generated date would
+        simply be a wrong one. On screen this is redundant with the header
+        above, hence print-only.
+      */}
+      {hasContent ? (
+        <dl className="hidden grid-cols-2 gap-x-8 gap-y-1 border-b pb-4 text-sm print:grid">
+          <div className="flex gap-2">
+            <dt className="font-medium">Subject:</dt>
+            <dd>{plan.subjectName}</dd>
+          </div>
+          <div className="flex gap-2">
+            <dt className="font-medium">Class:</dt>
+            <dd>{plan.classLevelName}</dd>
+          </div>
+          <div className="flex gap-2">
+            <dt className="font-medium">Date:</dt>
+            <dd className="min-w-[8rem] border-b border-dotted border-foreground/40" />
+          </div>
+          <div className="flex gap-2">
+            <dt className="font-medium">Time:</dt>
+            <dd className="min-w-[8rem] border-b border-dotted border-foreground/40" />
+          </div>
+          <div className="flex gap-2">
+            <dt className="font-medium">Duration:</dt>
+            <dd>
+              {plan.durationMinutes ? (
+                `${plan.durationMinutes} minutes`
+              ) : (
+                <span className="inline-block min-w-[8rem] border-b border-dotted border-foreground/40" />
+              )}
+            </dd>
+          </div>
+          <div className="flex gap-2">
+            <dt className="font-medium">Topic:</dt>
+            <dd>{plan.topic}</dd>
+          </div>
+        </dl>
+      ) : null}
+
       {!hasContent ? (
         <div className="rounded-md border border-amber-500/40 bg-amber-500/5 p-4 text-sm">
           <p className="font-medium text-foreground">This plan has no generated content.</p>
@@ -279,7 +373,7 @@ export default function LessonPlanDetailPage() {
         </div>
       ) : (
         <div className="flex flex-col gap-6">
-          {SECTIONS.map(({ key, label, hint }) => {
+          {visibleSections.map(({ key, label, hint }) => {
             const current = drafts[key] ?? plan[key] ?? "";
             const dirty = drafts[key] !== undefined && drafts[key] !== (plan[key] ?? "");
             return (
@@ -287,7 +381,17 @@ export default function LessonPlanDetailPage() {
                 <div className="flex items-baseline justify-between gap-3">
                   <div className="flex items-baseline gap-2">
                     <h2 className="font-serif text-lg font-medium text-foreground">{label}</h2>
-                    <span className="text-xs text-muted-foreground">{hint}</span>
+                    {/*
+                      print:hidden — the hints are form-filling affordances
+                      ("What to bring to class", "Step 1, Step 2, Step 3..."),
+                      not part of the lesson note. Printed, they read as
+                      instructions to the teacher on a document whose audience
+                      is the head teacher or an inspector. Caught in a real
+                      print preview, not by any assertion: the section labels
+                      and content were all correct, and the page still printed
+                      its own scaffolding.
+                    */}
+                    <span className="text-xs text-muted-foreground print:hidden">{hint}</span>
                   </div>
                   <div className="flex items-center gap-2 print:hidden">
                     {savedKey === key ? (
