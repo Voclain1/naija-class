@@ -12,6 +12,7 @@ import { Link, Redirect } from "expo-router";
 import { ApiError, ApiNetworkError } from "../src/lib/api/client";
 import { useSession } from "../src/lib/auth/session";
 import { loadSchoolHint } from "../src/lib/auth/school-hint-store";
+import { shouldCollapseSchoolField } from "../src/lib/auth/school-hint";
 import { useTheme } from "../src/theme/theme-provider";
 import { fontSizes, fonts, radii, spacing } from "../src/theme/tokens";
 import { Body, Button, Heading, Notice, Screen } from "../src/components/ui";
@@ -39,11 +40,16 @@ export default function LoginScreen() {
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The school code remembered from the last student sign-in or activation on
+  // this device, and whether the user has asked to change it. Kept separate
+  // from schoolSlug because schoolSlug is what gets SUBMITTED and is editable;
+  // this is only the answer to "do we have one, and is it still being used?".
+  const [rememberedSlug, setRememberedSlug] = useState<string | null>(null);
+  const [editingSchool, setEditingSchool] = useState(false);
 
-  // Prefill the school code from the last student sign-in or activation on
-  // this device. A child is told their admission number by the school and
-  // chooses their own password, but nobody ever tells them a school code —
-  // so without this, a second sign-in can be impossible for them alone.
+  // A child is told their admission number by the school and chooses their own
+  // password, but nobody ever tells them a school code — so without this, a
+  // second sign-in can be impossible for them alone.
   //
   // Only ever fills a field the user has not touched: the guard means a
   // late-resolving read cannot overwrite something already being typed, and
@@ -52,6 +58,7 @@ export default function LoginScreen() {
     let cancelled = false;
     void loadSchoolHint().then((hint) => {
       if (cancelled || hint === null) return;
+      setRememberedSlug(hint);
       setSchoolSlug((current) => (current.length === 0 ? hint : current));
     });
     return () => {
@@ -64,6 +71,22 @@ export default function LoginScreen() {
   }
 
   const isStudent = mode === "student";
+
+  // Collapse only when there is a remembered code AND it is still the value in
+  // play. If the user has revealed the field, or edited it away from what was
+  // remembered, the input stays — re-collapsing under someone mid-correction
+  // would hide the thing they are trying to fix.
+  //
+  // Revealing deliberately KEEPS the current value rather than clearing it.
+  // Deleting a wrong code costs one gesture; recovering a forgotten one is
+  // impossible for a child, so the asymmetry decides it.
+  const showCollapsedSchool = shouldCollapseSchoolField({
+    isStudent,
+    editing: editingSchool,
+    remembered: rememberedSlug,
+    current: schoolSlug,
+  });
+
   const canSubmit = isStudent
     ? schoolSlug.trim().length > 0 &&
       admissionNumber.trim().length > 0 &&
@@ -183,16 +206,48 @@ export default function LoginScreen() {
 
           {isStudent ? (
             <>
-              <TextInput
-                value={schoolSlug}
-                onChangeText={setSchoolSlug}
-                placeholder="School code"
-                placeholderTextColor={colors.mutedForeground}
-                autoCapitalize="none"
-                autoCorrect={false}
-                editable={!submitting}
-                style={inputStyle}
-              />
+              {/* A returning child on their own device sees two fields, not
+                  three — the school code is the one credential nobody ever
+                  tells them, so asking for it every time is asking for the
+                  one thing they cannot supply.
+
+                  It collapses rather than disappears: the code is still shown,
+                  so a child can read it off the screen and a parent can check
+                  it, and it is still submitted. Anyone whose school is wrong —
+                  a switched device, a sibling at another school, a shared
+                  handset — taps through to the full field. */}
+              {showCollapsedSchool ? (
+                <View style={styles.schoolSummary}>
+                  <Text style={[styles.schoolSummaryText, { color: colors.mutedForeground }]}>
+                    Signing in to{" "}
+                    <Text style={[styles.schoolSummarySlug, { color: colors.foreground }]}>
+                      {schoolSlug}
+                    </Text>
+                  </Text>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Change school"
+                    disabled={submitting}
+                    onPress={() => setEditingSchool(true)}
+                    style={styles.schoolChange}
+                  >
+                    <Text style={[styles.schoolChangeText, { color: colors.primary }]}>
+                      Not your school?
+                    </Text>
+                  </Pressable>
+                </View>
+              ) : (
+                <TextInput
+                  value={schoolSlug}
+                  onChangeText={setSchoolSlug}
+                  placeholder="School code"
+                  placeholderTextColor={colors.mutedForeground}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  editable={!submitting}
+                  style={inputStyle}
+                />
+              )}
               <TextInput
                 value={admissionNumber}
                 onChangeText={setAdmissionNumber}
@@ -292,6 +347,28 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   switchLabel: {
+    fontFamily: fonts.sansSemibold,
+    fontSize: fontSizes.body,
+  },
+  schoolSummary: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: spacing.sm,
+  },
+  schoolSummaryText: {
+    flexShrink: 1,
+    fontFamily: fonts.sans,
+    fontSize: fontSizes.body,
+  },
+  schoolSummarySlug: {
+    fontFamily: fonts.sansSemibold,
+  },
+  schoolChange: {
+    minHeight: 44, // the minimum comfortable tap target
+    justifyContent: "center",
+  },
+  schoolChangeText: {
     fontFamily: fonts.sansSemibold,
     fontSize: fontSizes.body,
   },
