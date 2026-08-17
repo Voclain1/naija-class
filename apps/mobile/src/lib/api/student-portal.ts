@@ -1,4 +1,7 @@
 import type {
+  AcceptStudentInvitationInput,
+  AcceptStudentInvitationResponse,
+  PublicStudentInvitationDto,
   ReleasedResultDetailDto,
   ReleasedResultListResponse,
   StudentLoginInput,
@@ -30,6 +33,36 @@ export function studentLogin(
     method: "POST",
     body: input,
   });
+}
+
+// ---- Activation (D26) ---------------------------------------------------
+//
+// Both routes are UNAUTHENTICATED: a child holding an invitation has no
+// session yet, which is the whole reason the server resolves them through a
+// SECURITY DEFINER function before any tenant context exists.
+//
+// Note what the lookup deliberately does NOT return: the student's name. The
+// accept screen would read better as "Set a password for Adaeze", but this
+// endpoint takes an attacker-supplied token, and a name would turn a leaked
+// or guessed link into a disclosure of which child it belongs to. The screen
+// says "your password"; the child knows who they are.
+
+export function getStudentInvitation(
+  token: string,
+): Promise<PublicStudentInvitationDto> {
+  return apiFetch<PublicStudentInvitationDto>(
+    `/student-portal/invitations/${encodeURIComponent(token)}`,
+  );
+}
+
+export function acceptStudentInvitation(
+  token: string,
+  input: AcceptStudentInvitationInput,
+): Promise<AcceptStudentInvitationResponse> {
+  return apiFetch<AcceptStudentInvitationResponse>(
+    `/student-portal/invitations/${encodeURIComponent(token)}/accept`,
+    { method: "POST", body: input },
+  );
 }
 
 export function getStudentMe(): Promise<StudentMeResponse> {

@@ -30,6 +30,10 @@ export const queryKeys = {
   //
   // These cannot collide with the guardian keys above even on a shared
   // handset, and the cache is wiped on every sign-out regardless (D12).
+  // A guardian's view of one child's portal access state.
+  portalStatus: (studentId: string) =>
+    ["students", studentId, "portal-status"] as const,
+
   me: ["me"] as const,
   myResults: ["me", "results"] as const,
   myResult: (termId: string) => ["me", "results", termId] as const,
