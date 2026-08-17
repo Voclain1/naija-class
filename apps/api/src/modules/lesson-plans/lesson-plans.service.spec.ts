@@ -13,12 +13,24 @@ import { LessonPlansService } from "./lesson-plans.service.js";
 // is easy to get wrong — that a failed generation leaves a usable DRAFT rather
 // than a 500 with nothing to show for it.
 
+// Standard Nigerian lesson note sections (prompt v2). Must stay in step with
+// LESSON_PLAN_SECTION_ORDER — the service validates every key in that list is
+// present and non-empty, so a fixture still shaped like v1 makes every
+// generation here fail as "incomplete".
 const GOOD_SECTIONS = {
-  introduction: "Open by asking students what plants need to grow. ".repeat(3),
-  mainContent: "Photosynthesis converts light energy into chemical energy. ".repeat(3),
-  activities: "In groups of six, place one leaf in a dark cupboard. ".repeat(3),
-  assessment: "Ask: name the two raw materials. Correct answer names water and carbon dioxide. ".repeat(2),
+  behaviouralObjectives:
+    "By the end of the lesson, pupils should be able to: 1. Define photosynthesis. 2. Name the raw materials. ".repeat(
+      2,
+    ),
+  instructionalMaterials: "A real green leaf; chalkboard and chalk; a hand-drawn wall chart. ".repeat(2),
+  previousKnowledge: "Pupils have already learnt the parts of a flowering plant and their functions. ".repeat(2),
+  referenceMaterials: "NERDC Basic Science Curriculum for Junior Secondary Schools; WAEC/NECO syllabus. ".repeat(2),
+  mainContent: "Step 1: Teacher holds up the leaf and asks how the plant feeds. Step 2: Pupils copy the definition. ".repeat(
+    2,
+  ),
+  assessment: "1. What is photosynthesis? 2. Name the three raw materials needed for photosynthesis. ".repeat(2),
   homework: "Write the word equation and draw a labelled diagram. ".repeat(2),
+  conclusion: "Teacher summarises the word equation on the board for pupils to copy into their notes. ".repeat(2),
 };
 
 class FakePort implements AnthropicPort {
@@ -106,14 +118,22 @@ describe("LessonPlansService", () => {
 
   const input = () => ({ classLevelId, subjectId, topic: `Photosynthesis ${runId}`, objectives: null, durationMinutes: 40 });
 
-  it("generates all five sections and persists them", async () => {
+  it("generates every Nigerian lesson-note section and persists them", async () => {
     const plan = await service.createAndGenerate(schoolId, userId, input());
 
-    expect(plan.introduction).toBeTruthy();
+    expect(plan.behaviouralObjectives).toBeTruthy();
+    expect(plan.instructionalMaterials).toBeTruthy();
+    expect(plan.previousKnowledge).toBeTruthy();
+    expect(plan.referenceMaterials).toBeTruthy();
     expect(plan.mainContent).toBeTruthy();
-    expect(plan.activities).toBeTruthy();
     expect(plan.assessment).toBeTruthy();
     expect(plan.homework).toBeTruthy();
+    expect(plan.conclusion).toBeTruthy();
+    // v1's generic sections are no longer generated — a v2 note must not
+    // silently populate them, or the "old format" UI blocks would appear on
+    // every freshly generated note.
+    expect(plan.introduction).toBeNull();
+    expect(plan.activities).toBeNull();
     expect(plan.status).toBe("DRAFT");
     expect(plan.classLevelName).toBe("JSS 2");
   });
@@ -151,7 +171,10 @@ describe("LessonPlansService", () => {
       }),
     );
     expect(rows.length - before).toBe(1);
-    expect(rows[0]).toMatchObject({ success: true, promptVersion: "1", userId });
+    // v2 — the Nigerian lesson note format. Pinned deliberately: the ledger's
+    // promptVersion is what lets a later quality review tell v1 output from v2
+    // output, so a silent version drift here would make that review meaningless.
+    expect(rows[0]).toMatchObject({ success: true, promptVersion: "2", userId });
     expect(rows[0].inputTokens).toBe(200);
     expect(rows[0].outputTokens).toBe(400);
   });
@@ -165,7 +188,7 @@ describe("LessonPlansService", () => {
     );
     // The row survives with the teacher's inputs intact so they can retry
     // without retyping.
-    const failed = rows.find((r) => r.introduction === null);
+    const failed = rows.find((r) => r.behaviouralObjectives === null);
     expect(failed).toBeDefined();
     expect(failed?.topic).toBe(input().topic);
     expect(failed?.durationMinutes).toBe(40);
