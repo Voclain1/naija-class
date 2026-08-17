@@ -3,6 +3,7 @@ import { Injectable, Logger } from "@nestjs/common";
 import {
   LESSON_PLAN_PROMPT,
   LESSON_PLAN_SCHEMA,
+  LESSON_PLAN_SECTION_ORDER,
   LESSON_PLAN_SYSTEM,
   LESSON_QUIZ_PROMPT,
   LESSON_QUIZ_SYSTEM,
@@ -40,21 +41,25 @@ import { AiGenerationService } from "../../common/ai/ai-generation.service.js";
 // automatically.
 // ---------------------------------------------------------------------------
 
+// Standard Nigerian lesson note sections (prompt v2). `mainContent`,
+// `assessment` and `homework` carry Presentation, Evaluation and Assignment
+// under their original column names — see the schema note in
+// packages/ai/src/prompts/lesson-plan.ts.
 interface GeneratedSections {
-  introduction: string;
+  behaviouralObjectives: string;
+  instructionalMaterials: string;
+  previousKnowledge: string;
+  referenceMaterials: string;
   mainContent: string;
-  activities: string;
   assessment: string;
   homework: string;
+  conclusion: string;
 }
 
-const SECTION_KEYS: Array<keyof GeneratedSections> = [
-  "introduction",
-  "mainContent",
-  "activities",
-  "assessment",
-  "homework",
-];
+// Derived from the output schema's `required` array rather than re-listed, so
+// adding a section to the prompt cannot leave this validation silently behind
+// — the failure mode that would let an incomplete note reach a teacher.
+const SECTION_KEYS = LESSON_PLAN_SECTION_ORDER as ReadonlyArray<keyof GeneratedSections>;
 
 @Injectable()
 export class LessonPlansService {
@@ -156,11 +161,14 @@ export class LessonPlansService {
     }
 
     return {
-      introduction: obj.introduction as string,
+      behaviouralObjectives: obj.behaviouralObjectives as string,
+      instructionalMaterials: obj.instructionalMaterials as string,
+      previousKnowledge: obj.previousKnowledge as string,
+      referenceMaterials: obj.referenceMaterials as string,
       mainContent: obj.mainContent as string,
-      activities: obj.activities as string,
       assessment: obj.assessment as string,
       homework: obj.homework as string,
+      conclusion: obj.conclusion as string,
     };
   }
 
@@ -176,7 +184,19 @@ export class LessonPlansService {
     );
     if (!plan) throw new NotFoundError("Lesson plan not found.");
 
-    const lessonContent = [plan.introduction, plan.mainContent, plan.activities]
+    // Feeds the quiz generator the teaching content only. Reads BOTH shapes:
+    // v2 sections first, then the two legacy columns, so a quiz can still be
+    // generated against a lesson note written before the 2026-08-17
+    // restructure. Objectives, materials, references and conclusion are
+    // deliberately excluded — the quiz must test what was taught, and a
+    // reference list in the prompt invites questions about the textbook.
+    const lessonContent = [
+      plan.behaviouralObjectives,
+      plan.previousKnowledge,
+      plan.mainContent,
+      plan.introduction,
+      plan.activities,
+    ]
       .filter(Boolean)
       .join("\n\n");
     if (!lessonContent.trim()) {
@@ -233,7 +253,10 @@ export class LessonPlansService {
       createdBy: r.createdBy,
       createdAt: r.createdAt,
       updatedAt: r.updatedAt,
-      hasContent: Boolean(r.introduction),
+      // Checks both shapes: v2 writes behaviouralObjectives first, pre-v2 rows
+      // only ever had introduction. Keying this on one shape would make every
+      // lesson note of the other era render as "not yet generated".
+      hasContent: Boolean(r.behaviouralObjectives ?? r.introduction),
       hasQuiz: Boolean(r.quiz),
     }));
   }
@@ -257,6 +280,11 @@ export class LessonPlansService {
       objectives: row.objectives,
       durationMinutes: row.durationMinutes,
       status: row.status,
+      behaviouralObjectives: row.behaviouralObjectives,
+      instructionalMaterials: row.instructionalMaterials,
+      previousKnowledge: row.previousKnowledge,
+      referenceMaterials: row.referenceMaterials,
+      conclusion: row.conclusion,
       introduction: row.introduction,
       mainContent: row.mainContent,
       activities: row.activities,
