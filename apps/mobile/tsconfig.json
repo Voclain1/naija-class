@@ -1,5 +1,8 @@
 {
-  "extends": ["expo/tsconfig.base", "@school-kit/config/tsconfig.expo.json"],
+  "extends": [
+    "expo/tsconfig.base",
+    "@school-kit/config/tsconfig.expo.json"
+  ],
   "//": [
     ".expo/types is deliberately NOT included, and app.json sets",
     "experiments.typedRoutes = false to match.",
@@ -18,6 +21,13 @@
     "are plain strings until typed routes can be generated as part of the",
     "build; revisit if Expo ships a standalone type-generation command."
   ],
-  "include": ["**/*.ts", "**/*.tsx", "expo-env.d.ts"],
-  "exclude": ["node_modules", "dist", ".expo"]
+  "include": [
+    "**/*.ts",
+    "**/*.tsx"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    ".expo"
+  ]
 }

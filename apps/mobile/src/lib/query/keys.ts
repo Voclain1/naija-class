@@ -37,4 +37,6 @@ export const queryKeys = {
   me: ["me"] as const,
   myResults: ["me", "results"] as const,
   myResult: (termId: string) => ["me", "results", termId] as const,
+  myAttendance: ["me", "attendance"] as const,
+  myFees: ["me", "fees"] as const,
 } as const;

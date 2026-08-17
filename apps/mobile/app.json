@@ -2,6 +2,7 @@
   "expo": {
     "name": "School Kit",
     "slug": "school-kit",
+    "owner": "voclains-team",
     "version": "0.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -36,6 +37,12 @@
     ],
     "experiments": {
       "typedRoutes": false
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "970ed906-d9a1-4110-b923-ae969dfdad09"
+      }
     }
   }
 }

@@ -38,6 +38,62 @@ variable is unset, which keeps `expo start` working with no configuration.
 > here too. Verify with `eas env:list` after the first real build rather than
 > assuming the profile above took effect.
 
+## `eas-build-post-install` — why a build hook exists at all
+
+`package.json` carries an `eas-build-post-install` script:
+
+```
+pnpm --filter "@school-kit/mobile^..." build
+```
+
+It looks removable. It is not — without it, **every** EAS build fails at
+`EAGER_BUNDLE`, because a clean EAS environment does not have
+`packages/types/dist/`.
+
+The chain:
+
+- `packages/types/package.json` points `main`/`types`/`exports` at
+  `./dist/index.js`. That is a repo-wide convention, not a local choice —
+  CLAUDE.md → *ESM module resolution*: compiled output, "never at `src/`".
+- `dist/` is gitignored (`.gitignore:6`).
+- **EAS builds from the Git archive**, so a gitignored directory is never
+  uploaded.
+- EAS's lifecycle is install → prebuild → bundle. Nothing in it runs
+  `pnpm build`, so nothing regenerates `dist/`.
+- Metro then reads the `exports` map, finds the target missing, warns that the
+  package "contains an invalid package.json configuration", falls back to
+  file-based resolution, finds nothing there either, and fails on the first
+  file that imports `@school-kit/types` — which is a dozen of them, so the
+  filename in the error is incidental.
+
+`eas-build-post-install` runs after dependencies are installed (so `tsc` is
+present) and before JS bundling. Unlike a plain `postinstall`, it is invoked
+only by EAS and has no effect on a local `pnpm install`.
+
+### Why the filter is `@school-kit/mobile^...` and not `./packages/*`
+
+`^...` selects exactly mobile's workspace dependency **closure** —
+`@school-kit/config` (no build script, skipped) and `@school-kit/types`. It
+also stays correct on its own if mobile ever gains another workspace
+dependency.
+
+CI uses `pnpm -r --filter "./packages/*" build` instead
+(`.github/workflows/ci.yml`), and that is deliberately **not** copied here:
+it also builds `packages/db`, whose `tsc` fails unless `prisma generate` has
+run first — an ordering hazard that workflow documents in its own comment.
+`packages/db` is not in mobile's closure and has no business being pulled
+into a mobile build.
+
+### The general lesson
+
+This is the third environment to hit the same trap. Local passes prove
+nothing about it: `expo export`, `expo export:embed --eager` and
+`pnpm typecheck` all read a `dist/` left on disk by an earlier `pnpm build`
+or `pnpm dev` (turbo's `build` and `dev` tasks both `dependsOn: ["^build"]`).
+The artifact is stale-but-present locally and absent on EAS. CI needed the
+same explicit step, twice. Nothing caught it for `apps/mobile` because
+`ci.yml` has no mobile job.
+
 ## Why `web.output` is `"single"`, not `"static"`
 
 The Phase 0 scaffold set `output: "static"`, which runs a Node prerender pass

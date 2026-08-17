@@ -96,6 +96,24 @@ export default function MyHomeScreen() {
           </Pressable>
         </Link>
 
+        <Link href="/me/attendance" asChild>
+          <Pressable>
+            <Card>
+              <Heading>My attendance</Heading>
+              <Body muted>How many days you have been in school.</Body>
+            </Card>
+          </Pressable>
+        </Link>
+
+        <Link href="/me/fees" asChild>
+          <Pressable>
+            <Card>
+              <Heading>My fees</Heading>
+              <Body muted>What your school has invoiced this year.</Body>
+            </Card>
+          </Pressable>
+        </Link>
+
         <Button title="Sign out" variant="secondary" onPress={() => void signOut()} />
       </ScrollView>
     </Screen>

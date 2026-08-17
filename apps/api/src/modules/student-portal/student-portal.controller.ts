@@ -8,6 +8,8 @@ import {
   type PublicStudentInvitationDto,
   type StudentLoginInput,
   type StudentLoginResponse,
+  type PortalInvoiceListResponse,
+  type StudentAttendanceResponse,
   type StudentMeResponse,
   type ReleasedResultDetailDto,
   type ReleasedResultListResponse,
@@ -102,6 +104,27 @@ export class StudentPortalController {
     @Param("termId") termId: string,
   ): Promise<ReleasedResultDetailDto> {
     return this.service.getResult(ctx, termId);
+  }
+
+  // GET /student-portal/me/attendance — own attendance, by term.
+  // No parameters at all: the session names the student, and there is nothing
+  // else to ask for.
+  @Get("me/attendance")
+  @UseGuards(StudentAuthGuard)
+  async attendance(
+    @CurrentStudent() ctx: StudentAuthContext,
+  ): Promise<StudentAttendanceResponse> {
+    return this.service.listAttendance(ctx);
+  }
+
+  // GET /student-portal/me/fees — own invoices, read only. No pay route here
+  // by design; see the service method.
+  @Get("me/fees")
+  @UseGuards(StudentAuthGuard)
+  async fees(
+    @CurrentStudent() ctx: StudentAuthContext,
+  ): Promise<PortalInvoiceListResponse> {
+    return this.service.listFees(ctx);
   }
 
   @Post("logout")

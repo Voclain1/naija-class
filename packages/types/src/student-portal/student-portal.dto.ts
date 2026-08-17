@@ -157,3 +157,45 @@ export interface DeactivateStudentPortalResponse {
   sessionsRevoked: number;
   invitationsRevoked: number;
 }
+
+// ---------------------------------------------------------------------------
+// Own attendance (slice 4)
+//
+// Per-term, most recent first. There is no date-range parameter and no way to
+// ask about anybody else: like every other /student-portal/me/* shape, the
+// session decides whose attendance this is.
+//
+// The rate is Int hundredths (8750 = 87.50%), never a float — the same
+// discipline the money rule applies to kobo, for the same reason: a
+// percentage rendered from a float acquires a long tail of digits that is
+// pure noise, and comparing two of them for equality stops working.
+//
+// CRUCIALLY it is the SAME rule staff see, computed by the same helper:
+// (PRESENT + LATE) / daysMarked, with EXCUSED left in the denominator as
+// not-attended. A student and their form teacher looking at the same term
+// must not read two different numbers — and the only way to guarantee that is
+// to share the computation rather than re-derive it here.
+//
+// Terms with nothing marked are OMITTED rather than returned with a zero
+// rate. rateHundredths() answers 0 for an empty denominator, which on a staff
+// screen never surfaces (that query only tallies students who have records)
+// but here would put "0.00%" in front of a child whose school simply has not
+// taken a register yet. "You attended none of it" and "nobody has marked it"
+// are opposite meanings; omitting the term lets the screen say the true one.
+export interface StudentAttendanceTermDto {
+  termId: string;
+  termName: string;
+  sequence: number;
+  academicYearLabel: string;
+  daysMarked: number;
+  presentCount: number;
+  absentCount: number;
+  lateCount: number;
+  excusedCount: number;
+  /** Int hundredths: 8750 = 87.50%. */
+  attendanceRate: number;
+}
+
+export interface StudentAttendanceResponse {
+  data: StudentAttendanceTermDto[];
+}

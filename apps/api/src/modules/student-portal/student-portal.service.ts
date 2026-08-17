@@ -14,6 +14,9 @@ import {
   type StudentPortalStudentDto,
   type ReleasedResultDetailDto,
   type ReleasedResultListResponse,
+  type PortalInvoiceListResponse,
+  type StudentAttendanceResponse,
+  type StudentAttendanceTermDto,
 } from "@school-kit/types";
 
 import * as password from "../../common/auth/password";
@@ -22,6 +25,8 @@ import { mayActivate, mayHoldSession } from "../../common/auth/student-portal-st
 import type { StudentAuthContext } from "../../common/auth/student-auth-context";
 import { loadCurrentEnrollmentForStudent } from "../enrollments/enrollments.service";
 import { ReleasedResultsService } from "../report-cards/released-results.service";
+import { PortalInvoicesService } from "../portal-finance/portal-invoices.service";
+import { rateHundredths } from "../attendance/shared/attendance-shared.util";
 
 const LOGIN_AUDIT_ACTION = "student.login";
 const LOGIN_FAILED_AUDIT_ACTION = "student.login-failed";
@@ -84,7 +89,10 @@ function toStudentDto(
 
 @Injectable()
 export class StudentPortalService {
-  constructor(private readonly releasedResults: ReleasedResultsService) {}
+  constructor(
+    private readonly releasedResults: ReleasedResultsService,
+    private readonly invoices: PortalInvoicesService,
+  ) {}
 
   // POST /student-portal/login — PUBLIC.
   //
@@ -261,6 +269,99 @@ export class StudentPortalService {
   async getResult(ctx: StudentAuthContext, termId: string): Promise<ReleasedResultDetailDto> {
     return withTenant(ctx.schoolId, (db) =>
       this.releasedResults.getForStudent(db, ctx.studentId, termId),
+    );
+  }
+
+  // GET /student-portal/me/attendance — the student's own attendance, by term.
+  //
+  // studentId comes from the session, exactly as the results reads do. There
+  // is no date range and no student parameter: the narrowest query that
+  // answers "how am I doing" is also the one with nothing to get wrong.
+  //
+  // The rate is computed with the SAME helper the staff summary uses
+  // (rateHundredths, (PRESENT + LATE) / daysMarked, EXCUSED left in the
+  // denominator as not-attended). A student and their form teacher reading
+  // two different percentages for the same term would be worse than either
+  // number being unavailable, so this shares the computation rather than
+  // restating the rule.
+  async listAttendance(ctx: StudentAuthContext): Promise<StudentAttendanceResponse> {
+    const data = await withTenant(ctx.schoolId, async (db) => {
+      const records = await db.attendanceRecord.findMany({
+        where: { studentId: ctx.studentId },
+        select: { termId: true, status: true },
+      });
+      if (records.length === 0) return [];
+
+      const tallies = new Map<
+        string,
+        { daysMarked: number; present: number; absent: number; late: number; excused: number }
+      >();
+      for (const r of records) {
+        const t =
+          tallies.get(r.termId) ??
+          { daysMarked: 0, present: 0, absent: 0, late: 0, excused: 0 };
+        t.daysMarked += 1;
+        if (r.status === "PRESENT") t.present += 1;
+        else if (r.status === "ABSENT") t.absent += 1;
+        else if (r.status === "LATE") t.late += 1;
+        else t.excused += 1;
+        tallies.set(r.termId, t);
+      }
+
+      const terms = await db.term.findMany({
+        where: { id: { in: [...tallies.keys()] } },
+        select: {
+          id: true,
+          name: true,
+          sequence: true,
+          academicYear: { select: { label: true, startDate: true } },
+        },
+      });
+
+      // Most recent first — newest academic year, then latest term within it.
+      // Sorted here rather than in the database because the ordering key spans
+      // a join and a tally the database has not seen.
+      return terms
+        .sort((a, b) => {
+          const byYear =
+            b.academicYear.startDate.getTime() - a.academicYear.startDate.getTime();
+          return byYear !== 0 ? byYear : b.sequence - a.sequence;
+        })
+        .map((term): StudentAttendanceTermDto => {
+          const t = tallies.get(term.id)!;
+          return {
+            termId: term.id,
+            termName: term.name,
+            sequence: term.sequence,
+            academicYearLabel: term.academicYear.label,
+            daysMarked: t.daysMarked,
+            presentCount: t.present,
+            absentCount: t.absent,
+            lateCount: t.late,
+            excusedCount: t.excused,
+            attendanceRate: rateHundredths(t.present + t.late, t.daysMarked),
+          };
+        });
+    });
+
+    return { data };
+  }
+
+  // GET /student-portal/me/fees — the student's own invoices.
+  //
+  // Reuses PortalInvoicesService's query, the same way the results reads
+  // reuse ReleasedResultsService: a child and their parent must see the same
+  // figures, and the only way to be sure of that is for there to be one
+  // query. The guardian route reaches it through withGuardian(); this one
+  // reaches it with a studentId that came from the session.
+  //
+  // READ ONLY. There is deliberately no student equivalent of
+  // POST /portal/students/:id/invoices/:invoiceId/pay — paying is the
+  // guardian's action, and money-moving endpoints stay on the principal who
+  // owns the money (CLAUDE.md's money rules).
+  async listFees(ctx: StudentAuthContext): Promise<PortalInvoiceListResponse> {
+    return withTenant(ctx.schoolId, (db) =>
+      this.invoices.listForStudentInTenant(db, ctx.studentId),
     );
   }
 

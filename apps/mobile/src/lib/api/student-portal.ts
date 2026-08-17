@@ -1,4 +1,6 @@
 import type {
+  PortalInvoiceListResponse,
+  StudentAttendanceResponse,
   AcceptStudentInvitationInput,
   AcceptStudentInvitationResponse,
   PublicStudentInvitationDto,
@@ -95,4 +97,20 @@ export async function studentLogout(): Promise<void> {
   } catch {
     // Intentionally swallowed — see above.
   }
+}
+
+/** Own attendance, per term, most recent first. No parameters — see the API. */
+export function listStudentAttendance(): Promise<StudentAttendanceResponse> {
+  return apiFetch<StudentAttendanceResponse>("/student-portal/me/attendance");
+}
+
+/**
+ * Own invoices, read only.
+ *
+ * Same DTO the guardian portal returns, from the same server-side query, so a
+ * child and their parent cannot be shown different figures. There is no
+ * student pay endpoint to call — paying is the guardian's action.
+ */
+export function listStudentFees(): Promise<PortalInvoiceListResponse> {
+  return apiFetch<PortalInvoiceListResponse>("/student-portal/me/fees");
 }

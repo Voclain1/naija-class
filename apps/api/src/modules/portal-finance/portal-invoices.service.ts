@@ -88,30 +88,45 @@ export class PortalInvoicesService {
     studentId: string,
   ): Promise<PortalInvoiceListResponse> {
     return withTenant(guardianCtx.schoolId, (db) =>
-      withGuardian(guardianCtx.guardianId, studentId, db, async (db2) => {
-        const rows = await db2.invoice.findMany({
-          where: { studentId },
-          orderBy: { createdAt: "desc" },
-          select: INVOICE_SELECT,
-        });
-
-        const terms = await loadTermsByIds(db2, [...new Set(rows.map((r) => r.termId))]);
-
-        return {
-          data: rows.map((row) => {
-            const term = terms.get(row.termId);
-            // Every invoice's termId is validated against a real Term row
-            // at issue time (InvoiceGenerationService.fetchTerm) — this is
-            // unreachable in practice, guarded rather than asserted with
-            // `!` for the same reason PortalStudentsService.findById's own
-            // impossible-branch comment gives.
-            if (!term) {
-              throw new InternalError(`Invoice ${row.id} references a missing term ${row.termId}.`);
-            }
-            return toPortalInvoiceDto(row, term);
-          }),
-        };
-      }),
+      withGuardian(guardianCtx.guardianId, studentId, db, (db2) =>
+        this.listForStudentInTenant(db2, studentId),
+      ),
     );
+  }
+
+  // The query itself, with NO authorization of its own — the caller has
+  // already established which student it may ask about.
+  //
+  // Shared deliberately, mirroring ReleasedResultsService: a guardian gets
+  // here after withGuardian() has checked the link, and a student gets here
+  // with an id that came from their own session and can name nobody else.
+  // Two copies of this query would be two places for the fee figures a family
+  // sees to drift apart from each other.
+  async listForStudentInTenant(
+    db: PrismaClient,
+    studentId: string,
+  ): Promise<PortalInvoiceListResponse> {
+    const rows = await db.invoice.findMany({
+      where: { studentId },
+      orderBy: { createdAt: "desc" },
+      select: INVOICE_SELECT,
+    });
+
+    const terms = await loadTermsByIds(db, [...new Set(rows.map((r) => r.termId))]);
+
+    return {
+      data: rows.map((row) => {
+        const term = terms.get(row.termId);
+        // Every invoice's termId is validated against a real Term row at
+        // issue time (InvoiceGenerationService.fetchTerm) — this is
+        // unreachable in practice, guarded rather than asserted with `!` for
+        // the same reason PortalStudentsService.findById's own
+        // impossible-branch comment gives.
+        if (!term) {
+          throw new InternalError(`Invoice ${row.id} references a missing term ${row.termId}.`);
+        }
+        return toPortalInvoiceDto(row, term);
+      }),
+    };
   }
 }
