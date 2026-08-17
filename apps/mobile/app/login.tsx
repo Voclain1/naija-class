@@ -2,7 +2,9 @@ import { useState } from "react";
 import {
   KeyboardAvoidingView,
   Platform,
+  Pressable,
   StyleSheet,
+  Text,
   TextInput,
   View,
 } from "react-native";
@@ -13,21 +15,66 @@ import { useTheme } from "../src/theme/theme-provider";
 import { fontSizes, fonts, radii, spacing } from "../src/theme/tokens";
 import { Body, Button, Heading, Notice, Screen } from "../src/components/ui";
 
+// One login screen, two principals.
+//
+// Not two screens behind a chooser: a parent and a child on a shared handset
+// both start here, and an extra "who are you?" step before either can even see
+// a form is a wall in front of the only door. The toggle is the first thing on
+// the screen and the form beneath it changes — nothing is hidden behind a
+// second navigation.
+type Mode = "guardian" | "student";
+
 export default function LoginScreen() {
-  const { status, signIn } = useSession();
+  const { status, principal, signIn, signInStudent } = useSession();
   const { colors } = useTheme();
+  const [mode, setMode] = useState<Mode>("guardian");
+
+  // Guardian fields
   const [email, setEmail] = useState("");
+  // Student fields
+  const [schoolSlug, setSchoolSlug] = useState("");
+  const [admissionNumber, setAdmissionNumber] = useState("");
+  // Shared
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  if (status === "authenticated") return <Redirect href="/students" />;
+  if (status === "authenticated") {
+    return <Redirect href={principal === "student" ? "/me" : "/students"} />;
+  }
+
+  const isStudent = mode === "student";
+  const canSubmit = isStudent
+    ? schoolSlug.trim().length > 0 &&
+      admissionNumber.trim().length > 0 &&
+      password.length > 0
+    : email.trim().length > 0 && password.length > 0;
+
+  function switchMode(next: Mode) {
+    // Clear the error when switching: a failure from the parent form is not
+    // about the student form, and leaving it up reads as though the new form
+    // has already been rejected before it was filled in.
+    setError(null);
+    setMode(next);
+  }
 
   async function onSubmit() {
     setError(null);
     setSubmitting(true);
     try {
-      await signIn({ email: email.trim().toLowerCase(), password });
+      if (isStudent) {
+        // Trimming/lowercasing of the school code and trimming of the
+        // admission number also happen server-side in studentLoginSchema.
+        // Doing it here too means the value the child sees in the box is the
+        // value that gets sent — not a silently different one.
+        await signInStudent({
+          schoolSlug: schoolSlug.trim().toLowerCase(),
+          admissionNumber: admissionNumber.trim(),
+          password,
+        });
+      } else {
+        await signIn({ email: email.trim().toLowerCase(), password });
+      }
       // No navigation here — the session flipping to "authenticated" makes
       // the <Redirect> above fire. One source of truth for routing.
     } catch (caught) {
@@ -39,7 +86,14 @@ export default function LoginScreen() {
       } else if (caught instanceof ApiError) {
         setError(
           caught.status === 401
-            ? "That email or password is not right."
+            ? isStudent
+              ? // Deliberately does not say which of the three was wrong. The
+                // server refuses to distinguish "no such school", "no such
+                // admission number" and "wrong password" — admission numbers
+                // are sequential and school slugs are public, so a specific
+                // message would let anyone enumerate a school's roll.
+                "That school code, admission number or password is not right."
+              : "That email or password is not right."
             : caught.message,
         );
       } else {
@@ -50,6 +104,15 @@ export default function LoginScreen() {
     }
   }
 
+  const inputStyle = [
+    styles.input,
+    {
+      color: colors.foreground,
+      borderColor: colors.border,
+      backgroundColor: colors.card,
+    },
+  ];
+
   return (
     <Screen>
       <KeyboardAvoidingView
@@ -59,32 +122,88 @@ export default function LoginScreen() {
         <View style={styles.form}>
           <View style={styles.intro}>
             <Heading>Welcome back</Heading>
-            <Body muted>Sign in to follow your child&apos;s progress.</Body>
+            <Body muted>
+              {isStudent
+                ? "Sign in to see your results."
+                : "Sign in to follow your child's progress."}
+            </Body>
           </View>
 
-          <TextInput
-            value={email}
-            onChangeText={setEmail}
-            placeholder="Email address"
-            placeholderTextColor={colors.mutedForeground}
-            // autoCapitalize/autoCorrect off is not cosmetic: mobile keyboards
-            // will happily capitalise and "correct" an email into one that
-            // does not exist, producing a login failure the user cannot see
-            // the cause of.
-            autoCapitalize="none"
-            autoCorrect={false}
-            keyboardType="email-address"
-            textContentType="emailAddress"
-            editable={!submitting}
-            style={[
-              styles.input,
-              {
-                color: colors.foreground,
-                borderColor: colors.border,
-                backgroundColor: colors.card,
-              },
-            ]}
-          />
+          <View style={[styles.switcher, { borderColor: colors.border }]}>
+            {(["guardian", "student"] as const).map((option) => {
+              const active = mode === option;
+              return (
+                <Pressable
+                  key={option}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: active }}
+                  disabled={submitting}
+                  onPress={() => switchMode(option)}
+                  style={[
+                    styles.switchOption,
+                    active && { backgroundColor: colors.primary },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.switchLabel,
+                      {
+                        color: active
+                          ? colors.primaryForeground
+                          : colors.mutedForeground,
+                      },
+                    ]}
+                  >
+                    {option === "guardian" ? "Parent" : "Student"}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+
+          {isStudent ? (
+            <>
+              <TextInput
+                value={schoolSlug}
+                onChangeText={setSchoolSlug}
+                placeholder="School code"
+                placeholderTextColor={colors.mutedForeground}
+                autoCapitalize="none"
+                autoCorrect={false}
+                editable={!submitting}
+                style={inputStyle}
+              />
+              <TextInput
+                value={admissionNumber}
+                onChangeText={setAdmissionNumber}
+                placeholder="Admission number"
+                placeholderTextColor={colors.mutedForeground}
+                // Case is NOT folded here, matching the server: a school may
+                // legitimately have issued both "abc/1" and "ABC/1".
+                autoCapitalize="characters"
+                autoCorrect={false}
+                editable={!submitting}
+                style={inputStyle}
+              />
+            </>
+          ) : (
+            <TextInput
+              value={email}
+              onChangeText={setEmail}
+              placeholder="Email address"
+              placeholderTextColor={colors.mutedForeground}
+              // autoCapitalize/autoCorrect off is not cosmetic: mobile keyboards
+              // will happily capitalise and "correct" an email into one that
+              // does not exist, producing a login failure the user cannot see
+              // the cause of.
+              autoCapitalize="none"
+              autoCorrect={false}
+              keyboardType="email-address"
+              textContentType="emailAddress"
+              editable={!submitting}
+              style={inputStyle}
+            />
+          )}
 
           <TextInput
             value={password}
@@ -97,14 +216,7 @@ export default function LoginScreen() {
             textContentType="password"
             editable={!submitting}
             onSubmitEditing={() => void onSubmit()}
-            style={[
-              styles.input,
-              {
-                color: colors.foreground,
-                borderColor: colors.border,
-                backgroundColor: colors.card,
-              },
-            ]}
+            style={inputStyle}
           />
 
           {error ? <Notice tone="danger">{error}</Notice> : null}
@@ -113,7 +225,7 @@ export default function LoginScreen() {
             title="Sign in"
             onPress={() => void onSubmit()}
             loading={submitting}
-            disabled={email.trim().length === 0 || password.length === 0}
+            disabled={!canSubmit}
           />
         </View>
       </KeyboardAvoidingView>
@@ -131,6 +243,22 @@ const styles = StyleSheet.create({
   intro: {
     gap: spacing.xs,
     marginBottom: spacing.sm,
+  },
+  switcher: {
+    flexDirection: "row",
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: radii.md,
+    overflow: "hidden",
+  },
+  switchOption: {
+    flex: 1,
+    minHeight: 44, // the minimum comfortable tap target
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  switchLabel: {
+    fontFamily: fonts.sansSemibold,
+    fontSize: fontSizes.body,
   },
   input: {
     minHeight: 48,

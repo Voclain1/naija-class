@@ -22,4 +22,15 @@ export const queryKeys = {
   results: (studentId: string) => ["students", studentId, "results"] as const,
   result: (studentId: string, termId: string) =>
     ["students", studentId, "results", termId] as const,
+
+  // The student principal's own data. Keyed under "me" rather than under the
+  // student's id on purpose: the id never appears in a student-surface URL or
+  // request (phase-6.md §8), so introducing one here just to build a cache key
+  // would reintroduce the identifier the API deliberately refuses to take.
+  //
+  // These cannot collide with the guardian keys above even on a shared
+  // handset, and the cache is wiped on every sign-out regardless (D12).
+  me: ["me"] as const,
+  myResults: ["me", "results"] as const,
+  myResult: (termId: string) => ["me", "results", termId] as const,
 } as const;

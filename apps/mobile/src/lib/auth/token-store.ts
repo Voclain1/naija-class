@@ -1,6 +1,7 @@
 import { Platform } from "react-native";
 import * as SecureStore from "expo-secure-store";
 import { setTokenProvider } from "../api/client";
+import { readStoredPrincipal, type Principal } from "./principal";
 
 // Session token storage for apps/mobile.
 //
@@ -17,6 +18,12 @@ import { setTokenProvider } from "../api/client";
 // cache never contains it (see src/lib/query/client.ts).
 
 const TOKEN_KEY = "sk_session_token";
+const PRINCIPAL_KEY = "sk_session_principal";
+
+// Principal parsing lives in ./principal so it can be unit-tested without a
+// React Native transform. Re-exported because callers already import the type
+// from here alongside the token accessors.
+export type { Principal } from "./principal";
 
 /**
  * In-memory mirror of the persisted token.
@@ -26,6 +33,9 @@ const TOKEN_KEY = "sk_session_token";
  * round-trip in front of every single API call.
  */
 let cachedToken: string | null = null;
+
+/** In-memory mirror of the persisted principal. Same reasoning as above. */
+let cachedPrincipal: Principal | null = null;
 
 /**
  * SecureStore is native-only — it is not implemented for react-native-web.
@@ -43,33 +53,55 @@ export async function loadPersistedToken(): Promise<string | null> {
   if (!isSecureStoreAvailable) return cachedToken;
   try {
     cachedToken = await SecureStore.getItemAsync(TOKEN_KEY);
+    // A token written before the student principal existed has no principal
+    // key beside it. Guardian was the only principal then, so that is what it
+    // must be — read as null it would strand an already-signed-in parent on a
+    // screen the router cannot resolve.
+    cachedPrincipal = cachedToken
+      ? readStoredPrincipal(await SecureStore.getItemAsync(PRINCIPAL_KEY))
+      : null;
   } catch {
     // A corrupted keychain entry must not brick the app on launch. Treat it
     // as "no session" — the user signs in again and the entry is rewritten.
     cachedToken = null;
+    cachedPrincipal = null;
   }
   return cachedToken;
 }
 
-export async function saveToken(token: string): Promise<void> {
+export async function saveToken(
+  token: string,
+  principal: Principal,
+): Promise<void> {
   cachedToken = token;
+  cachedPrincipal = principal;
   if (!isSecureStoreAvailable) return;
   await SecureStore.setItemAsync(TOKEN_KEY, token);
+  await SecureStore.setItemAsync(PRINCIPAL_KEY, principal);
 }
 
 export async function clearToken(): Promise<void> {
   cachedToken = null;
+  cachedPrincipal = null;
   if (!isSecureStoreAvailable) return;
-  try {
-    await SecureStore.deleteItemAsync(TOKEN_KEY);
-  } catch {
-    // Deleting a key that is already absent throws on some platforms. The
-    // in-memory copy is cleared above, which is what governs authorization.
+  for (const key of [TOKEN_KEY, PRINCIPAL_KEY]) {
+    try {
+      await SecureStore.deleteItemAsync(key);
+    } catch {
+      // Deleting a key that is already absent throws on some platforms. The
+      // in-memory copies are cleared above, which is what governs
+      // authorization — and the loop must not abandon the second key because
+      // the first threw.
+    }
   }
 }
 
 export function getCachedToken(): string | null {
   return cachedToken;
+}
+
+export function getCachedPrincipal(): Principal | null {
+  return cachedPrincipal;
 }
 
 /**

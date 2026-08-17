@@ -12,11 +12,21 @@ import type {
   GuardianLoginInput,
   GuardianLoginSchoolDto,
   GuardianLoginUserDto,
+  StudentLoginInput,
+  StudentPortalSchoolDto,
+  StudentPortalStudentDto,
 } from "@school-kit/types";
 
 import { guardianLogin } from "../api/portal";
+import { studentLogin, studentLogout } from "../api/student-portal";
 import { onUnauthorized } from "../api/client";
-import { clearToken, getCachedToken, saveToken } from "./token-store";
+import {
+  clearToken,
+  getCachedPrincipal,
+  getCachedToken,
+  saveToken,
+  type Principal,
+} from "./token-store";
 import { wipeOfflineCache } from "../query/persist";
 
 // Guardian session state for apps/mobile.
@@ -35,11 +45,20 @@ import { wipeOfflineCache } from "../query/persist";
 
 export type SessionStatus = "loading" | "authenticated" | "guest";
 
+// One device, one signed-in account. Deliberately not two concurrent sessions:
+// the shared family handset is the normal case (phase-6.md §7), and the rule
+// there is that a second person signing in must not see the first one's cached
+// data. Two live sessions would make that guarantee depend on every screen
+// reading from the right one, instead of on there being only one.
 interface SessionValue {
   status: SessionStatus;
+  /** Which principal is signed in. `null` exactly when status is not "authenticated". */
+  principal: Principal | null;
   guardian: GuardianLoginUserDto | null;
-  school: GuardianLoginSchoolDto | null;
+  student: StudentPortalStudentDto | null;
+  school: GuardianLoginSchoolDto | StudentPortalSchoolDto | null;
   signIn: (input: GuardianLoginInput) => Promise<void>;
+  signInStudent: (input: StudentLoginInput) => Promise<void>;
   signOut: () => Promise<void>;
 }
 
@@ -54,12 +73,27 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<SessionStatus>(() =>
     getCachedToken() ? "authenticated" : "guest",
   );
+  const [principal, setPrincipal] = useState<Principal | null>(() =>
+    getCachedToken() ? getCachedPrincipal() : null,
+  );
   const [guardian, setGuardian] = useState<GuardianLoginUserDto | null>(null);
-  const [school, setSchool] = useState<GuardianLoginSchoolDto | null>(null);
+  const [student, setStudent] = useState<StudentPortalStudentDto | null>(null);
+  const [school, setSchool] = useState<
+    GuardianLoginSchoolDto | StudentPortalSchoolDto | null
+  >(null);
 
   const signOut = useCallback(async () => {
+    // Tell the server first, while the token is still usable — clearToken()
+    // below would strip the credential the revoke call needs. Only the student
+    // surface has a logout endpoint today; the guardian one does not, which is
+    // why this is not symmetrical.
+    if (getCachedPrincipal() === "student") {
+      await studentLogout();
+    }
     setStatus("guest");
+    setPrincipal(null);
     setGuardian(null);
+    setStudent(null);
     setSchool(null);
     await clearToken();
     // D12. Clearing the in-memory client alone would leave the persisted copy
@@ -73,8 +107,24 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       const response = await guardianLogin(input);
       // Token first: a render triggered by the state updates below can start
       // a query immediately, and it must not race an unauthenticated request.
-      await saveToken(response.token);
+      await saveToken(response.token, "guardian");
+      setPrincipal("guardian");
       setGuardian(response.guardian);
+      setStudent(null);
+      setSchool(response.school);
+      setStatus("authenticated");
+    },
+    [],
+  );
+
+  const signInStudent = useCallback(
+    async (input: StudentLoginInput) => {
+      const response = await studentLogin(input);
+      // Same ordering rule as the guardian path above.
+      await saveToken(response.token, "student");
+      setPrincipal("student");
+      setStudent(response.student);
+      setGuardian(null);
       setSchool(response.school);
       setStatus("authenticated");
     },
@@ -97,8 +147,17 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, [signOut]);
 
   const value = useMemo<SessionValue>(
-    () => ({ status, guardian, school, signIn, signOut }),
-    [status, guardian, school, signIn, signOut],
+    () => ({
+      status,
+      principal,
+      guardian,
+      student,
+      school,
+      signIn,
+      signInStudent,
+      signOut,
+    }),
+    [status, principal, guardian, student, school, signIn, signInStudent, signOut],
   );
 
   return (
