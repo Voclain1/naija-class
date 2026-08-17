@@ -75,6 +75,16 @@ export default function MyHomeScreen() {
           <Card>
             <Label>Admission number</Label>
             <Body>{student.admissionNumber}</Body>
+            {/* The two things a child needs to sign in again, shown together
+                and while they are still signed in — the app remembers the
+                school code for them, but a new or reset phone will not, and
+                nobody else in their life is likely to know it. */}
+            {school ? (
+              <>
+                <Label>School code</Label>
+                <Body>{school.slug}</Body>
+              </>
+            ) : null}
             {enrollment ? (
               <>
                 <Label>Class</Label>

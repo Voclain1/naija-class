@@ -9,6 +9,7 @@ import {
 } from "../lib/api/portal";
 import { queryKeys } from "../lib/query/keys";
 import { ApiNetworkError } from "../lib/api/client";
+import { useSession } from "../lib/auth/session";
 import { spacing } from "../theme/tokens";
 import { Body, Button, Card, Heading, Label, Notice } from "./ui";
 
@@ -30,6 +31,10 @@ interface Props {
 
 export function StudentPortalAccess({ studentId, studentFirstName }: Props) {
   const queryClient = useQueryClient();
+  // Read from the signed-in guardian's own session rather than fetched: a
+  // parent is always in exactly one school here, and it is already loaded.
+  const { school } = useSession();
+  const schoolSlug = school?.slug ?? null;
   const [issuedToken, setIssuedToken] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -123,6 +128,18 @@ export function StudentPortalAccess({ studentId, studentFirstName }: Props) {
               {/* selectable so a parent on a device can long-press to copy —
                   there is no clipboard dependency in this app. */}
               <Body>{issuedToken}</Body>
+              {/* The school code is shown beside the invitation, not instead
+                  of it. The invitation alone gets the child in the first
+                  time; the school code is what they need for every sign-in
+                  AFTER that, and this is the one moment a parent is already
+                  passing sign-in details on. Without it here, activation
+                  succeeds and the second login quietly cannot happen. */}
+              {schoolSlug ? (
+                <>
+                  <Label>School code</Label>
+                  <Body>{schoolSlug}</Body>
+                </>
+              ) : null}
               <Body muted>
                 Send this to {name}. On the sign-in screen they choose
                 &quot;Student&quot;, then &quot;First time? Use your
@@ -134,7 +151,12 @@ export function StudentPortalAccess({ studentId, studentFirstName }: Props) {
                 disabled={busy}
                 onPress={() => {
                   void Share.share({
-                    message: `Your School Kit invitation code: ${issuedToken}`,
+                    // The school code rides along in the shared text for the
+                    // same reason it is on screen: the message a parent sends
+                    // is usually the only written record the child keeps.
+                    message: schoolSlug
+                      ? `Your School Kit invitation code: ${issuedToken}\nSchool code (for signing in later): ${schoolSlug}`
+                      : `Your School Kit invitation code: ${issuedToken}`,
                   }).catch(() => {
                     // Share is unavailable on some targets (including web).
                     // The code is on screen regardless, so this is not worth
