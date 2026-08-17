@@ -1408,12 +1408,36 @@ model LessonPlan {
   // Generated content. All nullable: a row exists from the moment generation
   // is requested, so a failed generation leaves an inspectable record rather
   // than vanishing.
+  //
+  // Section set follows the standard Nigerian lesson note (prompt v2,
+  // 2026-08-17). The generated order is: behaviouralObjectives,
+  // instructionalMaterials, previousKnowledge, referenceMaterials,
+  // mainContent (Presentation, as numbered Steps), assessment (Evaluation),
+  // homework (Assignment), conclusion. That order lives in
+  // LESSON_PLAN_SECTION_ORDER in packages/ai, derived from the output schema;
+  // this table is storage and deliberately does not re-encode it.
+  //
+  // `mainContent`/`assessment`/`homework` carry the Presentation/Evaluation/
+  // Assignment sections under their original column names — generic enough to
+  // stay accurate, and reusing them kept the v2 restructure free of a data
+  // migration or column rename.
+  behaviouralObjectives  String? @map("behavioural_objectives")
+  instructionalMaterials String? @map("instructional_materials")
+  previousKnowledge      String? @map("previous_knowledge")
+  referenceMaterials     String? @map("reference_materials")
+  mainContent            String? @map("main_content")
+  assessment             String?
+  homework               String?
+  conclusion             String?
+  quiz                   String?
+
+  // LEGACY, pre-v2 (generic international format). No longer generated or
+  // edited; retained so lesson notes written before 2026-08-17 stay readable
+  // rather than losing content to the restructure. `introduction` was replaced
+  // by previousKnowledge + behaviouralObjectives; `activities` was folded into
+  // the Presentation steps, where the Nigerian format puts pupil activity.
   introduction String?
-  mainContent  String? @map("main_content")
   activities   String?
-  assessment   String?
-  homework     String?
-  quiz         String?
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")

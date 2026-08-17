@@ -13,7 +13,13 @@
 //     over-applies. Shouty "CRITICAL: YOU MUST" phrasing causes
 //     over-triggering and rigid output rather than compliance.
 
-import { LESSON_PLAN_SYSTEM, LESSON_QUIZ_SYSTEM } from "../../src/prompts/lesson-plan.js";
+import {
+  LESSON_PLAN_PROMPT,
+  LESSON_PLAN_SCHEMA,
+  LESSON_PLAN_SECTION_ORDER,
+  LESSON_PLAN_SYSTEM,
+  LESSON_QUIZ_SYSTEM,
+} from "../../src/prompts/lesson-plan.js";
 import {
   INSIGHTS_NARRATION_SYSTEM,
   INSIGHTS_ROUTER_SYSTEM,
@@ -106,6 +112,100 @@ export const promptQualityCase: EvalCase = {
       // own checks are below.
       ...auditSystemPrompt("insights-narration", INSIGHTS_NARRATION_SYSTEM),
     ];
+
+    // ---- lesson-plan: the Nigerian lesson note structure ------------------
+    // v1 produced a generic international lesson plan (objectives -> warm-up
+    // -> instruction -> practice -> wrap-up), which is not the document a
+    // Nigerian teacher copies into a scheme book and not what a head teacher
+    // or inspector checks. That was a real defect reported from the first
+    // pilot generation, and it is invisible to a typecheck: the v1 output was
+    // schema-valid, well-written, and wrong. These checks pin the shape.
+    const EXPECTED_SECTION_ORDER = [
+      "behaviouralObjectives",
+      "instructionalMaterials",
+      "previousKnowledge",
+      "referenceMaterials",
+      "mainContent",
+      "assessment",
+      "homework",
+      "conclusion",
+    ];
+
+    const schemaProps = Object.keys(
+      (LESSON_PLAN_SCHEMA as { properties: Record<string, unknown> }).properties,
+    );
+
+    results.push(
+      // Written out literally rather than compared against the constant it is
+      // derived from — an eval that reads the same array it is guarding would
+      // pass no matter how that array changed.
+      check(
+        "lesson-plan: schema requires the Nigerian lesson-note sections IN ORDER",
+        JSON.stringify([...LESSON_PLAN_SECTION_ORDER]) === JSON.stringify(EXPECTED_SECTION_ORDER),
+        `required = [${[...LESSON_PLAN_SECTION_ORDER].join(", ")}] — a reordering here ` +
+          "reorders the teacher's printed note and the UI that renders from it",
+      ),
+      check(
+        "lesson-plan: schema properties match the required set exactly",
+        JSON.stringify([...schemaProps].sort()) ===
+          JSON.stringify([...EXPECTED_SECTION_ORDER].sort()),
+        `properties = [${schemaProps.join(", ")}] — a property that is not required can ` +
+          "come back missing, and a required key with no property is unfulfillable",
+      ),
+      check(
+        "lesson-plan: v1's generic sections are gone from the schema",
+        !schemaProps.includes("introduction") && !schemaProps.includes("activities"),
+        "Introduction/Activities are the generic-lesson-plan shape v2 replaced; " +
+          "Previous Knowledge + Objectives replace the first, and pupil activity " +
+          "belongs inside the Presentation steps",
+      ),
+      check(
+        "lesson-plan: schema is closed",
+        (LESSON_PLAN_SCHEMA as { additionalProperties?: unknown }).additionalProperties === false,
+        "an open schema lets the model add sections the UI will never render",
+      ),
+      check(
+        "lesson-plan: prompt version bumped past v1's generic format",
+        LESSON_PLAN_PROMPT.version !== "1",
+        `version=${LESSON_PLAN_PROMPT.version} — the ledger must be able to tell ` +
+          "v1 output from v2 output when quality is reviewed later",
+      ),
+    );
+
+    // The system prompt has to teach the conventions the schema can't encode.
+    const lessonNoteLower = LESSON_PLAN_SYSTEM.toLowerCase();
+    results.push(
+      check(
+        "lesson-plan: objectives use the conventional behavioural opening",
+        LESSON_PLAN_SYSTEM.includes("By the end of the lesson, pupils should be able to"),
+        "this exact phrasing is the convention; a paraphrase reads as a foreign " +
+          "document to the teacher copying it into a scheme book",
+      ),
+      check(
+        "lesson-plan: objectives are required to be observable",
+        /measurable verb/i.test(LESSON_PLAN_SYSTEM) && /\bunderstand\b/i.test(LESSON_PLAN_SYSTEM),
+        "without naming the unobservable verbs to avoid, objectives drift back to " +
+          '"pupils will understand...", which cannot be evaluated',
+      ),
+      check(
+        "lesson-plan: presentation is broken into numbered steps",
+        /step 1/i.test(LESSON_PLAN_SYSTEM) && /step 2/i.test(LESSON_PLAN_SYSTEM),
+        "the labelled-steps structure is the most recognisable feature of the format",
+      ),
+      check(
+        "lesson-plan: names the lesson-note sections it must emit",
+        ["instructional materials", "previous knowledge", "reference materials", "evaluation"].every(
+          (s) => lessonNoteLower.includes(s),
+        ),
+        "the schema forces the keys, but only the prose teaches what belongs in each",
+      ),
+      check(
+        "lesson-plan: guards against invented textbook citations",
+        /rather than inventing/i.test(LESSON_PLAN_SYSTEM),
+        "a fabricated author/edition in the Reference Materials line is the most " +
+          "checkable error in the document — a head teacher will look it up",
+      ),
+    );
 
     // ---- insights router: the closed output space -------------------------
     // This prompt's entire safety property is that it chooses a label from a

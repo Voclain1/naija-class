@@ -22,65 +22,152 @@ import type { PromptDefinition } from "./registry.js";
 
 export const LESSON_PLAN_PROMPT: PromptDefinition = {
   name: "lesson-plan",
-  version: "1",
+  version: "2",
   // Sonnet 5 rather than Haiku: low volume (a teacher generates a handful a
   // week, not one per student), quality-sensitive, and the output is long and
   // structured. Cost per call is dominated by output tokens here, but the call
   // count is small enough that the quality difference is worth it.
   model: MODELS.SONNET_5,
-  // Five prose sections plus a mark scheme. 4000 leaves room for a genuinely
-  // detailed plan without letting a runaway generation eat the school's
-  // budget — and it is the number the reservation is sized on, so an inflated
-  // value would make schools look closer to their cap than they are.
+  // Eight prose sections. 4000 leaves room for a genuinely detailed plan
+  // without letting a runaway generation eat the school's budget — and it is
+  // the number the reservation is sized on, so an inflated value would make
+  // schools look closer to their cap than they are. Held at 4000 across the
+  // v1 -> v2 restructure: v2 has more sections but they are individually
+  // shorter (materials and references are lists, not prose), and the live
+  // eval asserts stop_reason != max_tokens, so a real overflow fails loudly
+  // rather than silently truncating a teacher's Conclusion.
   maxTokens: 4000,
 };
 
-export const LESSON_PLAN_SYSTEM = `You are an experienced Nigerian secondary school teacher and head of department, writing a lesson plan for a colleague.
+// v2 (2026-08-17) — STRUCTURE ONLY. v1's teaching content was good; what was
+// wrong was the shape. v1 emitted a generic international lesson plan
+// (objectives -> warm-up -> instruction -> practice -> wrap-up), which is not
+// what a Nigerian teacher writes in a scheme book and not what a head of
+// department or an inspector expects to see. Reported from Virgo Fidelis's
+// first pilot generation.
+//
+// v2 emits the conventional Nigerian lesson note: behavioural objectives in
+// the "By the end of the lesson, pupils should be able to..." form,
+// Instructional Materials, Previous Knowledge / Entry Behaviour, Reference
+// Materials, a Presentation broken into numbered Steps, Evaluation,
+// Assignment, and Conclusion.
+//
+// The section ORDER is enforced by the schema's `required` array and asserted
+// by the eval suite, not left to the prose below — a model that reorders
+// sections produces a document a teacher has to reshuffle by hand, which is
+// exactly the defect being fixed here.
+//
+// NOT generated, deliberately: the header block (Subject, Class, Date, Time,
+// Duration) and the Topic. Subject, class and duration are already structured
+// columns on the row, and Topic is the teacher's own input — regenerating them
+// as prose would let the model contradict the record it is attached to. Date
+// and Time are rendered as blank fill-in lines because a lesson note is dated
+// when it is taught, not when it is drafted, and a model inventing a date is a
+// wrong date. The teacher UI composes that header from the row; see the
+// lesson-plan detail page.
+export const LESSON_PLAN_SYSTEM = `You are an experienced Nigerian secondary school teacher and head of department, writing a lesson note for a colleague.
+
+Write it in the standard Nigerian lesson note format, in this order: Behavioural Objectives, Instructional Materials, Previous Knowledge, Reference Materials, Presentation, Evaluation, Assignment, Conclusion. This is the format teachers copy into their scheme books and that head teachers and inspectors check, so the shape matters as much as the content.
+
+Section conventions to follow exactly:
+- Behavioural objectives open with "By the end of the lesson, pupils should be able to:" and are then listed as numbered, observable outcomes starting with a measurable verb (state, define, identify, calculate, describe, demonstrate). Avoid unobservable verbs like "understand", "know" or "appreciate".
+- Instructional materials are the physical items to bring to class, listed. Chalk, a chalkboard, a wall chart you draw yourself, a real leaf, sachet water, a plastic bottle — things that actually exist in the room.
+- Previous knowledge states what the pupils already know that this lesson builds on, phrased as a fact about the pupils ("Pupils have already learnt...").
+- Reference materials cite real, commonly used Nigerian textbooks and syllabus documents for the class level, with author, title and edition where you are confident of them. If you are not confident a specific book exists, cite the curriculum or syllabus rather than inventing a title, author or edition.
+- The presentation is broken into clearly labelled steps — Step 1, Step 2, Step 3 and so on. Each step names what the teacher does and what the pupils do in response. This is where the actual teaching lives: the explanations, definitions, worked examples and board work, in the order they happen.
+- Evaluation is a short list of specific questions to ask the class to check the objectives were met, not a description of how you would assess.
+- The assignment is the task pupils take home, with the number of questions or expected length.
+- The conclusion is how the lesson is closed: what is summarised on the board and what pupils copy into their notes.
 
 Ground everything in Nigerian classroom reality:
 - Follow the Nigerian national curriculum and, for senior classes, WAEC/NECO syllabus expectations and question styles.
-- Assume a large class (40-60 students), limited lab equipment, and unreliable electricity. Activities must work with chalk, a board, paper, and locally available materials. Never assume a projector, printer, tablets, or one-device-per-student.
+- Assume a large class (40-60 pupils), limited lab equipment, and unreliable electricity. Every activity must work with chalk, a board, paper, and locally available materials. Never assume a projector, printer, tablets, or one-device-per-pupil.
 - Use Nigerian examples, names, places, currency (Naira) and units. A worked example about the price of garri in a Lagos market is better than one about a US grocery store.
 - Use British spelling.
 
-Write for a working teacher, not an education researcher. Be concrete and usable: a colleague should be able to teach directly from this tomorrow morning without rewriting it. Prefer specific instructions ("write these three equations on the board, then ask students to copy and attempt the second one") over vague guidance ("engage students with the material").
+Write for a working teacher, not an education researcher. Be concrete and usable: a colleague should be able to teach directly from this tomorrow morning without rewriting it. Prefer specific instructions ("write these three equations on the board, then ask pupils to copy and attempt the second one") over vague guidance ("engage pupils with the material").
 
 Do not pad. If a section is short because the topic is simple, let it be short.`;
 
 // Structured output schema. Every object needs additionalProperties:false and
 // an explicit `required` list. Field names map directly onto lesson_plans
 // columns so the service does no translation.
+//
+// The `required` array is in Nigerian lesson-note order and is the machine-
+// readable source of truth for that order — LESSON_PLAN_SECTION_ORDER below is
+// derived from it rather than repeated, so the two cannot drift.
+//
+// `mainContent`, `assessment` and `homework` keep their v1 column names while
+// carrying the v2 sections (Presentation, Evaluation, Assignment). The names
+// are generic enough to stay accurate, and reusing them means the restructure
+// needs no data migration and no column rename. `introduction` and
+// `activities` are NOT in this schema any more: v1's Introduction is replaced
+// by Previous Knowledge plus Behavioural Objectives, and v1's separate
+// Activities section is folded into the Presentation steps, where the Nigerian
+// format puts pupil activity. Both columns remain on the table, unpopulated,
+// so pre-v2 rows stay readable.
 export const LESSON_PLAN_SCHEMA: Record<string, unknown> = {
   type: "object",
   properties: {
-    introduction: {
+    behaviouralObjectives: {
       type: "string",
       description:
-        "How to open the lesson: the hook, prior knowledge to check, and the learning objectives stated in student-facing language.",
+        'Behavioural/instructional objectives. Must open with "By the end of the lesson, pupils should be able to:" followed by numbered, observable outcomes each starting with a measurable verb.',
+    },
+    instructionalMaterials: {
+      type: "string",
+      description:
+        "The physical teaching materials to bring to the class, as a list. Must be items available in an ordinary Nigerian classroom — no projector, printer or per-pupil device.",
+    },
+    previousKnowledge: {
+      type: "string",
+      description:
+        'Previous knowledge / entry behaviour: what the pupils already know that this lesson builds on, phrased as a fact about the pupils (e.g. "Pupils have already learnt...").',
+    },
+    referenceMaterials: {
+      type: "string",
+      description:
+        "Reference materials and textbooks for this class level, with author, title and edition where known. Cite the curriculum or syllabus rather than inventing a title, author or edition.",
     },
     mainContent: {
       type: "string",
       description:
-        "The core teaching content, in the order it should be delivered. Include the actual explanations, definitions, worked examples and board work — not a summary of what to cover.",
-    },
-    activities: {
-      type: "string",
-      description:
-        "Student activities with timings, group sizes and required materials. Must be workable in a class of 40-60 with no electricity.",
+        "The Presentation, broken into clearly labelled steps (Step 1, Step 2, Step 3...). Each step states what the teacher does and what the pupils do. Include the actual explanations, definitions, worked examples and board work — not a summary of what to cover.",
     },
     assessment: {
       type: "string",
       description:
-        "How to check understanding during and at the end of the lesson, including specific questions to ask and what a correct answer looks like.",
+        "Evaluation: the specific questions to ask the class to check each objective was met. Actual questions, not a description of how assessment would be carried out.",
     },
     homework: {
       type: "string",
-      description: "Homework task, with an indication of expected length or number of questions.",
+      description:
+        "Assignment/homework task for pupils to take home, with the number of questions or expected length.",
+    },
+    conclusion: {
+      type: "string",
+      description:
+        "Conclusion/summary: how the lesson is closed — what the teacher summarises on the board and what the pupils copy into their notes.",
     },
   },
-  required: ["introduction", "mainContent", "activities", "assessment", "homework"],
+  required: [
+    "behaviouralObjectives",
+    "instructionalMaterials",
+    "previousKnowledge",
+    "referenceMaterials",
+    "mainContent",
+    "assessment",
+    "homework",
+    "conclusion",
+  ],
   additionalProperties: false,
 };
+
+// Canonical section order, derived from the schema so the two cannot drift.
+// The service, the teacher UI and the eval suite all read this rather than
+// hard-coding their own list — an ordering regression then fails in one place
+// instead of rendering a scrambled note.
+export const LESSON_PLAN_SECTION_ORDER = LESSON_PLAN_SCHEMA.required as readonly string[];
 
 export interface LessonPlanInput {
   readonly classLevel: string;

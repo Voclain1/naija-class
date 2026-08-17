@@ -29,12 +29,19 @@ export const updateLessonPlanSchema = z
     topic: z.string().trim().min(3).max(200).optional(),
     objectives: z.string().trim().max(2000).nullable().optional(),
     durationMinutes: z.number().int().min(5).max(240).nullable().optional(),
-    introduction: z.string().max(20000).nullable().optional(),
+    behaviouralObjectives: z.string().max(20000).nullable().optional(),
+    instructionalMaterials: z.string().max(20000).nullable().optional(),
+    previousKnowledge: z.string().max(20000).nullable().optional(),
+    referenceMaterials: z.string().max(20000).nullable().optional(),
     mainContent: z.string().max(20000).nullable().optional(),
-    activities: z.string().max(20000).nullable().optional(),
     assessment: z.string().max(20000).nullable().optional(),
     homework: z.string().max(20000).nullable().optional(),
+    conclusion: z.string().max(20000).nullable().optional(),
     quiz: z.string().max(20000).nullable().optional(),
+    // Legacy pre-v2 sections stay editable so a teacher can still fix a typo
+    // in an old lesson note; new generations never populate them.
+    introduction: z.string().max(20000).nullable().optional(),
+    activities: z.string().max(20000).nullable().optional(),
     status: z.enum(["DRAFT", "ACCEPTED"]).optional(),
   })
   .strict();
