@@ -28,6 +28,7 @@ import {
   saveToken,
   type Principal,
 } from "./token-store";
+import { saveSchoolHint } from "./school-hint-store";
 import { wipeOfflineCache } from "../query/persist";
 
 // Guardian session state for apps/mobile.
@@ -132,6 +133,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     async (response: StudentLoginResponse) => {
       // Same ordering rule as the guardian path above.
       await saveToken(response.token, "student");
+      // Remember the school code so the next sign-in doesn't ask for one the
+      // child was never told. This is the choke point for BOTH student login
+      // and invitation-accept, so activation alone is enough to seed it —
+      // which matters, because activation is the first time a child ever
+      // holds a session and the last moment the code is guaranteed known.
+      await saveSchoolHint(response.school.slug);
       setPrincipal("student");
       setStudent(response.student);
       setGuardian(null);

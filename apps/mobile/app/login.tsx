@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   KeyboardAvoidingView,
   Platform,
@@ -11,6 +11,7 @@ import {
 import { Link, Redirect } from "expo-router";
 import { ApiError, ApiNetworkError } from "../src/lib/api/client";
 import { useSession } from "../src/lib/auth/session";
+import { loadSchoolHint } from "../src/lib/auth/school-hint-store";
 import { useTheme } from "../src/theme/theme-provider";
 import { fontSizes, fonts, radii, spacing } from "../src/theme/tokens";
 import { Body, Button, Heading, Notice, Screen } from "../src/components/ui";
@@ -38,6 +39,25 @@ export default function LoginScreen() {
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Prefill the school code from the last student sign-in or activation on
+  // this device. A child is told their admission number by the school and
+  // chooses their own password, but nobody ever tells them a school code —
+  // so without this, a second sign-in can be impossible for them alone.
+  //
+  // Only ever fills a field the user has not touched: the guard means a
+  // late-resolving read cannot overwrite something already being typed, and
+  // a family sharing one handset across two schools can still type over it.
+  useEffect(() => {
+    let cancelled = false;
+    void loadSchoolHint().then((hint) => {
+      if (cancelled || hint === null) return;
+      setSchoolSlug((current) => (current.length === 0 ? hint : current));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   if (status === "authenticated") {
     return <Redirect href={principal === "student" ? "/me" : "/students"} />;
