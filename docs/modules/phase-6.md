@@ -266,6 +266,16 @@ Not done, and not slice 1's to do: `eas init` (needs the Apple/Google
 developer accounts, which have 1–3 week external latency and are being started
 in parallel).
 
+> **Resolved 2026-08-17, and the parenthetical above was wrong.** `eas init`
+> needed only a free Expo account — the Apple/Google developer accounts gate
+> *store submission*, and an Android internal APK needs neither. Waiting on
+> them would have delayed the first real build for weeks with no cause.
+> `owner: voclains-team` and `extra.eas.projectId` are now committed in
+> `app.json`, and the first `preview` APK built successfully the same day —
+> after two build failures (a missing `packages/types/dist/` and an
+> undeclared `babel-preset-expo`), both invisible to every local command.
+> See `docs/runbooks/mobile-eas-setup.md` §4a.
+
 ### Slice 2 — Guardian mobile
 
 **The API is already built.** Eight endpoints, all working in production:
