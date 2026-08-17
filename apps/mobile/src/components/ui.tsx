@@ -8,9 +8,45 @@ import {
   type ViewStyle,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import type { ReactNode } from "react";
+import type { ReactElement, ReactNode } from "react";
 import { useTheme } from "../theme/theme-provider";
+
 import { fontSizes, fonts, radii, spacing } from "../theme/tokens";
+
+/**
+ * Children for components that render into a <View>.
+ *
+ * React Native will not render a bare string inside a <View>: on iOS/Android
+ * it throws "Text strings must be rendered within a <Text> component" — a red
+ * box in dev, a broken screen in production. react-native-web only logs a
+ * console error and paints the text anyway, so the mistake looks fine on the
+ * web target, survives screenshots, and survives unit tests that never render
+ * the offending state. It shipped exactly once that way (the results screens'
+ * loading and error states, fixed in #185) and was caught only by driving the
+ * real app in a browser and reading the console.
+ *
+ * This type turns that runtime trap into a compile error, while still
+ * permitting the ordinary things a View wraps: several children, a
+ * `{cond && <X />}` guard, an array from .map(), null.
+ *
+ * It is spelled out recursively rather than as `Exclude<ReactNode, string |
+ * number>`, which LOOKS right and silently does nothing. ReactNode also
+ * includes `Iterable<ReactNode>`, and TypeScript treats `string` as an
+ * `Iterable<string>` — so deleting the `string` member leaves the string a
+ * hole to fit through, and the bad code still compiles. (Verified: with
+ * `Exclude`, re-introducing the exact #185 bug typechecked clean.) Here the
+ * iterable's own element type is ViewChildren, so a string fails that test
+ * too and there is no way round.
+ *
+ * Text-rendering components (Body, Heading, Label, Notice) keep ReactNode on
+ * purpose: a string is precisely what they exist to take.
+ */
+type ViewChildren =
+  | ReactElement
+  | boolean
+  | null
+  | undefined
+  | readonly ViewChildren[];
 
 // Shared primitives for apps/mobile.
 //
@@ -24,7 +60,7 @@ export function Screen({
   children,
   style,
 }: {
-  children: ReactNode;
+  children: ViewChildren;
   style?: StyleProp<ViewStyle>;
 }) {
   const { colors } = useTheme();
@@ -53,7 +89,7 @@ export function Card({
   children,
   style,
 }: {
-  children: ReactNode;
+  children: ViewChildren;
   style?: StyleProp<ViewStyle>;
 }) {
   const { colors } = useTheme();
@@ -180,7 +216,7 @@ export function Notice({
   );
 }
 
-export function CenteredMessage({ children }: { children: ReactNode }) {
+export function CenteredMessage({ children }: { children: ViewChildren }) {
   return <View style={styles.centered}>{children}</View>;
 }
 
