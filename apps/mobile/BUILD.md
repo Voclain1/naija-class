@@ -84,6 +84,31 @@ run first — an ordering hazard that workflow documents in its own comment.
 `packages/db` is not in mobile's closure and has no business being pulled
 into a mobile build.
 
+## `babel-preset-expo` is an explicit devDependency on purpose
+
+`babel.config.js` names `babel-preset-expo`, and `package.json` declares it
+even though it ships as a transitive dependency of `expo`. Removing the
+declaration "because expo already brings it" breaks Android release builds
+at `:app:createBundleReleaseJsAndAssets` with
+`Error: Cannot find module 'babel-preset-expo'`.
+
+The root `.npmrc` sets `node-linker=isolated` with `shamefully-hoist=false`.
+That is a deliberate strictness: a transitive dependency is NOT resolvable by
+name from a workspace that did not declare it.
+
+What makes this one nasty is that it stays invisible almost everywhere. Metro's
+transformer resolves the preset from **its own** package directory, where pnpm
+has correctly linked it, so `expo start`, `expo export` and even
+`expo export:embed --eager` all bundle fine. Gradle's release bundle task
+resolves from `apps/mobile` instead, where — undeclared — it is not linked.
+Verified: before the declaration,
+`require.resolve('babel-preset-expo', { paths: ['./apps/mobile'] })` threw
+`MODULE_NOT_FOUND` on a fully-installed local tree while eager bundling passed
+in the same tree.
+
+Pin it to the SDK-matching version (`~57.0.7` for SDK 57) and move it with the
+SDK, the same as every other `expo-*` entry.
+
 ### The general lesson
 
 This is the third environment to hit the same trap. Local passes prove
