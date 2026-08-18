@@ -1,8 +1,9 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Loader2 } from "lucide-react";
+import { ChevronDown, ChevronRight, Loader2 } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
@@ -126,6 +127,28 @@ function defaultValues(existing?: StudentDto): FormValues {
   };
 }
 
+// The fields the school actually needs at intake. Everything else on a
+// Student is the student's or guardian's own detail to fill in from their
+// portal after activation (Phase 6 / Slice 3), so on CREATE the rest of the
+// form starts collapsed rather than confronting a secretary with 16 inputs
+// per child. Nothing is removed — the disclosure below still holds every
+// field, and EDIT opens it automatically whenever any of them already has a
+// value, so no existing data is ever hidden behind a closed section.
+const EXTRA_DETAIL_FIELDS = [
+  "phone",
+  "address",
+  "stateOfOrigin",
+  "religion",
+  "bloodGroup",
+  "photoUrl",
+  "medicalNotes",
+  "notes",
+] as const satisfies readonly (keyof FormValues)[];
+
+function hasExtraDetails(values: FormValues): boolean {
+  return EXTRA_DETAIL_FIELDS.some((f) => values[f].trim() !== "");
+}
+
 export function StudentForm({ existing }: Props) {
   const router = useRouter();
   const form = useForm<FormValues>({
@@ -133,6 +156,17 @@ export function StudentForm({ existing }: Props) {
     defaultValues: defaultValues(existing),
     mode: "onSubmit",
   });
+
+  const [showExtras, setShowExtras] = useState(() =>
+    hasExtraDetails(defaultValues(existing)),
+  );
+
+  // Point (b) of the form-class protection above, extended for the collapsed
+  // section: if validation fails on a field inside it, open it — otherwise the
+  // submit would look like a silent no-op with the error rendered off-screen.
+  const onInvalid = (errors: Record<string, unknown>) => {
+    if (EXTRA_DETAIL_FIELDS.some((f) => f in errors)) setShowExtras(true);
+  };
 
   const onSubmit = form.handleSubmit(async (values) => {
     // Optional blanks map to `undefined` (absent from the JSON body) rather
@@ -188,7 +222,7 @@ export function StudentForm({ existing }: Props) {
         });
       }
     }
-  });
+  }, onInvalid);
 
   return (
     <form onSubmit={onSubmit} className="flex flex-col gap-6" noValidate>
@@ -212,9 +246,16 @@ export function StudentForm({ existing }: Props) {
       )}
 
       <section className="flex flex-col gap-4">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-          Required
-        </h2>
+        <div className="flex flex-col gap-0.5">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+            Student details
+          </h2>
+          <p className="text-xs text-muted-foreground">
+            All that&apos;s needed to create the record. Contact and bio details
+            can be filled in later — by you, or by the student and guardian from
+            their own portal.
+          </p>
+        </div>
 
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <div className="flex flex-col gap-1">
@@ -311,15 +352,54 @@ export function StudentForm({ existing }: Props) {
               </p>
             )}
           </div>
+
+          <div className="flex flex-col gap-1 md:col-span-2">
+            <Label htmlFor="student-email">Email (optional)</Label>
+            <Input
+              id="student-email"
+              type="email"
+              {...form.register("email")}
+              aria-invalid={Boolean(form.formState.errors.email)}
+            />
+            <p className="text-xs text-muted-foreground">
+              Used later to invite the student to their own portal.
+            </p>
+            {form.formState.errors.email && (
+              <p className="text-sm text-destructive">
+                {form.formState.errors.email.message}
+              </p>
+            )}
+          </div>
         </div>
       </section>
 
       <section className="flex flex-col gap-4">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-          Contact & bio
-        </h2>
+        <button
+          type="button"
+          onClick={() => setShowExtras((v) => !v)}
+          aria-expanded={showExtras}
+          aria-controls="student-extra-details"
+          className="flex w-fit items-center gap-1 text-sm font-semibold uppercase tracking-wide text-muted-foreground transition-colors hover:text-foreground"
+        >
+          {showExtras ? (
+            <ChevronDown className="h-4 w-4" />
+          ) : (
+            <ChevronRight className="h-4 w-4" />
+          )}
+          More details (optional)
+        </button>
 
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+        {/* Kept mounted (not conditionally rendered) so react-hook-form keeps
+            registering these fields — collapsing the section must never drop a
+            value the user already typed, or one loaded from an existing
+            student. `hidden` is expressed as a class, not the attribute: the
+            attribute's UA `display:none` loses to Tailwind's `grid`. */}
+        <div
+          id="student-extra-details"
+          className={
+            showExtras ? "grid grid-cols-1 gap-4 md:grid-cols-2" : "hidden"
+          }
+        >
           <div className="flex flex-col gap-1">
             <Label htmlFor="student-phone">Phone (optional)</Label>
             <Input
@@ -331,21 +411,6 @@ export function StudentForm({ existing }: Props) {
             {form.formState.errors.phone && (
               <p className="text-sm text-destructive">
                 {form.formState.errors.phone.message}
-              </p>
-            )}
-          </div>
-
-          <div className="flex flex-col gap-1">
-            <Label htmlFor="student-email">Email (optional)</Label>
-            <Input
-              id="student-email"
-              type="email"
-              {...form.register("email")}
-              aria-invalid={Boolean(form.formState.errors.email)}
-            />
-            {form.formState.errors.email && (
-              <p className="text-sm text-destructive">
-                {form.formState.errors.email.message}
               </p>
             )}
           </div>

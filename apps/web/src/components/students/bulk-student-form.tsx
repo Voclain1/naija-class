@@ -1,9 +1,8 @@
 "use client";
 
-import { zodResolver } from "@hookform/resolvers/zod";
 import { AlertCircle, Check, Loader2, Plus, Trash2 } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { useFieldArray, useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
@@ -32,14 +31,41 @@ import { createStudent } from "@/lib/students/students-api";
 // forms drift, that's an acceptable cost for not destabilizing the
 // highest-traffic student-creation flow same-day.
 //
-// Deliberately excludes photoUrl (handled later by the student during full
-// registration, per product decision) and medicalNotes/notes (long free-text,
-// impractical in a grid cell — same call CSV import already made).
-// Deliberately excludes class arm + guardian info: neither the existing
-// single-add form nor the CSV import bundle those into student creation —
+// FIELD SET (narrowed 2026-08-18): admission number, first/middle/last name,
+// date of birth, gender, email. Everything else a Student can carry — phone,
+// address, blood group, religion, state of origin, nationality, photo,
+// medical notes, notes — is deliberately NOT captured here any more. Those
+// are the student's or guardian's own details to supply after they activate
+// their portal account (Phase 6 / Slice 3), and making a school secretary
+// re-key 13 columns per child at intake was the single biggest cost in this
+// screen. `nationality` is not sent at all: `students.nationality` carries a
+// DB-level `@default("Nigerian")`, so omitting it stores exactly what the
+// old always-prefilled column did. The narrowed set is also what makes a
+// roster usable on day one — an admission number to key on, a name to
+// search, a DOB for age-banding, a gender for reporting.
+//
+// Still deliberately excludes class arm + guardian info: neither the single-
+// add form nor the CSV import bundles those into student creation —
 // enrollment is a separate step via /enrollments/bulk, guardians via each
-// student's own Guardians tab. Matching that existing precedent rather than
-// inventing new bulk-capture logic under time pressure.
+// student's own Guardians tab.
+//
+// SPEED AFFORDANCES (2026-08-18) — the grid is meant to be driven from the
+// keyboard, never the mouse:
+//   * Paste a block straight out of Excel/Sheets into any cell: it spreads
+//     across columns and down rows, creating rows as needed. Dates written
+//     dd/mm/yyyy and genders typed "M"/"F"/"male" are normalised on the way
+//     in, because that is what real school spreadsheets actually contain.
+//   * Enter moves down the same column (spreadsheet muscle memory) and
+//     appends a row when pressed on the last one.
+//   * Typing in the last row auto-appends a fresh blank row, so there is
+//     never a trip back to "Add row".
+//   * Entirely blank rows are ignored on submit rather than failing
+//     validation — which is what makes the auto-append safe.
+//
+// Validation runs by hand in the submit handler rather than through
+// zodResolver: the resolver validates every row in the array, and the
+// blank-trailing-row rule above is precisely a "don't validate this row"
+// decision the resolver has no way to express.
 //
 // Submission is a sequential loop of the existing POST /students (no new
 // bulk endpoint, no BullMQ) — this doesn't have the CSV pipeline's
@@ -54,44 +80,41 @@ import { createStudent } from "@/lib/students/students-api";
 // still idle/error) — created rows are never resubmitted or lost.
 
 const GENDER_VALUES = ["MALE", "FEMALE", "OTHER"] as const;
-const optionalText = (max: number) => z.string().trim().max(max);
 
 const rowSchema = z.object({
-  admissionNumber: z
-    .string()
-    .trim()
-    .min(1, "Required")
-    .max(40, "Too long"),
-  firstName: z.string().trim().min(1, "Required").max(60),
-  middleName: optionalText(60),
-  lastName: z.string().trim().min(1, "Required").max(60),
+  admissionNumber: z.string().trim().min(1, "Required").max(40, "Too long"),
+  firstName: z.string().trim().min(1, "Required").max(60, "Too long"),
+  middleName: z.string().trim().max(60, "Too long"),
+  lastName: z.string().trim().min(1, "Required").max(60, "Too long"),
   dateOfBirth: z
     .string()
     .min(1, "Required")
     .refine((v) => !Number.isNaN(new Date(v).getTime()), "Invalid date"),
   gender: z.string().min(1, "Required"),
-  phone: optionalText(30),
   email: z
     .string()
     .trim()
-    .max(254)
+    .max(254, "Too long")
     .refine(
       (v) => v === "" || z.string().email().safeParse(v).success,
       "Invalid email",
     ),
-  address: optionalText(500),
-  bloodGroup: optionalText(10),
-  religion: optionalText(40),
-  stateOfOrigin: optionalText(40),
-  nationality: optionalText(40),
 });
 
-const bulkFormSchema = z.object({
-  rows: z.array(rowSchema).min(1),
-});
+type RowValues = z.infer<typeof rowSchema>;
+type RowField = keyof RowValues;
+type FormValues = { rows: RowValues[] };
 
-type FormValues = z.infer<typeof bulkFormSchema>;
-type RowValues = FormValues["rows"][number];
+/** Column order — drives paste spreading and Enter navigation. */
+const COLUMNS = [
+  "admissionNumber",
+  "firstName",
+  "middleName",
+  "lastName",
+  "dateOfBirth",
+  "gender",
+  "email",
+] as const satisfies readonly RowField[];
 
 function emptyRow(): RowValues {
   return {
@@ -101,19 +124,63 @@ function emptyRow(): RowValues {
     lastName: "",
     dateOfBirth: "",
     gender: "",
-    phone: "",
     email: "",
-    address: "",
-    bloodGroup: "",
-    religion: "",
-    stateOfOrigin: "",
-    nationality: "Nigerian",
   };
+}
+
+function isBlankRow(row: RowValues | undefined): boolean {
+  if (!row) return true;
+  return COLUMNS.every((c) => (row[c] ?? "").trim() === "");
 }
 
 function emptyToUndefined(v: string): string | undefined {
   const t = v.trim();
   return t === "" ? undefined : t;
+}
+
+// Real school spreadsheets hold "M", "f", "Male" — not the enum. Anything
+// unrecognised passes through untouched so the row shows a visible
+// "Required" error rather than being silently coerced to the wrong gender.
+function normalizeGender(raw: string): string {
+  const v = raw.trim().toLowerCase();
+  if (v === "m" || v === "male") return "MALE";
+  if (v === "f" || v === "female") return "FEMALE";
+  if (v === "o" || v === "other") return "OTHER";
+  return raw.trim();
+}
+
+// <input type="date"> only accepts YYYY-MM-DD. Nigerian spreadsheets are
+// overwhelmingly dd/mm/yyyy, so that is the one alternative translated here;
+// anything else is left alone to fail validation loudly rather than being
+// guessed at.
+function normalizeDate(raw: string): string {
+  const v = raw.trim();
+  if (v === "") return "";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
+  const m = /^(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{4})$/.exec(v);
+  if (m) {
+    const day = m[1]!.padStart(2, "0");
+    const month = m[2]!.padStart(2, "0");
+    return `${m[3]}-${month}-${day}`;
+  }
+  return v;
+}
+
+function normalizeCell(column: RowField, raw: string): string {
+  if (column === "gender") return normalizeGender(raw);
+  if (column === "dateOfBirth") return normalizeDate(raw);
+  return raw.trim();
+}
+
+/**
+ * Splits pasted clipboard text into a grid. Tab-delimited when the paste
+ * contains tabs (which is how every spreadsheet copies); comma otherwise.
+ */
+function parseClipboardGrid(text: string): string[][] {
+  const lines = text.replace(/\r\n?/g, "\n").split("\n");
+  while (lines.length > 0 && lines[lines.length - 1]!.trim() === "") lines.pop();
+  const delimiter = text.includes("\t") ? "\t" : ",";
+  return lines.map((line) => line.split(delimiter));
 }
 
 interface RowStatus {
@@ -122,11 +189,10 @@ interface RowStatus {
   studentId?: string;
 }
 
-const START_ROWS = 3;
+const START_ROWS = 5;
 
 export function BulkStudentForm() {
   const form = useForm<FormValues>({
-    resolver: zodResolver(bulkFormSchema),
     defaultValues: { rows: Array.from({ length: START_ROWS }, emptyRow) },
     mode: "onSubmit",
   });
@@ -140,24 +206,134 @@ export function BulkStudentForm() {
   const [submitting, setSubmitting] = useState(false);
   const [summary, setSummary] = useState<string | null>(null);
 
-  const successCount = fields.filter(
+  const createdCount = fields.filter(
     (f) => rowStatus[f.id]?.state === "success",
   ).length;
-  const allDone = fields.length > 0 && successCount === fields.length;
+  // "Done" means every row that still holds data has been created — trailing
+  // blank rows (the auto-appended spares) must not hold the state open.
+  const allDone =
+    createdCount > 0 &&
+    fields.every(
+      (f, i) =>
+        rowStatus[f.id]?.state === "success" ||
+        isBlankRow(form.getValues(`rows.${i}`)),
+    );
+
+  const focusCell = useCallback((rowIndex: number, colIndex: number) => {
+    // Deferred a frame: when Enter appends a row, the target input does not
+    // exist until React has flushed the new field array.
+    requestAnimationFrame(() => {
+      document
+        .querySelector<HTMLElement>(`[data-cell="${rowIndex}:${colIndex}"]`)
+        ?.focus();
+    });
+  }, []);
+
+  // Typing anywhere in the last row means the user is still going, so keep
+  // one spare row waiting below them.
+  const ensureSpareRow = useCallback(
+    (rowIndex: number) => {
+      if (rowIndex === fields.length - 1) {
+        append(emptyRow(), { shouldFocus: false });
+      }
+    },
+    [append, fields.length],
+  );
+
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent, rowIndex: number, colIndex: number) => {
+      if (e.key !== "Enter") return;
+      // A grid of inputs inside a <form>: Enter would otherwise submit.
+      e.preventDefault();
+      if (rowIndex === fields.length - 1) {
+        append(emptyRow(), { shouldFocus: false });
+      }
+      focusCell(rowIndex + 1, colIndex);
+    },
+    [append, fields.length, focusCell],
+  );
+
+  const handlePaste = useCallback(
+    (e: React.ClipboardEvent, rowIndex: number, colIndex: number) => {
+      const text = e.clipboardData.getData("text/plain");
+      // An ordinary single-value paste keeps the browser's own behaviour.
+      if (!text || (!text.includes("\t") && !text.includes("\n"))) return;
+      e.preventDefault();
+
+      const grid = parseClipboardGrid(text);
+      const rowsNeeded = rowIndex + grid.length - fields.length;
+      for (let i = 0; i < rowsNeeded; i++) {
+        append(emptyRow(), { shouldFocus: false });
+      }
+
+      grid.forEach((cells, r) => {
+        cells.forEach((value, c) => {
+          const column = COLUMNS[colIndex + c];
+          if (!column) return; // pasted wider than the grid — extra columns dropped
+          form.setValue(
+            `rows.${rowIndex + r}.${column}`,
+            normalizeCell(column, value),
+            { shouldDirty: true },
+          );
+        });
+      });
+
+      toast.success(
+        `Pasted ${grid.length} row${grid.length === 1 ? "" : "s"} — check them, then create.`,
+      );
+    },
+    [append, fields.length, form],
+  );
 
   const onSubmit = form.handleSubmit(async (values) => {
+    form.clearErrors();
+
+    // Blank rows are not an error — they are the spares the auto-append
+    // leaves behind. Only rows the user actually typed in get validated.
+    const liveIndexes = values.rows
+      .map((row, i) => ({ row, i }))
+      .filter(({ row }) => !isBlankRow(row))
+      .map(({ i }) => i);
+
+    if (liveIndexes.length === 0) {
+      setSummary("Fill in at least one row first.");
+      return;
+    }
+
+    let invalid = 0;
+    for (const i of liveIndexes) {
+      const parsed = rowSchema.safeParse(values.rows[i]);
+      if (parsed.success) continue;
+      invalid++;
+      for (const issue of parsed.error.issues) {
+        const column = issue.path[0] as RowField | undefined;
+        if (!column) continue;
+        form.setError(`rows.${i}.${column}`, {
+          type: "manual",
+          message: issue.message,
+        });
+      }
+    }
+    if (invalid > 0) {
+      setSummary(
+        `${invalid} row${invalid === 1 ? " needs" : "s need"} fixing — see the highlighted cells.`,
+      );
+      return;
+    }
+
     setSubmitting(true);
     setSummary(null);
     // Captured once, before this pass's setRowStatus calls — React state
     // updates inside the loop below are async, so reading `rowStatus` again
     // after the loop would race with (and likely miss) this render's own
     // updates. Track this pass's outcome in local variables instead.
-    const alreadySucceededBeforeThisPass = fields.filter(
-      (f) => rowStatus[f.id]?.state === "success",
-    ).length;
+    const alreadySucceededBeforeThisPass = liveIndexes.filter((i) => {
+      const field = fields[i];
+      return field ? rowStatus[field.id]?.state === "success" : false;
+    }).length;
     let createdThisPass = 0;
 
-    for (let i = 0; i < values.rows.length; i++) {
+    for (const i of liveIndexes) {
       const field = fields[i];
       if (!field) continue;
       if (rowStatus[field.id]?.state === "success") continue; // already created — never resubmit
@@ -166,6 +342,8 @@ export function BulkStudentForm() {
 
       const row = values.rows[i];
       if (!row) continue;
+      // `nationality` is omitted deliberately — the column carries a DB
+      // default of "Nigerian"; see the field-set note at the top of this file.
       const payload: CreateStudentInput = {
         admissionNumber: row.admissionNumber.trim(),
         firstName: row.firstName.trim(),
@@ -173,13 +351,7 @@ export function BulkStudentForm() {
         lastName: row.lastName.trim(),
         dateOfBirth: new Date(row.dateOfBirth),
         gender: row.gender as CreateStudentInput["gender"],
-        address: emptyToUndefined(row.address),
-        phone: emptyToUndefined(row.phone),
         email: emptyToUndefined(row.email),
-        bloodGroup: emptyToUndefined(row.bloodGroup),
-        religion: emptyToUndefined(row.religion),
-        stateOfOrigin: emptyToUndefined(row.stateOfOrigin),
-        nationality: emptyToUndefined(row.nationality) ?? "Nigerian",
       };
 
       try {
@@ -198,7 +370,10 @@ export function BulkStudentForm() {
             });
             setRowStatus((prev) => ({
               ...prev,
-              [field.id]: { state: "error", message: "Admission number already in use." },
+              [field.id]: {
+                state: "error",
+                message: "Admission number already in use.",
+              },
             }));
           } else {
             setRowStatus((prev) => ({
@@ -209,7 +384,10 @@ export function BulkStudentForm() {
         } else {
           setRowStatus((prev) => ({
             ...prev,
-            [field.id]: { state: "error", message: "Could not reach the server." },
+            [field.id]: {
+              state: "error",
+              message: "Could not reach the server.",
+            },
           }));
         }
       }
@@ -218,12 +396,14 @@ export function BulkStudentForm() {
     setSubmitting(false);
     const totalSuccess = alreadySucceededBeforeThisPass + createdThisPass;
     if (createdThisPass > 0) {
-      toast.success(`Created ${createdThisPass} student${createdThisPass === 1 ? "" : "s"}.`);
+      toast.success(
+        `Created ${createdThisPass} student${createdThisPass === 1 ? "" : "s"}.`,
+      );
     }
-    const failedCount = values.rows.length - totalSuccess;
+    const failedCount = liveIndexes.length - totalSuccess;
     setSummary(
       failedCount > 0
-        ? `Created ${totalSuccess} of ${values.rows.length}. Fix the highlighted rows and submit again to retry the rest.`
+        ? `Created ${totalSuccess} of ${liveIndexes.length}. Fix the highlighted rows and submit again to retry the rest.`
         : `All ${totalSuccess} student${totalSuccess === 1 ? "" : "s"} created.`,
     );
   });
@@ -253,13 +433,12 @@ export function BulkStudentForm() {
               <TableHead className="min-w-32">Last name</TableHead>
               <TableHead className="min-w-36">DOB</TableHead>
               <TableHead className="min-w-28">Gender</TableHead>
-              <TableHead className="min-w-32">Phone</TableHead>
-              <TableHead className="min-w-40">Email</TableHead>
-              <TableHead className="min-w-40">Address</TableHead>
-              <TableHead className="min-w-24">Blood grp</TableHead>
-              <TableHead className="min-w-28">Religion</TableHead>
-              <TableHead className="min-w-28">State</TableHead>
-              <TableHead className="min-w-28">Nationality</TableHead>
+              <TableHead className="min-w-44">
+                Email{" "}
+                <span className="font-normal normal-case text-muted-foreground">
+                  (optional)
+                </span>
+              </TableHead>
               <TableHead className="min-w-32">Status</TableHead>
               <TableHead className="w-8" />
             </TableRow>
@@ -267,79 +446,72 @@ export function BulkStudentForm() {
           <TableBody>
             {fields.map((field, index) => {
               const status = rowStatus[field.id];
-              const isLocked = status?.state === "success" || status?.state === "submitting";
+              const isLocked =
+                status?.state === "success" || status?.state === "submitting";
               const rowErrors = form.formState.errors.rows?.[index];
+
+              // Wires each cell into the grid behaviours: paste spreading,
+              // Enter-moves-down, and auto-append on the last row.
+              const cell = (column: RowField) => {
+                const colIndex = COLUMNS.indexOf(column);
+                return {
+                  "data-cell": `${index}:${colIndex}`,
+                  disabled: isLocked,
+                  "aria-invalid": Boolean(rowErrors?.[column]),
+                  onKeyDown: (e: React.KeyboardEvent) =>
+                    handleKeyDown(e, index, colIndex),
+                  onPaste: (e: React.ClipboardEvent) =>
+                    handlePaste(e, index, colIndex),
+                  ...form.register(`rows.${index}.${column}`, {
+                    onChange: () => ensureSpareRow(index),
+                  }),
+                };
+              };
+
+              const cellError = (column: RowField) =>
+                rowErrors?.[column] ? (
+                  <p className="mt-0.5 text-xs text-destructive">
+                    {rowErrors[column]?.message}
+                  </p>
+                ) : null;
 
               return (
                 <TableRow key={field.id}>
-                  <TableCell className="text-xs text-muted-foreground">{index + 1}</TableCell>
+                  <TableCell className="text-xs text-muted-foreground">
+                    {index + 1}
+                  </TableCell>
                   <TableCell>
                     <Input
                       className="h-8 min-w-32 text-xs"
-                      disabled={isLocked}
                       placeholder="2025/JSS1/001"
-                      {...form.register(`rows.${index}.admissionNumber`)}
-                      aria-invalid={Boolean(rowErrors?.admissionNumber)}
+                      {...cell("admissionNumber")}
                     />
-                    {rowErrors?.admissionNumber && (
-                      <p className="mt-0.5 text-xs text-destructive">
-                        {rowErrors.admissionNumber.message}
-                      </p>
-                    )}
+                    {cellError("admissionNumber")}
                   </TableCell>
                   <TableCell>
-                    <Input
-                      className="h-8 min-w-28 text-xs"
-                      disabled={isLocked}
-                      {...form.register(`rows.${index}.firstName`)}
-                      aria-invalid={Boolean(rowErrors?.firstName)}
-                    />
-                    {rowErrors?.firstName && (
-                      <p className="mt-0.5 text-xs text-destructive">
-                        {rowErrors.firstName.message}
-                      </p>
-                    )}
+                    <Input className="h-8 min-w-28 text-xs" {...cell("firstName")} />
+                    {cellError("firstName")}
                   </TableCell>
                   <TableCell>
-                    <Input
-                      className="h-8 min-w-24 text-xs"
-                      disabled={isLocked}
-                      {...form.register(`rows.${index}.middleName`)}
-                    />
+                    <Input className="h-8 min-w-24 text-xs" {...cell("middleName")} />
+                    {cellError("middleName")}
                   </TableCell>
                   <TableCell>
-                    <Input
-                      className="h-8 min-w-28 text-xs"
-                      disabled={isLocked}
-                      {...form.register(`rows.${index}.lastName`)}
-                      aria-invalid={Boolean(rowErrors?.lastName)}
-                    />
-                    {rowErrors?.lastName && (
-                      <p className="mt-0.5 text-xs text-destructive">
-                        {rowErrors.lastName.message}
-                      </p>
-                    )}
+                    <Input className="h-8 min-w-28 text-xs" {...cell("lastName")} />
+                    {cellError("lastName")}
                   </TableCell>
                   <TableCell>
                     <Input
                       type="date"
                       className="h-8 min-w-32 text-xs"
-                      disabled={isLocked}
-                      {...form.register(`rows.${index}.dateOfBirth`)}
-                      aria-invalid={Boolean(rowErrors?.dateOfBirth)}
+                      {...cell("dateOfBirth")}
                     />
-                    {rowErrors?.dateOfBirth && (
-                      <p className="mt-0.5 text-xs text-destructive">
-                        {rowErrors.dateOfBirth.message}
-                      </p>
-                    )}
+                    {cellError("dateOfBirth")}
                   </TableCell>
                   <TableCell>
                     <select
                       className="h-8 min-w-24 rounded-md border border-input bg-background px-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                      disabled={isLocked}
-                      {...form.register(`rows.${index}.gender`)}
-                      aria-invalid={Boolean(rowErrors?.gender)}
+                      {...cell("gender")}
                     >
                       <option value="">Select…</option>
                       {GENDER_VALUES.map((g) => (
@@ -348,66 +520,15 @@ export function BulkStudentForm() {
                         </option>
                       ))}
                     </select>
-                    {rowErrors?.gender && (
-                      <p className="mt-0.5 text-xs text-destructive">{rowErrors.gender.message}</p>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <Input
-                      type="tel"
-                      className="h-8 min-w-28 text-xs"
-                      disabled={isLocked}
-                      {...form.register(`rows.${index}.phone`)}
-                    />
+                    {cellError("gender")}
                   </TableCell>
                   <TableCell>
                     <Input
                       type="email"
-                      className="h-8 min-w-36 text-xs"
-                      disabled={isLocked}
-                      {...form.register(`rows.${index}.email`)}
-                      aria-invalid={Boolean(rowErrors?.email)}
+                      className="h-8 min-w-40 text-xs"
+                      {...cell("email")}
                     />
-                    {rowErrors?.email && (
-                      <p className="mt-0.5 text-xs text-destructive">{rowErrors.email.message}</p>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <Input
-                      className="h-8 min-w-36 text-xs"
-                      disabled={isLocked}
-                      {...form.register(`rows.${index}.address`)}
-                    />
-                  </TableCell>
-                  <TableCell>
-                    <Input
-                      className="h-8 min-w-20 text-xs"
-                      disabled={isLocked}
-                      placeholder="O+"
-                      {...form.register(`rows.${index}.bloodGroup`)}
-                    />
-                  </TableCell>
-                  <TableCell>
-                    <Input
-                      className="h-8 min-w-24 text-xs"
-                      disabled={isLocked}
-                      {...form.register(`rows.${index}.religion`)}
-                    />
-                  </TableCell>
-                  <TableCell>
-                    <Input
-                      className="h-8 min-w-24 text-xs"
-                      disabled={isLocked}
-                      placeholder="Lagos"
-                      {...form.register(`rows.${index}.stateOfOrigin`)}
-                    />
-                  </TableCell>
-                  <TableCell>
-                    <Input
-                      className="h-8 min-w-24 text-xs"
-                      disabled={isLocked}
-                      {...form.register(`rows.${index}.nationality`)}
-                    />
+                    {cellError("email")}
                   </TableCell>
                   <TableCell>
                     {status?.state === "submitting" && (
@@ -460,16 +581,29 @@ export function BulkStudentForm() {
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          disabled={submitting}
-          onClick={() => append(emptyRow())}
-        >
-          <Plus className="mr-1 h-4 w-4" />
-          Add row
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            disabled={submitting}
+            onClick={() => append(emptyRow(), { shouldFocus: false })}
+          >
+            <Plus className="mr-1 h-4 w-4" />
+            Add row
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            disabled={submitting}
+            onClick={() =>
+              append(Array.from({ length: 10 }, emptyRow), { shouldFocus: false })
+            }
+          >
+            +10 rows
+          </Button>
+        </div>
 
         <div className="flex gap-2">
           {allDone ? (
