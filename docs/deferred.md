@@ -334,6 +334,32 @@ Format:
   roster and one was spot-checked on its detail page. See
   `apps/web/src/components/students/bulk-student-form.tsx`.
 
+  **Narrowed and sped up 2026-08-18** (same file). The grid shipped with 13
+  data columns — every optional bio field the single-add form had — which
+  made "add several students quickly" the slowest intake path in the app.
+  It now captures only what a school actually needs at intake: admission
+  number, first/middle/last name, DOB, gender, and an optional email. Phone,
+  address, blood group, religion, state of origin, nationality, photo,
+  medical notes and free notes are gone from this screen; they belong to the
+  student and guardian to supply from their own portal (Phase 6 / Slice 3),
+  and `nationality` in particular is now simply not sent — the column's
+  `@default("Nigerian")` already stores what the always-prefilled cell did.
+  Four keyboard affordances were added at the same time: paste a block from
+  Excel/Sheets into any cell (it spreads across columns and down rows,
+  normalising `dd/mm/yyyy` dates and `M`/`F` genders), Enter to move down a
+  column, auto-appending a spare row as you type in the last one, and blank
+  rows ignored on submit — which is what makes the auto-append safe, and is
+  also why this form validates by hand rather than through `zodResolver`
+  (the resolver has no way to say "skip this row"). The single-add form kept
+  every field but now opens with only the intake set visible; the rest sit
+  behind a **More details (optional)** disclosure that stays mounted (so no
+  typed value is ever dropped) and auto-opens on edit whenever any of those
+  fields already holds a value, or on a failed submit whose error is inside
+  it. The roster's own toolbar was rearranged in the same pass: five
+  equal-weight buttons wrapping onto two ragged rows became Export + Print
+  on the left and one primary split button — **Add student**, with the grid
+  and CSV import under its caret — on the right.
+
 ## Phase 1 — AI foundation tables (DONE — slice 12, 2026-06-01)
 - [x] Mastery-tracking table: thin/additive-friendly, school_id + RLS,
   RLS test extended. Minimal columns (student, school, topic_ref,

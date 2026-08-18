@@ -208,19 +208,25 @@ Separately from the above, a class arm can also have a **form teacher** — the 
 
 ## 8. Students: add or import
 
-Go to **Students** (`/students`). Three ways to get students in:
+Go to **Students** (`/students`). Three ways to get students in, all behind the green **Add student** button in the top right — click it for one student, or open the caret beside it for the other two.
 
 ### One at a time
 
-Click **Add student**. Required: **Admission number**, **Date of birth**, **First name**, **Last name**, **Gender**. Everything else (phone, email, address, state of origin, nationality, religion, blood group, photo URL, medical notes) is optional and can be filled in later. Click **Create student**.
+Click **Add student**. Required: **Admission number**, **Date of birth**, **First name**, **Last name**, **Gender**; **Email** sits with them and is optional (it's what a portal invitation is later sent to). Everything else — phone, address, state of origin, nationality, religion, blood group, photo URL, medical notes — is tucked under **More details (optional)** and can be filled in later, either by you or by the student and guardian from their own portal. Click **Create student**.
 
 ### Several at once, by hand
 
-Click **Add multiple**. This opens a spreadsheet-style grid starting with 3 blank rows (click **Add row** for more). Fill in the same required fields per row, then click **Create students**. Rows submit one at a time — if one fails, the ones that already succeeded stay created.
+Open the caret and pick **Add several in a grid**. This opens a spreadsheet-style grid of 5 blank rows with just seven columns — admission number, first/middle/last name, date of birth, gender, and an optional email. It's built to be typed straight through:
+
+- **Paste from Excel or Google Sheets.** Copy a block of cells, click the cell you want it to land in, and paste — it spreads across the columns and down the rows, adding rows as needed. Dates written `dd/mm/yyyy` and genders typed `M`/`F` are converted for you.
+- **Enter** drops to the next row in the same column; **Tab** moves across.
+- New rows appear as you type in the last one, and blank rows are ignored — so you never have to count rows or tidy up.
+
+Click **Create students** when done. Rows submit one at a time — if one fails, the ones that already succeeded stay created, and re-submitting only retries the rest.
 
 ### From a CSV
 
-Click **Import students**. Same 4-step wizard shape as the staff import: **Upload → Map columns → Review → Import**. Download the **Template CSV** if needed. On the mapping step, also set the **Date format** your CSV uses (defaults to `DD/MM/YYYY`, the Nigerian convention). Review the "Ready to import" vs. "Needs fixing" rows, then click **Commit N student(s)**.
+Open the caret and pick **Import from CSV**. Same 4-step wizard shape as the staff import: **Upload → Map columns → Review → Import**. Download the **Template CSV** if needed. On the mapping step, also set the **Date format** your CSV uses (defaults to `DD/MM/YYYY`, the Nigerian convention). Review the "Ready to import" vs. "Needs fixing" rows, then click **Commit N student(s)**.
 
 **Putting students straight into their classes.** The template has a **Class Arm** column — fill it in with the class name exactly as it appears under **Settings → Academic → Class Arms** (e.g. `JSS 1A`), map it on the mapping step, and each student is enrolled into that class as they import. You'll be asked which **term** to enrol them into; there's no default, so pick it deliberately — every student in the file goes into the term you choose.
 
@@ -231,7 +237,7 @@ A few things worth knowing:
 - **Class names must be unique.** If two classes share a name, the import can't tell which one you meant and will flag those rows rather than guess. Rename one under **Settings → Academic → Class Arms**.
 - **Spelling must match**, but capitals don't — `jss 1a` and `JSS 1A` both work; `JSS1A` doesn't.
 
-> Importing a student doesn't link a guardian — that's a separate step, from each student's own page (see [§11](#11-invite-guardians-to-the-parent-portal)). The **Add student** and **Add multiple** paths above also don't enrol into a class; for those, use bulk enrollment at **/enrollments/bulk** afterwards.
+> Importing a student doesn't link a guardian — that's a separate step, from each student's own page (see [§11](#11-invite-guardians-to-the-parent-portal)). The **Add student** and **Add several in a grid** paths above also don't enrol into a class; for those, use bulk enrollment at **/enrollments/bulk** afterwards.
 
 ---
 
