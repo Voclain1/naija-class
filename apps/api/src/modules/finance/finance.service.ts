@@ -15,6 +15,7 @@ import { EmailService } from "../../common/email/email.service.js";
 import { redactPhone } from "../../common/redact.js";
 import { normalizeNigerianPhone, TermiiService } from "../../common/termii/termii.service.js";
 import { NotificationPreferencesService } from "../notifications/notification-preferences.service.js";
+import { NotificationDispatchService } from "../notifications/notification-dispatch.service.js";
 
 // onModuleInit must never block NestFactory.create() indefinitely. Same fix
 // as PartitionService (see docs/deferred.md's "recurring dev-server bootstrap
@@ -43,6 +44,7 @@ export class FinanceService implements OnModuleInit {
     private readonly email: EmailService,
     private readonly termii: TermiiService,
     private readonly notificationPreferences: NotificationPreferencesService,
+    private readonly dispatch: NotificationDispatchService,
   ) {}
 
   // On startup: catch any invoices that went overdue while the API was down.
@@ -253,6 +255,10 @@ export class FinanceService implements OnModuleInit {
     const channels = await this.notificationPreferences.getEnabledChannels(authCtx.schoolId);
     const emailAttemptable = channels.email && this.email.isConfigured;
     const smsAttemptable = channels.sms && this.termii.isConfigured;
+    // Phase 6 / Slice 5. Push needs no configuration check of its own: Expo
+    // requires no API key (possession of a token is the authorization), so
+    // unlike email and SMS there is no "configured" state that can be false.
+    const pushAttemptable = channels.push;
 
     if (!emailAttemptable && !smsAttemptable) {
       this.logger.warn(
@@ -296,12 +302,24 @@ export class FinanceService implements OnModuleInit {
         // Load primary guardian contact info (same pattern as Slice 8 initPaystack).
         const guardianLink = await db.studentGuardian.findFirst({
           where: { studentId, isPrimary: true },
-          select: { guardian: { select: { email: true, phone: true, firstName: true } } },
+          select: {
+            guardian: { select: { id: true, email: true, phone: true, firstName: true } },
+          },
         });
         const guardianEmail = guardianLink?.guardian?.email;
         const guardianPhone = guardianLink?.guardian?.phone;
+        const guardianId = guardianLink?.guardian?.id;
+        // Push is reachable whenever a guardian exists — it needs no contact
+        // detail on the row, because the address is a device token the parent
+        // registered themselves. That is why it is not part of the
+        // "no usable contact info" test below.
+        const pushReachable = pushAttemptable && !!guardianId;
 
-        if ((!emailAttemptable || !guardianEmail) && (!smsAttemptable || !guardianPhone)) {
+        if (
+          (!emailAttemptable || !guardianEmail) &&
+          (!smsAttemptable || !guardianPhone) &&
+          !pushReachable
+        ) {
           this.logger.warn(
             `No usable guardian contact info on an enabled channel for student ${studentId} — skipping`,
           );
@@ -343,7 +361,37 @@ export class FinanceService implements OnModuleInit {
           }
         }
 
-        if (smsAttemptable && guardianPhone) {
+        // D37 — decide the mobile channel ONCE, before either is attempted.
+        // Email is untouched and still runs in parallel above: it is free and
+        // it is a different medium. The exclusivity being bought here is
+        // between push and SMS, because SMS is the one that costs money per
+        // message.
+        //
+        // The dispatch service answers with a channel rather than sending,
+        // so the Termii call below remains the single place an SMS is sent.
+        const channel = pushReachable
+          ? await this.dispatch.notifyGuardian({
+              schoolId: authCtx.schoolId,
+              guardianId: guardianId as string,
+              title: school.name,
+              // D36 — lockscreen-safe. NOT the student's name, NOT the
+              // balance, NOT the due date, all of which the SMS below does
+              // carry. A fee reminder on a locked screen would otherwise
+              // publish a family's debt to anyone holding the phone.
+              body: "You have a new fee reminder.",
+              data: { kind: "fee-reminder" },
+              smsAvailable: smsAttemptable && !!guardianPhone,
+            })
+          : "SMS";
+
+        if (channel === "PUSH") {
+          sentAny = true;
+        }
+
+        // Reached only when push was unavailable — either the school has it
+        // off, or this guardian has no live device. Behaviour when push is
+        // off is byte-for-byte what it was before slice 5.
+        if (channel === "SMS" && smsAttemptable && guardianPhone) {
           const normalized = normalizeNigerianPhone(guardianPhone);
           if (!normalized) {
             this.logger.warn(

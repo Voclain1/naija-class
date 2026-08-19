@@ -811,8 +811,15 @@ Phase 6 subset" assertion, mirroring the teacher one.~~
 - **No isolated staging.** Slice 3's migrations run against the one database
   real schools use. Treat the RLS and SECURITY DEFINER correctness
   accordingly.
-- **The render worker's wake is still broken**, and push notification
-  delivery in slice 5 will want a worker.
+- ~~**The render worker's wake is still broken**, and push notification
+  delivery in slice 5 will want a worker.~~ **Resolved by #177 (2026-08-14),
+  confirmed on `main` 2026-08-18.** `wake-render-worker.ts` is a shared
+  helper called by both enqueue paths, hitting the PUBLIC Fly hostname
+  (`.internal` cannot work — it only publishes running machines and bypasses
+  the proxy that starts them), measured at a 21.0s cold start in production.
+  Slice 5 is **not** blocked on this. Left struck through rather than deleted
+  because the stale line was read as current on 2026-08-18 and produced a
+  wrong "slice 5 is blocked" call.
 
 ---
 
@@ -1824,3 +1831,161 @@ guard under ordinary RLS. Roughly: shared helper and DTOs, two student
 endpoints, one guardian endpoint, two mobile screens, the offline wiring,
 and the seven-case negative walk. The gate already exists; this slice
 attaches a reader to it.
+
+---
+
+## 16. Slice 5 plan-first — push notifications
+
+**Status: PLAN ONLY. Nothing in this section is built.** Written 2026-08-18,
+after slice 4 shipped and the first Android build was installed and tested on
+a real device.
+
+### 16.1 What already exists, and what does not
+
+Verified against `main` @ `8a51adc`, not assumed:
+
+| Piece | State |
+|---|---|
+| `NotificationPreference.pushEnabled` | **Exists**, per-school, `@default(false)`. Phase 4 / Slice 6 left it *"dark until the mobile phase — no code reads it yet."* This slice is what reads it. |
+| Any push infrastructure | **None.** A repo-wide grep for `expo-notifications`, `ExpoPush`, `exp.host`, `pushToken` returns zero hits outside `node_modules`. |
+| BullMQ queue pattern | **Established** — four queues already registered (imports, parent-summaries, report-cards, report-comments) over a shared connection in `common/queue/queue.module.ts`. |
+| SMS sending | **Two real call sites**: `FinanceService` (fee reminders) and `GuardiansService` (portal invitations), both via `TermiiService.sendSms`. |
+| Render worker wake | **Working** — fixed by #177, verified in production 2026-08-14. §12's claim that it is broken is STALE; a push worker is not blocked on it. |
+
+### 16.2 The commercial argument, stated precisely
+
+Termii charges per SMS. Expo Push is free. A school sending daily attendance
+alerts to hundreds of parents pays for every one. Push does not *replace* SMS
+— a parent without the app installed still needs it — so the saving comes
+entirely from **routing to push when a live device exists and falling back to
+SMS only when one does not** (D37). A fallback policy that sends both saves
+nothing, and is worth building carefully rather than quickly.
+
+### 16.3 Decisions
+
+**D34 — A new `DeviceToken` model, not a column on Guardian/Student.** One
+person legitimately has several devices (a parent's phone and tablet; a
+shared family handset used by two children), so this is one-to-many. Shape:
+`{ id, schoolId, principalType, guardianId?, studentId?, expoPushToken,
+platform, lastSeenAt, createdAt }`, `@@unique([expoPushToken])`, plus the
+usual `schoolId` scoping column and an RLS policy. Exactly one of
+`guardianId`/`studentId` is non-null — enforced by a CHECK constraint, not by
+convention, because a row belonging to neither is unroutable and a row
+belonging to both is a cross-principal leak.
+
+**D35 — Both principals get push.** Guardians and students each register from
+their own signed-in session. They do NOT share a token row: the same handset
+signing out of a parent account and into a child's must not inherit
+notifications, which is the same guarantee `wipeOfflineCache` already makes
+for cached data (D12).
+
+**D36 — Notification bodies carry no PII, no grades, no amounts.** This is
+the sharpest decision in the slice. A push notification renders on a LOCKED
+screen, visible to anyone holding the phone — on a shared family handset, in
+a classroom, on a bus. These are children's records.
+
+So the body says *what happened*, never *what it was*: "Your school has
+released a new report card", not "Adaeze scored 78% in Mathematics"; "A new
+invoice is available", not "You owe ₦150,000". The title is the school name.
+Opening the app is what reveals the content, behind the session that already
+governs it.
+
+This deliberately costs some utility — a parent cannot triage from the
+lockscreen — and that is the correct trade for a product handling minors'
+data. It also keeps NDPR exposure to what is already public: the school's
+name.
+
+**D37 — Push OR SMS, never both.** Order: if the school has `pushEnabled`
+AND the recipient has at least one live device token, send push and stop.
+Send SMS only when there is no live token, or when a push receipt has since
+told us the token is dead (D39). Email is unaffected and continues in
+parallel — it is free, and it is a different medium.
+
+The "live" qualifier is load-bearing: a token that exists but belongs to an
+uninstalled app looks identical to a working one at send time. Without D39,
+that silently converts "we saved an SMS" into "the parent was never told."
+
+**D38 — Delivery goes through a BullMQ queue, not inline.** Same reasoning as
+every other queue here, plus one specific to Expo: the push API accepts
+batches of up to 100 and is rate-limited, so a fee reminder to 400 parents is
+inherently a batched background job. Sending inline would put a third-party
+round trip inside a request a bursar is waiting on.
+
+**D39 — Receipts must be polled, not assumed.** Expo push is two-phase: the
+send returns a *ticket*, and the delivery outcome arrives later as a
+*receipt*. `DeviceNotRegistered` in a receipt is the ONLY reliable signal
+that an app was uninstalled. Skipping receipts means dead tokens accumulate,
+D37's fallback never fires for those parents, and the failure is invisible —
+messages stop arriving and nothing errors. A second scheduled job polls
+receipts and prunes.
+
+**D40 — Token lifecycle is tied to session boundaries that already exist.**
+Delete on sign-out, on `DeviceNotRegistered`, and — this one matters — when a
+guardian switches off their child's portal access.
+`StudentAccessService.deactivate` already nulls `passwordHash`, deletes
+`studentSession` rows and revokes invitations; a surviving push token would
+keep pushing to a child whose access a parent just revoked. It joins that
+same transaction.
+
+### 16.4 Endpoints
+
+```
+POST   /portal/devices              guardian registers a token
+DELETE /portal/devices/:token       guardian unregisters (sign-out)
+POST   /student-portal/devices      student registers a token
+DELETE /student-portal/devices/:token
+```
+
+Each runs inside its existing guard under ordinary RLS. **No SECURITY
+DEFINER function is needed** — every one of these happens with a session in
+hand, so a tenant is already known. (Count stays at 20; next shape review at
+23.)
+
+### 16.5 Sequencing consequence worth knowing before starting
+
+**Android push works today; iOS push does not, and cannot.** Verified against
+Expo's setup docs 2026-08-18:
+
+- **Android** needs a **free Firebase project** with an FCM V1 service-account
+  key uploaded to EAS. It does **NOT** need the paid Google Play Console
+  account ($25) — that gates store *distribution*, not push delivery. This is
+  a ~10-minute setup, not an external wait.
+- **iOS** needs an APNs key from a **paid Apple Developer account** ($99/yr)
+  — the same account slice 6 needs, with 1–3 weeks of external latency.
+
+So this slice ships Android-first regardless of how it is written. That is an
+argument for opening the Apple account NOW, in parallel, not an argument for
+delaying the slice.
+
+### 16.6 Verification plan
+
+Push cannot be verified in **Expo Go** or on web — Expo Go is explicitly
+unsupported for push, and web is not a shipping surface here. It needs a
+development or production build; an Android Emulator *with Google Play
+services* also works, so a physical device is the preferred but not the only
+option. That build now exists, and did not when this phase started.
+
+1. Register a token from a signed-in guardian; confirm the row and its
+   `schoolId` scoping.
+2. Trigger a fee reminder for a school with `pushEnabled` and a live token —
+   assert push sent, **and assert no SMS was sent** (the saving is the point).
+3. Same with no token registered — assert SMS sent, exactly once.
+4. Uninstall the app, trigger again, let receipts poll: assert the token is
+   pruned and the NEXT send falls back to SMS. This is D39's whole reason to
+   exist, and the case most likely to be skipped.
+5. Sign out; assert the token is gone and nothing arrives.
+6. Guardian switches off a child's portal access; assert the child's token is
+   deleted in the same transaction as the session rows (D40).
+7. Lockscreen check by eye: no name, no grade, no amount (D36).
+
+### 16.7 Out of scope
+
+- **iOS delivery** — blocked on the Apple account; slice 6 territory.
+- **Deep links from a notification.** Tapping opens the app, not a specific
+  screen: `https://` links do not open this app yet (no Universal Links / App
+  Links), and wiring notification routing before that exists would build on a
+  foundation that is itself missing.
+- **Per-guardian notification preferences.** `NotificationPreference` is
+  per-SCHOOL today. Letting an individual parent mute a channel is a real
+  feature, and a different one.
+- **Rich notifications** — images, actions, grouping.

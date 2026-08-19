@@ -35,6 +35,7 @@ export * from './portal-students/index.js';
 export * from './portal-finance/index.js';
 export * from './portal-payments/index.js';
 export * from './student-portal/index.js';
+export * from './devices/index.js';
 export * from './dashboard/index.js';
 export * from './paystack-setup/index.js';
 export * from './platform-admin/index.js';

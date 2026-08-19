@@ -33,8 +33,10 @@ export default function NotificationSettingsPage() {
 
   const [emailEnabled, setEmailEnabled] = useState<boolean | null>(null); // persisted
   const [smsEnabled, setSmsEnabled] = useState<boolean | null>(null); // persisted
+  const [pushEnabled, setPushEnabled] = useState<boolean | null>(null); // persisted
   const [draftEmail, setDraftEmail] = useState(false);
   const [draftSms, setDraftSms] = useState(false);
+  const [draftPush, setDraftPush] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -46,8 +48,10 @@ export default function NotificationSettingsPage() {
       const prefs = await getNotificationPreferences();
       setEmailEnabled(prefs.emailEnabled);
       setSmsEnabled(prefs.smsEnabled);
+      setPushEnabled(prefs.pushEnabled);
       setDraftEmail(prefs.emailEnabled);
       setDraftSms(prefs.smsEnabled);
+      setDraftPush(prefs.pushEnabled);
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Could not load settings.");
     } finally {
@@ -62,7 +66,8 @@ export default function NotificationSettingsPage() {
 
   const dirty =
     (emailEnabled !== null && draftEmail !== emailEnabled) ||
-    (smsEnabled !== null && draftSms !== smsEnabled);
+    (smsEnabled !== null && draftSms !== smsEnabled) ||
+    (pushEnabled !== null && draftPush !== pushEnabled);
 
   async function onSave(): Promise<void> {
     setSaving(true);
@@ -70,11 +75,14 @@ export default function NotificationSettingsPage() {
       const updated = await updateNotificationPreferences({
         emailEnabled: draftEmail,
         smsEnabled: draftSms,
+        pushEnabled: draftPush,
       });
       setEmailEnabled(updated.emailEnabled);
       setSmsEnabled(updated.smsEnabled);
+      setPushEnabled(updated.pushEnabled);
       setDraftEmail(updated.emailEnabled);
       setDraftSms(updated.smsEnabled);
+      setDraftPush(updated.pushEnabled);
       toast.success("Notification preferences saved.");
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : "Couldn't save — try again.");
@@ -131,6 +139,13 @@ export default function NotificationSettingsPage() {
               checked={draftSms}
               disabled={!canUpdate || saving}
               onChange={setDraftSms}
+            />
+            <ToggleRow
+              label="Push"
+              description="Send to the School Kit app, free. Used instead of SMS when a guardian has the app installed — never as well as."
+              checked={draftPush}
+              disabled={!canUpdate || saving}
+              onChange={setDraftPush}
             />
           </div>
 

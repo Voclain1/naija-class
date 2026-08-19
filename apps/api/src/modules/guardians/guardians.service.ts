@@ -378,6 +378,24 @@ export class GuardiansService {
     phone: string | null;
     acceptUrl: string;
   }): Promise<void> {
+    // DELIBERATELY NOT ROUTED THROUGH NotificationDispatchService (Phase 6 /
+    // Slice 5). Every other SMS in this codebase should prefer push under
+    // D37; this one must not, for two independent reasons:
+    //
+    //   1. The recipient cannot have a push token. This message EXISTS to
+    //      reach someone who has never signed in — no session has ever been
+    //      issued to them, so no device has ever registered. notifyGuardian
+    //      would find zero tokens and return SMS every time, so the call
+    //      would be a query that can only have one answer.
+    //   2. Even for a RE-invite of a guardian who does have the app, push is
+    //      the wrong medium: the payload is a single-use accept URL, which is
+    //      a credential, and D36 forbids putting one on a lockscreen. A push
+    //      saying "you have an invitation" without the link would leave the
+    //      parent unable to act on it.
+    //
+    // So the saving D37 buys does not apply here. Recorded rather than left
+    // as an omission, because "the other SMS call site was wired and this one
+    // was not" reads like something that was forgotten.
     const { email: emailEnabled, sms: smsEnabled } =
       await this.notificationPreferences.getEnabledChannels(params.schoolId);
 

@@ -220,6 +220,18 @@ export class StudentAccessService {
         where: { studentId, acceptedAt: null, revokedAt: null },
         data: { revokedAt: new Date() },
       });
+      // Phase 6 / Slice 5 (D40). A push token outlives the session it was
+      // registered under — it is an address Expo holds, not a credential we
+      // check — so without this a parent who just switched their child's
+      // account off would watch notifications keep arriving on the child's
+      // phone. That is the same "false safety control" D26 rejected: it
+      // tells a parent they have revoked access while something they can
+      // still see says otherwise.
+      //
+      // In THIS transaction, beside the session delete, for the same reason
+      // the session delete is here rather than in a cleanup job: revocation
+      // has to be complete at the moment the parent taps the button.
+      const devices = await db.deviceToken.deleteMany({ where: { studentId } });
 
       const after = await db.student.findUniqueOrThrow({
         where: { id: studentId },
@@ -239,6 +251,7 @@ export class StudentAccessService {
           metadata: {
             sessionsRevoked: sessions.count,
             invitationsRevoked: invitations.count,
+            deviceTokensRevoked: devices.count,
           },
         },
       });

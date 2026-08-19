@@ -29,6 +29,7 @@ import {
   type Principal,
 } from "./token-store";
 import { saveSchoolHint } from "./school-hint-store";
+import { registerForPush, unregisterForPush } from "../push/register";
 import { wipeOfflineCache } from "../query/persist";
 
 // Guardian session state for apps/mobile.
@@ -96,10 +97,17 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   const signOut = useCallback(async () => {
     // Tell the server first, while the token is still usable — clearToken()
-    // below would strip the credential the revoke call needs. Only the student
-    // surface has a logout endpoint today; the guardian one does not, which is
-    // why this is not symmetrical.
-    if (getCachedPrincipal() === "student") {
+    // below strips the credential both of these calls need. Unregistering
+    // after would send an unauthenticated DELETE that the guard rejects,
+    // leaving the device registered to an account nobody is signed in to.
+    //
+    // Only the student surface has a logout endpoint today; the guardian one
+    // does not, which is why that half is not symmetrical. Push release is.
+    const leaving = getCachedPrincipal();
+    if (leaving) {
+      await unregisterForPush(leaving);
+    }
+    if (leaving === "student") {
       await studentLogout();
     }
     setStatus("guest");
@@ -125,6 +133,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       setStudent(null);
       setSchool(response.school);
       setStatus("authenticated");
+      // Fire-and-forget, and deliberately AFTER status flips: registration is
+      // an enhancement, and awaiting a permission prompt plus two native
+      // calls before the app renders would put a dialog in front of a parent
+      // who just wanted to see their child's fees.
+      void registerForPush("guardian");
     },
     [],
   );
@@ -144,6 +157,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       setGuardian(null);
       setSchool(response.school);
       setStatus("authenticated");
+      void registerForPush("student");
     },
     [],
   );

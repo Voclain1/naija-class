@@ -24,7 +24,7 @@ function makeNotificationPreferencesStub(
   overrides: Partial<NotificationPreferencesService> = {},
 ): NotificationPreferencesService {
   return {
-    getEnabledChannels: vi.fn(async () => ({ email: true, sms: false })),
+    getEnabledChannels: vi.fn(async () => ({ email: true, sms: false, push: false })),
     ...overrides,
   } as NotificationPreferencesService;
 }
@@ -978,7 +978,7 @@ describe("GuardiansService", () => {
         emailStub,
         makeTermiiStub(),
         makeNotificationPreferencesStub({
-          getEnabledChannels: vi.fn(async () => ({ email: true, sms: false })),
+          getEnabledChannels: vi.fn(async () => ({ email: true, sms: false, push: false })),
         }),
       );
 
@@ -1009,7 +1009,7 @@ describe("GuardiansService", () => {
         makeEmailStub(),
         termiiStub,
         makeNotificationPreferencesStub({
-          getEnabledChannels: vi.fn(async () => ({ email: false, sms: true })),
+          getEnabledChannels: vi.fn(async () => ({ email: false, sms: true, push: false })),
         }),
       );
 
@@ -1039,7 +1039,7 @@ describe("GuardiansService", () => {
         emailStub,
         termiiStub,
         makeNotificationPreferencesStub({
-          getEnabledChannels: vi.fn(async () => ({ email: false, sms: false })),
+          getEnabledChannels: vi.fn(async () => ({ email: false, sms: false, push: false })),
         }),
       );
 
@@ -1064,7 +1064,7 @@ describe("GuardiansService", () => {
         makeEmailStub({ send: vi.fn(async () => { throw new Error("Resend down"); }) }),
         makeTermiiStub(),
         makeNotificationPreferencesStub({
-          getEnabledChannels: vi.fn(async () => ({ email: true, sms: false })),
+          getEnabledChannels: vi.fn(async () => ({ email: true, sms: false, push: false })),
         }),
       );
 

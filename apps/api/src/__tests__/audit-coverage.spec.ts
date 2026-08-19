@@ -1149,7 +1149,7 @@ describe("Phase 4 / Slice 6 audit coverage — notification-preferences.update w
   it("notification-preferences: update", async () => {
     const result = await notificationPreferences.update(
       ownerCtx,
-      { emailEnabled: false, smsEnabled: true },
+      { emailEnabled: false, smsEnabled: true, pushEnabled: false },
       reqCtx,
     );
 
@@ -1160,7 +1160,7 @@ describe("Phase 4 / Slice 6 audit coverage — notification-preferences.update w
     );
     expect(rows.length, "audit rows for notification-preferences.update").toBe(1);
     expect(rows[0].entityId).toBeTruthy();
-    expect(rows[0].metadata).toMatchObject({ emailEnabled: false, smsEnabled: true });
+    expect(rows[0].metadata).toMatchObject({ emailEnabled: false, smsEnabled: true, pushEnabled: false });
     expect(result.emailEnabled).toBe(false);
   });
 });

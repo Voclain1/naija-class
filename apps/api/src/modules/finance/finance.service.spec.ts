@@ -6,6 +6,7 @@ import { NotFoundError, type InvoiceStatus } from "@school-kit/types";
 import type { EmailService } from "../../common/email/email.service.js";
 import type { TermiiService } from "../../common/termii/termii.service.js";
 import type { NotificationPreferencesService } from "../notifications/notification-preferences.service.js";
+import type { NotificationDispatchService } from "../notifications/notification-dispatch.service.js";
 import { AuthService } from "../auth/auth.service.js";
 import { FinanceService } from "./finance.service.js";
 
@@ -24,19 +25,32 @@ function makeNotificationPreferencesStub(
   overrides: Partial<NotificationPreferencesService> = {},
 ): NotificationPreferencesService {
   return {
-    getEnabledChannels: vi.fn(async () => ({ email: true, sms: false })),
+    getEnabledChannels: vi.fn(async () => ({ email: true, sms: false, push: false })),
     ...overrides,
   } as NotificationPreferencesService;
+}
+// Phase 6 / Slice 5: FinanceService now takes a dispatch service. The stub
+// defaults to "SMS", which is the answer a school with push OFF gets — so
+// every pre-existing reminder test keeps asserting exactly the behaviour it
+// was written for, and any test that wants the push branch says so.
+function makeDispatchStub(
+  channel: "PUSH" | "SMS" | "NONE" = "SMS",
+): NotificationDispatchService {
+  return {
+    notifyGuardian: vi.fn(async () => channel),
+  } as unknown as NotificationDispatchService;
 }
 function makeFinanceService(overrides?: {
   email?: Partial<EmailService>;
   termii?: Partial<TermiiService>;
   notificationPreferences?: Partial<NotificationPreferencesService>;
+  dispatchChannel?: "PUSH" | "SMS" | "NONE";
 }): FinanceService {
   return new FinanceService(
     makeEmailStub(overrides?.email),
     makeTermiiStub(overrides?.termii),
     makeNotificationPreferencesStub(overrides?.notificationPreferences),
+    makeDispatchStub(overrides?.dispatchChannel),
   );
 }
 
@@ -500,7 +514,7 @@ describe("FinanceService (integration)", () => {
       const svc = makeFinanceService({
         email: { isConfigured: true, send: emailStub.send },
         notificationPreferences: {
-          getEnabledChannels: vi.fn(async () => ({ email: true, sms: false })),
+          getEnabledChannels: vi.fn(async () => ({ email: true, sms: false, push: false })),
         },
       });
 
@@ -523,7 +537,7 @@ describe("FinanceService (integration)", () => {
       const svc = makeFinanceService({
         termii: { isConfigured: true, sendSms: termiiStub.sendSms },
         notificationPreferences: {
-          getEnabledChannels: vi.fn(async () => ({ email: false, sms: true })),
+          getEnabledChannels: vi.fn(async () => ({ email: false, sms: true, push: false })),
         },
       });
 
@@ -553,7 +567,7 @@ describe("FinanceService (integration)", () => {
         email: { isConfigured: true, send: emailStub.send },
         termii: { isConfigured: true, sendSms: termiiStub.sendSms },
         notificationPreferences: {
-          getEnabledChannels: vi.fn(async () => ({ email: false, sms: false })),
+          getEnabledChannels: vi.fn(async () => ({ email: false, sms: false, push: false })),
         },
       });
 
@@ -583,7 +597,7 @@ describe("FinanceService (integration)", () => {
         },
         termii: { isConfigured: true, sendSms: vi.fn(async () => undefined) },
         notificationPreferences: {
-          getEnabledChannels: vi.fn(async () => ({ email: true, sms: true })),
+          getEnabledChannels: vi.fn(async () => ({ email: true, sms: true, push: false })),
         },
       });
 

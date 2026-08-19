@@ -365,6 +365,55 @@ describe("Student portal — negative walk (Phase 6 / Slice 3)", () => {
       expect(after.body.error.code).toBe("INVALID_SESSION");
     });
 
+    it("7b. deactivation also burns the student's PUSH TOKENS (D40)", async () => {
+      // A push token outlives the session it was registered under — it is an
+      // address Expo holds, not a credential we check. Without this, a parent
+      // who just switched their child's account off would watch notifications
+      // keep arriving on the child's phone: the exact "false safety control"
+      // D26 rejected, where the UI says revoked and the device says otherwise.
+      const token = `ExponentPushToken[walk-${runId}]`;
+      await withTenant(schoolB, (db) =>
+        db.deviceToken.create({
+          data: {
+            schoolId: schoolB,
+            principalType: "STUDENT",
+            studentId: s3,
+            expoPushToken: token,
+            platform: "ANDROID",
+          },
+        }),
+      );
+
+      const before = await withTenant(schoolB, (db) =>
+        db.deviceToken.count({ where: { studentId: s3 } }),
+      );
+      expect(before).toBe(1);
+
+      const deact = await http
+        .post(`/api/v1/portal/students/${s3}/deactivate`)
+        .set("Authorization", `Bearer ${g3Token}`)
+        .expect(200);
+
+      const after = await withTenant(schoolB, (db) =>
+        db.deviceToken.count({ where: { studentId: s3 } }),
+      );
+      expect(after).toBe(0);
+
+      // The audit row records the count, so "did it actually take effect?" is
+      // answerable after the fact rather than inferred — same reasoning the
+      // sessionsRevoked/invitationsRevoked counts already carry.
+      const rows = await withTenant(schoolB, (db) =>
+        db.auditLog.findMany({
+          where: { entityId: s3, action: "student.deactivate" },
+          select: { metadata: true },
+          orderBy: { createdAt: "desc" },
+          take: 1,
+        }),
+      );
+      expect(JSON.stringify(rows[0]?.metadata)).toContain('"deviceTokensRevoked":1');
+      expect(deact.body.state).toBe("DEACTIVATED");
+    });
+
     it("8. the deactivated student cannot log in again with their OLD password", async () => {
       const res = await http
         .post("/api/v1/student-portal/login")
