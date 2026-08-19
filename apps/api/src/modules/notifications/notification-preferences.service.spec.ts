@@ -114,7 +114,7 @@ describe("NotificationPreferencesService", () => {
 
       const result = await service.update(
         authCtx,
-        { emailEnabled: false, smsEnabled: true },
+        { emailEnabled: false, smsEnabled: true, pushEnabled: false },
         reqCtx,
       );
 
@@ -131,14 +131,14 @@ describe("NotificationPreferencesService", () => {
         }),
       );
       expect(audit).not.toBeNull();
-      expect(audit?.metadata).toMatchObject({ emailEnabled: false, smsEnabled: true });
+      expect(audit?.metadata).toMatchObject({ emailEnabled: false, smsEnabled: true, pushEnabled: false });
     });
 
     it("updates the existing row (not a second insert) on a subsequent call", async () => {
       const { authCtx, schoolId } = await createActiveSchool("update-twice");
 
-      await service.update(authCtx, { emailEnabled: true, smsEnabled: false }, reqCtx);
-      await service.update(authCtx, { emailEnabled: false, smsEnabled: true }, reqCtx);
+      await service.update(authCtx, { emailEnabled: true, smsEnabled: false, pushEnabled: false }, reqCtx);
+      await service.update(authCtx, { emailEnabled: false, smsEnabled: true, pushEnabled: false }, reqCtx);
 
       const rows = await withTenant(schoolId, (db) =>
         db.notificationPreference.findMany({ where: { schoolId } }),
@@ -150,7 +150,7 @@ describe("NotificationPreferencesService", () => {
 
     it("get() reflects a prior update()", async () => {
       const { authCtx } = await createActiveSchool("update-then-get");
-      await service.update(authCtx, { emailEnabled: false, smsEnabled: true }, reqCtx);
+      await service.update(authCtx, { emailEnabled: false, smsEnabled: true, pushEnabled: false }, reqCtx);
 
       const prefs = await service.get(authCtx);
       expect(prefs.emailEnabled).toBe(false);
@@ -161,7 +161,7 @@ describe("NotificationPreferencesService", () => {
       const { schoolId } = await createActiveSchool("update-forbidden");
       const { authCtx: noRoleCtx } = await createUserWithoutRole(schoolId, "update-forbidden");
       await expect(
-        service.update(noRoleCtx, { emailEnabled: true, smsEnabled: false }, reqCtx),
+        service.update(noRoleCtx, { emailEnabled: true, smsEnabled: false, pushEnabled: false }, reqCtx),
       ).rejects.toBeInstanceOf(ForbiddenError);
     });
   });
@@ -179,26 +179,33 @@ describe("NotificationPreferencesService", () => {
       await expect(service.getEnabledChannels(schoolId)).resolves.toEqual({
         email: true,
         sms: false,
+        // Phase 6 / Slice 5: push joined this helper and defaults OFF, like
+        // sms and for the same reason — a school that has not opted in has
+        // not opted in. Asserted explicitly rather than relaxed to
+        // toMatchObject, because exact equality is what caught the change.
+        push: false,
       });
     });
 
     it("reflects a school that has disabled email and enabled SMS", async () => {
       const { authCtx, schoolId } = await createActiveSchool("channels-custom");
-      await service.update(authCtx, { emailEnabled: false, smsEnabled: true }, reqCtx);
+      await service.update(authCtx, { emailEnabled: false, smsEnabled: true, pushEnabled: false }, reqCtx);
 
       await expect(service.getEnabledChannels(schoolId)).resolves.toEqual({
         email: false,
         sms: true,
+        push: false,
       });
     });
 
     it("reflects a school with both channels disabled", async () => {
       const { authCtx, schoolId } = await createActiveSchool("channels-both-off");
-      await service.update(authCtx, { emailEnabled: false, smsEnabled: false }, reqCtx);
+      await service.update(authCtx, { emailEnabled: false, smsEnabled: false, pushEnabled: false }, reqCtx);
 
       await expect(service.getEnabledChannels(schoolId)).resolves.toEqual({
         email: false,
         sms: false,
+        push: false,
       });
     });
   });

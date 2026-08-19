@@ -637,6 +637,7 @@ model Student {
   parentSummaries   ParentSummary[] // Phase 5 / Slice 5 back-relation.
   sessions          StudentSession[] // Phase 6 / Slice 3.
   portalInvitations StudentPortalInvitation[] // Phase 6 / Slice 3.
+  deviceTokens      DeviceToken[] // Phase 6 / Slice 5.
 
   @@unique([schoolId, admissionNumber])
   @@index([schoolId])
@@ -783,9 +784,10 @@ model Guardian {
   createdAt  DateTime @default(now()) @map("created_at")
   updatedAt  DateTime @updatedAt @map("updated_at")
 
-  students    StudentGuardian[]
-  sessions    GuardianSession[]
-  invitations GuardianInvitation[]
+  students     StudentGuardian[]
+  sessions     GuardianSession[]
+  invitations  GuardianInvitation[]
+  deviceTokens DeviceToken[] // Phase 6 / Slice 5.
 
   // Decision C (phase-4.md) — scoped per school, not global. A guardian with
   // children at two schools gets two separate portal accounts (intentional).
@@ -864,6 +866,68 @@ model NotificationPreference {
 
   @@unique([schoolId])
   @@map("notification_preferences")
+}
+
+// Phase 6 / Slice 5 (D34) — an Expo push token for one app install.
+//
+// WHY A TABLE AND NOT A COLUMN on Guardian/Student: one person legitimately
+// has several devices (a parent's phone and tablet), and one device carries
+// several installs over its life (reinstall issues a new token). Both are
+// one-to-many, and a column would silently drop every device but the last.
+//
+// EXACTLY ONE OF guardianId/studentId IS SET. Enforced by a CHECK constraint
+// in the migration rather than by convention: a row with neither is
+// unroutable, and a row with both would deliver a child's notification to a
+// parent's device or the reverse — the precise cross-principal leak the two
+// separate session tables exist to prevent (see CLAUDE.md's SECURITY DEFINER
+// cadence review on why those are not merged).
+//
+// The token is NOT a credential — it is an address Expo issues, and holding
+// one lets you send TO a device, not read anything from it. So it is stored
+// in plaintext, unlike every session token here, which are stored as hashes
+// because they authenticate. Do not "fix" this by hashing it: a hash cannot
+// be sent to.
+//
+// schoolId is a plain scoping column with no School relation — same
+// convention as NotificationPreference above, GradingScheme and Guardian.
+model DeviceToken {
+  id            String         @id @default(uuid())
+  schoolId      String         @map("school_id")
+  principalType PrincipalType  @map("principal_type")
+  guardianId    String?        @map("guardian_id")
+  studentId     String?        @map("student_id")
+  // Expo's token, e.g. "ExponentPushToken[xxxxxxxx]". Globally unique: the
+  // same install re-registering must UPDATE its row (and can legitimately
+  // move between principals on a shared handset), never accumulate copies.
+  expoPushToken String         @unique @map("expo_push_token")
+  platform      DevicePlatform
+  // Touched on every re-registration, which the app does at each launch.
+  // A token Expo has not invalidated but no app has claimed in months is the
+  // signal for a future prune; nothing reads it yet.
+  lastSeenAt    DateTime       @default(now()) @map("last_seen_at")
+  createdAt     DateTime       @default(now()) @map("created_at")
+
+  guardian Guardian? @relation(fields: [guardianId], references: [id], onDelete: Cascade)
+  student  Student?  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@index([schoolId])
+  @@index([guardianId])
+  @@index([studentId])
+  @@map("device_tokens")
+}
+
+enum PrincipalType {
+  GUARDIAN
+  STUDENT
+
+  @@map("principal_type")
+}
+
+enum DevicePlatform {
+  ANDROID
+  IOS
+
+  @@map("device_platform")
 }
 
 enum Relationship {

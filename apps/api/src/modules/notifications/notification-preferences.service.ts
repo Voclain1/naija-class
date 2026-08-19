@@ -79,11 +79,13 @@ export class NotificationPreferencesService {
           schoolId: authCtx.schoolId,
           emailEnabled: input.emailEnabled,
           smsEnabled: input.smsEnabled,
+          pushEnabled: input.pushEnabled,
           updatedBy: authCtx.userId,
         },
         update: {
           emailEnabled: input.emailEnabled,
           smsEnabled: input.smsEnabled,
+          pushEnabled: input.pushEnabled,
           updatedBy: authCtx.userId,
         },
         select: SELECT,
@@ -97,7 +99,11 @@ export class NotificationPreferencesService {
           entityType: "notification_preference",
           entityId: updated.id,
           ipAddress: reqCtx.ipAddress,
-          metadata: { emailEnabled: input.emailEnabled, smsEnabled: input.smsEnabled },
+          metadata: {
+            emailEnabled: input.emailEnabled,
+            smsEnabled: input.smsEnabled,
+            pushEnabled: input.pushEnabled,
+          },
         },
       });
 
@@ -115,15 +121,23 @@ export class NotificationPreferencesService {
   // No permission check here — this is an internal service-to-service call,
   // not an admin-facing endpoint; the caller already authorized its own
   // action (e.g. guardian.invite) before reaching this point.
-  async getEnabledChannels(schoolId: string): Promise<{ email: boolean; sms: boolean }> {
+  // Phase 6 / Slice 5: `push` added. It was omitted until now because
+  // pushEnabled was dark — no code read it. Extending this method rather
+  // than letting the dispatch service read notification_preferences itself
+  // keeps DEFAULTS the single source of what an unconfigured school gets;
+  // two readers with two default sets is how a school ends up with push on
+  // in one code path and off in another.
+  async getEnabledChannels(
+    schoolId: string,
+  ): Promise<{ email: boolean; sms: boolean; push: boolean }> {
     return withTenant(schoolId, async (db) => {
       const row = await db.notificationPreference.findUnique({
         where: { schoolId },
-        select: { emailEnabled: true, smsEnabled: true },
+        select: { emailEnabled: true, smsEnabled: true, pushEnabled: true },
       });
       return row
-        ? { email: row.emailEnabled, sms: row.smsEnabled }
-        : { email: DEFAULTS.emailEnabled, sms: DEFAULTS.smsEnabled };
+        ? { email: row.emailEnabled, sms: row.smsEnabled, push: row.pushEnabled }
+        : { email: DEFAULTS.emailEnabled, sms: DEFAULTS.smsEnabled, push: DEFAULTS.pushEnabled };
     });
   }
 }

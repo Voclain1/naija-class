@@ -6,6 +6,7 @@ import { NotFoundError } from "@school-kit/types";
 import type { EmailService } from "../../common/email/email.service.js";
 import type { TermiiService } from "../../common/termii/termii.service.js";
 import type { NotificationPreferencesService } from "../notifications/notification-preferences.service.js";
+import type { NotificationDispatchService } from "../notifications/notification-dispatch.service.js";
 import { AuthService } from "../auth/auth.service.js";
 import { FinanceService } from "../finance/finance.service.js";
 import { DashboardService } from "./dashboard.service.js";
@@ -24,9 +25,13 @@ function makeFinanceService(): FinanceService {
     sendSms: async () => undefined,
   } as unknown as TermiiService;
   const notificationPreferences = {
-    getEnabledChannels: async () => ({ email: true, sms: false }),
+    getEnabledChannels: async () => ({ email: true, sms: false, push: false }),
   } as unknown as NotificationPreferencesService;
-  return new FinanceService(email, termii, notificationPreferences);
+  // push OFF, so the dispatch answer is the pre-slice-5 behaviour: SMS.
+  const dispatch = {
+    notifyGuardian: async () => "SMS" as const,
+  } as unknown as NotificationDispatchService;
+  return new FinanceService(email, termii, notificationPreferences, dispatch);
 }
 
 let phoneCounter = 0;

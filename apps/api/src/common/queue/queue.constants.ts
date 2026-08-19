@@ -43,3 +43,24 @@ export const AI_JOB_FORM_COMMENT = "form-comment";
 // sweep enqueues and returns; the worker drains at concurrency 3 like
 // everything else on this queue.
 export const AI_JOB_PARENT_SUMMARY = "parent-summary";
+
+// Phase 6 / Slice 5 (D38) — push notification delivery.
+//
+// Its own queue rather than a job name on AI_QUEUE: these jobs are pure
+// third-party I/O with no model call, no browser and no per-tenant memory
+// budget, and sharing a queue would serialise a fee-reminder fan-out behind
+// AI generations that take orders of magnitude longer.
+//
+// TWO job names on the one queue, dispatched by job.name in a single
+// @Processor class — the pattern ImportsProcessor established, and for the
+// reason its header gives: @nestjs/bullmq spawns one Worker per @Processor
+// class, so a second class here would load-balance push sends across
+// competing workers.
+export const PUSH_QUEUE = "push";
+// Send one batch of at most EXPO_BATCH_SIZE messages.
+export const PUSH_JOB_SEND = "send";
+// Poll receipts for a previously-sent batch and prune dead tokens (D39).
+// Enqueued DELAYED by the send job rather than run on a cron: the delay is
+// per-batch, and a cron would have to persist which tickets are outstanding
+// somewhere else to find them again.
+export const PUSH_JOB_RECEIPTS = "receipts";
