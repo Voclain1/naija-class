@@ -579,6 +579,42 @@ describe("FinanceService (integration)", () => {
       expect(result.skipped).toBe(1);
     });
 
+    it("still reaches a guardian when ONLY push is enabled (email and SMS both off)", async () => {
+      // The configuration slice 5 exists to make attractive: a school turns
+      // SMS off to stop paying Termii and turns push on instead. Before this
+      // test the early-return guard checked only email and SMS, so such a
+      // school got {sent: 0} and reached nobody — silently, while the
+      // settings page showed push enabled.
+      const { schoolId, ownerId } = await makeSchool("remind-push-only");
+      const { termId, studentId } = await makeInvoice(schoolId, ownerId, {
+        totalDue: 100_000,
+        status: "ISSUED",
+      });
+      await linkPrimaryGuardian(schoolId, studentId, {
+        email: `remind-push-${runId}@example.test`,
+        phone: "+2348012345678",
+      });
+
+      const emailStub = makeEmailStub({ isConfigured: true });
+      const termiiStub = makeTermiiStub({ isConfigured: true });
+      const svc = makeFinanceService({
+        email: { isConfigured: true, send: emailStub.send },
+        termii: { isConfigured: true, sendSms: termiiStub.sendSms },
+        notificationPreferences: {
+          getEnabledChannels: vi.fn(async () => ({ email: false, sms: false, push: true })),
+        },
+        dispatchChannel: "PUSH",
+      });
+
+      const result = await svc.sendReminders(ctx(schoolId, ownerId), { termId, studentIds: [studentId] });
+
+      expect(result.sent).toBe(1);
+      expect(result.skipped).toBe(0);
+      // And exclusivity still holds — push instead of SMS, never as well as.
+      expect(termiiStub.sendSms).not.toHaveBeenCalled();
+      expect(emailStub.send).not.toHaveBeenCalled();
+    });
+
     it("counts as sent when email fails but SMS succeeds (per-student, not per-channel)", async () => {
       const { schoolId, ownerId } = await makeSchool("remind-partial");
       const { termId, studentId } = await makeInvoice(schoolId, ownerId, {

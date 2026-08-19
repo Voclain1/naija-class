@@ -260,11 +260,17 @@ export class FinanceService implements OnModuleInit {
     // unlike email and SMS there is no "configured" state that can be false.
     const pushAttemptable = channels.push;
 
-    if (!emailAttemptable && !smsAttemptable) {
+    // Push is part of this test as of slice 5. Without it, a school that
+    // turned SMS OFF and push ON — the exact configuration the push work
+    // exists to make attractive, since it replaces messages they pay for —
+    // would return {sent: 0} here and reach nobody, while the settings page
+    // showed a channel enabled. The failure would be silent to the school.
+    if (!emailAttemptable && !smsAttemptable && !pushAttemptable) {
       this.logger.warn(
         `Reminders skipped for school ${authCtx.schoolId} — no enabled/configured channel ` +
           `(emailEnabled=${channels.email}, emailConfigured=${this.email.isConfigured}, ` +
-          `smsEnabled=${channels.sms}, smsConfigured=${this.termii.isConfigured})`,
+          `smsEnabled=${channels.sms}, smsConfigured=${this.termii.isConfigured}, ` +
+          `pushEnabled=${channels.push})`,
       );
       return { sent: 0, skipped: dto.studentIds.length };
     }
