@@ -9,6 +9,51 @@ Format:
 
 ## Captured so far
 
+- [ ] **Every newly provisioned school lands with NO academic year and NO
+  current term, through BOTH onboarding paths — and nothing tells the owner.**
+  Found 2026-08-19 while building a test school for the slice 5 push
+  verification: `GET /academic-years` on a freshly signed-up school returned
+  `[]`.
+
+  **Verified against the code, not inferred from one school:**
+  - `packages/db/src/seeds/school-defaults.ts` — its own header lists what it
+    seeds: "14 class levels, one default arm each, a core subject catalogue,
+    and the grading scheme + components + grade boundaries." No academic year,
+    no term. Both callers (`AuthService.signupOwner` and platform-admin
+    provisioning) share this one function, so both paths are affected.
+  - The onboarding wizard is five steps — Basics, Branding, Invites, NDPR,
+    Success (`apps/web/src/components/onboarding/step*.tsx`). None creates an
+    academic year or term.
+  - A UI to create one DOES exist, at Settings → Academic → Years. So this is
+    not "impossible", it is "nothing points there".
+
+  **Why it matters:** a term is a required foreign key for enrollment,
+  invoice generation and attendance. Until an owner finds that settings page
+  unprompted, they cannot enroll a student, cannot issue an invoice, and
+  cannot mark a register — i.e. the three things a school actually bought the
+  product to do. Building the test school hit exactly this: student created
+  fine, then enrollment failed for want of a `termId`.
+
+  **This is the same shape as the incident `school-defaults.ts` was written to
+  fix**, and its own header describes that one: four schools provisioned
+  2026-08-08 with zero class levels, where "an owner could log in and do
+  nothing", one of whose owners gave up and re-registered, leaving two rows
+  for one school. That fix covered class structure, subjects and grading —
+  the academic-year half was never part of it, so the same "logs in, can do
+  nothing" outcome survives in a narrower form.
+
+  **Not fixed here deliberately, and not a slice 5 concern** — slice 5 only
+  surfaced it. Two candidate fixes, and the choice is a product call rather
+  than a technical one:
+  (a) seed a default year+term in `applySchoolDefaults`. Cheap, but the dates
+      would be guesses, and a wrong term silently attached to real enrollments
+      is worse than no term;
+  (b) add an academic-year step to the onboarding wizard, where the owner
+      supplies real dates. More work, correct data, and it fits the existing
+      five-step flow.
+  Recommend (b). (a) is tempting precisely because it is easy, which is how a
+  guessed date ends up on a real school's records.
+
 - [ ] **Two of the four session resolvers have no revocation signal at all**
   (found by the SECURITY DEFINER cadence review, 2026-08-16). `auth_resolve_
   student_session` returns `student_status` + `portal_enabled` and
