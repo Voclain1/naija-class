@@ -342,6 +342,39 @@ Format:
   **A second wrong-documented-value gap surfaced along the way**: the runbook's suggested `R2_BUCKET="school-kit-staging"` (also present in the original Slice 1b provisioning journal) turned out not to exist under the real account. Confirmed by calling R2's S3-compatible API directly with the real credentials before using them for anything else — `ListBuckets` itself came back `403` (the token is scoped to a single bucket, not account-wide — a permissions rejection, not a signature failure, so this didn't mean the credentials were bad), then `HeadBucket`/`ListObjectsV2` against candidate names found the real bucket: **`school-kit-prod`**. Fixed in the runbook template (see its own guard note) before the actual `flyctl secrets set` calls ran, so the wrong value was never live even briefly.
   **Fixed and verified real end-to-end, not just secret presence**: `flyctl secrets set R2_ACCOUNT_ID=... R2_ACCESS_KEY_ID=... R2_SECRET_ACCESS_KEY=... R2_BUCKET=school-kit-prod STORAGE_DRIVER=r2` run on both `school-kit-api` and `school-kit-render-worker`, confirmed deployed via `flyctl secrets list`. Then a genuine write+fetch cycle through real, unmodified production code: signed up a test school, created a student and a real `ISSUED` invoice, called the real `POST /payments/manual` endpoint — `201`, with a populated `receiptUrl` (`schools/<id>/receipts/<paymentId>.html`, the canonical R2 object key), proving `storage.put()` succeeded synchronously as part of the request. Called the real `GET /payments/:id/receipt` endpoint — `200`, returned a genuine presigned URL at `school-kit-prod.<accountId>.r2.cloudflarestorage.com` (bucket name matches the corrected value). Fetched that URL directly — `200 OK`, `Server: cloudflare`, real receipt HTML content (`Receipt RCP-...`) matching the payment just created. All test data (DB rows and the R2 object itself) cleaned up afterward and confirmed gone (`NotFound` on a follow-up `HeadObjectCommand`).
 
+- [ ] **Smart Student Import has no content evals and its prompt has never
+  seen a real register (2026-08-20).** The feature shipped complete —
+  vision plumbing, budget accounting, human-review gate, provenance flag, 50
+  tests, 22 new eval checks — but every one of those checks is STRUCTURAL.
+  Whether the model correctly reads "Chukwuemeka" off a photocopied,
+  handwritten page is a content question none of them can answer, and
+  `student-list-extraction` is at v1 having never run against a real Nigerian
+  school register.
+
+  This is the same gap phase-5.md §9 already carries for slices 2-5, but
+  sharper: handwriting varies far more than a score table does, and the
+  output lands in a child's permanent record rather than in a comment a
+  parent reads once. The precedent is recent and specific —
+  `report-card-subject-comment` needed a v2 the same day a real key was first
+  configured, for two defects 154 structural checks could not see.
+
+  **What closing this needs:** ~10 photographed pages from a real school with
+  hand-verified ground truth, a per-field exact-match accuracy pass, and
+  almost certainly a prompt v2. The fixture set is a new KIND of eval asset —
+  nothing in `packages/ai/evals/cases` is comparable — so building it is real
+  work, not a config change.
+
+  **Trigger:** before this feature is enabled for ANY school. Same rule
+  phase-5.md §9 sets for slice 5 — do not switch a school on until someone
+  has read real output. Blocked on Arinzechukwu confirming a pilot school.
+
+  **Related, and cheap to get wrong:** extraction is SYNCHRONOUS by design
+  (D3 — no persisted image means no queued job). The 30-60s estimate for a
+  full page is an ESTIMATE; it has never been measured against the real API.
+  If real timings blow past what a Fly request will tolerate, the decision to
+  revisit is D3 itself, and that needs sign-off — not a quiet switch to
+  buffering the image somewhere.
+
 - [ ] **Re-validate the report-card PDF memory gate IN A FLY.IO CONTAINER + author `apps/api/Dockerfile` with Chromium provisioning.** Slice-5 cp2's 40-card memory gate was measured in **dev on Windows** only (numbers in the 2026-06-04 journal entry). The fly.io Linux container fit is unproven. Before the first deploy that enables PDF render: (1) write `apps/api/Dockerfile` provisioning Chromium + system libs + a font (checklist in `docs/modules/phase-2.md` § "Deployment — Chromium provisioning"); (2) re-run the gate in-container against the target machine size (512MB / 1GB) — GREEN if peak RSS < 70% of budget. If it FAILS in-container, fall back to the external render service (the existing phase-2.md deferred item). **Trigger: pre-deploy / Phase 3 infra, or the first time PDF render is wanted in a deployed env.**
 
 - [x] **HIGH PRIORITY, ROOT CAUSE CONFIRMED (2026-07-31) — frequent long loading stalls on login/navigation in production. Two stacking causes; Cause 1 FIXED 2026-07-31 (Redis session cache), Cause 2 DELIBERATELY NOT FIXED (Neon Free tier — no dashboard control, confirmed same day).**

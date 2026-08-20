@@ -32,11 +32,23 @@ import { CommitRowError } from "./commit-guardians.row";
 // class of race this file already documents for admission numbers. The
 // ambiguity rule is identical to the validate engine's (D1) — ClassArm.name
 // has no uniqueness constraint, so >1 match is an error, never a guess.
+// ---- Extraction provenance (2026-08-20) --------------------------------
+// `aiExtracted` marks rows whose values came from a camera-captured register
+// transcribed by the model (Smart Student Import) rather than from a CSV or
+// a typed form. Defaulted to false so every existing caller — the CSV commit
+// handler and its specs — is unchanged.
+//
+// It is NOT a trust marker: a scanned row reaching this function has already
+// been read, corrected and explicitly confirmed by an admin (D4), so it is
+// exactly as authoritative as a CSV row. It exists so that a systematic
+// extraction defect found later has an identifiable population. See the
+// column's own comment in schema.prisma.
 export async function commitStudentRow(
   row: StudentImportRow,
   schoolId: string,
   db: PrismaClient,
   enrollment?: { termId: string; academicYearId: string },
+  aiExtracted = false,
 ): Promise<void> {
   const created = await db.student.create({
     data: {
@@ -54,6 +66,7 @@ export async function commitStudentRow(
       bloodGroup: row.bloodGroup ?? null,
       religion: row.religion ?? null,
       stateOfOrigin: row.stateOfOrigin ?? null,
+      aiExtracted,
     },
     select: { id: true },
   });

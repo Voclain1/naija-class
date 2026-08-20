@@ -597,6 +597,28 @@ model Student {
   nationality     String        @default("Nigerian")
   status          StudentStatus @default(ACTIVE)
 
+  // ---- Smart Student Import — extraction provenance (2026-08-20) --------
+  // TRUE when this row's field values originated from a camera-captured
+  // register transcribed by the model, rather than being typed by a human or
+  // parsed from a CSV the school produced.
+  //
+  // Added at the same time as the feature, deliberately, on D15's reasoning:
+  // "was this AI-drafted or human-written?" is a question you cannot
+  // retrofit an answer to. Once a term of scanned intakes exists, no
+  // migration can tell those rows apart from hand-typed ones.
+  //
+  // NOT a trust signal and nothing branches on it — every scanned row was
+  // reviewed and confirmed by an admin before it was written (D4), so a
+  // scanned row is exactly as authoritative as a typed one. It exists so
+  // that if a systematic extraction defect is ever found (a prompt version
+  // that mis-read a date format, say), the affected population is
+  // identifiable instead of hypothetical.
+  //
+  // Non-nullable with a FALSE default rather than nullable: every existing
+  // student was demonstrably not scanned, so there is no "unknown" state to
+  // represent and a nullable column would invite one.
+  aiExtracted     Boolean       @default(false) @map("ai_extracted")
+
   // ---- Phase 6 / Slice 3 — student portal auth (D18, D26) --------------
   // Credentials live on Student rather than a companion table, mirroring
   // Decision A of the guardian build (guardians carry their own auth
@@ -1000,6 +1022,11 @@ model ImportJob {
   schoolId        String          @map("school_id")
   type            ImportJobType
   status          ImportJobStatus @default(PENDING)
+  // Empty string for STUDENTS_SCAN jobs: the captured image is never
+  // persisted (D3), so there is no object to point at. Deliberately NOT made
+  // nullable — three import types rely on this being present, and widening
+  // the column to null would push an `if (!url)` branch into every one of
+  // them to serve the one type that never reads it.
   sourceFileUrl   String          @map("source_file_url")
   columnMapping   Json?           @map("column_mapping")
   totalRows       Int             @default(0) @map("total_rows")
@@ -1032,6 +1059,16 @@ enum ImportJobType {
   STUDENTS
   GUARDIANS
   TEACHERS
+  // Camera-captured student register (Smart Student Import). A separate type
+  // rather than a discriminator column on STUDENTS because the two differ in
+  // LIFECYCLE, not just in provenance: a STUDENTS job has a source file in
+  // storage and a mapping step, and a STUDENTS_SCAN job has neither — the
+  // model already mapped the fields (that is the feature) and the image is
+  // never persisted (D3). The validate worker dispatches on this enum, so
+  // making it a type keeps "does this job have a source file?" answerable
+  // from the row instead of from a second nullable column that could
+  // disagree with it.
+  STUDENTS_SCAN
 }
 
 enum ImportJobStatus {

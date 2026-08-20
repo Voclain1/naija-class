@@ -4,3 +4,4 @@ export * from "./update-student.dto.js";
 export * from "./list-students.dto.js";
 export * from "./status-transition.dto.js";
 export * from "./import.js";
+export * from "./scan.js";

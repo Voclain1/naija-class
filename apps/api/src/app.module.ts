@@ -32,6 +32,7 @@ import { ExpensesModule } from "./modules/expenses/expenses.module";
 import { GradingModule } from "./modules/grading/grading.module";
 import { GuardiansModule } from "./modules/guardians/guardians.module";
 import { ImportsModule } from "./modules/imports/imports.module";
+import { StudentScanModule } from "./modules/student-scan/student-scan.module";
 import { InvitationsModule } from "./modules/invitations/invitations.module";
 import { NotificationsModule } from "./modules/notifications/notifications.module";
 import { LessonPlansModule } from "./modules/lesson-plans/lesson-plans.module";
@@ -122,6 +123,7 @@ const isProd = process.env.NODE_ENV === "production";
     TeacherAssignmentsModule,
     TeacherScopeModule,
     ImportsModule,
+    StudentScanModule,
     GradingModule,
     AssessmentModule,
     AttendanceModule,

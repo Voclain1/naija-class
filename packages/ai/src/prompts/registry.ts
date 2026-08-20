@@ -31,6 +31,7 @@ import { LESSON_PLAN_PROMPT, LESSON_QUIZ_PROMPT } from "./lesson-plan.js";
 import { PARENT_WEEKLY_SUMMARY_PROMPT } from "./parent-weekly-summary.js";
 import { REPORT_CARD_COMMENT_PROMPT } from "./report-card-comment.js";
 import { REPORT_CARD_FORM_COMMENT_PROMPT } from "./report-card-form-comment.js";
+import { STUDENT_LIST_EXTRACTION_PROMPT } from "./student-list-extraction.js";
 
 export interface PromptDefinition {
   readonly name: string;
@@ -63,6 +64,10 @@ export const PROMPTS = {
   PARENT_WEEKLY_SUMMARY: PARENT_WEEKLY_SUMMARY_PROMPT,
   INSIGHTS_ROUTER: INSIGHTS_ROUTER_PROMPT,
   INSIGHTS_NARRATION: INSIGHTS_NARRATION_PROMPT,
+  // The ONLY prompt permitted to send student PII to the model. See
+  // CLAUDE.md's PII-bearing prompt allowlist and this prompt's own header
+  // before touching it, and note the allowlist is one row long by design.
+  STUDENT_LIST_EXTRACTION: STUDENT_LIST_EXTRACTION_PROMPT,
 } as const satisfies Record<string, PromptDefinition>;
 
 export type PromptKey = keyof typeof PROMPTS;

@@ -97,9 +97,34 @@ infra/      Terraform / Pulumi
 ### AI
 
 - Never auto-finalise AI output for grades, report card comments, or behaviour records. There is always a teacher-approval gate.
-- Never send student PII (full name, address, DOB, contact info) to the LLM. Use opaque IDs and class-level context (e.g. "JSS2 student") only.
+- Never send student PII (full name, address, DOB, contact info) to the LLM **for derived features** — comments, summaries, insights, tutoring. Use opaque IDs and class-level context (e.g. "JSS2 student") only. The single exception is the named-prompt allowlist below; it is an allowlist of *prompt names*, not a category, and nothing joins it without its own sign-off.
 - Every call to `claudeClient.messages.create` must log to the `ai_generations` table: model, prompt name + version, input/output tokens, latency, cost estimate, success/error.
 - Per-school monthly token budget enforced before the call, not after.
+
+**The PII-bearing prompt allowlist (approved 2026-08-20).** Exactly one prompt
+is permitted to send student PII to the model:
+
+| Prompt name | Feature | Why the PII *is* the payload |
+|---|---|---|
+| `student-list-extraction` | Smart Student Import (`docs/modules/smart-student-import.md`) | The feature transcribes a register the school already holds and already has the data in. Opaque IDs are not merely worse here — there is nothing to make opaque, because the transcription is the product. |
+
+Two rules bind every prompt on this list, and they are what make membership
+survivable:
+
+1. **The transcribed data is never retained by the model path beyond the
+   single request.** No storage object, no queue payload, no cache. See D3 in
+   the module doc.
+2. **The extraction never writes to a student record without explicit human
+   confirmation.** Same gate as D15's report comments.
+
+**This is an allowlist of one prompt name, deliberately — not a new
+category.** The distinction is load-bearing: a category ("transcription
+features", "onboarding features") is something a future prompt could argue
+itself into during review. A named list cannot be joined by accident — adding
+a second row is a visible edit to this file, and the eval suite pins the list
+so an unlisted prompt carrying PII fails CI rather than shipping. If a future
+feature needs this, it earns its own row and its own sign-off. Do not
+generalise this table into a rule.
 
 **`AIInteractionLog` (`ai_interaction_logs`, shipped Phase 1 / Slice 12) vs
 `AIGeneration` (`ai_generations`, not yet built — Phase 5) are deliberately

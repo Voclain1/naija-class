@@ -18,10 +18,43 @@ import Anthropic from "@anthropic-ai/sdk";
 
 import type { ModelId } from "./models.js";
 
+// One image attached to a request.
+//
+// `widthPx`/`heightPx` are REQUIRED, and that is deliberate rather than
+// convenient: the budget reservation runs before the call and has no other
+// way to price an image (see estimateImageTokens in ./models.ts). Making them
+// optional would let a caller silently reserve nothing for a 4784-token
+// image, which is precisely the hard-rule regression this contract exists to
+// prevent. The upload path decodes them from the image header.
+//
+// `base64` is the raw base64 payload WITHOUT a data: URI prefix — the API
+// takes the bytes, not a data URL, and a leaked "data:image/jpeg;base64,"
+// prefix is a 400 that is annoying to diagnose.
+//
+// No `file_id` source type: @anthropic-ai/sdk@0.116.0 exposes FileImageSource
+// only in the beta namespace, and we have no use for it anyway — every image
+// in this product is sent exactly once and never retained (D3).
+export interface AiImageInput {
+  readonly mediaType: "image/jpeg" | "image/png" | "image/webp";
+  readonly base64: string;
+  readonly widthPx: number;
+  readonly heightPx: number;
+}
+
 export interface AiCallRequest {
   readonly model: ModelId;
   readonly system?: string;
   readonly userContent: string;
+  // Optional images, sent BEFORE the text block. Anthropic's vision docs are
+  // explicit that image-then-text outperforms text-then-image, and for an
+  // extraction prompt the ordering matters more than usual: the instructions
+  // are about the image, so the model should have seen it first.
+  //
+  // PII WARNING: images are the one input channel in this codebase that can
+  // legitimately carry student PII, and only for the single prompt named in
+  // CLAUDE.md's PII-bearing prompt allowlist. If you are attaching an image
+  // from any other prompt, stop and read that table.
+  readonly images?: readonly AiImageInput[];
   readonly maxTokens: number;
   // Optional JSON Schema. When present the response is constrained to match
   // it (structured outputs), which removes the "model wandered off the output
@@ -69,7 +102,7 @@ class AnthropicSdkPort implements AnthropicPort {
       ...(req.jsonSchema
         ? { output_config: { format: { type: "json_schema" as const, schema: req.jsonSchema } } }
         : {}),
-      messages: [{ role: "user", content: req.userContent }],
+      messages: [{ role: "user", content: buildUserContent(req) }],
     });
 
     // response.content is a discriminated union; narrow before reading .text.
@@ -87,6 +120,30 @@ class AnthropicSdkPort implements AnthropicPort {
       stopReason: response.stop_reason ?? null,
     };
   }
+}
+
+// Builds the user turn's content.
+//
+// Returns a bare string when there are no images — not a single-element block
+// array — so every existing text-only prompt produces a byte-identical request
+// to the one it produced before vision support landed. That matters for more
+// than tidiness: prompt caching is a prefix match, and silently rewrapping
+// five shipped prompts' content would invalidate every cached prefix in the
+// product for no benefit.
+function buildUserContent(req: AiCallRequest): Anthropic.MessageParam["content"] {
+  if (!req.images || req.images.length === 0) return req.userContent;
+
+  return [
+    ...req.images.map((image) => ({
+      type: "image" as const,
+      source: {
+        type: "base64" as const,
+        media_type: image.mediaType,
+        data: image.base64,
+      },
+    })),
+    { type: "text" as const, text: req.userContent },
+  ];
 }
 
 // Returns null when no API key is configured, rather than throwing at import

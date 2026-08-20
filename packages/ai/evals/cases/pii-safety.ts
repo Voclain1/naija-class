@@ -23,7 +23,31 @@ import {
 import { renderParentWeeklySummaryPrompt } from "../../src/prompts/parent-weekly-summary.js";
 import { renderReportCardCommentPrompt } from "../../src/prompts/report-card-comment.js";
 import { renderReportCardFormCommentPrompt } from "../../src/prompts/report-card-form-comment.js";
+import { renderStudentListExtractionPrompt } from "../../src/prompts/student-list-extraction.js";
+import { PROMPTS } from "../../src/prompts/registry.js";
 import { check, type EvalCase } from "../harness.js";
+
+// ---------------------------------------------------------------------------
+// THE PII-BEARING PROMPT ALLOWLIST.
+//
+// CLAUDE.md's AI hard rules carve out exactly ONE prompt that may send student
+// PII to the model — `student-list-extraction`, whose entire function is
+// transcribing a register the school already holds. This constant is the
+// machine-readable half of that table, and the checks below pin it so the
+// carve-out cannot quietly widen:
+//
+//   * a SECOND prompt added here fails the length assertion, so joining the
+//     list is a visible, deliberate edit rather than something a feature can
+//     argue itself into during review;
+//   * the allowlisted prompt must still exist in the registry under exactly
+//     this name, so renaming it silently does not orphan the carve-out.
+//
+// Note what the allowlist does NOT permit: PII in the rendered TEXT. Even for
+// this prompt, the text channel stays clean — the register's contents travel
+// in the image, and renderStudentListExtractionPrompt takes only class arm
+// names. That is asserted below, and it is what keeps this suite meaningful
+// for the one prompt it exempts.
+const PII_BEARING_PROMPT_ALLOWLIST = ["student-list-extraction"] as const;
 
 // Field names that must never appear in a rendered prompt. If a template ever
 // interpolates a labelled PII field, the label itself usually travels with it.
@@ -443,6 +467,71 @@ export const piiSafetyCase: EvalCase = {
         adversarial.includes("Chinedu Okafor"),
         "if this fails the renderer has started sanitising input, which would silently corrupt legitimate topics — " +
           "PII typed into free text is mitigated at the API layer, not here",
+      ),
+    );
+
+    // ---- the PII-bearing prompt allowlist --------------------------------
+    results.push(
+      check(
+        "allowlist: exactly one prompt is permitted to carry student PII",
+        PII_BEARING_PROMPT_ALLOWLIST.length === 1,
+        `the allowlist has ${PII_BEARING_PROMPT_ALLOWLIST.length} entries. Adding one is a deliberate act ` +
+          "requiring its own sign-off and its own row in CLAUDE.md's PII-bearing prompt allowlist — " +
+          "if you meant to do that, update this assertion in the same commit and say why.",
+      ),
+    );
+
+    const registryNames = Object.values(PROMPTS).map((p) => p.name);
+    results.push(
+      check(
+        "allowlist: every allowlisted prompt still exists in the registry under that exact name",
+        PII_BEARING_PROMPT_ALLOWLIST.every((name) => registryNames.includes(name)),
+        "an allowlisted prompt name does not match any registered prompt — it was renamed or removed, " +
+          "which orphans the carve-out and would let the real prompt fall outside it",
+      ),
+    );
+
+    // ---- student-list-extraction renderer --------------------------------
+    // The allowlisted prompt, and the check that matters most for it: the
+    // carve-out covers the IMAGE channel only. Its rendered text must still be
+    // free of student PII, because the only thing it is given is school
+    // structure — a list of class arm names.
+    //
+    // If a future edit ever threads a student's name, admission number or
+    // guardian phone into this template (say, to "help the model match a row
+    // to an existing student"), it fails here. That would be a second,
+    // undeclared PII channel hiding behind a prompt that already has
+    // permission to see PII — the exact failure the allowlist exists to make
+    // impossible rather than merely discouraged.
+    const extractionRendered = renderStudentListExtractionPrompt({
+      knownClassArms: ["SENTINEL_ARM_JSS1A", "SENTINEL_ARM_PRIMARY4GOLD"],
+    });
+    results.push(...assertNoForbidden("student-list-extraction", extractionRendered));
+    results.push(
+      check(
+        "student-list-extraction: renders the class arms it was given",
+        ["SENTINEL_ARM_JSS1A", "SENTINEL_ARM_PRIMARY4GOLD"].every((s) =>
+          extractionRendered.includes(s),
+        ),
+        "a declared input was silently dropped from the template",
+      ),
+    );
+    results.push(
+      check(
+        "student-list-extraction: renderer is deterministic",
+        extractionRendered ===
+          renderStudentListExtractionPrompt({
+            knownClassArms: ["SENTINEL_ARM_JSS1A", "SENTINEL_ARM_PRIMARY4GOLD"],
+          }),
+        "same input produced different output — a clock or env read has crept into the template",
+      ),
+    );
+    results.push(
+      check(
+        "student-list-extraction: renders cleanly for a school with no class arms",
+        !/(undefined|null|NaN)/.test(renderStudentListExtractionPrompt({ knownClassArms: [] })),
+        "a school that has not yet created class arms is an ordinary onboarding state — " +
+          "the very state this feature exists to serve — not an error",
       ),
     );
 

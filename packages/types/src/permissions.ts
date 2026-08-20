@@ -550,6 +550,37 @@ export const PHASE_2_TEACHER_PERMISSIONS = [
   "grading-scheme.read",
 ] as const;
 
+// Smart Student Import (2026-08-20) — camera-captured student registers.
+//
+// Its own descriptively-named constant rather than an entry in
+// PHASE_5_PERMISSIONS, per CLAUDE.md's convention for work that isn't a
+// numbered Phase: Phase 5 is closed (slices 1-5 + 8, all shipped) and
+// Phase 7 is explicitly held pending an embeddings vendor decision, so
+// force-fitting this into either would misdate it.
+//
+// ONE new permission, not two. The split mirrors the reasoning
+// `report-card-comment.generate` / `.write` already encodes — one action
+// spends the school's AI budget, the other writes a permanent student
+// record — but here the second half already exists: committing a scan IS a
+// student import, running through the same worker, the same validation and
+// the same audit action as a CSV commit. Minting a `student.scan.commit`
+// alongside `student.import` would create two permissions a school could
+// set inconsistently for one indivisible outcome.
+//
+// So: `student.scan` gates the extraction (the spend), and the existing
+// `student.import` gates the commit (the write). A school that already
+// decided who may bulk-create students has already answered the second
+// question.
+//
+// Owner and admin only — deliberately NOT teacher-facing. Bulk student
+// intake is an office task, and `student.import` is already admin/owner
+// (see PHASE_1 grants); granting `student.scan` more widely than the
+// permission that commits its output would let a teacher spend the school's
+// AI budget producing rows they cannot then import.
+export const SMART_IMPORT_PERMISSIONS = [
+  "student.scan",
+] as const;
+
 export const ALL_PERMISSIONS = [
   ...PHASE_0_PERMISSIONS,
   ...PHASE_1_PERMISSIONS,
@@ -559,6 +590,7 @@ export const ALL_PERMISSIONS = [
   ...ADMIN_DASHBOARD_PERMISSIONS,
   ...PHASE_5_PERMISSIONS,
   ...PAYSTACK_SETUP_PERMISSIONS,
+  ...SMART_IMPORT_PERMISSIONS,
   /* extend per phase */
 ] as const;
 
