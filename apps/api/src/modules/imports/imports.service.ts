@@ -18,7 +18,7 @@ import {
   type ImportJobDto,
   type GuardianImportRow,
   type ImportJobPreviewSnapshot,
-  type ImportJobType,
+  type CsvImportJobType,
   type ImportMappingAcceptedResponse,
   type ImportUploadResponse,
   type StudentImportRow,
@@ -77,7 +77,7 @@ const AUDIT = {
 // to the full ImportJobType (adding TEACHERS).
 export interface ValidateJobData extends TenantJobData {
   jobId: string;
-  type: ImportJobType;
+  type: CsvImportJobType;
 }
 
 // Job-data shape for the commit worker (slice 7, widened in slice 8 + 10).
@@ -87,7 +87,7 @@ export interface ValidateJobData extends TenantJobData {
 // payload.
 export interface CommitJobData extends TenantJobData {
   jobId: string;
-  type: ImportJobType;
+  type: CsvImportJobType;
 }
 
 interface RequestContext {
@@ -171,7 +171,7 @@ export class ImportsService {
     authCtx: AuthContext,
     file: UploadFile,
     reqCtx: RequestContext,
-    type: ImportJobType,
+    type: CsvImportJobType,
   ): Promise<ImportUploadResponse> {
     await assertUserActiveAndHasOneOf(authCtx, ["owner", "admin"]);
 
@@ -311,7 +311,7 @@ export class ImportsService {
     // with applyStudentImportMappingSchema; GUARDIANS jobs use
     // applyGuardianImportMappingSchema. The body shape is otherwise
     // identical — only the target-field enum + required-set differ.
-    let jobType: ImportJobType;
+    let jobType: CsvImportJobType;
     await withTenant(authCtx.schoolId, async (db) => {
       const job = await db.importJob.findUnique({
         where: { id: jobId },
@@ -322,6 +322,19 @@ export class ImportsService {
         throw new ConflictError(
           "JOB_NOT_IN_PENDING_STATE",
           `Mapping can only be applied to a PENDING job. Current status: ${job.status}.`,
+        );
+      }
+      // A scan job has no column mapping — the model already mapped the
+      // fields, which is the whole feature. Today this is also unreachable
+      // (scans are created READY, and the status gate above fires first), so
+      // it is a belt-and-braces check whose real job is to fail loudly if a
+      // future change ever makes a scan job PENDING. Without it, such a
+      // change would silently write a columnMapping onto a job that has no
+      // source file to apply it to.
+      if (job.type === "STUDENTS_SCAN") {
+        throw new ConflictError(
+          "WRONG_JOB_TYPE",
+          "A scanned register has no column mapping step.",
         );
       }
       jobType = job.type;
@@ -774,7 +787,7 @@ export class ImportsService {
     // of the same RLS-scoped read. Hoist it out via assignment for the
     // enqueue below (BullMQ payload carries `type` for log/debug only —
     // the worker re-reads from the row).
-    let jobType: ImportJobType;
+    let jobType: CsvImportJobType;
     await withTenant(authCtx.schoolId, async (db) => {
       const job = await db.importJob.findUnique({
         where: { id: jobId },
@@ -785,6 +798,24 @@ export class ImportsService {
         throw new ConflictError(
           "JOB_NOT_IN_READY_STATE",
           `Commit can only be triggered on a READY job. Current status: ${job.status}.`,
+        );
+      }
+      // REACHABLE, unlike the mapping guard above, and therefore load-bearing:
+      // a scan job sits in READY exactly like a validated CSV job, so the
+      // status gate does NOT exclude it. Without this check an admin could
+      // commit a scan through the CSV endpoint, where the worker would read a
+      // null columnMapping and an empty sourceFileUrl and fail in a way that
+      // reports as a corrupt import rather than as the wrong endpoint.
+      //
+      // More importantly, it would bypass D4's human gate: the CSV commit
+      // path takes its rows from the stored source file, so it would commit
+      // the MODEL's extraction rather than the admin's reviewed corrections.
+      // Scans commit through POST /student-scan/:jobId/commit, which takes
+      // the reviewed rows in the request body.
+      if (job.type === "STUDENTS_SCAN") {
+        throw new ConflictError(
+          "WRONG_JOB_TYPE",
+          "A scanned register is committed from its review screen, not through the CSV import path.",
         );
       }
       jobType = job.type;

@@ -28,6 +28,7 @@ import {
 import { PARENT_WEEKLY_SUMMARY_SYSTEM } from "../../src/prompts/parent-weekly-summary.js";
 import { REPORT_CARD_COMMENT_SYSTEM } from "../../src/prompts/report-card-comment.js";
 import { REPORT_CARD_FORM_COMMENT_SYSTEM } from "../../src/prompts/report-card-form-comment.js";
+import { STUDENT_LIST_EXTRACTION_SYSTEM } from "../../src/prompts/student-list-extraction.js";
 import { check, warn, type EvalCase } from "../harness.js";
 
 // Dated pressure patterns. Not banned outright — emphasis is a legitimate,
@@ -478,6 +479,80 @@ export const promptQualityCase: EvalCase = {
         "lesson-quiz: constrains questions to the taught material",
         /did not teach|lesson content provided|answerable from the lesson/i.test(LESSON_QUIZ_SYSTEM),
         "without this the model invents questions on material the lesson never covered",
+      ),
+    );
+
+    // ---- student-list-extraction (Smart Student Import) ------------------
+    // D6's two failure modes. Both produce output that LOOKS correct, which
+    // is exactly why they are asserted mechanically rather than trusted to
+    // survive a future prompt edit: a reviewer skimming a diff will not
+    // notice that the sentence forbidding name-normalisation has gone.
+    const extractionLower = STUDENT_LIST_EXTRACTION_SYSTEM.toLowerCase();
+
+    results.push(
+      check(
+        "student-list-extraction: forbids normalising unfamiliar names",
+        /never adjust a spelling|do not (?:standardise|correct)|nearest recognisable/i.test(
+          STUDENT_LIST_EXTRACTION_SYSTEM,
+        ),
+        "without this the model 'helpfully' corrects Chukwuemeka to Chukwueka — a permanent error " +
+          "on a child's record that is plausible enough to survive review",
+      ),
+    );
+
+    results.push(
+      check(
+        "student-list-extraction: names real Nigerian names as ordinary, not as errors",
+        ["chukwuemeka", "adaeze", "ngozi", "oluwaseun"].filter((n) => extractionLower.includes(n))
+          .length >= 3,
+        "the prompt relies on concrete examples to establish that these are names to transcribe, " +
+          "not misspellings to tidy — an abstract instruction alone does not hold",
+      ),
+    );
+
+    results.push(
+      check(
+        "student-list-extraction: forbids guessing an illegible field",
+        /never guess/i.test(STUDENT_LIST_EXTRACTION_SYSTEM),
+        "a plausible invented value is indistinguishable from a real one in the review grid, " +
+          "which is what makes guessing worse than an empty cell",
+      ),
+    );
+
+    results.push(
+      check(
+        "student-list-extraction: forbids inventing or inferring an admission number",
+        /never invent an admission number/i.test(STUDENT_LIST_EXTRACTION_SYSTEM) &&
+          /never infer a value from neighbouring rows/i.test(STUDENT_LIST_EXTRACTION_SYSTEM),
+        "sequential admission numbers make interpolation tempting and right nine times out of ten — " +
+          "the tenth silently assigns a child another child's number",
+      ),
+    );
+
+    results.push(
+      check(
+        "student-list-extraction: refuses ambiguous dates rather than converting them",
+        /ambiguous|day-first|month-first/i.test(STUDENT_LIST_EXTRACTION_SYSTEM),
+        "03/04/2015 is two different birthdays; 'Nigerian schools normally write day-first' " +
+          "is not good enough for a date of birth",
+      ),
+    );
+
+    results.push(
+      check(
+        "student-list-extraction: preserves phone numbers verbatim",
+        /leading zero/i.test(STUDENT_LIST_EXTRACTION_SYSTEM),
+        "a reformatted Nigerian mobile number is one the school cannot dial, and a dropped " +
+          "leading zero is the classic way to produce one",
+      ),
+    );
+
+    results.push(
+      check(
+        "student-list-extraction: distinguishes unreadable from absent",
+        /unreadablefields/i.test(extractionLower),
+        "'could not read this' and 'the page does not record this' need different handling in " +
+          "the review grid — collapsing them tells the admin nothing about where to look",
       ),
     );
 

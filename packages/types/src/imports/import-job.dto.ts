@@ -4,7 +4,23 @@
 // statuses in sync with packages/db/prisma/schema.prisma's
 // ImportJobType / ImportJobStatus enums.
 
-export const IMPORT_JOB_TYPES = ["STUDENTS", "GUARDIANS", "TEACHERS"] as const;
+// The types a CSV upload can produce. Every one of these has a source file in
+// storage and goes through the column-mapping step.
+export const CSV_IMPORT_JOB_TYPES = ["STUDENTS", "GUARDIANS", "TEACHERS"] as const;
+export type CsvImportJobType = (typeof CSV_IMPORT_JOB_TYPES)[number];
+
+// Every type an ImportJob row can carry, including STUDENTS_SCAN (Smart
+// Student Import — a camera-captured register).
+//
+// STUDENTS_SCAN is deliberately kept OUT of CSV_IMPORT_JOB_TYPES above rather
+// than the two being collapsed into one list. A scan job has no source file
+// (the image is never persisted — D3) and no column mapping (the model
+// already mapped the fields, which is the feature), so the CSV lifecycle
+// endpoints cannot serve it and must not be handed it. Keeping the narrow
+// union around means the upload response and mapping DTOs stay typed to what
+// they can actually produce, instead of widening to a value they would then
+// have to reject at runtime.
+export const IMPORT_JOB_TYPES = [...CSV_IMPORT_JOB_TYPES, "STUDENTS_SCAN"] as const;
 export type ImportJobType = (typeof IMPORT_JOB_TYPES)[number];
 
 export const IMPORT_JOB_STATUSES = [
@@ -23,7 +39,8 @@ export type ImportJobStatus = (typeof IMPORT_JOB_STATUSES)[number];
 export interface ImportUploadResponse {
   jobId: string;
   status: Extract<ImportJobStatus, "PENDING">;
-  type: ImportJobType;
+  // Narrow: a CSV upload can never produce a STUDENTS_SCAN job.
+  type: CsvImportJobType;
   headers: string[];
   sampleRows: Record<string, string>[];
   totalRows: number;

@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronDown, FileUp, Loader2, Rows3, UserPlus } from "lucide-react";
+import { Camera, ChevronDown, FileUp, Loader2, Rows3, UserPlus } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
@@ -214,6 +214,17 @@ export default function StudentsRosterPage() {
                     </span>
                   </Link>
                 </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <Link href="/students/scan">
+                    <Camera className="mr-2 h-4 w-4" />
+                    <span className="flex flex-col">
+                      <span>Scan a student list</span>
+                      <span className="text-xs text-muted-foreground">
+                        Photograph a register page
+                      </span>
+                    </span>
+                  </Link>
+                </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
@@ -275,6 +286,12 @@ export default function StudentsRosterPage() {
                 <Link href="/students/import">
                   <FileUp className="mr-1 h-4 w-4" />
                   Import from CSV
+                </Link>
+              </Button>
+              <Button asChild variant="outline">
+                <Link href="/students/scan">
+                  <Camera className="mr-1 h-4 w-4" />
+                  Scan a student list
                 </Link>
               </Button>
             </div>

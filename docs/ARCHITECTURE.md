@@ -218,6 +218,8 @@ Setup wizard: school profile → academic year/terms → class levels → subjec
 
 **AI hooks** — duplicate detection on bulk import (same student in twice with name variations), OCR on uploaded birth certs.
 
+> Partially delivered 2026-08-20 by **Smart Student Import** (`docs/modules/smart-student-import.md`): an admin photographs a handwritten or printed class register and the model transcribes it into reviewable import rows. That is the "OCR" half of this line, applied to registers rather than birth certificates — and it is the project's first vision-capable feature. Duplicate detection with name variations is still not built; the scan path reuses the CSV import's exact-match dedup and nothing fuzzier.
+
 ### 6.4 Staff management
 
 - Hiring and onboarding workflow

@@ -18,6 +18,7 @@ import {
   PHASE_4_PERMISSIONS,
   PHASE_5_PERMISSIONS,
   PHASE_5_TEACHER_PERMISSIONS,
+  SMART_IMPORT_PERMISSIONS,
 } from "@school-kit/types";
 
 export interface SystemRoleSeed {
@@ -51,6 +52,17 @@ const ADMIN_PERMISSIONS: readonly string[] = [
   // Phase 5 / Slice 2 — lesson-plan CRUD + ai-usage.read. No owner-only
   // subset: nothing here moves money or deletes an academic record.
   ...PHASE_5_PERMISSIONS,
+  // Smart Student Import (2026-08-20) — `student.scan`. Admin/owner only;
+  // deliberately absent from the teacher and bursar grants, because the
+  // permission that COMMITS a scan's output (`student.import`) is already
+  // admin/owner, and granting the spend more widely than the write would let
+  // someone burn the school's AI budget on rows they cannot import.
+  //
+  // Kept IN SYNC with the idempotent append in
+  // prisma/migrations/20260820000000_smart_student_import (which covers
+  // existing and CI databases via `migrate deploy`; this covers a fresh
+  // `db:seed`). If you edit one, edit both.
+  ...SMART_IMPORT_PERMISSIONS,
 ];
 
 // System roles are global (school_id = NULL, is_system = true) and referenced

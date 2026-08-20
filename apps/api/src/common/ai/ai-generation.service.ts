@@ -5,9 +5,12 @@ import {
   PRICE_TABLE_VERSION,
   createAnthropicClient,
   estimateCostMicroUsd,
+  estimateImageTokens,
   promptRef,
   type AiCallResult,
+  type AiImageInput,
   type AnthropicPort,
+  type ModelId,
   type PromptDefinition,
 } from "@school-kit/ai";
 import { withTenant } from "@school-kit/db";
@@ -84,6 +87,11 @@ export interface GenerateParams {
   // Callers that need a guaranteed response shape (the lesson-plan generator
   // writes five separate DB columns) supply one rather than parsing prose.
   readonly jsonSchema?: Record<string, unknown>;
+  // Optional images, passed through to the port and priced into the
+  // reservation. ONLY the prompt named in CLAUDE.md's PII-bearing prompt
+  // allowlist may attach an image containing student PII — see that table
+  // before adding a second caller.
+  readonly images?: readonly AiImageInput[];
 }
 
 interface Reservation {
@@ -170,6 +178,7 @@ export class AiGenerationService {
         userContent: params.userContent,
         maxTokens: params.prompt.maxTokens,
         jsonSchema: params.jsonSchema,
+        images: params.images,
       });
     } catch (e) {
       failure = e;
@@ -198,7 +207,12 @@ export class AiGenerationService {
     // Pessimistic estimate: a rough input estimate plus the prompt's full
     // output ceiling. Over-reserving is the safe direction — settle reconciles
     // it down to the true count moments later.
-    const estimatedInput = estimateInputTokens(params.system, params.userContent);
+    const estimatedInput = estimateInputTokens(
+      params.system,
+      params.userContent,
+      params.prompt.model,
+      params.images,
+    );
     const estimatedTokens = estimatedInput + params.prompt.maxTokens;
 
     return withTenant(params.schoolId, async (db) => {
@@ -344,9 +358,39 @@ export class AiGenerationService {
 // for the ledger, both of which use the API's reported counts. ~4 chars per
 // token is the conventional English approximation; deliberately rounded UP so
 // the reservation errs high.
-export function estimateInputTokens(system: string | undefined, userContent: string): number {
+// IMAGES ARE COUNTED SEPARATELY AND MUST BE (smart-student-import §2). An
+// image contributes zero characters, so the chars/4 approximation prices a
+// 4784-visual-token register photo at nothing. Left uncounted, a school
+// sitting just under its cap could fire a scan the reservation thinks costs
+// ~4,200 tokens and that actually costs ~10,400 — settle() would reconcile
+// the ledger to the truth afterwards, but the budget would already have been
+// overshot, and CLAUDE.md's rule is "enforced BEFORE the call, not after".
+// That makes this a hard-rule regression rather than an imprecision, which is
+// why the model id is a parameter here: visual-token caps are per-model.
+export function estimateInputTokens(
+  system: string | undefined,
+  userContent: string,
+  model?: ModelId,
+  images?: readonly AiImageInput[],
+): number {
   const chars = (system?.length ?? 0) + userContent.length;
-  return Math.ceil(chars / 4) + 16;
+  const textTokens = Math.ceil(chars / 4) + 16;
+
+  if (!images || images.length === 0) return textTokens;
+  if (!model) {
+    // Unreachable through generate(), which always passes the prompt's model.
+    // Throwing rather than silently returning the text-only estimate: a
+    // caller that attached images and lost the model has hit the exact bug
+    // this parameter exists to prevent, and swallowing it would restore the
+    // under-reservation quietly.
+    throw new InternalError("estimateInputTokens: images supplied without a model to price them.");
+  }
+
+  const imageTokens = images.reduce(
+    (sum, image) => sum + estimateImageTokens(model, image.widthPx, image.heightPx),
+    0,
+  );
+  return textTokens + imageTokens;
 }
 
 // Redacted, per CLAUDE.md: never put secrets, PII, or a raw prompt echo in an

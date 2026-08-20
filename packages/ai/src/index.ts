@@ -27,16 +27,20 @@
 // per the note above — TypeScript preserves them and Node ESM requires them.
 
 export {
+  IMAGE_PATCH_PX,
   MODELS,
+  MODEL_MAX_VISUAL_TOKENS,
   MODEL_PRICING,
   PRICE_TABLE_VERSION,
   estimateCostMicroUsd,
+  estimateImageTokens,
   type ModelId,
 } from "./models.js";
 
 export {
   createAnthropicClient,
   type AiCallRequest,
+  type AiImageInput,
   type AiCallResult,
   type AnthropicPort,
 } from "./client.js";
@@ -100,3 +104,11 @@ export {
   type FormCommentSubjectResult,
   type ReportCardFormCommentInput,
 } from "./prompts/report-card-form-comment.js";
+
+export {
+  STUDENT_LIST_EXTRACTION_PROMPT,
+  STUDENT_LIST_EXTRACTION_SCHEMA,
+  STUDENT_LIST_EXTRACTION_SYSTEM,
+  renderStudentListExtractionPrompt,
+  type StudentListExtractionInput,
+} from "./prompts/student-list-extraction.js";
