@@ -79,7 +79,13 @@ export class StudentScanController {
   // No @HttpCode: extraction creates an ImportJob, so 201 is correct.
   @Post()
   @Permissions("student.scan")
-  @UseFilters(UploadErrorFilter)
+  // `new UploadErrorFilter(...)`, NOT the bare class reference. The filter
+  // takes a size label as a constructor argument, so a class reference makes
+  // Nest try to resolve a `String` provider and fail — and it fails at BOOT,
+  // taking the whole API down, not at the first upload. The filter's own
+  // header comment says this; passing the class anyway is how PR #199's first
+  // CI run died.
+  @UseFilters(new UploadErrorFilter("10 MB"))
   @UseInterceptors(
     FileInterceptor("image", { limits: { fileSize: SCAN_MAX_FILE_SIZE_BYTES } }),
   )
