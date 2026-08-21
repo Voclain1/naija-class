@@ -9,8 +9,11 @@ import type { AuthContext } from "../common/auth/auth-context";
 import { PermissionsGuard } from "../common/auth/permissions.guard";
 import { AuthService } from "../modules/auth/auth.service";
 import { AcademicYearsController } from "../modules/academic-years/academic-years.controller";
+import { AcademicYearsService } from "../modules/academic-years/academic-years.service";
 import { ClassArmsController } from "../modules/class-arms/class-arms.controller";
+import { ClassArmsService } from "../modules/class-arms/class-arms.service";
 import { TermsController } from "../modules/terms/terms.controller";
+import { TermsService } from "../modules/terms/terms.service";
 import { BvnController } from "../modules/users/bvn.controller";
 import { FinanceController } from "../modules/finance/finance.controller";
 import { InvoicesController } from "../modules/invoices/invoices.controller";
@@ -95,7 +98,14 @@ describe("Bursar-scope negative walk (Phase 3 slice 15 cp3)", () => {
       where: { id: signed.school.id },
       data: { status: "ACTIVE", onboardingStep: 5 },
     });
-    return { schoolId: signed.school.id };
+    return { schoolId: signed.school.id, ownerUserId: signed.user.id };
+  }
+
+  // The owner AuthContext for a school created above — needed because the
+  // service-layer test has to perform an owner-only WRITE (creating a year)
+  // before it can exercise the bursar's scoped READ of that year's terms.
+  function ownerCtx(schoolId: string, ownerUserId: string): AuthContext {
+    return { sessionId: "sess-owner", userId: ownerUserId, schoolId } as AuthContext;
   }
 
   async function createBursar(schoolId: string, suffix: string): Promise<AuthContext> {
@@ -182,5 +192,59 @@ describe("Bursar-scope negative walk (Phase 3 slice 15 cp3)", () => {
     await expect(
       guard.canActivate(makeCtx(ClassArmsController.prototype.list, ClassArmsController, bursar)),
     ).resolves.toBe(true);
+  });
+
+  // 2026-08-21 — the test ABOVE passed green for 19 days while the feature it
+  // guards was completely broken in production, and this test exists because
+  // of that gap, not merely because of the bug.
+  //
+  // The guard is only HALF the gate on these three read paths. Each service
+  // ALSO calls assertUserActiveAndHasOneOf(), which checks ROLE KEYS and
+  // never consults permissions — so `bursar` passed the @Permissions check
+  // above and was then rejected by the service with FORBIDDEN "This action
+  // requires one of the following roles: owner, admin." Net effect: every
+  // finance page's year/term/class-arm selector 403'd for the one role whose
+  // job those pages are, which is precisely the end-to-end breakage the
+  // 2026-08-02 fix believed it had repaired.
+  //
+  // A guard-only assertion cannot see that, because it stops one layer above
+  // where the rejection happens. Calling the SERVICES is the point of this
+  // test — it is the only layer at which "a bursar can actually load a
+  // finance page" is a true statement.
+  it("bursar CAN actually call the academic read services (not just pass the guard)", async () => {
+    const { schoolId, ownerUserId } = await createSchoolWithOwner("svcread");
+    const bursar = await createBursar(schoolId, "svcread");
+
+    const academicYears = new AcademicYearsService();
+    const terms = new TermsService();
+    const classArms = new ClassArmsService();
+
+    // list() on all three: the calls the finance selectors actually make.
+    await expect(academicYears.list(bursar)).resolves.toBeInstanceOf(Array);
+    await expect(classArms.list(bursar)).resolves.toBeInstanceOf(Array);
+
+    // terms.listForYear needs a real year to scope against. Creating it as
+    // the OWNER also pins the other half of the boundary: reads widen to
+    // bursar, writes must not.
+    const owner = ownerCtx(schoolId, ownerUserId);
+    const year = await academicYears.create(
+      owner,
+      { label: `26/27-${runId}`, startDate: new Date("2026-09-01"), endDate: new Date("2027-07-31") },
+      reqCtx,
+    );
+    await expect(terms.listForYear(bursar, year.id)).resolves.toBeInstanceOf(Array);
+
+    // The writes stay closed to bursar — widening the reads must not have
+    // widened these by accident.
+    await expect(
+      academicYears.create(
+        bursar,
+        { label: `27/28-${runId}`, startDate: new Date("2027-09-01"), endDate: new Date("2028-07-31") },
+        reqCtx,
+      ),
+    ).rejects.toBeInstanceOf(ForbiddenError);
+    await expect(academicYears.setCurrent(bursar, year.id, reqCtx)).rejects.toBeInstanceOf(
+      ForbiddenError,
+    );
   });
 });

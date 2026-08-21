@@ -35,7 +35,15 @@ export class AcademicYearsService {
   // list
   // -----------------------------------------------------------------------
   async list(authCtx: AuthContext): Promise<AcademicYearDto[]> {
-    await assertUserActiveAndHasOneOf(authCtx, ["owner", "admin"]);
+    // "bursar" reads here, deliberately: this role holds academic-year.read /
+    // term.read / class-arm.read (added 2026-08-02) purely as read-only
+    // SCOPING context — every finance screen needs a year/term/class-arm to
+    // scope its query against. That grant was inert until now, because this
+    // service-layer gate checks ROLE KEYS and never consults permissions, so
+    // the controller's @Permissions("...read") would pass and this line would
+    // then 403 — leaving the whole bursar role non-functional end-to-end.
+    // Mutations below stay owner/admin: reads only.
+    await assertUserActiveAndHasOneOf(authCtx, ["owner", "admin", "bursar"]);
     return withTenant(authCtx.schoolId, async (db) => {
       const rows = await db.academicYear.findMany({
         select: ACADEMIC_YEAR_SELECT,
@@ -49,7 +57,15 @@ export class AcademicYearsService {
   // get one
   // -----------------------------------------------------------------------
   async findById(authCtx: AuthContext, id: string): Promise<AcademicYearDto> {
-    await assertUserActiveAndHasOneOf(authCtx, ["owner", "admin"]);
+    // "bursar" reads here, deliberately: this role holds academic-year.read /
+    // term.read / class-arm.read (added 2026-08-02) purely as read-only
+    // SCOPING context — every finance screen needs a year/term/class-arm to
+    // scope its query against. That grant was inert until now, because this
+    // service-layer gate checks ROLE KEYS and never consults permissions, so
+    // the controller's @Permissions("...read") would pass and this line would
+    // then 403 — leaving the whole bursar role non-functional end-to-end.
+    // Mutations below stay owner/admin: reads only.
+    await assertUserActiveAndHasOneOf(authCtx, ["owner", "admin", "bursar"]);
     return withTenant(authCtx.schoolId, async (db) => {
       const row = await db.academicYear.findUnique({
         where: { id },
