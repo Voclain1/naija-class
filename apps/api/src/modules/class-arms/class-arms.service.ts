@@ -34,7 +34,15 @@ export class ClassArmsService {
     classLevelId: string,
     options: { includeInactive?: boolean } = {},
   ): Promise<ClassArmDto[]> {
-    await assertUserActiveAndHasOneOf(authCtx, ["owner", "admin"]);
+    // "bursar" reads here, deliberately: this role holds academic-year.read /
+    // term.read / class-arm.read (added 2026-08-02) purely as read-only
+    // SCOPING context — every finance screen needs a year/term/class-arm to
+    // scope its query against. That grant was inert until now, because this
+    // service-layer gate checks ROLE KEYS and never consults permissions, so
+    // the controller's @Permissions("...read") would pass and this line would
+    // then 403 — leaving the whole bursar role non-functional end-to-end.
+    // Mutations below stay owner/admin: reads only.
+    await assertUserActiveAndHasOneOf(authCtx, ["owner", "admin", "bursar"]);
 
     return withTenant(authCtx.schoolId, async (db) => {
       // Validate parent exists in tenant — RLS would otherwise return [] for
@@ -65,7 +73,15 @@ export class ClassArmsService {
     authCtx: AuthContext,
     options: { includeInactive?: boolean } = {},
   ): Promise<ClassArmDto[]> {
-    await assertUserActiveAndHasOneOf(authCtx, ["owner", "admin"]);
+    // "bursar" reads here, deliberately: this role holds academic-year.read /
+    // term.read / class-arm.read (added 2026-08-02) purely as read-only
+    // SCOPING context — every finance screen needs a year/term/class-arm to
+    // scope its query against. That grant was inert until now, because this
+    // service-layer gate checks ROLE KEYS and never consults permissions, so
+    // the controller's @Permissions("...read") would pass and this line would
+    // then 403 — leaving the whole bursar role non-functional end-to-end.
+    // Mutations below stay owner/admin: reads only.
+    await assertUserActiveAndHasOneOf(authCtx, ["owner", "admin", "bursar"]);
     return withTenant(authCtx.schoolId, async (db) => {
       const rows = await db.classArm.findMany({
         where: options.includeInactive ? undefined : { isActive: true },
@@ -80,7 +96,15 @@ export class ClassArmsService {
   // findById (flat)
   // ----------------------------------------------------------------------
   async findById(authCtx: AuthContext, id: string): Promise<ClassArmDto> {
-    await assertUserActiveAndHasOneOf(authCtx, ["owner", "admin"]);
+    // "bursar" reads here, deliberately: this role holds academic-year.read /
+    // term.read / class-arm.read (added 2026-08-02) purely as read-only
+    // SCOPING context — every finance screen needs a year/term/class-arm to
+    // scope its query against. That grant was inert until now, because this
+    // service-layer gate checks ROLE KEYS and never consults permissions, so
+    // the controller's @Permissions("...read") would pass and this line would
+    // then 403 — leaving the whole bursar role non-functional end-to-end.
+    // Mutations below stay owner/admin: reads only.
+    await assertUserActiveAndHasOneOf(authCtx, ["owner", "admin", "bursar"]);
     return withTenant(authCtx.schoolId, async (db) => {
       const row = await db.classArm.findUnique({
         where: { id },

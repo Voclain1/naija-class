@@ -54,6 +54,78 @@ Format:
   Recommend (b). (a) is tempting precisely because it is easy, which is how a
   guessed date ends up on a real school's records.
 
+- [ ] **Permission-gate the academic READ paths and drop the redundant
+  service-layer role check** — the properly-scoped version of the hotfix
+  shipped 2026-08-21 (see the recurring-pattern entry directly below).
+
+  The hotfix added `"bursar"` to `assertUserActiveAndHasOneOf(authCtx,
+  ["owner", "admin"])` in the seven academic READ paths
+  (`academic-years.service.ts` list/findById, `terms.service.ts`
+  listForYear/findById, `class-arms.service.ts` listForLevel/list/findById).
+  That unblocks the role, but it treats the symptom: those endpoints are
+  ALREADY correctly gated by `@Permissions("academic-year.read")` etc. on
+  their controllers, and the service-layer check is a second, parallel
+  authorization system that keys off ROLE KEYS and cannot see permissions at
+  all. Every future role will hit the same wall, and the failure mode is
+  silent — the permission grant simply does nothing.
+
+  **The real fix**: where a controller already gates on the right permission,
+  the service-layer role check on READ paths is redundant and should be
+  removed (keeping the `isActive` re-check, which is a genuine
+  defense-in-depth requirement from CLAUDE.md's auth rules and is the other
+  half of what that helper does). **Deliberately NOT done as part of the
+  hotfix**: `assertUserActiveAndHasOneOf` has ~20 call sites across
+  assessment, students, users, schools, ai-usage and more, and splitting the
+  active-check from the role-check touches every one. That is a plan-first
+  with its own RBAC test pass, not a line to change under time pressure while
+  a production role is broken.
+
+  Note the helper's own header comment already describes itself as a gate for
+  "every handler that performs a tenant-scoped **mutation**" — the read paths
+  were arguably never its intended scope, which is worth using as the starting
+  point for that plan-first.
+
+- [ ] **RECURRING PATTERN — this is the THIRD time the `bursar` role has
+  shipped broken in the same shape: a grant that looks correct in
+  `permissions.ts` but is contradicted by a second gate somewhere else, caught
+  only in a browser, never by CI.** Recorded as a pattern deliberately, not
+  just as today's instance; the individual bugs are all fixed, the shape is
+  what keeps recurring.
+
+  1. **2026-08-02 — admin-shell lockout.** `bursar` shipped in Phase 3 /
+     Slice 15 with real finance permissions, but `(admin)/layout.tsx`'s
+     `RequireAuth roles={["owner", "admin"]}` was never updated, so a bursar
+     hitting any `(admin)` route was redirected to `/teacher/dashboard` with
+     no way back in. Gate: a ROLE list in the web shell.
+  2. **2026-08-02 (same day, second gate) — missing scoping permissions.**
+     Bursar held every `finance.*` permission but not `academic-year.read` /
+     `term.read` / `class-arm.read`, so every finance page's year/term
+     selector 403'd. Gate: the PERMISSION list.
+  3. **2026-08-21 — the fix for (2) was inert for 19 days.** The permissions
+     were added and the endpoints stayed 403, because the three academic
+     services ALSO call `assertUserActiveAndHasOneOf(authCtx, ["owner",
+     "admin"])`, which checks ROLE KEYS and never consults permissions. Gate:
+     a role list in the SERVICE layer, below the one that was fixed.
+
+  **Why CI never caught (3), which is the part worth internalising:**
+  `bursar-scope.spec.ts` had a regression test named "bursar CAN read academic
+  years, terms, and class arms" that passed green the entire time. It asserted
+  `guard.canActivate(...)` — the PermissionsGuard only — and stopped exactly
+  one layer above where the rejection actually happened. The test was not
+  wrong about what it checked; it was wrong about what it implied. A test that
+  proves a request gets PAST one gate says nothing about whether the request
+  succeeds, whenever more than one gate exists.
+
+  **Mitigation shipped with the hotfix**: a sibling test that calls the
+  SERVICES directly, verified to fail against the pre-fix code before being
+  committed. **Still open**: nothing systematically detects "a permission is
+  granted in `permissions.ts` but a role check elsewhere contradicts it."
+  Options worth weighing in the plan-first above — (a) an inventory spec that
+  cross-references `assertUserActiveAndHasOneOf` role lists against the
+  `@Permissions` metadata on the same handler and fails on disagreement;
+  (b) an e2e RBAC walk that exercises each role's real landing page over HTTP,
+  which is what a human did to find all three of these.
+
 - [ ] **Two of the four session resolvers have no revocation signal at all**
   (found by the SECURITY DEFINER cadence review, 2026-08-16). `auth_resolve_
   student_session` returns `student_status` + `portal_enabled` and
