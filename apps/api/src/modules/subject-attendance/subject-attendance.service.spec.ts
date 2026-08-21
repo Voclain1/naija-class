@@ -10,6 +10,7 @@ import { ForbiddenError, NotFoundError, ValidationError } from "@school-kit/type
 import { FilesystemStorageDriver } from "../../common/storage/filesystem-storage.driver";
 import { StorageService } from "../../common/storage/storage.service";
 import { AuthService } from "../auth/auth.service";
+import { AcademicCalendarService } from "../academic-calendar/academic-calendar.service.js";
 import { SchoolsService } from "../schools/schools.service";
 import { SubjectAttendanceService } from "./subject-attendance.service";
 
@@ -46,7 +47,7 @@ describe("SubjectAttendanceService (cp1 — opt-in, scope, register, mark, summa
   const runId = Math.random().toString(36).slice(2, 8);
   const auth = new AuthService();
   const storageRoot = mkdtempSync(join(tmpdir(), "schoolkit-subject-attendance-storage-"));
-  const schools = new SchoolsService(new StorageService(new FilesystemStorageDriver(storageRoot)), undefined as never);
+  const schools = new SchoolsService(new StorageService(new FilesystemStorageDriver(storageRoot)), undefined as never, new AcademicCalendarService());
   const service = new SubjectAttendanceService();
   const schoolIds = new Set<string>();
 

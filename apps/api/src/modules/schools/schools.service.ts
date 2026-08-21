@@ -22,6 +22,7 @@ import { assertUserActiveAndHasOneOf } from "../../common/auth/role-check";
 import { PaystackService } from "../../common/paystack/paystack.service";
 import { redactEmail } from "../../common/redact";
 import { StorageService } from "../../common/storage/storage.service";
+import { AcademicCalendarService } from "../academic-calendar/academic-calendar.service.js";
 
 const INVITATION_TTL_MS = 1000 * 60 * 60 * 24 * 7; // 7 days
 
@@ -61,6 +62,7 @@ export class SchoolsService {
   constructor(
     private readonly storage: StorageService,
     private readonly paystack: PaystackService,
+    private readonly academicCalendar: AcademicCalendarService,
   ) {}
 
   // GET /schools/me — owner/admin only (Phase 2 slice 9 cp2, WS4). Returns the
@@ -219,7 +221,7 @@ export class SchoolsService {
       case 4:
         return this.applyStep4(authCtx, payload.data, reqCtx);
       case 5:
-        return this.applyStep5(authCtx, reqCtx);
+        return this.applyStep5(authCtx, payload.data, reqCtx);
     }
   }
 
@@ -369,18 +371,60 @@ export class SchoolsService {
     return { school };
   }
 
+  // Step 5 — academic calendar, then activate.
+  //
+  // This step used to take no payload and only flip status to ACTIVE. As of
+  // 2026-08-21 it also creates the school's first academic year and its three
+  // terms (#198 — a production census found 36 of 42 real schools unable to
+  // enroll, invoice, or mark a register for want of one).
+  //
+  // ONE transaction, not updateSchoolWithAudit() + a separate calendar call.
+  // A school that went ACTIVE but whose calendar write failed would be
+  // returned to precisely the broken state this step exists to prevent, and
+  // would then be invisible to the wizard forever after (only the in-app
+  // prompt could reach it). Activation and a usable calendar become true at
+  // the same instant, or neither does.
+  //
+  // The "onboarding.complete" audit row is written unchanged and still last:
+  // OnboardingNudgeService keys its follow-up email off that exact action,
+  // and the calendar write emits its own separate academic-calendar.create
+  // row rather than folding into this one.
   private async applyStep5(
     authCtx: AuthContext,
+    data: OnboardingStep5Input,
     reqCtx: RequestContext,
   ): Promise<OnboardingStepResponse> {
-    const school = await this.updateSchoolWithAudit(
-      authCtx,
-      { status: "ACTIVE", onboardingStep: 5 },
-      "onboarding.complete",
-      reqCtx,
-      { completedAt: new Date().toISOString() },
-    );
-    return { school };
+    const updated = await withTenant(authCtx.schoolId, async (db) => {
+      await this.academicCalendar.createInTransaction(
+        db,
+        authCtx.schoolId,
+        authCtx.userId,
+        data.calendar,
+        reqCtx.ipAddress,
+      );
+
+      const school = await db.school.update({
+        where: { id: authCtx.schoolId },
+        data: { status: "ACTIVE", onboardingStep: 5 },
+        select: SCHOOL_RESPONSE_SELECT,
+      });
+
+      await db.auditLog.create({
+        data: {
+          schoolId: authCtx.schoolId,
+          userId: authCtx.userId,
+          action: "onboarding.complete",
+          entityType: "school",
+          entityId: authCtx.schoolId,
+          ipAddress: reqCtx.ipAddress,
+          metadata: { completedAt: new Date().toISOString() },
+        },
+      });
+
+      return school;
+    });
+
+    return { school: toSchoolMeDto(updated) };
   }
 
   // POST /schools/me/logo — owner or admin. Multipart upload, separate from

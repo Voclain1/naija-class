@@ -20,6 +20,8 @@ import {
   request as playwrightRequest,
 } from "@playwright/test";
 
+import { proposeAcademicCalendar } from "@school-kit/types";
+
 // The API base, WITH a trailing slash (see PATH NOTE above). Overridable for
 // non-default ports.
 export const API_BASE_URL =
@@ -152,10 +154,37 @@ export async function apiActivateSchool(
     await api.post("schools/me/onboarding/4", { data: { ndprConsent: true } }),
     "onboarding/4",
   );
+  // Step 5 carries the academic calendar as of 2026-08-21 (#198) — a school
+  // can no longer go ACTIVE without one, which is the whole point of the fix.
+  //
+  // Worth noting what this quietly repairs: setupAcademicStructure() creates
+  // a year and a term but has never set isCurrent, so every e2e school used
+  // to land in exactly the NO_CURRENT state the production census counted.
+  // Activating through the real endpoint now gives each of them a genuine
+  // current term, so fixtures match how real schools are actually shaped.
   await unwrap(
-    await api.post("schools/me/onboarding/5", { data: {} }),
+    await api.post("schools/me/onboarding/5", { data: { calendar: e2eCalendarPayload() } }),
     "onboarding/5",
   );
+}
+
+// Serialised to ISO strings, as a browser would send them; the API's
+// z.coerce.date() parses them back. Pinned to a fixed date rather than
+// `new Date()` so a test run's calendar never depends on the day CI runs.
+function e2eCalendarPayload() {
+  const p = proposeAcademicCalendar(new Date(Date.UTC(2026, 9, 15)));
+  return {
+    yearLabel: p.yearLabel,
+    yearStartDate: p.yearStartDate.toISOString(),
+    yearEndDate: p.yearEndDate.toISOString(),
+    terms: p.terms.map((t) => ({
+      sequence: t.sequence,
+      name: t.name,
+      startDate: t.startDate.toISOString(),
+      endDate: t.endDate.toISOString(),
+    })),
+    currentTermSequence: p.currentTermSequence,
+  };
 }
 
 // ---------------------------------------------------------------------------
