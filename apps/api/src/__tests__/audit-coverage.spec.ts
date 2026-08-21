@@ -39,6 +39,7 @@ import { ReportCardService } from "../modules/report-cards/report-card.service";
 import { ReportCardWorkflowService } from "../modules/report-cards/workflow/report-card-workflow.service";
 import { PaystackSetupService } from "../modules/schools/paystack-setup.service";
 import { PlatformAdminService } from "../modules/platform-admin/platform-admin.service";
+import { AcademicCalendarService } from "../modules/academic-calendar/academic-calendar.service.js";
 import { SchoolsService } from "../modules/schools/schools.service";
 import { StudentsService } from "../modules/students/students.service";
 import { SubjectAttendanceService } from "../modules/subject-attendance/subject-attendance.service";
@@ -584,7 +585,7 @@ describe("Phase 2 audit coverage — every mutation writes an audit row", () => 
   beforeAll(async () => {
     storageRoot = await mkdtemp(join(tmpdir(), "audit-p2-"));
     storage = new StorageService(new FilesystemStorageDriver(storageRoot));
-    schools = new SchoolsService(storage, undefined as never);
+    schools = new SchoolsService(storage, undefined as never, new AcademicCalendarService());
     // Isolated queue NAME so a stray dev:api worker can't steal the enqueued jobs.
     queue = new Queue(`${REPORT_CARDS_QUEUE}-audit-${runId}`, { connection: redisConnection() });
     await queue.obliterate({ force: true });

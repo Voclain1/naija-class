@@ -10,6 +10,8 @@ import { ForbiddenError, NotFoundError, UnauthorizedError, ValidationError } fro
 import { FilesystemStorageDriver } from "../../common/storage/filesystem-storage.driver";
 import { StorageService } from "../../common/storage/storage.service";
 import { AuthService } from "../auth/auth.service";
+import { proposeAcademicCalendar } from "@school-kit/types";
+import { AcademicCalendarService } from "../academic-calendar/academic-calendar.service.js";
 import { SchoolsService, type OnboardingStepPayload } from "./schools.service";
 
 // Integration spec — talks to the real dev Postgres. Same rationale as
@@ -32,6 +34,23 @@ function randomPhone(): string {
   return `+23488${(phoneCounter % 100).toString().padStart(2, "0")}${random}`;
 }
 
+// Step 5 now carries the school's first academic year + three terms (#198 —
+// see academic-calendar.dto.ts). Built from proposeAcademicCalendar() rather
+// than hand-written literals so these specs exercise the same payload the
+// real form pre-fills, and so a change to the proposed shape is caught here.
+function step5Payload() {
+  const p = proposeAcademicCalendar(new Date(Date.UTC(2026, 9, 15)));
+  return {
+    calendar: {
+      yearLabel: p.yearLabel,
+      yearStartDate: p.yearStartDate,
+      yearEndDate: p.yearEndDate,
+      terms: p.terms,
+      currentTermSequence: p.currentTermSequence,
+    },
+  };
+}
+
 describe("SchoolsService (Slice 6)", () => {
   const runId = Math.random().toString(36).slice(2, 8);
   const ctx = { ipAddress: "127.0.0.1", userAgent: "vitest" };
@@ -45,6 +64,7 @@ describe("SchoolsService (Slice 6)", () => {
   const schoolsService = new SchoolsService(
     new StorageService(new FilesystemStorageDriver(storageRoot)),
     undefined as never,
+    new AcademicCalendarService(),
   );
 
   const schoolIdsToCleanup = new Set<string>();
@@ -225,6 +245,7 @@ describe("SchoolsService (Slice 6)", () => {
       return new SchoolsService(
         new StorageService(new FilesystemStorageDriver(storageRoot)),
         { getSubaccount } as never,
+        new AcademicCalendarService(),
       );
     }
 
@@ -405,7 +426,7 @@ describe("SchoolsService (Slice 6)", () => {
       expect(step4.school.ndprConsent).toBe(true);
       expect(step4.school.ndprConsentAt).toBeInstanceOf(Date);
 
-      const step5 = await schoolsService.advanceOnboarding(authCtx, payload(5, {}), ctx);
+      const step5 = await schoolsService.advanceOnboarding(authCtx, payload(5, step5Payload()), ctx);
       expect(step5.school.onboardingStep).toBe(5);
       expect(step5.school.status).toBe("ACTIVE");
 
@@ -514,7 +535,7 @@ describe("SchoolsService (Slice 6)", () => {
       await schoolsService.advanceOnboarding(authCtx, payload(2, {}), ctx);
       await schoolsService.advanceOnboarding(authCtx, payload(3, { invites: [] }), ctx);
       await schoolsService.advanceOnboarding(authCtx, payload(4, { ndprConsent: true }), ctx);
-      await schoolsService.advanceOnboarding(authCtx, payload(5, {}), ctx);
+      await schoolsService.advanceOnboarding(authCtx, payload(5, step5Payload()), ctx);
 
       // Now status is ACTIVE; POST anything → ONBOARDING_ALREADY_COMPLETE.
       await expect(

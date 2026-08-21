@@ -6,6 +6,7 @@
 // outside src/ and so couldn't be imported across packages (TS rootDir).
 
 import {
+  ADMIN_DASHBOARD_PERMISSIONS,
   OWNER_ONLY_PERMISSIONS,
   PHASE_0_PERMISSIONS,
   PHASE_1_PERMISSIONS,
@@ -52,6 +53,16 @@ const ADMIN_PERMISSIONS: readonly string[] = [
   // Phase 5 / Slice 2 — lesson-plan CRUD + ai-usage.read. No owner-only
   // subset: nothing here moves money or deletes an academic record.
   ...PHASE_5_PERMISSIONS,
+  // Admin dashboard (2026-08-21). ADMIN_DASHBOARD_PERMISSIONS was spliced into
+  // ALL_PERMISSIONS when the dashboard shipped and GET /dashboard has always
+  // been guarded by it, but the admin role was never granted it — so every
+  // INVITED admin 403'd on the page login routes them to. Owners were
+  // unaffected (their grant is "*"). It stayed invisible because the dashboard
+  // page only calls the API once a termId exists, and schools had no terms
+  // (#198); fixing that is what surfaced this. Kept IN SYNC with the
+  // idempotent append in
+  // prisma/migrations/20260821000000_admin_dashboard_read_permission.
+  ...ADMIN_DASHBOARD_PERMISSIONS,
   // Smart Student Import (2026-08-20) — `student.scan`. Admin/owner only;
   // deliberately absent from the teacher and bursar grants, because the
   // permission that COMMITS a scan's output (`student.import`) is already

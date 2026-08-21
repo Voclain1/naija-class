@@ -13,6 +13,7 @@ import { HealthController } from "./health/health.controller";
 import { HttpExceptionFilter } from "./common/http-exception.filter";
 import { QueueModule } from "./common/queue";
 import { StorageModule } from "./common/storage";
+import { AcademicCalendarModule } from "./modules/academic-calendar/academic-calendar.module";
 import { AcademicYearsModule } from "./modules/academic-years/academic-years.module";
 import { AssessmentModule } from "./modules/assessment/assessment.module";
 import { AttendanceModule } from "./modules/attendance/attendance.module";
@@ -103,6 +104,7 @@ const isProd = process.env.NODE_ENV === "production";
     SchoolsModule,
     UsersModule,
     InvitationsModule,
+    AcademicCalendarModule,
     AcademicYearsModule,
     TermsModule,
     ClassLevelsModule,

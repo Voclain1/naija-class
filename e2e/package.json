@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
-    "@school-kit/db": "workspace:*"
+    "@school-kit/db": "workspace:*",
+    "@school-kit/types": "workspace:*"
   },
   "devDependencies": {
     "@playwright/test": "^1.49.1",

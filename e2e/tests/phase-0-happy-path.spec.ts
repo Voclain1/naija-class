@@ -129,9 +129,13 @@ test("Phase 0 happy path: signup -> onboarding -> invite -> accept -> login", as
     .click();
   await ownerPage.waitForURL(/\/onboarding\/5$/);
 
-  // 6. Onboarding step 5 — finalise (flips status to ACTIVE).
-  await expect(ownerPage.getByText("You're all set")).toBeVisible();
-  await ownerPage.getByRole("button", { name: "Go to dashboard" }).click();
+  // 6. Onboarding step 5 — academic calendar, then finalise (flips status to
+  //    ACTIVE). Pre-filled by proposeAcademicCalendar(), so the owner can
+  //    accept the defaults without typing — which is what this click does.
+  //    Before #198 this step was a bare "You're all set" screen and a school
+  //    could complete onboarding with no academic year at all.
+  await expect(ownerPage.getByText("Set up your school year")).toBeVisible();
+  await ownerPage.getByRole("button", { name: "Finish setup" }).click();
   await ownerPage.waitForURL(/\/dashboard$/);
   await expect(
     ownerPage.getByRole("heading", { name: "Dashboard", level: 1 }),

@@ -442,6 +442,9 @@ importers:
       '@school-kit/db':
         specifier: workspace:*
         version: link:../packages/db
+      '@school-kit/types':
+        specifier: workspace:*
+        version: link:../packages/types
     devDependencies:
       '@playwright/test':
         specifier: ^1.49.1

@@ -2,6 +2,7 @@
 
 import { useState, type ReactNode } from "react";
 
+import { CalendarSetupPrompt } from "@/components/academic-calendar/calendar-setup-prompt";
 import { RequireAuth } from "@/components/auth/require-auth";
 import { AdminSidebar } from "@/components/admin/sidebar";
 import { AdminTopbar } from "@/components/admin/topbar";
@@ -75,7 +76,15 @@ function AdminShell({
             onReplayTour={startReplay}
           />
         </div>
-        <main className="min-w-0 flex-1 overflow-x-hidden p-4 sm:p-6 print:p-0">{children}</main>
+        <main className="min-w-0 flex-1 overflow-x-hidden p-4 sm:p-6 print:p-0">
+          {/* Renders nothing for a healthy school. Mounted here rather than
+              per-page so a school with no academic year is told why the
+              product is inert on whichever admin page it lands on — #198. */}
+          <div className="print:hidden">
+            <CalendarSetupPrompt />
+          </div>
+          {children}
+        </main>
       </div>
     </div>
   );

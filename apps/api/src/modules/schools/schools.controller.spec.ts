@@ -5,6 +5,8 @@ import { ConfigModule } from "@nestjs/config";
 import { Global, Module, INestApplication } from "@nestjs/common";
 import request from "supertest";
 
+import { proposeAcademicCalendar } from "@school-kit/types";
+
 import { basePrisma } from "@school-kit/db";
 
 import { REDIS_AUTH_CLIENT } from "../../common/auth/redis-auth.provider";
@@ -303,7 +305,29 @@ describe("SchoolsController (Slice 6)", () => {
     expect(JSON.stringify(res.body.error?.details)).toContain("ndprConsent");
   });
 
-  it("POST /schools/me/onboarding/5 — flips status to ACTIVE", async () => {
+  // Step 5 carries the academic calendar as of 2026-08-21 (#198) — it is no
+  // longer an empty POST. Serialised through JSON here (not Date objects)
+  // because that is what a browser actually sends; z.coerce.date() on the
+  // server is what makes the ISO strings land as @db.Date values.
+  function step5Body() {
+    const p = proposeAcademicCalendar(new Date(Date.UTC(2026, 9, 15)));
+    return {
+      calendar: {
+        yearLabel: p.yearLabel,
+        yearStartDate: p.yearStartDate.toISOString(),
+        yearEndDate: p.yearEndDate.toISOString(),
+        terms: p.terms.map((t) => ({
+          sequence: t.sequence,
+          name: t.name,
+          startDate: t.startDate.toISOString(),
+          endDate: t.endDate.toISOString(),
+        })),
+        currentTermSequence: p.currentTermSequence,
+      },
+    };
+  }
+
+  it("POST /schools/me/onboarding/5 — creates the calendar and flips status to ACTIVE", async () => {
     // Complete step 4 first.
     await request(app.getHttpServer())
       .post("/api/v1/schools/me/onboarding/4")
@@ -313,10 +337,27 @@ describe("SchoolsController (Slice 6)", () => {
     const res = await request(app.getHttpServer())
       .post("/api/v1/schools/me/onboarding/5")
       .set(withAuth(ownerToken))
-      .send({});
+      .send(step5Body());
     expect(res.status).toBe(200);
     expect(res.body.school?.status).toBe("ACTIVE");
     expect(res.body.school?.onboardingStep).toBe(5);
+  });
+
+  // The regression this whole change exists to prevent: a school must not be
+  // able to finish onboarding without a usable calendar (#198). An empty
+  // step-5 body used to be the valid, and only, way to complete the wizard.
+  it("POST /schools/me/onboarding/5 — rejects an empty body, so no school can go ACTIVE without a calendar", async () => {
+    await request(app.getHttpServer())
+      .post("/api/v1/schools/me/onboarding/4")
+      .set(withAuth(ownerToken))
+      .send({ ndprConsent: true });
+
+    const res = await request(app.getHttpServer())
+      .post("/api/v1/schools/me/onboarding/5")
+      .set(withAuth(ownerToken))
+      .send({});
+    expect(res.status).toBe(400);
+    expect(res.body.error?.code).toBe("VALIDATION_ERROR");
   });
 
   // ---------------------------------------------------------------------

@@ -18,6 +18,7 @@ import { AuthService } from "../modules/auth/auth.service";
 import { GradingService } from "../modules/grading/grading.service";
 import { ReportCardService } from "../modules/report-cards/report-card.service";
 import { ReportCardWorkflowService } from "../modules/report-cards/workflow/report-card-workflow.service";
+import { AcademicCalendarService } from "../modules/academic-calendar/academic-calendar.service.js";
 import { SchoolsService } from "../modules/schools/schools.service";
 import { SubjectAttendanceService } from "../modules/subject-attendance/subject-attendance.service";
 
@@ -90,7 +91,7 @@ describe("Phase 2 E2E rollup (slice 9 cp3)", () => {
   beforeAll(async () => {
     storageRoot = await mkdtemp(join(tmpdir(), "p2-e2e-"));
     storage = new StorageService(new FilesystemStorageDriver(storageRoot));
-    schools = new SchoolsService(storage, undefined as never);
+    schools = new SchoolsService(storage, undefined as never, new AcademicCalendarService());
     queue = new Queue(`${REPORT_CARDS_QUEUE}-e2e-${runId}`, { connection: redisConnection() });
     await queue.obliterate({ force: true });
     reportCards = new ReportCardService(aggregation, storage, queue);
