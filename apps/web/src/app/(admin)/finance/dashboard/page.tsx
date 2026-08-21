@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 
 import type { AcademicYearDto, FinanceDashboardDto, TermDto } from "@school-kit/types";
@@ -8,6 +9,7 @@ import { BrandLoadingInline } from "@/components/brand-loading-screen";
 import { StatCard } from "@/components/shared/stat-card";
 import { Card, CardContent } from "@/components/ui/card";
 import { listAcademicYears, listTerms } from "@/lib/academic-years/academic-years-api";
+import { useAuth } from "@/lib/auth/use-auth";
 import { getFinanceDashboard } from "@/lib/finance/finance-api";
 import { formatKobo } from "@/lib/finance/format";
 
@@ -23,6 +25,58 @@ import { formatKobo } from "@/lib/finance/format";
 // Net position is the one genuine polarity signal here (above/below zero),
 // so it's the one value that carries status color; everything else is a
 // plain descriptive number in text tokens.
+
+// Local copy of sidebar.tsx's helper (it isn't exported there either). Kept
+// local rather than lifted to a shared module because that would be a
+// cross-cutting refactor riding along on a bursar bugfix; if a third caller
+// appears, extract it then.
+function hasPermission(permissions: string[], perm: string): boolean {
+  return permissions.includes("*") || permissions.includes(perm);
+}
+
+// Why this exists (2026-08-21): `bursar`'s home route is THIS page
+// (home-route.ts), and the page only renders once a term is selected. Both
+// selectors default off `isCurrent` — a MANUALLY set flag, never derived from
+// dates, set only by POST /academic-years/:id/set-current and
+// POST /terms/:id/set-current. When nothing is flagged current, the page fell
+// back to "Select an academic year and term", which for a bursar is a dead
+// end: PHASE_3_BURSAR_PERMISSIONS holds no academic-year.create,
+// academic-year.update or term.update, so they can neither create a year nor
+// mark one current, and nothing on screen said so or named who could.
+//
+// This deliberately does NOT resolve a term by date as a fallback.
+// `isCurrent` is the codebase-wide definition of "current" (enrollments,
+// student roster, teacher-scope all key off it); date-resolving here alone
+// would let the finance dashboard report one term while the roster is in
+// another — invoices attributed to a different term than the enrollments
+// they belong to. An honest empty state beats a silent divergence.
+//
+// The zero-years case is the visible symptom of a known, deliberately-open
+// root cause: every newly provisioned school lands with no academic year and
+// no term through both onboarding paths (docs/deferred.md, #198). This names
+// the situation; it does not paper over it.
+function AcademicSetupNotice({ message, canFix }: { message: string; canFix: boolean }) {
+  return (
+    <div className="rounded-md border border-border bg-muted/40 px-4 py-3 text-sm">
+      <p className="font-medium text-foreground">{message}</p>
+      {canFix ? (
+        <p className="mt-1 text-muted-foreground">
+          Set one up in{" "}
+          <Link href="/settings/academic" className="font-medium text-primary underline underline-offset-2">
+            Settings → Academic
+          </Link>
+          .
+        </p>
+      ) : (
+        <p className="mt-1 text-muted-foreground">
+          Ask your school administrator to set this up in Settings → Academic. Finance figures stay
+          empty until a current term is set.
+        </p>
+      )}
+    </div>
+  );
+}
+
 export default function FinanceDashboardPage() {
   const [years, setYears] = useState<AcademicYearDto[]>([]);
   const [yearId, setYearId] = useState("");
@@ -32,6 +86,22 @@ export default function FinanceDashboardPage() {
   const [dashboard, setDashboard] = useState<FinanceDashboardDto | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Resolved separately from `years.length` so the notice below can tell
+  // "the school has no academic year" apart from "the fetch hasn't landed
+  // yet" — both are an empty array, and only one of them is worth alarming
+  // a bursar about.
+  const [yearsLoaded, setYearsLoaded] = useState(false);
+  const [termsLoaded, setTermsLoaded] = useState(false);
+  // A FAILED academic-years fetch also leaves `years` empty. Without this,
+  // a 403 would render "No academic year has been set up for this school
+  // yet" — telling a bursar their school is misconfigured when the real
+  // fault is a permission regression. That is precisely the misdiagnosis
+  // this whole change exists to remove, so the notice stays suppressed
+  // unless the load actually succeeded.
+  const [yearsFailed, setYearsFailed] = useState(false);
+
+  const { permissions } = useAuth();
 
   useEffect(() => {
     listAcademicYears()
@@ -44,12 +114,15 @@ export default function FinanceDashboardPage() {
       })
       .catch((e) => {
         console.error("[FinanceDashboardPage] listAcademicYears:", e);
-      });
+        setYearsFailed(true);
+      })
+      .finally(() => setYearsLoaded(true));
   }, []);
 
   useEffect(() => {
     setTermId("");
     setTerms([]);
+    setTermsLoaded(false);
     setDashboard(null);
     if (!yearId) return;
     listTerms(yearId)
@@ -58,7 +131,8 @@ export default function FinanceDashboardPage() {
         const current = rows.find((t) => t.isCurrent);
         if (current) setTermId(current.id);
       })
-      .catch(() => setTerms([]));
+      .catch(() => setTerms([]))
+      .finally(() => setTermsLoaded(true));
   }, [yearId]);
 
   useEffect(() => {
@@ -128,10 +202,57 @@ export default function FinanceDashboardPage() {
           starts (docs/deferred.md), not a fix for the underlying issue. */}
       {loading && <BrandLoadingInline />}
 
-      {!termId && !loading && (
-        <p className="text-sm text-muted-foreground">
-          Select an academic year and term to view the finance dashboard.
-        </p>
+      {/* Ordered most-fundamental-first: no years at all, then no current
+          year, then no terms under the selected year, then no current term.
+          Each names the actual blocker instead of asking a bursar to fix it
+          from a selector they have no permission to act on. The final branch
+          is the original copy — reached only when the school IS configured
+          and the user cleared a selector by hand, which is the one case where
+          "select a term" is genuinely the right instruction. */}
+      {/* A failed academic-years load leaves the page with two empty
+          selectors and nothing else — silently blank. Say so instead. As of
+          2026-08-21 this is what a bursar actually hits: GET /academic-years
+          403s for them (see the service-layer role gate in
+          academic-years.service.ts), so this branch is not hypothetical. */}
+      {!termId && !loading && !error && yearsLoaded && yearsFailed && (
+        <div className="rounded-md border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+          <p className="font-medium">Could not load academic years.</p>
+          <p className="mt-1">
+            The finance dashboard needs an academic year and term to show figures. If this keeps
+            happening, your account may not have access to academic records — ask your school
+            administrator.
+          </p>
+        </div>
+      )}
+
+      {!termId && !loading && !error && yearsLoaded && !yearsFailed && (
+        <>
+          {years.length === 0 ? (
+            <AcademicSetupNotice
+              message="No academic year has been set up for this school yet."
+              canFix={hasPermission(permissions, "academic-year.create")}
+            />
+          ) : !years.some((y) => y.isCurrent) ? (
+            <AcademicSetupNotice
+              message="No academic year is marked as current."
+              canFix={hasPermission(permissions, "academic-year.update")}
+            />
+          ) : yearId && termsLoaded && terms.length === 0 ? (
+            <AcademicSetupNotice
+              message="This academic year has no terms yet."
+              canFix={hasPermission(permissions, "term.create")}
+            />
+          ) : yearId && termsLoaded && !terms.some((t) => t.isCurrent) ? (
+            <AcademicSetupNotice
+              message="No term is marked as current for this academic year."
+              canFix={hasPermission(permissions, "term.update")}
+            />
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              Select an academic year and term to view the finance dashboard.
+            </p>
+          )}
+        </>
       )}
 
       {dashboard && !loading && (
