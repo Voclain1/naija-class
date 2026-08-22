@@ -135,20 +135,21 @@ those; it doesn't replace them.
 
 ## Latest state as of this handoff (updated 2026-08-22)
 
-- **RBAC conformance PR 1 is complete and ready for review.** On branch
-  `docs/rbac-gate-plan-first`,
-  `apps/api/src/__tests__/rbac-two-gate-conformance.spec.ts` now enforces I1
-  and I2 from `docs/modules/rbac-two-gate-reconciliation.md` using controller
-  and provider instances resolved from the real Nest `AppModule` container,
-  not a handler/service map. Its first run found zero I1 failures and exactly
-  20 I2 disagreements. All 20 were then evidence-classified as deliberate
-  design restrictions and are now held in six named, reasoned exception
-  groups; the gate proves zero undocumented disagreements, zero stale
-  exceptions, and zero duplicate exceptions. See
-  `docs/journal/2026-08-22.md`. Focused spec, API typecheck and API lint pass.
-  No production auth behavior or `isActive` check changed; fixes are the next
-  module-by-module PRs. Payment links remain queued, including the open
-  `percentage: 100` Paystack split question.
+- **Payment-link plan-first is complete in docs-only PR #203; implementation
+  awaits review.** PR #203 was rebased onto current `main`. A real Paystack
+  test-mode follow-up proved one `percentage: 100` split reusable at 123,400
+  and 987,600 kobo, with integration share zero and the school receiving gross
+  less Paystack fee both times. The final plan in
+  `docs/modules/shareable-payment-links.md` covers the school split column,
+  assisted-setup creation, existing-school backfill, durable link lifecycle,
+  synthetic customer email, metadata-correlated `paymentrequest.*` webhook,
+  archive-on-every-balance-change, no-recipient WhatsApp share, visible
+  connect state, tests and rollout gates. No product code is implemented.
+- **RBAC conformance PR #204 is merged on `main`.** Its real-DI I1/I2 gate
+  holds all 20 deliberate disagreements as six reasoned exception groups and
+  enforces zero undocumented, stale, or duplicate exceptions. The ~89-site
+  cleanup remains an incremental follow-on; production auth and `isActive`
+  were not changed.
 
 - **Most recent merged PR:** #128 (`docs: close the two Phase 4 restyle bugs
   in deferred.md`), on top of #127 (mobile nav fix) and #126 (RBAC
