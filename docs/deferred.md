@@ -9,7 +9,8 @@ Format:
 
 ## Captured so far
 
-- [ ] **Every newly provisioned school lands with NO academic year and NO
+- [x] **RESOLVED 2026-08-21 (PR #201, merged f674e4a, deployed and verified).**
+  Every newly provisioned school lands with NO academic year and NO
   current term, through BOTH onboarding paths — and nothing tells the owner.**
   Found 2026-08-19 while building a test school for the slice 5 push
   verification: `GET /academic-years` on a freshly signed-up school returned
@@ -53,6 +54,73 @@ Format:
       five-step flow.
   Recommend (b). (a) is tempting precisely because it is easy, which is how a
   guessed date ends up on a real school's records.
+
+  **RESOLUTION (2026-08-21).** Option (b), essentially — but the decision was
+  re-made from scratch against the code rather than taken from this note, and
+  the argument that settled it is stronger than "guessed dates are untidy":
+  term dates are LOAD-BEARING. `resolveTermForDate()` resolves attendance
+  purely by date range and ignores `isCurrent`, `FinanceService` attributes
+  expenses by that range because `Expense` has no `termId`, and the range
+  prints on the report-card PDF given to parents. A school signing up in
+  February would have been seeded a calendar for a term that ended two months
+  earlier and then been unable to mark attendance at all. Full argument in
+  `docs/modules/academic-calendar-bootstrap.md` §2, which applies the
+  `subjects.ts` precedent (seed only what is universally TRUE).
+
+  Shipped: onboarding step 5 now carries the calendar — riding on the
+  EXISTING step 5, which was an empty object, so no renumbering, no route
+  move and no migration for schools mid-onboarding, all of which the
+  plan-first had costed as the main expense. Calendar creation and activation
+  share one transaction. Already-active schools get an in-app prompt backed
+  by `POST /schools/me/academic-calendar` — deliberately a prompt, NOT a
+  backfill, because the earlier `backfill-school-defaults.ts` was safe only
+  in that the 14 class levels are universally correct, whereas term dates are
+  school-specific judgement.
+
+  Production census before the fix (`pnpm db:census-academic-calendar`, the
+  read-only script added by this work): **36 of 42 real schools (86%) stuck** —
+  25 PRISTINE, 11 NO_CURRENT, 0 NO_YEAR_WITH_DATA. Note the census counts DB
+  state, not whether a school has a PATH to recovery: it will keep counting
+  those 36 until each owner actually fills the banner in, which is the
+  prompt-not-backfill decision working, not a failed rollout.
+
+  **Deploy + verification record.** Merged `f674e4a` 2026-08-21 21:15 UTC;
+  `deploy-staging` succeeded; `Applying migration
+  20260821000000_admin_dashboard_read_permission` → "All migrations have been
+  successfully applied" against the production Neon database; Fly release
+  deployed and its 6-op smoke test green including a real signup;
+  `GET /api/v1/schools/me/academic-calendar/status` on the deployed API
+  returns **401**, not 404 — the route exists and its AuthGuard is live.
+  Direct DB read confirmed by Arinzechukwu (2026-08-21), which the migration's
+  own success report is NOT a substitute for: `admin | true`, `bursar | false`,
+  `owner | false`, `teacher | false` — owner correctly false because it holds
+  the `*` wildcard rather than an individual grant.
+
+- [ ] **RECOMMENDED FOR PRIORITISATION (2026-08-21) — no longer just a
+  tidy-up.** When this was logged it was one refactor behind one bug. It is
+  now the common root of **three of the four** recurring role bugs, and the
+  fourth is its mirror image:
+
+  | # | Bug | Gate that disagreed |
+  |---|---|---|
+  | 1 | Bursar admin-shell lockout | ROLE list in the web shell |
+  | 2 | Bursar missing scoping permissions | PERMISSION list |
+  | 3 | Bursar grant inert for 19 days | ROLE list in the SERVICE, below the fixed one |
+  | 4 | Admin `dashboard.read` never granted | PERMISSION enforced, never granted |
+
+  1–3 are the same defect: a permission system and a role system that do not
+  consult each other, so a grant can be correct and still do nothing. 4 is the
+  inverse — enforcement with no grant — and was invisible for a different
+  reason worth remembering: it was MASKED BY ANOTHER BUG (#198 meant the
+  dashboard never called its API, so the 403 never fired). Fixing #198 exposed
+  it, which is the second time in this sequence that one fix uncovered the
+  next. That pattern is the argument for doing the structural work rather than
+  waiting for bug five to introduce itself.
+
+  Cost is unchanged and still real (~20 call sites of a shared auth helper);
+  what has changed is the evidence for the benefit. **Flagged as a
+  recommendation for Arinzechukwu to weigh against everything else in flight,
+  explicitly NOT a decision taken here.**
 
 - [ ] **Permission-gate the academic READ paths and drop the redundant
   service-layer role check** — the properly-scoped version of the hotfix
