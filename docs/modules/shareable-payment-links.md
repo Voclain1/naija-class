@@ -762,6 +762,36 @@ idempotency, overpayment handling, centralized archive-pending transition and
 remote retry. Gate: signed fixture plus test-mode event replay credits exactly
 once; all balance-change paths invalidate the old amount.
 
+**CP3 implementation evidence (2026-08-22): complete on `feat/payment-links`.**
+The signed webhook router now handles `paymentrequest.*` before transfer and
+charge events. `paymentrequest.success` validates UUID metadata, the stored
+tenant/link/invoice/request/customer tuple, a fresh Payment Request fetch, and
+a separately verified successful transaction including amount, currency and
+the school's split. An atomic `LIVE → PAID` claim makes concurrent delivery
+single-writer; the same database transaction inserts one `SUCCESS` Payment,
+recomputes the invoice, removes the hosted URL, updates installments and writes
+the payment/link audits. Retry delivery is a no-op. The common invalidation
+service marks live links archive-pending inside manual-payment, ordinary
+Paystack-payment, refund and invoice-cancellation transactions; remote archive
+runs after commit and retains bounded retry state on failure.
+
+The real `sk_test_` gate closed the spike's original silent-loss path. Hosted
+request `PRQ_lkkc9guolc6g46e` was paid for 210,000 kobo, producing real
+transaction `T291595725920935`. Its event passed HMAC verification and the
+controller branch twice. An independent tenant-scoped database read afterward
+found invoice `b4e212ff-62dd-48a8-a8b4-4785e20cc2ec` at `totalPaid=210000`,
+`status=PAID`; exactly one `SUCCESS` Payment with that Paystack reference and
+the exact school/invoice ids; and link `54e0b9b3-acf2-4f5b-9819-218561234f1d`
+at `PAID`, with `paidAt`/`archivedAt` set and `hostedUrl=null`. Audit counts
+were exactly one `payment.paystack-confirm`, one `payment-link.paid` and one
+`payment-link.archive`, alongside the pre-existing one creation audit. A fresh
+Paystack fetch independently returned `status=success`, `archived=true`, NGN,
+210,000 kobo and one transaction. The temporary split was then made inert
+(zero subaccounts) and local fixtures removed. CP3/invalidation tests pass 2/2;
+payments/invoice generation 66/66; refunds, Paystack contract, permission and
+RBAC regressions 171/171; audit coverage plus CP2 durable-link regression
+40/40; API typecheck, lint and `git diff --check` pass.
+
 **CP4 — admin invoice UX.** Durable display, copy, no-recipient WhatsApp share,
 and visible connect/retry states. Gate: role/browser tests for owner, admin and
 bursar; no contact-data permission widening.

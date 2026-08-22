@@ -31,6 +31,7 @@ export interface PaystackVerifyData {
   currency: string;
   fees: number | null;
   customer: { email: string };
+  split?: { split_code?: string } | null;
 }
 
 interface PaystackVerifyResponse {
@@ -187,6 +188,13 @@ export interface PaystackPaymentRequestData {
   split_code: string | null;
   metadata: Record<string, unknown> | null;
   customer: { customer_code: string; email: string };
+  transactions?: Array<{
+    reference: string;
+    status: string;
+    amount: number;
+    currency?: string;
+    paid_at?: string | null;
+  }>;
 }
 
 interface PaystackPaymentRequestResponse {

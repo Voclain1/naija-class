@@ -136,7 +136,7 @@ those; it doesn't replace them.
 ## Latest state as of this handoff (updated 2026-08-22)
 
 - **Payment-link plan-first is merged in docs-only PR #203; implementation
-  CP1 and CP2 are complete on `feat/payment-links`.** A real Paystack
+  CP1 through CP3 are complete on `feat/payment-links`.** A real Paystack
   test-mode follow-up proved one `percentage: 100` split reusable at 123,400
   and 987,600 kobo, with integration share zero and the school receiving gross
   less Paystack fee both times. The final plan in
@@ -150,8 +150,11 @@ those; it doesn't replace them.
   reservation/uniqueness, Paystack create/fetch/archive wrappers, synthetic
   customer and correlation metadata, and idempotent GET/POST lifecycle. Real
   RLS control/rejection, concurrent uniqueness and Paystack test-mode gates
-  passed; see `docs/journal/2026-08-22.md`. CP3 (webhook and finance
-  invalidation) is next.
+  passed. CP3 adds verified `paymentrequest.success` correlation, atomic
+  idempotent crediting, and post-commit archival for every balance-changing
+  path. A real hosted test payment (`T291595725920935`) passed the signed
+  controller branch twice and produced exactly one database credit; see
+  `docs/journal/2026-08-22.md`. CP4 (admin invoice UX) is next.
 - **RBAC conformance PR #204 is merged on `main`.** Its real-DI I1/I2 gate
   holds all 20 deliberate disagreements as six reasoned exception groups and
   enforces zero undocumented, stale, or duplicate exceptions. The ~89-site
