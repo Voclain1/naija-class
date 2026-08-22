@@ -133,7 +133,22 @@ those; it doesn't replace them.
   (`c:\Users\acer\Desktop\Naija-class\`) and Claude Code's memory directory
   (derived from the folder name). Don't rename either mid-session.
 
-## Latest state as of this handoff (2026-07-29)
+## Latest state as of this handoff (updated 2026-08-22)
+
+- **RBAC conformance PR 1 is complete and ready for review.** On branch
+  `docs/rbac-gate-plan-first`,
+  `apps/api/src/__tests__/rbac-two-gate-conformance.spec.ts` now enforces I1
+  and I2 from `docs/modules/rbac-two-gate-reconciliation.md` using controller
+  and provider instances resolved from the real Nest `AppModule` container,
+  not a handler/service map. Its first run found zero I1 failures and exactly
+  20 I2 disagreements. All 20 were then evidence-classified as deliberate
+  design restrictions and are now held in six named, reasoned exception
+  groups; the gate proves zero undocumented disagreements, zero stale
+  exceptions, and zero duplicate exceptions. See
+  `docs/journal/2026-08-22.md`. Focused spec, API typecheck and API lint pass.
+  No production auth behavior or `isActive` check changed; fixes are the next
+  module-by-module PRs. Payment links remain queued, including the open
+  `percentage: 100` Paystack split question.
 
 - **Most recent merged PR:** #128 (`docs: close the two Phase 4 restyle bugs
   in deferred.md`), on top of #127 (mobile nav fix) and #126 (RBAC
