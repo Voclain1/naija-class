@@ -4,6 +4,12 @@ Plan-first. **Nothing in this document is built yet.** Approved in principle
 2026-08-21 (Arinzechukwu); this doc is the design that must be signed off
 before implementation, per the money-touching rigor CLAUDE.md mandates.
 
+**UPDATED 2026-08-22 after the verification spike ran against Paystack's live
+test API.** D2's gate has been discharged and its findings are now measured
+rather than assumed. Three of the four assumptions the original draft rested
+on were WRONG, and the correction roughly doubles the scope — see §2A. Read
+that section before anything below it; several decisions downstream changed.
+
 ## 1. Why this exists
 
 An admin generates an invoice and today has no way to hand a parent a link.
@@ -27,6 +33,140 @@ the reason D1 gives.
 
 ## 2. Decisions
 
+## 2A. Spike results (2026-08-22) — what is actually true
+
+Run against Paystack's live **test** API with a `sk_test_` key, confirmed by
+prefix check before any call. Test artefacts created and then archived:
+subaccount `ACCT_6czb2qyorlser2u`, split `SPL_6PbNHcTjf6`, payment requests
+`PRQ_d02ejbzyvqo10vz` and `PRQ_2xfhsojnwz4wmzq` (both archived; the second was
+paid with a test card to capture a real transaction).
+
+### F1 — `subaccount` + `bearer` are SILENTLY DROPPED by `/paymentrequest`
+
+The single most important finding, and the reason the gate existed.
+
+```
+POST /paymentrequest { customer, amount, subaccount: "ACCT_…", bearer: "subaccount" }
+  → 200 OK  "Payment request created"
+
+GET /paymentrequest/PRQ_…
+  → split_code: null
+  → no `subaccount` field stored at all
+```
+
+Paystack **accepted the request and discarded the routing fields**. No error,
+no warning, a 200 and a working-looking link. Had this shipped on the
+third-party SDK's type definitions (which list `subaccount` and `bearer` as
+accepted), every shared payment link would have settled into SchoolKit's main
+account instead of the school's, silently.
+
+This is the same class of failure as the `CORRECTED 2026-08-15` block in
+`paystack.service.ts`, which records the subaccount model being misunderstood
+and shipped wrong in the schema, the settings page and the code comments. That
+precedent is why the spike was made a blocking gate rather than a detail, and
+it has now paid for itself twice.
+
+### F2 — `split_code` works, and the economics are identical to today's
+
+```
+POST /split { type: "flat", subaccounts: [{ subaccount: ACCT_…, share: 15000000 }],
+              bearer_type: "subaccount", bearer_subaccount: ACCT_… }
+  → SPL_6PbNHcTjf6
+
+POST /paymentrequest { …, split_code: "SPL_6PbNHcTjf6" }  → split_code STORED ✓
+```
+
+Verified on the **paid** transaction, which is what makes this trustworthy
+rather than merely accepted:
+
+```
+split.shares = { paystack: 200000,
+                 subaccounts: [{ amount: 14800000, subaccount_code: ACCT_… , fees: 200000 }],
+                 integration: 0 }
+split.formula.bearer_type = "subaccount"
+```
+
+`integration: 0` is the load-bearing number — **SchoolKit's main account
+receives nothing**, exactly the 0%-cut arrangement `PaystackInitParams.bearer`
+documents today, and the school bears Paystack's own fee. So the split route
+preserves the business model exactly; it is the plumbing that changes, not the
+economics.
+
+### F3 — there is NO `invoice_url`; the customer link is a CONVENTION
+
+The SDK types promised `invoice_url` ("a hosted URL where the customer can
+view and pay"). **It does not exist.** Neither the create nor the fetch
+response contains any URL field (`pdf_url` is null).
+
+The link that works, confirmed by loading it in a real browser:
+
+```
+https://paystack.com/pay/PRQ_2xfhsojnwz4wmzq   → 200
+    "Hey spike-parent@example.com, Schoolkit has requested a payment of NGN 150,000"
+```
+
+The `PRQ_` prefix is REQUIRED — without it the URL 404s and redirects to
+`paystack.shop`, which is the separate Payment Pages product. Note `curl`
+returns 403 for all of these (Cloudflare, not 404), so this was only
+resolvable with a headed browser; automated probing gives a misleading answer.
+
+**Risk to state plainly in any build: we would be hard-coding a URL Paystack
+never returned to us.** If they change the format, every link already sitting
+in parents' WhatsApp threads dies, and we find out from a parent, not from an
+API error.
+
+**Second-order privacy finding:** that page displays the customer's EMAIL
+ADDRESS and the integration name. A link forwarded on WhatsApp discloses the
+payer's email to whoever receives it. That interacts directly with D10's
+no-recipient `wa.me` choice and needs an explicit decision (see D10 below).
+
+### F4 — the transaction reference is Paystack's, and D3's failure is REAL
+
+The paid transaction:
+
+```
+reference   = "T673056755756172"        ← Paystack-generated, "T" + 15 digits
+metadata    = { referrer: "https://paystack.shop/pay/PRQ_…" }
+subaccount  = {}                        (routing lives under `split`, not here)
+```
+
+`parsePaystackReference` requires `PSK-{uuid}-{uuid}` (77 chars) and returns
+`null` for anything else. `T673056755756172` therefore hits the
+`"Webhook: unrecognized reference format"` branch and the handler RETURNS.
+**D3's predicted silent-money-loss path is confirmed against a real
+transaction, not inferred.**
+
+### F5 — `metadata` round-trips on the REQUEST but does NOT reach the TRANSACTION
+
+This one cuts both ways and corrects the spike's own first reading.
+
+```
+payment request metadata  = { schoolId: "1111…", invoiceId: "2222…" }   ✓ persisted
+transaction   metadata    = { referrer: "https://paystack.shop/pay/PRQ_…" }  ✗ ours absent
+```
+
+So metadata is a usable correlation channel **only for `paymentrequest.*`
+events**, whose payload is the payment request. It is NOT available on
+`charge.success`, whose payload is the transaction.
+
+Two other correlation keys observed:
+- the payment request's embedded transaction carries `payment_request: 24150967`
+  — the request's NUMERIC id, not its `request_code`, so both must be stored;
+- the verified transaction carries `split.split_code` — which, if each school
+  has its own split, identifies the school.
+
+### F6 — archive works exactly as D6 assumed
+
+```
+POST /paymentrequest/archive/PRQ_…  → 200 "Payment request has been archived"
+GET  → archived: true
+```
+
+Confirmed on both an unpaid and a paid request. D6 (archive-on-balance-change)
+is implementable as written.
+
+---
+
 ### D1 — The link must be durable, so this is Payment Requests, not `transaction/initialize`.
 
 The obvious cheap build is "display the `authorizationUrl` we already have."
@@ -49,7 +189,16 @@ webhook event — not a UI change.
 This adds `createPaymentRequest`, `fetchPaymentRequest`, and
 `archivePaymentRequest`.
 
-### D2 — **The API surface below is UNVERIFIED and must be confirmed against test keys before any schema is committed.**
+### D2 — ~~UNVERIFIED~~ **DISCHARGED 2026-08-22. The spike ran; see §2A.**
+
+**Outcome: the expensive branch. `subaccount` does not work; `split_code` does,
+which means a Transaction Split per school — see D12.** The five questions
+this gate posed are all now answered by F1–F6. The original text is kept below
+because the reasoning for gating still applies to the next Paystack surface we
+touch, and because three of its five assumptions turned out wrong, which is
+the evidence that gating was correct.
+
+#### Original gate text (retained)
 
 This is the single most important line in this document.
 
@@ -94,7 +243,37 @@ schema, no committed code):
 Findings from the spike get written back into this section before the build
 starts.
 
-### D3 — The webhook will not correlate. This is the real engineering work.
+### D3 — CONFIRMED against a real transaction. The webhook will not correlate.
+
+**Status 2026-08-22: no longer a prediction.** F4 measured it — a real paid
+payment request produced reference `T673056755756172`, which
+`parsePaystackReference` rejects, so the handler logs and returns while the
+school's money sits in their Paystack balance.
+
+**The design, now that the payload shapes are known (F5):**
+
+Primary path — handle **`paymentrequest.success`**, whose `data` IS the
+payment request and therefore carries our `metadata.schoolId` /
+`metadata.invoiceId` intact. The payload is HMAC-verified by the existing
+`PaystackWebhookGuard`, which is the same trust model the current reference
+string already relies on (that string is equally attacker-supplied and equally
+protected by the signature).
+
+Fallback — if a `charge.success` arrives that `parsePaystackReference` cannot
+parse, resolve the school from `data.split.split_code`, which D12 makes
+unique per school. This exists because `charge.success` does NOT carry our
+metadata (F5), so it cannot be the primary path.
+
+Router gains a third branch alongside the existing `transfer.*` / `charge.*`
+split:
+
+```
+event.startsWith("transfer.")       → PayrollService
+event.startsWith("paymentrequest.") → PaymentLinksService   ← new
+otherwise                           → PaymentsService (unchanged)
+```
+
+
 
 Today every Paystack payment is correlated by a reference **we mint**:
 `PSK-{schoolId}-{paymentId}`, parsed back by `parsePaystackReference`
@@ -127,7 +306,26 @@ otherwise                           → PaymentsService
 
 correlating on `request_code`, which we stored when we minted the link.
 
-### D4 — Correlating pre-tenant needs SECURITY DEFINER function #21.
+### D4 — ~~needs SECURITY DEFINER #21~~ **WITHDRAWN. No new SD function.**
+
+**Corrected 2026-08-22 by F5.** This decision rested on the SDK's field list
+omitting `metadata`, which made a pre-tenant DB lookup the only way to resolve
+`request_code → school_id`. The spike shows `metadata` IS accepted and DOES
+persist on the payment request, and `paymentrequest.success` carries the
+payment request — so the webhook reads a signed `schoolId` directly and never
+needs to query before a tenant exists.
+
+**SECURITY DEFINER count stays at 20. Next cadence review stays due at 23.**
+No change to `security-definer-inventory.spec.ts` or CLAUDE.md's table.
+
+The fallback path (F5, `split.split_code` on a bare `charge.success`) DOES
+need a pre-tenant read, and if it is built it reintroduces the SD function.
+Recommendation: build the primary path first and treat an unparseable
+`charge.success` as a logged alert rather than a silent return, then add the
+fallback only if real traffic shows those events actually arrive. That keeps
+the count at 20 unless evidence demands otherwise.
+
+#### Original text (retained — the reasoning was sound given wrong inputs)
 
 The webhook runs before any tenant is known, and the link table will be under
 FORCE RLS like every other tenant table. `request_code` → `school_id` is
@@ -189,6 +387,10 @@ in SQL rather than the service layer.
 
 ### D6 — A link is bound to an amount, so a balance change must invalidate it.
 
+**Confirmed 2026-08-22 (F6): the archive endpoint exists and works** —
+`POST /paymentrequest/archive/:code` → 200, `archived: true`, verified on both
+an unpaid and a paid request. This decision is implementable as written.
+
 A Payment Request carries a fixed `amount`. If the bursar shares a link for
 ₦150,000 and the parent then pays ₦50,000 in cash at the office, the live link
 still demands ₦150,000.
@@ -235,6 +437,23 @@ sentinel.
 
 ### D10 — `wa.me` with no recipient. Not WhatsApp Business API.
 
+**NEW CONSIDERATION 2026-08-22 (F3), needs an explicit decision.** The hosted
+payment page displays the CUSTOMER'S EMAIL ADDRESS ("Hey
+spike-parent@example.com, Schoolkit has requested…"). A link forwarded through
+a WhatsApp group therefore discloses that parent's email to everyone who sees
+it — and `PaymentsService.initPaystack` resolves that email from the PRIMARY
+GUARDIAN, so it is a real parent's real address, not a synthetic one.
+
+This does not sink the feature, but it is a genuine NDPR-adjacent disclosure
+that the original draft did not know about, and "share this link in the class
+group" is an obvious thing a bursar will do. Options, none yet chosen:
+(a) accept it and say so in the share dialog's copy; (b) pass the school's own
+contact address as the Paystack customer rather than the guardian's, losing
+per-parent receipts at Paystack; (c) use the synthetic
+`noreply-<id>@schoolkit.ng` fallback for link-shared requests specifically.
+Recommend (c) — it keeps the page impersonal, costs nothing, and the invoice
+already identifies the student to the parent holding it.
+
 Approved. The button builds:
 
 ```
@@ -273,6 +492,43 @@ Per instruction: the share control renders a clear **"Connect Paystack to
 share payment links"** state pointing at Settings → Payments, rather than
 being absent or erroring on click. A missing button reads as a broken feature;
 an explanatory state reads as a setup step.
+
+### D12 — NEW (2026-08-22): a Transaction Split per school. This is the doubled scope.
+
+Forced by F1/F2. `split_code` is the only routing mechanism `/paymentrequest`
+honours, and a split is a first-class Paystack object that must be created and
+stored, exactly as the subaccount already is.
+
+What this adds, none of which the original estimate contained:
+
+1. **`PaystackService.createSplit()`** — new API surface, plus a
+   `getSplit()`-style verification at save time mirroring `getSubaccount()`'s
+   "verify at the low-stakes save step" pattern.
+2. **`School.paystackSplitCode`** — a new column, a migration, and its
+   inclusion in the assisted-setup flow so a newly provisioned school gets a
+   split alongside its subaccount (`docs/modules/paystack-assisted-setup.md`
+   D5 currently creates the subaccount by hand; the split has to join that
+   runbook).
+3. **A backfill for every school that already has a subaccount but no split.**
+   Same discipline as `backfill-school-defaults.ts` — dry-run by default,
+   narrow predicate, RLS-scoped as `app_user`, idempotent, audited. Unlike the
+   academic-calendar case this one IS safe to backfill: a split is derived
+   mechanically from the subaccount the school already approved, so nothing is
+   being guessed on their behalf.
+4. **`flat` vs `percentage` decision, NOT yet tested.** The spike used a
+   `flat` split whose share equalled the invoice amount, which routed
+   correctly — but a flat split is amount-specific, so it cannot be reused
+   across invoices of different amounts. The likely answer is a single
+   `percentage: 100` split per school, reused for every link. **This is
+   untested and is the one open question the spike did not close.** It should
+   be a 20-minute follow-up on the same test key before any build, not a
+   discovery made during implementation.
+5. **The split becomes a second thing that can drift** from the subaccount —
+   a school whose subaccount is replaced needs its split recreated, which is
+   new operational surface for the assisted-setup runbook.
+
+Items 1–3 are mechanical. Item 4 is a real unknown. Item 5 is the kind of
+ongoing cost that does not show up in an estimate and should.
 
 ## 3. Data model
 
@@ -334,7 +590,12 @@ phone on finance DTOs. Bulk "share to all debtors" — worth wanting, but it
 multiplies every risk above by the size of a class and should follow the
 single-invoice path proving itself. Link expiry/reminder scheduling.
 
-**Estimate:** one slice, *conditional on D2*. If `subaccount` works on
+**Estimate — REVISED 2026-08-22, and this is the re-sequencing decision.**
+The plan-first said "one slice if `subaccount` works; roughly double if only
+`split_code` is accepted." **F1/F2 landed on the doubling branch.** See D12
+for what was added.
+
+**Superseded estimate text:** one slice, *conditional on D2*. If `subaccount` works on
 `/paymentrequest`, this is a contained piece of work. If only `split_code` is
 accepted, add Transaction Split management per school and re-scope.
 
@@ -342,7 +603,48 @@ accepted, add Transaction Split management per school and re-scope.
 
 ---
 
-## Sources consulted for the Paystack surface
+## Re-sequencing recommendation (2026-08-22)
+
+Stated as a recommendation, not a decision.
+
+**What changed:** the feature is no longer "show a link we already generate."
+It is a Payment Request integration, a Transaction Split per school with its
+own column/migration/backfill/runbook entry, a third webhook branch, and one
+untested question (D12 item 4). The economics survive intact (F2), and no new
+SECURITY DEFINER function is needed (D4 withdrawn), so the news is not all
+bad — but the honest estimate is roughly double the original.
+
+**Against that, the RBAC follow-up is now the common root of three of four
+recurring role bugs**, with the fourth its mirror image, and twice in this
+sequence one fix has uncovered the next. That work is bounded (~20 call sites
+of one helper), touches no external API, and removes a class of bug rather
+than adding a surface.
+
+**Recommendation: do the RBAC work first.** Not because payment links are
+unimportant — the WhatsApp share is the collection channel Nigerian schools
+actually use — but because this spike converted payment links from a
+"probably a slice" into a genuinely-sized piece of work with an open question
+still in it, while the RBAC work went the other way, from a tidy-up into
+something with four bugs of evidence behind it. Doing the bounded, evidence-
+backed thing before the newly-doubled, externally-dependent thing is the
+lower-variance order.
+
+**If payment links go first anyway**, close D12 item 4 (`percentage: 100`
+split reuse) before writing any schema. It is 20 minutes on the test key and
+it is the last thing that could move the estimate again.
+
+## Sources — measured, not consulted
+
+Everything in §2A was observed directly against Paystack's test API on
+2026-08-22 with a `sk_test_` key, including one real card payment. The
+documentation links below were the ORIGINAL basis for this plan and are
+retained only to show where the wrong assumptions came from: Paystack's own
+docs 403 automated fetching, so the field lists came from a third-party
+OpenAPI-generated SDK, and three of its claims (`subaccount` accepted,
+`bearer` accepted, `invoice_url` returned) did not survive contact with the
+API.
+
+### Original sources
 
 - [Payment Requests API](https://paystack.com/docs/api/payment-request/) — 403 to automated fetch
 - [Split Payments](https://paystack.com/docs/payments/split-payments/)
