@@ -132,7 +132,7 @@ export function PlatformAdminDashboard() {
       );
       toast.success(
         input.status === "FULFILLED"
-          ? "Marked fulfilled — the school can now paste the code."
+          ? "Marked fulfilled — the verified subaccount and split are now connected."
           : "Request rejected. The school sees your reason.",
       );
       // Drop the revealed banking details as soon as the request is closed:

@@ -714,6 +714,18 @@ creation; settings drift rules; dry-run/idempotent backfill and runbook. Gate:
 test mode proves a newly fulfilled school and one existing-school backfill
 both persist a verified percentage-100 split before link work can use it.
 
+**CP1 implementation evidence (2026-08-22): complete on `feat/payment-links`.**
+The additive migration applied to real local Postgres. A real `sk_test_`
+assisted fulfilment created/fetched/verified `SPL_medxZWlNDP` and atomically
+enabled its synthetic school; a separate already-enabled synthetic school ran
+through the operator backfill and persisted verified `SPL_Zt45TQRO3k` with
+exactly one audit row. Both temporary splits were then made inert (zero
+subaccounts) and both database fixtures removed. The gate also caught a stale
+local test fixture whose fake `ACCT_valid123` code passed database eligibility
+but Paystack rejected it; apply mode now independently fetch-verifies every
+subaccount before split creation. Focused contract/integration suites pass
+75/75, and API/web typecheck + lint pass.
+
 **CP2 — durable link domain and API.** FORCE-RLS `PaymentLink`, partial live
 uniqueness, create/fetch/archive wrappers, synthetic customer, metadata,
 idempotent POST and discriminated GET. Gate: real test-mode Payment Request at

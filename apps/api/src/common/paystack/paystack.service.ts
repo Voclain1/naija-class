@@ -136,6 +136,36 @@ interface PaystackSubaccountResponse {
   data: PaystackSubaccountData;
 }
 
+export interface PaystackSplitData {
+  id: number;
+  name: string;
+  type: "percentage" | "flat";
+  currency: string;
+  split_code: string;
+  active: boolean;
+  domain: "test" | "live";
+  bearer_type: "subaccount" | "account" | "all-proportional" | "all";
+  // Paystack accepts a subaccount code on create but fetch returns the
+  // numeric subaccount id here. Verify it against the sole nested object.
+  bearer_subaccount: string | number | null;
+  subaccounts: Array<{
+    share: number;
+    subaccount: { id?: number; subaccount_code: string };
+  }>;
+}
+
+interface PaystackSplitResponse {
+  status: boolean;
+  message: string;
+  data: PaystackSplitData;
+}
+
+interface PaystackSplitListResponse {
+  status: boolean;
+  message: string;
+  data: PaystackSplitData[];
+}
+
 // ---------------------------------------------------------------------------
 // Params for initializeTransaction
 // ---------------------------------------------------------------------------
@@ -494,6 +524,120 @@ export class PaystackService {
     }
 
     return json.data;
+  }
+
+  // One durable-link split per school. The deterministic name is the
+  // reconciliation key when Paystack creates the object but the HTTP response
+  // is lost before our database commit. School ids are opaque and contain no
+  // PII. Payment Request metadata cannot be attached to a split object.
+  async ensureSchoolPercentageSplit(params: {
+    schoolId: string;
+    subaccountCode: string;
+  }): Promise<PaystackSplitData> {
+    if (!this.secretKey) {
+      throw new Error("PAYSTACK_SECRET_KEY is not configured on this server");
+    }
+    const name = `SchoolKit school ${params.schoolId}`;
+    const search = new URLSearchParams({ name, active: "true", perPage: "100" });
+    const listRes = await fetch(`${this.baseUrl}/split?${search.toString()}`, {
+      headers: { Authorization: `Bearer ${this.secretKey}` },
+    });
+    if (!listRes.ok) {
+      throw new InternalError(
+        "PAYSTACK_SPLIT_LOOKUP_FAILED",
+        `Could not reconcile this school's Paystack split (HTTP ${listRes.status}).`,
+      );
+    }
+    const listed = (await listRes.json()) as PaystackSplitListResponse;
+    if (!listed.status) {
+      throw new InternalError("PAYSTACK_SPLIT_LOOKUP_FAILED", listed.message);
+    }
+    const matches = listed.data.filter((candidate) => candidate.name === name && candidate.active);
+    if (matches.length > 1) {
+      throw new ConflictError(
+        "PAYSTACK_SPLIT_DUPLICATE",
+        "More than one active Paystack split exists for this school; resolve the duplicate before enabling payments.",
+      );
+    }
+
+    let split = matches[0];
+    if (!split) {
+      const createRes = await fetch(`${this.baseUrl}/split`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${this.secretKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          name,
+          type: "percentage",
+          currency: "NGN",
+          subaccounts: [{ subaccount: params.subaccountCode, share: 100 }],
+          bearer_type: "subaccount",
+          bearer_subaccount: params.subaccountCode,
+        }),
+      });
+      if (!createRes.ok) {
+        const text = await createRes.text().catch(() => "<no body>");
+        this.logger.error(`Paystack split creation failed: ${createRes.status} ${text}`);
+        throw new InternalError(
+          "PAYSTACK_SPLIT_CREATE_FAILED",
+          `Could not create this school's Paystack split (HTTP ${createRes.status}).`,
+        );
+      }
+      const created = (await createRes.json()) as PaystackSplitResponse;
+      if (!created.status) {
+        throw new InternalError("PAYSTACK_SPLIT_CREATE_FAILED", created.message);
+      }
+      split = created.data;
+    }
+
+    // Always fetch the saved object. Creation/list acceptance alone is not
+    // proof that Paystack persisted every load-bearing routing field (the
+    // Payment Request spike demonstrated silent field dropping).
+    const fetched = await this.getSplit(split.split_code);
+    this.assertSchoolPercentageSplit(fetched, params.subaccountCode);
+    return fetched;
+  }
+
+  async getSplit(code: string): Promise<PaystackSplitData> {
+    if (!this.secretKey) {
+      throw new Error("PAYSTACK_SECRET_KEY is not configured on this server");
+    }
+    const res = await fetch(`${this.baseUrl}/split/${encodeURIComponent(code)}`, {
+      headers: { Authorization: `Bearer ${this.secretKey}` },
+    });
+    if (!res.ok) {
+      throw new InternalError(
+        "PAYSTACK_SPLIT_LOOKUP_FAILED",
+        `Could not verify this school's Paystack split (HTTP ${res.status}).`,
+      );
+    }
+    const json = (await res.json()) as PaystackSplitResponse;
+    if (!json.status) throw new InternalError("PAYSTACK_SPLIT_LOOKUP_FAILED", json.message);
+    return json.data;
+  }
+
+  assertSchoolPercentageSplit(split: PaystackSplitData, subaccountCode: string): void {
+    const only = split.subaccounts[0];
+    const expectedDomain = this.secretKey.startsWith("sk_test_") ? "test" : "live";
+    if (
+      !split.active ||
+      split.domain !== expectedDomain ||
+      split.type !== "percentage" ||
+      split.currency !== "NGN" ||
+      split.bearer_type !== "subaccount" ||
+      (split.bearer_subaccount !== subaccountCode &&
+        split.bearer_subaccount !== only?.subaccount.id) ||
+      split.subaccounts.length !== 1 ||
+      only?.subaccount.subaccount_code !== subaccountCode ||
+      only.share !== 100
+    ) {
+      throw new ConflictError(
+        "PAYSTACK_SPLIT_MISMATCH",
+        "Paystack saved a split that does not match the required school-only percentage routing.",
+      );
+    }
   }
 
   // ─── Webhook signature verification (pure — no network) ───────────────────

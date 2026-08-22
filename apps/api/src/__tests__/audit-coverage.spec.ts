@@ -1437,7 +1437,14 @@ describe("Paystack assisted setup audit coverage", () => {
       key === "PAYSTACK_SETUP_EMAIL" ? "payments@schoolkit.ng" : undefined,
   } as unknown as ConfigService;
   const paystackSetup = new PaystackSetupService(emailStub, configStub);
-  const platformAdmin = new PlatformAdminService(emailStub);
+  const platformAdmin = new PlatformAdminService(emailStub, {
+    getSubaccount: async (code: string) => ({
+      subaccount_code: code,
+      business_name: "Audit Test School Ltd",
+      active: true,
+    }),
+    ensureSchoolPercentageSplit: async () => ({ split_code: "SPL_audit_test" }),
+  } as never);
 
   const ACCOUNT_NUMBER = "0123456789";
 
@@ -1585,15 +1592,18 @@ describe("Paystack assisted setup audit coverage", () => {
     ).rejects.toMatchObject({ code: "PAYSTACK_SETUP_ALREADY_RESOLVED" });
   });
 
-  it("fulfilment does NOT write School.paystackSubaccountCode", async () => {
-    // The school pastes the code itself so the save-time Paystack
-    // verification runs. Writing it here would skip that check entirely.
+  it("fulfilment atomically enables the verified subaccount + split", async () => {
     const school = await basePrisma.school.findUnique({
       where: { id: schoolId },
-      select: { paystackSubaccountCode: true, paystackPaymentsEnabled: true },
+      select: {
+        paystackSubaccountCode: true,
+        paystackSplitCode: true,
+        paystackPaymentsEnabled: true,
+      },
     });
-    expect(school?.paystackSubaccountCode).toBeNull();
-    expect(school?.paystackPaymentsEnabled).toBe(false);
+    expect(school?.paystackSubaccountCode).toBe("ACCT_auditTest123");
+    expect(school?.paystackSplitCode).toBe("SPL_audit_test");
+    expect(school?.paystackPaymentsEnabled).toBe(true);
   });
 
   it("a notification failure does NOT lose the request (D6 ordering)", async () => {

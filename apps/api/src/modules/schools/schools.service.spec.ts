@@ -277,7 +277,7 @@ describe("SchoolsService (Slice 6)", () => {
       expect(row.paystackSubaccountCode).toBeNull();
     });
 
-    it("patchMe — valid code + enable in one call: verifies via Paystack, persists both fields", async () => {
+    it("patchMe — a new valid subaccount cannot enable without its assisted-setup split", async () => {
       const { authCtx, schoolId } = await createOwnedSchool("patch-paystack-happy");
       const getSubaccountSpy = async (code: string) => ({
         subaccount_code: code,
@@ -286,40 +286,40 @@ describe("SchoolsService (Slice 6)", () => {
       });
       const svc = makeSchoolsServiceWithPaystackStub(getSubaccountSpy);
 
-      const updated = await svc.patchMe(
-        authCtx,
-        { paystackSubaccountCode: "ACCT_valid123", paystackPaymentsEnabled: true },
-        ctx,
-      );
-
-      expect(updated.paystackSubaccountCode).toBe("ACCT_valid123");
-      expect(updated.paystackPaymentsEnabled).toBe(true);
-      // The verified business name is surfaced on THIS response only — the
-      // admin's real confirmation signal (a wrong-but-valid code wouldn't
-      // show their own school's name here).
-      expect(updated.paystackSubaccountBusinessName).toBe("Test School Ventures");
+      await expect(
+        svc.patchMe(
+          authCtx,
+          { paystackSubaccountCode: "ACCT_valid123", paystackPaymentsEnabled: true },
+          ctx,
+        ),
+      ).rejects.toMatchObject({ code: "PAYSTACK_NOT_CONFIGURED" });
 
       const row = await basePrisma.school.findUniqueOrThrow({
         where: { id: schoolId },
         select: { paystackSubaccountCode: true, paystackPaymentsEnabled: true },
       });
-      expect(row.paystackSubaccountCode).toBe("ACCT_valid123");
-      expect(row.paystackPaymentsEnabled).toBe(true);
+      expect(row.paystackSubaccountCode).toBeNull();
+      expect(row.paystackPaymentsEnabled).toBe(false);
     });
 
-    it("patchMe — clearing the code while enabled (without also disabling) → PAYSTACK_NOT_CONFIGURED", async () => {
+    it("patchMe — clearing/replacing a code automatically disables and clears its bound split", async () => {
       const { authCtx, schoolId } = await createOwnedSchool("patch-paystack-clear");
       await basePrisma.school.update({
         where: { id: schoolId },
-        data: { paystackSubaccountCode: "ACCT_existing", paystackPaymentsEnabled: true },
+        data: {
+          paystackSubaccountCode: "ACCT_existing",
+          paystackSplitCode: "SPL_existing",
+          paystackPaymentsEnabled: true,
+        },
       });
       const svc = makeSchoolsServiceWithPaystackStub(async () => {
         throw new Error("should not be called — clearing to null, not verifying a new code");
       });
 
-      await expect(
-        svc.patchMe(authCtx, { paystackSubaccountCode: null }, ctx),
-      ).rejects.toMatchObject({ code: "PAYSTACK_NOT_CONFIGURED" });
+      const updated = await svc.patchMe(authCtx, { paystackSubaccountCode: null }, ctx);
+      expect(updated.paystackSubaccountCode).toBeNull();
+      expect(updated.paystackSplitCode).toBeNull();
+      expect(updated.paystackPaymentsEnabled).toBe(false);
     });
 
     it("patchMe — rejects a user with no owner/admin grant with ForbiddenError", async () => {

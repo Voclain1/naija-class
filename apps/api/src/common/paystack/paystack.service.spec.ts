@@ -197,3 +197,71 @@ describe("PaystackService.getSubaccount", () => {
     await expect(service.getSubaccount("ACCT_x")).rejects.toThrow("PAYSTACK_SECRET_KEY is not configured");
   });
 });
+
+describe("PaystackService.ensureSchoolPercentageSplit", () => {
+  const split = {
+    id: 42,
+    name: "SchoolKit school school-1",
+    type: "percentage",
+    currency: "NGN",
+    split_code: "SPL_school1",
+    active: true,
+    domain: "test",
+    bearer_type: "subaccount",
+    bearer_subaccount: 314,
+    subaccounts: [{ share: 100, subaccount: { id: 314, subaccount_code: "ACCT_school1" } }],
+  };
+
+  it("creates percentage:100 with the school as sole share and fee bearer, then fetch-verifies", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(new Response(JSON.stringify({ status: true, message: "ok", data: [] })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ status: true, message: "ok", data: split })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ status: true, message: "ok", data: split })));
+
+    const result = await makeService("sk_test_unit").ensureSchoolPercentageSplit({
+      schoolId: "school-1",
+      subaccountCode: "ACCT_school1",
+    });
+    const createBody = JSON.parse(String(fetchSpy.mock.calls[1]?.[1]?.body));
+    expect(createBody).toMatchObject({
+      name: "SchoolKit school school-1",
+      type: "percentage",
+      currency: "NGN",
+      bearer_type: "subaccount",
+      bearer_subaccount: "ACCT_school1",
+      subaccounts: [{ subaccount: "ACCT_school1", share: 100 }],
+    });
+    expect(result.split_code).toBe("SPL_school1");
+    fetchSpy.mockRestore();
+  });
+
+  it("reconciles an existing deterministic-name split without creating another", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(new Response(JSON.stringify({ status: true, message: "ok", data: [split] })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ status: true, message: "ok", data: split })));
+    await makeService("sk_test_unit").ensureSchoolPercentageSplit({
+      schoolId: "school-1",
+      subaccountCode: "ACCT_school1",
+    });
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    expect(fetchSpy.mock.calls.every((call) => call[1]?.method !== "POST")).toBe(true);
+    fetchSpy.mockRestore();
+  });
+
+  it("fails closed when fetch-back shows silently changed routing", async () => {
+    const bad = { ...split, bearer_type: "account" };
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(new Response(JSON.stringify({ status: true, message: "ok", data: [split] })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ status: true, message: "ok", data: bad })));
+    await expect(
+      makeService("sk_test_unit").ensureSchoolPercentageSplit({
+        schoolId: "school-1",
+        subaccountCode: "ACCT_school1",
+      }),
+    ).rejects.toMatchObject({ code: "PAYSTACK_SPLIT_MISMATCH" });
+    fetchSpy.mockRestore();
+  });
+});

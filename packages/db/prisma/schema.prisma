@@ -64,6 +64,10 @@ model School {
   // apps/api/src/common/paystack/paystack.service.ts for why no
   // transaction_charge/bearer split math is needed given that decision.
   paystackSubaccountCode   String?      @map("paystack_subaccount_code")
+  // Payment Requests ignore transaction-style subaccount routing. Assisted
+  // setup therefore creates one verified percentage:100 Transaction Split
+  // per school and stores its code here for every durable invoice link.
+  paystackSplitCode        String?      @map("paystack_split_code")
   paystackPaymentsEnabled  Boolean      @default(false) @map("paystack_payments_enabled")
   // Onboarding-nudge email (2026-08-08): stamped once, the first (and only,
   // v1) time OnboardingNudgeService emails a school's owner that finished

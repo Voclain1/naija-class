@@ -36,6 +36,7 @@ export interface SchoolMeDto {
   // paystackPaymentsEnabled can only be true when this is non-null (enforced
   // in SchoolsService.patchMe, not by the DB).
   paystackSubaccountCode: string | null;
+  paystackSplitCode: string | null;
   paystackPaymentsEnabled: boolean;
   // Populated ONLY in the PATCH /schools/me response, and only when that
   // call just verified a new/changed subaccount code against Paystack —

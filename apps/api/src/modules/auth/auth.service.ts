@@ -954,6 +954,7 @@ const SCHOOL_RESPONSE_SELECT = {
   ndprConsentAt: true,
   subjectAttendanceEnabled: true,
   paystackSubaccountCode: true,
+  paystackSplitCode: true,
   paystackPaymentsEnabled: true,
   createdAt: true,
   updatedAt: true,
