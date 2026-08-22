@@ -20,6 +20,7 @@ import {
   type PaginatedInvoicesDto,
   type PreviewInvoicesInput,
   type PreviewLineDto,
+  type PaymentLinkStateDto,
 } from "@school-kit/types";
 
 import type { AuthContext } from "../../common/auth/auth-context.js";
@@ -29,11 +30,15 @@ import { Permissions } from "../../common/auth/permissions.decorator.js";
 import { PermissionsGuard } from "../../common/auth/permissions.guard.js";
 import { ZodValidationPipe } from "../../common/zod-validation.pipe.js";
 import { InvoiceGenerationService } from "./invoice-generation.service.js";
+import { PaymentLinksService } from "./payment-links.service.js";
 
 @Controller("invoices")
 @UseGuards(AuthGuard, PermissionsGuard)
 export class InvoicesController {
-  constructor(private readonly service: InvoiceGenerationService) {}
+  constructor(
+    private readonly service: InvoiceGenerationService,
+    private readonly paymentLinks: PaymentLinksService,
+  ) {}
 
   // ─── Static sub-paths first (before /:id) ─────────────────────────────────
   // NestJS matches routes in declaration order: "arm/preview" and "arm/generate"
@@ -78,6 +83,25 @@ export class InvoicesController {
     @Param("id") id: string,
   ): Promise<InvoiceDto> {
     return this.service.findById(authCtx, id);
+  }
+
+  @Get(":id/payment-link")
+  @Permissions("payment.read")
+  async getPaymentLink(
+    @CurrentUser() authCtx: AuthContext,
+    @Param("id") id: string,
+  ): Promise<PaymentLinkStateDto> {
+    return this.paymentLinks.get(authCtx, id);
+  }
+
+  @Post(":id/payment-link")
+  @Permissions("payment.record")
+  async createPaymentLink(
+    @CurrentUser() authCtx: AuthContext,
+    @Param("id") id: string,
+    @Ip() ip: string,
+  ): Promise<PaymentLinkStateDto> {
+    return this.paymentLinks.create(authCtx, id, { ipAddress: ip });
   }
 
   @Post(":id/cancel")

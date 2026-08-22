@@ -265,3 +265,47 @@ describe("PaystackService.ensureSchoolPercentageSplit", () => {
     fetchSpy.mockRestore();
   });
 });
+
+describe("PaystackService Payment Request contract", () => {
+  it("sends split_code, metadata, fixed kobo amount, and disables Paystack notification", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          status: true,
+          message: "ok",
+          data: { id: 1, request_code: "PRQ_unit", amount: 123_400 },
+        }),
+      ),
+    );
+    await makeService("sk_test_unit").createPaymentRequest({
+      customerCode: "CUS_unit",
+      amount: 123_400,
+      description: "Test invoice",
+      splitCode: "SPL_unit",
+      metadata: { schoolKitPaymentLinkId: "link-1", schoolId: "school-1" },
+    });
+    const body = JSON.parse(String(fetchSpy.mock.calls[0]?.[1]?.body));
+    expect(body).toEqual({
+      customer: "CUS_unit",
+      amount: 123_400,
+      description: "Test invoice",
+      currency: "NGN",
+      send_notification: false,
+      split_code: "SPL_unit",
+      metadata: { schoolKitPaymentLinkId: "link-1", schoolId: "school-1" },
+    });
+    expect(body.subaccount).toBeUndefined();
+    expect(body.bearer).toBeUndefined();
+    fetchSpy.mockRestore();
+  });
+
+  it("archives through the verified Payment Request endpoint", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("", { status: 200 }));
+    await makeService("sk_test_unit").archivePaymentRequest("PRQ_unit");
+    expect(fetchSpy).toHaveBeenCalledWith(
+      "https://api.paystack.co/paymentrequest/archive/PRQ_unit",
+      expect.objectContaining({ method: "POST" }),
+    );
+    fetchSpy.mockRestore();
+  });
+});

@@ -1977,10 +1977,46 @@ model Invoice {
   updatedAt      DateTime      @updatedAt @map("updated_at")
   payments       Payment[]
   paymentPlans   PaymentPlan[]
+  paymentLinks   PaymentLink[]
 
   @@unique([schoolId, studentId, termId])
   @@index([schoolId, status])
   @@map("invoices")
+}
+
+enum PaymentLinkStatus {
+  CREATING
+  LIVE
+  PAID
+  ARCHIVE_PENDING
+  ARCHIVED
+  CREATE_FAILED
+}
+
+model PaymentLink {
+  id                   String            @id @default(uuid())
+  schoolId             String            @map("school_id")
+  invoiceId            String            @map("invoice_id")
+  requestId            BigInt?           @map("request_id")
+  requestCode          String?           @unique @map("request_code")
+  hostedUrl            String?           @map("hosted_url")
+  paystackCustomerCode String?           @map("paystack_customer_code")
+  amount               Int
+  currency             String            @default("NGN")
+  status               PaymentLinkStatus @default(CREATING)
+  createdBy            String            @map("created_by")
+  failureCode          String?           @map("failure_code")
+  retryCount           Int               @default(0) @map("retry_count")
+  lastAttemptAt        DateTime           @default(now()) @map("last_attempt_at")
+  createdAt            DateTime           @default(now()) @map("created_at")
+  updatedAt            DateTime           @updatedAt @map("updated_at")
+  archivedAt           DateTime?          @map("archived_at")
+  paidAt               DateTime?          @map("paid_at")
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@index([schoolId, invoiceId, status])
+  @@map("payment_links")
 }
 
 // ---------- Phase 3 / Slice 7 — Payments (manual recording + receipts) ----------

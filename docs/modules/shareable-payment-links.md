@@ -732,6 +732,30 @@ idempotent POST and discriminated GET. Gate: real test-mode Payment Request at
 two balances routes through the school's persisted split; no parent PII and no
 `PENDING Payment` row.
 
+**CP2 implementation evidence (2026-08-22): complete on `feat/payment-links`.**
+The additive migration applied to real local Postgres and enables plus forces
+RLS with both `USING` and `WITH CHECK`. A same-tenant control insert succeeded,
+a tenant-B read of tenant A's row returned null, a tenant-B write carrying
+tenant A's ids was rejected specifically by the RLS policy, and a valid
+tenant-B control insert succeeded. The runtime connection saw zero rows with
+no tenant GUC. Two genuinely concurrent transactions racing to reserve the
+same invoice produced exactly one active row and one database `P2002`; the
+partial index covers both `CREATING` and `LIVE`, preventing duplicate remote
+creation before either request can become live.
+
+A real `sk_test_` lifecycle call used the school's persisted percentage-100
+split `SPL_RzjgpOl0Jl` to create and independently fetch-verify Payment Request
+`PRQ_qa8y451u4uvb63p` for 345,600 kobo. Stored tenant, invoice, amount,
+currency, customer, split and all three metadata correlation ids matched. Its
+customer email was synthetic (`noreply-payment-<link UUID>@schoolkit.ng`), no
+guardian field was read, zero `Payment` rows were created, and exactly one
+creation audit was stored. The remote request was archived, the temporary
+split made inert, and local fixtures removed. A negative integration case
+also proves a read-back mismatch archives the remote request, stores no URL,
+emits no success audit, and returns only a bounded retryable-failure state.
+The focused real-DB suite passes 5/5; Paystack/invoice regressions 52/52 and
+permission/RBAC gates 143/143; API typecheck and lint pass.
+
 **CP3 — webhook and finance invalidation.** `paymentrequest.*` router,
 metadata/Paystack verification, SUCCESS payment transaction, audit,
 idempotency, overpayment handling, centralized archive-pending transition and

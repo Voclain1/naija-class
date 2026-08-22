@@ -166,6 +166,35 @@ interface PaystackSplitListResponse {
   data: PaystackSplitData[];
 }
 
+export interface PaystackCustomerData {
+  customer_code: string;
+  email: string;
+}
+
+interface PaystackCustomerResponse {
+  status: boolean;
+  message: string;
+  data: PaystackCustomerData;
+}
+
+export interface PaystackPaymentRequestData {
+  id: number;
+  request_code: string;
+  amount: number;
+  currency: string;
+  status: string;
+  archived: boolean;
+  split_code: string | null;
+  metadata: Record<string, unknown> | null;
+  customer: { customer_code: string; email: string };
+}
+
+interface PaystackPaymentRequestResponse {
+  status: boolean;
+  message: string;
+  data: PaystackPaymentRequestData;
+}
+
 // ---------------------------------------------------------------------------
 // Params for initializeTransaction
 // ---------------------------------------------------------------------------
@@ -636,6 +665,102 @@ export class PaystackService {
       throw new ConflictError(
         "PAYSTACK_SPLIT_MISMATCH",
         "Paystack saved a split that does not match the required school-only percentage routing.",
+      );
+    }
+  }
+
+  async createCustomer(params: {
+    email: string;
+    firstName: string;
+    lastName: string;
+  }): Promise<PaystackCustomerData> {
+    if (!this.secretKey) throw new Error("PAYSTACK_SECRET_KEY is not configured on this server");
+    const res = await fetch(`${this.baseUrl}/customer`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${this.secretKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        email: params.email,
+        first_name: params.firstName,
+        last_name: params.lastName,
+      }),
+    });
+    if (!res.ok) {
+      throw new InternalError(
+        "PAYSTACK_CUSTOMER_CREATE_FAILED",
+        `Could not create the payment-link customer (HTTP ${res.status}).`,
+      );
+    }
+    const json = (await res.json()) as PaystackCustomerResponse;
+    if (!json.status) throw new InternalError("PAYSTACK_CUSTOMER_CREATE_FAILED", json.message);
+    return json.data;
+  }
+
+  async createPaymentRequest(params: {
+    customerCode: string;
+    amount: number;
+    description: string;
+    splitCode: string;
+    metadata: Record<string, unknown>;
+  }): Promise<PaystackPaymentRequestData> {
+    if (!this.secretKey) throw new Error("PAYSTACK_SECRET_KEY is not configured on this server");
+    const res = await fetch(`${this.baseUrl}/paymentrequest`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${this.secretKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        customer: params.customerCode,
+        amount: params.amount,
+        description: params.description,
+        currency: "NGN",
+        send_notification: false,
+        split_code: params.splitCode,
+        metadata: params.metadata,
+      }),
+    });
+    if (!res.ok) {
+      throw new InternalError(
+        "PAYSTACK_PAYMENT_REQUEST_CREATE_FAILED",
+        `Could not create the Paystack Payment Request (HTTP ${res.status}).`,
+      );
+    }
+    const json = (await res.json()) as PaystackPaymentRequestResponse;
+    if (!json.status) {
+      throw new InternalError("PAYSTACK_PAYMENT_REQUEST_CREATE_FAILED", json.message);
+    }
+    return json.data;
+  }
+
+  async getPaymentRequest(code: string): Promise<PaystackPaymentRequestData> {
+    if (!this.secretKey) throw new Error("PAYSTACK_SECRET_KEY is not configured on this server");
+    const res = await fetch(`${this.baseUrl}/paymentrequest/${encodeURIComponent(code)}`, {
+      headers: { Authorization: `Bearer ${this.secretKey}` },
+    });
+    if (!res.ok) {
+      throw new InternalError(
+        "PAYSTACK_PAYMENT_REQUEST_LOOKUP_FAILED",
+        `Could not fetch the Paystack Payment Request (HTTP ${res.status}).`,
+      );
+    }
+    const json = (await res.json()) as PaystackPaymentRequestResponse;
+    if (!json.status) throw new InternalError("PAYSTACK_PAYMENT_REQUEST_LOOKUP_FAILED", json.message);
+    return json.data;
+  }
+
+  async archivePaymentRequest(code: string): Promise<void> {
+    if (!this.secretKey) throw new Error("PAYSTACK_SECRET_KEY is not configured on this server");
+    const res = await fetch(`${this.baseUrl}/paymentrequest/archive/${encodeURIComponent(code)}`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${this.secretKey}` },
+    });
+    if (!res.ok) {
+      throw new InternalError(
+        "PAYSTACK_PAYMENT_REQUEST_ARCHIVE_FAILED",
+        `Could not archive the Paystack Payment Request (HTTP ${res.status}).`,
       );
     }
   }

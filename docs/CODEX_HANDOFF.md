@@ -135,9 +135,8 @@ those; it doesn't replace them.
 
 ## Latest state as of this handoff (updated 2026-08-22)
 
-- **Payment-link plan-first is complete in docs-only PR #203; implementation
-  is approved and merged; implementation CP1 is complete on
-  `feat/payment-links`.** A real Paystack
+- **Payment-link plan-first is merged in docs-only PR #203; implementation
+  CP1 and CP2 are complete on `feat/payment-links`.** A real Paystack
   test-mode follow-up proved one `percentage: 100` split reusable at 123,400
   and 987,600 kobo, with integration share zero and the school receiving gross
   less Paystack fee both times. The final plan in
@@ -147,8 +146,12 @@ those; it doesn't replace them.
   archive-on-every-balance-change, no-recipient WhatsApp share, visible
   connect state, tests and rollout gates. CP1 now implements the school split
   column/migration, assisted-setup split creation, drift rules and audited
-  operator backfill. Real test-mode fulfilment and backfill both passed; see
-  `docs/journal/2026-08-22.md`. CP2 is next; no link model/endpoint exists yet.
+  operator backfill. CP2 adds the FORCE-RLS durable link model, database
+  reservation/uniqueness, Paystack create/fetch/archive wrappers, synthetic
+  customer and correlation metadata, and idempotent GET/POST lifecycle. Real
+  RLS control/rejection, concurrent uniqueness and Paystack test-mode gates
+  passed; see `docs/journal/2026-08-22.md`. CP3 (webhook and finance
+  invalidation) is next.
 - **RBAC conformance PR #204 is merged on `main`.** Its real-DI I1/I2 gate
   holds all 20 deliberate disagreements as six reasoned exception groups and
   enforces zero undocumented, stale, or duplicate exceptions. The ~89-site
