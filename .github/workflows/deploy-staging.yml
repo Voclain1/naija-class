@@ -178,6 +178,10 @@ jobs:
 
       # Build and deploy the render worker image. Uses Dockerfile.render
       # (includes Chrome download ~200 MB — build is slower).
+      # Keep exactly one worker Machine. Fly Launch originally created two for
+      # HA, but this queue is concurrency-1 and scale-to-zero; a wake request
+      # can start both identical 2 GB Machines and double render compute with
+      # no throughput benefit at the platform's current volume.
       - name: Deploy render worker
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
@@ -187,6 +191,11 @@ jobs:
           --build-arg SENTRY_RELEASE=${{ github.sha }}
           --remote-only
           --wait-timeout 300
+
+      - name: Enforce single render worker machine
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: flyctl scale count 1 --app school-kit-render-worker --yes
 
       # Give NestJS time to finish initializing on the 512MB Fly machine before
       # hitting /health. More modules = longer startup; 30 s base wait plus
