@@ -164,6 +164,13 @@ those; it doesn't replace them.
   apply-time confirmation, active platform-admin attribution, independent
   remote re-verification and full money-path smoke evidence before selecting
   another school. Deployment/pilot execution is next; there is no bulk mode.
+  The Virgo pilot then exposed a Paystack-controlled greeting issue: hosted
+  Payment Requests display customer email even when names are supplied. A
+  real test request proved `parent@schoolkit.ng` renders as “Hey
+  parent@schoolkit.ng,” and Paystack permits separate Customer records with
+  that same address. The fix is on `fix/payment-link-paystack-greeting`;
+  Virgo's pre-fix UUID-bearing request must be archived and recreated after
+  deployment before any parent receives it.
 - **RBAC conformance PR #204 is merged on `main`.** Its real-DI I1/I2 gate
   holds all 20 deliberate disagreements as six reasoned exception groups and
   enforces zero undocumented, stale, or duplicate exceptions. The ~89-site

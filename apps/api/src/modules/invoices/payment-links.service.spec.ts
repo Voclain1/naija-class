@@ -214,7 +214,12 @@ describe("PaymentLinksService CP2 — real RLS, uniqueness, and lifecycle", () =
       amount: 250_000,
       studentLabel: `Bursar Visible (CP4-${runId})`,
     });
-    expect(capturedEmail).toMatch(/^noreply-payment-[0-9a-f-]+@schoolkit\.ng$/);
+    expect(capturedEmail).toBe("parent@schoolkit.ng");
+    expect(paystack.createCustomer).toHaveBeenCalledWith({
+      email: "parent@schoolkit.ng",
+      firstName: "Parent",
+      lastName: "School Fees",
+    });
     expect(JSON.stringify(capturedMetadata)).not.toContain("example.test");
     expect(capturedMetadata).toMatchObject({ schoolId: schoolA, invoiceId: invoiceA });
     expect(await withTenant(schoolA, (db) => db.payment.count({ where: { invoiceId: invoiceA } }))).toBe(0);

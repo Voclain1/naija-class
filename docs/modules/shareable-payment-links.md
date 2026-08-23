@@ -501,12 +501,20 @@ a WhatsApp group therefore discloses that parent's email to everyone who sees
 it — and `PaymentsService.initPaystack` resolves that email from the PRIMARY
 GUARDIAN, so it is a real parent's real address, not a synthetic one.
 
-The server generates the link row id first and creates a Paystack customer as
-`noreply-payment-<opaque-link-id>@schoolkit.ng`; it never reads or sends the
-guardian's email for this flow. `send_notification` is false. Store the
-returned Paystack `customer_code` on the link for reconciliation. The address
-shown on a forwarded page is therefore non-deliverable and contains no parent
-PII; the ordinary guardian-portal payment flow remains unchanged.
+The server never reads or sends the guardian's email for this flow and
+`send_notification` is false. Store the returned Paystack `customer_code` on
+the link for reconciliation. The ordinary guardian-portal payment flow remains
+unchanged.
+
+**Amended 2026-08-23 after the real Virgo pilot:** Paystack's hosted page uses
+`customer.email` for its visible “Hey …” greeting even when `first_name` and
+`last_name` are populated; those names cannot suppress the email greeting.
+The per-link UUID address therefore avoided PII but exposed an ugly internal
+identifier. Shared links now use the stable synthetic address
+`parent@schoolkit.ng` with names `Parent` / `School Fees`. A real test-mode
+request (`PRQ_m9h11vo6o8sd25j`) rendered exactly “Hey parent@schoolkit.ng,”.
+Paystack also accepted two separate Customer records with that same address,
+so per-link customer/request correlation is preserved without a visible UUID.
 
 Approved. The button builds:
 
@@ -606,8 +614,8 @@ never Float), `currency` (`NGN`), `status` (`CREATING` / `LIVE` / `PAID` /
 `archivedAt`, `paidAt`, and bounded non-PII failure/retry timestamps.
 
 `CREATING` is a short-lived reservation created before the Paystack customer
-and request calls; it supplies the opaque id used in synthetic email and
-metadata and serializes concurrent clicks. A retry reconciles by stored
+and request calls; it supplies the opaque id used in correlation metadata and
+serializes concurrent clicks. A retry reconciles by stored
 request/customer ids where present rather than minting another live request.
 
 Partial unique index on `(school_id, invoice_id)` where status = LIVE, plus a
