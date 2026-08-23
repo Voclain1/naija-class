@@ -171,6 +171,13 @@ those; it doesn't replace them.
   that same address. The fix is on `fix/payment-link-paystack-greeting`;
   Virgo's pre-fix UUID-bearing request must be archived and recreated after
   deployment before any parent receives it.
+- **Fly render-worker count is reduced live from two Machines to one.** Branch
+  `fix/render-worker-single-machine` makes that count a deployment invariant
+  after every worker deploy while preserving 2 GB, concurrency 1 and
+  `min_machines_running = 0`. A real production render from a confirmed cold
+  stop reached `GENERATED` and a 200 R2 artifact in 56.254 s; the sole Machine
+  subsequently returned to stopped. The live BullMQ queue was empty across
+  waiting/active/delayed/failed after completion. See the 2026-08-23 journal.
 - **RBAC conformance PR #204 is merged on `main`.** Its real-DI I1/I2 gate
   holds all 20 deliberate disagreements as six reasoned exception groups and
   enforces zero undocumented, stale, or duplicate exceptions. The ~89-site

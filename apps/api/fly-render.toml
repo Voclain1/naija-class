@@ -13,6 +13,10 @@
 # Chrome init). Workers drain the queue then the machine goes idle and Fly
 # stops it again.
 #
+# Machine count is deliberately ONE at the platform's current volume. The
+# deploy workflow enforces this after every worker deploy; `min_machines_running`
+# controls how many stay warm, not how many Machines exist.
+#
 # 2 GB VM: headless Chromium peak measured at ~918 MB VmRSS + ~179 MB Node RSS
 # during the 40-card gate (2026-06-18). 2 GB gives ~900 MB headroom for Fly
 # memory overhead and concurrent renders beyond the gate load.
