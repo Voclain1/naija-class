@@ -51,10 +51,20 @@ describe("PaymentLinksService CP2 — real RLS, uniqueness, and lifecycle", () =
         },
       });
       await db.userRole.create({ data: { userId: user.id, roleId: bursarRole.id } });
+      const student = await db.student.create({
+        data: {
+          schoolId: schoolA,
+          admissionNumber: `CP4-${runId}`,
+          firstName: "Bursar",
+          lastName: "Visible",
+          dateOfBirth: new Date("2012-01-01"),
+          gender: "FEMALE",
+        },
+      });
       const invoice = await db.invoice.create({
         data: {
           schoolId: schoolA,
-          studentId: `student-a-${runId}`,
+          studentId: student.id,
           termId: `term-a-${runId}`,
           academicYearId: `year-a-${runId}`,
           items: [],
@@ -202,6 +212,7 @@ describe("PaymentLinksService CP2 — real RLS, uniqueness, and lifecycle", () =
       state: "LIVE",
       url: `https://paystack.com/pay/PRQ_${runId}`,
       amount: 250_000,
+      studentLabel: `Bursar Visible (CP4-${runId})`,
     });
     expect(capturedEmail).toMatch(/^noreply-payment-[0-9a-f-]+@schoolkit\.ng$/);
     expect(JSON.stringify(capturedMetadata)).not.toContain("example.test");
@@ -281,4 +292,66 @@ describe("PaymentLinksService CP2 — real RLS, uniqueness, and lifecycle", () =
       ),
     ).toBe(0);
   });
+
+  it.each(["owner", "admin"] as const)(
+    "allows an active %s through the real role gate and lifecycle",
+    async (roleKey) => {
+      const role = await basePrisma.role.findFirstOrThrow({
+        where: { schoolId: null, key: roleKey, isSystem: true },
+        select: { id: true },
+      });
+      const fixture = await withTenant(schoolA, async (db) => {
+        const user = await db.user.create({
+          data: { schoolId: schoolA, firstName: roleKey, lastName: "CP4" },
+        });
+        await db.userRole.create({ data: { userId: user.id, roleId: role.id } });
+        const invoice = await db.invoice.create({
+          data: {
+            schoolId: schoolA,
+            studentId: `student-${roleKey}-${runId}`,
+            termId: `term-${roleKey}-${runId}`,
+            academicYearId: `year-${roleKey}-${runId}`,
+            items: [],
+            totalAmount: 60_000,
+            totalDiscount: 0,
+            totalDue: 60_000,
+            issuedAt: new Date(),
+            issuedBy: user.id,
+          },
+        });
+        return { user, invoice };
+      });
+      const requestCode = `PRQ_${roleKey}_${runId}`;
+      let email = "";
+      let metadata: Record<string, unknown> = {};
+      const paystack = {
+        createCustomer: vi.fn(async (input: { email: string }) => {
+          email = input.email;
+          return { customer_code: `CUS_${roleKey}`, email };
+        }),
+        createPaymentRequest: vi.fn(async (input: { metadata: Record<string, unknown> }) => {
+          metadata = input.metadata;
+          return { request_code: requestCode };
+        }),
+        getPaymentRequest: vi.fn(async () => ({
+          id: roleKey === "owner" ? 700001 : 700002,
+          request_code: requestCode,
+          amount: 60_000,
+          currency: "NGN",
+          status: "pending",
+          archived: false,
+          split_code: "SPL_test_a",
+          metadata,
+          customer: { customer_code: `CUS_${roleKey}`, email },
+        })),
+        archivePaymentRequest: vi.fn(async () => undefined),
+      };
+      const result = await new PaymentLinksService(paystack as never).create(
+        { sessionId: `cp4-${roleKey}`, schoolId: schoolA, userId: fixture.user.id },
+        fixture.invoice.id,
+        { ipAddress: "127.0.0.1" },
+      );
+      expect(result).toMatchObject({ state: "LIVE", schoolName: `Payment Link RLS A ${runId}` });
+    },
+  );
 });

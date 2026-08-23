@@ -133,7 +133,7 @@ those; it doesn't replace them.
   (`c:\Users\acer\Desktop\Naija-class\`) and Claude Code's memory directory
   (derived from the folder name). Don't rename either mid-session.
 
-## Latest state as of this handoff (updated 2026-08-22)
+## Latest state as of this handoff (updated 2026-08-23)
 
 - **Payment-link plan-first is merged in docs-only PR #203; implementation
   CP1 through CP3 are complete on `feat/payment-links`.** A real Paystack
@@ -154,7 +154,12 @@ those; it doesn't replace them.
   idempotent crediting, and post-commit archival for every balance-changing
   path. A real hosted test payment (`T291595725920935`) passed the signed
   controller branch twice and produced exactly one database credit; see
-  `docs/journal/2026-08-22.md`. CP4 (admin invoice UX) is next.
+  `docs/journal/2026-08-22.md`. CP4 is complete: the admin invoice surface
+  renders every lifecycle state and exposes a read-only durable URL, exact
+  copy action and no-recipient WhatsApp share. Real Chrome passes covered
+  owner, admin and bursar. The first bursar pass caught a raw-student-id
+  fallback; the payment-link API now supplies the tenant-scoped display label
+  without widening student-read permission. CP5 rollout is next.
 - **RBAC conformance PR #204 is merged on `main`.** Its real-DI I1/I2 gate
   holds all 20 deliberate disagreements as six reasoned exception groups and
   enforces zero undocumented, stale, or duplicate exceptions. The ~89-site

@@ -3,6 +3,7 @@ import type {
   GenerateInvoicesResponseDto,
   InvoiceDto,
   InvoiceStatus,
+  PaymentLinkStateDto,
   PaginatedInvoicesDto,
   PreviewLineDto,
 } from "@school-kit/types";
@@ -51,4 +52,16 @@ export function getInvoice(id: string): Promise<InvoiceDto> {
 
 export function cancelInvoice(id: string): Promise<InvoiceDto> {
   return apiFetch<InvoiceDto>(`/invoices/${id}/cancel`, { method: "POST" });
+}
+
+export function getPaymentLink(id: string): Promise<PaymentLinkStateDto> {
+  return apiFetch<PaymentLinkStateDto>(`/invoices/${encodeURIComponent(id)}/payment-link`, {
+    method: "GET",
+  });
+}
+
+export function createPaymentLink(id: string): Promise<PaymentLinkStateDto> {
+  return apiFetch<PaymentLinkStateDto>(`/invoices/${encodeURIComponent(id)}/payment-link`, {
+    method: "POST",
+  });
 }

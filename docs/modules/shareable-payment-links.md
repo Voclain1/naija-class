@@ -796,6 +796,15 @@ RBAC regressions 171/171; audit coverage plus CP2 durable-link regression
 and visible connect/retry states. Gate: role/browser tests for owner, admin and
 bursar; no contact-data permission widening.
 
+Completed 2026-08-23. Real Chrome passes covered owner, admin and bursar on
+the same tenant-scoped invoice plus all five server states. The first bursar
+pass caught the page falling back to a raw student UUID because bursar does
+not hold the separate student-read permission. The fix carries the display
+label from the tenant-scoped payment-link API instead; no permission was
+widened. The final WhatsApp URL has no recipient, contains the school name,
+server-fixed amount, student name/admission number and durable URL, and the
+copy action returns that exact URL.
+
 **CP5 — rollout.** Apply migration; deploy API before web; run one-school
 backfill and reconcile in Paystack; then all eligible schools; smoke create,
 reload, share, test pay, webhook, invoice update and archive. Stop rollout on

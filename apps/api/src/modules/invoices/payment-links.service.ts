@@ -25,13 +25,15 @@ export class PaymentLinksService {
     return withTenant(authCtx.schoolId, async (db) => {
       const invoice = await db.invoice.findFirst({
         where: { id: invoiceId, schoolId: authCtx.schoolId },
-        select: { id: true },
+        select: { id: true, studentId: true },
       });
       if (!invoice) throw new NotFoundError("Invoice not found.");
+      const studentLabel = await findStudentLabel(db, authCtx.schoolId, invoice.studentId);
 
       const school = await db.school.findUnique({
         where: { id: authCtx.schoolId },
         select: {
+          name: true,
           paystackPaymentsEnabled: true,
           paystackSubaccountCode: true,
           paystackSplitCode: true,
@@ -50,7 +52,7 @@ export class PaymentLinksService {
         orderBy: { createdAt: "desc" },
       });
       if (active?.status === "CREATING") return { state: "CREATING" };
-      if (active?.status === "LIVE") return toLiveDto(active);
+      if (active?.status === "LIVE") return toLiveDto(active, school.name, studentLabel);
 
       const failed = await db.paymentLink.findFirst({
         where: { schoolId: authCtx.schoolId, invoiceId, status: "CREATE_FAILED" },
@@ -73,9 +75,10 @@ export class PaymentLinksService {
     const prepared = await withTenant(authCtx.schoolId, async (db) => {
       const invoice = await db.invoice.findFirst({
         where: { id: invoiceId, schoolId: authCtx.schoolId },
-        select: { id: true, totalDue: true, totalPaid: true, status: true },
+        select: { id: true, studentId: true, totalDue: true, totalPaid: true, status: true },
       });
       if (!invoice) throw new NotFoundError("Invoice not found.");
+      const studentLabel = await findStudentLabel(db, authCtx.schoolId, invoice.studentId);
       if (["PAID", "CANCELLED", "REFUNDED"].includes(invoice.status)) {
         throw new ConflictError(
           "PAYMENT_LINK_INVOICE_NOT_PAYABLE",
@@ -118,7 +121,7 @@ export class PaymentLinksService {
             createdBy: authCtx.userId,
           },
         });
-        return { link, splitCode: school.paystackSplitCode, schoolName: school.name };
+        return { link, splitCode: school.paystackSplitCode, schoolName: school.name, studentLabel };
       } catch (error) {
         if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== "P2002") {
           throw error;
@@ -132,13 +135,15 @@ export class PaymentLinksService {
           orderBy: { createdAt: "desc" },
         });
         if (!existing) throw error;
-        return { existing } as const;
+        return { existing, schoolName: school.name, studentLabel } as const;
       }
     });
 
     const existing = "existing" in prepared ? prepared.existing : undefined;
     if (existing) {
-      return existing.status === "LIVE" ? toLiveDto(existing) : { state: "CREATING" };
+      return existing.status === "LIVE"
+        ? toLiveDto(existing, prepared.schoolName, prepared.studentLabel)
+        : { state: "CREATING" };
     }
     const link = prepared.link;
     if (!link) throw new Error("Payment link reservation was not returned");
@@ -213,7 +218,7 @@ export class PaymentLinksService {
             metadata: { invoiceId, amount: live.amount, requestCode: live.requestCode },
           },
         });
-        return toLiveDto(live);
+        return toLiveDto(live, prepared.schoolName, prepared.studentLabel);
       });
     } catch (error) {
       if (requestCode) await this.paystack.archivePaymentRequest(requestCode).catch(() => undefined);
@@ -247,7 +252,7 @@ function toLiveDto(row: {
   amount: number;
   currency: string;
   createdAt: Date;
-}): PaymentLinkStateDto {
+}, schoolName: string, studentLabel: string): PaymentLinkStateDto {
   if (!row.hostedUrl || !row.requestCode || row.currency !== "NGN") {
     throw new ConflictError("PAYMENT_LINK_CORRUPT", "The stored payment link is incomplete.");
   }
@@ -257,7 +262,23 @@ function toLiveDto(row: {
     url: row.hostedUrl,
     amount: row.amount,
     currency: "NGN",
+    schoolName,
+    studentLabel,
     requestCode: row.requestCode,
     createdAt: row.createdAt.toISOString(),
   };
+}
+
+async function findStudentLabel(
+  db: Parameters<Parameters<typeof withTenant>[1]>[0],
+  schoolId: string,
+  studentId: string,
+): Promise<string> {
+  const student = await db.student.findFirst({
+    where: { id: studentId, schoolId },
+    select: { firstName: true, lastName: true, admissionNumber: true },
+  });
+  return student
+    ? `${student.firstName} ${student.lastName} (${student.admissionNumber})`
+    : studentId;
 }
