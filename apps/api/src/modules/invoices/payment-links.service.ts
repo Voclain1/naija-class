@@ -16,6 +16,10 @@ interface RequestContext {
 }
 
 const ACTIVE_STATUSES = ["CREATING", "LIVE"] as const;
+// Paystack's hosted Payment Request page greets the payer with customer.email
+// even when first_name/last_name are populated. Keep this synthetic and
+// deliberately human-readable: a per-link UUID here is parent-visible.
+const PAYMENT_LINK_CUSTOMER_EMAIL = "parent@schoolkit.ng";
 
 @Injectable()
 export class PaymentLinksService {
@@ -148,13 +152,13 @@ export class PaymentLinksService {
     const link = prepared.link;
     if (!link) throw new Error("Payment link reservation was not returned");
 
-    const syntheticEmail = `noreply-payment-${link.id}@schoolkit.ng`;
+    const syntheticEmail = PAYMENT_LINK_CUSTOMER_EMAIL;
     let requestCode: string | undefined;
     try {
       const customer = await this.paystack.createCustomer({
         email: syntheticEmail,
-        firstName: "SchoolKit",
-        lastName: "Payment",
+        firstName: "Parent",
+        lastName: "School Fees",
       });
       await withTenant(authCtx.schoolId, (db) =>
         db.paymentLink.update({
