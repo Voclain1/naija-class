@@ -36,7 +36,8 @@
     "list-smoke": "dotenv -e ../../.env -- sh -c 'psql \"$DIRECT_URL\" -f ../../scripts/list-smoke-schools.sql'",
     "prune-smoke": "dotenv -e ../../.env -- sh -c 'psql \"$DIRECT_URL\" -f ../../scripts/prune-smoke-schools.sql'",
     "clean": "rm -rf dist generated",
-    "census-academic-calendar": "dotenv -e ../../.env -- tsx scripts/census-academic-calendar.ts"
+    "census-academic-calendar": "dotenv -e ../../.env -- tsx scripts/census-academic-calendar.ts",
+    "census-paystack-splits": "dotenv -e ../../.env -- tsx scripts/census-paystack-splits.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

@@ -26,13 +26,9 @@ import { cn } from "@/lib/utils";
 // Paystack subaccounts belong to the integration that created them and the
 // API holds one platform-wide secret key, so a code from the school's own
 // dashboard is invisible to our save-time verification and always fails.
-// The school submits banking details here, we create the subaccount on
-// SchoolKit's integration, and send back the ACCT_ code to paste below.
-//
-// The paste-and-verify half is unchanged and deliberately so: saving a code
-// still triggers a live GET /subaccount/:code and shows the business name
-// back, which is the only check that catches a valid code belonging to
-// someone else. See docs/modules/paystack-assisted-setup.md.
+// The school submits banking details here. At fulfilment, the operator's
+// ACCT_ code is verified and the API creates/fetch-verifies the school's
+// percentage:100 split before atomically enabling payments.
 export default function PaymentsSettingsPage() {
   const [savedCode, setSavedCode] = useState<string | null>(null);
   const [savedEnabled, setSavedEnabled] = useState(false);
@@ -297,9 +293,9 @@ export default function PaymentsSettingsPage() {
               <p className="font-medium">Setup request received</p>
               <p className="mt-1 text-muted-foreground">
                 Sent {new Date(request.submittedAt).toLocaleDateString()} for{" "}
-                <strong>{request.businessName}</strong>. We&apos;ll email your subaccount code
-                once the Paystack account is set up — then paste it below. Keep collecting cash,
-                POS, and bank transfer payments in the meantime; nothing is blocked.
+                <strong>{request.businessName}</strong>. We&apos;ll connect it here once the
+                Paystack account and routing split are verified. Keep collecting cash, POS, and
+                bank transfer payments in the meantime; nothing is blocked.
               </p>
             </div>
           ) : request?.status === "FULFILLED" && request.subaccountCode ? (
@@ -311,23 +307,9 @@ export default function PaymentsSettingsPage() {
             <div className="rounded-md border border-emerald-600/40 bg-emerald-600/5 p-4 text-sm">
               <p className="font-medium">Your Paystack subaccount is ready</p>
               <p className="mt-1 text-muted-foreground">
-                Created for <strong>{request.businessName}</strong>. Your code is{" "}
-                <code className="font-mono">{request.subaccountCode}</code>
-                {savedCode === request.subaccountCode
-                  ? " — already saved below."
-                  : " — paste it below and save to finish connecting."}
+                Created and verified for <strong>{request.businessName}</strong>. Your school is
+                connected automatically; no code-pasting step remains.
               </p>
-              {savedCode !== request.subaccountCode && (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  className="mt-3"
-                  onClick={() => setCodeDraft(request.subaccountCode ?? "")}
-                >
-                  Fill it in for me
-                </Button>
-              )}
             </div>
           ) : null}
 
@@ -336,9 +318,8 @@ export default function PaymentsSettingsPage() {
               Paystack subaccount code
             </Label>
             <p className="text-xs text-muted-foreground">
-              Paste the code we sent you — it looks like <code>ACCT_xxxxxxxxxx</code>. We check it
-              with Paystack when you save and show the business name back, so you can confirm
-              it&apos;s your school&apos;s account before it goes live.
+              Managed by assisted setup. Changing or clearing this code disables Paystack and
+              clears its routing split; a new setup request is then required before re-enabling.
             </p>
             <Input
               id="subaccount-code"

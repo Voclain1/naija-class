@@ -111,17 +111,48 @@ For each pending request:
    the revealed business name, bank, and account number. Paystack resolves the
    account name itself — **if it does not match the name the school gave, stop
    and reject the request with that as the reason** rather than guessing.
-3. Set the split so the school receives **100%** (0% platform cut). Confirm on
-   screen before saving; the dashboard's wording about which side the
-   percentage applies to is easy to read backwards.
-4. Copy the resulting `ACCT_…` code into the queue row and click **Mark
+3. Copy the resulting `ACCT_…` code into the queue row and click **Mark
    fulfilled**.
+4. The API fetch-verifies the subaccount, creates or reconciles the
+   deterministic per-school Transaction Split (`percentage: 100`, sole school
+   subaccount, school bears Paystack fees), fetches the saved split back, and
+   only then atomically stores both codes and enables payments. Any mismatch
+   leaves the request pending and the school disabled.
 
-The school then pastes that code into their own settings page, which runs the
-live `GET /subaccount/:code` verification and shows the business name back for
-confirmation. **Do not try to set the code on the school's behalf** — that
-check is the only thing standing between a mistyped code and a school's fees
-settling into a stranger's account.
+The school no longer pastes a code after fulfilment. Replacing or clearing a
+subaccount disables payments and clears its split code; a new assisted-setup
+fulfilment is required before re-enabling.
+
+### Backfill for schools configured before `paystack_split_code`
+
+1. Run `pnpm db:census-paystack-splits`. This is a read-only `DIRECT_URL`
+   census and prints opaque school ids only. Review the resulting manifest.
+2. Select exactly one pilot school. Dry-run only that id with
+   `pnpm api:backfill-paystack-splits -- --school-id <id>`.
+3. Apply only that reviewed pilot, passing the same id again as an explicit
+   confirmation plus the acting platform admin's tenant and user ids for the
+   audit row:
+   `pnpm api:backfill-paystack-splits -- --apply --school-id <id>
+   --confirm-school-id <same-id> --actor-school-id <operator-tenant-id>
+   --actor-user-id <operator-user-id>`.
+4. Rerun the same single-school command without `--apply`. It must return
+   `already-verified`; this performs a fresh Paystack fetch and validates the
+   percentage-100 split, sole expected subaccount and fee bearer independently
+   of the database write. Confirm exactly one `paystack-split.backfilled` audit
+   row for that school.
+5. Smoke the pilot end to end before selecting another school: create and
+   reload one durable link, confirm its no-recipient share URL, complete a test
+   payment, then verify the Payment row, invoice balance, webhook idempotency,
+   link consumption and remote request archival. Stop on any mismatch,
+   duplicate credit or unarchived stale amount.
+6. Wider rollout is repetition of steps 2–5, one school per invocation and
+   with observation between schools. The CLI rejects zero or multiple
+   `--school-id` arguments and rejects apply unless `--confirm-school-id`
+   exactly matches. There is deliberately no blanket-apply mode.
+7. Rerun the census after the final reviewed school. `missingCount` must be
+   zero only when the deliberately staged rollout is complete. Database
+   eligibility alone is never sufficient; every apply independently verifies
+   the stored subaccount and fetch-verifies the resulting Paystack split.
 
 `PAYSTACK_SETUP_EMAIL` must be set for the "a school is waiting" notification
 to send. If it is unset, requests still land in the queue — the email is a

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
+import { Copy, ExternalLink, Link2, MessageCircle, RefreshCw } from "lucide-react";
 
 import type {
   CreatePaymentPlanInput,
@@ -11,10 +12,12 @@ import type {
   ManualPaymentMethod,
   PaymentDto,
   PaymentPlanDto,
+  PaymentLinkStateDto,
   PaymentStatus,
   StudentDetailDto,
   TermDto,
 } from "@school-kit/types";
+import { buildNoRecipientWhatsAppUrl, buildPaymentLinkMessage } from "@school-kit/types";
 
 import { Badge, type BadgeProps } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -22,7 +25,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { listTerms } from "@/lib/academic-years/academic-years-api";
 import { formatKobo } from "@/lib/finance/format";
-import { cancelInvoice, getInvoice } from "@/lib/finance/invoices-api";
+import { cancelInvoice, createPaymentLink, getInvoice, getPaymentLink } from "@/lib/finance/invoices-api";
 import {
   createPaymentPlan,
   deletePaymentPlan,
@@ -111,6 +114,10 @@ export default function InvoiceDetailPage() {
   const [term, setTerm] = useState<TermDto | null>(null);
   const [payments, setPayments] = useState<PaymentDto[]>([]);
   const [plan, setPlan] = useState<PaymentPlanDto | null | undefined>(undefined); // undefined = loading
+  const [paymentLink, setPaymentLink] = useState<PaymentLinkStateDto | undefined>(undefined);
+  const [paymentLinkBusy, setPaymentLinkBusy] = useState(false);
+  const [paymentLinkError, setPaymentLinkError] = useState<string | null>(null);
+  const [linkCopied, setLinkCopied] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -169,6 +176,9 @@ export default function InvoiceDetailPage() {
           getPaymentPlan(inv.id)
             .then(setPlan)
             .catch(() => setPlan(null)),
+          getPaymentLink(inv.id)
+            .then(setPaymentLink)
+            .catch((e) => setPaymentLinkError(e instanceof Error ? e.message : "Failed to load payment link.")),
         ]).catch(() => {});
       })
       .catch((e) => setError(e instanceof Error ? e.message : "Failed to load invoice."))
@@ -189,6 +199,7 @@ export default function InvoiceDetailPage() {
     try {
       const updated = await cancelInvoice(invoice.id);
       setInvoice(updated);
+      await refreshPaymentLink();
     } catch (e) {
       setCancelError(e instanceof Error ? e.message : "Cancel failed.");
     } finally {
@@ -219,6 +230,7 @@ export default function InvoiceDetailPage() {
       setInvoice(updatedInvoice);
       setPayments(updatedPayments.data);
       setPlan(updatedPlan);
+      await refreshPaymentLink();
       setForm({ amount: "", method: "CASH", paidAt: nowLocalDatetimeValue(), reference: "" });
     } catch (e) {
       setRecordError(e instanceof Error ? e.message : "Failed to record payment.");
@@ -267,6 +279,7 @@ export default function InvoiceDetailPage() {
       setInvoice(updatedInvoice);
       setPayments(updatedPayments.data);
       setPlan(updatedPlan);
+      await refreshPaymentLink();
       setRefundPaymentId(null);
     } catch (e) {
       setRefundError(e instanceof Error ? e.message : "Refund failed.");
@@ -320,6 +333,38 @@ export default function InvoiceDetailPage() {
     } finally {
       setPlanDeleting(false);
     }
+  }
+
+  async function refreshPaymentLink() {
+    if (!invoice) return;
+    setPaymentLinkBusy(true);
+    setPaymentLinkError(null);
+    try {
+      setPaymentLink(await getPaymentLink(invoice.id));
+    } catch (e) {
+      setPaymentLinkError(e instanceof Error ? e.message : "Failed to refresh payment link.");
+    } finally {
+      setPaymentLinkBusy(false);
+    }
+  }
+
+  async function handleCreatePaymentLink() {
+    if (!invoice) return;
+    setPaymentLinkBusy(true);
+    setPaymentLinkError(null);
+    try {
+      setPaymentLink(await createPaymentLink(invoice.id));
+    } catch (e) {
+      setPaymentLinkError(e instanceof Error ? e.message : "Failed to create payment link.");
+    } finally {
+      setPaymentLinkBusy(false);
+    }
+  }
+
+  async function handleCopyPaymentLink(url: string) {
+    await navigator.clipboard.writeText(url);
+    setLinkCopied(true);
+    window.setTimeout(() => setLinkCopied(false), 2000);
   }
 
   function handlePlanRowChange(index: number, field: "amount" | "dueDate", value: string) {
@@ -476,6 +521,87 @@ export default function InvoiceDetailPage() {
             )}
           </div>
         </details>
+      )}
+
+      {/* Durable shareable payment link — never reads or pre-fills guardian contact data. */}
+      {PAYABLE.has(invoice.status) && (
+        <section className="space-y-3 rounded-lg border border-emerald-200 bg-emerald-50/50 p-4 dark:border-emerald-900 dark:bg-emerald-950/20">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h2 className="flex items-center gap-2 text-base font-semibold text-foreground">
+                <Link2 className="h-4 w-4" /> Share payment link
+              </h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Create one durable link for the current balance. It is automatically disabled when the invoice changes.
+              </p>
+            </div>
+            <Button variant="ghost" size="sm" onClick={refreshPaymentLink} disabled={paymentLinkBusy}>
+              <RefreshCw className={`mr-2 h-4 w-4 ${paymentLinkBusy ? "animate-spin" : ""}`} />
+              Refresh
+            </Button>
+          </div>
+
+          {paymentLink === undefined ? (
+            <p className="text-sm text-muted-foreground">Loading payment-link status…</p>
+          ) : paymentLink.state === "CONNECT_PAYSTACK" ? (
+            <div className="space-y-2">
+              <p className="text-sm font-medium text-amber-800 dark:text-amber-300">
+                Connect Paystack first to create a shareable payment link.
+              </p>
+              <Button asChild variant="outline" size="sm">
+                <Link href="/settings/finance/payments">Open Paystack settings</Link>
+              </Button>
+            </div>
+          ) : paymentLink.state === "LIVE" ? (
+            <div className="space-y-3">
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <input
+                  aria-label="Shareable payment link"
+                  readOnly
+                  value={paymentLink.url}
+                  className={`${INPUT_CLASSES} font-mono text-xs`}
+                />
+                <Button variant="outline" onClick={() => handleCopyPaymentLink(paymentLink.url)}>
+                  <Copy className="mr-2 h-4 w-4" /> {linkCopied ? "Copied" : "Copy"}
+                </Button>
+                <Button asChild>
+                  <a
+                    href={buildNoRecipientWhatsAppUrl(buildPaymentLinkMessage({
+                      schoolName: paymentLink.schoolName,
+                      studentLabel: paymentLink.studentLabel,
+                      amount: paymentLink.amount,
+                      url: paymentLink.url,
+                    }))}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    <MessageCircle className="mr-2 h-4 w-4" /> Share on WhatsApp
+                  </a>
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                WhatsApp opens without a recipient. Choose the correct conversation before sending.
+              </p>
+            </div>
+          ) : paymentLink.state === "CREATING" ? (
+            <p className="text-sm text-muted-foreground">Payment link creation is in progress. Refresh shortly.</p>
+          ) : paymentLink.state === "RETRYABLE_FAILURE" ? (
+            <div className="space-y-2">
+              <p className="text-sm text-destructive">
+                The previous link could not be completed. No payment URL was exposed.
+              </p>
+              <Button size="sm" onClick={handleCreatePaymentLink} disabled={paymentLinkBusy}>
+                Retry creating link
+              </Button>
+            </div>
+          ) : (
+            <Button size="sm" onClick={handleCreatePaymentLink} disabled={paymentLinkBusy}>
+              <ExternalLink className="mr-2 h-4 w-4" />
+              {paymentLinkBusy ? "Creating…" : `Create link for ${formatKobo(invoice.totalDue - invoice.totalPaid)}`}
+            </Button>
+          )}
+          {paymentLinkError && <p className="text-sm text-destructive">{paymentLinkError}</p>}
+        </section>
       )}
 
       {/* Payment history */}

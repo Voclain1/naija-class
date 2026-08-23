@@ -1,4 +1,4 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { Injectable, Logger, Optional } from "@nestjs/common";
 
 import { withTenant } from "@school-kit/db";
 import {
@@ -10,6 +10,7 @@ import {
 
 import type { AuthContext } from "../../common/auth/auth-context.js";
 import { PaystackService } from "../../common/paystack/paystack.service.js";
+import { PaymentLinkInvalidationService } from "../invoices/payment-link-invalidation.service.js";
 import { PaymentPlanService } from "./payment-plan.service.js";
 import { computeInvoiceStatus } from "./payments.service.js";
 
@@ -26,10 +27,11 @@ export class RefundsService {
   constructor(
     private readonly paystack: PaystackService,
     private readonly paymentPlan: PaymentPlanService,
+    @Optional() private readonly paymentLinkInvalidation?: PaymentLinkInvalidationService,
   ) {}
 
   async create(authCtx: AuthContext, dto: CreateRefundInput): Promise<RefundDto> {
-    return withTenant(authCtx.schoolId, async (db) => {
+    const result = await withTenant(authCtx.schoolId, async (db) => {
       // 1. Load the payment — RLS ensures school_id matches.
       const payment = await db.payment.findUnique({
         where: { id: dto.paymentId },
@@ -169,6 +171,11 @@ export class RefundsService {
 
       // 10. Recompute installment plan paid flags.
       await this.paymentPlan.recomputeInstallmentsPaid(db, payment.invoiceId, newTotalPaid);
+      await this.paymentLinkInvalidation?.markForArchive(
+        db,
+        authCtx.schoolId,
+        payment.invoiceId,
+      );
 
       // 11. Audit log.
       await db.auditLog.create({
@@ -201,5 +208,7 @@ export class RefundsService {
         createdAt: refund.createdAt,
       };
     });
+    await this.paymentLinkInvalidation?.archivePending(authCtx.schoolId);
+    return result;
   }
 }

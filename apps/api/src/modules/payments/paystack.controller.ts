@@ -67,7 +67,9 @@ export class PaystackController {
   @HttpCode(200)
   @UseGuards(PaystackWebhookGuard)
   async handleWebhook(@Body() event: PaystackWebhookEvent): Promise<{ status: string }> {
-    if (event.event.startsWith("transfer.")) {
+    if (event.event.startsWith("paymentrequest.")) {
+      await this.service.handlePaymentRequestWebhook(event);
+    } else if (event.event.startsWith("transfer.")) {
       await this.payrollService.handleTransferWebhook(event);
     } else {
       await this.service.handleWebhook(event);

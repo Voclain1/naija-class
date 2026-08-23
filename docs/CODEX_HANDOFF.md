@@ -133,10 +133,10 @@ those; it doesn't replace them.
   (`c:\Users\acer\Desktop\Naija-class\`) and Claude Code's memory directory
   (derived from the folder name). Don't rename either mid-session.
 
-## Latest state as of this handoff (updated 2026-08-22)
+## Latest state as of this handoff (updated 2026-08-23)
 
-- **Payment-link plan-first is complete in docs-only PR #203; implementation
-  awaits review.** PR #203 was rebased onto current `main`. A real Paystack
+- **Payment-link plan-first is merged in docs-only PR #203; implementation
+  CP1 through CP3 are complete on `feat/payment-links`.** A real Paystack
   test-mode follow-up proved one `percentage: 100` split reusable at 123,400
   and 987,600 kobo, with integration share zero and the school receiving gross
   less Paystack fee both times. The final plan in
@@ -144,7 +144,26 @@ those; it doesn't replace them.
   assisted-setup creation, existing-school backfill, durable link lifecycle,
   synthetic customer email, metadata-correlated `paymentrequest.*` webhook,
   archive-on-every-balance-change, no-recipient WhatsApp share, visible
-  connect state, tests and rollout gates. No product code is implemented.
+  connect state, tests and rollout gates. CP1 now implements the school split
+  column/migration, assisted-setup split creation, drift rules and audited
+  operator backfill. CP2 adds the FORCE-RLS durable link model, database
+  reservation/uniqueness, Paystack create/fetch/archive wrappers, synthetic
+  customer and correlation metadata, and idempotent GET/POST lifecycle. Real
+  RLS control/rejection, concurrent uniqueness and Paystack test-mode gates
+  passed. CP3 adds verified `paymentrequest.success` correlation, atomic
+  idempotent crediting, and post-commit archival for every balance-changing
+  path. A real hosted test payment (`T291595725920935`) passed the signed
+  controller branch twice and produced exactly one database credit; see
+  `docs/journal/2026-08-22.md`. CP4 is complete: the admin invoice surface
+  renders every lifecycle state and exposes a read-only durable URL, exact
+  copy action and no-recipient WhatsApp share. Real Chrome passes covered
+  owner, admin and bursar. The first bursar pass caught a raw-student-id
+  fallback; the payment-link API now supplies the tenant-scoped display label
+  without widening student-read permission. CP5's rollout mechanism now
+  mirrors AI enablement: exactly one reviewed school per invocation, matching
+  apply-time confirmation, active platform-admin attribution, independent
+  remote re-verification and full money-path smoke evidence before selecting
+  another school. Deployment/pilot execution is next; there is no bulk mode.
 - **RBAC conformance PR #204 is merged on `main`.** Its real-DI I1/I2 gate
   holds all 20 deliberate disagreements as six reasoned exception groups and
   enforces zero undocumented, stale, or duplicate exceptions. The ~89-site

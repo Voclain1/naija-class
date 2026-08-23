@@ -185,6 +185,13 @@ Revisit when the queue justifies it. Consequence: step 2 of the
 onboarding guide is a human action — the school-facing copy already
 describes it without claiming a mechanism.
 
+**Extended 2026-08-22 for durable payment links:** marking a request fulfilled
+now verifies the operator-created subaccount, creates/reconciles one
+`percentage: 100` Transaction Split for that school, fetch-verifies the saved
+routing fields, and atomically writes `School.paystackSubaccountCode`,
+`School.paystackSplitCode`, and `paystackPaymentsEnabled=true`. The school no
+longer pastes the code afterward. See `shareable-payment-links.md` F7/D12.
+
 ### D6 — Persist first, notify second.
 
 The email goes through `EmailService.send()` (which checks Resend's

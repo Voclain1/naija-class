@@ -714,11 +714,47 @@ creation; settings drift rules; dry-run/idempotent backfill and runbook. Gate:
 test mode proves a newly fulfilled school and one existing-school backfill
 both persist a verified percentage-100 split before link work can use it.
 
+**CP1 implementation evidence (2026-08-22): complete on `feat/payment-links`.**
+The additive migration applied to real local Postgres. A real `sk_test_`
+assisted fulfilment created/fetched/verified `SPL_medxZWlNDP` and atomically
+enabled its synthetic school; a separate already-enabled synthetic school ran
+through the operator backfill and persisted verified `SPL_Zt45TQRO3k` with
+exactly one audit row. Both temporary splits were then made inert (zero
+subaccounts) and both database fixtures removed. The gate also caught a stale
+local test fixture whose fake `ACCT_valid123` code passed database eligibility
+but Paystack rejected it; apply mode now independently fetch-verifies every
+subaccount before split creation. Focused contract/integration suites pass
+75/75, and API/web typecheck + lint pass.
+
 **CP2 — durable link domain and API.** FORCE-RLS `PaymentLink`, partial live
 uniqueness, create/fetch/archive wrappers, synthetic customer, metadata,
 idempotent POST and discriminated GET. Gate: real test-mode Payment Request at
 two balances routes through the school's persisted split; no parent PII and no
 `PENDING Payment` row.
+
+**CP2 implementation evidence (2026-08-22): complete on `feat/payment-links`.**
+The additive migration applied to real local Postgres and enables plus forces
+RLS with both `USING` and `WITH CHECK`. A same-tenant control insert succeeded,
+a tenant-B read of tenant A's row returned null, a tenant-B write carrying
+tenant A's ids was rejected specifically by the RLS policy, and a valid
+tenant-B control insert succeeded. The runtime connection saw zero rows with
+no tenant GUC. Two genuinely concurrent transactions racing to reserve the
+same invoice produced exactly one active row and one database `P2002`; the
+partial index covers both `CREATING` and `LIVE`, preventing duplicate remote
+creation before either request can become live.
+
+A real `sk_test_` lifecycle call used the school's persisted percentage-100
+split `SPL_RzjgpOl0Jl` to create and independently fetch-verify Payment Request
+`PRQ_qa8y451u4uvb63p` for 345,600 kobo. Stored tenant, invoice, amount,
+currency, customer, split and all three metadata correlation ids matched. Its
+customer email was synthetic (`noreply-payment-<link UUID>@schoolkit.ng`), no
+guardian field was read, zero `Payment` rows were created, and exactly one
+creation audit was stored. The remote request was archived, the temporary
+split made inert, and local fixtures removed. A negative integration case
+also proves a read-back mismatch archives the remote request, stores no URL,
+emits no success audit, and returns only a bounded retryable-failure state.
+The focused real-DB suite passes 5/5; Paystack/invoice regressions 52/52 and
+permission/RBAC gates 143/143; API typecheck and lint pass.
 
 **CP3 — webhook and finance invalidation.** `paymentrequest.*` router,
 metadata/Paystack verification, SUCCESS payment transaction, audit,
@@ -726,14 +762,61 @@ idempotency, overpayment handling, centralized archive-pending transition and
 remote retry. Gate: signed fixture plus test-mode event replay credits exactly
 once; all balance-change paths invalidate the old amount.
 
+**CP3 implementation evidence (2026-08-22): complete on `feat/payment-links`.**
+The signed webhook router now handles `paymentrequest.*` before transfer and
+charge events. `paymentrequest.success` validates UUID metadata, the stored
+tenant/link/invoice/request/customer tuple, a fresh Payment Request fetch, and
+a separately verified successful transaction including amount, currency and
+the school's split. An atomic `LIVE → PAID` claim makes concurrent delivery
+single-writer; the same database transaction inserts one `SUCCESS` Payment,
+recomputes the invoice, removes the hosted URL, updates installments and writes
+the payment/link audits. Retry delivery is a no-op. The common invalidation
+service marks live links archive-pending inside manual-payment, ordinary
+Paystack-payment, refund and invoice-cancellation transactions; remote archive
+runs after commit and retains bounded retry state on failure.
+
+The real `sk_test_` gate closed the spike's original silent-loss path. Hosted
+request `PRQ_lkkc9guolc6g46e` was paid for 210,000 kobo, producing real
+transaction `T291595725920935`. Its event passed HMAC verification and the
+controller branch twice. An independent tenant-scoped database read afterward
+found invoice `b4e212ff-62dd-48a8-a8b4-4785e20cc2ec` at `totalPaid=210000`,
+`status=PAID`; exactly one `SUCCESS` Payment with that Paystack reference and
+the exact school/invoice ids; and link `54e0b9b3-acf2-4f5b-9819-218561234f1d`
+at `PAID`, with `paidAt`/`archivedAt` set and `hostedUrl=null`. Audit counts
+were exactly one `payment.paystack-confirm`, one `payment-link.paid` and one
+`payment-link.archive`, alongside the pre-existing one creation audit. A fresh
+Paystack fetch independently returned `status=success`, `archived=true`, NGN,
+210,000 kobo and one transaction. The temporary split was then made inert
+(zero subaccounts) and local fixtures removed. CP3/invalidation tests pass 2/2;
+payments/invoice generation 66/66; refunds, Paystack contract, permission and
+RBAC regressions 171/171; audit coverage plus CP2 durable-link regression
+40/40; API typecheck, lint and `git diff --check` pass.
+
 **CP4 — admin invoice UX.** Durable display, copy, no-recipient WhatsApp share,
 and visible connect/retry states. Gate: role/browser tests for owner, admin and
 bursar; no contact-data permission widening.
+
+Completed 2026-08-23. Real Chrome passes covered owner, admin and bursar on
+the same tenant-scoped invoice plus all five server states. The first bursar
+pass caught the page falling back to a raw student UUID because bursar does
+not hold the separate student-read permission. The fix carries the display
+label from the tenant-scoped payment-link API instead; no permission was
+widened. The final WhatsApp URL has no recipient, contains the school name,
+server-fixed amount, student name/admission number and durable URL, and the
+copy action returns that exact URL.
 
 **CP5 — rollout.** Apply migration; deploy API before web; run one-school
 backfill and reconcile in Paystack; then all eligible schools; smoke create,
 reload, share, test pay, webhook, invoice update and archive. Stop rollout on
 any split mismatch, duplicate credit, or unarchived stale amount.
+
+Rollout rail confirmed 2026-08-23: this mirrors AI enablement's explicit
+per-school discipline, not a blanket flip. The backfill accepts exactly one
+`--school-id` per invocation and apply additionally requires a matching
+`--confirm-school-id` plus an active platform-admin actor for audit. The pilot
+must be rerun read-only to fetch-verify Paystack and pass the complete money
+smoke before a second school is selected. Wider enablement repeats that same
+sequence with observation between schools; no bulk-apply path exists.
 
 These are checkpoints within one payment-links module PR unless review finds a
 reason to split deployment. No checkpoint may expose UI before its server and

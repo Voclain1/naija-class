@@ -27,6 +27,7 @@ import type { PlatformAdminContext } from "../../common/auth/platform-admin-cont
 import * as password from "../../common/auth/password";
 import { createSession } from "../../common/auth/sessions";
 import { EmailService } from "../../common/email/email.service";
+import { PaystackService } from "../../common/paystack/paystack.service";
 import { redactEmail } from "../../common/redact";
 import { generateUniqueSchoolSlug } from "../../common/slug/school-slug.js";
 
@@ -188,7 +189,10 @@ const PAYSTACK_SETUP_REJECTED_AUDIT_ACTION = "paystack-setup.rejected";
 export class PlatformAdminService {
   private readonly logger = new Logger(PlatformAdminService.name);
 
-  constructor(private readonly email: EmailService) {}
+  constructor(
+    private readonly email: EmailService,
+    private readonly paystack: PaystackService,
+  ) {}
 
   // Reuses the exact same SECURITY DEFINER lookup, argon2 verification, and
   // session-minting helper as staff login (AuthService.login) — "no new
@@ -398,9 +402,25 @@ export class PlatformAdminService {
       );
     }
 
+    let splitCode: string | null = null;
+    if (input.status === "FULFILLED") {
+      const subaccount = await this.paystack.getSubaccount(input.subaccountCode);
+      if (!subaccount.active) {
+        throw new ConflictError(
+          "PAYSTACK_SUBACCOUNT_INACTIVE",
+          "The supplied Paystack subaccount is inactive.",
+        );
+      }
+      const split = await this.paystack.ensureSchoolPercentageSplit({
+        schoolId: owner.schoolId,
+        subaccountCode: input.subaccountCode,
+      });
+      splitCode = split.split_code;
+    }
+
     const updated = await basePrisma.$transaction(async (tx) => {
       await tx.$executeRaw`SELECT set_config('app.current_school_id', ${owner.schoolId}, true)`;
-      return tx.paystackSetupRequest.update({
+      const request = await tx.paystackSetupRequest.update({
         where: { id: requestId },
         data: {
           status: input.status,
@@ -410,28 +430,35 @@ export class PlatformAdminService {
           fulfilledAt: new Date(),
         },
       });
-    });
-
-    await basePrisma.auditLog.create({
-      data: {
-        schoolId: null,
-        userId: adminCtx.userId,
-        action:
-          input.status === "FULFILLED"
-            ? PAYSTACK_SETUP_FULFILLED_AUDIT_ACTION
-            : PAYSTACK_SETUP_REJECTED_AUDIT_ACTION,
-        entityType: "paystack_setup_request",
-        entityId: requestId,
-        ipAddress: reqCtx.ipAddress,
-        metadata: {
-          schoolId: owner.schoolId,
-          // The subaccount code is not a secret — it is an opaque routing
-          // identifier the school pastes into a settings field — and which
-          // code went to which school is the single most useful thing this
-          // audit row can record.
-          subaccountCode: updated.subaccountCode,
+      if (input.status === "FULFILLED") {
+        await tx.school.update({
+          where: { id: owner.schoolId },
+          data: {
+            paystackSubaccountCode: input.subaccountCode,
+            paystackSplitCode: splitCode,
+            paystackPaymentsEnabled: true,
+          },
+        });
+      }
+      await tx.auditLog.create({
+        data: {
+          schoolId: null,
+          userId: adminCtx.userId,
+          action:
+            input.status === "FULFILLED"
+              ? PAYSTACK_SETUP_FULFILLED_AUDIT_ACTION
+              : PAYSTACK_SETUP_REJECTED_AUDIT_ACTION,
+          entityType: "paystack_setup_request",
+          entityId: requestId,
+          ipAddress: reqCtx.ipAddress,
+          metadata: {
+            schoolId: owner.schoolId,
+            subaccountCode: request.subaccountCode,
+            splitCode,
+          },
         },
-      },
+      });
+      return request;
     });
 
     return { requestId: updated.id, status: updated.status };

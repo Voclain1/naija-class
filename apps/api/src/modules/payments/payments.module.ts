@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 
 import { PaystackModule } from "../../common/paystack/paystack.module.js";
 import { PayrollModule } from "../payroll/payroll.module.js";
+import { InvoicesModule } from "../invoices/invoices.module.js";
 import { PaymentPlanService } from "./payment-plan.service.js";
 import { PaymentPlansController } from "./payment-plans.controller.js";
 import { PaystackController } from "./paystack.controller.js";
@@ -19,7 +20,7 @@ import { RefundsService } from "./refunds.service.js";
 // -> PayrollModule -> PaystackModule, no cycle.
 
 @Module({
-  imports: [PaystackModule, PayrollModule],
+  imports: [PaystackModule, PayrollModule, InvoicesModule],
   controllers: [PaymentsController, PaystackController, PaymentPlansController, RefundsController],
   providers: [PaymentsService, PaymentPlanService, RefundsService],
   exports: [PaymentsService, PaymentPlanService, RefundsService],

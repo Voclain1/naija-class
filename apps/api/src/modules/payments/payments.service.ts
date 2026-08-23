@@ -1,4 +1,4 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { Injectable, Logger, Optional } from "@nestjs/common";
 
 import { type PrismaClient, withTenant } from "@school-kit/db";
 import {
@@ -20,6 +20,7 @@ import {
 import type { AuthContext } from "../../common/auth/auth-context.js";
 import { PaystackService } from "../../common/paystack/paystack.service.js";
 import { StorageService } from "../../common/storage/storage.service.js";
+import { PaymentLinkInvalidationService } from "../invoices/payment-link-invalidation.service.js";
 import { PaymentPlanService } from "./payment-plan.service.js";
 
 const RECEIPT_URL_TTL_SECONDS = 15 * 60; // 15 minutes
@@ -27,6 +28,17 @@ const RECEIPT_URL_TTL_SECONDS = 15 * 60; // 15 minutes
 const AUDIT_RECORD = "payment.record";
 const AUDIT_PAYSTACK_CONFIRM = "payment.paystack-confirm";
 const AUDIT_PAYSTACK_FAILED = "payment.paystack-failed";
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function asUuid(value: unknown): string | null {
+  return typeof value === "string" && UUID_RE.test(value) ? value : null;
+}
 
 // ---------------------------------------------------------------------------
 // Pure helpers (exported for unit tests)
@@ -193,6 +205,7 @@ export class PaymentsService {
     private readonly storage: StorageService,
     private readonly paystack: PaystackService,
     private readonly paymentPlan: PaymentPlanService,
+    @Optional() private readonly paymentLinkInvalidation?: PaymentLinkInvalidationService,
   ) {}
 
   // ─── Record manual payment ────────────────────────────────────────────────
@@ -202,7 +215,7 @@ export class PaymentsService {
     dto: RecordManualPaymentInput,
     reqCtx: { ipAddress: string | null; userAgent?: string | null },
   ): Promise<PaymentDto> {
-    return withTenant(authCtx.schoolId, async (db) => {
+    const result = await withTenant(authCtx.schoolId, async (db) => {
       // 1. Load invoice — RLS ensures school_id matches; double-check to be explicit.
       const invoice = await db.invoice.findUnique({
         where: { id: dto.invoiceId },
@@ -307,9 +320,16 @@ export class PaymentsService {
 
       // 9. Update installment paid flags if an installment plan exists.
       await this.paymentPlan.recomputeInstallmentsPaid(db, dto.invoiceId, newTotalPaid);
+      await this.paymentLinkInvalidation?.markForArchive(
+        db,
+        authCtx.schoolId,
+        dto.invoiceId,
+      );
 
       return toDto(updated as PaymentRow);
     });
+    await this.paymentLinkInvalidation?.archivePending(authCtx.schoolId, dto.invoiceId);
+    return result;
   }
 
   // ─── Initiate Paystack payment ─────────────────────────────────────────────
@@ -436,6 +456,7 @@ export class PaymentsService {
     }
     const { schoolId, paymentId } = parsed;
 
+    let balanceChanged = false;
     await withTenant(schoolId, async (db) => {
       const payment = await db.payment.findUnique({
         where: { id: paymentId },
@@ -470,10 +491,143 @@ export class PaymentsService {
       if (eventType === "charge.success") {
         const paidAt = data.paid_at ? new Date(data.paid_at) : new Date();
         await this.applyPaystackSuccess(db, payment, data as Record<string, unknown>, paidAt);
+        await this.paymentLinkInvalidation?.markForArchive(db, schoolId, payment.invoiceId);
+        balanceChanged = true;
       } else {
         await this.applyPaystackFailed(db, payment);
       }
     });
+    if (balanceChanged) {
+      await this.paymentLinkInvalidation?.archivePending(schoolId);
+    }
+  }
+
+  async handlePaymentRequestWebhook(event: PaystackWebhookEvent): Promise<void> {
+    if (event.event !== "paymentrequest.success") return;
+    const metadata = asRecord(event.data.metadata);
+    const schoolId = asUuid(metadata?.schoolId);
+    const linkId = asUuid(metadata?.schoolKitPaymentLinkId);
+    const invoiceId = asUuid(metadata?.invoiceId);
+    if (!schoolId || !linkId || !invoiceId) {
+      this.logger.error("Payment Request webhook rejected: invalid correlation metadata");
+      return;
+    }
+
+    const link = await withTenant(schoolId, (db) =>
+      db.paymentLink.findUnique({ where: { id: linkId } }),
+    );
+    if (
+      !link ||
+      link.schoolId !== schoolId ||
+      link.invoiceId !== invoiceId ||
+      !link.requestCode ||
+      !link.requestId ||
+      !link.paystackCustomerCode ||
+      !["LIVE", "PAID"].includes(link.status)
+    ) {
+      this.logger.error("Payment Request webhook rejected: stored link correlation failed");
+      return;
+    }
+    if (link.status === "PAID") return;
+
+    const request = await this.paystack.getPaymentRequest(link.requestCode);
+    const requestMetadata = request.metadata;
+    if (
+      BigInt(request.id) !== link.requestId ||
+      request.request_code !== link.requestCode ||
+      request.amount !== link.amount ||
+      request.currency !== link.currency ||
+      request.status !== "success" ||
+      request.split_code === null ||
+      request.customer.customer_code !== link.paystackCustomerCode ||
+      requestMetadata?.schoolId !== schoolId ||
+      requestMetadata?.invoiceId !== invoiceId ||
+      requestMetadata?.schoolKitPaymentLinkId !== linkId
+    ) {
+      this.logger.error("Payment Request webhook rejected: Paystack request verification mismatch");
+      return;
+    }
+
+    const embedded = request.transactions?.find((transaction) => transaction.status === "success");
+    const eventTransaction = asRecord(event.data.transaction);
+    const reference =
+      (typeof eventTransaction?.reference === "string" ? eventTransaction.reference : undefined) ??
+      embedded?.reference;
+    if (!reference) {
+      this.logger.error("Payment Request webhook rejected: successful transaction missing");
+      return;
+    }
+    const transaction = await this.paystack.verifyTransaction(reference);
+    if (
+      transaction.status !== "success" ||
+      transaction.reference !== reference ||
+      transaction.amount !== link.amount ||
+      transaction.currency !== link.currency ||
+      transaction.split?.split_code !== request.split_code
+    ) {
+      this.logger.error("Payment Request webhook rejected: transaction verification mismatch");
+      return;
+    }
+
+    const paidAt = transaction.paid_at ? new Date(transaction.paid_at) : new Date();
+    const applied = await withTenant(schoolId, async (db) => {
+      const invoice = await db.invoice.findUnique({ where: { id: invoiceId } });
+      if (!invoice || invoice.schoolId !== schoolId) return false;
+      const claim = await db.paymentLink.updateMany({
+        where: { id: linkId, schoolId, invoiceId, status: "LIVE" },
+        data: { status: "PAID", paidAt, hostedUrl: null, failureCode: null },
+      });
+      if (claim.count === 0) return false;
+
+      const payment = await db.payment.create({
+          data: {
+            schoolId,
+            invoiceId,
+            studentId: invoice.studentId,
+            amount: link.amount,
+            method: "PAYSTACK",
+            status: "SUCCESS",
+            paystackReference: reference,
+            paystackData: transaction as object,
+            recordedBy: link.createdBy,
+            paidAt,
+          },
+      });
+      const aggregate = await db.payment.aggregate({
+          where: { invoiceId, status: "SUCCESS" },
+          _sum: { amount: true },
+      });
+      const newTotalPaid = aggregate._sum.amount ?? 0;
+      const newStatus = computeInvoiceStatus(newTotalPaid, invoice.totalDue);
+      await db.invoice.update({
+          where: { id: invoiceId },
+          data: { totalPaid: newTotalPaid, status: newStatus },
+      });
+      await this.paymentLinkInvalidation?.markForArchive(db, schoolId, invoiceId, linkId);
+      await db.auditLog.createMany({
+          data: [
+            {
+              schoolId,
+              userId: null,
+              action: AUDIT_PAYSTACK_CONFIRM,
+              entityType: "payment",
+              entityId: payment.id,
+              metadata: { invoiceId, amount: link.amount, newInvoiceStatus: newStatus, newTotalPaid },
+            },
+            {
+              schoolId,
+              userId: null,
+              action: "payment-link.paid",
+              entityType: "payment_link",
+              entityId: linkId,
+              metadata: { invoiceId, paymentId: payment.id, reference },
+            },
+          ],
+      });
+      await this.paymentPlan.recomputeInstallmentsPaid(db, invoiceId, newTotalPaid);
+      return true;
+    });
+    if (applied) await this.paymentLinkInvalidation?.archivePending(schoolId, invoiceId);
   }
 
   // ─── Verify Paystack payment (self-heal) ───────────────────────────────────

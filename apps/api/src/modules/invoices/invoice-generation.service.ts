@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, Optional } from "@nestjs/common";
 
 import { withTenant, type PrismaClient } from "@school-kit/db";
 import {
@@ -21,6 +21,7 @@ import {
   type DiscountRuleForSnapshot,
   type FeeItemForSnapshot,
 } from "./invoice-snapshot.js";
+import { PaymentLinkInvalidationService } from "./payment-link-invalidation.service.js";
 
 interface RequestContext {
   ipAddress: string | null;
@@ -45,6 +46,10 @@ interface TermContext {
 
 @Injectable()
 export class InvoiceGenerationService {
+  constructor(
+    @Optional() private readonly paymentLinkInvalidation?: PaymentLinkInvalidationService,
+  ) {}
+
   // ─── Generate ──────────────────────────────────────────────────────────────
 
   async generateForArm(
@@ -247,7 +252,7 @@ export class InvoiceGenerationService {
   // ─── Cancel ────────────────────────────────────────────────────────────────
 
   async cancel(authCtx: AuthContext, id: string, reqCtx: RequestContext): Promise<InvoiceDto> {
-    return withTenant(authCtx.schoolId, async (db) => {
+    const result = await withTenant(authCtx.schoolId, async (db) => {
       const row = await db.invoice.findUnique({ where: { id } });
       if (!row) throw new NotFoundError("Invoice not found.");
 
@@ -282,9 +287,12 @@ export class InvoiceGenerationService {
           metadata: { previousStatus: row.status },
         },
       });
+      await this.paymentLinkInvalidation?.markForArchive(db, authCtx.schoolId, id);
 
       return toDto(updated, updated.items as unknown as InvoiceLineItemDto[]);
     });
+    await this.paymentLinkInvalidation?.archivePending(authCtx.schoolId, id);
+    return result;
   }
 
   // ─── Private helpers ───────────────────────────────────────────────────────

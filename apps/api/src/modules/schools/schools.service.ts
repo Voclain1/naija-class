@@ -119,21 +119,31 @@ export class SchoolsService {
     if (input.paystackSubaccountCode !== undefined || input.paystackPaymentsEnabled !== undefined) {
       const current = await basePrisma.school.findUnique({
         where: { id: authCtx.schoolId },
-        select: { paystackSubaccountCode: true, paystackPaymentsEnabled: true },
+        select: {
+          paystackSubaccountCode: true,
+          paystackSplitCode: true,
+          paystackPaymentsEnabled: true,
+        },
       });
       const effectiveCode =
         input.paystackSubaccountCode !== undefined
           ? input.paystackSubaccountCode
           : (current?.paystackSubaccountCode ?? null);
+      const subaccountChanged =
+        input.paystackSubaccountCode !== undefined &&
+        input.paystackSubaccountCode !== current?.paystackSubaccountCode;
       const effectiveEnabled =
         input.paystackPaymentsEnabled !== undefined
           ? input.paystackPaymentsEnabled
-          : (current?.paystackPaymentsEnabled ?? false);
+          : subaccountChanged
+            ? false
+            : (current?.paystackPaymentsEnabled ?? false);
+      const effectiveSplitCode = subaccountChanged ? null : (current?.paystackSplitCode ?? null);
 
-      if (effectiveEnabled && !effectiveCode) {
+      if (effectiveEnabled && (!effectiveCode || !effectiveSplitCode)) {
         throw new ConflictError(
           "PAYSTACK_NOT_CONFIGURED",
-          "Cannot enable Paystack payments without a valid subaccount code configured first.",
+          "Cannot enable Paystack payments until assisted setup has verified both the subaccount and its transaction split.",
         );
       }
 
@@ -159,6 +169,12 @@ export class SchoolsService {
 
       if (input.paystackSubaccountCode !== undefined) {
         data.paystackSubaccountCode = input.paystackSubaccountCode;
+        if (subaccountChanged) {
+          // A split is bound to exactly one subaccount. Never let a replaced
+          // code inherit the previous school's routing object.
+          data.paystackSplitCode = null;
+          data.paystackPaymentsEnabled = false;
+        }
       }
       if (input.paystackPaymentsEnabled !== undefined) {
         data.paystackPaymentsEnabled = input.paystackPaymentsEnabled;
@@ -565,6 +581,7 @@ const SCHOOL_RESPONSE_SELECT = {
   ndprConsentAt: true,
   subjectAttendanceEnabled: true,
   paystackSubaccountCode: true,
+  paystackSplitCode: true,
   paystackPaymentsEnabled: true,
   createdAt: true,
   updatedAt: true,
@@ -589,6 +606,7 @@ function toSchoolMeDto(school: SchoolRow): SchoolMeDto {
     ndprConsentAt: school.ndprConsentAt,
     subjectAttendanceEnabled: school.subjectAttendanceEnabled,
     paystackSubaccountCode: school.paystackSubaccountCode,
+    paystackSplitCode: school.paystackSplitCode,
     paystackPaymentsEnabled: school.paystackPaymentsEnabled,
     // Only patchMe's own return (above) ever overrides this to a real value
     // — see SchoolMeDto's field comment.
