@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { Copy, ExternalLink, Link2, MessageCircle, RefreshCw } from "lucide-react";
+import { Archive, Copy, ExternalLink, Link2, MessageCircle, RefreshCw } from "lucide-react";
 
 import type {
   CreatePaymentPlanInput,
@@ -25,7 +25,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { listTerms } from "@/lib/academic-years/academic-years-api";
 import { formatKobo } from "@/lib/finance/format";
-import { cancelInvoice, createPaymentLink, getInvoice, getPaymentLink } from "@/lib/finance/invoices-api";
+import { archivePaymentLink, cancelInvoice, createPaymentLink, getInvoice, getPaymentLink } from "@/lib/finance/invoices-api";
 import {
   createPaymentPlan,
   deletePaymentPlan,
@@ -361,6 +361,19 @@ export default function InvoiceDetailPage() {
     }
   }
 
+  async function handleArchivePaymentLink() {
+    if (!invoice || !window.confirm("Archive this payment link? It will stop accepting payments and cannot be restored.")) return;
+    setPaymentLinkBusy(true);
+    setPaymentLinkError(null);
+    try {
+      setPaymentLink(await archivePaymentLink(invoice.id));
+    } catch (e) {
+      setPaymentLinkError(e instanceof Error ? e.message : "Failed to archive payment link.");
+    } finally {
+      setPaymentLinkBusy(false);
+    }
+  }
+
   async function handleCopyPaymentLink(url: string) {
     await navigator.clipboard.writeText(url);
     setLinkCopied(true);
@@ -577,6 +590,9 @@ export default function InvoiceDetailPage() {
                   >
                     <MessageCircle className="mr-2 h-4 w-4" /> Share on WhatsApp
                   </a>
+                </Button>
+                <Button variant="outline" onClick={handleArchivePaymentLink} disabled={paymentLinkBusy}>
+                  <Archive className="mr-2 h-4 w-4" /> {paymentLinkBusy ? "Archiving…" : "Archive link"}
                 </Button>
               </div>
               <p className="text-xs text-muted-foreground">

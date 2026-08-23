@@ -229,6 +229,74 @@ describe("PaymentLinksService CP2 — real RLS, uniqueness, and lifecycle", () =
       ),
     ).toBe(1);
     expect(await service.get(authA, invoiceA)).toEqual(created);
+
+    expect(await service.archive(authA, invoiceA, { ipAddress: "127.0.0.1" })).toEqual({
+      state: "NOT_CREATED",
+    });
+    expect(paystack.archivePaymentRequest).toHaveBeenCalledWith(`PRQ_${runId}`);
+    const archived = await withTenant(schoolA, (db) =>
+      db.paymentLink.findUniqueOrThrow({ where: { id: created.state === "LIVE" ? created.id : "" } }),
+    );
+    expect(archived).toMatchObject({ status: "ARCHIVED", hostedUrl: null, failureCode: null });
+    expect(archived.archivedAt).toBeInstanceOf(Date);
+    expect(
+      await withTenant(schoolA, (db) =>
+        db.auditLog.count({
+          where: {
+            action: "payment-link.archive",
+            entityId: created.state === "LIVE" ? created.id : "",
+            userId: userA,
+          },
+        }),
+      ),
+    ).toBe(1);
+  });
+
+  it("restores the live link when Paystack rejects a manual archive and denies cross-tenant targets", async () => {
+    const link = await withTenant(schoolA, (db) =>
+      db.paymentLink.create({
+        data: {
+          schoolId: schoolA,
+          invoiceId: invoiceA,
+          amount: 250_000,
+          createdBy: userA,
+          requestCode: `PRQ_archive_failure_${runId}`,
+          hostedUrl: `https://paystack.com/pay/PRQ_archive_failure_${runId}`,
+          status: "LIVE",
+        },
+      }),
+    );
+    const paystack = {
+      archivePaymentRequest: vi.fn(async () => {
+        throw new Error("Paystack archive unavailable");
+      }),
+    };
+    const service = new PaymentLinksService(paystack as never);
+
+    await expect(
+      service.archive(authA, invoiceB, { ipAddress: "127.0.0.1" }),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+    expect(paystack.archivePaymentRequest).not.toHaveBeenCalled();
+
+    await expect(
+      service.archive(authA, invoiceA, { ipAddress: "127.0.0.1" }),
+    ).rejects.toThrow("Paystack archive unavailable");
+    expect(paystack.archivePaymentRequest).toHaveBeenCalledWith(`PRQ_archive_failure_${runId}`);
+    const restored = await withTenant(schoolA, (db) =>
+      db.paymentLink.findUniqueOrThrow({ where: { id: link.id } }),
+    );
+    expect(restored).toMatchObject({
+      status: "LIVE",
+      hostedUrl: `https://paystack.com/pay/PRQ_archive_failure_${runId}`,
+      failureCode: "PAYSTACK_PAYMENT_REQUEST_ARCHIVE_FAILED",
+      retryCount: 1,
+    });
+    expect(restored.archivedAt).toBeNull();
+    expect(
+      await withTenant(schoolA, (db) =>
+        db.auditLog.count({ where: { action: "payment-link.archive", entityId: link.id } }),
+      ),
+    ).toBe(0);
   });
 
   it("fails closed on a Paystack verification mismatch and exposes only a retryable failure", async () => {
