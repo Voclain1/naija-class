@@ -127,15 +127,32 @@ fulfilment is required before re-enabling.
 
 1. Run `pnpm db:census-paystack-splits`. This is a read-only `DIRECT_URL`
    census and prints opaque school ids only. Review the resulting manifest.
-2. Dry-run each id with
+2. Select exactly one pilot school. Dry-run only that id with
    `pnpm api:backfill-paystack-splits -- --school-id <id>`.
-3. Apply only reviewed ids, passing the acting platform admin's tenant and
-   user ids for the audit row:
+3. Apply only that reviewed pilot, passing the same id again as an explicit
+   confirmation plus the acting platform admin's tenant and user ids for the
+   audit row:
    `pnpm api:backfill-paystack-splits -- --apply --school-id <id>
-   --actor-school-id <id> --actor-user-id <id>`.
-4. Rerun the census. `missingCount` must be zero. Apply mode independently
-   fetch-verifies the stored subaccount before it creates/reconciles and
-   fetch-verifies the split; database eligibility alone is not sufficient.
+   --confirm-school-id <same-id> --actor-school-id <operator-tenant-id>
+   --actor-user-id <operator-user-id>`.
+4. Rerun the same single-school command without `--apply`. It must return
+   `already-verified`; this performs a fresh Paystack fetch and validates the
+   percentage-100 split, sole expected subaccount and fee bearer independently
+   of the database write. Confirm exactly one `paystack-split.backfilled` audit
+   row for that school.
+5. Smoke the pilot end to end before selecting another school: create and
+   reload one durable link, confirm its no-recipient share URL, complete a test
+   payment, then verify the Payment row, invoice balance, webhook idempotency,
+   link consumption and remote request archival. Stop on any mismatch,
+   duplicate credit or unarchived stale amount.
+6. Wider rollout is repetition of steps 2–5, one school per invocation and
+   with observation between schools. The CLI rejects zero or multiple
+   `--school-id` arguments and rejects apply unless `--confirm-school-id`
+   exactly matches. There is deliberately no blanket-apply mode.
+7. Rerun the census after the final reviewed school. `missingCount` must be
+   zero only when the deliberately staged rollout is complete. Database
+   eligibility alone is never sufficient; every apply independently verifies
+   the stored subaccount and fetch-verifies the resulting Paystack split.
 
 `PAYSTACK_SETUP_EMAIL` must be set for the "a school is waiting" notification
 to send. If it is unset, requests still land in the queue — the email is a

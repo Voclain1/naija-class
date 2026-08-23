@@ -159,7 +159,11 @@ those; it doesn't replace them.
   copy action and no-recipient WhatsApp share. Real Chrome passes covered
   owner, admin and bursar. The first bursar pass caught a raw-student-id
   fallback; the payment-link API now supplies the tenant-scoped display label
-  without widening student-read permission. CP5 rollout is next.
+  without widening student-read permission. CP5's rollout mechanism now
+  mirrors AI enablement: exactly one reviewed school per invocation, matching
+  apply-time confirmation, active platform-admin attribution, independent
+  remote re-verification and full money-path smoke evidence before selecting
+  another school. Deployment/pilot execution is next; there is no bulk mode.
 - **RBAC conformance PR #204 is merged on `main`.** Its real-DI I1/I2 gate
   holds all 20 deliberate disagreements as six reasoned exception groups and
   enforces zero undocumented, stale, or duplicate exceptions. The ~89-site

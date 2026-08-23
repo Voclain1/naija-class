@@ -3,24 +3,12 @@ import { ConfigService } from "@nestjs/config";
 import { withTenant } from "@school-kit/db";
 
 import { PaystackService } from "../src/common/paystack/paystack.service.js";
+import { parsePaystackSplitBackfillArgs } from "../src/common/paystack/paystack-split-backfill.args.js";
 
 async function main(): Promise<void> {
-const args = process.argv.slice(2);
-const apply = args.includes("--apply");
-const actorIndex = args.indexOf("--actor-user-id");
-const actorUserId = actorIndex >= 0 ? args[actorIndex + 1] : undefined;
-const actorSchoolIndex = args.indexOf("--actor-school-id");
-const actorSchoolId = actorSchoolIndex >= 0 ? args[actorSchoolIndex + 1] : undefined;
-const schoolIds = args
-  .map((arg, index) => (arg === "--school-id" ? args[index + 1] : undefined))
-  .filter((value): value is string => Boolean(value));
-
-if (schoolIds.length === 0) {
-  throw new Error("Pass at least one operator-reviewed --school-id <uuid>.");
-}
-if (apply && (!actorUserId || !actorSchoolId)) {
-  throw new Error("--apply requires --actor-user-id and --actor-school-id for audit.");
-}
+const { apply, schoolId, actorUserId, actorSchoolId } = parsePaystackSplitBackfillArgs(
+  process.argv.slice(2),
+);
 if (apply) {
   const actor = await withTenant(actorSchoolId!, (db) =>
     db.user.findFirst({
@@ -36,9 +24,9 @@ if (apply) {
 const paystack = new PaystackService(new ConfigService(process.env));
 const results: Array<Record<string, unknown>> = [];
 
-for (const schoolId of schoolIds) {
-  const school = await withTenant(schoolId, (db) => db.school.findUnique({
-    where: { id: schoolId },
+for (const reviewedSchoolId of [schoolId]) {
+  const school = await withTenant(reviewedSchoolId, (db) => db.school.findUnique({
+    where: { id: reviewedSchoolId },
     select: {
       id: true,
       paystackPaymentsEnabled: true,
@@ -46,50 +34,50 @@ for (const schoolId of schoolIds) {
       paystackSplitCode: true,
     },
   }));
-  if (!school) throw new Error(`School not found: ${schoolId}`);
+  if (!school) throw new Error(`School not found: ${reviewedSchoolId}`);
   if (!school.paystackPaymentsEnabled || !school.paystackSubaccountCode) {
-    results.push({ schoolId, result: "ineligible" });
+    results.push({ schoolId: reviewedSchoolId, result: "ineligible" });
     continue;
   }
   if (school.paystackSplitCode) {
     const split = await paystack.getSplit(school.paystackSplitCode);
     paystack.assertSchoolPercentageSplit(split, school.paystackSubaccountCode);
-    results.push({ schoolId, result: "already-verified", splitCode: split.split_code });
+    results.push({ schoolId: reviewedSchoolId, result: "already-verified", splitCode: split.split_code });
     continue;
   }
   if (!apply) {
-    results.push({ schoolId, result: "would-create" });
+    results.push({ schoolId: reviewedSchoolId, result: "would-create" });
     continue;
   }
 
   const subaccount = await paystack.getSubaccount(school.paystackSubaccountCode);
   if (!subaccount.active) {
-    throw new Error(`Paystack subaccount is inactive for school ${schoolId}.`);
+    throw new Error(`Paystack subaccount is inactive for school ${reviewedSchoolId}.`);
   }
   const split = await paystack.ensureSchoolPercentageSplit({
-    schoolId,
+    schoolId: reviewedSchoolId,
     subaccountCode: school.paystackSubaccountCode,
   });
-  const wrote = await withTenant(schoolId, async (db) => {
+  const wrote = await withTenant(reviewedSchoolId, async (db) => {
     const update = await db.school.updateMany({
-      where: { id: schoolId, paystackSplitCode: null },
+      where: { id: reviewedSchoolId, paystackSplitCode: null },
       data: { paystackSplitCode: split.split_code },
     });
     if (update.count === 1) {
       await db.auditLog.create({
         data: {
-          schoolId,
+          schoolId: reviewedSchoolId,
           userId: actorUserId!,
           action: "paystack-split.backfilled",
           entityType: "school",
-          entityId: schoolId,
+          entityId: reviewedSchoolId,
           metadata: { splitCode: split.split_code, subaccountCode: school.paystackSubaccountCode },
         },
       });
     }
     return update.count;
   });
-  results.push({ schoolId, result: wrote === 1 ? "created" : "concurrent-skip", splitCode: split.split_code });
+  results.push({ schoolId: reviewedSchoolId, result: wrote === 1 ? "created" : "concurrent-skip", splitCode: split.split_code });
 }
 
 console.info(JSON.stringify({ mode: apply ? "apply" : "dry-run", results }, null, 2));

@@ -810,6 +810,14 @@ backfill and reconcile in Paystack; then all eligible schools; smoke create,
 reload, share, test pay, webhook, invoice update and archive. Stop rollout on
 any split mismatch, duplicate credit, or unarchived stale amount.
 
+Rollout rail confirmed 2026-08-23: this mirrors AI enablement's explicit
+per-school discipline, not a blanket flip. The backfill accepts exactly one
+`--school-id` per invocation and apply additionally requires a matching
+`--confirm-school-id` plus an active platform-admin actor for audit. The pilot
+must be rerun read-only to fetch-verify Paystack and pass the complete money
+smoke before a second school is selected. Wider enablement repeats that same
+sequence with observation between schools; no bulk-apply path exists.
+
 These are checkpoints within one payment-links module PR unless review finds a
 reason to split deployment. No checkpoint may expose UI before its server and
 money-path gate is green.
