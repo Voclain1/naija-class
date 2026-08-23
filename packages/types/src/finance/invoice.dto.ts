@@ -44,6 +44,8 @@ export interface InvoiceDto {
   studentId: string;
   termId: string;
   academicYearId: string;
+  /** Immutable issuance-time arm snapshot; null only for unresolved legacy rows. */
+  classArmId: string | null;
   status: InvoiceStatus;
   items: InvoiceLineItemDto[];
   totalAmount: number;   // kobo

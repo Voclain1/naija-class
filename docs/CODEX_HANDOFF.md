@@ -135,6 +135,19 @@ those; it doesn't replace them.
 
 ## Latest state as of this handoff (updated 2026-08-23)
 
+- **Invoice grouping by arm CP1 is complete on
+  `feat/invoice-arm-snapshots` as a single conventional commit.** PR #209 is merged and
+  deployed as `28afbb6`; its production Virgo invoice proof renders
+  `Issued by — Arinze Belolisah`. CP1 adds the nullable legacy-compatible
+  issuance-time `Invoice.classArmId` snapshot and tenant/term/arm index; all
+  new invoice creation populates it and arm filters use it directly. The
+  operator backfill is one-school-only, dry-run-first, exact-confirmation and
+  platform-admin attributed. It refuses missing, later-created or
+  post-issuance-transferred enrollment guesses, reconciles write counts and
+  creates one audit row. Real Postgres evidence passes 43/43, including the
+  critical same-term Arm A issue then Arm B transfer remaining historically in
+  Arm A. CP2 aggregates is next after checkpoint review.
+
 - **Two invoice-read bugs are fixed on branch
   `fix/invoice-read-display-and-arm-filter`, pending PR.** The invoice list's
   `classArmId` selector was silently ignored by the API; `findAll()` now

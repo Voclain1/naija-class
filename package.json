@@ -35,7 +35,8 @@
     "kill-ports": "npx kill-port 3001 3002 4000",
     "db:census-academic-calendar": "pnpm --filter @school-kit/db census-academic-calendar",
     "db:census-paystack-splits": "pnpm --filter @school-kit/db census-paystack-splits",
-    "api:backfill-paystack-splits": "pnpm --filter @school-kit/api backfill-paystack-splits"
+    "api:backfill-paystack-splits": "pnpm --filter @school-kit/api backfill-paystack-splits",
+    "api:backfill-invoice-arms": "pnpm --filter @school-kit/api backfill-invoice-arms"
   },
   "devDependencies": {
     "turbo": "^2.3.3",
