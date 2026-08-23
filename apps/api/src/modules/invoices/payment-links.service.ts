@@ -240,6 +240,93 @@ export class PaymentLinksService {
       throw error;
     }
   }
+
+  async archive(
+    authCtx: AuthContext,
+    invoiceId: string,
+    reqCtx: RequestContext,
+  ): Promise<PaymentLinkStateDto> {
+    await assertUserActiveAndHasOneOf(authCtx, ["owner", "admin", "bursar"]);
+
+    const link = await withTenant(authCtx.schoolId, async (db) => {
+      const invoice = await db.invoice.findFirst({
+        where: { id: invoiceId, schoolId: authCtx.schoolId },
+        select: { id: true },
+      });
+      if (!invoice) throw new NotFoundError("Invoice not found.");
+
+      const active = await db.paymentLink.findFirst({
+        where: { schoolId: authCtx.schoolId, invoiceId, status: "LIVE" },
+        orderBy: { createdAt: "desc" },
+        select: { id: true, requestCode: true, hostedUrl: true },
+      });
+      if (!active?.requestCode || !active.hostedUrl) {
+        throw new ConflictError(
+          "PAYMENT_LINK_NOT_LIVE",
+          "There is no live payment link to archive.",
+        );
+      }
+
+      const reserved = await db.paymentLink.updateMany({
+        where: { id: active.id, schoolId: authCtx.schoolId, invoiceId, status: "LIVE" },
+        data: { status: "ARCHIVE_PENDING", hostedUrl: null, lastAttemptAt: new Date() },
+      });
+      if (reserved.count !== 1) {
+        throw new ConflictError(
+          "PAYMENT_LINK_ARCHIVE_IN_PROGRESS",
+          "This payment link is already being archived.",
+        );
+      }
+      return {
+        id: active.id,
+        requestCode: active.requestCode,
+        hostedUrl: active.hostedUrl,
+      };
+    });
+
+    try {
+      await this.paystack.archivePaymentRequest(link.requestCode);
+    } catch (error) {
+      await withTenant(authCtx.schoolId, (db) =>
+        db.paymentLink.update({
+          where: { id: link.id },
+          data: {
+            status: "LIVE",
+            hostedUrl: link.hostedUrl,
+            failureCode: "PAYSTACK_PAYMENT_REQUEST_ARCHIVE_FAILED",
+            retryCount: { increment: 1 },
+            lastAttemptAt: new Date(),
+          },
+        }),
+      );
+      throw error;
+    }
+
+    await withTenant(authCtx.schoolId, async (db) => {
+      await db.paymentLink.update({
+        where: { id: link.id },
+        data: {
+          status: "ARCHIVED",
+          archivedAt: new Date(),
+          hostedUrl: null,
+          failureCode: null,
+          lastAttemptAt: new Date(),
+        },
+      });
+      await db.auditLog.create({
+        data: {
+          schoolId: authCtx.schoolId,
+          userId: authCtx.userId,
+          action: "payment-link.archive",
+          entityType: "payment_link",
+          entityId: link.id,
+          ipAddress: reqCtx.ipAddress,
+          metadata: { invoiceId, requestCode: link.requestCode, reason: "manually-requested" },
+        },
+      });
+    });
+    return { state: "NOT_CREATED" };
+  }
 }
 
 function domainFailureCode(error: unknown): string {

@@ -65,3 +65,9 @@ export function createPaymentLink(id: string): Promise<PaymentLinkStateDto> {
     method: "POST",
   });
 }
+
+export function archivePaymentLink(id: string): Promise<PaymentLinkStateDto> {
+  return apiFetch<PaymentLinkStateDto>(`/invoices/${encodeURIComponent(id)}/payment-link/archive`, {
+    method: "POST",
+  });
+}

@@ -104,6 +104,16 @@ export class InvoicesController {
     return this.paymentLinks.create(authCtx, id, { ipAddress: ip });
   }
 
+  @Post(":id/payment-link/archive")
+  @Permissions("payment.record")
+  async archivePaymentLink(
+    @CurrentUser() authCtx: AuthContext,
+    @Param("id") id: string,
+    @Ip() ip: string,
+  ): Promise<PaymentLinkStateDto> {
+    return this.paymentLinks.archive(authCtx, id, { ipAddress: ip });
+  }
+
   @Post(":id/cancel")
   @Permissions("invoice.cancel")
   async cancel(
