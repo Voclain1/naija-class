@@ -440,7 +440,10 @@ export default function InvoiceDetailPage() {
         </div>
         <div>
           <dt className="text-muted-foreground">Issued by</dt>
-          <dd className="font-mono">{invoice.issuedBy ?? "—"}</dd>
+          <dd>
+            {invoice.issuedByName ??
+              (invoice.issuedBy ? "Former or unavailable staff member" : "—")}
+          </dd>
         </div>
       </dl>
 

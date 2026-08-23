@@ -53,6 +53,9 @@ export interface InvoiceDto {
   dueDate: string | null; // ISO date string (DATE col, no time)
   issuedAt: Date | null;
   issuedBy: string | null;
+  // Tenant-scoped server resolution of `issuedBy`. Consumers must never
+  // render the raw user id as a human-facing fallback.
+  issuedByName: string | null;
   createdAt: Date;
   updatedAt: Date;
 }

@@ -1,6 +1,6 @@
 import { Injectable, Optional } from "@nestjs/common";
 
-import { withTenant, type PrismaClient } from "@school-kit/db";
+import { Prisma, withTenant, type PrismaClient } from "@school-kit/db";
 import {
   ConflictError,
   NotFoundError,
@@ -85,6 +85,7 @@ export class InvoiceGenerationService {
       );
 
       const issuedAt = new Date();
+      const issuerName = await this.resolveIssuerName(db, authCtx.schoolId, authCtx.userId);
       const created: InvoiceDto[] = [];
       let skipped = 0;
 
@@ -152,7 +153,7 @@ export class InvoiceGenerationService {
           },
         });
 
-        created.push(toDto(invoice, snapshot.items));
+        created.push(toDto(invoice, snapshot.items, issuerName));
       }
 
       return { created: created.length, skipped, invoices: created };
@@ -217,14 +218,40 @@ export class InvoiceGenerationService {
     return withTenant(authCtx.schoolId, async (db) => {
       const row = await db.invoice.findUnique({ where: { id } });
       if (!row) throw new NotFoundError("Invoice not found.");
-      return toDto(row, row.items as unknown as InvoiceLineItemDto[]);
+      const issuerName = row.issuedBy
+        ? await this.resolveIssuerName(db, authCtx.schoolId, row.issuedBy)
+        : null;
+      return toDto(row, row.items as unknown as InvoiceLineItemDto[], issuerName);
     });
   }
 
   async findAll(authCtx: AuthContext, query: ListInvoicesInput): Promise<PaginatedInvoicesDto> {
     return withTenant(authCtx.schoolId, async (db) => {
-      const where = {
+      let enrollmentScope: Prisma.InvoiceWhereInput = {};
+      if (query.classArmId) {
+        // Invoice stores a student + term snapshot rather than a mutable arm
+        // FK. Match exact enrollment pairs so moving arm next term cannot
+        // make an older invoice appear under the student's new arm.
+        const enrollments = await db.enrollment.findMany({
+          where: {
+            schoolId: authCtx.schoolId,
+            classArmId: query.classArmId,
+            ...(query.termId ? { termId: query.termId } : {}),
+          },
+          select: { studentId: true, termId: true },
+        });
+
+        if (enrollments.length === 0) {
+          return { data: [], total: 0, page: query.page, limit: query.limit };
+        }
+        enrollmentScope = {
+          OR: enrollments.map(({ studentId, termId }) => ({ studentId, termId })),
+        };
+      }
+
+      const where: Prisma.InvoiceWhereInput = {
         schoolId: authCtx.schoolId,
+        ...enrollmentScope,
         ...(query.termId ? { termId: query.termId } : {}),
         ...(query.studentId ? { studentId: query.studentId } : {}),
         ...(query.status ? { status: query.status } : {}),
@@ -240,8 +267,20 @@ export class InvoiceGenerationService {
         db.invoice.count({ where }),
       ]);
 
+      const issuerNames = await this.resolveIssuerNames(
+        db,
+        authCtx.schoolId,
+        rows.flatMap((row) => (row.issuedBy ? [row.issuedBy] : [])),
+      );
+
       return {
-        data: rows.map((r) => toDto(r, r.items as unknown as InvoiceLineItemDto[])),
+        data: rows.map((r) =>
+          toDto(
+            r,
+            r.items as unknown as InvoiceLineItemDto[],
+            r.issuedBy ? (issuerNames.get(r.issuedBy) ?? null) : null,
+          ),
+        ),
         total,
         page: query.page,
         limit: query.limit,
@@ -289,7 +328,10 @@ export class InvoiceGenerationService {
       });
       await this.paymentLinkInvalidation?.markForArchive(db, authCtx.schoolId, id);
 
-      return toDto(updated, updated.items as unknown as InvoiceLineItemDto[]);
+      const issuerName = updated.issuedBy
+        ? await this.resolveIssuerName(db, authCtx.schoolId, updated.issuedBy)
+        : null;
+      return toDto(updated, updated.items as unknown as InvoiceLineItemDto[], issuerName);
     });
     await this.paymentLinkInvalidation?.archivePending(authCtx.schoolId, id);
     return result;
@@ -394,6 +436,32 @@ export class InvoiceGenerationService {
       },
     });
   }
+
+  private async resolveIssuerName(
+    db: PrismaClient,
+    schoolId: string,
+    userId: string,
+  ): Promise<string | null> {
+    const names = await this.resolveIssuerNames(db, schoolId, [userId]);
+    return names.get(userId) ?? null;
+  }
+
+  private async resolveIssuerNames(
+    db: PrismaClient,
+    schoolId: string,
+    userIds: string[],
+  ): Promise<Map<string, string>> {
+    const uniqueIds = [...new Set(userIds)];
+    if (uniqueIds.length === 0) return new Map();
+
+    const users = await db.user.findMany({
+      where: { schoolId, id: { in: uniqueIds } },
+      select: { id: true, firstName: true, lastName: true },
+    });
+    return new Map(
+      users.map((user) => [user.id, `${user.firstName} ${user.lastName}`.trim()]),
+    );
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -419,6 +487,7 @@ function toDto(
     updatedAt: Date;
   },
   items: InvoiceLineItemDto[],
+  issuedByName: string | null,
 ): InvoiceDto {
   return {
     id: row.id,
@@ -435,6 +504,7 @@ function toDto(
     dueDate: row.dueDate ? row.dueDate.toISOString().slice(0, 10) : null,
     issuedAt: row.issuedAt,
     issuedBy: row.issuedBy,
+    issuedByName,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
