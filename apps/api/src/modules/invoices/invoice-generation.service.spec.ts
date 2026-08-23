@@ -3,6 +3,10 @@ import { afterAll, describe, expect, it } from "vitest";
 import { basePrisma, withTenant } from "@school-kit/db";
 
 import { AuthService } from "../auth/auth.service.js";
+import {
+  applyInvoiceArmBackfill,
+  planInvoiceArmBackfill,
+} from "./invoice-arm-backfill.js";
 import { InvoiceGenerationService } from "./invoice-generation.service.js";
 import { buildSnapshot, computeRuleDiscount } from "./invoice-snapshot.js";
 
@@ -977,6 +981,59 @@ describe("InvoiceGenerationService (integration)", () => {
 
       expect(result).toMatchObject({ data: [], total: 0 });
     });
+
+    it("keeps an issued invoice in its original arm after the enrollment is transferred", async () => {
+      const { schoolId, ownerId } = await makeSchool("invoice-arm-snapshot-transfer");
+      const { academicYearId, termId, classLevelId, classArmId: originalArmId } =
+        await makeAcademicStructure(schoolId);
+      await makeFeeSetup(schoolId, ownerId, classLevelId, termId);
+      const newArmId = await withTenant(schoolId, async (db) => {
+        const arm = await db.classArm.create({
+          data: {
+            schoolId,
+            classLevelId,
+            name: `Transferred-${runId}`,
+            code: `transferred-${runId}`,
+          },
+          select: { id: true },
+        });
+        return arm.id;
+      });
+      const studentId = await makeStudent(schoolId, "invoice-arm-snapshot-transfer");
+      await enrollStudent(schoolId, studentId, originalArmId, termId, academicYearId);
+
+      const generated = await svc.generateForArm(
+        ctx(schoolId, ownerId),
+        { termId, classArmId: originalArmId },
+        reqCtx,
+      );
+      expect(generated.invoices[0].classArmId).toBe(originalArmId);
+
+      await withTenant(schoolId, (db) =>
+        db.enrollment.update({
+          where: { schoolId_studentId_termId: { schoolId, studentId, termId } },
+          data: { classArmId: newArmId },
+        }),
+      );
+
+      const originalArm = await svc.findAll(ctx(schoolId, ownerId), {
+        termId,
+        classArmId: originalArmId,
+        page: 1,
+        limit: 50,
+      });
+      const transferredArm = await svc.findAll(ctx(schoolId, ownerId), {
+        termId,
+        classArmId: newArmId,
+        page: 1,
+        limit: 50,
+      });
+
+      expect(originalArm.data.map((invoice) => invoice.id)).toEqual([
+        generated.invoices[0].id,
+      ]);
+      expect(transferredArm).toMatchObject({ data: [], total: 0 });
+    });
   });
 
   describe("findById", () => {
@@ -998,6 +1055,83 @@ describe("InvoiceGenerationService (integration)", () => {
       expect(invoice.issuedBy).toBe(ownerId); // attribution remains intact internally
       expect(invoice.issuedByName).toBe("Bisi Owner");
       expect(invoice.issuedByName).not.toContain(ownerId);
+    });
+  });
+
+  describe("legacy invoice arm backfill", () => {
+    it("plans, applies and exactly audits a provable legacy row", async () => {
+      const { schoolId, ownerId } = await makeSchool("invoice-arm-backfill");
+      const { academicYearId, termId, classLevelId, classArmId } =
+        await makeAcademicStructure(schoolId);
+      await makeFeeSetup(schoolId, ownerId, classLevelId, termId);
+      const studentId = await makeStudent(schoolId, "invoice-arm-backfill");
+      await enrollStudent(schoolId, studentId, classArmId, termId, academicYearId);
+      const generated = await svc.generateForArm(
+        ctx(schoolId, ownerId), { termId, classArmId }, reqCtx,
+      );
+      await withTenant(schoolId, (db) =>
+        db.invoice.update({ where: { id: generated.invoices[0].id }, data: { classArmId: null } }),
+      );
+
+      await withTenant(schoolId, async (db) => {
+        const plan = await planInvoiceArmBackfill(db, schoolId);
+        expect(plan).toMatchObject({
+          legacyInvoiceCount: 1,
+          candidates: [{ invoiceId: generated.invoices[0].id, classArmId }],
+          unresolved: [],
+          candidateCountByArm: { [classArmId]: 1 },
+        });
+        expect(await applyInvoiceArmBackfill(db, schoolId, ownerId, plan)).toBe(1);
+      });
+
+      const proof = await withTenant(schoolId, async (db) => ({
+        invoice: await db.invoice.findUnique({ where: { id: generated.invoices[0].id } }),
+        audits: await db.auditLog.findMany({
+          where: { schoolId, action: "invoice-arm.backfilled" },
+        }),
+      }));
+      expect(proof.invoice?.classArmId).toBe(classArmId);
+      expect(proof.audits).toHaveLength(1);
+      expect(proof.audits[0].userId).toBe(ownerId);
+      expect(proof.audits[0].metadata).toMatchObject({ updatedCount: 1, unresolvedCount: 0 });
+    });
+
+    it("leaves a post-issuance arm change unresolved instead of guessing", async () => {
+      const { schoolId, ownerId } = await makeSchool("invoice-arm-backfill-ambiguous");
+      const { academicYearId, termId, classLevelId, classArmId } =
+        await makeAcademicStructure(schoolId);
+      await makeFeeSetup(schoolId, ownerId, classLevelId, termId);
+      const studentId = await makeStudent(schoolId, "invoice-arm-backfill-ambiguous");
+      await enrollStudent(schoolId, studentId, classArmId, termId, academicYearId);
+      const generated = await svc.generateForArm(
+        ctx(schoolId, ownerId), { termId, classArmId }, reqCtx,
+      );
+
+      const plan = await withTenant(schoolId, async (db) => {
+        const enrollment = await db.enrollment.findUniqueOrThrow({
+          where: { schoolId_studentId_termId: { schoolId, studentId, termId } },
+        });
+        await db.invoice.update({
+          where: { id: generated.invoices[0].id }, data: { classArmId: null },
+        });
+        await db.auditLog.create({
+          data: {
+            schoolId,
+            userId: ownerId,
+            action: "enrollment.update",
+            entityType: "enrollment",
+            entityId: enrollment.id,
+            metadata: { previousArmId: classArmId, changed: ["classArm"] },
+          },
+        });
+        return planInvoiceArmBackfill(db, schoolId);
+      });
+
+      expect(plan.candidates).toEqual([]);
+      expect(plan.unresolved).toEqual([{
+        invoiceId: generated.invoices[0].id,
+        reason: "ARM_CHANGED_AFTER_INVOICE",
+      }]);
     });
   });
 });

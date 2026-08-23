@@ -1962,6 +1962,9 @@ model Invoice {
   studentId      String        @map("student_id") // plain-FK — validated in service
   termId         String        @map("term_id") // plain-FK
   academicYearId String        @map("academic_year_id") // denormalised from term at issue time
+  // Immutable issuance-time arm snapshot. Deliberately a plain FK: deleting or
+  // renaming an academic arm must not rewrite historical finance attribution.
+  classArmId     String?       @map("class_arm_id")
   status         InvoiceStatus @default(ISSUED)
   // Frozen snapshot of fee line items and applied discounts at issue time.
   // Shape: [{ feeItemId, categoryName, feeName, amount, discountsApplied: [{ ruleId, ruleName, discountAmount }], netAmount }]
@@ -1981,6 +1984,7 @@ model Invoice {
 
   @@unique([schoolId, studentId, termId])
   @@index([schoolId, status])
+  @@index([schoolId, termId, classArmId])
   @@map("invoices")
 }
 

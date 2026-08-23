@@ -122,6 +122,7 @@ export class InvoiceGenerationService {
             studentId,
             termId: dto.termId,
             academicYearId: term.academicYearId,
+            classArmId: dto.classArmId,
             status: "ISSUED",
             items: snapshot.items as object[],
             totalAmount: snapshot.totalAmount,
@@ -227,31 +228,9 @@ export class InvoiceGenerationService {
 
   async findAll(authCtx: AuthContext, query: ListInvoicesInput): Promise<PaginatedInvoicesDto> {
     return withTenant(authCtx.schoolId, async (db) => {
-      let enrollmentScope: Prisma.InvoiceWhereInput = {};
-      if (query.classArmId) {
-        // Invoice stores a student + term snapshot rather than a mutable arm
-        // FK. Match exact enrollment pairs so moving arm next term cannot
-        // make an older invoice appear under the student's new arm.
-        const enrollments = await db.enrollment.findMany({
-          where: {
-            schoolId: authCtx.schoolId,
-            classArmId: query.classArmId,
-            ...(query.termId ? { termId: query.termId } : {}),
-          },
-          select: { studentId: true, termId: true },
-        });
-
-        if (enrollments.length === 0) {
-          return { data: [], total: 0, page: query.page, limit: query.limit };
-        }
-        enrollmentScope = {
-          OR: enrollments.map(({ studentId, termId }) => ({ studentId, termId })),
-        };
-      }
-
       const where: Prisma.InvoiceWhereInput = {
         schoolId: authCtx.schoolId,
-        ...enrollmentScope,
+        ...(query.classArmId ? { classArmId: query.classArmId } : {}),
         ...(query.termId ? { termId: query.termId } : {}),
         ...(query.studentId ? { studentId: query.studentId } : {}),
         ...(query.status ? { status: query.status } : {}),
@@ -475,6 +454,7 @@ function toDto(
     studentId: string;
     termId: string;
     academicYearId: string;
+    classArmId: string | null;
     status: string;
     totalAmount: number;
     totalDiscount: number;
@@ -495,6 +475,7 @@ function toDto(
     studentId: row.studentId,
     termId: row.termId,
     academicYearId: row.academicYearId,
+    classArmId: row.classArmId,
     status: row.status as InvoiceStatus,
     items,
     totalAmount: row.totalAmount,
