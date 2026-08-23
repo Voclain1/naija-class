@@ -135,6 +135,19 @@ those; it doesn't replace them.
 
 ## Latest state as of this handoff (updated 2026-08-23)
 
+- **Two invoice-read bugs are fixed on branch
+  `fix/invoice-read-display-and-arm-filter`, pending PR.** The invoice list's
+  `classArmId` selector was silently ignored by the API; `findAll()` now
+  resolves exact tenant-scoped `(studentId, termId)` enrollment pairs, so the
+  selected arm actually filters and historical invoices do not drift when a
+  student changes arms. Invoice detail now receives a server-resolved
+  `issuedByName` inside the existing tenant-scoped read instead of rendering a
+  raw user UUID; no staff-read grant was added. The real-Postgres suite passes
+  37/37 with a two-arm positive/control pair and foreign-tenant rejection.
+  API/web typechecks and lint pass, and the Dev Bursar visual gate rendered
+  `Issued by — Dev Owner`. The larger finance-dashboard per-arm aggregation is
+  still new scope and awaits its approved plan-first after these fixes ship.
+
 - **Payment-link plan-first is merged in docs-only PR #203; implementation
   CP1 through CP3 are complete on `feat/payment-links`.** A real Paystack
   test-mode follow-up proved one `percentage: 100` split reusable at 123,400
@@ -172,8 +185,9 @@ those; it doesn't replace them.
   `parent@schoolkit.ng`, and a fresh Virgo link rendered the intended greeting.
   A follow-up then proved manual archival was absent from both UI and API. The
   old request `PRQ_f6hc5gbogveid7y` remains LIVE on a different invoice.
-  `fix/payment-link-manual-archive` adds the missing tenant-scoped, audited,
-  failure-safe operator archive lifecycle; see the 2026-08-23 journal.
+  PR #208 added the missing tenant-scoped, audited, failure-safe operator
+  archive lifecycle and is merged/live. Virgo's original invoice visibly
+  exposes the action; Arinzechukwu still owns the final archive confirmation.
 - **Fly render-worker count is reduced live from two Machines to one.** PR #207
   is merged and live and makes that count a deployment invariant
   after every worker deploy while preserving 2 GB, concurrency 1 and

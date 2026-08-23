@@ -905,5 +905,99 @@ describe("InvoiceGenerationService (integration)", () => {
       const page2 = await svc.findAll(ctx(schoolId, ownerId), { termId, page: 2, limit: 1 });
       expect(page2.data).toHaveLength(1);
     });
+
+    it("filters invoices to the selected class arm instead of silently returning the whole term", async () => {
+      const { schoolId, ownerId } = await makeSchool("list-arm-filter");
+      const { academicYearId, termId, classLevelId, classArmId: armAId } =
+        await makeAcademicStructure(schoolId);
+      await makeFeeSetup(schoolId, ownerId, classLevelId, termId);
+
+      const armBId = await withTenant(schoolId, async (db) => {
+        const arm = await db.classArm.create({
+          data: {
+            schoolId,
+            classLevelId,
+            name: `Arm-B-${runId}`,
+            code: `arm-b-${runId}`,
+          },
+          select: { id: true },
+        });
+        return arm.id;
+      });
+      const studentA = await makeStudent(schoolId, "list-arm-a");
+      const studentB = await makeStudent(schoolId, "list-arm-b");
+      await enrollStudent(schoolId, studentA, armAId, termId, academicYearId);
+      await enrollStudent(schoolId, studentB, armBId, termId, academicYearId);
+      await svc.generateForArm(ctx(schoolId, ownerId), { termId, classArmId: armAId }, reqCtx);
+      await svc.generateForArm(ctx(schoolId, ownerId), { termId, classArmId: armBId }, reqCtx);
+
+      const unfiltered = await svc.findAll(ctx(schoolId, ownerId), {
+        termId,
+        page: 1,
+        limit: 50,
+      });
+      const filtered = await svc.findAll(ctx(schoolId, ownerId), {
+        termId,
+        classArmId: armAId,
+        page: 1,
+        limit: 50,
+      });
+
+      expect(unfiltered.total).toBe(2); // control: both invoices genuinely exist
+      expect(filtered.total).toBe(1);
+      expect(filtered.data.map((invoice) => invoice.studentId)).toEqual([studentA]);
+    });
+
+    it("returns no invoices for another tenant's class arm", async () => {
+      const { schoolId: schoolA, ownerId: ownerA } = await makeSchool("list-arm-tenant-a");
+      const structureA = await makeAcademicStructure(schoolA);
+      await makeFeeSetup(schoolA, ownerA, structureA.classLevelId, structureA.termId);
+      const studentA = await makeStudent(schoolA, "list-arm-tenant-a");
+      await enrollStudent(
+        schoolA,
+        studentA,
+        structureA.classArmId,
+        structureA.termId,
+        structureA.academicYearId,
+      );
+      await svc.generateForArm(
+        ctx(schoolA, ownerA),
+        { termId: structureA.termId, classArmId: structureA.classArmId },
+        reqCtx,
+      );
+
+      const { schoolId: schoolB } = await makeSchool("list-arm-tenant-b");
+      const structureB = await makeAcademicStructure(schoolB);
+      const result = await svc.findAll(ctx(schoolA, ownerA), {
+        termId: structureA.termId,
+        classArmId: structureB.classArmId,
+        page: 1,
+        limit: 50,
+      });
+
+      expect(result).toMatchObject({ data: [], total: 0 });
+    });
+  });
+
+  describe("findById", () => {
+    it("resolves the issuer name inside the invoice tenant instead of exposing a raw user UUID", async () => {
+      const { schoolId, ownerId } = await makeSchool("detail-issuer-name");
+      const { academicYearId, termId, classLevelId, classArmId } =
+        await makeAcademicStructure(schoolId);
+      await makeFeeSetup(schoolId, ownerId, classLevelId, termId);
+      const studentId = await makeStudent(schoolId, "detail-issuer-name");
+      await enrollStudent(schoolId, studentId, classArmId, termId, academicYearId);
+      const generated = await svc.generateForArm(
+        ctx(schoolId, ownerId),
+        { termId, classArmId },
+        reqCtx,
+      );
+
+      const invoice = await svc.findById(ctx(schoolId, ownerId), generated.invoices[0].id);
+
+      expect(invoice.issuedBy).toBe(ownerId); // attribution remains intact internally
+      expect(invoice.issuedByName).toBe("Bisi Owner");
+      expect(invoice.issuedByName).not.toContain(ownerId);
+    });
   });
 });
