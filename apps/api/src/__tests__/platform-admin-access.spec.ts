@@ -770,6 +770,44 @@ describe("Platform admin access (2026-08-02)", () => {
     });
   });
 
+  describe("PATCH /platform-admin/schools/:schoolId/staff-mobile (CP1)", () => {
+    it("pairs ordinary-staff rejection with a platform-admin control and touches one school only", async () => {
+      const rejected = await request(app.getHttpServer())
+        .patch(`/api/v1/platform-admin/schools/${schoolA}/staff-mobile`)
+        .set("Authorization", `Bearer ${ownerAToken}`)
+        .send({ staffMobileEnabled: true });
+      expect(rejected.status).toBe(403);
+      expect((await basePrisma.school.findUnique({ where: { id: schoolA }, select: { staffMobileEnabled: true } }))?.staffMobileEnabled).toBe(false);
+
+      const enabled = await request(app.getHttpServer())
+        .patch(`/api/v1/platform-admin/schools/${schoolA}/staff-mobile`)
+        .set("Authorization", `Bearer ${platformAdminToken}`)
+        .send({ staffMobileEnabled: true });
+      expect(enabled.status).toBe(200);
+      expect(enabled.body).toEqual({ schoolId: schoolA, staffMobileEnabled: true });
+      expect((await basePrisma.school.findUnique({ where: { id: schoolA }, select: { staffMobileEnabled: true } }))?.staffMobileEnabled).toBe(true);
+      expect((await basePrisma.school.findUnique({ where: { id: schoolB }, select: { staffMobileEnabled: true } }))?.staffMobileEnabled).toBe(false);
+
+      const audit = await basePrisma.auditLog.findFirst({
+        where: { action: "platform_admin.schools.set-staff-mobile", entityId: schoolA },
+        orderBy: { createdAt: "desc" },
+      });
+      expect(audit).toMatchObject({ schoolId: null, userId: platformAdminUserId, entityType: "school" });
+      expect(audit?.metadata).toMatchObject({ field: "staffMobileEnabled", from: false, to: true });
+    });
+
+    it("rejects non-boolean input and unknown schools", async () => {
+      expect((await request(app.getHttpServer())
+        .patch(`/api/v1/platform-admin/schools/${schoolA}/staff-mobile`)
+        .set("Authorization", `Bearer ${platformAdminToken}`)
+        .send({ staffMobileEnabled: "yes" })).status).toBe(400);
+      expect((await request(app.getHttpServer())
+        .patch("/api/v1/platform-admin/schools/does-not-exist/staff-mobile")
+        .set("Authorization", `Bearer ${platformAdminToken}`)
+        .send({ staffMobileEnabled: true })).status).toBe(404);
+    });
+  });
+
   it("every platform-admin read/write writes an audit_logs row namespaced platform_admin.*", async () => {
     const rows = await basePrisma.auditLog.findMany({
       where: { userId: platformAdminUserId, action: { startsWith: "platform_admin." } },
@@ -782,6 +820,7 @@ describe("Platform admin access (2026-08-02)", () => {
     expect(actions.has("platform_admin.schools.create")).toBe(true);
     expect(actions.has("platform_admin.schools.set-early-access")).toBe(true);
     expect(actions.has("platform_admin.schools.set-ai-enabled")).toBe(true);
+    expect(actions.has("platform_admin.schools.set-staff-mobile")).toBe(true);
   });
 
   it("import-boundary: the platform-admin service never imports withTenant or references Invoice/Payment/Student Prisma delegates", () => {

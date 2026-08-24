@@ -24,10 +24,10 @@ import { Body, Button, Heading, Notice, Screen } from "../src/components/ui";
 // a form is a wall in front of the only door. The toggle is the first thing on
 // the screen and the form beneath it changes — nothing is hidden behind a
 // second navigation.
-type Mode = "guardian" | "student";
+type Mode = "guardian" | "student" | "staff";
 
 export default function LoginScreen() {
-  const { status, principal, signIn, signInStudent } = useSession();
+  const { status, principal, signIn, signInStudent, signInStaff, completeStaffTwoFactor } = useSession();
   const { colors } = useTheme();
   const [mode, setMode] = useState<Mode>("guardian");
 
@@ -40,6 +40,8 @@ export default function LoginScreen() {
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [challengeToken, setChallengeToken] = useState<string | null>(null);
+  const [twoFactorCode, setTwoFactorCode] = useState("");
   // The school code remembered from the last student sign-in or activation on
   // this device, and whether the user has asked to change it. Kept separate
   // from schoolSlug because schoolSlug is what gets SUBMITTED and is editable;
@@ -67,7 +69,7 @@ export default function LoginScreen() {
   }, []);
 
   if (status === "authenticated") {
-    return <Redirect href={principal === "student" ? "/me" : "/students"} />;
+    return <Redirect href={principal === "staff" ? "/staff" : principal === "student" ? "/me" : "/students"} />;
   }
 
   const isStudent = mode === "student";
@@ -87,7 +89,10 @@ export default function LoginScreen() {
     current: schoolSlug,
   });
 
-  const canSubmit = isStudent
+  const isStaff = mode === "staff";
+  const canSubmit = challengeToken
+    ? twoFactorCode.length === 6
+    : isStudent
     ? schoolSlug.trim().length > 0 &&
       admissionNumber.trim().length > 0 &&
       password.length > 0
@@ -98,6 +103,8 @@ export default function LoginScreen() {
     // about the student form, and leaving it up reads as though the new form
     // has already been rejected before it was filled in.
     setError(null);
+    setChallengeToken(null);
+    setTwoFactorCode("");
     setMode(next);
   }
 
@@ -105,7 +112,9 @@ export default function LoginScreen() {
     setError(null);
     setSubmitting(true);
     try {
-      if (isStudent) {
+      if (challengeToken) {
+        await completeStaffTwoFactor(challengeToken, twoFactorCode);
+      } else if (isStudent) {
         // Trimming/lowercasing of the school code and trimming of the
         // admission number also happen server-side in studentLoginSchema.
         // Doing it here too means the value the child sees in the box is the
@@ -115,6 +124,9 @@ export default function LoginScreen() {
           admissionNumber: admissionNumber.trim(),
           password,
         });
+      } else if (isStaff) {
+        const challenge = await signInStaff({ email: email.trim().toLowerCase(), password });
+        if (challenge) setChallengeToken(challenge);
       } else {
         await signIn({ email: email.trim().toLowerCase(), password });
       }
@@ -129,7 +141,7 @@ export default function LoginScreen() {
       } else if (caught instanceof ApiError) {
         setError(
           caught.status === 401
-            ? isStudent
+              ? isStudent
               ? // Deliberately does not say which of the three was wrong. The
                 // server refuses to distinguish "no such school", "no such
                 // admission number" and "wrong password" — admission numbers
@@ -168,12 +180,14 @@ export default function LoginScreen() {
             <Body muted>
               {isStudent
                 ? "Sign in to see your results."
-                : "Sign in to follow your child's progress."}
+                : isStaff
+                  ? "Secure access for school staff."
+                  : "Sign in to follow your child's progress."}
             </Body>
           </View>
 
           <View style={[styles.switcher, { borderColor: colors.border }]}>
-            {(["guardian", "student"] as const).map((option) => {
+            {(["guardian", "student", "staff"] as const).map((option) => {
               const active = mode === option;
               return (
                 <Pressable
@@ -197,14 +211,25 @@ export default function LoginScreen() {
                       },
                     ]}
                   >
-                    {option === "guardian" ? "Parent" : "Student"}
+                    {option === "guardian" ? "Parent" : option === "student" ? "Student" : "Staff"}
                   </Text>
                 </Pressable>
               );
             })}
           </View>
 
-          {isStudent ? (
+          {challengeToken ? (
+            <TextInput
+              value={twoFactorCode}
+              onChangeText={setTwoFactorCode}
+              placeholder="6-digit authenticator code"
+              placeholderTextColor={colors.mutedForeground}
+              keyboardType="number-pad"
+              maxLength={6}
+              editable={!submitting}
+              style={inputStyle}
+            />
+          ) : isStudent ? (
             <>
               {/* A returning child on their own device sees two fields, not
                   three — the school code is the one credential nobody ever
@@ -280,7 +305,7 @@ export default function LoginScreen() {
             />
           )}
 
-          <TextInput
+          {!challengeToken ? <TextInput
             value={password}
             onChangeText={setPassword}
             placeholder="Password"
@@ -292,7 +317,7 @@ export default function LoginScreen() {
             editable={!submitting}
             onSubmitEditing={() => void onSubmit()}
             style={inputStyle}
-          />
+          /> : null}
 
           {error ? <Notice tone="danger">{error}</Notice> : null}
 

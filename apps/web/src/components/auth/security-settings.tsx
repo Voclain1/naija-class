@@ -1,7 +1,7 @@
 "use client";
 
 import { zodResolver } from "@hookform/resolvers/zod";
-import { CheckCircle2, Loader2, ShieldCheck, ShieldOff } from "lucide-react";
+import { CheckCircle2, Loader2, MonitorSmartphone, ShieldCheck, ShieldOff } from "lucide-react";
 import QRCode from "react-qr-code";
 import { useCallback, useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
@@ -12,6 +12,7 @@ import {
   totpDisableSchema,
   type TotpConfirmInput,
   type TotpDisableInput,
+  type StaffSessionDto,
 } from "@school-kit/types";
 
 import { Button } from "@/components/ui/button";
@@ -23,6 +24,8 @@ import {
   twoFactorDisableRequest,
   twoFactorSetupRequest,
   twoFactorStatusRequest,
+  staffSessionsRequest,
+  revokeStaffSessionRequest,
 } from "@/lib/auth/auth-api";
 import { cn } from "@/lib/utils";
 
@@ -44,6 +47,8 @@ export function SecuritySettings() {
   const [setup, setSetup] = useState<SetupState>({ phase: "idle", otpAuthUrl: "", secret: "" });
   const [disabling, setDisabling] = useState(false);
   const [showDisableForm, setShowDisableForm] = useState(false);
+  const [sessions, setSessions] = useState<StaffSessionDto[]>([]);
+  const [revoking, setRevoking] = useState<string | null>(null);
 
   const confirmForm = useForm<TotpConfirmInput>({
     resolver: zodResolver(totpConfirmSchema),
@@ -60,8 +65,9 @@ export function SecuritySettings() {
   const loadStatus = useCallback(async () => {
     setLoading(true);
     try {
-      const status = await twoFactorStatusRequest();
+      const [status, sessionList] = await Promise.all([twoFactorStatusRequest(), staffSessionsRequest()]);
       setEnabled(status.enabled);
+      setSessions(sessionList.sessions);
     } catch {
       toast.error("Could not load 2FA status.");
     } finally {
@@ -296,6 +302,47 @@ export function SecuritySettings() {
           Every sign-in will now require a code from your authenticator app.
         </div>
       )}
+
+      <div className="flex flex-col gap-3 border-t pt-6">
+        <div className="flex items-center gap-2">
+          <MonitorSmartphone className="h-5 w-5" />
+          <h2 className="font-medium">Signed-in devices</h2>
+        </div>
+        <p className="text-sm text-muted-foreground">
+          Revoke a lost or shared device immediately. School Kit never shows token, IP, or browser details here.
+        </p>
+        {sessions.map((session) => (
+          <div key={session.id} className="flex items-center justify-between gap-4 rounded-md border p-3">
+            <div>
+              <p className="text-sm font-medium">
+                {session.deviceName ?? (session.clientType === "WEB" ? "Web browser" : "Mobile device")}
+                {session.current ? " (this session)" : ""}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {session.clientType === "MOBILE" ? "Mobile" : "Web"} · signed in {new Date(session.createdAt).toLocaleDateString()}
+              </p>
+            </div>
+            {!session.current && (
+              <Button
+                variant="outline"
+                disabled={revoking === session.id}
+                onClick={() => {
+                  setRevoking(session.id);
+                  void revokeStaffSessionRequest(session.id)
+                    .then(() => {
+                      setSessions((current) => current.filter((row) => row.id !== session.id));
+                      toast.success("Session revoked.");
+                    })
+                    .catch(() => toast.error("Could not revoke that session."))
+                    .finally(() => setRevoking(null));
+                }}
+              >
+                {revoking === session.id ? "Revoking…" : "Revoke"}
+              </Button>
+            )}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

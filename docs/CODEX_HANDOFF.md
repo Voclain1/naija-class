@@ -133,7 +133,23 @@ those; it doesn't replace them.
   (`c:\Users\acer\Desktop\Naija-class\`) and Claude Code's memory directory
   (derived from the folder name). Don't rename either mid-session.
 
-## Latest state as of this handoff (updated 2026-08-23)
+## Latest state as of this handoff (updated 2026-08-24)
+
+- **Staff mobile companion CP1 is implemented but deliberately not closed.**
+  Branch `phase-6/staff-mobile-auth` contains the staff auth/security
+  foundation only; no workflow screen has begun. Real Postgres/Redis evidence
+  is green (56/56 focused API tests), mobile tests are 108/108, all affected
+  type/lint gates pass, Expo Doctor is 21/21, mobile export and optimized web
+  build pass. EAS upload was authorized and a real-phone pass found and fixed
+  one double-JSON-encoding bug in staff login/2FA; exact request-body tests
+  bring the full mobile suite to 110/110. The corrected APK now reaches the
+  production API, where an independent probe confirms the expected 404
+  because CP1's rollout-disabled route/schema have not deployed. Merge and
+  deploy the CP1 PR, then finish OS credential enrollment, cold restore,
+  two-minute background re-lock, app-switcher protection, and remote
+  revocation against one reviewed test school. See
+  `docs/journal/2026-08-24.md`. The unrelated root `app.json` is still
+  untracked and untouched.
 
 - **Invoice grouping by arm CP1 is complete on
   `feat/invoice-arm-snapshots` as a single conventional commit.** PR #209 is merged and

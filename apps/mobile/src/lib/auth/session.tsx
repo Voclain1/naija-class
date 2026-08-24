@@ -4,9 +4,12 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
+import { AppState } from "react-native";
+import * as ScreenCapture from "expo-screen-capture";
 import { useQueryClient } from "@tanstack/react-query";
 import type {
   GuardianLoginInput,
@@ -16,10 +19,13 @@ import type {
   StudentLoginResponse,
   StudentPortalSchoolDto,
   StudentPortalStudentDto,
+  MeResponse,
+  StaffMobileLoginInput,
 } from "@school-kit/types";
 
 import { guardianLogin } from "../api/portal";
 import { studentLogin, studentLogout } from "../api/student-portal";
+import { staffLogout, staffMe, staffMobileChallenge, staffMobileLogin } from "../api/staff-auth";
 import { onUnauthorized } from "../api/client";
 import {
   clearToken,
@@ -31,6 +37,8 @@ import {
 import { saveSchoolHint } from "./school-hint-store";
 import { registerForPush, unregisterForPush } from "../push/register";
 import { wipeOfflineCache } from "../query/persist";
+import { canProtectStaffSession, unlockStaffSession } from "./local-lock";
+import { getStaffDevice } from "./staff-device";
 
 // Guardian session state for apps/mobile.
 //
@@ -46,7 +54,7 @@ import { wipeOfflineCache } from "../query/persist";
 // start with a valid token knows it is authenticated but not yet *who* — see
 // `status: "restoring"` below.
 
-export type SessionStatus = "loading" | "authenticated" | "guest";
+export type SessionStatus = "loading" | "locked" | "authenticated" | "guest";
 
 // One device, one signed-in account. Deliberately not two concurrent sessions:
 // the shared family handset is the normal case (phase-6.md §7), and the rule
@@ -60,8 +68,12 @@ interface SessionValue {
   guardian: GuardianLoginUserDto | null;
   student: StudentPortalStudentDto | null;
   school: GuardianLoginSchoolDto | StudentPortalSchoolDto | null;
+  staff: MeResponse | null;
   signIn: (input: GuardianLoginInput) => Promise<void>;
   signInStudent: (input: StudentLoginInput) => Promise<void>;
+  signInStaff: (input: Omit<StaffMobileLoginInput, "deviceId" | "deviceName">) => Promise<string | null>;
+  completeStaffTwoFactor: (challengeToken: string, code: string) => Promise<void>;
+  unlock: () => Promise<boolean>;
   /**
    * Adopt a student session the caller already obtained.
    *
@@ -94,6 +106,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [school, setSchool] = useState<
     GuardianLoginSchoolDto | StudentPortalSchoolDto | null
   >(null);
+  const [staff, setStaff] = useState<MeResponse | null>(null);
+  const backgroundedAt = useRef<number | null>(null);
 
   const signOut = useCallback(async () => {
     // Tell the server first, while the token is still usable — clearToken()
@@ -104,17 +118,21 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     // Only the student surface has a logout endpoint today; the guardian one
     // does not, which is why that half is not symmetrical. Push release is.
     const leaving = getCachedPrincipal();
-    if (leaving) {
+    if (leaving && leaving !== "staff") {
       await unregisterForPush(leaving);
     }
     if (leaving === "student") {
       await studentLogout();
+    }
+    if (leaving === "staff") {
+      await staffLogout().catch(() => undefined);
     }
     setStatus("guest");
     setPrincipal(null);
     setGuardian(null);
     setStudent(null);
     setSchool(null);
+    setStaff(null);
     await clearToken();
     // D12. Clearing the in-memory client alone would leave the persisted copy
     // to rehydrate on next launch — the next child to pick up the phone would
@@ -132,6 +150,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       setGuardian(response.guardian);
       setStudent(null);
       setSchool(response.school);
+      setStaff(null);
       setStatus("authenticated");
       // Fire-and-forget, and deliberately AFTER status flips: registration is
       // an enhancement, and awaiting a permission prompt plus two native
@@ -156,6 +175,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       setStudent(response.student);
       setGuardian(null);
       setSchool(response.school);
+      setStaff(null);
       setStatus("authenticated");
       void registerForPush("student");
     },
@@ -168,6 +188,87 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     },
     [adoptStudentSession],
   );
+
+  const adoptStaffSession = useCallback(async (token: string) => {
+    if (!(await canProtectStaffSession())) {
+      throw new Error("DEVICE_LOCK_REQUIRED");
+    }
+    await saveToken(token, "staff");
+    try {
+      const me = await staffMe();
+      setPrincipal("staff");
+      setStaff(me);
+      setGuardian(null);
+      setStudent(null);
+      setSchool(me.school);
+      setStatus("authenticated");
+    } catch (error) {
+      await clearToken();
+      throw error;
+    }
+  }, []);
+
+  const signInStaff = useCallback(async (input: Omit<StaffMobileLoginInput, "deviceId" | "deviceName">) => {
+    if (!(await canProtectStaffSession())) throw new Error("DEVICE_LOCK_REQUIRED");
+    const device = await getStaffDevice();
+    const response = await staffMobileLogin({ ...input, ...device });
+    if (response.requiresTwoFactor) return response.challengeToken;
+    await adoptStaffSession(response.token);
+    return null;
+  }, [adoptStaffSession]);
+
+  const completeStaffTwoFactor = useCallback(async (challengeToken: string, code: string) => {
+    const device = await getStaffDevice();
+    const response = await staffMobileChallenge({ challengeToken, code, ...device });
+    if (response.requiresTwoFactor) throw new Error("Unexpected nested 2FA challenge");
+    await adoptStaffSession(response.token);
+  }, [adoptStaffSession]);
+
+  const unlock = useCallback(async () => {
+    const unlocked = await unlockStaffSession();
+    if (!unlocked) return false;
+    try {
+      const me = await staffMe();
+      setStaff(me);
+      setSchool(me.school);
+      setStatus("authenticated");
+      return true;
+    } catch {
+      await signOut();
+      return false;
+    }
+  }, [signOut]);
+
+  useEffect(() => {
+    if (principal === "staff" && getCachedToken() && staff === null) setStatus("locked");
+  }, [principal, staff]);
+
+  useEffect(() => {
+    if (principal !== "staff" || status !== "authenticated") return;
+    void ScreenCapture.preventScreenCaptureAsync("staff-session");
+    void ScreenCapture.enableAppSwitcherProtectionAsync(1);
+    const subscription = AppState.addEventListener("change", (next) => {
+      if (next === "background" || next === "inactive") {
+        backgroundedAt.current ??= Date.now();
+        return;
+      }
+      if (next === "active" && backgroundedAt.current !== null) {
+        const elapsed = Date.now() - backgroundedAt.current;
+        backgroundedAt.current = null;
+        if (elapsed > 2 * 60 * 1000) {
+          setStaff(null);
+          setSchool(null);
+          queryClient.removeQueries({ predicate: (query) => query.queryKey[0] === "staff" });
+          setStatus("locked");
+        }
+      }
+    });
+    return () => {
+      subscription.remove();
+      void ScreenCapture.allowScreenCaptureAsync("staff-session");
+      void ScreenCapture.disableAppSwitcherProtectionAsync();
+    };
+  }, [principal, queryClient, status]);
 
   useEffect(() => {
     // A 401 on any request means the server has rejected this token —
@@ -191,8 +292,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       guardian,
       student,
       school,
+      staff,
       signIn,
       signInStudent,
+      signInStaff,
+      completeStaffTwoFactor,
+      unlock,
       adoptStudentSession,
       signOut,
     }),
@@ -202,8 +307,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       guardian,
       student,
       school,
+      staff,
       signIn,
       signInStudent,
+      signInStaff,
+      completeStaffTwoFactor,
+      unlock,
       adoptStudentSession,
       signOut,
     ],

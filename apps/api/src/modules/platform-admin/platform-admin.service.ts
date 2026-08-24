@@ -177,6 +177,7 @@ const USERS_LIST_AUDIT_ACTION = "platform_admin.users.list";
 const SCHOOLS_CREATE_AUDIT_ACTION = "platform_admin.schools.create";
 const SCHOOLS_SET_EARLY_ACCESS_AUDIT_ACTION = "platform_admin.schools.set-early-access";
 const SCHOOLS_SET_AI_ENABLED_AUDIT_ACTION = "platform_admin.schools.set-ai-enabled";
+const SCHOOLS_SET_STAFF_MOBILE_AUDIT_ACTION = "platform_admin.schools.set-staff-mobile";
 // Paystack assisted setup (2026-08-15). The reveal action is the important
 // one: it is the only path in the product that returns a school's bank
 // account number, and every single call writes one of these rows.
@@ -598,6 +599,29 @@ export class PlatformAdminService {
       schoolId: updated.id,
       aiEnabled: updated.aiEnabled,
     };
+  }
+
+  async setStaffMobileEnabled(
+    schoolId: string,
+    input: { staffMobileEnabled: boolean },
+    adminCtx: PlatformAdminContext,
+    reqCtx: RequestContext,
+  ): Promise<{ schoolId: string; staffMobileEnabled: boolean }> {
+    const existing = await basePrisma.school.findUnique({
+      where: { id: schoolId }, select: { id: true, staffMobileEnabled: true },
+    });
+    if (!existing) throw new NotFoundError("School not found.");
+    const updated = await basePrisma.school.update({
+      where: { id: schoolId }, data: { staffMobileEnabled: input.staffMobileEnabled },
+      select: { id: true, staffMobileEnabled: true },
+    });
+    await basePrisma.auditLog.create({ data: {
+      schoolId: null, userId: adminCtx.userId,
+      action: SCHOOLS_SET_STAFF_MOBILE_AUDIT_ACTION,
+      entityType: "school", entityId: schoolId, ipAddress: reqCtx.ipAddress,
+      metadata: { field: "staffMobileEnabled", from: existing.staffMobileEnabled, to: updated.staffMobileEnabled },
+    }});
+    return { schoolId: updated.id, staffMobileEnabled: updated.staffMobileEnabled };
   }
 
   // POST /platform-admin/schools — the surface's first write. Creates the

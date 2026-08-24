@@ -18,9 +18,12 @@ export default function Index() {
   const { status, principal } = useSession();
 
   if (status === "loading") return null;
+  if (status === "locked") return <Redirect href="/unlock" />;
   if (status !== "authenticated") return <Redirect href="/login" />;
 
-  return principal === "student" ? (
+  return principal === "staff" ? (
+    <Redirect href="/staff" />
+  ) : principal === "student" ? (
     <Redirect href="/me" />
   ) : (
     <Redirect href="/students" />

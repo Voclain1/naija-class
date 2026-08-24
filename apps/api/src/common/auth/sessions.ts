@@ -14,6 +14,13 @@ export interface CreateSessionContext {
   userAgent: string | null;
 }
 
+export interface CreateSessionOptions {
+  clientType?: "WEB" | "MOBILE";
+  deviceId?: string;
+  deviceName?: string;
+  ttlMs?: number;
+}
+
 // Mints a session row for {schoolId, userId} and returns the raw bearer
 // token. We persist only the sha256 hash of the token; the raw bytes are
 // returned to the caller and never stored.
@@ -28,6 +35,7 @@ export async function createSession(
   schoolId: string,
   userId: string,
   ctx: CreateSessionContext,
+  options: CreateSessionOptions = {},
 ): Promise<{ rawToken: string }> {
   const rawToken = crypto.randomBytes(32).toString("base64url");
   const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
@@ -39,7 +47,10 @@ export async function createSession(
         tokenHash,
         ipAddress: ctx.ipAddress,
         userAgent: ctx.userAgent,
-        expiresAt: new Date(Date.now() + SESSION_TTL_MS),
+        clientType: options.clientType ?? "WEB",
+        deviceId: options.deviceId,
+        deviceName: options.deviceName,
+        expiresAt: new Date(Date.now() + (options.ttlMs ?? SESSION_TTL_MS)),
       },
     }),
   );

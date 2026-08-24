@@ -19,6 +19,7 @@ import {
   platformAdminResolvePaystackSetupSchema,
   platformAdminSetAiEnabledSchema,
   platformAdminSetEarlyAccessSchema,
+  platformAdminSetStaffMobileSchema,
   type PlatformAdminCreateSchoolInput,
   type PlatformAdminCreateSchoolResponse,
   type PlatformAdminListUsersQuery,
@@ -33,6 +34,8 @@ import {
   type PlatformAdminSetAiEnabledResponse,
   type PlatformAdminSetEarlyAccessInput,
   type PlatformAdminSetEarlyAccessResponse,
+  type PlatformAdminSetStaffMobileInput,
+  type PlatformAdminSetStaffMobileResponse,
   type PlatformAdminUserDto,
 } from "@school-kit/types";
 import type { Request } from "express";
@@ -210,6 +213,21 @@ export class PlatformAdminController {
     return this.platformAdminService.setAiEnabled(schoolId, dto, adminCtx, {
       ipAddress: ip,
       userAgent: req.header("user-agent") ?? null,
+    });
+  }
+
+  @Patch("schools/:schoolId/staff-mobile")
+  @UseGuards(PlatformAdminGuard)
+  @Throttle({ default: { ttl: 60000, limit: 20 } })
+  async setStaffMobileEnabled(
+    @Param("schoolId") schoolId: string,
+    @Body(new ZodValidationPipe(platformAdminSetStaffMobileSchema)) dto: PlatformAdminSetStaffMobileInput,
+    @CurrentPlatformAdmin() adminCtx: PlatformAdminContext,
+    @Ip() ip: string,
+    @Req() req: Request,
+  ): Promise<PlatformAdminSetStaffMobileResponse> {
+    return this.platformAdminService.setStaffMobileEnabled(schoolId, dto, adminCtx, {
+      ipAddress: ip, userAgent: req.header("user-agent") ?? null,
     });
   }
 }
