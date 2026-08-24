@@ -22,6 +22,7 @@ import type {
   TotpDisableInput,
   TotpSetupResponseDto,
   TotpStatusDto,
+  StaffSessionListResponse,
 } from "@school-kit/types";
 
 import { apiFetch, proxyFetch } from "../api-client";
@@ -92,6 +93,14 @@ export function twoFactorDisableRequest(input: TotpDisableInput): Promise<void> 
   // not an expired session. The caller (security-settings.tsx) catches the error and
   // shows an inline field error; letting the global 401 handler fire would log the user out.
   return apiFetch<void>("/auth/2fa", { method: "DELETE", body: input, notifyOnUnauthorized: false });
+}
+
+export function staffSessionsRequest(): Promise<StaffSessionListResponse> {
+  return apiFetch<StaffSessionListResponse>("/auth/sessions", { method: "GET" });
+}
+
+export function revokeStaffSessionRequest(sessionId: string): Promise<void> {
+  return apiFetch<void>(`/auth/sessions/${encodeURIComponent(sessionId)}`, { method: "DELETE" });
 }
 
 // Both public — no session exists yet (forgot-password) or is being

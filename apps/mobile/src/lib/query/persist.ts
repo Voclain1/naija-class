@@ -3,6 +3,7 @@ import { createAsyncStoragePersister } from "@tanstack/query-async-storage-persi
 import type { QueryClient } from "@tanstack/react-query";
 import type { PersistQueryClientOptions } from "@tanstack/react-query-persist-client";
 import { PERSIST_MAX_AGE_MS } from "./client";
+import { mayPersistQuery } from "./persist-policy";
 
 // Storage wiring for the offline cache. Separated from ./client.ts so the
 // cache POLICY stays free of platform imports and therefore unit-testable;
@@ -41,15 +42,7 @@ export const persistOptions: Omit<PersistQueryClientOptions, "queryClient"> = {
   dehydrateOptions: {
     shouldDehydrateMutation: () => false,
     shouldDehydrateQuery: (query) => {
-      const key = JSON.stringify(query.queryKey).toLowerCase();
-      if (
-        key.includes("auth") ||
-        key.includes("session") ||
-        key.includes("token")
-      ) {
-        return false;
-      }
-      return query.state.status === "success";
+      return query.state.status === "success" && mayPersistQuery(query.queryKey, query.meta);
     },
   },
 };

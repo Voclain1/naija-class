@@ -4,4 +4,5 @@ export * from "./platform-admin-paystack-setup.dto.js";
 export * from "./platform-admin-school.dto.js";
 export * from "./platform-admin-set-ai-enabled.dto.js";
 export * from "./platform-admin-set-early-access.dto.js";
+export * from "./platform-admin-set-staff-mobile.dto.js";
 export * from "./platform-admin-user.dto.js";

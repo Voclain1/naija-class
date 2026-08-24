@@ -15,6 +15,12 @@ describe("readStoredPrincipal", () => {
     expect(readStoredPrincipal("guardian")).toBe("guardian");
   });
 
+  it("reads a stored staff principal without treating a role as a principal", () => {
+    expect(readStoredPrincipal("staff")).toBe("staff");
+    expect(readStoredPrincipal("teacher")).toBe("guardian");
+    expect(readStoredPrincipal("bursar")).toBe("guardian");
+  });
+
   it("treats a MISSING principal as guardian, not as no-session", () => {
     // This is the upgrade path: a parent already signed in before the student
     // principal existed has a token in the keychain with no principal beside

@@ -8,6 +8,8 @@ import type { RegisterDeviceInput } from "@school-kit/types";
 
 import { apiFetch } from "../api/client";
 import type { Principal } from "../auth/principal";
+
+type PushPrincipal = Exclude<Principal, "staff">;
 import {
   canRequestToken,
   needsRegistration,
@@ -30,7 +32,7 @@ const LAST_TOKEN_KEY = "sk_push_last_token";
 const LAST_PRINCIPAL_KEY = "sk_push_last_principal";
 
 /** Where the guardian and student surfaces each accept a device. */
-function endpointFor(principal: Principal): string {
+function endpointFor(principal: PushPrincipal): string {
   return principal === "student" ? "/student-portal/devices" : "/portal/devices";
 }
 
@@ -78,7 +80,7 @@ async function resolvePermission(): Promise<PermissionStatus> {
  * token or the principal has actually changed (needsRegistration), so the
  * steady-state cost after first launch is two AsyncStorage reads.
  */
-export async function registerForPush(principal: Principal): Promise<void> {
+export async function registerForPush(principal: PushPrincipal): Promise<void> {
   try {
     const platform = currentPlatform();
     if (platform === null) return;
@@ -131,7 +133,7 @@ export async function registerForPush(principal: Principal): Promise<void> {
  * next sign-in must re-register rather than believe a stale token is still
  * claimed. The server tolerates deleting a token that is already gone.
  */
-export async function unregisterForPush(principal: Principal): Promise<void> {
+export async function unregisterForPush(principal: PushPrincipal): Promise<void> {
   try {
     const token = await AsyncStorage.getItem(LAST_TOKEN_KEY);
     if (token) {

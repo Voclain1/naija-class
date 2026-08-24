@@ -6,6 +6,7 @@ import type Redis from "ioredis";
 import { Prisma, applySchoolDefaults, basePrisma, withTenant } from "@school-kit/db";
 import {
   ConflictError,
+  ForbiddenError,
   GoneError,
   InternalError,
   NotFoundError,
@@ -16,6 +17,9 @@ import {
   type ForgotPasswordResponse,
   type LoginInput,
   type LoginResponse,
+  type StaffMobileChallengeInput,
+  type StaffMobileLoginInput,
+  type StaffSessionListResponse,
   type MeResponse,
   type ResetPasswordInput,
   type ResetPasswordResponse,
@@ -43,6 +47,8 @@ import { TotpService } from "./totp.service.js";
 const SIGNUP_AUDIT_ACTION = "auth.signup_owner";
 const LOGIN_AUDIT_ACTION = "auth.login";
 const LOGIN_2FA_AUDIT_ACTION = "auth.login_2fa";
+const MOBILE_LOGIN_AUDIT_ACTION = "auth.mobile_login";
+const SESSION_REVOKED_AUDIT_ACTION = "auth.session_revoked";
 const LOGOUT_AUDIT_ACTION = "auth.logout";
 const TOTP_ENABLE_AUDIT_ACTION = "auth.2fa.enable";
 const TOTP_DISABLE_AUDIT_ACTION = "auth.2fa.disable";
@@ -51,6 +57,15 @@ const PASSWORD_RESET_AUDIT_ACTION = "auth.password_reset";
 
 const CHALLENGE_TTL_SECONDS = 300;
 const CHALLENGE_KEY_PREFIX = "2fa:challenge:";
+const STAFF_MOBILE_TTL_MAX_HOURS = 168;
+
+function staffMobileTtlMs(): number {
+  const configured = Number(process.env.STAFF_MOBILE_SESSION_TTL_HOURS ?? STAFF_MOBILE_TTL_MAX_HOURS);
+  const hours = Number.isFinite(configured)
+    ? Math.min(Math.max(Math.floor(configured), 1), STAFF_MOBILE_TTL_MAX_HOURS)
+    : STAFF_MOBILE_TTL_MAX_HOURS;
+  return hours * 60 * 60 * 1000;
+}
 
 // Explicit override for signupOwner's $transaction below — Prisma's
 // interactive-transaction default is 5000ms. Production incident
@@ -307,7 +322,11 @@ export class AuthService {
   //   3. Wrong password, unknown email, and deactivated account all return
   //      the SAME generic INVALID_CREDENTIALS error.
   //   4. Rate limiting is deliberately deferred (see docs/deferred.md).
-  async login(input: LoginInput, ctx: RequestContext): Promise<LoginResponse> {
+  async login(
+    input: LoginInput | StaffMobileLoginInput,
+    ctx: RequestContext,
+    audience: "WEB" | "STAFF_MOBILE" = "WEB",
+  ): Promise<LoginResponse> {
     const rows = await basePrisma.$queryRaw<LookupUserForLoginRow[]>`
       SELECT * FROM auth_lookup_user_for_login(${input.email})
     `;
@@ -335,12 +354,18 @@ export class AuthService {
 
     // Check 2FA after password + is_active pass — schoolId is available from
     // the SD function result so we can scope straight to withTenant.
-    const { totpEnabled } = await withTenant(row.school_id, (db) =>
-      db.user.findUniqueOrThrow({
-        where: { id: row.user_id },
-        select: { totpEnabled: true },
+    const [{ totpEnabled }, schoolAccess] = await Promise.all([
+      withTenant(row.school_id, (db) => db.user.findUniqueOrThrow({
+        where: { id: row.user_id }, select: { totpEnabled: true },
+      })),
+      basePrisma.school.findUniqueOrThrow({
+        where: { id: row.school_id }, select: { staffMobileEnabled: true },
       }),
-    );
+    ]);
+
+    if (audience === "STAFF_MOBILE" && !schoolAccess.staffMobileEnabled) {
+      throw new ForbiddenError("STAFF_MOBILE_DISABLED", "Staff mobile access is not enabled for this school.");
+    }
 
     if (totpEnabled) {
       // Issue a single-use, short-lived challenge token instead of a session.
@@ -349,14 +374,27 @@ export class AuthService {
       const key = `${CHALLENGE_KEY_PREFIX}${challengeToken}`;
       await this.redis.set(
         key,
-        JSON.stringify({ userId: row.user_id, schoolId: row.school_id }),
+        JSON.stringify({
+          userId: row.user_id,
+          schoolId: row.school_id,
+          audience,
+          deviceId: "deviceId" in input ? input.deviceId : null,
+          deviceName: "deviceName" in input ? input.deviceName : null,
+        }),
         "EX",
         CHALLENGE_TTL_SECONDS,
       );
       return { requiresTwoFactor: true, challengeToken };
     }
 
-    const { rawToken } = await createSession(row.school_id, row.user_id, ctx);
+    const { rawToken } = await createSession(row.school_id, row.user_id, ctx,
+      audience === "STAFF_MOBILE" ? {
+        clientType: "MOBILE",
+        deviceId: (input as StaffMobileLoginInput).deviceId,
+        deviceName: (input as StaffMobileLoginInput).deviceName,
+        ttlMs: staffMobileTtlMs(),
+      } : undefined,
+    );
 
     const user = await withTenant(row.school_id, async (db) => {
       // Touch lastLoginAt + read back the public-shape user payload.
@@ -372,7 +410,7 @@ export class AuthService {
         data: {
           schoolId: row.school_id,
           userId: row.user_id,
-          action: LOGIN_AUDIT_ACTION,
+            action: audience === "STAFF_MOBILE" ? MOBILE_LOGIN_AUDIT_ACTION : LOGIN_AUDIT_ACTION,
           entityType: "user",
           entityId: row.user_id,
           ipAddress: ctx.ipAddress,
@@ -396,13 +434,21 @@ export class AuthService {
     return { requiresTwoFactor: false, user, school, token: rawToken };
   }
 
+  async mobileLogin(input: StaffMobileLoginInput, ctx: RequestContext): Promise<LoginResponse> {
+    return this.login(input, ctx, "STAFF_MOBILE");
+  }
+
   // Completes a 2FA-gated login started by login(). The client submits the
   // challenge token it received + the current TOTP code. On a wrong code the
   // token is preserved in Redis so the user can retry within the 300 s TTL;
   // on a correct code the token is deleted (single-use) and a normal session
   // is issued. The per-endpoint throttle (5 attempts / 5 min) guards against
   // code enumeration.
-  async loginWithChallenge(input: TotpChallengeInput, ctx: RequestContext): Promise<LoginResponse> {
+  async loginWithChallenge(
+    input: TotpChallengeInput | StaffMobileChallengeInput,
+    ctx: RequestContext,
+    expectedAudience: "WEB" | "STAFF_MOBILE" = "WEB",
+  ): Promise<LoginResponse> {
     const key = `${CHALLENGE_KEY_PREFIX}${input.challengeToken}`;
 
     // GET without deleting: a wrong-code attempt must not consume the token
@@ -423,7 +469,27 @@ export class AuthService {
       );
     }
 
-    const { userId, schoolId } = JSON.parse(raw) as { userId: string; schoolId: string };
+    const challenge = JSON.parse(raw) as {
+      userId: string; schoolId: string; audience?: "WEB" | "STAFF_MOBILE";
+      deviceId?: string | null; deviceName?: string | null;
+    };
+    const { userId, schoolId } = challenge;
+    if ((challenge.audience ?? "WEB") !== expectedAudience) {
+      throw new UnauthorizedError("INVALID_2FA_CHALLENGE", "Challenge token is invalid or has expired.");
+    }
+    if (expectedAudience === "STAFF_MOBILE" &&
+      (challenge.deviceId !== (input as StaffMobileChallengeInput).deviceId ||
+       challenge.deviceName !== (input as StaffMobileChallengeInput).deviceName)) {
+      throw new UnauthorizedError("INVALID_2FA_CHALLENGE", "Challenge token is invalid or has expired.");
+    }
+    if (expectedAudience === "STAFF_MOBILE") {
+      const access = await basePrisma.school.findUniqueOrThrow({
+        where: { id: schoolId }, select: { staffMobileEnabled: true },
+      });
+      if (!access.staffMobileEnabled) {
+        throw new ForbiddenError("STAFF_MOBILE_DISABLED", "Staff mobile access is not enabled for this school.");
+      }
+    }
 
     // Re-check is_active + fetch the live totp_secret inside the challenge
     // window. The user could be deactivated during the 300s TTL.
@@ -447,7 +513,14 @@ export class AuthService {
     // finds no key and receives INVALID_2FA_CHALLENGE.
     await this.redis.del(key);
 
-    const { rawToken } = await createSession(schoolId, userId, ctx);
+    const { rawToken } = await createSession(schoolId, userId, ctx,
+      expectedAudience === "STAFF_MOBILE" ? {
+        clientType: "MOBILE",
+        deviceId: challenge.deviceId ?? undefined,
+        deviceName: challenge.deviceName ?? undefined,
+        ttlMs: staffMobileTtlMs(),
+      } : undefined,
+    );
 
     const user = await withTenant(schoolId, async (db) => {
       const updatedUser = await db.user.update({
@@ -460,7 +533,7 @@ export class AuthService {
         data: {
           schoolId,
           userId,
-          action: LOGIN_2FA_AUDIT_ACTION,
+          action: expectedAudience === "STAFF_MOBILE" ? MOBILE_LOGIN_AUDIT_ACTION : LOGIN_2FA_AUDIT_ACTION,
           entityType: "user",
           entityId: userId,
           ipAddress: ctx.ipAddress,
@@ -477,6 +550,36 @@ export class AuthService {
     });
 
     return { requiresTwoFactor: false, user, school, token: rawToken };
+  }
+
+  async mobileLoginWithChallenge(input: StaffMobileChallengeInput, ctx: RequestContext): Promise<LoginResponse> {
+    return this.loginWithChallenge(input, ctx, "STAFF_MOBILE");
+  }
+
+  async listSessions(authCtx: AuthContext): Promise<StaffSessionListResponse> {
+    const sessions = await withTenant(authCtx.schoolId, (db) => db.session.findMany({
+      where: { userId: authCtx.userId, expiresAt: { gt: new Date() } },
+      orderBy: { createdAt: "desc" },
+      select: { id: true, clientType: true, deviceName: true, createdAt: true, lastSeenAt: true, expiresAt: true },
+    }));
+    return { sessions: sessions.map((session) => ({ ...session, current: session.id === authCtx.sessionId })) };
+  }
+
+  async revokeSession(authCtx: AuthContext, sessionId: string, ctx: RequestContext): Promise<void> {
+    const tokenHash = await withTenant(authCtx.schoolId, async (db) => {
+      const target = await db.session.findFirst({
+        where: { id: sessionId, userId: authCtx.userId }, select: { tokenHash: true },
+      });
+      if (!target) throw new NotFoundError("Session not found.");
+      await db.session.delete({ where: { id: sessionId } });
+      await db.auditLog.create({ data: {
+        schoolId: authCtx.schoolId, userId: authCtx.userId,
+        action: SESSION_REVOKED_AUDIT_ACTION, entityType: "session", entityId: sessionId,
+        ipAddress: ctx.ipAddress, metadata: { userAgent: ctx.userAgent, self: sessionId === authCtx.sessionId },
+      }});
+      return target.tokenHash;
+    });
+    await invalidateSessionCache(this.redis, [tokenHash]);
   }
 
   // Deletes the session row matching the current bearer token and writes an

@@ -5,6 +5,7 @@ import {
   Get,
   HttpCode,
   Ip,
+  Param,
   Post,
   Req,
   UseGuards,
@@ -22,6 +23,11 @@ import {
   type ForgotPasswordResponse,
   type LoginInput,
   type LoginResponse,
+  staffMobileChallengeSchema,
+  staffMobileLoginSchema,
+  type StaffMobileChallengeInput,
+  type StaffMobileLoginInput,
+  type StaffSessionListResponse,
   type MeResponse,
   type ResetPasswordInput,
   type ResetPasswordResponse,
@@ -82,6 +88,29 @@ export class AuthController {
       ipAddress: ip,
       userAgent: req.header("user-agent") ?? null,
     });
+  }
+
+  @Post("mobile/login")
+  @HttpCode(200)
+  @Throttle({ default: { ttl: 60000, limit: 10 } })
+  @UseGuards(RateLimitByEmailGuard)
+  async mobileLogin(
+    @Body(new ZodValidationPipe(staffMobileLoginSchema)) dto: StaffMobileLoginInput,
+    @Ip() ip: string,
+    @Req() req: Request,
+  ): Promise<LoginResponse> {
+    return this.authService.mobileLogin(dto, { ipAddress: ip, userAgent: req.header("user-agent") ?? null });
+  }
+
+  @Post("mobile/2fa/challenge")
+  @HttpCode(200)
+  @Throttle({ default: { ttl: 300_000, limit: 5 } })
+  async mobileTwoFactorChallenge(
+    @Body(new ZodValidationPipe(staffMobileChallengeSchema)) dto: StaffMobileChallengeInput,
+    @Ip() ip: string,
+    @Req() req: Request,
+  ): Promise<LoginResponse> {
+    return this.authService.mobileLoginWithChallenge(dto, { ipAddress: ip, userAgent: req.header("user-agent") ?? null });
   }
 
   // Public endpoint. 200 always, regardless of whether the email matched an
@@ -148,6 +177,24 @@ export class AuthController {
   @UseGuards(AuthGuard)
   async me(@CurrentUser() user: AuthContext): Promise<MeResponse> {
     return this.authService.getMe(user);
+  }
+
+  @Get("sessions")
+  @UseGuards(AuthGuard)
+  async sessions(@CurrentUser() user: AuthContext): Promise<StaffSessionListResponse> {
+    return this.authService.listSessions(user);
+  }
+
+  @Delete("sessions/:sessionId")
+  @UseGuards(AuthGuard)
+  @HttpCode(204)
+  async revokeSession(
+    @CurrentUser() user: AuthContext,
+    @Param("sessionId") sessionId: string,
+    @Ip() ip: string,
+    @Req() req: Request,
+  ): Promise<void> {
+    await this.authService.revokeSession(user, sessionId, { ipAddress: ip, userAgent: req.header("user-agent") ?? null });
   }
 
   // Returns whether 2FA is currently enabled for the authenticated user.

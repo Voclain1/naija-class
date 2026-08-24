@@ -5,6 +5,7 @@
   "scripts": {
     "backfill-paystack-splits": "dotenv -e ../../.env -- tsx scripts/backfill-paystack-splits.ts",
     "backfill-invoice-arms": "dotenv -e ../../.env -- tsx scripts/backfill-invoice-arms.ts",
+    "set-staff-mobile": "dotenv -e ../../.env -- tsx scripts/set-staff-mobile.ts",
     "build": "nest build",
     "start": "nest start",
     "dev": "nest start --watch",

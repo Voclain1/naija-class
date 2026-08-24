@@ -6,7 +6,7 @@
 // vitest.config.ts), so anything importing `react-native` cannot be reached
 // from a spec — and this rule is the part with a wrong answer worth guarding.
 
-export type Principal = "guardian" | "student";
+export type Principal = "guardian" | "student" | "staff";
 
 /**
  * Narrow an untrusted value read out of secure storage.
@@ -25,5 +25,6 @@ export type Principal = "guardian" | "student";
  * shows a "no children linked" list.
  */
 export function readStoredPrincipal(raw: string | null | undefined): Principal {
-  return raw === "student" ? "student" : "guardian";
+  if (raw === "student" || raw === "staff") return raw;
+  return "guardian";
 }
