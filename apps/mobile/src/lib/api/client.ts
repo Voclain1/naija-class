@@ -22,6 +22,8 @@
 
 import type { ErrorBody } from "@school-kit/types";
 
+import { recordServerDate } from "../staff/server-date";
+
 /**
  * Base URL. Expo only inlines env vars prefixed EXPO_PUBLIC_ into the bundle
  * (the equivalent of Next's NEXT_PUBLIC_). The dev default matches the API's
@@ -139,6 +141,11 @@ export async function apiFetch<T>(
     // fetch() rejects only on transport failure; any HTTP status resolves.
     throw new ApiNetworkError(cause);
   }
+
+  // Every response establishes the server's clock. Recorded before any
+  // status branching so an error response counts too — the CP2 marking rail
+  // must not be left without a server date just because the last call failed.
+  recordServerDate(response.headers.get("date"));
 
   if (response.status === 204) {
     return undefined as T;
