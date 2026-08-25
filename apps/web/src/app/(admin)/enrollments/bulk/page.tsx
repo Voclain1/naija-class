@@ -32,6 +32,12 @@ import {
   listEnrollments,
 } from "@/lib/enrollments/enrollments-api";
 import { getStudent, listStudents } from "@/lib/students/students-api";
+import { initialCarryOverSelection } from "@/lib/enrollments/carry-over-selection";
+import {
+  CARRY_OVER_DISABLED_BODY,
+  CARRY_OVER_DISABLED_TITLE,
+  CARRY_OVER_ENABLED,
+} from "@/lib/enrollments/carry-over-availability";
 
 // /enrollments/bulk — Phase 1 / Slice 9 cp2.
 //
@@ -47,7 +53,9 @@ import { getStudent, listStudents } from "@/lib/students/students-api";
 //   (a) Carried over — ENROLLED in source term + arm, default-checked
 //   (b) Withdrew last term — WITHDRAWN in source term + arm, default-UNchecked
 //   (c) Admitted after term 1 — Student.admittedAt > source.endDate
-//       AND no source-term enrollment in this arm, default-checked
+//       AND no source-term enrollment in this arm, default-UNCHECKED
+//       (changed 2026-08-25 — see the incident runbook; pre-ticked, this
+//       group swept an entire school into one arm)
 //
 // Cross-year guard: if the target term and the source term are in
 // different academic years, we refuse the carry-over outright (Phase 1
@@ -285,14 +293,11 @@ export default function BulkEnrollmentWizardPage() {
         }
         setCandidates(rows);
 
-        // Default-check state per spec.
-        const initial = new Map<string, boolean>();
-        for (const row of rows) {
-          if (row.group === "carried") initial.set(row.studentId, true);
-          else if (row.group === "admitted") initial.set(row.studentId, true);
-          else initial.set(row.studentId, false);
-        }
-        setChecked(initial);
+        // Default-check state. The rule itself lives in
+        // @/lib/enrollments/carry-over-selection so it can be unit-tested —
+        // it was inline here, untestable, when it caused the 2026-08-25
+        // incident. Guard: carry-over-selection.spec.ts.
+        setChecked(initialCarryOverSelection(rows));
 
         setLoading(false);
       } catch (e) {
@@ -481,6 +486,27 @@ export default function BulkEnrollmentWizardPage() {
     );
   }
 
+  // Kill switch, checked BEFORE anything renders. The CTA on /enrollments is
+  // already hidden, so reaching here means a bookmarked or hand-typed URL —
+  // which is exactly the path a switch has to cover to be worth calling a
+  // switch. See lib/enrollments/carry-over-availability.ts.
+  if (!CARRY_OVER_ENABLED) {
+    return (
+      <div className="mx-auto flex w-full max-w-2xl flex-col gap-4">
+        <h1 className="text-2xl font-semibold tracking-tight">
+          {CARRY_OVER_DISABLED_TITLE}
+        </h1>
+        <p className="text-sm text-muted-foreground">{CARRY_OVER_DISABLED_BODY}</p>
+        <Button asChild variant="outline" className="w-fit">
+          <Link href="/enrollments">
+            <ArrowLeft className="mr-1 h-4 w-4" />
+            Back to enrollments
+          </Link>
+        </Button>
+      </div>
+    );
+  }
+
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-6">
       <header className="flex flex-col gap-1">
@@ -520,10 +546,26 @@ export default function BulkEnrollmentWizardPage() {
         onToggleAll={(v) => toggleGroup("withdrew", v)}
       />
 
+      {/*
+        A visible scale warning when this group is large relative to the arm
+        it is being carried into. The 2026-08-25 incident produced exactly
+        this shape — 12 unplaced students offered on an arm whose real roster
+        was 3 — and nothing on screen said so.
+      */}
+      {groups.admitted.length > groups.carried.length && groups.admitted.length > 0 && (
+        <div className="rounded-md border border-warning/40 bg-warning/5 p-3 text-sm">
+          <strong>{groups.admitted.length} students</strong> have no place in{" "}
+          {sourceTerm?.name ?? "the previous term"} — more than the{" "}
+          {groups.carried.length} carrying over into {arm?.name}. This group is
+          school-wide, so it includes students who belong in other arms. Tick
+          only the ones joining <strong>{arm?.name}</strong>.
+        </div>
+      )}
+
       <CandidateGroup
         title="Admitted after previous term"
-        helper="Students admitted AFTER the previous term ended. Default: include all (they belong here this term)."
-        tone="success"
+        helper="Students with no place in the previous term — school-wide, not just this arm. Unticked by default: tick only the ones who belong in THIS arm."
+        tone="warning"
         rows={groups.admitted}
         checked={checked}
         onToggle={toggle}
