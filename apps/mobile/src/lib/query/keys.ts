@@ -57,4 +57,15 @@ export const queryKeys = {
     ["staff", schoolId, userId, "scope"] as const,
   staffRegister: (schoolId: string, userId: string, classArmId: string, date: string) =>
     ["staff", schoolId, userId, "attendance", classArmId, date] as const,
+
+  // CP3 — bursar collections. Same "staff" prefix rule, and it matters more
+  // here than anywhere else in the app: a debtor list is every family in the
+  // school that owes money, by name and amount. That must never reach
+  // plaintext AsyncStorage on a shared staffroom handset.
+  staffTermContext: (schoolId: string, userId: string) =>
+    ["staff", schoolId, userId, "term-context"] as const,
+  staffCollections: (schoolId: string, userId: string, termId: string) =>
+    ["staff", schoolId, userId, "collections", termId] as const,
+  staffDebtors: (schoolId: string, userId: string, termId: string) =>
+    ["staff", schoolId, userId, "debtors", termId] as const,
 } as const;

@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { staffTeacherScope } from "../../src/lib/api/staff-attendance";
 import { queryKeys } from "../../src/lib/query/keys";
 import { useSession } from "../../src/lib/auth/session";
+import { hasPermission } from "../../src/lib/auth/permissions";
 import { spacing } from "../../src/theme/tokens";
 import {
   Body,
@@ -35,6 +36,8 @@ export default function StaffHomeScreen() {
   const schoolId = staff?.school.id ?? "";
   const userId = staff?.user.id ?? "";
 
+  const canSeeCollections = hasPermission(staff?.permissions ?? [], "finance.dashboard.read");
+
   const scope = useQuery({
     queryKey: queryKeys.staffScope(schoolId, userId),
     queryFn: staffTeacherScope,
@@ -62,6 +65,23 @@ export default function StaffHomeScreen() {
       </Body>
 
       <ScrollView contentContainerStyle={styles.content}>
+        {/*
+          CP3 — collections, offered on PERMISSION rather than role name. A
+          bursar holds finance.dashboard.read; so does an owner (via "*"). A
+          teacher holds neither and is never shown a screen that could only
+          403 at them, which is the same rule the arm list below applies to
+          form-teacher arms.
+        */}
+        {canSeeCollections && (
+          <Card style={styles.armCard}>
+            <View style={styles.armText}>
+              <Body>Collections</Body>
+              <Label>Fees collected, outstanding and who owes</Label>
+            </View>
+            <Button title="Open collections" onPress={() => router.push("/staff/collections")} />
+          </Card>
+        )}
+
         {scope.isPending && (
           <CenteredMessage>
             <Body muted>Loading your classes…</Body>
