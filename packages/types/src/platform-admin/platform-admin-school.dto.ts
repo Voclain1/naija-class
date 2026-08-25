@@ -28,4 +28,14 @@ export interface PlatformAdminSchoolDto {
   // a separate gate this field says nothing about. Toggled via
   // PATCH /platform-admin/schools/:schoolId/ai.
   aiEnabled: boolean;
+  // The per-school staff mobile rollout gate (School.staffMobileEnabled,
+  // DEFAULT false). Toggled via PATCH /platform-admin/schools/:schoolId/
+  // staff-mobile. Present here so that endpoint is not a blind write — and
+  // specifically so a DISABLE is checkable: an ENABLE has an accidental
+  // substitute proof (a successful staff mobile login can only happen when the
+  // flag is true, since it is re-read at both password acceptance and 2FA
+  // challenge completion), but a disable has none — "nobody logged in" is not
+  // an observation. Says nothing about WHICH staff: role grants and the
+  // per-principal guards are separate gates.
+  staffMobileEnabled: boolean;
 }

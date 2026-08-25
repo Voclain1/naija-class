@@ -480,6 +480,7 @@ export function PlatformAdminDashboard() {
                   <TableHead>Signed up</TableHead>
                   <TableHead>Early access</TableHead>
                   <TableHead>AI</TableHead>
+                  <TableHead>Staff mobile</TableHead>
                   <TableHead />
                 </TableRow>
               </TableHeader>
@@ -546,6 +547,25 @@ export function PlatformAdminDashboard() {
                               : "Enable"}
                         </Button>
                       </div>
+                    </TableCell>
+                    {/*
+                      Staff mobile is READ-ONLY here, deliberately unlike the AI
+                      column beside it. Enablement runs through the one-school
+                      rollout rail (apps/api/scripts/set-staff-mobile.ts), which
+                      requires a dry run and an exactly-matching
+                      --confirm-school-id and refuses more than one --school-id.
+                      A one-click toggle in a table row would quietly undo that
+                      friction, which is the whole point of the rail. What was
+                      missing was VISIBILITY — the operator could not read back
+                      what a rollout did, and a disable was unverifiable in any
+                      direction. That is what this cell fixes.
+                    */}
+                    <TableCell>
+                      {school.staffMobileEnabled ? (
+                        <Badge variant="success">On</Badge>
+                      ) : (
+                        <Badge variant="muted">Off</Badge>
+                      )}
                     </TableCell>
                     <TableCell>
                       <Button
