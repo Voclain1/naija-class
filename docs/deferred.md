@@ -2019,3 +2019,146 @@ If widened, `PORTAL_ALLOWED_STATUS` becomes a set and all three call sites
 read from it — note that the invitation-accept gate is the one place where
 widening has a real security question attached (should a graduated student
 be able to *newly activate* an account, or only keep an existing one?).
+
+---
+
+## Rollout rails make the operator fish the school ID out of DevTools — captured 2026-08-25
+
+**Small, self-contained, not urgent.** Logged because this is now the THIRD
+one-school-at-a-time rollout rail sharing the same friction, which is the point
+at which it stops being a quirk of one script.
+
+Every rail takes an operator-reviewed school id as its argument:
+
+- AI enablement (`PATCH /platform-admin/schools/:schoolId/ai`)
+- Early access (`PATCH /platform-admin/schools/:schoolId/early-access`)
+- Staff mobile (`PATCH /platform-admin/schools/:schoolId/staff-mobile`, plus
+  the dry-run/confirm CLI `apps/api/scripts/set-staff-mobile.ts`)
+
+But the platform-admin dashboard never renders a school id as text.
+`platform-admin-dashboard.tsx` uses `schoolId` as a React key and inside
+request paths only, so the operator's actual retrieval route today is: open
+DevTools, read the `/api/platform-admin/schools` response, or click "View
+users" and read the id out of the resulting `/api/platform-admin/users?schoolId=…`
+request URL.
+
+Discovered concretely during CP2 Gate 5 prep (2026-08-25): the dry-run could
+not be run without asking the maintainer to go and fetch the id by hand.
+
+**Why this is worth fixing rather than tolerating.** The operator-reviewed id is
+not incidental to these rails — it IS the safety check. `set-staff-mobile.ts`
+refuses `--apply` unless `--confirm-school-id` matches exactly, and refuses more
+than one `--school-id` so there is no bulk mode. A retrieval path that runs
+through DevTools invites the one behaviour that check exists to prevent:
+typing a plausible-looking id from memory. Making the real id one click away is
+a safety improvement, not a convenience.
+
+**Suggested shape:** a "copy id" affordance on each dashboard row (icon button,
+copies to clipboard, brief confirmation). Deliberately NOT a plain visible id
+column — the row is already dense, and the id is needed occasionally rather than
+read at a glance.
+
+Explicitly out of scope for CP2. Not started.
+
+---
+
+## `staffMobileEnabled` is a blind write — missing from the platform-admin read surface (captured 2026-08-25)
+
+`PATCH /platform-admin/schools/:schoolId/staff-mobile` (shipped in CP1, PR #211)
+sets `School.staffMobileEnabled`, but **nothing on the platform-admin read
+surface returns it**: `platform_admin_list_schools()` does not select the
+column, and `PlatformAdminSchoolDto` has no such field. The operator can
+therefore turn staff mobile on for a school and has no way to read back that it
+is on — the write's own response echo is the only signal, which is exactly what
+independent verification is not.
+
+**This is the same gap the AI toggle deliberately closed**, and the reasoning
+transfers unchanged. CLAUDE.md's inventory row for `platform_admin_list_schools`
+records that `ai_enabled` was added to the return shape on 2026-08-14 precisely
+"so `PATCH /platform-admin/schools/:schoolId/ai` isn't a blind write", and
+argues it belongs there because it is platform status about the tenancy set by
+the operator, not the school's own configuration. `staffMobileEnabled` is the
+same category by the same test: operator-set, platform-side, not school
+configuration and not spend configuration.
+
+Found concretely during CP2 Gate 5 (2026-08-25): after the enablement PATCH for
+Virgo returned `{ staffMobileEnabled: true }`, there was no read path to confirm
+it. Gate 5 proceeded on a stronger substitute — a successful staff mobile login
+proves the flag, because the flag is re-read from the row at both password
+acceptance and challenge completion and a false value returns
+`403 STAFF_MOBILE_DISABLED`. That substitute works for enablement; it does NOT
+give the operator a roster view, and it does not work at all for confirming a
+DISABLE.
+
+**FIXED 2026-08-25, same day**, once the disable-direction consequence was
+understood: an enable had an accidental proof, a disable had none, and a kill
+switch verifiable only in the granting direction is the wrong way round.
+
+Shipped: migration `20260825120000_platform_admin_staff_mobile_visibility`
+(DROP + CREATE, same function name, adding `staff_mobile_enabled`),
+`PlatformAdminSchoolDto.staffMobileEnabled`, the service mapping, and a
+READ-ONLY column on the dashboard row. Read-only deliberately, unlike the AI
+toggle beside it: enablement runs through the one-school rollout rail with a
+dry run and an exactly-matching `--confirm-school-id`, and a one-click row
+toggle would quietly undo that friction — the gap was visibility, not
+convenience.
+
+Verified against a live database: SECURITY DEFINER count still 20, owner
+`school_kit`, `prosecdef` true, `search_path` pinned, EXECUTE to `app_user`
+with PUBLIC absent, new column present in `pg_get_function_result`. The
+allow-list shape test in `platform-admin-access.spec.ts` was extended (it is a
+deliberate allow-list so this surface can never widen silently), and a new
+regression asserts the LIST reflects the write in BOTH directions —
+false → true → false. Platform-admin suite 33/33, SD inventory + RBAC gates
+45/45.
+
+---
+
+## No audit trail is inspectable through the product — SQL is the only way to read one (captured 2026-08-25)
+
+**Platform-wide, not specific to any module.** Every mutating path in this
+system writes to `audit_logs` — it is a hard rule in CLAUDE.md for money, it is
+enforced for platform-admin actions, and `audit-coverage.spec.ts` gates it. But
+**nothing anywhere reads those rows back.** Searched 2026-08-25 across
+`apps/api/src/modules` (no controller, no service, no `auditLog.findMany`
+outside test files) and `apps/web/src/app` (no route, no page). There is no
+`GET /audit-logs` endpoint, no admin screen, no export.
+
+From the application's point of view the audit trail is **write-only**. The
+only way to read an audit row is a direct SQL query against production.
+
+**Why this is worth its own entry rather than a footnote.** The audit trail is
+relied on as an answer to questions that are, in practice, asked by people who
+cannot run SQL:
+
+- "Who changed this student's grade, and when?"
+- "Who recorded this payment?" — the money rule exists precisely so this is
+  answerable, including for admin overrides.
+- "Did that operator action actually take effect?" — this is how the gap was
+  found: verifying CP2's Gate 5 device mark required reading one audit row, and
+  the only available instruction was "open the Neon SQL editor"
+  (`docs/runbooks/cp2-gate5-verification.md`).
+- NDPR / dispute situations, where "we have an audit log" is materially weaker
+  if nobody but a developer with production database access can produce it.
+
+**Not obviously a bug.** Keeping the trail out of the product is a defensible
+posture: audit rows carry `ip_address`, actor ids and `metadata` that can name
+students, and a careless read surface is a new PII exposure on a table that
+currently has none. The point of this entry is that the current state looks
+like a deliberate decision and may not be one — it has never been written down
+anywhere as a choice.
+
+**If it is ever built, the real questions are:**
+
+1. Who may read it? Owner only, or owner + admin? A staff member reading who
+   changed what about their own colleagues is its own problem.
+2. Scoped how? `audit_logs` is under RLS and monthly-partitioned, so a naive
+   date-range query across partitions needs care.
+3. Redacted how? `ip_address` and `metadata` are the sensitive parts; the
+   actor, action, entity and timestamp are the useful parts, and those are
+   mostly separable.
+4. Platform-admin rows have `school_id = null` and must never appear in a
+   school's own view.
+
+Not started. No decision taken. Logged so the absence reads as known rather
+than accidental.

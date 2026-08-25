@@ -299,9 +299,16 @@ describe("Platform admin access (2026-08-02)", () => {
     //     the operator. Note what did NOT come with it: aiMonthlyTokenBudget
     //     is spend configuration and parentSummaryEnabled is the school's own
     //     opt-in, and neither is needed to answer "is AI on here")
+    //   - staffMobileEnabled              2026-08-25 (per-school staff mobile
+    //     rollout gate; same category again — operator-set platform status.
+    //     Added specifically so PATCH .../staff-mobile is not a blind write.
+    //     The enable direction had an accidental proof (a successful staff
+    //     mobile login is impossible while the flag is false); the DISABLE
+    //     direction had none, which is the wrong way round for a kill switch)
     expect(Object.keys(row).sort()).toEqual(
       [
         "aiEnabled",
+        "staffMobileEnabled",
         "createdAt",
         "earlyAccessGrantedAt",
         "isActive",
@@ -794,6 +801,50 @@ describe("Platform admin access (2026-08-02)", () => {
       });
       expect(audit).toMatchObject({ schoolId: null, userId: platformAdminUserId, entityType: "school" });
       expect(audit?.metadata).toMatchObject({ field: "staffMobileEnabled", from: false, to: true });
+    });
+
+    it("the schools LIST reflects the write in BOTH directions (the blind-write fix)", async () => {
+      // Regression for the gap found during CP2 Gate 5 (2026-08-25): the PATCH
+      // shipped without staffMobileEnabled on any read surface, so the write's
+      // own echo was the only signal it had worked.
+      //
+      // The enable direction had an accidental substitute proof — a successful
+      // staff mobile login is impossible while the flag is false, since it is
+      // re-read at both password acceptance and challenge completion. The
+      // DISABLE direction had none: "nobody logged in" is not an observation,
+      // and a failed disable is indistinguishable from a successful one from
+      // outside. Both directions are asserted here, and the disable half is
+      // the one that was genuinely unverifiable before.
+      const listOnce = async (): Promise<boolean> => {
+        const res = await request(app.getHttpServer())
+          .get("/api/v1/platform-admin/schools")
+          .set("Authorization", `Bearer ${platformAdminToken}`);
+        expect(res.status).toBe(200);
+        return res.body.find((r: { schoolId: string }) => r.schoolId === schoolB)
+          .staffMobileEnabled as boolean;
+      };
+
+      expect(await listOnce()).toBe(false);
+
+      await request(app.getHttpServer())
+        .patch(`/api/v1/platform-admin/schools/${schoolB}/staff-mobile`)
+        .set("Authorization", `Bearer ${platformAdminToken}`)
+        .send({ staffMobileEnabled: true })
+        .expect(200);
+      expect(await listOnce()).toBe(true);
+
+      await request(app.getHttpServer())
+        .patch(`/api/v1/platform-admin/schools/${schoolB}/staff-mobile`)
+        .set("Authorization", `Bearer ${platformAdminToken}`)
+        .send({ staffMobileEnabled: false })
+        .expect(200);
+      expect(await listOnce()).toBe(false);
+
+      // And the list is not reporting one school's flag for another.
+      await basePrisma.school.update({
+        where: { id: schoolB },
+        data: { staffMobileEnabled: false },
+      });
     });
 
     it("rejects non-boolean input and unknown schools", async () => {

@@ -105,6 +105,7 @@ interface ListSchoolsRow {
   owner_invite_expires_at: Date | null;
   early_access_granted_at: Date | null;
   ai_enabled: boolean;
+  staff_mobile_enabled: boolean;
 }
 
 // Mirrors platform_admin_list_paystack_setup_requests()'s columns.
@@ -279,6 +280,7 @@ export class PlatformAdminService {
         ? r.early_access_granted_at.toISOString()
         : null,
       aiEnabled: r.ai_enabled,
+      staffMobileEnabled: r.staff_mobile_enabled,
     }));
   }
 
