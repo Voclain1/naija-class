@@ -1,6 +1,6 @@
 # Staff mobile companion
 
-**Status:** approved 2026-08-24. CP1 complete 2026-08-25 (deployed + maintainer-confirmed real-device verification; see `docs/journal/2026-08-25.md`). CP2 planning.
+**Status:** approved 2026-08-24. CP1 and CP2 complete 2026-08-25 — both device-gated and server-side verified against Virgo Fidelis; see `docs/journal/2026-08-25.md`. CP3 (bursar monitoring) not started.
 
 This addendum supersedes only Phase 6's original “not a teacher mobile app”
 boundary. Staff is one principal with existing role grants, not four new
