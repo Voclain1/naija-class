@@ -2058,7 +2058,34 @@ copies to clipboard, brief confirmation). Deliberately NOT a plain visible id
 column — the row is already dense, and the id is needed occasionally rather than
 read at a glance.
 
-Explicitly out of scope for CP2. Not started.
+**RESOLVED 2026-08-26.** Shipped in `platform-admin-dashboard.tsx`: each school
+row's name cell now carries a second line — a copy-icon button whose label IS
+the full school id, in monospace, which copies the id to the clipboard and
+swaps the icon to a tick for two seconds. Fallback on a refused clipboard write
+is `window.prompt` with the id pre-filled, the same pattern
+`components/settings/invitations-table.tsx` already uses; that fallback matters
+more here than it does there, because the entire point of the affordance is
+that obtaining an id never sends the operator back to DevTools.
+
+**One deliberate divergence from the shape suggested above:** the id IS
+rendered visibly, not hidden behind a bare icon. The note's reasoning was row
+density, and that concern was real but is answered by placement — the id sits
+as a secondary line under the school name rather than as a ninth column, and
+`whitespace-nowrap` keeps it on one line (verified in a real browser; without
+it the 36-char id wrapped). The stronger argument is the one this entry makes
+itself: the operator-reviewed id IS the safety check that `--confirm-school-id`
+enforces. A copy-only icon would let an operator paste an id they never
+actually looked at, which is a *different* way of failing the same check that
+typing one from memory fails. Seeing the id and copying it are both required
+for the check to mean anything.
+
+Verified in a real browser (Chromium via Playwright, against the local API and
+Postgres, logged in through the real `/super-admin/login` form as a genuine
+platform admin): the id renders as text in the row, clicking the button places
+that exact id on the clipboard (read back via `navigator.clipboard.readText()`),
+and the copied-state feedback appears and reverts. That check was run as a
+throwaway spec and deliberately not committed — see the note in
+`docs/journal/2026-08-26.md`.
 
 ---
 
