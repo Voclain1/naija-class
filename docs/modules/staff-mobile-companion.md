@@ -1,6 +1,6 @@
 # Staff mobile companion
 
-**Status:** approved 2026-08-24. CP1 and CP2 complete 2026-08-25 — both device-gated and server-side verified against Virgo Fidelis; see `docs/journal/2026-08-25.md`. CP3 (bursar monitoring) not started.
+**Status:** approved 2026-08-24. CP1, CP2 and CP3 complete. CP1/CP2 device-gated and server-side verified against Virgo Fidelis (`docs/journal/2026-08-25.md`); CP3 gates 0-4 verified, Gate 5 maintainer-reported with figures pending (`docs/journal/2026-08-26.md`). **D16 remains open** — it was to be decided on the cold-open measurement, which has not been recorded. CP4 (owner/admin dashboard + web handoffs) not started.
 
 This addendum supersedes only Phase 6's original “not a teacher mobile app”
 boundary. Staff is one principal with existing role grants, not four new
