@@ -1,6 +1,6 @@
 # Staff mobile companion
 
-**Status:** approved 2026-08-24. CP1 and CP2 complete 2026-08-25 — both device-gated and server-side verified against Virgo Fidelis; see `docs/journal/2026-08-25.md`. CP3 (bursar monitoring) not started.
+**Status:** approved 2026-08-24. CP1, CP2 and CP3 complete. CP1/CP2 device-gated and server-side verified against Virgo Fidelis (`docs/journal/2026-08-25.md`); CP3 gates 0-4 verified, Gate 5 maintainer-reported with figures pending (`docs/journal/2026-08-26.md`). **D16 remains open** — it was to be decided on the cold-open measurement, which has not been recorded. CP4 (owner/admin dashboard + web handoffs) not started.
 
 This addendum supersedes only Phase 6's original “not a teacher mobile app”
 boundary. Staff is one principal with existing role grants, not four new
@@ -162,3 +162,127 @@ response carries a `Date` header, so `apiFetch` records it and the register load
 itself establishes the server's day — no new endpoint, and CP2's
 no-server-change boundary holds. If no response has been seen yet, marking is
 BLOCKED rather than falling back to the device clock.
+
+---
+
+## CP3 — bursar collection monitoring (plan-first, for review 2026-08-25)
+
+**Scope: read-only.** The plan-first's own boundary already settles this —
+"payment recording or approval" and "refunds" are web-only. Monitoring is
+therefore what CP3 is: a bursar standing in a corridor can see where collections
+stand and who owes, and cannot move money from the phone. That asymmetry is
+deliberate and worth keeping visible on screen, not just in this document.
+
+**Like CP2, no server change is expected.** Every endpoint exists and the bursar
+role already holds every permission needed:
+
+| Need | Endpoint | Permission (bursar holds) |
+|---|---|---|
+| Collections summary | `GET /finance/dashboard?termId=` | `finance.dashboard.read` |
+| Who owes | `GET /finance/debtors?termId=` | `finance.debtors.read` |
+| Recent money in | `GET /payments` | `payment.read` |
+| Term context | `GET /academic-years`, `GET /academic-years/:yearId/terms` | `academic-year.read`, `term.read` |
+
+`FinanceDashboardDto` already returns `totalInvoiced`, `totalCollected`,
+`collectionRatePercent`, `outstandingBalance`, `debtorCount`, `totalExpenses`
+and `netPosition`. `DebtorDto` already returns student name, admission number,
+class arm, `totalDue`/`totalPaid`/`balance`, status, due date and
+`hasPaymentPlan` — and carries NO guardian contact details, which is the right
+shape for a phone and means CP3 introduces no new PII surface.
+
+### The one real finding, and it is a Gate 0 question
+
+**A bursar has no one-stop context endpoint, and the phone therefore pays two
+round-trips before it can render anything.** Both finance endpoints require
+`termId: uuid` with no server-side "current term" fallback (`dashboard.dto.ts`
+says so explicitly, mirroring `listDebtorsSchema`). Resolving it means
+`GET /academic-years` → find `isCurrent` → `GET /academic-years/:yearId/terms`
+→ find `isCurrent` → only then the dashboard.
+
+This is the mirror image of the teacher's position and worth stating plainly:
+teachers were GIVEN `/teacher-scope/me` precisely because they lacked
+`term.read` and could not resolve a term at all. Bursars hold the permission,
+so nobody ever built them the convenience — the web finance pages resolve it
+through a year/term selector the user is already looking at. On a phone opened
+for a ten-second glance, three sequential requests on a Nigerian mobile network
+is the whole interaction.
+
+**Decision required before Gate 1 (D16).** Three options, and this is the one
+place CP3 might legitimately need a server change:
+
+- **(a) Client-side chain, no server change.** Preserves CP2's "mobile-only"
+  property exactly. Costs two extra round-trips on every cold open.
+- **(b) A `currentTermId` convenience on an existing bursar-readable read.**
+  Small, but it is a server change and needs its own justification.
+- **(c) Accept `termId` optional on the two finance endpoints, defaulting to the
+  current term.** Cleanest for every client including web — and precisely what
+  `dashboard.dto.ts` says was deliberately NOT done, so it reopens a settled
+  decision and must not be done casually.
+
+**Recommendation: (a) for CP3.** It keeps the checkpoint honest to the CP2
+precedent, and the cost is measurable rather than theoretical. If Gate 0 shows
+the cold open is genuinely slow on a real network, that measurement is the
+argument for (b) or (c) — made with evidence, in its own PR, rather than
+assumed now.
+
+### D17 — payment-link share is deliberately EXCLUDED, and should be revisited
+
+The single most natural bursar action on a phone is sharing an invoice's
+payment link to WhatsApp, which the web already does (`GET/POST
+/invoices/:id/payment-link`, `wa.me` share, shipped in the payment-links
+initiative). WhatsApp is on the phone; the parent is on WhatsApp.
+
+It is excluded from CP3 anyway, because `POST /invoices/:id/payment-link`
+requires `payment.record` and creates a remote Paystack object — a write, and
+one adjacent to the money boundary this plan-first put behind a web-only line.
+Shipping it inside a checkpoint scoped as "monitoring" would widen that line
+quietly.
+
+Recorded as a real candidate for CP4 or its own slice, with the note that the
+READ half (`GET …/payment-link`, showing an already-created link and offering
+the share) is a materially smaller ask than the write half and could be taken
+alone.
+
+### Gates
+
+**Gate 0 — verify the no-server-change claim, and MEASURE the cold open.**
+Against real Postgres, confirm the four endpoints supply everything the screens
+render. Separately, time the resolve-term-then-load chain against the deployed
+API and record the number. That measurement is D16's evidence; without it, (a)
+vs (b) vs (c) is a matter of taste.
+
+**Gate 1 — the collections screen.** Dashboard figures for the current term:
+collected vs invoiced, collection rate, outstanding, debtor count. Money is
+formatted from kobo at the display layer only; the phone computes nothing —
+`netPosition` and `collectionRatePercent` are server-computed and rendered as
+given. Evidence: a school with zero invoices renders an explicit empty state
+naming why, not "0%" presented as a fact about collections.
+
+**Gate 2 — the debtor list.** Name, arm, balance, status, `hasPaymentPlan`.
+Read-only, no reminder sending (`finance.debtors.remind` is a write and a real
+outbound message; it stays web-only for CP3). Evidence: the list renders
+identically to the web debtors page for the same term, verified against real
+data rather than by eye.
+
+**Gate 3 — CP1's security invariants, on the most sensitive payload yet.**
+Every key begins `["staff", schoolId, userId, …]`, with a spec asserting the
+ACTUAL keys these screens build — the same shape as `staff-keys.spec.ts`, and
+more load-bearing here than for attendance: a debtor list is every family in the
+school that owes money, by name and amount, and it must never reach plaintext
+AsyncStorage. Plus, on device: obscured in the app switcher, and re-locked after
+more than two minutes backgrounded while a debtor list is on screen.
+
+**Gate 4 — real-DB API conformance.** Positive/control pairing: bursar reads
+successfully; a TEACHER is refused on all four endpoints (they hold none of
+these permissions); cross-tenant `termId` returns nothing, not another school's
+figures. Money assertions in kobo, exact, no float arithmetic anywhere.
+
+**Gate 5 — real device.** A real bursar login against a reviewed school, figures
+compared against the web finance dashboard for the same term — the two surfaces
+must agree to the kobo. Same standard CP2 was held to.
+
+### Out of scope for CP3
+
+Recording payments, refunds, reminder sends, payment-link creation or sharing
+(D17), expenses, payroll, BVN, and the invoice detail page. Every one of these
+is either a write or an established web-only surface.

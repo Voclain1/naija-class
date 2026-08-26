@@ -21,6 +21,12 @@ const USER = "user_xyz";
 const STAFF_KEYS: Record<string, readonly unknown[]> = {
   staffScope: queryKeys.staffScope(SCHOOL, USER),
   staffRegister: queryKeys.staffRegister(SCHOOL, USER, "arm_1", "2026-08-25"),
+  // CP3 — collections. staffDebtors is the single most sensitive cache entry
+  // in the app: every family in the school that owes money, by name and
+  // amount.
+  staffTermContext: queryKeys.staffTermContext(SCHOOL, USER),
+  staffCollections: queryKeys.staffCollections(SCHOOL, USER, "term_1"),
+  staffDebtors: queryKeys.staffDebtors(SCHOOL, USER, "term_1"),
 };
 
 describe("staff query keys", () => {
