@@ -20,6 +20,11 @@ import { listAcademicYears, listTerms } from "@/lib/academic-years/academic-year
 import { ApiError } from "@/lib/api-client";
 import { listArmsForLevel } from "@/lib/class-arms/class-arms-api";
 import { listClassLevels } from "@/lib/class-levels/class-levels-api";
+import { listClassArms } from "@/lib/class-arms/class-arms-api";
+import {
+  feeScopeWarning,
+  feeScopeWarningText,
+} from "@/lib/finance/fee-scope-warning";
 import {
   createFeeCategory,
   createFeeItem,
@@ -60,9 +65,28 @@ const EMPTY_ITEM_FORM: ItemFormState = {
 export default function FeesPage() {
   // ── scope reference data ─────────────────────────────────────────────────
   const [levels, setLevels] = useState<ClassLevelDto[]>([]);
-  const [arms, setArms] = useState<ClassArmDto[]>([]);
   const [years, setYears] = useState<AcademicYearDto[]>([]);
+
+  // FORM state: the dependent dropdowns, deliberately narrow — arms for the
+  // level currently chosen in the item form, terms for the year chosen there.
+  // Emptied whenever the form has no level/year.
+  const [arms, setArms] = useState<ClassArmDto[]>([]);
   const [terms, setTerms] = useState<TermDto[]>([]);
+
+  // TABLE state: every arm and every term in the school, loaded once.
+  //
+  // These exist because scopeLabel used to read the FORM lists above, so a
+  // saved item's arm and term could only be named while the form happened to
+  // have the matching level/year selected — otherwise the row rendered
+  // "Unknown arm · Unknown term" for perfectly valid data. Levels and years
+  // never had the problem because they load globally, which is exactly why
+  // half of each scope label resolved and half did not.
+  //
+  // That was not cosmetic: on 2026-08-26 it hid a fee item pinned to the
+  // Second Term of the WRONG academic year, which made invoice generation
+  // return zero and looked like broken arm scoping.
+  const [allArms, setAllArms] = useState<ClassArmDto[]>([]);
+  const [allTerms, setAllTerms] = useState<TermDto[]>([]);
 
   // ── categories ───────────────────────────────────────────────────────────
   const [categories, setCategories] = useState<FeeCategoryDto[]>([]);
@@ -91,8 +115,25 @@ export default function FeesPage() {
     void Promise.all([
       listClassLevels().then(setLevels).catch(() => undefined),
       listAcademicYears().then(setYears).catch(() => undefined),
+      listClassArms().then(setAllArms).catch(() => setAllArms([])),
     ]);
   }, []);
+
+  // Every term across every year, for the table's scope labels. Terms are only
+  // listable per-year, so this fans out over the years once they are known —
+  // a handful of requests, made once, not per render.
+  useEffect(() => {
+    if (years.length === 0) return;
+    let cancelled = false;
+    void Promise.all(
+      years.map((y) => listTerms(y.id).catch(() => [] as TermDto[])),
+    ).then((lists) => {
+      if (!cancelled) setAllTerms(lists.flat());
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [years]);
 
   // When level changes in item form, reload arms.
   useEffect(() => {
@@ -115,6 +156,16 @@ export default function FeesPage() {
       .then(setTerms)
       .catch(() => setTerms([]));
   }, [itemForm.academicYearId]);
+
+  // Warn when the item being edited is scoped outside the current year. Uses
+  // the PAGE-level term list so it works even before the form's dependent
+  // term list has loaded.
+  const scopeWarning = feeScopeWarning({
+    academicYearId: itemForm.academicYearId || null,
+    termId: itemForm.termId || null,
+    years,
+    terms: allTerms,
+  });
 
   // ── categories CRUD ──────────────────────────────────────────────────────
   const loadCategories = useCallback(async () => {
@@ -447,7 +498,7 @@ export default function FeesPage() {
                             {formatKobo(item.amount)}
                           </TableCell>
                           <TableCell className="text-xs text-muted-foreground">
-                            {scopeLabel(item, levels, arms, years, terms)}
+                            {scopeLabel(item, levels, allArms, years, allTerms)}
                           </TableCell>
                           <TableCell className="text-center">
                             {item.active ? (
@@ -620,6 +671,21 @@ export default function FeesPage() {
             </div>
           </div>
 
+          {/*
+            Scope warning. A fee item scoped outside the current academic year
+            is valid — a school may set next year's fees in advance — but it
+            will NOT appear in invoices generated for the current term, and on
+            2026-08-26 that silence cost a pilot school an afternoon: an item
+            pinned to "Second Term" of the wrong YEAR produced zero invoices
+            and looked like broken arm scoping. Says what will happen, not
+            merely that something is unusual.
+          */}
+          {scopeWarning && (
+            <div className="mt-3 rounded-md border border-warning/40 bg-warning/5 p-3 text-sm">
+              {feeScopeWarningText(scopeWarning)}
+            </div>
+          )}
+
           <DialogFooter>
             <Button variant="outline" onClick={() => setItemFormOpen(false)}>
               Cancel
@@ -645,17 +711,19 @@ export default function FeesPage() {
 function scopeLabel(
   item: FeeItemDto,
   levels: ClassLevelDto[],
-  _arms: ClassArmDto[],
+  allArms: ClassArmDto[],
   years: AcademicYearDto[],
-  terms: TermDto[],
+  allTerms: TermDto[],
 ): string {
+  // NOTE: these must be the PAGE-level lists (every arm, every term), never
+  // the item form's dependent dropdowns. See the state block above.
   const parts: string[] = [];
   if (item.classLevelId) {
     const level = levels.find((l) => l.id === item.classLevelId);
     parts.push(level?.name ?? "Unknown level");
   }
   if (item.classArmId) {
-    const arm = _arms.find((a) => a.id === item.classArmId);
+    const arm = allArms.find((a) => a.id === item.classArmId);
     parts.push(arm?.name ?? "Unknown arm");
   }
   if (item.academicYearId) {
@@ -663,7 +731,7 @@ function scopeLabel(
     parts.push(year?.label ?? "Unknown year");
   }
   if (item.termId) {
-    const term = terms.find((t) => t.id === item.termId);
+    const term = allTerms.find((t) => t.id === item.termId);
     parts.push(term?.name ?? "Unknown term");
   }
   return parts.length ? parts.join(" · ") : "School-wide";
