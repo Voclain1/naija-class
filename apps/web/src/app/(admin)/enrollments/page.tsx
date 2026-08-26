@@ -28,6 +28,11 @@ import {
 import { listClassArms } from "@/lib/class-arms/class-arms-api";
 import { listClassLevels } from "@/lib/class-levels/class-levels-api";
 import {
+  CARRY_OVER_DISABLED_BODY,
+  CARRY_OVER_DISABLED_TITLE,
+  CARRY_OVER_ENABLED,
+} from "@/lib/enrollments/carry-over-availability";
+import {
   listEnrollments,
   updateEnrollment,
 } from "@/lib/enrollments/enrollments-api";
@@ -453,15 +458,26 @@ function ArmCard({
             <p className="text-sm">
               No enrollments yet for this arm this term.
             </p>
-            <Button asChild size="sm" variant="outline" className="w-fit">
-              <Link
-                href={`/enrollments/bulk?armId=${arm.id}&termId=${targetTermId}`}
-              >
-                Carry over {carryOverHint.count} students from{" "}
-                {carryOverHint.termLabel}
-                <ArrowRight className="ml-1 h-4 w-4" />
-              </Link>
-            </Button>
+            {CARRY_OVER_ENABLED ? (
+              <Button asChild size="sm" variant="outline" className="w-fit">
+                <Link
+                  href={`/enrollments/bulk?armId=${arm.id}&termId=${targetTermId}`}
+                >
+                  Carry over {carryOverHint.count} students from{" "}
+                  {carryOverHint.termLabel}
+                  <ArrowRight className="ml-1 h-4 w-4" />
+                </Link>
+              </Button>
+            ) : (
+              // Kill switch — see lib/enrollments/carry-over-availability.ts.
+              // Rendered as an explanation rather than a disabled button: a
+              // greyed-out control with no reason is how an administrator
+              // concludes the product is broken.
+              <p className="text-sm text-muted-foreground">
+                <strong>{CARRY_OVER_DISABLED_TITLE}.</strong>{" "}
+                {CARRY_OVER_DISABLED_BODY}
+              </p>
+            )}
           </div>
         ) : (
           <p className="rounded-md border border-dashed bg-muted/20 p-3 text-sm text-muted-foreground">
