@@ -39,4 +39,22 @@ export const queryKeys = {
   myResult: (termId: string) => ["me", "results", termId] as const,
   myAttendance: ["me", "attendance"] as const,
   myFees: ["me", "fees"] as const,
+
+  // --- staff (CP2) --------------------------------------------------------
+  //
+  // EVERY staff key begins with the literal "staff". That prefix is not
+  // cosmetic: `mayPersistQuery` (src/lib/query/persist-policy.ts) refuses any
+  // key whose first element is "staff", which is what keeps a teacher's
+  // register — real students, by name — out of plaintext AsyncStorage on a
+  // shared handset. schoolId and userId follow so a second staff account on
+  // the same device cannot read the first one's cached register, and so the
+  // background-lock teardown can drop the whole subtree by prefix.
+  //
+  // A new staff key that does not start with "staff" would silently become
+  // persistable. `staff-keys.spec.ts` asserts the real keys these screens use,
+  // not the policy function in the abstract, for exactly that reason.
+  staffScope: (schoolId: string, userId: string) =>
+    ["staff", schoolId, userId, "scope"] as const,
+  staffRegister: (schoolId: string, userId: string, classArmId: string, date: string) =>
+    ["staff", schoolId, userId, "attendance", classArmId, date] as const,
 } as const;

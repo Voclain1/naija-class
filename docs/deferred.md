@@ -2162,3 +2162,53 @@ anywhere as a choice.
 
 Not started. No decision taken. Logged so the absence reads as known rather
 than accidental.
+
+---
+
+## Verifying that a mobile action really happened takes a browser console and a SQL editor (captured 2026-08-25)
+
+**Directly connected to the audit-log read-gap entry above** — that entry is the
+root cause; this is the shape the pain actually took in practice. Logged
+separately because the fix is not necessarily the same fix.
+
+CP2's Gate 5 asked a simple question: *did the register a teacher marked on a
+phone actually land?* Answering it required all of the following, none of which
+a school could do:
+
+1. Log into the web app as an owner/admin, open DevTools, and paste a
+   ~40-line script that fetches the arm list, `/auth/me`, and the register, then
+   compares `markedBy` against the arm's `classTeacherId`.
+2. Open the Neon production SQL editor and run two hand-written queries — one
+   joining `attendance_records` to `students`, one against `audit_logs`.
+3. Know in advance that "one audit row per submit, not one per student" is the
+   expected shape, or the result is uninterpretable.
+
+The scripts are written down (`docs/runbooks/cp2-gate5-verification.md`) so this
+is repeatable, but "repeatable by the person who holds the production database
+credential" is a narrow definition of repeatable.
+
+**Why this is worth its own entry.** Three distinct gaps stack here, and only
+the first is the audit-log one:
+
+- **The audit row is unreadable outside SQL** — see the entry above.
+- **Provenance is not surfaced anywhere in the product.** `AttendanceRecord`
+  stores `markedBy` and `markedAt`, and the API returns both on every register
+  row, but no screen renders "who marked this". The web register editor shows a
+  "last marked at HH:MM" stamp and drops the *who* entirely. A head teacher
+  asking "did Mrs Okafor mark JSS3 today, or did someone do it for her?" has no
+  answer inside the app — the data is right there in the response and simply is
+  not displayed.
+- **There is no per-user activity view.** "What did this staff member do today"
+  is answerable only by SQL, which matters more now that staff act from phones
+  where the school cannot see over anyone's shoulder.
+
+**Deliberately not proposing a build.** The obvious move — render `markedBy` as
+a name on the register — is a one-line-ish change and probably right, but it is
+also the sort of thing that should be decided alongside the audit-read question
+rather than bolted on ahead of it, since both are answering "who did this".
+Whoever picks up the audit-log entry should pick this up in the same pass.
+
+Concrete data point from the run that surfaced it: one arm, 12 students, one
+save from the phone, one audit row — and two credentialed tools to see it.
+
+Not started. No decision taken.
