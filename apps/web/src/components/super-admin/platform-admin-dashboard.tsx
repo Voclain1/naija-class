@@ -1,5 +1,6 @@
 "use client";
 
+import { Check, Copy } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
 import { toast } from "sonner";
@@ -74,6 +75,31 @@ export function PlatformAdminDashboard() {
   const [resolvingId, setResolvingId] = useState<string | null>(null);
   const [codeDrafts, setCodeDrafts] = useState<Record<string, string>>({});
   const [showResolved, setShowResolved] = useState(false);
+
+  // Copying a school ID (2026-08-26). Every one-school rollout rail so far —
+  // AI enablement, early access, staff mobile — takes a school ID as its
+  // argument, and the only way to obtain one was to read it out of a Network
+  // tab response. The ID is already on screen in this component's state; it
+  // was simply never rendered.
+  const [copiedSchoolId, setCopiedSchoolId] = useState<string | null>(null);
+
+  async function onCopySchoolId(schoolId: string) {
+    try {
+      await navigator.clipboard.writeText(schoolId);
+      setCopiedSchoolId(schoolId);
+      window.setTimeout(
+        () => setCopiedSchoolId((current) => (current === schoolId ? null : current)),
+        2000,
+      );
+    } catch {
+      // Same fallback as components/settings/invitations-table.tsx: a
+      // clipboard write can be refused (insecure context, permission policy).
+      // Falling back to a selectable prompt matters more here than it does
+      // there — the whole point of this affordance is that obtaining a school
+      // ID never requires opening DevTools again.
+      window.prompt("Copy this school ID:", schoolId);
+    }
+  }
 
   const refreshSchools = () => {
     proxyFetch<PlatformAdminSchoolDto[]>("/api/platform-admin/schools")
@@ -487,7 +513,31 @@ export function PlatformAdminDashboard() {
               <TableBody>
                 {schools.map((school) => (
                   <TableRow key={school.schoolId}>
-                    <TableCell>{school.name}</TableCell>
+                    <TableCell>
+                      <div className="flex flex-col items-start gap-1">
+                        <span>{school.name}</span>
+                        <button
+                          type="button"
+                          onClick={() => void onCopySchoolId(school.schoolId)}
+                          title={`Copy school ID for ${school.name}`}
+                          aria-label={`Copy school ID for ${school.name}`}
+                          className="flex items-center gap-1.5 whitespace-nowrap rounded font-mono text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                        >
+                          {copiedSchoolId === school.schoolId ? (
+                            <Check className="h-3 w-3 shrink-0 text-emerald-600" aria-hidden />
+                          ) : (
+                            <Copy className="h-3 w-3 shrink-0" aria-hidden />
+                          )}
+                          {/* The ID text itself never changes on copy — only the
+                              icon does — so the row does not shift under the
+                              operator's cursor mid-click. */}
+                          <span>{school.schoolId}</span>
+                          <span className="sr-only" role="status">
+                            {copiedSchoolId === school.schoolId ? "School ID copied" : ""}
+                          </span>
+                        </button>
+                      </div>
+                    </TableCell>
                     <TableCell>
                       {school.ownerInvitePending ? (
                         <Badge variant="warning">Pending owner</Badge>
