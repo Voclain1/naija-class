@@ -1,5 +1,5 @@
 import * as crypto from "node:crypto";
-import { Injectable } from "@nestjs/common";
+import { Injectable, Logger } from "@nestjs/common";
 
 import { Prisma, basePrisma, withTenant } from "@school-kit/db";
 import {
@@ -9,17 +9,38 @@ import {
   UnauthorizedError,
   type AcceptGuardianInvitationInput,
   type AcceptGuardianInvitationResponse,
+  type GuardianForgotPasswordInput,
+  type GuardianForgotPasswordResponse,
   type GuardianLoginInput,
   type GuardianLoginResponse,
+  type GuardianResetPasswordInput,
+  type GuardianResetPasswordResponse,
   type PublicGuardianInvitationDto,
 } from "@school-kit/types";
 
 import * as password from "../../common/auth/password";
+import { EmailService } from "../../common/email/email.service";
 import { createGuardianSession } from "../../common/auth/guardian-sessions";
 import { redactEmail } from "../../common/redact";
+import type { GuardianAuthContext } from "../../common/auth/guardian-auth-context";
 
 const LOGIN_AUDIT_ACTION = "guardian.login";
 const ACCEPT_AUDIT_ACTION = "guardian-invitation.accept";
+const LOGOUT_AUDIT_ACTION = "guardian.logout";
+const PASSWORD_RESET_REQUESTED_AUDIT_ACTION = "guardian.password-reset.requested";
+const PASSWORD_RESET_COMPLETED_AUDIT_ACTION = "guardian.password-reset.completed";
+
+// One hour, matching the staff reset TTL (auth.service.ts). Short enough that
+// a link sitting in a shared or forwarded inbox stops working quickly; long
+// enough for a parent who checks email on a phone later in the day.
+const GUARDIAN_PASSWORD_RESET_TTL_MS = 1000 * 60 * 60;
+
+function portalBaseUrl(): string {
+  // Same helper shape as guardians.service.ts — the API constructs portal
+  // URLs for delivery but never follows them. Production must set
+  // PORTAL_BASE_URL explicitly (see CLAUDE.md); dev falls back to :3002.
+  return process.env.PORTAL_BASE_URL ?? "http://localhost:3002";
+}
 
 interface RequestContext {
   ipAddress: string | null;
@@ -30,6 +51,20 @@ interface LookupGuardianForLoginRow {
   guardian_id: string;
   school_id: string;
   password_hash: string;
+}
+
+interface LookupGuardianForPasswordResetRow {
+  guardian_id: string;
+  school_id: string;
+  school_name: string;
+}
+
+interface ResolveGuardianPasswordResetRow {
+  reset_id: string;
+  guardian_id: string;
+  school_id: string;
+  expires_at: Date;
+  used_at: Date | null;
 }
 
 interface ResolveGuardianInvitationRow {
@@ -59,6 +94,10 @@ async function getDummyVerifyHash(): Promise<string> {
 
 @Injectable()
 export class PortalAuthService {
+  private readonly logger = new Logger(PortalAuthService.name);
+
+  constructor(private readonly email: EmailService) {}
+
   // POST /portal/login — PUBLIC.
   //
   // Multi-candidate verify (interim strategy, option ii — approved
@@ -259,6 +298,240 @@ export class PortalAuthService {
     return { guardian: accepted, school, token: bearerToken };
   }
 
+  // POST /portal/logout — requires GuardianAuthGuard.
+  //
+  // Deletes the guardian_sessions row for the CURRENT session only, never
+  // every session for the guardian: signing out on the school computer must
+  // not sign you out on your phone. (Password RESET is the opposite case and
+  // does kill them all — see resetPassword.)
+  //
+  // Simpler than staff logout in one specific way, and it is worth saying why
+  // rather than leaving the absence to look like an oversight:
+  // AuthService.logout must also DEL the Redis session cache, because
+  // AuthGuard reads through that cache. GuardianAuthGuard has NO cache — it
+  // calls auth_resolve_guardian_session on every request — so deleting the
+  // row IS the revocation, effective on the very next request. If a guardian
+  // session cache is ever introduced, this method must gain the same
+  // invalidation staff logout has.
+  //
+  // Idempotent: deleteMany, not delete, so a double-submit or an
+  // already-swept session returns 204 rather than a 404 that would tell the
+  // caller nothing useful.
+  async logout(guardianCtx: GuardianAuthContext, ctx: RequestContext): Promise<void> {
+    await withTenant(guardianCtx.schoolId, async (db) => {
+      await db.guardianSession.deleteMany({ where: { id: guardianCtx.sessionId } });
+
+      await db.auditLog.create({
+        data: {
+          schoolId: guardianCtx.schoolId,
+          // Guardian id, not a User id — same as login() above; audit_logs
+          // .user_id carries no FK constraint.
+          userId: guardianCtx.guardianId,
+          action: LOGOUT_AUDIT_ACTION,
+          entityType: "guardian-session",
+          entityId: guardianCtx.sessionId,
+          ipAddress: ctx.ipAddress,
+          metadata: { userAgent: ctx.userAgent },
+        },
+      });
+    });
+  }
+
+  // POST /portal/forgot-password — PUBLIC.
+  //
+  // ACCOUNT-ENUMERATION GUARD: the response never varies. Unknown email,
+  // known-but-never-invited email, and a real portal account all return the
+  // identical message with the identical status. Mirrors staff
+  // forgotPassword, whose comment explains why control-flow invariance (not
+  // timing padding) is the right guard here: nothing in this method compares
+  // a caller-supplied secret.
+  //
+  // THE GUARDIAN-SPECIFIC WRINKLE. Guardian.email is unique only per school
+  // (Decision C), so one address can own portal accounts at several schools.
+  // Login resolves that ambiguity by verifying the typed password against
+  // each candidate. Recovery has no secret to resolve it with — so it does
+  // not try to pick one. It issues a SEPARATE token per matching account and
+  // sends a SEPARATE email per account, each naming its school. Every token
+  // resets exactly one account.
+  //
+  // That is not an enumeration leak: the school names travel only to the
+  // inbox, whose owner already holds all of those accounts. The HTTP
+  // response still says nothing at all.
+  async forgotPassword(
+    input: GuardianForgotPasswordInput,
+    ctx: RequestContext,
+  ): Promise<GuardianForgotPasswordResponse> {
+    const GENERIC_RESPONSE: GuardianForgotPasswordResponse = {
+      message:
+        "If an account exists for that email, we have sent password reset instructions.",
+    };
+
+    // The SQL function already filters to password_hash IS NOT NULL, so a
+    // guardian who was never invited cannot acquire a password here — that
+    // would be an activation backdoor around the invitation flow.
+    const rows = await basePrisma.$queryRaw<LookupGuardianForPasswordResetRow[]>`
+      SELECT * FROM auth_lookup_guardians_for_password_reset(${input.email})
+    `;
+
+    for (const row of rows) {
+      const rawToken = crypto.randomBytes(32).toString("base64url");
+      const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
+      const expiresAt = new Date(Date.now() + GUARDIAN_PASSWORD_RESET_TTL_MS);
+
+      await withTenant(row.school_id, async (db) => {
+        await db.guardianPasswordResetToken.create({
+          data: {
+            schoolId: row.school_id,
+            guardianId: row.guardian_id,
+            tokenHash,
+            expiresAt,
+          },
+        });
+
+        await db.auditLog.create({
+          data: {
+            schoolId: row.school_id,
+            userId: row.guardian_id,
+            action: PASSWORD_RESET_REQUESTED_AUDIT_ACTION,
+            entityType: "guardian",
+            entityId: row.guardian_id,
+            ipAddress: ctx.ipAddress,
+            metadata: {
+              email: redactEmail(input.email),
+              userAgent: ctx.userAgent,
+            },
+          },
+        });
+      });
+
+      const resetUrl = `${portalBaseUrl()}/reset-password/${rawToken}`;
+      // Manual-copy fallback, same established pattern as the guardian
+      // invite's [GUARDIAN INVITATION] line — logged unconditionally and
+      // BEFORE the best-effort send, so a Resend outage never loses the link
+      // entirely. This is a server log, the same trust boundary the staff
+      // reset already uses for the same reason.
+      this.logger.log(`[GUARDIAN PASSWORD RESET] ${resetUrl}`);
+
+      try {
+        await this.email.send({
+          to: input.email,
+          subject: `Reset your ${row.school_name} parent portal password`,
+          html:
+            `<p>We received a request to reset the password for your ` +
+            `<strong>${escapeHtml(row.school_name)}</strong> parent portal account.</p>` +
+            `<p>This link expires in 1 hour and can only be used once.</p>` +
+            `<p><a href="${resetUrl}">${resetUrl}</a></p>` +
+            `<p>If you did not request this, you can safely ignore this email — ` +
+            `your password will not change.</p>`,
+        });
+      } catch (err) {
+        // Best-effort, exactly like staff forgotPassword: a mail-provider
+        // failure must not change the response (that would leak existence)
+        // and must not roll back the token (the logged URL above is still a
+        // usable recovery path for support).
+        this.logger.error(
+          `Guardian password reset email to ${redactEmail(input.email)} failed`,
+          err instanceof Error ? err.stack : String(err),
+        );
+      }
+    }
+
+    return GENERIC_RESPONSE;
+  }
+
+  // POST /portal/reset-password — PUBLIC.
+  //
+  // Does NOT auto-login, deliberately. Staff resetPassword established this
+  // convention and the reasoning transfers: an invitation-accept is a
+  // first-time enrolment (and does return a session), whereas a reset is
+  // recovery on an existing account and should re-enter the normal,
+  // rate-limited login path. It also means a leaked reset link cannot be
+  // converted straight into a live session without the new password being
+  // typed at the login form.
+  async resetPassword(
+    input: GuardianResetPasswordInput,
+    ctx: RequestContext,
+  ): Promise<GuardianResetPasswordResponse> {
+    const tokenHash = crypto.createHash("sha256").update(input.token).digest("hex");
+    const rows = await basePrisma.$queryRaw<ResolveGuardianPasswordResetRow[]>`
+      SELECT * FROM auth_resolve_guardian_password_reset_token(${tokenHash})
+    `;
+    const row = rows[0];
+
+    if (!row) {
+      throw new NotFoundError("Password reset link not found.");
+    }
+    // Order matters, same rationale as resolveOrThrow and staff
+    // resetPassword: already-used takes precedence over expired, so someone
+    // who used the link and comes back later gets the more useful message.
+    if (row.used_at !== null) {
+      throw new GoneError(
+        "PASSWORD_RESET_ALREADY_USED",
+        "This password reset link has already been used.",
+      );
+    }
+    if (row.expires_at.getTime() <= Date.now()) {
+      throw new GoneError(
+        "PASSWORD_RESET_EXPIRED",
+        "This password reset link has expired. Request a new one.",
+      );
+    }
+
+    const passwordHash = await password.hashPassword(input.password);
+
+    await withTenant(row.school_id, async (db) => {
+      // ATOMIC single-use claim, same race-safe pattern as acceptInvitation
+      // and staff resetPassword: usedAt: null is in the WHERE, so a
+      // concurrent second attempt gets count = 0 rather than both
+      // succeeding. This — not the read above — is where single-use is
+      // actually enforced.
+      const claim = await db.guardianPasswordResetToken.updateMany({
+        where: { id: row.reset_id, usedAt: null },
+        data: { usedAt: new Date() },
+      });
+      if (claim.count !== 1) {
+        throw new GoneError(
+          "PASSWORD_RESET_ALREADY_USED",
+          "This password reset link has already been used.",
+        );
+      }
+
+      await db.guardian.update({
+        where: { id: row.guardian_id },
+        data: { passwordHash },
+      });
+
+      // Kill EVERY session for this guardian. Unlike logout (current session
+      // only), a reset is what someone does when they believe their account
+      // may be compromised — leaving other sessions alive would defeat the
+      // point. GuardianAuthGuard has no cache, so this delete IS the whole
+      // revocation and takes effect on the next request.
+      await db.guardianSession.deleteMany({ where: { guardianId: row.guardian_id } });
+
+      // Burn any OTHER outstanding reset tokens for this guardian, so an
+      // older link still sitting in the inbox cannot be replayed to set a
+      // different password after this one succeeded.
+      await db.guardianPasswordResetToken.updateMany({
+        where: { guardianId: row.guardian_id, usedAt: null },
+        data: { usedAt: new Date() },
+      });
+
+      await db.auditLog.create({
+        data: {
+          schoolId: row.school_id,
+          userId: row.guardian_id,
+          action: PASSWORD_RESET_COMPLETED_AUDIT_ACTION,
+          entityType: "guardian",
+          entityId: row.guardian_id,
+          ipAddress: ctx.ipAddress,
+          metadata: { userAgent: ctx.userAgent },
+        },
+      });
+    });
+
+    return { message: "Your password has been reset. You can now sign in." };
+  }
+
   // Shared lookup: hash the raw token, call the SECURITY DEFINER function,
   // apply the same 404 / already-accepted-before-expired / expired status
   // mapping as staff's InvitationsService.resolveOrThrow.
@@ -300,3 +573,19 @@ const GUARDIAN_LOGIN_SCHOOL_SELECT = {
   name: true,
   slug: true,
 } satisfies Prisma.SchoolSelect;
+
+
+// Minimal HTML escape for the one interpolated value in the reset email (the
+// school's own name). School names are school-controlled input and this
+// string is rendered as HTML in a mail client — escaping is cheap, and the
+// alternative is trusting that no school ever registers a name containing an
+// angle bracket. The reset URL itself is not escaped: it is base64url plus a
+// known origin, with no user-controlled segment.
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}

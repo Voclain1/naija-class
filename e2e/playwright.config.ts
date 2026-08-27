@@ -71,5 +71,23 @@ export default defineConfig({
       stderr: "pipe",
       cwd: "..",
     },
+    // apps/portal (:3002), added 2026-08-27 for the guardian auth suite.
+    // Until then this harness only ever booted api + web, so the guardian
+    // portal had NO browser coverage at all — which is part of why a login
+    // screen kept a dead "You're signed in / Continue" interstitial through
+    // two slices without anyone tripping over it.
+    //
+    // baseURL stays http://localhost:3001 (the staff app, which every
+    // pre-existing spec relies on). Portal specs use absolute URLs, so the
+    // two apps cannot be confused for one another in a test.
+    {
+      command: "pnpm --filter @school-kit/portal dev",
+      url: "http://localhost:3002/login",
+      reuseExistingServer: !process.env.CI,
+      timeout: 180_000,
+      stdout: "pipe",
+      stderr: "pipe",
+      cwd: "..",
+    },
   ],
 });

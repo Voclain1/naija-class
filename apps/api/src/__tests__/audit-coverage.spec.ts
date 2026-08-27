@@ -1314,7 +1314,10 @@ describe("Phase 4 / Slice 2 audit coverage — guardian.invite, guardian-invitat
     { sendSms: async () => undefined } as never,
     { getEnabledChannels: async () => ({ email: true, sms: false }) } as never,
   );
-  const portalAuth = new PortalAuthService();
+  // EmailService stub — PortalAuthService gained an EmailService
+  // dependency with guardian forgot-password (2026-08-27). Same
+  // no-op-send shape GuardiansService already uses just above.
+  const portalAuth = new PortalAuthService({ send: async () => undefined } as never);
 
   let schoolId: string;
   let ownerId: string;

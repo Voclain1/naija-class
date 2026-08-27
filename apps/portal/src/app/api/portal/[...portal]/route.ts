@@ -19,6 +19,12 @@
 // POST  .../login               — set cookie (login has no 2FA branch here)
 // GET   .../invitations/:token  — proxied transparently, no cookie involved
 // POST  .../invitations/:token/accept — set cookie (accept = auto-login)
+// POST  .../logout              — CLEAR cookie on a 2xx (2026-08-27)
+// POST  .../forgot-password     — proxied transparently, no cookie involved
+// POST  .../reset-password      — proxied transparently, no cookie involved.
+//                                 Reset deliberately does NOT establish a
+//                                 session (see the API service's own comment),
+//                                 so there is no token here to set.
 
 import { cookies, headers } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
@@ -45,6 +51,12 @@ async function forward(
   sessionToken: string | undefined,
   host: string,
 ): Promise<NextResponse> {
+  // Logout is the ONLY sub-path that clears rather than (possibly) sets.
+  // Matched here rather than in a separate route handler so every cookie
+  // decision for the portal session stays in this one function — the cookie
+  // attributes below (domain in particular) have to match exactly between
+  // set and clear or the browser keeps a second, stale cookie.
+  const isLogout = subPath === "logout";
   let resp: Response;
   let text: string;
   try {
@@ -108,7 +120,14 @@ async function forward(
     ? Object.fromEntries(Object.entries(data as object).filter(([key]) => key !== "token"))
     : data;
 
-  const out = NextResponse.json(bodyForClient, { status: resp.status });
+  // 204 (logout) carries no body, and a Response with a null-body status
+  // MUST NOT be given one — NextResponse.json(null, { status: 204 }) throws.
+  // Build the empty response explicitly for those statuses; cookies are set
+  // on it below exactly the same way.
+  const out =
+    resp.status === 204 || resp.status === 304
+      ? new NextResponse(null, { status: resp.status })
+      : NextResponse.json(bodyForClient, { status: resp.status });
 
   if (maybeToken) {
     out.cookies.set(COOKIE_NAME, maybeToken, {
@@ -117,6 +136,29 @@ async function forward(
       sameSite: "strict",
       path: "/",
       maxAge: COOKIE_MAX_AGE,
+      ...(host === PRODUCTION_HOST ? { domain: PRODUCTION_HOST } : {}),
+    });
+  }
+
+  // Clear on a SUCCESSFUL logout only. The API has already deleted the
+  // guardian_sessions row by this point, so the cookie is dead either way —
+  // but clearing it on a FAILED logout would be actively worse than not
+  // clearing: the browser would forget a token that is still live
+  // server-side, leaving a session nobody can reach to revoke. On a failure
+  // the cookie stays and the UI reports the failure, so the guardian can
+  // retry and actually destroy the session.
+  //
+  // Attributes MUST mirror the set above (path, and domain on production) —
+  // a Set-Cookie deletion only matches a cookie with the same name, path and
+  // domain. Getting this wrong leaves the original cookie in place and the
+  // "logout" silently does nothing in the browser.
+  if (isLogout && resp.ok) {
+    out.cookies.set(COOKIE_NAME, "", {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict",
+      path: "/",
+      maxAge: 0,
       ...(host === PRODUCTION_HOST ? { domain: PRODUCTION_HOST } : {}),
     });
   }
