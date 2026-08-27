@@ -2343,3 +2343,113 @@ one deliberate pass rather than opportunistically — the value is in the
 consistency, not in any single screen.
 
 Not started. No decision taken on any item above.
+
+## Guardian auth & recovery — follow-ups after PR #222 (captured 2026-08-27)
+
+PR #222 shipped guardian sign out and password recovery (F-06) and removed
+the obsolete post-login interstitial (F-13). These are the things that slice
+found or inherited and deliberately did NOT expand into. None is started;
+none has a decision.
+
+### Resend failure visibility — a monitoring gap, not a security one
+
+`PortalAuthService.forgotPassword` creates the token row and its audit row,
+commits, logs `[GUARDIAN PASSWORD RESET] <url>`, and only then attempts the
+send. A Resend failure is caught, `logger.error`'d, and deliberately does NOT
+change the response — varying it would leak account existence, which is the
+whole point of the generic acknowledgement.
+
+The consequence is that a failed send leaves a **valid but undelivered**
+reset token, live until its 1h TTL expires, and the failure is visible
+**only in stdout / Fly logs**. It does not reach Sentry: `Sentry.captureException`
+fires solely in `http-exception.filter.ts`, and only for unmodelled exceptions
+that actually reach the filter — this one is caught in the service well
+before then.
+
+**This is inherited, not introduced.** Staff `AuthService.forgotPassword` and
+`GuardiansService.deliverInvitation` behave identically. So the fix, if taken,
+should cover all three rather than singling out the guardian path. Options
+worth weighing together: a `Sentry.captureMessage` at the catch site; a
+counter/alert on the log line; or surfacing undelivered-token counts to the
+platform-admin surface. Not a security defect — the token is never exposed
+and the response never varies — so this is about operators noticing, not
+about exposure.
+
+### Guardian `is_active` / central revocation
+
+Still open, and now the sharpest asymmetry in the auth model. Recorded in
+CLAUDE.md's 2026-08-16 SECURITY DEFINER review: `auth_resolve_guardian_session`
+returns NO revocation signal, because `Guardian` has no `is_active` column.
+Students have two signals (`student_status` AND `portal_enabled`); staff have
+one (`user_is_active`); guardians have none.
+
+PR #222 narrows this without closing it: a password reset now deletes every
+session for that guardian, so a parent who believes they are compromised has
+a self-service lever they did not have before. What is still missing is the
+SCHOOL's lever — an administrator cannot cut off a guardian's access centrally.
+Clearing `password_hash` prevents future logins but does not invalidate a live
+session, which can run for up to 30 days.
+
+### Multi-school same-password ambiguity
+
+`Guardian.email` is unique only per school (Decision C), so one address can
+own accounts at several schools. `PortalAuthService.login` verifies the typed
+password against every candidate and throws `AMBIGUOUS_GUARDIAN_ACCOUNT` when
+more than one matches — a documented interim strategy (approved 2026-07-16)
+whose real fix was always going to be a school selector in the portal login
+flow.
+
+PR #222 does not change login, but it does establish that recovery can serve
+all of a person's accounts at once (one token and one email per school, each
+naming its school). Whoever builds the school selector should look at that
+pattern first: the recovery email already tells a parent which schools they
+have accounts at, which is most of the information a selector needs.
+
+### Guardian account lockout
+
+Guardian login now carries both a per-IP throttle (10/min) and
+`RateLimitByEmailGuard` (20 attempts / 15 min), the latter added by PR #222
+for parity with staff login, which had it since Phase 0. What neither
+principal has is a real lockout — a sustained low-rate attack against one
+address is still only rate-limited, never stopped.
+
+Student portal lockout is already logged as approved-but-not-built
+(Phase 6 / Slice 3 follow-ups). Guardians have the identical gap. These are
+the same decision and should be taken together rather than one principal at
+a time.
+
+### Public-origin config hardening — a tiny, separate infra decision
+
+`PORTAL_BASE_URL` is a **public hostname, not a credential**, yet it lives
+only as a Fly secret. `apps/api/fly.toml` declares `NODE_ENV`, `API_PORT` and
+`RENDER_WORKER_URL` — and `RENDER_WORKER_URL` was deliberately moved INTO
+that `[env]` block on 2026-08-14 for exactly this reason, with a comment that
+names PORTAL_BASE_URL as the cautionary precedent: "Same failure shape as the
+PORTAL_BASE_URL miss: config that exists in the repo but was never set on the
+running app."
+
+The proposal is one line: move `PORTAL_BASE_URL = "https://portal.schoolkit.ng"`
+into `fly.toml [env]`, turning "verify a secret exists" into "it is in version
+control and reviewable in a diff." Two things to settle first, which is why
+this is logged rather than done:
+
+1. **Precedence.** If the value stays set as a Fly secret as well, which wins?
+   That must be confirmed against Fly's actual behaviour before relying on the
+   `[env]` entry, or the change is cosmetic at best and misleading at worst.
+2. **Scope.** `WEB_BASE_URL`, `CORS_ORIGIN` and `CORS_ORIGIN_PORTAL` are the
+   same category — public origins currently held as secrets, and the first two
+   have already caused a documented production incident (2026-07-19). Doing
+   one and not the others would leave the inconsistency that makes this class
+   of bug easy to reintroduce.
+
+Deployment-ordering note, observed during PR #222's own rollout and worth
+remembering for any future feature that spans both apps: **Vercel deploys
+apps/portal on push to main, while the Fly API deploys only after `ci`
+passes.** For roughly eleven minutes the production portal offered
+"Forgot password?" against an API that did not yet have the endpoint
+(`POST /api/v1/portal/reset-password` returned `Cannot POST`). Harmless here —
+the feature was unannounced and the window was short — but a UI-first,
+API-second ordering is the wrong way round for anything a parent might be
+told about in advance.
+
+Not started. No decision taken on any item above.
