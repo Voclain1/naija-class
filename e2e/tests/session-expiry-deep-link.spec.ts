@@ -270,3 +270,133 @@ test.describe("authorization still applies after redirect (F-10 security)", () =
     await admin.api.dispose();
   });
 });
+
+// ─────────────────────────── guardian portal ───────────────────────────
+//
+// The portal's half of F-10. Last slice gave middleware a `next` for the
+// cold-load case; the MID-SESSION 401 path was still a bare
+// replace("/login") — no reason, no memory of the page. These cover both,
+// plus the hardened open-redirect guard that replaced the portal's weaker
+// inline check.
+
+test.describe("guardian portal — session expiry and deep links (F-10)", () => {
+  const PORTAL = process.env.E2E_PORTAL_URL ?? "http://localhost:3002";
+
+  for (const hostile of [
+    "https://evil.example",
+    "//evil.example",
+    "/\evil.example",
+    "%2f%2fevil.example",
+  ]) {
+    test(`portal refuses next=${hostile}`, async ({ browser }) => {
+      const admin = await loginAsAdmin(browser);
+      const suffix = uniqueSuffix();
+      const { createPortalGuardian } = await import("../fixtures/guardian.js");
+      const guardian = await createPortalGuardian(admin.api, {
+        suffix,
+        schoolId: admin.schoolId,
+      });
+
+      const context = await browser.newContext();
+      const page = await context.newPage();
+      await page.goto(`${PORTAL}/login?next=${encodeURIComponent(hostile)}`);
+      await page.getByLabel("Email").fill(guardian.email);
+      await page.getByLabel("Password", { exact: true }).fill(guardian.password);
+      await page.getByRole("button", { name: "Log in" }).click();
+
+      // Falls back to the portal home; never leaves the origin.
+      await expect(page).toHaveURL(`${PORTAL}/`);
+      expect(page.url()).not.toContain("evil.example");
+      expect(new URL(page.url()).origin).toBe(PORTAL);
+
+      await context.close();
+      await admin.context.close();
+      await admin.api.dispose();
+    });
+  }
+
+  test("a parent who loses their session mid-read is told why and returned to the page", async ({
+    browser,
+  }) => {
+    const admin = await loginAsAdmin(browser);
+    const suffix = uniqueSuffix();
+    const { createPortalGuardian } = await import("../fixtures/guardian.js");
+    const guardian = await createPortalGuardian(admin.api, {
+      suffix,
+      schoolId: admin.schoolId,
+    });
+
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    await page.goto(`${PORTAL}/login`);
+    await page.getByLabel("Email").fill(guardian.email);
+    await page.getByLabel("Password", { exact: true }).fill(guardian.password);
+    await page.getByRole("button", { name: "Log in" }).click();
+    await expect(page.getByRole("heading", { name: "Your children" })).toBeVisible();
+
+    const target = `/students/${guardian.studentId}`;
+    await page.goto(`${PORTAL}${target}`);
+    await expect(page.getByText(guardian.studentFirstName).first()).toBeVisible();
+
+    // Drop the portal session cookie — the next authed fetch 401s with a
+    // real code from GuardianAuthGuard.
+    const cookies = await context.cookies(PORTAL);
+    await context.clearCookies();
+    const keep = cookies.filter((c) => c.name !== "sk_portal_session");
+    if (keep.length > 0) await context.addCookies(keep);
+
+    await page.reload();
+
+    await expect(page).toHaveURL(/\/login/);
+    const url = new URL(page.url());
+    expect(["expired", "revoked"]).toContain(url.searchParams.get("reason"));
+
+    const status = page.getByRole("status");
+    await expect(status).toBeVisible();
+    await expect(status).toContainText(/signed out|session expired/i);
+
+    // No technical vocabulary reaches the parent.
+    const body = (await page.locator("body").textContent()) ?? "";
+    for (const leak of ["401", "SESSION_EXPIRED", "INVALID_SESSION", "bearer"]) {
+      expect(body).not.toContain(leak);
+    }
+    // And the child's data is not still on screen behind the login form.
+    await expect(page.getByText(guardian.studentFirstName)).toBeHidden();
+
+    await context.close();
+    await admin.context.close();
+    await admin.api.dispose();
+  });
+
+  test("a deliberate portal Sign out shows NO expiry message", async ({ browser }) => {
+    const admin = await loginAsAdmin(browser);
+    const suffix = uniqueSuffix();
+    const { createPortalGuardian } = await import("../fixtures/guardian.js");
+    const guardian = await createPortalGuardian(admin.api, {
+      suffix,
+      schoolId: admin.schoolId,
+    });
+
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    await page.goto(`${PORTAL}/login`);
+    await page.getByLabel("Email").fill(guardian.email);
+    await page.getByLabel("Password", { exact: true }).fill(guardian.password);
+    await page.getByRole("button", { name: "Log in" }).click();
+    await expect(page.getByRole("heading", { name: "Your children" })).toBeVisible();
+    await expect(page.getByText(guardian.studentFirstName).first()).toBeVisible();
+
+    await page.waitForLoadState("networkidle");
+    await Promise.all([
+      page.waitForURL(new RegExp("/login"), { timeout: 30_000 }),
+      page.getByRole("button", { name: "Sign out" }).click(),
+    ]);
+
+    expect(new URL(page.url()).searchParams.get("reason")).toBeNull();
+    await expect(page.getByRole("status")).toBeHidden();
+
+    await context.close();
+    await admin.context.close();
+    await admin.api.dispose();
+  });
+});

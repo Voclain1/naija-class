@@ -23,6 +23,11 @@ import type {
 } from "@school-kit/types";
 
 import { SignOutButton } from "@/components/sign-out-button";
+import {
+  buildLoginUrl,
+  errorCodeFromBody,
+  reasonFromErrorCode,
+} from "@/lib/session-end";
 import { StudentPortalAccess } from "@/components/student-portal-access";
 
 type LoadState =
@@ -123,7 +128,16 @@ export default function StudentDetailPage() {
         ]);
 
         if (studentRes.status === 401 || invoicesRes.status === 401) {
-          router.replace("/login");
+          // Say WHY, and remember which child's page they were on (F-10).
+          // Read the code off whichever response actually 401'd.
+          const unauthorised = studentRes.status === 401 ? studentRes : invoicesRes;
+          const errBody: unknown = await unauthorised.json().catch(() => null);
+          router.replace(
+            buildLoginUrl({
+              reason: reasonFromErrorCode(errorCodeFromBody(errBody)),
+              next: `${window.location.pathname}${window.location.search}`,
+            }),
+          );
           return;
         }
         // Checked together, not just studentRes: both endpoints run the

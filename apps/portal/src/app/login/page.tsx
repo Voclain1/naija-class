@@ -26,32 +26,27 @@ import { useForm } from "react-hook-form";
 
 import { guardianLoginSchema, type GuardianLoginInput } from "@school-kit/types";
 
+import {
+  parseSessionEndReason,
+  resolveNextPath,
+  sessionEndNotice,
+} from "@/lib/session-end";
+
 type SubmitState =
   | { kind: "idle" }
   | { kind: "submitting" }
   | { kind: "error"; message: string };
 
-/**
- * Only ever return a same-origin PATH.
- *
- * `next` arrives from the query string, which anyone can craft and put in a
- * link. Passing it to location.assign unchecked is a textbook open redirect:
- * `/login?next=https://evil.example/login` would bounce a parent who just
- * authenticated onto a look-alike page. Requiring a leading "/" and
- * rejecting "//" (protocol-relative, which the browser reads as a host) keeps
- * it to this origin.
- */
-function safeNextPath(raw: string | null): string {
-  if (!raw) return "/";
-  if (!raw.startsWith("/")) return "/";
-  if (raw.startsWith("//")) return "/";
-  return raw;
-}
-
 function LoginForm() {
   const searchParams = useSearchParams();
   const [state, setState] = useState<SubmitState>({ kind: "idle" });
   const [showPassword, setShowPassword] = useState(false);
+
+  // Why the parent is looking at this screen (F-10). Both parameters are
+  // untrusted: parseSessionEndReason narrows to a known reason so nobody can
+  // inject copy via ?reason=, and resolveNextPath refuses anything that is
+  // not a plain internal path.
+  const notice = sessionEndNotice(parseSessionEndReason(searchParams.get("reason")));
 
   const form = useForm<GuardianLoginInput>({
     resolver: zodResolver(guardianLoginSchema),
@@ -88,7 +83,7 @@ function LoginForm() {
       // rather than racing a client-side transition. It also replaces the
       // /login entry in history, so pressing Back from the dashboard does
       // not land on a login form the guardian has already passed.
-      window.location.replace(safeNextPath(searchParams.get("next")));
+      window.location.replace(resolveNextPath(searchParams.get("next")));
     } catch {
       setState({ kind: "error", message: "Could not reach the server. Try again in a moment." });
     }
@@ -102,6 +97,19 @@ function LoginForm() {
         <h1 className="text-2xl font-semibold tracking-tight">schoolkit</h1>
         <p className="text-sm text-muted-foreground">Parent Portal</p>
       </div>
+
+      {/* Shown only when the redirect actually carried a reason. A parent who
+          pressed Sign out, or who is simply signing in, sees nothing —
+          neither is a failure. role="status", not "alert": informative. */}
+      {notice && (
+        <div
+          role="status"
+          className="w-full max-w-sm rounded-lg border bg-card px-4 py-3 text-center"
+        >
+          <p className="text-sm font-medium">{notice.title}</p>
+          <p className="text-sm text-muted-foreground">{notice.body}</p>
+        </div>
+      )}
 
       <form
         onSubmit={onSubmit}
