@@ -70,14 +70,18 @@ test.describe("finance — invoice generation and list", () => {
     const { admin, page, armName } = await scaffold(browser);
     await page.goto("/finance/invoices");
 
+    // Wait for reference data to land BEFORE reading option text.
+    // allTextContents() does NOT auto-wait, so reading it straight after
+    // goto() races the client component's first render and returns [].
+    // Asserting the pre-selected current year first is the natural barrier:
+    // the value is only non-empty once listAcademicYears has resolved.
+    await expect(page.locator("#invoice-year")).not.toHaveValue("");
+
     // F-29: no developer placeholders.
     const yearOptions = await page.locator("#invoice-year option").allTextContents();
     expect(yearOptions.some((o) => o.includes("Choose an academic year"))).toBe(true);
     expect(yearOptions.join(" ")).not.toContain("— year —");
-
-    // The current academic year is pre-selected (it never reaches the write).
-    await expect(page.locator("#invoice-year")).not.toHaveValue("");
-    // ...and is labelled as current so the choice is legible.
+    // The current year is labelled as such, so the pre-selection is legible.
     expect(yearOptions.some((o) => o.includes("(current)"))).toBe(true);
 
     // The TERM is deliberately NOT auto-selected — generation is a financial
