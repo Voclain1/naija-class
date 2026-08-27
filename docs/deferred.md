@@ -2239,3 +2239,107 @@ Concrete data point from the run that surfaced it: one arm, 12 students, one
 save from the phone, one audit row — and two credentialed tools to see it.
 
 Not started. No decision taken.
+
+## Finance / bursar invoice UX — follow-ups after PR #220 (captured 2026-08-27)
+
+PR #220 hardened the core bursar invoice journey (`/finance/invoices`) against
+six confirmed UX-discovery findings — F-01 cancellation confirmation, F-04
+human student identity, F-05 empty-vs-error, F-12 raw error objects, F-29
+selector clarity, F-32 client navigation. These are the things that PR found
+and deliberately did NOT expand into. None is started; none has a decision.
+
+### F-34 — bulk invoice generation has no scope/amount confirmation gate
+
+**The one on this list that is about money, and the reason the list exists.**
+
+"Generate invoices" bills every enrolled student in a class arm on a single
+click. There is a Preview, and PR #220 made it name students and show a
+realistic total — but preview is **advisory and optional**, and nothing
+requires the bursar to have looked at it before generating. The button does
+not restate what is about to happen in terms of a count and a naira total, and
+there is no confirmation step between intent and a whole arm being billed.
+
+Note the asymmetry PR #220 has now created, which is the sharpest argument for
+picking this up: **cancelling ONE invoice now requires an explicit
+confirmation naming the student and the amount, while creating THIRTY does
+not.** That is exactly backwards by blast radius. It was left that way
+deliberately — the slice's brief said not to change generation workflow
+silently, and making preview mandatory is a product decision about how a
+bursar's day works, not a bug fix. But it should not stay backwards for long.
+
+Worth deciding together, not piecemeal:
+- Does generation get a confirmation dialog (count + total + arm + term), a
+  mandatory preview step, or neither?
+- Is "already invoiced students are skipped" enough of a safety net in
+  practice? It makes a double-generate harmless, which is a real mitigation —
+  but it does nothing about generating for the WRONG arm or the WRONG term,
+  which is the failure that actually costs a school money and trust.
+- What is the undo story? There isn't one: cancelling N invoices means N
+  individually-confirmed cancellations. If generation stays one-click, bulk
+  cancel probably has to exist, and bulk cancel is its own hazard.
+
+**Needs a focused product/UX assessment soon.** Not started.
+
+### The Generate and List tabs share one picker
+
+Academic year / term / class are a single piece of state used by both tabs. A
+bursar who switches to "Invoice list" and changes the class to look something
+up has also changed what the Generate tab would bill, with no indication that
+happened. Pre-existing, not introduced by #220.
+
+Interacts directly with F-34 above: a one-click generate is more dangerous
+when the selection can be changed from a screen the user thinks is read-only.
+If F-34 gets a confirmation gate that restates the arm and term, that also
+largely defuses this — which is a reason to decide them together rather than
+separately.
+
+### Other finance surfaces still turn a failed fetch into an empty array
+
+PR #220 fixed this on `/finance/invoices` (loading / genuine-zero /
+filtered-zero / fetch-failed / reference-data-failed are now distinct states
+with retry, resolved by a total function in
+`apps/web/src/lib/finance/invoice-list-state.ts`). The same `.catch(() =>
+setX([]))` pattern still stands on:
+
+- `finance/discounts` — three sites (`.catch(() => {})`, `setTerms([])`,
+  `setRules([])`)
+- `finance/fees` — four sites (`.catch(() => undefined)`, `setAllArms([])`,
+  `[] as TermDto[]`, `setArms([])`)
+- `finance/dashboard` and `finance/debtors` — the TERM-list fetch
+  (`.catch(() => setTerms([]))`); their primary data fetches were fixed in #220
+
+Scoped out of #220 on purpose: the brief forbade a repo-wide error refactor,
+and the machinery to fix them now exists and is tested. This is mechanical
+work, not a design question — `resolveInvoiceListView` and
+`financeErrorMessage` are the pattern to copy.
+
+### Cancellation affordance is not permission-aware
+
+`canCancelInvoice` filters on invoice STATUS only. A user without
+`invoice.cancel` is still offered the action and discovers the truth via a 403
+— which now at least renders as reviewed human copy rather than silence, but
+is still the wrong place to learn it. The server remains the authority and
+that is correct; this is purely about not offering an action that cannot
+succeed.
+
+### "Unknown student" identity handling
+
+`studentDisplayName` deliberately never falls back to a raw or truncated
+student id — that was the point of F-04. When a student row cannot be resolved
+it renders "Unknown student", or "Unnamed student (ADM-…)" when an admission
+number survives. That is the right refusal, but nothing surfaces WHY, and
+there is no path from that row to finding out. Rare (it needs a hard-deleted
+student), so this is a polish item, not a correctness one.
+
+### Broader finance error-state consistency
+
+Beyond the empty-array item above: `apps/web/src/lib/finance/error-copy.ts`
+now exists as the single place that decides what a school employee is told
+when a finance request fails, and it is unit-tested against the specific leaks
+F-12 found (`ApiError:`, `TypeError:`, `ECONNREFUSED`, bare error codes). It is
+currently used by exactly three screens. The remaining finance surfaces each
+still phrase failure their own way. Adopting it everywhere is worth doing as
+one deliberate pass rather than opportunistically — the value is in the
+consistency, not in any single screen.
+
+Not started. No decision taken on any item above.
