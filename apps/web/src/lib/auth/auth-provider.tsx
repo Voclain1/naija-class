@@ -16,6 +16,7 @@ import type {
 
 import {
   AUTH_UNAUTHORIZED_EVENT,
+  type UnauthorizedEventDetail,
   clearStoredToken,
   setStoredToken,
 } from "../api-client";
@@ -28,6 +29,8 @@ import {
   signupOwnerRequest,
   twoFactorChallengeRequest,
 } from "./auth-api";
+
+import { buildLoginUrl, reasonFromErrorCode } from "./session-end";
 
 export type AuthStatus = "loading" | "authed" | "guest";
 
@@ -142,13 +145,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   // Mid-session 401 handling. When apiFetch sees a 401 on any authed call it
-  // clears the in-memory token and dispatches AUTH_UNAUTHORIZED_EVENT. We
-  // listen here, drop to guest, and let RequireAuth issue the redirect.
+  // clears the in-memory token and dispatches AUTH_UNAUTHORIZED_EVENT with
+  // the API's error code. We listen here, drop to guest, and redirect to a
+  // login screen that can SAY WHY and REMEMBER WHERE (F-10) — previously
+  // this was a bare router.replace("/login"), which is why an expiry and a
+  // deliberate sign-out were indistinguishable.
   useEffect(() => {
-    const handler = () => {
+    const handler = (event: Event) => {
       clearStoredToken();
       setState(guestState());
-      router.replace("/login");
+
+      const code = (event as CustomEvent<UnauthorizedEventDetail | undefined>).detail?.code;
+      // window.location, not the router: this fires from wherever the failed
+      // request happened, and the current pathname is the thing worth
+      // returning to.
+      const current = `${window.location.pathname}${window.location.search}`;
+      router.replace(
+        buildLoginUrl({ reason: reasonFromErrorCode(code), next: current }),
+      );
     };
     window.addEventListener(AUTH_UNAUTHORIZED_EVENT, handler);
     return () => window.removeEventListener(AUTH_UNAUTHORIZED_EVENT, handler);

@@ -41,8 +41,20 @@ export function middleware(req: NextRequest): NextResponse {
 
   if (req.cookies.has(COOKIE_NAME)) return NextResponse.next();
 
-  const loginUrl = req.nextUrl.clone();
-  loginUrl.pathname = "/login";
+  // Remember where they were going (F-10). Before this, the destination was
+  // simply lost — and worse, `clone()` kept the ORIGINAL query string while
+  // replacing only the pathname, so a visit to /students/123?tab=fees landed
+  // on /login?tab=fees: the half that mattered discarded, the half that did
+  // not carried along. Build the URL explicitly instead.
+  //
+  // Only the path+query is carried, never an absolute URL. The login page
+  // re-validates it with isSafeNextPath before navigating, so this side is a
+  // convenience and that side is the guard.
+  const loginUrl = new URL("/login", req.url);
+  const target = `${req.nextUrl.pathname}${req.nextUrl.search}`;
+  if (target && target !== "/" && !target.startsWith("/login")) {
+    loginUrl.searchParams.set("next", target);
+  }
   return NextResponse.redirect(loginUrl);
 }
 

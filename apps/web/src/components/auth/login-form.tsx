@@ -3,7 +3,7 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Loader2 } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
@@ -23,6 +23,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ApiError } from "@/lib/api-client";
 import { homeRouteForRoles } from "@/lib/auth/home-route";
+import {
+  parseSessionEndReason,
+  resolveNextPath,
+  sessionEndNotice,
+} from "@/lib/auth/session-end";
 import { useAuth } from "@/lib/auth/use-auth";
 
 // Two-step login: credentials → (if 2FA enabled) TOTP code.
@@ -41,6 +46,20 @@ type TotpStepInput = z.infer<typeof totpStepSchema>;
 export function LoginForm() {
   const { login, loginWithChallenge } = useAuth();
   const router = useRouter();
+  const searchParams = useSearchParams();
+
+  // Why the user is here, and where they were trying to go (F-10). Both
+  // arrive as query parameters and both are treated as untrusted:
+  // parseSessionEndReason narrows to a known reason (so nobody can inject
+  // copy via ?reason=), and resolveNextPath refuses anything that is not a
+  // plain internal path (so ?next= cannot become an open redirect).
+  const notice = sessionEndNotice(parseSessionEndReason(searchParams.get("reason")));
+
+  // Where to land after a successful sign-in. The role default remains the
+  // fallback, so a missing or unsafe `next` behaves exactly as before.
+  function destinationFor(roles: Parameters<typeof homeRouteForRoles>[0]): string {
+    return resolveNextPath(searchParams.get("next"), homeRouteForRoles(roles));
+  }
   const [submitting, setSubmitting] = useState(false);
   const [step, setStep] = useState<FormStep>({ kind: "credentials" });
 
@@ -63,7 +82,7 @@ export function LoginForm() {
       if (result.requiresTwoFactor) {
         setStep({ kind: "totp", challengeToken: result.challengeToken });
       } else {
-        router.replace(homeRouteForRoles(result.roles));
+        router.replace(destinationFor(result.roles));
       }
     } catch (error) {
       if (error instanceof ApiError && error.code === "INVALID_CREDENTIALS") {
@@ -86,7 +105,7 @@ export function LoginForm() {
     setSubmitting(true);
     try {
       const roles = await loginWithChallenge({ challengeToken: step.challengeToken, code: values.code });
-      router.replace(homeRouteForRoles(roles));
+      router.replace(destinationFor(roles));
     } catch (error) {
       if (error instanceof ApiError && error.code === "INVALID_2FA_CODE") {
         totpForm.setError("code", {
@@ -165,6 +184,23 @@ export function LoginForm() {
         <CardDescription>
           Use your school owner or admin credentials.
         </CardDescription>
+        {/* Why you are looking at this screen (F-10). Rendered only when the
+            redirect actually carried a reason — a deliberate Sign out and a
+            first visit both show nothing, because neither is a failure.
+            role="status" rather than "alert": informative, not an error. */}
+        {notice && (
+          <div
+            role="status"
+            className={
+              notice.tone === "warning"
+                ? "mt-3 rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2"
+                : "mt-3 rounded-md border bg-muted/50 px-3 py-2"
+            }
+          >
+            <p className="text-sm font-medium text-foreground">{notice.title}</p>
+            <p className="text-sm text-muted-foreground">{notice.body}</p>
+          </div>
+        )}
       </CardHeader>
       <CardContent>
         <form onSubmit={onCredSubmit} className="flex flex-col gap-4" noValidate>

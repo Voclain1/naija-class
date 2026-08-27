@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useEffect } from "react";
 import type { ReactNode } from "react";
 
+import { buildLoginUrl } from "@/lib/auth/session-end";
 import { useAuth } from "@/lib/auth/use-auth";
 
 import { BrandLoadingScreen } from "../brand-loading-screen";
@@ -43,7 +44,23 @@ export function RequireAuth({ children, roles }: { children: ReactNode; roles?: 
 
   useEffect(() => {
     if (status === "guest") {
-      router.replace("/login");
+      // Preserve the destination (F-10). This branch fires on a cold load of
+      // a protected page with no session — the user followed a link or a
+      // bookmark, and dumping them on the dashboard loses the thing they
+      // actually asked for.
+      //
+      // No `reason` here, deliberately: this path cannot tell WHY there is no
+      // session. It might be an expiry the API already reported (in which
+      // case the 401 handler in auth-provider has already redirected with a
+      // reason and this never runs), or simply someone who was never signed
+      // in. Asserting "your session expired" to a first-time visitor would be
+      // a false statement, so it says nothing.
+      router.replace(
+        buildLoginUrl({
+          reason: null,
+          next: `${window.location.pathname}${window.location.search}`,
+        }),
+      );
       return;
     }
     if (status === "authed" && school?.status === "ONBOARDING") {
