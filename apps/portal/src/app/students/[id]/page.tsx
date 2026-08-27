@@ -22,6 +22,7 @@ import type {
   PortalStudentDto,
 } from "@school-kit/types";
 
+import { SignOutButton } from "@/components/sign-out-button";
 import { StudentPortalAccess } from "@/components/student-portal-access";
 
 type LoadState =
@@ -186,9 +187,15 @@ export default function StudentDetailPage() {
 
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-2xl flex-col gap-6 px-4 py-10">
-      <Link href="/" className="text-sm text-muted-foreground hover:underline">
-        ← Back to your children
-      </Link>
+      {/* Sign out is reachable from EVERY authenticated surface, not just
+          the home page — a guardian who lands here from an emailed link
+          should not have to navigate back to find it (F-06). */}
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <Link href="/" className="text-sm text-muted-foreground hover:underline">
+          ← Back to your children
+        </Link>
+        <SignOutButton />
+      </div>
 
       {state.kind === "loading" && (
         <p className="text-sm text-muted-foreground">Loading…</p>

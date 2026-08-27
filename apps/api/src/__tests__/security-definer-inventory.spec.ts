@@ -57,6 +57,18 @@ const SECURITY_DEFINER_FUNCTIONS = [
   "auth_resolve_student_session",
   "auth_lookup_student_for_login",
   "auth_resolve_student_invitation",
+  // Guardian portal password recovery (2026-08-27) — count 20 -> 22.
+  // Both are pre-tenant reads for PUBLIC endpoints, and both are
+  // deliberately narrower than the login-path function they sit beside:
+  // ..._for_password_reset never returns password_hash (same separation
+  // auth_lookup_user_for_password_reset keeps from
+  // auth_lookup_user_for_login), and ..._reset_token returns no name or
+  // email because a public, attacker-supplied token must not identify whose
+  // account it opens.
+  //
+  // Next cadence review remains due at 23.
+  "auth_lookup_guardians_for_password_reset",
+  "auth_resolve_guardian_password_reset_token",
 ] as const;
 
 interface SecurityDefinerRow {

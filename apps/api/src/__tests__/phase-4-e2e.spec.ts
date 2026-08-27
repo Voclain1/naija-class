@@ -70,7 +70,10 @@ describe("Phase 4 E2E rollup (slice 8)", () => {
     { sendSms: async () => undefined } as never,
     { getEnabledChannels: async () => ({ email: true, sms: false }) } as never,
   );
-  const portalAuth = new PortalAuthService();
+  // EmailService stub — PortalAuthService gained an EmailService
+  // dependency with guardian forgot-password (2026-08-27). Same
+  // no-op-send shape GuardiansService already uses just above.
+  const portalAuth = new PortalAuthService({ send: async () => undefined } as never);
   const portalStudents = new PortalStudentsService();
   const portalInvoices = new PortalInvoicesService();
 

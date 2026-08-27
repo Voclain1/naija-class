@@ -1,19 +1,27 @@
 "use client";
 
-// Phase 4 / Slice 2 — real submit handler replaces slice 1's static shell.
-// POSTs to this app's own /api/portal/login route (never the NestJS API
-// directly — see the proxy route's header comment for why), which sets the
-// httpOnly sk_portal_session cookie and strips the raw token before this
-// component ever sees the response body.
+// Guardian portal login.
 //
-// No dashboard exists yet (that's slice 4's "parent view" territory) — on
-// success this shows an inline confirmation and lets the visitor navigate to
-// "/", which now checks for the session cookie server-side (see
-// app/page.tsx) instead of unconditionally bouncing back to /login.
+// F-13: this page used to render a "You're signed in / Continue" screen on
+// success. That interstitial was correct WHEN IT WAS WRITTEN — slice 2's own
+// comment said "No dashboard exists yet (that's slice 4's parent view
+// territory)", so there was genuinely nowhere to send anyone. Slice 4 shipped
+// that dashboard (app/page.tsx, "Your children") and the interstitial was
+// never removed, leaving every parent an extra click away from the thing they
+// signed in for, on a screen that exists only to say the login worked.
+//
+// It is gone. A successful login now goes straight to the children list, or
+// to whatever protected page the visitor was originally trying to reach.
+//
+// POSTs to this app's own /api/portal/login route (never the NestJS API
+// directly — see the proxy route's header comment), which sets the httpOnly
+// sk_portal_session cookie and strips the raw token before this component
+// ever sees the response body.
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import Link from "next/link";
-import { useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { Suspense, useState } from "react";
 import { useForm } from "react-hook-form";
 
 import { guardianLoginSchema, type GuardianLoginInput } from "@school-kit/types";
@@ -21,11 +29,29 @@ import { guardianLoginSchema, type GuardianLoginInput } from "@school-kit/types"
 type SubmitState =
   | { kind: "idle" }
   | { kind: "submitting" }
-  | { kind: "success" }
   | { kind: "error"; message: string };
 
-export default function LoginPage() {
+/**
+ * Only ever return a same-origin PATH.
+ *
+ * `next` arrives from the query string, which anyone can craft and put in a
+ * link. Passing it to location.assign unchecked is a textbook open redirect:
+ * `/login?next=https://evil.example/login` would bounce a parent who just
+ * authenticated onto a look-alike page. Requiring a leading "/" and
+ * rejecting "//" (protocol-relative, which the browser reads as a host) keeps
+ * it to this origin.
+ */
+function safeNextPath(raw: string | null): string {
+  if (!raw) return "/";
+  if (!raw.startsWith("/")) return "/";
+  if (raw.startsWith("//")) return "/";
+  return raw;
+}
+
+function LoginForm() {
+  const searchParams = useSearchParams();
   const [state, setState] = useState<SubmitState>({ kind: "idle" });
+  const [showPassword, setShowPassword] = useState(false);
 
   const form = useForm<GuardianLoginInput>({
     resolver: zodResolver(guardianLoginSchema),
@@ -54,29 +80,24 @@ export default function LoginPage() {
         return;
       }
 
-      setState({ kind: "success" });
+      // Straight to the destination — no interstitial (F-13).
+      //
+      // location.replace, not the Next router, for two reasons. The session
+      // cookie was just set by the proxy on THIS response, and a full
+      // document load guarantees middleware.ts sees it on the next request
+      // rather than racing a client-side transition. It also replaces the
+      // /login entry in history, so pressing Back from the dashboard does
+      // not land on a login form the guardian has already passed.
+      window.location.replace(safeNextPath(searchParams.get("next")));
     } catch {
       setState({ kind: "error", message: "Could not reach the server. Try again in a moment." });
     }
   });
 
-  if (state.kind === "success") {
-    return (
-      <main className="flex min-h-screen flex-col items-center justify-center gap-8 px-4">
-        <div className="flex flex-col items-center gap-1 text-center">
-          <h1 className="text-2xl font-semibold tracking-tight">You&apos;re signed in</h1>
-          <p className="text-sm text-muted-foreground">
-            <Link href="/" className="underline">
-              Continue
-            </Link>
-          </p>
-        </div>
-      </main>
-    );
-  }
+  const submitting = state.kind === "submitting";
 
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center gap-8 px-4">
+    <main className="flex min-h-screen flex-col items-center justify-center gap-8 px-4 py-10">
       <div className="flex flex-col items-center gap-1 text-center">
         <h1 className="text-2xl font-semibold tracking-tight">schoolkit</h1>
         <p className="text-sm text-muted-foreground">Parent Portal</p>
@@ -94,15 +115,19 @@ export default function LoginPage() {
           <input
             id="email"
             type="email"
+            inputMode="email"
             autoComplete="email"
             autoFocus
             placeholder="you@example.com"
             className="h-10 rounded-md border border-input bg-background px-3 text-sm"
             aria-invalid={Boolean(form.formState.errors.email)}
+            aria-describedby={form.formState.errors.email ? "email-error" : undefined}
             {...form.register("email")}
           />
           {form.formState.errors.email && (
-            <p className="text-sm text-destructive">{form.formState.errors.email.message}</p>
+            <p id="email-error" className="text-sm text-destructive">
+              {form.formState.errors.email.message}
+            </p>
           )}
         </div>
 
@@ -110,17 +135,38 @@ export default function LoginPage() {
           <label htmlFor="password" className="text-sm font-medium">
             Password
           </label>
-          <input
-            id="password"
-            type="password"
-            autoComplete="current-password"
-            placeholder="••••••••"
-            className="h-10 rounded-md border border-input bg-background px-3 text-sm"
-            aria-invalid={Boolean(form.formState.errors.password)}
-            {...form.register("password")}
-          />
+          <div className="relative">
+            <input
+              id="password"
+              type={showPassword ? "text" : "password"}
+              autoComplete="current-password"
+              placeholder="••••••••"
+              // pr-16 leaves room for the Show/Hide control so a long
+              // password never runs underneath it.
+              className="h-10 w-full rounded-md border border-input bg-background px-3 pr-16 text-sm"
+              aria-invalid={Boolean(form.formState.errors.password)}
+              aria-describedby={form.formState.errors.password ? "password-error" : undefined}
+              {...form.register("password")}
+            />
+            {/* A real <button> rather than an icon-only div: it is reachable
+                by Tab, activates on Enter/Space, and its accessible name says
+                what pressing it will DO. aria-pressed communicates the
+                current state to a screen reader without needing the label to
+                double as a status. */}
+            <button
+              type="button"
+              onClick={() => setShowPassword((v) => !v)}
+              aria-pressed={showPassword}
+              aria-controls="password"
+              className="absolute right-2 top-1/2 -translate-y-1/2 rounded px-2 py-1 text-xs font-medium text-muted-foreground hover:text-foreground"
+            >
+              {showPassword ? "Hide" : "Show"}
+            </button>
+          </div>
           {form.formState.errors.password && (
-            <p className="text-sm text-destructive">{form.formState.errors.password.message}</p>
+            <p id="password-error" className="text-sm text-destructive">
+              {form.formState.errors.password.message}
+            </p>
           )}
         </div>
 
@@ -132,12 +178,33 @@ export default function LoginPage() {
 
         <button
           type="submit"
-          disabled={state.kind === "submitting"}
+          disabled={submitting}
           className="h-10 rounded-md bg-primary text-sm font-medium text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50"
         >
-          {state.kind === "submitting" ? "Signing in…" : "Log in"}
+          {submitting ? "Signing in…" : "Log in"}
         </button>
+
+        {/* F-06: there was no route out of a forgotten password at all — not
+            a link, not a page, not an endpoint. A parent who forgot theirs
+            had to phone the school and have an administrator re-issue an
+            invitation. */}
+        <p className="text-center text-sm">
+          <Link href="/forgot-password" className="text-muted-foreground underline hover:text-foreground">
+            Forgot password?
+          </Link>
+        </p>
       </form>
     </main>
+  );
+}
+
+// useSearchParams requires a Suspense boundary in the App Router; without
+// one, this route opts the whole page into client-side rendering at build
+// time and Next warns about it.
+export default function LoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <LoginForm />
+    </Suspense>
   );
 }

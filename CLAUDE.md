@@ -207,6 +207,8 @@ Discipline for every function in this category:
 | `auth_resolve_student_session(token_hash)` | `20260815120000_phase_6_slice_3_student_portal_auth` | StudentAuthGuard's session lookup — the third principal (staff, guardian, student). Resolves a bearer token to `{ session_id, student_id, school_id, expires_at, student_status, portal_enabled }`. Returns **two** authority signals, deliberately: `student_status` is the SCHOOL's judgement about enrolment, `portal_enabled` (`password_hash IS NOT NULL`) is the GUARDIAN's about credentials. Neither subsumes the other — a parent switching off their child's account must not alter enrolment, and a school withdrawal must not depend on a parent acting. The guard refuses on either, which also makes guardian deactivation authoritative even if the session-row DELETE did not take effect. | `password_hash` itself (only the derived boolean leaves the DB); first/last name, DOB, photo, address, phone, email, blood group, medical notes, admission number. The guard runs pre-tenant and attaches its result to the request — this is the most PII-dense row in the schema and almost none of it is the guard's business. |
 | `auth_lookup_student_for_login(school_slug, admission_number)` | `20260815120000_phase_6_slice_3_student_portal_auth` | Student login's pre-tenant lookup. Both `schools` and `students` must be read before a tenant is known: the caller supplies a school SLUG, so even the GUC's value is one of the things this resolves. **Single-row by construction** — `schools.slug` is globally unique and `students` carries `UNIQUE(school_id, admission_number)`. Deliberately does NOT copy `auth_lookup_guardians_for_login`'s multi-row shape or its argon2-verify loop: that exists only because `Guardian.email` is per-school unique, is documented as interim, and students cannot reproduce the ambiguity. Returns `{ student_id, school_id, password_hash, student_status, activated_at }`; `activated_at` is for AUDIT ONLY and must never change the response, since a divergent message is the enumeration leak this surface is most exposed to. | Names, DOB, contact details, medical notes — a login attempt is UNAUTHENTICATED, and admission numbers are sequential while school slugs are public, so returning PII here would hand it to anyone who can guess. Also the school's name/branding: nothing pre-auth needs it, and it would confirm a slug exists. |
 | `auth_resolve_student_invitation(token_hash)` | `20260815120000_phase_6_slice_3_student_portal_auth` | Resolves the single-use portal invitation a GUARDIAN issues for their child, for the two public endpoints a child hits before holding any credential. **Liveness is enforced in SQL, not in the service**: the WHERE clause requires `accepted_at IS NULL AND revoked_at IS NULL`, which is the enforcement point for both of D26's guarantees — single-use (an already-accepted token, e.g. a forwarded screenshot, resolves to nothing) and burnable (deactivation stamps `revoked_at` and this function stops returning it in the same transaction). In the service layer a future second caller could forget it, and "single-use" would become a convention rather than a property. Expiry is deliberately NOT in the WHERE clause — `expires_at` is returned so the caller can distinguish EXPIRED from INVALID, matching every other resolver here. | `token_hash` (the caller holds it); `issued_by`; `accepted_at`/`revoked_at` (never non-NULL in a returned row). And **the student's name** — the sharpest omission here: the accept page would read better as "Set a password for Adaeze", but this endpoint is public and takes an attacker-supplied token, so a name turns a leaked or brute-forced token into a disclosure of which child it belongs to. The page says "your password"; the child knows who they are. |
+| `auth_lookup_guardians_for_password_reset(email)` | `20260827000000_guardian_password_reset` | `POST /portal/forgot-password`'s pre-tenant lookup. **Multi-row**, like `auth_lookup_guardians_for_login` and for the same root cause (`Guardian.email` is unique only per school, Decision C) — but for a sharper reason: login disambiguates candidates by verifying the supplied password against each, and forgot-password has **no secret to disambiguate with**, so it must not try. Returns `{ guardian_id, school_id, school_name }` per portal-enabled match; the caller issues one token per account and mails each separately with its school named. Filters `password_hash IS NOT NULL` **in SQL, not in the service** — a guardian who was never invited (or whose access was revoked by clearing the hash) must not be able to obtain a password through recovery, which would make this an activation backdoor around the invitation flow. | `password_hash` — the whole reason this is separate from `auth_lookup_guardians_for_login` rather than a reuse of it, exactly as `auth_lookup_user_for_password_reset` is kept apart from `auth_lookup_user_for_login`. Also names, phone, `email_verified`. |
+| `auth_resolve_guardian_password_reset_token(token_hash)` | `20260827000000_guardian_password_reset` | `POST /portal/reset-password` resolves a token hash to `{ reset_id, guardian_id, school_id, expires_at, used_at }` before `withTenant()` can apply. Liveness is deliberately NOT in the `WHERE` clause (unlike `auth_resolve_student_invitation`): both `used_at` and `expires_at` are returned so the service can distinguish "already used" from "expired" — different, actionable messages. Single-use is still enforced atomically at the UPDATE, never by trusting this read. | `token_hash` (the caller holds it), and — the sharpest omission — the guardian's **name and email**. This endpoint is public and takes an attacker-supplied token; returning contact details would turn a leaked or brute-forced token into a disclosure of whose account it opens. Same reasoning as `auth_resolve_student_invitation`. |
 
 **SECURITY DEFINER inventory audit (Phase 3 / Slice 12, 2026-07-08):** reviewed
 all 5 pre-existing functions for consolidation when the count crossed the
@@ -443,9 +445,34 @@ absent (`proacl` shows only `school_kit=X` and `app_user=X`), the new column
 present in `pg_get_function_result`, and `SELECT count(*) FROM pg_proc WHERE
 prosecdef` returning exactly 20.
 
+**Guardian portal password recovery (2026-08-27):** added two functions —
+`auth_lookup_guardians_for_password_reset`, `auth_resolve_guardian_password_reset_token`
+— count moves **20 → 22**. Both belong to families the 2026-08-16 review
+already mapped (pre-tenant credential lookups; invitation/token resolvers),
+and both were written narrower than the neighbour they sit beside rather than
+reusing it: the lookup never returns `password_hash`, and the resolver returns
+no name or email.
+
+The recovery path deliberately did NOT reuse the staff `password_reset_tokens`
+table, for the same reason this table's own session-family review refused to
+merge the four session resolvers: separate tables make cross-principal token
+confusion **structurally impossible** rather than conventional. A staff reset
+token presented to `POST /portal/reset-password` resolves to nothing, because
+the guardian resolver reads only `guardian_password_reset_tokens`. (There is
+also a plain structural reason — `password_reset_tokens.user_id` is a NOT NULL
+FK to `users`, so a guardian id cannot go in it without weakening that
+constraint.)
+
+Verified against a live database after applying the migration: both
+`prosecdef = true`, owned by `school_kit`, `search_path=public, pg_temp`
+pinned, EXECUTE granted to `app_user` with PUBLIC absent (`proacl` shows only
+`school_kit=X` and `app_user=X`), `SELECT count(*) FROM pg_proc WHERE
+prosecdef` returning exactly 22, and the new table's RLS enabled AND forced
+with its `tenant_isolation` policy present.
+
 **Next review due at 23.**
 
-**Current count: 20.**
+**Current count: 22.**
 
 ### ESM module resolution
 
