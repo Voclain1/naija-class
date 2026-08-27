@@ -93,7 +93,12 @@ export async function createPortalGuardian(
   if (!token) throw new Error(`no token in acceptUrl: ${invited.acceptUrl}`);
 
   await unwrap(
-    await api.post(`portal/invitations/${token}/accept`, { data: { password } }),
+    // ndprConsent is a required literal true on this schema — a guardian
+    // genuinely has to tick it in the real accept form, so the fixture must
+    // send it too rather than pretending the field is optional.
+    await api.post(`portal/invitations/${token}/accept`, {
+      data: { password, ndprConsent: true },
+    }),
     "acceptGuardianInvitation",
   );
 
