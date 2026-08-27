@@ -133,7 +133,33 @@ those; it doesn't replace them.
   (`c:\Users\acer\Desktop\Naija-class\`) and Claude Code's memory directory
   (derived from the folder name). Don't rename either mid-session.
 
-## Latest state as of this handoff (updated 2026-08-24)
+## Latest state as of this handoff (updated 2026-08-27)
+
+- **Report-card release UX hardening is implemented but uncommitted on
+  `fix/report-card-release-ux`.** It lives in the isolated worktree
+  `C:\tmp\schoolkit-report-card-release`, created because the shared checkout
+  is carrying another agent's finance/invoice work. The report-card board now
+  requires a named class/term/card-count confirmation before the owner/admin
+  release mutation, prevents duplicate submission, and explains the next
+  workflow actor/state to owner/admin/form-teacher viewers. Source inspection
+  confirmed release is the atomic parent/student-visibility transition; the
+  notification dispatch infrastructure exists but no report-card release
+  notification is currently specified or wired, so none was added. A focused
+  Playwright confirmation regression was added. A normal offline frozen-lockfile
+  install restored the isolated worktree's missing pnpm links; web typecheck,
+  lint, and the focused workflow-guidance unit suite are green. One isolated
+  browser run passed the focused confirmation regression. A later rerun was
+  blocked before assertions by an unresponsive local Next dev server on 3101;
+  PM classified that as a local runtime limitation and designated PR CI as the
+  final E2E gate. `git diff --check` is green. See
+  `docs/journal/2026-08-27.md`.
+
+- **PM scope decision (2026-08-27):** retain only the focused release-
+  confirmation regression and the small isolated URL/cookie safety fixes that
+  enabled its prior passing run. Do not add released-results, failure-path or
+  mutation infrastructure to this PR. PM explicitly waived a temporary
+  source-mutation proof for this slice; the dismiss-with-zero-request browser
+  regression is the accepted safety evidence.
 
 - **Staff mobile companion CP1 is implemented but deliberately not closed.**
   Branch `phase-6/staff-mobile-auth` contains the staff auth/security

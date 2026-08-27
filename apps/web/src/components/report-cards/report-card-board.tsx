@@ -9,8 +9,10 @@ import { toast } from "sonner";
 import type { ReportCardBoardRowDto, ReportCardStatusDto } from "@school-kit/types";
 
 import { FormComments } from "@/components/report-cards/form-comments";
+import { ReleaseReportCardsDialog } from "@/components/report-cards/release-report-cards-dialog";
 import { PdfStatusBadge, WorkflowStatusBadge } from "@/components/report-cards/status-badges";
 import { ReopenModal } from "@/components/report-cards/reopen-modal";
+import { WorkflowGuidance } from "@/components/report-cards/workflow-guidance";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { listAcademicYears, listTerms } from "@/lib/academic-years/academic-years-api";
@@ -60,6 +62,7 @@ export function ReportCardBoard({ basePath }: { basePath: string }) {
   const [rendering, setRendering] = useState(false);
   const [workflowBusy, setWorkflowBusy] = useState(false);
   const [reopenOpen, setReopenOpen] = useState(false);
+  const [releaseOpen, setReleaseOpen] = useState(false);
 
   // Resolve the arm name + term (manager: arms/terms APIs; form teacher: scope),
   // then load the board feed.
@@ -142,6 +145,13 @@ export function ReportCardBoard({ basePath }: { basePath: string }) {
     const set = new Set(rows.map((r) => r.reportCard.status));
     return set.size === 1 ? ([...set][0] as ReportCardStatusDto) : "MIXED";
   }, [rows]);
+
+  // A release may also complete from another concurrent manager session. In
+  // either case, close a stale confirmation as soon as the board reaches the
+  // released state; no optimistic success message is shown before the API reply.
+  useEffect(() => {
+    if (releaseOpen && armStatus !== "PRINCIPAL_APPROVED") setReleaseOpen(false);
+  }, [releaseOpen, armStatus]);
 
   // Cards with an active render: GENERATING, OR a RELEASED card still PENDING
   // (just-released, awaiting the worker → GENERATING → GENERATED). A PENDING card
@@ -272,7 +282,7 @@ export function ReportCardBoard({ basePath }: { basePath: string }) {
   const onRelease = useCallback(() => {
     if (!ready) return;
     const termId = ready.termId;
-    void runWorkflow(async () => {
+    return runWorkflow(async () => {
       const r = await releaseArm(termId, armId);
       toast.success(`Released ${r.cardCount} report card${r.cardCount === 1 ? "" : "s"} — generating PDFs…`);
     }, true);
@@ -374,7 +384,7 @@ export function ReportCardBoard({ basePath }: { basePath: string }) {
 
               {/* Release — PRINCIPAL_APPROVED (owner/admin). */}
               {armStatus === "PRINCIPAL_APPROVED" && canManage && (
-                <Button type="button" onClick={onRelease} disabled={workflowBusy || shouldPoll}>
+                <Button type="button" onClick={() => setReleaseOpen(true)} disabled={workflowBusy || shouldPoll}>
                   {workflowBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
                   Release arm
                 </Button>
@@ -405,6 +415,8 @@ export function ReportCardBoard({ basePath }: { basePath: string }) {
 
             {/* Persistent render-progress feedback — survives fast batches that
                 finish before the first poll tick, and slow 40-card batches. */}
+            {armStatus && <WorkflowGuidance status={armStatus} canManage={canManage} isOwner={isOwner} />}
+
             {renderingCount > 0 ? (
               <div className="flex items-center gap-2 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800">
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -515,6 +527,18 @@ export function ReportCardBoard({ basePath }: { basePath: string }) {
           classArmId={armId}
           rows={rows}
           onAccepted={() => void refreshRows(ready.termId)}
+        />
+      ) : null}
+
+      {ready && armStatus === "PRINCIPAL_APPROVED" ? (
+        <ReleaseReportCardsDialog
+          open={releaseOpen}
+          armName={ready.armName}
+          termName={ready.termName}
+          cardCount={rows.length}
+          busy={workflowBusy}
+          onClose={() => setReleaseOpen(false)}
+          onConfirm={onRelease}
         />
       ) : null}
 

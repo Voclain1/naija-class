@@ -38,7 +38,7 @@ async function authedContext(
     {
       name: "sk_session",
       value: token,
-      url: "http://localhost:3001",
+      url: process.env.E2E_WEB_URL ?? "http://localhost:3001",
       httpOnly: true,
       sameSite: "Lax",
     },
