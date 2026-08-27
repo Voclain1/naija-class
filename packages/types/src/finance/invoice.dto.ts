@@ -42,6 +42,22 @@ export interface InvoiceDto {
   id: string;
   schoolId: string;
   studentId: string;
+  /**
+   * Tenant-scoped server resolution of `studentId` — the same contract
+   * `issuedByName` established: consumers must never render the raw student
+   * id as a human-facing fallback. Null only when the student row has since
+   * been hard-deleted; the UI shows "Unknown student" in that case, not a
+   * UUID. Batched per page (one findMany, no N+1) in
+   * InvoiceGenerationService.resolveStudentIdentities.
+   */
+  studentName: string | null;
+  /**
+   * The school's own admission number for `studentId` — free text, unique
+   * per school. Secondary identity: what a bursar reads out on the phone
+   * when two children share a name. Null under the same condition as
+   * `studentName`.
+   */
+  admissionNumber: string | null;
   termId: string;
   academicYearId: string;
   /** Immutable issuance-time arm snapshot; null only for unresolved legacy rows. */
@@ -95,6 +111,10 @@ export type ListInvoicesInput = z.infer<typeof listInvoicesSchema>;
 
 export interface PreviewLineDto {
   studentId: string;
+  /** See InvoiceDto.studentName — same resolution, same batching. */
+  studentName: string | null;
+  /** See InvoiceDto.admissionNumber. */
+  admissionNumber: string | null;
   feeItemCount: number;
   totalAmount: number;   // kobo
   totalDiscount: number; // kobo

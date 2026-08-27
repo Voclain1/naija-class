@@ -86,6 +86,14 @@ export class InvoiceGenerationService {
 
       const issuedAt = new Date();
       const issuerName = await this.resolveIssuerName(db, authCtx.schoolId, authCtx.userId);
+      // Resolved ONCE for the whole arm, before the per-student loop — the
+      // arm's roster is already in hand, so this stays a single findMany
+      // however many invoices the loop goes on to create.
+      const studentIdentities = await this.resolveStudentIdentities(
+        db,
+        authCtx.schoolId,
+        enrollments.map((e) => e.studentId),
+      );
       const created: InvoiceDto[] = [];
       let skipped = 0;
 
@@ -154,7 +162,9 @@ export class InvoiceGenerationService {
           },
         });
 
-        created.push(toDto(invoice, snapshot.items, issuerName));
+        created.push(
+          toDto(invoice, snapshot.items, issuerName, studentIdentities.get(studentId) ?? null),
+        );
       }
 
       return { created: created.length, skipped, invoices: created };
@@ -190,6 +200,15 @@ export class InvoiceGenerationService {
         term.academicYearId,
       );
 
+      // Same single-batch resolution as generateForArm: the preview table is
+      // read by a bursar deciding whether to issue, so it must name students
+      // rather than show ids — but not at the cost of a query per row.
+      const studentIdentities = await this.resolveStudentIdentities(
+        db,
+        authCtx.schoolId,
+        enrollments.map((e) => e.studentId),
+      );
+
       const previews: PreviewLineDto[] = [];
       for (const { studentId } of enrollments) {
         const discountRules = await this.fetchDiscountRules(
@@ -200,8 +219,11 @@ export class InvoiceGenerationService {
           term.academicYearId,
         );
         const snapshot = buildSnapshot(feeItems, discountRules);
+        const identity = studentIdentities.get(studentId) ?? null;
         previews.push({
           studentId,
+          studentName: identity?.studentName ?? null,
+          admissionNumber: identity?.admissionNumber ?? null,
           feeItemCount: feeItems.length,
           totalAmount: snapshot.totalAmount,
           totalDiscount: snapshot.totalDiscount,
@@ -222,7 +244,15 @@ export class InvoiceGenerationService {
       const issuerName = row.issuedBy
         ? await this.resolveIssuerName(db, authCtx.schoolId, row.issuedBy)
         : null;
-      return toDto(row, row.items as unknown as InvoiceLineItemDto[], issuerName);
+      const identities = await this.resolveStudentIdentities(db, authCtx.schoolId, [
+        row.studentId,
+      ]);
+      return toDto(
+        row,
+        row.items as unknown as InvoiceLineItemDto[],
+        issuerName,
+        identities.get(row.studentId) ?? null,
+      );
     });
   }
 
@@ -246,11 +276,18 @@ export class InvoiceGenerationService {
         db.invoice.count({ where }),
       ]);
 
-      const issuerNames = await this.resolveIssuerNames(
-        db,
-        authCtx.schoolId,
-        rows.flatMap((row) => (row.issuedBy ? [row.issuedBy] : [])),
-      );
+      const [issuerNames, studentIdentities] = await Promise.all([
+        this.resolveIssuerNames(
+          db,
+          authCtx.schoolId,
+          rows.flatMap((row) => (row.issuedBy ? [row.issuedBy] : [])),
+        ),
+        this.resolveStudentIdentities(
+          db,
+          authCtx.schoolId,
+          rows.map((row) => row.studentId),
+        ),
+      ]);
 
       return {
         data: rows.map((r) =>
@@ -258,6 +295,7 @@ export class InvoiceGenerationService {
             r,
             r.items as unknown as InvoiceLineItemDto[],
             r.issuedBy ? (issuerNames.get(r.issuedBy) ?? null) : null,
+            studentIdentities.get(r.studentId) ?? null,
           ),
         ),
         total,
@@ -310,7 +348,15 @@ export class InvoiceGenerationService {
       const issuerName = updated.issuedBy
         ? await this.resolveIssuerName(db, authCtx.schoolId, updated.issuedBy)
         : null;
-      return toDto(updated, updated.items as unknown as InvoiceLineItemDto[], issuerName);
+      const identities = await this.resolveStudentIdentities(db, authCtx.schoolId, [
+        updated.studentId,
+      ]);
+      return toDto(
+        updated,
+        updated.items as unknown as InvoiceLineItemDto[],
+        issuerName,
+        identities.get(updated.studentId) ?? null,
+      );
     });
     await this.paymentLinkInvalidation?.archivePending(authCtx.schoolId, id);
     return result;
@@ -425,6 +471,35 @@ export class InvoiceGenerationService {
     return names.get(userId) ?? null;
   }
 
+  // Batched student identity for the list/detail surfaces. Mirrors
+  // resolveIssuerNames exactly: ONE findMany over the de-duplicated id set,
+  // never a per-row lookup, so a 200-invoice page costs two queries rather
+  // than 201. Both fields are tenant-scoped by the `schoolId` filter on top
+  // of RLS — a student id from another school resolves to nothing rather
+  // than leaking a name.
+  private async resolveStudentIdentities(
+    db: PrismaClient,
+    schoolId: string,
+    studentIds: string[],
+  ): Promise<Map<string, StudentIdentity>> {
+    const uniqueIds = [...new Set(studentIds)];
+    if (uniqueIds.length === 0) return new Map();
+
+    const students = await db.student.findMany({
+      where: { schoolId, id: { in: uniqueIds } },
+      select: { id: true, firstName: true, lastName: true, admissionNumber: true },
+    });
+    return new Map(
+      students.map((student) => [
+        student.id,
+        {
+          studentName: `${student.firstName} ${student.lastName}`.trim() || null,
+          admissionNumber: student.admissionNumber,
+        },
+      ]),
+    );
+  }
+
   private async resolveIssuerNames(
     db: PrismaClient,
     schoolId: string,
@@ -447,6 +522,11 @@ export class InvoiceGenerationService {
 // DTO mapping
 // ---------------------------------------------------------------------------
 
+interface StudentIdentity {
+  studentName: string | null;
+  admissionNumber: string | null;
+}
+
 function toDto(
   row: {
     id: string;
@@ -468,11 +548,14 @@ function toDto(
   },
   items: InvoiceLineItemDto[],
   issuedByName: string | null,
+  studentIdentity: StudentIdentity | null,
 ): InvoiceDto {
   return {
     id: row.id,
     schoolId: row.schoolId,
     studentId: row.studentId,
+    studentName: studentIdentity?.studentName ?? null,
+    admissionNumber: studentIdentity?.admissionNumber ?? null,
     termId: row.termId,
     academicYearId: row.academicYearId,
     classArmId: row.classArmId,

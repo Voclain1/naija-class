@@ -372,14 +372,18 @@ describe("InvoiceGenerationService (integration)", () => {
     });
   }
 
-  async function makeStudent(schoolId: string, suffix: string): Promise<string> {
+  async function makeStudent(
+    schoolId: string,
+    suffix: string,
+    name?: { firstName: string; lastName: string },
+  ): Promise<string> {
     return withTenant(schoolId, async (db) => {
       const s = await db.student.create({
         data: {
           schoolId,
           admissionNumber: `ADM-INV-${suffix}-${runId}`,
-          firstName: "Test",
-          lastName: "Student",
+          firstName: name?.firstName ?? "Test",
+          lastName: name?.lastName ?? "Student",
           dateOfBirth: new Date("2010-01-01"),
           gender: "MALE",
         },
@@ -1055,6 +1059,114 @@ describe("InvoiceGenerationService (integration)", () => {
       expect(invoice.issuedBy).toBe(ownerId); // attribution remains intact internally
       expect(invoice.issuedByName).toBe("Bisi Owner");
       expect(invoice.issuedByName).not.toContain(ownerId);
+    });
+  });
+
+  // ── Student identity on the read surfaces ────────────────────────────────
+  // The bursar-facing list identifies a child by name and admission number,
+  // never by the raw studentId UUID. Same contract issuedByName established
+  // one describe block up; these tests are what stop a future refactor from
+  // dropping the resolution and letting the UI fall back to an id.
+  describe("student identity resolution", () => {
+    it("resolves student name and admission number on every findAll row, for a multi-student page", async () => {
+      const { schoolId, ownerId } = await makeSchool("identity-list");
+      const { academicYearId, termId, classLevelId, classArmId } =
+        await makeAcademicStructure(schoolId);
+      await makeFeeSetup(schoolId, ownerId, classLevelId, termId);
+
+      // Realistic Nigerian names, including a long one — the same rows the
+      // web layout is checked against.
+      const roster = [
+        { suffix: "identity-a", firstName: "Adaeze", lastName: "Okonkwo" },
+        { suffix: "identity-b", firstName: "Oluwaseun", lastName: "Adebayo-Ogundimu" },
+        { suffix: "identity-c", firstName: "Ibrahim", lastName: "Danjuma" },
+      ];
+      for (const person of roster) {
+        const studentId = await makeStudent(schoolId, person.suffix, person);
+        await enrollStudent(schoolId, studentId, classArmId, termId, academicYearId);
+      }
+
+      await svc.generateForArm(ctx(schoolId, ownerId), { termId, classArmId }, reqCtx);
+      const page = await svc.findAll(ctx(schoolId, ownerId), {
+        termId,
+        classArmId,
+        page: 1,
+        limit: 50,
+      });
+
+      expect(page.data).toHaveLength(3);
+      expect(page.data.map((i) => i.studentName).sort()).toEqual([
+        "Adaeze Okonkwo",
+        "Ibrahim Danjuma",
+        "Oluwaseun Adebayo-Ogundimu",
+      ]);
+      for (const invoice of page.data) {
+        expect(invoice.studentName).not.toBeNull();
+        expect(invoice.admissionNumber).toMatch(/^ADM-INV-identity-/);
+        // The identity must never be the id wearing a different field name.
+        expect(invoice.studentName).not.toContain(invoice.studentId);
+        expect(invoice.admissionNumber).not.toContain(invoice.studentId);
+      }
+    });
+
+    it("resolves student identity on findById, previewForArm and cancel", async () => {
+      const { schoolId, ownerId } = await makeSchool("identity-surfaces");
+      const { academicYearId, termId, classLevelId, classArmId } =
+        await makeAcademicStructure(schoolId);
+      await makeFeeSetup(schoolId, ownerId, classLevelId, termId);
+      const studentId = await makeStudent(schoolId, "identity-surfaces", {
+        firstName: "Chiamaka",
+        lastName: "Eze",
+      });
+      await enrollStudent(schoolId, studentId, classArmId, termId, academicYearId);
+
+      const previews = await svc.previewForArm(ctx(schoolId, ownerId), { termId, classArmId });
+      expect(previews[0].studentName).toBe("Chiamaka Eze");
+      expect(previews[0].admissionNumber).toBe(`ADM-INV-identity-surfaces-${runId}`);
+
+      const generated = await svc.generateForArm(
+        ctx(schoolId, ownerId),
+        { termId, classArmId },
+        reqCtx,
+      );
+      expect(generated.invoices[0].studentName).toBe("Chiamaka Eze");
+
+      const detail = await svc.findById(ctx(schoolId, ownerId), generated.invoices[0].id);
+      expect(detail.studentName).toBe("Chiamaka Eze");
+
+      // The cancel response is what the UI re-renders the row from — if it
+      // lost the name, a cancelled row would silently degrade to a UUID.
+      const cancelled = await svc.cancel(ctx(schoolId, ownerId), detail.id, reqCtx);
+      expect(cancelled.status).toBe("CANCELLED");
+      expect(cancelled.studentName).toBe("Chiamaka Eze");
+      expect(cancelled.admissionNumber).toBe(`ADM-INV-identity-surfaces-${runId}`);
+    });
+
+    it("does not leak a student name across tenants", async () => {
+      const { schoolId: schoolA, ownerId: ownerA } = await makeSchool("identity-ct-a");
+      const { schoolId: schoolB, ownerId: ownerB } = await makeSchool("identity-ct-b");
+      const structureA = await makeAcademicStructure(schoolA);
+      await makeFeeSetup(schoolA, ownerA, structureA.classLevelId, structureA.termId);
+      const studentA = await makeStudent(schoolA, "identity-ct-a", {
+        firstName: "Ngozi",
+        lastName: "Balogun",
+      });
+      await enrollStudent(
+        schoolA,
+        studentA,
+        structureA.classArmId,
+        structureA.termId,
+        structureA.academicYearId,
+      );
+      await svc.generateForArm(
+        ctx(schoolA, ownerA),
+        { termId: structureA.termId, classArmId: structureA.classArmId },
+        reqCtx,
+      );
+
+      const asB = await svc.findAll(ctx(schoolB, ownerB), { page: 1, limit: 50 });
+      expect(asB.data).toHaveLength(0);
+      expect(JSON.stringify(asB)).not.toContain("Ngozi");
     });
   });
 
