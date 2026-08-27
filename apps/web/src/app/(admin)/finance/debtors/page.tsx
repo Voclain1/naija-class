@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { listAcademicYears, listTerms } from "@/lib/academic-years/academic-years-api";
 import { exportRowsAsCsv, type CsvColumn } from "@/lib/csv-export";
+import { financeErrorMessage, logFinanceError } from "@/lib/finance/error-copy";
 import { formatKobo } from "@/lib/finance/format";
 import { listDebtors, sendReminders } from "@/lib/finance/finance-api";
 
@@ -86,7 +87,11 @@ export default function DebtorsPage() {
     setLoading(true);
     listDebtors(termId)
       .then(setDebtors)
-      .catch((e) => { setError(String(e)); })
+      .catch((e) => {
+        // Previously stringified the raw error — see lib/finance/error-copy.ts.
+        logFinanceError("listDebtors", e);
+        setError(financeErrorMessage(e));
+      })
       .finally(() => setLoading(false));
   }, [termId]);
 
@@ -116,7 +121,8 @@ export default function DebtorsPage() {
       setReminderResult(result);
       setSelected(new Set());
     } catch (e) {
-      setError(String(e));
+      logFinanceError("sendReminders", e);
+      setError(financeErrorMessage(e));
     } finally {
       setReminding(false);
     }

@@ -25,7 +25,8 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { listTerms } from "@/lib/academic-years/academic-years-api";
 import { formatKobo } from "@/lib/finance/format";
-import { archivePaymentLink, cancelInvoice, createPaymentLink, getInvoice, getPaymentLink } from "@/lib/finance/invoices-api";
+import { CancelInvoiceDialog } from "@/components/finance/cancel-invoice-dialog";
+import { archivePaymentLink, createPaymentLink, getInvoice, getPaymentLink } from "@/lib/finance/invoices-api";
 import {
   createPaymentPlan,
   deletePaymentPlan,
@@ -121,9 +122,9 @@ export default function InvoiceDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Cancel
-  const [cancelling, setCancelling] = useState(false);
-  const [cancelError, setCancelError] = useState<string | null>(null);
+  // Cancel — the confirmation, in-flight guard and failure copy all live in
+  // <CancelInvoiceDialog>, shared with the invoice list so the destructive
+  // action behaves identically wherever it is offered.
 
   // Refund
   const [refundPaymentId, setRefundPaymentId] = useState<string | null>(null);
@@ -192,19 +193,9 @@ export default function InvoiceDetailPage() {
     }
   }, [invoice, planCount, planMode]);
 
-  async function handleCancel() {
-    if (!invoice) return;
-    setCancelling(true);
-    setCancelError(null);
-    try {
-      const updated = await cancelInvoice(invoice.id);
-      setInvoice(updated);
-      await refreshPaymentLink();
-    } catch (e) {
-      setCancelError(e instanceof Error ? e.message : "Cancel failed.");
-    } finally {
-      setCancelling(false);
-    }
+  async function handleCancelled(updated: InvoiceDto) {
+    setInvoice(updated);
+    await refreshPaymentLink();
   }
 
   async function handleRecordPayment(e: React.FormEvent) {
@@ -942,12 +933,18 @@ export default function InvoiceDetailPage() {
 
       {/* Cancel */}
       {CANCELLABLE.has(invoice.status) && (
-        <div className="flex items-center gap-4">
-          <Button variant="destructive" disabled={cancelling} onClick={handleCancel}>
-            {cancelling ? "Cancelling…" : "Cancel invoice"}
-          </Button>
-          {cancelError && <p className="text-sm text-destructive">{cancelError}</p>}
-        </div>
+        <CancelInvoiceDialog onCancelled={handleCancelled}>
+          {(open, busy) => (
+            <div className="flex items-center gap-4">
+              <Button variant="destructive" disabled={busy} onClick={() => open(invoice)}>
+                {busy ? "Cancelling…" : "Cancel invoice…"}
+              </Button>
+              <p className="text-sm text-muted-foreground">
+                You will be asked to confirm before anything changes.
+              </p>
+            </div>
+          )}
+        </CancelInvoiceDialog>
       )}
 
       <div className="pt-2">

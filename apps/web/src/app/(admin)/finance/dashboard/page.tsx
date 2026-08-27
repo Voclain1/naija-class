@@ -11,6 +11,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { listAcademicYears, listTerms } from "@/lib/academic-years/academic-years-api";
 import { useAuth } from "@/lib/auth/use-auth";
 import { getFinanceDashboard } from "@/lib/finance/finance-api";
+import { financeErrorMessage, logFinanceError } from "@/lib/finance/error-copy";
 import { formatKobo } from "@/lib/finance/format";
 
 // /finance/dashboard — Phase 3 / Slice 14. Read-only aggregation, all
@@ -143,7 +144,11 @@ export default function FinanceDashboardPage() {
     getFinanceDashboard(termId)
       .then(setDashboard)
       .catch((e) => {
-        setError(String(e));
+        // Previously stringified the raw error, which rendered the error's
+        // class name ("ApiError: …") straight into the page. The raw error
+        // still reaches the console; only the user-facing copy is sanitised.
+        logFinanceError("getFinanceDashboard", e);
+        setError(financeErrorMessage(e));
       })
       .finally(() => setLoading(false));
   }, [termId]);

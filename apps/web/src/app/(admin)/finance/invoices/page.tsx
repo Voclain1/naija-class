@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { AlertTriangle, RotateCcw } from "lucide-react";
+import Link from "next/link";
+import { useCallback, useEffect, useState } from "react";
 
 import type {
   AcademicYearDto,
@@ -11,6 +13,7 @@ import type {
   TermDto,
 } from "@school-kit/types";
 
+import { CancelInvoiceDialog } from "@/components/finance/cancel-invoice-dialog";
 import { ExportCsvButton } from "@/components/shared/export-csv-button";
 import { PrintButton } from "@/components/shared/print-button";
 import { Badge, type BadgeProps } from "@/components/ui/badge";
@@ -20,27 +23,17 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { listAcademicYears, listTerms } from "@/lib/academic-years/academic-years-api";
 import { listClassArms } from "@/lib/class-arms/class-arms-api";
 import { exportRowsAsCsv, type CsvColumn } from "@/lib/csv-export";
+import { currentSuffix, unambiguousCurrent } from "@/lib/finance/current-context";
+import { financeErrorMessage, logFinanceError } from "@/lib/finance/error-copy";
 import { formatKobo } from "@/lib/finance/format";
+import { canCancelInvoice } from "@/lib/finance/invoice-cancel";
 import {
-  cancelInvoice,
-  generateInvoices,
-  listInvoices,
-  previewInvoices,
-} from "@/lib/finance/invoices-api";
-
-// Export reuses GET /invoices with the same filters currently applied to the
-// list tab, looping the page number (limit 200/page) until every page is
-// fetched — same permission-guarded endpoint, no new backend route. Capped
-// at 100 pages (20,000 invoices) as a runaway-loop guard.
-const INVOICE_EXPORT_COLUMNS: CsvColumn<InvoiceDto>[] = [
-  { header: "Invoice ID", accessor: (i) => i.id },
-  { header: "Student ID", accessor: (i) => i.studentId },
-  { header: "Status", accessor: (i) => STATUS_LABELS[i.status] },
-  { header: "Total Due", accessor: (i) => formatKobo(i.totalDue) },
-  { header: "Paid", accessor: (i) => formatKobo(i.totalPaid) },
-  { header: "Balance", accessor: (i) => formatKobo(i.totalDue - i.totalPaid) },
-  { header: "Due Date", accessor: (i) => i.dueDate ?? "" },
-];
+  invoiceReference,
+  studentDisplayName,
+  studentSecondaryLabel,
+} from "@/lib/finance/invoice-identity";
+import { resolveInvoiceListView } from "@/lib/finance/invoice-list-state";
+import { generateInvoices, listInvoices, previewInvoices } from "@/lib/finance/invoices-api";
 
 const STATUS_LABELS: Record<InvoiceStatus, string> = {
   DRAFT: "Draft",
@@ -51,6 +44,28 @@ const STATUS_LABELS: Record<InvoiceStatus, string> = {
   CANCELLED: "Cancelled",
   REFUNDED: "Refunded",
 };
+
+// Export reuses GET /invoices with the same filters currently applied to the
+// list tab, looping the page number (limit 200/page) until every page is
+// fetched — same permission-guarded endpoint, no new backend route. Capped
+// at 100 pages (20,000 invoices) as a runaway-loop guard.
+//
+// Column order is bursar-first: the human identity a school employee opens
+// the file to find leads, and the machine ids stay at the END rather than
+// being removed — they are still what a developer or a support request needs
+// to pin an exact row, they just no longer occupy the first thing you read.
+const INVOICE_EXPORT_COLUMNS: CsvColumn<InvoiceDto>[] = [
+  { header: "Student", accessor: (i) => studentDisplayName(i) },
+  { header: "Admission number", accessor: (i) => i.admissionNumber ?? "" },
+  { header: "Invoice reference", accessor: (i) => invoiceReference(i.id) },
+  { header: "Status", accessor: (i) => STATUS_LABELS[i.status] },
+  { header: "Total due", accessor: (i) => formatKobo(i.totalDue) },
+  { header: "Paid", accessor: (i) => formatKobo(i.totalPaid) },
+  { header: "Balance", accessor: (i) => formatKobo(i.totalDue - i.totalPaid) },
+  { header: "Due date", accessor: (i) => i.dueDate ?? "" },
+  { header: "Invoice ID", accessor: (i) => i.id },
+  { header: "Student ID", accessor: (i) => i.studentId },
+];
 
 // Same status set as /finance/debtors and the invoice detail page — kept as
 // three separate maps (not a shared constant) because each screen's status
@@ -74,6 +89,10 @@ export default function InvoicesPage() {
   // Reference data
   const [years, setYears] = useState<AcademicYearDto[]>([]);
   const [arms, setArms] = useState<ClassArmDto[]>([]);
+  // Reference-data failure is tracked SEPARATELY from the invoice fetch: an
+  // empty "Class" dropdown because /class-arms 500'd looks identical to a
+  // school that has not set up any classes, and the two need different advice.
+  const [referenceError, setReferenceError] = useState<string | null>(null);
 
   // Picker state (shared between generate and list tabs)
   const [yearId, setYearId] = useState("");
@@ -96,17 +115,34 @@ export default function InvoicesPage() {
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [listLoading, setListLoading] = useState(false);
-  const [cancelling, setCancelling] = useState<string | null>(null);
+  const [listError, setListError] = useState<string | null>(null);
+  // Bumped by the retry button to re-run the list effect with identical filters.
+  const [listReloadKey, setListReloadKey] = useState(0);
+  const [exportError, setExportError] = useState<string | null>(null);
 
   // Load reference data on mount
-  useEffect(() => {
-    listAcademicYears()
-      .then(setYears)
-      .catch((e) => { console.error("[InvoicesPage] listAcademicYears:", e); });
-    listClassArms()
-      .then(setArms)
-      .catch((e) => { console.error("[InvoicesPage] listClassArms:", e); });
+  const loadReferenceData = useCallback(() => {
+    setReferenceError(null);
+    Promise.all([listAcademicYears(), listClassArms()])
+      .then(([loadedYears, loadedArms]) => {
+        setYears(loadedYears);
+        setArms(loadedArms);
+        // Academic YEAR only. The year never reaches generateInvoices (which
+        // takes termId + classArmId) — it only narrows which terms are
+        // listed — so landing on the current one saves a click and cannot
+        // cause anything to be billed. The TERM is deliberately NOT
+        // defaulted: see lib/finance/current-context.ts for why, and for the
+        // existing repo decision it follows.
+        const current = unambiguousCurrent(loadedYears);
+        if (current) setYearId((existing) => existing || current.id);
+      })
+      .catch((e) => {
+        logFinanceError("reference data", e);
+        setReferenceError(financeErrorMessage(e));
+      });
   }, []);
+
+  useEffect(loadReferenceData, [loadReferenceData]);
 
   // Load terms when academic year changes
   useEffect(() => {
@@ -115,7 +151,11 @@ export default function InvoicesPage() {
     if (!yearId) return;
     listTerms(yearId)
       .then(setTerms)
-      .catch(() => setTerms([]));
+      .catch((e) => {
+        logFinanceError("listTerms", e);
+        setTerms([]);
+        setReferenceError(financeErrorMessage(e));
+      });
   }, [yearId]);
 
   // Reset downstream state when term/arm changes
@@ -128,7 +168,9 @@ export default function InvoicesPage() {
   // Load invoices list when tab, term, arm, status, or page changes
   useEffect(() => {
     if (tab !== "list") return;
+    let cancelled = false;
     setListLoading(true);
+    setListError(null);
     listInvoices({
       termId: termId || undefined,
       classArmId: armId || undefined,
@@ -136,30 +178,64 @@ export default function InvoicesPage() {
       page,
       limit: 50,
     })
-      .then((r) => { setInvoices(r.data); setTotal(r.total); })
-      .catch((e) => { console.error("[InvoicesPage] listInvoices:", e); setInvoices([]); })
-      .finally(() => setListLoading(false));
-  }, [tab, termId, armId, statusFilter, page]);
+      .then((r) => {
+        if (cancelled) return;
+        setInvoices(r.data);
+        setTotal(r.total);
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        logFinanceError("listInvoices", e);
+        // Rows are cleared so no STALE data is presented as current, but the
+        // error is recorded so the table renders a failure — never the bare
+        // emptiness claim this used to fall through to (F-05).
+        setInvoices([]);
+        setTotal(0);
+        setListError(financeErrorMessage(e));
+      })
+      .finally(() => {
+        if (!cancelled) setListLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [tab, termId, armId, statusFilter, page, listReloadKey]);
 
   const pickerReady = !!termId && !!armId;
 
+  const listView = resolveInvoiceListView({
+    loading: listLoading,
+    error: listError,
+    rowCount: invoices.length,
+    statusFilter,
+    statusLabel: statusFilter ? STATUS_LABELS[statusFilter] : "",
+  });
+
   async function handleExport() {
-    const rows: InvoiceDto[] = [];
-    let exportPage = 1;
-    let seenTotal = Infinity;
-    while (rows.length < seenTotal && exportPage <= 100) {
-      const res = await listInvoices({
-        termId: termId || undefined,
-        classArmId: armId || undefined,
-        status: statusFilter || undefined,
-        page: exportPage,
-        limit: 200,
-      });
-      rows.push(...res.data);
-      seenTotal = res.total;
-      exportPage += 1;
+    setExportError(null);
+    try {
+      const rows: InvoiceDto[] = [];
+      let exportPage = 1;
+      let seenTotal = Infinity;
+      while (rows.length < seenTotal && exportPage <= 100) {
+        const res = await listInvoices({
+          termId: termId || undefined,
+          classArmId: armId || undefined,
+          status: statusFilter || undefined,
+          page: exportPage,
+          limit: 200,
+        });
+        rows.push(...res.data);
+        seenTotal = res.total;
+        exportPage += 1;
+      }
+      exportRowsAsCsv("invoices.csv", rows, INVOICE_EXPORT_COLUMNS);
+    } catch (e) {
+      // A half-fetched export must not be written to a file the bursar would
+      // then reconcile against — fail loudly and download nothing.
+      logFinanceError("invoice export", e);
+      setExportError(financeErrorMessage(e));
     }
-    exportRowsAsCsv("invoices.csv", rows, INVOICE_EXPORT_COLUMNS);
   }
 
   async function handlePreview() {
@@ -172,7 +248,8 @@ export default function InvoicesPage() {
       const rows = await previewInvoices({ termId, classArmId: armId });
       setPreview(rows);
     } catch (e) {
-      setGenerateError(e instanceof Error ? e.message : "Preview failed.");
+      logFinanceError("previewInvoices", e);
+      setGenerateError(financeErrorMessage(e));
     } finally {
       setPreviewLoading(false);
     }
@@ -192,61 +269,92 @@ export default function InvoicesPage() {
       setGenerateResult({ created: result.created, skipped: result.skipped });
       setPreview(null);
     } catch (e) {
-      setGenerateError(e instanceof Error ? e.message : "Generation failed.");
+      logFinanceError("generateInvoices", e);
+      setGenerateError(financeErrorMessage(e));
     } finally {
       setGenerating(false);
     }
   }
 
-  async function handleCancel(id: string) {
-    setCancelling(id);
-    try {
-      const updated = await cancelInvoice(id);
-      setInvoices((prev) => prev.map((inv) => (inv.id === id ? updated : inv)));
-    } catch (e) {
-      console.error("[InvoicesPage] cancelInvoice:", e);
-    } finally {
-      setCancelling(null);
-    }
-  }
-
   const previewTotalDue = preview?.reduce((s, r) => s + r.totalDue, 0) ?? 0;
+
+  const selectedTerm = terms.find((t) => t.id === termId);
+  const selectedArm = arms.find((a) => a.id === armId);
 
   return (
     <div className="max-w-6xl space-y-6 p-6">
       <h1 className="font-serif text-2xl font-medium tracking-tight text-foreground">Invoices</h1>
 
+      {referenceError && (
+        <div
+          role="alert"
+          className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive print:hidden"
+        >
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
+          <div className="space-y-2">
+            <p>Could not load the school&rsquo;s years, terms and classes. {referenceError}</p>
+            <Button variant="outline" size="sm" onClick={loadReferenceData}>
+              <RotateCcw className="mr-1 h-4 w-4" aria-hidden />
+              Try again
+            </Button>
+          </div>
+        </div>
+      )}
+
       {/* Term + arm picker */}
       <div className="flex flex-wrap items-end gap-3 print:hidden">
         <div>
-          <label className="mb-1 block text-sm font-medium text-foreground">Academic year</label>
-          <select className={SELECT_CLASSES} value={yearId} onChange={(e) => setYearId(e.target.value)}>
-            <option value="">— year —</option>
+          <label htmlFor="invoice-year" className="mb-1 block text-sm font-medium text-foreground">
+            Academic year
+          </label>
+          <select
+            id="invoice-year"
+            className={SELECT_CLASSES}
+            value={yearId}
+            onChange={(e) => setYearId(e.target.value)}
+          >
+            <option value="">Choose an academic year</option>
             {years.map((y) => (
-              <option key={y.id} value={y.id}>{y.label}</option>
+              <option key={y.id} value={y.id}>
+                {y.label}
+                {currentSuffix(y.isCurrent)}
+              </option>
             ))}
           </select>
         </div>
 
         <div>
-          <label className="mb-1 block text-sm font-medium text-foreground">Term</label>
+          <label htmlFor="invoice-term" className="mb-1 block text-sm font-medium text-foreground">
+            Term
+          </label>
           <select
+            id="invoice-term"
             className={SELECT_CLASSES}
             disabled={!yearId}
             value={termId}
             onChange={(e) => setTermId(e.target.value)}
           >
-            <option value="">{yearId ? "— term —" : "Select year first"}</option>
+            <option value="">{yearId ? "Choose a term" : "Choose an academic year first"}</option>
             {terms.map((t) => (
-              <option key={t.id} value={t.id}>{t.name}</option>
+              <option key={t.id} value={t.id}>
+                {t.name}
+                {currentSuffix(t.isCurrent)}
+              </option>
             ))}
           </select>
         </div>
 
         <div>
-          <label className="mb-1 block text-sm font-medium text-foreground">Class arm</label>
-          <select className={SELECT_CLASSES} value={armId} onChange={(e) => setArmId(e.target.value)}>
-            <option value="">— arm —</option>
+          <label htmlFor="invoice-arm" className="mb-1 block text-sm font-medium text-foreground">
+            Class
+          </label>
+          <select
+            id="invoice-arm"
+            className={SELECT_CLASSES}
+            value={armId}
+            onChange={(e) => setArmId(e.target.value)}
+          >
+            <option value="">Choose a class</option>
             {arms.map((a) => (
               <option key={a.id} value={a.id}>{a.name}</option>
             ))}
@@ -264,8 +372,11 @@ export default function InvoicesPage() {
         <TabsContent value="generate" className="space-y-4">
           <div className="flex flex-wrap items-end gap-3">
             <div>
-              <label className="mb-1 block text-sm font-medium text-foreground">Due date (optional)</label>
+              <label htmlFor="invoice-due-date" className="mb-1 block text-sm font-medium text-foreground">
+                Due date (optional)
+              </label>
               <input
+                id="invoice-due-date"
                 type="date"
                 className={SELECT_CLASSES}
                 value={dueDate}
@@ -282,25 +393,37 @@ export default function InvoicesPage() {
             </Button>
           </div>
 
-          {generateError && <p className="text-sm text-destructive">{generateError}</p>}
+          {pickerReady && selectedTerm && selectedArm && (
+            <p className="text-sm text-muted-foreground">
+              Invoices will be created for every enrolled student in{" "}
+              <strong className="text-foreground">{selectedArm.name}</strong> for{" "}
+              <strong className="text-foreground">{selectedTerm.name}</strong>. Students who
+              already have an invoice for this term are skipped.
+            </p>
+          )}
+
+          {generateError && (
+            <p role="alert" className="text-sm text-destructive">{generateError}</p>
+          )}
 
           {generateResult && (
             <div className="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-300">
-              Done — {generateResult.created} invoice(s) created, {generateResult.skipped} skipped (already issued).
+              Done — {generateResult.created} invoice{generateResult.created === 1 ? "" : "s"}{" "}
+              created, {generateResult.skipped} skipped (already issued).
             </div>
           )}
 
           {preview && (
             <div className="space-y-2">
               <p className="text-sm text-muted-foreground">
-                Advisory preview — {preview.length} student(s). Clicking
+                Advisory preview — {preview.length} student{preview.length === 1 ? "" : "s"}. Clicking
                 &ldquo;Generate invoices&rdquo; recomputes from current fee catalog.
               </p>
-              <div className="rounded-lg border">
+              <div className="overflow-x-auto rounded-lg border">
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Student ID</TableHead>
+                      <TableHead>Student</TableHead>
                       <TableHead className="text-right">Fee items</TableHead>
                       <TableHead className="text-right">Gross</TableHead>
                       <TableHead className="text-right">Discount</TableHead>
@@ -310,7 +433,16 @@ export default function InvoicesPage() {
                   <TableBody>
                     {preview.map((row) => (
                       <TableRow key={row.studentId}>
-                        <TableCell className="font-mono text-xs text-muted-foreground">{row.studentId}</TableCell>
+                        <TableCell className="max-w-[18rem]">
+                          <span className="block break-words font-medium text-foreground">
+                            {studentDisplayName(row)}
+                          </span>
+                          {studentSecondaryLabel(row) && (
+                            <span className="block text-xs text-muted-foreground">
+                              {studentSecondaryLabel(row)}
+                            </span>
+                          )}
+                        </TableCell>
                         <TableCell className="text-right">{row.feeItemCount}</TableCell>
                         <TableCell className="text-right font-mono tabular-nums">{formatKobo(row.totalAmount)}</TableCell>
                         <TableCell className="text-right font-mono tabular-nums text-destructive">
@@ -340,7 +472,9 @@ export default function InvoicesPage() {
           )}
 
           {!pickerReady && (
-            <p className="text-sm text-muted-foreground">Select a term and class arm to continue.</p>
+            <p className="text-sm text-muted-foreground">
+              Choose an academic year, a term and a class above to continue.
+            </p>
           )}
         </TabsContent>
 
@@ -348,8 +482,11 @@ export default function InvoicesPage() {
         <TabsContent value="list" className="space-y-4">
           <div className="flex flex-wrap items-end justify-between gap-3 print:hidden">
             <div>
-              <label className="mb-1 block text-sm font-medium text-foreground">Status</label>
+              <label htmlFor="invoice-status" className="mb-1 block text-sm font-medium text-foreground">
+                Status
+              </label>
               <select
+                id="invoice-status"
                 className={SELECT_CLASSES}
                 value={statusFilter}
                 onChange={(e) => { setStatusFilter(e.target.value as InvoiceStatus | ""); setPage(1); }}
@@ -366,75 +503,160 @@ export default function InvoicesPage() {
             </div>
           </div>
 
-          <div className="rounded-lg border">
+          {exportError && (
+            <p role="alert" className="text-sm text-destructive print:hidden">
+              Export failed — nothing was downloaded. {exportError}
+            </p>
+          )}
+
+          <div className="overflow-x-auto rounded-lg border">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Invoice ID</TableHead>
                   <TableHead>Student</TableHead>
+                  <TableHead>Reference</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead className="text-right">Total due</TableHead>
                   <TableHead className="text-right">Paid</TableHead>
                   <TableHead>Due date</TableHead>
-                  <TableHead className="w-32 print:hidden" />
+                  <TableHead className="w-40 print:hidden" />
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {listLoading && (
-                  <TableRow>
-                    <TableCell colSpan={7} className="py-6 text-center text-muted-foreground">Loading…</TableCell>
-                  </TableRow>
-                )}
-                {!listLoading && invoices.length === 0 && (
+                {listView.kind === "loading" && (
                   <TableRow>
                     <TableCell colSpan={7} className="py-6 text-center text-muted-foreground">
-                      No invoices found.
+                      Loading invoices…
                     </TableCell>
                   </TableRow>
                 )}
-                {invoices.map((inv) => (
-                  <TableRow key={inv.id}>
-                    <TableCell className="font-mono text-xs text-muted-foreground">
-                      <a href={`/finance/invoices/${inv.id}`} className="text-primary underline hover:text-primary/80">
-                        {inv.id.slice(0, 8)}…
-                      </a>
-                    </TableCell>
-                    <TableCell className="font-mono text-xs text-muted-foreground">{inv.studentId.slice(0, 8)}…</TableCell>
-                    <TableCell>
-                      <Badge variant={STATUS_VARIANTS[inv.status]}>{STATUS_LABELS[inv.status]}</Badge>
-                    </TableCell>
-                    <TableCell className="text-right font-mono tabular-nums">{formatKobo(inv.totalDue)}</TableCell>
-                    <TableCell className="text-right font-mono tabular-nums text-emerald-700 dark:text-emerald-400">
-                      {formatKobo(inv.totalPaid)}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">{inv.dueDate ?? "—"}</TableCell>
-                    <TableCell className="text-right print:hidden">
-                      <div className="flex justify-end gap-3">
-                        <a
-                          href={`/finance/invoices/${inv.id}`}
-                          className="text-xs text-primary underline hover:text-primary/80"
-                        >
-                          View
-                        </a>
-                        {(inv.status === "ISSUED" || inv.status === "DRAFT" || inv.status === "OVERDUE") && (
-                          <button
-                            disabled={cancelling === inv.id}
-                            onClick={() => handleCancel(inv.id)}
-                            className="text-xs text-destructive hover:text-destructive/80 disabled:opacity-50"
-                          >
-                            {cancelling === inv.id ? "…" : "Cancel"}
-                          </button>
-                        )}
+
+                {listView.kind === "error" && (
+                  <TableRow>
+                    <TableCell colSpan={7} className="py-8">
+                      <div role="alert" className="mx-auto flex max-w-md flex-col items-center gap-3 text-center">
+                        <AlertTriangle className="h-6 w-6 text-destructive" aria-hidden />
+                        <div>
+                          <p className="font-medium text-foreground">Could not load invoices</p>
+                          <p className="text-sm text-muted-foreground">{listView.message}</p>
+                          <p className="mt-1 text-sm text-muted-foreground">
+                            This is not the same as having no invoices — nothing about this
+                            term&rsquo;s billing has been confirmed.
+                          </p>
+                        </div>
+                        <Button variant="outline" size="sm" onClick={() => setListReloadKey((k) => k + 1)}>
+                          <RotateCcw className="mr-1 h-4 w-4" aria-hidden />
+                          Try again
+                        </Button>
                       </div>
                     </TableCell>
                   </TableRow>
-                ))}
+                )}
+
+                {listView.kind === "empty" && (
+                  <TableRow>
+                    <TableCell colSpan={7} className="py-8 text-center">
+                      <p className="font-medium text-foreground">No invoices yet</p>
+                      <p className="text-sm text-muted-foreground">
+                        Nothing has been billed for this selection. Use the{" "}
+                        <strong>Generate</strong> tab to create invoices for a class.
+                      </p>
+                    </TableCell>
+                  </TableRow>
+                )}
+
+                {listView.kind === "filtered-empty" && (
+                  <TableRow>
+                    <TableCell colSpan={7} className="py-8 text-center">
+                      <p className="font-medium text-foreground">
+                        No &ldquo;{listView.statusLabel}&rdquo; invoices here
+                      </p>
+                      <p className="text-sm text-muted-foreground">
+                        Invoices may still exist under a different status.
+                      </p>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="mt-3"
+                        onClick={() => { setStatusFilter(""); setPage(1); }}
+                      >
+                        Show all statuses
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                )}
+
+                {listView.kind === "rows" &&
+                  invoices.map((inv) => (
+                    <TableRow key={inv.id}>
+                      {/* Human identity leads the row — this column used to be a
+                          truncated UUID (F-04). max-w + break-words so a long
+                          Nigerian name wraps inside its cell instead of pushing
+                          the amount columns off screen. */}
+                      <TableCell className="max-w-[16rem]">
+                        <Link
+                          href={`/finance/invoices/${inv.id}`}
+                          className="block break-words font-medium text-foreground underline-offset-2 hover:underline"
+                        >
+                          {studentDisplayName(inv)}
+                        </Link>
+                        {studentSecondaryLabel(inv) && (
+                          <span className="block text-xs text-muted-foreground">
+                            {studentSecondaryLabel(inv)}
+                          </span>
+                        )}
+                      </TableCell>
+                      <TableCell className="font-mono text-xs text-muted-foreground">
+                        {invoiceReference(inv.id)}
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant={STATUS_VARIANTS[inv.status]}>{STATUS_LABELS[inv.status]}</Badge>
+                      </TableCell>
+                      <TableCell className="text-right font-mono tabular-nums">{formatKobo(inv.totalDue)}</TableCell>
+                      <TableCell className="text-right font-mono tabular-nums text-emerald-700 dark:text-emerald-400">
+                        {formatKobo(inv.totalPaid)}
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap text-muted-foreground">{inv.dueDate ?? "—"}</TableCell>
+                      <TableCell className="text-right print:hidden">
+                        <div className="flex justify-end gap-3">
+                          {/* Client navigation (F-32): a raw <a href> here forced a
+                              full document reload, discarding the loaded filters. */}
+                          <Link
+                            href={`/finance/invoices/${inv.id}`}
+                            className="text-xs text-primary underline hover:text-primary/80"
+                          >
+                            View
+                          </Link>
+                          {canCancelInvoice(inv.status) && (
+                            <CancelInvoiceDialog
+                              onCancelled={(updated) =>
+                                setInvoices((prev) =>
+                                  prev.map((row) => (row.id === updated.id ? updated : row)),
+                                )
+                              }
+                            >
+                              {(open, busy) => (
+                                <button
+                                  type="button"
+                                  disabled={busy}
+                                  onClick={() => open(inv)}
+                                  className="text-xs text-destructive underline hover:text-destructive/80 disabled:opacity-50"
+                                >
+                                  Cancel invoice…
+                                </button>
+                              )}
+                            </CancelInvoiceDialog>
+                          )}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
               </TableBody>
             </Table>
           </div>
 
           {/* Pagination */}
-          {total > 50 && (
+          {listView.kind === "rows" && total > 50 && (
             <div className="flex items-center gap-3 text-sm print:hidden">
               <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
                 ← Prev
