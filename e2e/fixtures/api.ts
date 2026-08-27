@@ -22,6 +22,22 @@ import {
 
 import { proposeAcademicCalendar } from "@school-kit/types";
 
+function assertIsolatedE2eTarget(): void {
+  if (process.env.E2E_ISOLATED !== "1") return;
+
+  const apiUrl = process.env.E2E_API_URL;
+  const databaseUrl = process.env.DATABASE_URL;
+  if (!apiUrl || !databaseUrl) throw new Error("Isolated E2E requires E2E_API_URL and DATABASE_URL.");
+
+  const api = new URL(apiUrl);
+  const database = new URL(databaseUrl);
+  if (api.hostname !== "localhost" || api.port !== "4100" || database.hostname !== "127.0.0.1" || database.port !== "55432") {
+    throw new Error("Isolated E2E target is not the approved local API/database.");
+  }
+}
+
+assertIsolatedE2eTarget();
+
 // The API base, WITH a trailing slash (see PATH NOTE above). Overridable for
 // non-default ports.
 export const API_BASE_URL =
