@@ -17,6 +17,22 @@ import { loginAsAdmin, uniqueSuffix } from "../fixtures/index.js";
 
 const WEB = "http://localhost:3001";
 
+/**
+ * Assert the browser is on `path`, ignoring query parameters the PAGE adds
+ * for itself.
+ *
+ * /dashboard appends ?termId=<uuid> as soon as it resolves the current term,
+ * so `toHaveURL(`${WEB}/dashboard`)` — an exact string match — can never
+ * hold. What these tests care about is the origin and the pathname: that the
+ * user landed on the right page and never left the origin.
+ */
+async function expectPath(page: Page, path: string): Promise<void> {
+  await expect
+    .poll(() => new URL(page.url()).pathname, { timeout: 15_000 })
+    .toBe(path);
+  expect(new URL(page.url()).origin).toBe(WEB);
+}
+
 /** Delete the session cookie in the browser — a revoked/absent session. */
 async function dropSessionCookie(page: Page): Promise<void> {
   const context = page.context();
@@ -95,7 +111,7 @@ test.describe("deep-link continuity (F-10)", () => {
     await page.getByLabel("Password", { exact: true }).fill(admin.password);
     await page.getByRole("button", { name: /sign in|log in/i }).click();
 
-    await expect(page).toHaveURL(`${WEB}/dashboard`);
+    await expectPath(page, "/dashboard");
 
     await context.close();
     await admin.context.close();
@@ -122,9 +138,8 @@ test.describe("open-redirect guard (F-10 security)", () => {
       await page.getByRole("button", { name: /sign in|log in/i }).click();
 
       // Falls back to the role home; never leaves the origin.
-      await expect(page).toHaveURL(`${WEB}/dashboard`);
+      await expectPath(page, "/dashboard");
       expect(page.url()).not.toContain("evil.example");
-      expect(new URL(page.url()).origin).toBe(WEB);
 
       await context.close();
       await admin.context.close();
@@ -143,24 +158,39 @@ test.describe("session-expiry communication (F-10)", () => {
     await page.goto(`${WEB}/finance/invoices`);
     await expect(page.getByRole("heading", { name: "Invoices" })).toBeVisible();
 
-    // Drop the session the way a revocation would: the cookie is gone, so the
-    // next authed request comes back 401 with a real error code.
-    await dropSessionCookie(page);
+    // Make the NEXT authenticated request come back as a genuine expiry.
+    // Intercepting is deliberate: deleting the cookie would also be a 401,
+    // but it exercises the middleware path and cannot say WHICH reason the
+    // server gave. Fulfilling with the API's real envelope tests the thing
+    // this slice actually changed — that apiFetch carries the code through
+    // and the provider maps it — and lets the assertion below be exact
+    // rather than "one of two".
+    await page.route("**/api/v1/**", (route) =>
+      route.fulfill({
+        status: 401,
+        contentType: "application/json",
+        body: JSON.stringify({
+          error: { code: "SESSION_EXPIRED", message: "Session has expired." },
+        }),
+      }),
+    );
 
     // Trigger an authenticated request from the live page.
     await page.getByRole("tab", { name: "Invoice list" }).click();
 
-    await expect(page).toHaveURL(/\/login\?/);
+    await expect
+      .poll(() => new URL(page.url()).pathname, { timeout: 15_000 })
+      .toBe("/login");
     const url = new URL(page.url());
-    // A reason was carried...
-    expect(["expired", "revoked"]).toContain(url.searchParams.get("reason"));
+    // The EXACT reason the server gave, not a guess.
+    expect(url.searchParams.get("reason")).toBe("expired");
     // ...and the destination survived.
     expect(url.searchParams.get("next")).toContain("/finance/invoices");
 
     // The user is told something they can act on, in plain language.
     const status = page.getByRole("status");
     await expect(status).toBeVisible();
-    await expect(status).toContainText(/signed out|session expired/i);
+    await expect(status).toContainText(/your session expired/i);
 
     // And never in our vocabulary.
     const body = (await page.locator("body").textContent()) ?? "";
@@ -179,7 +209,7 @@ test.describe("session-expiry communication (F-10)", () => {
     const page = admin.page;
 
     await page.goto(`${WEB}/dashboard`);
-    await expect(page).toHaveURL(`${WEB}/dashboard`);
+    await expectPath(page, "/dashboard");
 
     await dropSessionCookie(page);
     await page.reload();
@@ -197,7 +227,7 @@ test.describe("session-expiry communication (F-10)", () => {
     const page = admin.page;
 
     await page.goto(`${WEB}/dashboard`);
-    await expect(page).toHaveURL(`${WEB}/dashboard`);
+    await expectPath(page, "/dashboard");
 
     // Open the account menu and sign out.
     await page.getByRole("button", { name: /account|menu|profile/i }).first().click();
@@ -220,7 +250,7 @@ test.describe("session-expiry communication (F-10)", () => {
     const page = admin.page;
 
     await page.goto(`${WEB}/students`);
-    await expect(page).toHaveURL(`${WEB}/students`);
+    await expectPath(page, "/students");
 
     await dropSessionCookie(page);
     await page.reload();
