@@ -102,6 +102,16 @@ export async function createPortalGuardian(
     "acceptGuardianInvitation",
   );
 
+  // Accepting an invitation IS a login — the endpoint mints a session and
+  // returns a token (AcceptGuardianInvitationResponse is GuardianLoginResponse).
+  // The fixture throws that token away, which would otherwise leave an orphan
+  // session and make every "this guardian has N sessions" assertion off by
+  // one. Clear it so specs start from a known zero.
+  const { withTenant } = await import("@school-kit/db");
+  await withTenant(input.schoolId, (db) =>
+    db.guardianSession.deleteMany({ where: { guardianId } }),
+  );
+
   return {
     guardianId,
     schoolId: input.schoolId,

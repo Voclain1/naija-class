@@ -44,6 +44,20 @@ async function signIn(page: Page, guardian: PortalGuardian): Promise<void> {
   await page.getByLabel("Email").fill(guardian.email);
   await page.getByLabel("Password", { exact: true }).fill(guardian.password);
   await page.getByRole("button", { name: "Log in" }).click();
+  // WAIT for the landing before returning. Login finishes with a full
+  // document replace, so a caller that navigates immediately would race the
+  // cookie being set and get bounced to /login by middleware.
+  await expect(page.getByRole("heading", { name: "Your children" })).toBeVisible();
+}
+
+// Alerts inside the page content only.
+//
+// getByRole("alert") on its own is a strict-mode violation in a Next.js app:
+// the App Router injects <div role="alert" id="__next-route-announcer__">
+// into every page for screen-reader route announcements, so the role always
+// matches at least two elements. Scoping to <main> excludes it.
+function pageAlert(page: Page) {
+  return page.locator("main").getByRole("alert");
 }
 
 test.describe("guardian login (F-13)", () => {
@@ -79,7 +93,7 @@ test.describe("guardian login (F-13)", () => {
     await page.getByLabel("Password", { exact: true }).fill("Wrong-Password-1!");
     await page.getByRole("button", { name: "Log in" }).click();
 
-    await expect(page.getByRole("alert")).toContainText(/Invalid email or password/i);
+    await expect(pageAlert(page)).toContainText(/Invalid email or password/i);
     await expect(page).toHaveURL(new RegExp("/login"));
     await expect(page.getByRole("heading", { name: "Your children" })).toBeHidden();
     expect(await sessionCount(guardian.schoolId, guardian.guardianId)).toBe(0);
@@ -198,7 +212,8 @@ test.describe("guardian logout (F-06)", () => {
   }) => {
     const { admin, guardian, context, page } = await scaffold(browser);
     await signIn(page, guardian);
-    await expect(page.getByRole("heading", { name: "Your children" })).toBeVisible();
+    // Exactly one: the fixture clears the session that accepting the
+    // invitation created, so this is the session THIS test just made.
     expect(await sessionCount(guardian.schoolId, guardian.guardianId)).toBe(1);
 
     await page.getByRole("button", { name: "Sign out" }).click();
@@ -400,7 +415,7 @@ test.describe("guardian password recovery (F-06)", () => {
     await page.getByLabel("Confirm new password").fill("Attacker-Pass-3!");
     await page.getByRole("button", { name: "Set new password" }).click();
 
-    await expect(page.getByRole("alert")).toContainText(/already been used/i);
+    await expect(pageAlert(page)).toContainText(/already been used/i);
     await expect(page.getByRole("link", { name: "Request a new reset link" })).toBeVisible();
 
     // And the second password never took effect.
@@ -408,7 +423,7 @@ test.describe("guardian password recovery (F-06)", () => {
     await page.getByLabel("Email").fill(guardian.email);
     await page.getByLabel("Password", { exact: true }).fill("Attacker-Pass-3!");
     await page.getByRole("button", { name: "Log in" }).click();
-    await expect(page.getByRole("alert")).toContainText(/Invalid email or password/i);
+    await expect(pageAlert(page)).toContainText(/Invalid email or password/i);
 
     await context.close();
     await admin.context.close();
@@ -426,7 +441,7 @@ test.describe("guardian password recovery (F-06)", () => {
     await page.getByLabel("Confirm new password").fill("Brand-New-Pass-1!");
     await page.getByRole("button", { name: "Set new password" }).click();
 
-    await expect(page.getByRole("alert")).toContainText(/expired/i);
+    await expect(pageAlert(page)).toContainText(/expired/i);
 
     // A garbage token says something DIFFERENT — the two failures are not
     // collapsed into one unhelpful "invalid".
@@ -435,7 +450,7 @@ test.describe("guardian password recovery (F-06)", () => {
     await page.getByLabel("Confirm new password").fill("Brand-New-Pass-1!");
     await page.getByRole("button", { name: "Set new password" }).click();
 
-    const alert = page.getByRole("alert");
+    const alert = pageAlert(page);
     await expect(alert).toBeVisible();
     await expect(alert).not.toContainText(/expired/i);
 
