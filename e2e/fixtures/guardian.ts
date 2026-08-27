@@ -64,7 +64,12 @@ export async function createPortalGuardian(
     "createStudent",
   );
 
-  const guardian = await unwrap<{ id: string }>(
+  // NOTE the response shape: this endpoint returns
+  // { link, guardian, createdGuardian }, NOT a bare guardian. Reading
+  // `body.id` here yields undefined and the invite below then 404s on
+  // /guardians/undefined/invite — which is exactly how this fixture failed
+  // the first time.
+  const created = await unwrap<{ guardian: { id: string } }>(
     await api.post(`students/${student.id}/guardians/new`, {
       data: {
         firstName,
@@ -77,9 +82,10 @@ export async function createPortalGuardian(
     }),
     "createGuardianForStudent",
   );
+  const guardianId = created.guardian.id;
 
   const invited = await unwrap<{ acceptUrl: string }>(
-    await api.post(`guardians/${guardian.id}/invite`, { data: {} }),
+    await api.post(`guardians/${guardianId}/invite`, { data: {} }),
     "inviteGuardian",
   );
 
@@ -92,7 +98,7 @@ export async function createPortalGuardian(
   );
 
   return {
-    guardianId: guardian.id,
+    guardianId,
     schoolId: input.schoolId,
     studentId: student.id,
     email,
