@@ -48,6 +48,32 @@ async function signIn(page: Page, guardian: PortalGuardian): Promise<void> {
   // document replace, so a caller that navigates immediately would race the
   // cookie being set and get bounced to /login by middleware.
   await expect(page.getByRole("heading", { name: "Your children" })).toBeVisible();
+  // ...and wait for the CHILD to render, not just the heading. The heading is
+  // in the static shell and appears before React has hydrated; the list only
+  // renders after the client fetch resolves, which cannot happen until the
+  // component is live. Without this barrier a subsequent .click() can land on
+  // a button whose onClick is not attached yet — the click "succeeds",
+  // nothing happens, and the failure looks like a broken feature rather than
+  // a race. That is exactly how the sign-out specs failed in CI: the runs
+  // that failed show NO POST /api/portal/logout at all.
+  await expect(page.getByText(guardian.studentFirstName).first()).toBeVisible();
+}
+
+/**
+ * Click Sign out and wait for the return to the login screen.
+ *
+ * Waits for the page to settle first, for the hydration reason described in
+ * signIn — every caller of this helper reaches it straight after a
+ * navigation.
+ */
+async function signOut(page: Page): Promise<void> {
+  const button = page.getByRole("button", { name: "Sign out" });
+  await expect(button).toBeEnabled();
+  await page.waitForLoadState("networkidle");
+  await Promise.all([
+    page.waitForURL(new RegExp("/login"), { timeout: 30_000 }),
+    button.click(),
+  ]);
 }
 
 // Alerts inside the page content only.
@@ -216,8 +242,7 @@ test.describe("guardian logout (F-06)", () => {
     // invitation created, so this is the session THIS test just made.
     expect(await sessionCount(guardian.schoolId, guardian.guardianId)).toBe(1);
 
-    await page.getByRole("button", { name: "Sign out" }).click();
-
+    await signOut(page);
     await expect(page).toHaveURL(new RegExp("/login"));
     // Destroyed server-side, not merely forgotten by the browser.
     expect(await sessionCount(guardian.schoolId, guardian.guardianId)).toBe(0);
@@ -247,8 +272,7 @@ test.describe("guardian logout (F-06)", () => {
     await page.goto(`${PORTAL_BASE_URL}/students/${guardian.studentId}`);
     await expect(page.getByText(guardian.studentFirstName)).toBeVisible();
 
-    await page.getByRole("button", { name: "Sign out" }).click();
-    await expect(page).toHaveURL(new RegExp("/login"));
+    await signOut(page);
 
     await page.goBack();
     await page.waitForLoadState("networkidle");
@@ -273,7 +297,7 @@ test.describe("guardian logout (F-06)", () => {
     await expect(phonePage.getByRole("heading", { name: "Your children" })).toBeVisible();
     expect(await sessionCount(guardian.schoolId, guardian.guardianId)).toBe(2);
 
-    await page.getByRole("button", { name: "Sign out" }).click();
+    await signOut(page);
     await expect(page).toHaveURL(new RegExp("/login"));
 
     // The phone is untouched — signing out of a shared computer must not
