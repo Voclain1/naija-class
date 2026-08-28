@@ -4,6 +4,8 @@ import { Loader2 } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { isAuthForcedNavigation } from "@/lib/auth/session-end-navigation";
+
 import { RegisterEditor } from "@/components/teacher/attendance/register-editor";
 import { useAttendanceScope } from "@/components/teacher/attendance/use-attendance-scope";
 
@@ -66,6 +68,12 @@ export default function AttendanceRegisterPage() {
     if (!hasUnsaved) return;
 
     const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      // Stand down for a forced sign-out: the credential is already gone, so
+      // "Stay" cannot save this register. See lib/auth/session-end-navigation.ts.
+      // The click and popstate guards below are deliberately NOT gated on it —
+      // both only fire for in-app navigation the user chose, which is exactly
+      // the case where the question is honest.
+      if (isAuthForcedNavigation()) return;
       event.preventDefault();
       event.returnValue = "";
     };

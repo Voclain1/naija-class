@@ -10,6 +10,7 @@ import type {
 } from "@school-kit/types";
 
 import { Button } from "@/components/ui/button";
+import { isAuthForcedNavigation } from "@/lib/auth/session-end-navigation";
 
 // Per-cell server snapshot — null when no link exists for (level, subject).
 export type CellSnapshot = { linkId: string; isCore: boolean } | null;
@@ -133,6 +134,9 @@ export function ClassSubjectMatrix({
   useEffect(() => {
     if (!isDirty) return;
     const handler = (e: BeforeUnloadEvent) => {
+      // Stand down for a forced sign-out — "Stay" cannot save these toggles
+      // once the credential is gone. See lib/auth/session-end-navigation.ts.
+      if (isAuthForcedNavigation()) return;
       e.preventDefault();
       e.returnValue = "";
     };

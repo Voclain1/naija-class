@@ -5,6 +5,7 @@ import { useEffect } from "react";
 import type { ReactNode } from "react";
 
 import { buildLoginUrl } from "@/lib/auth/session-end";
+import { consumeSessionEndReason } from "@/lib/auth/session-end-navigation";
 import { useAuth } from "@/lib/auth/use-auth";
 
 import { BrandLoadingScreen } from "../brand-loading-screen";
@@ -49,15 +50,21 @@ export function RequireAuth({ children, roles }: { children: ReactNode; roles?: 
       // bookmark, and dumping them on the dashboard loses the thing they
       // actually asked for.
       //
-      // No `reason` here, deliberately: this path cannot tell WHY there is no
-      // session. It might be an expiry the API already reported (in which
-      // case the 401 handler in auth-provider has already redirected with a
-      // reason and this never runs), or simply someone who was never signed
-      // in. Asserting "your session expired" to a first-time visitor would be
-      // a false statement, so it says nothing.
+      // The reason comes from consumeSessionEndReason(), NOT from guessing.
+      //
+      // This branch cannot tell on its own WHY there is no session, and
+      // asserting "your session expired" to a first-time visitor would be a
+      // false statement — so it used to say nothing at all. That was right
+      // for a cold load and wrong for the case that actually reaches here:
+      // a mid-session 401. The auth provider parks the API's own reason
+      // before it starts the forced navigation, so if this effect wins the
+      // race it now carries the same explanation rather than dropping it.
+      //
+      // Still null for a genuine cold load — nothing parks a reason there,
+      // so a first-time visitor is told nothing, exactly as before.
       router.replace(
         buildLoginUrl({
-          reason: null,
+          reason: consumeSessionEndReason(),
           next: `${window.location.pathname}${window.location.search}`,
         }),
       );
