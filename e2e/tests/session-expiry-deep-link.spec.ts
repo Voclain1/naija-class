@@ -395,7 +395,11 @@ test.describe("guardian portal — session expiry and deep links (F-10)", () => 
     // with no cookie is handled by MIDDLEWARE, which carries `next` but
     // cannot know a reason, so it would never exercise the 401 handler this
     // slice added — and the reason would correctly be null.
-    await page.route("**/api/v1/portal/students/**", (route) =>
+    // NOTE the path: the portal browser never calls the API directly — it
+    // goes through this app's own Next proxy route (ARCHITECTURE.md §12), so
+    // the interceptable URL is /api/portal/*, not /api/v1/*. Matching the
+    // API path caught nothing and the page simply never redirected.
+    await page.route("**/api/portal/students/**", (route) =>
       route.fulfill({
         status: 401,
         contentType: "application/json",

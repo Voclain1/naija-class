@@ -1,6 +1,5 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { createContext, useCallback, useEffect, useState } from "react";
 import type { ReactNode } from "react";
 
@@ -96,7 +95,6 @@ function guestState(): AuthState {
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const router = useRouter();
   const [state, setState] = useState<AuthState>(initialState);
 
   // Cold-boot hydration. GET /api/auth/session reads the sk_session HttpOnly
@@ -156,17 +154,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setState(guestState());
 
       const code = (event as CustomEvent<UnauthorizedEventDetail | undefined>).detail?.code;
-      // window.location, not the router: this fires from wherever the failed
-      // request happened, and the current pathname is the thing worth
-      // returning to.
       const current = `${window.location.pathname}${window.location.search}`;
-      router.replace(
-        buildLoginUrl({ reason: reasonFromErrorCode(code), next: current }),
-      );
+      const target = buildLoginUrl({ reason: reasonFromErrorCode(code), next: current });
+
+      // FULL-DOCUMENT navigation, for the same reason logout uses one.
+      // setState(guestState()) above also makes RequireAuth's guest branch
+      // fire, and that branch redirects with reason:null (it cannot know
+      // why). With router.replace the two raced and RequireAuth could win —
+      // silently discarding the very reason this slice exists to surface.
+      // A document replace tears the tree down first, so the reason always
+      // survives.
+      //
+      // It also guarantees no stale authenticated data is left in memory
+      // behind the login screen, which router.replace alone does not.
+      window.location.replace(target);
     };
     window.addEventListener(AUTH_UNAUTHORIZED_EVENT, handler);
     return () => window.removeEventListener(AUTH_UNAUTHORIZED_EVENT, handler);
-  }, [router]);
+  }, []);
 
   const login = useCallback(
     async (
