@@ -131,6 +131,17 @@ export default function StudentDetailPage() {
           // Say WHY, and remember which child's page they were on (F-10).
           // Read the code off whichever response actually 401'd.
           const unauthorised = studentRes.status === 401 ? studentRes : invoicesRes;
+          // Blank the page BEFORE anything else. A redirect is not instant,
+          // and until it lands this component would otherwise keep rendering
+          // whatever was already loaded — a child's name and fee balance, on
+          // a screen whose session has just been rejected. Dropping back to
+          // "loading" makes "no stale protected content after a 401" a
+          // property of the component rather than a race against navigation.
+          //
+          // This matters most on the shared-device Back path: the browser
+          // restores the rendered page, the refetch 401s, and the gap before
+          // the redirect is exactly the window someone else could read.
+          if (!cancelled) setState({ kind: "loading" });
           const errBody: unknown = await unauthorised.json().catch(() => null);
           router.replace(
             buildLoginUrl({

@@ -42,6 +42,11 @@ export default function DashboardPage() {
           // Say WHY, and remember where they were (F-10). This used to be a
           // bare replace("/login") — indistinguishable from pressing Sign
           // out, and it discarded the page.
+          //
+          // Blank first: see the note in students/[id]/page.tsx. A redirect
+          // is not instant, and this list names every one of a parent's
+          // children.
+          if (!cancelled) setState({ kind: "loading" });
           router.replace(
             buildLoginUrl({
               reason: reasonFromErrorCode(errorCodeFromBody(body)),
