@@ -14,6 +14,12 @@ import { useRouter } from "next/navigation";
 
 import type { PortalStudentDto } from "@school-kit/types";
 
+import {
+  buildLoginUrl,
+  errorCodeFromBody,
+  reasonFromErrorCode,
+} from "@/lib/session-end";
+
 import { SignOutButton } from "@/components/sign-out-button";
 
 type LoadState =
@@ -31,11 +37,24 @@ export default function DashboardPage() {
     async function load() {
       try {
         const res = await fetch("/api/portal/students");
+        const body: unknown = await res.json().catch(() => null);
         if (res.status === 401) {
-          router.replace("/login");
+          // Say WHY, and remember where they were (F-10). This used to be a
+          // bare replace("/login") — indistinguishable from pressing Sign
+          // out, and it discarded the page.
+          //
+          // Blank first: see the note in students/[id]/page.tsx. A redirect
+          // is not instant, and this list names every one of a parent's
+          // children.
+          if (!cancelled) setState({ kind: "loading" });
+          router.replace(
+            buildLoginUrl({
+              reason: reasonFromErrorCode(errorCodeFromBody(body)),
+              next: `${window.location.pathname}${window.location.search}`,
+            }),
+          );
           return;
         }
-        const body: unknown = await res.json().catch(() => null);
         if (!res.ok) {
           const message =
             body !== null && typeof body === "object" && "error" in body

@@ -13,6 +13,15 @@ import type { ErrorBody } from "@school-kit/types";
 
 export const AUTH_UNAUTHORIZED_EVENT = "sk:auth:unauthorized";
 
+/**
+ * Detail carried by AUTH_UNAUTHORIZED_EVENT: the `code` from the API's
+ * `{ error: { code, message } }` envelope, so the listener can tell an
+ * expiry from a revocation from a deactivated account.
+ */
+export interface UnauthorizedEventDetail {
+  code: string;
+}
+
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api/v1";
 
@@ -114,7 +123,17 @@ export async function apiFetch<T>(
     if (response.status === 401 && notifyOnUnauthorized) {
       clearStoredToken();
       if (typeof window !== "undefined") {
-        window.dispatchEvent(new CustomEvent(AUTH_UNAUTHORIZED_EVENT));
+        // Carry the API's own error code to the listener. AuthGuard has
+        // always distinguished SESSION_EXPIRED / INVALID_SESSION /
+        // USER_INACTIVE / MISSING_BEARER_TOKEN; this event used to drop that
+        // on the floor, which is why every sign-out looked identical to the
+        // user (F-10). The auth provider maps it to a reason — see
+        // lib/auth/session-end.ts.
+        window.dispatchEvent(
+          new CustomEvent<UnauthorizedEventDetail>(AUTH_UNAUTHORIZED_EVENT, {
+            detail: { code: errorBody.code },
+          }),
+        );
       }
     }
 

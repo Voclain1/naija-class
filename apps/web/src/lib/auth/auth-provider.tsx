@@ -1,6 +1,5 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { createContext, useCallback, useEffect, useState } from "react";
 import type { ReactNode } from "react";
 
@@ -16,6 +15,7 @@ import type {
 
 import {
   AUTH_UNAUTHORIZED_EVENT,
+  type UnauthorizedEventDetail,
   clearStoredToken,
   setStoredToken,
 } from "../api-client";
@@ -28,6 +28,8 @@ import {
   signupOwnerRequest,
   twoFactorChallengeRequest,
 } from "./auth-api";
+
+import { buildLoginUrl, reasonFromErrorCode } from "./session-end";
 
 export type AuthStatus = "loading" | "authed" | "guest";
 
@@ -93,7 +95,6 @@ function guestState(): AuthState {
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const router = useRouter();
   const [state, setState] = useState<AuthState>(initialState);
 
   // Cold-boot hydration. GET /api/auth/session reads the sk_session HttpOnly
@@ -142,17 +143,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   // Mid-session 401 handling. When apiFetch sees a 401 on any authed call it
-  // clears the in-memory token and dispatches AUTH_UNAUTHORIZED_EVENT. We
-  // listen here, drop to guest, and let RequireAuth issue the redirect.
+  // clears the in-memory token and dispatches AUTH_UNAUTHORIZED_EVENT with
+  // the API's error code. We listen here, drop to guest, and redirect to a
+  // login screen that can SAY WHY and REMEMBER WHERE (F-10) — previously
+  // this was a bare router.replace("/login"), which is why an expiry and a
+  // deliberate sign-out were indistinguishable.
   useEffect(() => {
-    const handler = () => {
+    const handler = (event: Event) => {
       clearStoredToken();
       setState(guestState());
-      router.replace("/login");
+
+      const code = (event as CustomEvent<UnauthorizedEventDetail | undefined>).detail?.code;
+      const current = `${window.location.pathname}${window.location.search}`;
+      const target = buildLoginUrl({ reason: reasonFromErrorCode(code), next: current });
+
+      // FULL-DOCUMENT navigation, for the same reason logout uses one.
+      // setState(guestState()) above also makes RequireAuth's guest branch
+      // fire, and that branch redirects with reason:null (it cannot know
+      // why). With router.replace the two raced and RequireAuth could win —
+      // silently discarding the very reason this slice exists to surface.
+      // A document replace tears the tree down first, so the reason always
+      // survives.
+      //
+      // It also guarantees no stale authenticated data is left in memory
+      // behind the login screen, which router.replace alone does not.
+      window.location.replace(target);
     };
     window.addEventListener(AUTH_UNAUTHORIZED_EVENT, handler);
     return () => window.removeEventListener(AUTH_UNAUTHORIZED_EVENT, handler);
-  }, [router]);
+  }, []);
 
   const login = useCallback(
     async (
@@ -245,8 +264,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     clearStoredToken();
     resetIdentity();
     setState(guestState());
-    router.replace("/login");
-  }, [router]);
+    // FULL-DOCUMENT navigation, not router.replace.
+    //
+    // Two reasons, and the first is a bug this fixes. Setting guest state
+    // also makes RequireAuth's guest branch fire, and that branch now
+    // appends `?next=<current path>` — so a deliberate sign-out raced with
+    // it and could land on /login?next=/dashboard, which is exactly what a
+    // sign-out must NOT carry (see session-end.ts: returning you to where
+    // you were is a courtesy for an interruption, not for a decision to
+    // leave). A document replace tears the React tree down before that
+    // effect can run, so the bare /login always wins.
+    //
+    // Second, it takes the authenticated URL out of the history stack, so
+    // Back cannot return to it — the same shared-device reasoning as the
+    // guardian portal's SignOutButton, which uses this for both reasons.
+    window.location.replace("/login");
+  }, []);
 
   return (
     <AuthContext.Provider
