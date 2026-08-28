@@ -165,7 +165,12 @@ test.describe("session-expiry communication (F-10)", () => {
     // this slice actually changed — that apiFetch carries the code through
     // and the provider maps it — and lets the assertion below be exact
     // rather than "one of two".
-    await page.route("**/api/v1/**", (route) =>
+    // Scoped to the invoices call ONLY, and paired with dropping the cookie
+    // below. Intercepting all of /api/v1 caused an infinite redirect: after
+    // the handler navigated to /login, the provider re-hydrated from the
+    // still-present cookie, its /auth/me call hit the same intercept, and
+    // the cycle repeated until the test timed out.
+    await page.route("**/api/v1/invoices**", (route) =>
       route.fulfill({
         status: 401,
         contentType: "application/json",
@@ -174,6 +179,10 @@ test.describe("session-expiry communication (F-10)", () => {
         }),
       }),
     );
+
+    // Remove the cookie too, so the redirect target cannot re-authenticate
+    // and bounce the user straight back in.
+    await dropSessionCookie(page);
 
     // Trigger an authenticated request from the live page.
     await page.getByRole("tab", { name: "Invoice list" }).click();

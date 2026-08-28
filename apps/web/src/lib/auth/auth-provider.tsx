@@ -259,8 +259,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     clearStoredToken();
     resetIdentity();
     setState(guestState());
-    router.replace("/login");
-  }, [router]);
+    // FULL-DOCUMENT navigation, not router.replace.
+    //
+    // Two reasons, and the first is a bug this fixes. Setting guest state
+    // also makes RequireAuth's guest branch fire, and that branch now
+    // appends `?next=<current path>` — so a deliberate sign-out raced with
+    // it and could land on /login?next=/dashboard, which is exactly what a
+    // sign-out must NOT carry (see session-end.ts: returning you to where
+    // you were is a courtesy for an interruption, not for a decision to
+    // leave). A document replace tears the React tree down before that
+    // effect can run, so the bare /login always wins.
+    //
+    // Second, it takes the authenticated URL out of the history stack, so
+    // Back cannot return to it — the same shared-device reasoning as the
+    // guardian portal's SignOutButton, which uses this for both reasons.
+    window.location.replace("/login");
+  }, []);
 
   return (
     <AuthContext.Provider
