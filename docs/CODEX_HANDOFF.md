@@ -133,7 +133,28 @@ those; it doesn't replace them.
   (`c:\Users\acer\Desktop\Naija-class\`) and Claude Code's memory directory
   (derived from the folder name). Don't rename either mid-session.
 
-## Latest state as of this handoff (updated 2026-08-27)
+## Latest state as of this handoff (updated 2026-08-28)
+
+- **Teacher attendance UX hardening is implemented but awaiting PM review on
+  `fix/teacher-attendance-ux` in `C:\tmp\schoolkit-report-card-release`.** The
+  daily register now warns before dirty marks are discarded by class/date
+  changes, in-app links, browser Back, reload or close; shows a persistent
+  unsaved/saving/saved/failed state; retains failed-save marks and offers retry;
+  and pauses all editing during a write. At narrow widths, the roster becomes
+  row cards with 44px P/A/L/E targets, named visible legend, keyboard operation
+  and full-width notes. No attendance service, authorization, offline write,
+  finance, guardian-auth or report-card changes were made. Disposable isolated
+  Postgres/Redis/API/web evidence is green: 18/18 nearest attendance service
+  tests, 3/3 focused Playwright cases, plus web/E2E typechecks and web lint.
+  A temporary `canDiscard()` bypass made the dirty-change browser regression
+  fail (missing confirmation; exit 1); it was restored and the full spec passed.
+  The branch was safely rebased with `git rebase --onto origin/main ff419c0`
+  onto `4878ccf`; the only conflict was a mechanical composition of this
+  isolated-mode config with main's guardian portal dev server. Post-rebase
+  validation passed again (18/18 service, 3/3 browser, web/E2E typechecks and
+  web lint). The resulting branch is pushed as PR #226 and awaits PM review,
+  not merge.
+  See `docs/journal/2026-08-28.md`.
 
 - **Report-card release UX hardening is implemented but uncommitted on
   `fix/report-card-release-ux`.** It lives in the isolated worktree

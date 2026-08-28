@@ -15,6 +15,10 @@ dotenv.config({
   path: fileURLToPath(new URL("../.env", import.meta.url)),
 });
 
+const isolated = process.env.E2E_ISOLATED === "1";
+const webUrl = process.env.E2E_WEB_URL ?? "http://localhost:3001";
+const apiUrl = (process.env.E2E_API_URL ?? "http://localhost:4000/api/v1/").replace(/\/?api\/v1\/?$/, "");
+
 // Phase 0 smoke seeded this harness; slice 11 cp4 grows it into a small
 // fixture-backed suite (see e2e/fixtures/). We're now past the "5+ tests"
 // threshold the original comment deferred richer coverage behind, so fixtures
@@ -36,7 +40,7 @@ export default defineConfig({
     ? [["list"], ["html", { open: "never" }]]
     : "list",
   use: {
-    baseURL: "http://localhost:3001",
+    baseURL: webUrl,
     trace: "on-first-retry",
     screenshot: "only-on-failure",
     video: "retain-on-failure",
@@ -52,25 +56,27 @@ export default defineConfig({
   // boots. Healthcheck URL is the unauthenticated GET /api/v1/health
   // endpoint (apps/api/src/health/health.controller.ts) — Playwright polls
   // it until a 2xx, then runs the test.
-  webServer: [
-    {
-      command: "pnpm --filter @school-kit/api dev",
-      url: "http://localhost:4000/api/v1/health",
-      reuseExistingServer: !process.env.CI,
-      timeout: 180_000,
-      stdout: "pipe",
-      stderr: "pipe",
-      cwd: "..",
-    },
-    {
-      command: "pnpm --filter @school-kit/web dev",
-      url: "http://localhost:3001",
-      reuseExistingServer: !process.env.CI,
-      timeout: 180_000,
-      stdout: "pipe",
-      stderr: "pipe",
-      cwd: "..",
-    },
+  webServer: isolated
+    ? []
+    : [
+        {
+          command: "pnpm --filter @school-kit/api dev",
+          url: `${apiUrl}/api/v1/health`,
+          reuseExistingServer: !process.env.CI,
+          timeout: 180_000,
+          stdout: "pipe",
+          stderr: "pipe",
+          cwd: "..",
+        },
+        {
+          command: "pnpm --filter @school-kit/web dev",
+          url: webUrl,
+          reuseExistingServer: !process.env.CI,
+          timeout: 180_000,
+          stdout: "pipe",
+          stderr: "pipe",
+          cwd: "..",
+        },
     // apps/portal (:3002), added 2026-08-27 for the guardian auth suite.
     // Until then this harness only ever booted api + web, so the guardian
     // portal had NO browser coverage at all — which is part of why a login
@@ -88,6 +94,6 @@ export default defineConfig({
       stdout: "pipe",
       stderr: "pipe",
       cwd: "..",
-    },
-  ],
+        },
+      ],
 });
