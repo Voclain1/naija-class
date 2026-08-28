@@ -32,6 +32,7 @@ export default function AttendanceRegisterPage() {
 
   const [armId, setArmId] = useState<string | null>(null);
   const [date, setDate] = useState<string>(today);
+  const [dirtyCount, setDirtyCount] = useState(0);
   // Latest markedAt for the loaded (arm × date), reported up by RegisterEditor.
   // Null when the date has no marks (→ stamp hidden, per the plan).
   const [lastMarkedAt, setLastMarkedAt] = useState<Date | null>(null);
@@ -54,6 +55,74 @@ export default function AttendanceRegisterPage() {
   const handleLoaded = useCallback((meta: { lastMarkedAt: Date | null }) => {
     setLastMarkedAt(meta.lastMarkedAt);
   }, []);
+
+  const hasUnsaved = dirtyCount > 0;
+  const discardMessage = `You have ${dirtyCount} unsaved attendance change${dirtyCount === 1 ? "" : "s"}. Leave without saving?`;
+
+  // A daily register is local client state. Guard the exits the App Router does
+  // not turn into a browser unload: sidebar/page links and the browser Back
+  // button. beforeunload still covers refresh, closing the tab, and a new URL.
+  useEffect(() => {
+    if (!hasUnsaved) return;
+
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+
+    const onClick = (event: MouseEvent) => {
+      if (event.defaultPrevented || event.button !== 0) return;
+      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+
+      const anchor = (event.target as HTMLElement | null)?.closest?.<HTMLAnchorElement>("a[href]");
+      if (!anchor || anchor.target === "_blank") return;
+      const href = anchor.getAttribute("href");
+      if (!href || href.startsWith("#")) return;
+
+      const destination = new URL(anchor.href, window.location.origin);
+      if (destination.pathname === window.location.pathname) return;
+
+      if (!window.confirm(discardMessage)) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    };
+
+    let restoringCurrentPage = false;
+    const onPopState = () => {
+      if (restoringCurrentPage) {
+        restoringCurrentPage = false;
+        return;
+      }
+      if (!window.confirm(discardMessage)) {
+        restoringCurrentPage = true;
+        window.history.go(1);
+      }
+    };
+
+    window.addEventListener("beforeunload", onBeforeUnload);
+    window.addEventListener("popstate", onPopState);
+    document.addEventListener("click", onClick, true);
+    return () => {
+      window.removeEventListener("beforeunload", onBeforeUnload);
+      window.removeEventListener("popstate", onPopState);
+      document.removeEventListener("click", onClick, true);
+    };
+  }, [discardMessage, hasUnsaved]);
+
+  function canDiscard(): boolean {
+    return !hasUnsaved || window.confirm(discardMessage);
+  }
+
+  function changeArm(nextArmId: string): void {
+    if (!canDiscard()) return;
+    setArmId(nextArmId || null);
+  }
+
+  function changeDate(nextDate: string): void {
+    if (!canDiscard()) return;
+    setDate(nextDate || today);
+  }
 
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-6">
@@ -104,7 +173,7 @@ export default function AttendanceRegisterPage() {
               <span className="font-medium">Class</span>
               <select
                 value={armId ?? ""}
-                onChange={(e) => setArmId(e.target.value || null)}
+                onChange={(e) => changeArm(e.target.value)}
                 className="w-full min-w-48 rounded-md border bg-background px-3 py-2 text-sm"
               >
                 <option value="" disabled>
@@ -124,11 +193,17 @@ export default function AttendanceRegisterPage() {
                 type="date"
                 value={date}
                 max={today}
-                onChange={(e) => setDate(e.target.value || today)}
+                onChange={(e) => changeDate(e.target.value)}
                 className="rounded-md border bg-background px-3 py-2 text-sm"
               />
             </label>
           </div>
+
+          {hasUnsaved && (
+            <p role="status" className="rounded-md border border-amber-300/60 bg-amber-50 p-3 text-sm text-amber-900">
+              {dirtyCount} unsaved attendance change{dirtyCount === 1 ? "" : "s"}. Save before changing class, date, or leaving this page.
+            </p>
+          )}
 
           {armId && lastMarkedAt && (
             <p className="text-sm text-muted-foreground">
@@ -143,6 +218,7 @@ export default function AttendanceRegisterPage() {
               classArmId={armId}
               date={date}
               onLoaded={handleLoaded}
+              onDirtyChange={setDirtyCount}
             />
           ) : (
             <div className="rounded-md border border-dashed bg-muted/20 p-8 text-sm text-muted-foreground">
