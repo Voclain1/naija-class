@@ -2453,3 +2453,95 @@ API-second ordering is the wrong way round for anything a parent might be
 told about in advance.
 
 Not started. No decision taken on any item above.
+
+## Session expiry — follow-ups after PR #225 (captured 2026-08-28)
+
+PR #225 fixed F-10's *authentication continuity* half for the two web
+principals: a session that ends now says why, and the page the user was
+trying to reach survives the round trip through login. Two things were
+deliberately left out, both confirmed by PM as separate work. Neither is
+started.
+
+### A. HIGH PRIORITY — unsaved work is silently destroyed by a forced sign-out
+
+This is the half of F-10 that PR #225 did **not** solve, and it is the one
+with real cost to a real person.
+
+`beforeunload` guards already exist on the gradebook
+(`components/teacher/gradebook/gradebook-grid.tsx`), lesson plans
+(`app/(teacher)/teacher/lesson-plans/[id]/page.tsx`) and the class-subject
+matrix (`components/settings/academic/class-subject-matrix.tsx`). **None of
+them protects against this**, because `beforeunload` does not fire for a
+client-side navigation — and a forced sign-out is exactly that. PR #225 in
+fact made the navigation a full-document `window.location.replace`, which
+does fire `beforeunload`; but that produces a *browser-native "leave site?"
+dialog* at the moment the session is already gone, which is worse than
+useless: answering "stay" cannot save the work, because the credential
+needed to save it no longer exists.
+
+So the shape of the problem is: a teacher spends twenty minutes entering a
+column of scores, the session lapses, the save 401s, and the grid is gone.
+PR #225 ensures they are now *told* they were signed out — which is what
+stops them believing the save succeeded — but the scores are still lost.
+
+**Do NOT assume platform-wide draft persistence is the answer.** Three
+candidate approaches, to be decided on evidence rather than instinct:
+
+1. **Re-authenticate in place.** Keep the component mounted, put a password
+   prompt over it, re-mint the session, retry the failed write. Preserves
+   everything and needs no storage at all. Costs the most: it means the 401
+   handler can no longer unconditionally tear the tree down, which is the
+   property that just fixed two navigation races (see #225's commit history
+   before assuming this is free).
+2. **Narrowly scoped draft preservation.** Only the specific dirty surfaces,
+   only in memory or `sessionStorage`, only until the next successful save.
+   Cheaper, but it means unsaved *student scores* sit in browser storage —
+   which needs its own look at the PII rules in CLAUDE.md before anyone
+   writes a line of it.
+3. **Something else** — e.g. make the surfaces autosave a server-side draft
+   while the session is still valid, so there is nothing to preserve
+   client-side when it ends.
+
+The right first step is probably to measure how often this actually bites
+(session TTL vs. how long a gradebook column really takes) rather than to
+pick a mechanism.
+
+Known affected surfaces: gradebook, lesson plans, class-subject matrix.
+Others almost certainly exist — the three above are simply the ones that
+already carry a `beforeunload`, which is a marker of "someone noticed this
+form has unsaved state", not a complete inventory. Teacher attendance was
+being worked on concurrently and was not surveyed.
+
+### B. Mobile session-end UX
+
+All three mobile principals — guardian, student, staff — still sign out
+**silently** on a 401. The cause is one line: `UnauthorizedListener` in
+`apps/mobile/src/lib/api/client.ts` is typed `() => void`, so
+`notifyUnauthorized()` cannot pass the server's error code on, and
+`session.tsx` calls `signOut()` with nothing to display.
+
+The server-side half is already done and needs no change: `AuthGuard`,
+`GuardianAuthGuard` and `StudentAuthGuard` all emit `SESSION_EXPIRED`,
+`INVALID_SESSION` and `MISSING_BEARER_TOKEN` as distinct codes, and
+`StudentAuthGuard` additionally distinguishes a withdrawn student from a
+guardian-disabled account. So this is a client-side plumbing job of roughly
+the shape #225 did for web: widen the listener signature, carry the code,
+map it to copy on the login screen.
+
+Two things make it a **dedicated slice with real-device verification**
+rather than a quick follow-on:
+
+- Mobile has no browser E2E. Every claim about what a user sees has to be
+  checked on a device or simulator, which is why #225 stopped at the web
+  boundary rather than half-doing React Native without a way to prove it.
+- Mobile deliberately does NOT sign out on `ApiNetworkError` (only on a real
+  401), so that going offline never dumps a user to login and discards their
+  cached view — a documented phase-6 requirement. Any change here must
+  preserve that distinction exactly, and it is precisely the kind of
+  behaviour a careless refactor of the 401 path would break.
+
+Worth pairing with the mobile lock-screen behaviour already in
+`session.tsx`, since both are "what the user sees when the app decides they
+are no longer authenticated".
+
+Neither item is started. No mechanism has been chosen for A.
