@@ -41,6 +41,24 @@ export default function BulkAddStudentsPage() {
         to move across · new rows appear as you go, and blank ones are ignored.
       </div>
 
+      {/*
+        Recovery guidance for someone returning after an interrupted attempt.
+        Static, because it is always true and needs no state: a submit that
+        stops partway leaves the successful rows created, and this grid cannot
+        remember them across a sign-out (drafts in browser storage were
+        considered and rejected — see docs/deferred.md). What makes re-entering
+        safe is the server, not our memory: admission numbers are unique per
+        school, so a duplicate is refused per-row rather than creating a second
+        child record.
+      */}
+      <div className="rounded-md border bg-muted/30 px-4 py-3 text-xs text-muted-foreground">
+        <span className="font-medium text-foreground">Interrupted partway through?</span>{" "}
+        Students added before the interruption are already saved. Re-entering
+        them is safe — an admission number that already exists is rejected on
+        its own row instead of creating a second record, so the roster is the
+        one to trust.
+      </div>
+
       <BulkStudentForm />
     </div>
   );

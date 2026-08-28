@@ -21,6 +21,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ApiError } from "@/lib/api-client";
+import { isTerminalAuthFailure, partialSaveNotice } from "@/lib/students/bulk-create";
 import { createStudent } from "@/lib/students/students-api";
 
 // /students/new/bulk — spreadsheet-like inline entry for adding several
@@ -332,6 +333,9 @@ export function BulkStudentForm() {
       return field ? rowStatus[field.id]?.state === "success" : false;
     }).length;
     let createdThisPass = 0;
+    // Set when a row fails because the session is gone. Every remaining row
+    // would fail the same way, so the loop stops instead of firing them.
+    let terminalAuthFailure = false;
 
     for (const i of liveIndexes) {
       const field = fields[i];
@@ -362,6 +366,23 @@ export function BulkStudentForm() {
         }));
         createdThisPass++;
       } catch (error) {
+        if (error instanceof ApiError && isTerminalAuthFailure(error)) {
+          // The session ended mid-pass. Rows before this one are ALREADY
+          // CREATED server-side; rows after it have not been attempted.
+          //
+          // Stop here. Continuing would fire one doomed request per remaining
+          // row — reproduced 2026-08-28: a 401 on row 2 of 3 still sent row 3,
+          // each one dispatching another unauthorized event at a server that
+          // had already refused. Same shape as the class-subject matrix's
+          // save loop, which breaks on first failure and reports how far it
+          // got rather than pressing on.
+          terminalAuthFailure = true;
+          setRowStatus((prev) => ({
+            ...prev,
+            [field.id]: { state: "error", message: "Not saved — you were signed out." },
+          }));
+          break;
+        }
         if (error instanceof ApiError) {
           if (error.code === "ADMISSION_NUMBER_TAKEN") {
             form.setError(`rows.${i}.admissionNumber`, {
@@ -402,9 +423,16 @@ export function BulkStudentForm() {
     }
     const failedCount = liveIndexes.length - totalSuccess;
     setSummary(
-      failedCount > 0
-        ? `Created ${totalSuccess} of ${liveIndexes.length}. Fix the highlighted rows and submit again to retry the rest.`
-        : `All ${totalSuccess} student${totalSuccess === 1 ? "" : "s"} created.`,
+      // The signed-out case gets its own sentence, not the generic "fix the
+      // highlighted rows" one. Nothing here needs fixing and re-submitting
+      // will not help — the credential is gone. What the user needs is the
+      // COUNT that actually landed, because the redirect is about to take
+      // this grid away and those students are real.
+      terminalAuthFailure
+        ? partialSaveNotice(totalSuccess, liveIndexes.length)
+        : failedCount > 0
+          ? `Created ${totalSuccess} of ${liveIndexes.length}. Fix the highlighted rows and submit again to retry the rest.`
+          : `All ${totalSuccess} student${totalSuccess === 1 ? "" : "s"} created.`,
     );
   });
 

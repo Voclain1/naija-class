@@ -10,6 +10,7 @@ import type { LessonPlanDto } from "@school-kit/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ApiError } from "@/lib/api-client";
+import { isAuthForcedNavigation } from "@/lib/auth/session-end-navigation";
 import {
   deleteLessonPlan,
   generateLessonQuiz,
@@ -126,7 +127,13 @@ export default function LessonPlanDetailPage() {
   useEffect(() => {
     if (!hasUnsaved) return;
 
-    const onBeforeUnload = (e: BeforeUnloadEvent) => e.preventDefault();
+    // The auth-forced check is only on beforeunload, not on the click guard
+    // below: a forced sign-out is a document replace, never an anchor click.
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      // "Stay" cannot save this section once the credential is gone.
+      if (isAuthForcedNavigation()) return;
+      e.preventDefault();
+    };
 
     const onClick = (e: MouseEvent) => {
       // Leave modified clicks (open-in-new-tab etc.) alone — they don't

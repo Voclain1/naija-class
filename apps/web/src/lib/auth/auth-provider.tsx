@@ -15,6 +15,7 @@ import type {
 
 import {
   AUTH_UNAUTHORIZED_EVENT,
+  ApiError,
   type UnauthorizedEventDetail,
   clearStoredToken,
   setStoredToken,
@@ -29,6 +30,7 @@ import {
   twoFactorChallengeRequest,
 } from "./auth-api";
 
+import { beginAuthForcedNavigation, parkSessionEndReason } from "./session-end-navigation";
 import { buildLoginUrl, reasonFromErrorCode } from "./session-end";
 
 export type AuthStatus = "loading" | "authed" | "guest";
@@ -129,9 +131,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           schoolStatus: me.school.status,
           role: me.roles[0]?.key,
         });
-      } catch {
+      } catch (error) {
         if (cancelled) return;
         clearStoredToken();
+        // Keep the reason the API just gave us. This call runs with
+        // notifyOnUnauthorized:false, so it never fires the eviction event and
+        // never redirects — RequireAuth does that, and it cannot know why on
+        // its own. Parking the code here is what stops a deactivated teacher
+        // landing on a bare /login after following an ordinary link.
+        //
+        // Park only. NOT beginAuthForcedNavigation: nothing is navigating, and
+        // raising that flag would silence every unsaved-changes guard in the
+        // document. Unrecognised codes and network errors park null, so a
+        // visitor who simply has no session is still told nothing.
+        parkSessionEndReason(
+          reasonFromErrorCode(error instanceof ApiError ? error.code : undefined),
+        );
         setState(guestState());
       }
     }
@@ -154,8 +169,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setState(guestState());
 
       const code = (event as CustomEvent<UnauthorizedEventDetail | undefined>).detail?.code;
+      const reason = reasonFromErrorCode(code);
       const current = `${window.location.pathname}${window.location.search}`;
-      const target = buildLoginUrl({ reason: reasonFromErrorCode(code), next: current });
+      const target = buildLoginUrl({ reason, next: current });
+
+      // Mark this as an EVICTION before the navigation starts, so the app's
+      // beforeunload guards stand down (see session-end-navigation.ts).
+      //
+      // Without this, `window.location.replace` below fires beforeunload on
+      // any dirty page and the browser offers "Leave or Stay" — with the
+      // credential already cleared two lines up. "Stay" cancels the
+      // navigation and nothing else: the queued guest state still flushes,
+      // RequireAuth still unmounts the form, and the user is still ejected,
+      // now via a client-side redirect that carries NO reason. Reproduced on
+      // the gradebook and the class-subject matrix, 2026-08-28.
+      //
+      // Standing the guards down does not save the work — nothing here can.
+      // It stops the app offering a button that pretends to.
+      beginAuthForcedNavigation(reason);
 
       // FULL-DOCUMENT navigation, for the same reason logout uses one.
       // setState(guestState()) above also makes RequireAuth's guest branch

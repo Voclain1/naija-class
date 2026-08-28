@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ApiError } from "@/lib/api-client";
+import { isAuthForcedNavigation } from "@/lib/auth/session-end-navigation";
 import {
   aggregateScores,
   bulkSaveScores,
@@ -131,6 +132,9 @@ export function GradebookGrid({
   useEffect(() => {
     if (!isDirty) return;
     const handler = (e: BeforeUnloadEvent) => {
+      // Stand down for a forced sign-out: the credential is already gone, so
+      // "Stay" cannot save this column. See lib/auth/session-end-navigation.ts.
+      if (isAuthForcedNavigation()) return;
       e.preventDefault();
       e.returnValue = "";
     };
