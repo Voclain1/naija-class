@@ -180,9 +180,11 @@ test.describe("session-expiry communication (F-10)", () => {
       }),
     );
 
-    // Remove the cookie too, so the redirect target cannot re-authenticate
-    // and bounce the user straight back in.
-    await dropSessionCookie(page);
+    // The cookie is deliberately LEFT IN PLACE. Removing it would make the
+    // next navigation hit middleware, which carries `next` but cannot know a
+    // reason — so the assertion below would see reason=null and this test
+    // would silently stop covering the 401 handler at all. The intercept is
+    // scoped to the invoices call, so re-hydration on /login is unaffected.
 
     // Trigger an authenticated request from the live page.
     await page.getByRole("tab", { name: "Invoice list" }).click();
@@ -238,9 +240,15 @@ test.describe("session-expiry communication (F-10)", () => {
     await page.goto(`${WEB}/dashboard`);
     await expectPath(page, "/dashboard");
 
-    // Open the account menu and sign out.
-    await page.getByRole("button", { name: /account|menu|profile/i }).first().click();
-    await page.getByRole("menuitem", { name: /sign out|log out/i }).click();
+    // Open the account menu and sign out. The trigger is named after the
+    // signed-in user (same locator phase-0-happy-path uses) — there is no
+    // generic "account"/"profile" label to match on.
+    // "Eve Owner" is what loginAsAdmin provisions every owner as
+    // (ownerFirstName/ownerLastName in e2e/fixtures/session.ts). AdminSession
+    // does not surface those, so the fixture's own constant is the honest
+    // thing to match on.
+    await page.getByRole("button", { name: /Eve Owner/ }).click();
+    await page.getByRole("menuitem", { name: /log out|sign out/i }).click();
 
     await expect(page).toHaveURL(new RegExp(`^${WEB}/login/?$`));
     // No reason parameter, and no notice — leaving on purpose is not a
@@ -268,9 +276,13 @@ test.describe("session-expiry communication (F-10)", () => {
     await page.goBack();
     await page.waitForLoadState("networkidle");
 
-    // Whatever the browser restores, the protected route must not be showing
-    // its content.
-    await expect(page).toHaveURL(/\/login/);
+    // Assert the PROPERTY, not a particular URL. This page's history is
+    // [about:blank, /students -> /login], so Back lands on about:blank —
+    // which reveals nothing, and asserting /login here was testing the
+    // wrong thing. What must hold is that no protected content is on
+    // screen.
+    await expect(page.getByRole("heading", { name: "Students" })).toBeHidden();
+    await expect(page.getByRole("table")).toBeHidden();
 
     await admin.context.close();
     await admin.api.dispose();
@@ -324,7 +336,7 @@ test.describe("guardian portal — session expiry and deep links (F-10)", () => 
   for (const hostile of [
     "https://evil.example",
     "//evil.example",
-    "/\evil.example",
+    "/\\evil.example",
     "%2f%2fevil.example",
   ]) {
     test(`portal refuses next=${hostile}`, async ({ browser }) => {
@@ -377,22 +389,33 @@ test.describe("guardian portal — session expiry and deep links (F-10)", () => 
     await page.goto(`${PORTAL}${target}`);
     await expect(page.getByText(guardian.studentFirstName).first()).toBeVisible();
 
-    // Drop the portal session cookie — the next authed fetch 401s with a
-    // real code from GuardianAuthGuard.
-    const cookies = await context.cookies(PORTAL);
-    await context.clearCookies();
-    const keep = cookies.filter((c) => c.name !== "sk_portal_session");
-    if (keep.length > 0) await context.addCookies(keep);
+    // Make the next authed fetch return a genuine expiry.
+    //
+    // Deliberately an intercept, not a cookie deletion + reload: a reload
+    // with no cookie is handled by MIDDLEWARE, which carries `next` but
+    // cannot know a reason, so it would never exercise the 401 handler this
+    // slice added — and the reason would correctly be null.
+    await page.route("**/api/v1/portal/students/**", (route) =>
+      route.fulfill({
+        status: 401,
+        contentType: "application/json",
+        body: JSON.stringify({
+          error: { code: "SESSION_EXPIRED", message: "Session has expired." },
+        }),
+      }),
+    );
 
     await page.reload();
 
-    await expect(page).toHaveURL(/\/login/);
+    await expect
+      .poll(() => new URL(page.url()).pathname, { timeout: 15_000 })
+      .toBe("/login");
     const url = new URL(page.url());
-    expect(["expired", "revoked"]).toContain(url.searchParams.get("reason"));
+    expect(url.searchParams.get("reason")).toBe("expired");
 
     const status = page.getByRole("status");
     await expect(status).toBeVisible();
-    await expect(status).toContainText(/signed out|session expired/i);
+    await expect(status).toContainText(/your session expired/i);
 
     // No technical vocabulary reaches the parent.
     const body = (await page.locator("body").textContent()) ?? "";
