@@ -123,16 +123,30 @@ describe("apiFetch — error handling", () => {
 });
 
 describe("apiFetch — unauthorized notification", () => {
-  it("notifies subscribers on 401", async () => {
+  it("delivers a normalized session-end reason on 401", async () => {
     const listener = vi.fn();
     const unsubscribe = onUnauthorized(listener);
     fetchMock.mockResolvedValue(
-      jsonResponse(401, { error: { code: "UNAUTHORIZED", message: "nope" } }),
+      jsonResponse(401, { error: { code: "SESSION_EXPIRED", message: "nope" } }),
     );
 
     await apiFetch("/portal/students").catch(() => undefined);
 
     expect(listener).toHaveBeenCalledOnce();
+    expect(listener).toHaveBeenCalledWith("SESSION_EXPIRED");
+    unsubscribe();
+  });
+
+  it("normalizes unknown 401 codes instead of exposing raw backend strings", async () => {
+    const listener = vi.fn();
+    const unsubscribe = onUnauthorized(listener);
+    fetchMock.mockResolvedValue(
+      jsonResponse(401, { error: { code: "SOMETHING_NEW", message: "internal detail" } }),
+    );
+
+    await apiFetch("/x").catch(() => undefined);
+
+    expect(listener).toHaveBeenCalledWith("INVALID_SESSION");
     unsubscribe();
   });
 
@@ -160,6 +174,16 @@ describe("apiFetch — unauthorized notification", () => {
 
     await apiFetch("/x").catch(() => undefined);
 
+    expect(listener).not.toHaveBeenCalled();
+    unsubscribe();
+  });
+
+  it("does not notify or clear a session on ApiNetworkError", async () => {
+    const listener = vi.fn();
+    const unsubscribe = onUnauthorized(listener);
+    fetchMock.mockRejectedValue(new TypeError("Network request failed"));
+
+    await expect(apiFetch("/x")).rejects.toBeInstanceOf(ApiNetworkError);
     expect(listener).not.toHaveBeenCalled();
     unsubscribe();
   });

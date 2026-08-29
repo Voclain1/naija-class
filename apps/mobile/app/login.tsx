@@ -27,7 +27,7 @@ import { Body, Button, Heading, Notice, Screen } from "../src/components/ui";
 type Mode = "guardian" | "student" | "staff";
 
 export default function LoginScreen() {
-  const { status, principal, signIn, signInStudent, signInStaff, completeStaffTwoFactor } = useSession();
+  const { status, principal, sessionEnd, consumeSessionEnd, signIn, signInStudent, signInStaff, completeStaffTwoFactor } = useSession();
   const { colors } = useTheme();
   const [mode, setMode] = useState<Mode>("guardian");
 
@@ -40,6 +40,7 @@ export default function LoginScreen() {
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [sessionEndMessage, setSessionEndMessage] = useState<string | null>(null);
   const [challengeToken, setChallengeToken] = useState<string | null>(null);
   const [twoFactorCode, setTwoFactorCode] = useState("");
   // The school code remembered from the last student sign-in or activation on
@@ -68,10 +69,6 @@ export default function LoginScreen() {
     };
   }, []);
 
-  if (status === "authenticated") {
-    return <Redirect href={principal === "staff" ? "/staff" : principal === "student" ? "/me" : "/students"} />;
-  }
-
   const isStudent = mode === "student";
 
   // Collapse only when there is a remembered code AND it is still the value in
@@ -90,6 +87,16 @@ export default function LoginScreen() {
   });
 
   const isStaff = mode === "staff";
+
+  useEffect(() => {
+    if (sessionEnd?.principal !== mode) return;
+    setSessionEndMessage(sessionEnd.message);
+    consumeSessionEnd();
+  }, [consumeSessionEnd, mode, sessionEnd]);
+
+  if (status === "authenticated") {
+    return <Redirect href={principal === "staff" ? "/staff" : principal === "student" ? "/me" : "/students"} />;
+  }
   const canSubmit = challengeToken
     ? twoFactorCode.length === 6
     : isStudent
@@ -103,6 +110,9 @@ export default function LoginScreen() {
     // about the student form, and leaving it up reads as though the new form
     // has already been rejected before it was filled in.
     setError(null);
+    // Session-end copy belongs only to the principal whose login form raised
+    // it. Do not carry it into another principal's form while switching.
+    setSessionEndMessage(null);
     setChallengeToken(null);
     setTwoFactorCode("");
     setMode(next);
@@ -320,6 +330,7 @@ export default function LoginScreen() {
           /> : null}
 
           {error ? <Notice tone="danger">{error}</Notice> : null}
+          {sessionEndMessage ? <Notice tone="danger">{sessionEndMessage}</Notice> : null}
 
           <Button
             title="Sign in"

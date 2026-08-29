@@ -86,7 +86,14 @@ export function setTokenProvider(provider: TokenProvider): void {
 
 // --- unauthorized notification -------------------------------------------
 
-type UnauthorizedListener = () => void;
+/** The stable server-side reasons that end an already-established session. */
+export type SessionEndReason =
+  | "SESSION_EXPIRED"
+  | "INVALID_SESSION"
+  | "USER_INACTIVE"
+  | "MISSING_BEARER_TOKEN";
+
+type UnauthorizedListener = (reason: SessionEndReason) => void;
 
 const unauthorizedListeners = new Set<UnauthorizedListener>();
 
@@ -98,8 +105,21 @@ export function onUnauthorized(listener: UnauthorizedListener): () => void {
   };
 }
 
-function notifyUnauthorized(): void {
-  for (const listener of unauthorizedListeners) listener();
+function normalizeSessionEndReason(code: string): SessionEndReason {
+  switch (code) {
+    case "SESSION_EXPIRED":
+    case "USER_INACTIVE":
+    case "MISSING_BEARER_TOKEN":
+      return code;
+    default:
+      // A revoked/unknown bearer and an unrecognised 401 both mean the token
+      // cannot safely be retained. Do not surface the raw backend code.
+      return "INVALID_SESSION";
+  }
+}
+
+function notifyUnauthorized(reason: SessionEndReason): void {
+  for (const listener of unauthorizedListeners) listener(reason);
 }
 
 // --- request --------------------------------------------------------------
@@ -179,7 +199,7 @@ export async function apiFetch<T>(
         : { code: "UNKNOWN_ERROR", message: response.statusText };
 
     if (response.status === 401 && notifyOnUnauthorized) {
-      notifyUnauthorized();
+      notifyUnauthorized(normalizeSessionEndReason(errorBody.code));
     }
 
     throw new ApiError(response.status, errorBody);

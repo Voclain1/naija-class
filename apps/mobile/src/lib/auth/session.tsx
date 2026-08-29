@@ -26,7 +26,7 @@ import type {
 import { guardianLogin } from "../api/portal";
 import { studentLogin, studentLogout } from "../api/student-portal";
 import { staffLogout, staffMe, staffMobileChallenge, staffMobileLogin } from "../api/staff-auth";
-import { onUnauthorized } from "../api/client";
+import { onUnauthorized, type SessionEndReason } from "../api/client";
 import {
   clearToken,
   getCachedPrincipal,
@@ -39,6 +39,7 @@ import { registerForPush, unregisterForPush } from "../push/register";
 import { wipeOfflineCache } from "../query/persist";
 import { canProtectStaffSession, unlockStaffSession } from "./local-lock";
 import { getStaffDevice } from "./staff-device";
+import { sessionEndMessage, type SessionEndNotice } from "./session-end";
 
 // Guardian session state for apps/mobile.
 //
@@ -69,6 +70,8 @@ interface SessionValue {
   student: StudentPortalStudentDto | null;
   school: GuardianLoginSchoolDto | StudentPortalSchoolDto | null;
   staff: MeResponse | null;
+  sessionEnd: SessionEndNotice | null;
+  consumeSessionEnd: () => void;
   signIn: (input: GuardianLoginInput) => Promise<void>;
   signInStudent: (input: StudentLoginInput) => Promise<void>;
   signInStaff: (input: Omit<StaffMobileLoginInput, "deviceId" | "deviceName">) => Promise<string | null>;
@@ -107,7 +110,22 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     GuardianLoginSchoolDto | StudentPortalSchoolDto | null
   >(null);
   const [staff, setStaff] = useState<MeResponse | null>(null);
+  const [sessionEnd, setSessionEnd] = useState<SessionEndNotice | null>(null);
   const backgroundedAt = useRef<number | null>(null);
+
+  const clearSession = useCallback(async (notice: SessionEndNotice | null) => {
+    setSessionEnd(notice);
+    setStatus("guest");
+    setPrincipal(null);
+    setGuardian(null);
+    setStudent(null);
+    setSchool(null);
+    setStaff(null);
+    await clearToken();
+    await wipeOfflineCache(queryClient);
+  }, [queryClient]);
+
+  const consumeSessionEnd = useCallback(() => setSessionEnd(null), []);
 
   const signOut = useCallback(async () => {
     // Tell the server first, while the token is still usable — clearToken()
@@ -127,22 +145,16 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     if (leaving === "staff") {
       await staffLogout().catch(() => undefined);
     }
-    setStatus("guest");
-    setPrincipal(null);
-    setGuardian(null);
-    setStudent(null);
-    setSchool(null);
-    setStaff(null);
-    await clearToken();
+    await clearSession(null);
     // D12. Clearing the in-memory client alone would leave the persisted copy
     // to rehydrate on next launch — the next child to pick up the phone would
     // see the previous one's results.
-    await wipeOfflineCache(queryClient);
-  }, [queryClient]);
+  }, [clearSession]);
 
   const signIn = useCallback(
     async (input: GuardianLoginInput) => {
       const response = await guardianLogin(input);
+      setSessionEnd(null);
       // Token first: a render triggered by the state updates below can start
       // a query immediately, and it must not race an unauthenticated request.
       await saveToken(response.token, "guardian");
@@ -163,6 +175,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   const adoptStudentSession = useCallback(
     async (response: StudentLoginResponse) => {
+      setSessionEnd(null);
       // Same ordering rule as the guardian path above.
       await saveToken(response.token, "student");
       // Remember the school code so the next sign-in doesn't ask for one the
@@ -194,6 +207,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       throw new Error("DEVICE_LOCK_REQUIRED");
     }
     await saveToken(token, "staff");
+    setSessionEnd(null);
     try {
       const me = await staffMe();
       setPrincipal("staff");
@@ -280,10 +294,16 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     // can never sign a user out — which is the behaviour phase-6.md §7
     // requires ("expiry while offline must not dump the user to login and
     // discard their cached view").
-    return onUnauthorized(() => {
-      void signOut();
+    return onUnauthorized((reason: SessionEndReason) => {
+      const endingPrincipal = getCachedPrincipal();
+      if (!endingPrincipal) return;
+      void clearSession({
+        principal: endingPrincipal,
+        reason,
+        message: sessionEndMessage(reason),
+      });
     });
-  }, [signOut]);
+  }, [clearSession]);
 
   const value = useMemo<SessionValue>(
     () => ({
@@ -293,6 +313,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       student,
       school,
       staff,
+      sessionEnd,
+      consumeSessionEnd,
       signIn,
       signInStudent,
       signInStaff,
@@ -308,6 +330,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       student,
       school,
       staff,
+      sessionEnd,
+      consumeSessionEnd,
       signIn,
       signInStudent,
       signInStaff,
