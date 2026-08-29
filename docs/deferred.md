@@ -2630,3 +2630,83 @@ can grow without the invariant rotting. Extraction is owed; it is a refactor,
 not a fix, and it is what A above needs to exist first.
 
 Not started. No decision taken on any item above.
+
+## First-school setup / owner onboarding — follow-ups after PR #232 (captured 2026-08-29)
+
+PR #232 closed F-25: a fresh school's dashboard now carries a tiered,
+server-derived setup checklist, and four workflow screens explain their
+missing prerequisite instead of quietly doing nothing. See
+`docs/modules/first-school-setup.md` for the dependency map and the evidence
+behind each tier.
+
+Three things were deliberately left. All were known and accepted at PM review,
+not discovered afterwards.
+
+### A — teacher screens still have no prerequisite messaging
+
+`GET /schools/me/setup-state` is owner/admin only, on purpose: every step it
+returns is an owner/admin action, and offering one to a teacher would be
+handing them a button that 403s — the misleading navigation the slice existed
+to remove.
+
+The cost is that a teacher who logs in to an empty gradebook, or a form
+teacher with nothing to mark, still gets only that screen's own empty state.
+They are told there is nothing there; they are not told that their admin has
+not enrolled anyone yet, or has not assigned them a subject.
+
+A fix needs a *separate, teacher-safe* read — not a widening of this one. The
+distinction matters: the teacher-facing answer is "what is missing that
+affects you", which is a different (and much narrower) shape than "what should
+you go and configure", and it must not leak school-wide configuration state to
+a teacher. Cheapest honest version is probably a scope-derived message from
+`TeacherScopeService.getMyScope`, which the teacher already calls and which
+already knows whether their scope is empty.
+
+Not started. No decision taken.
+
+### B — the onboarding guide implies a ClassSubject dependency that does not exist
+
+`docs/onboarding-guide.md` lists the class-subject matrix at stage 6 of a
+sequence whose own preamble says "each stage depends on the one before it".
+That reads as a prerequisite. It is not one.
+
+Verified 2026-08-29 by grepping every consumer: `ClassSubject` is read by its
+own CRUD module and by nothing else in `apps/` or `packages/`. It does not
+gate the gradebook (built from `TeacherAssignment` via
+`TeacherScopeService`), report cards, or teacher assignment —
+`TeacherAssignmentsService.create` validates that the subject is *active*,
+never that it is linked to the level.
+
+PR #232 acted on this where it was load-bearing (the step is tiered
+`optional`, and `SetupStateService`'s header records why) but did NOT rewrite
+the guide, which is a larger docs pass and outside the slice.
+
+The rule going forward: the guide should not describe the matrix as a
+dependency unless and until a workflow actually reads `ClassSubject`. If one
+ever does, the step must be re-tiered in `SetupStateService` and given a
+`PrerequisiteNotice` in the same PR — the tiering test
+(`setup-state.service.spec.ts`, "keeps fees, staff and the subject matrix off
+the required list") will fail until it is, which is the intended forcing
+function.
+
+Not started.
+
+### C — "established" counts a cancelled invoice as progress
+
+`SetupStateService.hasRealActivity` is true once the school has marked a
+register, issued an invoice, or entered a score. `db.invoice.count()` is
+unfiltered, so an invoice that was later CANCELLED still counts.
+
+The practical case: a school that issued exactly one invoice, cancelled it,
+and did nothing else reads as `established` and stops seeing setup UI while
+recommended steps are still outstanding.
+
+This is product semantics, not a bug, and the current behaviour is arguably
+the right one — the school demonstrably found and used the invoicing flow,
+which is what the signal is actually measuring. Filtering to non-cancelled
+invoices would also make the status flap: a school could look established on
+Monday and be back in `finishing` on Tuesday because a bursar reversed a
+mistake, which is a worse experience than the thing it fixes.
+
+Recorded so the choice reads as deliberate rather than overlooked. Not a
+blocker. No change proposed.
