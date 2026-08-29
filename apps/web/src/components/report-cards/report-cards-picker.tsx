@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type { ClassArmDto, TermDto } from "@school-kit/types";
 
+import { PrerequisiteNotice } from "@/components/setup/prerequisite-notice";
 import { listAcademicYears, listTerms } from "@/lib/academic-years/academic-years-api";
 import { ApiError } from "@/lib/api-client";
 import { useAuth } from "@/lib/auth/use-auth";
@@ -105,6 +106,16 @@ export function ReportCardsPicker({ basePath }: { basePath: string }) {
           Pick a term and class to build, review, and generate report-card PDFs.
         </p>
       </header>
+
+      {/* Every class arm below is listed and openable whether or not anybody
+          is in it — and a board for an empty class builds zero cards and says
+          so only in a "0 students" result. This says it up front instead.
+          Renders nothing for a teacher (the API is owner/admin) and nothing
+          once students are enrolled. */}
+      <PrerequisiteNotice
+        stepKey="enrollments"
+        because="These classes are empty, so a report card run here would produce nothing."
+      />
 
       {loading ? (
         <div className="flex items-center gap-2 text-sm text-muted-foreground">

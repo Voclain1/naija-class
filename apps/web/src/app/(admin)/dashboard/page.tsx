@@ -1,6 +1,5 @@
 "use client";
 
-import { GraduationCap } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -12,6 +11,7 @@ import { CommandDialog } from "@/components/admin/command-dialog";
 import { BrandLoadingInline } from "@/components/brand-loading-screen";
 import { AlertList } from "@/components/shared/alert-list";
 import { ProgressMeter } from "@/components/shared/progress-meter";
+import { SetupChecklist } from "@/components/setup/setup-checklist";
 import { StatCard } from "@/components/shared/stat-card";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -115,8 +115,16 @@ export default function DashboardPage() {
   if (!dashboard) return null;
 
   // A school with nothing enrolled and nothing billed yet has nothing real
-  // to show — the KPI grid would just be a wall of zeros. Keep the original
-  // onboarding nudge instead of faking a populated dashboard.
+  // to show — the KPI grid would just be a wall of zeros. Show the setup
+  // checklist instead of faking a populated dashboard.
+  //
+  // This replaced a single "Get started by adding your first student" card
+  // (F-25, 2026-08-29). That card was not wrong, it was alone: it named the
+  // second of three required steps, said nothing about the third (enrolling
+  // those students into a class, without which every register, invoice and
+  // report card stays empty), and gave an owner no way to tell what else was
+  // waiting or what had already been done for them. SetupChecklist answers
+  // all four questions from real persisted state.
   const isEmpty = dashboard.enrolled.count === 0 && dashboard.fees.billed === 0;
   if (isEmpty) {
     return (
@@ -127,22 +135,7 @@ export default function DashboardPage() {
             Once your school is set up, this is where the day-to-day will live.
           </p>
         </div>
-        <Card>
-          <CardHeader className="items-start">
-            <div className="flex items-center gap-3">
-              <GraduationCap className="h-6 w-6 text-muted-foreground" />
-              <CardTitle className="text-lg">Get started by adding your first student</CardTitle>
-            </div>
-            <CardDescription className="ml-9">
-              Build your roster one student at a time — bulk CSV import is available from Students.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="ml-9">
-            <Button asChild>
-              <Link href="/students/new">Add a student</Link>
-            </Button>
-          </CardContent>
-        </Card>
+        <SetupChecklist />
       </div>
     );
   }
@@ -173,6 +166,13 @@ export default function DashboardPage() {
           </Button>
         </div>
       </div>
+
+      {/* A partly-configured school reaches this branch as soon as it has one
+          enrolled student or one billed fee — well before setup is finished.
+          SetupChecklist renders nothing once the API calls the school
+          established, so this is not permanent furniture; it is here so that
+          progress on the roster does not make the remaining steps vanish. */}
+      <SetupChecklist />
 
       {/* KPI row */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">

@@ -52,6 +52,7 @@ import { StudentPortalModule } from "./modules/student-portal/student-portal.mod
 import { DevicesModule } from "./modules/devices/devices.module";
 import { ReportCardsModule } from "./modules/report-cards/report-cards.module";
 import { SchoolsModule } from "./modules/schools/schools.module";
+import { SetupStateModule } from "./modules/setup-state/setup-state.module";
 import { StaffBankAccountModule } from "./modules/staff-bank-accounts/staff-bank-account.module";
 import { SystemModule } from "./modules/system/system.module";
 import { StudentsModule } from "./modules/students/students.module";
@@ -138,6 +139,7 @@ const isProd = process.env.NODE_ENV === "production";
     FinanceModule,
     OnboardingNudgeModule,
     DashboardModule,
+    SetupStateModule,
     ExpensesModule,
     PayrollModule,
     StaffBankAccountModule,
