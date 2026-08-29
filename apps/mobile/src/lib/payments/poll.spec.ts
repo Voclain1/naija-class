@@ -120,4 +120,13 @@ describe("describeOutcome", () => {
       "danger",
     );
   });
+
+  it("adds the known child, term and amount after a confirmed guardian payment", () => {
+    expect(
+      describeOutcome(
+        { kind: "succeeded", payment: payment("SUCCESS") },
+        { studentName: "Chidinma Adeleke", termName: "First Term" },
+      ).title,
+    ).toContain("₦5,000.00 was received for Chidinma Adeleke's First Term invoice.");
+  });
 });

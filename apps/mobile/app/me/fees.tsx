@@ -1,7 +1,7 @@
 import { ScrollView, StyleSheet, View } from "react-native";
 import { Redirect, Stack } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
-import { formatKobo, type PortalInvoiceDto } from "@school-kit/types";
+import { formatKobo, invoiceStatusLabel, type PortalInvoiceDto } from "@school-kit/types";
 
 import { listStudentFees } from "../../src/lib/api/student-portal";
 import { queryKeys } from "../../src/lib/query/keys";
@@ -91,7 +91,7 @@ export default function MyFeesScreen() {
                 return (
                   <Card key={invoice.id}>
                     <Heading>{invoice.term.name}</Heading>
-                    <Body muted>{invoice.status.replace(/_/g, " ")}</Body>
+                    <Body muted>{invoiceStatusLabel[invoice.status]}</Body>
 
                     <View style={styles.row}>
                       <View style={styles.metric}>
