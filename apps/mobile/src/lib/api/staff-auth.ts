@@ -20,7 +20,7 @@ export function staffMe(): Promise<MeResponse> {
 }
 
 export function staffLogout(): Promise<void> {
-  return apiFetch("/auth/logout", { method: "POST" });
+  return apiFetch("/auth/logout", { method: "POST", notifyOnUnauthorized: false });
 }
 
 export function staffSessions(): Promise<StaffSessionListResponse> {

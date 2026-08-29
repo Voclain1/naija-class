@@ -93,7 +93,7 @@ export function getStudentResult(
  */
 export async function studentLogout(): Promise<void> {
   try {
-    await apiFetch<void>("/student-portal/logout", { method: "POST" });
+    await apiFetch<void>("/student-portal/logout", { method: "POST", notifyOnUnauthorized: false });
   } catch {
     // Intentionally swallowed — see above.
   }

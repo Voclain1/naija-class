@@ -139,6 +139,9 @@ export async function unregisterForPush(principal: PushPrincipal): Promise<void>
     if (token) {
       await apiFetch(`${endpointFor(principal)}/${encodeURIComponent(token)}`, {
         method: "DELETE",
+        // This is part of an intentional local sign-out. A raced/revoked
+        // bearer must not turn that action into an expiry/revocation notice.
+        notifyOnUnauthorized: false,
       });
     }
   } catch {
