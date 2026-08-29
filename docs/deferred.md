@@ -2545,3 +2545,75 @@ Worth pairing with the mobile lock-screen behaviour already in
 are no longer authenticated".
 
 Neither item is started. No mechanism has been chosen for A.
+
+## Session-end work loss — what PR #228 did NOT fix (captured 2026-08-29)
+
+PR #228 removed the *false choice* a forced sign-out used to offer: a
+`beforeunload` dialog whose "Stay" cancelled only the navigation, while the
+already-queued guest state still unmounted the dirty form and RequireAuth
+still ejected the user with no reason. Three things it deliberately left.
+
+### A — deliberate sign-out with a dirty form (P1/P2)
+
+`logout()` awaits `logoutRequest()` — which destroys the server session —
+*before* it clears local state and calls `window.location.replace("/login")`.
+The native dirty-form prompt therefore fires with the credential already gone,
+exactly as the forced path did. "Stay" cannot save anything.
+
+Unlike the forced path, this one is fixable *properly*: a sign-out is a choice
+the user makes in advance, so the prompt can be moved to before the destructive
+call. The blocker is that there is no central dirty-state registry — the Sign
+out button lives in the shell and has no handle on whichever form is dirty
+several levels down.
+
+So the shape of the fix is: **detect dirty state BEFORE server logout, not
+after.** Not "suppress the dialog" — that was right for eviction, where nothing
+could be saved, and would be wrong here, where something still can.
+
+Deliberately not folded into #228, which is about forced termination.
+
+### B — gradebook durability
+
+**This is not "turn on autosave".** Established constraints, from reading the
+endpoint rather than guessing:
+
+- `POST /assessment-scores/bulk` is idempotent at score-row level — a multi-row
+  `INSERT … ON CONFLICT (school_id, student_id, subject_id, term_id,
+  component_id) DO UPDATE`. Replaying an identical payload is safe.
+- Autosave changes `entered_by` / `entered_at` semantics. Both are overwritten
+  on every conflict, so they would come to mean "last autosave fired" rather
+  than "a teacher committed this" — a change to the meaning of an assessment
+  record, not an implementation detail.
+- **Any score write clears an existing sign-off** (`subjectSignedOffAt`/`By`
+  → null, the Q6 implicit unlock). A debounced autosave would silently
+  un-sign-off a signed column while the teacher types. Any design must gate on
+  `!isSignedOff` or sign-off stops meaning anything.
+- Per-cell autosave multiplies request AND audit volume substantially: one
+  audit row per call today, so ~40 rows and ~40 requests for a class where
+  there is now 1. Each carries the full preamble — term / component /
+  enrollment / scope / released-card checks plus `materializeSummaryBatch`.
+- That endpoint has **prior transaction-timeout history**: the 2026-08-04
+  production incident is why `BULK_SAVE_TRANSACTION_TIMEOUT_MS` is 15s and why
+  the round-trip count was cut. It is high-frequency and multi-teacher-
+  concurrent; a 40× multiplier lands there.
+- Any autosave requires explicit **Saved / Unsaved / Saving / Failed** state.
+  A silent failure is worse than no autosave: it turns "I know it didn't save"
+  into "I assumed it did". Today a network failure sets a visible banner.
+
+Needs a dedicated product/technical decision. Not approved.
+
+### C — shared dirty-state infrastructure
+
+Four hand-written `beforeunload` guards now exist (gradebook, class-subject
+matrix, lesson plans, teacher attendance), each with its own click-capture
+companion and, in attendance's case, a `popstate` guard too. #228 added a
+fifth thing each must remember.
+
+Deliberately NOT extracted in #228 — the diff would have collided with PR #226,
+which landed the attendance guard the same week. The standing gate is
+`apps/web/src/lib/auth/session-end-invariants.spec.ts`, which walks the source
+tree and fails on any `beforeunload` guard it does not know about, so the count
+can grow without the invariant rotting. Extraction is owed; it is a refactor,
+not a fix, and it is what A above needs to exist first.
+
+Not started. No decision taken on any item above.
