@@ -19,6 +19,7 @@ import type {
   TermDto,
 } from "@school-kit/types";
 
+import { PrerequisiteNotice } from "@/components/setup/prerequisite-notice";
 import { Button } from "@/components/ui/button";
 import { ApiError } from "@/lib/api-client";
 import {
@@ -327,6 +328,14 @@ export default function EnrollmentsPage() {
           forward the previous term&apos;s arm.
         </p>
       </header>
+
+      {/* Fourteen classes, all reading "No enrollments yet", is what a school
+          with an empty roster sees here — accurate, and no help at all. The
+          notice names the actual missing thing and links to it. */}
+      <PrerequisiteNotice
+        stepKey="students"
+        because="There is nobody to enrol yet — your roster is empty."
+      />
 
       <section className="flex flex-col gap-3 rounded-md border bg-card p-4 sm:flex-row sm:items-end">
         <label className="flex flex-1 flex-col gap-1 text-sm">

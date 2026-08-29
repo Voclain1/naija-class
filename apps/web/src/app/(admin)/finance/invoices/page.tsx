@@ -15,6 +15,7 @@ import type {
 
 import { CancelInvoiceDialog } from "@/components/finance/cancel-invoice-dialog";
 import { ExportCsvButton } from "@/components/shared/export-csv-button";
+import { PrerequisiteNotice } from "@/components/setup/prerequisite-notice";
 import { PrintButton } from "@/components/shared/print-button";
 import { Badge, type BadgeProps } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -284,6 +285,22 @@ export default function InvoicesPage() {
   return (
     <div className="max-w-6xl space-y-6 p-6">
       <h1 className="font-serif text-2xl font-medium tracking-tight text-foreground">Invoices</h1>
+
+      {/* The two ways a fee run here silently produces nothing. With no fees
+          priced, GET /invoices/arm/preview returns an empty list; with no
+          students enrolled, there is nobody to bill. Both cases currently
+          look identical to a successful run of zero invoices, which is the
+          worst possible feedback for a bursar who has just pressed Generate.
+          Neither notice disables the form — a school mid-setup can still
+          preview, and both vanish as soon as the step is done. */}
+      <PrerequisiteNotice
+        stepKey="fee-catalog"
+        because="No fees are priced yet, so generating invoices here would bill nobody."
+      />
+      <PrerequisiteNotice
+        stepKey="enrollments"
+        because="No students are in a class this term, so there is nobody to invoice."
+      />
 
       {referenceError && (
         <div

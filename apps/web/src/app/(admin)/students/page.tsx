@@ -11,6 +11,7 @@ import type {
 } from "@school-kit/types";
 
 import { ExportCsvButton } from "@/components/shared/export-csv-button";
+import { PrerequisiteNotice } from "@/components/setup/prerequisite-notice";
 import { PrintButton } from "@/components/shared/print-button";
 import { StudentsListControls } from "@/components/students/students-list-controls";
 import { StudentsRosterTable } from "@/components/students/students-roster-table";
@@ -230,6 +231,20 @@ export default function StudentsRosterPage() {
           </div>
         </div>
       </header>
+
+      {/* The handover this product was missing. Building a roster feels like
+          the finish line, but a student on this page is in no class, on no
+          register and on no invoice until they are enrolled. `onlyAfter`
+          holds this back until there is actually a roster — on an empty
+          Students page it would be noise, and the page's own empty state
+          already says what to do. */}
+      <div className="print:hidden">
+        <PrerequisiteNotice
+          stepKey="enrollments"
+          onlyAfter="students"
+          because="Your students are on the roster but not yet in any class."
+        />
+      </div>
 
       <div className="print:hidden">
         <StudentsListControls
