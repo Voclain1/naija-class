@@ -93,7 +93,10 @@ export default function ResultsListScreen() {
                   href={`/students/${studentId}/results/${r.termId}`}
                   asChild
                 >
-                  <Pressable>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={`View ${r.termName} results`}
+                  >
                     <Card>
                       <Heading>{r.termName}</Heading>
                       <Body muted>{r.academicYearLabel}</Body>

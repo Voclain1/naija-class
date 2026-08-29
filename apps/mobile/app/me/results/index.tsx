@@ -94,7 +94,10 @@ export default function MyResultsScreen() {
             ) : (
               results.map((r) => (
                 <Link key={r.reportCardId} href={`/me/results/${r.termId}`} asChild>
-                  <Pressable>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={`View ${r.termName} results`}
+                  >
                     <Card>
                       <Heading>{r.termName}</Heading>
                       <Body muted>{r.academicYearLabel}</Body>

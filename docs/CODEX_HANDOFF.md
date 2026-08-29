@@ -135,6 +135,18 @@ those; it doesn't replace them.
 
 ## Latest state as of this handoff (updated 2026-08-28)
 
+- **Guardian/student consistency UX is in progress on
+  `fix/guardian-student-consistency-ux` (2026-08-29).** It is confined to
+  family-facing mobile/portal presentation, shared invoice labels and focused
+  tests. It was replayed safely onto `bfaf96d`; main's onboarding change had no
+  semantic overlap. Local typechecks/lint and 11 focused mobile tests pass, as
+  does E2E typecheck for the new guardian released-results regression. A
+  disposable loopback-only migrated Postgres/Redis environment was built, but
+  this host terminates local Node servers after startup, so the browser test has
+  not reached an assertion. Do not call this browser or Android runtime
+  verified; no API, schema, migration, payment reconciliation or offline-write
+  behavior changed.
+
 - **Mobile session-end UX shipped through PR #230 on
   `fix/mobile-session-end-ux` (2026-08-29).** The shared mobile API listener
   now forwards normalized 401 termination reasons to `SessionProvider`, which
