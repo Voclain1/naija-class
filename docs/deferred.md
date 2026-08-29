@@ -2344,6 +2344,19 @@ consistency, not in any single screen.
 
 Not started. No decision taken on any item above.
 
+## Physical Android runtime smoke — mobile session-end UX (deferred post-merge, 2026-08-29)
+
+PR #230 merged under an explicit PM waiver of native Android runtime evidence
+as a merge blocker. The Android development APK was built and automated CI,
+typecheck, lint, and mobile tests were green, but no agent performed a physical
+device session test. Do not represent this as Android runtime verification.
+
+Physical Android runtime smoke for mobile session-end UX remains outstanding:
+guardian/student/staff terminating 401, deliberate logout, network failure,
+principal isolation, and one-time notice lifecycle. Use disposable local
+identities and the development profile's local API target; no production school
+data should be mutated.
+
 ## Guardian auth & recovery — follow-ups after PR #222 (captured 2026-08-27)
 
 PR #222 shipped guardian sign out and password recovery (F-06) and removed

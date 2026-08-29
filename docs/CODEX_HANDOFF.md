@@ -135,7 +135,7 @@ those; it doesn't replace them.
 
 ## Latest state as of this handoff (updated 2026-08-28)
 
-- **Mobile session-end UX is an uncommitted, locally validated slice on
+- **Mobile session-end UX shipped through PR #230 on
   `fix/mobile-session-end-ux` (2026-08-29).** The shared mobile API listener
   now forwards normalized 401 termination reasons to `SessionProvider`, which
   immediately clears SecureStore credentials and the protected query cache,
@@ -143,9 +143,10 @@ those; it doesn't replace them.
   student, and staff logout paths suppress raced 401 notices; network errors
   remain local/offline errors and do not sign users out. Mobile typecheck,
   lint, and 163/163 unit tests pass. **No Android SDK/emulator/device is
-  available on this host, so the required native runtime evidence is still
-  missing. Do not claim it or merge this slice until it is obtained; PR CI is
-  permitted to run in parallel.**
+  available on this host, so native runtime evidence was not obtained. PM
+  explicitly waived it as a merge blocker after fresh CI and a development APK
+  build; it remains a deferred post-merge physical-device smoke check. Do not
+  claim that Android runtime verification occurred.**
 
 - **Teacher attendance UX hardening is implemented but awaiting PM review on
   `fix/teacher-attendance-ux` in `C:\tmp\schoolkit-report-card-release`.** The
