@@ -209,6 +209,26 @@ export class InvoiceGenerationService {
         enrollments.map((e) => e.studentId),
       );
 
+      // Which of these students would generateForArm actually SKIP? Keyed off
+      // the same `@@unique([schoolId, studentId, termId])` row its loop tests,
+      // so preview and generation cannot drift apart (F-34). One findMany over
+      // the roster rather than a findUnique per row — the same batching
+      // discipline resolveStudentIdentities above follows.
+      //
+      // `select: { studentId: true }` with no status filter is deliberate and
+      // load-bearing: the uniqueness row is status-agnostic, so a CANCELLED
+      // invoice still blocks regeneration. Filtering to live statuses here
+      // would make preview promise invoices that generation then skips.
+      const existingInvoices = await db.invoice.findMany({
+        where: {
+          schoolId: authCtx.schoolId,
+          termId: dto.termId,
+          studentId: { in: enrollments.map((e) => e.studentId) },
+        },
+        select: { studentId: true },
+      });
+      const alreadyInvoicedIds = new Set(existingInvoices.map((i) => i.studentId));
+
       const previews: PreviewLineDto[] = [];
       for (const { studentId } of enrollments) {
         const discountRules = await this.fetchDiscountRules(
@@ -228,6 +248,7 @@ export class InvoiceGenerationService {
           totalAmount: snapshot.totalAmount,
           totalDiscount: snapshot.totalDiscount,
           totalDue: snapshot.totalDue,
+          alreadyInvoiced: alreadyInvoicedIds.has(studentId),
         });
       }
 

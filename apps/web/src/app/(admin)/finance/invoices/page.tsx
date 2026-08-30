@@ -15,6 +15,7 @@ import {
 } from "@school-kit/types";
 
 import { CancelInvoiceDialog } from "@/components/finance/cancel-invoice-dialog";
+import { GenerateInvoicesDialog } from "@/components/finance/generate-invoices-dialog";
 import { ExportCsvButton } from "@/components/shared/export-csv-button";
 import { PrerequisiteNotice } from "@/components/setup/prerequisite-notice";
 import { PrintButton } from "@/components/shared/print-button";
@@ -35,7 +36,7 @@ import {
   studentSecondaryLabel,
 } from "@/lib/finance/invoice-identity";
 import { resolveInvoiceListView } from "@/lib/finance/invoice-list-state";
-import { generateInvoices, listInvoices, previewInvoices } from "@/lib/finance/invoices-api";
+import { listInvoices, previewInvoices } from "@/lib/finance/invoices-api";
 
 // Export reuses GET /invoices with the same filters currently applied to the
 // list tab, looping the page number (limit 200/page) until every page is
@@ -96,7 +97,6 @@ export default function InvoicesPage() {
   const [dueDate, setDueDate] = useState("");
   const [preview, setPreview] = useState<PreviewLineDto[] | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
-  const [generating, setGenerating] = useState(false);
   const [generateResult, setGenerateResult] = useState<{ created: number; skipped: number } | null>(null);
   const [generateError, setGenerateError] = useState<string | null>(null);
 
@@ -119,8 +119,8 @@ export default function InvoicesPage() {
       .then(([loadedYears, loadedArms]) => {
         setYears(loadedYears);
         setArms(loadedArms);
-        // Academic YEAR only. The year never reaches generateInvoices (which
-        // takes termId + classArmId) — it only narrows which terms are
+        // Academic YEAR only. The year never reaches the generation request
+        // (which takes termId + classArmId) — it only narrows which terms are
         // listed — so landing on the current one saves a click and cannot
         // cause anything to be billed. The TERM is deliberately NOT
         // defaulted: see lib/finance/current-context.ts for why, and for the
@@ -247,25 +247,15 @@ export default function InvoicesPage() {
     }
   }
 
-  async function handleGenerate() {
-    if (!pickerReady) return;
-    setGenerating(true);
+  // F-34: the page no longer holds a path to the mutation at all. Generation
+  // is reachable only through <GenerateInvoicesDialog>, which owns the review
+  // gate; this just records what the confirmed run reported.
+  function handleGenerated(result: { created: number; skipped: number }) {
+    setGenerateResult(result);
     setGenerateError(null);
-    setGenerateResult(null);
-    try {
-      const result = await generateInvoices({
-        termId,
-        classArmId: armId,
-        dueDate: dueDate || undefined,
-      });
-      setGenerateResult({ created: result.created, skipped: result.skipped });
-      setPreview(null);
-    } catch (e) {
-      logFinanceError("generateInvoices", e);
-      setGenerateError(financeErrorMessage(e));
-    } finally {
-      setGenerating(false);
-    }
+    setPreview(null);
+    // The list tab is now stale — a confirmed run has changed what it shows.
+    setListReloadKey((k) => k + 1);
   }
 
   const previewTotalDue = preview?.reduce((s, r) => s + r.totalDue, 0) ?? 0;
@@ -396,9 +386,32 @@ export default function InvoicesPage() {
               {previewLoading ? "Loading…" : "Preview"}
             </Button>
 
-            <Button disabled={!pickerReady || generating} onClick={handleGenerate}>
-              {generating ? "Generating…" : "Generate invoices"}
-            </Button>
+            {/* F-34: the trigger receives `open`, never the mutation. The
+                review dialog restates arm, term, count and naira total before
+                anything is billed — which also defuses the shared-picker
+                hazard, since the arm/term about to be billed is named at the
+                moment of confirming rather than assumed from a control the
+                bursar may have changed on the List tab. */}
+            <GenerateInvoicesDialog onGenerated={handleGenerated}>
+              {(open, busy) => (
+                <Button
+                  disabled={!pickerReady || busy || !selectedTerm || !selectedArm}
+                  onClick={() =>
+                    selectedTerm &&
+                    selectedArm &&
+                    open({
+                      termId,
+                      classArmId: armId,
+                      armName: selectedArm.name,
+                      termName: selectedTerm.name,
+                      dueDate: dueDate || undefined,
+                    })
+                  }
+                >
+                  {busy ? "Creating…" : "Generate invoices"}
+                </Button>
+              )}
+            </GenerateInvoicesDialog>
           </div>
 
           {pickerReady && selectedTerm && selectedArm && (

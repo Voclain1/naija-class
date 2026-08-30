@@ -834,6 +834,64 @@ describe("InvoiceGenerationService (integration)", () => {
       });
       expect(invoices.total).toBe(0);
     });
+
+    // F-34: the review gate's count and naira total are built from these
+    // flags. If preview cannot tell which students generation would skip, the
+    // dialog overstates both — worst on a re-run, which is exactly when a
+    // bursar most needs the number to be true.
+    it("flags nobody as already-invoiced before any generation has run", async () => {
+      const { schoolId, ownerId } = await makeSchool("preview-flag-fresh");
+      const { academicYearId, termId, classLevelId, classArmId } =
+        await makeAcademicStructure(schoolId);
+      await makeFeeSetup(schoolId, ownerId, classLevelId, termId);
+      const studentId = await makeStudent(schoolId, "preview-flag-s1");
+      await enrollStudent(schoolId, studentId, classArmId, termId, academicYearId);
+
+      const preview = await svc.previewForArm(ctx(schoolId, ownerId), { termId, classArmId });
+      expect(preview[0].alreadyInvoiced).toBe(false);
+    });
+
+    it("flags a student as already-invoiced once generation has billed them", async () => {
+      const { schoolId, ownerId } = await makeSchool("preview-flag-billed");
+      const { academicYearId, termId, classLevelId, classArmId } =
+        await makeAcademicStructure(schoolId);
+      await makeFeeSetup(schoolId, ownerId, classLevelId, termId);
+      const billed = await makeStudent(schoolId, "preview-flag-billed-s1");
+      const unbilled = await makeStudent(schoolId, "preview-flag-billed-s2");
+      await enrollStudent(schoolId, billed, classArmId, termId, academicYearId);
+      await svc.generateForArm(ctx(schoolId, ownerId), { termId, classArmId }, reqCtx);
+      // Enrolled only AFTER the run, so this one is still billable.
+      await enrollStudent(schoolId, unbilled, classArmId, termId, academicYearId);
+
+      const preview = await svc.previewForArm(ctx(schoolId, ownerId), { termId, classArmId });
+      const byId = new Map(preview.map((l) => [l.studentId, l.alreadyInvoiced]));
+      expect(byId.get(billed)).toBe(true);
+      expect(byId.get(unbilled)).toBe(false);
+    });
+
+    // The sharp edge. @@unique([schoolId, studentId, termId]) is status-
+    // agnostic, so cancelling does NOT free a student to be re-billed by a
+    // bulk run. Preview must say so, or the dialog promises invoices that
+    // generation then silently skips.
+    it("still flags a student whose only invoice for the term was CANCELLED", async () => {
+      const { schoolId, ownerId } = await makeSchool("preview-flag-cancelled");
+      const { academicYearId, termId, classLevelId, classArmId } =
+        await makeAcademicStructure(schoolId);
+      await makeFeeSetup(schoolId, ownerId, classLevelId, termId);
+      const studentId = await makeStudent(schoolId, "preview-flag-cancelled-s1");
+      await enrollStudent(schoolId, studentId, classArmId, termId, academicYearId);
+
+      const { invoices } = await svc.generateForArm(ctx(schoolId, ownerId), { termId, classArmId }, reqCtx);
+      await svc.cancel(ctx(schoolId, ownerId), invoices[0].id, reqCtx);
+
+      const preview = await svc.previewForArm(ctx(schoolId, ownerId), { termId, classArmId });
+      expect(preview[0].alreadyInvoiced).toBe(true);
+
+      // And generation agrees — preview and generation must not disagree.
+      const rerun = await svc.generateForArm(ctx(schoolId, ownerId), { termId, classArmId }, reqCtx);
+      expect(rerun.created).toBe(0);
+      expect(rerun.skipped).toBe(1);
+    });
   });
 
   // ── cancel ─────────────────────────────────────────────────────────────────
