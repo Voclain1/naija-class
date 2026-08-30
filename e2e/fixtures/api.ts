@@ -215,6 +215,9 @@ interface AcademicYearRow {
 interface TermRow {
   id: string;
   sequence: number;
+  /** Display name ("First Term"). The API has always returned it; this type
+   *  was narrower than the payload until a spec needed to assert on it. */
+  name: string;
 }
 
 interface SubjectRow {

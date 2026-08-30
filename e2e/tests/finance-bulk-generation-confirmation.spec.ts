@@ -24,8 +24,11 @@ async function financeArm(admin: AdminSession, suffix: string, opts: { seed?: bo
   const years = await apiListAcademicYears(admin.api);
   const terms = await apiListTerms(admin.api, years[0].id);
   const term = terms[0];
+  // apiCreateClassArm returns { id } only, so the caller keeps the name it
+  // supplied rather than reading one back off the created row.
+  const armName = `Gold ${suffix}`;
   const arm = await apiCreateClassArm(admin.api, level.id, {
-    name: `Gold ${suffix}`,
+    name: armName,
     code: `gold-${suffix}`.toLowerCase().slice(0, 12),
   });
   let scaffold = null;
@@ -35,7 +38,7 @@ async function financeArm(admin: AdminSession, suffix: string, opts: { seed?: bo
       classLevelId: level.id, academicYearId: years[0].id,
     });
   }
-  return { level, year: years[0], term, arm, scaffold };
+  return { level, year: years[0], term, arm, armName, scaffold };
 }
 
 /**
@@ -91,7 +94,7 @@ test.describe("F-34 — bulk invoice generation confirmation", () => {
   test("the review states class, term, student count and naira total from real data", async ({ browser }) => {
     const admin = await loginAsAdmin(browser);
     const suffix = uniqueSuffix();
-    const { year, term, arm, scaffold } = await financeArm(admin, suffix);
+    const { year, term, arm, armName, scaffold } = await financeArm(admin, suffix);
     const expectedTotal = scaffold!.students.length * scaffold!.feeItemAmount;
 
     await admin.page.goto("/finance/invoices", { waitUntil: "domcontentloaded" });
@@ -100,7 +103,7 @@ test.describe("F-34 — bulk invoice generation confirmation", () => {
 
     const dialog = admin.page.getByRole("dialog");
     const text = await dialog.innerText();
-    expect(text).toContain(arm.name);
+    expect(text).toContain(armName);
     expect(text).toContain(term.name);
     expect(text).toContain(`${scaffold!.students.length} students`);
     // ₦135,000.00 for the 3-student × ₦45,000 scaffold — the real money figure.
