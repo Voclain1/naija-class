@@ -135,6 +135,20 @@ those; it doesn't replace them.
 
 ## Latest state as of this handoff (updated 2026-08-28)
 
+- **Wave 3B terminology/developer-language cleanup is in progress on
+  `fix/terminology-developer-language` from `6064ad6` (2026-08-30).** It is
+  presentation-only: enrollment UUID fallbacks, raw dashboard/import/guardian
+  error fallbacks, visible status labels and user-facing SchoolKit spelling.
+  Shared invoice/payment/payroll/Paystack labels are centralised without
+  changing backend enum values. Types, web/portal/mobile typechecks, web and
+  mobile lint, portal lint, and the focused web Vitest suite (13/13) pass;
+  `git diff --check` passes. Fresh PR #235 CI passed its complete rendered
+  gate: Playwright 67 passed (one retried pre-existing guardian-auth flake),
+  including all three new terminology presentation cases; mobile CI finished
+  20 files/165 tests; and both Vercel previews are green. No schema,
+  migration, authorization, finance behavior, attendance, session-end or
+  offline-write policy changed. See `docs/journal/2026-08-30.md`.
+
 - **Guardian/student consistency UX is in progress on
   `fix/guardian-student-consistency-ux` (2026-08-29).** It is confined to
   family-facing mobile/portal presentation, shared invoice labels and focused

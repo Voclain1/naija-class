@@ -185,7 +185,7 @@ export default function PaymentsSettingsPage() {
                 <p className="text-xs text-muted-foreground">
                   We create the Paystack subaccount for you and send back a code to paste below.
                   You can&apos;t create one yourself — a subaccount made in your own Paystack
-                  dashboard won&apos;t work with schoolkit. Money settles from Paystack straight
+                  dashboard won&apos;t work with SchoolKit. Money settles from Paystack straight
                   to your bank account; it never passes through us, and we take no cut.
                 </p>
               </div>

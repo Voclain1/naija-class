@@ -94,7 +94,7 @@ export function SignupForm() {
       <CardHeader>
         <CardTitle>Create your school</CardTitle>
         <CardDescription>
-          Set up your schoolkit account. Onboarding takes about five minutes.
+          Set up your SchoolKit account. Onboarding takes about five minutes.
         </CardDescription>
       </CardHeader>
       <CardContent>

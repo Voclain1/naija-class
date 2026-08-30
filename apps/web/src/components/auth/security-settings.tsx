@@ -309,7 +309,7 @@ export function SecuritySettings() {
           <h2 className="font-medium">Signed-in devices</h2>
         </div>
         <p className="text-sm text-muted-foreground">
-          Revoke a lost or shared device immediately. School Kit never shows token, IP, or browser details here.
+          Revoke a lost or shared device immediately. SchoolKit never shows token, IP, or browser details here.
         </p>
         {sessions.map((session) => (
           <div key={session.id} className="flex items-center justify-between gap-4 rounded-md border p-3">

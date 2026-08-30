@@ -4,7 +4,7 @@ import { FileText, Loader2, PlusCircle, Send } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
-import type { PayrollItemDto, UserListItemDto } from "@school-kit/types";
+import { payrollStatusLabel, type PayrollItemDto, type UserListItemDto } from "@school-kit/types";
 
 import { PayrollFormModal } from "@/components/finance/payroll-form-modal";
 import { Badge, type BadgeProps } from "@/components/ui/badge";
@@ -241,7 +241,7 @@ export default function PayrollPage() {
                   <TableCell className="text-right tabular-nums">{formatKobo(item.netSalary)}</TableCell>
                   <TableCell>
                     <Badge variant={STATUS_VARIANTS[item.status]}>
-                      {item.status === "PROCESSING" ? "Processing…" : item.status}
+                      {item.status === "PROCESSING" ? "Processing…" : payrollStatusLabel[item.status]}
                     </Badge>
                   </TableCell>
                   <TableCell>

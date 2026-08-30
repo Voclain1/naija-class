@@ -17,6 +17,7 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { ApiError } from "@/lib/api-client";
+import { importMappingErrorMessage } from "@/lib/imports/mapping-error-copy";
 import {
   applyGuardiansImportMapping,
   deleteImportJob,
@@ -208,11 +209,7 @@ export default function ImportGuardiansMappingPage() {
       clearUploadResponse(jobId);
       router.push(`/guardians/import/${jobId}/preview`);
     } catch (e) {
-      if (e instanceof ApiError) {
-        toast.error(e.message);
-      } else {
-        toast.error("Could not submit mapping. Try again.");
-      }
+      toast.error(importMappingErrorMessage(e));
       setSubmitting(false);
     }
   }, [canValidate, jobId, mapping, dateFormat, treatBlankAs, router]);

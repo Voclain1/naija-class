@@ -46,7 +46,7 @@ export function StudentPortalAccess({ studentId, studentFirstName }: Props) {
 
   function describeFailure(caught: unknown): string {
     if (caught instanceof ApiNetworkError) {
-      return "Can't reach School Kit. Check your connection and try again.";
+      return "Can't reach SchoolKit. Check your connection and try again.";
     }
     return caught instanceof Error ? caught.message : "Something went wrong.";
   }
@@ -98,7 +98,7 @@ export function StudentPortalAccess({ studentId, studentFirstName }: Props) {
         <>
           {status.state === "ACTIVE" ? (
             <Body>
-              {name} can sign in to School Kit and see their own results.
+              {name} can sign in to SchoolKit and see their own results.
             </Body>
           ) : status.state === "DEACTIVATED" ? (
             <Body>
@@ -155,8 +155,8 @@ export function StudentPortalAccess({ studentId, studentFirstName }: Props) {
                     // same reason it is on screen: the message a parent sends
                     // is usually the only written record the child keeps.
                     message: schoolSlug
-                      ? `Your School Kit invitation code: ${issuedToken}\nSchool code (for signing in later): ${schoolSlug}`
-                      : `Your School Kit invitation code: ${issuedToken}`,
+                      ? `Your SchoolKit invitation code: ${issuedToken}\nSchool code (for signing in later): ${schoolSlug}`
+                      : `Your SchoolKit invitation code: ${issuedToken}`,
                   }).catch(() => {
                     // Share is unavailable on some targets (including web).
                     // The code is on screen regardless, so this is not worth

@@ -9,7 +9,7 @@ export async function canProtectStaffSession(): Promise<boolean> {
 export async function unlockStaffSession(): Promise<boolean> {
   if (!(await canProtectStaffSession())) return false;
   const result = await LocalAuthentication.authenticateAsync({
-    promptMessage: "Unlock School Kit staff access",
+    promptMessage: "Unlock SchoolKit staff access",
     cancelLabel: "Sign out",
     disableDeviceFallback: false,
   });

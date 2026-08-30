@@ -147,7 +147,7 @@ export default function LoginScreen() {
         // Distinguishing this from bad credentials matters: telling someone
         // their password is wrong when they are simply on a bad connection
         // sends them to reset a password that was never the problem.
-        setError("Can't reach School Kit. Check your connection and try again.");
+        setError("Can't reach SchoolKit. Check your connection and try again.");
       } else if (caught instanceof ApiError) {
         setError(
           caught.status === 401
