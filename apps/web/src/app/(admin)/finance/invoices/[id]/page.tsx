@@ -5,17 +5,19 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import { Archive, Copy, ExternalLink, Link2, MessageCircle, RefreshCw } from "lucide-react";
 
-import type {
-  CreatePaymentPlanInput,
-  InvoiceDto,
-  InvoiceStatus,
-  ManualPaymentMethod,
-  PaymentDto,
-  PaymentPlanDto,
-  PaymentLinkStateDto,
-  PaymentStatus,
-  StudentDetailDto,
-  TermDto,
+import {
+  invoiceStatusLabel,
+  paymentStatusLabel,
+  type CreatePaymentPlanInput,
+  type InvoiceDto,
+  type InvoiceStatus,
+  type ManualPaymentMethod,
+  type PaymentDto,
+  type PaymentPlanDto,
+  type PaymentLinkStateDto,
+  type PaymentStatus,
+  type StudentDetailDto,
+  type TermDto,
 } from "@school-kit/types";
 import { buildNoRecipientWhatsAppUrl, buildPaymentLinkMessage } from "@school-kit/types";
 
@@ -34,16 +36,6 @@ import {
 } from "@/lib/finance/payment-plans-api";
 import { createRefund, getPaymentReceiptUrl, initPaystackPayment, listPayments, recordManualPayment } from "@/lib/finance/payments-api";
 import { getStudent } from "@/lib/students/students-api";
-
-const STATUS_LABELS: Record<InvoiceStatus, string> = {
-  DRAFT: "Draft",
-  ISSUED: "Issued",
-  PARTIALLY_PAID: "Partially paid",
-  PAID: "Paid",
-  OVERDUE: "Overdue",
-  CANCELLED: "Cancelled",
-  REFUNDED: "Refunded",
-};
 
 // Same mapping as /finance/invoices and /finance/debtors.
 const STATUS_VARIANTS: Record<InvoiceStatus, BadgeProps["variant"]> = {
@@ -403,7 +395,7 @@ export default function InvoiceDetailPage() {
           <p className="mt-0.5 font-mono text-sm text-muted-foreground">{invoice.id}</p>
         </div>
         <Badge variant={STATUS_VARIANTS[invoice.status]} className="px-3 py-1 text-sm">
-          {STATUS_LABELS[invoice.status]}
+          {invoiceStatusLabel[invoice.status]}
         </Badge>
       </div>
 
@@ -647,7 +639,7 @@ export default function InvoiceDetailPage() {
                     </TableCell>
                     <TableCell>
                       <Badge variant={PAYMENT_STATUS_VARIANTS[p.status]}>
-                        {p.status === "REVERSED" ? "Reversed" : p.status}
+                        {paymentStatusLabel[p.status]}
                       </Badge>
                     </TableCell>
                     <TableCell className="text-right">

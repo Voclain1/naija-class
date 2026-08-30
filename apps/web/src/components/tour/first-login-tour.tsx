@@ -36,7 +36,7 @@ type TourStep =
 const STEPS: TourStep[] = [
   {
     kind: "intro",
-    title: "Welcome to schoolkit",
+    title: "Welcome to SchoolKit",
     body: "Quick tour of where things live — about a minute. Skip anytime.",
   },
   {

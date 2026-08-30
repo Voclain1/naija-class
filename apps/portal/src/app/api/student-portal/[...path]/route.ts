@@ -59,7 +59,7 @@ async function forward(req: NextRequest, segments: string[]): Promise<NextRespon
       {
         error: {
           code: "API_UNREACHABLE",
-          message: "We couldn't reach School Kit. Please try again shortly.",
+          message: "We couldn't reach SchoolKit. Please try again shortly.",
         },
       },
       { status: 502 },

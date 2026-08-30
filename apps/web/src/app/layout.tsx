@@ -20,7 +20,7 @@ const fraunces = Fraunces({
 });
 
 export const metadata: Metadata = {
-  title: "schoolkit",
+  title: "SchoolKit",
   // Shown in search results and link previews, so it is marketing copy, not a
   // system description. Was "Multi-tenant school management for Nigerian
   // private schools." until 2026-08-09 — "multi-tenant" is an architecture

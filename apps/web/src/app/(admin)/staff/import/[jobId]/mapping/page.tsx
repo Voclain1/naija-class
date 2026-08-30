@@ -17,6 +17,7 @@ import { IMPORT_WIZARD_STEPS, WizardStepper } from "@/components/shared/wizard-s
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ApiError } from "@/lib/api-client";
+import { importMappingErrorMessage } from "@/lib/imports/mapping-error-copy";
 import {
   applyTeachersImportMapping,
   deleteImportJob,
@@ -181,11 +182,7 @@ export default function ImportTeachersMappingPage() {
       clearUploadResponse(jobId);
       router.push(`/staff/import/${jobId}/preview`);
     } catch (e) {
-      if (e instanceof ApiError) {
-        toast.error(e.message);
-      } else {
-        toast.error("Could not submit mapping. Try again.");
-      }
+      toast.error(importMappingErrorMessage(e));
       setSubmitting(false);
     }
   }, [canValidate, jobId, mapping, treatBlankAs, router]);

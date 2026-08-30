@@ -4,13 +4,14 @@ import { AlertTriangle, RotateCcw } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
-import type {
-  AcademicYearDto,
-  ClassArmDto,
-  InvoiceDto,
-  InvoiceStatus,
-  PreviewLineDto,
-  TermDto,
+import {
+  invoiceStatusLabel,
+  type AcademicYearDto,
+  type ClassArmDto,
+  type InvoiceDto,
+  type InvoiceStatus,
+  type PreviewLineDto,
+  type TermDto,
 } from "@school-kit/types";
 
 import { CancelInvoiceDialog } from "@/components/finance/cancel-invoice-dialog";
@@ -36,16 +37,6 @@ import {
 import { resolveInvoiceListView } from "@/lib/finance/invoice-list-state";
 import { generateInvoices, listInvoices, previewInvoices } from "@/lib/finance/invoices-api";
 
-const STATUS_LABELS: Record<InvoiceStatus, string> = {
-  DRAFT: "Draft",
-  ISSUED: "Issued",
-  PARTIALLY_PAID: "Partially paid",
-  PAID: "Paid",
-  OVERDUE: "Overdue",
-  CANCELLED: "Cancelled",
-  REFUNDED: "Refunded",
-};
-
 // Export reuses GET /invoices with the same filters currently applied to the
 // list tab, looping the page number (limit 200/page) until every page is
 // fetched — same permission-guarded endpoint, no new backend route. Capped
@@ -59,7 +50,7 @@ const INVOICE_EXPORT_COLUMNS: CsvColumn<InvoiceDto>[] = [
   { header: "Student", accessor: (i) => studentDisplayName(i) },
   { header: "Admission number", accessor: (i) => i.admissionNumber ?? "" },
   { header: "Invoice reference", accessor: (i) => invoiceReference(i.id) },
-  { header: "Status", accessor: (i) => STATUS_LABELS[i.status] },
+  { header: "Status", accessor: (i) => invoiceStatusLabel[i.status] },
   { header: "Total due", accessor: (i) => formatKobo(i.totalDue) },
   { header: "Paid", accessor: (i) => formatKobo(i.totalPaid) },
   { header: "Balance", accessor: (i) => formatKobo(i.totalDue - i.totalPaid) },
@@ -209,7 +200,7 @@ export default function InvoicesPage() {
     error: listError,
     rowCount: invoices.length,
     statusFilter,
-    statusLabel: statusFilter ? STATUS_LABELS[statusFilter] : "",
+    statusLabel: statusFilter ? invoiceStatusLabel[statusFilter] : "",
   });
 
   async function handleExport() {
@@ -509,8 +500,8 @@ export default function InvoicesPage() {
                 onChange={(e) => { setStatusFilter(e.target.value as InvoiceStatus | ""); setPage(1); }}
               >
                 <option value="">All statuses</option>
-                {(Object.keys(STATUS_LABELS) as InvoiceStatus[]).map((s) => (
-                  <option key={s} value={s}>{STATUS_LABELS[s]}</option>
+                {(Object.keys(invoiceStatusLabel) as InvoiceStatus[]).map((s) => (
+                  <option key={s} value={s}>{invoiceStatusLabel[s]}</option>
                 ))}
               </select>
             </div>
@@ -627,7 +618,7 @@ export default function InvoicesPage() {
                         {invoiceReference(inv.id)}
                       </TableCell>
                       <TableCell>
-                        <Badge variant={STATUS_VARIANTS[inv.status]}>{STATUS_LABELS[inv.status]}</Badge>
+                        <Badge variant={STATUS_VARIANTS[inv.status]}>{invoiceStatusLabel[inv.status]}</Badge>
                       </TableCell>
                       <TableCell className="text-right font-mono tabular-nums">{formatKobo(inv.totalDue)}</TableCell>
                       <TableCell className="text-right font-mono tabular-nums text-emerald-700 dark:text-emerald-400">

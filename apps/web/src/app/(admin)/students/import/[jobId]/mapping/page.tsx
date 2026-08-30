@@ -19,6 +19,7 @@ import { IMPORT_WIZARD_STEPS, WizardStepper } from "@/components/shared/wizard-s
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ApiError } from "@/lib/api-client";
+import { importMappingErrorMessage } from "@/lib/imports/mapping-error-copy";
 import {
   applyStudentsImportMapping,
   deleteImportJob,
@@ -282,15 +283,7 @@ export default function ImportStudentsMappingPage() {
       clearUploadResponse(jobId);
       router.push(`/students/import/${jobId}/preview`);
     } catch (e) {
-      if (e instanceof ApiError) {
-        if (e.code === "MISSING_REQUIRED_MAPPING") {
-          toast.error(e.message);
-        } else {
-          toast.error(e.message);
-        }
-      } else {
-        toast.error("Could not submit mapping. Try again.");
-      }
+      toast.error(importMappingErrorMessage(e));
       setSubmitting(false);
     }
   }, [

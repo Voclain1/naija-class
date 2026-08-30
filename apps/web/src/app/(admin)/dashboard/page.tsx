@@ -16,6 +16,7 @@ import { StatCard } from "@/components/shared/stat-card";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { getAdminDashboard } from "@/lib/dashboard/dashboard-api";
+import { dashboardErrorMessage } from "@/lib/dashboard/dashboard-error-copy";
 import { formatKobo } from "@/lib/finance/format";
 import { useAuth } from "@/lib/auth/use-auth";
 
@@ -50,7 +51,7 @@ export default function DashboardPage() {
     setError(null);
     getAdminDashboard(termId)
       .then(setDashboard)
-      .catch((e) => setError(String(e)))
+      .catch((e) => setError(dashboardErrorMessage(e)))
       .finally(() => setLoading(false));
   }, [termId]);
 

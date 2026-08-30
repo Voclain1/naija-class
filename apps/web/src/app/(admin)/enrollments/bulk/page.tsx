@@ -31,6 +31,7 @@ import {
   bulkCreateEnrollments,
   listEnrollments,
 } from "@/lib/enrollments/enrollments-api";
+import { studentDisplayName } from "@/lib/finance/invoice-identity";
 import { getStudent, listStudents } from "@/lib/students/students-api";
 import { initialCarryOverSelection } from "@/lib/enrollments/carry-over-selection";
 import {
@@ -258,9 +259,11 @@ export default function BulkEnrollmentWizardPage() {
           const s = studentLookup.get(enr.studentId);
           rows.push({
             studentId: enr.studentId,
-            studentLabel: s
-              ? `${s.lastName}, ${s.firstName}`
-              : `student ${enr.studentId.slice(0, 8)}`,
+            studentLabel: studentDisplayName({
+              studentId: enr.studentId,
+              studentName: s ? `${s.lastName}, ${s.firstName}` : null,
+              admissionNumber: s?.admissionNumber ?? null,
+            }),
             admissionNumber: s?.admissionNumber ?? "—",
             group: "carried",
             lookupFailed: !s,
@@ -270,9 +273,11 @@ export default function BulkEnrollmentWizardPage() {
           const s = studentLookup.get(enr.studentId);
           rows.push({
             studentId: enr.studentId,
-            studentLabel: s
-              ? `${s.lastName}, ${s.firstName}`
-              : `student ${enr.studentId.slice(0, 8)}`,
+            studentLabel: studentDisplayName({
+              studentId: enr.studentId,
+              studentName: s ? `${s.lastName}, ${s.firstName}` : null,
+              admissionNumber: s?.admissionNumber ?? null,
+            }),
             admissionNumber: s?.admissionNumber ?? "—",
             group: "withdrew",
             lookupFailed: !s,
@@ -282,9 +287,11 @@ export default function BulkEnrollmentWizardPage() {
           const s = studentLookup.get(ad.studentId);
           rows.push({
             studentId: ad.studentId,
-            studentLabel: s
-              ? `${s.lastName}, ${s.firstName}`
-              : `student ${ad.studentId.slice(0, 8)}`,
+            studentLabel: studentDisplayName({
+              studentId: ad.studentId,
+              studentName: s ? `${s.lastName}, ${s.firstName}` : null,
+              admissionNumber: s?.admissionNumber ?? null,
+            }),
             admissionNumber: s?.admissionNumber ?? "—",
             group: "admitted",
             meta: `Admitted ${ad.admittedAt.toISOString().slice(0, 10)}`,
@@ -332,6 +339,13 @@ export default function BulkEnrollmentWizardPage() {
     for (const [, v] of checked) if (v) n += 1;
     return n;
   }, [checked]);
+
+  const candidateLabel = useCallback(
+    (studentId: string) =>
+      candidates.find((candidate) => candidate.studentId === studentId)?.studentLabel ??
+      "A selected student",
+    [candidates],
+  );
 
   const toggle = useCallback((studentId: string) => {
     setChecked((prev) => {
@@ -469,8 +483,8 @@ export default function BulkEnrollmentWizardPage() {
           <ul className="flex flex-col gap-1 rounded-md border bg-card p-4 text-sm">
             {summary.errors.map((e, i) => (
               <li key={i}>
-                <span className="font-mono text-xs text-muted-foreground">
-                  {e.studentId.slice(0, 8)}…
+                <span className="text-muted-foreground">
+                  {candidateLabel(e.studentId)}
                 </span>
                 : {e.reason}
               </li>

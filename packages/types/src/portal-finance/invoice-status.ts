@@ -1,4 +1,7 @@
 import type { InvoiceStatus } from "../finance/invoice.dto.js";
+import type { PaymentStatus } from "../finance/payment.dto.js";
+import type { PayrollStatus } from "../finance/payroll.dto.js";
+import type { PaystackSetupStatus } from "../paystack-setup/paystack-setup-request.dto.js";
 
 /**
  * Human-facing invoice status labels shared by family-facing clients.
@@ -15,4 +18,28 @@ export const invoiceStatusLabel: Record<InvoiceStatus, string> = {
   OVERDUE: "Overdue",
   CANCELLED: "Cancelled",
   REFUNDED: "Refunded",
+};
+
+/** Human-facing payment statuses. API values remain machine identifiers. */
+export const paymentStatusLabel: Record<PaymentStatus, string> = {
+  PENDING: "Pending",
+  SUCCESS: "Successful",
+  FAILED: "Failed",
+  REVERSED: "Reversed",
+};
+
+/** Human-facing payroll statuses for staff-payment operators. */
+export const payrollStatusLabel: Record<PayrollStatus, string> = {
+  DRAFT: "Draft",
+  APPROVED: "Approved",
+  PROCESSING: "Processing",
+  PAID: "Paid",
+  FAILED: "Failed",
+};
+
+/** Human-facing labels for an assisted Paystack setup request. */
+export const paystackSetupStatusLabel: Record<PaystackSetupStatus, string> = {
+  PENDING: "Pending",
+  FULFILLED: "Completed",
+  REJECTED: "Rejected",
 };

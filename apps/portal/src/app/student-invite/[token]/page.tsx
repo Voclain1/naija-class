@@ -54,7 +54,7 @@ export default function StudentInvitePage() {
       }
       setState({ kind: "ready", invitation: body as PublicStudentInvitationDto });
     } catch {
-      setState({ kind: "invalid", message: "We couldn't reach School Kit. Try again shortly." });
+      setState({ kind: "invalid", message: "We couldn't reach SchoolKit. Try again shortly." });
     }
   }, [params.token]);
 
@@ -92,7 +92,7 @@ export default function StudentInvitePage() {
       // The response contains a session token. It is intentionally ignored.
       setState({ kind: "done" });
     } catch {
-      setError("We couldn't reach School Kit. Try again shortly.");
+      setError("We couldn't reach SchoolKit. Try again shortly.");
     } finally {
       setSubmitting(false);
     }
@@ -115,7 +115,7 @@ export default function StudentInvitePage() {
         <div className="flex flex-col gap-2">
           <h1 className="text-2xl font-semibold tracking-tight">You&apos;re all set</h1>
           <p className="text-sm text-muted-foreground">
-            Open the School Kit app and sign in with your admission number and
+            Open the SchoolKit app and sign in with your admission number and
             the password you just chose.
           </p>
         </div>
@@ -126,7 +126,7 @@ export default function StudentInvitePage() {
           <div className="flex flex-col gap-1">
             <h1 className="text-2xl font-semibold tracking-tight">Choose your password</h1>
             <p className="text-sm text-muted-foreground">
-              This sets up your School Kit account at {state.invitation.schoolName}.
+              This sets up your SchoolKit account at {state.invitation.schoolName}.
             </p>
           </div>
 

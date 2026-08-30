@@ -8,7 +8,7 @@ import "./globals.css";
 // one; add it then rather than installing react-query/PostHog/an
 // AuthProvider now for nothing to use.
 export const metadata: Metadata = {
-  title: "schoolkit — Parent Portal",
+  title: "SchoolKit — Parent Portal",
   description: "View your child's fees and payments, and stay in touch with the school.",
 };
 
