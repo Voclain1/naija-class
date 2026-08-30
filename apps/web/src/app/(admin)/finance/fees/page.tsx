@@ -354,8 +354,14 @@ export default function FeesPage() {
           <div className="mb-2 flex items-center justify-between">
             <h2 className="text-sm font-medium">Categories</h2>
             <Button size="sm" variant="outline" onClick={openCatCreate}>
-              <PlusCircle className="mr-1 h-3.5 w-3.5" />
-              New
+              <PlusCircle className="mr-1 h-3.5 w-3.5" aria-hidden />
+              {/* Visible label stays "New" (it sits under a "Categories"
+                  heading, which sighted users read as context). The sr-only
+                  suffix gives the button a self-contained accessible name —
+                  a screen-reader user tabbing to it out of that visual
+                  context otherwise hears only "New". Keeping "New" as the
+                  prefix satisfies WCAG 2.5.3 Label in Name. */}
+              New<span className="sr-only"> category</span>
             </Button>
           </div>
 
@@ -396,8 +402,8 @@ export default function FeesPage() {
             </DialogHeader>
             <div className="space-y-3">
               <div>
-                <label className="mb-1 block text-sm font-medium text-foreground">Name</label>
-                <input
+                <label htmlFor="fee-name" className="mb-1 block text-sm font-medium text-foreground">Name</label>
+                <input id="fee-name"
                   autoFocus
                   className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                   value={catName}
@@ -408,10 +414,10 @@ export default function FeesPage() {
                 />
               </div>
               <div>
-                <label className="mb-1 block text-sm font-medium text-foreground">
+                <label htmlFor="fee-description-optional" className="mb-1 block text-sm font-medium text-foreground">
                   Description <span className="font-normal text-muted-foreground">(optional)</span>
                 </label>
-                <textarea
+                <textarea id="fee-description-optional"
                   className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                   value={catDesc}
                   onChange={(e) => setCatDesc(e.target.value)}
@@ -545,8 +551,8 @@ export default function FeesPage() {
           <div className="space-y-3">
             {/* Name */}
             <div>
-              <label className="mb-1 block text-sm font-medium text-foreground">Name</label>
-              <input
+              <label htmlFor="fee-name-2" className="mb-1 block text-sm font-medium text-foreground">Name</label>
+              <input id="fee-name-2"
                 autoFocus
                 className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                 value={itemForm.name}
@@ -558,10 +564,10 @@ export default function FeesPage() {
 
             {/* Amount in naira */}
             <div>
-              <label className="mb-1 block text-sm font-medium text-foreground">
+              <label htmlFor="fee-amount-naira-naira" className="mb-1 block text-sm font-medium text-foreground">
                 Amount <span className="font-normal text-muted-foreground">(₦ naira)</span>
               </label>
-              <input
+              <input id="fee-amount-naira-naira"
                 type="number"
                 min="0"
                 step="0.01"
@@ -584,8 +590,8 @@ export default function FeesPage() {
 
             {/* Class level */}
             <div>
-              <label className="mb-1 block text-sm font-medium text-foreground">Class level</label>
-              <select
+              <label htmlFor="fee-class-level" className="mb-1 block text-sm font-medium text-foreground">Class level</label>
+              <select id="fee-class-level"
                 className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                 value={itemForm.classLevelId}
                 onChange={(e) =>
@@ -607,8 +613,8 @@ export default function FeesPage() {
 
             {/* Class arm — disabled until level selected */}
             <div>
-              <label className="mb-1 block text-sm font-medium text-foreground">Class arm</label>
-              <select
+              <label htmlFor="fee-class-arm" className="mb-1 block text-sm font-medium text-foreground">Class arm</label>
+              <select id="fee-class-arm"
                 className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
                 value={itemForm.classArmId}
                 onChange={(e) => setItemForm((f) => ({ ...f, classArmId: e.target.value }))}
@@ -628,8 +634,8 @@ export default function FeesPage() {
 
             {/* Academic year */}
             <div>
-              <label className="mb-1 block text-sm font-medium text-foreground">Academic year</label>
-              <select
+              <label htmlFor="fee-academic-year" className="mb-1 block text-sm font-medium text-foreground">Academic year</label>
+              <select id="fee-academic-year"
                 className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                 value={itemForm.academicYearId}
                 onChange={(e) =>
@@ -651,8 +657,8 @@ export default function FeesPage() {
 
             {/* Term — disabled until year selected */}
             <div>
-              <label className="mb-1 block text-sm font-medium text-foreground">Term</label>
-              <select
+              <label htmlFor="fee-term" className="mb-1 block text-sm font-medium text-foreground">Term</label>
+              <select id="fee-term"
                 className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
                 value={itemForm.termId}
                 onChange={(e) => setItemForm((f) => ({ ...f, termId: e.target.value }))}

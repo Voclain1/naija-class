@@ -723,8 +723,8 @@ export default function InvoiceDetailPage() {
           <form onSubmit={handleCreatePlan} className="space-y-4 rounded-lg border p-4">
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="mb-1 block text-sm text-muted-foreground">Plan name</label>
-                <input
+                <label htmlFor="inv-plan-name" className="mb-1 block text-sm text-muted-foreground">Plan name</label>
+                <input id="inv-plan-name"
                   type="text"
                   required
                   value={planName}
@@ -733,8 +733,8 @@ export default function InvoiceDetailPage() {
                 />
               </div>
               <div>
-                <label className="mb-1 block text-sm text-muted-foreground">Number of installments</label>
-                <input
+                <label htmlFor="inv-number-of-installments" className="mb-1 block text-sm text-muted-foreground">Number of installments</label>
+                <input id="inv-number-of-installments"
                   type="number"
                   min={1}
                   max={24}
@@ -800,8 +800,8 @@ export default function InvoiceDetailPage() {
                 <div key={i} className="grid grid-cols-[auto_1fr_1fr] items-center gap-3">
                   <span className="w-6 text-sm text-muted-foreground">{i + 1}.</span>
                   <div>
-                    <label className="mb-0.5 block text-xs text-muted-foreground">Amount (₦)</label>
-                    <input
+                    <label htmlFor="inv-amount-naira" className="mb-0.5 block text-xs text-muted-foreground">Amount (₦)</label>
+                    <input id="inv-amount-naira"
                       type="number"
                       step="0.01"
                       min="0.01"
@@ -813,8 +813,8 @@ export default function InvoiceDetailPage() {
                     />
                   </div>
                   <div>
-                    <label className="mb-0.5 block text-xs text-muted-foreground">Due date</label>
-                    <input
+                    <label htmlFor="inv-due-date" className="mb-0.5 block text-xs text-muted-foreground">Due date</label>
+                    <input id="inv-due-date"
                       type="date"
                       required
                       min={todayIso()}
@@ -849,8 +849,8 @@ export default function InvoiceDetailPage() {
           <form onSubmit={handleRecordPayment} className="space-y-3">
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="mb-1 block text-sm text-muted-foreground">Amount (₦)</label>
-                <input
+                <label htmlFor="inv-amount-naira-2" className="mb-1 block text-sm text-muted-foreground">Amount (₦)</label>
+                <input id="inv-amount-naira-2"
                   type="number"
                   step="0.01"
                   min="0.01"
@@ -862,8 +862,8 @@ export default function InvoiceDetailPage() {
                 />
               </div>
               <div>
-                <label className="mb-1 block text-sm text-muted-foreground">Method</label>
-                <select
+                <label htmlFor="inv-method" className="mb-1 block text-sm text-muted-foreground">Method</label>
+                <select id="inv-method"
                   value={form.method}
                   onChange={(e) => setForm((f) => ({ ...f, method: e.target.value as ManualPaymentMethod }))}
                   className={INPUT_CLASSES}
@@ -874,8 +874,8 @@ export default function InvoiceDetailPage() {
                 </select>
               </div>
               <div>
-                <label className="mb-1 block text-sm text-muted-foreground">Date paid</label>
-                <input
+                <label htmlFor="inv-date-paid" className="mb-1 block text-sm text-muted-foreground">Date paid</label>
+                <input id="inv-date-paid"
                   type="datetime-local"
                   required
                   value={form.paidAt}
@@ -884,8 +884,8 @@ export default function InvoiceDetailPage() {
                 />
               </div>
               <div>
-                <label className="mb-1 block text-sm text-muted-foreground">Reference (optional)</label>
-                <input
+                <label htmlFor="inv-reference-optional" className="mb-1 block text-sm text-muted-foreground">Reference (optional)</label>
+                <input id="inv-reference-optional"
                   type="text"
                   maxLength={200}
                   value={form.reference}
@@ -961,10 +961,10 @@ export default function InvoiceDetailPage() {
           </p>
           <form onSubmit={handleRefund} className="space-y-3">
             <div>
-              <label className="mb-1 block text-sm font-medium text-foreground">
+              <label htmlFor="inv-reason" className="mb-1 block text-sm font-medium text-foreground">
                 Reason <span className="text-destructive">*</span>
               </label>
-              <textarea
+              <textarea id="inv-reason"
                 required
                 maxLength={500}
                 rows={3}

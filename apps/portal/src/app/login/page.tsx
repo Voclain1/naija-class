@@ -113,6 +113,7 @@ function LoginForm() {
 
       <form
         onSubmit={onSubmit}
+        method="post"
         className="flex w-full max-w-sm flex-col gap-4 rounded-lg border bg-card p-6 shadow-sm"
         noValidate
       >

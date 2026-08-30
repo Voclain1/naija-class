@@ -130,6 +130,7 @@ export default function ResetPasswordPage() {
       </div>
 
       <form
+        method="post"
         onSubmit={onSubmit}
         className="flex w-full max-w-sm flex-col gap-4 rounded-lg border bg-card p-6 shadow-sm"
         noValidate

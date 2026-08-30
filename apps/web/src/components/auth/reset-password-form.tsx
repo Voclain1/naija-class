@@ -141,7 +141,7 @@ export function ResetPasswordForm({ token }: Props) {
         <CardDescription>Choose a new password for your account.</CardDescription>
       </CardHeader>
       <CardContent>
-        <form onSubmit={onSubmit} className="flex flex-col gap-4" noValidate>
+        <form method="post" onSubmit={onSubmit} className="flex flex-col gap-4" noValidate>
           <div className="flex flex-col gap-1">
             <Label htmlFor="password">New password</Label>
             <Input

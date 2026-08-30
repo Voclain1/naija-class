@@ -203,7 +203,7 @@ export function LoginForm() {
         )}
       </CardHeader>
       <CardContent>
-        <form onSubmit={onCredSubmit} className="flex flex-col gap-4" noValidate>
+        <form method="post" onSubmit={onCredSubmit} className="flex flex-col gap-4" noValidate>
           <div className="flex flex-col gap-2">
             <Label htmlFor="email">Email</Label>
             <Input

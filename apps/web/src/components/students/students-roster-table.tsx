@@ -77,8 +77,17 @@ export function StudentsRosterTable({ students }: Props) {
                   className="h-7"
                 >
                   <Link href={`/students/${s.id}`}>
-                    <Eye className="mr-1 h-3 w-3" />
+                    <Eye className="mr-1 h-3 w-3" aria-hidden />
+                    {/* One of these renders per row, so the bare visible
+                        "View" gave every row an identical accessible name —
+                        a screen-reader user listing links hears "View" N
+                        times with nothing to tell the students apart. The
+                        sr-only suffix names the row's student while leaving
+                        the column visually unchanged. */}
                     View
+                    <span className="sr-only">
+                      {` ${s.firstName} ${s.lastName}`}
+                    </span>
                   </Link>
                 </Button>
               </TableCell>

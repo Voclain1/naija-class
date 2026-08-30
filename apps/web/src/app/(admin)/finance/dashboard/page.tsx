@@ -160,8 +160,8 @@ export default function FinanceDashboardPage() {
       {/* Term selector — identical pattern to /finance/debtors */}
       <div className="flex flex-wrap items-end gap-4">
         <div>
-          <label className="mb-1 block text-sm font-medium text-foreground">Academic year</label>
-          <select
+          <label htmlFor="fin-dash-year" className="mb-1 block text-sm font-medium text-foreground">Academic year</label>
+          <select id="fin-dash-year"
             className="rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
             value={yearId}
             onChange={(e) => setYearId(e.target.value)}
@@ -176,8 +176,8 @@ export default function FinanceDashboardPage() {
         </div>
 
         <div>
-          <label className="mb-1 block text-sm font-medium text-foreground">Term</label>
-          <select
+          <label htmlFor="fin-dash-term" className="mb-1 block text-sm font-medium text-foreground">Term</label>
+          <select id="fin-dash-term"
             className="rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
             value={termId}
             onChange={(e) => setTermId(e.target.value)}
