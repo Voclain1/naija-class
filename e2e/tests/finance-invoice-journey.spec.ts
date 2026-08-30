@@ -63,6 +63,28 @@ async function selectContext(page: Page, armName: string): Promise<void> {
   await page.locator("#invoice-arm").selectOption({ label: armName });
 }
 
+/**
+ * Generate invoices through the F-34 review gate.
+ *
+ * Before F-34, "Generate invoices" billed the arm on the click. It now opens a
+ * review that states the arm, term, student count and naira total, and nothing
+ * is created until that is confirmed — so every call site here that used to
+ * assert on the result immediately must confirm first.
+ *
+ * The dedicated coverage for the gate itself lives in
+ * finance-bulk-generation-confirmation.spec.ts; this helper only keeps the
+ * pre-existing journey tests exercising the journey they are about.
+ */
+async function generateViaReview(page: Page): Promise<void> {
+  await page.getByRole("button", { name: "Generate invoices" }).click();
+  await expect(page.getByRole("dialog")).toBeVisible();
+  // The review loads its preview before it can state a count.
+  await expect(page.getByText("Working out who would be invoiced")).toHaveCount(0, {
+    timeout: 30000,
+  });
+  await page.getByRole("button", { name: /^Create \d+ invoices?$/ }).click();
+}
+
 test.describe("finance — invoice generation and list", () => {
   test("generation selectors are plain language, default the current year, and never auto-pick a term", async ({
     browser,
@@ -122,7 +144,7 @@ test.describe("finance — invoice generation and list", () => {
     await expect(page.getByText("₦135,000.00")).toBeVisible(); // 3 × ₦45,000
 
     // ── Generate ──
-    await page.getByRole("button", { name: "Generate invoices" }).click();
+    await generateViaReview(page);
     await expect(page.getByText(/3 invoices created, 0 skipped/)).toBeVisible();
 
     // ── List ──
@@ -156,7 +178,7 @@ test.describe("finance — invoice generation and list", () => {
     const { admin, page, armName } = await scaffold(browser);
     await page.goto("/finance/invoices");
     await selectContext(page, armName);
-    await page.getByRole("button", { name: "Generate invoices" }).click();
+    await generateViaReview(page);
     await expect(page.getByText(/3 invoices created/)).toBeVisible();
     await page.getByRole("tab", { name: "Invoice list" }).click();
     await expect(page.getByText("Oluwaseun Adebayo-Ogundimu")).toBeVisible();
@@ -195,7 +217,7 @@ test.describe("finance — invoice list states (F-05)", () => {
 
     // Generate, then filter to a status nothing matches.
     await page.getByRole("tab", { name: "Generate" }).click();
-    await page.getByRole("button", { name: "Generate invoices" }).click();
+    await generateViaReview(page);
     await expect(page.getByText(/3 invoices created/)).toBeVisible();
     await page.getByRole("tab", { name: "Invoice list" }).click();
     await expect(page.getByText("Adaeze Okonkwo")).toBeVisible();
@@ -248,7 +270,7 @@ test.describe("finance — invoice cancellation (F-01)", () => {
     const s = await scaffold(browser);
     await s.page.goto("/finance/invoices");
     await selectContext(s.page, s.armName);
-    await s.page.getByRole("button", { name: "Generate invoices" }).click();
+    await generateViaReview(s.page);
     await expect(s.page.getByText(/3 invoices created/)).toBeVisible();
     await s.page.getByRole("tab", { name: "Invoice list" }).click();
     await expect(s.page.getByText("Adaeze Okonkwo")).toBeVisible();
@@ -391,7 +413,7 @@ test.describe("finance — invoice navigation (F-32)", () => {
     const { admin, page, armName } = await scaffold(browser);
     await page.goto("/finance/invoices");
     await selectContext(page, armName);
-    await page.getByRole("button", { name: "Generate invoices" }).click();
+    await generateViaReview(page);
     await expect(page.getByText(/3 invoices created/)).toBeVisible();
     await page.getByRole("tab", { name: "Invoice list" }).click();
     await expect(page.getByText("Adaeze Okonkwo")).toBeVisible();
