@@ -221,8 +221,8 @@ export default function DiscountsPage() {
       {/* Student picker */}
       <div className="flex items-end gap-3">
         <div className="w-80">
-          <label className="mb-1 block text-sm font-medium text-foreground">Student</label>
-          <select className={SELECT_CLASSES} value={selectedStudentId} onChange={(e) => setSelectedStudentId(e.target.value)}>
+          <label htmlFor="disc-student" className="mb-1 block text-sm font-medium text-foreground">Student</label>
+          <select id="disc-student" className={SELECT_CLASSES} value={selectedStudentId} onChange={(e) => setSelectedStudentId(e.target.value)}>
             <option value="">— choose a student —</option>
             {students.map((s) => (
               <option key={s.id} value={s.id}>
@@ -324,10 +324,10 @@ export default function DiscountsPage() {
           <form onSubmit={handleSubmit} className="space-y-4">
             {/* Name */}
             <div>
-              <label className="mb-1 block text-sm font-medium text-foreground">
+              <label htmlFor="disc-label-description" className="mb-1 block text-sm font-medium text-foreground">
                 Label / description
               </label>
-              <input
+              <input id="disc-label-description"
                 required
                 className={SELECT_CLASSES}
                 placeholder="e.g. Staff child reduction, Scholarship"
@@ -338,10 +338,10 @@ export default function DiscountsPage() {
 
             {/* Discount type */}
             <div>
-              <label className="mb-2 block text-sm font-medium text-foreground">
+              <span id="disc-type-label" className="mb-2 block text-sm font-medium text-foreground">
                 Discount type
-              </label>
-              <div className="flex gap-4">
+              </span>
+              <div role="radiogroup" aria-labelledby="disc-type-label" className="flex gap-4">
                 {(
                   [
                     ["PERCENTAGE", "Percentage"],
@@ -368,11 +368,11 @@ export default function DiscountsPage() {
             {/* Value — conditional on discount type */}
             {form.discountType === "PERCENTAGE" && (
               <div>
-                <label className="mb-1 block text-sm font-medium text-foreground">
+                <label htmlFor="disc-discount" className="mb-1 block text-sm font-medium text-foreground">
                   Discount (%)
                 </label>
                 <div className="flex items-center gap-2">
-                  <input
+                  <input id="disc-discount"
                     required
                     type="number"
                     min="0.01"
@@ -394,10 +394,10 @@ export default function DiscountsPage() {
 
             {form.discountType === "FIXED_AMOUNT" && (
               <div>
-                <label className="mb-1 block text-sm font-medium text-foreground">
+                <label htmlFor="disc-amount-naira" className="mb-1 block text-sm font-medium text-foreground">
                   Amount (₦)
                 </label>
-                <input
+                <input id="disc-amount-naira"
                   required
                   type="number"
                   min="0.01"
@@ -412,10 +412,10 @@ export default function DiscountsPage() {
 
             {/* Target: fee item or category */}
             <div>
-              <label className="mb-2 block text-sm font-medium text-foreground">
+              <span id="disc-applies-to-label" className="mb-2 block text-sm font-medium text-foreground">
                 Applies to
-              </label>
-              <div className="mb-2 flex gap-4">
+              </span>
+              <div role="radiogroup" aria-labelledby="disc-applies-to-label" className="mb-2 flex gap-4">
                 <label className="flex cursor-pointer items-center gap-1.5 text-sm text-foreground">
                   <input
                     type="radio"
@@ -477,8 +477,8 @@ export default function DiscountsPage() {
 
             {/* Duration */}
             <div>
-              <label className="mb-2 block text-sm font-medium text-foreground">Duration</label>
-              <div className="mb-2 flex gap-4">
+              <span id="disc-duration-label" className="mb-2 block text-sm font-medium text-foreground">Duration</span>
+              <div role="radiogroup" aria-labelledby="disc-duration-label" className="mb-2 flex gap-4">
                 {(
                   [
                     ["TERM", "Single term"],

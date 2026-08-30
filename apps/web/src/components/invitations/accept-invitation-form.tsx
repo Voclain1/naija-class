@@ -157,7 +157,7 @@ export function AcceptInvitationForm({ token, invitation }: Props) {
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <form onSubmit={onSubmit} className="flex flex-col gap-4" noValidate>
+        <form method="post" onSubmit={onSubmit} className="flex flex-col gap-4" noValidate>
           {/* Email shown read-only — the invitation pins which address this
               account is for. */}
           <div className="flex flex-col gap-1">

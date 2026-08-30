@@ -37,7 +37,7 @@ export function NavList({
 
       {laterPhaseItems.length > 0 && (
         <>
-          <div className="mb-1 mt-5 px-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+          <div className="mb-1 mt-5 px-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
             Coming soon
           </div>
           {laterPhaseItems.map((item) => (

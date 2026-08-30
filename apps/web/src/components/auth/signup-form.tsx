@@ -98,7 +98,7 @@ export function SignupForm() {
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <form onSubmit={onSubmit} className="flex flex-col gap-4" noValidate>
+        <form method="post" onSubmit={onSubmit} className="flex flex-col gap-4" noValidate>
           <Field
             label="School name"
             id="schoolName"

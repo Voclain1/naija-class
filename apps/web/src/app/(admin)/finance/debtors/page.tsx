@@ -137,8 +137,8 @@ export default function DebtorsPage() {
       {/* Term selector */}
       <div className="flex flex-wrap items-end gap-4 print:hidden">
         <div>
-          <label className="mb-1 block text-sm font-medium text-foreground">Academic year</label>
-          <select className={SELECT_CLASSES} value={yearId} onChange={(e) => setYearId(e.target.value)}>
+          <label htmlFor="fin-debtors-year" className="mb-1 block text-sm font-medium text-foreground">Academic year</label>
+          <select id="fin-debtors-year" className={SELECT_CLASSES} value={yearId} onChange={(e) => setYearId(e.target.value)}>
             <option value="">Select year…</option>
             {years.map((y) => (
               <option key={y.id} value={y.id}>{y.label}</option>
@@ -147,8 +147,8 @@ export default function DebtorsPage() {
         </div>
 
         <div>
-          <label className="mb-1 block text-sm font-medium text-foreground">Term</label>
-          <select
+          <label htmlFor="fin-debtors-term" className="mb-1 block text-sm font-medium text-foreground">Term</label>
+          <select id="fin-debtors-term"
             className={SELECT_CLASSES}
             value={termId}
             onChange={(e) => setTermId(e.target.value)}

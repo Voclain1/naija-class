@@ -122,7 +122,7 @@ export default function StudentInvitePage() {
       )}
 
       {state.kind === "ready" && (
-        <form onSubmit={submit} className="flex flex-col gap-4">
+        <form method="post" onSubmit={submit} className="flex flex-col gap-4">
           <div className="flex flex-col gap-1">
             <h1 className="text-2xl font-semibold tracking-tight">Choose your password</h1>
             <p className="text-sm text-muted-foreground">

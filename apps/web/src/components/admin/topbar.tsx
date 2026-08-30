@@ -161,7 +161,16 @@ export function AdminTopbar({
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" size="sm" className="gap-2 px-2 sm:px-3">
-              <UserIcon className="h-4 w-4" />
+              <UserIcon className="h-4 w-4" aria-hidden />
+              {/* The name is `hidden sm:inline`, so below 640px this trigger
+                  had NO accessible name at all — an icon-only button opening
+                  the account/log-out menu. The sr-only twin carries the name
+                  on mobile and is dropped at `sm` exactly where the visible
+                  one appears, so the button is never both unnamed nor
+                  double-named. */}
+              <span className={user ? "sr-only sm:hidden" : "sr-only"}>
+                {user ? `${user.firstName} ${user.lastName} — account menu` : "Account menu"}
+              </span>
               <span className="hidden sm:inline">
                 {user ? `${user.firstName} ${user.lastName}` : ""}
               </span>

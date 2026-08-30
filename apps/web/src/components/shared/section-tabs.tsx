@@ -33,27 +33,40 @@ export function SectionTabs({
 }) {
   const pathname = usePathname() ?? "";
 
+  // The strip scrolls horizontally rather than being clipped. A plain flex row
+  // neither wrapped nor scrolled, so once the tabs were wider than the viewport
+  // (Finance has seven) the overflowing ones were cut off by the admin shell's
+  // `overflow-x-hidden` <main> and became genuinely unreachable — not
+  // scrollable to, not clickable, yet still keyboard-focusable into off-screen
+  // space. Measured at 768px on /finance/invoices.
+  //
+  // The scrollport is the <nav> and the flex row moves inside it: a container
+  // with `overflow-x: auto` computes `overflow-y` to `auto` as well, so putting
+  // the scroll on the bordered row itself would clip each tab's `-mb-px`
+  // underline. `min-w-max` lets that row stay wider than the scrollport.
   return (
-    <nav aria-label={ariaLabel} className="flex gap-1 border-b border-border text-sm">
-      {items.map((item) => {
-        const active = item.exact ? pathname === item.href : pathname.startsWith(item.href);
-        return (
-          <Link
-            key={item.href}
-            href={item.href}
-            aria-current={active ? "page" : undefined}
-            onClick={onNavigate ? (e) => onNavigate(item, active, e) : undefined}
-            className={cn(
-              "-mb-px border-b-2 px-3 py-2 font-medium transition-colors",
-              active
-                ? "border-primary text-primary"
-                : "border-transparent text-muted-foreground hover:border-muted hover:text-foreground",
-            )}
-          >
-            {item.label}
-          </Link>
-        );
-      })}
+    <nav aria-label={ariaLabel} className="overflow-x-auto">
+      <div className="flex min-w-max gap-1 border-b border-border text-sm">
+        {items.map((item) => {
+          const active = item.exact ? pathname === item.href : pathname.startsWith(item.href);
+          return (
+            <Link
+              key={item.href}
+              href={item.href}
+              aria-current={active ? "page" : undefined}
+              onClick={onNavigate ? (e) => onNavigate(item, active, e) : undefined}
+              className={cn(
+                "-mb-px shrink-0 whitespace-nowrap border-b-2 px-3 py-2 font-medium transition-colors",
+                active
+                  ? "border-primary text-primary"
+                  : "border-transparent text-muted-foreground hover:border-muted hover:text-foreground",
+              )}
+            >
+              {item.label}
+            </Link>
+          );
+        })}
+      </div>
     </nav>
   );
 }

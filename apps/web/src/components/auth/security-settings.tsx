@@ -259,7 +259,7 @@ export function SecuritySettings() {
               Enter your current password to confirm. You can re-enable 2FA at any time.
             </p>
           </div>
-          <form onSubmit={onDisableSubmit} className="flex flex-col gap-4">
+          <form method="post" onSubmit={onDisableSubmit} className="flex flex-col gap-4">
             <div className="flex flex-col gap-2">
               <Label htmlFor="current-password">Current password</Label>
               <Input
