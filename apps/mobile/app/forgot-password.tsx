@@ -17,7 +17,9 @@ export default function ForgotPasswordScreen() {
     try {
       await guardianForgotPassword({ email: email.trim().toLowerCase() });
       setState("sent");
-    } catch (error) {
+    } catch {
+      // Deliberately uninspected: this screen shows the same copy for every
+      // failure, so a wrong address can't be told apart from a send failure.
       setState("error");
     } finally { setBusy(false); }
   }
