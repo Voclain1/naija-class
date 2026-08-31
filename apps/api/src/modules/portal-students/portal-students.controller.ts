@@ -64,6 +64,16 @@ export class PortalStudentsController {
     return this.access.issueInvitation(guardianCtx, id, { ipAddress: ip });
   }
 
+  @Post("students/:id/password-reset")
+  @HttpCode(200)
+  async requestPasswordReset(
+    @CurrentGuardian() guardianCtx: GuardianAuthContext,
+    @Param("id") id: string,
+    @Ip() ip: string,
+  ): Promise<IssueStudentInvitationResponse> {
+    return this.access.requestPasswordReset(guardianCtx, id, { ipAddress: ip });
+  }
+
   @Post("students/:id/deactivate")
   @HttpCode(200)
   async deactivate(

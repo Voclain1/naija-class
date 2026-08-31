@@ -70,6 +70,8 @@ function describeState(status: StudentPortalStatusDto, firstName: string): strin
       return `${firstName} can sign in to SchoolKit.`;
     case "DEACTIVATED":
       return `${firstName}'s access is turned off. Send a new invite to switch it back on.`;
+    case "RESET_PENDING":
+      return `A password reset is waiting for ${firstName}. Share the new one-time link so they can choose a password.`;
     case "NEVER_ACTIVATED":
       return status.hasPendingInvitation
         ? `You've sent an invite. ${firstName} hasn't used it yet.`

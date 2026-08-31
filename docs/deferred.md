@@ -2357,6 +2357,15 @@ principal isolation, and one-time notice lifecycle. Use disposable local
 identities and the development profile's local API target; no production school
 data should be mutated.
 
+### Mobile password recovery — physical Android smoke outstanding
+
+Guardian email recovery and guardian-mediated student recovery have real-
+Postgres lifecycle evidence, not device evidence. At the first available
+Android session, use disposable identities to verify guardian request → email
+link → browser reset → app sign-in, and guardian student reset → old
+credentials refused → one-time code accepted → new-password sign-in. Do not
+call mobile-auth hardening device-verified until both pass.
+
 ## Guardian auth & recovery — follow-ups after PR #222 (captured 2026-08-27)
 
 PR #222 shipped guardian sign out and password recovery (F-06) and removed

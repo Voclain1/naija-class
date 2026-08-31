@@ -1,11 +1,12 @@
 import { useState } from "react";
-import { Share, StyleSheet, View } from "react-native";
+import { Alert, Share, StyleSheet, View } from "react-native";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
   deactivateStudentPortal,
   getPortalStatus,
   issueStudentInvitation,
+  requestStudentPasswordReset,
 } from "../lib/api/portal";
 import { queryKeys } from "../lib/query/keys";
 import { ApiNetworkError } from "../lib/api/client";
@@ -80,8 +81,18 @@ export function StudentPortalAccess({ studentId, studentFirstName }: Props) {
     onError: (caught) => setError(describeFailure(caught)),
   });
 
+  const reset = useMutation({
+    mutationFn: () => requestStudentPasswordReset(studentId),
+    onSuccess: async (response) => {
+      setError(null);
+      setIssuedToken(response.token);
+      await queryClient.invalidateQueries({ queryKey: queryKeys.portalStatus(studentId) });
+    },
+    onError: (caught) => setError(describeFailure(caught)),
+  });
+
   const status = statusQuery.data;
-  const busy = invite.isPending || deactivate.isPending;
+  const busy = invite.isPending || deactivate.isPending || reset.isPending;
   const name = studentFirstName ?? "your child";
 
   return (
@@ -105,6 +116,8 @@ export function StudentPortalAccess({ studentId, studentFirstName }: Props) {
               {name}&apos;s access is switched off. Send a new invitation to
               turn it back on.
             </Body>
+          ) : status.state === "RESET_PENDING" ? (
+            <Body>{name}&apos;s password is being reset. Share the new one-time code below so they can choose a new password.</Body>
           ) : (
             <Body>
               {name} doesn&apos;t have an account yet. Send an invitation and
@@ -124,7 +137,7 @@ export function StudentPortalAccess({ studentId, studentFirstName }: Props) {
 
           {issuedToken ? (
             <View style={styles.tokenBlock}>
-              <Label>Invitation code</Label>
+              <Label>{status.state === "RESET_PENDING" ? "Password reset code" : "Invitation code"}</Label>
               {/* selectable so a parent on a device can long-press to copy —
                   there is no clipboard dependency in this app. */}
               <Body>{issuedToken}</Body>
@@ -179,6 +192,23 @@ export function StudentPortalAccess({ studentId, studentFirstName }: Props) {
             disabled={busy}
             onPress={() => invite.mutate()}
           />
+
+          {status.state === "ACTIVE" ? (
+            <Button
+              title="Reset password"
+              variant="secondary"
+              loading={reset.isPending}
+              disabled={busy}
+              onPress={() => Alert.alert(
+                `Reset ${name}'s password?`,
+                "They will be signed out now. Their old password will stop working, and you will need to share a new one-time code.",
+                [
+                  { text: "Keep current password", style: "cancel" },
+                  { text: "Reset password", style: "destructive", onPress: () => reset.mutate() },
+                ],
+              )}
+            />
+          ) : null}
 
           {status.state === "ACTIVE" ? (
             <Button

@@ -1,4 +1,6 @@
 import type {
+  GuardianForgotPasswordInput,
+  GuardianForgotPasswordResponse,
   GuardianLoginInput,
   GuardianLoginResponse,
   PaystackInitResponseDto,
@@ -38,6 +40,17 @@ export function guardianLogin(
     body: input,
     // A failed login is a 401 by design. Firing the unauthorized listener
     // here would tear down a session the user is in the middle of creating.
+    notifyOnUnauthorized: false,
+  });
+}
+
+/** Starts the existing guardian recovery flow without exposing account existence. */
+export function guardianForgotPassword(
+  input: GuardianForgotPasswordInput,
+): Promise<GuardianForgotPasswordResponse> {
+  return apiFetch<GuardianForgotPasswordResponse>("/portal/forgot-password", {
+    method: "POST",
+    body: input,
     notifyOnUnauthorized: false,
   });
 }
@@ -140,6 +153,15 @@ export function issueStudentInvitation(
 ): Promise<IssueStudentInvitationResponse> {
   return apiFetch<IssueStudentInvitationResponse>(
     `/portal/students/${encodeURIComponent(studentId)}/portal-invitation`,
+    { method: "POST" },
+  );
+}
+
+export function requestStudentPasswordReset(
+  studentId: string,
+): Promise<IssueStudentInvitationResponse> {
+  return apiFetch<IssueStudentInvitationResponse>(
+    `/portal/students/${encodeURIComponent(studentId)}/password-reset`,
     { method: "POST" },
   );
 }

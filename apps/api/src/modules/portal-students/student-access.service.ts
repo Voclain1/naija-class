@@ -27,6 +27,7 @@ import { ReleasedResultsService } from "../report-cards/released-results.service
 // governed by RLS like any other tenant mutation.
 
 const INVITE_AUDIT_ACTION = "student.portal-invitation-issued";
+const PASSWORD_RESET_REQUESTED_AUDIT_ACTION = "student.password-reset.requested";
 const DEACTIVATE_AUDIT_ACTION = "student.deactivate";
 
 /** Shorter than the guardian invitation's — a child's link is more likely to sit unread in a family chat. */
@@ -109,16 +110,17 @@ export class StudentAccessService {
           expiresAt: { gt: new Date() },
         },
         orderBy: { createdAt: "desc" },
-        select: { expiresAt: true },
+        select: { expiresAt: true, purpose: true },
       });
 
       return {
         studentId: student.id,
-        state: derivePortalState(student.activatedAt, student.passwordHash),
+        state: derivePortalState(student.activatedAt, student.passwordHash, pending?.purpose ?? null),
         activatedAt: student.activatedAt,
         lastLoginAt: student.lastLoginAt,
         hasPendingInvitation: pending !== null,
         pendingInvitationExpiresAt: pending?.expiresAt ?? null,
+        pendingInvitationPurpose: pending?.purpose ?? null,
       };
     });
   }
@@ -154,6 +156,7 @@ export class StudentAccessService {
           studentId,
           tokenHash,
           issuedBy: ctx.guardianId,
+          purpose: "ACTIVATION",
           expiresAt,
         },
         select: { id: true },
@@ -177,6 +180,45 @@ export class StudentAccessService {
         expiresAt,
         revokedPrevious: revoked.count,
       };
+    });
+  }
+
+  /** A guardian-mediated password reset is a real revocation, not a deferred overwrite. */
+  async requestPasswordReset(
+    ctx: GuardianAuthContext,
+    studentId: string,
+    reqCtx: { ipAddress: string | null },
+  ): Promise<IssueStudentInvitationResponse> {
+    const rawToken = crypto.randomBytes(32).toString("base64url");
+    const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
+    const expiresAt = new Date(Date.now() + STUDENT_INVITATION_TTL_MS);
+    return withTenant(ctx.schoolId, async (db) => {
+      await this.assertLinked(db, ctx.guardianId, studentId);
+      const revoked = await db.studentPortalInvitation.updateMany({
+        where: { studentId, acceptedAt: null, revokedAt: null },
+        data: { revokedAt: new Date() },
+      });
+      await db.student.update({ where: { id: studentId }, data: { passwordHash: null } });
+      const sessions = await db.studentSession.deleteMany({ where: { studentId } });
+      const devices = await db.deviceToken.deleteMany({ where: { studentId } });
+      const invitation = await db.studentPortalInvitation.create({
+        data: {
+          schoolId: ctx.schoolId, studentId, tokenHash, issuedBy: ctx.guardianId,
+          purpose: "PASSWORD_RESET", expiresAt,
+        },
+        select: { id: true },
+      });
+      await db.auditLog.create({
+        data: {
+          schoolId: ctx.schoolId, userId: ctx.guardianId, action: PASSWORD_RESET_REQUESTED_AUDIT_ACTION,
+          entityType: "student", entityId: studentId, ipAddress: reqCtx.ipAddress,
+          metadata: {
+            invitationId: invitation.id, revokedPrevious: revoked.count,
+            sessionsRevoked: sessions.count, deviceTokensRevoked: devices.count,
+          },
+        },
+      });
+      return { invitationId: invitation.id, token: rawToken, expiresAt, revokedPrevious: revoked.count };
     });
   }
 
@@ -314,7 +356,9 @@ export class StudentAccessService {
 export function derivePortalState(
   activatedAt: Date | null,
   passwordHash: string | null,
+  pendingPurpose: "ACTIVATION" | "PASSWORD_RESET" | null = null,
 ): StudentPortalState {
   if (passwordHash) return "ACTIVE";
+  if (activatedAt && pendingPurpose === "PASSWORD_RESET") return "RESET_PENDING";
   return activatedAt ? "DEACTIVATED" : "NEVER_ACTIVATED";
 }

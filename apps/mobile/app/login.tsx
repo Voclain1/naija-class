@@ -353,6 +353,16 @@ export default function LoginScreen() {
               </Pressable>
             </Link>
           ) : null}
+          {!isStudent && !isStaff ? (
+            <Link href="/forgot-password" asChild>
+              <Pressable style={styles.activateLink} disabled={submitting}>
+                <Text style={[styles.activateText, { color: colors.primary }]}>Forgot password?</Text>
+              </Pressable>
+            </Link>
+          ) : null}
+          {isStudent ? (
+            <Body muted>Forgot your password? Ask your parent to reset it from their SchoolKit app.</Body>
+          ) : null}
         </View>
       </KeyboardAvoidingView>
     </Screen>

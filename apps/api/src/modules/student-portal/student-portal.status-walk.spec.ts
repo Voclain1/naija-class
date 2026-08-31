@@ -227,6 +227,26 @@ describe("Student portal — status walk (keep vs obtain)", () => {
       expect(res.body.student.id).toBe(students.ACTIVE.id);
     });
 
+    it("14b. guardian password reset revokes old student access and issues one reset token", async () => {
+      const oldSession = (await createStudentSession(schoolId, students.ACTIVE.id, {
+        ipAddress: null, userAgent: null,
+      })).rawToken;
+      const reset = await http.post(`/api/v1/portal/students/${students.ACTIVE.id}/password-reset`)
+        .set("Authorization", `Bearer ${guardianToken}`).expect(200);
+      expect(reset.body.token).toEqual(expect.any(String));
+      await http.get("/api/v1/student-portal/me").set("Authorization", `Bearer ${oldSession}`).expect(401);
+      await http.post("/api/v1/student-portal/login")
+        .send({ schoolSlug: slug, admissionNumber: students.ACTIVE.adm, password: "a-fresh-password-here" }).expect(401);
+      const pending = await http.get(`/api/v1/portal/students/${students.ACTIVE.id}/portal-status`)
+        .set("Authorization", `Bearer ${guardianToken}`).expect(200);
+      expect(pending.body.state).toBe("RESET_PENDING");
+      expect(pending.body.pendingInvitationPurpose).toBe("PASSWORD_RESET");
+      await http.post(`/api/v1/student-portal/invitations/${reset.body.token}/accept`)
+        .send({ password: "Recovered-Student-1" }).expect(200);
+      await http.post("/api/v1/student-portal/login")
+        .send({ schoolSlug: slug, admissionNumber: students.ACTIVE.adm, password: "Recovered-Student-1" }).expect(200);
+    });
+
     it.each<StudentStatus>(["WITHDRAWN", "GRADUATED"])(
       "15. a %s student CANNOT accept, even though they may still sign in",
       async (status) => {

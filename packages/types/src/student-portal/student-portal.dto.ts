@@ -115,9 +115,12 @@ export type AcceptStudentInvitationResponse = StudentLoginResponse;
 export const studentPortalStateValues = [
   "NEVER_ACTIVATED",
   "ACTIVE",
+  "RESET_PENDING",
   "DEACTIVATED",
 ] as const;
 export type StudentPortalState = (typeof studentPortalStateValues)[number];
+export const studentPortalInvitationPurposeValues = ["ACTIVATION", "PASSWORD_RESET"] as const;
+export type StudentPortalInvitationPurpose = (typeof studentPortalInvitationPurposeValues)[number];
 
 export interface StudentPortalStatusDto {
   studentId: string;
@@ -129,6 +132,7 @@ export interface StudentPortalStatusDto {
   // offering to send a second one that would silently revoke the first.
   hasPendingInvitation: boolean;
   pendingInvitationExpiresAt: string | Date | null;
+  pendingInvitationPurpose: StudentPortalInvitationPurpose | null;
 }
 
 // POST /portal/students/:id/portal-invitation
