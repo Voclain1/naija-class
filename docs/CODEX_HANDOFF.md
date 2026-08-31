@@ -133,10 +133,39 @@ those; it doesn't replace them.
   (`c:\Users\acer\Desktop\Naija-class\`) and Claude Code's memory directory
   (derived from the folder name). Don't rename either mid-session.
 
-## Latest state as of this handoff (updated 2026-08-28)
+## Latest state as of this handoff (updated 2026-09-01)
 
-- **Wave 4 shared error primitives are in progress on
-  `fix/shared-error-primitives` from `a9c4ad9` (2026-08-31).** The small
+- **Mobile password recovery is MERGED and LIVE — PR #239, squashed to
+  `2519add` (2026-09-01).** Guardian mobile reuses the established email reset
+  flow; a guardian can also reset a linked student's password. The student
+  reset is a real revocation, not a deferred overwrite: in one `withTenant`
+  transaction it revokes prior invitations, clears `passwordHash`, deletes all
+  student sessions and device tokens, issues exactly one `PASSWORD_RESET`
+  invitation, and audits the revoked counts. Completion audits separately as
+  `student.password-reset.completed`.
+
+  Production evidence, not just a green badge: migration
+  `20260831120000_student_password_recovery` applied to the Neon prod database
+  during the deploy (78 migrations found, this one applied), the deploy's own
+  smoke test passed and the rollback step never fired. The behavioural check
+  was a three-way probe against `https://school-kit-api.fly.dev` — the new
+  `POST /portal/students/:id/password-reset` route went from **404 before the
+  deploy to 401 MISSING_BEARER_TOKEN after**, while an existing sibling route
+  stayed 401 and a nonsense route stayed 404, so the flip is this route
+  appearing under its guard and not a blanket behaviour change.
+
+  **Physical Android smoke is STILL OUTSTANDING for both the guardian email
+  path and the guardian-mediated student path.** Everything above is lifecycle
+  and routing evidence; none of it is runtime-on-hardware evidence. Do not
+  call mobile auth hardening device-verified until that smoke has run — see
+  `docs/deferred.md` and `docs/journal/2026-08-31.md`.
+
+  A second commit on the branch recorded the `auth_resolve_student_invitation`
+  return-shape change in `CLAUDE.md`'s SECURITY DEFINER inventory; the function
+  count is unchanged at 22.
+
+- **Wave 4 shared error primitives are MERGED as PR #238
+  (`fix/shared-error-primitives`, 2026-08-31).** The small
   web-only `InlineAlert` adds semantic error presentation with an optional
   retry, and the destructive token now meets AA for the legacy translucent
   banner treatment. Eight Finance read surfaces plus the admin dashboard have
@@ -329,11 +358,13 @@ those; it doesn't replace them.
   cleanup remains an incremental follow-on; production auth and `isActive`
   were not changed.
 
-- **Most recent merged PR:** #128 (`docs: close the two Phase 4 restyle bugs
-  in deferred.md`), on top of #127 (mobile nav fix) and #126 (RBAC
-  `grading-scheme.read` grant) — both of which closed out bugs found during
-  the Phase 4 design-system restyle's live-verification pass. Phase 4
-  (settings + teacher portal restyle) is done and verified live.
+- **Most recent merged PR:** #238 (`fix(ux): make finance errors truthful and
+  accessible`) as of 2026-09-01. This line was left pointing at #128 for over
+  a hundred PRs — treat any specific PR number in this file as a snapshot and
+  confirm against `gh pr list` before relying on it. The older note it
+  replaced is still true and worth keeping: #126/#127/#128 closed out the bugs
+  found during the Phase 4 design-system restyle's live-verification pass, and
+  Phase 4 (settings + teacher portal restyle) is done and verified live.
 - **Design system rollout**: Phases 1–4 of a visual/UX overhaul are shipped
   (finance, students/staff, academics/grading/report-cards, settings/teacher
   portal). Color tokens, fonts (Fraunces + Hanken Grotesk), and dark mode are
