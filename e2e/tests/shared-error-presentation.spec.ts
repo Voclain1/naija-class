@@ -68,7 +68,7 @@ test.describe("shared error presentation", () => {
 
     await admin.page.getByRole("button", { name: "Retry" }).click();
     await expect(alert).toHaveCount(0);
-    expect(dashboardRequests).toBe(2);
+    await expect.poll(() => dashboardRequests).toBe(2);
 
     await admin.context.close();
     await admin.api.dispose();
