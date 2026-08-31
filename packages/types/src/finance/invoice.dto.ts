@@ -119,6 +119,26 @@ export interface PreviewLineDto {
   totalAmount: number;   // kobo
   totalDiscount: number; // kobo
   totalDue: number;      // kobo
+  /**
+   * True when this student already has an invoice for this term, and will
+   * therefore be SKIPPED by `POST /invoices/arm/generate` rather than billed.
+   *
+   * Added for F-34. Preview used to list every enrolled student with no way
+   * to tell which ones generation would actually create, so a review built on
+   * it overstated both the count and the naira total — on a re-run of an
+   * already-billed arm it would promise "30 students, ₦1,350,000" when the
+   * true answer was "0 created, 30 skipped".
+   *
+   * This is computed by the SERVER from the same `@@unique([schoolId,
+   * studentId, termId])` row that generation itself keys on, deliberately
+   * rather than being re-derived on the client: the rule has a sharp edge
+   * (see below) and there must be exactly one implementation of it.
+   *
+   * NOTE THE EDGE: the uniqueness row is status-agnostic, so a **CANCELLED**
+   * invoice still sets this flag. Cancelling does not free the student to be
+   * re-billed by a bulk run — verified at runtime, not assumed.
+   */
+  alreadyInvoiced: boolean;
 }
 
 export interface GenerateInvoicesResponseDto {
