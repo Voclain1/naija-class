@@ -37,7 +37,11 @@
     --muted-foreground: 198 15% 40%;
     --accent: 45 20% 88%;
     --accent-foreground: 198 42% 13%;
-    --destructive: 0 84.2% 60.2%;
+    /* Darkened so `text-destructive` on the existing destructive/5 banner
+       background reaches 6.98:1 contrast (the former #ef4444 pairing was
+       only 3.23:1). This fixes the repeated banner pattern at its token
+       source, rather than recolouring every caller. */
+    --destructive: 0 72% 35%;
     --destructive-foreground: 210 40% 98%;
     --border: 45 15% 85%;
     --input: 45 15% 85%;
@@ -71,8 +75,10 @@
     --muted-foreground: 45 12% 65%;
     --accent: 198 25% 20%;
     --accent-foreground: 45 20% 92%;
-    --destructive: 0 62.8% 45%;
-    --destructive-foreground: 210 40% 98%;
+    /* In dark mode the alert text needs the opposite polarity: this light red
+       reaches 6.68:1 against destructive/5 on the Ink background. */
+    --destructive: 0 90% 75%;
+    --destructive-foreground: 198 42% 13%;
     --border: 198 20% 22%;
     --input: 198 20% 22%;
     --ring: 158 49% 48%;

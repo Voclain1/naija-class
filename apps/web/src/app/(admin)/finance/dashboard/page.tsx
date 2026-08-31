@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import type { AcademicYearDto, FinanceDashboardDto, TermDto } from "@school-kit/types";
 
 import { BrandLoadingInline } from "@/components/brand-loading-screen";
+import { InlineAlert } from "@/components/shared/inline-alert";
 import { StatCard } from "@/components/shared/stat-card";
 import { Card, CardContent } from "@/components/ui/card";
 import { listAcademicYears, listTerms } from "@/lib/academic-years/academic-years-api";
@@ -101,6 +102,7 @@ export default function FinanceDashboardPage() {
   // this whole change exists to remove, so the notice stays suppressed
   // unless the load actually succeeded.
   const [yearsFailed, setYearsFailed] = useState(false);
+  const [referenceError, setReferenceError] = useState<string | null>(null);
 
   const { permissions } = useAuth();
 
@@ -114,8 +116,9 @@ export default function FinanceDashboardPage() {
         if (current) setYearId(current.id);
       })
       .catch((e) => {
-        console.error("[FinanceDashboardPage] listAcademicYears:", e);
+        logFinanceError("listAcademicYears", e);
         setYearsFailed(true);
+        setReferenceError(financeErrorMessage(e));
       })
       .finally(() => setYearsLoaded(true));
   }, []);
@@ -124,6 +127,7 @@ export default function FinanceDashboardPage() {
     setTermId("");
     setTerms([]);
     setTermsLoaded(false);
+    setReferenceError(null);
     setDashboard(null);
     if (!yearId) return;
     listTerms(yearId)
@@ -132,7 +136,10 @@ export default function FinanceDashboardPage() {
         const current = rows.find((t) => t.isCurrent);
         if (current) setTermId(current.id);
       })
-      .catch(() => setTerms([]))
+      .catch((e) => {
+        logFinanceError("listDashboardTerms", e);
+        setReferenceError(financeErrorMessage(e));
+      })
       .finally(() => setTermsLoaded(true));
   }, [yearId]);
 
@@ -194,9 +201,15 @@ export default function FinanceDashboardPage() {
       </div>
 
       {error && (
-        <div className="rounded-md border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+        <InlineAlert title="Could not load finance dashboard" action={{ label: "Retry", onClick: () => window.location.reload() }}>
           {error}
-        </div>
+        </InlineAlert>
+      )}
+
+      {referenceError && !error && (
+        <InlineAlert title="Could not load academic information" action={{ label: "Retry", onClick: () => window.location.reload() }}>
+          {referenceError}
+        </InlineAlert>
       )}
 
       {/* Branded (not bare-text) loading state, matching the admin dashboard
@@ -219,15 +232,15 @@ export default function FinanceDashboardPage() {
           2026-08-21 this is what a bursar actually hits: GET /academic-years
           403s for them (see the service-layer role gate in
           academic-years.service.ts), so this branch is not hypothetical. */}
-      {!termId && !loading && !error && yearsLoaded && yearsFailed && (
-        <div className="rounded-md border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+      {!termId && !loading && !error && !referenceError && yearsLoaded && yearsFailed && (
+        <InlineAlert title="Could not load academic years.">
           <p className="font-medium">Could not load academic years.</p>
           <p className="mt-1">
             The finance dashboard needs an academic year and term to show figures. If this keeps
             happening, your account may not have access to academic records — ask your school
             administrator.
           </p>
-        </div>
+        </InlineAlert>
       )}
 
       {!termId && !loading && !error && yearsLoaded && !yearsFailed && (

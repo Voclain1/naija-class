@@ -17,6 +17,7 @@ import {
 import { CancelInvoiceDialog } from "@/components/finance/cancel-invoice-dialog";
 import { GenerateInvoicesDialog } from "@/components/finance/generate-invoices-dialog";
 import { ExportCsvButton } from "@/components/shared/export-csv-button";
+import { InlineAlert } from "@/components/shared/inline-alert";
 import { PrerequisiteNotice } from "@/components/setup/prerequisite-notice";
 import { PrintButton } from "@/components/shared/print-button";
 import { Badge, type BadgeProps } from "@/components/ui/badge";
@@ -284,19 +285,13 @@ export default function InvoicesPage() {
       />
 
       {referenceError && (
-        <div
-          role="alert"
-          className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive print:hidden"
+        <InlineAlert
+          title="Could not load academic information"
+          className="print:hidden"
+          action={{ label: "Try again", onClick: loadReferenceData }}
         >
-          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
-          <div className="space-y-2">
-            <p>Could not load the school&rsquo;s years, terms and classes. {referenceError}</p>
-            <Button variant="outline" size="sm" onClick={loadReferenceData}>
-              <RotateCcw className="mr-1 h-4 w-4" aria-hidden />
-              Try again
-            </Button>
-          </div>
-        </div>
+          Could not load the school&rsquo;s years, terms and classes. {referenceError}
+        </InlineAlert>
       )}
 
       {/* Term + arm picker */}

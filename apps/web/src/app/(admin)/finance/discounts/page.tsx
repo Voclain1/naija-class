@@ -12,12 +12,14 @@ import type {
 } from "@school-kit/types";
 
 import { Badge } from "@/components/ui/badge";
+import { InlineAlert } from "@/components/shared/inline-alert";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { listAcademicYears, listTerms } from "@/lib/academic-years/academic-years-api";
 import { listFeeCategories, listFeeItems } from "@/lib/finance/fee-catalog-api";
 import { formatKobo } from "@/lib/finance/format";
+import { financeErrorMessage, logFinanceError } from "@/lib/finance/error-copy";
 import {
   createDiscountRule,
   deactivateDiscountRule,
@@ -71,6 +73,8 @@ export default function DiscountsPage() {
   const [selectedStudentId, setSelectedStudentId] = useState("");
   const [rules, setRules] = useState<DiscountRuleDto[]>([]);
   const [loadingRules, setLoadingRules] = useState(false);
+  const [referenceError, setReferenceError] = useState<string | null>(null);
+  const [rulesError, setRulesError] = useState<string | null>(null);
 
   // Assign discount modal
   const [showForm, setShowForm] = useState(false);
@@ -83,19 +87,31 @@ export default function DiscountsPage() {
   useEffect(() => {
     listStudents({ limit: 200 }) // schema max is 200
       .then((r) => setStudents(r.data))
-      .catch(() => {});
+      .catch((e) => {
+        logFinanceError("listDiscountStudents", e);
+        setReferenceError(financeErrorMessage(e));
+      });
     // includeInactive: true — a discount can target a deactivated fee item or
     // category (the rule is still valid for existing invoices). Filtering to
     // active-only would hide legitimate targets.
     listFeeItems({ includeInactive: true })
       .then(setFeeItems)
-      .catch((e) => { console.error("[DiscountsPage] listFeeItems:", e); });
+      .catch((e) => {
+        logFinanceError("listDiscountFeeItems", e);
+        setReferenceError(financeErrorMessage(e));
+      });
     listFeeCategories({ includeInactive: true })
       .then(setFeeCategories)
-      .catch((e) => { console.error("[DiscountsPage] listFeeCategories:", e); });
+      .catch((e) => {
+        logFinanceError("listDiscountFeeCategories", e);
+        setReferenceError(financeErrorMessage(e));
+      });
     listAcademicYears()
       .then(setYears)
-      .catch((e) => { console.error("[DiscountsPage] listAcademicYears:", e); });
+      .catch((e) => {
+        logFinanceError("listDiscountAcademicYears", e);
+        setReferenceError(financeErrorMessage(e));
+      });
   }, []);
 
   // Load terms when yearId changes (TERM duration)
@@ -106,7 +122,10 @@ export default function DiscountsPage() {
     }
     listTerms(form.yearId)
       .then(setTerms)
-      .catch(() => setTerms([]));
+      .catch((e) => {
+        logFinanceError("listDiscountTerms", e);
+        setReferenceError(financeErrorMessage(e));
+      });
   }, [form.yearId]);
 
   // Load rules for the selected student
@@ -116,9 +135,13 @@ export default function DiscountsPage() {
       return;
     }
     setLoadingRules(true);
+    setRulesError(null);
     listDiscountRules({ studentId: selectedStudentId, includeInactive: true })
       .then(setRules)
-      .catch(() => setRules([]))
+      .catch((e) => {
+        logFinanceError("listDiscountRules", e);
+        setRulesError(financeErrorMessage(e));
+      })
       .finally(() => setLoadingRules(false));
   }, [selectedStudentId]);
 
@@ -165,7 +188,8 @@ export default function DiscountsPage() {
       setShowForm(false);
       setForm(EMPTY_FORM);
     } catch (err) {
-      setFormError(err instanceof Error ? err.message : "Failed to assign discount.");
+      logFinanceError("createDiscountRule", err);
+      setFormError(financeErrorMessage(err));
     } finally {
       setSubmitting(false);
     }
@@ -175,8 +199,9 @@ export default function DiscountsPage() {
     try {
       await deactivateDiscountRule(id);
       setRules((r) => r.map((rule) => (rule.id === id ? { ...rule, active: false } : rule)));
-    } catch {
-      // A production page would show an inline toast; MVP omits that.
+    } catch (e) {
+      logFinanceError("deactivateDiscountRule", e);
+      setRulesError(financeErrorMessage(e));
     }
   }
 
@@ -217,6 +242,18 @@ export default function DiscountsPage() {
         Manually assign fee discounts to individual students. Each rule targets
         one fee item or one fee category for a specified duration.
       </p>
+
+      {referenceError && (
+        <InlineAlert title="Could not load discount setup information" action={{ label: "Retry", onClick: () => window.location.reload() }}>
+          {referenceError}
+        </InlineAlert>
+      )}
+
+      {rulesError && (
+        <InlineAlert title="Could not load discount rules" action={{ label: "Retry", onClick: () => window.location.reload() }}>
+          {rulesError}
+        </InlineAlert>
+      )}
 
       {/* Student picker */}
       <div className="flex items-end gap-3">
@@ -267,7 +304,7 @@ export default function DiscountsPage() {
                   </TableCell>
                 </TableRow>
               )}
-              {!loadingRules && rules.length === 0 && (
+              {!loadingRules && !rulesError && rules.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={7} className="py-6 text-center text-muted-foreground">
                     No discount rules assigned to this student.

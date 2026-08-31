@@ -21,13 +21,15 @@ import {
 } from "@school-kit/types";
 import { buildNoRecipientWhatsAppUrl, buildPaymentLinkMessage } from "@school-kit/types";
 
+import { CancelInvoiceDialog } from "@/components/finance/cancel-invoice-dialog";
+import { InlineAlert } from "@/components/shared/inline-alert";
 import { Badge, type BadgeProps } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { listTerms } from "@/lib/academic-years/academic-years-api";
 import { formatKobo } from "@/lib/finance/format";
-import { CancelInvoiceDialog } from "@/components/finance/cancel-invoice-dialog";
+import { financeErrorMessage, logFinanceError } from "@/lib/finance/error-copy";
 import { archivePaymentLink, createPaymentLink, getInvoice, getPaymentLink } from "@/lib/finance/invoices-api";
 import {
   createPaymentPlan,
@@ -113,6 +115,7 @@ export default function InvoiceDetailPage() {
   const [linkCopied, setLinkCopied] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [relatedDataError, setRelatedDataError] = useState<string | null>(null);
 
   // Cancel — the confirmation, in-flight guard and failure copy all live in
   // <CancelInvoiceDialog>, shared with the invoice list so the destructive
@@ -152,29 +155,54 @@ export default function InvoiceDetailPage() {
   useEffect(() => {
     if (!id) return;
     setLoading(true);
+    setError(null);
+    setRelatedDataError(null);
     getInvoice(id)
       .then((inv) => {
         setInvoice(inv);
         Promise.all([
-          getStudent(inv.studentId).then(setStudent).catch(() => {}),
+          getStudent(inv.studentId).then(setStudent).catch((e) => {
+            logFinanceError("getInvoiceStudent", e);
+            setRelatedDataError(financeErrorMessage(e));
+          }),
           listTerms(inv.academicYearId)
             .then((terms) => {
               const matched = terms.find((t) => t.id === inv.termId);
               if (matched) setTerm(matched);
             })
-            .catch(() => {}),
+            .catch((e) => {
+              logFinanceError("listInvoiceTerms", e);
+              setRelatedDataError(financeErrorMessage(e));
+            }),
           listPayments({ invoiceId: inv.id })
             .then((r) => setPayments(r.data))
-            .catch(() => {}),
+            .catch((e) => {
+              logFinanceError("listInvoicePayments", e);
+              setRelatedDataError(financeErrorMessage(e));
+            }),
           getPaymentPlan(inv.id)
             .then(setPlan)
-            .catch(() => setPlan(null)),
+            .catch((e) => {
+              // A missing plan is a real empty state; a failed request is not.
+              if (e instanceof Error && "status" in e && e.status === 404) {
+                setPlan(null);
+                return;
+              }
+              logFinanceError("getInvoicePaymentPlan", e);
+              setRelatedDataError(financeErrorMessage(e));
+            }),
           getPaymentLink(inv.id)
             .then(setPaymentLink)
-            .catch((e) => setPaymentLinkError(e instanceof Error ? e.message : "Failed to load payment link.")),
-        ]).catch(() => {});
+            .catch((e) => setPaymentLinkError(financeErrorMessage(e))),
+        ]).catch((e) => {
+          logFinanceError("loadInvoiceRelatedData", e);
+          setRelatedDataError(financeErrorMessage(e));
+        });
       })
-      .catch((e) => setError(e instanceof Error ? e.message : "Failed to load invoice."))
+      .catch((e) => {
+        logFinanceError("getInvoice", e);
+        setError(financeErrorMessage(e));
+      })
       .finally(() => setLoading(false));
   }, [id]);
 
@@ -216,7 +244,7 @@ export default function InvoiceDetailPage() {
       await refreshPaymentLink();
       setForm({ amount: "", method: "CASH", paidAt: nowLocalDatetimeValue(), reference: "" });
     } catch (e) {
-      setRecordError(e instanceof Error ? e.message : "Failed to record payment.");
+      setRecordError(financeErrorMessage(e));
     } finally {
       setRecording(false);
     }
@@ -235,7 +263,7 @@ export default function InvoiceDetailPage() {
       });
       window.location.href = authorizationUrl;
     } catch (e) {
-      setPaystackError(e instanceof Error ? e.message : "Failed to initiate payment.");
+      setPaystackError(financeErrorMessage(e));
       setInitiatingPaystack(false);
     }
   }
@@ -265,7 +293,7 @@ export default function InvoiceDetailPage() {
       await refreshPaymentLink();
       setRefundPaymentId(null);
     } catch (e) {
-      setRefundError(e instanceof Error ? e.message : "Refund failed.");
+      setRefundError(financeErrorMessage(e));
     } finally {
       setRefunding(false);
     }
@@ -298,7 +326,7 @@ export default function InvoiceDetailPage() {
       const created = await createPaymentPlan(input);
       setPlan(created);
     } catch (e) {
-      setPlanError(e instanceof Error ? e.message : "Failed to create plan.");
+      setPlanError(financeErrorMessage(e));
     } finally {
       setPlanSubmitting(false);
     }
@@ -312,7 +340,7 @@ export default function InvoiceDetailPage() {
       await deletePaymentPlan(plan.id);
       setPlan(null);
     } catch (e) {
-      setPlanDeleteError(e instanceof Error ? e.message : "Failed to delete plan.");
+      setPlanDeleteError(financeErrorMessage(e));
     } finally {
       setPlanDeleting(false);
     }
@@ -325,7 +353,7 @@ export default function InvoiceDetailPage() {
     try {
       setPaymentLink(await getPaymentLink(invoice.id));
     } catch (e) {
-      setPaymentLinkError(e instanceof Error ? e.message : "Failed to refresh payment link.");
+      setPaymentLinkError(financeErrorMessage(e));
     } finally {
       setPaymentLinkBusy(false);
     }
@@ -338,7 +366,7 @@ export default function InvoiceDetailPage() {
     try {
       setPaymentLink(await createPaymentLink(invoice.id));
     } catch (e) {
-      setPaymentLinkError(e instanceof Error ? e.message : "Failed to create payment link.");
+      setPaymentLinkError(financeErrorMessage(e));
     } finally {
       setPaymentLinkBusy(false);
     }
@@ -351,7 +379,7 @@ export default function InvoiceDetailPage() {
     try {
       setPaymentLink(await archivePaymentLink(invoice.id));
     } catch (e) {
-      setPaymentLinkError(e instanceof Error ? e.message : "Failed to archive payment link.");
+      setPaymentLinkError(financeErrorMessage(e));
     } finally {
       setPaymentLinkBusy(false);
     }
@@ -372,7 +400,13 @@ export default function InvoiceDetailPage() {
   }
 
   if (error || !invoice) {
-    return <div className="p-6 text-destructive">{error ?? "Invoice not found."}</div>;
+    return (
+      <div className="p-6">
+        <InlineAlert title="Could not load invoice" action={{ label: "Retry", onClick: () => window.location.reload() }}>
+          {error ?? "Invoice not found."}
+        </InlineAlert>
+      </div>
+    );
   }
 
   const studentLabel = student
@@ -388,6 +422,11 @@ export default function InvoiceDetailPage() {
 
   return (
     <div className="max-w-4xl space-y-6 p-6">
+      {relatedDataError && (
+        <InlineAlert title="Some invoice details could not be loaded">
+          {relatedDataError} Information already shown has not been changed.
+        </InlineAlert>
+      )}
       {/* Header */}
       <div className="flex items-start justify-between gap-4">
         <div>

@@ -7,12 +7,14 @@ import { toast } from "sonner";
 import { payrollStatusLabel, type PayrollItemDto, type UserListItemDto } from "@school-kit/types";
 
 import { PayrollFormModal } from "@/components/finance/payroll-form-modal";
+import { InlineAlert } from "@/components/shared/inline-alert";
 import { Badge, type BadgeProps } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ApiError } from "@/lib/api-client";
 import { useAuth } from "@/lib/auth/use-auth";
 import { formatKobo } from "@/lib/finance/format";
+import { financeErrorMessage, logFinanceError } from "@/lib/finance/error-copy";
 import {
   approvePayrollItem,
   createPayrollItem,
@@ -77,7 +79,8 @@ export default function PayrollPage() {
       setStaff(staffList);
       setItems(payrollItems);
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : "Could not load payroll.");
+      logFinanceError("listPayroll", e);
+      setError(financeErrorMessage(e));
     } finally {
       setLoading(false);
     }
@@ -100,7 +103,12 @@ export default function PayrollPage() {
     }
     if (anyProcessing) {
       pollRef.current = setInterval(() => {
-        void listPayroll({ period }).then(setItems).catch(() => undefined);
+        void listPayroll({ period })
+          .then(setItems)
+          .catch((e) => {
+            logFinanceError("pollPayroll", e);
+            setError(financeErrorMessage(e));
+          });
       }, 4000);
     }
     return () => {
@@ -208,20 +216,22 @@ export default function PayrollPage() {
         />
       </div>
 
-      {loading ? (
+      {error && (
+        <InlineAlert title="Could not load payroll" action={{ label: "Retry", onClick: () => { setLoading(true); void load(); } }}>
+          {error}
+        </InlineAlert>
+      )}
+
+      {loading && items.length === 0 ? (
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <Loader2 className="h-4 w-4 animate-spin" />
           Loading…
         </div>
-      ) : error ? (
-        <div className="rounded-md border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive">
-          {error}
-        </div>
-      ) : items.length === 0 ? (
+      ) : !error && items.length === 0 ? (
         <div className="flex h-32 items-center justify-center rounded-lg border border-dashed text-sm text-muted-foreground">
           No payroll items for this period yet.
         </div>
-      ) : (
+      ) : items.length > 0 ? (
         <div className="rounded-lg border">
           <Table>
             <TableHeader>
@@ -293,7 +303,7 @@ export default function PayrollPage() {
             </TableBody>
           </Table>
         </div>
-      )}
+      ) : null}
 
       <PayrollFormModal
         open={showForm}
