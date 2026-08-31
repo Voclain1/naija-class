@@ -10,6 +10,7 @@ import { AttendanceSparkline } from "@/components/admin/attendance-sparkline";
 import { CommandDialog } from "@/components/admin/command-dialog";
 import { BrandLoadingInline } from "@/components/brand-loading-screen";
 import { AlertList } from "@/components/shared/alert-list";
+import { InlineAlert } from "@/components/shared/inline-alert";
 import { ProgressMeter } from "@/components/shared/progress-meter";
 import { SetupChecklist } from "@/components/setup/setup-checklist";
 import { StatCard } from "@/components/shared/stat-card";
@@ -107,9 +108,9 @@ export default function DashboardPage() {
 
   if (error) {
     return (
-      <div className="rounded-md border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+      <InlineAlert title="Could not load dashboard" action={{ label: "Retry", onClick: () => window.location.reload() }}>
         {error}
-      </div>
+      </InlineAlert>
     );
   }
 

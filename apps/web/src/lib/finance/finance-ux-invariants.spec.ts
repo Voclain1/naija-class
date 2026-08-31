@@ -36,10 +36,15 @@ const FINANCE_DASHBOARD = "apps/web/src/app/(admin)/finance/dashboard/page.tsx";
 const DEBTORS = "apps/web/src/app/(admin)/finance/debtors/page.tsx";
 const GENERATE_DIALOG = "apps/web/src/components/finance/generate-invoices-dialog.tsx";
 const GENERATE_LOGIC = "apps/web/src/lib/finance/invoice-generate.ts";
+const DISCOUNTS = "apps/web/src/app/(admin)/finance/discounts/page.tsx";
+const FEES = "apps/web/src/app/(admin)/finance/fees/page.tsx";
+const EXPENSES = "apps/web/src/app/(admin)/finance/expenses/page.tsx";
+const PAYROLL = "apps/web/src/app/(admin)/finance/payroll/page.tsx";
+const INLINE_ALERT = "apps/web/src/components/shared/inline-alert.tsx";
 
 describe("sanity — the files these invariants guard still exist", () => {
   it("reads every guarded source file", () => {
-    for (const path of [INVOICE_LIST, INVOICE_DETAIL, CANCEL_DIALOG, FINANCE_DASHBOARD, DEBTORS, GENERATE_DIALOG]) {
+    for (const path of [INVOICE_LIST, INVOICE_DETAIL, CANCEL_DIALOG, FINANCE_DASHBOARD, DEBTORS, GENERATE_DIALOG, INLINE_ALERT]) {
       expect(source(path).length).toBeGreaterThan(500);
     }
   });
@@ -217,5 +222,45 @@ describe("F-34 — bulk generation cannot bypass the review gate", () => {
     const dialog = source(GENERATE_DIALOG);
     expect(dialog).toContain("studentDisplayName");
     expect(dialog).not.toContain("studentId.slice");
+  });
+});
+
+describe("F-05b/F-22 shared error presentation remains truthful", () => {
+  const migratedScreens = [
+    INVOICE_LIST,
+    INVOICE_DETAIL,
+    FINANCE_DASHBOARD,
+    DEBTORS,
+    DISCOUNTS,
+    FEES,
+    EXPENSES,
+    PAYROLL,
+  ];
+
+  it("uses one semantic alert primitive with an optional retry action", () => {
+    const alert = source(INLINE_ALERT);
+    expect(alert).toContain('role="alert"');
+    expect(alert).toContain("action?: InlineAlertAction");
+    expect(alert).toContain("action.label");
+  });
+
+  it("does not turn a failed Finance fetch into an empty collection", () => {
+    for (const path of migratedScreens) {
+      const screen = source(path);
+      expect(screen).toContain("InlineAlert");
+      expect(screen).not.toMatch(/catch\(\(\)\s*=>\s*(set\w+\(\[\]\)|undefined|\{\s*\})/);
+    }
+  });
+
+  it("does not reintroduce the duplicated destructive banner in migrated Finance screens", () => {
+    for (const path of migratedScreens) {
+      expect(source(path)).not.toMatch(/border-destructive[^"`]*bg-destructive|bg-destructive[^"`]*border-destructive/);
+    }
+  });
+
+  it("normalizes raw exception messages on the invoice detail surface", () => {
+    const detail = source(INVOICE_DETAIL);
+    expect(detail).toContain("financeErrorMessage");
+    expect(detail).not.toContain("instanceof Error ? e.message");
   });
 });

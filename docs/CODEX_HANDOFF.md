@@ -135,6 +135,19 @@ those; it doesn't replace them.
 
 ## Latest state as of this handoff (updated 2026-08-28)
 
+- **Wave 4 shared error primitives are in progress on
+  `fix/shared-error-primitives` from `a9c4ad9` (2026-08-31).** The small
+  web-only `InlineAlert` adds semantic error presentation with an optional
+  retry, and the destructive token now meets AA for the legacy translucent
+  banner treatment. Eight Finance read surfaces plus the admin dashboard have
+  been migrated; the 15 confirmed Finance failure-to-empty/silent catches now
+  show reviewed human error copy without clearing a truthful prior result.
+  Web lint/typecheck, focused Vitest (30 tests) and E2E typecheck pass. A
+  browser axe/contrast/retry regression is written but not run locally because
+  this worktree has no disposable runtime configuration or services. No
+  Finance backend, payment reconciliation, mobile, Prisma, migration or
+  offline-write behavior changed. See `docs/journal/2026-08-31.md`.
+
 - **Wave 3B terminology/developer-language cleanup is in progress on
   `fix/terminology-developer-language` from `6064ad6` (2026-08-30).** It is
   presentation-only: enrollment UUID fallbacks, raw dashboard/import/guardian
