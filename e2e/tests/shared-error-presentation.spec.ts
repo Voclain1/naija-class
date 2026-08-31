@@ -1,7 +1,9 @@
 import { expect, test } from "@playwright/test";
-import { source as axeSource } from "axe-core";
+import axeCore from "axe-core";
 
 import { loginAsAdmin, setupAcademicStructure } from "../fixtures/index.js";
+
+const axeSource = axeCore.source;
 
 function relativeLuminance([red, green, blue]: number[]): number {
   const linear = [red, green, blue].map((value) => {
