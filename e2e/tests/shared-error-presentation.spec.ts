@@ -40,14 +40,15 @@ test.describe("shared error presentation", () => {
 
     await admin.page.goto("/finance/dashboard");
     await expect(admin.page.locator("#fin-dash-year")).not.toHaveValue("");
-    await expect(admin.page.getByRole("alert")).toContainText("Could not load finance dashboard");
-    await expect(admin.page.getByRole("alert")).not.toContainText("DATABASE_TIMEOUT");
+    const alert = admin.page.getByRole("alert").filter({ hasText: "Could not load finance dashboard" });
+    await expect(alert).toContainText("Could not load finance dashboard");
+    await expect(alert).not.toContainText("DATABASE_TIMEOUT");
     await expect(admin.page.getByText("No debtors")).toHaveCount(0);
 
     // Browser-computed colours include the current design tokens. The alert
     // background is translucent, so calculate the conservative text contrast
     // against the opaque page background it is painted over.
-    const ratio = await admin.page.getByRole("alert").evaluate((node) => {
+    const ratio = await alert.evaluate((node) => {
       const parse = (value: string) => value.match(/\d+(?:\.\d+)?/g)?.slice(0, 3).map(Number) ?? [];
       const foreground = parse(getComputedStyle(node).color);
       const pageBackground = parse(getComputedStyle(document.body).backgroundColor);
@@ -66,7 +67,7 @@ test.describe("shared error presentation", () => {
     expect(axe).toEqual([]);
 
     await admin.page.getByRole("button", { name: "Retry" }).click();
-    await expect(admin.page.getByRole("alert")).toHaveCount(0);
+    await expect(alert).toHaveCount(0);
     expect(dashboardRequests).toBe(2);
 
     await admin.context.close();
