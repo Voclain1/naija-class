@@ -753,12 +753,18 @@ model StudentSession {
 // outstanding one, enforced in the service rather than by a partial unique
 // index, because "live" is a three-column predicate (accepted_at IS NULL AND
 // revoked_at IS NULL AND expires_at > now()) and now() is not immutable.
+enum StudentPortalInvitationPurpose {
+  ACTIVATION
+  PASSWORD_RESET
+}
+
 model StudentPortalInvitation {
   id         String    @id @default(uuid())
   schoolId   String    @map("school_id") // denormalised for direct RLS
   studentId  String    @map("student_id")
   tokenHash  String    @unique @map("token_hash")
   issuedBy   String    @map("issued_by") // guardianId — plain scoping column
+  purpose    StudentPortalInvitationPurpose @default(ACTIVATION)
   expiresAt  DateTime  @map("expires_at")
   acceptedAt DateTime? @map("accepted_at") // stamped on use — single-use
   revokedAt  DateTime? @map("revoked_at") // stamped by deactivation (D26)

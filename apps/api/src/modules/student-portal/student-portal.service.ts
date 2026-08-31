@@ -31,6 +31,7 @@ import { rateHundredths } from "../attendance/shared/attendance-shared.util";
 const LOGIN_AUDIT_ACTION = "student.login";
 const LOGIN_FAILED_AUDIT_ACTION = "student.login-failed";
 const ACCEPT_AUDIT_ACTION = "student.invitation-accept";
+const PASSWORD_RESET_COMPLETED_AUDIT_ACTION = "student.password-reset.completed";
 const LOGOUT_AUDIT_ACTION = "student.logout";
 
 interface RequestContext {
@@ -51,6 +52,7 @@ interface ResolveStudentInvitationRow {
   school_id: string;
   student_id: string;
   expires_at: Date;
+  purpose: "ACTIVATION" | "PASSWORD_RESET";
 }
 
 // Fixed argon2id hash for the timing-attack defence when no candidate exists,
@@ -465,7 +467,10 @@ export class StudentPortalService {
         data: {
           schoolId: row.school_id,
           userId: row.student_id,
-          action: ACCEPT_AUDIT_ACTION,
+          action:
+            row.purpose === "PASSWORD_RESET"
+              ? PASSWORD_RESET_COMPLETED_AUDIT_ACTION
+              : ACCEPT_AUDIT_ACTION,
           entityType: "student",
           entityId: row.student_id,
           ipAddress: ctx.ipAddress,
