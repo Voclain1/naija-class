@@ -4,17 +4,20 @@ import { AlertTriangle, RotateCcw } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
-import type {
-  AcademicYearDto,
-  ClassArmDto,
-  InvoiceDto,
-  InvoiceStatus,
-  PreviewLineDto,
-  TermDto,
+import {
+  invoiceStatusLabel,
+  type AcademicYearDto,
+  type ClassArmDto,
+  type InvoiceDto,
+  type InvoiceStatus,
+  type PreviewLineDto,
+  type TermDto,
 } from "@school-kit/types";
 
 import { CancelInvoiceDialog } from "@/components/finance/cancel-invoice-dialog";
+import { GenerateInvoicesDialog } from "@/components/finance/generate-invoices-dialog";
 import { ExportCsvButton } from "@/components/shared/export-csv-button";
+import { InlineAlert } from "@/components/shared/inline-alert";
 import { PrerequisiteNotice } from "@/components/setup/prerequisite-notice";
 import { PrintButton } from "@/components/shared/print-button";
 import { Badge, type BadgeProps } from "@/components/ui/badge";
@@ -34,17 +37,7 @@ import {
   studentSecondaryLabel,
 } from "@/lib/finance/invoice-identity";
 import { resolveInvoiceListView } from "@/lib/finance/invoice-list-state";
-import { generateInvoices, listInvoices, previewInvoices } from "@/lib/finance/invoices-api";
-
-const STATUS_LABELS: Record<InvoiceStatus, string> = {
-  DRAFT: "Draft",
-  ISSUED: "Issued",
-  PARTIALLY_PAID: "Partially paid",
-  PAID: "Paid",
-  OVERDUE: "Overdue",
-  CANCELLED: "Cancelled",
-  REFUNDED: "Refunded",
-};
+import { listInvoices, previewInvoices } from "@/lib/finance/invoices-api";
 
 // Export reuses GET /invoices with the same filters currently applied to the
 // list tab, looping the page number (limit 200/page) until every page is
@@ -59,7 +52,7 @@ const INVOICE_EXPORT_COLUMNS: CsvColumn<InvoiceDto>[] = [
   { header: "Student", accessor: (i) => studentDisplayName(i) },
   { header: "Admission number", accessor: (i) => i.admissionNumber ?? "" },
   { header: "Invoice reference", accessor: (i) => invoiceReference(i.id) },
-  { header: "Status", accessor: (i) => STATUS_LABELS[i.status] },
+  { header: "Status", accessor: (i) => invoiceStatusLabel[i.status] },
   { header: "Total due", accessor: (i) => formatKobo(i.totalDue) },
   { header: "Paid", accessor: (i) => formatKobo(i.totalPaid) },
   { header: "Balance", accessor: (i) => formatKobo(i.totalDue - i.totalPaid) },
@@ -105,7 +98,6 @@ export default function InvoicesPage() {
   const [dueDate, setDueDate] = useState("");
   const [preview, setPreview] = useState<PreviewLineDto[] | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
-  const [generating, setGenerating] = useState(false);
   const [generateResult, setGenerateResult] = useState<{ created: number; skipped: number } | null>(null);
   const [generateError, setGenerateError] = useState<string | null>(null);
 
@@ -128,8 +120,8 @@ export default function InvoicesPage() {
       .then(([loadedYears, loadedArms]) => {
         setYears(loadedYears);
         setArms(loadedArms);
-        // Academic YEAR only. The year never reaches generateInvoices (which
-        // takes termId + classArmId) — it only narrows which terms are
+        // Academic YEAR only. The year never reaches the generation request
+        // (which takes termId + classArmId) — it only narrows which terms are
         // listed — so landing on the current one saves a click and cannot
         // cause anything to be billed. The TERM is deliberately NOT
         // defaulted: see lib/finance/current-context.ts for why, and for the
@@ -209,7 +201,7 @@ export default function InvoicesPage() {
     error: listError,
     rowCount: invoices.length,
     statusFilter,
-    statusLabel: statusFilter ? STATUS_LABELS[statusFilter] : "",
+    statusLabel: statusFilter ? invoiceStatusLabel[statusFilter] : "",
   });
 
   async function handleExport() {
@@ -256,25 +248,15 @@ export default function InvoicesPage() {
     }
   }
 
-  async function handleGenerate() {
-    if (!pickerReady) return;
-    setGenerating(true);
+  // F-34: the page no longer holds a path to the mutation at all. Generation
+  // is reachable only through <GenerateInvoicesDialog>, which owns the review
+  // gate; this just records what the confirmed run reported.
+  function handleGenerated(result: { created: number; skipped: number }) {
+    setGenerateResult(result);
     setGenerateError(null);
-    setGenerateResult(null);
-    try {
-      const result = await generateInvoices({
-        termId,
-        classArmId: armId,
-        dueDate: dueDate || undefined,
-      });
-      setGenerateResult({ created: result.created, skipped: result.skipped });
-      setPreview(null);
-    } catch (e) {
-      logFinanceError("generateInvoices", e);
-      setGenerateError(financeErrorMessage(e));
-    } finally {
-      setGenerating(false);
-    }
+    setPreview(null);
+    // The list tab is now stale — a confirmed run has changed what it shows.
+    setListReloadKey((k) => k + 1);
   }
 
   const previewTotalDue = preview?.reduce((s, r) => s + r.totalDue, 0) ?? 0;
@@ -303,19 +285,13 @@ export default function InvoicesPage() {
       />
 
       {referenceError && (
-        <div
-          role="alert"
-          className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive print:hidden"
+        <InlineAlert
+          title="Could not load academic information"
+          className="print:hidden"
+          action={{ label: "Try again", onClick: loadReferenceData }}
         >
-          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
-          <div className="space-y-2">
-            <p>Could not load the school&rsquo;s years, terms and classes. {referenceError}</p>
-            <Button variant="outline" size="sm" onClick={loadReferenceData}>
-              <RotateCcw className="mr-1 h-4 w-4" aria-hidden />
-              Try again
-            </Button>
-          </div>
-        </div>
+          Could not load the school&rsquo;s years, terms and classes. {referenceError}
+        </InlineAlert>
       )}
 
       {/* Term + arm picker */}
@@ -405,9 +381,32 @@ export default function InvoicesPage() {
               {previewLoading ? "Loading…" : "Preview"}
             </Button>
 
-            <Button disabled={!pickerReady || generating} onClick={handleGenerate}>
-              {generating ? "Generating…" : "Generate invoices"}
-            </Button>
+            {/* F-34: the trigger receives `open`, never the mutation. The
+                review dialog restates arm, term, count and naira total before
+                anything is billed — which also defuses the shared-picker
+                hazard, since the arm/term about to be billed is named at the
+                moment of confirming rather than assumed from a control the
+                bursar may have changed on the List tab. */}
+            <GenerateInvoicesDialog onGenerated={handleGenerated}>
+              {(open, busy) => (
+                <Button
+                  disabled={!pickerReady || busy || !selectedTerm || !selectedArm}
+                  onClick={() =>
+                    selectedTerm &&
+                    selectedArm &&
+                    open({
+                      termId,
+                      classArmId: armId,
+                      armName: selectedArm.name,
+                      termName: selectedTerm.name,
+                      dueDate: dueDate || undefined,
+                    })
+                  }
+                >
+                  {busy ? "Creating…" : "Generate invoices"}
+                </Button>
+              )}
+            </GenerateInvoicesDialog>
           </div>
 
           {pickerReady && selectedTerm && selectedArm && (
@@ -509,8 +508,8 @@ export default function InvoicesPage() {
                 onChange={(e) => { setStatusFilter(e.target.value as InvoiceStatus | ""); setPage(1); }}
               >
                 <option value="">All statuses</option>
-                {(Object.keys(STATUS_LABELS) as InvoiceStatus[]).map((s) => (
-                  <option key={s} value={s}>{STATUS_LABELS[s]}</option>
+                {(Object.keys(invoiceStatusLabel) as InvoiceStatus[]).map((s) => (
+                  <option key={s} value={s}>{invoiceStatusLabel[s]}</option>
                 ))}
               </select>
             </div>
@@ -627,7 +626,7 @@ export default function InvoicesPage() {
                         {invoiceReference(inv.id)}
                       </TableCell>
                       <TableCell>
-                        <Badge variant={STATUS_VARIANTS[inv.status]}>{STATUS_LABELS[inv.status]}</Badge>
+                        <Badge variant={STATUS_VARIANTS[inv.status]}>{invoiceStatusLabel[inv.status]}</Badge>
                       </TableCell>
                       <TableCell className="text-right font-mono tabular-nums">{formatKobo(inv.totalDue)}</TableCell>
                       <TableCell className="text-right font-mono tabular-nums text-emerald-700 dark:text-emerald-400">

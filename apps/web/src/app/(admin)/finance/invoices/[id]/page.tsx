@@ -5,27 +5,31 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import { Archive, Copy, ExternalLink, Link2, MessageCircle, RefreshCw } from "lucide-react";
 
-import type {
-  CreatePaymentPlanInput,
-  InvoiceDto,
-  InvoiceStatus,
-  ManualPaymentMethod,
-  PaymentDto,
-  PaymentPlanDto,
-  PaymentLinkStateDto,
-  PaymentStatus,
-  StudentDetailDto,
-  TermDto,
+import {
+  invoiceStatusLabel,
+  paymentStatusLabel,
+  type CreatePaymentPlanInput,
+  type InvoiceDto,
+  type InvoiceStatus,
+  type ManualPaymentMethod,
+  type PaymentDto,
+  type PaymentPlanDto,
+  type PaymentLinkStateDto,
+  type PaymentStatus,
+  type StudentDetailDto,
+  type TermDto,
 } from "@school-kit/types";
 import { buildNoRecipientWhatsAppUrl, buildPaymentLinkMessage } from "@school-kit/types";
 
+import { CancelInvoiceDialog } from "@/components/finance/cancel-invoice-dialog";
+import { InlineAlert } from "@/components/shared/inline-alert";
 import { Badge, type BadgeProps } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { listTerms } from "@/lib/academic-years/academic-years-api";
 import { formatKobo } from "@/lib/finance/format";
-import { CancelInvoiceDialog } from "@/components/finance/cancel-invoice-dialog";
+import { financeErrorMessage, logFinanceError } from "@/lib/finance/error-copy";
 import { archivePaymentLink, createPaymentLink, getInvoice, getPaymentLink } from "@/lib/finance/invoices-api";
 import {
   createPaymentPlan,
@@ -34,16 +38,6 @@ import {
 } from "@/lib/finance/payment-plans-api";
 import { createRefund, getPaymentReceiptUrl, initPaystackPayment, listPayments, recordManualPayment } from "@/lib/finance/payments-api";
 import { getStudent } from "@/lib/students/students-api";
-
-const STATUS_LABELS: Record<InvoiceStatus, string> = {
-  DRAFT: "Draft",
-  ISSUED: "Issued",
-  PARTIALLY_PAID: "Partially paid",
-  PAID: "Paid",
-  OVERDUE: "Overdue",
-  CANCELLED: "Cancelled",
-  REFUNDED: "Refunded",
-};
 
 // Same mapping as /finance/invoices and /finance/debtors.
 const STATUS_VARIANTS: Record<InvoiceStatus, BadgeProps["variant"]> = {
@@ -121,6 +115,7 @@ export default function InvoiceDetailPage() {
   const [linkCopied, setLinkCopied] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [relatedDataError, setRelatedDataError] = useState<string | null>(null);
 
   // Cancel — the confirmation, in-flight guard and failure copy all live in
   // <CancelInvoiceDialog>, shared with the invoice list so the destructive
@@ -160,29 +155,54 @@ export default function InvoiceDetailPage() {
   useEffect(() => {
     if (!id) return;
     setLoading(true);
+    setError(null);
+    setRelatedDataError(null);
     getInvoice(id)
       .then((inv) => {
         setInvoice(inv);
         Promise.all([
-          getStudent(inv.studentId).then(setStudent).catch(() => {}),
+          getStudent(inv.studentId).then(setStudent).catch((e) => {
+            logFinanceError("getInvoiceStudent", e);
+            setRelatedDataError(financeErrorMessage(e));
+          }),
           listTerms(inv.academicYearId)
             .then((terms) => {
               const matched = terms.find((t) => t.id === inv.termId);
               if (matched) setTerm(matched);
             })
-            .catch(() => {}),
+            .catch((e) => {
+              logFinanceError("listInvoiceTerms", e);
+              setRelatedDataError(financeErrorMessage(e));
+            }),
           listPayments({ invoiceId: inv.id })
             .then((r) => setPayments(r.data))
-            .catch(() => {}),
+            .catch((e) => {
+              logFinanceError("listInvoicePayments", e);
+              setRelatedDataError(financeErrorMessage(e));
+            }),
           getPaymentPlan(inv.id)
             .then(setPlan)
-            .catch(() => setPlan(null)),
+            .catch((e) => {
+              // A missing plan is a real empty state; a failed request is not.
+              if (e instanceof Error && "status" in e && e.status === 404) {
+                setPlan(null);
+                return;
+              }
+              logFinanceError("getInvoicePaymentPlan", e);
+              setRelatedDataError(financeErrorMessage(e));
+            }),
           getPaymentLink(inv.id)
             .then(setPaymentLink)
-            .catch((e) => setPaymentLinkError(e instanceof Error ? e.message : "Failed to load payment link.")),
-        ]).catch(() => {});
+            .catch((e) => setPaymentLinkError(financeErrorMessage(e))),
+        ]).catch((e) => {
+          logFinanceError("loadInvoiceRelatedData", e);
+          setRelatedDataError(financeErrorMessage(e));
+        });
       })
-      .catch((e) => setError(e instanceof Error ? e.message : "Failed to load invoice."))
+      .catch((e) => {
+        logFinanceError("getInvoice", e);
+        setError(financeErrorMessage(e));
+      })
       .finally(() => setLoading(false));
   }, [id]);
 
@@ -224,7 +244,7 @@ export default function InvoiceDetailPage() {
       await refreshPaymentLink();
       setForm({ amount: "", method: "CASH", paidAt: nowLocalDatetimeValue(), reference: "" });
     } catch (e) {
-      setRecordError(e instanceof Error ? e.message : "Failed to record payment.");
+      setRecordError(financeErrorMessage(e));
     } finally {
       setRecording(false);
     }
@@ -243,7 +263,7 @@ export default function InvoiceDetailPage() {
       });
       window.location.href = authorizationUrl;
     } catch (e) {
-      setPaystackError(e instanceof Error ? e.message : "Failed to initiate payment.");
+      setPaystackError(financeErrorMessage(e));
       setInitiatingPaystack(false);
     }
   }
@@ -273,7 +293,7 @@ export default function InvoiceDetailPage() {
       await refreshPaymentLink();
       setRefundPaymentId(null);
     } catch (e) {
-      setRefundError(e instanceof Error ? e.message : "Refund failed.");
+      setRefundError(financeErrorMessage(e));
     } finally {
       setRefunding(false);
     }
@@ -306,7 +326,7 @@ export default function InvoiceDetailPage() {
       const created = await createPaymentPlan(input);
       setPlan(created);
     } catch (e) {
-      setPlanError(e instanceof Error ? e.message : "Failed to create plan.");
+      setPlanError(financeErrorMessage(e));
     } finally {
       setPlanSubmitting(false);
     }
@@ -320,7 +340,7 @@ export default function InvoiceDetailPage() {
       await deletePaymentPlan(plan.id);
       setPlan(null);
     } catch (e) {
-      setPlanDeleteError(e instanceof Error ? e.message : "Failed to delete plan.");
+      setPlanDeleteError(financeErrorMessage(e));
     } finally {
       setPlanDeleting(false);
     }
@@ -333,7 +353,7 @@ export default function InvoiceDetailPage() {
     try {
       setPaymentLink(await getPaymentLink(invoice.id));
     } catch (e) {
-      setPaymentLinkError(e instanceof Error ? e.message : "Failed to refresh payment link.");
+      setPaymentLinkError(financeErrorMessage(e));
     } finally {
       setPaymentLinkBusy(false);
     }
@@ -346,7 +366,7 @@ export default function InvoiceDetailPage() {
     try {
       setPaymentLink(await createPaymentLink(invoice.id));
     } catch (e) {
-      setPaymentLinkError(e instanceof Error ? e.message : "Failed to create payment link.");
+      setPaymentLinkError(financeErrorMessage(e));
     } finally {
       setPaymentLinkBusy(false);
     }
@@ -359,7 +379,7 @@ export default function InvoiceDetailPage() {
     try {
       setPaymentLink(await archivePaymentLink(invoice.id));
     } catch (e) {
-      setPaymentLinkError(e instanceof Error ? e.message : "Failed to archive payment link.");
+      setPaymentLinkError(financeErrorMessage(e));
     } finally {
       setPaymentLinkBusy(false);
     }
@@ -380,7 +400,13 @@ export default function InvoiceDetailPage() {
   }
 
   if (error || !invoice) {
-    return <div className="p-6 text-destructive">{error ?? "Invoice not found."}</div>;
+    return (
+      <div className="p-6">
+        <InlineAlert title="Could not load invoice" action={{ label: "Retry", onClick: () => window.location.reload() }}>
+          {error ?? "Invoice not found."}
+        </InlineAlert>
+      </div>
+    );
   }
 
   const studentLabel = student
@@ -396,6 +422,11 @@ export default function InvoiceDetailPage() {
 
   return (
     <div className="max-w-4xl space-y-6 p-6">
+      {relatedDataError && (
+        <InlineAlert title="Some invoice details could not be loaded">
+          {relatedDataError} Information already shown has not been changed.
+        </InlineAlert>
+      )}
       {/* Header */}
       <div className="flex items-start justify-between gap-4">
         <div>
@@ -403,7 +434,7 @@ export default function InvoiceDetailPage() {
           <p className="mt-0.5 font-mono text-sm text-muted-foreground">{invoice.id}</p>
         </div>
         <Badge variant={STATUS_VARIANTS[invoice.status]} className="px-3 py-1 text-sm">
-          {STATUS_LABELS[invoice.status]}
+          {invoiceStatusLabel[invoice.status]}
         </Badge>
       </div>
 
@@ -647,7 +678,7 @@ export default function InvoiceDetailPage() {
                     </TableCell>
                     <TableCell>
                       <Badge variant={PAYMENT_STATUS_VARIANTS[p.status]}>
-                        {p.status === "REVERSED" ? "Reversed" : p.status}
+                        {paymentStatusLabel[p.status]}
                       </Badge>
                     </TableCell>
                     <TableCell className="text-right">
@@ -731,8 +762,8 @@ export default function InvoiceDetailPage() {
           <form onSubmit={handleCreatePlan} className="space-y-4 rounded-lg border p-4">
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="mb-1 block text-sm text-muted-foreground">Plan name</label>
-                <input
+                <label htmlFor="inv-plan-name" className="mb-1 block text-sm text-muted-foreground">Plan name</label>
+                <input id="inv-plan-name"
                   type="text"
                   required
                   value={planName}
@@ -741,8 +772,8 @@ export default function InvoiceDetailPage() {
                 />
               </div>
               <div>
-                <label className="mb-1 block text-sm text-muted-foreground">Number of installments</label>
-                <input
+                <label htmlFor="inv-number-of-installments" className="mb-1 block text-sm text-muted-foreground">Number of installments</label>
+                <input id="inv-number-of-installments"
                   type="number"
                   min={1}
                   max={24}
@@ -808,8 +839,8 @@ export default function InvoiceDetailPage() {
                 <div key={i} className="grid grid-cols-[auto_1fr_1fr] items-center gap-3">
                   <span className="w-6 text-sm text-muted-foreground">{i + 1}.</span>
                   <div>
-                    <label className="mb-0.5 block text-xs text-muted-foreground">Amount (₦)</label>
-                    <input
+                    <label htmlFor="inv-amount-naira" className="mb-0.5 block text-xs text-muted-foreground">Amount (₦)</label>
+                    <input id="inv-amount-naira"
                       type="number"
                       step="0.01"
                       min="0.01"
@@ -821,8 +852,8 @@ export default function InvoiceDetailPage() {
                     />
                   </div>
                   <div>
-                    <label className="mb-0.5 block text-xs text-muted-foreground">Due date</label>
-                    <input
+                    <label htmlFor="inv-due-date" className="mb-0.5 block text-xs text-muted-foreground">Due date</label>
+                    <input id="inv-due-date"
                       type="date"
                       required
                       min={todayIso()}
@@ -857,8 +888,8 @@ export default function InvoiceDetailPage() {
           <form onSubmit={handleRecordPayment} className="space-y-3">
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="mb-1 block text-sm text-muted-foreground">Amount (₦)</label>
-                <input
+                <label htmlFor="inv-amount-naira-2" className="mb-1 block text-sm text-muted-foreground">Amount (₦)</label>
+                <input id="inv-amount-naira-2"
                   type="number"
                   step="0.01"
                   min="0.01"
@@ -870,8 +901,8 @@ export default function InvoiceDetailPage() {
                 />
               </div>
               <div>
-                <label className="mb-1 block text-sm text-muted-foreground">Method</label>
-                <select
+                <label htmlFor="inv-method" className="mb-1 block text-sm text-muted-foreground">Method</label>
+                <select id="inv-method"
                   value={form.method}
                   onChange={(e) => setForm((f) => ({ ...f, method: e.target.value as ManualPaymentMethod }))}
                   className={INPUT_CLASSES}
@@ -882,8 +913,8 @@ export default function InvoiceDetailPage() {
                 </select>
               </div>
               <div>
-                <label className="mb-1 block text-sm text-muted-foreground">Date paid</label>
-                <input
+                <label htmlFor="inv-date-paid" className="mb-1 block text-sm text-muted-foreground">Date paid</label>
+                <input id="inv-date-paid"
                   type="datetime-local"
                   required
                   value={form.paidAt}
@@ -892,8 +923,8 @@ export default function InvoiceDetailPage() {
                 />
               </div>
               <div>
-                <label className="mb-1 block text-sm text-muted-foreground">Reference (optional)</label>
-                <input
+                <label htmlFor="inv-reference-optional" className="mb-1 block text-sm text-muted-foreground">Reference (optional)</label>
+                <input id="inv-reference-optional"
                   type="text"
                   maxLength={200}
                   value={form.reference}
@@ -969,10 +1000,10 @@ export default function InvoiceDetailPage() {
           </p>
           <form onSubmit={handleRefund} className="space-y-3">
             <div>
-              <label className="mb-1 block text-sm font-medium text-foreground">
+              <label htmlFor="inv-reason" className="mb-1 block text-sm font-medium text-foreground">
                 Reason <span className="text-destructive">*</span>
               </label>
-              <textarea
+              <textarea id="inv-reason"
                 required
                 maxLength={500}
                 rows={3}

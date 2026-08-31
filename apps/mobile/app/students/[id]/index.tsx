@@ -34,7 +34,9 @@ export default function StudentDetailScreen() {
   const { status } = useSession();
   const queryClient = useQueryClient();
   const online = useIsOnline();
-  const [outcome, setOutcome] = useState<CheckoutOutcome | null>(null);
+  const [outcome, setOutcome] = useState<
+    { outcome: CheckoutOutcome; invoice: PortalInvoiceDto } | null
+  >(null);
   const [payError, setPayError] = useState<string | null>(null);
 
   const studentId = typeof id === "string" ? id : "";
@@ -57,8 +59,9 @@ export default function StudentDetailScreen() {
       setOutcome(null);
       setPayError(null);
     },
-    onSuccess: (result) => {
-      setOutcome(result);
+    onSuccess: (result, invoiceId) => {
+      const invoice = invoicesQuery.data?.data.find((item) => item.id === invoiceId);
+      if (invoice) setOutcome({ outcome: result, invoice });
       // Re-read the invoice from the server rather than adjusting anything
       // locally. CLAUDE.md's Money rules are explicit that the frontend never
       // computes balances — it displays what the API returned.
@@ -124,7 +127,7 @@ export default function StudentDetailScreen() {
             an invoice, and the results screen is the one thing this app can
             show that nothing else in School Kit currently can. */}
         <Link href={`/students/${studentId}/results`} asChild>
-          <Pressable>
+          <Pressable accessibilityRole="button" accessibilityLabel="View released results">
             <Card>
               <Heading>Results</Heading>
               <Body muted>Report cards the school has released.</Body>
@@ -140,8 +143,13 @@ export default function StudentDetailScreen() {
         />
 
         {outcome ? (
-          <Notice tone={describeOutcome(outcome).tone}>
-            {describeOutcome(outcome).title}
+          <Notice tone={describeOutcome(outcome.outcome).tone}>
+            {describeOutcome(outcome.outcome, {
+              studentName: student
+                ? [student.firstName, student.lastName].filter(Boolean).join(" ")
+                : null,
+              termName: outcome.invoice.term.name,
+            }).title}
           </Notice>
         ) : null}
         {payError ? <Notice tone="danger">{payError}</Notice> : null}

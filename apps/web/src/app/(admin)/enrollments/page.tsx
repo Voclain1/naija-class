@@ -37,6 +37,7 @@ import {
   listEnrollments,
   updateEnrollment,
 } from "@/lib/enrollments/enrollments-api";
+import { studentDisplayName } from "@/lib/finance/invoice-identity";
 import { listStudents } from "@/lib/students/students-api";
 
 // /enrollments — Phase 1 / Slice 9 cp2.
@@ -175,9 +176,11 @@ export default function EnrollmentsPage() {
         const s = studentLookup.get(enr.studentId);
         const row: EnrollmentRowVm = {
           enrollment: enr,
-          studentLabel: s
-            ? `${s.lastName}, ${s.firstName}`
-            : `student ${enr.studentId.slice(0, 8)}`,
+          studentLabel: studentDisplayName({
+            studentId: enr.studentId,
+            studentName: s ? `${s.lastName}, ${s.firstName}` : null,
+            admissionNumber: s?.admissionNumber ?? null,
+          }),
           admissionNumber: s?.admissionNumber ?? "—",
         };
         const bucket = byArm.get(enr.classArmId) ?? [];
@@ -627,6 +630,15 @@ function EnrollmentRow({
   );
 }
 
+const ENROLLMENT_STATUS_LABELS: Record<EnrollmentStatusDto, string> = {
+  ENROLLED: "Enrolled",
+  TRANSFERRED: "Transferred",
+  PROMOTED: "Promoted",
+  REPEATED: "Repeating",
+  WITHDRAWN: "Withdrawn",
+  GRADUATED: "Graduated",
+};
+
 function StatusPill({ status }: { status: EnrollmentStatusDto }) {
   const tone =
     status === "ENROLLED"
@@ -640,7 +652,7 @@ function StatusPill({ status }: { status: EnrollmentStatusDto }) {
     <span
       className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ${tone}`}
     >
-      {status.toLowerCase()}
+      {ENROLLMENT_STATUS_LABELS[status]}
     </span>
   );
 }

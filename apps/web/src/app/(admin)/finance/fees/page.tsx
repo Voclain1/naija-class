@@ -14,6 +14,7 @@ import type {
 } from "@school-kit/types";
 
 import { Button } from "@/components/ui/button";
+import { InlineAlert } from "@/components/shared/inline-alert";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { listAcademicYears, listTerms } from "@/lib/academic-years/academic-years-api";
@@ -36,6 +37,7 @@ import {
   updateFeeItem,
 } from "@/lib/finance/fee-catalog-api";
 import { formatKobo } from "@/lib/finance/format";
+import { financeErrorMessage, logFinanceError } from "@/lib/finance/error-copy";
 
 // ---------------------------------------------------------------------------
 // Fee Catalog page (/finance/fees; moved from /settings/finance/fees
@@ -91,6 +93,8 @@ export default function FeesPage() {
   // ── categories ───────────────────────────────────────────────────────────
   const [categories, setCategories] = useState<FeeCategoryDto[]>([]);
   const [catsLoading, setCatsLoading] = useState(true);
+  const [categoriesError, setCategoriesError] = useState<string | null>(null);
+  const [referenceError, setReferenceError] = useState<string | null>(null);
   const [selectedCatId, setSelectedCatId] = useState<string | null>(null);
 
   // category create / edit form
@@ -103,6 +107,7 @@ export default function FeesPage() {
   // ── items ─────────────────────────────────────────────────────────────────
   const [items, setItems] = useState<FeeItemDto[]>([]);
   const [itemsLoading, setItemsLoading] = useState(false);
+  const [itemsError, setItemsError] = useState<string | null>(null);
 
   // item create / edit form
   const [itemFormOpen, setItemFormOpen] = useState(false);
@@ -113,9 +118,18 @@ export default function FeesPage() {
   // ── reference data load ──────────────────────────────────────────────────
   useEffect(() => {
     void Promise.all([
-      listClassLevels().then(setLevels).catch(() => undefined),
-      listAcademicYears().then(setYears).catch(() => undefined),
-      listClassArms().then(setAllArms).catch(() => setAllArms([])),
+      listClassLevels().then(setLevels).catch((e) => {
+        logFinanceError("listFeeClassLevels", e);
+        setReferenceError(financeErrorMessage(e));
+      }),
+      listAcademicYears().then(setYears).catch((e) => {
+        logFinanceError("listFeeAcademicYears", e);
+        setReferenceError(financeErrorMessage(e));
+      }),
+      listClassArms().then(setAllArms).catch((e) => {
+        logFinanceError("listFeeClassArms", e);
+        setReferenceError(financeErrorMessage(e));
+      }),
     ]);
   }, []);
 
@@ -126,7 +140,11 @@ export default function FeesPage() {
     if (years.length === 0) return;
     let cancelled = false;
     void Promise.all(
-      years.map((y) => listTerms(y.id).catch(() => [] as TermDto[])),
+      years.map((y) => listTerms(y.id).catch((e) => {
+        logFinanceError("listFeeTerms", e);
+        setReferenceError(financeErrorMessage(e));
+        return [] as TermDto[];
+      })),
     ).then((lists) => {
       if (!cancelled) setAllTerms(lists.flat());
     });
@@ -143,7 +161,10 @@ export default function FeesPage() {
     }
     void listArmsForLevel(itemForm.classLevelId)
       .then(setArms)
-      .catch(() => setArms([]));
+      .catch((e) => {
+        logFinanceError("listFeeArmsForLevel", e);
+        setReferenceError(financeErrorMessage(e));
+      });
   }, [itemForm.classLevelId]);
 
   // When academic year changes in item form, reload terms.
@@ -154,7 +175,10 @@ export default function FeesPage() {
     }
     void listTerms(itemForm.academicYearId)
       .then(setTerms)
-      .catch(() => setTerms([]));
+      .catch((e) => {
+        logFinanceError("listFeeTermsForYear", e);
+        setReferenceError(financeErrorMessage(e));
+      });
   }, [itemForm.academicYearId]);
 
   // Warn when the item being edited is scoped outside the current year. Uses
@@ -170,10 +194,12 @@ export default function FeesPage() {
   // ── categories CRUD ──────────────────────────────────────────────────────
   const loadCategories = useCallback(async () => {
     setCatsLoading(true);
+    setCategoriesError(null);
     try {
       setCategories(await listFeeCategories());
-    } catch {
-      toast.error("Could not load fee categories.");
+    } catch (e) {
+      logFinanceError("listFeeCategories", e);
+      setCategoriesError(financeErrorMessage(e));
     } finally {
       setCatsLoading(false);
     }
@@ -248,9 +274,13 @@ export default function FeesPage() {
       return;
     }
     setItemsLoading(true);
+    setItemsError(null);
     listFeeItems({ categoryId: selectedCatId, includeInactive: true })
       .then(setItems)
-      .catch(() => toast.error("Could not load fee items."))
+      .catch((e) => {
+        logFinanceError("listFeeItems", e);
+        setItemsError(financeErrorMessage(e));
+      })
       .finally(() => setItemsLoading(false));
   }, [selectedCatId]);
 
@@ -348,14 +378,38 @@ export default function FeesPage() {
         </p>
       </header>
 
+      {referenceError && (
+        <InlineAlert title="Could not load fee setup information" action={{ label: "Retry", onClick: () => window.location.reload() }}>
+          {referenceError}
+        </InlineAlert>
+      )}
+
+      {categoriesError && (
+        <InlineAlert title="Could not load fee categories" action={{ label: "Retry", onClick: () => void loadCategories() }}>
+          {categoriesError}
+        </InlineAlert>
+      )}
+
+      {itemsError && (
+        <InlineAlert title="Could not load fee items" action={{ label: "Retry", onClick: () => window.location.reload() }}>
+          {itemsError}
+        </InlineAlert>
+      )}
+
       <div className="flex gap-6">
         {/* ── Category panel ─────────────────────────────────────────── */}
         <aside className="w-64 shrink-0">
           <div className="mb-2 flex items-center justify-between">
             <h2 className="text-sm font-medium">Categories</h2>
             <Button size="sm" variant="outline" onClick={openCatCreate}>
-              <PlusCircle className="mr-1 h-3.5 w-3.5" />
-              New
+              <PlusCircle className="mr-1 h-3.5 w-3.5" aria-hidden />
+              {/* Visible label stays "New" (it sits under a "Categories"
+                  heading, which sighted users read as context). The sr-only
+                  suffix gives the button a self-contained accessible name —
+                  a screen-reader user tabbing to it out of that visual
+                  context otherwise hears only "New". Keeping "New" as the
+                  prefix satisfies WCAG 2.5.3 Label in Name. */}
+              New<span className="sr-only"> category</span>
             </Button>
           </div>
 
@@ -363,7 +417,7 @@ export default function FeesPage() {
             <div className="flex items-center gap-2 text-sm text-muted-foreground py-4">
               <Loader2 className="h-4 w-4 animate-spin" /> Loading…
             </div>
-          ) : categories.length === 0 ? (
+          ) : !categoriesError && categories.length === 0 ? (
             <p className="text-sm text-muted-foreground py-4">No categories yet.</p>
           ) : (
             <ul className="space-y-1">
@@ -396,8 +450,8 @@ export default function FeesPage() {
             </DialogHeader>
             <div className="space-y-3">
               <div>
-                <label className="mb-1 block text-sm font-medium text-foreground">Name</label>
-                <input
+                <label htmlFor="fee-name" className="mb-1 block text-sm font-medium text-foreground">Name</label>
+                <input id="fee-name"
                   autoFocus
                   className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                   value={catName}
@@ -408,10 +462,10 @@ export default function FeesPage() {
                 />
               </div>
               <div>
-                <label className="mb-1 block text-sm font-medium text-foreground">
+                <label htmlFor="fee-description-optional" className="mb-1 block text-sm font-medium text-foreground">
                   Description <span className="font-normal text-muted-foreground">(optional)</span>
                 </label>
-                <textarea
+                <textarea id="fee-description-optional"
                   className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                   value={catDesc}
                   onChange={(e) => setCatDesc(e.target.value)}
@@ -474,11 +528,11 @@ export default function FeesPage() {
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <Loader2 className="h-4 w-4 animate-spin" /> Loading…
                 </div>
-              ) : items.length === 0 ? (
+              ) : !itemsError && items.length === 0 ? (
                 <div className="flex h-32 items-center justify-center rounded-lg border border-dashed text-sm text-muted-foreground">
                   No fee items in this category yet.
                 </div>
-              ) : (
+              ) : items.length > 0 ? (
                 <div className="rounded-lg border">
                   <Table>
                     <TableHeader>
@@ -530,7 +584,7 @@ export default function FeesPage() {
                     </TableBody>
                   </Table>
                 </div>
-              )}
+              ) : null}
             </div>
           )}
         </div>
@@ -545,8 +599,8 @@ export default function FeesPage() {
           <div className="space-y-3">
             {/* Name */}
             <div>
-              <label className="mb-1 block text-sm font-medium text-foreground">Name</label>
-              <input
+              <label htmlFor="fee-name-2" className="mb-1 block text-sm font-medium text-foreground">Name</label>
+              <input id="fee-name-2"
                 autoFocus
                 className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                 value={itemForm.name}
@@ -558,10 +612,10 @@ export default function FeesPage() {
 
             {/* Amount in naira */}
             <div>
-              <label className="mb-1 block text-sm font-medium text-foreground">
+              <label htmlFor="fee-amount-naira-naira" className="mb-1 block text-sm font-medium text-foreground">
                 Amount <span className="font-normal text-muted-foreground">(₦ naira)</span>
               </label>
-              <input
+              <input id="fee-amount-naira-naira"
                 type="number"
                 min="0"
                 step="0.01"
@@ -584,8 +638,8 @@ export default function FeesPage() {
 
             {/* Class level */}
             <div>
-              <label className="mb-1 block text-sm font-medium text-foreground">Class level</label>
-              <select
+              <label htmlFor="fee-class-level" className="mb-1 block text-sm font-medium text-foreground">Class level</label>
+              <select id="fee-class-level"
                 className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                 value={itemForm.classLevelId}
                 onChange={(e) =>
@@ -607,8 +661,8 @@ export default function FeesPage() {
 
             {/* Class arm — disabled until level selected */}
             <div>
-              <label className="mb-1 block text-sm font-medium text-foreground">Class arm</label>
-              <select
+              <label htmlFor="fee-class-arm" className="mb-1 block text-sm font-medium text-foreground">Class arm</label>
+              <select id="fee-class-arm"
                 className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
                 value={itemForm.classArmId}
                 onChange={(e) => setItemForm((f) => ({ ...f, classArmId: e.target.value }))}
@@ -628,8 +682,8 @@ export default function FeesPage() {
 
             {/* Academic year */}
             <div>
-              <label className="mb-1 block text-sm font-medium text-foreground">Academic year</label>
-              <select
+              <label htmlFor="fee-academic-year" className="mb-1 block text-sm font-medium text-foreground">Academic year</label>
+              <select id="fee-academic-year"
                 className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                 value={itemForm.academicYearId}
                 onChange={(e) =>
@@ -651,8 +705,8 @@ export default function FeesPage() {
 
             {/* Term — disabled until year selected */}
             <div>
-              <label className="mb-1 block text-sm font-medium text-foreground">Term</label>
-              <select
+              <label htmlFor="fee-term" className="mb-1 block text-sm font-medium text-foreground">Term</label>
+              <select id="fee-term"
                 className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
                 value={itemForm.termId}
                 onChange={(e) => setItemForm((f) => ({ ...f, termId: e.target.value }))}

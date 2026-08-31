@@ -259,7 +259,7 @@ export function SecuritySettings() {
               Enter your current password to confirm. You can re-enable 2FA at any time.
             </p>
           </div>
-          <form onSubmit={onDisableSubmit} className="flex flex-col gap-4">
+          <form method="post" onSubmit={onDisableSubmit} className="flex flex-col gap-4">
             <div className="flex flex-col gap-2">
               <Label htmlFor="current-password">Current password</Label>
               <Input
@@ -309,7 +309,7 @@ export function SecuritySettings() {
           <h2 className="font-medium">Signed-in devices</h2>
         </div>
         <p className="text-sm text-muted-foreground">
-          Revoke a lost or shared device immediately. School Kit never shows token, IP, or browser details here.
+          Revoke a lost or shared device immediately. SchoolKit never shows token, IP, or browser details here.
         </p>
         {sessions.map((session) => (
           <div key={session.id} className="flex items-center justify-between gap-4 rounded-md border p-3">

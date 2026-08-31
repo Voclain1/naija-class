@@ -34,10 +34,17 @@ const INVOICE_DETAIL = "apps/web/src/app/(admin)/finance/invoices/[id]/page.tsx"
 const CANCEL_DIALOG = "apps/web/src/components/finance/cancel-invoice-dialog.tsx";
 const FINANCE_DASHBOARD = "apps/web/src/app/(admin)/finance/dashboard/page.tsx";
 const DEBTORS = "apps/web/src/app/(admin)/finance/debtors/page.tsx";
+const GENERATE_DIALOG = "apps/web/src/components/finance/generate-invoices-dialog.tsx";
+const GENERATE_LOGIC = "apps/web/src/lib/finance/invoice-generate.ts";
+const DISCOUNTS = "apps/web/src/app/(admin)/finance/discounts/page.tsx";
+const FEES = "apps/web/src/app/(admin)/finance/fees/page.tsx";
+const EXPENSES = "apps/web/src/app/(admin)/finance/expenses/page.tsx";
+const PAYROLL = "apps/web/src/app/(admin)/finance/payroll/page.tsx";
+const INLINE_ALERT = "apps/web/src/components/shared/inline-alert.tsx";
 
 describe("sanity — the files these invariants guard still exist", () => {
   it("reads every guarded source file", () => {
-    for (const path of [INVOICE_LIST, INVOICE_DETAIL, CANCEL_DIALOG, FINANCE_DASHBOARD, DEBTORS]) {
+    for (const path of [INVOICE_LIST, INVOICE_DETAIL, CANCEL_DIALOG, FINANCE_DASHBOARD, DEBTORS, GENERATE_DIALOG, INLINE_ALERT]) {
       expect(source(path).length).toBeGreaterThan(500);
     }
   });
@@ -164,5 +171,96 @@ describe("F-29 — generation selectors are plain-language and do not guess", ()
     expect(list).toContain("unambiguousCurrent(loadedYears)");
     expect(list).not.toContain("unambiguousCurrent(terms)");
     expect(list).not.toContain("setTermId(current.id)");
+  });
+});
+
+describe("F-34 — bulk generation cannot bypass the review gate", () => {
+  it("only the review dialog is allowed to call generateInvoices", () => {
+    // THE mutation check, mirroring F-01's. Re-wiring the Generate button
+    // straight to the mutation requires importing generateInvoices into the
+    // page again — which fails here. Billing a whole arm must stay at least
+    // as guarded as voiding one invoice.
+    expect(source(INVOICE_LIST)).not.toContain("generateInvoices");
+    expect(source(GENERATE_DIALOG)).toContain("generateInvoices");
+  });
+
+  it("the Generate entry point goes through <GenerateInvoicesDialog>", () => {
+    expect(source(INVOICE_LIST)).toContain("GenerateInvoicesDialog");
+  });
+
+  it("the dialog drives its phases through the tested reducer, not ad-hoc booleans", () => {
+    const dialog = source(GENERATE_DIALOG);
+    expect(dialog).toContain("generateReducer");
+    expect(dialog).toContain("initialGenerateState");
+  });
+
+  it("the review is populated from the server preview, not a client re-computation", () => {
+    const dialog = source(GENERATE_DIALOG);
+    expect(dialog).toContain("previewInvoices");
+    // summariseGeneration only PARTITIONS server-supplied lines; it must not
+    // be accompanied by a re-derivation of who is already invoiced.
+    expect(dialog).toContain("summariseGeneration");
+    expect(dialog).not.toContain("listInvoices");
+  });
+
+  it("the skip set is decided by the server, not re-derived on the client", () => {
+    // alreadyInvoiced is read from the preview DTO; the client must never
+    // reconstruct the uniqueness rule (which is status-agnostic, so a
+    // CANCELLED invoice still blocks — an edge easy to get wrong twice).
+    const logic = source(GENERATE_LOGIC);
+    expect(logic).toContain("alreadyInvoiced");
+    expect(logic).not.toContain("CANCELLED");
+  });
+
+  it("a generation failure is never swallowed into console.error alone", () => {
+    const dialog = source(GENERATE_DIALOG);
+    expect(dialog).toContain("financeErrorMessage");
+    expect(dialog).toContain('role="alert"');
+  });
+
+  it("the review names students through the shared identity helper, never ids", () => {
+    const dialog = source(GENERATE_DIALOG);
+    expect(dialog).toContain("studentDisplayName");
+    expect(dialog).not.toContain("studentId.slice");
+  });
+});
+
+describe("F-05b/F-22 shared error presentation remains truthful", () => {
+  const migratedScreens = [
+    INVOICE_LIST,
+    INVOICE_DETAIL,
+    FINANCE_DASHBOARD,
+    DEBTORS,
+    DISCOUNTS,
+    FEES,
+    EXPENSES,
+    PAYROLL,
+  ];
+
+  it("uses one semantic alert primitive with an optional retry action", () => {
+    const alert = source(INLINE_ALERT);
+    expect(alert).toContain('role="alert"');
+    expect(alert).toContain("action?: InlineAlertAction");
+    expect(alert).toContain("action.label");
+  });
+
+  it("does not turn a failed Finance fetch into an empty collection", () => {
+    for (const path of migratedScreens) {
+      const screen = source(path);
+      expect(screen).toContain("InlineAlert");
+      expect(screen).not.toMatch(/catch\(\(\)\s*=>\s*(set\w+\(\[\]\)|undefined|\{\s*\})/);
+    }
+  });
+
+  it("does not reintroduce the duplicated destructive banner in migrated Finance screens", () => {
+    for (const path of migratedScreens) {
+      expect(source(path)).not.toMatch(/border-destructive[^"`]*bg-destructive|bg-destructive[^"`]*border-destructive/);
+    }
+  });
+
+  it("normalizes raw exception messages on the invoice detail surface", () => {
+    const detail = source(INVOICE_DETAIL);
+    expect(detail).toContain("financeErrorMessage");
+    expect(detail).not.toContain("instanceof Error ? e.message");
   });
 });

@@ -94,7 +94,7 @@ function LoginForm() {
   return (
     <main className="flex min-h-screen flex-col items-center justify-center gap-8 px-4 py-10">
       <div className="flex flex-col items-center gap-1 text-center">
-        <h1 className="text-2xl font-semibold tracking-tight">schoolkit</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">SchoolKit</h1>
         <p className="text-sm text-muted-foreground">Parent Portal</p>
       </div>
 
@@ -113,6 +113,7 @@ function LoginForm() {
 
       <form
         onSubmit={onSubmit}
+        method="post"
         className="flex w-full max-w-sm flex-col gap-4 rounded-lg border bg-card p-6 shadow-sm"
         noValidate
       >

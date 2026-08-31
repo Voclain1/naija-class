@@ -95,7 +95,10 @@ export default function StudentsScreen() {
           }
           renderItem={({ item }) => (
             <Link href={`/students/${item.id}`} asChild>
-              <Pressable accessibilityRole="button">
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`View ${fullName(item)}`}
+              >
                 <Card>
                   <Label>{item.admissionNumber}</Label>
                   <Body>{fullName(item)}</Body>

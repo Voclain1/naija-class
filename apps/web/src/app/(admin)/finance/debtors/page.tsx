@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import type { AcademicYearDto, DebtorDto, TermDto } from "@school-kit/types";
 
 import { ExportCsvButton } from "@/components/shared/export-csv-button";
+import { InlineAlert } from "@/components/shared/inline-alert";
 import { PrintButton } from "@/components/shared/print-button";
 import { Badge, type BadgeProps } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -53,6 +54,7 @@ export default function DebtorsPage() {
   const [debtors, setDebtors] = useState<DebtorDto[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [referenceError, setReferenceError] = useState<string | null>(null);
 
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [reminding, setReminding] = useState(false);
@@ -62,7 +64,10 @@ export default function DebtorsPage() {
   useEffect(() => {
     listAcademicYears()
       .then(setYears)
-      .catch((e) => { console.error("[DebtorsPage] listAcademicYears:", e); });
+      .catch((e) => {
+        logFinanceError("listDebtorAcademicYears", e);
+        setReferenceError(financeErrorMessage(e));
+      });
   }, []);
 
   // Load terms when year changes
@@ -71,10 +76,14 @@ export default function DebtorsPage() {
     setTerms([]);
     setDebtors([]);
     setSelected(new Set());
+    setReferenceError(null);
     if (!yearId) return;
     listTerms(yearId)
       .then(setTerms)
-      .catch(() => setTerms([]));
+      .catch((e) => {
+        logFinanceError("listDebtorTerms", e);
+        setReferenceError(financeErrorMessage(e));
+      });
   }, [yearId]);
 
   // Load debtors when term changes
@@ -137,8 +146,8 @@ export default function DebtorsPage() {
       {/* Term selector */}
       <div className="flex flex-wrap items-end gap-4 print:hidden">
         <div>
-          <label className="mb-1 block text-sm font-medium text-foreground">Academic year</label>
-          <select className={SELECT_CLASSES} value={yearId} onChange={(e) => setYearId(e.target.value)}>
+          <label htmlFor="fin-debtors-year" className="mb-1 block text-sm font-medium text-foreground">Academic year</label>
+          <select id="fin-debtors-year" className={SELECT_CLASSES} value={yearId} onChange={(e) => setYearId(e.target.value)}>
             <option value="">Select year…</option>
             {years.map((y) => (
               <option key={y.id} value={y.id}>{y.label}</option>
@@ -147,8 +156,8 @@ export default function DebtorsPage() {
         </div>
 
         <div>
-          <label className="mb-1 block text-sm font-medium text-foreground">Term</label>
-          <select
+          <label htmlFor="fin-debtors-term" className="mb-1 block text-sm font-medium text-foreground">Term</label>
+          <select id="fin-debtors-term"
             className={SELECT_CLASSES}
             value={termId}
             onChange={(e) => setTermId(e.target.value)}
@@ -164,9 +173,15 @@ export default function DebtorsPage() {
 
       {/* Error */}
       {error && (
-        <div className="rounded-md border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+        <InlineAlert title="Could not load debtors" action={{ label: "Retry", onClick: () => window.location.reload() }}>
           {error}
-        </div>
+        </InlineAlert>
+      )}
+
+      {referenceError && !error && (
+        <InlineAlert title="Could not load academic information" action={{ label: "Retry", onClick: () => window.location.reload() }}>
+          {referenceError}
+        </InlineAlert>
       )}
 
       {/* Reminder result */}
@@ -186,7 +201,7 @@ export default function DebtorsPage() {
       )}
 
       {/* Empty state */}
-      {termId && !loading && debtors.length === 0 && (
+      {termId && !loading && !error && debtors.length === 0 && (
         <p className="text-sm text-muted-foreground">No outstanding invoices for this term.</p>
       )}
 

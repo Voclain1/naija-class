@@ -61,13 +61,13 @@ async function readError(res: Response, fallback: string): Promise<string> {
     // A non-JSON body means the failure happened before the API was reached.
     // Fall through — the status code is still worth surfacing below.
   }
-  return `${fallback} (error ${res.status})`;
+  return `${fallback} Try again.`;
 }
 
 function describeState(status: StudentPortalStatusDto, firstName: string): string {
   switch (status.state) {
     case "ACTIVE":
-      return `${firstName} can sign in to School Kit.`;
+      return `${firstName} can sign in to SchoolKit.`;
     case "DEACTIVATED":
       return `${firstName}'s access is turned off. Send a new invite to switch it back on.`;
     case "NEVER_ACTIVATED":
@@ -153,7 +153,7 @@ export function StudentPortalAccess({ studentId, firstName }: Props) {
   if (status.kind === "error") {
     return (
       <section className="flex flex-col gap-2">
-        <h2 className="text-lg font-semibold tracking-tight">School Kit account</h2>
+        <h2 className="text-lg font-semibold tracking-tight">SchoolKit account</h2>
         <p className="text-sm text-destructive">{status.message}</p>
       </section>
     );
@@ -164,7 +164,7 @@ export function StudentPortalAccess({ studentId, firstName }: Props) {
 
   return (
     <section className="flex flex-col gap-3">
-      <h2 className="text-lg font-semibold tracking-tight">School Kit account</h2>
+      <h2 className="text-lg font-semibold tracking-tight">SchoolKit account</h2>
 
       <div className="rounded-lg border bg-card p-4 flex flex-col gap-3">
         <p className="text-sm">{describeState(s, firstName)}</p>
@@ -211,7 +211,7 @@ export function StudentPortalAccess({ studentId, firstName }: Props) {
                 ? "Send a new invite"
                 : s.hasPendingInvitation
                   ? "Send a new invite"
-                  : "Invite to School Kit"}
+                  : "Invite to SchoolKit"}
           </button>
 
           {/* Only offered when there is something to turn off. Showing a

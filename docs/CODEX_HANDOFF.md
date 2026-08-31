@@ -135,6 +135,45 @@ those; it doesn't replace them.
 
 ## Latest state as of this handoff (updated 2026-08-28)
 
+- **Wave 4 shared error primitives are in progress on
+  `fix/shared-error-primitives` from `a9c4ad9` (2026-08-31).** The small
+  web-only `InlineAlert` adds semantic error presentation with an optional
+  retry, and the destructive token now meets AA for the legacy translucent
+  banner treatment. Eight Finance read surfaces plus the admin dashboard have
+  been migrated; the 15 confirmed Finance failure-to-empty/silent catches now
+  show reviewed human error copy without clearing a truthful prior result.
+  Web lint/typecheck, focused Vitest (30 tests) and E2E typecheck pass. A
+  browser axe/contrast/retry regression is written but not run locally because
+  this worktree has no disposable runtime configuration or services. No
+  Finance backend, payment reconciliation, mobile, Prisma, migration or
+  offline-write behavior changed. See `docs/journal/2026-08-31.md`.
+
+- **Wave 3B terminology/developer-language cleanup is in progress on
+  `fix/terminology-developer-language` from `6064ad6` (2026-08-30).** It is
+  presentation-only: enrollment UUID fallbacks, raw dashboard/import/guardian
+  error fallbacks, visible status labels and user-facing SchoolKit spelling.
+  Shared invoice/payment/payroll/Paystack labels are centralised without
+  changing backend enum values. Types, web/portal/mobile typechecks, web and
+  mobile lint, portal lint, and the focused web Vitest suite (13/13) pass;
+  `git diff --check` passes. Fresh PR #235 CI passed its complete rendered
+  gate: Playwright 67 passed (one retried pre-existing guardian-auth flake),
+  including all three new terminology presentation cases; mobile CI finished
+  20 files/165 tests; and both Vercel previews are green. No schema,
+  migration, authorization, finance behavior, attendance, session-end or
+  offline-write policy changed. See `docs/journal/2026-08-30.md`.
+
+- **Guardian/student consistency UX is in progress on
+  `fix/guardian-student-consistency-ux` (2026-08-29).** It is confined to
+  family-facing mobile/portal presentation, shared invoice labels and focused
+  tests. It was replayed safely onto `bfaf96d`; main's onboarding change had no
+  semantic overlap. Local typechecks/lint and 11 focused mobile tests pass, as
+  does E2E typecheck for the new guardian released-results regression. A
+  disposable loopback-only migrated Postgres/Redis environment was built, but
+  this host terminates local Node servers after startup, so the browser test has
+  not reached an assertion. Do not call this browser or Android runtime
+  verified; no API, schema, migration, payment reconciliation or offline-write
+  behavior changed.
+
 - **Mobile session-end UX shipped through PR #230 on
   `fix/mobile-session-end-ux` (2026-08-29).** The shared mobile API listener
   now forwards normalized 401 termination reasons to `SessionProvider`, which

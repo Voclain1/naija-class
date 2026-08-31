@@ -21,6 +21,7 @@ import type {
   PortalParentSummaryDto,
   PortalStudentDto,
 } from "@school-kit/types";
+import { invoiceStatusLabel } from "@school-kit/types";
 
 import { SignOutButton } from "@/components/sign-out-button";
 import {
@@ -46,16 +47,6 @@ type LoadState =
       // render.
       summaries: PortalParentSummaryDto[];
     };
-
-const STATUS_LABELS: Record<PortalInvoiceDto["status"], string> = {
-  DRAFT: "Draft",
-  ISSUED: "Issued",
-  PARTIALLY_PAID: "Partially paid",
-  PAID: "Paid",
-  OVERDUE: "Overdue",
-  CANCELLED: "Cancelled",
-  REFUNDED: "Refunded",
-};
 
 const STATUS_STYLES: Record<PortalInvoiceDto["status"], string> = {
   DRAFT: "bg-muted text-muted-foreground",
@@ -262,6 +253,19 @@ export default function StudentDetailPage() {
             firstName={state.student.firstName}
           />
 
+          <section className="flex flex-col gap-2 rounded-lg border bg-card p-4 shadow-sm">
+            <h2 className="text-lg font-semibold tracking-tight">Results</h2>
+            <p className="text-sm text-muted-foreground">
+              Report cards the school has released for this child.
+            </p>
+            <Link
+              href={`/students/${state.student.id}/results`}
+              className="text-sm font-medium text-primary hover:underline"
+            >
+              View released results
+            </Link>
+          </section>
+
           {/* Weekly updates sit ABOVE invoices deliberately: a parent opening
               their child's page is more often checking on the child than on a
               bill, and this is the only section here that changes week to
@@ -357,7 +361,7 @@ function InvoiceCard({ invoice }: { invoice: PortalInvoiceDto }) {
         <span
           className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_STYLES[invoice.status]}`}
         >
-          {STATUS_LABELS[invoice.status]}
+          {invoiceStatusLabel[invoice.status]}
         </span>
       </div>
 

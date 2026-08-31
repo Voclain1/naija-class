@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
 import { toast } from "sonner";
 
+import { paystackSetupStatusLabel } from "@school-kit/types";
 import type {
   PlatformAdminCreateSchoolInput,
   PlatformAdminCreateSchoolResponse,
@@ -338,7 +339,7 @@ export function PlatformAdminDashboard() {
                           </TableCell>
                           <TableCell>
                             <Badge variant={r.status === "PENDING" ? "default" : "secondary"}>
-                              {r.status}
+                              {paystackSetupStatusLabel[r.status]}
                             </Badge>
                           </TableCell>
                           <TableCell>

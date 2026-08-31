@@ -75,7 +75,7 @@ export default function AcceptInvitationScreen() {
       await adoptStudentSession(response);
     } catch (caught) {
       if (caught instanceof ApiNetworkError) {
-        setError("Can't reach School Kit. Check your connection and try again.");
+        setError("Can't reach SchoolKit. Check your connection and try again.");
       } else if (caught instanceof ApiError) {
         setError(
           caught.status === 404 || caught.status === 410

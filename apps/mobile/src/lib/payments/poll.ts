@@ -103,13 +103,20 @@ export async function pollPaymentOutcome(
 }
 
 /** User-facing copy for each outcome. Kept next to the logic that produces it. */
-export function describeOutcome(outcome: CheckoutOutcome): {
+export function describeOutcome(
+  outcome: CheckoutOutcome,
+  context?: { studentName: string | null; termName: string },
+): {
   title: string;
   tone: "info" | "warning" | "danger";
 } {
   switch (outcome.kind) {
-    case "succeeded":
-      return { title: "Payment confirmed. Thank you.", tone: "info" };
+    case "succeeded": {
+      const paymentContext = context
+        ? ` ${formatKobo(outcome.payment.amount)} was received for ${context.studentName ?? "this child"}'s ${context.termName} invoice.`
+        : "";
+      return { title: `Payment confirmed. Thank you.${paymentContext}`, tone: "info" };
+    }
     case "failed":
       return { title: "That payment did not go through.", tone: "danger" };
     case "pending":
@@ -127,4 +134,11 @@ export function describeOutcome(outcome: CheckoutOutcome): {
         tone: "warning",
       };
   }
+}
+
+function formatKobo(kobo: number): string {
+  return `₦${(kobo / 100).toLocaleString("en-NG", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
 }

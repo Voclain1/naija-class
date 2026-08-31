@@ -109,7 +109,7 @@ export default function NotificationSettingsPage() {
       <header className="flex flex-col gap-2">
         <h1 className="font-serif text-2xl font-medium tracking-tight text-foreground">Notifications</h1>
         <p className="text-sm text-muted-foreground">
-          Choose which channels schoolkit uses to reach guardians — portal
+          Choose which channels SchoolKit uses to reach guardians — portal
           invitations and fee reminders both respect these settings.
         </p>
       </header>
@@ -142,7 +142,7 @@ export default function NotificationSettingsPage() {
             />
             <ToggleRow
               label="Push"
-              description="Send to the School Kit app, free. Used instead of SMS when a guardian has the app installed — never as well as."
+              description="Send to the SchoolKit app, free. Used instead of SMS when a guardian has the app installed — never as well as."
               checked={draftPush}
               disabled={!canUpdate || saving}
               onChange={setDraftPush}

@@ -9,6 +9,7 @@ import type { ExpenseCategoryDto, ExpenseDto } from "@school-kit/types";
 import { ExpenseCategoriesModal } from "@/components/finance/expense-categories-modal";
 import { ExpenseFormModal } from "@/components/finance/expense-form-modal";
 import { ExportCsvButton } from "@/components/shared/export-csv-button";
+import { InlineAlert } from "@/components/shared/inline-alert";
 import { PrintButton } from "@/components/shared/print-button";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -24,6 +25,7 @@ import {
   uploadExpenseReceipt,
 } from "@/lib/finance/expenses-api";
 import { formatKobo } from "@/lib/finance/format";
+import { financeErrorMessage, logFinanceError } from "@/lib/finance/error-copy";
 
 // /finance/expenses — Phase 3 / Slice 13. Completes the P&L inputs.
 //
@@ -65,7 +67,8 @@ export default function ExpensesPage() {
       setCategories(cats);
       setExpenses(exps);
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : "Could not load expenses.");
+      logFinanceError("listExpenses", e);
+      setError(financeErrorMessage(e));
     } finally {
       setLoading(false);
     }
@@ -218,20 +221,22 @@ export default function ExpensesPage() {
         </select>
       </div>
 
-      {loading ? (
+      {error && (
+        <InlineAlert title="Could not load expenses" action={{ label: "Retry", onClick: () => void load() }}>
+          {error}
+        </InlineAlert>
+      )}
+
+      {loading && expenses.length === 0 ? (
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <Loader2 className="h-4 w-4 animate-spin" />
           Loading…
         </div>
-      ) : error ? (
-        <div className="rounded-md border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive">
-          {error}
-        </div>
-      ) : expenses.length === 0 ? (
+      ) : !error && expenses.length === 0 ? (
         <div className="flex h-32 items-center justify-center rounded-lg border border-dashed text-sm text-muted-foreground">
           No expenses recorded yet.
         </div>
-      ) : (
+      ) : expenses.length > 0 ? (
         <div className="rounded-lg border">
           <Table>
             <TableHeader>
@@ -305,7 +310,7 @@ export default function ExpensesPage() {
             </TableBody>
           </Table>
         </div>
-      )}
+      ) : null}
 
       {/* Hidden file input shared by every row's "Upload receipt" button —
           triggerUpload() sets uploadTargetId then clicks this. */}
