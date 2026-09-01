@@ -2777,3 +2777,63 @@ blocker. No change proposed.
   unless the shared-hook extraction above is done first — see the
   `usePermissions` entry, whose recount found ten. Doing that extraction and
   this gate together is a reasonable pairing.
+
+## NDPR compliance posture for third-party AI / embeddings vendors has never been formally reviewed (captured 2026-09-01)
+
+- [ ] **NDPR compliance posture for third-party AI/embeddings vendors has never
+  been formally reviewed — applies to current production Anthropic usage as
+  well as any future embeddings vendor.**
+
+  **This needs real legal review. It is not an engineering decision and must
+  not be closed by one.** No amount of code review, redaction auditing or
+  vendor documentation reading substitutes for a qualified answer on what the
+  Nigerian Data Protection Regulation requires when a Nigerian school's data —
+  including data about children — is processed by a third-party AI provider
+  outside Nigeria. Engineering can describe precisely what is sent, to whom,
+  and under what controls; engineering cannot decide whether that is lawful.
+
+  **Scope is broader than Phase 7.** It was surfaced while choosing an
+  embeddings vendor for Phase 7 (curriculum RAG + student tutor, HELD per
+  `docs/ARCHITECTURE.md`), but it is not a Phase 7 question. The same question
+  sits underneath the Anthropic integration that Phase 5 already shipped
+  (lesson plans, report-card comments, parent summaries, admin insights). A
+  second vendor widens the exposure; it did not create it.
+
+  **What is already true in our favour, and what it does not settle.**
+  `CLAUDE.md`'s AI hard rules already forbid sending student PII to the model
+  for derived features, mandate opaque IDs and class-level context only, and
+  pin a deliberate allowlist of exactly one PII-bearing prompt
+  (`student-list-extraction`) with its own sign-off. That is a genuinely
+  strong engineering posture and it is why this is a question rather than an
+  incident. It does not settle the legal question: NDPR concerns itself with
+  cross-border transfer, lawful basis, consent scope, processor agreements and
+  data-subject rights, none of which are answered by "we redact PII well."
+  Onboarding step 4 collects an NDPR consent confirmation — whether that
+  consent's wording actually covers third-party AI processing is precisely
+  the sort of thing that needs reading by someone qualified.
+
+  **Open factual question to resolve before or during the review:** whether
+  Anthropic-backed features are currently reachable in production at all.
+  `AI_ENABLED` defaults to `true` when unset (`ai-generation.service.ts`), and
+  there is a separate per-school `School.aiEnabled` gate, but production is
+  believed to run with `AI_ENABLED=false` as a deliberate staged-off state.
+  That could not be verified while writing this entry (no `flyctl` access from
+  this host). It matters a great deal to the review: "shipped but gated off"
+  and "processing real school data today" are materially different starting
+  positions, and the answer should be confirmed from the running app rather
+  than assumed in either direction.
+
+  **Decision status (2026-09-01).** Voyage AI is the approved vendor choice
+  and the engineering-readiness findings are accepted. Phase 7 planning may
+  proceed on that assumption. **Implementation — actual API integration and
+  actual curriculum content processing — waits** for either (a) confirmation
+  that the NDPR question has been addressed, or (b) a deliberate, recorded
+  decision to proceed despite it. Option (b) is a legitimate business call,
+  but it should be made knowingly and written down here, not arrived at by
+  someone simply starting the integration.
+
+  **Recorded from Arinzechukwu's instruction, 2026-09-01.** The supporting
+  Phase 7 plan-first and vendor comparison are not committed to this repo —
+  see the note in the same PR. This entry deliberately states the compliance
+  question and its status only, and does not restate vendor analysis it cannot
+  cite.
