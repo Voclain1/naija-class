@@ -4,6 +4,8 @@ import {
   buildCancelConfirmation,
   cancelReducer,
   canCancelInvoice,
+  CANCEL_INVOICE_PERMISSION,
+  hasPermission,
   initialCancelState,
   shouldSendCancelRequest,
   type CancelState,
@@ -34,21 +36,88 @@ function confirming(): CancelState {
   return cancelReducer(initialCancelState, { type: "open", target });
 }
 
-describe("canCancelInvoice", () => {
+// A user who holds the cancel permission. Every status assertion below runs
+// with this, so a status result can never pass for the wrong reason.
+const ALLOWED = [CANCEL_INVOICE_PERMISSION];
+// A realistic under-privileged grant: can see invoices, cannot void them.
+const READ_ONLY = ["invoice.read", "payment.read", "finance.debtors.read"];
+
+describe("canCancelInvoice — workflow state", () => {
   it("offers cancellation only for statuses the server will actually accept", () => {
-    expect(canCancelInvoice("DRAFT")).toBe(true);
-    expect(canCancelInvoice("ISSUED")).toBe(true);
-    expect(canCancelInvoice("OVERDUE")).toBe(true);
+    expect(canCancelInvoice("DRAFT", ALLOWED)).toBe(true);
+    expect(canCancelInvoice("ISSUED", ALLOWED)).toBe(true);
+    expect(canCancelInvoice("OVERDUE", ALLOWED)).toBe(true);
   });
 
   it("never offers cancellation for an invoice with money against it", () => {
     // These four map 1:1 onto InvoiceGenerationService.cancel's ConflictErrors.
     // Offering the action here would guarantee a failed request and, worse,
     // suggest to a bursar that voiding a paid invoice is a normal thing to do.
-    expect(canCancelInvoice("PAID")).toBe(false);
-    expect(canCancelInvoice("PARTIALLY_PAID")).toBe(false);
-    expect(canCancelInvoice("REFUNDED")).toBe(false);
-    expect(canCancelInvoice("CANCELLED")).toBe(false);
+    expect(canCancelInvoice("PAID", ALLOWED)).toBe(false);
+    expect(canCancelInvoice("PARTIALLY_PAID", ALLOWED)).toBe(false);
+    expect(canCancelInvoice("REFUNDED", ALLOWED)).toBe(false);
+    expect(canCancelInvoice("CANCELLED", ALLOWED)).toBe(false);
+  });
+});
+
+describe("canCancelInvoice — permission", () => {
+  // The gap this suite exists for: the endpoint is @Permissions("invoice.cancel"),
+  // but the UI used to gate on status alone. A user without the grant was shown
+  // a live "Cancel invoice…" control and found out via a 403.
+
+  it("refuses every otherwise-cancellable status when the grant is missing", () => {
+    // The important shape: status is VALID in all three. Only the permission
+    // differs, so this cannot pass because of the status filter.
+    for (const status of ["DRAFT", "ISSUED", "OVERDUE"] as const) {
+      expect(canCancelInvoice(status, ALLOWED)).toBe(true);
+      expect(canCancelInvoice(status, READ_ONLY)).toBe(false);
+    }
+  });
+
+  it("refuses when the user has no permissions at all", () => {
+    expect(canCancelInvoice("ISSUED", [])).toBe(false);
+  });
+
+  it("fails closed while auth is still loading", () => {
+    // AuthProvider's initial state is `permissions: []` with status "loading".
+    // Rendering a void-this-invoice control during that window would offer a
+    // destructive money action before knowing whether it is allowed.
+    const stillLoading: string[] = [];
+    expect(canCancelInvoice("ISSUED", stillLoading)).toBe(false);
+  });
+
+  it("honours the owner wildcard", () => {
+    expect(canCancelInvoice("ISSUED", ["*"])).toBe(true);
+  });
+
+  it("is not satisfied by a different, similarly-named finance grant", () => {
+    // Guards against a prefix/substring check creeping in later.
+    expect(canCancelInvoice("ISSUED", ["invoice.read"])).toBe(false);
+    expect(canCancelInvoice("ISSUED", ["invoice.issue"])).toBe(false);
+    expect(canCancelInvoice("ISSUED", ["invoice.cancel.request"])).toBe(false);
+    expect(canCancelInvoice("ISSUED", ["payment.refund"])).toBe(false);
+  });
+
+  it("requires BOTH gates — neither one alone is sufficient", () => {
+    expect(canCancelInvoice("PAID", ALLOWED)).toBe(false); // permitted, wrong state
+    expect(canCancelInvoice("ISSUED", READ_ONLY)).toBe(false); // right state, not permitted
+    expect(canCancelInvoice("PAID", READ_ONLY)).toBe(false); // neither
+    expect(canCancelInvoice("ISSUED", ALLOWED)).toBe(true); // both
+  });
+
+  it("names the exact permission the server declares", () => {
+    // If the endpoint's @Permissions string is ever renamed, this is the line
+    // that should fail rather than the affordance silently going dark.
+    expect(CANCEL_INVOICE_PERMISSION).toBe("invoice.cancel");
+  });
+});
+
+describe("hasPermission", () => {
+  it("matches the sidebar/BVN convention: exact match or the wildcard", () => {
+    expect(hasPermission(["invoice.cancel"], "invoice.cancel")).toBe(true);
+    expect(hasPermission(["*"], "invoice.cancel")).toBe(true);
+    expect(hasPermission([], "invoice.cancel")).toBe(false);
+    expect(hasPermission(["invoice.read"], "invoice.cancel")).toBe(false);
   });
 });
 
