@@ -851,15 +851,26 @@ Format:
 
 - [ ] Shared `usePermissions` hook for `apps/web`. The 2-line
   `hasPermission(permissions, perm)` helper (checks `permissions.includes("*")
-  || permissions.includes(perm)`) is duplicated per-file rather than shared:
-  `finance/payroll/page.tsx`, `staff/bvn-section.tsx`,
-  `components/students/guardians-tab.tsx` (guardian-invite button, gating
-  `guardian.invite` to owner/admin — hide, not disable, for everyone else),
-  and now `settings/notifications/page.tsx` (same hide-not-disable gate on
-  `notification-preferences.read`/`update`). No divergence yet, just
-  copy-paste. **Trigger condition has now fired (4th site, 2026-07-18)** —
-  next touch of any of these four files is a reasonable point to actually
-  extract the hook, rather than adding a 5th copy.
+  || permissions.includes(perm)`) is duplicated per-file rather than shared.
+
+  **Recount 2026-09-01: there are TEN copies, not four.** This entry claimed
+  four from 2026-07-18 until an actual `grep -rn "function hasPermission"`
+  was run while gating the invoice-cancel affordance. The full list:
+  `finance/dashboard/page.tsx`, `finance/payroll/page.tsx`,
+  `insights/page.tsx`, `settings/ai-usage/page.tsx`,
+  `settings/notifications/page.tsx`, `settings/parent-summaries/page.tsx`,
+  `components/admin/sidebar.tsx`, `components/staff/bvn-section.tsx`,
+  `components/students/guardians-tab.tsx`, and `lib/finance/invoice-cancel.ts`.
+  Still no behavioural divergence — all ten are the same two lines — but the
+  entry's own trigger condition had fired five sites earlier than it said, and
+  nobody noticed because the count was never re-derived.
+
+  `lib/finance/invoice-cancel.ts`'s copy (added 2026-09-01) is the odd one
+  out and the natural seed for the extraction: it is the only one that is
+  **exported and unit-tested**, and the only one living in a pure module
+  rather than inside a component. The other nine are unreachable by
+  `apps/web`'s node-environment Vitest runner. When this is finally extracted,
+  move that one rather than writing an eleventh.
 
 - [ ] Cross-cutting unsaved-changes guard for the class-subject matrix.
   Slice 3 cp3 ships a two-layer guard: `beforeunload` (catches close /

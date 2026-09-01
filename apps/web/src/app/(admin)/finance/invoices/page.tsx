@@ -25,6 +25,7 @@ import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { listAcademicYears, listTerms } from "@/lib/academic-years/academic-years-api";
+import { useAuth } from "@/lib/auth/use-auth";
 import { listClassArms } from "@/lib/class-arms/class-arms-api";
 import { exportRowsAsCsv, type CsvColumn } from "@/lib/csv-export";
 import { currentSuffix, unambiguousCurrent } from "@/lib/finance/current-context";
@@ -80,6 +81,10 @@ const SELECT_CLASSES =
 type Tab = "generate" | "list";
 
 export default function InvoicesPage() {
+  // Cancelling is `@Permissions("invoice.cancel")` on the server. Read the
+  // signed-in user's grant here so the row action reflects it, rather than
+  // offering the action and letting a 403 be the answer.
+  const { permissions } = useAuth();
   // Reference data
   const [years, setYears] = useState<AcademicYearDto[]>([]);
   const [arms, setArms] = useState<ClassArmDto[]>([]);
@@ -643,7 +648,7 @@ export default function InvoicesPage() {
                           >
                             View
                           </Link>
-                          {canCancelInvoice(inv.status) && (
+                          {canCancelInvoice(inv.status, permissions) && (
                             <CancelInvoiceDialog
                               onCancelled={(updated) =>
                                 setInvoices((prev) =>
