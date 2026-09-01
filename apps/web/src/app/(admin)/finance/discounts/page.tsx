@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useReducer, useState } from "react";
 
 import type {
   AcademicYearDto,
@@ -25,6 +25,13 @@ import {
   deactivateDiscountRule,
   listDiscountRules,
 } from "@/lib/finance/discount-rules-api";
+import {
+  buildDeactivateConfirmation,
+  deactivateReducer,
+  initialDeactivateState,
+  shouldSendDeactivateRequest,
+  toDeactivateTarget,
+} from "@/lib/finance/discount-deactivate";
 import { listStudents } from "@/lib/students/students-api";
 
 type TargetType = "feeItem" | "feeCategory";
@@ -75,6 +82,12 @@ export default function DiscountsPage() {
   const [loadingRules, setLoadingRules] = useState(false);
   const [referenceError, setReferenceError] = useState<string | null>(null);
   const [rulesError, setRulesError] = useState<string | null>(null);
+
+  // Deactivation confirmation (F-01-style gate — see lib/finance/discount-deactivate.ts)
+  const [deactivate, dispatchDeactivate] = useReducer(
+    deactivateReducer,
+    initialDeactivateState,
+  );
 
   // Assign discount modal
   const [showForm, setShowForm] = useState(false);
@@ -195,13 +208,24 @@ export default function DiscountsPage() {
     }
   }
 
-  async function handleDeactivate(id: string) {
+  // Only ever called from the confirmation dialog's confirm button. The
+  // reducer refuses `submit` from `idle`, so the row button cannot reach the
+  // request even if someone re-wires it later.
+  async function handleConfirmDeactivate() {
+    const next = deactivateReducer(deactivate, { type: "submit" });
+    if (!shouldSendDeactivateRequest(next)) return;
+    const target = next.target;
+    if (!target) return;
+    dispatchDeactivate({ type: "submit" });
     try {
-      await deactivateDiscountRule(id);
-      setRules((r) => r.map((rule) => (rule.id === id ? { ...rule, active: false } : rule)));
+      await deactivateDiscountRule(target.id);
+      setRules((r) => r.map((rule) => (rule.id === target.id ? { ...rule, active: false } : rule)));
+      dispatchDeactivate({ type: "success" });
     } catch (e) {
       logFinanceError("deactivateDiscountRule", e);
-      setRulesError(financeErrorMessage(e));
+      // Stays in the dialog with the reason — the row is left showing what the
+      // server still has, never an optimistic "Inactive".
+      dispatchDeactivate({ type: "error", message: financeErrorMessage(e) });
     }
   }
 
@@ -332,7 +356,17 @@ export default function DiscountsPage() {
                   <TableCell>
                     {rule.active && (
                       <button
-                        onClick={() => handleDeactivate(rule.id)}
+                        type="button"
+                        // Named for the rule it belongs to: several rules list
+                        // together, and a bare "Deactivate" identified none of
+                        // them to a screen reader.
+                        aria-label={`Deactivate ${rule.name}`}
+                        onClick={() =>
+                          dispatchDeactivate({
+                            type: "open",
+                            target: toDeactivateTarget(rule, formatValue(rule), scopeLabel(rule)),
+                          })
+                        }
                         className="text-xs text-destructive hover:text-destructive/80"
                       >
                         Deactivate
@@ -591,6 +625,56 @@ export default function DiscountsPage() {
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Deactivate confirmation — the F-01 gate for discount rules. */}
+      <Dialog
+        open={deactivate.phase !== "idle"}
+        onOpenChange={(next) => {
+          if (!next) dispatchDeactivate({ type: "dismiss" });
+        }}
+      >
+        <DialogContent>
+          {deactivate.target &&
+            (() => {
+              const copy = buildDeactivateConfirmation(
+                deactivate.target,
+                selectedStudent
+                  ? `${selectedStudent.firstName} ${selectedStudent.lastName}`
+                  : "this student",
+              );
+              return (
+                <>
+                  <DialogHeader>
+                    <DialogTitle>{copy.title}</DialogTitle>
+                  </DialogHeader>
+                  <p className="text-sm font-medium text-foreground">{copy.subject}</p>
+                  <p className="text-sm text-muted-foreground">{copy.consequence}</p>
+                  {deactivate.error && (
+                    <InlineAlert title="Could not deactivate this discount">
+                      {deactivate.error}
+                    </InlineAlert>
+                  )}
+                  <DialogFooter>
+                    <Button
+                      variant="outline"
+                      disabled={deactivate.phase === "submitting"}
+                      onClick={() => dispatchDeactivate({ type: "dismiss" })}
+                    >
+                      {copy.dismissLabel}
+                    </Button>
+                    <Button
+                      variant="destructive"
+                      disabled={deactivate.phase === "submitting"}
+                      onClick={() => void handleConfirmDeactivate()}
+                    >
+                      {deactivate.phase === "submitting" ? "Deactivating…" : copy.confirmLabel}
+                    </Button>
+                  </DialogFooter>
+                </>
+              );
+            })()}
         </DialogContent>
       </Dialog>
     </div>
