@@ -28,7 +28,9 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { listTerms } from "@/lib/academic-years/academic-years-api";
+import { useAuth } from "@/lib/auth/use-auth";
 import { formatKobo } from "@/lib/finance/format";
+import { canCancelInvoice } from "@/lib/finance/invoice-cancel";
 import { financeErrorMessage, logFinanceError } from "@/lib/finance/error-copy";
 import { archivePaymentLink, createPaymentLink, getInvoice, getPaymentLink } from "@/lib/finance/invoices-api";
 import {
@@ -57,7 +59,6 @@ const PAYMENT_STATUS_VARIANTS: Record<PaymentStatus, BadgeProps["variant"]> = {
   REVERSED: "destructive",
 };
 
-const CANCELLABLE: Set<InvoiceStatus> = new Set(["ISSUED", "DRAFT", "OVERDUE"]);
 const PAYABLE: Set<InvoiceStatus> = new Set(["ISSUED", "PARTIALLY_PAID", "OVERDUE"]);
 const PLANNABLE: Set<InvoiceStatus> = new Set(["ISSUED", "PARTIALLY_PAID"]);
 
@@ -103,6 +104,11 @@ function buildAutoSplit(count: number, totalDue: number): InstallmentFormRow[] {
 
 export default function InvoiceDetailPage() {
   const { id } = useParams<{ id: string }>();
+  // Cancelling is `@Permissions("invoice.cancel")` on the server. Status alone
+  // used to decide whether this page offered the action; it now checks the
+  // signed-in user's grant too, via the same shared helper the invoice list
+  // uses — this page previously kept its own duplicate status set.
+  const { permissions } = useAuth();
 
   const [invoice, setInvoice] = useState<InvoiceDto | null>(null);
   const [student, setStudent] = useState<StudentDetailDto | null>(null);
@@ -963,7 +969,7 @@ export default function InvoiceDetailPage() {
       )}
 
       {/* Cancel */}
-      {CANCELLABLE.has(invoice.status) && (
+      {canCancelInvoice(invoice.status, permissions) && (
         <CancelInvoiceDialog onCancelled={handleCancelled}>
           {(open, busy) => (
             <div className="flex items-center gap-4">

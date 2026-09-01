@@ -27,18 +27,63 @@ import type { InvoiceStatus } from "@school-kit/types";
 // ---------------------------------------------------------------------------
 // Eligibility
 // ---------------------------------------------------------------------------
+//
+// Cancelling is gated on TWO independent things, and the affordance must
+// reflect both:
+//
+//   1. WORKFLOW STATE — mirrors InvoiceGenerationService.cancel's status
+//      guards (PARTIALLY_PAID / PAID / CANCELLED / REFUNDED are refused).
+//   2. PERMISSION — the endpoint is `@Permissions("invoice.cancel")`.
+//
+// Only (1) was ever checked here. A signed-in user holding `invoice.read`
+// but NOT `invoice.cancel` was shown a live "Cancel invoice…" control on a
+// perfectly cancellable invoice, and the 403 was the first and only thing
+// that told them otherwise. That is the frontend deferring a money-adjacent
+// permission decision to a downstream 4xx, which this codebase does not do
+// for invoice balances and should not do for this either.
+//
+// Both remain affordance filters — the server re-checks both and stays the
+// authority. Nothing here is load-bearing for security; it is load-bearing
+// for the UI telling the truth about what this user may do.
 
-// Mirrors InvoiceGenerationService.cancel's guards. This is an affordance
-// filter only — the server re-checks and is the authority. It exists so the
-// bursar is not offered an action that is guaranteed to fail.
+// Mirrors InvoiceGenerationService.cancel's guards.
 const CANCELLABLE: ReadonlySet<InvoiceStatus> = new Set<InvoiceStatus>([
   "DRAFT",
   "ISSUED",
   "OVERDUE",
 ]);
 
-export function canCancelInvoice(status: InvoiceStatus): boolean {
-  return CANCELLABLE.has(status);
+/** The permission `POST /invoices/:id/cancel` is declared with. */
+export const CANCEL_INVOICE_PERMISSION = "invoice.cancel";
+
+/**
+ * Wildcard-aware permission test, matching the `permissions.includes("*")`
+ * convention used by the nine other copies of this helper across `apps/web`
+ * (sidebar, BVN section, guardians tab, and six pages). Extracting a shared
+ * hook is tracked in `docs/deferred.md` and deliberately not done here — but
+ * unlike the other nine, this copy is exported and unit-tested, so it is the
+ * one to move when that extraction happens rather than the seed of an
+ * eleventh.
+ */
+export function hasPermission(permissions: readonly string[], permission: string): boolean {
+  return permissions.includes("*") || permissions.includes(permission);
+}
+
+/**
+ * True only when this user may cancel THIS invoice right now.
+ *
+ * `permissions` is a required parameter, not an optional one with a
+ * permissive default: a call site that forgets it fails typecheck instead of
+ * silently reverting to status-only gating. It is also why an unknown or
+ * still-loading auth state (`[]`) correctly yields `false` — while the app
+ * does not yet know what the user may do, it must not offer to void an
+ * invoice.
+ */
+export function canCancelInvoice(
+  status: InvoiceStatus,
+  permissions: readonly string[],
+): boolean {
+  return hasPermission(permissions, CANCEL_INVOICE_PERMISSION) && CANCELLABLE.has(status);
 }
 
 // ---------------------------------------------------------------------------
