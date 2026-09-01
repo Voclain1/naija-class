@@ -2730,3 +2730,50 @@ mistake, which is a worse experience than the thing it fixes.
 
 Recorded so the choice reads as deliberate rather than overlooked. Not a
 blocker. No change proposed.
+
+## Discount-rule Deactivate is not permission-gated (captured 2026-09-01)
+
+- [ ] Gate the discounts page's **Deactivate** row action on the
+  `discount-rule.deactivate` permission, using PR #241's exact pattern.
+
+  **Found while** verifying the discount-rule deactivation path in a real
+  browser for PR #242. That PR fixed the missing confirmation and deliberately
+  stopped there; this is the remaining half, kept separate so the confirmation
+  fix stayed focused.
+
+  **The gap.** `DELETE /discount-rules/:id` is declared
+  `@Permissions("discount-rule.deactivate")` on the server
+  (`discount-rules.controller.ts`). The page
+  (`apps/web/src/app/(admin)/finance/discounts/page.tsx`) does not read the
+  signed-in user's grant at all — it never calls `useAuth()` — so the action
+  renders for anyone who can reach the page, and a 403 is the only thing that
+  would stop them. Same class as the invoice-cancel affordance PR #241 fixes:
+  the frontend deferring a money-adjacent permission decision to a downstream
+  4xx.
+
+  **The pattern to copy, from PR #241** (`lib/finance/invoice-cancel.ts`):
+  1. Extend the existing pure module — here `lib/finance/discount-deactivate.ts`,
+     which already holds this action's policy and is unit-tested — with a
+     wildcard-aware `hasPermission` and a `DEACTIVATE_DISCOUNT_PERMISSION`
+     constant pinned to `"discount-rule.deactivate"`.
+  2. Make the permissions argument **required**, not optional-with-a-default,
+     so a call site that forgets it fails typecheck rather than silently
+     reverting to ungated rendering.
+  3. Fail closed on an empty grant — that is also `AuthProvider`'s initial
+     loading state, and a destructive money action must not be offered before
+     the app knows whether it is allowed.
+  4. Cover it both ways: the permitted case, the under-privileged case, the
+     empty/loading case, the owner `"*"` wildcard, and a near-miss grant
+     (`discount-rule.read`) that must not satisfy it.
+
+  **Severity: latent, not exploitable today.** Every role that can currently
+  reach the discounts page — owner, admin, bursar — holds
+  `discount-rule.deactivate`; teacher holds no discount permissions. It
+  matters for custom per-school roles (`Role.isSystem` exists for exactly
+  that) and because the affordance should be honest regardless. Worth doing,
+  not urgent.
+
+  Note this would add an eleventh copy of the two-line `hasPermission` helper
+  unless the shared-hook extraction above is done first — see the
+  `usePermissions` entry, whose recount found ten. Doing that extraction and
+  this gate together is a reasonable pairing.
