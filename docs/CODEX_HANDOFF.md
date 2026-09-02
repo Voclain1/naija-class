@@ -29,6 +29,61 @@ those; it doesn't replace them.
   is disabled on this system." A POSIX shell (Git Bash, etc.) invokes the
   `.cmd` shim instead and works fine. PowerShell itself is fine for anything
   that isn't shelling out to a `.ps1`.
+- **`flyctl` cannot run on this machine at all — blocked by Windows
+  Application Control (confirmed 2026-09-01).** Not an execution-policy or
+  file-permission problem, and NOT fixable the way the `npm.ps1` quirk above
+  is. The binary is already `-rwxr-xr-x`; `chmod +x` changes nothing; it fails
+  identically from Git Bash (`Permission denied`) and from PowerShell:
+
+  ```
+  Program 'flyctl.exe' failed to run: An Application Control policy has
+  blocked this file
+  ```
+
+  **Root cause: Windows Smart App Control, in enforcement mode.** Verified
+  against the registry 2026-09-01:
+  `HKLM:\SYSTEM\CurrentControlSet\Control\CI\Policy\VerifiedAndReputablePolicyState`
+  is `1`. This was already diagnosed on 2026-08-13 when flyctl was FIRST
+  installed — the block hit a freshly-downloaded binary then, too.
+
+  **Do not spend time reinstalling.** SAC is *reputation*-based, not
+  mark-of-the-web-based, so a fresh download is exactly what it blocks —
+  reinstalling from Git Bash rather than PowerShell changes nothing about the
+  binary's reputation. `Unblock-File` does not help for the same reason. At
+  ~1 MB/min on this connection the ~55 MB flyctl download is a ~45-minute
+  round trip to arrive back at the same error.
+
+  **Never suggest disabling Smart App Control.** Once turned off it CANNOT be
+  re-enabled without reinstalling Windows. Route around it instead. Expect the
+  same block on any other newly-downloaded CLI binary.
+
+  (Unrelated but adjacent, from the same 2026-08-13 session: flyctl hard-fails
+  once its version is too far out of date, and its self-upgrade deletes the old
+  binary *before* downloading the replacement — a slow or failed download
+  leaves a dangling `fly.exe` and "command not recognized".)
+
+  **Consequence: every `flyctl` command in `docs/runbooks/` is unavailable on
+  this machine**, including the production rollback path. Two alternatives
+  that do work:
+
+  1. **The Fly web dashboard** (fly.io) — releases, rollback, secret NAMES,
+     machine status, logs. This is the fallback for anything in
+     `deploy-rollback.md`.
+  2. **Check application behaviour instead of raw env vars, wherever the app
+     exposes it.** This is usually the better check anyway, not merely a
+     workaround: it reflects what the running code actually does rather than
+     what a variable is set to. Worked example — to answer "is AI on in
+     production?", sign in and open **Settings → AI Usage**, which returns
+     `aiConfigured` (the platform `AI_ENABLED` gate AND a usable Anthropic
+     key) and `aiEnabled` (that school's own opt-in). That is strictly more
+     informative than `printenv AI_ENABLED`, which cannot tell you whether the
+     key is also present.
+
+  Note neither the CLI nor the dashboard will show a secret's VALUE — Fly
+  stores them write-only and both surfaces show names and digests only. So for
+  any question of the form "what is X set to in production", an app-level
+  check is not just the workaround, it is often the only answer available.
+
 - **Web dev runs on port 3001, not 3000, permanently.** A long-running
   unrelated `node` process squats on :3000 on this machine. `apps/web`'s dev
   script is `next dev --port 3001`, and `.env.example`'s `BETTER_AUTH_URL`
