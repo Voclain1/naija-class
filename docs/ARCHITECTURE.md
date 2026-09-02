@@ -477,8 +477,8 @@ Lesson plan generator, report comment generator, parent summaries, admin insight
 **Phase 6 — mobile app, student portal, guardian mobile (revised 2026-08-15)**
 Mobile shell (`apps/mobile` is the bare Phase 0 Expo scaffold), the student principal and student-facing surface, and the guardian experience on mobile. Offline resilience is a first-class design constraint, not a later pass. See `docs/modules/phase-6.md`.
 
-**Phase 7 — curriculum RAG + student tutor (HELD)**
-Curriculum ingestion over `pgvector`, retrieval, and the curriculum-grounded student tutor. Held pending a deliberate decision on the embeddings vendor and its cost model — Anthropic ships no embeddings API, so this needs a second AI vendor. Not started until that decision is made.
+**Phase 7 — curriculum RAG + student tutor (PLANNED, not started)**
+Curriculum ingestion over `pgvector`, retrieval, and the curriculum-grounded student tutor. The embeddings-vendor decision that held this phase is now made — **Voyage AI**, since Anthropic ships no embeddings API. See `docs/modules/phase-7.md` for the plan-first: v1 grounds the existing lesson-plan generator in a school's own scheme of work; the student tutor is explicitly a later slice. Implementation is blocked on the NDPR review in `docs/deferred.md`; planning is not.
 
 **Phase 8 — assignments (3 weeks)**
 Assignment creation, submission, AI-assisted grading. Was the original Phase 6; renumbered when the mobile/student-portal work took that slot. Its student-portal half is absorbed into Phase 6, which builds the student principal it depended on.
