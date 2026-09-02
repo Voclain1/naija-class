@@ -125,6 +125,38 @@ school created through the local API, not a real one.
 
 ---
 
+## What else the disposable identities will receive
+
+Checked against every `email.send` call site in `apps/api` (2026-09-02), because
+a test that quietly triggers unrelated real notifications is not cleanly scoped.
+
+**The guardian inbox receives exactly two emails, both deliberate:**
+
+1. **The guardian invitation** (`guardians.service.ts`) — setup; it is how the
+   test guardian gets a password in the first place.
+2. **The password reset** (`portal-auth.service.ts`) — the thing under test.
+
+**Nothing else fires.** Specifically:
+
+| Path | Why it cannot fire here |
+|---|---|
+| Welcome / signup email | **Does not exist.** `signupOwner` sends no email at all. |
+| Onboarding nudge | Goes to the **owner**, not the guardian; needs an `onboarding.complete` audit row, a **24 h** delay, AND zero academic years and zero students. The test school has students, so it is suppressed on that alone. |
+| Weekly parent summaries | Gated on `School.parentSummaryEnabled`, which defaults **false** (and also needs AI enabled). |
+| Student portal invitation | **Sends no email whatsoever** — the guardian copies the link out of the portal UI. |
+| Debtor reminders, Paystack setup, staff password reset, platform-admin owner invite | All require an explicit action nobody takes during this test. |
+
+**The structural reason this is safe**, beyond the per-path reasoning above:
+the test school exists only in your **local** database. Production's scheduled
+jobs sweep the production database and cannot see it. The only process that
+could email anything is your local API, during the window it is running.
+
+One practical note: use **different addresses for the owner and the guardian**.
+They are the only two mailboxes involved, and keeping them separate makes it
+obvious at a glance that the guardian received exactly the two emails above.
+
+---
+
 ## Recording the result
 
 Update `docs/deferred.md`'s Android smoke entry with the device model and
