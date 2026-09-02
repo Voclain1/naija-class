@@ -45,6 +45,23 @@ const BASE_PRISMA_RESTRICTION = {
 // its own Anthropic client, those rules would be a convention rather than a
 // guarantee — exactly the failure this project already fixed once for
 // basePrisma/RLS. Same shape, same reasoning: make bypass a CI failure.
+// Phase 7 / CP1 — the Voyage boundary.
+//
+// Unlike Anthropic there is no SDK import to ban: Voyage's REST API is one
+// POST, and pulling in a client library to make it would be more dependency
+// than the call is worth. The seam is therefore the base URL itself, which
+// only packages/ai/src/embeddings.ts may name — everything above it depends on
+// the narrow EmbeddingPort interface.
+//
+// Same reasoning as the Anthropic ban: an unledgered embedding call would put
+// spend outside embedding_generations and outside the school's cost total, so
+// bypass should be a CI failure rather than a code-review catch.
+const VOYAGE_URL_RESTRICTION = {
+  selector: "Literal[value=/api\.voyageai\.com/]",
+  message:
+    "Do not call the Voyage API directly. Inject EmbeddingService (apps/api/src/common/embeddings), which writes the embedding_generations ledger row and accrues cost onto the school's budget period — see docs/modules/phase-7.md D3/D4. The only permitted file is packages/ai/src/embeddings.ts.",
+};
+
 const ANTHROPIC_SDK_RESTRICTION = {
   name: "@anthropic-ai/sdk",
   message:
@@ -100,6 +117,7 @@ export const baseConfig = [
         "error",
         { paths: [BASE_PRISMA_RESTRICTION, ANTHROPIC_SDK_RESTRICTION] },
       ],
+      "no-restricted-syntax": ["error", VOYAGE_URL_RESTRICTION],
     },
   },
 
@@ -250,6 +268,24 @@ export const baseConfig = [
     rules: {
       // Exempts the Anthropic SDK ONLY — basePrisma stays banned here.
       "no-restricted-imports": ["error", { paths: [BASE_PRISMA_RESTRICTION] }],
+    },
+  },
+
+  // ---------------------------------------------------------------------
+  // Voyage endpoint allowlist — exactly one file, same shape and same bar as
+  // the Anthropic block above.
+  //
+  // packages/ai/src/embeddings.ts is the seam: it wraps the one POST behind
+  // the narrow EmbeddingPort interface that EmbeddingService depends on. A
+  // second entry here means someone can spend money with an embeddings vendor
+  // without writing an embedding_generations row or accruing the cost onto the
+  // school's period — see docs/modules/phase-7.md D3/D4.
+  // ---------------------------------------------------------------------
+  {
+    files: ["**/packages/ai/src/embeddings.ts", "**/ai/src/embeddings.ts"],
+    rules: {
+      // Exempts the Voyage URL ONLY — every import ban still applies here.
+      "no-restricted-syntax": "off",
     },
   },
 ];

@@ -46,6 +46,20 @@ export {
 } from "./client.js";
 
 export {
+  EMBEDDING_DIMENSIONS,
+  EMBEDDING_MODELS,
+  EMBEDDING_PRICE_TABLE_VERSION,
+  EMBEDDING_PRICING_MICRO_USD_PER_MTOK,
+  createVoyageClient,
+  estimateEmbeddingCostMicroUsd,
+  type EmbeddingInputType,
+  type EmbeddingModelId,
+  type EmbeddingPort,
+  type EmbeddingRequest,
+  type EmbeddingResult,
+} from "./embeddings.js";
+
+export {
   PROMPTS,
   promptRef,
   type PromptDefinition,
