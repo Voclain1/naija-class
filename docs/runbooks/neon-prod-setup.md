@@ -1,5 +1,14 @@
 # Production setup — Neon + Fly provisioning
 
+> **`flyctl` is blocked on the maintainer's Windows machine** by Windows
+> Application Control (confirmed 2026-09-01) — every `flyctl secrets set`
+> and `flyctl` command in this runbook will fail there. Use the Fly web
+> dashboard (fly.io) to set and inspect secrets instead. Note neither
+> surface reveals a secret's VALUE — Fly stores them write-only — so to
+> answer "what is X set to in production", check application behaviour
+> rather than the variable. See `docs/CODEX_HANDOFF.md` → "Environment
+> quirks".
+
 Run these steps once before the first `deploy-staging.yml` execution.
 All commands run from the repo root unless stated otherwise.
 
