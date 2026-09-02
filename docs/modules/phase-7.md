@@ -222,6 +222,38 @@ For the budget, the two dimensions are deliberately split:
   money, and the AI Usage page's cost figure should be the true platform cost,
   not the Claude-only subset.
 
+### D4a — Voyage rate limits are the real ingestion constraint, not cost
+
+**Observed live 2026-09-02**, not read from a docs page: an account with **no
+payment method attached** is limited to **3 requests/minute and 10,000 tokens
+/minute**. The fourth call in `packages/ai/evals/live-embedding.ts` returned
+`429` with exactly that explanation.
+
+This inverts the assumption in D2. Cost was never going to be the binding
+constraint — 200M free tokens is far more than v1 will use — but **throughput
+is**, and it bites precisely where the volume is: ingestion.
+
+Concretely, a scheme of work chunked into ~60 chunks is one or two batched
+requests by token count, but a corpus of several subjects across several class
+levels is not. At 3 RPM, a naive per-chunk loop would take twenty minutes for a
+single document.
+
+Three consequences for CP2, none of which are optional:
+
+1. **Batch aggressively.** Voyage accepts up to 1,000 inputs per request, so
+   the unit of work is a batch of chunks bounded by the 10K TPM budget, never
+   one chunk per call.
+2. **Rate-limit and retry with backoff inside the ingestion worker.** A `429`
+   must be a retry, not a `FAILED` document. This is a BullMQ job precisely so
+   it can afford to wait.
+3. **Adding a payment method lifts the limit**, and is worth doing before the
+   first real ingestion regardless of the free allowance — the free tokens and
+   the reduced rate limit are independent, and it is the rate limit that hurts.
+
+Recorded here rather than left in a commit message because it changes what CP2
+has to build, and it is exactly the kind of vendor detail that is expensive to
+rediscover halfway through an ingestion pipeline.
+
 ### D5 — Retrieval is not reserved; ingestion is
 
 The reserve → call → settle shape exists because a Claude call is slow

@@ -5,6 +5,7 @@ import { ScheduleModule } from "@nestjs/schedule";
 import { ThrottlerGuard, ThrottlerModule } from "@nestjs/throttler";
 
 import { EmailModule } from "./common/email/email.module.js";
+import { EmbeddingsModule } from "./common/embeddings/embeddings.module.js";
 import { PaystackModule } from "./common/paystack/paystack.module.js";
 import { TermiiModule } from "./common/termii/termii.module.js";
 import { RedisAuthModule } from "./common/auth/redis-auth.module";
@@ -100,6 +101,10 @@ const isProd = process.env.NODE_ENV === "production";
     PaystackModule,
     EmailModule,
     TermiiModule,
+    // Phase 7 / CP1. Registered now, before any feature consumes it, so the
+    // fail-soft warning for a missing VOYAGE_API_KEY fires at boot rather than
+    // at a teacher's first upload — the same reason AiModule's equivalent does.
+    EmbeddingsModule,
     SystemModule,
     AuthModule,
     SchoolsModule,

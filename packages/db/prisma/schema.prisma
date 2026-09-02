@@ -1521,6 +1521,151 @@ model AIBudgetPeriod {
   @@map("ai_budget_periods")
 }
 
+// ---------- Phase 7 / CP1 — Curriculum RAG ----------
+//
+// See docs/modules/phase-7.md. v1 grounds the EXISTING lesson-plan generator
+// in a school's own scheme of work; the student tutor is a later slice.
+//
+// Two content tables (document + chunk) and one ledger (embedding calls).
+// pgvector was enabled in the very first migration (20260514120000_init), so
+// no extension work is needed here.
+
+enum CurriculumDocumentStatus {
+  PENDING // uploaded, not yet processed
+  PROCESSING // chunking / embedding in flight
+  READY // embedded and retrievable
+  FAILED // see errorMessage
+}
+
+model CurriculumDocument {
+  id           String @id @default(uuid())
+  schoolId     String @map("school_id")
+  // Plain scoping columns, not declared relations — same convention as
+  // LessonPlan.classLevelId/subjectId, which these deliberately mirror since
+  // retrieval is scoped by exactly the pair a lesson plan is generated for.
+  subjectId    String @map("subject_id")
+  classLevelId String @map("class_level_id")
+
+  title      String
+  // Storage key for the original upload — the source of truth a teacher can
+  // re-download. Key kind: { kind: "curriculum-document"; documentId }.
+  storageKey String @map("storage_key")
+  // Content hash of the extracted text. Guards against re-embedding an
+  // identical re-upload, which is the common case when a teacher re-sends a
+  // file they already sent.
+  checksum   String
+
+  status       CurriculumDocumentStatus @default(PENDING)
+  // Redacted failure reason when status = FAILED. Never carries raw document
+  // text — a parse failure must not spill the document into an error column.
+  errorMessage String?                  @map("error_message")
+  chunkCount   Int                      @default(0) @map("chunk_count")
+
+  uploadedBy String   @map("uploaded_by")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  chunks CurriculumChunk[]
+
+  // The retrieval scope: chunks are searched within one school's subject +
+  // class level, never across the whole tenant.
+  @@index([schoolId, subjectId, classLevelId])
+  @@index([schoolId, status])
+  // Backs the COMPOSITE foreign key from curriculum_chunks. Not a uniqueness
+  // rule anyone needs on its own — `id` is already the primary key — it exists
+  // solely so the child can reference (id, school_id) as a pair. See the
+  // relation on CurriculumChunk for why that matters.
+  @@unique([id, schoolId])
+  @@map("curriculum_documents")
+}
+
+model CurriculumChunk {
+  id         String @id @default(uuid())
+  // Denormalised for a flat RLS check, same pattern as StudentPortalInvitation
+  // and every other child table in this schema. A cross-tenant leak here would
+  // put another school's curriculum inside a teacher's lesson plan, so the
+  // policy is doing real work, not tidiness.
+  schoolId   String @map("school_id")
+  documentId String @map("document_id")
+
+  // Position in the source document — stable ordering for display.
+  ordinal    Int
+  // Detected heading path, e.g. "Term 1 > Week 5 > Photosynthesis". This is
+  // what makes a retrieved chunk CITABLE to a teacher (phase-7.md D7/D10);
+  // a naked paragraph is not a reference anyone recognises.
+  heading    String?
+  content    String
+  tokenCount Int     @map("token_count")
+
+  // voyage-4's default output dimension, confirmed 2026-09-02 against Voyage's
+  // model documentation (phase-7.md D2). Reducing this later is a truncation
+  // of vectors already held (Matryoshka), not a re-embed; increasing it is a
+  // re-embed.
+  //
+  // Prisma cannot express pgvector types, so this is Unsupported: it cannot be
+  // read or written through Prisma Client. Every insert and every similarity
+  // search is raw SQL inside withTenant(), with SET LOCAL app.current_school_id
+  // applied first — CLAUDE.md's raw-SQL rule applies directly here.
+  embedding Unsupported("vector(1024)")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // COMPOSITE foreign key on (document_id, school_id), not on document_id
+  // alone. Found by curriculum-rls.spec.ts on 2026-09-02: Postgres evaluates
+  // referential-integrity checks with RLS BYPASSED, so a plain FK let a chunk
+  // in school A reference a document in school B. RLS still stopped A reading
+  // B's document, so it was not a read leak — but it let the denormalised
+  // school_id disagree with its parent's, which is precisely the invariant
+  // that denormalisation exists to make cheap to check.
+  //
+  // With the pair referenced together, the disagreement is rejected by the
+  // database rather than prevented by service discipline. Same instinct as
+  // every other structural-over-conventional choice in this schema.
+  document CurriculumDocument @relation(fields: [documentId, schoolId], references: [id, schoolId], onDelete: Cascade)
+
+  @@index([schoolId])
+  @@index([documentId, ordinal])
+  @@map("curriculum_chunks")
+}
+
+// Per-call ledger for embedding-vendor calls. Deliberately NOT ai_generations
+// (phase-7.md D3): that table requires promptName, promptVersion and
+// outputTokens, none of which exist for an embedding, and the cost/compliance
+// ledger must not carry invented values.
+//
+// Budget interaction (D4): embedding spend is added to
+// ai_budget_periods.costMicroUsd — money is money — but NOT to
+// tokensReserved/tokensActual, which stay denominated in Claude tokens.
+// Voyage tokens are 50-250x cheaper, so folding them into the same counter
+// would silently dilute the cap rather than tighten it.
+model EmbeddingGeneration {
+  id         String  @id @default(uuid())
+  schoolId   String  @map("school_id")
+  // Null for query embeddings; set for ingestion. Deliberately NOT a declared
+  // relation with Cascade: like AIGeneration, this is evidence that money was
+  // spent and must survive deletion of the content it was spent on.
+  documentId String? @map("document_id")
+
+  model   String
+  // "ingest" | "query". Plain String for the same reason AIGeneration.promptName
+  // is: this is a historical record and must hold values a future enum drops.
+  purpose String
+
+  // No outputTokens: an embedding call has input only.
+  inputTokens  Int     @map("input_tokens")
+  latencyMs    Int     @map("latency_ms")
+  costMicroUsd Int     @map("cost_micro_usd")
+  success      Boolean
+  // Redacted before write — no keys, no PII, no raw document text.
+  errorMessage String? @map("error_message")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([schoolId, createdAt])
+  @@index([schoolId, documentId])
+  @@map("embedding_generations")
+}
+
 // ---------- Phase 5 / Slice 2 — Lesson plan generator ----------
 //
 // The first AI FEATURE, and deliberately the first one: it is the only one of
