@@ -417,6 +417,88 @@ taken production down once in this project.
 
 ---
 
+### D13 — Heading extraction is fixed in CP3, not deferred (the real-document finding)
+
+**The first real document broke the citation story while passing every check.**
+Virgo Fidelis's JSS2 ENGLISH scheme of work ingested cleanly on 2026-09-02 and
+reported 17 sections with **16 non-null headings**. The headings were
+nonetheless useless: `ENGLISH` eight times, `COMPREHENSION` twice,
+`TABLE OF CONTENT` twice, and **not one week among them**.
+
+Two independent causes, diagnosed by reproducing the signature synthetically
+(chunker output matched: `8x ENGLISH`, `1x TABLE OF CONTENT`,
+`1x "1 COMPREHENSION 2"`, zero week-bearing):
+
+1. **A running page header.** `ENGLISH` is printed at the top of every page.
+   Text extraction concatenates pages, and the generic ALL-CAPS rule — the
+   loosest in the chunker — promoted each occurrence to a level-1 heading,
+   making it the root of every page's section.
+2. **The weeks are inside a flattened table.** A tabular scheme extracts as one
+   line per row (`3 Grammar: Nouns... By the end of...`), so `WEEK n` never
+   appears alone and the WEEK rule never fired.
+
+**Neither is the term-precedence bug flagged earlier** — that one is real but
+separate, and is also fixed here (see below).
+
+**Stripping the furniture alone does not work**, which is the finding that
+decided the shape of the fix. Measured: removing repeated lines drops the
+chunk count and merely swaps one class of noise (`8x ENGLISH`) for another
+(contents-page fragments), still with **zero** week-bearing headings. Both
+halves are required.
+
+**The fix, and why it is contained rather than structural.** Recovering table
+structure sounds like it needs x/y layout analysis over pdf.js text items —
+genuinely larger work. It does not, because two things survive flattening: the
+row begins with its **week number**, and the table **announces its own columns**
+in a header line (`Week Topic Objectives ...`). That header is the guard that
+makes rewriting safe; without it the rule would be "any line starting with a
+digit is a week", which would mangle numbered lists in any other document.
+
+Four parts, all in `packages/ai/src/chunking.ts`:
+
+| Part | What it does |
+|---|---|
+| Repeated-line demotion | A short line occurring 3+ times is never a heading. It **stays as body text** — demoting furniture must not delete content, since a scheme repeating per-week boilerplate would otherwise lose it. |
+| Tabular row recovery | Guarded by the column header; rewrites a row into `WEEK n` / `TOPIC: ...` / body, so recovered weeks nest and path exactly like natively-formatted ones. |
+| Contents-entry rejection | `1 COMPREHENSION 2` is a contents row, not a heading. |
+| Term precedence | `TERM` now outranks an unclassified capitalised line, so a cover block's `SUBJECT:` / `CLASS:` no longer pops `FIRST TERM`. |
+
+Plus: in a document where row recovery fired, the generic ALL-CAPS rule is
+suppressed entirely — otherwise recovered weeks nested under
+`TABLE OF CONTENT`, a path that cites the wrong page.
+
+Measured on the reproduction, before → after:
+
+| | before | after |
+|---|---|---|
+| week-bearing headings | 0 | **8 of 8** |
+| distinct headings | 3 | **9** |
+| max repeat of one heading | 8 | **1** |
+
+Conventional (non-tabular) schemes are unaffected and now carry the term:
+`FIRST TERM SCHEME OF WORK > CLASS: JSS 2 > WEEK 3 > TOPIC: ...`.
+
+**The lesson is about the test, not only the code.** CP2's suite asserted that
+headings were NON-NULL — and this document would have passed. That is the wrong
+property: a heading repeated eight times is non-null and worthless, while null
+would at least have been an honest signal. The regression suite now asserts
+**distinctness and informativeness**, and carries a fixture reproducing both
+causes.
+
+### D14 — Re-ingest the existing document rather than fixing only prospectively
+
+Chunks are derived data, so the fix does not reach documents already ingested.
+The JSS2 ENGLISH document is re-ingested (delete + re-upload) rather than left
+as-is.
+
+Worth doing because it is the **only piece of real-world evidence** that the
+pipeline works end to end, and verifying the fix against the same content that
+exposed the bug is the standard this project applies to every other fix. It is
+also nearly free: re-embedding one document is a handful of Voyage requests
+against a 200M-token free allowance. The checksum duplicate guard does not
+obstruct this — it only refuses documents that are still live, so a delete
+followed by a re-upload is permitted by design.
+
 ## 4. Data model
 
 Two new tables, both under RLS + FORCE.
