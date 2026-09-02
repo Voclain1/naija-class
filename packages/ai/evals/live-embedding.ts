@@ -34,15 +34,23 @@ import {
   estimateEmbeddingCostMicroUsd,
 } from "../src/embeddings.js";
 
-// Voyage applies a REDUCED rate limit of 3 requests/minute until a payment
-// method is added to the account (observed 2026-09-02: the fourth call in this
-// script returned 429 with exactly that explanation). This script makes four
-// calls, so it paces itself rather than pretending the limit is not there.
+// HISTORICAL, kept deliberately: Voyage applied a REDUCED rate limit of 3
+// requests/minute until a payment method was added to the account (observed
+// 2026-09-02 — the fourth call in this script returned 429 with exactly that
+// explanation). This script makes four calls, so it paced itself.
 //
-// This is a real operational constraint, not a test artefact — CP2's ingestion
-// path will meet it far harder than this script does. See the note in
-// docs/modules/phase-7.md.
-const RATE_LIMIT_PAUSE_MS = 21_000;
+// A payment method was added later the same day and the limit is GONE
+// (re-measured: 500 requests in 11.6s with zero refusals, ~2577 req/min
+// sustained; the local machine's socket capacity gives out before the vendor
+// refuses anything). The pause is now 0 and this script runs in a couple of
+// seconds.
+//
+// The constant is not deleted, because the reduced tier is what a NEW account
+// gets: whoever next provisions a Voyage key for this project will meet the 3
+// RPM limit again, and a script that hangs on a 429 with no explanation is a
+// worse first experience than one that documents why the knob exists. Set it
+// back to 21_000 if that happens.
+const RATE_LIMIT_PAUSE_MS = 0;
 
 function pause(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, RATE_LIMIT_PAUSE_MS));

@@ -581,6 +581,34 @@ export const SMART_IMPORT_PERMISSIONS = [
   "student.scan",
 ] as const;
 
+// Phase 7 — Curriculum RAG. Uploading a scheme of work is a TEACHING act, not
+// an office one: the person who knows whether a document is the current
+// syllabus is the teacher who works from it, and a curriculum library only an
+// admin could fill would sit empty. So `curriculum.read` and
+// `curriculum.upload` both go to teachers (see PHASE_7_TEACHER_PERMISSIONS).
+//
+// `curriculum.delete` is deliberately NOT teacher-facing. Deleting a document
+// cascades its chunks, which silently changes what every OTHER teacher's
+// lesson plans are grounded in — a shared-corpus effect the deleter cannot
+// see. Same instinct that split report-card-comment.generate from .write: the
+// action with the wider blast radius gets the narrower grant.
+//
+// There is no `curriculum.retrieve` permission. Retrieval is not a user
+// action; it is something lesson-plan generation does on the teacher's behalf,
+// and it is already gated by `lesson-plan.create`. A separate permission would
+// suggest a surface that does not exist.
+export const PHASE_7_PERMISSIONS = [
+  "curriculum.read",
+  "curriculum.upload",
+  "curriculum.delete",
+] as const;
+
+// The teacher-facing subset, granted in the seed alongside PHASE_5_TEACHER_PERMISSIONS.
+export const PHASE_7_TEACHER_PERMISSIONS = [
+  "curriculum.read",
+  "curriculum.upload",
+] as const;
+
 export const ALL_PERMISSIONS = [
   ...PHASE_0_PERMISSIONS,
   ...PHASE_1_PERMISSIONS,
@@ -591,6 +619,7 @@ export const ALL_PERMISSIONS = [
   ...PHASE_5_PERMISSIONS,
   ...PAYSTACK_SETUP_PERMISSIONS,
   ...SMART_IMPORT_PERMISSIONS,
+  ...PHASE_7_PERMISSIONS,
   /* extend per phase */
 ] as const;
 

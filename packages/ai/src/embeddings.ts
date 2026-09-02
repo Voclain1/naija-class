@@ -19,7 +19,34 @@
 //   { input: string | string[], model, input_type?, output_dimension? }
 //   -> { data: [{ embedding: number[], index }], usage: { total_tokens } }
 
+import { VendorApiError, parseRetryAfterMs } from "./retry.js";
+
 const VOYAGE_EMBEDDINGS_URL = "https://api.voyageai.com/v1/embeddings";
+
+// ---------------------------------------------------------------------------
+// Request limits (CP2 / D4a)
+// ---------------------------------------------------------------------------
+
+/**
+ * Voyage accepts at most 1,000 inputs in one request. This is the reason
+ * ingestion batches rather than looping per chunk: at the unpaid tier's 3
+ * requests/minute a 60-chunk document would have taken twenty minutes one
+ * chunk at a time, and even with the limit lifted, one request per chunk is
+ * 60x the network round-trips for no benefit.
+ */
+export const VOYAGE_MAX_INPUTS_PER_REQUEST = 1_000;
+
+/**
+ * Token ceiling this codebase applies per request. NOT a published vendor
+ * limit — a self-imposed budget, chosen to stay comfortably inside the
+ * token-per-minute allowance while keeping batches large.
+ *
+ * Deliberately conservative because the token counts feeding it are ESTIMATES
+ * (see chunking.ts): a batch planner that packed to a true ceiling using
+ * approximate arithmetic would overshoot on documents whose text is denser
+ * than the 4-chars-per-token heuristic assumes.
+ */
+export const EMBEDDING_MAX_TOKENS_PER_REQUEST = 8_000;
 
 // ---------------------------------------------------------------------------
 // Models and pricing
@@ -120,10 +147,16 @@ class VoyageHttpPort implements EmbeddingPort {
       // Body text, not the request — an error message must never echo the
       // document being embedded back into a log or a ledger row.
       const detail = await response.text().catch(() => "");
-      throw new Error(
+      // A TYPED error, carrying status and Retry-After, so the ingestion
+      // worker can classify 429 as retryable without parsing this string
+      // (D4a; see packages/ai/src/retry.ts). Before CP2 this was a plain
+      // Error and the status was recoverable only by regex.
+      throw new VendorApiError(
         `Voyage embeddings request failed: ${response.status} ${response.statusText}${
           detail ? ` — ${detail.slice(0, 300)}` : ""
         }`,
+        response.status,
+        parseRetryAfterMs(response.headers.get("retry-after")),
       );
     }
 

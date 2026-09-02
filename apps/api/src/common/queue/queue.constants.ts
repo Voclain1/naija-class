@@ -64,3 +64,20 @@ export const PUSH_JOB_SEND = "send";
 // per-batch, and a cron would have to persist which tickets are outstanding
 // somewhere else to find them again.
 export const PUSH_JOB_RECEIPTS = "receipts";
+
+// Phase 7 / CP2 — curriculum document ingestion (embedding).
+//
+// Its own queue rather than a job name on AI_QUEUE. The two are both
+// network-bound AI work, which is the argument FOR sharing, but they have
+// opposite failure economics: an AI comment job is one short call and a
+// failure loses one comment, while an ingestion job is a long sequence of
+// batched embedding calls where a failure loses a whole document's progress
+// and a retry re-spends money on the batches that already succeeded.
+//
+// Concretely, sharing would mean a school uploading its full curriculum could
+// hold every AI worker for minutes while report-card comments — which a
+// teacher is waiting on, at a keyboard — queue behind it. Ingestion has no one
+// waiting; it can afford to be slow, and putting it on its own queue is what
+// lets it be slow without making anything else slow.
+export const CURRICULUM_QUEUE = "curriculum";
+export const CURRICULUM_JOB_INGEST = "ingest";
