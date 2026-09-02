@@ -40,3 +40,4 @@ export * from './dashboard/index.js';
 export * from './paystack-setup/index.js';
 export * from './platform-admin/index.js';
 export * from './setup-state/index.js';
+export * from './curriculum/index.js';

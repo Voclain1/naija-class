@@ -47,10 +47,12 @@ export {
 
 export {
   EMBEDDING_DIMENSIONS,
+  EMBEDDING_MAX_TOKENS_PER_REQUEST,
   EMBEDDING_MODELS,
   EMBEDDING_PRICE_TABLE_VERSION,
   EMBEDDING_PRICING_MICRO_USD_PER_MTOK,
   createVoyageClient,
+  VOYAGE_MAX_INPUTS_PER_REQUEST,
   estimateEmbeddingCostMicroUsd,
   type EmbeddingInputType,
   type EmbeddingModelId,
@@ -58,6 +60,33 @@ export {
   type EmbeddingRequest,
   type EmbeddingResult,
 } from "./embeddings.js";
+
+export {
+  CHUNK_DEFAULTS,
+  chunkDocument,
+  estimateTokens,
+  type Chunk,
+  type ChunkingOptions,
+} from "./chunking.js";
+
+export {
+  planEmbeddingBatches,
+  planTotals,
+  type BatchPlanOptions,
+  type BatchableItem,
+  type EmbeddingBatch,
+} from "./embedding-batching.js";
+
+export {
+  BACKOFF_DEFAULTS,
+  VendorApiError,
+  classifyVendorError,
+  computeBackoffMs,
+  parseRetryAfterMs,
+  retryWithBackoff,
+  type BackoffOptions,
+  type VendorErrorKind,
+} from "./retry.js";
 
 export {
   PROMPTS,

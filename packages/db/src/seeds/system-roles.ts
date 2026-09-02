@@ -19,6 +19,7 @@ import {
   PHASE_4_PERMISSIONS,
   PHASE_5_PERMISSIONS,
   PHASE_5_TEACHER_PERMISSIONS,
+  PHASE_7_TEACHER_PERMISSIONS,
   SMART_IMPORT_PERMISSIONS,
 } from "@school-kit/types";
 
@@ -132,6 +133,12 @@ export const SYSTEM_ROLE_SEEDS: SystemRoleSeed[] = [
       // definition. Deliberately excludes ai-usage.read: school-level AI spend
       // is operator information, not teaching workflow.
       ...PHASE_5_TEACHER_PERMISSIONS,
+      // Phase 7 / CP2 — curriculum upload + read. Teacher-facing for the same
+      // reason lesson plans are: the person who knows whether a scheme of work
+      // is the CURRENT one is the teacher who works from it. curriculum.delete
+      // is deliberately excluded — deleting a document changes what every other
+      // teacher's plans are grounded in.
+      ...PHASE_7_TEACHER_PERMISSIONS,
     ],
   },
   // Phase 3 / Slice 15 — `bursar` role wire-up + RBAC close-out. Finance-only

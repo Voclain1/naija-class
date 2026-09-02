@@ -254,6 +254,35 @@ Recorded here rather than left in a commit message because it changes what CP2
 has to build, and it is exactly the kind of vendor detail that is expensive to
 rediscover halfway through an ingestion pipeline.
 
+**UPDATE 2026-09-02 (same day) — payment method added, limit confirmed
+lifted.** Re-measured rather than assumed, because the whole of CP2 was sized
+against the old number:
+
+| Probe | Result |
+|---|---|
+| 12 sequential requests | all accepted, 5.2s total |
+| 30 concurrent | all accepted, 0.98s |
+| 200 concurrent | all accepted, 1.9s |
+| 500 concurrent, sustained | all accepted, 11.6s — **~2,577 req/min** |
+
+Zero `429`s across ~900 requests. Under the old tier, request #4 of the first
+probe would have been refused.
+
+**The ceiling could not be reached from this machine.** A second sustained
+round of 500 produced 208 failures — but every one was a bare `fetch failed`,
+i.e. LOCAL socket exhaustion, not a vendor refusal. That is a more useful
+finding than a rate-limit number would have been, and it changed the design:
+`retry.ts` classifies transient NETWORK faults as retryable alongside `429`,
+because in a long ingestion run that class of error is the more likely of the
+two. Treating only `429` as retryable would have left the more probable
+failure mode unhandled.
+
+**What this does NOT change.** All three consequences above stand. Batching is
+still right (25 chunks in 1 request instead of 25 — measured live), the retry
+is still required (transient faults, and a new account meets the 3 RPM tier
+again), and the caps are still the spend control. The limit being lifted makes
+ingestion fast; it does not make it safe.
+
 ### D5 — Retrieval is not reserved; ingestion is
 
 The reserve → call → settle shape exists because a Claude call is slow
@@ -289,6 +318,20 @@ printed booklet.
 v1 handles the first two, plus a plain-text paste box. **Scanned/photographed
 documents are explicitly deferred**, because OCR is a genuinely separate piece
 of work and the single biggest schedule risk in this phase (§10).
+
+**CP2 implementation note (2026-09-02) — `pdf-parse` is DISQUALIFIED.** The
+obvious library for this was tried first and must not be reintroduced:
+`pdf-parse@1.1.1` returns the **first document's text for every subsequent call
+in the same process** (measured by parsing three different PDFs in sequence and
+getting the first one's text back all three times, in both orders; the cause is
+its pinned pdf.js v1.10.100 build on the fake-worker path). In a long-lived
+ingestion worker that is a **cross-tenant content leak** with no visible
+symptom — one school's scheme of work chunked, embedded and stored under
+another school's document id, with every layer downstream reporting success.
+The implementation uses `pdfjs-dist` (Mozilla's maintained build, per-call
+document, explicitly destroyed), and `document-parser.spec.ts` carries a
+regression test that parses two different PDFs in one process and asserts their
+text differs.
 
 Recorded for whoever picks that up: this codebase **already has a working
 vision-extraction path** — `student-list-extraction`, the one prompt on

@@ -4,6 +4,7 @@ import {
   BookOpen,
   CalendarCheck,
   CalendarClock,
+  Library,
   Sparkles,
   ClipboardList,
   FileText,
@@ -38,6 +39,11 @@ const BASE_ITEMS: NavItem[] = [
   // attendance it needs no per-school opt-in, and unlike gradebook/report
   // cards it needs no prior data, so it is usable by every school from day one.
   { label: "Lesson plans", href: "/teacher/lesson-plans", icon: Sparkles, enabled: true },
+  // Phase 7 / CP2 — the curriculum library that grounds lesson plans. Sits
+  // directly beneath "Lesson plans" because that is the only thing it feeds:
+  // its whole purpose is to make the item above it produce better output, and
+  // separating them would leave a teacher wondering what it is for.
+  { label: "Curriculum", href: "/teacher/curriculum", icon: Library, enabled: true },
 ];
 
 const SUBJECT_ITEM: NavItem = {

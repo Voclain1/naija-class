@@ -1571,6 +1571,11 @@ model CurriculumDocument {
   // class level, never across the whole tenant.
   @@index([schoolId, subjectId, classLevelId])
   @@index([schoolId, status])
+  // Backs the duplicate-upload check: a re-sent file is refused with "already
+  // uploaded" rather than paying to embed identical content twice. NOT unique —
+  // the same scheme legitimately appears under two class levels, and a deleted
+  // document must be re-uploadable.
+  @@index([schoolId, checksum])
   // Backs the COMPOSITE foreign key from curriculum_chunks. Not a uniqueness
   // rule anyone needs on its own — `id` is already the primary key — it exists
   // solely so the child can reference (id, school_id) as a pair. See the

@@ -46,7 +46,18 @@ export type StorageObjectKey =
   // explicitly (schools.service.ts's uploadLogo does this) — an
   // extensionless key would just self-overwrite, but we've chosen the
   // extension-bearing shape for reason (1) above, so cleanup is on us.
-  | { kind: "school-logo"; ext: "png" | "jpg" | "webp" };
+  | { kind: "school-logo"; ext: "png" | "jpg" | "webp" }
+  // Phase 7 / CP2 — the original curriculum document a teacher uploaded.
+  // Layout: schools/<schoolId>/curriculum/<documentId>/source
+  //
+  // EXTENSIONLESS, following expense-receipt rather than school-logo. The two
+  // reasons school-logo needed an extension do not apply: this object is never
+  // rendered inline by a browser (the retrievable artefact is the CHUNKS, not
+  // the file — the file is kept so a teacher can re-download what they sent),
+  // and it is immutable, so there is no re-upload-with-a-different-format case
+  // needing an explicit delete of the old key. A re-upload is a new document
+  // with a new id.
+  | { kind: "curriculum-document"; documentId: string };
 
 export type StorageDriverKind = "filesystem" | "r2";
 

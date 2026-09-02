@@ -59,6 +59,12 @@ export function pathFor(schoolId: string, key: StorageObjectKey): string {
     case "school-logo": {
       return `schools/${schoolId}/logo.${key.ext}`;
     }
+    case "curriculum-document": {
+      if (!UUID_RE.test(key.documentId)) {
+        throw new Error(`storage: documentId is not a UUID: ${redact(key.documentId)}`);
+      }
+      return `schools/${schoolId}/curriculum/${key.documentId}/source`;
+    }
   }
 }
 
