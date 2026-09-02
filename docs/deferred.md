@@ -2812,27 +2812,74 @@ blocker. No change proposed.
   consent's wording actually covers third-party AI processing is precisely
   the sort of thing that needs reading by someone qualified.
 
-  **Open factual question to resolve before or during the review:** whether
-  Anthropic-backed features are currently reachable in production at all.
-  `AI_ENABLED` defaults to `true` when unset (`ai-generation.service.ts`), and
-  there is a separate per-school `School.aiEnabled` gate, but production is
-  believed to run with `AI_ENABLED=false` as a deliberate staged-off state.
-  That could not be verified while writing this entry (no `flyctl` access from
-  this host). It matters a great deal to the review: "shipped but gated off"
-  and "processing real school data today" are materially different starting
-  positions, and the answer should be confirmed from the running app rather
-  than assumed in either direction.
+  **CONFIRMED LIVE IN PRODUCTION (2026-09-02). This is not a hypothetical or
+  a staged-off deployment.** Checked directly against the real AI Usage page
+  for Virgo Fidelis on `app.schoolkit.ng`:
 
-  **Decision status (2026-09-01).** Voyage AI is the approved vendor choice
-  and the engineering-readiness findings are accepted. Phase 7 planning may
-  proceed on that assumption. **Implementation — actual API integration and
+  | Reading | Value |
+  |---|---|
+  | `aiConfigured` (platform `AI_ENABLED` gate AND a usable Anthropic key) | **true** |
+  | `aiEnabled` (that school's own opt-in) | **true** |
+  | Generations this month | **5** |
+  | Tokens used | **14,625 of 750,000** |
+  | Real platform cost incurred | **$0.14** |
+
+  Both gates are open and real calls have already been billed, so a real
+  Nigerian school's data has been sent to a third-party AI provider outside
+  Nigeria under a compliance posture nobody has formally reviewed. **This
+  raises the urgency: the review is about processing that is happening now,
+  not about processing that might happen later.** It is not an emergency —
+  the volume is small and `CLAUDE.md`'s PII rules have been in force
+  throughout — but it is not something to look at at leisure either, and it
+  should not be scheduled as though Phase 7 were the trigger.
+
+  This also corrects a previously-held belief, recorded here so it is not
+  reintroduced: production was assumed to be running `AI_ENABLED=false` as a
+  deliberate staged-off state. **That assumption was wrong.** Note the
+  direction of the failure — `AI_ENABLED` defaults to `true` when unset
+  (`ai-generation.service.ts`), so an absent variable is the PERMISSIVE case,
+  not the safe one. Anyone reasoning about this in future should verify the
+  running app rather than the intent.
+
+  **Two scoping questions the legal review will need, not answered by the
+  above:**
+
+  1. **How many schools, not just this one.** The reading confirms the
+     platform gate is open and that Virgo Fidelis has opted in. It says
+     nothing about how many OTHER schools have `School.aiEnabled = true`, or
+     how much data they have put through. Someone should count before the
+     review, because "one pilot school" and "every tenant" are very different
+     conversations.
+
+     Encouragingly, `School.aiEnabled` defaults to **false** in the schema
+     (`schema.prisma`, changed 2026-08-14 precisely so enablement is a
+     deliberate per-school operator decision rather than a platform-wide
+     flip). So the expected answer is "only schools someone explicitly
+     switched on" — but that should be confirmed by counting, not assumed,
+     since it is exactly the kind of belief that was wrong last time. The
+     platform-admin dashboard already surfaces `ai_enabled` per school
+     (`platform_admin_list_schools`), so this is a read someone can do today
+     without a database console.
+  2. **Which features actually ran.** The five generations were some mix of
+     lesson plans, report-card comments, parent summaries and admin insights,
+     and those differ in what they send. The AI Usage page's per-prompt
+     breakdown answers this, and it matters more to a lawyer than the token
+     total does.
+
+  **Decision status (2026-09-01, urgency revised 2026-09-02).** Voyage AI is
+  the approved vendor choice and the engineering-readiness findings are
+  accepted. Phase 7 planning may proceed on that assumption. Note that the
+  confirmation above decouples this item's urgency from Phase 7 entirely:
+  even if Phase 7 were cancelled tomorrow, the question would still be live,
+  because the processing is already happening. **Implementation — actual API integration and
   actual curriculum content processing — waits** for either (a) confirmation
   that the NDPR question has been addressed, or (b) a deliberate, recorded
   decision to proceed despite it. Option (b) is a legitimate business call,
   but it should be made knowingly and written down here, not arrived at by
   someone simply starting the integration.
 
-  **Recorded from Arinzechukwu's instruction, 2026-09-01.** The supporting
+  **Recorded from Arinzechukwu's instruction, 2026-09-01; production state
+  confirmed by him 2026-09-02.** The supporting
   Phase 7 plan-first and vendor comparison are not committed to this repo —
   see the note in the same PR. This entry deliberately states the compliance
   question and its status only, and does not restate vendor analysis it cannot
