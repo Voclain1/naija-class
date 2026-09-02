@@ -119,7 +119,7 @@ service first and grounding nothing, which would have produced infrastructure
 with no user-visible result and no way to tell whether the retrieval was any
 good. Grounding one real feature is what makes the retrieval *testable*.
 
-### D2 — Voyage model: `voyage-4`, pending a dimension check
+### D2 — Voyage model: `voyage-4` at 1024 dimensions
 
 Voyage's current line-up and pricing (checked 2026-09-02 against
 `docs.voyageai.com/docs/pricing`):
@@ -138,12 +138,52 @@ thousands of tokens, so a pilot school's entire corpus embeds inside a
 rounding error of the free tier. Choose on quality, not price: `voyage-4` as
 the default, `voyage-4-lite` only if a measured reason appears.
 
-**OPEN — must be resolved before the migration is written:** the exact output
-dimensionality of `voyage-4`. The pricing page does not state it, and a
-`vector(N)` column requires N to be fixed at DDL time. Do not guess this from
-`voyage-3.5`'s 1024. Confirm from Voyage's model documentation, record the
-number in the migration header, and treat a later dimension change as a
-re-embed of the whole corpus, not an `ALTER`.
+**RESOLVED 2026-09-02 — `vector(1024)`.** Confirmed from Voyage's model
+documentation (MongoDB Docs → Voyage AI → Models) and corroborated by their
+"Flexible Dimensions and Quantization" page, not inferred from `voyage-3.5`:
+
+| Property | `voyage-4` |
+|---|---|
+| Output dimensions | **1024 default**; 256, 512, 2048 also supported |
+| Context length | 32,000 tokens |
+
+Use the **1024 default**. It is the balanced point of their range and needs no
+`output_dimension` parameter, so the ingestion and query paths cannot drift
+apart by one of them omitting it.
+
+**A correction to what this section previously said.** The earlier draft warned
+that a later dimension change means re-embedding the whole corpus. That is only
+half true, and the research changed the answer. The voyage-4 family is trained
+with **Matryoshka representation learning**, so a 1024-dim embedding can be
+*truncated* to 512 or 256 and renormalised to obtain (approximately) the
+model's native embedding at that size.
+
+Practically:
+
+- **Reducing** dimensions later (1024 → 512, e.g. to shrink the index) is a
+  transformation of vectors we already hold. **No re-embedding, no Voyage
+  spend, no re-upload.**
+- **Increasing** (1024 → 2048) *does* require re-embedding, because the extra
+  dimensions were never computed.
+
+Choosing 1024 therefore keeps the cheap direction open and only forecloses the
+expensive one, which is the right way round. It still requires a migration —
+`vector(N)` is fixed at DDL time — but not a round-trip to the vendor.
+
+**Also surfaced by this research, and deliberately left open:**
+`voyage-context-4` exists specifically to produce *contextualised chunk
+embeddings* — chunks embedded with awareness of the surrounding document
+rather than in isolation — and supports auto-chunking up to 120K tokens.
+That is aimed squarely at the problem D7 solves by hand. It costs $0.12/M
+against `voyage-4`'s $0.06/M and carries the same 200M free allowance, so cost
+is not the deciding factor at this scale.
+
+It is **not** chosen here, because D7's structural chunking has a property this
+slice specifically needs: a chunk keeps its heading path, and the heading is
+what makes a retrieved chunk citable to a teacher (D10). Handing chunking to
+the vendor risks losing that. But it should be **measured against D7's chunking
+at CP4**, using the retrieval-precision fixture — that harness is exactly the
+tool for deciding this, and guessing now would waste it.
 
 ### D3 — Embedding calls do NOT go through `AiGenerationService`
 
@@ -354,8 +394,10 @@ model CurriculumChunk {
   content    String
   tokenCount Int    @map("token_count")
 
-  // Prisma cannot express pgvector types. N is fixed by D2's open dimension
-  // question and must be recorded in the migration header.
+  // Prisma cannot express pgvector types. 1024 is voyage-4's default output
+  // dimension, confirmed 2026-09-02 (D2). Record it in the migration header.
+  // Reducing this later is a truncation of vectors already held, not a
+  // re-embed — increasing it is not. See D2.
   embedding  Unsupported("vector(1024)")
 
   createdAt  DateTime @default(now()) @map("created_at")
@@ -638,17 +680,21 @@ This phase has two such dependencies (Voyage, document formats).
 
 ## 11. Open questions
 
-1. **`voyage-4`'s output dimensionality** (D2). Blocks the migration. Confirm
-   from Voyage's model docs before CP1 writes DDL.
+1. ~~**`voyage-4`'s output dimensionality**~~ — **RESOLVED 2026-09-02: 1024
+   default** (256/512/2048 also available), 32K context. See D2, which also
+   records the Matryoshka finding: reducing dimensions later is truncation, not
+   re-embedding. No longer blocks the migration.
 2. **NDPR**, per §7 and `docs/deferred.md`. Implementation stays blocked on
    this; planning does not.
 3. **Voyage data-retention terms.** Does Voyage retain submitted text, and for
    how long? Feeds directly into (2), and is the sort of thing that must be
    read from their DPA rather than inferred from a marketing page.
-4. **Chunk size and top-K.** Deliberately not fixed here — these should be
-   tuned against the CP4 retrieval-precision fixture rather than guessed in a
-   plan document. Sensible starting point: ~500-token chunks with ~50-token
-   overlap, K=4.
+4. **Chunk size, top-K, and hand-rolled vs `voyage-context-4`.** Deliberately
+   not fixed here — all three should be measured against the CP4
+   retrieval-precision fixture rather than guessed in a plan document.
+   Sensible starting point: ~500-token chunks with ~50-token overlap, K=4,
+   using D7's structural chunking. See D2 for why `voyage-context-4` is a
+   real alternative worth measuring rather than dismissing.
 5. **Re-embedding on document update.** When a school uploads a corrected
    scheme of work, the old chunks must go. Cascade delete handles the
    mechanics; the product question of whether previously-generated lesson
@@ -666,6 +712,6 @@ This phase has two such dependencies (Voyage, document formats).
 2. The NDPR item has been addressed, **or** a deliberate, recorded decision
    has been made to proceed regardless (`docs/deferred.md` already states this
    condition and that option (b) must be written down, not arrived at).
-3. `voyage-4`'s dimension is confirmed (Q1).
+3. ~~`voyage-4`'s dimension is confirmed~~ — **done 2026-09-02: 1024** (D2).
 4. `VOYAGE_API_KEY` is provisioned, with the fail-soft path (D12) verified in
    the running app rather than assumed.
