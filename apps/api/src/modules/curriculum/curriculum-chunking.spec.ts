@@ -131,6 +131,135 @@ describe("chunkDocument — structural chunking (D7)", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// Real-document regression — Virgo Fidelis, JSS2 ENGLISH, 2026-09-02.
+//
+// The first real scheme of work put through the pipeline ingested cleanly and
+// reported 17 sections with 16 non-null headings. Every automated check passed.
+// The headings were nonetheless useless: "ENGLISH" eight times, plus
+// contents-page fragments, and not one week among them.
+//
+// THE LESSON IS ABOUT THE TEST, NOT ONLY THE CODE. The original suite asserted
+// that headings were NON-NULL. That is the wrong property: a heading repeated
+// eight times is non-null and worthless, and null would at least have been an
+// honest signal. What matters is whether headings are DISTINCT and
+// INFORMATIVE, so that is what these assert.
+//
+// The fixture below reproduces the two causes that were diagnosed:
+//   1. a running page header ("ENGLISH") repeated once per extracted page;
+//   2. week/topic structure flattened into single-line table rows, so "WEEK n"
+//      never appears alone and the WEEK rule never fires.
+// ---------------------------------------------------------------------------
+
+const REAL_TOPICS = [
+  "COMPREHENSION",
+  "Speech Work: Vowel Sounds",
+  "Grammar: Nouns and Their Types",
+  "Vocabulary Development",
+  "Composition: Narrative Essay",
+  "Literature: Elements of Prose",
+  "COMPREHENSION",
+  "Grammar: Verbs and Tenses",
+];
+
+/** Text as extraction produces it for a tabular scheme with a running header. */
+function tabularSchemeExtraction(): string {
+  const pages: string[] = [
+    ["ENGLISH", "TABLE OF CONTENT", "Week Topic Page", ...REAL_TOPICS.map((t, i) => `${i + 1} ${t} ${i + 2}`)].join(
+      "\n",
+    ),
+  ];
+  REAL_TOPICS.forEach((topic, i) => {
+    pages.push(
+      [
+        "ENGLISH",
+        "Week Topic Objectives Activities Materials Evaluation",
+        `${i + 1} ${topic} By the end of the lesson pupils should be able to explain the concept in their own ` +
+          `words, give at least three examples drawn from their environment, and apply the skill in written work. ` +
+          `Teacher introduces the topic, models the target form and guides controlled practice; pupils participate ` +
+          `in drills and complete the exercise in their notebooks. Textbook, chalkboard, flash cards. Pupils answer ` +
+          `five oral questions and complete the written exercise before the next lesson.`,
+      ].join("\n"),
+    );
+  });
+  return pages.join("\n\n");
+}
+
+describe("chunkDocument — real-document regression (tabular scheme)", () => {
+  it("does NOT label every chunk with a repeated running page header", () => {
+    // The exact production failure: "ENGLISH" x8.
+    const chunks = chunkDocument(tabularSchemeExtraction());
+    const counts = new Map<string, number>();
+    for (const c of chunks) {
+      if (c.heading) counts.set(c.heading, (counts.get(c.heading) ?? 0) + 1);
+    }
+    for (const [heading, n] of counts) {
+      expect(n, `heading "${heading}" repeats ${n} times`).toBeLessThanOrEqual(1);
+    }
+    expect([...counts.keys()].some((h) => h.trim() === "ENGLISH")).toBe(false);
+  });
+
+  it("RECOVERS week and topic from flattened table rows", () => {
+    const chunks = chunkDocument(tabularSchemeExtraction());
+    const weekBearing = chunks.filter((c) => /WEEK\s*\d/i.test(c.heading ?? ""));
+    // Every one of the eight weeks must be found, not merely "some".
+    expect(weekBearing.length).toBeGreaterThanOrEqual(REAL_TOPICS.length);
+    for (let w = 1; w <= REAL_TOPICS.length; w++) {
+      expect(
+        chunks.some((c) => new RegExp(`WEEK ${w}\\b`).test(c.heading ?? "")),
+        `no chunk carries WEEK ${w}`,
+      ).toBe(true);
+    }
+    expect(chunks.some((c) => /TOPIC: Grammar: Nouns/i.test(c.heading ?? ""))).toBe(true);
+  });
+
+  it("does not nest recovered weeks under the CONTENTS PAGE title", () => {
+    // "TABLE OF CONTENT > WEEK 1 > ..." is worse than no path: it cites the
+    // wrong page of the document.
+    const chunks = chunkDocument(tabularSchemeExtraction());
+    expect(chunks.some((c) => /TABLE OF CONTENT\s*>/i.test(c.heading ?? ""))).toBe(false);
+  });
+
+  it("keeps a repeated line as CONTENT even though it is not a heading", () => {
+    // Demoting furniture must never delete text — a scheme that repeats
+    // boilerplate per week would otherwise lose it.
+    const chunks = chunkDocument(tabularSchemeExtraction());
+    expect(chunks.map((c) => c.content).join("\n")).toContain("ENGLISH");
+  });
+
+  it("does not treat a contents-page entry as a heading", () => {
+    const chunks = chunkDocument(tabularSchemeExtraction());
+    expect(chunks.some((c) => /^\d+\s+.*\s\d+$/.test(c.heading ?? ""))).toBe(false);
+  });
+});
+
+describe("chunkDocument — heading quality invariants", () => {
+  it("keeps the TERM as the root of the path, above unclassified capitalised lines", () => {
+    // Regression: FIRST TERM was popped by "SUBJECT:" / "CLASS:" on the cover
+    // block, so every week nested under "CLASS: JSS 2" and the term was lost.
+    const text =
+      "VIRGO FIDELIS SECONDARY SCHOOL\nFIRST TERM SCHEME OF WORK\nSUBJECT: ENGLISH LANGUAGE\nCLASS: JSS 2\n" +
+      "\nWEEK 1\nTOPIC: Comprehension\n" +
+      "Pupils should be able to identify topic sentences and answer factual questions on a passage they have read.\n";
+    const chunks = chunkDocument(text);
+    expect(chunks[0]?.heading).toContain("FIRST TERM");
+    expect(chunks[0]?.heading).toContain("WEEK 1");
+  });
+
+  it("does not invent weeks in a document with no week table", () => {
+    // The row-recovery rewrite is guarded by a "Week ... Topic" column header.
+    // Without that guard it would mangle any numbered list.
+    const text =
+      "SAFEGUARDING POLICY\n" +
+      "1 All staff must complete the annual safeguarding training before the start of the academic session, and " +
+      "records of completion are held by the school administrator for inspection at any time.\n" +
+      "2 Any concern about a child must be reported to the designated safeguarding lead on the same day it arises, " +
+      "in writing, using the standard form held in the school office.\n";
+    const chunks = chunkDocument(text);
+    expect(chunks.some((c) => /WEEK/i.test(c.heading ?? ""))).toBe(false);
+  });
+});
+
 describe("planEmbeddingBatches — D4a consequence 1", () => {
   const item = (tokens: number, tag: string) => ({
     content: tag,
