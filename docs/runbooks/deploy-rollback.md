@@ -3,6 +3,25 @@
 This runbook covers the three failure classes after a staging deploy and tells
 you what to do for each one.
 
+> **Before you rely on this in an incident: `flyctl` does not run on the
+> maintainer's Windows machine.** It is blocked by Windows Application Control
+> (confirmed 2026-09-01) — not an execution policy, not a file permission, and
+> not fixed by `chmod`. Every command below will fail there with *"An
+> Application Control policy has blocked this file"*.
+>
+> **Use the Fly web dashboard (fly.io) instead**: it can list releases, roll
+> back, show machine status and stream logs — everything this runbook needs.
+> Find the app, open **Releases**, and roll back to the last good version.
+>
+> Root cause is Windows Smart App Control in enforcement mode
+> (`VerifiedAndReputablePolicyState = 1`, re-verified 2026-09-01). It is
+> reputation-based, so **reinstalling flyctl will not fix it** — don't burn
+> ~45 minutes re-downloading. **Never disable Smart App Control**: it cannot be
+> re-enabled without reinstalling Windows.
+>
+> This is worth knowing BEFORE an incident rather than discovering it during
+> one. See `docs/CODEX_HANDOFF.md` → "Environment quirks" for full detail.
+
 ---
 
 ## Before you start: find the failed deploy
