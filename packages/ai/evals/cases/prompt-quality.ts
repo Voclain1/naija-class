@@ -19,6 +19,7 @@ import {
   LESSON_PLAN_SECTION_ORDER,
   LESSON_PLAN_SYSTEM,
   LESSON_QUIZ_SYSTEM,
+  renderLessonPlanPrompt,
 } from "../../src/prompts/lesson-plan.js";
 import {
   INSIGHTS_NARRATION_SYSTEM,
@@ -160,6 +161,60 @@ export const promptQualityCase: EvalCase = {
           "Previous Knowledge + Objectives replace the first, and pupil activity " +
           "belongs inside the Presentation steps",
       ),
+      // ---- v3 curriculum grounding (Phase 7 / CP3, D19) -------------------
+      //
+      // The grounded and ungrounded renders are BOTH asserted here. Grounding
+      // is additive (D18): a school that has uploaded nothing must not
+      // experience Phase 7 as a regression, and the empty branch is the one
+      // nobody would notice breaking.
+      ...(() => {
+        const base = {
+          classLevel: "JSS 3",
+          subject: "English Studies",
+          topic: "Adverbs of frequency",
+        } as const;
+        const grounded = renderLessonPlanPrompt({
+          ...base,
+          groundingChunks: [
+            {
+              heading: "First Term > WEEK 3",
+              content: "Adverbs of Frequency - often, always, occasionally.",
+              documentTitle: "English JSS3 Scheme",
+            },
+          ],
+        });
+        const ungrounded = renderLessonPlanPrompt(base);
+
+        return [
+          check(
+            "lesson-plan v3: a grounded render includes the school's own extract",
+            grounded.includes("Adverbs of Frequency - often, always, occasionally.") &&
+              grounded.includes("First Term > WEEK 3") &&
+              grounded.includes("English JSS3 Scheme"),
+            "the retrieved chunk, its citable heading and its document title must all " +
+              "reach the model, or the Reference Materials section cannot cite them",
+          ),
+          check(
+            "lesson-plan v3: a grounded render tells the model to PREFER the school's scheme",
+            /prefer them over your own knowledge/i.test(grounded),
+            "without this the model treats the extract as one source among many and " +
+              "the school's own curriculum stops being the differentiator",
+          ),
+          check(
+            "lesson-plan v3: an UNGROUNDED render still asks for a lesson plan",
+            ungrounded.includes("Write the lesson plan.") &&
+              !ungrounded.includes("SCHEME OF WORK EXTRACT"),
+            "grounding is additive — a school with no uploaded documents must still " +
+              "get a usable plan, with no dangling reference to an extract it never received",
+          ),
+          check(
+            "lesson-plan v3: an ungrounded render says so, rather than staying silent",
+            /no scheme of work has been uploaded/i.test(ungrounded),
+            "silence would leave the model unable to tell an absent curriculum from one " +
+              "it was given and ignored, inviting invented page and week references",
+          ),
+        ];
+      })(),
       check(
         "lesson-plan: schema is closed",
         (LESSON_PLAN_SCHEMA as { additionalProperties?: unknown }).additionalProperties === false,

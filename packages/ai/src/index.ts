@@ -64,6 +64,7 @@ export {
 export {
   CHUNK_DEFAULTS,
   chunkDocument,
+  embeddableText,
   estimateTokens,
   type Chunk,
   type ChunkingOptions,

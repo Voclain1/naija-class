@@ -285,6 +285,8 @@ export default function LessonPlanDetailPage() {
         </Link>
       </div>
 
+      <GroundingLine grounding={plan.groundedOn} />
+
       <header className="flex flex-col gap-3 border-b pb-5 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex flex-col gap-1">
           <h1 className="font-serif text-2xl font-medium tracking-tight text-foreground">
@@ -512,6 +514,73 @@ export default function LessonPlanDetailPage() {
           Delete
         </Button>
       </footer>
+    </div>
+  );
+}
+
+/**
+ * What this plan was grounded in (Phase 7 / CP3, D10 + D20).
+ *
+ * Two reasons this exists, and the second is the important one. It makes the
+ * feature legible — a teacher can see their own scheme of work being used. And
+ * it is the ONLY human check on retrieval quality: if the wrong week was
+ * retrieved, the teacher is the only person who will ever notice, and they can
+ * only notice if they are told.
+ *
+ * It therefore also speaks when nothing was retrieved. Silence on the empty
+ * path would hide exactly the failure this line exists to catch, and "no
+ * matching section found" is what tells a teacher to upload a scheme of work.
+ *
+ * print:hidden — this is provenance for the teacher writing the plan, not part
+ * of the lesson note a head teacher or inspector reads.
+ */
+function GroundingLine({
+  grounding,
+}: {
+  grounding: LessonPlanDto["groundedOn"];
+}) {
+  // Null means the plan predates CP3 entirely. Saying nothing is correct:
+  // there is no retrieval to report on, and "no matching section" would be a
+  // false statement about a generation that never attempted one.
+  if (!grounding) return null;
+
+  if (grounding.reason === "ok" && grounding.chunks.length > 0) {
+    return (
+      <div className="rounded-md border border-primary/25 bg-primary/5 p-3 text-sm print:hidden">
+        <p className="font-medium">Based on your own scheme of work</p>
+        <ul className="mt-1 space-y-0.5 text-muted-foreground">
+          {grounding.chunks.map((c) => (
+            <li key={c.chunkId}>
+              {c.documentTitle}
+              {c.heading ? ` — ${c.heading}` : ""}
+            </li>
+          ))}
+        </ul>
+      </div>
+    );
+  }
+
+  // Every non-ok reason is reported, but in the teacher's terms rather than
+  // the system's: what they could do about it, not which component declined.
+  const message =
+    grounding.reason === "no-documents"
+      ? "No scheme of work has been uploaded for this subject and class level, so this plan is not grounded in your own curriculum."
+      : grounding.reason === "no-match"
+        ? "No matching section was found in your uploaded scheme of work, so this plan is not grounded in it."
+        : "Your curriculum library could not be searched this time, so this plan is not grounded in it.";
+
+  return (
+    <div className="text-muted-foreground rounded-md border border-dashed p-3 text-sm print:hidden">
+      {message}
+      {grounding.reason === "no-documents" ? (
+        <>
+          {" "}
+          <Link href="/teacher/curriculum" className="underline underline-offset-2">
+            Add one
+          </Link>
+          .
+        </>
+      ) : null}
     </div>
   );
 }
