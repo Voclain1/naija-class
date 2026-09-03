@@ -488,8 +488,9 @@ causes.
 ### D14 — Re-ingest the existing document rather than fixing only prospectively
 
 Chunks are derived data, so the fix does not reach documents already ingested.
-The JSS2 ENGLISH document is re-ingested (delete + re-upload) rather than left
-as-is.
+The document is re-ingested (delete + re-upload) rather than left as-is.
+(Reported throughout as "JSS2 English"; the file is in fact the JSS3 English
+scheme — noted so the two names are known to refer to one document.)
 
 Worth doing because it is the **only piece of real-world evidence** that the
 pipeline works end to end, and verifying the fix against the same content that
@@ -498,6 +499,94 @@ also nearly free: re-embedding one document is a handful of Voyage requests
 against a 200M-token free allowance. The checksum duplicate guard does not
 obstruct this — it only refuses documents that are still live, so a delete
 followed by a re-upload is permitted by design.
+
+### D13/D14 — VERIFIED CLOSED, 2026-09-03
+
+Re-ingestion ran against the fixed chunker and the output meets every condition
+stated **in advance**. Recorded here rather than left in a conversation,
+because this phase opened by discovering that a previous plan-first existed
+only in chat history — and a verification whose result lives nowhere is the
+same failure in a smaller box.
+
+**The result was confirmed FRESH before it was assessed.** `createdAt`
+`2026-09-03T10:53:21.723Z`, after both deploys (`a450dba` 09:12, `ace7fb1`
+09:36). That check exists because the previous round's "unchanged" result
+turned out to be a document that had never been re-ingested at all — the delete
+had failed on a permission error, so the snippet re-read the original chunks.
+**Always check `createdAt` before concluding anything about a re-ingestion.**
+
+| Condition (stated before the run) | Result |
+|---|---|
+| No heading repeated **due to page furniture** | **PASS** — no `ENGLISH`, `COMPREHENSION` or `ABULARY` anywhere |
+| A real `WEEK n` in most paths | **PASS** — 21 of 26 chunks (81%) |
+| No path rooted at `TABLE OF CONTENT` | **PASS** — absent entirely |
+
+Measured before → after on the real document:
+
+| | before | after |
+|---|---|---|
+| week-bearing headings | 0 | **21 of 26** |
+| repeated `ENGLISH` headings | 8 | **0** |
+| term attribution | wrong by one term | **correct** |
+
+`First Term WEEK 1-9`, `Second Term WEEK 1-9`, `Third Term WEEK 2-4` — 21
+distinct week paths, no collisions. The distinctness is what specifically
+confirms the term-label fix rather than merely being consistent with it:
+without detecting the table-row term label, second- and third-term weeks
+collide with first-term ones.
+
+**The confirmed root causes** — both differed from the first two diagnoses,
+which is why the source document was ultimately required:
+
+1. `ENGLISH` ×8 was **not a running page header**. It is the second line of the
+   wrapped cell `LITERATURE IN` / `ENGLISH`, recurring in every week of every
+   term. Same mechanism for `COMPREHENSION` and, with a mid-word column break,
+   `COMPREHENSION/VOC` / `ABULARY`.
+2. Weeks were missing because row recovery required 120+ characters after the
+   week number. Real rows are short (`1 REVISION OF LAST`, `10 REVISION`), so
+   it never fired.
+
+**Third Term Week 1 is absent, by design.** Its section is a single short line
+that falls under the minimum chunk size and merges into the preceding chunk —
+content preserved, heading lost. Predicted before the run, for that reason.
+
+**Term-label repeats are benign.** The only repeated headings are bare term
+labels. Two explanations exist and are distinguishable by ordinal: consecutive
+repeats mean one long section was windowed; scattered repeats mean several
+blocks sit under a term but outside any week row. Both make `First Term` a true
+citation, and neither is the furniture bug.
+
+#### What this does NOT establish
+
+Stated explicitly, because over-claiming from thin evidence is the exact
+failure this episode kept repeating:
+
+- **One document, of one kind.** A syllabus.ng commercial ebook — a templated
+  PDF, not a school-authored scheme. A hand-made Word export may extract
+  differently. What is proven is that this document CLASS works, and that the
+  fixture is now real, so the next surprise costs minutes rather than deploy
+  cycles.
+- **Good headings are not good retrieval.** Nothing here measures whether the
+  right chunk comes back for a teacher's topic. That is CP3, and CP4's eval
+  suite is what would measure it.
+- **The heading is still not embedded.** `ingest.handler.ts` embeds `content`
+  only. Now that headings are meaningful, prepending them is likely a real
+  retrieval win — carried into CP3 as a design decision, not an afterthought.
+
+#### The process lesson
+
+Three diagnoses were made about this document. The first two were
+reconstructions, both wrong, in different ways, and each cost a deploy cycle
+before the error surfaced. The third was made against the source document and
+was right first time.
+
+The tests were wrong in the same way the diagnoses were: CP2's suite asserted
+headings were NON-NULL, and this document would have passed. A heading repeated
+eight times is non-null and worthless; null would at least have been honest.
+The suite now asserts **distinctness and informativeness** against the
+document's real extracted text.
+
+**Get the real artefact before the second attempt at a fix, not the fourth.**
 
 ## 4. Data model
 
