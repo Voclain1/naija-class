@@ -102,7 +102,7 @@ test.describe("guardian login (F-13)", () => {
     await expect(page.getByRole("link", { name: "Continue" })).toBeHidden();
 
     // And the child is actually there.
-    await expect(page.getByText(guardian.studentFirstName)).toBeVisible();
+    await expect(page.getByText(guardian.studentFirstName).first()).toBeVisible();
 
     await context.close();
     await admin.context.close();
@@ -270,7 +270,7 @@ test.describe("guardian logout (F-06)", () => {
     const { admin, guardian, context, page } = await scaffold(browser);
     await signIn(page, guardian);
     await page.goto(`${PORTAL_BASE_URL}/students/${guardian.studentId}`);
-    await expect(page.getByText(guardian.studentFirstName)).toBeVisible();
+    await expect(page.getByText(guardian.studentFirstName).first()).toBeVisible();
 
     await signOut(page);
 
