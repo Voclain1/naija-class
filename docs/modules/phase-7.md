@@ -961,3 +961,208 @@ This phase has two such dependencies (Voyage, document formats).
 3. ~~`voyage-4`'s dimension is confirmed~~ — **done 2026-09-02: 1024** (D2).
 4. `VOYAGE_API_KEY` is provisioned, with the fail-soft path (D12) verified in
    the running app rather than assumed.
+
+---
+
+## 13. CP3 plan-first — retrieval, prompt v3, grounding display
+
+Written 2026-09-03, after D13/D14 closed. CP2 gave this checkpoint a corpus
+whose citations are real; CP3 is what finally puts it in front of a teacher.
+
+**Scope:** tenant-scoped similarity search, lesson-plan prompt v2 → v3, and the
+grounding display. Nothing else. No retrieval UI, no tutor, no re-ranking.
+
+### 13.1 What CP3 inherits, verified not assumed
+
+Checked against the repo on 2026-09-03:
+
+| Thing | State |
+|---|---|
+| `curriculum_chunks` with `vector(1024)` + HNSW | live in production |
+| RLS + FORCE on all three curriculum tables | live, spec'd in `curriculum-rls.spec.ts` |
+| `EmbeddingService.embed()` with `inputType: "query"` | shipped CP1, ledgered as `purpose: "query"` |
+| Meaningful heading paths on real documents | verified 2026-09-03 (D13/D14) |
+| `AiGenerationService.generate()` reserve → call → settle | shipped Phase 5 |
+| `LESSON_PLAN_PROMPT` at v2, `renderLessonPlanPrompt()` pure | `packages/ai/src/prompts/lesson-plan.ts` |
+| `LessonPlansService.create()` calls `ai.generate()` outside the transaction | `lesson-plans.service.ts:117` |
+
+The call site matters: generation already happens **outside** the tenant
+transaction, at the reserve/call/settle boundary. Retrieval slots in
+immediately before it with no restructuring.
+
+### 13.2 Decisions
+
+#### D15 — The heading is embedded WITH the chunk, and the corpus is re-embedded once
+
+Today `ingest.handler.ts:124` embeds `c.content` only; the heading is stored
+but never seen by the model. That was defensible while headings were
+meaningless. Now that they are real, it is a measurable loss: `WEEK 5` and
+`First Term` are exactly the terms a teacher's query uses, and they appear
+nowhere in the embedded text.
+
+**Embed `"{heading}\n\n{content}"`.** Retrieval is over a single vector per
+chunk, so the heading has to be *inside* it to influence similarity at all.
+
+Two consequences stated plainly rather than discovered later:
+
+1. **Existing chunks must be re-embedded.** A corpus embedded content-only and
+   one embedded heading-plus-content are not comparable — mixing them makes
+   similarity scores mean different things for different rows. This is a
+   one-time backfill, not an ongoing cost: at 200M free tokens and a handful of
+   requests per document, re-embedding every chunk a pilot school holds is
+   free and takes seconds. The backfill re-uses the ingest handler's existing
+   idempotent delete-then-insert path.
+2. **`tokenCount` drifts.** It is computed on `content` and used for batch
+   budgeting. Adding the heading adds real tokens the planner does not count.
+   The budget is already deliberately conservative (8K against a much larger
+   real ceiling), so this is headroom being spent rather than a bug — but the
+   estimate must include the heading, or the two will diverge further as
+   headings get richer.
+
+**Not doing:** a separate heading vector, or a hybrid keyword+vector search.
+Both are real techniques and both are premature before CP4 can measure whether
+retrieval is actually failing.
+
+#### D16 — Retrieval is scoped to (school, subject, class level), and that scoping is in SQL
+
+A lesson plan is generated for one subject and one class level, and
+`CurriculumDocument` carries both. Retrieval filters on them.
+
+This is not only relevance — it is a **correctness** boundary. Without the
+subject filter, a JSS3 English query can retrieve a Basic Science chunk that
+happens to be lexically close, and the teacher gets a lesson plan grounded in
+the wrong subject's scheme. That is worse than no grounding, on exactly the
+reasoning D13 settled for citations.
+
+Per D8, the query runs inside `withTenant` (GUC set) **and** carries
+`school_id` in its `WHERE` clause. Belt and braces, as every other raw-SQL read
+in this codebase does. `curriculum-rls.spec.ts` gains a retrieval case: school
+A's query returns zero of school B's chunks, proven with both schools holding
+an identical vector so only RLS can separate them.
+
+#### D17 — Top-K is 5, with a distance floor, and the floor is the important half
+
+`ORDER BY embedding <=> $query LIMIT 5`.
+
+**5** because a lesson plan's grounding block competes for prompt space with
+the existing system prompt, and five ~500-token chunks is ~2,500 tokens — real
+context without crowding out the instructions that produce the Nigerian lesson
+note format.
+
+**The distance floor matters more than K.** Cosine distance always returns a
+nearest neighbour, even when nothing is relevant: a school that uploaded only a
+Mathematics scheme will still get five Mathematics chunks for an English topic,
+ranked confidently. Grounding a lesson plan in those is worse than not
+grounding it. So a chunk is only used below a maximum distance, and if nothing
+qualifies the generation proceeds ungrounded (D18).
+
+The threshold is a **guess until CP4 measures it** — that is stated here so it
+is not later mistaken for a tuned value. Starting point 0.55 cosine distance,
+recorded as provisional, with the retrieved distances logged so CP4 has real
+data to set it from rather than another guess.
+
+#### D18 — Grounding is additive; the ungrounded path stays first-class
+
+Restating D9 because CP3 is where it becomes code. Every one of these must
+produce a normal, usable lesson plan:
+
+- a school with no uploaded documents at all;
+- a school whose documents are still `PENDING`/`PROCESSING`;
+- a topic with no chunk under the distance floor;
+- `VOYAGE_API_KEY` absent, or the embedding call failing.
+
+The last one deserves its own note: **a retrieval failure must never fail a
+generation.** The query embedding is one network call to a second vendor, and a
+teacher pressing "generate" should not lose their lesson plan because Voyage
+had a bad minute. Retrieval is wrapped so any error degrades to ungrounded,
+logged at warn, with the reason surfaced in the grounding display rather than
+swallowed.
+
+#### D19 — Prompt v2 → v3, and the empty case is part of the prompt, not around it
+
+`renderLessonPlanPrompt` gains an optional `groundingChunks` argument and the
+version bumps to `3`. The registry pins name + version into every
+`ai_generations` row, so v2/v3 are separable in the ledger and A/B-able with
+the existing `evals/ab-lesson-plan-format.ts` pattern.
+
+v3 instructs the model to prefer the school's own scheme over its training
+data, and to draw **Reference Materials** from it — the section that today is
+invented, and the one §2 named as the concrete win.
+
+The empty case is handled **inside** the render function, not by branching
+between two prompts. One prompt with a conditional block keeps a single string
+under eval, where two prompts would drift and only one would get tested.
+
+`renderLessonPlanPrompt` stays a pure function of its inputs — no database, no
+`new Date()` — so the eval harness can assert on the exact string.
+
+#### D20 — The grounding display cites, and says when it did not ground
+
+Per D10, a short line under the plan: *"Based on your Basic Science scheme of
+work — First Term > WEEK 5."* The heading path is the citation, which is the
+whole reason D13 mattered.
+
+**And it says so when nothing was retrieved.** "No matching section found in
+your uploaded schemes" is more useful than silence: it tells a teacher whether
+to upload something, and it is the only way anyone will notice retrieval
+quietly failing. Silence on the empty path would hide exactly the failure this
+display exists to catch.
+
+Storage: a nullable `groundedOn` JSON column on `LessonPlan`, holding chunk
+ids, heading paths, document titles and distances. A column rather than a join
+because a lesson plan is a **historical record** — it must keep showing what
+grounded it even after the document is deleted and its chunks cascade away.
+Same instinct that keeps `embedding_generations` from cascading.
+
+Distances are stored, not only displayed. CP4 needs real retrieval scores from
+real use to set D17's threshold, and the alternative is another guess.
+
+### 13.3 Shape
+
+```
+packages/ai/src/prompts/lesson-plan.ts     v3 + grounding block
+apps/api/src/modules/curriculum/
+  curriculum-retrieval.service.ts          embed query -> $queryRaw -> filter
+apps/api/src/modules/lesson-plans/
+  lesson-plans.service.ts                  retrieve before ai.generate()
+packages/db/prisma/schema.prisma           LessonPlan.groundedOn Json?
+apps/web/.../lesson-plans/[id]/page.tsx    grounding line
+```
+
+One new service, one prompt version, one nullable column, one UI line. No new
+queue, no new vendor, no new permission — retrieval is not a user action, it is
+something `lesson-plan.create` already authorises (per D-note in
+`PHASE_7_PERMISSIONS`).
+
+### 13.4 Verification
+
+Offline, in CI:
+
+- retrieval scoping — school A gets zero of school B's chunks, with identical
+  vectors so only RLS separates them;
+- subject/class-level filtering excludes a lexically-close wrong-subject chunk;
+- the distance floor rejects an unrelated corpus;
+- all four ungrounded paths produce a complete lesson plan;
+- an embedding failure degrades to ungrounded rather than throwing;
+- v3 renders both the grounded and empty forms deterministically.
+
+Live, by hand:
+
+- a real query against the re-ingested JSS3 scheme returns the *right week* —
+  the first end-to-end evidence that retrieval works on real content, and the
+  direct successor to D14's verification.
+
+**What CP3 does NOT verify:** whether retrieval is *good*. One hand-checked
+query is an existence proof, not a measurement. That is CP4's entire job, and
+D17's threshold stays explicitly provisional until then.
+
+### 13.5 Estimate
+
+**4–6 days**, unchanged from §10. The range is honest rather than padded: the
+retrieval query itself is an afternoon, and the time is in the four ungrounded
+paths, the re-embedding backfill, and the prompt A/B.
+
+**The one thing that could make it longer** is discovering that retrieval
+returns plausible-but-wrong chunks on the real corpus — a quality problem, not
+a plumbing one, and the only mitigation is that D20 logs distances so CP4
+inherits data instead of another reconstruction.
