@@ -1040,7 +1040,7 @@ in this codebase does. `curriculum-rls.spec.ts` gains a retrieval case: school
 A's query returns zero of school B's chunks, proven with both schools holding
 an identical vector so only RLS can separate them.
 
-#### D17 — Top-K is 5, with a distance floor, and the floor is the important half
+#### D17 — Top-K is 5, with a distance floor of 0.69 (measured, not guessed)
 
 `ORDER BY embedding <=> $query LIMIT 5`.
 
@@ -1056,10 +1056,41 @@ ranked confidently. Grounding a lesson plan in those is worse than not
 grounding it. So a chunk is only used below a maximum distance, and if nothing
 qualifies the generation proceeds ungrounded (D18).
 
-The threshold is a **guess until CP4 measures it** — that is stated here so it
-is not later mistaken for a tuned value. Starting point 0.55 cosine distance,
-recorded as provisional, with the retrieved distances logged so CP4 has real
-data to set it from rather than another guess.
+**The threshold was checked against the real corpus before shipping, and the
+first guess was wrong.** 0.55 was the proposed starting value. Measured
+2026-09-03 against the real JSS3 English scheme — chunks embedded
+heading-plus-content per D15, five plausible English queries and five
+Mathematics/Science ones, distances computed as `1 - cosine similarity` exactly
+as pgvector's `<=>` returns:
+
+| | nearest-chunk distance |
+|---|---|
+| genuine matches | 0.5524 – **0.6391** |
+| false matches (other subjects) | **0.7456** – 0.8343 |
+
+**0.55 would have rejected all five genuine matches.** Every real query scored
+above it. Grounding would have silently never fired: retrieval would run, cost
+a query embedding, find nothing "close enough", and every lesson plan would go
+out ungrounded while the feature reported itself working. Exactly the class of
+untested guess about real content this phase has already paid for twice.
+
+**Threshold is therefore 0.69**, the midpoint of the measured gap
+(0.6391 → 0.7456). Still provisional, still CP4's to tune, but now sitting
+between two measured populations rather than picked from the air.
+
+Two findings worth carrying forward:
+
+- **Ranking is already good; only the threshold was wrong.** "adverbs of
+  frequency" → `First Term > WEEK 3` (the document's week 3 grammar row is
+  "Adverbs of Frequency"); "consonant contrast sheep and chip" →
+  `First Term > WEEK 8` ("Consonants /ʃ/ and /tʃ/ — sheep/chip"). The right
+  week comes back. That is the strongest signal yet that CP3's premise holds.
+- **The gap is narrow — 0.107.** Ten queries against one document of one
+  subject is thin evidence for a delicate number, and a second subject in the
+  same corpus could move it. This is what makes D20's decision to LOG distances
+  load-bearing rather than nice-to-have, and it is worth CP4 considering a
+  RELATIVE criterion (best-vs-rest separation) instead of an absolute floor,
+  which would not depend on a single tuned constant at all.
 
 #### D18 — Grounding is additive; the ungrounded path stays first-class
 
