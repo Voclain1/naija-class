@@ -18,6 +18,8 @@ import {
   pollUntilSettled,
   uploadCurriculumFile,
 } from "@/lib/curriculum/curriculum-api";
+import { listClassLevels } from "@/lib/class-levels/class-levels-api";
+import { listSubjects } from "@/lib/subjects/subjects-api";
 import { getMyScope } from "@/lib/teacher/teacher-scope-api";
 
 // /teacher/curriculum — Phase 7 / CP2.
@@ -38,16 +40,72 @@ interface Option {
 
 const MAX_MB = 10;
 
+/**
+ * Subject and class-level options for the upload form.
+ *
+ * TWO SOURCES, teacher-scope first.
+ *
+ * `/teacher-scope/me` is preferred because it is better UX and better data: a
+ * teacher picks only from what they actually teach, rather than the school's
+ * whole catalogue. It is also the only one that works for them — `/class-levels`
+ * and `/subjects` are owner|admin at the service layer.
+ *
+ * But that endpoint gates on the `teacher` ROLE with no owner/admin bypass, so
+ * for an admin it 403s. Falling back to the admin catalogue endpoints is what
+ * makes this page usable by an admin at all — which matters, because an admin
+ * doing central uploads is a legitimate workflow, and because for a while the
+ * only role that could reach this page was the one that could not delete.
+ *
+ * If BOTH fail the caller disables the form rather than rendering empty
+ * dropdowns that silently cannot be satisfied.
+ */
+async function loadUploadOptions(): Promise<{ levels: Option[]; subjects: Option[] }> {
+  try {
+    const scope = await getMyScope();
+    // Several arms (JSS 2 A, JSS 2 B) collapse to one level, which is the grain
+    // a scheme of work is written at.
+    const levelById = new Map<string, Option>();
+    for (const arm of scope.classArms) {
+      if (!levelById.has(arm.classLevelId)) {
+        levelById.set(arm.classLevelId, { id: arm.classLevelId, name: arm.classLevelName });
+      }
+    }
+    const subjectById = new Map<string, Option>();
+    for (const list of Object.values(scope.subjectsByArm)) {
+      for (const s of list) {
+        if (!subjectById.has(s.id)) subjectById.set(s.id, { id: s.id, name: s.name });
+      }
+    }
+    // A teacher with no assignments yet resolves to empty lists, which is not a
+    // failure but is also not usable — fall through to the catalogue.
+    if (levelById.size > 0 && subjectById.size > 0) {
+      return { levels: [...levelById.values()], subjects: [...subjectById.values()] };
+    }
+  } catch {
+    // Not a teacher (403), or the scope call failed. Either way the catalogue
+    // below is the answer; swallowing is deliberate and the fallback's failure
+    // is what surfaces to the user.
+  }
+
+  const [levels, subjects] = await Promise.all([listClassLevels(), listSubjects()]);
+  return {
+    levels: levels.map((l) => ({ id: l.id, name: l.name })),
+    subjects: subjects.map((s) => ({ id: s.id, name: s.name })),
+  };
+}
+
 export default function CurriculumPage() {
   const [documents, setDocuments] = useState<CurriculumDocumentDto[]>([]);
   const [usage, setUsage] = useState<{ documents: number; maxDocuments: number } | null>(null);
-  // Sourced from /teacher-scope/me, NOT /class-levels + /subjects — those are
-  // owner|admin at the service layer, so they 403 for exactly the users this
-  // page is built for. Same trap the lesson-plans page documents.
+  // Populated by loadUploadOptions — teacher scope first, school catalogue as
+  // the admin fallback. See its header.
   const [levels, setLevels] = useState<Option[]>([]);
   const [subjects, setSubjects] = useState<Option[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Separate from `error`: the list can load fine while the upload options fail,
+  // and conflating them is what hid the document list from admins.
+  const [optionsError, setOptionsError] = useState<string | null>(null);
 
   const [mode, setMode] = useState<"file" | "paste">("file");
   const [classLevelId, setClassLevelId] = useState("");
@@ -61,40 +119,63 @@ export default function CurriculumPage() {
   const [formError, setFormError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
+  /**
+   * Load the document list and the subject/class-level options INDEPENDENTLY.
+   *
+   * They were a single `Promise.all` and that was a real bug: `/teacher-scope/me`
+   * is gated on the `teacher` ROLE with no owner/admin bypass, so for an admin it
+   * 403s — and `Promise.all` rejects wholesale, taking the document list down
+   * with it. An admin saw "Could not load the curriculum library" and no list,
+   * which combined with the delete permission being admin-only meant NOBODY
+   * could delete a document through the UI.
+   *
+   * So the options are best-effort: a failure there disables the upload FORM
+   * and says why, while the list and its delete action still render.
+   */
   const load = useCallback(async () => {
     setError(null);
-    try {
-      const [list, scope] = await Promise.all([listCurriculumDocuments(), getMyScope()]);
-      setDocuments(list.documents);
-      setUsage({ documents: list.usage.documents, maxDocuments: list.usage.maxDocuments });
+    setOptionsError(null);
 
-      const levelById = new Map<string, Option>();
-      for (const arm of scope.classArms) {
-        if (!levelById.has(arm.classLevelId)) {
-          levelById.set(arm.classLevelId, { id: arm.classLevelId, name: arm.classLevelName });
-        }
-      }
-      setLevels([...levelById.values()]);
+    const [listResult, optionsResult] = await Promise.allSettled([
+      listCurriculumDocuments(),
+      loadUploadOptions(),
+    ]);
 
-      const subjectById = new Map<string, Option>();
-      for (const list2 of Object.values(scope.subjectsByArm)) {
-        for (const s of list2) {
-          if (!subjectById.has(s.id)) subjectById.set(s.id, { id: s.id, name: s.name });
-        }
-      }
-      setSubjects([...subjectById.values()]);
-    } catch (e) {
+    if (listResult.status === "fulfilled") {
+      setDocuments(listResult.value.documents);
+      setUsage({
+        documents: listResult.value.usage.documents,
+        maxDocuments: listResult.value.usage.maxDocuments,
+      });
+    } else {
+      const e: unknown = listResult.reason;
       setError(e instanceof ApiError ? e.message : "Could not load the curriculum library.");
-    } finally {
-      setLoading(false);
     }
+
+    if (optionsResult.status === "fulfilled") {
+      setLevels(optionsResult.value.levels);
+      setSubjects(optionsResult.value.subjects);
+    } else {
+      setLevels([]);
+      setSubjects([]);
+      // Reached only when BOTH the teacher scope and the school catalogue
+      // failed, so this is a genuine "cannot offer the form" state rather than
+      // a role mismatch.
+      setOptionsError(
+        "Could not load subjects and class levels, so uploading is unavailable right now. You can still review and remove documents below.",
+      );
+    }
+
+    setLoading(false);
   }, []);
 
   useEffect(() => {
     void load();
   }, [load]);
 
+  const canUpload = levels.length > 0 && subjects.length > 0;
   const canSubmit =
+    canUpload &&
     classLevelId &&
     subjectId &&
     title.trim().length > 0 &&
@@ -206,6 +287,12 @@ export default function CurriculumPage() {
             Paste the text
           </Button>
         </div>
+
+        {optionsError ? (
+          <p className="border-muted bg-muted/40 text-muted-foreground mb-4 rounded-md border p-3 text-sm">
+            {optionsError}
+          </p>
+        ) : null}
 
         <form className="space-y-4" onSubmit={handleSubmit}>
           <div className="grid gap-4 sm:grid-cols-2">
