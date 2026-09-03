@@ -22,7 +22,15 @@ import type { PromptDefinition } from "./registry.js";
 
 export const LESSON_PLAN_PROMPT: PromptDefinition = {
   name: "lesson-plan",
-  version: "2",
+  // v3 (Phase 7 / CP3): adds curriculum grounding. The registry pins name +
+  // version into every ai_generations row, so v2 and v3 are separable in the
+  // ledger and A/B-able with the evals/ab-lesson-plan-format.ts pattern.
+  //
+  // The version bumps even though the SYSTEM prompt is unchanged, because what
+  // reaches the model genuinely differs: a grounded call carries the school's
+  // own scheme of work. A ledger that could not distinguish the two would make
+  // any later quality comparison meaningless.
+  version: "3",
   // Sonnet 5 rather than Haiku: low volume (a teacher generates a handful a
   // week, not one per student), quality-sensitive, and the output is long and
   // structured. Cost per call is dominated by output tokens here, but the call
@@ -169,12 +177,26 @@ export const LESSON_PLAN_SCHEMA: Record<string, unknown> = {
 // instead of rendering a scrambled note.
 export const LESSON_PLAN_SECTION_ORDER = LESSON_PLAN_SCHEMA.required as readonly string[];
 
+/** One retrieved curriculum chunk, as the prompt sees it. */
+export interface LessonPlanGroundingChunk {
+  /** Citable path, e.g. "First Term > WEEK 5". Null when the chunker found no structure. */
+  readonly heading: string | null;
+  readonly content: string;
+  /** The uploaded document's title, so the model can name its source. */
+  readonly documentTitle: string;
+}
+
 export interface LessonPlanInput {
   readonly classLevel: string;
   readonly subject: string;
   readonly topic: string;
   readonly objectives?: string | null;
   readonly durationMinutes?: number | null;
+  /**
+   * Retrieved chunks of the school's own scheme of work. Empty or omitted is a
+   * FIRST-CLASS case, not a degraded one — see the render function.
+   */
+  readonly groundingChunks?: readonly LessonPlanGroundingChunk[];
 }
 
 // Renders the user turn. Kept as a pure function of its inputs, with no
@@ -192,6 +214,42 @@ export function renderLessonPlanPrompt(input: LessonPlanInput): string {
   } else {
     lines.push("The teacher has not specified learning objectives — infer appropriate ones for this class level.");
   }
+  // ---- curriculum grounding (v3) ----------------------------------------
+  //
+  // ONE prompt with a conditional block, not two prompts. Two would drift, and
+  // only one of them would ever get an eval written for it — so the empty case
+  // is handled INSIDE this function, where the same string is under test.
+  const grounding = input.groundingChunks ?? [];
+  if (grounding.length > 0) {
+    lines.push(
+      "",
+      "--- THIS SCHOOL'S OWN SCHEME OF WORK ---",
+      "The sections below are extracted from the scheme of work this school actually uses.",
+      "Prefer them over your own knowledge wherever they differ: they are what this",
+      "school's inspectors and head teacher will check the lesson against.",
+      "Draw the Reference Materials section from these sections, citing them by their",
+      "heading, rather than naming textbooks you were not given.",
+      "",
+    );
+    grounding.forEach((chunk, i) => {
+      const label = chunk.heading ? `${chunk.documentTitle} — ${chunk.heading}` : chunk.documentTitle;
+      lines.push(`[${i + 1}] ${label}`, chunk.content.trim(), "");
+    });
+    lines.push("--- END OF SCHEME OF WORK EXTRACT ---");
+  } else {
+    // Said explicitly rather than by silence. Without this the model has no way
+    // to know whether it was given a curriculum and ignored it, and the v3
+    // instruction to "draw Reference Materials from the sections above" would
+    // refer to nothing — inviting it to invent sections that look cited.
+    lines.push(
+      "",
+      "No scheme of work has been uploaded for this subject and class level, so no",
+      "curriculum extract is provided. Write the plan from your knowledge of the",
+      "Nigerian curriculum, and keep Reference Materials to widely-available texts",
+      "rather than inventing a specific page or week reference.",
+    );
+  }
+
   lines.push("", "Write the lesson plan.");
   return lines.join("\n");
 }

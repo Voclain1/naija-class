@@ -1724,6 +1724,25 @@ model LessonPlan {
 
   status LessonPlanStatus @default(DRAFT)
 
+  // Phase 7 / CP3 (D20) — what the generation was grounded in: chunk ids,
+  // heading paths, document titles and cosine distances, plus the retrieval
+  // reason when nothing was used.
+  //
+  // A COLUMN, not a join to curriculum_chunks. A lesson plan is a HISTORICAL
+  // RECORD: it must keep showing what grounded it after the document is deleted
+  // and its chunks cascade away. Same instinct that keeps embedding_generations
+  // from cascading — evidence about a past event outlives the thing it
+  // describes.
+  //
+  // Nullable because every plan generated before CP3 has no grounding, and
+  // because an ungrounded generation is a first-class outcome (D18), not a
+  // failure to be back-filled.
+  //
+  // Distances are stored, not merely displayed: CP4 tunes RETRIEVAL_MAX_DISTANCE
+  // from real retrievals, and without them that tuning would start from another
+  // guess.
+  groundedOn Json? @map("grounded_on")
+
   // Generated content. All nullable: a row exists from the moment generation
   // is requested, so a failed generation leaves an inspectable record rather
   // than vanishing.

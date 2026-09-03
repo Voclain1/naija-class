@@ -1,6 +1,7 @@
 import { Prisma, withTenant } from "@school-kit/db";
 import {
   chunkDocument,
+  embeddableText,
   planEmbeddingBatches,
   planTotals,
   retryWithBackoff,
@@ -121,7 +122,9 @@ export async function runIngestHandler(deps: IngestHandlerDeps): Promise<IngestR
         embeddings.embed({
           schoolId,
           documentId,
-          inputs: batch.items.map((c) => c.content),
+          // Heading INCLUDED — see embeddableText (D15). Retrieval is over one
+          // vector per chunk, so the heading has to be inside it to matter.
+          inputs: batch.items.map((c) => embeddableText(c)),
           inputType: "document",
         }),
       {

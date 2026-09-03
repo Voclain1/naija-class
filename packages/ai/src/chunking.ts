@@ -63,8 +63,27 @@ export interface Chunk {
   /** Detected heading path, e.g. "Term 1 > Week 5 > Photosynthesis". */
   readonly heading: string | null;
   readonly content: string;
-  /** Estimated — see estimateTokens. */
+  /** Estimated — see estimateTokens. Covers the EMBEDDED text (see embeddableText). */
   readonly tokenCount: number;
+}
+
+/**
+ * The exact text that gets embedded for a chunk — heading included (D15).
+ *
+ * Retrieval is over ONE vector per chunk, so anything not inside this string
+ * cannot influence similarity at all. Until CP3 the heading was stored but
+ * never embedded, which meant "WEEK 5" and "First Term" — precisely the terms a
+ * teacher's query uses — appeared nowhere in the vector. That was defensible
+ * while headings were meaningless; D13/D14 made them real.
+ *
+ * ONE function, used by both ingestion and any re-embedding backfill, because
+ * a corpus embedded content-only and one embedded heading-plus-content are not
+ * comparable: mixing them makes a distance threshold mean different things for
+ * different rows. If these two paths ever computed the string differently the
+ * symptom would be silently degraded retrieval, not an error.
+ */
+export function embeddableText(chunk: Pick<Chunk, "heading" | "content">): string {
+  return chunk.heading ? `${chunk.heading}\n\n${chunk.content}` : chunk.content;
 }
 
 // ---------------------------------------------------------------------------
@@ -600,7 +619,11 @@ export function chunkDocument(raw: string, options: ChunkingOptions = {}): Chunk
     ordinal: i,
     heading: c.heading,
     content: c.content,
-    tokenCount: estimateTokens(c.content),
+    // Estimated over the EMBEDDED text, not the content alone. tokenCount
+    // feeds batch budgeting, and since D15 the heading is part of what is sent
+    // — counting only the content would let batches quietly exceed the
+    // per-request budget by the size of every heading in them.
+    tokenCount: estimateTokens(embeddableText(c)),
   }));
 }
 

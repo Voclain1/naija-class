@@ -18,11 +18,15 @@ import {
   type CreateLessonPlanInput,
   type LessonPlanDto,
   type LessonPlanSummaryDto,
+  type LessonPlanGroundingChunkDto,
+  type LessonPlanGroundingDto,
+  type LessonPlanGroundingReasonDto,
   type ListLessonPlansInput,
   type UpdateLessonPlanInput,
 } from "@school-kit/types";
 
 import { AiGenerationService } from "../../common/ai/ai-generation.service.js";
+import { CurriculumRetrievalService } from "../curriculum/curriculum-retrieval.service.js";
 
 // ---------------------------------------------------------------------------
 // Lesson plan generator — Phase 5 / Slice 2, the first AI FEATURE.
@@ -65,7 +69,10 @@ const SECTION_KEYS = LESSON_PLAN_SECTION_ORDER as ReadonlyArray<keyof GeneratedS
 export class LessonPlansService {
   private readonly logger = new Logger(LessonPlansService.name);
 
-  constructor(private readonly ai: AiGenerationService) {}
+  constructor(
+    private readonly ai: AiGenerationService,
+    private readonly curriculum: CurriculumRetrievalService,
+  ) {}
 
   // -------------------------------------------------------------------------
   // Create + generate.
@@ -114,6 +121,23 @@ export class LessonPlansService {
       return { classLevel, subject, lessonPlanId: created.id };
     });
 
+    // ---- curriculum retrieval (Phase 7 / CP3) ---------------------------
+    //
+    // Before the generation, outside the transaction. The topic is what the
+    // teacher is planning, and their objectives sharpen it where given — both
+    // are short, so this is one ~40-token query embedding (D5: not reserved).
+    //
+    // `retrieve` never throws: every failure path — no documents, nothing
+    // relevant, vendor down, key absent — returns an empty result with a
+    // reason, and the generation proceeds ungrounded (D18). A teacher must not
+    // lose their lesson plan because a second vendor had a bad minute.
+    const retrieval = await this.curriculum.retrieve({
+      schoolId,
+      subjectId: input.subjectId,
+      classLevelId: input.classLevelId,
+      query: [input.topic, input.objectives ?? ""].join(" ").trim(),
+    });
+
     // Outside the transaction — this is the reserve → call → settle boundary.
     const result = await this.ai.generate({
       schoolId,
@@ -126,6 +150,11 @@ export class LessonPlansService {
         topic: input.topic,
         objectives: input.objectives,
         durationMinutes: input.durationMinutes,
+        groundingChunks: retrieval.chunks.map((c) => ({
+          heading: c.heading,
+          content: c.content,
+          documentTitle: c.documentTitle,
+        })),
       }),
       jsonSchema: LESSON_PLAN_SCHEMA,
     });
@@ -133,7 +162,27 @@ export class LessonPlansService {
     const sections = this.parseSections(result.text, context.lessonPlanId);
 
     await withTenant(schoolId, (db) =>
-      db.lessonPlan.update({ where: { id: context.lessonPlanId }, data: sections }),
+      db.lessonPlan.update({
+        where: { id: context.lessonPlanId },
+        data: {
+          ...sections,
+          // Recorded even when nothing was used: "no matching section found"
+          // is what tells a teacher whether to upload something, and the
+          // nearest distance is what lets CP4 tune the floor from data rather
+          // than another guess (D20).
+          groundedOn: {
+            reason: retrieval.reason,
+            nearestDistance: retrieval.nearestDistance,
+            chunks: retrieval.chunks.map((c) => ({
+              chunkId: c.chunkId,
+              documentId: c.documentId,
+              documentTitle: c.documentTitle,
+              heading: c.heading,
+              distance: c.distance,
+            })),
+          },
+        },
+      }),
     );
 
     return this.get(schoolId, context.lessonPlanId);
@@ -291,6 +340,7 @@ export class LessonPlansService {
       assessment: row.assessment,
       homework: row.homework,
       quiz: row.quiz,
+      groundedOn: parseGroundedOn(row.groundedOn),
       createdBy: row.createdBy,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
@@ -308,3 +358,50 @@ export class LessonPlansService {
     await withTenant(schoolId, (db) => db.lessonPlan.delete({ where: { id } }));
   }
 }
+
+/**
+ * Read `groundedOn` back out of its JSON column.
+ *
+ * VALIDATED, not cast. The column is `Json?`, so anything could be in it — a
+ * plan generated before CP3 (null), a shape from an older version, a partial
+ * write. A blind cast would make the grounding line render `undefined` and read
+ * as a RETRIEVAL bug rather than a storage one, and this display exists
+ * precisely to be the honest signal about retrieval. A row it cannot
+ * understand is reported as absent, which is true.
+ */
+function parseGroundedOn(raw: unknown): LessonPlanGroundingDto | null {
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const value = raw as Record<string, unknown>;
+
+  const reason = value.reason;
+  if (typeof reason !== "string") return null;
+  if (!GROUNDING_REASONS.includes(reason as LessonPlanGroundingReasonDto)) return null;
+
+  const chunks = Array.isArray(value.chunks) ? value.chunks : [];
+  return {
+    reason: reason as LessonPlanGroundingReasonDto,
+    nearestDistance: typeof value.nearestDistance === "number" ? value.nearestDistance : null,
+    chunks: chunks.flatMap((c): LessonPlanGroundingChunkDto[] => {
+      if (c === null || typeof c !== "object") return [];
+      const chunk = c as Record<string, unknown>;
+      if (typeof chunk.chunkId !== "string" || typeof chunk.documentId !== "string") return [];
+      return [
+        {
+          chunkId: chunk.chunkId,
+          documentId: chunk.documentId,
+          documentTitle: typeof chunk.documentTitle === "string" ? chunk.documentTitle : "",
+          heading: typeof chunk.heading === "string" ? chunk.heading : null,
+          distance: typeof chunk.distance === "number" ? chunk.distance : 0,
+        },
+      ];
+    }),
+  };
+}
+
+const GROUNDING_REASONS: readonly LessonPlanGroundingReasonDto[] = [
+  "ok",
+  "no-documents",
+  "no-match",
+  "not-configured",
+  "error",
+];

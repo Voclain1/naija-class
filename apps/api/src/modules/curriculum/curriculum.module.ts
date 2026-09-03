@@ -6,6 +6,7 @@ import { CURRICULUM_QUEUE } from "../../common/queue";
 import { StorageModule } from "../../common/storage/storage.module";
 import { AuthModule } from "../auth/auth.module";
 import { CurriculumController } from "./curriculum.controller";
+import { CurriculumRetrievalService } from "./curriculum-retrieval.service";
 import { CurriculumService } from "./curriculum.service";
 import { CurriculumProcessor } from "./workers/curriculum.processor";
 
@@ -36,7 +37,11 @@ import { CurriculumProcessor } from "./workers/curriculum.processor";
     }),
   ],
   controllers: [CurriculumController],
-  providers: [CurriculumService, CurriculumProcessor],
-  exports: [CurriculumService],
+  providers: [CurriculumService, CurriculumRetrievalService, CurriculumProcessor],
+  // CurriculumRetrievalService is exported for LessonPlansModule — the one
+  // consumer of retrieval. Retrieval is not a user action; it is something
+  // lesson-plan generation does on the teacher's behalf, already authorised by
+  // lesson-plan.create, which is why it has no permission of its own.
+  exports: [CurriculumService, CurriculumRetrievalService],
 })
 export class CurriculumModule {}

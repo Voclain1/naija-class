@@ -5,6 +5,8 @@ import { LESSON_PLAN_SCHEMA, type AiCallRequest, type AiCallResult, type Anthrop
 import { basePrisma, withTenant } from "@school-kit/db";
 
 import { AiGenerationService } from "../../common/ai/ai-generation.service.js";
+import { EmbeddingService } from "../../common/embeddings/embedding.service.js";
+import { CurriculumRetrievalService } from "../curriculum/curriculum-retrieval.service.js";
 import { LessonPlansService } from "./lesson-plans.service.js";
 
 // Integration suite against the real Postgres, with the Anthropic side faked.
@@ -67,7 +69,15 @@ describe("LessonPlansService", () => {
 
   beforeEach(async () => {
     port = new FakePort();
-    service = new LessonPlansService(new AiGenerationService(configStub(), port));
+    // Retrieval with an UNCONFIGURED embedding service, so every generation in
+    // this suite takes the ungrounded path. That is deliberate rather than
+    // convenient: D18 makes ungrounded a first-class outcome, and this whole
+    // pre-existing suite now stands as evidence that adding curriculum
+    // grounding did not change what a school without a corpus receives.
+    service = new LessonPlansService(
+      new AiGenerationService(configStub(), port),
+      new CurriculumRetrievalService(new EmbeddingService(configStub())),
+    );
 
     if (schoolId) return;
     const school = await basePrisma.school.create({
@@ -174,7 +184,11 @@ describe("LessonPlansService", () => {
     // v2 — the Nigerian lesson note format. Pinned deliberately: the ledger's
     // promptVersion is what lets a later quality review tell v1 output from v2
     // output, so a silent version drift here would make that review meaningless.
-    expect(rows[0]).toMatchObject({ success: true, promptVersion: "2", userId });
+    // "3" since Phase 7 / CP3 (D19): v3 adds the curriculum grounding block.
+    // This assertion did its job on that bump — it failed, deliberately,
+    // rather than letting the ledger silently start recording a different
+    // prompt under the old version number.
+    expect(rows[0]).toMatchObject({ success: true, promptVersion: "3", userId });
     expect(rows[0].inputTokens).toBe(200);
     expect(rows[0].outputTokens).toBe(400);
   });
