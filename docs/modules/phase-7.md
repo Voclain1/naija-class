@@ -949,6 +949,22 @@ This phase has two such dependencies (Voyage, document formats).
    per-school documents, and the one with a real licensing question already
    flagged in `docs/deferred.md`. Out of scope here; recorded so it is not
    mistaken for an oversight.
+7. **CP4's labelled query set — WHO WRITES IT.** Open, and it gates whether
+   CP4's numbers mean anything (D22). The suite needs 5-10 topics a real Virgo
+   Fidelis teacher would actually type, each labelled by them with the week it
+   should land on, plus one or two they would expect to find nothing for.
+   Author-generated queries measure internal consistency rather than quality:
+   one of CP3's own five was `"consonants sheep chip fish pitch"`, which
+   quotes the document almost verbatim and is therefore easy by construction,
+   where a teacher's `"pronunciation practice"` is the honest test. Same
+   lesson as D13/D14 — a reconstruction was wrong twice, the real artefact was
+   right first time. Requested via Arinzechukwu 2026-09-03; if it does not
+   arrive, CP4 ships with the gate at `warn` and labels its own evidence weak.
+8. **Absolute distance floor vs relative best-vs-rest separation.** D17's 0.69
+   is one tuned constant in a 0.107-wide measured gap. D23 makes this CP4's
+   decision, from the measured distance distribution rather than from
+   argument. Recorded here because it is genuinely unresolved, not merely
+   deferred.
 
 ---
 
@@ -1197,3 +1213,202 @@ paths, the re-embedding backfill, and the prompt A/B.
 returns plausible-but-wrong chunks on the real corpus — a quality problem, not
 a plumbing one, and the only mitigation is that D20 logs distances so CP4
 inherits data instead of another reconstruction.
+
+---
+
+## 14. CP4 plan-first — the content-quality eval suite
+
+Written 2026-09-03, after CP3 shipped. §8 sketched why RAG makes content
+quality measurable; this is the design for actually measuring it.
+
+**Scope:** a `curriculum-grounding` eval case measuring retrieval quality
+against a labelled query set, plus grounding-sensitivity and citation-fidelity
+checks. Six decisions, D21–D26.
+
+### 14.1 What CP3 left unmeasured
+
+CP3 proved retrieval *functions*: five queries returned the right week, and a
+Mathematics query was rejected. That is an existence proof by five
+hand-checks, and two things about it should worry anyone:
+
+- **The margin is thin.** `WEEK 2` was accepted at 0.6461 against a 0.69 floor
+  — 0.044 of headroom. The Mathematics rejection sat 0.145 outside. A
+  differently-formatted document could invert that.
+- **I wrote the queries, the chunker, the retrieval and the check.** One of my
+  five was `"consonants sheep chip fish pitch"`, which quotes the document's
+  own wording almost verbatim. That is an easy query BY CONSTRUCTION. A
+  teacher typing `"pronunciation practice"` is the honest test, and I could
+  not have found that gap from inside my own assumptions.
+
+The second point is the real subject of this checkpoint. **A suite whose
+queries, corpus and scorer all come from the same author measures internal
+consistency, not quality.** It can score 100% and mean nothing. Every decision
+below is shaped by that.
+
+### 14.2 Decisions
+
+#### D21 — hit@K is the pass/fail metric; hit@1 and precision are reported, not gated
+
+All K retrieved chunks go into the prompt, so the operative question is
+whether the right week is *anywhere* in the retrieved set — not whether it
+ranked first. **hit@5 is the gate.**
+
+`hit@1` and `precision@5` are reported at **warn** severity. They are real
+quality signals — a plan grounded in one relevant chunk and four irrelevant
+ones is diluted even when hit@5 passes — but gating on them would fail CI for
+a ranking wobble that changes nothing a teacher sees. The harness already
+distinguishes `check` (error) from `warn` (tripwire); this uses that
+distinction as intended.
+
+**Distances are reported alongside every result**, not just the verdict. The
+scores tell us whether retrieval works; the distance *distribution* is what
+D23 needs, and a suite that printed only pass/fail would answer the easy
+question and discard the data for the hard one.
+
+#### D22 — THE QUERY SET MUST NOT BE AUTHORED BY ME. Provenance is an open question.
+
+**This is the one decision CP4 cannot make on its own, and it is recorded as
+an open question rather than resolved.**
+
+The requirement: 5–10 topics from a **real Virgo Fidelis teacher**, verbatim,
+plus — critically — **which week of the scheme each should land on**. The
+label has to come from them too; me deciding what the right answer is
+reintroduces exactly the circularity this avoids.
+
+Also wanted: **one or two queries they'd expect to find nothing for.** Negative
+cases are what test the floor, and my Mathematics-against-English probe is an
+artificially easy version — no lexical overlap at all. A near-miss inside the
+same subject (a topic the school covers in a *different term*) is the case
+that would actually find a bad threshold.
+
+**Precedent for insisting on this.** Two reconstructions of the source
+document were wrong in two different ways, each costing a deploy cycle; the
+diagnosis made against the real document was right first time. A reconstructed
+query set is the same mistake in a different place. `docs/modules/phase-7.md`
+D13/D14 records that episode; this decision exists because of it.
+
+**If real queries do not arrive**, CP4 still ships — but the suite is labelled
+in its own output as **author-generated and therefore weak evidence**, and the
+gate runs at `warn` rather than `error`. A suite that overstates its own
+authority is worse than one that admits its limits, because the first one gets
+trusted.
+
+#### D23 — The absolute-vs-relative threshold decision is CP4's to make, from measured data
+
+D17's 0.69 floor is a single tuned constant sitting in a 0.107-wide gap. The
+alternative flagged at CP3 is a **relative** rule — accept a chunk only if it
+is meaningfully closer than the rest of the corpus (e.g. best distance versus
+the median, or a gap between the best and the K-th) — which would not depend
+on a constant at all.
+
+**CP4 decides this by measuring, not by argument.** With the query set in hand
+the suite reports, for each query, the full distance profile of the corpus.
+Two things then become visible that cannot be reasoned about:
+
+- whether genuine and spurious matches separate more cleanly in absolute
+  distance or in best-vs-rest margin;
+- whether the separation holds across *subjects and document formats*, which
+  is the axis a single constant is most likely to fail on.
+
+**Honest limitation stated up front:** with 5–10 queries there is no
+meaningful train/test split. If the floor is tuned on the same queries the
+score is reported against, the score is optimistic and must say so. The
+suite therefore prints the floor's provenance — "fitted on this set" versus
+"held out" — beside the result. Whichever it is, it will not be silent.
+
+#### D24 — Grounding sensitivity: the check most likely to catch silent breakage
+
+Generate the same topic twice, with and without grounding, and assert the
+outputs **differ in the expected direction** — specifically that the grounded
+plan's Reference Materials cite the supplied chunk headings and the ungrounded
+one does not.
+
+This is the highest-value check in the suite and the reason is worth stating:
+**every other signal can be green while grounding does nothing.** Retrieval
+can return the right chunks, the prompt can contain them, the ledger can
+record v3, the UI can display citations — and if the model ignored the
+grounding block entirely, nothing above would notice. Identical grounded and
+ungrounded output is the one observation that catches it.
+
+Live (needs `ANTHROPIC_API_KEY`), so it skips loudly in CI exactly as
+`live-generation.ts` does.
+
+#### D25 — Citation fidelity is checked mechanically, against the supplied headings
+
+Do the generated Reference Materials correspond to chunks that were actually
+retrieved, or did the model invent a textbook again? Comparable mechanically:
+the headings supplied to the prompt are known, so a generated reference either
+matches one or does not.
+
+Deliberately a **warn**, not a gate. A model legitimately citing the
+recommended textbook the scheme itself names (the real document lists six)
+would fail a strict "only cite supplied headings" rule while being entirely
+correct. The signal worth having is the *rate* of unsupported citations, not a
+binary.
+
+#### D26 — NOT LLM-as-judge. Restated because CP4 is where the temptation peaks.
+
+§8 already ruled this out; it is repeated here because a checkpoint titled
+"measure quality" is precisely where a scoring rubric gets smuggled in.
+
+An LLM judge introduces a second model whose own accuracy needs
+establishing — and establishing it requires labelled data, which is the thing
+D22 says we do not yet have. Adding a judge now would answer an unmeasured
+question with an unvalidated instrument, and produce numbers that look far
+more authoritative than they are.
+
+Mechanical groundedness first. Judged quality is its own decision, with its
+own plan-first, once there is a labelled set big enough to validate a judge
+against.
+
+### 14.3 Shape
+
+```
+packages/ai/evals/cases/curriculum-grounding.ts   offline: retrieval precision
+packages/ai/evals/fixtures/query-set.ts           labelled queries + provenance
+packages/ai/evals/live-grounding.ts               live: sensitivity + citations
+packages/ai/evals/run.ts                          register the new case
+```
+
+The offline case needs **Voyage but not Anthropic** — query embeddings only,
+free against the 200M allowance. That places it awkwardly relative to the
+existing split, so: it runs when `VOYAGE_API_KEY` is present and **skips
+loudly** otherwise, matching `live-generation.ts`'s contract rather than
+inventing a third tier.
+
+The corpus is the fixture CP3 already committed
+(`__fixtures__/real-scheme-of-work.ts`) — real extracted text, not a
+reconstruction. It currently lives under `apps/api`; CP4 moves it to
+`packages/ai/evals/fixtures/` so the eval can import it without a
+package-boundary violation, and the API spec imports it from there.
+
+### 14.4 What CP4 does NOT establish
+
+- **Whether lesson plans are GOOD.** Only whether they are grounded in the
+  right source. A well-grounded plan can still be poorly written, and nothing
+  here measures that (D26).
+- **Generalisation beyond one document class.** The corpus is one syllabus.ng
+  ebook. A hand-made Word export may chunk and retrieve differently, and one
+  document cannot tell us.
+- **That the threshold is right for other subjects.** English is the only
+  subject in the corpus. D23's measurement is honest about the axis it cannot
+  cover.
+
+### 14.5 Dependencies and estimate
+
+**Two real dependencies, both external:**
+
+1. **The re-ingestion** (D15's heading-plus-content embedding). Any baseline
+   measured before it is against a floor calibrated for a different embedding,
+   and would have to be discarded. Blocks measurement, not design.
+2. **The teacher query set** (D22). Blocks the suite being *trustworthy*, not
+   its construction.
+
+**Estimate: 3–5 days**, unchanged from §10, and this is the widest-risk
+checkpoint in the phase for a reason §10 already names: it has no precedent in
+this repo to copy. Every one of the existing 180 evals asserts structure; this
+is the first that measures behaviour.
+
+**The harness is the easy half.** The hard half is the query set, and its cost
+is not engineering time — it is the wait for real input, and the discipline not
+to fill the gap with my own reasoning while waiting.
