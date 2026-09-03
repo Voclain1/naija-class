@@ -107,7 +107,15 @@ const HEADING_RULES: ReadonlyArray<{
   readonly level: number;
 }> = [
   // "FIRST TERM", "TERM 1", "SECOND TERM" — the outermost unit.
+  //
+  // The third pattern is the TABLE-ROW form, "Term  Second Term", and it is
+  // load-bearing rather than cosmetic. In the real document each term's table
+  // opens with that row while the decorative "Second Term" banner extracts
+  // AFTER the table it heads. Detecting only the banner attributed every week
+  // to the PREVIOUS term — second-term content cited as "First Term > WEEK 2",
+  // which is worse than carrying no term at all.
   { test: /^\s*(FIRST|SECOND|THIRD)\s+TERM\b/i, level: LEVEL.TERM },
+  { test: /^\s*TERMS?\s+(FIRST|SECOND|THIRD)\s+TERM\b/i, level: LEVEL.TERM },
   { test: /^\s*TERM\s+(ONE|TWO|THREE|[123])\b/i, level: LEVEL.TERM },
   // "WEEK 5", "WEEKS 5-6", "WEEK 5:" — the unit a teacher plans against.
   { test: /^\s*WEEKS?\s+\d+(\s*[-–]\s*\d+)?\s*[:.-]?/i, level: LEVEL.WEEK },
@@ -162,13 +170,16 @@ function detectHeading(
 
   // Numbered outline: "1.", "1.2", "1.2.3" — level from the dot depth.
   const numbered = /^(\d+(?:\.\d+)*)[.)]\s+(.*)$/.exec(trimmed);
-  if (numbered?.[1] && (numbered[2] ?? "").trim().length > 0) {
+  // Must carry an actual word. The real scheme of work contains the line
+  // "11. –" (a week RANGE whose second number wrapped to the next line), which
+  // otherwise matched this rule and became a heading reading "11. –".
+  if (numbered?.[1] && /[A-Za-z]/.test(numbered[2] ?? "")) {
     return { level: numbered[1].split(".").length, text: trimmed };
   }
 
   for (const rule of HEADING_RULES) {
     if (rule.test.test(trimmed)) {
-      return { level: rule.level, text: stripTrailingPunctuation(trimmed) };
+      return { level: rule.level, text: cleanHeadingText(trimmed) };
     }
   }
 
@@ -254,66 +265,146 @@ function findRepeatedLines(text: string): ReadonlySet<string> {
  */
 const WEEK_TABLE_HEADER = /^[^\n]{0,20}\bweeks?\b[^\n]{0,40}\btopics?\b/im;
 
-/** A contents-page row is short; a real content row carries the week's whole plan. */
-const MIN_CONTENT_ROW_CHARS = 120;
-const MAX_TOPIC_WORDS = 10;
-const MAX_TOPIC_CHARS = 90;
+/**
+ * A table cell that wrapped onto the next line, e.g.
+ *
+ *     LITERATURE IN
+ *     ENGLISH
+ *
+ * Text extraction emits each wrapped line separately, so a two-line cell
+ * arrives as two lines. Joining them is what turns the fragments this chunker
+ * used to emit — "ENGLISH", "ABULARY", "1 REVISION OF LAST" — back into the
+ * phrases a teacher would recognise.
+ *
+ * Only ALL-CAPS lines are joined, and only to other ALL-CAPS lines. In these
+ * documents the topic column is consistently capitalised while the breakdown
+ * column is sentence case, so this rejoins cells without ever swallowing body
+ * text. A line with no letters ("11. –", "12") is never joined, so a week
+ * number cannot absorb the row beneath it.
+ */
+function joinWrappedCapsLines(text: string): string {
+  const lines = text.split("\n");
+  const out: string[] = [];
 
-/** Clause openers that mark where the topic column ends and objectives begin. */
-const OBJECTIVE_OPENER =
-  /\b(?:by the end|pupils?\s+(?:should|will|are)|students?\s+(?:should|will|are)|teacher\s|the teacher\b|learning objective|objective[s]?\s*[:-])/i;
+  const isCapsFragment = (line: string): boolean => {
+    const t = line.trim();
+    if (t.length === 0 || t.length > 60) return false;
+    if (!/[A-Z]/.test(t)) return false;
+    if (t !== t.toUpperCase()) return false;
+    // A finished sentence is not a wrapped cell.
+    return !/[.!?]$/.test(t);
+  };
 
-function splitTopicFromRow(rest: string): { topic: string; body: string } | null {
-  let head = rest;
+  // A line the heading rules already recognise is STRUCTURE, not a wrapped
+  // cell, and must never be absorbed into its neighbour. Without this the
+  // cover block
+  //     VIRGO FIDELIS SECONDARY SCHOOL / FIRST TERM SCHEME OF WORK / SUBJECT: …
+  // collapsed into one long line and the term was swallowed whole — trading
+  // the bug this function fixes for a worse one.
+  const isStructural = (line: string): boolean =>
+    HEADING_RULES.some((rule) => rule.test.test(line.trim()));
 
-  // Prefer an explicit objective opener; fall back to the first sentence break;
-  // fall back again to a word cap. Real topics are short noun phrases
-  // ("Grammar: Nouns and Their Types"), so a cap is a reasonable last resort.
-  const opener = OBJECTIVE_OPENER.exec(head);
-  if (opener && opener.index > 2) head = head.slice(0, opener.index);
-
-  const period = head.indexOf(". ");
-  if (period > 2) head = head.slice(0, period);
-
-  const words = head.trim().split(/\s+/);
-  if (words.length > MAX_TOPIC_WORDS) head = words.slice(0, MAX_TOPIC_WORDS).join(" ");
-
-  const consumed = head.length;
-  const topic = head.trim().replace(/[,;:.\s]+$/, "");
-  if (topic.length < 3 || topic.length > MAX_TOPIC_CHARS) return null;
-
-  return { topic, body: rest.slice(consumed).trim() };
+  for (const line of lines) {
+    const prev = out[out.length - 1];
+    if (
+      prev !== undefined &&
+      isCapsFragment(prev) &&
+      isCapsFragment(line) &&
+      !isStructural(prev) &&
+      !isStructural(line)
+    ) {
+      out[out.length - 1] = `${prev.trim()} ${line.trim()}`;
+      continue;
+    }
+    out.push(line);
+  }
+  return out.join("\n");
 }
 
 /**
- * Rewrite flattened table rows into the line shape the heading rules already
- * understand. A row becomes three lines: "WEEK n", "TOPIC: ...", then the rest
- * of the row as body.
+ * Leading ALL-CAPS tokens of a table row — the topic cell.
  *
- * Rewriting the TEXT rather than adding a fourth heading rule is deliberate —
- * it keeps one code path for heading detection, so a recovered week nests,
- * paths, and merges exactly like a natively-formatted one.
+ * Tokenising rather than regex-matching a character class, because the
+ * boundary that matters is where capitalisation STOPS: in
+ * "SPEECH WORK The Schwa / ə / sound", the topic is "SPEECH WORK" and the
+ * breakdown begins at "The". A token is part of the topic while it is
+ * capitalised and contains a letter.
+ */
+function leadingCapsPhrase(rest: string): { topic: string; body: string } | null {
+  const tokens = rest.split(/\s+/);
+  const taken: string[] = [];
+  for (const token of tokens) {
+    if (!/[A-Z]/.test(token) || token !== token.toUpperCase()) break;
+    taken.push(token);
+  }
+  if (taken.length === 0) return null;
+
+  const topic = taken.join(" ").replace(/[,;:.\s]+$/, "");
+  if (topic.length < 3 || topic.length > MAX_TOPIC_CHARS) return null;
+  return { topic, body: tokens.slice(taken.length).join(" ").trim() };
+}
+
+const MAX_TOPIC_CHARS = 90;
+
+/**
+ * Rewrite tabular week rows into the line shape the heading rules understand.
+ *
+ * Grounded in the real document (a Lagos State unified scheme of work
+ * distributed as a syllabus.ng ebook, examined 2026-09-03) rather than in a
+ * reconstruction. Its table extracts like this:
+ *
+ *     Week Topic Breakdown
+ *     1 REVISION OF LAST
+ *     TERM'S EXAMINATION
+ *     GRAMMAR Parts of speech – Revision
+ *     READING AND
+ *     COMPREHENSION
+ *     Scanning for main points
+ *
+ * Three properties of that shape do the work here:
+ *
+ *   1. The table announces its own columns ("Week Topic Breakdown"), which is
+ *      the guard — nothing is rewritten in a document without it.
+ *   2. A week row begins with its NUMBER, optionally a range ("5-10").
+ *   3. The topic cell is ALL-CAPS while the breakdown cell is sentence case,
+ *      so the topic ends exactly where capitalisation stops.
+ *
+ * Note there is NO minimum row length. An earlier version required 120+
+ * characters after the number, to separate content rows from contents-page
+ * entries. Against the real document that was simply wrong: rows are SHORT
+ * ("1 REVISION OF LAST", "10 REVISION"), so recovery never fired. The
+ * all-caps-topic requirement is the better discriminator, and it is what
+ * excludes "2 Chapter Two" and "3 Chapter Three" — title case, not caps.
  */
 function recoverTabularWeekRows(text: string): { text: string; recovered: boolean } {
   if (!WEEK_TABLE_HEADER.test(text)) return { text, recovered: false };
 
   let recovered = false;
   const out: string[] = [];
-  for (const line of text.split("\n")) {
-    const trimmed = line.trim();
-    const match = /^(\d{1,2})\s+(.+)$/.exec(trimmed);
-    const rest = match?.[2]?.trim() ?? "";
 
-    if (match?.[1] && rest.length >= MIN_CONTENT_ROW_CHARS) {
-      const week = Number(match[1]);
-      // Bounded by a plausible term length. A "week 47" is a row number or a
-      // price, not a week.
-      if (week >= 1 && week <= 15) {
-        const split = splitTopicFromRow(rest);
-        if (split) {
-          out.push(`WEEK ${week}`);
-          out.push(`TOPIC: ${split.topic}`);
-          if (split.body.length > 0) out.push(split.body);
+  for (const line of text.split("\n")) {
+    const match = /^(\d{1,2})(?:\s*[-–]\s*(\d{1,2}))?\s+(.+)$/.exec(line.trim());
+    if (match?.[1] && match[3]) {
+      const from = Number(match[1]);
+      const to = match[2] ? Number(match[2]) : null;
+      // Bounded by a plausible term length; a "week 47" is a row number.
+      if (from >= 1 && from <= 15 && (to === null || (to >= from && to <= 15))) {
+        // The caps phrase VALIDATES the row (it is what distinguishes
+        // "2 SPEECH WORK …" from "2 Chapter Two"), but it is deliberately NOT
+        // promoted into the heading.
+        //
+        // A week's row carries only its FIRST aspect — week 5 reads
+        // "5 SPEECH WORK …" and then continues with grammar, comprehension,
+        // composition and literature in the rows beneath it. Citing the chunk
+        // as "WEEK 5 > TOPIC: SPEECH WORK" would attach a claim the chunk does
+        // not honour: a teacher who retrieved the modal-verbs passage would see
+        // it labelled "speech work". "WEEK 5" alone is precise, checkable
+        // against the document, and says nothing untrue.
+        //
+        // The topic text stays in the BODY, so retrieval still matches on it.
+        if (leadingCapsPhrase(match[3]) !== null) {
+          out.push(to === null ? `WEEK ${from}` : `WEEK ${from}-${to}`);
+          out.push(match[3]);
           recovered = true;
           continue;
         }
@@ -326,6 +417,20 @@ function recoverTabularWeekRows(text: string): { text: string; recovered: boolea
 
 function stripTrailingPunctuation(text: string): string {
   return text.replace(/[\s:]+$/, "");
+}
+
+/**
+ * Tidy a detected heading for display in a citation.
+ *
+ * Currently one rule: collapse the table-row form "Term  Second Term" to
+ * "Second Term". The row is how the document labels its term, but repeating
+ * the column name in the path ("Term Second Term > WEEK 3") reads as a
+ * transcription artefact rather than a reference.
+ */
+function cleanHeadingText(text: string): string {
+  const termRow = /^\s*TERMS?\s+((?:FIRST|SECOND|THIRD)\s+TERM)\b/i.exec(text);
+  if (termRow?.[1]) return termRow[1];
+  return stripTrailingPunctuation(text);
 }
 
 /** Joined heading path from a stack, e.g. "Term 1 > Week 5". */
@@ -418,8 +523,13 @@ export function chunkDocument(raw: string, options: ChunkingOptions = {}): Chunk
   //
   // Order matters: repeated lines are counted on the ORIGINAL text, before row
   // recovery inserts new "WEEK n" lines that are unique by construction.
-  const repeated = findRepeatedLines(normalised);
-  const { text, recovered } = recoverTabularWeekRows(normalised);
+  // Wrapped cells are rejoined FIRST: everything downstream reasons about
+  // lines, and a two-line cell is not two lines of meaning. Repeated-line
+  // counting then runs on the joined text, so it sees "LITERATURE IN ENGLISH"
+  // rather than a stray "ENGLISH" fragment.
+  const joined = joinWrappedCapsLines(normalised);
+  const repeated = findRepeatedLines(joined);
+  const { text, recovered } = recoverTabularWeekRows(joined);
 
   // ---- 1. sections -------------------------------------------------------
   const sections: Section[] = [];
