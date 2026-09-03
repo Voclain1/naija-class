@@ -8,6 +8,7 @@ import { chunkDocument } from "@school-kit/ai";
 import { withTenant } from "@school-kit/db";
 import {
   ConflictError,
+  ForbiddenError,
   NotFoundError,
   ValidationError,
   type CurriculumDocumentDetailResponse,
@@ -20,7 +21,10 @@ import {
 } from "@school-kit/types";
 
 import type { AuthContext } from "../../common/auth/auth-context";
-import { assertUserActiveAndHasOneOf } from "../../common/auth/role-check";
+import {
+  assertUserActiveAndHasOneOf,
+  getActiveUserRoleKeys,
+} from "../../common/auth/role-check";
 import { EmbeddingService } from "../../common/embeddings/embedding.service";
 import {
   CURRICULUM_JOB_INGEST,
@@ -321,7 +325,7 @@ export class CurriculumService {
         where: { id: documentId, schoolId: authCtx.schoolId },
       });
       if (!document) {
-        throw new NotFoundError("CURRICULUM_DOCUMENT_NOT_FOUND", "Document not found.");
+        throw new NotFoundError("Curriculum document not found.");
       }
       const chunks = await db.curriculumChunk.findMany({
         where: { documentId, schoolId: authCtx.schoolId },
@@ -332,16 +336,55 @@ export class CurriculumService {
     });
   }
 
+  /**
+   * Delete a document and its chunks.
+   *
+   * OWNERSHIP-SCOPED (revised 2026-09-03). Owner and admin may delete any
+   * document; a teacher may delete only one they uploaded themselves.
+   *
+   * The original rule was owner/admin only, on the reasoning that deleting
+   * cascades chunks and so changes what other teachers' lesson plans are
+   * grounded in. That reasoning was thinner than it looked: a curriculum
+   * document is scoped to ONE (subject, classLevel), so the people affected are
+   * essentially that subject's own teachers — and the rule made every corrected
+   * re-upload need an admin, which is recurring friction on the feature's
+   * primary user.
+   *
+   * What the protection actually needs to guard is a teacher deleting a
+   * COLLEAGUE'S material. Scoping to `uploadedBy` guards exactly that and
+   * nothing more.
+   *
+   * Note the layering: `@Permissions("curriculum.delete")` on the controller is
+   * the coarse gate (teachers now hold it), and this is the substantive one.
+   * That is the same division the rest of the codebase uses — the guard says
+   * "this surface exists for you", the service says "this ROW is yours".
+   */
   async remove(authCtx: AuthContext, documentId: string, ipAddress: string): Promise<void> {
-    await assertUserActiveAndHasOneOf(authCtx, ["owner", "admin"]);
+    const roleKeys = await getActiveUserRoleKeys(authCtx);
+    const isPrivileged = roleKeys.includes("owner") || roleKeys.includes("admin");
+    if (!isPrivileged && !roleKeys.includes("teacher")) {
+      throw new ForbiddenError(
+        "CURRICULUM_DELETE_FORBIDDEN",
+        "This action requires one of the following roles: owner, admin, teacher.",
+      );
+    }
 
     await withTenant(authCtx.schoolId, async (db) => {
       const existing = await db.curriculumDocument.findFirst({
         where: { id: documentId, schoolId: authCtx.schoolId },
-        select: { id: true, title: true, chunkCount: true },
+        select: { id: true, title: true, chunkCount: true, uploadedBy: true },
       });
       if (!existing) {
-        throw new NotFoundError("CURRICULUM_DOCUMENT_NOT_FOUND", "Document not found.");
+        throw new NotFoundError("Curriculum document not found.");
+      }
+      if (!isPrivileged && existing.uploadedBy !== authCtx.userId) {
+        // Deliberately a distinct code from the role failure above: this is a
+        // teacher who may delete their OWN documents being told which one this
+        // is, not someone without the feature at all.
+        throw new ForbiddenError(
+          "CURRICULUM_NOT_UPLOADER",
+          "You can only delete curriculum documents you uploaded yourself. Ask an admin to remove this one.",
+        );
       }
       // Chunks go with it via ON DELETE CASCADE on the composite FK.
       await db.curriculumDocument.delete({ where: { id: documentId } });

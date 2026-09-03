@@ -587,11 +587,10 @@ export const SMART_IMPORT_PERMISSIONS = [
 // admin could fill would sit empty. So `curriculum.read` and
 // `curriculum.upload` both go to teachers (see PHASE_7_TEACHER_PERMISSIONS).
 //
-// `curriculum.delete` is deliberately NOT teacher-facing. Deleting a document
-// cascades its chunks, which silently changes what every OTHER teacher's
-// lesson plans are grounded in — a shared-corpus effect the deleter cannot
-// see. Same instinct that split report-card-comment.generate from .write: the
-// action with the wider blast radius gets the narrower grant.
+// `curriculum.delete` is ALSO teacher-facing, but OWNERSHIP-SCOPED at the
+// service layer (revised 2026-09-03 — it was withheld entirely at first). The
+// permission is the coarse gate; CurriculumService.remove is the substantive
+// one, and it lets a teacher delete only a document they uploaded themselves.
 //
 // There is no `curriculum.retrieve` permission. Retrieval is not a user
 // action; it is something lesson-plan generation does on the teacher's behalf,
@@ -604,9 +603,26 @@ export const PHASE_7_PERMISSIONS = [
 ] as const;
 
 // The teacher-facing subset, granted in the seed alongside PHASE_5_TEACHER_PERMISSIONS.
+//
+// `curriculum.delete` IS included (revised 2026-09-03) — but it is
+// OWNERSHIP-SCOPED at the service layer: a teacher may delete only a document
+// they uploaded themselves, while owner and admin may delete any. See
+// CurriculumService.remove.
+//
+// The original grant withheld it entirely, on the reasoning that deleting
+// cascades chunks and changes what other teachers' plans are grounded in. Two
+// things were wrong with that. The reasoning was thinner than it looked — a
+// document is scoped to one (subject, classLevel), so the people affected are
+// that subject's own teachers — and the practical effect was that NOBODY could
+// delete through the UI, because the only role that can load the curriculum
+// page is the one the permission was withheld from.
+//
+// What the protection actually needs to guard is a teacher deleting a
+// COLLEAGUE'S material. `uploadedBy` guards exactly that.
 export const PHASE_7_TEACHER_PERMISSIONS = [
   "curriculum.read",
   "curriculum.upload",
+  "curriculum.delete",
 ] as const;
 
 export const ALL_PERMISSIONS = [

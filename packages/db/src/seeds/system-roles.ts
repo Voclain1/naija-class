@@ -133,11 +133,13 @@ export const SYSTEM_ROLE_SEEDS: SystemRoleSeed[] = [
       // definition. Deliberately excludes ai-usage.read: school-level AI spend
       // is operator information, not teaching workflow.
       ...PHASE_5_TEACHER_PERMISSIONS,
-      // Phase 7 / CP2 — curriculum upload + read. Teacher-facing for the same
-      // reason lesson plans are: the person who knows whether a scheme of work
-      // is the CURRENT one is the teacher who works from it. curriculum.delete
-      // is deliberately excluded — deleting a document changes what every other
-      // teacher's plans are grounded in.
+      // Phase 7 — curriculum read + upload + delete. Teacher-facing for the
+      // same reason lesson plans are: the person who knows whether a scheme of
+      // work is the CURRENT one is the teacher who works from it.
+      //
+      // curriculum.delete is OWNERSHIP-SCOPED in CurriculumService.remove — a
+      // teacher may delete only what they uploaded. See
+      // PHASE_7_TEACHER_PERMISSIONS for why it moved from excluded to scoped.
       ...PHASE_7_TEACHER_PERMISSIONS,
     ],
   },
