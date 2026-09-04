@@ -1557,3 +1557,74 @@ means First Term week 1 (it is ambiguous across four candidate weeks). All six
 POSITIVE queries remain the author's own wording, and the positives are what
 the gate scores. `QUERY_SET_PROVENANCE` stays `"author-generated"`, the
 CP4-IS-NOT-CLOSED banner keeps printing, and CP4 stays open.
+
+#### D27 — Document-verbatim positives, quoted not rephrased (2026-09-04)
+
+Further free-text teacher input was not readily available, so the positive
+query set was rebuilt from the already-parsed, already-verified JSS3 English
+document. **The queries quote the document verbatim. They are deliberately NOT
+rephrased into more natural language.**
+
+**Why quoting beats rephrasing, given the choice.** Rephrasing the document's
+topic text into "what a teacher would type" is an act performed by the system's
+own author, guessing at natural phrasing — the exact circularity D22 exists to
+break, and the same move that produced two prior labelling errors (the week 7/9
+debate, and a parts-of-speech query ambiguous across four weeks). It would also
+have produced approximately the set that already existed, while wearing a
+stronger claim: *derived from verified ground truth*. Same evidence quality,
+higher apparent authority, which is the worst direction for a label to move.
+
+Quoting is honest instead of flattering. A verbatim query shares its exact
+tokens with the target chunk, so a hit shows the pipeline is **wired up**, not
+that the embedding **understands** the topic. That is a real thing to test —
+it is a regression check on chunking, embedding, top-K and the floor — and its
+labels are ground truth with no author judgement in them. It is simply not
+evidence about semantic retrieval, and the suite now says so in those words.
+
+**Three bands, reported separately, because an aggregate over them is
+misleading.** Each query carries a `source`, and the eval prints per-band
+hit@K rather than letting the easy band carry the headline number:
+
+| band | n | hit@1 | hit@5 | nearest-distance range |
+|---|---|---|---|---|
+| `document-verbatim` (labels are ground truth, phrasing is the corpus's) | 14 | 13/14 | **14/14** | 0.457 – 0.655 |
+| `author-paraphrase` (the only semantic signal; weakest provenance) | 6 | 3/6 | **5/6** | 0.465 – 0.679 |
+| negatives — author, cross-subject (weak by construction) | 2 | — | 0/2 rejected ✓ | 0.810 – 0.812 |
+| negative — **teacher, within-subject** | 1 | — | 0/1 rejected ✓ | 0.721 |
+
+**The band gap is the finding.** Verbatim scores 93% hit@1; paraphrase scores
+50%. The aggregate — 16/20, 80% — would have overstated semantic performance
+by a wide margin and hidden which band was carrying it. This is precisely why
+the bands are not averaged.
+
+**A second D23 datum, and it points the same way as §14.7.** The worst
+*verbatim* positive sits at 0.655 — a query quoted word-for-word out of the
+corpus, only 0.035 inside the 0.69 floor. Together with the teacher negative at
+0.721, even the easy band leaves a 0.066 gap. An absolute floor that a verbatim
+self-quote nearly fails is thin, and this is now the second independent
+observation pushing D23 toward the relative rule.
+
+**A latent false-pass, found and fixed by this work.** `expectedWeeks` held
+bare week numbers (`"WEEK 2"`) matched by SUBSTRING. This corpus has three
+`WEEK 2`s and two `WEEK 1`s across terms, so a bare label silently accepts the
+wrong term's chunk as a hit. It had not yet fired only because five of six
+placeholders were First Term. Labels are now FULL heading paths
+(`"First Term > WEEK 2"`) matched by EQUALITY. Found only because the
+document-derived positives span all three terms and made the collision
+unavoidable — a real bug surfaced by broadening coverage.
+
+**The teacher's negative is untouched and must stay that way.** No
+document-derived negatives were added, deliberately: a correct rejection cannot
+be derived from a document that does not contain the topic, and the attempt is
+actively dangerous — the first within-subject candidate, "parts of speech in
+third term", was in fact a strong positive (§14.7).
+
+**Provenance is NOT `teacher-supplied` and the gate does NOT promote to
+`error`.** A new marker value, `document-derived`, was added precisely so this
+set can be described accurately without overstating it: labels ground-truth,
+phrasing the document's own, **no positive query written by a teacher**. Only a
+teacher-phrased positive set clears the banner. CP4 therefore remains open, and
+if it is ever closed on this basis the claim must be narrowed in writing to
+what it actually establishes: *retrieval returns the correct week for verbatim
+and author-paraphrased topics* — not that real teacher phrasing retrieves
+correctly.

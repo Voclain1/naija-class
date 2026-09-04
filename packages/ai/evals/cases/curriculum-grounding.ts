@@ -110,14 +110,19 @@ export const curriculumGroundingCase: EvalCase = {
   suite: "Curriculum grounding (requires VOYAGE_API_KEY)",
 
   async run(): Promise<CheckResult[]> {
-    const authorGenerated = QUERY_SET_PROVENANCE === "author-generated";
+    // Only a teacher-written POSITIVE set clears the banner and promotes the
+    // gate to `error`. `document-derived` does not: its labels are ground
+    // truth, but its phrasing is the corpus's own and tests plumbing, not
+    // semantics. Treating it as sufficient would be the exact overstatement
+    // this mechanism exists to prevent.
+    const teacherPhrased = QUERY_SET_PROVENANCE === "teacher-supplied";
 
     // The tracked commitment, enforced by the suite rather than remembered.
     // Fails on every run until real teacher queries replace the placeholders,
     // so a green suite can never be read as CP4 being closed.
     const provenanceBanner = warn(
       "QUERY SET PROVENANCE — CP4 IS NOT CLOSED while this fails",
-      !authorGenerated,
+      teacherPhrased,
       `${QUERY_SET_NOTE} Scores below measure internal consistency, not quality: the ` +
         "queries, the corpus, the retrieval and the scorer share one author. See " +
         "docs/modules/phase-7.md D22.",
@@ -162,8 +167,13 @@ export const curriculumGroundingCase: EvalCase = {
 
       const nearest = ranked[0]?.distance ?? 1;
       const kept = ranked.slice(0, RETRIEVAL_TOP_K).filter((r) => r.distance <= RETRIEVAL_MAX_DISTANCE);
+      // EQUALITY on the full heading path, never substring on a bare week
+      // number: this corpus has three `WEEK 2`s and two `WEEK 1`s across
+      // terms, so `includes("WEEK 2")` accepts the wrong term's chunk as a
+      // hit. That was a real latent false-pass, invisible while the queries
+      // were almost all First Term.
       const matches = (h: string | null): boolean =>
-        q.expectedWeeks !== null && q.expectedWeeks.some((w) => (h ?? "").includes(w));
+        q.expectedWeeks !== null && q.expectedWeeks.some((w) => h === w);
 
       const firstHit = kept.findIndex((r) => matches(r.heading));
 
@@ -182,7 +192,7 @@ export const curriculumGroundingCase: EvalCase = {
 
     // Severity flips with provenance. `gate` is the pass/fail metric (D21);
     // everything else reports regardless.
-    const gate = authorGenerated ? warn : check;
+    const gate = teacherPhrased ? check : warn;
 
     const hitK = positives.filter((s) => s.hitAtK).length;
     const hit1 = positives.filter((s) => s.hitAt1).length;
@@ -241,6 +251,37 @@ export const curriculumGroundingCase: EvalCase = {
           "at position 5 sits behind four irrelevant weeks that dilute the grounding block.",
       ),
     );
+
+    // ---- per-band breakdown -----------------------------------------------
+    // An aggregate over a mixed-provenance set is misleading: a verbatim hit
+    // and a paraphrase hit are not comparable evidence. Reporting the bands
+    // separately is what stops the easy band from carrying the headline score.
+    for (const band of ["document-verbatim", "author-paraphrase"] as const) {
+      const inBand = positives.filter((s) => s.q.source === band);
+      if (inBand.length === 0) continue;
+      const bandHit = inBand.filter((s) => s.hitAtK).length;
+      results.push(
+        warn(
+          `curriculum-grounding: hit@${RETRIEVAL_TOP_K} within band "${band}"`,
+          bandHit === inBand.length,
+          `${bandHit}/${inBand.length}. ` +
+            (band === "document-verbatim"
+              ? "EASY BY CONSTRUCTION — these queries are quoted verbatim from the corpus and " +
+                "share its exact tokens, so a hit shows the pipeline is wired up, NOT that the " +
+                "embedding understands the topic. Their VALUE is that the week labels are " +
+                "ground truth. Read this band as a regression check."
+              : "The only semantic signal in this suite — no shared vocabulary with the target " +
+                "chunk. Also the weakest provenance: the author guessing at a teacher's " +
+                "phrasing. A gap between this band and the verbatim one is the measurement " +
+                "that matters most here.") +
+            " " +
+            inBand
+              .filter((s) => !s.hitAtK)
+              .map((s) => `MISS "${s.q.query}" expected ${s.q.expectedWeeks?.join("/")}`)
+              .join("; "),
+        ),
+      );
+    }
 
     // ---- the distance distribution (D23) ----------------------------------
     // Reported as an always-passing line because it is DATA, not a verdict.
