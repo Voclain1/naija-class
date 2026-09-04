@@ -57,6 +57,18 @@ export type RetrievalReason =
   | "ok"
   /** The school has no READY document for this subject + class level. */
   | "no-documents"
+  /**
+   * A document EXISTS for this subject + class level but is still waiting for a
+   * teacher to approve what the parser made of it (CP5 / D35).
+   *
+   * Deliberately distinct from `no-documents`. They look identical from inside
+   * retrieval — neither returns chunks — but they are opposite instructions to
+   * the person reading the result: one says "upload something", the other says
+   * "you already did; go and confirm it". Collapsing them would leave a teacher
+   * who uploaded a scheme five minutes ago being told to upload one, which is
+   * the single most confusing thing this feature could say.
+   */
+  | "awaiting-review"
   /** Documents exist, but nothing cleared RETRIEVAL_MAX_DISTANCE. */
   | "no-match"
   /** The embedding vendor is not configured on this deployment. */
@@ -115,7 +127,22 @@ export class CurriculumRetrievalService {
         },
       }),
     );
-    if (hasDocuments === 0) return EMPTY("no-documents");
+    if (hasDocuments === 0) {
+      // Nothing READY. Before saying "upload a scheme of work", check whether
+      // one is sitting in the review queue — D35 chooses visibility over an
+      // expiry job, and this is where that promise is actually kept.
+      const awaiting = await withTenant(params.schoolId, (db) =>
+        db.curriculumDocument.count({
+          where: {
+            schoolId: params.schoolId,
+            subjectId: params.subjectId,
+            classLevelId: params.classLevelId,
+            status: { in: ["AWAITING_REVIEW", "EMBEDDING"] },
+          },
+        }),
+      );
+      return EMPTY(awaiting > 0 ? "awaiting-review" : "no-documents");
+    }
 
     let queryVector: number[];
     try {
@@ -201,6 +228,13 @@ export class CurriculumRetrievalService {
            AND d.subject_id = $3
            AND d.class_level_id = $4
            AND d.status = 'READY'
+           -- CP5 / D29: a chunk may exist without a vector while its document
+           -- is awaiting a teacher's review. The status filter above already
+           -- excludes those documents, so this is a SECOND guard, deliberately:
+           -- it means a future query that forgets the status join still cannot
+           -- return an unreviewed draft, and it keeps the distance operator
+           -- from ever seeing a NULL.
+           AND c.embedding IS NOT NULL
          ORDER BY c.embedding <=> $1::vector
          LIMIT $5
         `,

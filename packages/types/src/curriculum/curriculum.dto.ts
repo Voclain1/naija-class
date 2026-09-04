@@ -11,8 +11,26 @@ import { z } from "zod";
 export const CURRICULUM_DOCUMENT_STATUSES = [
   "PENDING",
   "PROCESSING",
+  // CP5 / D28 — the review gate. A document parses into sections, then waits
+  // for a teacher to confirm the structure before anything is embedded.
+  "AWAITING_REVIEW",
+  "EMBEDDING",
   "READY",
   "FAILED",
+] as const;
+
+/**
+ * Statuses in which a document is NOT yet usable for lesson-plan grounding.
+ * Retrieval only ever reads READY, but the UI needs to say WHY nothing was
+ * found, and "waiting for your review" is a different message from "still
+ * processing" — D35 chooses visibility over an expiry job, and this is what
+ * that message keys off.
+ */
+export const CURRICULUM_NOT_YET_USABLE_STATUSES = [
+  "PENDING",
+  "PROCESSING",
+  "AWAITING_REVIEW",
+  "EMBEDDING",
 ] as const;
 
 export type CurriculumDocumentStatusDto = (typeof CURRICULUM_DOCUMENT_STATUSES)[number];
@@ -49,6 +67,16 @@ export interface CurriculumDocumentDto {
   errorMessage: string | null;
   chunkCount: number;
   uploadedBy: string;
+  /**
+   * Who approved the extracted structure, and when. NULL means this document
+   * predates the review gate (D34) — NOT that it is unreviewed. The two are
+   * different and must not be conflated when measuring chunker quality.
+   */
+  reviewedBy: string | null;
+  reviewedAt: string | null;
+  /** What the teacher corrected before approving (D31). */
+  headingEditCount: number;
+  discardedChunkCount: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -100,4 +128,35 @@ export interface CurriculumChunkDto {
 export interface CurriculumDocumentDetailResponse {
   document: CurriculumDocumentDto;
   chunks: CurriculumChunkDto[];
+}
+
+// ---------------------------------------------------------------------------
+// CP5 — the review gate.
+//
+// Two operations, deliberately (D30): correct a HEADING, discard a CHUNK.
+// Editing chunk CONTENT is excluded — it turns a verification step into a
+// document editor and lets the embedded text drift from the file the school
+// actually holds. If the text is wrong, the repair is a better upload.
+// ---------------------------------------------------------------------------
+
+export const updateCurriculumChunkSchema = z.object({
+  /**
+   * The corrected heading path, e.g. "First Term > WEEK 3 > Adverbs of
+   * Frequency". Null clears it, which is a legitimate correction: the parser
+   * sometimes promotes a line that is not a heading at all.
+   */
+  heading: z.string().trim().min(1).max(300).nullable(),
+});
+
+export type UpdateCurriculumChunkInput = z.infer<typeof updateCurriculumChunkSchema>;
+
+/**
+ * Approval carries no body. It is deliberately not "save these edits" — edits
+ * are applied one at a time as the teacher makes them, so a dropped connection
+ * mid-review loses nothing. Approval only means "the structure is right now".
+ */
+export interface ApproveCurriculumDocumentResponse {
+  document: CurriculumDocumentDto;
+  /** Chunks queued for embedding. Equals the surviving chunk count. */
+  chunkCount: number;
 }

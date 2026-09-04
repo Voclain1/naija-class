@@ -1889,3 +1889,92 @@ lesson plan has not shipped the feature — it has shipped a form.
 already has a status lifecycle and a tenant-scoped worker to extend. The review
 screen is the bulk of it, and the E2E test is the part most likely to expose
 something unforeseen, as it did in CP2.
+
+### 15.9 Built — 2026-09-04
+
+Shipped as planned, with three deviations, all recorded here rather than
+silently absorbed.
+
+**Deviation 1: D32 was already done.** Paste-as-text shipped in CP2 as "the D6
+escape hatch" — a first-class `POST /curriculum/documents/paste` endpoint with
+its own tab in the upload form. The plan proposed building what already
+existed. No work was needed and none was done.
+
+**Deviation 2: draft chunks are written in the REQUEST, not by a worker.** The
+plan had upload queue a parse job that ended at `AWAITING_REVIEW`. But parsing
+and chunking already happened in the request — the per-document and per-school
+caps are denominated in chunks, so the count has to be known before the upload
+can be accepted at all. Writing those chunks in the same transaction costs one
+bounded insert and removes an entire polling stage from the critical path: the
+teacher lands on the review screen with content on it, instead of watching a
+spinner for work that had already finished. Only embedding is queued now, and
+only after approval.
+
+**Deviation 3: the enum change needed its own migration.** `ALTER TYPE ... ADD
+VALUE` is permitted inside a transaction, but PostgreSQL refuses to let the new
+value be USED in that same transaction, and the partial index for the review
+queue has `WHERE status = 'AWAITING_REVIEW'` in its predicate. Kept together
+the pair would have failed on a fresh database while appearing to work on one
+where the enum already had the values — the worst kind of migration bug.
+`20260904100000_phase_7_cp5_review_statuses` therefore contains nothing but the
+two `ADD VALUE` statements, and must stay that way.
+
+**One addition beyond the plan: `awaiting-review` as a grounding reason.** D35
+promised the lesson-plan grounding notice would name an unreviewed document
+rather than staying silent. Delivering that needed a new `RetrievalReason`,
+because `no-documents` and `awaiting-review` are indistinguishable from inside
+retrieval — neither returns chunks — but they are OPPOSITE instructions to the
+teacher reading them. One says "upload a scheme of work"; the other says "you
+already did, go and confirm it". A teacher who uploaded five minutes ago being
+told to upload again would be the most confusing thing this feature could say.
+
+#### What was verified, and how
+
+Against a **real PostgreSQL**, not a mock:
+
+- Both migrations applied cleanly with `prisma migrate deploy` — which is what
+  actually proves deviation 3's split was necessary rather than cautious.
+- **97/97 curriculum tests pass**, including 13 new ones.
+- **1,870 API tests pass, 0 failures.** Full monorepo: 13/13 packages green,
+  plus `pnpm lint` 9/9 and `pnpm typecheck` 14/14.
+
+**The single most important test** is `embed.handler.spec.ts`'s first case:
+*embeds the TEACHER'S corrected heading, not the parser's original.*
+
+It earns that place because the failure it guards against is silent and total.
+The review screen could work perfectly — the teacher fixes a wrong heading, the
+row updates, the UI shows the correction, the document goes READY — and if the
+embed step re-derived its chunks from the stored source file, every correction
+would be discarded at the last moment and the parser's mistakes embedded
+anyway. Nothing else in the system would notice, because the chunk rows would
+still display the corrected text; only the vectors would disagree with them.
+
+That is not a hypothetical: re-deriving from source is exactly what the
+pre-CP5 handler did, deliberately and for good reasons. Those reasons INVERT
+once a human is allowed to correct the chunks, and the spec pins the inversion.
+
+#### Known gap: no browser E2E in CI
+
+The plan called the upload → review → edit → approve → grounded-plan E2E "the
+slice's acceptance test and not optional". **It is not in CI, and the reason is
+structural rather than a shortcut being taken.**
+
+CI has no `VOYAGE_API_KEY` — it passes a placeholder Anthropic key and no
+embedding key at all. `EmbeddingService.isConfigured()` is therefore false in
+CI, and the very first step of the flow refuses with `CURRICULUM_NOT_CONFIGURED`
+before a document is ever created. A Playwright spec would not partially cover
+the flow; it would be skipped or red on every run.
+
+What covers the flow instead, and what does not:
+
+- **Covered against a real database**: the gate's authorisation, the
+  edit/discard operations and their counters, the refusal to edit an approved
+  document, the refusal to approve twice, the refusal to embed an unapproved
+  document, resume-without-re-spending, rate-limit survival, and — the crux —
+  that the teacher's corrected heading is what reaches the vendor.
+- **NOT covered**: that the browser wiring holds end to end. The API contract
+  is tested; the click path is not.
+
+That gap closes with a manual pass against a deployment that has real keys, and
+it should be done before this is announced to a school. It is a real gap and is
+recorded as one rather than being reported as covered.

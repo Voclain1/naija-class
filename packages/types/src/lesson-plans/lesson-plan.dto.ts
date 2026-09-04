@@ -28,6 +28,10 @@ export interface LessonPlanGroundingChunkDto {
 export type LessonPlanGroundingReasonDto =
   | "ok"
   | "no-documents"
+  // CP5 / D35 — a scheme of work exists for this subject and class level but
+  // has not been approved yet. Distinct from "no-documents" because the action
+  // it implies is the opposite: confirm what you uploaded, do not upload again.
+  | "awaiting-review"
   | "no-match"
   | "not-configured"
   | "error";

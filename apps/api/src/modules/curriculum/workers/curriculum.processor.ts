@@ -6,9 +6,14 @@ import { withTenant } from "@school-kit/db";
 import { classifyVendorError } from "@school-kit/ai";
 
 import { EmbeddingService } from "../../../common/embeddings/embedding.service";
-import { CURRICULUM_JOB_INGEST, CURRICULUM_QUEUE } from "../../../common/queue";
+import {
+  CURRICULUM_JOB_EMBED,
+  CURRICULUM_JOB_INGEST,
+  CURRICULUM_QUEUE,
+} from "../../../common/queue";
 import { StorageService } from "../../../common/storage";
-import type { IngestJobData } from "../curriculum.service";
+import type { EmbedJobData, IngestJobData } from "../curriculum.service";
+import { runEmbedHandler } from "./embed.handler";
 import { runIngestHandler } from "./ingest.handler";
 
 // CurriculumProcessor — sole BullMQ entry for CURRICULUM_QUEUE.
@@ -35,6 +40,16 @@ export class CurriculumProcessor extends WorkerHost {
   }
 
   async process(job: Job): Promise<unknown> {
+    if (job.name === CURRICULUM_JOB_EMBED) {
+      return this.handleEmbed(job as Job<EmbedJobData>);
+    }
+    // LEGACY (CP5). Nothing enqueues "ingest" any more — upload now writes its
+    // chunks synchronously and stops at AWAITING_REVIEW, and embedding is
+    // dispatched by approval. This branch stays so that jobs already sitting in
+    // Redis when the gate deployed still drain correctly instead of throwing
+    // "unknown job name" and failing documents that were mid-flight through no
+    // fault of their own. Safe to delete once the queue has drained past the
+    // deploy; not before.
     if (job.name === CURRICULUM_JOB_INGEST) {
       return this.handleIngest(job as Job<IngestJobData>);
     }
@@ -92,6 +107,37 @@ export class CurriculumProcessor extends WorkerHost {
     }
   };
 
+  // CP5 — embedding, dispatched by approval rather than by upload.
+  //
+  // Same tenancy shape as handleIngest and for the same reason: short
+  // withTenant calls per database step rather than one outer transaction held
+  // open across minutes of vendor calls.
+  private readonly handleEmbed = async (job: Job<EmbedJobData>): Promise<void> => {
+    if (!job.data?.schoolId || !job.data?.documentId) {
+      throw new Error(
+        `embed: job ${job.id ?? "(no id)"} missing schoolId/documentId; refusing to run`,
+      );
+    }
+
+    if (!this.embeddings.isConfigured()) {
+      throw new UnrecoverableError("Embedding vendor is not configured on this deployment.");
+    }
+
+    try {
+      await runEmbedHandler({
+        documentId: job.data.documentId,
+        schoolId: job.data.schoolId,
+        embeddings: this.embeddings,
+        logger: this.logger,
+      });
+    } catch (err) {
+      if (classifyVendorError(err) === "fatal" && !(err instanceof UnrecoverableError)) {
+        throw new UnrecoverableError(err instanceof Error ? err.message : String(err));
+      }
+      throw err;
+    }
+  };
+
   @OnWorkerEvent("failed")
   async onFailed(job: Job<IngestJobData>, error: Error): Promise<void> {
     if (!job?.data?.schoolId || !job.data.documentId) {
@@ -117,6 +163,12 @@ export class CurriculumProcessor extends WorkerHost {
       await withTenant(job.data.schoolId, async (db) => {
         await db.curriculumDocument.update({
           where: { id: job.data.documentId },
+          // FAILED, not back to AWAITING_REVIEW. The teacher already reviewed
+          // and approved this structure; sending them round the same screen a
+          // second time would imply their review was the problem when the
+          // failure is on the vendor side. reviewedBy/reviewedAt are left
+          // intact so the approval survives the failure and a retry does not
+          // need re-approving.
           data: { status: "FAILED", errorMessage: summarise(error, isUnrecoverable) },
         });
       });

@@ -9,12 +9,14 @@
 // the same way rather than each inventing its own interval.
 
 import type {
+  ApproveCurriculumDocumentResponse,
   CurriculumDocumentDetailResponse,
   CurriculumDocumentDto,
   CurriculumDocumentListResponse,
   CurriculumUploadAcceptedResponse,
   ListCurriculumDocumentsQuery,
   PasteCurriculumDocumentInput,
+  UpdateCurriculumChunkInput,
 } from "@school-kit/types";
 
 import { apiFetch } from "../api-client";
@@ -72,10 +74,60 @@ export function deleteCurriculumDocument(documentId: string): Promise<void> {
   return apiFetch<void>(`/curriculum/documents/${documentId}`, { method: "DELETE" });
 }
 
+// ---------------------------------------------------------------------------
+// CP5 — the review gate.
+// ---------------------------------------------------------------------------
+
+/** Correct one section's heading. Returns the whole document, freshly read. */
+export function updateCurriculumChunk(
+  documentId: string,
+  chunkId: string,
+  input: UpdateCurriculumChunkInput,
+): Promise<CurriculumDocumentDetailResponse> {
+  return apiFetch<CurriculumDocumentDetailResponse>(
+    `/curriculum/documents/${documentId}/chunks/${chunkId}`,
+    { method: "PATCH", body: input },
+  );
+}
+
+/** Drop a section the parser should not have produced. */
+export function discardCurriculumChunk(
+  documentId: string,
+  chunkId: string,
+): Promise<CurriculumDocumentDetailResponse> {
+  return apiFetch<CurriculumDocumentDetailResponse>(
+    `/curriculum/documents/${documentId}/chunks/${chunkId}`,
+    { method: "DELETE" },
+  );
+}
+
+/** Approve the structure and start embedding. */
+export function approveCurriculumDocument(
+  documentId: string,
+): Promise<ApproveCurriculumDocumentResponse> {
+  return apiFetch<ApproveCurriculumDocumentResponse>(
+    `/curriculum/documents/${documentId}/approve`,
+    { method: "POST" },
+  );
+}
+
 export const SETTLED_STATUSES = ["READY", "FAILED"] as const;
 
+/**
+ * "Settled" means the document has stopped moving on its own.
+ *
+ * AWAITING_REVIEW counts (CP5). It is not a transient state a poller should
+ * wait out — it is the pipeline deliberately stopping to wait for a HUMAN, and
+ * a spinner that never resolves because it is waiting for the person watching
+ * it would be the worst possible rendering of this feature.
+ */
 export function isSettled(status: CurriculumDocumentDto["status"]): boolean {
-  return status === "READY" || status === "FAILED";
+  return status === "READY" || status === "FAILED" || status === "AWAITING_REVIEW";
+}
+
+/** Does this document need a human before it can be used? */
+export function needsReview(status: CurriculumDocumentDto["status"]): boolean {
+  return status === "AWAITING_REVIEW";
 }
 
 /**

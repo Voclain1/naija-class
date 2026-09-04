@@ -1532,8 +1532,10 @@ model AIBudgetPeriod {
 
 enum CurriculumDocumentStatus {
   PENDING // uploaded, not yet processed
-  PROCESSING // chunking / embedding in flight
-  READY // embedded and retrievable
+  PROCESSING // chunking in flight
+  AWAITING_REVIEW // parsed and chunked; waiting for a teacher to confirm the structure (CP5 / D28)
+  EMBEDDING // teacher approved; vectors being generated
+  READY // embedded, retrievable, and human-confirmed
   FAILED // see errorMessage
 }
 
@@ -1562,6 +1564,22 @@ model CurriculumDocument {
   chunkCount   Int                      @default(0) @map("chunk_count")
 
   uploadedBy String   @map("uploaded_by")
+
+  // The review gate (CP5 / D31). `reviewedAt` NULL is MEANINGFUL, not missing
+  // data: it distinguishes "a human confirmed this structure through the gate"
+  // from "this document predates the gate" (D34). Any analysis of chunker
+  // quality must exclude NULL-reviewed rows rather than counting them as
+  // zero-edit approvals, which would silently flatter the chunker.
+  reviewedBy String?   @map("reviewed_by")
+  reviewedAt DateTime? @map("reviewed_at")
+
+  // What the teacher CHANGED before approving — the first real measurement of
+  // chunking quality on documents nobody on this project has seen. A document
+  // approved with zero edits is evidence the chunker got it right; one with six
+  // heading corrections is evidence it did not.
+  headingEditCount    Int @default(0) @map("heading_edit_count")
+  discardedChunkCount Int @default(0) @map("discarded_chunk_count")
+
   createdAt  DateTime @default(now()) @map("created_at")
   updatedAt  DateTime @updatedAt @map("updated_at")
 
@@ -1611,7 +1629,18 @@ model CurriculumChunk {
   // read or written through Prisma Client. Every insert and every similarity
   // search is raw SQL inside withTenant(), with SET LOCAL app.current_school_id
   // applied first — CLAUDE.md's raw-SQL rule applies directly here.
-  embedding Unsupported("vector(1024)")
+  //
+  // NULLABLE since CP5 (D29): a chunk exists from the moment the document is
+  // parsed, but it is only embedded after a teacher has approved the structure.
+  // Embedding earlier would mean paying for a vector, discarding it the moment
+  // a heading is corrected (headings are embedded WITH content, D15), and
+  // holding a window where a document's vectors disagree with its own headings.
+  //
+  // The "a chunk is retrievable" invariant moves to the DOCUMENT level: a
+  // document only reaches READY once every chunk has a vector, and retrieval
+  // filters on that status AND on `embedding IS NOT NULL` as a second guard.
+  // HNSW does not index NULL rows, so the index is unaffected.
+  embedding Unsupported("vector(1024)")?
 
   createdAt DateTime @default(now()) @map("created_at")
 

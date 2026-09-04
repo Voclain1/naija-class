@@ -81,3 +81,9 @@ export const PUSH_JOB_RECEIPTS = "receipts";
 // lets it be slow without making anything else slow.
 export const CURRICULUM_QUEUE = "curriculum";
 export const CURRICULUM_JOB_INGEST = "ingest";
+// CP5 / D28 — embedding is now its own job, dispatched when a teacher APPROVES
+// the extracted structure rather than immediately on upload. Parsing and
+// chunking happen in the request (they are fast and must be able to refuse),
+// so "ingest" no longer runs on upload at all; it is retained for documents
+// queued before the gate shipped and for a re-parse path.
+export const CURRICULUM_JOB_EMBED = "embed";

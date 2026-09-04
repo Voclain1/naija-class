@@ -565,18 +565,20 @@ function GroundingLine({
   const message =
     grounding.reason === "no-documents"
       ? "No scheme of work has been uploaded for this subject and class level, so this plan is not grounded in your own curriculum."
-      : grounding.reason === "no-match"
-        ? "No matching section was found in your uploaded scheme of work, so this plan is not grounded in it."
-        : "Your curriculum library could not be searched this time, so this plan is not grounded in it.";
+      : grounding.reason === "awaiting-review"
+        ? "Your scheme of work for this subject and class level is waiting for you to check it. Until you approve it, plans are not grounded in your own curriculum."
+        : grounding.reason === "no-match"
+          ? "No matching section was found in your uploaded scheme of work, so this plan is not grounded in it."
+          : "Your curriculum library could not be searched this time, so this plan is not grounded in it.";
 
   return (
     <div className="text-muted-foreground rounded-md border border-dashed p-3 text-sm print:hidden">
       {message}
-      {grounding.reason === "no-documents" ? (
+      {grounding.reason === "no-documents" || grounding.reason === "awaiting-review" ? (
         <>
           {" "}
           <Link href="/teacher/curriculum" className="underline underline-offset-2">
-            Add one
+            {grounding.reason === "awaiting-review" ? "Review it now" : "Add one"}
           </Link>
           .
         </>
