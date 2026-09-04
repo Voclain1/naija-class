@@ -1628,3 +1628,264 @@ if it is ever closed on this basis the claim must be narrowed in writing to
 what it actually establishes: *retrieval returns the correct week for verbatim
 and author-paraphrased topics* — not that real teacher phrasing retrieves
 correctly.
+
+---
+
+## 15. CP5 plan-first — the curriculum review gate
+
+Written 2026-09-04. Requested directly: after a teacher uploads or pastes a
+scheme of work, the system should show them what it understood and let them
+**correct it before saving**, so a mismatch is caught by the person who knows
+the document rather than discovered later inside a lesson plan.
+
+**Scope:** a human-approval gate between chunking and embedding, with a review
+screen a teacher can actually use. Decisions D28–D35.
+
+**Shipping constraint, stated first because it shapes every decision below: a
+teacher must be able to use this the day it ships.** Not a schema plus an
+endpoint with the UI to follow. The slice is only done when a teacher can
+upload a document, see the term/week/topic structure the system extracted, fix
+a wrong heading, drop a junk section, approve, and immediately generate a
+grounded lesson plan from it. Anything that does not serve that path is out of
+this checkpoint.
+
+### 15.1 Why this is the right gate, and why now
+
+This is not a new principle — it is closing an inconsistency. `CLAUDE.md`
+requires that AI output is never auto-finalised, and the Smart Student Import
+rule already states that an extraction "never writes to a student record
+without explicit human confirmation." Curriculum ingestion is currently the
+one extraction path in this system that **auto-finalises**: parse, chunk,
+embed, mark READY, no human in the loop.
+
+The evidence that it matters is unusually direct. The chunker mis-derived
+headings on the first real document **twice** (D13/D14), in ways no synthetic
+fixture caught, and both were found only because a human looked at the output
+and said that isn't right. Today that inspection is accidental — it depends on
+someone noticing that "17 sections" looks wrong. This makes it structural.
+
+**A second, non-obvious payoff: this generates CP4's missing ground truth.**
+Every approval is a teacher confirming a topic-to-week mapping — the exact
+artifact D22 has been blocked on, arriving as a byproduct of normal use rather
+than as a favour asked of a busy teacher. It does **not** close D22 on its own:
+approval confirms LABELS, not how a teacher PHRASES a search, so
+`QUERY_SET_PROVENANCE` still cannot read `teacher-supplied` on this basis. But
+it converts the label half of the problem from "chase someone" into "read what
+the product already recorded." D31 makes that an explicit design requirement
+rather than a hoped-for side effect.
+
+### 15.2 The lifecycle change
+
+```
+  before:  PENDING -> PROCESSING -----------------------> READY | FAILED
+  after:   PENDING -> PROCESSING -> AWAITING_REVIEW -> EMBEDDING -> READY | FAILED
+                                          ^                |
+                                          +--- teacher edits, approves
+```
+
+Two properties fall out of this for free, and both are worth naming:
+
+- **Retrieval needs no change.** `CurriculumRetrievalService` already filters
+  `status = 'READY'`, so a document awaiting review is invisible to lesson
+  planning without a single line changing in the retrieval path. The gate is
+  enforced by a status the retriever already respects.
+- **`READY` starts carrying a stronger guarantee**: not merely "embedded" but
+  "a human confirmed this structure."
+
+### 15.3 Decisions
+
+#### D28 — The gate sits between chunking and embedding, not after embedding
+
+Embed only what a human has approved.
+
+The reason is not only cost discipline. D15 embeds **heading + content**, so
+every heading a teacher corrects invalidates that chunk's vector. Embedding
+first would mean paying for vectors, discarding them on the first correction,
+and recomputing — with a window in which a document holds embeddings that no
+longer match its own headings. Gating first means a badly-parsed document never
+consumes embedding budget at all, and a corrected heading is embedded exactly
+once, correctly.
+
+This also splits the existing worker in two: `parse+chunk` (ends at
+AWAITING_REVIEW) and `embed+finalise` (triggered by approval). Both remain
+`tenantWorker`-wrapped jobs on the existing queue, dispatched by job name — the
+one-processor-per-queue convention this repo already follows.
+
+#### D29 — Draft chunks persist in `curriculum_chunks` with a NULLABLE embedding
+
+The alternative considered was holding the draft chunk set as JSONB on the
+document and materialising rows only on approval. That preserves a clean
+invariant ("a chunk row is always retrievable") but it means a loose blob
+needing its own validating parser, a second representation of the same shape,
+and edit logic that rewrites a blob rather than updating rows.
+
+Making `embedding` nullable is simpler and lets the review screen read chunks
+through ordinary tenant-scoped queries with RLS already doing its work. The
+invariant is preserved at the DOCUMENT level instead: a document only reaches
+`READY` when every one of its chunks has an embedding, and retrieval filters on
+that status. The embed step asserts it explicitly rather than assuming it, and
+the retrieval SQL adds `embedding IS NOT NULL` as a belt-and-braces guard —
+cheap, and it means a future query that forgets the status filter still cannot
+return an unembedded chunk.
+
+HNSW simply does not index NULL rows, so the vector index is unaffected.
+
+#### D30 — The teacher edits HEADINGS and discards CHUNKS. Content is not editable.
+
+Two operations, deliberately:
+
+1. **Correct a heading path** — term, week, topic. This is where every real
+   defect has appeared: `ENGLISH` repeated eight times, `TABLE OF CONTENT` as a
+   heading, a term precedence bug putting weeks under the wrong term.
+2. **Discard a chunk** — the front matter, the contents page, the recommended-
+   textbooks page. Real documents carry material that is not curriculum, and
+   the honest fix is to drop it, not to label it.
+
+**Editing chunk CONTENT is deliberately excluded from v1.** It turns a
+verification step into a document editor, and it lets a teacher silently
+rewrite the source of truth so that what is embedded no longer matches the file
+the school actually holds. If a document's *text* is wrong, the right repair is
+re-uploading a better file, not retyping it into a review screen. Revisit only
+if real use shows a case this refusal blocks.
+
+#### D31 — Approval is recorded as data, because it is CP4's ground truth
+
+`reviewedBy` and `reviewedAt` on the document, plus an `audit_logs` row — the
+same treatment any other human-confirmation gate in this system gets.
+
+But the requirement is stronger than provenance bookkeeping: the approved
+**heading set** must be readable afterwards as a topic-to-week mapping a
+teacher stands behind. Concretely, after approval the system can answer "which
+week does this school's JSS3 English scheme place *Idiomatic Expressions* in?"
+with an answer a human confirmed. That is CP4's labelled data, and building the
+review screen without capturing it in that form would waste the one chance to
+get it as a byproduct.
+
+Also recorded: **whether the teacher changed anything, and what.** A document
+approved with zero edits is evidence the chunker got it right; a document with
+six heading corrections is evidence it did not. That is the first real
+measurement of chunker quality on documents nobody on this project has seen —
+worth strictly more than any synthetic fixture, and it costs one extra column.
+
+#### D32 — Paste-as-text is a first-class input alongside file upload
+
+The request named "uploads/pastes" and the paste path is worth having on its
+own merits: it skips PDF parsing entirely, which is the most failure-prone
+component in the pipeline (a cross-document leak in `pdf-parse`, an ESM/CJS
+loader problem, a MediaBox clipping bug — all real, all found here). A teacher
+who can paste their scheme into a textarea gets a working feature without
+depending on any of it.
+
+Implementation cost is genuinely small: the same chunker, the same review
+screen, the same approval path; only the parse step is skipped and
+`storageKey` becomes optional for pasted documents. **If this checkpoint comes
+under scope pressure, this is the first thing to drop** — but it should not
+need to be.
+
+#### D33 — No new permission. Coarse `curriculum.upload` guard, ownership asserted in the service.
+
+Approving a document is not a distinct authority from uploading one — someone
+trusted to add curriculum is trusted to confirm it parsed correctly. Adding
+`curriculum.review` would mean a permission migration and a role-grant backfill
+for no real access-control gain.
+
+The substantive check lives in the service layer, exactly as the ownership-
+scoped delete does: the uploader may approve their own document; an admin may
+approve any within the school. This is the established division in this
+codebase — coarse `@Permissions` guard, substantive assertion in the service —
+and reusing it keeps the two curriculum write paths consistent with each other.
+
+#### D34 — Existing READY documents are grandfathered, not retro-gated
+
+There is one real document in production (the JSS3 English scheme). It is
+already embedded and has in fact been human-inspected more thoroughly than this
+gate will ever inspect anything. Migrating it back to `AWAITING_REVIEW` would
+break grounding for a live user to satisfy a formality.
+
+Existing documents stay `READY` with `reviewedAt` NULL — and **that NULL is
+meaningful, not missing data**: it distinguishes "approved by a human through
+the gate" from "predates the gate." Any future analysis of chunker quality
+(D31) must exclude NULL-reviewed documents rather than treating them as
+zero-edit approvals, which would silently flatter the chunker.
+
+#### D35 — No auto-expiry of AWAITING_REVIEW in v1
+
+A document can sit unreviewed forever. The failure mode is a teacher uploading,
+being interrupted, and later wondering why lesson planning finds nothing.
+
+The v1 answer is **visibility, not expiry**: the curriculum list shows an
+explicit "Needs your review" state, and the lesson-plan grounding notice — which
+already explains when generation was not grounded (D20) — names an awaiting-
+review document as the reason when one exists for that subject and class level.
+That converts a silent gap into a signposted next action.
+
+Auto-expiring or auto-approving after a timeout is rejected outright: the first
+destroys work a teacher may return to, and the second defeats the entire point
+of the gate.
+
+### 15.4 Shape
+
+```
+packages/db/prisma/schema.prisma          + AWAITING_REVIEW, EMBEDDING statuses
+                                          + reviewedBy/reviewedAt/editCount
+                                          embedding -> nullable
+packages/db/prisma/migrations/<new>/      the above, additive and guarded
+packages/types/src/curriculum/            review + approve DTOs (Zod)
+apps/api/.../curriculum.service.ts        listForReview, updateChunkHeading,
+                                          discardChunk, approve (ownership-scoped)
+apps/api/.../curriculum.controller.ts     GET    /curriculum/documents/:id/review
+                                          PATCH  /curriculum/documents/:id/chunks/:chunkId
+                                          DELETE /curriculum/documents/:id/chunks/:chunkId
+                                          POST   /curriculum/documents/:id/approve
+                                          POST   /curriculum/documents/paste
+apps/api/.../curriculum.processor.ts      split: parse+chunk | embed+finalise
+apps/web/src/app/(teacher)/curriculum/    the review screen — the deliverable
+```
+
+### 15.5 The vertical slice, spelled out
+
+Done means a teacher can, unaided:
+
+1. Upload a PDF **or paste text**, and land on a review screen rather than a
+   spinner that ends in silence.
+2. See every extracted section as **Term > Week > Topic**, in document order,
+   with its text.
+3. **Fix a wrong heading** inline and **discard a junk section**.
+4. **Approve**, and watch the document become usable.
+5. Generate a lesson plan that cites the sections they just approved.
+
+Step 5 is the acceptance test. A review screen that does not end in a grounded
+lesson plan has not shipped the feature — it has shipped a form.
+
+### 15.6 Tests
+
+- Service specs: approval is ownership-scoped (uploader or admin only, and a
+  teacher from another school gets nothing); a document cannot be approved
+  twice; a chunk cannot be edited once its document is `READY`.
+- RLS spec extension: a draft chunk with a NULL embedding is subject to exactly
+  the same tenant isolation as an embedded one — the new nullable column must
+  not open a hole.
+- Retrieval spec: an `AWAITING_REVIEW` document is invisible to retrieval, and
+  a chunk with a NULL embedding is never returned even if its document status
+  is tampered with.
+- E2E: upload -> review -> edit a heading -> discard a chunk -> approve ->
+  generate a grounded lesson plan citing the edited heading. This is the
+  slice's acceptance test and it is not optional.
+
+### 15.7 What CP5 does NOT do
+
+- **It does not verify that the document is a good scheme of work.** It
+  verifies that the system read it correctly. A teacher approving a poorly
+  written scheme gets faithful grounding in a poor scheme.
+- **It does not fix chunking.** It makes chunking errors visible and
+  correctable, and it starts measuring how often they happen (D31). The
+  measurement is the input to any future chunker work — including the sub-row
+  granularity question CP4 raised and deliberately left open.
+- **It does not close D22.** Approval confirms labels, not query phrasing.
+
+### 15.8 Estimate
+
+**3–4 days.** The API and worker split are straightforward — the pipeline
+already has a status lifecycle and a tenant-scoped worker to extend. The review
+screen is the bulk of it, and the E2E test is the part most likely to expose
+something unforeseen, as it did in CP2.
