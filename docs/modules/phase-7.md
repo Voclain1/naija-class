@@ -1412,3 +1412,59 @@ is the first that measures behaviour.
 **The harness is the easy half.** The hard half is the query set, and its cost
 is not engineering time — it is the wait for real input, and the discipline not
 to fill the gap with my own reasoning while waiting.
+
+### 14.6 First run — findings, 2026-09-04
+
+The harness is built and running against the placeholder set. Recorded now
+because these are measurements, and a measurement that lives only in a
+terminal is the failure §0 opened this document with.
+
+**Against the real JSS3 English corpus, 17 chunks, 6 positive and 2 negative
+queries:**
+
+| metric | result |
+|---|---|
+| hit@5 (the gate) | **5 / 6** |
+| hit@1 | 3 / 6 |
+| MRR | passes (≥ 0.5) |
+| negatives rejected by the floor | **2 / 2** |
+| distance separation | floor sits in the gap |
+
+**All checks report at `warn`, and a permanently-failing line says CP4 IS NOT
+CLOSED.** That is D22 working as designed, not a fault to be cleared.
+
+**Three findings, two of them about my own work:**
+
+1. **My metric was unsatisfiable.** The first version asserted
+   `precision@5 >= 0.5`. With exactly one correct week per query and K=5,
+   precision cannot exceed 0.2 — no correct system could ever have passed it.
+   Replaced with mean reciprocal rank, which is the right metric for a single
+   relevant item. Caught by running the suite, not by reading it.
+
+2. **My label was wrong.** `"class debate on a social issue"` was labelled
+   week 7; retrieval returned week 9. Both weeks run a debate, so week 9 was
+   correct and the *label* was the error. `expectedWeeks` is now a list. This
+   is precisely the mistake D22 predicts an author makes about their own
+   corpus, and it appeared within minutes of the suite first running.
+
+3. **A genuine retrieval miss, kept rather than tuned away.**
+   `"introducing the parts of speech at the start of term"` does not retrieve
+   week 1, whose grammar row is "Parts of speech – Revision". The week-1 chunk
+   ranks below five less relevant weeks. The likely cause is chunk
+   GRANULARITY: a whole week is one chunk, so a sub-topic query competes
+   against four other sub-topics in the same chunk and the signal is diluted.
+
+   **Deliberately not fixed here.** Splitting chunks at the sub-row level is a
+   design change with real costs — more chunks, more embedding, weaker
+   week-level citations — and it should be decided against a teacher's queries,
+   not against mine. Recorded as the first substantive question CP4 hands to
+   whoever tunes retrieval.
+
+**Also fixed while building this: `pnpm ai:eval` was never run by CI.**
+`CLAUDE.md` calls it "required before any prompt PR merges", but the workflow
+ran only lint, typecheck and test — so the gate was manual, and the eval
+sources were neither linted nor typechecked (packages/ai's tsconfig covers
+`src/**` only). CI now runs it. The suite was designed from the start to gate
+without an API key, so this costs nothing and the two key-dependent cases skip
+loudly.
+

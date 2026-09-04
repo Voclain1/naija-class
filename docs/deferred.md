@@ -2884,3 +2884,44 @@ blocker. No change proposed.
   see the note in the same PR. This entry deliberately states the compliance
   question and its status only, and does not restate vendor analysis it cannot
   cite.
+
+---
+
+## CP4's eval query set is AUTHOR-GENERATED and must be replaced
+
+**Status: open, tracked, and enforced by the suite itself.**
+
+`packages/ai/evals/fixtures/query-set.ts` currently holds placeholder queries
+written by the implementer (2026-09-04). CP4 measures retrieval quality
+against them, and while they are in place **CP4 must not be reported as
+closed**.
+
+**Why it matters, not just that it does.** A suite whose queries, corpus,
+retrieval and scorer share one author measures internal consistency, not
+quality — it can score 100% and mean nothing. The concrete evidence is already
+in: CP3's live check used `"consonants sheep chip fish pitch"`, which quotes
+the source document almost verbatim and is therefore easy BY CONSTRUCTION. A
+teacher would type `"pronunciation practice"` — no shared vocabulary, and a
+genuinely different test.
+
+**What is needed:** 5–10 topics a real Virgo Fidelis teacher would actually
+type, verbatim, each labelled BY THEM with the week it should land on, plus
+one or two they would expect to find nothing for. The label has to come from
+the teacher too — an author choosing the right answers reintroduces the
+circularity. The most valuable negative is a **near miss inside the same
+subject**; the current negatives (Mathematics, History against an English
+corpus) share no vocabulary at all, which makes rejection trivial.
+
+**This is enforced, not remembered.** `QUERY_SET_PROVENANCE` drives the eval:
+while it reads `"author-generated"`, every check reports at `warn` instead of
+`error`, and a permanently-failing line prints
+`QUERY SET PROVENANCE — CP4 IS NOT CLOSED while this fails` on every run,
+including in CI. Replacing the queries and flipping the marker is the only
+thing that clears it.
+
+**Requested via Arinzechukwu 2026-09-03.** Same lesson as `phase-7.md`
+D13/D14: two reconstructions of the source document were wrong in two
+different ways and each cost a deploy cycle, while the diagnosis made against
+the real artefact was right first time. A reconstructed query set is that
+mistake in a different place.
+

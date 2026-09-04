@@ -16,6 +16,7 @@
 // phrasing), not correctness.
 
 import { runSuites } from "./harness.js";
+import { curriculumGroundingCase } from "./cases/curriculum-grounding.js";
 import { liveGenerationCase } from "./cases/live-generation.js";
 import { piiSafetyCase } from "./cases/pii-safety.js";
 import { promptQualityCase } from "./cases/prompt-quality.js";
@@ -30,6 +31,7 @@ async function main(): Promise<void> {
     piiSafetyCase,
     registryIntegrityCase,
     promptQualityCase,
+    curriculumGroundingCase,
     liveGenerationCase,
   ]);
   process.exit(exitCode);

@@ -207,6 +207,16 @@ jobs:
       - name: Test
         run: pnpm test
 
+      # CLAUDE.md calls `pnpm ai:eval` "required before any prompt PR merges",
+      # but until now nothing enforced it — it was a manual gate, so a prompt
+      # change could merge without ever running it, and the eval sources were
+      # neither linted nor typechecked (packages/ai's tsconfig covers src/**
+      # only). Phase 7 / CP4 makes it real: the suite is designed to gate
+      # WITHOUT any API key, and the two cases that need one (live generation,
+      # curriculum grounding) skip loudly rather than passing silently.
+      - name: AI evals
+        run: pnpm ai:eval
+
       - name: Build (web)
         run: pnpm --filter @school-kit/web build
 
