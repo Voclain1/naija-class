@@ -1,6 +1,8 @@
 "use client";
 
-import { AlertCircle, CheckCircle2, FileText, Loader2, Trash2, Upload } from "lucide-react";
+import { AlertCircle, CheckCircle2, ClipboardCheck, FileText, Loader2, Trash2, Upload } from "lucide-react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { CurriculumDocumentDto } from "@school-kit/types";
@@ -12,10 +14,9 @@ import { Label } from "@/components/ui/label";
 import { ApiError } from "@/lib/api-client";
 import {
   deleteCurriculumDocument,
-  isSettled,
   listCurriculumDocuments,
+  needsReview,
   pasteCurriculumText,
-  pollUntilSettled,
   uploadCurriculumFile,
 } from "@/lib/curriculum/curriculum-api";
 import { listClassLevels } from "@/lib/class-levels/class-levels-api";
@@ -107,6 +108,7 @@ export default function CurriculumPage() {
   // and conflating them is what hid the document list from admins.
   const [optionsError, setOptionsError] = useState<string | null>(null);
 
+  const router = useRouter();
   const [mode, setMode] = useState<"file" | "paste">("file");
   const [classLevelId, setClassLevelId] = useState("");
   const [subjectId, setSubjectId] = useState("");
@@ -205,28 +207,18 @@ export default function CurriculumPage() {
               content: pasted,
             });
 
-      // The upload is accepted synchronously with a real chunk count, because
-      // parsing and chunking happen in the request — only embedding is queued.
-      // Saying how many sections were found is the most useful confirmation
-      // available at this moment, and it is honest: it is what will be embedded.
-      setNotice(
-        `Accepted — ${accepted.chunkCount} section${accepted.chunkCount === 1 ? "" : "s"} found. Preparing for search…`,
-      );
+      // CP5 — straight to the review screen, no polling in between.
+      //
+      // Parsing and chunking happen in the request and the chunks are written
+      // there too, so by the time this resolves there is genuinely something to
+      // look at. The teacher goes and looks at it. Nothing is embedded, and
+      // nothing is usable for lesson planning, until they approve.
       setTitle("");
       setPasted("");
       setFile(null);
       if (fileInput.current) fileInput.current.value = "";
-      await load();
-
-      const settled = await pollUntilSettled(accepted.documentId);
-      setNotice(
-        settled.status === "READY"
-          ? `"${settled.title}" is ready — ${settled.chunkCount} sections available to lesson planning.`
-          : settled.status === "FAILED"
-            ? `"${settled.title}" could not be processed. ${settled.errorMessage ?? ""}`
-            : `"${settled.title}" is still processing. It will appear as ready shortly.`,
-      );
-      await load();
+      router.push(`/teacher/curriculum/${accepted.documentId}/review`);
+      return;
     } catch (e) {
       setFormError(
         e instanceof ApiError ? e.message : "Could not upload the document. Please try again.",
@@ -419,10 +411,21 @@ export default function CurriculumPage() {
                       ? `${doc.chunkCount} sections`
                       : doc.status === "FAILED"
                         ? (doc.errorMessage ?? "Could not be processed")
-                        : "Preparing for search…"}
+                        : needsReview(doc.status)
+                          ? // D35 chooses visibility over an expiry job: an
+                            // unreviewed document must say what it is waiting
+                            // for, or a teacher will wonder why lesson planning
+                            // cannot find it.
+                            `${doc.chunkCount} sections found — not used for lesson planning until you approve them`
+                          : "Preparing for search…"}
                   </p>
                 </div>
                 <div className="flex shrink-0 items-center gap-3">
+                  {needsReview(doc.status) ? (
+                    <Button asChild size="sm">
+                      <Link href={`/teacher/curriculum/${doc.id}/review`}>Review</Link>
+                    </Button>
+                  ) : null}
                   <StatusBadge status={doc.status} />
                   <Button
                     type="button"
@@ -458,9 +461,19 @@ function StatusBadge({ status }: { status: CurriculumDocumentDto["status"] }) {
       </Badge>
     );
   }
+  if (status === "AWAITING_REVIEW") {
+    // Deliberately NOT a spinner. This document is not working on anything —
+    // it is waiting for the person reading this line, and an animation would
+    // say the opposite.
+    return (
+      <Badge className="gap-1">
+        <ClipboardCheck className="h-3 w-3" /> Needs your review
+      </Badge>
+    );
+  }
   return (
     <Badge variant="outline" className="gap-1">
-      <Loader2 className="h-3 w-3 animate-spin" /> {isSettled(status) ? status : "Processing"}
+      <Loader2 className="h-3 w-3 animate-spin" /> Processing
     </Badge>
   );
 }

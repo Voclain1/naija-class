@@ -401,6 +401,7 @@ function parseGroundedOn(raw: unknown): LessonPlanGroundingDto | null {
 const GROUNDING_REASONS: readonly LessonPlanGroundingReasonDto[] = [
   "ok",
   "no-documents",
+  "awaiting-review",
   "no-match",
   "not-configured",
   "error",

@@ -7,6 +7,7 @@ import {
   Ip,
   Param,
   ParseUUIDPipe,
+  Patch,
   Post,
   Query,
   UploadedFile,
@@ -20,11 +21,14 @@ import {
   ValidationError,
   listCurriculumDocumentsQuerySchema,
   pasteCurriculumDocumentSchema,
+  updateCurriculumChunkSchema,
   uploadCurriculumDocumentSchema,
+  type ApproveCurriculumDocumentResponse,
   type CurriculumDocumentDetailResponse,
   type CurriculumDocumentListResponse,
   type CurriculumUploadAcceptedResponse,
   type PasteCurriculumDocumentInput,
+  type UpdateCurriculumChunkInput,
 } from "@school-kit/types";
 
 import type { AuthContext } from "../../common/auth/auth-context";
@@ -112,6 +116,74 @@ export class CurriculumController {
     @Param("documentId", ParseUUIDPipe) documentId: string,
   ): Promise<CurriculumDocumentDetailResponse> {
     return this.service.getOne(authCtx, documentId);
+  }
+
+  // -------------------------------------------------------------------------
+  // CP5 — the review gate (D28-D35).
+  //
+  // All three carry `curriculum.upload`, NOT a new `curriculum.review`
+  // permission (D33). Approving is not a distinct authority from uploading —
+  // someone trusted to add curriculum is trusted to confirm it parsed
+  // correctly — and a new permission would mean a migration and a role-grant
+  // backfill for no access-control gain. The substantive check (this row is
+  // yours, and it is still IN review) lives in the service, exactly as the
+  // ownership-scoped delete below does.
+  //
+  // There is no GET for review: the existing GET :documentId already returns
+  // the document with its chunks in ordinal order, which is precisely the
+  // review payload. Adding a second read of the same rows under a different
+  // name would be duplication, not clarity.
+  // -------------------------------------------------------------------------
+
+  // PATCH /curriculum/documents/:documentId/chunks/:chunkId — correct a heading.
+  //
+  // Applied immediately rather than accumulated and saved on approval, so an
+  // interrupted review loses nothing and the edit counter (D31) records real
+  // corrections as they happen.
+  @Patch(":documentId/chunks/:chunkId")
+  @Permissions("curriculum.upload")
+  async updateChunk(
+    @CurrentUser() authCtx: AuthContext,
+    @Param("documentId", ParseUUIDPipe) documentId: string,
+    @Param("chunkId", ParseUUIDPipe) chunkId: string,
+    @Body() body: UpdateCurriculumChunkInput,
+  ): Promise<CurriculumDocumentDetailResponse> {
+    const input = updateCurriculumChunkSchema.parse(body);
+    return this.service.updateChunk(authCtx, documentId, chunkId, input);
+  }
+
+  // DELETE /curriculum/documents/:documentId/chunks/:chunkId — drop a section
+  // the parser should not have produced (front matter, contents page).
+  //
+  // Returns 200 with the refreshed document rather than 204, unlike the
+  // document delete below: the caller is a review screen that must immediately
+  // re-render the remaining sections, and handing it the new state saves a
+  // follow-up round trip on every click.
+  @Delete(":documentId/chunks/:chunkId")
+  @Permissions("curriculum.upload")
+  async discardChunk(
+    @CurrentUser() authCtx: AuthContext,
+    @Param("documentId", ParseUUIDPipe) documentId: string,
+    @Param("chunkId", ParseUUIDPipe) chunkId: string,
+  ): Promise<CurriculumDocumentDetailResponse> {
+    return this.service.discardChunk(authCtx, documentId, chunkId);
+  }
+
+  // POST /curriculum/documents/:documentId/approve — the gate itself.
+  //
+  // 202, not 200: approval moves the document to EMBEDDING and queues the
+  // vendor work. The teacher polls from here exactly as they did for ingestion
+  // before CP5 — the difference is that the wait now happens AFTER a human has
+  // confirmed the structure, not before anyone has seen it.
+  @Post(":documentId/approve")
+  @HttpCode(202)
+  @Permissions("curriculum.upload")
+  async approve(
+    @CurrentUser() authCtx: AuthContext,
+    @Param("documentId", ParseUUIDPipe) documentId: string,
+    @Ip() ip: string,
+  ): Promise<ApproveCurriculumDocumentResponse> {
+    return this.service.approve(authCtx, documentId, ip);
   }
 
   @Delete(":documentId")
