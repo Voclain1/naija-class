@@ -2889,7 +2889,20 @@ blocker. No change proposed.
 
 ## CP4's eval query set is AUTHOR-GENERATED and must be replaced
 
-**Status: open, tracked, and enforced by the suite itself.**
+**Status: open, tracked, and enforced by the suite itself. PARTIALLY sourced
+as of 2026-09-04 — two items received, all six positives still outstanding.**
+
+**What arrived (2026-09-04)** from a real Virgo Fidelis English teacher:
+the within-subject negative ("writing a university-level academic research
+paper with APA citations", fixture-verified before adding) and the week label
+for the parts-of-speech query (First Term week 1 — it was ambiguous across four
+candidate weeks). The teacher supplied that LABEL, not the query wording.
+
+**What is still missing: the teacher's POSITIVE topics.** They were never
+captured/forwarded. All six positives remain the implementer's own wording,
+and the positives are what the gate scores — so `QUERY_SET_PROVENANCE` stays
+`"author-generated"`. Flipping it with author-written positives would make the
+marker lie, which is worse than not having one.
 
 `packages/ai/evals/fixtures/query-set.ts` currently holds placeholder queries
 written by the implementer (2026-09-04). CP4 measures retrieval quality

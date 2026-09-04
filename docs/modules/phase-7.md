@@ -1316,6 +1316,12 @@ score is reported against, the score is optimistic and must say so. The
 suite therefore prints the floor's provenance — "fitted on this set" versus
 "held out" — beside the result. Whichever it is, it will not be silent.
 
+**UPDATE 2026-09-04 — the first real evidence has arrived, and it narrows the
+gap sharply.** A teacher-supplied within-subject negative cut the measured
+separation from 0.1302 to 0.0415, leaving the 0.69 floor clearing a genuine
+positive by 0.0106. The floor is not being changed on one data point, but this
+is direct evidence for the relative rule. See §14.7.
+
 #### D24 — Grounding sensitivity: the check most likely to catch silent breakage
 
 Generate the same topic twice, with and without grounding, and assert the
@@ -1468,3 +1474,157 @@ sources were neither linted nor typechecked (packages/ai's tsconfig covers
 without an API key, so this costs nothing and the two key-dependent cases skip
 loudly.
 
+
+### 14.7 The teacher's negative collapses D23's margin — 2026-09-04
+
+**This is the observation D23 was deferred to wait for.** It arrived from one
+query, and it is direct evidence for the relative-threshold alternative.
+
+A real Virgo Fidelis English teacher was asked for the within-subject negative
+D22 said the floor actually needs — a topic they would expect this scheme to
+have nothing useful for. They gave:
+
+> "Writing a university-level academic research paper with APA citations"
+
+Verified against the real fixture before adding it: the scheme has no
+research-paper, source, bibliography or citation-format content anywhere. But
+unlike the author's cross-subject negatives, it collides lexically with three
+real entries — First Term WEEK 3's *"Reading to cultivate the skill of
+**referencing**"* (a comprehension skill, not academic citation), Third Term
+WEEK 3's *"Review of Argumentative / Expository Essay"* (the nearest
+legitimate writing neighbour), and First Term WEEK 1's *"my plan for the
+**academic** session"*.
+
+**Measured against real Voyage embeddings, all three negatives are correctly
+rejected — but not by remotely comparable margins:**
+
+| negative query | source | nearest distance | margin outside the 0.69 floor |
+|---|---|---|---|
+| simultaneous linear equations and factorisation | author | 0.8124 | 0.1224 |
+| the causes of the Nigerian civil war | author | 0.8096 | 0.1196 |
+| **university-level academic research paper with APA citations** | **teacher** | **0.7209** | **0.0309** |
+
+The teacher's negative sits **four times closer to the floor** than either
+author-written one. The separation gap that D23 must reason about therefore
+collapses:
+
+```
+worst genuine match   0.6794   ("class debate on a social issue")
+best false match      0.7209   (the teacher's negative)
+gap                   0.0415   <- was 0.1302 before this query existed
+floor 0.69 sits inside it, with 0.0106 of headroom above a REAL POSITIVE
+```
+
+**One teacher query cut the apparent safety margin by 68%.** The floor still
+separates correctly, but it now clears a genuine positive by roughly one
+hundredth of a distance unit — and that is measured on a corpus of ONE
+document in ONE subject, which is the axis D23 already named as the one a
+single constant is most likely to fail on.
+
+**The floor is NOT being changed on this.** One data point does not justify
+retuning a shipped constant, and moving it to widen the negative margin would
+narrow the positive one — the gap is the constraint, not the position within
+it. What this changes is the standing of the alternative: a relative rule
+(best-vs-rest margin) does not depend on the gap staying wide, and this is the
+first real evidence that the gap is narrower than CP3's five hand-checks
+suggested.
+
+**What would settle it:** the same measurement once the teacher's POSITIVE
+queries land, and once a second subject or document format is in the corpus. If
+the gap narrows again on either axis, the absolute floor is not durable and
+D23 should resolve toward the relative rule.
+
+**A caveat that must travel with these numbers:** the 0.69 floor was FITTED on
+author-generated queries and is being scored against a set that is still mostly
+those same queries. The measurement is optimistic, and the true gap is at best
+this wide. The suite prints that provenance beside the result on every run.
+
+**Also recorded — a near-miss worth keeping.** The first candidate for this
+negative was *"parts of speech in third term"*, which looked like an ideal
+within-subject case. It is in fact a strong POSITIVE: the scheme reviews all
+eight parts of speech across Third Term weeks 2, 3 and 4. Filed as a negative
+it would have asserted the opposite of the truth, and since negatives are
+GATED it would have failed correct retrieval — or pressured the floor downward
+to "fix" it. Caught only by checking the fixture rather than trusting the
+label. That is the third confirmed mislabelling of this corpus (after the week
+7/9 debate and the unsatisfiable precision metric), and the first involving a
+label that did not originate with the author: **every label gets verified
+against the source, including a teacher's.**
+
+**Provenance is NOT flipped by any of this.** Only two items arrived — this
+negative, and a week label confirming that the author's parts-of-speech query
+means First Term week 1 (it is ambiguous across four candidate weeks). All six
+POSITIVE queries remain the author's own wording, and the positives are what
+the gate scores. `QUERY_SET_PROVENANCE` stays `"author-generated"`, the
+CP4-IS-NOT-CLOSED banner keeps printing, and CP4 stays open.
+
+#### D27 — Document-verbatim positives, quoted not rephrased (2026-09-04)
+
+Further free-text teacher input was not readily available, so the positive
+query set was rebuilt from the already-parsed, already-verified JSS3 English
+document. **The queries quote the document verbatim. They are deliberately NOT
+rephrased into more natural language.**
+
+**Why quoting beats rephrasing, given the choice.** Rephrasing the document's
+topic text into "what a teacher would type" is an act performed by the system's
+own author, guessing at natural phrasing — the exact circularity D22 exists to
+break, and the same move that produced two prior labelling errors (the week 7/9
+debate, and a parts-of-speech query ambiguous across four weeks). It would also
+have produced approximately the set that already existed, while wearing a
+stronger claim: *derived from verified ground truth*. Same evidence quality,
+higher apparent authority, which is the worst direction for a label to move.
+
+Quoting is honest instead of flattering. A verbatim query shares its exact
+tokens with the target chunk, so a hit shows the pipeline is **wired up**, not
+that the embedding **understands** the topic. That is a real thing to test —
+it is a regression check on chunking, embedding, top-K and the floor — and its
+labels are ground truth with no author judgement in them. It is simply not
+evidence about semantic retrieval, and the suite now says so in those words.
+
+**Three bands, reported separately, because an aggregate over them is
+misleading.** Each query carries a `source`, and the eval prints per-band
+hit@K rather than letting the easy band carry the headline number:
+
+| band | n | hit@1 | hit@5 | nearest-distance range |
+|---|---|---|---|---|
+| `document-verbatim` (labels are ground truth, phrasing is the corpus's) | 14 | 13/14 | **14/14** | 0.457 – 0.655 |
+| `author-paraphrase` (the only semantic signal; weakest provenance) | 6 | 3/6 | **5/6** | 0.465 – 0.679 |
+| negatives — author, cross-subject (weak by construction) | 2 | — | 0/2 rejected ✓ | 0.810 – 0.812 |
+| negative — **teacher, within-subject** | 1 | — | 0/1 rejected ✓ | 0.721 |
+
+**The band gap is the finding.** Verbatim scores 93% hit@1; paraphrase scores
+50%. The aggregate — 16/20, 80% — would have overstated semantic performance
+by a wide margin and hidden which band was carrying it. This is precisely why
+the bands are not averaged.
+
+**A second D23 datum, and it points the same way as §14.7.** The worst
+*verbatim* positive sits at 0.655 — a query quoted word-for-word out of the
+corpus, only 0.035 inside the 0.69 floor. Together with the teacher negative at
+0.721, even the easy band leaves a 0.066 gap. An absolute floor that a verbatim
+self-quote nearly fails is thin, and this is now the second independent
+observation pushing D23 toward the relative rule.
+
+**A latent false-pass, found and fixed by this work.** `expectedWeeks` held
+bare week numbers (`"WEEK 2"`) matched by SUBSTRING. This corpus has three
+`WEEK 2`s and two `WEEK 1`s across terms, so a bare label silently accepts the
+wrong term's chunk as a hit. It had not yet fired only because five of six
+placeholders were First Term. Labels are now FULL heading paths
+(`"First Term > WEEK 2"`) matched by EQUALITY. Found only because the
+document-derived positives span all three terms and made the collision
+unavoidable — a real bug surfaced by broadening coverage.
+
+**The teacher's negative is untouched and must stay that way.** No
+document-derived negatives were added, deliberately: a correct rejection cannot
+be derived from a document that does not contain the topic, and the attempt is
+actively dangerous — the first within-subject candidate, "parts of speech in
+third term", was in fact a strong positive (§14.7).
+
+**Provenance is NOT `teacher-supplied` and the gate does NOT promote to
+`error`.** A new marker value, `document-derived`, was added precisely so this
+set can be described accurately without overstating it: labels ground-truth,
+phrasing the document's own, **no positive query written by a teacher**. Only a
+teacher-phrased positive set clears the banner. CP4 therefore remains open, and
+if it is ever closed on this basis the claim must be narrowed in writing to
+what it actually establishes: *retrieval returns the correct week for verbatim
+and author-paraphrased topics* — not that real teacher phrasing retrieves
+correctly.
