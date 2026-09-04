@@ -34,7 +34,7 @@ export type QuerySetProvenance = "author-generated" | "document-derived" | "teac
  * a stronger value than the queries justify defeats the entire mechanism —
  * that is the one failure this file cannot detect for itself.
  */
-export const QUERY_SET_PROVENANCE: QuerySetProvenance = "author-generated";
+export const QUERY_SET_PROVENANCE: QuerySetProvenance = "document-derived";
 
 /** Free-text note shown in the suite output, so provenance is never invisible. */
 export const QUERY_SET_NOTE =
@@ -44,8 +44,13 @@ export const QUERY_SET_NOTE =
   "check rather than a test of semantic retrieval. 6 positives are the implementer's own " +
   "paraphrases: harder, and the only semantic signal here, but unvalidated guesses at how a " +
   "teacher phrases things. 1 negative is genuinely TEACHER-SOURCED and is the single most " +
-  "informative item in the set. NO positive query was written by a teacher. Scores are " +
-  "reported per band because an aggregate over these three is meaningless.";
+  "informative item in the set. NO positive query was written by a teacher, which is why " +
+  "this is document-derived and NOT teacher-supplied, and why the CP4-IS-NOT-CLOSED banner " +
+  "still fails. Scores are reported per band because an aggregate over these three is " +
+  "meaningless. THE NUMBERS ARE ALSO PROVISIONAL FOR A SECOND, SEPARATE REASON: the JSS3 " +
+  "corpus has NOT been re-ingested since CP3 began embedding headings together with " +
+  "content (D15), so the corpus this suite scores against may not be embedded the way " +
+  "production is. Unconfirmed as of 2026-09-04 — not verified either way.";
 
 /**
  * Where an individual query came from. The eval reports each band separately,
