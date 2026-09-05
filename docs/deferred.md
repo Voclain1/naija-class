@@ -2938,3 +2938,48 @@ different ways and each cost a deploy cycle, while the diagnosis made against
 the real artefact was right first time. A reconstructed query set is that
 mistake in a different place.
 
+
+## A reranker for curriculum retrieval — the one untested mechanism with real potential
+
+**Status: deferred deliberately, prioritised, and now CHECKABLE. Not urgent.**
+
+**Priority: the highest-value open item in Phase 7's retrieval work**, because
+it is the only candidate that addresses D38's one honest limitation. Everything
+else measured has been tried and rejected on evidence (§17.7).
+
+**What it is.** A cross-encoder reranking model (Voyage publishes one) scores
+each retrieved chunk against the query *jointly*, rather than comparing two
+independently-produced vectors. That is the textbook fix for exactly the failure
+CP6 measured: bi-encoder distance answers "are these the same kind of text",
+which is why *"Lesson note on X for JSS3"* sits close to an entire scheme of work
+whatever X is.
+
+**Why it is deferred rather than dismissed.** D38 — capturing the model's own
+relevance judgement — solved the immediate problem at zero marginal cost, 6/6
+including both cases every distance mechanism fails. A reranker adds a second
+vendor dependency and a per-generation cost to a feature governed by a hard
+budget rule, to improve a signal that currently measures as correct. That trade
+is not worth making on today's evidence.
+
+**Why it is worth remembering.** D38's judgement is **self-reported**: a model
+that ignores the instruction will also misreport having followed it. Six cases
+on one document is a real measurement, not a guarantee. A reranker is an
+*independent* signal, which is precisely what a self-report cannot be.
+
+**What would trigger it, and this is the part that changed:** D38's judgement is
+now stored on every plan (`groundedOn.modelSaysGrounded`). So the failure mode
+is **observable** rather than theoretical — a teacher reporting "it said this
+wasn't in my scheme but it is", or the reverse, is now a query against real
+rows rather than a hunch. Revisit when:
+
+  * any plan is found where `modelSaysGrounded` is measurably wrong; or
+  * the corpus grows past one subject/document class, where D38 is unmeasured; or
+  * a second school's documents make the current 2/5 false-accept rate at the
+    RANKING stage (which the model currently absorbs) start costing real tokens.
+
+**What NOT to do instead.** Do not revisit query normalisation (D39) or lexical
+support (D40). Both were built, measured against the real query set, and
+rejected — D39 harms a genuine positive while gaining nothing, and D40 scores
+*perfect confidence on the worst case in the set* because words are not
+meanings. Their code was deleted so it could not be picked up on faith; §17.7
+has the numbers.
