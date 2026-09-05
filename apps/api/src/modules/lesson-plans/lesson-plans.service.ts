@@ -171,6 +171,12 @@ export class LessonPlansService {
     });
 
     const sections = this.parseSections(result.text, context.lessonPlanId);
+    // D38 — read the model's own coverage judgement out of the same response.
+    // Deliberately NOT part of parseSections' required-field check: a missing
+    // judgement must never fail a generation the teacher is waiting for. An
+    // unreadable value is `null` (unknown), which the UI treats as "no claim
+    // either way" rather than as "not grounded".
+    const coverage = readCoverage(result.text);
 
     await withTenant(schoolId, (db) =>
       db.lessonPlan.update({
@@ -184,6 +190,11 @@ export class LessonPlansService {
           groundedOn: {
             reason: retrieval.reason,
             nearestDistance: retrieval.nearestDistance,
+            // D38. Stored beside `reason`, not instead of it: `reason` records
+            // what RETRIEVAL did, this records what the MODEL made of it, and
+            // the two disagreeing is the signal worth having.
+            modelSaysGrounded: coverage.grounded,
+            modelGroundingNote: coverage.note,
             chunks: retrieval.chunks.map((c) => ({
               chunkId: c.chunkId,
               documentId: c.documentId,
@@ -371,6 +382,29 @@ export class LessonPlansService {
 }
 
 /**
+ * D38 — the model's coverage judgement, read defensively.
+ *
+ * Separate from `parseSections` on purpose. A lesson plan missing its
+ * Presentation is unusable and must fail loudly; a lesson plan missing this
+ * boolean is a perfectly good lesson plan with one unknown piece of metadata,
+ * and failing the generation over it would trade a real teacher's work for a
+ * diagnostic.
+ */
+function readCoverage(raw: string): { grounded: boolean | null; note: string | null } {
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const grounded = typeof parsed.groundedInScheme === "boolean" ? parsed.groundedInScheme : null;
+    const note =
+      typeof parsed.groundingNote === "string" && parsed.groundingNote.trim()
+        ? parsed.groundingNote.trim()
+        : null;
+    return { grounded, note };
+  } catch {
+    return { grounded: null, note: null };
+  }
+}
+
+/**
  * Read `groundedOn` back out of its JSON column.
  *
  * VALIDATED, not cast. The column is `Json?`, so anything could be in it — a
@@ -392,6 +426,11 @@ function parseGroundedOn(raw: unknown): LessonPlanGroundingDto | null {
   return {
     reason: reason as LessonPlanGroundingReasonDto,
     nearestDistance: typeof value.nearestDistance === "number" ? value.nearestDistance : null,
+    modelSaysGrounded: typeof value.modelSaysGrounded === "boolean" ? value.modelSaysGrounded : null,
+    modelGroundingNote:
+      typeof value.modelGroundingNote === "string" && value.modelGroundingNote.trim()
+        ? value.modelGroundingNote
+        : null,
     chunks: chunks.flatMap((c): LessonPlanGroundingChunkDto[] => {
       if (c === null || typeof c !== "object") return [];
       const chunk = c as Record<string, unknown>;

@@ -30,7 +30,7 @@ export const LESSON_PLAN_PROMPT: PromptDefinition = {
   // reaches the model genuinely differs: a grounded call carries the school's
   // own scheme of work. A ledger that could not distinguish the two would make
   // any later quality comparison meaningless.
-  version: "4",
+  version: "5",
   // Sonnet 5 rather than Haiku: low volume (a teacher generates a handful a
   // week, not one per student), quality-sensitive, and the output is long and
   // structured. Cost per call is dominated by output tokens here, but the call
@@ -114,6 +114,27 @@ Do not pad. If a section is short because the topic is simple, let it be short.`
 // Activities section is folded into the Presentation steps, where the Nigerian
 // format puts pupil activity. Both columns remain on the table, unpopulated,
 // so pre-v2 rows stay readable.
+/**
+ * The eight PROSE sections, in the order a Nigerian lesson note is written.
+ *
+ * Declared here rather than derived from the schema's `required` (which it was
+ * until v5) because `required` now also carries the two curriculum-coverage
+ * fields — machine-readable metadata, not sections a teacher reads. Deriving
+ * the render order from `required` would put a boolean in the middle of the
+ * lesson note. The schema below spreads this array, so the two still cannot
+ * drift; only the direction of the dependency changed.
+ */
+export const LESSON_PLAN_SECTION_ORDER = [
+  "behaviouralObjectives",
+  "instructionalMaterials",
+  "previousKnowledge",
+  "referenceMaterials",
+  "mainContent",
+  "assessment",
+  "homework",
+  "conclusion",
+] as const;
+
 export const LESSON_PLAN_SCHEMA: Record<string, unknown> = {
   type: "object",
   properties: {
@@ -157,25 +178,36 @@ export const LESSON_PLAN_SCHEMA: Record<string, unknown> = {
       description:
         "Conclusion/summary: how the lesson is closed — what the teacher summarises on the board and what the pupils copy into their notes.",
     },
+    // ---- D38: the relevance judgement, captured instead of discarded -------
+    //
+    // The model already decides this. v4 instructs it to read the supplied
+    // sections, use only those that cover the topic, and say so when none do —
+    // and measured against the real model it does exactly that, correctly, on
+    // the case both distance thresholds fail (phase-7.md §17.1).
+    //
+    // Until v5 that judgement existed only as prose inside Reference Materials,
+    // where nothing could read it. These two fields are the same decision made
+    // machine-readable. No extra call, no second model, no extra cost.
+    groundedInScheme: {
+      type: "boolean",
+      description:
+        "TRUE only if at least one supplied scheme-of-work section genuinely covers this topic and you used it. FALSE if no section was supplied, or if sections were supplied but none of them cover this topic. Answer about COVERAGE OF THE TOPIC, not about whether the sections are from the right subject or class.",
+    },
+    groundingNote: {
+      type: "string",
+      description:
+        "One short sentence a teacher will read, explaining the value above. When true, name the section(s) used. When false, say plainly that the topic was not found in their scheme of work and the plan is written from general knowledge. Never more than one sentence.",
+    },
   },
   required: [
-    "behaviouralObjectives",
-    "instructionalMaterials",
-    "previousKnowledge",
-    "referenceMaterials",
-    "mainContent",
-    "assessment",
-    "homework",
-    "conclusion",
+    ...LESSON_PLAN_SECTION_ORDER,
+    "groundedInScheme",
+    "groundingNote",
   ],
   additionalProperties: false,
 };
 
-// Canonical section order, derived from the schema so the two cannot drift.
-// The service, the teacher UI and the eval suite all read this rather than
-// hard-coding their own list — an ordering regression then fails in one place
-// instead of rendering a scrambled note.
-export const LESSON_PLAN_SECTION_ORDER = LESSON_PLAN_SCHEMA.required as readonly string[];
+
 
 /** One retrieved curriculum chunk, as the prompt sees it. */
 export interface LessonPlanGroundingChunk {
@@ -254,6 +286,11 @@ export function renderLessonPlanPrompt(input: LessonPlanInput): string {
       "Citing a section that does not cover the topic is worse than citing nothing: it",
       "tells a teacher their own curriculum says something it does not say.",
       "",
+      "Then RECORD that judgement in the two fields provided: set groundedInScheme to true",
+      "only if at least one section above genuinely covers this topic and you used it, and",
+      "false if none of them do. This is read by the software, not only by the teacher, so",
+      "it must match what you actually did above.",
+      "",
     );
     grounding.forEach((chunk, i) => {
       const label = chunk.heading ? `${chunk.documentTitle} — ${chunk.heading}` : chunk.documentTitle;
@@ -283,6 +320,8 @@ export function renderLessonPlanPrompt(input: LessonPlanInput): string {
       "Do NOT invent a week number, a page reference, or a scheme-of-work heading: you",
       "have not been given one, and a teacher must be able to tell at a glance that this",
       "plan is not grounded in their own curriculum.",
+      "",
+      "Set groundedInScheme to false — no curriculum extract was supplied for this plan.",
     );
   }
 

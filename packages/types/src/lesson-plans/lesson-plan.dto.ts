@@ -41,6 +41,24 @@ export interface LessonPlanGroundingDto {
   /** Nearest distance even when nothing cleared the floor — CP4 tuning data. */
   nearestDistance: number | null;
   chunks: LessonPlanGroundingChunkDto[];
+  /**
+   * D38 — the MODEL'S own judgement on whether the retrieved sections actually
+   * cover this topic, captured from the generation rather than inferred from
+   * distance.
+   *
+   * This exists because distance cannot answer the question. Measured against
+   * real teacher phrasing (§17.1), two topics absent from the scheme retrieved
+   * CLOSER than genuine matches, so no absolute or relative threshold
+   * separates them. The model, handed the same sections, judged all six test
+   * cases correctly — including both of those.
+   *
+   * `null` on plans generated before v5, and on any generation where the field
+   * could not be read. Null means UNKNOWN, never "not grounded": treating a
+   * missing judgement as a negative one would relabel every older plan.
+   */
+  modelSaysGrounded: boolean | null;
+  /** One sentence from the model explaining the value above. Shown verbatim. */
+  modelGroundingNote: string | null;
 }
 
 export interface LessonPlanDto {

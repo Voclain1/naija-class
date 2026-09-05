@@ -544,6 +544,44 @@ function GroundingLine({
   // false statement about a generation that never attempted one.
   if (!grounding) return null;
 
+  // D38 — retrieval found sections, and the MODEL says none of them cover this
+  // topic. This is the case that was invisible until now, and it is not rare:
+  // it is what happens for every topic a school's scheme does not contain,
+  // because the distance floor cannot reject those (§17.1).
+  //
+  // Rendered as its own state rather than folded into either neighbour. It is
+  // NOT the grounded state — nothing from the scheme was used. It is also not
+  // the plain "no match" state, because retrieval DID return sections and the
+  // teacher may want to know their scheme was searched and found wanting,
+  // rather than assuming the feature did nothing.
+  if (
+    grounding.reason === "ok" &&
+    grounding.chunks.length > 0 &&
+    grounding.modelSaysGrounded === false
+  ) {
+    return (
+      <div className="rounded-md border border-amber-500/40 bg-amber-500/5 p-3 text-sm print:hidden">
+        <p className="font-medium">Not found in your scheme of work</p>
+        <p className="text-muted-foreground mt-0.5">
+          {grounding.modelGroundingNote ??
+            "This topic does not appear in the sections of your scheme of work that were searched, so this plan is written from general knowledge of the Nigerian curriculum."}
+        </p>
+        <p className="text-muted-foreground mt-2 text-xs">
+          Sections searched:{" "}
+          {grounding.chunks
+            .map((c) => c.heading ?? c.documentTitle)
+            .join(", ")}
+          . If one of these is right after all, it may be worth checking the section headings in
+          your{" "}
+          <Link href="/teacher/curriculum" className="underline underline-offset-2">
+            curriculum library
+          </Link>
+          .
+        </p>
+      </div>
+    );
+  }
+
   if (grounding.reason === "ok" && grounding.chunks.length > 0) {
     // D43 — the wording is deliberately weaker than it was, and this is the
     // point rather than a hedge for its own sake.
@@ -570,8 +608,14 @@ function GroundingLine({
       <div className="rounded-md border border-primary/25 bg-primary/5 p-3 text-sm print:hidden">
         <p className="font-medium">Sections used from your scheme of work</p>
         <p className="text-muted-foreground mt-0.5 text-xs">
-          These were matched automatically — please check they are the right ones for this
-          topic.
+          {/* D38 — when the model confirmed coverage, its own sentence is a
+              better line than the generic hedge, because it names WHAT it used
+              and can be checked against the list below. The hedge remains the
+              fallback for plans generated before v5, where there is no
+              judgement to show and the teacher is still the only detector. */}
+          {grounding.modelSaysGrounded === true && grounding.modelGroundingNote
+            ? grounding.modelGroundingNote
+            : "These were matched automatically — please check they are the right ones for this topic."}
         </p>
         <ul className="mt-1 space-y-0.5 text-muted-foreground">
           {grounding.chunks.map((c) => (
