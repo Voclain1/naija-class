@@ -2253,3 +2253,29 @@ and the current wording actively discourages them from looking.
 is the checkpoint. D39 and D40 are each half a day to implement and most of a
 day to evaluate honestly. D42's UI is a day. D43 is an hour and should go first,
 on its own, since it is unblocked and reduces live harm.
+
+### 17.5 D43 shipped — 2026-09-05
+
+Shipped alone and first, ahead of the rest of CP6, because it was unblocked and
+reduces live harm today.
+
+The grounded banner read **"Based on your own scheme of work"**, stated flatly,
+whenever any section cleared the 0.69 floor. Measured against real teacher
+phrasing (§17.1) the floor accepts topics the scheme does not cover at all, so
+that heading asserted — in the school's own voice — that five irrelevant weeks
+were the basis of the plan. Since D36 the plan's own Reference Materials may now
+say the opposite a few lines below, and a heading contradicting the body is the
+clearest possible evidence the heading is wrong.
+
+It now reads **"Sections used from your scheme of work"** with a line beneath:
+*"These were matched automatically — please check they are the right ones for
+this topic."*
+
+The reason for the weaker wording is not caution for its own sake. Until CP6 can
+tell a covered topic from an uncovered one, **the teacher is the detector** —
+they are the only person who can look at "Week 3 — Stress and Intonation" under
+a summary-writing plan and know it is wrong. The old wording told them the check
+had already been done for them. The new wording asks them to make it, and costs
+nothing on the plans where retrieval was right.
+
+Not a fix for the detection failure, and deliberately not presented as one.
