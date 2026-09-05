@@ -2353,3 +2353,98 @@ Two structural evals were updated rather than loosened: the schema's
 where they land (`groundedOn`), so a THIRD orphan still fails, and the section
 order is now declared explicitly rather than derived from `required` — otherwise
 a boolean would render in the middle of the teacher's lesson note.
+### 17.7 D39 and D40 measured and REJECTED; D41 decided — 2026-09-05
+
+Both candidates were built and scored against the real query set (23 covered
+topics, 5 uncovered). Both fail. Recording the measurements in full, because a
+rejected mechanism is only useful if the next person can see why rather than
+re-proposing it.
+
+#### D39 — query normalisation: REJECTED
+
+Stripping the boilerplate frame ("lesson note on", "for JSS3", "with examples")
+did move the two problem negatives away from the corpus, which is the right
+direction:
+
+| query | nearest raw | nearest normalised |
+|---|---|---|
+| `direct and indirect speech` (uncovered) | 0.5672 | **0.6106** |
+| `summary writing` (uncovered) | 0.6022 | **0.6649** |
+
+**But it moved a genuine positive the same way, and further:**
+
+| `How to write a formal letter for JSS3` (covered) | 0.6641 | **0.6885** |
+
+That query starts just inside the 0.69 floor and ends 0.0015 from falling
+outside it. Normalisation increases spread without separating anything: false
+accepts stay at **2/5**, and the best achievable absolute cut is **2 errors**
+either way — 0.680 raw, 0.689 normalised. Identical.
+
+**It also strips real content words.** `"How to write a formal letter for JSS3"`
+normalises to `"a formal letter for"` — but *how to write* IS the topic of a
+letter-writing lesson. `"teaching pupils to find the main idea..."` loses
+*teaching*. The docstring warned that an over-eager normaliser would turn hits
+into misses in a way that is hard to notice; it then did exactly that, in the
+first measurement. The conservative design was not conservative enough, and
+tightening it further would leave it doing nothing at all.
+
+#### D40 — lexical support: REJECTED, and anti-correlated where it matters
+
+The motivating case was real: "summary" occurs zero times in the corpus. But
+scored across the whole set, term overlap does not separate covered from
+uncovered at any threshold:
+
+| threshold | false accepts | false rejects |
+|---|---|---|
+| > 0.20 | 4/5 | 1/23 |
+| > 0.34 | 2/5 | 1/23 |
+| > 0.40 | 2/5 | 3/23 |
+| > 0.50 | 1/5 | 4/23 |
+
+At its best setting it is **no better than the floor alone on false accepts and
+adds a false reject.** Combining it with normalisation makes it worse:
+
+```
+direct and indirect speech (UNCOVERED)   lexical support 1.00
+```
+
+**Perfect lexical support for a topic the scheme does not teach.** Every word
+is present — "direct" and "indirect" from *"Direct and Indirect Forms of
+Modals"*, "speech" from *"Speech Work"* and *"parts of speech"* — with entirely
+different meanings. Meanwhile genuine paraphrases score 0.22, 0.40, 0.50.
+
+So on the single hardest case in the set, the lexical signal is **maximally
+confident and completely wrong** — anti-correlated exactly where a veto was
+supposed to help. Words are not meanings, and a scheme of work is dense enough
+that almost any English teaching vocabulary appears somewhere in it.
+
+**Neither module is being kept as dormant code.** Both were deleted after
+measurement. Shipping a rejected mechanism as an unused export invites someone
+to wire it up later on the strength of its plausible docstring; the numbers
+above are what should survive, and they are reproducible from this section.
+
+#### D41 — the decision
+
+| mechanism | false accepts | verdict |
+|---|---|---|
+| absolute floor 0.69 (shipped) | **2/5** | keep, as a RANKING cutoff only |
+| relative best-vs-rest (§17.1) | interleaved | disproven |
+| D39 query normalisation | **2/5** | rejected — no gain, harms a positive |
+| D40 lexical support | **2/5** at best | rejected — anti-correlated on the worst case |
+| **D38 model judgement** | **0/2 on the cases that defeat the rest; 6/6 overall** | **adopted** |
+
+**D38 is the detector. Nothing else measured is.** That is a stronger statement
+than "D38 is the best of four" — three of the four do not work at all, and the
+one that does is the one that reads the sections rather than measuring them.
+
+The 0.69 floor stays exactly where it is, with its role narrowed and stated:
+**it decides which sections are worth putting in front of the model, and it no
+longer decides whether the plan is grounded.** D38 decides that. A floor that
+admits two irrelevant topics out of five is acceptable for the first job — the
+model then declines them — and was never acceptable for the second.
+
+**What would change this verdict:** a reranker (deferred at D40, still
+deferred) is the one untested mechanism with a real chance, and D38's
+self-reporting weakness is exactly what a reranker would cover. Worth revisiting
+if D38's judgement is ever measured wrong in production — which is now visible,
+because it is stored on every plan.
