@@ -23,30 +23,47 @@
  *   curriculum document, so their week labels are ground truth. The phrasing
  *   is the DOCUMENT'S, not a teacher's, and is therefore easy by construction
  *   (see `document-verbatim` below). Not independently phrased.
+ * - `teacher-phrased` — the queries are a real teacher's own wording, but their
+ *   WEEK LABELS came from verifying each topic against the source document,
+ *   because the teacher's own week claims were checked and were wrong. This is
+ *   the honest description of the current set, and it is deliberately NOT
+ *   `teacher-supplied`: D22 asked for topics AND labels from a teacher, and
+ *   only half of that arrived.
  * - `teacher-supplied` — the positive queries were written AND labelled by a
- *   real teacher. This is the only value that represents real-world phrasing,
- *   and the only one under which CP4's original claim is fully established.
+ *   real teacher, with the labels holding up against the document. This is the
+ *   only value under which CP4's original claim is fully established.
  */
-export type QuerySetProvenance = "author-generated" | "document-derived" | "teacher-supplied";
+export type QuerySetProvenance =
+  | "author-generated"
+  | "document-derived"
+  | "teacher-phrased"
+  | "teacher-supplied";
 
 /**
  * CHANGE THIS only to match what the queries below actually are. Setting it to
  * a stronger value than the queries justify defeats the entire mechanism —
  * that is the one failure this file cannot detect for itself.
  */
-export const QUERY_SET_PROVENANCE: QuerySetProvenance = "document-derived";
+export const QUERY_SET_PROVENANCE: QuerySetProvenance = "teacher-phrased";
 
 /** Free-text note shown in the suite output, so provenance is never invisible. */
 export const QUERY_SET_NOTE =
-  "MIXED provenance, honestly mixed (2026-09-04). 14 positives are quoted VERBATIM from the " +
+  "MIXED provenance, honestly mixed (2026-09-05). FIVE queries are a real Virgo Fidelis " +
+  "teacher's OWN WORDING — the independently-phrased input CP4 waited for. Their WEEK " +
+  "LABELS are NOT the teacher's: all five claimed weeks were checked against the source " +
+  "document and ALL FIVE WERE WRONG (0/5), so the labels here come from fixture " +
+  "verification instead. Two of the five turned out not to be in the scheme at all and are " +
+  "now the set's best negatives. That is why this is teacher-PHRASED, not teacher-supplied. " +
+  "14 further positives are quoted VERBATIM from the " +
   "verified JSS3 English scheme, so their week labels are ground truth but their phrasing is " +
   "the document's own and matches the corpus lexically — easy by construction, and a plumbing " +
   "check rather than a test of semantic retrieval. 6 positives are the implementer's own " +
   "paraphrases: harder, and the only semantic signal here, but unvalidated guesses at how a " +
   "teacher phrases things. 1 negative is genuinely TEACHER-SOURCED and is the single most " +
-  "informative item in the set. NO positive query was written by a teacher, which is why " +
-  "this is document-derived and NOT teacher-supplied, and why the CP4-IS-NOT-CLOSED banner " +
-  "still fails. Scores are reported per band because an aggregate over these three is " +
+  "informative item in the set. THREE positives are now teacher-WRITTEN, but none is " +
+  "teacher-LABELLED, which is why the CP4-IS-NOT-CLOSED banner still fails: D22 asked for " +
+  "topics and labels, and the labels did not survive verification. Scores are reported per " +
+  "band because an aggregate over these four is "
   "meaningless. THE NUMBERS ARE ALSO PROVISIONAL FOR A SECOND, SEPARATE REASON: the JSS3 " +
   "corpus has NOT been re-ingested since CP3 began embedding headings together with " +
   "content (D15), so the corpus this suite scores against may not be embedded the way " +
@@ -273,6 +290,55 @@ export const QUERY_SET: readonly LabelledQuery[] = [
       "weeks. The teacher confirmed First Term week 1. The WORDING is still the author's.",
   },
 
+  // ---- band 2b: TEACHER-PHRASED positives (2026-09-05) --------------------
+  //
+  // A real Virgo Fidelis English teacher supplied five topics in their own
+  // words. This is the independently-phrased input D22 has wanted since CP3 —
+  // and note the SHAPE of it, which no author guessed: every one is framed as
+  // "lesson note on X for JSS3", not as a bare topic. That frame turns out to
+  // be the likeliest cause of the retrieval failures in phase-7.md §17.1,
+  // because it matches an entire scheme of work regardless of topic.
+  //
+  // THE LABELS ARE NOT THEIRS. All five claimed weeks were checked against the
+  // source document and all five were wrong — not marginally: two of the topics
+  // are not in the scheme in ANY week. The labels below therefore come from
+  // fixture verification, which is why the set is `teacher-phrased` rather than
+  // `teacher-supplied`. Recorded because it is the strongest evidence in this
+  // whole exercise that EVERY label gets verified against the source no matter
+  // who supplies it — including a teacher who teaches the subject daily.
+  {
+    query: "JSS3 comprehension lesson on identifying main ideas",
+    expectedWeeks: ["First Term > WEEK 1", "First Term > WEEK 9"],
+    source: "teacher",
+    rationale:
+      "TEACHER-PHRASED. Claimed week 3; week 3's comprehension row is actually 'Reading to " +
+      "cultivate the skill of referencing'. Main ideas are First Term W1 ('Scanning for main " +
+      "points') and W9 ('Identification of the topic sentence'). Retrieval returns W9 first " +
+      "at 0.5979 — correct against the VERIFIED label, a miss against the teacher's.",
+  },
+  {
+    query: "Lesson note on simile, metaphor and personification",
+    expectedWeeks: ["Third Term > WEEK 3"],
+    source: "teacher",
+    rationale:
+      "TEACHER-PHRASED. Claimed week 5; the literary terms are Third Term week 3 ('Metaphor, " +
+      "Simile, Alliteration, Irony'). Personification appears NOWHERE in the scheme, which a " +
+      "teacher searching for it cannot know. Retrieved correctly at 0.5247, the best margin in " +
+      "the whole set.",
+  },
+  {
+    query: "How to write a formal letter for JSS3",
+    expectedWeeks: ["Third Term > WEEK 4", "First Term > WEEK 5"],
+    source: "teacher",
+    rationale:
+      "TEACHER-PHRASED, and the set's most valuable POSITIVE because it MISSES. Claimed week 4 " +
+      "— correct only if Third Term was meant; First Term week 4 is 'How to care for a motor " +
+      "vehicle'. Formal letters are Third Term W4 and First Term W5. Retrieval keeps just ONE " +
+      "chunk at 0.6641 and it is the front-matter 'First Term' block, not either real week. A " +
+      "genuine topic, genuinely present, genuinely not found — and lost to a junk chunk that " +
+      "CP5's review gate now lets a teacher discard.",
+  },
+
   // ---- band 3: negatives --------------------------------------------------
   {
     query: "simultaneous linear equations and factorisation",
@@ -307,5 +373,30 @@ export const QUERY_SET: readonly LabelledQuery[] = [
       "too loose, this leaks; the cross-subject negatives above never could. " +
       "DO NOT REPLACE OR DILUTE — this single query collapsed D23's measured separation gap " +
       "from 0.1302 to 0.0415 and is the most informative item in the file.",
+  },
+  {
+    query: "Lesson note on direct and indirect speech for JSS3",
+    expectedWeeks: null,
+    source: "teacher",
+    rationale:
+      "NEGATIVE, TEACHER-PHRASED (2026-09-05) — and it CURRENTLY LEAKS at 0.5678, deep inside " +
+      "the 0.69 floor and CLOSER than three genuine positives. The teacher offered it as a " +
+      "week-2 positive; reported speech appears nowhere in this scheme. The only 'direct/" +
+      "indirect' in the document is First Term week 5's 'Direct and Indirect Forms of MODALS', " +
+      "a false friend. Left failing on purpose: this is the case that disproved both the " +
+      "absolute floor and D23's relative rule (phase-7.md §17.1).",
+  },
+  {
+    query: "JSS3 summary writing lesson note with examples",
+    expectedWeeks: null,
+    source: "teacher",
+    rationale:
+      "NEGATIVE, TEACHER-PHRASED (2026-09-05) — LEAKS at 0.6018 with all five slots filled. " +
+      "'Summary', 'summarise' and 'summarize' occur ZERO times in the corpus, which is what " +
+      "makes this the sharpest argument for D40's lexical check: a dense vector always returns " +
+      "a nearest neighbour, however absent the topic. THIS IS THE QUERY THAT EXPOSED THE LIVE " +
+      "HALLUCINATION (D36): fed these five irrelevant chunks, the real model cited First Term " +
+      "week 3 and Third Term week 3 as the curriculum basis for a summary-writing lesson. " +
+      "Left failing on purpose — v4 stops the false citation, but the false MATCH is CP6's job.",
   },
 ];
