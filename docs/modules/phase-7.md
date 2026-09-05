@@ -2066,3 +2066,190 @@ Materials now contradict that heading. Fixing detection is D23's relative-
 threshold work, and the teacher-facing decision point is its own plan-first.
 This was shipped alone and immediately because it removes the false CITATION —
 the part that actively misinforms — without waiting for either.
+
+---
+
+## 17. CP6 plan-first — honest detection, and the teacher's decision point
+
+Written 2026-09-05, after D36 shipped. Combines what were two questions — D23's
+absolute-vs-relative threshold, and Arinzechukwu's "tell the teacher when their
+topic isn't in the curriculum" — because **the UX depends entirely on detection
+working**, and a decision point built on a detector that cannot detect would
+simply move the false confidence one screen earlier.
+
+**Scope:** make "is this topic in the school's scheme of work?" answerable, then
+put the answer in front of the teacher. Decisions D37–D43.
+
+### 17.1 The finding that reframes this: the relative rule does not work either
+
+D23 deferred the threshold question pending real data, naming a **relative**
+rule (best distance versus the rest) as the likely alternative to the 0.69
+constant. That data now exists — five real teacher-phrased queries — and it
+disqualifies both.
+
+**Absolute floor, nearest distance per query:**
+
+| query | truth | nearest |
+|---|---|---|
+| `direct and indirect speech` | **not in corpus** | **0.5678** |
+| `simile, metaphor, personification` | in corpus (TT W3) | 0.5247 |
+| `identifying main ideas` | in corpus (FT W1/W9) | 0.5979 |
+| `summary writing` | **not in corpus** | **0.6018** |
+| `formal letter` | in corpus (TT W4) | 0.6641 |
+
+Two topics the scheme does not teach are **closer** than a topic it does. No
+absolute cut separates them: any threshold rejecting 0.5678 discards almost
+every genuine match first.
+
+**Relative rule (best vs second-best), which is what D23 expected to work:**
+
+| query | truth | best → 2nd | gap |
+|---|---|---|---|
+| `identifying main ideas` | TRUE | 0.5979 → 0.6092 | **0.0113** |
+| `direct and indirect speech` | FALSE | 0.5678 → 0.5799 | **0.0121** |
+| `summary writing` | FALSE | 0.6018 → 0.6460 | **0.0442** |
+| `simile, metaphor` | TRUE | 0.5247 → 0.5747 | **0.0500** |
+
+**Completely interleaved.** The smallest gap is a true match; the second
+largest is a false one. **D23's presumed answer is disproven, not confirmed** —
+recording that plainly because the alternative has been carried as the likely
+fix since CP3, and continuing to assume it would waste the checkpoint.
+
+**Why both fail, most probably:** the queries share a frame — *"Lesson note on
+X for JSS3"*, *"JSS3 … lesson note with examples"* — and that frame matches an
+entire scheme of work regardless of topic. The topic words are a small part of
+the embedding; the register is most of it. Distance is measuring "is this a
+JSS3 English curriculum document", which every chunk is.
+
+**Caveat that must travel with this:** five queries, one document, one subject.
+Enough to disqualify a mechanism (a rule that fails on real cases is disproven
+by them) but NOT enough to validate one. D40 addresses that asymmetry directly.
+
+### 17.2 Decisions
+
+#### D37 — Detection is a SEPARATE decision from ranking, and needs its own mechanism
+
+Retrieval answers "which sections are nearest". That is a ranking question and
+pgvector answers it well. "Does the scheme cover this topic at all" is a
+different question, and the evidence above shows nearest-distance cannot answer
+it at any threshold, absolute or relative.
+
+Treating them as one question is the root error. CP6 adds a **relevance gate**
+after ranking, rather than continuing to tune the ranking's cutoff.
+
+#### D38 — The model's own relevance judgement is the primary candidate, because it already exists and is already right
+
+v4 (D36) instructs the model to read the retrieved sections, use only those
+that cover the topic, and **say so when none do**. Measured against the real
+model, it did exactly that on the case both thresholds fail — correctly
+reporting that no supplied week covered summary writing.
+
+**So a working detector is already running in production, and its answer is
+being thrown away.** The plan is to capture it: add a structured field to the
+lesson-plan JSON schema — `groundedInScheme: boolean` plus a short
+`groundingNote` — and persist it alongside `groundedOn`.
+
+**Why this is not the LLM-as-judge that D26 rules out.** D26 refuses a *second*
+model scoring the *quality* of a first model's output, because validating the
+judge needs labelled data we do not have. This is the *same* model, in the
+*same* call, reporting whether the material it was handed covered the topic it
+was asked about — a question it must already answer internally to write the
+plan at all. No extra call, no extra cost, no second model to validate.
+
+**Its honest weakness:** it is self-reported, and a model that ignores the
+instruction will also misreport it. That is why D39 does not depend on it alone
+and D40 measures it.
+
+#### D39 — Query normalisation, tested as a cheap independent lever
+
+Strip the boilerplate frame before embedding: *"lesson note on"*, *"lesson
+plan"*, *"for JSS3"*, *"with examples"*, class-level and subject names already
+known from the request. If §17.1's diagnosis is right, removing the register
+that matches everything should move genuine and spurious matches apart.
+
+Cheap, deterministic, testable offline against the existing query set, and it
+composes with everything else. **It is a hypothesis, not a decision** — the
+plan commits to measuring it, not to shipping it.
+
+#### D40 — A hybrid lexical check, for the case embeddings structurally cannot see
+
+`summary writing` has **zero** lexical support in the corpus — the words
+"summary", "summarise", "summarize" do not occur once. A term-frequency check
+(BM25, or something much simpler) would find nothing and say so, where a dense
+vector always returns its nearest neighbour no matter how far.
+
+This is the complement of D38's weakness: lexical matching cannot recognise a
+paraphrase, but it cannot hallucinate a topic that is absent either. Where they
+disagree, that disagreement is itself a signal worth surfacing.
+
+**Rerankers are the obvious fourth option and are deliberately deferred, not
+dismissed.** A cross-encoder re-ranking model is the textbook fix for exactly
+this failure. It is deferred because it adds a second vendor dependency and a
+per-generation cost to a feature whose spend model is already the subject of a
+hard rule, and because D38 may make it unnecessary. Revisit if D38 and D40
+measured together do not separate the set.
+
+#### D41 — Measure all three against a set that includes the failures, before choosing
+
+No mechanism ships on argument. The eval suite gains the five teacher-phrased
+queries (three positives with fixture-verified labels, two negatives), and each
+candidate is scored on the metric that actually matters here: **can it tell a
+covered topic from an uncovered one**, reported as false-accept and
+false-reject counts rather than hit@K.
+
+The 0.69 floor stays in place unchanged until something measurably beats it.
+Shipping a differently-wrong threshold would be worse than the current one,
+because it would look like the problem had been addressed.
+
+#### D42 — The teacher's decision point comes AFTER generation, not before
+
+Arinzechukwu's proposal is right and this is the one design choice inside it.
+
+An interstitial *before* generation — "this topic isn't in your scheme, generate
+anyway?" — reads as the safer design and is worse in practice. It blocks the
+teacher on a question they cannot answer better than the system can, it costs a
+round trip before any work is done, and when detection is wrong it *prevents* a
+correct grounded plan rather than merely mislabelling one. It also cannot use
+D38's signal at all, which only exists after generation.
+
+**So: always generate, then label honestly and prominently.** Concretely:
+
+- When the topic is not covered, the plan is headed **"Not found in your scheme
+  of work — written from general knowledge"**, with the same visual weight the
+  grounded banner has today, not a muted footnote.
+- The teacher gets the two actions that are actually useful at that moment:
+  **re-run against the scheme** (if they think detection was wrong) and **open
+  the curriculum library** (if the scheme genuinely lacks it — which, post-CP5,
+  may mean a section was discarded during review).
+- The generated plan is kept either way. A teacher who asked for a lesson plan
+  gets a lesson plan.
+
+#### D43 — The grounded banner must stop overstating, immediately and regardless
+
+Today a plan reads **"Based on your own scheme of work"** whenever any chunk
+cleared the floor — including the summary-writing case, where v4's own
+Reference Materials now say the opposite two inches below. The heading
+contradicting the plan's own text is the clearest possible evidence the heading
+is wrong.
+
+This does not depend on detection working and should not wait for it: the
+banner shows the cited sections and invites the check — *"check these are the
+right sections"* — because until CP6 lands, **the teacher is the detector**,
+and the current wording actively discourages them from looking.
+
+### 17.3 What CP6 does NOT do
+
+- **It does not make retrieval better.** It makes the system honest about when
+  retrieval failed. A topic genuinely in the scheme that ranks badly is still
+  a miss (`formal letter`, 0.6641, is one today).
+- **It does not settle the threshold for other subjects or document formats.**
+  One document, one subject, five real queries.
+- **It does not close CP4.** Still no teacher-authored positive labels — this
+  batch's labels were 0/5 correct against the fixture.
+
+### 17.4 Estimate
+
+**4–6 days.** D38 is small (a schema field and persistence) but its measurement
+is the checkpoint. D39 and D40 are each half a day to implement and most of a
+day to evaluate honestly. D42's UI is a day. D43 is an hour and should go first,
+on its own, since it is unblocked and reduces live harm.
