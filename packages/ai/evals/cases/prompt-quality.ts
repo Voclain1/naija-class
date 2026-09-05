@@ -195,10 +195,52 @@ export const promptQualityCase: EvalCase = {
               "reach the model, or the Reference Materials section cannot cite them",
           ),
           check(
-            "lesson-plan v3: a grounded render tells the model to PREFER the school's scheme",
-            /prefer them over your own knowledge/i.test(grounded),
+            "lesson-plan v4: a grounded render tells the model to PREFER the school's scheme",
+            /prefer those over/i.test(grounded),
             "without this the model treats the extract as one source among many and " +
               "the school's own curriculum stops being the differentiator",
+          ),
+          // ---- v4: the retrieved sections are NOT presumed relevant --------
+          //
+          // The defect this pins, found 2026-09-05 from a real teacher query:
+          // retrieval returned five chunks for "summary writing", a topic that
+          // appears NOWHERE in the school's scheme, because every chunk sat
+          // inside the 0.69 distance floor. v3 told the model to prefer them
+          // and to draw Reference Materials from them, unconditionally — and
+          // the real model duly cited First Term Week 3 and Third Term Week 3
+          // as the curriculum basis for a summary-writing lesson.
+          //
+          // That is the hallucination this phase exists to prevent, arriving
+          // through the GROUNDED path rather than the ungrounded one. The floor
+          // fix is D23's job; this instruction is what stops a bad retrieval
+          // from becoming a false citation in the meantime.
+          check(
+            "lesson-plan v4: the model is told retrieved sections MAY NOT match the topic",
+            /may not cover the topic/i.test(grounded) &&
+              /selected automatically by similarity search/i.test(grounded),
+            "retrieval selects by distance, not by understanding — a prompt that presents " +
+              "its output as authoritative curriculum turns every bad match into a false " +
+              "citation of the school's own scheme",
+          ),
+          check(
+            "lesson-plan v4: the model is told to IGNORE sections that do not cover the topic",
+            /ignore any section that does not cover this topic/i.test(grounded) &&
+              /do not cite it/i.test(grounded),
+            "without an explicit instruction to drop them, an irrelevant section that was " +
+              "supplied reads to the model as one it is expected to use",
+          ),
+          check(
+            "lesson-plan v4: the model is told to SAY SO when no section covers the topic",
+            /if none of the sections below cover this topic/i.test(grounded) &&
+              /general knowledge/i.test(grounded),
+            "the teacher's only defence against a wrong retrieval is being told it happened; " +
+              "silence here is what makes a false grounding indistinguishable from a real one",
+          ),
+          check(
+            "lesson-plan v4: names the harm, not just the rule",
+            /worse than citing nothing/i.test(grounded),
+            "an instruction with its reason attached survives paraphrase and edge cases that " +
+              "a bare rule does not",
           ),
           check(
             "lesson-plan v3: an UNGROUNDED render still asks for a lesson plan",
@@ -208,10 +250,32 @@ export const promptQualityCase: EvalCase = {
               "get a usable plan, with no dangling reference to an extract it never received",
           ),
           check(
-            "lesson-plan v3: an ungrounded render says so, rather than staying silent",
-            /no scheme of work has been uploaded/i.test(ungrounded),
+            "lesson-plan v4: an ungrounded render says so, rather than staying silent",
+            /no curriculum extract for this plan/i.test(ungrounded) &&
+              /do not invent a week number/i.test(ungrounded),
             "silence would leave the model unable to tell an absent curriculum from one " +
               "it was given and ignored, inviting invented page and week references",
+          ),
+          check(
+            "lesson-plan v4: an ungrounded render asks the OUTPUT to admit it, not just the model",
+            /state this in the\s+first line of reference materials/i.test(ungrounded),
+            "a model that knows it is ungrounded still produces a plan that LOOKS grounded " +
+              "unless it is told to say so where the teacher reads it",
+          ),
+          // v3 asserted "no scheme of work has been uploaded" on every empty
+          // path. That is FALSE when a school HAS uploaded one and nothing
+          // cleared the distance floor — which, given the floor accepts
+          // unrelated topics, is the commonest empty path there is.
+          check(
+            "lesson-plan v4: does not claim nothing was uploaded when something was",
+            /but no section of it matched this topic/i.test(
+              renderLessonPlanPrompt({ ...base, groundingAbsenceReason: "no-match" }),
+            ) &&
+              !/no scheme of work has been uploaded/i.test(
+                renderLessonPlanPrompt({ ...base, groundingAbsenceReason: "no-match" }),
+              ),
+            "the prompt is the model's only description of the world outside its own " +
+              "knowledge; a false statement there is not cosmetic",
           ),
         ];
       })(),

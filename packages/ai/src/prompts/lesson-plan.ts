@@ -30,7 +30,7 @@ export const LESSON_PLAN_PROMPT: PromptDefinition = {
   // reaches the model genuinely differs: a grounded call carries the school's
   // own scheme of work. A ledger that could not distinguish the two would make
   // any later quality comparison meaningless.
-  version: "3",
+  version: "4",
   // Sonnet 5 rather than Haiku: low volume (a teacher generates a handful a
   // week, not one per student), quality-sensitive, and the output is long and
   // structured. Cost per call is dominated by output tokens here, but the call
@@ -197,6 +197,15 @@ export interface LessonPlanInput {
    * FIRST-CLASS case, not a degraded one — see the render function.
    */
   readonly groundingChunks?: readonly LessonPlanGroundingChunk[];
+  /**
+   * WHY there is no extract, when there is none. v3 asserted "no scheme of work
+   * has been uploaded" on every empty path, which is FALSE for three of the
+   * four: a school can have a scheme of work uploaded and simply have nothing
+   * clear the distance floor, or have the vendor be down. Telling the model a
+   * false thing about the school's state is not harmless — it is the one part
+   * of the prompt describing reality outside the model's knowledge.
+   */
+  readonly groundingAbsenceReason?: "no-documents" | "no-match" | "unavailable";
 }
 
 // Renders the user turn. Kept as a pure function of its inputs, with no
@@ -225,10 +234,25 @@ export function renderLessonPlanPrompt(input: LessonPlanInput): string {
       "",
       "--- THIS SCHOOL'S OWN SCHEME OF WORK ---",
       "The sections below are extracted from the scheme of work this school actually uses.",
-      "Prefer them over your own knowledge wherever they differ: they are what this",
-      "school's inspectors and head teacher will check the lesson against.",
-      "Draw the Reference Materials section from these sections, citing them by their",
-      "heading, rather than naming textbooks you were not given.",
+      "",
+      "THEY WERE SELECTED AUTOMATICALLY BY SIMILARITY SEARCH, NOT BY A PERSON, AND THEY",
+      "MAY NOT COVER THE TOPIC YOU HAVE BEEN ASKED TO PLAN. Read them before relying on",
+      "them, and judge each one on whether it actually covers this topic:",
+      "",
+      "  * Use only the sections that genuinely relate to the topic. Prefer those over",
+      "    your own knowledge wherever they differ — they are what this school's",
+      "    inspectors and head teacher will check the lesson against — and cite them in",
+      "    Reference Materials by their heading.",
+      "  * IGNORE any section that does not cover this topic. Do NOT cite it, do not",
+      "    work it into the lesson, and do not mention its week or heading anywhere.",
+      "  * If NONE of the sections below cover this topic, say so plainly in the first",
+      "    line of Reference Materials — for example: \"This topic was not found in the",
+      "    school's scheme of work; this plan is written from general knowledge of the",
+      "    Nigerian curriculum.\" — then write the plan from your own knowledge and keep",
+      "    Reference Materials to widely-available texts.",
+      "",
+      "Citing a section that does not cover the topic is worse than citing nothing: it",
+      "tells a teacher their own curriculum says something it does not say.",
       "",
     );
     grounding.forEach((chunk, i) => {
@@ -241,12 +265,24 @@ export function renderLessonPlanPrompt(input: LessonPlanInput): string {
     // to know whether it was given a curriculum and ignored it, and the v3
     // instruction to "draw Reference Materials from the sections above" would
     // refer to nothing — inviting it to invent sections that look cited.
+    const why =
+      input.groundingAbsenceReason === "no-match"
+        ? "This school has uploaded a scheme of work for this subject and class level, but no section of it matched this topic closely enough to use."
+        : input.groundingAbsenceReason === "unavailable"
+          ? "This school's scheme of work could not be searched for this generation."
+          : "No scheme of work has been uploaded for this subject and class level.";
     lines.push(
       "",
-      "No scheme of work has been uploaded for this subject and class level, so no",
-      "curriculum extract is provided. Write the plan from your knowledge of the",
-      "Nigerian curriculum, and keep Reference Materials to widely-available texts",
-      "rather than inventing a specific page or week reference.",
+      "--- NO CURRICULUM EXTRACT FOR THIS PLAN ---",
+      why,
+      "",
+      "Write the plan from your knowledge of the Nigerian curriculum. State this in the",
+      "first line of Reference Materials — for example: \"This plan is written from",
+      "general knowledge of the Nigerian curriculum, not from the school's own scheme of",
+      "work.\" — and keep the rest of Reference Materials to widely-available texts.",
+      "Do NOT invent a week number, a page reference, or a scheme-of-work heading: you",
+      "have not been given one, and a teacher must be able to tell at a glance that this",
+      "plan is not grounded in their own curriculum.",
     );
   }
 

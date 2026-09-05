@@ -1978,3 +1978,91 @@ What covers the flow instead, and what does not:
 That gap closes with a manual pass against a deployment that has real keys, and
 it should be done before this is announced to a school. It is a real gap and is
 recorded as one rather than being reported as covered.
+
+---
+
+## 16. D36 — The grounded prompt must not presume its own retrieval was right
+
+**Fixed 2026-09-05, urgently, ahead of any UX work.** Found from a real teacher
+query during CP4's query-set verification.
+
+### What was actually wrong
+
+The ungrounded path was fine and had been since CP3. It already told the model
+it had no curriculum, already forbade inventing week and page references, and
+the UI already labelled the plan as ungrounded. That half was never the defect.
+
+**The defect was on the GROUNDED path, and it was live.** v3 said, without
+qualification:
+
+> Prefer them over your own knowledge wherever they differ … Draw the Reference
+> Materials section from these sections, citing them by their heading.
+
+That is correct when retrieval is correct. It is a hallucination generator when
+retrieval is wrong — and retrieval IS wrong for topics a scheme does not cover,
+because the 0.69 floor accepts them. A real teacher query, *"JSS3 summary
+writing lesson note with examples"*, retrieved five chunks at 0.6018–0.6642 for
+a topic that appears **nowhere** in the JSS3 English scheme, so the model was
+handed five irrelevant weeks and instructed to prefer and cite them.
+
+**Measured against the real model, v3 did exactly that:**
+
+```
+Reference Materials
+- JSS3 English Scheme of Work — First Term, Week 3: Reading to cultivate the
+  skill of referencing
+- JSS3 English Scheme of Work — Third Term, Week 3: Comprehension/Vocabulary
+  Development — Use past questions
+```
+
+A summary-writing lesson, citing weeks about intonation and past questions, and
+the UI rendering **"Based on your own scheme of work"** above it. The teacher is
+told their own curriculum says something it does not say. That is the D13
+failure mode — inventing curriculum — arriving through the path that was
+supposed to prevent it.
+
+### The fix (prompt v4)
+
+Two changes, both making the prompt honest about what it actually knows:
+
+1. **Retrieved sections are no longer presumed relevant.** The model is told
+   they were selected automatically by similarity search, that they may not
+   cover the topic, to use only those that genuinely do, to IGNORE and never
+   cite the others, and — if none cover it — to say so in the first line of
+   Reference Materials and write from general knowledge. The instruction
+   carries its reason: *citing a section that does not cover the topic is worse
+   than citing nothing.*
+
+2. **The empty branch stops asserting something that can be false.** v3 said
+   "No scheme of work has been uploaded" on every empty path. That is untrue
+   for `no-match`, `error` and `not-configured` — and `no-match` is the
+   commonest of them. v4 takes the reason and says which case it is.
+
+### Evidence it changes MODEL BEHAVIOUR, not just prompt text
+
+Same topic, same five irrelevant chunks, real `claude-sonnet-5` calls:
+
+| | cites a scheme week | says the topic is not in the scheme |
+|---|---|---|
+| **v3 (shipped)** | **YES** — First Term W3, Third Term W3 | no |
+| **v4 (this fix)** | no | **YES** |
+| **v4, empty (`no-match`)** | no | **YES** |
+
+v4's output opens Reference Materials with: *"This topic was not found clearly
+in the extracted scheme of work; none of the weeks provided cover summary
+writing specifically. This plan is therefore written from general knowledge…"*
+
+Six offline checks in `prompt-quality.ts` pin every clause, so the wording
+cannot be softened without CI noticing. The v3 check that asserted the
+unqualified "prefer them" instruction was REPLACED rather than left in place —
+a passing check pinning defective wording is worse than no check.
+
+### What this does NOT fix
+
+**The floor still accepts unrelated topics.** v4 makes the model's OUTPUT
+honest about a bad retrieval; it does not stop the bad retrieval, and the UI
+still says "Based on your own scheme of work" over a plan whose own Reference
+Materials now contradict that heading. Fixing detection is D23's relative-
+threshold work, and the teacher-facing decision point is its own plan-first.
+This was shipped alone and immediately because it removes the false CITATION —
+the part that actively misinforms — without waiting for either.

@@ -188,7 +188,7 @@ describe("LessonPlansService", () => {
     // This assertion did its job on that bump — it failed, deliberately,
     // rather than letting the ledger silently start recording a different
     // prompt under the old version number.
-    expect(rows[0]).toMatchObject({ success: true, promptVersion: "3", userId });
+    expect(rows[0]).toMatchObject({ success: true, promptVersion: "4", userId });
     expect(rows[0].inputTokens).toBe(200);
     expect(rows[0].outputTokens).toBe(400);
   });
