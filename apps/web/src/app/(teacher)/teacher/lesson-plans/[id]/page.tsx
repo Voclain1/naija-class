@@ -10,6 +10,7 @@ import type { LessonPlanDto } from "@school-kit/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ApiError } from "@/lib/api-client";
+import { buildRetryHref } from "@/lib/lesson-plans/retry-prefill";
 import { isAuthForcedNavigation } from "@/lib/auth/session-end-navigation";
 import {
   deleteLessonPlan,
@@ -285,7 +286,7 @@ export default function LessonPlanDetailPage() {
         </Link>
       </div>
 
-      <GroundingLine grounding={plan.groundedOn} />
+      <GroundingLine grounding={plan.groundedOn} plan={plan} />
 
       <header className="flex flex-col gap-3 border-b pb-5 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex flex-col gap-1">
@@ -519,6 +520,33 @@ export default function LessonPlanDetailPage() {
 }
 
 /**
+ * D42 — a retry that carries the teacher's inputs forward.
+ *
+ * Links to the create form pre-filled, rather than firing a regeneration from
+ * here. Two reasons, and the second is the important one:
+ *
+ *  - Re-running the same topic against the same library is deterministic and
+ *    would return the same sections and the same verdict. What can change the
+ *    outcome is the WORDING, so the teacher needs to see and edit it.
+ *  - Creating a new plan cannot damage this one. There is no "regenerate in
+ *    place" path to get wrong, so "your plan is saved either way" is a
+ *    property of the design rather than a promise in the UI copy.
+ *
+ * The link itself is built by a tested pure function shared with the form that
+ * reads it back — see retry-prefill.ts for why the pair is round-tripped.
+ */
+function retryHref(plan: LessonPlanDto): string {
+  return buildRetryHref({
+    topic: plan.topic,
+    classLevelId: plan.classLevelId,
+    subjectId: plan.subjectId,
+    objectives: plan.objectives,
+    durationMinutes: plan.durationMinutes,
+  });
+}
+
+
+/**
  * What this plan was grounded in (Phase 7 / CP3, D10 + D20).
  *
  * Two reasons this exists, and the second is the important one. It makes the
@@ -536,8 +564,10 @@ export default function LessonPlanDetailPage() {
  */
 function GroundingLine({
   grounding,
+  plan,
 }: {
   grounding: LessonPlanDto["groundedOn"];
+  plan: LessonPlanDto;
 }) {
   // Null means the plan predates CP3 entirely. Saying nothing is correct:
   // there is no retrieval to report on, and "no matching section" would be a
@@ -568,15 +598,35 @@ function GroundingLine({
         </p>
         <p className="text-muted-foreground mt-2 text-xs">
           Sections searched:{" "}
-          {grounding.chunks
-            .map((c) => c.heading ?? c.documentTitle)
-            .join(", ")}
-          . If one of these is right after all, it may be worth checking the section headings in
-          your{" "}
-          <Link href="/teacher/curriculum" className="underline underline-offset-2">
-            curriculum library
-          </Link>
-          .
+          {grounding.chunks.map((c) => c.heading ?? c.documentTitle).join(", ")}
+        </p>
+
+        {/* D42 — the decision point.
+
+            The plan below is NOT discarded and no choice here removes it: both
+            actions lead somewhere else and leave this row untouched. That is
+            structural rather than promised — "try different wording" creates a
+            NEW plan, because POST /lesson-plans always creates a row, so the
+            original survives by construction rather than by remembering to
+            keep it.
+
+            Two actions and no more, because these are the only two things that
+            can actually change the outcome. Retrieval is deterministic for a
+            given query and corpus: re-running the SAME words against the SAME
+            library returns the same sections and the same verdict. So one
+            action changes the WORDS (phrasing dominates retrieval — §17.1) and
+            the other changes the LIBRARY. A plain "regenerate" button would
+            look useful and do nothing. */}
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <Button asChild size="sm" variant="secondary">
+            <Link href={retryHref(plan)}>Try different wording</Link>
+          </Button>
+          <Button asChild size="sm" variant="ghost">
+            <Link href="/teacher/curriculum">Open curriculum library</Link>
+          </Button>
+        </div>
+        <p className="text-muted-foreground mt-2 text-xs">
+          This plan is saved either way — you can keep and edit it as it is.
         </p>
       </div>
     );

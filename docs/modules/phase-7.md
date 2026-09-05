@@ -2448,3 +2448,72 @@ deferred) is the one untested mechanism with a real chance, and D38's
 self-reporting weakness is exactly what a reranker would cover. Worth revisiting
 if D38's judgement is ever measured wrong in production — which is now visible,
 because it is stored on every plan.
+
+### 17.8 D42 built — the teacher's decision point, 2026-09-05
+
+The state D38 made detectable now has actions attached, which is what
+Arinzechukwu originally asked for.
+
+#### What a teacher sees
+
+When the model reports that no retrieved section covers the topic, the plan is
+headed **"Not found in your scheme of work"** with the model's own sentence and
+the list of sections that were searched — and beneath it, two actions and one
+statement of fact:
+
+- **Try different wording** — opens the create form pre-filled with this plan's
+  topic, class level, subject, objectives and duration.
+- **Open curriculum library** — for the case where the scheme genuinely lacks
+  the topic, or a section was discarded during CP5's review.
+- *"This plan is saved either way — you can keep and edit it as it is."*
+
+#### Two actions, and why not a third
+
+There is deliberately no "Regenerate" button. **Retrieval is deterministic for
+a given query and corpus**: re-running the same words against the same library
+returns the same sections and the same verdict. A regenerate button would look
+like the obvious remedy and reliably do nothing, which is worse than not
+offering it.
+
+So one action changes the WORDS — and §17.1 established that phrasing dominates
+retrieval, so this is the lever that actually moves the outcome — and the other
+changes the LIBRARY. Those are the only two inputs.
+
+#### "Saved either way" is structural, not a promise
+
+The retry links to the create form. `POST /lesson-plans` always creates a row,
+so the original plan survives **by construction**: there is no
+regenerate-in-place path that could be got wrong. The alternative — a button
+that regenerated this plan and overwrote it — would have made the reassuring
+sentence something the UI has to keep being right about.
+
+#### Evidence
+
+- **`retry-prefill.spec.ts`, 8 tests.** The link builder and the query parser
+  are ROUND-TRIPPED against each other, which is stronger than asserting either
+  half: a shared misspelling of a parameter name would pass two separate tests
+  and fail the round trip. Covers the characters teachers actually type
+  (`Simile, metaphor & personification — "figures of speech" (poetry/prose)`),
+  optional fields being omitted rather than sent empty, a stray query string
+  NOT pre-filling the form, and a non-numeric duration falling back to null
+  rather than rendering NaN in a number field.
+- **`lesson-plans.service.spec.ts` — "a retry creates a NEW plan and leaves the
+  original untouched (D42)".** Generates twice with identical inputs, then
+  RE-READS the first from the database rather than trusting the object it
+  already held, and asserts both rows exist side by side. The UI's promise is
+  asserted where the promise is actually kept.
+
+Both pure functions live in `retry-prefill.ts` rather than inline in the
+components, because `apps/web`'s Vitest config is node-only and explicitly
+scoped to "pure logic extracted out of components". Leaving them inline would
+have meant a link-building and a query-parsing step untested on both ends —
+exactly where a retry silently drops a teacher's objectives, at the moment they
+have just been told something went wrong.
+
+#### The gap, stated
+
+**No browser E2E**, for the same structural reason as CP5: reaching this state
+requires a generation whose model reports no coverage, and CI has no
+`ANTHROPIC_API_KEY` or `VOYAGE_API_KEY`. The data path is tested end to end and
+the preservation property is tested against a real database; the click path is
+not, and needs one manual pass on a deployment with real keys.

@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ApiError } from "@/lib/api-client";
 import { createLessonPlan, listLessonPlans } from "@/lib/lesson-plans/lesson-plans-api";
+import { readRetryPrefill } from "@/lib/lesson-plans/retry-prefill";
 import { getMyScope } from "@/lib/teacher/teacher-scope-api";
 
 // /teacher/lesson-plans — Phase 5 / Slice 2.
@@ -59,6 +60,30 @@ export default function LessonPlansPage() {
   const [topic, setTopic] = useState("");
   const [objectives, setObjectives] = useState("");
   const [duration, setDuration] = useState("40");
+
+  // D42 — pre-fill from a retry link.
+  //
+  // Read from window.location rather than useSearchParams deliberately: this is
+  // a client component, and useSearchParams would force a Suspense boundary
+  // around it for prerendering. A one-shot read in an effect has neither that
+  // requirement nor any behavioural difference for a link the user clicked.
+  //
+  // Applied ONCE, and only to fields the teacher has not already filled, so a
+  // re-run of this effect cannot overwrite something they started typing.
+  const [retriedTopic, setRetriedTopic] = useState<string | null>(null);
+  const [prefilled, setPrefilled] = useState(false);
+  useEffect(() => {
+    if (prefilled) return;
+    setPrefilled(true);
+    const inputs = readRetryPrefill(window.location.search);
+    if (!inputs) return;
+    setTopic((cur) => cur || inputs.topic);
+    if (inputs.classLevelId) setClassLevelId((cur) => cur || inputs.classLevelId);
+    if (inputs.subjectId) setSubjectId((cur) => cur || inputs.subjectId);
+    if (inputs.objectives) setObjectives((cur) => cur || inputs.objectives!);
+    if (inputs.durationMinutes) setDuration(String(inputs.durationMinutes));
+    setRetriedTopic(inputs.topic);
+  }, [prefilled]);
 
   const [generating, setGenerating] = useState(false);
   const [progressIndex, setProgressIndex] = useState(0);
@@ -156,6 +181,19 @@ export default function LessonPlansPage() {
 
       {/* ---------------- Generate ---------------- */}
       <section className="rounded-lg border bg-card p-5 shadow-sm">
+        {retriedTopic ? (
+          // Says WHY the form is pre-filled. Without this the teacher arrives
+          // at a populated form with no explanation of where it came from, and
+          // — more importantly — no reminder that the plan they came from is
+          // still there.
+          <p className="border-primary/25 bg-primary/5 mb-4 rounded-md border p-3 text-sm">
+            Trying again for{" "}
+            <span className="font-medium">&ldquo;{retriedTopic}&rdquo;</span>. Rewording the topic
+            is what changes which sections of your scheme of work are found — try the words your
+            scheme itself uses. Your previous plan is still saved.
+          </p>
+        ) : null}
+
         <form onSubmit={handleGenerate} className="flex flex-col gap-4">
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="flex flex-col gap-1.5">
