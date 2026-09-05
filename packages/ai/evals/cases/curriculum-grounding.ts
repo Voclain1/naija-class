@@ -110,11 +110,15 @@ export const curriculumGroundingCase: EvalCase = {
   suite: "Curriculum grounding (requires VOYAGE_API_KEY)",
 
   async run(): Promise<CheckResult[]> {
-    // Only a teacher-written POSITIVE set clears the banner and promotes the
-    // gate to `error`. `document-derived` does not: its labels are ground
-    // truth, but its phrasing is the corpus's own and tests plumbing, not
-    // semantics. Treating it as sufficient would be the exact overstatement
-    // this mechanism exists to prevent.
+    // Only a teacher-written AND teacher-LABELLED positive set clears the
+    // banner and promotes the gate to `error`.
+    //
+    // `teacher-phrased` — the current value — does NOT, and the distinction is
+    // the whole lesson of 2026-09-05: a real teacher supplied five topics in
+    // their own words, and all five of their week claims were wrong against the
+    // source document. Their PHRASING is the best evidence in the set; their
+    // LABELS could not be used at all. Treating half of D22 as all of it would
+    // be the exact overstatement this mechanism exists to prevent.
     const teacherPhrased = QUERY_SET_PROVENANCE === "teacher-supplied";
 
     // The tracked commitment, enforced by the suite rather than remembered.
@@ -256,7 +260,7 @@ export const curriculumGroundingCase: EvalCase = {
     // An aggregate over a mixed-provenance set is misleading: a verbatim hit
     // and a paraphrase hit are not comparable evidence. Reporting the bands
     // separately is what stops the easy band from carrying the headline score.
-    for (const band of ["document-verbatim", "author-paraphrase"] as const) {
+    for (const band of ["document-verbatim", "author-paraphrase", "teacher"] as const) {
       const inBand = positives.filter((s) => s.q.source === band);
       if (inBand.length === 0) continue;
       const bandHit = inBand.filter((s) => s.hitAtK).length;
@@ -265,7 +269,12 @@ export const curriculumGroundingCase: EvalCase = {
           `curriculum-grounding: hit@${RETRIEVAL_TOP_K} within band "${band}"`,
           bandHit === inBand.length,
           `${bandHit}/${inBand.length}. ` +
-            (band === "document-verbatim"
+            (band === "teacher"
+              ? "THE ONLY BAND WHOSE WORDING CAME FROM OUTSIDE THIS PROJECT — a real teacher's " +
+                "own phrasing, with labels verified against the source document because the " +
+                "teacher's own week claims were checked and all five were wrong. The hardest " +
+                "band and the one worth watching."
+              : band === "document-verbatim"
               ? "EASY BY CONSTRUCTION — these queries are quoted verbatim from the corpus and " +
                 "share its exact tokens, so a hit shows the pipeline is wired up, NOT that the " +
                 "embedding understands the topic. Their VALUE is that the week labels are " +
