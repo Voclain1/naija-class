@@ -131,11 +131,24 @@ export const registryIntegrityCase: EvalCase = {
         `missing: ${LESSON_PLAN_DB_COLUMNS.filter((c) => !(c in props)).join(", ")}`,
       ),
     );
+    // D38 — two schema properties deliberately do NOT map to a content column.
+    // `groundedInScheme` and `groundingNote` land in the `groundedOn` JSON
+    // column beside the retrieval reason, because they describe the GENERATION
+    // rather than being part of the lesson note a teacher reads. Listed
+    // explicitly rather than by loosening the rule: the guarantee this check
+    // exists for — no schema field is silently discarded — still holds, and a
+    // THIRD orphan appearing would still fail.
+    const COVERAGE_FIELDS = ["groundedInScheme", "groundingNote"];
     results.push(
       check(
-        "lesson-plan schema: no property without a DB column to land in",
-        Object.keys(props).every((k) => LESSON_PLAN_DB_COLUMNS.includes(k)),
-        `orphan properties: ${Object.keys(props).filter((k) => !LESSON_PLAN_DB_COLUMNS.includes(k)).join(", ")}`,
+        "lesson-plan schema: no property without somewhere to land",
+        Object.keys(props).every(
+          (k) => LESSON_PLAN_DB_COLUMNS.includes(k) || COVERAGE_FIELDS.includes(k),
+        ),
+        `orphan properties: ${Object.keys(props)
+          .filter((k) => !LESSON_PLAN_DB_COLUMNS.includes(k) && !COVERAGE_FIELDS.includes(k))
+          .join(", ")} — every property must either be a content column or one of the ` +
+          `coverage fields stored in groundedOn`,
       ),
     );
     results.push(

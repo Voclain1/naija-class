@@ -150,9 +150,11 @@ export const promptQualityCase: EvalCase = {
       check(
         "lesson-plan: schema properties match the required set exactly",
         JSON.stringify([...schemaProps].sort()) ===
-          JSON.stringify([...EXPECTED_SECTION_ORDER].sort()),
+          JSON.stringify([...EXPECTED_SECTION_ORDER, "groundedInScheme", "groundingNote"].sort()),
         `properties = [${schemaProps.join(", ")}] — a property that is not required can ` +
-          "come back missing, and a required key with no property is unfulfillable",
+          "come back missing, and a required key with no property is unfulfillable. The two " +
+          "coverage fields (D38) are named literally here for the same reason the section " +
+          "order is: an eval that read the schema it guards would pass whatever the schema said",
       ),
       check(
         "lesson-plan: v1's generic sections are gone from the schema",
@@ -235,6 +237,40 @@ export const promptQualityCase: EvalCase = {
               /general knowledge/i.test(grounded),
             "the teacher's only defence against a wrong retrieval is being told it happened; " +
               "silence here is what makes a false grounding indistinguishable from a real one",
+          ),
+          // ---- D38: the judgement is CAPTURED, not only made ---------------
+          check(
+            "lesson-plan v5: the schema carries the model's coverage judgement",
+            Object.prototype.hasOwnProperty.call(
+              (LESSON_PLAN_SCHEMA as { properties: Record<string, unknown> }).properties,
+              "groundedInScheme",
+            ) &&
+              ((LESSON_PLAN_SCHEMA as { required: string[] }).required ?? []).includes(
+                "groundedInScheme",
+              ),
+            "the model already judges whether the retrieved sections cover the topic, and got " +
+              "all six measured cases right including the two where distance thresholds fail; " +
+              "without a schema field that judgement is prose nothing can read",
+          ),
+          check(
+            "lesson-plan v5: coverage fields are NOT rendered as lesson-note sections",
+            !LESSON_PLAN_SECTION_ORDER.includes("groundedInScheme") &&
+              !LESSON_PLAN_SECTION_ORDER.includes("groundingNote"),
+            "section order drives what a teacher reads — a boolean in the middle of the " +
+              "lesson note would be the cost of deriving that order from the schema's required list",
+          ),
+          check(
+            "lesson-plan v5: the grounded branch asks for the judgement explicitly",
+            /set groundedinscheme to true/i.test(grounded) &&
+              /read by the software/i.test(grounded),
+            "a field the prompt never mentions gets filled by guesswork; naming that it is " +
+              "machine-read is what ties it to the decision actually made above",
+          ),
+          check(
+            "lesson-plan v5: the ungrounded branch sets the judgement false",
+            /set groundedinscheme to false/i.test(ungrounded),
+            "an unset field on the empty path would read as UNKNOWN, when it is in fact the " +
+              "one case we know for certain is not grounded",
           ),
           check(
             "lesson-plan v4: names the harm, not just the rule",

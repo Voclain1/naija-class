@@ -2279,3 +2279,77 @@ had already been done for them. The new wording asks them to make it, and costs
 nothing on the plans where retrieval was right.
 
 Not a fix for the detection failure, and deliberately not presented as one.
+
+### 17.6 D38 built and measured — 2026-09-05
+
+**The detector works, and it is the first mechanism in this phase that
+separates the cases distance cannot.**
+
+#### What was built
+
+Prompt **v5** adds two fields to the lesson-plan structured output:
+
+- `groundedInScheme: boolean` — true only if at least one supplied section
+  genuinely covers the topic AND was used;
+- `groundingNote: string` — one sentence a teacher reads, naming what was used
+  or saying plainly that the topic was not found.
+
+Nothing else changed about how generation works. The model was already making
+this judgement — v4 (D36) instructs it to read the sections, use only relevant
+ones, and say so when none apply — but the answer existed only as prose inside
+Reference Materials, where no code could read it. v5 captures the same decision
+in a form the software can act on. **No second call, no second model, no extra
+cost**, which is what keeps it clear of D26's LLM-as-judge prohibition.
+
+#### Measured against the real model
+
+Six cases, each using the chunks retrieval **genuinely returns for that query
+today**, so the detector was measured in the position it will actually occupy:
+
+| topic | truth | model said | |
+|---|---|---|---|
+| `JSS3 summary writing lesson note with examples` | not covered | **false** | correct |
+| `Lesson note on direct and indirect speech for JSS3` | not covered | **false** | correct |
+| `Lesson note on simile, metaphor and personification` | covered | **true** | correct |
+| `JSS3 comprehension lesson on identifying main ideas` | covered | **true** | correct |
+| `Adverbs of frequency` (control) | covered | **true** | correct |
+| `Scanning a passage for main points` (control) | covered | **true** | correct |
+
+**6/6 — including both cases where the absolute floor AND D23's relative rule
+fail.** The two negatives are the ones that retrieve at 0.5678 and 0.6018,
+*closer* than genuine matches; no threshold on distance can reject them, and the
+model rejected both while correctly accepting four covered topics. The controls
+matter as much as the failures: a detector that simply answers "false" would
+also have caught the negatives and been useless.
+
+Its note for the summary-writing case, verbatim: *"None of the supplied
+scheme-of-work sections cover summary/précis writing, so this lesson plan is
+written from general knowledge of the Nigerian JSS3 English curriculum."*
+
+#### Honest limits
+
+- **Self-reported.** A model that ignores the instruction will also misreport
+  it. Six cases on one document is a real measurement, not a guarantee, and it
+  is the reason D39 and D40 are still worth measuring rather than being
+  cancelled on the strength of this.
+- **`null` means UNKNOWN, never "not grounded."** Plans generated before v5
+  carry no judgement, and treating a missing field as a negative would relabel
+  every existing plan as ungrounded. The UI shows the pre-v5 hedge in that case.
+- **It does not fix retrieval.** The wrong sections are still retrieved and
+  still reach the prompt; the model now declines to use them and says so.
+
+#### What the teacher sees
+
+A third grounding state, rendered distinctly rather than folded into either
+neighbour: **"Not found in your scheme of work"**, with the model's own
+sentence, and the list of sections that *were* searched. It is not the grounded
+state (nothing was used) and not the plain no-match state (the scheme WAS
+searched and found wanting, which is worth knowing). Where coverage IS
+confirmed, the model's sentence replaces D43's generic hedge, because it names
+what was used and can be checked against the list beneath it.
+
+Two structural evals were updated rather than loosened: the schema's
+"no property without a DB column" rule now names the two coverage fields and
+where they land (`groundedOn`), so a THIRD orphan still fails, and the section
+order is now declared explicitly rather than derived from `required` — otherwise
+a boolean would render in the middle of the teacher's lesson note.
