@@ -545,9 +545,34 @@ function GroundingLine({
   if (!grounding) return null;
 
   if (grounding.reason === "ok" && grounding.chunks.length > 0) {
+    // D43 — the wording is deliberately weaker than it was, and this is the
+    // point rather than a hedge for its own sake.
+    //
+    // It read "Based on your own scheme of work", stated flatly, whenever ANY
+    // section cleared the distance floor. Measured against real teacher
+    // phrasing (phase-7.md §17.1), the floor accepts topics the scheme does not
+    // cover at all: "JSS3 summary writing lesson note with examples" retrieves
+    // five sections at 0.60-0.66 from a document where the word "summary" never
+    // appears. The old heading asserted, in the school's own voice, that those
+    // sections were the basis of the plan.
+    //
+    // Since D36 the plan's own Reference Materials may now say the opposite a
+    // few lines below — and a heading contradicting the body is the clearest
+    // possible evidence the heading is wrong.
+    //
+    // Until CP6 can tell a covered topic from an uncovered one, THE TEACHER IS
+    // THE DETECTOR. They are the only person who can look at "Week 3 — Stress
+    // and Intonation" under a summary-writing plan and know it is wrong. The
+    // old wording told them the check had already been done for them; this asks
+    // them to make it. That is the honest instruction while detection is broken,
+    // and it costs nothing when retrieval was right.
     return (
       <div className="rounded-md border border-primary/25 bg-primary/5 p-3 text-sm print:hidden">
-        <p className="font-medium">Based on your own scheme of work</p>
+        <p className="font-medium">Sections used from your scheme of work</p>
+        <p className="text-muted-foreground mt-0.5 text-xs">
+          These were matched automatically — please check they are the right ones for this
+          topic.
+        </p>
         <ul className="mt-1 space-y-0.5 text-muted-foreground">
           {grounding.chunks.map((c) => (
             <li key={c.chunkId}>
