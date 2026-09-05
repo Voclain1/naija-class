@@ -155,6 +155,17 @@ export class LessonPlansService {
           content: c.content,
           documentTitle: c.documentTitle,
         })),
+        // v4 — WHY there is no extract, when there is none. v3 told the model
+        // "no scheme of work has been uploaded" on every empty path, which is
+        // false whenever a school HAS uploaded one and nothing cleared the
+        // floor. The prompt is the model's only description of the world
+        // outside its own knowledge; a false statement there is not cosmetic.
+        groundingAbsenceReason:
+          retrieval.reason === "no-documents" || retrieval.reason === "awaiting-review"
+            ? "no-documents"
+            : retrieval.reason === "no-match"
+              ? "no-match"
+              : "unavailable",
       }),
       jsonSchema: LESSON_PLAN_SCHEMA,
     });
