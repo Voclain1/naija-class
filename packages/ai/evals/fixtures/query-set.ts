@@ -64,10 +64,12 @@ export const QUERY_SET_NOTE =
   "teacher-LABELLED, which is why the CP4-IS-NOT-CLOSED banner still fails: D22 asked for " +
   "topics and labels, and the labels did not survive verification. Scores are reported per " +
   "band because an aggregate over these four is " +
-  "meaningless. THE NUMBERS ARE ALSO PROVISIONAL FOR A SECOND, SEPARATE REASON: the JSS3 " +
-  "corpus has NOT been re-ingested since CP3 began embedding headings together with " +
-  "content (D15), so the corpus this suite scores against may not be embedded the way " +
-  "production is. Unconfirmed as of 2026-09-04 — not verified either way.";
+  "meaningless. CORPUS PARITY IS NOW CONFIRMED (2026-09-06), retiring the caveat this note " +
+  "carried since CP4: the JSS3 document was re-ingested through CP5's review gate and its " +
+  "production vectors were checked against both candidate formats — heading+content matched " +
+  "at cosine distance 1.2e-5, content-only at 6.1e-2. Production runs D15 heading-plus-content, " +
+  "which is what this suite scores. The scores are still band-dependent and the provenance " +
+  "limitation above still stands; they are no longer provisional on the CORPUS.";
 
 /**
  * Where an individual query came from. The eval reports each band separately,
