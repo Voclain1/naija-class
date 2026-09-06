@@ -2983,3 +2983,48 @@ rejected — D39 harms a genuine positive while gaining nothing, and D40 scores
 *perfect confidence on the worst case in the set* because words are not
 meanings. Their code was deleted so it could not be picked up on faith; §17.7
 has the numbers.
+
+## The JSS3 corpus has not been re-ingested since CP3 changed the embedding format
+
+**Status: open, unconfirmed in either direction, and the last substantive gap
+in Phase 7.**
+
+Tracked here from 2026-09-06. Until now it lived only as a sentence inside the
+eval suite's provenance banner — which is the wrong place for the phase's one
+genuinely open item, and is exactly how it stayed unresolved across five
+checkpoints.
+
+**What changed.** CP3's D15 embeds **heading + content** together
+(`embeddableText`), not content alone. Any document embedded before that
+carries vectors that never saw their own headings.
+
+**Why it matters.** The JSS3 English scheme was re-ingested on 2026-09-03,
+after the chunker heading fix (#251) but — on the timeline — **before** CP3
+(#257) shipped heading-plus-content embedding. If that is right, production is
+running vectors in the older format, and every distance in
+`docs/modules/phase-7.md` §14.7, §17.1 and §17.7 was measured against a corpus
+embedded differently from the one teachers are actually searching.
+
+**This is inference from the conversation timeline, not a check.** Nobody has
+looked. It is equally possible the document was re-ingested afterwards.
+
+**What would settle it.** Any of:
+- the document's `updatedAt` in production against #257's merge time;
+- an `ai_generations` / `embedding_generations` row for that document dated
+  after CP3 shipped;
+- simply re-uploading it and approving it through CP5's review gate.
+
+**Note what does NOT settle it.** On 2026-09-06 a teacher saw a live
+"Sections searched" list with five real week references, which proves the
+document is present, `READY`, and being retrieved. Retrieval works with either
+embedding format, so this is not evidence about the format. Presence is not
+provenance.
+
+**Consequences while it stays open:**
+1. **CP4's measured numbers stay provisional**, and the eval banner says so on
+   every run.
+2. **D31's chunker-quality measurement has no first data point.** A
+   re-ingestion now goes through CP5's review gate, so it would produce the
+   first real "how much did a teacher have to correct" reading — on the one
+   document whose parse has been studied in detail.
+3. It is the natural pairing for any remaining manual verification visit.

@@ -2608,3 +2608,50 @@ API call made across the whole flow was recorded: seven requests, all `GET`,
 none a write of any kind against the original plan. That is structural — the
 retry is a link to the create form, and creating a plan always makes a new
 row — so there is no "regenerate in place" path that could get it wrong.
+
+### 17.10 D38 confirmed in production by a real teacher — 2026-09-06
+
+**The last piece of real-world verification for the D37–D42 arc.**
+
+Arinzechukwu reached the D38 panel on the deployed app — the first time any
+human has seen it. Before this it had been proven only by six scripted model
+calls and a browser render against a stubbed payload; the panel a teacher
+actually meets had never been met.
+
+What he saw, and each part is a separate thing working:
+
+| observed | what it proves |
+|---|---|
+| heading **"Not found in your scheme of work"** | the D38 branch was reached — `reason === "ok"`, chunks returned, `modelSaysGrounded === false` |
+| the model's **own sentence** | `groundingNote` survived the schema, the parse, the JSON column and the render |
+| **"Sections searched"** listing five real week references | retrieval genuinely returned five irrelevant chunks — the exact failure no distance threshold can reject |
+| **both actions present** | the shared `GroundingActions` component reached the branch it was written for |
+
+That last row matters most in context: 24 hours earlier those actions were
+**structurally unreachable** on the branch a teacher actually hit, and nothing
+automated had noticed because both branches were individually "correct".
+
+**What this does NOT establish, stated plainly.** A live "Sections searched"
+list proves the JSS3 document is present and `READY` in production for JSS3
+English, and that retrieval reads it. It says **nothing** about whether those
+vectors were computed with headings prepended (D15). Retrieval works either
+way; the embedding format is invisible from the outside. **The re-ingestion
+remains open** — see `docs/deferred.md`.
+
+#### The arc, closed
+
+| decision | how it was settled |
+|---|---|
+| D37 detection is separate from ranking | measurement: no threshold on distance separates the cases |
+| D38 the model's own judgement | 6/6 scripted, then **confirmed in production by a teacher** |
+| D39 query normalisation | measured, **rejected** — no gain, and it harmed a genuine positive |
+| D40 lexical support | measured, **rejected** — scored 1.00 on a topic the scheme does not teach |
+| D41 the choice | decided from false-accept/false-reject, not argument |
+| D42 the decision point | built, then **corrected** — the actions never rendered on the branch teachers hit |
+| D43 banner honesty | shipped first and alone |
+
+**The pattern worth keeping from this arc:** every mechanism that looked
+plausible in advance failed, and the one that worked was already running with
+its answer discarded. Three of four candidates were killed by measurement
+rather than by review, and the single most valuable finding — unreachable
+actions — came from a person clicking, after every automated gate was green.
