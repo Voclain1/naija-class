@@ -30,6 +30,30 @@ export const createStudentSchema = z
     nationality: z.string().trim().min(1).max(40).optional(),
     admittedAt: z.coerce.date().optional(),
     notes: z.string().trim().min(1).max(2000).nullable().optional(),
+
+    /**
+     * Place the student in a class in the same breath as creating them.
+     *
+     * OPTIONAL AT THE API, REQUIRED-CHOICE IN THE UI, and the difference is
+     * deliberate. A school mid-admission legitimately holds students who are
+     * not yet placed — `student-import-enrollment.md` D5 protects exactly that
+     * state for the CSV path, and making this mandatory here would remove it
+     * from the single-student path while leaving it available in bulk. What
+     * the FORM does is force an explicit answer (an arm, or "place later"), so
+     * nothing is guessed on the admin's behalf.
+     *
+     * There is deliberately NO default arm and NO default term. The 2026-08-25
+     * carry-over incident was a pre-ticked default enrolling every student at a
+     * newly-onboarded school, and the import path's D3 was overridden at review
+     * for the same reason: "a silent default is most dangerous exactly when it
+     * is most likely wrong".
+     */
+    enrollment: z
+      .object({
+        termId: z.string().uuid(),
+        classArmId: z.string().uuid(),
+      })
+      .optional(),
   })
   .strict();
 

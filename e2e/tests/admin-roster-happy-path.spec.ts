@@ -50,6 +50,20 @@ test("admin roster happy-path — create a student via the UI, then enrol them",
     await page.locator("#student-dateOfBirth").fill("2012-09-15");
     await page.locator("#student-gender").selectOption("FEMALE");
 
+    // Placement is a REQUIRED CHOICE since 2026-09-07 — the form refuses to
+    // submit until it is answered, so that nobody is put in a class by a
+    // default nobody chose. This test's whole subject is the two-step flow
+    // (create, THEN enrol), so it answers "not yet" and enrols below exactly
+    // as it always has.
+    //
+    // Worth keeping as coverage rather than short-cutting past: this is the
+    // branch a brand-new school takes, and CI catching its absence is how the
+    // gate's first version was found to block student creation outright.
+    const placement = page.locator("#placement-arm");
+    if (await placement.count()) {
+      await placement.selectOption("__later__");
+    }
+
     await page.getByRole("button", { name: "Create student" }).click();
 
     // On success the form routes to the new student's detail page

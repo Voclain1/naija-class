@@ -492,10 +492,26 @@ function ArmCard({
             )}
           </div>
         ) : (
-          <p className="rounded-md border border-dashed bg-muted/20 p-3 text-sm text-muted-foreground">
-            No enrollments yet. Use single enrollment per student, or wait
-            for a previous term to populate so you can carry over.
-          </p>
+          // Rewritten 2026-09-07 after a first-time school owner read the old
+          // copy and could not act on it. It said "Use single enrollment per
+          // student, or wait for a previous term to populate so you can carry
+          // over" — three pieces of jargon, and it pointed at a feature on a
+          // DIFFERENT page without linking to it. This names the one action
+          // that works today and links to it.
+          <div className="flex flex-col gap-2 rounded-md border border-dashed bg-muted/20 p-3">
+            <p className="text-sm">No students in this class yet.</p>
+            <p className="text-sm text-muted-foreground">
+              Students join a class when you add them — choose the class on the student
+              form. You can also add an existing student to this class from their own page,
+              under Enrollments.
+            </p>
+            <Button asChild size="sm" variant="outline" className="w-fit">
+              <Link href="/students/new">
+                Add a student
+                <ArrowRight className="ml-1 h-4 w-4" />
+              </Link>
+            </Button>
+          </div>
         )
       ) : (
         <table className="w-full text-sm">

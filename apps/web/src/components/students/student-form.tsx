@@ -6,6 +6,8 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
+
+import { PlacementPicker, type PlacementValue } from "./placement-picker";
 import { z } from "zod";
 
 import {
@@ -151,6 +153,18 @@ function hasExtraDetails(values: FormValues): boolean {
 
 export function StudentForm({ existing }: Props) {
   const router = useRouter();
+  // Placement is offered only when CREATING. Editing a student is not where
+  // enrollment changes belong — that lives on the student's Enrollments tab,
+  // which handles transfers and withdrawals the form knows nothing about.
+  //
+  // `undefined` = unanswered, `null` = "not yet" chosen explicitly. The
+  // distinction is the whole point: an unanswered form must not silently
+  // create an unplaced student when the admin simply did not scroll.
+  const [placement, setPlacement] = useState<PlacementValue | null | undefined>(undefined);
+  // Set only when a submit was BLOCKED for an unanswered placement. A plain
+  // "unanswered" flag would paint the field red before the admin has done
+  // anything, which reads as an error they caused rather than a question.
+  const [placementBlocked, setPlacementBlocked] = useState(false);
   const form = useForm<FormValues>({
     resolver: zodResolver(studentFormSchema),
     defaultValues: defaultValues(existing),
@@ -168,7 +182,22 @@ export function StudentForm({ existing }: Props) {
     if (EXTRA_DETAIL_FIELDS.some((f) => f in errors)) setShowExtras(true);
   };
 
+  // REQUIRED CHOICE, not a required field. The admin must answer — a class or
+  // an explicit "not yet" — but "not yet" is a legitimate answer, because a
+  // school mid-admission genuinely holds students who are not placed yet
+  // (student-import-enrollment.md D5). Making placement mandatory would remove
+  // a state the CSV import still permits.
+  const placementUnanswered = !existing && placement === undefined;
+
   const onSubmit = form.handleSubmit(async (values) => {
+    if (placementUnanswered) {
+      setPlacementBlocked(true);
+      form.setError("root", {
+        type: "manual",
+        message: "Choose a class for this student, or choose “Not yet”.",
+      });
+      return;
+    }
     // Optional blanks map to `undefined` (absent from the JSON body) rather
     // than null — matches the existing slice patterns. The local schema has
     // already guaranteed required fields are present and formats are valid.
@@ -189,6 +218,7 @@ export function StudentForm({ existing }: Props) {
       stateOfOrigin: emptyToUndefined(values.stateOfOrigin),
       nationality: emptyToUndefined(values.nationality) ?? "Nigerian",
       notes: emptyToUndefined(values.notes),
+      ...(existing || !placement ? {} : { enrollment: placement }),
     };
 
     try {
@@ -201,7 +231,11 @@ export function StudentForm({ existing }: Props) {
         router.refresh();
       } else {
         const created = await createStudent(payload);
-        toast.success("Student created.");
+        toast.success(
+          placement
+            ? "Student created and added to their class."
+            : "Student created. They are not in a class yet — you can add them to one from their student page.",
+        );
         router.push(`/students/${created.id}`);
         router.refresh();
       }
@@ -372,6 +406,38 @@ export function StudentForm({ existing }: Props) {
           </div>
         </div>
       </section>
+
+      {/* Placement — creation only. See placement-picker.tsx for why there is
+          no pre-selected class. */}
+      {!existing && (
+        <section className="flex flex-col gap-3 rounded-md border bg-card p-4">
+          <div className="flex flex-col gap-1">
+            <h2 className="font-medium">Class</h2>
+            <p className="text-sm text-muted-foreground">
+              Registers, results and invoices are all built per class, so a student only
+              appears on them once they are in one.
+            </p>
+          </div>
+          <PlacementPicker
+            value={placement}
+            onChange={(next) => {
+              setPlacement(next);
+              setPlacementBlocked(false);
+            }}
+            onUnavailable={() => {
+              setPlacement(null);
+              setPlacementBlocked(false);
+            }}
+            disabled={form.formState.isSubmitting}
+          />
+          {placementBlocked && (
+            <p className="text-sm text-destructive">
+              Choose a class, or choose &ldquo;Not yet&rdquo; — whichever is right. This is
+              asked rather than assumed so nobody is put in the wrong class by accident.
+            </p>
+          )}
+        </section>
+      )}
 
       <section className="flex flex-col gap-4">
         <button

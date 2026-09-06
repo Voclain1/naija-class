@@ -509,6 +509,69 @@ function mapEnrollmentUniqueViolation(e: unknown): unknown {
 // Module-level export so the students module can import + reuse without
 // recreating the join shape.
 //
+/**
+ * Validate and insert ONE enrollment inside a caller-supplied transaction.
+ *
+ * Extracted so `StudentsService.create` can place a student in a class in the
+ * SAME transaction that creates them, rather than making a second call
+ * afterwards. That is `student-import-enrollment.md` D6 applied to the
+ * single-student path: "a row is all-or-nothing: a student is never created
+ * without their enrollment when an arm was specified", because the alternative
+ * produces exactly the orphaned-student state this work exists to remove.
+ *
+ * Deliberately NOT built on `bulkCreate`, despite that endpoint already
+ * existing and being well tested. `bulkCreate` returns a partial-success
+ * envelope and SKIPS duplicates silently — a documented idempotency contract
+ * that is right for a 300-student carry-over and wrong for one student, where
+ * "you already enrolled this child this term" is the single most useful thing
+ * the form can say. `create`'s throw-on-conflict shape is the one this needs.
+ *
+ * Takes `db` rather than opening its own transaction, so the caller decides
+ * the atomicity boundary. Returns the created row; the caller audits.
+ */
+export async function insertEnrollmentInTx(
+  db: Prisma.TransactionClient | PrismaClient,
+  schoolId: string,
+  input: { studentId: string; termId: string; classArmId: string },
+): Promise<{ id: string; termId: string; classArmId: string; academicYearId: string }> {
+  const term = await db.term.findUnique({
+    where: { id: input.termId },
+    select: { id: true, academicYearId: true },
+  });
+  if (!term) throw new NotFoundError("Term not found.");
+
+  const arm = await db.classArm.findUnique({
+    where: { id: input.classArmId },
+    select: { id: true, isActive: true },
+  });
+  if (!arm) throw new NotFoundError("Class arm not found.");
+  if (!arm.isActive) {
+    throw new ValidationError(
+      "INACTIVE_CLASS_ARM",
+      "Cannot enroll a student into an inactive class arm.",
+    );
+  }
+
+  try {
+    const created = await db.enrollment.create({
+      data: {
+        schoolId,
+        studentId: input.studentId,
+        termId: input.termId,
+        // Derived from the term, never accepted from input — the schema
+        // comment requires the two stay consistent.
+        academicYearId: term.academicYearId,
+        classArmId: input.classArmId,
+        status: "ENROLLED",
+      },
+      select: { id: true, termId: true, classArmId: true, academicYearId: true },
+    });
+    return created;
+  } catch (e) {
+    throw mapEnrollmentUniqueViolation(e);
+  }
+}
+
 // Returns CurrentEnrollmentRefDto null-safely. Used in EXACTLY two
 // places — see also loadCurrentEnrollmentsForStudents below which does
 // the batched form for the roster page.
