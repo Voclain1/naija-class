@@ -18,6 +18,7 @@ import {
 import type { AuthContext } from "../../common/auth/auth-context";
 import { assertUserActiveAndHasOneOf } from "../../common/auth/role-check";
 import {
+  insertEnrollmentInTx,
   loadCurrentEnrollmentForStudent,
   loadCurrentEnrollmentsForStudents,
 } from "../enrollments/enrollments.service";
@@ -236,6 +237,49 @@ export class StudentsService {
             },
           },
         });
+
+        // ---- optional placement, in the SAME transaction ----------------
+        //
+        // student-import-enrollment.md D6, applied to the single-student path:
+        // all-or-nothing. If the enrollment fails — an inactive arm, a term
+        // that vanished, a student already enrolled this term — the student
+        // insert rolls back with it, and the admin sees one error instead of a
+        // half-created record they now have to reason about.
+        //
+        // Absent `enrollment` is a first-class case, not a degraded one: a
+        // school mid-admission legitimately holds unplaced students (D5).
+        if (input.enrollment) {
+          const enrollment = await insertEnrollmentInTx(db, authCtx.schoolId, {
+            studentId: created.id,
+            termId: input.enrollment.termId,
+            classArmId: input.enrollment.classArmId,
+          });
+
+          // Audited as its own event rather than folded into the student's.
+          // "Who put this child in this class, and when" is a question asked
+          // of enrollments, and an auditor filtering on enrollment.create must
+          // see this row alongside the ones the enrollments surface writes.
+          await db.auditLog.create({
+            data: {
+              schoolId: authCtx.schoolId,
+              userId: authCtx.userId,
+              action: "enrollment.create",
+              entityType: "enrollment",
+              entityId: enrollment.id,
+              ipAddress: reqCtx.ipAddress,
+              metadata: {
+                studentId: created.id,
+                termId: enrollment.termId,
+                classArmId: enrollment.classArmId,
+                status: "ENROLLED",
+                // Distinguishes this from an enrollment made on the
+                // enrollments surface, which is what makes "did placing at
+                // creation actually get used?" answerable later.
+                via: "student-create",
+              },
+            },
+          });
+        }
 
         return toStudentDto(created);
       } catch (e) {
