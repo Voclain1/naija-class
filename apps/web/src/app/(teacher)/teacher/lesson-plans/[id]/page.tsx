@@ -10,6 +10,7 @@ import type { LessonPlanDto } from "@school-kit/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ApiError } from "@/lib/api-client";
+import { InlineAlert } from "@/components/shared/inline-alert";
 import { buildRetryHref } from "@/lib/lesson-plans/retry-prefill";
 import { isAuthForcedNavigation } from "@/lib/auth/session-end-navigation";
 import {
@@ -590,45 +591,17 @@ function GroundingLine({
     grounding.modelSaysGrounded === false
   ) {
     return (
-      <div className="rounded-md border border-amber-500/40 bg-amber-500/5 p-3 text-sm print:hidden">
-        <p className="font-medium">Not found in your scheme of work</p>
-        <p className="text-muted-foreground mt-0.5">
+      <InlineAlert tone="warning" title="Not found in your scheme of work" className="print:hidden">
+        <p>
           {grounding.modelGroundingNote ??
             "This topic does not appear in the sections of your scheme of work that were searched, so this plan is written from general knowledge of the Nigerian curriculum."}
         </p>
-        <p className="text-muted-foreground mt-2 text-xs">
+        <p className="mt-2 text-xs opacity-80">
           Sections searched:{" "}
           {grounding.chunks.map((c) => c.heading ?? c.documentTitle).join(", ")}
         </p>
-
-        {/* D42 — the decision point.
-
-            The plan below is NOT discarded and no choice here removes it: both
-            actions lead somewhere else and leave this row untouched. That is
-            structural rather than promised — "try different wording" creates a
-            NEW plan, because POST /lesson-plans always creates a row, so the
-            original survives by construction rather than by remembering to
-            keep it.
-
-            Two actions and no more, because these are the only two things that
-            can actually change the outcome. Retrieval is deterministic for a
-            given query and corpus: re-running the SAME words against the SAME
-            library returns the same sections and the same verdict. So one
-            action changes the WORDS (phrasing dominates retrieval — §17.1) and
-            the other changes the LIBRARY. A plain "regenerate" button would
-            look useful and do nothing. */}
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          <Button asChild size="sm" variant="secondary">
-            <Link href={retryHref(plan)}>Try different wording</Link>
-          </Button>
-          <Button asChild size="sm" variant="ghost">
-            <Link href="/teacher/curriculum">Open curriculum library</Link>
-          </Button>
-        </div>
-        <p className="text-muted-foreground mt-2 text-xs">
-          This plan is saved either way — you can keep and edit it as it is.
-        </p>
-      </div>
+        <GroundingActions plan={plan} showRetry showLibrary />
+      </InlineAlert>
     );
   }
 
@@ -681,6 +654,16 @@ function GroundingLine({
 
   // Every non-ok reason is reported, but in the teacher's terms rather than
   // the system's: what they could do about it, not which component declined.
+  //
+  // STYLED AS A REAL ALERT since 2026-09-06. It was plain muted text in a
+  // dashed box — visually identical to every other caption on the page — and a
+  // teacher verifying the feature read straight past it without registering
+  // that their plan was not grounded. The detection was correct; the
+  // presentation gave a load-bearing message no more weight than a footnote.
+  //
+  // `warning`, not `destructive`: nothing failed. The plan is usable and the
+  // teacher simply has to know what it is based on. Using the red reserved for
+  // "could not load dashboard" would teach teachers to discount the colour.
   const message =
     grounding.reason === "no-documents"
       ? "No scheme of work has been uploaded for this subject and class level, so this plan is not grounded in your own curriculum."
@@ -690,18 +673,69 @@ function GroundingLine({
           ? "No matching section was found in your uploaded scheme of work, so this plan is not grounded in it."
           : "Your curriculum library could not be searched this time, so this plan is not grounded in it.";
 
+  // Per-reason actions, not a blanket pair. An action that cannot help is
+  // worse than no action: it invites a teacher to spend effort on something
+  // that provably will not change the outcome.
+  //
+  //   no-documents / awaiting-review -> the LIBRARY is the only lever.
+  //     Rewording cannot help when there is nothing (or nothing approved) to
+  //     search, so no retry is offered.
+  //   no-match -> BOTH. The scheme was searched and nothing matched, so either
+  //     the words or the library can change the result.
+  //   error -> RETRY only. A transient failure may simply succeed next time;
+  //     the library is not implicated.
+  const showLibrary =
+    grounding.reason === "no-documents" ||
+    grounding.reason === "awaiting-review" ||
+    grounding.reason === "no-match";
+  const showRetry = grounding.reason === "no-match" || grounding.reason === "error";
+
   return (
-    <div className="text-muted-foreground rounded-md border border-dashed p-3 text-sm print:hidden">
-      {message}
-      {grounding.reason === "no-documents" || grounding.reason === "awaiting-review" ? (
-        <>
-          {" "}
-          <Link href="/teacher/curriculum" className="underline underline-offset-2">
-            {grounding.reason === "awaiting-review" ? "Review it now" : "Add one"}
-          </Link>
-          .
-        </>
-      ) : null}
-    </div>
+    <InlineAlert tone="warning" title="Not grounded in your curriculum" className="print:hidden">
+      <p>{message}</p>
+      <GroundingActions plan={plan} showRetry={showRetry} showLibrary={showLibrary} />
+    </InlineAlert>
+  );
+}
+
+/**
+ * The two things a teacher can actually do, plus the reassurance that they can
+ * do neither.
+ *
+ * Shared by every not-grounded state (2026-09-06). Until now only D38's
+ * "model says these sections do not cover the topic" branch carried actions —
+ * but a teacher whose topic simply did not match has exactly the same problem
+ * and exactly the same two levers, and was given a sentence and nothing else.
+ * That was found by a real teacher hitting the no-match path, which is the
+ * path D42 never rendered for.
+ */
+function GroundingActions({
+  plan,
+  showRetry,
+  showLibrary,
+}: {
+  plan: LessonPlanDto;
+  showRetry: boolean;
+  showLibrary: boolean;
+}) {
+  if (!showRetry && !showLibrary) return null;
+  return (
+    <>
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        {showRetry ? (
+          <Button asChild size="sm" variant="secondary">
+            <Link href={retryHref(plan)}>Try different wording</Link>
+          </Button>
+        ) : null}
+        {showLibrary ? (
+          <Button asChild size="sm" variant="outline">
+            <Link href="/teacher/curriculum">Open curriculum library</Link>
+          </Button>
+        ) : null}
+      </div>
+      <p className="mt-2 text-xs opacity-80">
+        This plan is saved either way — you can keep and edit it as it is.
+      </p>
+    </>
   );
 }

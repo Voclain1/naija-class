@@ -63,7 +63,7 @@ export const QUERY_SET_NOTE =
   "informative item in the set. THREE positives are now teacher-WRITTEN, but none is " +
   "teacher-LABELLED, which is why the CP4-IS-NOT-CLOSED banner still fails: D22 asked for " +
   "topics and labels, and the labels did not survive verification. Scores are reported per " +
-  "band because an aggregate over these four is "
+  "band because an aggregate over these four is " +
   "meaningless. THE NUMBERS ARE ALSO PROVISIONAL FOR A SECOND, SEPARATE REASON: the JSS3 " +
   "corpus has NOT been re-ingested since CP3 began embedding headings together with " +
   "content (D15), so the corpus this suite scores against may not be embedded the way " +
