@@ -2655,3 +2655,71 @@ plausible in advance failed, and the one that worked was already running with
 its answer discarded. Three of four candidates were killed by measurement
 rather than by review, and the single most valuable finding — unreachable
 actions — came from a person clicking, after every automated gate was green.
+
+### 17.11 The JSS3 re-ingestion, verified in production — 2026-09-06
+
+**Phase 7's last substantive open item, closed with direct evidence.**
+
+Arinzechukwu deleted the old document, re-uploaded the same file, reviewed it
+through CP5's gate and approved it. Verified read-only inside the running
+`school-kit-api` container, RLS respected throughout (`SET LOCAL
+app.current_school_id` per read, no writes):
+
+```
+title                 JSS 3 ENGLISH SCHEME
+status                READY
+created_at            2026-09-06T18:58:33.932Z    <- 3 days AFTER CP3 (#257)
+reviewed_at           2026-09-06T19:00:24.802Z
+reviewed_by           3a1e1ff4-...
+heading_edit_count    0
+discarded_chunk_count 3
+chunk_count           23  (chunks actually present: 23)
+chunks_without_vector 0   <- D29's invariant holds in production
+```
+
+#### The format was proven, not inferred
+
+A fresh timestamp shows the document was re-ingested. It does **not** show
+which embedding format was used — and that was the actual question. A stored
+vector is opaque; you cannot read "the heading was included" off it.
+
+Embeddings are deterministic, so the stored vector was compared against both
+candidate re-embeddings of the same chunk:
+
+| candidate | cosine distance to the stored vector |
+|---|---|
+| `heading + content` (D15, post-CP3) | **1.214e-5** |
+| `content` only (pre-CP3) | 6.051e-2 |
+
+A ~5,000x separation. **Production runs D15 heading-plus-content.** This is the
+kind of check this phase kept having to learn to do: the timestamp was the
+convenient proxy, and the re-embedding comparison is the actual measurement.
+
+The eval suite's "numbers are provisional — corpus may not match production"
+caveat is retired accordingly. The provenance limitation is unaffected and
+still fails the banner.
+
+#### D31's first real data point
+
+| | |
+|---|---|
+| heading corrections by the teacher | **0** |
+| sections discarded | **3** (ordinals 0-2 — the front matter and contents page) |
+
+Against the three-condition bar established during D13/D14:
+
+| condition | result |
+|---|---|
+| no furniture-driven repeats | **23/23 distinct**; no `ENGLISH`-style single-word headings |
+| real `WEEK n` paths | **21/23** carry a week; **0** null headings; all three terms present |
+| no `TABLE OF CONTENT` roots | **none** |
+
+The heading path now reads `First Term > WEEK 1` … `Third Term > WEEK 4`
+continuously across all three terms. Compare the state that started D13: the
+same document produced `ENGLISH` eight times, `TABLE OF CONTENT` twice, and one
+usable week path.
+
+**Encouraging, not conclusive.** Zero edits is what a correct chunker looks
+like — and also what a hurried review looks like. One document, one reviewer.
+D31 exists to accumulate this across many documents; this is the first row, not
+the answer.

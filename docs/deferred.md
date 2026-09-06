@@ -2986,8 +2986,64 @@ has the numbers.
 
 ## The JSS3 corpus has not been re-ingested since CP3 changed the embedding format
 
-**Status: open, unconfirmed in either direction, and the last substantive gap
-in Phase 7.**
+**Status: RESOLVED 2026-09-06 — verified directly against the production
+database, not inferred.** The original entry is kept below the resolution so
+the reasoning that kept it open stays readable.
+
+### Resolution
+
+Arinzechukwu deleted the old document, re-uploaded the same file, reviewed it
+through CP5's gate and approved it. Confirmed read-only inside the running
+`school-kit-api` container, with RLS respected (`SET LOCAL
+app.current_school_id` per read; no writes of any kind):
+
+```
+title                 JSS 3 ENGLISH SCHEME
+status                READY
+created_at            2026-09-06T18:58:33.932Z    <- 3 days AFTER CP3 (#257)
+reviewed_at           2026-09-06T19:00:24.802Z    <- went through CP5's gate
+reviewed_by           3a1e1ff4-...                <- a real person
+heading_edit_count    0
+discarded_chunk_count 3
+chunk_count           23  (chunks actually present: 23)
+chunks_without_vector 0   <- D29's invariant holds
+```
+
+**The embedding FORMAT was proven, not inferred from the timestamp.** A stored
+vector is opaque — you cannot read "the heading was included" off it. But
+embeddings are deterministic, so one chunk's stored vector was compared against
+both candidate re-embeddings:
+
+```
+heading + content  ->  cosine distance 1.214e-5   <- MATCH
+content only       ->  cosine distance 6.051e-2
+```
+
+A ~5,000x separation. Production runs the **D15 heading-plus-content format**.
+This retires the "numbers are provisional" caveat the eval banner has carried
+since CP4.
+
+### D31's first real data point
+
+The teacher made **zero heading corrections** and discarded **3 sections**
+(ordinals 0-2 — exactly where the front matter and contents page sit). Against
+the three-condition bar this saga established:
+
+| condition | result |
+|---|---|
+| no furniture-driven repeats | **23/23 headings distinct**; no `ENGLISH`-style single-word headings |
+| real `WEEK n` paths | **21/23** carry a week; **0** null headings; all three terms present |
+| no `TABLE OF CONTENT` roots | **none** |
+
+The two headings without a week (`Second Term`, `Third Term`) are term-level
+sections, not defects.
+
+**Read this as encouraging, not conclusive.** Zero edits is what a correct
+chunker looks like — and also what a hurried review looks like. It is one
+document, reviewed by one person. D31 exists to accumulate this signal across
+many documents, not to be settled by the first reading.
+
+### The original entry, kept for the reasoning
 
 Tracked here from 2026-09-06. Until now it lived only as a sentence inside the
 eval suite's provenance banner — which is the wrong place for the phase's one
