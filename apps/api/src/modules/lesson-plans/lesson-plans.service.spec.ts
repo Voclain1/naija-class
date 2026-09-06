@@ -128,6 +128,37 @@ describe("LessonPlansService", () => {
 
   const input = () => ({ classLevelId, subjectId, topic: `Photosynthesis ${runId}`, objectives: null, durationMinutes: 40 });
 
+  // D42 — the retry path must not cost the teacher the plan they already have.
+  //
+  // The UI tells them "This plan is saved either way" beside a "Try different
+  // wording" button. That promise rests entirely on retry being a CREATE
+  // rather than a regenerate-in-place, so it is asserted here rather than
+  // trusted: a second generation with the same inputs must leave the first row
+  // untouched, still readable, and still carrying its own content.
+  it("a retry creates a NEW plan and leaves the original untouched (D42)", async () => {
+    const first = await service.createAndGenerate(schoolId, userId, input());
+    const firstBody = first.mainContent;
+
+    const second = await service.createAndGenerate(schoolId, userId, input());
+
+    expect(second.id).not.toBe(first.id);
+
+    // Re-read the original from the database rather than trusting the object
+    // returned earlier — the question is whether the ROW survived.
+    const reread = await service.get(schoolId, first.id);
+    expect(reread.id).toBe(first.id);
+    expect(reread.mainContent).toBe(firstBody);
+    expect(reread.topic).toBe(first.topic);
+
+    // Both plans exist side by side, which is what makes the retry safe.
+    const ids = await withTenant(schoolId, (db) =>
+      db.lessonPlan.findMany({ where: { schoolId }, select: { id: true } }),
+    );
+    const idSet = new Set(ids.map((r) => r.id));
+    expect(idSet.has(first.id)).toBe(true);
+    expect(idSet.has(second.id)).toBe(true);
+  });
+
   it("generates every Nigerian lesson-note section and persists them", async () => {
     const plan = await service.createAndGenerate(schoolId, userId, input());
 
