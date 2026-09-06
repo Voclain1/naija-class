@@ -2517,3 +2517,94 @@ requires a generation whose model reports no coverage, and CI has no
 `ANTHROPIC_API_KEY` or `VOYAGE_API_KEY`. The data path is tested end to end and
 the preservation property is tested against a real database; the click path is
 not, and needs one manual pass on a deployment with real keys.
+
+### 17.9 The not-grounded message was invisible — fixed 2026-09-06
+
+Found by a real teacher doing a manual verification pass, and worth recording
+because **the mechanism was correct and the feature still failed.**
+
+D38's detection worked. D42's copy was accurate. The message appeared exactly
+when it should. It was rendered as `text-muted-foreground` inside a dashed
+box — visually identical to every caption on the page — so a teacher read
+straight past it and did not register that their lesson plan was not grounded
+in their curriculum. A load-bearing statement given the weight of a footnote.
+
+**Three things were wrong, and only the first was the reported one.**
+
+**1. No visual prominence.** Now rendered through `InlineAlert`, the shared
+banner component, which brings `role="alert"`, an icon, a bold title and a
+coloured surface. Measured in a real browser: background
+`rgba(245, 158, 11, 0.1)`, border `rgba(245, 158, 11, 0.5)` at `1px`, against
+ordinary body text on the same page at `rgba(0, 0, 0, 0)` — no background and
+no border at all.
+
+`InlineAlert` gained a `tone` prop for this (`destructive` stays the default,
+so every existing caller is untouched). **`warning`, not `destructive`:**
+nothing failed. The plan is usable; the teacher simply has to know what it is
+based on. Putting it in the red used for "could not load dashboard" would
+teach teachers to discount the colour, and the value of a shared alert shape
+is that its severity means something. The tone drives the classes from inside
+the component rather than being appended by the caller, because Tailwind
+resolves conflicting utilities by stylesheet order, not by position in the
+class string — a caller passing `border-amber-500` alongside the base
+`border-destructive` would win or lose unpredictably.
+
+**2. THE ACTIONS WERE NEVER SHOWN — and this is the more serious half.**
+
+The reported message is the `no-match` branch. D42's decision point renders
+only when `reason === "ok" && chunks.length > 0 && modelSaysGrounded === false`
+— retrieval returned sections and the model rejected them. In the teacher's
+test the floor rejected everything, so retrieval returned **zero** chunks,
+`no-match` rendered, and **D42's two actions could not appear**. They were
+never exercised, by anyone, before this fix.
+
+That is a real gap in D42 rather than a styling oversight: a teacher whose
+topic simply did not match has *exactly* the same problem and *exactly* the
+same two levers, and was given a sentence and nothing else. Both actions and
+the "this plan is saved either way" line now come from one shared component
+used by every not-grounded state.
+
+**Actions are per-reason, not a blanket pair.** An action that cannot help is
+worse than no action, because it invites a teacher to spend effort on
+something that provably will not change the outcome:
+
+| reason | retry | library | why |
+|---|---|---|---|
+| `no-documents` | — | ✓ | rewording cannot help when there is nothing to search |
+| `awaiting-review` | — | ✓ | nothing approved to search yet |
+| `no-match` | ✓ | ✓ | either the words or the library can change the result |
+| `error` | ✓ | — | transient; the library is not implicated |
+
+**3. A silent regression, found while fixing the above.** `QUERY_SET_NOTE` in
+the eval fixture was missing a `+` between two adjacent string literals. This
+is not a syntax error — ASI ends the statement and leaves the remainder as a
+dangling expression — so it passed typecheck, lint and CI while **silently
+truncating the provenance banner mid-sentence** and dropping the
+"corpus not re-ingested, numbers are provisional" caveat from every run.
+Introduced in #266, live since. Fixed and verified by printing the note's
+tail.
+
+#### Verified in a real browser
+
+Chromium against the running app; the page, the component and the CSS are
+real, the plan payload is stubbed (reaching a genuinely not-grounded plan
+needs the full stack plus vendor keys, and the fix under test is
+presentational).
+
+```
+alert   role="alert"  icon: yes  border 1px rgba(245,158,11,0.5)
+        background rgba(245,158,11,0.1)   text rgb(120,53,15)
+body    background rgba(0,0,0,0)          no border
+buttons ["Try different wording", "Open curriculum library"]
+```
+
+Both actions driven end to end:
+
+- **Try different wording** → `/teacher/lesson-plans?topic=…&classLevelId=…&subjectId=…&duration=40`, and the create form comes up with **topic, class, subject and duration all carried**, under a banner naming the topic and saying the previous plan is still saved.
+- **Open curriculum library** → `/teacher/curriculum`.
+
+**The plan is preserved, and this was asserted rather than assumed.** Every
+API call made across the whole flow was recorded: seven requests, all `GET`,
+none a write of any kind against the original plan. That is structural — the
+retry is a link to the create form, and creating a plan always makes a new
+row — so there is no "regenerate in place" path that could get it wrong.
