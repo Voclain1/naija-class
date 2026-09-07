@@ -2,6 +2,8 @@
 
 This guide walks a school owner through setting up schoolkit for the first time, in the order that actually works — each stage depends on the one before it. Follow it top to bottom on your first visit; after that, you can jump to whichever section you need.
 
+**Prefer to watch first?** The [demo video](https://www.schoolkit.ng/demo) walks through the same sequence — signup, adding students, inviting staff — in a few minutes. It opens in a new tab, so you can leave this guide where it is.
+
 Every screen name, button label, and field name below is taken directly from the live app, not from memory — if something on your screen doesn't match this guide exactly, check the [Troubleshooting & FAQ](#troubleshooting--faq) section first, then ask for help.
 
 **Bursar or teacher? Most of this guide is the owner/admin setup sequence — here's what's actually yours:**

@@ -124,6 +124,18 @@ export function AdminTopbar({
             <DropdownMenuItem asChild>
               <Link href="/help/guide">Getting started guide</Link>
             </DropdownMenuItem>
+            <DropdownMenuItem asChild>
+              {/* External (marketing site), so a plain anchor rather than
+                  next/link, and a new tab so the menu-opener doesn't lose
+                  whatever page they were on. */}
+              <a
+                href="https://www.schoolkit.ng/demo"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Watch the demo
+              </a>
+            </DropdownMenuItem>
             {canReplayTour && (
               <DropdownMenuItem
                 onSelect={() => {
