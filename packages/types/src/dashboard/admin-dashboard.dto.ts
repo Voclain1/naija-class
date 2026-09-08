@@ -16,6 +16,16 @@ export type AdminDashboardQuery = z.infer<typeof adminDashboardQuerySchema>;
 // re-keys on Branch without a frontend contract change — see CLAUDE.md
 // "Design system" section for the full rationale.
 export interface DashboardCollectionGroupDto {
+  /**
+   * A ClassLevel.id today (a Branch.id when multi-campus ships), or the
+   * literal `"unassigned"` for the synthetic bucket holding invoices whose
+   * student has no ENROLLED row for the term.
+   *
+   * That bucket exists so these rows SUM to `fees.billed`/`fees.collected`
+   * above them. Previously such invoices were silently dropped, so the
+   * breakdown quietly disagreed with the KPI card on the same screen with
+   * nothing on the page explaining the difference.
+   */
   groupId: string;
   label: string;
   billed: number; // kobo
@@ -36,7 +46,25 @@ export interface DashboardAlertDto {
 
 export interface DashboardAttendanceWeekDto {
   weekStart: string; // ISO date (Monday of that week)
-  percentPresent: number; // round(present / totalMarked * 100); 0 if totalMarked is 0
+  /**
+   * How many attendance records exist in this week at all. The denominator,
+   * exposed so the chart can tell "no school this week" apart from "school
+   * ran and nobody came".
+   */
+  totalMarked: number;
+  /**
+   * round(present / totalMarked * 100), or `null` when totalMarked is 0.
+   *
+   * `null` means no register was taken that week — a holiday, a mid-term
+   * break, or a week the school simply did not mark. It is NOT 0.
+   *
+   * This previously returned 0 for an unmarked week, which plotted a dive to
+   * the axis indistinguishable from a week where every single student was
+   * absent. The frontend could not tell them apart because this DTO did not
+   * carry the denominator. Same no-data-vs-zero distinction the revenue
+   * trajectory encodes for future weeks.
+   */
+  percentPresent: number | null;
 }
 
 export interface AdminDashboardDto {
