@@ -60,7 +60,17 @@ function NavLink({
 }) {
   const Icon = item.icon;
   const active = item.enabled && (pathname === item.href || pathname.startsWith(`${item.href}/`));
-  const baseClasses = "flex items-center gap-3 rounded-md px-3 py-2 text-sm";
+  // Nav labels sit at font-medium, one step above the previous default
+  // weight — the single deliberate typography change in the dashboard
+  // redesign (brand faces themselves are unchanged: Hanken Grotesk +
+  // Fraunces stay, the mockup's Newsreader/Plus Jakarta Sans were rejected).
+  // The active item goes one step further to font-semibold so the current
+  // page still reads as distinct now that everything around it is heavier.
+  //
+  // Set HERE, in the one shared NavLink, rather than per container: this
+  // component backs the desktop rail, the mobile drawer AND the teacher
+  // portal's sidebar, so a per-call-site weight would drift between them.
+  const baseClasses = "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium";
 
   if (!item.enabled) {
     return (
@@ -83,7 +93,7 @@ function NavLink({
       className={cn(
         baseClasses,
         active
-          ? "bg-primary/10 text-primary"
+          ? "bg-primary/10 font-semibold text-primary"
           : "text-foreground/80 hover:bg-accent hover:text-accent-foreground",
       )}
     >

@@ -40,10 +40,12 @@ export interface NavItem {
 // out here would be a functional regression dressed up as a restyle, not a
 // visual change. Only what's genuinely unbuilt goes in LATER_PHASE_ITEMS:
 // Reports (pre-existing disabled item), AI Tutor (Phase 5, not started), and
-// five items added 2026-07-31 (Arinzechukwu's request) — Lesson notes,
-// Timetable generator, Event calendar, Assessments & exams, Result checker —
-// all still-unbuilt features tracked in docs/deferred.md's "Future feature
-// ideas" section. Same treatment: greyed out, non-clickable (NavList's
+// four items added 2026-07-31 (Arinzechukwu's request) — Timetable
+// generator, Event calendar, Assessments & exams, Result checker — all
+// still-unbuilt features tracked in docs/deferred.md's "Future feature
+// ideas" section. (Lesson notes was a fifth until 2026-09-08, when it was
+// promoted to a live NAV_ITEM: the feature had in fact shipped in the
+// teacher shell as /teacher/lesson-plans and only the nav entry was stale.) Same treatment: greyed out, non-clickable (NavList's
 // `!item.enabled` branch renders a non-link span with `title="Coming soon"`),
 // no functionality behind them yet.
 export const NAV_ITEMS: NavItem[] = [
@@ -61,6 +63,20 @@ export const NAV_ITEMS: NavItem[] = [
   { label: "Academics", href: "/settings/academic", icon: BarChart3, enabled: true, requiredPermission: "academic-year.create" },
   { label: "Grading", href: "/settings/grading", icon: SlidersHorizontal, enabled: true, requiredPermission: "grading-scheme.read" },
   { label: "Report Cards", href: "/report-cards", icon: FileText, enabled: true, requiredPermission: "report-card.read" },
+  // Lesson plans (Phase 5 / slice 2, shipped). The admin sidebar previously
+  // listed this under "Coming soon" pointing at /lesson-notes — a route that
+  // NEVER EXISTED. The feature shipped in the TEACHER shell as
+  // /teacher/lesson-plans, under a different name, so the admin sidebar was
+  // advertising a page nobody built for a feature that was already live.
+  //
+  // This deliberately links ACROSS SHELLS, which is a real wart: clicking it
+  // swaps the admin chrome for the teacher chrome. It is accepted over the
+  // alternatives because (a) building a separate admin lesson-plans view is
+  // days of work outside a nav fix, and (b) silently dropping the item would
+  // hide a shipped feature owner/admin genuinely hold permissions for.
+  // (teacher)/layout.tsx has NO role gate — a bare RequireAuth — so an
+  // admin can open it; that is what makes this viable at all.
+  { label: "Lesson plans", href: "/teacher/lesson-plans", icon: NotebookText, enabled: true, requiredPermission: "lesson-plan.read" },
   // Phase 5 / Slice 8. Gated on insight.read, which admin/owner hold and
   // bursar and teacher do not — these reports rank classes and subjects
   // against each other across the school, which is management information
@@ -73,7 +89,6 @@ export const NAV_ITEMS: NavItem[] = [
 export const LATER_PHASE_ITEMS: NavItem[] = [
   { label: "Reports", href: "/reports", icon: BarChart3, enabled: false },
   { label: "AI Tutor", href: "/ai-tutor", icon: Sparkles, enabled: false },
-  { label: "Lesson Notes", href: "/lesson-notes", icon: NotebookText, enabled: false },
   { label: "Timetable", href: "/timetable", icon: CalendarClock, enabled: false },
   { label: "Event Calendar", href: "/events", icon: CalendarDays, enabled: false },
   { label: "Assessments & Exams", href: "/exams", icon: ClipboardList, enabled: false },
