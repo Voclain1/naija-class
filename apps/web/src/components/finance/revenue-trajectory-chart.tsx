@@ -65,7 +65,14 @@ export function RevenueTrajectoryChart({ data }: { data: RevenueTrajectoryDto })
           viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`}
           className="h-48 w-full min-w-[320px]"
           role="img"
-          aria-label={`Revenue trajectory for ${data.termName}: invoiced and collected, cumulative, by week`}
+          // Deliberately does NOT interpolate data.termName. Playwright's
+          // getByLabel matches accessible names by SUBSTRING, so a name
+          // containing "First Term" collides with the term <select>'s own
+          // "Term" label and turns getByLabel("Term") into a strict-mode
+          // violation — which is exactly how this broke a11y-wave3a's
+          // keyboard-order test in CI. The term is already named in the
+          // visible caption below, so repeating it here bought nothing.
+          aria-label="Revenue trajectory: cumulative invoiced and collected, by week"
           onMouseLeave={() => setHoverIndex(null)}
           onMouseMove={(e) => {
             const rect = e.currentTarget.getBoundingClientRect();
