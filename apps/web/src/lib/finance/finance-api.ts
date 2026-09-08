@@ -1,6 +1,7 @@
 import type {
   DebtorDto,
   FinanceDashboardDto,
+  RevenueTrajectoryDto,
   SendRemindersInput,
   SendRemindersResult,
 } from "@school-kit/types";
@@ -24,4 +25,11 @@ export function sendReminders(input: SendRemindersInput): Promise<SendRemindersR
     method: "POST",
     body: input,
   });
+}
+
+export function getRevenueTrajectory(termId: string): Promise<RevenueTrajectoryDto> {
+  return apiFetch<RevenueTrajectoryDto>(
+    `/finance/revenue-trajectory?termId=${encodeURIComponent(termId)}`,
+    { method: "GET" },
+  );
 }

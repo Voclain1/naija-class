@@ -3,15 +3,21 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
-import type { AcademicYearDto, FinanceDashboardDto, TermDto } from "@school-kit/types";
+import type {
+  AcademicYearDto,
+  FinanceDashboardDto,
+  RevenueTrajectoryDto,
+  TermDto,
+} from "@school-kit/types";
 
 import { BrandLoadingInline } from "@/components/brand-loading-screen";
+import { RevenueTrajectoryChart } from "@/components/finance/revenue-trajectory-chart";
 import { InlineAlert } from "@/components/shared/inline-alert";
 import { StatCard } from "@/components/shared/stat-card";
 import { Card, CardContent } from "@/components/ui/card";
 import { listAcademicYears, listTerms } from "@/lib/academic-years/academic-years-api";
 import { useAuth } from "@/lib/auth/use-auth";
-import { getFinanceDashboard } from "@/lib/finance/finance-api";
+import { getFinanceDashboard, getRevenueTrajectory } from "@/lib/finance/finance-api";
 import { financeErrorMessage, logFinanceError } from "@/lib/finance/error-copy";
 import { formatKobo } from "@/lib/finance/format";
 
@@ -86,6 +92,7 @@ export default function FinanceDashboardPage() {
   const [termId, setTermId] = useState("");
 
   const [dashboard, setDashboard] = useState<FinanceDashboardDto | null>(null);
+  const [trajectory, setTrajectory] = useState<RevenueTrajectoryDto | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -145,9 +152,15 @@ export default function FinanceDashboardPage() {
 
   useEffect(() => {
     setDashboard(null);
+    setTrajectory(null);
     setError(null);
     if (!termId) return;
     setLoading(true);
+    // The trajectory is a secondary read: a failure here must not blank the
+    // KPI cards, so it is caught separately and simply omits the chart.
+    getRevenueTrajectory(termId)
+      .then(setTrajectory)
+      .catch((e) => logFinanceError("getRevenueTrajectory", e));
     getFinanceDashboard(termId)
       .then(setDashboard)
       .catch((e) => {
@@ -299,6 +312,20 @@ export default function FinanceDashboardPage() {
               </p>
             </CardContent>
           </Card>
+
+          {/* Revenue trajectory — how the term's collections built over
+              time. Weeks that have not happened yet render as a shaded
+              "not yet" region, never as zero. */}
+          {trajectory && (
+            <Card>
+              <CardContent className="pt-6">
+                <h2 className="mb-4 font-serif text-lg font-medium text-foreground">
+                  Revenue trajectory
+                </h2>
+                <RevenueTrajectoryChart data={trajectory} />
+              </CardContent>
+            </Card>
+          )}
 
           {/* KPI row — plain descriptive numbers, text tokens throughout */}
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">

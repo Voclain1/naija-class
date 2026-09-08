@@ -6,11 +6,14 @@ import {
   NotFoundError,
   type DebtorDto,
   type FinanceDashboardDto,
+  type RevenueTrajectoryBucketDto,
+  type RevenueTrajectoryDto,
   type SendRemindersInput,
   type SendRemindersResult,
 } from "@school-kit/types";
 
 import type { AuthContext } from "../../common/auth/auth-context.js";
+import { MS_PER_DAY, startOfDay, toIsoDate, weekStart } from "../../common/dates/week.util.js";
 import { EmailService } from "../../common/email/email.service.js";
 import { redactPhone } from "../../common/redact.js";
 import { normalizeNigerianPhone, TermiiService } from "../../common/termii/termii.service.js";
@@ -230,6 +233,208 @@ export class FinanceService implements OnModuleInit {
         debtorCount,
         totalExpenses,
         netPosition,
+      };
+    });
+  }
+
+  // ─── Revenue trajectory ───────────────────────────────────────────────────
+  //
+  // The term's collections story over time: two cumulative curves (invoiced
+  // vs collected) bucketed into the term's own weeks. Plan-first:
+  // docs/modules/revenue-trajectory.md.
+  //
+  // TIMEZONE: UTC, decided explicitly in D1 of that doc, NOT inherited from a
+  // nearby helper. The bursar dashboard's Africa/Lagos choice is the other
+  // side of the same test (school-day boundary vs accounting boundary) and is
+  // deliberately not followed here: this is an accounting artifact keyed to
+  // terms and invoices, its endpoint reconciles against term accounting
+  // totals, and its bucket boundaries derive from `@db.Date` columns that
+  // carry no zone at all. See week.util.ts.
+  //
+  // Week COUNT is derived from the term's real stored dates — never assumed
+  // to be a fixed number. Terms are not a uniform length.
+  async getRevenueTrajectory(authCtx: AuthContext, termId: string): Promise<RevenueTrajectoryDto> {
+    return withTenant(authCtx.schoolId, async (db) => {
+      const term = await db.term.findUnique({
+        where: { id: termId },
+        select: { id: true, name: true, startDate: true, endDate: true },
+      });
+      if (!term) throw new NotFoundError("Term not found.");
+
+      const now = new Date();
+      const today = startOfDay(now);
+
+      const [invoices, payments, totalsAgg] = await Promise.all([
+        db.invoice.findMany({
+          where: { termId, status: { notIn: ["DRAFT", "CANCELLED"] } },
+          select: { totalDue: true, issuedAt: true, createdAt: true },
+        }),
+        // SUCCESS only — a refund sets the payment REVERSED and recomputes
+        // Invoice.totalPaid from the remaining SUCCESS rows (refunds.service).
+        // Dropping that filter would count money the KPI card does not, and
+        // would break the reconciliation this endpoint promises, silently.
+        // The invoice-status filter mirrors the totals aggregate below.
+        db.payment.findMany({
+          where: {
+            status: "SUCCESS",
+            invoice: { termId, status: { notIn: ["DRAFT", "CANCELLED"] } },
+          },
+          select: { amount: true, paidAt: true, createdAt: true },
+        }),
+        // Deliberately the SAME source getDashboard() uses (invoice-level
+        // sums), not a sum of the rows above. If the payment-level series ever
+        // drifts from the invoice-level totals, the spec's reconciliation
+        // assertion must FAIL rather than compare a number against itself.
+        db.invoice.aggregate({
+          where: { termId, status: { notIn: ["DRAFT", "CANCELLED"] } },
+          _sum: { totalDue: true, totalPaid: true },
+        }),
+      ]);
+
+      const totalInvoiced = totalsAgg._sum.totalDue ?? 0;
+      const totalCollected = totalsAgg._sum.totalPaid ?? 0;
+
+      // In-term weeks, snapped to Mondays, derived from the stored dates.
+      // A term starting mid-week has its first bucket begin on the Monday
+      // BEFORE startDate — deliberate, so the finance weeks line up with the
+      // attendance trend's weeks rather than sitting on a private calendar.
+      const firstWeek = weekStart(term.startDate);
+      const lastWeek = weekStart(term.endDate);
+      const weeks: Date[] = [];
+      for (let t = firstWeek.getTime(); t <= lastWeek.getTime(); t += 7 * MS_PER_DAY) {
+        weeks.push(new Date(t));
+      }
+      const afterTermFrom = new Date(lastWeek.getTime() + 7 * MS_PER_DAY);
+
+      const invoicedDelta = new Array<number>(weeks.length).fill(0);
+      const collectedDelta = new Array<number>(weeks.length).fill(0);
+      let invoicedBefore = 0;
+      let collectedBefore = 0;
+      let invoicedAfter = 0;
+      let collectedAfter = 0;
+
+      const place = (
+        when: Date,
+        amount: number,
+        deltas: number[],
+        onBefore: (n: number) => void,
+        onAfter: (n: number) => void,
+      ) => {
+        const bucketStart = weekStart(when);
+        if (bucketStart.getTime() < firstWeek.getTime()) return onBefore(amount);
+        if (bucketStart.getTime() >= afterTermFrom.getTime()) return onAfter(amount);
+        const idx = Math.round((bucketStart.getTime() - firstWeek.getTime()) / (7 * MS_PER_DAY));
+        deltas[idx] = (deltas[idx] ?? 0) + amount;
+      };
+
+      for (const inv of invoices) {
+        // issuedAt is nullable; older rows have it unset. Same fallback
+        // invoice-arm-backfill.ts uses — without it those invoices vanish
+        // from the curve while remaining in totalInvoiced.
+        place(
+          inv.issuedAt ?? inv.createdAt,
+          inv.totalDue,
+          invoicedDelta,
+          (n) => {
+            invoicedBefore += n;
+          },
+          (n) => {
+            invoicedAfter += n;
+          },
+        );
+      }
+      for (const pay of payments) {
+        place(
+          pay.paidAt ?? pay.createdAt,
+          pay.amount,
+          collectedDelta,
+          (n) => {
+            collectedBefore += n;
+          },
+          (n) => {
+            collectedAfter += n;
+          },
+        );
+      }
+
+      const hasBefore = invoicedBefore > 0 || collectedBefore > 0;
+      const hasAfter = invoicedAfter > 0 || collectedAfter > 0;
+
+      // Trailing future weeks: the contiguous run at the END of the term whose
+      // week starts after today AND which hold no rows. Only this run is
+      // nulled, so the cumulative series never develops a hole in the middle.
+      // Suppressed entirely when an AFTER_TERM bucket exists — rows dated past
+      // the term mean the series continues, so nothing before them is "not yet".
+      const futureFrom = (() => {
+        if (hasAfter) return weeks.length;
+        let i = weeks.length;
+        while (i > 0) {
+          const w = weeks[i - 1]!;
+          const empty = (invoicedDelta[i - 1] ?? 0) === 0 && (collectedDelta[i - 1] ?? 0) === 0;
+          if (w.getTime() > today.getTime() && empty) i -= 1;
+          else break;
+        }
+        return i;
+      })();
+
+      const buckets: RevenueTrajectoryBucketDto[] = [];
+      let cumInvoiced = 0;
+      let cumCollected = 0;
+
+      if (hasBefore) {
+        cumInvoiced += invoicedBefore;
+        cumCollected += collectedBefore;
+        buckets.push({
+          weekStart: toIsoDate(term.startDate),
+          kind: "BEFORE_TERM",
+          label: "Before term",
+          invoiced: cumInvoiced,
+          collected: cumCollected,
+          isFuture: false,
+        });
+      }
+
+      for (let i = 0; i < weeks.length; i++) {
+        const isFuture = i >= futureFrom;
+        if (!isFuture) {
+          cumInvoiced += invoicedDelta[i] ?? 0;
+          cumCollected += collectedDelta[i] ?? 0;
+        }
+        buckets.push({
+          weekStart: toIsoDate(weeks[i]!),
+          kind: "IN_TERM",
+          label: "Week " + String(i + 1),
+          // null, NOT 0 — a week that has not happened yet has no data. A 0
+          // here would draw a flat line along the axis that reads as a
+          // collections collapse. See the DTO comment.
+          invoiced: isFuture ? null : cumInvoiced,
+          collected: isFuture ? null : cumCollected,
+          isFuture,
+        });
+      }
+
+      if (hasAfter) {
+        cumInvoiced += invoicedAfter;
+        cumCollected += collectedAfter;
+        buckets.push({
+          weekStart: toIsoDate(afterTermFrom),
+          kind: "AFTER_TERM",
+          label: "After term",
+          invoiced: cumInvoiced,
+          collected: cumCollected,
+          isFuture: false,
+        });
+      }
+
+      return {
+        termId: term.id,
+        termName: term.name,
+        termStartDate: toIsoDate(term.startDate),
+        termEndDate: toIsoDate(term.endDate),
+        asOf: now.toISOString(),
+        buckets,
+        totalInvoiced,
+        totalCollected,
       };
     });
   }
