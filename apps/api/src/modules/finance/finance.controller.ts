@@ -2,11 +2,14 @@ import { Body, Controller, Get, HttpCode, Post, Query, UseGuards } from "@nestjs
 import {
   financeDashboardQuerySchema,
   listDebtorsSchema,
+  revenueTrajectoryQuerySchema,
   sendRemindersSchema,
   type DebtorDto,
   type FinanceDashboardDto,
   type FinanceDashboardQuery,
   type ListDebtorsInput,
+  type RevenueTrajectoryDto,
+  type RevenueTrajectoryQuery,
   type SendRemindersInput,
   type SendRemindersResult,
 } from "@school-kit/types";
@@ -56,5 +59,21 @@ export class FinanceController {
     @Query(new ZodValidationPipe(financeDashboardQuerySchema)) query: FinanceDashboardQuery,
   ): Promise<FinanceDashboardDto> {
     return this.service.getDashboard(authCtx, query.termId);
+  }
+
+  // ─── GET /finance/revenue-trajectory?termId= ──────────────────────
+  //
+  // A separate endpoint rather than a wider FinanceDashboardDto: the KPI load
+  // should not pay for a per-week scan it never renders, and the two are
+  // independently changeable. Reuses finance.dashboard.read — no new
+  // permission constant. See docs/modules/revenue-trajectory.md D5.
+
+  @Get("revenue-trajectory")
+  @Permissions("finance.dashboard.read")
+  async getRevenueTrajectory(
+    @CurrentUser() authCtx: AuthContext,
+    @Query(new ZodValidationPipe(revenueTrajectoryQuerySchema)) query: RevenueTrajectoryQuery,
+  ): Promise<RevenueTrajectoryDto> {
+    return this.service.getRevenueTrajectory(authCtx, query.termId);
   }
 }

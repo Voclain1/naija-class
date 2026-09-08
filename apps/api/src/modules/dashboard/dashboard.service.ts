@@ -10,31 +10,13 @@ import {
 } from "@school-kit/types";
 
 import type { AuthContext } from "../../common/auth/auth-context.js";
+import { MS_PER_DAY, startOfDay, weekStart } from "../../common/dates/week.util.js";
 import { FinanceService } from "../finance/finance.service.js";
 
 const TREND_WEEKS = 8;
 
 // Sorts the synthetic "Unassigned" bucket after every real ClassLevel.
 const UNASSIGNED_ORDER_INDEX = Number.MAX_SAFE_INTEGER;
-const MS_PER_DAY = 24 * 60 * 60 * 1000;
-
-// UTC, not local time — AttendanceRecord.date is `@db.Date` (no timezone;
-// see CLAUDE.md's "midnight in which zone?" rule). Using local-time mutators
-// here (setHours/getDay/setDate) would compare against the wrong calendar
-// day whenever the server's local timezone isn't UTC+0, which is exactly
-// the trap that rule exists to avoid.
-function startOfDay(d: Date): Date {
-  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
-}
-
-// Monday of the week containing `d` (ISO week start), at UTC midnight.
-function weekStart(d: Date): Date {
-  const out = startOfDay(d);
-  const day = out.getUTCDay(); // 0 = Sunday
-  const diff = day === 0 ? -6 : 1 - day;
-  out.setUTCDate(out.getUTCDate() + diff);
-  return out;
-}
 
 // ---------------------------------------------------------------------------
 // DashboardService — the admin dashboard rebuild's aggregation layer.
