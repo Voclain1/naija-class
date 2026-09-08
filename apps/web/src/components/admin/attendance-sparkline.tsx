@@ -4,6 +4,12 @@ import { useState } from "react";
 
 import type { DashboardAttendanceWeekDto } from "@school-kit/types";
 
+import {
+  buildSparkline,
+  xForWeek,
+  DEFAULT_SPARKLINE_SIZE,
+} from "./attendance-sparkline.geometry";
+
 type Point = { x: number; y: number };
 
 // Monotone cubic (Hermite) tangents — the Fritsch-Carlson method, same
@@ -70,29 +76,31 @@ function smoothPath(points: Point[]): string {
 export function AttendanceSparkline({ weeks }: { weeks: DashboardAttendanceWeekDto[] }) {
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
 
-  const width = 320;
-  const height = 64;
-  const padding = 6;
-  const values = weeks.map((w) => w.percentPresent);
-  const max = Math.max(100, ...values);
-  const min = 0;
+  const { width, height } = DEFAULT_SPARKLINE_SIZE;
 
-  const points = values.map((v, i) => {
-    const x = padding + (i / Math.max(1, values.length - 1)) * (width - padding * 2);
-    const y = height - padding - ((v - min) / (max - min || 1)) * (height - padding * 2);
-    return { x, y };
-  });
+  // Weeks with no register taken are NOT plotted — see the geometry module.
+  // The line comes back as contiguous segments so a mid-term break leaves a
+  // real gap instead of a straight interpolation through the missing week.
+  const { segments, points, gapIndices } = buildSparkline(weeks, DEFAULT_SPARKLINE_SIZE);
 
-  const linePath = smoothPath(points);
-  const areaPath = `${linePath} L ${points[points.length - 1]?.x ?? 0} ${height} L ${points[0]?.x ?? 0} ${height} Z`;
+  const segmentPaths = segments.map((seg) => smoothPath(seg));
+  // The filled area is only meaningful under a single unbroken run; with a
+  // gap present it would imply data across the hole, so it is dropped.
+  const areaPath =
+    segments.length === 1 && segments[0]!.length > 1
+      ? `${segmentPaths[0]} L ${segments[0]!.at(-1)!.x} ${height} L ${segments[0]![0]!.x} ${height} Z`
+      : null;
 
   function handleMouseMove(e: React.MouseEvent<SVGSVGElement>) {
     const rect = e.currentTarget.getBoundingClientRect();
     const relX = ((e.clientX - rect.left) / rect.width) * width;
+    // Hit-test against WEEK slots, not plotted points, so hovering an
+    // unmarked week still reports that week (as "not marked") rather than
+    // snapping to the nearest week that happens to have data.
     let closest = 0;
     let closestDist = Infinity;
-    points.forEach((p, i) => {
-      const dist = Math.abs(p.x - relX);
+    weeks.forEach((_, i) => {
+      const dist = Math.abs(xForWeek(i, weeks.length, DEFAULT_SPARKLINE_SIZE) - relX);
       if (dist < closestDist) {
         closestDist = dist;
         closest = i;
@@ -102,7 +110,8 @@ export function AttendanceSparkline({ weeks }: { weeks: DashboardAttendanceWeekD
   }
 
   const hovered = hoverIndex !== null ? weeks[hoverIndex] : null;
-  const hoveredPoint = hoverIndex !== null ? points[hoverIndex] : null;
+  const hoveredPoint = hoverIndex !== null ? (points.find((p) => p.index === hoverIndex) ?? null) : null;
+  const hoveredX = hoverIndex !== null ? xForWeek(hoverIndex, weeks.length, DEFAULT_SPARKLINE_SIZE) : null;
 
   return (
     <div className="relative">
@@ -112,34 +121,62 @@ export function AttendanceSparkline({ weeks }: { weeks: DashboardAttendanceWeekD
         onMouseMove={handleMouseMove}
         onMouseLeave={() => setHoverIndex(null)}
       >
-        <path d={areaPath} className="fill-primary/10" />
-        <path
-          d={linePath}
-          className="fill-none stroke-primary"
-          strokeWidth={2}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-        {hoveredPoint && (
+        {areaPath && <path d={areaPath} className="fill-primary/10" />}
+        {/* Unmarked weeks get a faint tick on the baseline: visible as "no
+            register", deliberately not a data point on the curve. */}
+        {gapIndices.map((i) => (
+          <line
+            key={`gap-${i}`}
+            x1={xForWeek(i, weeks.length, DEFAULT_SPARKLINE_SIZE)}
+            y1={height - 4}
+            x2={xForWeek(i, weeks.length, DEFAULT_SPARKLINE_SIZE)}
+            y2={height}
+            className="stroke-muted-foreground/40"
+            strokeWidth={2}
+          />
+        ))}
+        {segmentPaths.map((d, i) => (
+          <path
+            key={`seg-${i}`}
+            d={d}
+            className="fill-none stroke-primary"
+            strokeWidth={2}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        ))}
+        {hoveredX !== null && (
           <>
             <line
-              x1={hoveredPoint.x}
+              x1={hoveredX}
               y1={0}
-              x2={hoveredPoint.x}
+              x2={hoveredX}
               y2={height}
               className="stroke-border"
               strokeWidth={1}
             />
-            <circle cx={hoveredPoint.x} cy={hoveredPoint.y} r={4} className="fill-primary" />
+            {hoveredPoint && (
+              <circle cx={hoveredPoint.x} cy={hoveredPoint.y} r={4} className="fill-primary" />
+            )}
           </>
         )}
       </svg>
-      {hovered && hoveredPoint && (
+      {hovered && hoveredX !== null && (
         <div
           className="pointer-events-none absolute -translate-x-1/2 -translate-y-full rounded-md border border-border bg-popover px-2 py-1 text-xs text-popover-foreground shadow-md"
-          style={{ left: `${(hoveredPoint.x / width) * 100}%`, top: `${(hoveredPoint.y / height) * 100}%` }}
+          style={{
+            left: `${(hoveredX / width) * 100}%`,
+            // An unmarked week has no point to anchor to, so the tooltip sits
+            // on the baseline rather than vanishing — the whole fix is that
+            // these weeks stay legible instead of silently reading as 0%.
+            top: `${((hoveredPoint?.y ?? height) / height) * 100}%`,
+          }}
         >
-          <div className="font-medium">{hovered.percentPresent}% present</div>
+          <div className="font-medium">
+            {hovered.percentPresent === null
+              ? "No register taken"
+              : `${hovered.percentPresent}% present`}
+          </div>
           <div className="text-muted-foreground">
             Week of {new Date(hovered.weekStart).toLocaleDateString("en-NG", { month: "short", day: "numeric" })}
           </div>

@@ -7,6 +7,9 @@ import type { AuthContext } from "../../common/auth/auth-context.js";
 import { FinanceService } from "../finance/finance.service.js";
 
 const TREND_WEEKS = 8;
+
+// Sorts the synthetic "Unassigned" bucket after every real ClassLevel.
+const UNASSIGNED_ORDER_INDEX = Number.MAX_SAFE_INTEGER;
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 // UTC, not local time — AttendanceRecord.date is `@db.Date` (no timezone;
@@ -64,7 +67,7 @@ export class DashboardService {
         attendanceAgg,
         enrollmentsForGroups,
         invoicesForGroups,
-        overdueCount,
+        currentTerm,
         pendingReportCardCount,
         pendingInvitationCount,
         attendanceForTrend,
@@ -88,7 +91,7 @@ export class DashboardService {
           where: { termId, status: { notIn: ["DRAFT", "CANCELLED"] } },
           select: { studentId: true, totalDue: true, totalPaid: true },
         }),
-        db.invoice.count({ where: { status: "OVERDUE" } }),
+        db.term.findFirst({ where: { isCurrent: true }, select: { id: true } }),
         db.reportCard.count({ where: { status: "FORM_REVIEWED" } }),
         db.invitation.count({ where: { acceptedAt: null, expiresAt: { gt: now } } }),
         db.attendanceRecord.findMany({
@@ -96,6 +99,13 @@ export class DashboardService {
           select: { date: true, status: true },
         }),
       ]);
+
+      // Scoped to the current term so this count agrees with the page it
+      // links to. A school with no current term flagged gets 0 rather than a
+      // cross-term total nothing on screen can account for.
+      const overdueCount = currentTerm
+        ? await db.invoice.count({ where: { status: "OVERDUE", termId: currentTerm.id } })
+        : 0;
 
       let previousTermCount: number | null = null;
       if (previousTerm) {
@@ -170,8 +180,13 @@ function buildCollectionByGroup(
 
   const groups = new Map<string, { label: string; orderIndex: number; billed: number; collected: number }>();
   for (const inv of invoices) {
-    const level = studentToLevel.get(inv.studentId);
-    if (!level) continue; // invoice for a student with no ENROLLED row this term — nothing to group by
+    // An invoice whose student has no ENROLLED row for this term still
+    // belongs to the term's totals, so it CANNOT be dropped — doing so made
+    // these rows disagree with the fees KPI card directly above them.
+    // UNASSIGNED_ORDER_INDEX sorts it last, after every real class level.
+    const level =
+      studentToLevel.get(inv.studentId) ??
+      ({ id: "unassigned", name: "Unassigned", orderIndex: UNASSIGNED_ORDER_INDEX } as const);
     const existing = groups.get(level.id) ?? {
       label: level.name,
       orderIndex: level.orderIndex,
@@ -197,7 +212,7 @@ function buildCollectionByGroup(
 function buildAttendanceTrend(
   records: Array<{ date: Date; status: string }>,
   today: Date,
-): Array<{ weekStart: string; percentPresent: number }> {
+): Array<{ weekStart: string; totalMarked: number; percentPresent: number | null }> {
   const buckets = new Map<string, { present: number; total: number }>();
   const weeks: string[] = [];
   for (let i = TREND_WEEKS - 1; i >= 0; i--) {
@@ -219,7 +234,11 @@ function buildAttendanceTrend(
     const bucket = buckets.get(weekStartKey)!;
     return {
       weekStart: weekStartKey,
-      percentPresent: bucket.total > 0 ? Math.round((bucket.present / bucket.total) * 100) : 0,
+      totalMarked: bucket.total,
+      // null, NOT 0, when nothing was marked — a holiday week is not a week
+      // of total absence, and returning 0 made the two indistinguishable on
+      // the chart. See DashboardAttendanceWeekDto.
+      percentPresent: bucket.total > 0 ? Math.round((bucket.present / bucket.total) * 100) : null,
     };
   });
 }
