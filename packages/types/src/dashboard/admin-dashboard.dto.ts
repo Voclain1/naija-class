@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import type { DashboardSchoolProfileDto } from "./school-profile.dto.js";
+
 // Admin dashboard — the "visual/UX overhaul" initiative's first slice
 // (not tied to a numbered Phase; Phase 4 is closed, Phase 5 is AI). Mirrors
 // financeDashboardQuerySchema exactly: termId required, no server-side
@@ -101,4 +103,11 @@ export interface AdminDashboardDto {
   needsYouToday: DashboardAlertDto[];
 
   attendanceTrend: DashboardAttendanceWeekDto[]; // last 8 weeks, oldest first
+
+  /**
+   * The school's actual state right now — facts, completeness ratios with
+   * real denominators, and timestamps of real activity. Deliberately NOT a
+   * health/uptime indicator; see school-profile.dto.ts for why.
+   */
+  schoolProfile: DashboardSchoolProfileDto;
 }

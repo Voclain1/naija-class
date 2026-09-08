@@ -8,6 +8,7 @@ import type { AdminDashboardDto, DashboardAlertType } from "@school-kit/types";
 
 import { AttendanceSparkline } from "@/components/admin/attendance-sparkline";
 import { CommandDialog } from "@/components/admin/command-dialog";
+import { SchoolProfileCard } from "@/components/admin/school-profile-card";
 import { BrandLoadingInline } from "@/components/brand-loading-screen";
 import { AlertList } from "@/components/shared/alert-list";
 import { InlineAlert } from "@/components/shared/inline-alert";
@@ -207,6 +208,17 @@ export default function DashboardPage() {
 
       {/* Two-column: collection breakdown + needs you today */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        {/* School profile — the school's actual state right now. No status
+            light and no "last synced" line; see school-profile-card.tsx. */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">School profile</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <SchoolProfileCard profile={dashboard.schoolProfile} />
+          </CardContent>
+        </Card>
+
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Collection by class level</CardTitle>
