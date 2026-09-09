@@ -19,12 +19,19 @@ import { resolveQuickActions } from "./quick-actions";
 // list the sidebar renders — rather than a second permission check that could
 // drift from it. See quick-actions.ts.
 //
-// Hidden below sm: the topbar is already tight on a phone, and both actions
-// remain reachable (⌘K on a keyboard, Finance in the hamburger drawer).
+// Hidden below lg (1024px), NOT sm. At 768px the desktop sidebar is already
+// visible and takes 256px, leaving ~512px of topbar — and two ~85px pills
+// pushed the account control clean off the right edge (right=858 against a
+// 768px viewport), which a11y-wave3a's responsive-overflow test caught. lg
+// gives the topbar 768px, i.e. 256px more than the width that was already
+// tight without the pills.
+//
+// Both actions stay reachable everywhere they are hidden: ⌘K on a keyboard,
+// Finance in the sidebar or the hamburger drawer.
 
 const PILL_CLASSES =
   "hidden h-9 shrink-0 items-center gap-1.5 rounded-md border border-input bg-background px-2.5 text-sm " +
-  "text-muted-foreground transition-colors hover:bg-accent/40 hover:text-foreground sm:inline-flex";
+  "text-muted-foreground transition-colors hover:bg-accent/40 hover:text-foreground lg:inline-flex";
 
 function Badge({ children }: { children: string }) {
   return (
