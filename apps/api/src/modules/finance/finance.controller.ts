@@ -1,12 +1,15 @@
 import { Body, Controller, Get, HttpCode, Post, Query, UseGuards } from "@nestjs/common";
 import {
   financeDashboardQuerySchema,
+  collectionByLevelQuerySchema,
   listDebtorsSchema,
   revenueTrajectoryQuerySchema,
   sendRemindersSchema,
   type DebtorDto,
   type FinanceDashboardDto,
   type FinanceDashboardQuery,
+  type CollectionByLevelDto,
+  type CollectionByLevelQuery,
   type ListDebtorsInput,
   type RevenueTrajectoryDto,
   type RevenueTrajectoryQuery,
@@ -75,5 +78,20 @@ export class FinanceController {
     @Query(new ZodValidationPipe(revenueTrajectoryQuerySchema)) query: RevenueTrajectoryQuery,
   ): Promise<RevenueTrajectoryDto> {
     return this.service.getRevenueTrajectory(authCtx, query.termId);
+  }
+
+  // ─── GET /finance/collection-by-level?termId= ───────────────────
+  //
+  // Separate from GET /finance/dashboard on purpose — that DTO's key set is
+  // pinned by finance.mobile-cp3.spec.ts because staff mobile consumes it.
+  // See CollectionByLevelDto for the full reasoning.
+
+  @Get("collection-by-level")
+  @Permissions("finance.dashboard.read")
+  async getCollectionByLevel(
+    @CurrentUser() authCtx: AuthContext,
+    @Query(new ZodValidationPipe(collectionByLevelQuerySchema)) query: CollectionByLevelQuery,
+  ): Promise<CollectionByLevelDto> {
+    return this.service.getCollectionByLevel(authCtx, query.termId);
   }
 }

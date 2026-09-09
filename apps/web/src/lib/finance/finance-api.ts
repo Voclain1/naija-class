@@ -1,4 +1,5 @@
 import type {
+  CollectionByLevelDto,
   DebtorDto,
   FinanceDashboardDto,
   RevenueTrajectoryDto,
@@ -30,6 +31,13 @@ export function sendReminders(input: SendRemindersInput): Promise<SendRemindersR
 export function getRevenueTrajectory(termId: string): Promise<RevenueTrajectoryDto> {
   return apiFetch<RevenueTrajectoryDto>(
     `/finance/revenue-trajectory?termId=${encodeURIComponent(termId)}`,
+    { method: "GET" },
+  );
+}
+
+export function getCollectionByLevel(termId: string): Promise<CollectionByLevelDto> {
+  return apiFetch<CollectionByLevelDto>(
+    `/finance/collection-by-level?termId=${encodeURIComponent(termId)}`,
     { method: "GET" },
   );
 }
