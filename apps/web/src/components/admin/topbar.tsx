@@ -17,6 +17,7 @@ import { useAuth } from "@/lib/auth/use-auth";
 import { SchoolLogo } from "@/components/school/school-logo";
 
 import { CommandDialog, useCommandDialogHotkey } from "./command-dialog";
+import { QuickActionPills } from "./quick-action-pills";
 import { DashboardTermSelector } from "./dashboard-term-selector";
 import { MobileNav } from "./mobile-nav";
 import type { NavItem } from "./nav-items";
@@ -110,6 +111,10 @@ export function AdminTopbar({
           ⌘K
         </kbd>
       </button>
+
+      {/* A / B quick actions. The Ledger pill is permission-gated off the same
+          filtered nav list the sidebar uses — see quick-actions.ts. */}
+      <QuickActionPills onOpenCommand={() => setCommandOpen(true)} />
 
       <div className="flex shrink-0 items-center gap-1 sm:gap-2">
         <DashboardTermSelector />
