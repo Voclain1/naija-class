@@ -4,19 +4,16 @@ import { withTenant } from "@school-kit/db";
 import {
   NotFoundError,
   type AdminDashboardDto,
-  type DashboardCollectionGroupDto,
   type DashboardSchoolProfileDto,
   type DashboardSetupBlockerDto,
 } from "@school-kit/types";
 
 import type { AuthContext } from "../../common/auth/auth-context.js";
 import { MS_PER_DAY, startOfDay, weekStart } from "../../common/dates/week.util.js";
+import { buildCollectionByGroup } from "../finance/collection-by-group.js";
 import { FinanceService } from "../finance/finance.service.js";
 
 const TREND_WEEKS = 8;
-
-// Sorts the synthetic "Unassigned" bucket after every real ClassLevel.
-const UNASSIGNED_ORDER_INDEX = Number.MAX_SAFE_INTEGER;
 
 // ---------------------------------------------------------------------------
 // DashboardService — the admin dashboard rebuild's aggregation layer.
@@ -285,49 +282,6 @@ function buildSchoolProfile(input: {
     },
     setupBlockers,
   };
-}
-
-function buildCollectionByGroup(
-  enrollments: Array<{
-    studentId: string;
-    classArm: { classLevel: { id: string; name: string; orderIndex: number } };
-  }>,
-  invoices: Array<{ studentId: string; totalDue: number; totalPaid: number }>,
-): DashboardCollectionGroupDto[] {
-  const studentToLevel = new Map<string, { id: string; name: string; orderIndex: number }>();
-  for (const e of enrollments) {
-    studentToLevel.set(e.studentId, e.classArm.classLevel);
-  }
-
-  const groups = new Map<string, { label: string; orderIndex: number; billed: number; collected: number }>();
-  for (const inv of invoices) {
-    // An invoice whose student has no ENROLLED row for this term still
-    // belongs to the term's totals, so it CANNOT be dropped — doing so made
-    // these rows disagree with the fees KPI card directly above them.
-    // UNASSIGNED_ORDER_INDEX sorts it last, after every real class level.
-    const level =
-      studentToLevel.get(inv.studentId) ??
-      ({ id: "unassigned", name: "Unassigned", orderIndex: UNASSIGNED_ORDER_INDEX } as const);
-    const existing = groups.get(level.id) ?? {
-      label: level.name,
-      orderIndex: level.orderIndex,
-      billed: 0,
-      collected: 0,
-    };
-    existing.billed += inv.totalDue;
-    existing.collected += inv.totalPaid;
-    groups.set(level.id, existing);
-  }
-
-  return Array.from(groups.entries())
-    .sort((a, b) => a[1].orderIndex - b[1].orderIndex)
-    .map(([groupId, g]) => ({
-      groupId,
-      label: g.label,
-      billed: g.billed,
-      collected: g.collected,
-      percent: g.billed > 0 ? Math.round((g.collected / g.billed) * 100) : 0,
-    }));
 }
 
 function buildAttendanceTrend(

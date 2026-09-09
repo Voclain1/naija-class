@@ -6,6 +6,7 @@ import {
   NotFoundError,
   type DebtorDto,
   type FinanceDashboardDto,
+  type CollectionByLevelDto,
   type RevenueTrajectoryBucketDto,
   type RevenueTrajectoryDto,
   type SendRemindersInput,
@@ -14,6 +15,7 @@ import {
 
 import type { AuthContext } from "../../common/auth/auth-context.js";
 import { MS_PER_DAY, startOfDay, toIsoDate, weekStart } from "../../common/dates/week.util.js";
+import { buildCollectionByGroup } from "./collection-by-group.js";
 import { EmailService } from "../../common/email/email.service.js";
 import { redactPhone } from "../../common/redact.js";
 import { normalizeNigerianPhone, TermiiService } from "../../common/termii/termii.service.js";
@@ -233,6 +235,62 @@ export class FinanceService implements OnModuleInit {
         debtorCount,
         totalExpenses,
         netPosition,
+      };
+    });
+  }
+
+  // ─── Collection by class level ────────────────────────────────────────────
+  //
+  // A SEPARATE endpoint rather than a wider FinanceDashboardDto, for a reason
+  // a contract test made concrete: finance.mobile-cp3.spec.ts pins that DTO's
+  // exact key set because STAFF MOBILE consumes it, and its stated purpose is
+  // that "the phone must not become the surface where a new field quietly
+  // reaches a staffroom". Adding a web-only breakdown there would ship
+  // per-class fee data to a screen that never asked for it.
+  //
+  // Same division D5 of docs/modules/revenue-trajectory.md already settled:
+  // the KPI read should not pay for a scan it never renders, and the two are
+  // independently changeable.
+  //
+  // Reuses finance.dashboard.read — no new permission.
+  async getCollectionByLevel(
+    authCtx: AuthContext,
+    termId: string,
+  ): Promise<CollectionByLevelDto> {
+    return withTenant(authCtx.schoolId, async (db) => {
+      const term = await db.term.findUnique({
+        where: { id: termId },
+        select: { id: true, name: true },
+      });
+      if (!term) throw new NotFoundError("Term not found.");
+
+      const [enrollments, invoices, totalsAgg] = await Promise.all([
+        db.enrollment.findMany({
+          where: { termId, status: "ENROLLED" },
+          select: {
+            studentId: true,
+            classArm: { select: { classLevel: { select: { id: true, name: true, orderIndex: true } } } },
+          },
+        }),
+        db.invoice.findMany({
+          where: { termId, status: { notIn: ["DRAFT", "CANCELLED"] } },
+          select: { studentId: true, totalDue: true, totalPaid: true },
+        }),
+        // Returned alongside the rows so the caller can show the breakdown
+        // against the same totals the KPI tiles use, and so the spec has
+        // something to assert the rows SUM to.
+        db.invoice.aggregate({
+          where: { termId, status: { notIn: ["DRAFT", "CANCELLED"] } },
+          _sum: { totalDue: true, totalPaid: true },
+        }),
+      ]);
+
+      return {
+        termId: term.id,
+        termName: term.name,
+        groups: buildCollectionByGroup(enrollments, invoices),
+        totalInvoiced: totalsAgg._sum.totalDue ?? 0,
+        totalCollected: totalsAgg._sum.totalPaid ?? 0,
       };
     });
   }

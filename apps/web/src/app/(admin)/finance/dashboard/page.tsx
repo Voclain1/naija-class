@@ -5,19 +5,25 @@ import { useEffect, useState } from "react";
 
 import type {
   AcademicYearDto,
+  CollectionByLevelDto,
   FinanceDashboardDto,
   RevenueTrajectoryDto,
   TermDto,
 } from "@school-kit/types";
 
 import { BrandLoadingInline } from "@/components/brand-loading-screen";
+import { CollectionByLevel } from "@/components/finance/collection-by-level";
 import { RevenueTrajectoryChart } from "@/components/finance/revenue-trajectory-chart";
 import { InlineAlert } from "@/components/shared/inline-alert";
 import { StatCard } from "@/components/shared/stat-card";
 import { Card, CardContent } from "@/components/ui/card";
 import { listAcademicYears, listTerms } from "@/lib/academic-years/academic-years-api";
 import { useAuth } from "@/lib/auth/use-auth";
-import { getFinanceDashboard, getRevenueTrajectory } from "@/lib/finance/finance-api";
+import {
+  getCollectionByLevel,
+  getFinanceDashboard,
+  getRevenueTrajectory,
+} from "@/lib/finance/finance-api";
 import { financeErrorMessage, logFinanceError } from "@/lib/finance/error-copy";
 import { formatKobo } from "@/lib/finance/format";
 
@@ -93,6 +99,7 @@ export default function FinanceDashboardPage() {
 
   const [dashboard, setDashboard] = useState<FinanceDashboardDto | null>(null);
   const [trajectory, setTrajectory] = useState<RevenueTrajectoryDto | null>(null);
+  const [byLevel, setByLevel] = useState<CollectionByLevelDto | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -153,6 +160,7 @@ export default function FinanceDashboardPage() {
   useEffect(() => {
     setDashboard(null);
     setTrajectory(null);
+    setByLevel(null);
     setError(null);
     if (!termId) return;
     setLoading(true);
@@ -161,6 +169,11 @@ export default function FinanceDashboardPage() {
     getRevenueTrajectory(termId)
       .then(setTrajectory)
       .catch((e) => logFinanceError("getRevenueTrajectory", e));
+    // Also a secondary read, caught separately for the same reason: a
+    // failure here omits one card rather than blanking the KPI tiles.
+    getCollectionByLevel(termId)
+      .then(setByLevel)
+      .catch((e) => logFinanceError("getCollectionByLevel", e));
     getFinanceDashboard(termId)
       .then(setDashboard)
       .catch((e) => {
@@ -323,6 +336,22 @@ export default function FinanceDashboardPage() {
                   Revenue trajectory
                 </h2>
                 <RevenueTrajectoryChart data={trajectory} />
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Collection by class level — the SAME component and the same
+              server-side builder the admin dashboard uses, including the
+              "Unassigned" bucket that makes these rows sum to the totals.
+              Its own endpoint, not a wider FinanceDashboardDto: that DTO's
+              key set is pinned because staff mobile consumes it. */}
+          {byLevel && (
+            <Card>
+              <CardContent className="pt-6">
+                <h2 className="mb-4 font-serif text-lg font-medium text-foreground">
+                  Collection by class level
+                </h2>
+                <CollectionByLevel groups={byLevel.groups} />
               </CardContent>
             </Card>
           )}

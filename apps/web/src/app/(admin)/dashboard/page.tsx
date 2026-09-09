@@ -9,10 +9,10 @@ import type { AdminDashboardDto, DashboardAlertType } from "@school-kit/types";
 import { AttendanceSparkline } from "@/components/admin/attendance-sparkline";
 import { CommandDialog } from "@/components/admin/command-dialog";
 import { SchoolProfileCard } from "@/components/admin/school-profile-card";
+import { CollectionByLevel } from "@/components/finance/collection-by-level";
 import { BrandLoadingInline } from "@/components/brand-loading-screen";
 import { AlertList } from "@/components/shared/alert-list";
 import { InlineAlert } from "@/components/shared/inline-alert";
-import { ProgressMeter } from "@/components/shared/progress-meter";
 import { SetupChecklist } from "@/components/setup/setup-checklist";
 import { StatCard } from "@/components/shared/stat-card";
 import { Button } from "@/components/ui/button";
@@ -224,13 +224,10 @@ export default function DashboardPage() {
             <CardTitle className="text-base">Collection by class level</CardTitle>
             <CardDescription>Fees billed vs. collected this term, by class level.</CardDescription>
           </CardHeader>
-          <CardContent className="flex flex-col gap-4">
-            {dashboard.collectionByGroup.length === 0 && (
-              <p className="text-sm text-muted-foreground">No invoices issued this term yet.</p>
-            )}
-            {dashboard.collectionByGroup.map((group) => (
-              <ProgressMeter key={group.groupId} label={group.label} percent={group.percent} />
-            ))}
+          <CardContent>
+            {/* Shared with /finance/dashboard — one component, so the two
+                screens cannot disagree about what a group row means. */}
+            <CollectionByLevel groups={dashboard.collectionByGroup} />
           </CardContent>
         </Card>
 
