@@ -1,7 +1,10 @@
 "use client";
 
-import { Loader2 } from "lucide-react";
+import { ClipboardCheck, Loader2 } from "lucide-react";
 import Link from "next/link";
+
+import { Button } from "@/components/ui/button";
+import { hasPermission } from "@/lib/auth/has-permission";
 import { useCallback, useEffect, useState } from "react";
 
 import type { TeacherScopeDto } from "@school-kit/types";
@@ -21,7 +24,7 @@ import { getMyScope } from "@/lib/teacher/teacher-scope-api";
 // other (teacher) page (/teacher/profile) is client for the same reason.
 
 export default function TeacherDashboardPage() {
-  const { user } = useAuth();
+  const { user, permissions } = useAuth();
   const [scope, setScope] = useState<TeacherScopeDto | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -46,13 +49,31 @@ export default function TeacherDashboardPage() {
 
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
-      <header className="flex flex-col gap-1">
-        <h1 className="font-serif text-2xl font-medium tracking-tight text-foreground">
-          Welcome{user?.firstName ? `, ${user.firstName}` : ""}.
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          The classes and subjects you teach.
-        </p>
+      {/* Roll Call lives HERE, on the teacher dashboard, rather than on the
+          admin dashboard's header. Owner/admin can use /teacher/attendance —
+          the page is explicitly built for managers — but reaching it from an
+          admin header quick-action swapped the whole shell's chrome mid-task,
+          which read as a glitch rather than a navigation. Review, 2026-09-10.
+
+          This dashboard previously had NO entry point to the register at all:
+          a teacher had to find Attendance in the sidebar. */}
+      <header className="flex flex-wrap items-start justify-between gap-4">
+        <div className="flex flex-col gap-1">
+          <h1 className="font-serif text-2xl font-medium tracking-tight text-foreground">
+            Welcome{user?.firstName ? `, ${user.firstName}` : ""}.
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            The classes and subjects you teach.
+          </p>
+        </div>
+        {hasPermission(permissions, "attendance.mark") && (
+          <Button asChild size="sm">
+            <Link href="/teacher/attendance">
+              <ClipboardCheck className="mr-2 h-4 w-4" aria-hidden />
+              Roll Call
+            </Link>
+          </Button>
+        )}
       </header>
 
       {loading ? (
