@@ -73,7 +73,20 @@ export function StatCard({
             </span>
           )}
         </div>
-        <p className={cn("mt-1 font-serif text-3xl font-medium", TONE_CLASSES[tone])}>{value}</p>
+        <p
+          className={cn(
+            // Responsive: a naira figure like N1,530,000.00 is nine glyphs
+            // plus separators and does not fit at text-3xl on a 430px phone —
+            // it was rendering CLIPPED mid-digit on the finance dashboard.
+            // Note the a11y overflow suite did NOT catch this: it checks
+            // body-level overflow and offscreen-unreachable elements, and this
+            // was text clipped INSIDE a card that itself fits.
+            "mt-1 font-serif text-2xl font-medium tabular-nums sm:text-3xl",
+            TONE_CLASSES[tone],
+          )}
+        >
+          {value}
+        </p>
         {context && <p className="mt-1 text-xs text-muted-foreground">{context}</p>}
         {footer && (
           <div className="mt-3 border-t border-border pt-2 text-xs text-muted-foreground">
