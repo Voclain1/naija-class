@@ -3,14 +3,11 @@
 import { usePathname } from "next/navigation";
 
 import { SchoolKitWordmark } from "@/components/brand/schoolkit-mark";
+import { hasPermission } from "@/lib/auth/has-permission";
 import { useAuth } from "@/lib/auth/use-auth";
 
 import { LATER_PHASE_ITEMS, NAV_ITEMS, type NavItem } from "./nav-items";
 import { NavList } from "./nav-list";
-
-function hasPermission(permissions: string[], perm: string): boolean {
-  return permissions.includes("*") || permissions.includes(perm);
-}
 
 // The (admin) shell is no longer owner/admin-exclusive — bursar reaches it
 // too (see (admin)/layout.tsx's RequireAuth roles), but bursar's permission

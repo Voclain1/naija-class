@@ -1,3 +1,5 @@
+import type { ReactNode } from "react";
+
 import { Card, CardContent } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 
@@ -29,15 +31,55 @@ interface StatCardProps {
   context?: string;
   tone?: "default" | "warning" | "positive" | "negative";
   className?: string;
+  /**
+   * Small glyph in the top-right corner. Purely decorative — it repeats what
+   * `label` already says, so it is rendered aria-hidden and MUST NOT be the
+   * only thing carrying a meaning.
+   *
+   * Additive and optional on purpose: this tile is shared by Students, Staff,
+   * Finance and Report Cards as well as the dashboard, and every existing
+   * call site must keep rendering exactly as before.
+   */
+  icon?: ReactNode;
+  /**
+   * A thin footer row under the context line, separated by a hairline rule —
+   * for a secondary breakdown ("Collected … / Target …") or a meter. Same
+   * additive rule as `icon`.
+   */
+  footer?: ReactNode;
 }
 
-export function StatCard({ label, value, context, tone = "default", className }: StatCardProps) {
+export function StatCard({
+  label,
+  value,
+  context,
+  tone = "default",
+  className,
+  icon,
+  footer,
+}: StatCardProps) {
   return (
     <Card className={className}>
       <CardContent className="pt-6">
-        <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{label}</p>
+        <div className="flex items-start justify-between gap-3">
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+            {label}
+          </p>
+          {/* Decorative: it restates the label, so a screen reader announcing
+              it would just be noise. */}
+          {icon && (
+            <span aria-hidden className="shrink-0 text-muted-foreground/70">
+              {icon}
+            </span>
+          )}
+        </div>
         <p className={cn("mt-1 font-serif text-3xl font-medium", TONE_CLASSES[tone])}>{value}</p>
         {context && <p className="mt-1 text-xs text-muted-foreground">{context}</p>}
+        {footer && (
+          <div className="mt-3 border-t border-border pt-2 text-xs text-muted-foreground">
+            {footer}
+          </div>
+        )}
       </CardContent>
     </Card>
   );

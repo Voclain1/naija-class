@@ -1,3 +1,5 @@
+import { fileURLToPath } from "node:url";
+
 import { defineConfig } from "vitest/config";
 
 // apps/web — Vitest config.
@@ -15,6 +17,16 @@ import { defineConfig } from "vitest/config";
 // Library setup and is a larger decision than this incident should make on
 // its own. Playwright already covers rendered behaviour end to end.
 export default defineConfig({
+  // The "@/" alias apps/web uses everywhere. Vitest does not read tsconfig
+  // paths, so a pure module importing "@/lib/..." fails to resolve here even
+  // though tsc and Next both accept it. Added 2026-09-09, when the dashboard
+  // action resolver became the first spec-covered module to import through
+  // the alias rather than a relative path.
+  resolve: {
+    alias: {
+      "@": fileURLToPath(new URL("./src", import.meta.url)),
+    },
+  },
   test: {
     environment: "node",
     include: ["src/**/*.spec.ts"],

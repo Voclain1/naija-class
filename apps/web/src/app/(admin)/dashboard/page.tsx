@@ -1,16 +1,18 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
+import { CalendarCheck, ClipboardList, Users, Wallet } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import type { AdminDashboardDto, DashboardAlertType } from "@school-kit/types";
 
 import { AttendanceSparkline } from "@/components/admin/attendance-sparkline";
-import { CommandDialog } from "@/components/admin/command-dialog";
+import { DashboardActionBar } from "@/components/admin/dashboard-action-bar";
 import { SchoolProfileCard } from "@/components/admin/school-profile-card";
 import { CollectionByLevel } from "@/components/finance/collection-by-level";
 import { BrandLoadingInline } from "@/components/brand-loading-screen";
+import { Badge } from "@/components/ui/badge";
 import { AlertList } from "@/components/shared/alert-list";
 import { InlineAlert } from "@/components/shared/inline-alert";
 import { SetupChecklist } from "@/components/setup/setup-checklist";
@@ -36,8 +38,7 @@ function greeting(): string {
 }
 
 export default function DashboardPage() {
-  const { user } = useAuth();
-  const router = useRouter();
+  const { user, school } = useAuth();
   const searchParams = useSearchParams();
   const termId = searchParams.get("termId") ?? "";
   const noAcademicYear = searchParams.get("noAcademicYear") === "1";
@@ -45,7 +46,6 @@ export default function DashboardPage() {
   const [dashboard, setDashboard] = useState<AdminDashboardDto | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [commandOpen, setCommandOpen] = useState(false);
 
   useEffect(() => {
     if (!termId) return;
@@ -148,26 +148,50 @@ export default function DashboardPage() {
       ? null
       : dashboard.enrolled.count - dashboard.enrolled.previousTermCount;
 
+  const actionItemCount = dashboard.needsYouToday.reduce((total, a) => total + a.count, 0);
+
   return (
     <div className="flex flex-col gap-8">
-      <div className="flex flex-wrap items-start justify-between gap-4">
+      {/* The A/B quick actions live in the TOPBAR, not here. This page used to
+          render its own "A · Command" / "B · Ledger" pair plus a second
+          CommandDialog instance, which meant /dashboard showed both sets at
+          once after the topbar pills shipped. The topbar version is the one to
+          keep: it is present on every admin page, its Ledger action is
+          permission-gated off the filtered nav list (the page-level one was
+          NOT — it rendered for roles that would 403 on /finance/dashboard),
+          and its accessible names are real phrases rather than "A · Command".
+          See components/admin/quick-action-pills.tsx. */}
+      {/* Greeting and actions share ONE row (flex-wrap, so the buttons drop
+          under the greeting on narrow screens rather than overflowing it).
+          The status pill and the brief line stay inside the greeting block. */}
+      <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="font-serif text-2xl font-medium tracking-tight text-foreground sm:text-4xl">
-            {greeting()}, {user?.firstName ?? ""}
-          </h1>
+        {/* Freshness first, and it is a real claim: `asOf` is stamped by the
+            server when it computed THIS response, not a client clock. The dot
+            is decorative — the text carries the meaning. */}
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-2.5 py-1 font-medium text-primary">
+            <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-primary" />
+            Live as of{" "}
+            {new Date(dashboard.asOf).toLocaleTimeString("en-NG", {
+              hour: "numeric",
+              minute: "2-digit",
+            })}
+          </span>
+          <span className="text-muted-foreground">{dashboard.termName}</span>
+        </div>
+
+        <h1 className="mt-3 font-serif text-2xl font-medium tracking-tight text-foreground sm:text-4xl">
+          {greeting()}, {user?.firstName ?? ""}
+        </h1>
+        {school?.name && (
           <p className="mt-1 text-sm text-muted-foreground">
-            {dashboard.termName} · Live as of{" "}
-            {new Date(dashboard.asOf).toLocaleTimeString("en-NG", { hour: "numeric", minute: "2-digit" })}
+            Here is your daily administrative brief for {school.name}.
           </p>
+        )}
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={() => setCommandOpen(true)}>
-            A · Command
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => router.push("/finance/dashboard")}>
-            B · Ledger
-          </Button>
-        </div>
+
+        <DashboardActionBar />
       </div>
 
       {/* A partly-configured school reaches this branch as soon as it has one
@@ -182,46 +206,67 @@ export default function DashboardPage() {
         <StatCard
           label="Enrolled"
           value={String(dashboard.enrolled.count)}
+          icon={<Users className="h-4 w-4" />}
           context={
             enrolledDelta === null
               ? "No prior term to compare"
               : `${enrolledDelta >= 0 ? "+" : ""}${enrolledDelta} vs last term`
           }
+          footer="Pupils on the active register"
         />
         <StatCard
           label="Fees collected"
           value={formatKobo(dashboard.fees.collected)}
+          icon={<Wallet className="h-4 w-4" />}
           context={`${dashboard.fees.percent}% of ${formatKobo(dashboard.fees.billed)} billed`}
+          footer={
+            // A meter, not a second number: one ratio against a limit. Capped
+            // so an over-collection (prepayments) cannot draw past the track.
+            <div className="h-1.5 w-full overflow-hidden rounded-full bg-primary/15">
+              <div
+                className="h-full rounded-full bg-primary"
+                style={{ width: `${Math.min(100, Math.max(0, dashboard.fees.percent))}%` }}
+              />
+            </div>
+          }
         />
         <StatCard
           label="Attendance today"
-          value={`${dashboard.attendanceToday.percentPresent}%`}
-          context={`${dashboard.attendanceToday.absentCount} absent of ${dashboard.attendanceToday.totalMarked} marked`}
+          value={
+            // 0 marked is NOT 0% present — the register simply has not been
+            // taken yet. Same no-data-vs-zero distinction the trend chart and
+            // the trajectory both encode.
+            dashboard.attendanceToday.totalMarked === 0
+              ? "—"
+              : `${dashboard.attendanceToday.percentPresent}%`
+          }
+          icon={<CalendarCheck className="h-4 w-4" />}
+          context={
+            dashboard.attendanceToday.totalMarked === 0
+              ? "No register taken yet today"
+              : `${dashboard.attendanceToday.absentCount} absent of ${dashboard.attendanceToday.totalMarked} marked`
+          }
+          footer={`${dashboard.schoolProfile.completeness.attendanceToday.done} of ${dashboard.schoolProfile.completeness.attendanceToday.total} classes marked`}
         />
         <StatCard
           label="Outstanding"
           value={formatKobo(dashboard.outstanding.amount)}
+          icon={<ClipboardList className="h-4 w-4" />}
           context={`${dashboard.outstanding.debtorCount} in arrears`}
           tone={dashboard.outstanding.amount > 0 ? "warning" : "default"}
+          footer="Across issued, unpaid invoices"
         />
       </div>
 
-      {/* Two-column: collection breakdown + needs you today */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        {/* School profile — the school's actual state right now. No status
-            light and no "last synced" line; see school-profile-card.tsx. */}
-        <Card>
+      {/* Collection gets the wide column and "Needs you today" the narrow one.
+          Previously these two plus the profile card shared a 2-up grid, which
+          left whichever card came third stranded on its own row. A 3-column
+          track with a 2-wide first card gives the breakdown the room its rows
+          need and keeps the action list beside it rather than under it. */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <Card className="lg:col-span-2">
           <CardHeader>
-            <CardTitle className="text-base">School profile</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <SchoolProfileCard profile={dashboard.schoolProfile} />
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Collection by class level</CardTitle>
+            <CardTitle className="font-serif text-lg font-medium">Collection by class level</CardTitle>
             <CardDescription>Fees billed vs. collected this term, by class level.</CardDescription>
           </CardHeader>
           <CardContent>
@@ -233,7 +278,23 @@ export default function DashboardPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Needs you today</CardTitle>
+            <div className="flex items-start justify-between gap-3">
+              <CardTitle className="font-serif text-lg font-medium">Needs you today</CardTitle>
+              {/* A real total, summed from the same rows rendered below — not
+                  a decorative badge. Hidden entirely at zero rather than
+                  showing "0 items", which would draw the eye to nothing. */}
+              {actionItemCount > 0 && (
+                // The shared Badge, not a hand-rolled span. The first version
+                // used bg-secondary/20 — Gold Spark at 20% opacity over Paper,
+                // which is a pale beige wash that does not read as gold at all.
+                // Badge's "secondary" variant uses the FULL token with
+                // secondary-foreground on top, which is a real gold pill with
+                // dark text in both themes (both are defined in globals.css).
+                <Badge variant="secondary" className="shrink-0">
+                  {actionItemCount} {actionItemCount === 1 ? "item" : "items"}
+                </Badge>
+              )}
+            </div>
             <CardDescription>
               Overdue invoices, pending approvals, and staff invitations that need action.
             </CardDescription>
@@ -251,17 +312,31 @@ export default function DashboardPage() {
         </Card>
       </div>
 
-      {/* Attendance trend */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Attendance, last eight weeks</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <AttendanceSparkline weeks={dashboard.attendanceTrend} />
-        </CardContent>
-      </Card>
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        {/* School profile — the school's actual state right now. No status
+            light and no "last synced" line; see school-profile-card.tsx. */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="font-serif text-lg font-medium">School profile</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <SchoolProfileCard profile={dashboard.schoolProfile} />
+          </CardContent>
+        </Card>
 
-      <CommandDialog open={commandOpen} onOpenChange={setCommandOpen} />
+        <Card>
+          <CardHeader>
+            <CardTitle className="font-serif text-lg font-medium">Attendance, last eight weeks</CardTitle>
+            <CardDescription>
+              Weeks with no register taken are left blank, not drawn as zero.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <AttendanceSparkline weeks={dashboard.attendanceTrend} />
+          </CardContent>
+        </Card>
+      </div>
+
     </div>
   );
 }

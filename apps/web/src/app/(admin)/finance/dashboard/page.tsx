@@ -18,6 +18,7 @@ import { InlineAlert } from "@/components/shared/inline-alert";
 import { StatCard } from "@/components/shared/stat-card";
 import { Card, CardContent } from "@/components/ui/card";
 import { listAcademicYears, listTerms } from "@/lib/academic-years/academic-years-api";
+import { hasPermission } from "@/lib/auth/has-permission";
 import { useAuth } from "@/lib/auth/use-auth";
 import {
   getCollectionByLevel,
@@ -39,14 +40,6 @@ import { formatKobo } from "@/lib/finance/format";
 // Net position is the one genuine polarity signal here (above/below zero),
 // so it's the one value that carries status color; everything else is a
 // plain descriptive number in text tokens.
-
-// Local copy of sidebar.tsx's helper (it isn't exported there either). Kept
-// local rather than lifted to a shared module because that would be a
-// cross-cutting refactor riding along on a bursar bugfix; if a third caller
-// appears, extract it then.
-function hasPermission(permissions: string[], perm: string): boolean {
-  return permissions.includes("*") || permissions.includes(perm);
-}
 
 // Why this exists (2026-08-21): `bursar`'s home route is THIS page
 // (home-route.ts), and the page only renders once a term is selected. Both
