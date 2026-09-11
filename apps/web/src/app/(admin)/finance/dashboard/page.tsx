@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { AlertTriangle, BellRing, FileText, Receipt, Scale, Users, Wallet } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import type {
   AcademicYearDto,
@@ -115,6 +115,16 @@ export default function FinanceDashboardPage() {
   const [yearsFailed, setYearsFailed] = useState(false);
   const [referenceError, setReferenceError] = useState<string | null>(null);
 
+  // Per-section failure, tracked separately from `error` (which belongs to the
+  // primary dashboard read). These two sections are SECONDARY reads: their
+  // failure must not blank the KPI cards. That isolation was already right —
+  // what was missing is that a failure produced NOTHING AT ALL. The section
+  // simply disappeared, the raw error went to the console, and a bursar saw a
+  // page that looked half-built rather than one reporting a problem. A section
+  // that deletes itself on error is worse than an error message.
+  const [trajectoryError, setTrajectoryError] = useState<string | null>(null);
+  const [byLevelError, setByLevelError] = useState<string | null>(null);
+
   const { permissions, school } = useAuth();
   // Same helper the settings preview and the reminder message use.
   const bankDetails = resolveSchoolBankDetails(school);
@@ -156,23 +166,42 @@ export default function FinanceDashboardPage() {
       .finally(() => setTermsLoaded(true));
   }, [yearId]);
 
+  // Each secondary section loads through its own function so Retry can refetch
+  // JUST that section — re-running the whole effect would also re-fetch the
+  // KPI data that is already on screen and correct.
+  const loadTrajectory = useCallback((id: string) => {
+    setTrajectory(null);
+    setTrajectoryError(null);
+    return getRevenueTrajectory(id)
+      .then(setTrajectory)
+      .catch((e) => {
+        logFinanceError("getRevenueTrajectory", e);
+        setTrajectoryError(financeErrorMessage(e));
+      });
+  }, []);
+
+  const loadByLevel = useCallback((id: string) => {
+    setByLevel(null);
+    setByLevelError(null);
+    return getCollectionByLevel(id)
+      .then(setByLevel)
+      .catch((e) => {
+        logFinanceError("getCollectionByLevel", e);
+        setByLevelError(financeErrorMessage(e));
+      });
+  }, []);
+
   useEffect(() => {
     setDashboard(null);
     setTrajectory(null);
     setByLevel(null);
+    setTrajectoryError(null);
+    setByLevelError(null);
     setError(null);
     if (!termId) return;
     setLoading(true);
-    // The trajectory is a secondary read: a failure here must not blank the
-    // KPI cards, so it is caught separately and simply omits the chart.
-    getRevenueTrajectory(termId)
-      .then(setTrajectory)
-      .catch((e) => logFinanceError("getRevenueTrajectory", e));
-    // Also a secondary read, caught separately for the same reason: a
-    // failure here omits one card rather than blanking the KPI tiles.
-    getCollectionByLevel(termId)
-      .then(setByLevel)
-      .catch((e) => logFinanceError("getCollectionByLevel", e));
+    loadTrajectory(termId);
+    loadByLevel(termId);
     getFinanceDashboard(termId)
       .then(setDashboard)
       .catch((e) => {
@@ -183,7 +212,7 @@ export default function FinanceDashboardPage() {
         setError(financeErrorMessage(e));
       })
       .finally(() => setLoading(false));
-  }, [termId]);
+  }, [termId, loadTrajectory, loadByLevel]);
 
   return (
     <div className="mx-auto max-w-5xl space-y-6 px-4 py-8">
@@ -439,33 +468,57 @@ export default function FinanceDashboardPage() {
 
           {/* Revenue trajectory — how the term's collections built over
               time. Weeks that have not happened yet render as a shaded
-              "not yet" region, never as zero. */}
-          {trajectory && (
-            <Card>
-              <CardContent className="pt-6">
-                <h2 className="mb-4 font-serif text-lg font-medium text-foreground">
-                  Revenue trajectory
-                </h2>
+              "not yet" region, never as zero.
+
+              The Card is rendered UNCONDITIONALLY and switches on its own
+              three states. Previously the whole section was behind
+              `{trajectory && ...}`, so a failed fetch removed it from the page
+              with no message — indistinguishable from a feature that was never
+              built. The heading stays put; only its contents change. */}
+          <Card>
+            <CardContent className="pt-6">
+              <h2 className="mb-4 font-serif text-lg font-medium text-foreground">
+                Revenue trajectory
+              </h2>
+              {trajectoryError ? (
+                <InlineAlert
+                  title="Could not load the revenue trajectory"
+                  action={{ label: "Retry", onClick: () => loadTrajectory(termId) }}
+                >
+                  {trajectoryError}
+                </InlineAlert>
+              ) : trajectory ? (
                 <RevenueTrajectoryChart data={trajectory} />
-              </CardContent>
-            </Card>
-          )}
+              ) : (
+                <p className="text-sm text-muted-foreground">Loading the trajectory for this term…</p>
+              )}
+            </CardContent>
+          </Card>
 
           {/* Collection by class level — the SAME component and the same
               server-side builder the admin dashboard uses, including the
               "Unassigned" bucket that makes these rows sum to the totals.
               Its own endpoint, not a wider FinanceDashboardDto: that DTO's
               key set is pinned because staff mobile consumes it. */}
-          {byLevel && (
-            <Card>
-              <CardContent className="pt-6">
-                <h2 className="mb-4 font-serif text-lg font-medium text-foreground">
-                  Collection by class level
-                </h2>
+          <Card>
+            <CardContent className="pt-6">
+              <h2 className="mb-4 font-serif text-lg font-medium text-foreground">
+                Collection by class level
+              </h2>
+              {byLevelError ? (
+                <InlineAlert
+                  title="Could not load collection by class level"
+                  action={{ label: "Retry", onClick: () => loadByLevel(termId) }}
+                >
+                  {byLevelError}
+                </InlineAlert>
+              ) : byLevel ? (
                 <CollectionByLevel groups={byLevel.groups} />
-              </CardContent>
-            </Card>
-          )}
+              ) : (
+                <p className="text-sm text-muted-foreground">Loading the class-level breakdown…</p>
+              )}
+            </CardContent>
+          </Card>
 
         </div>
       )}

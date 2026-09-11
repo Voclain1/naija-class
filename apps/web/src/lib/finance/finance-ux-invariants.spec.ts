@@ -264,3 +264,60 @@ describe("F-05b/F-22 shared error presentation remains truthful", () => {
     expect(detail).not.toContain("instanceof Error ? e.message");
   });
 });
+
+// ── The finance dashboard's secondary sections cannot vanish (2026-09-11) ───
+//
+// The defect: "Revenue trajectory" and "Collection by class level" were each
+// wrapped in `{data && (<Card>…</Card>)}`, and their fetch failures went only
+// to `logFinanceError` — the console. A failed read therefore deleted the
+// whole section from the page: no heading, no message, no retry. To a bursar
+// that is indistinguishable from a feature nobody finished, which is exactly
+// how it was reported.
+//
+// Isolating these reads from the KPI cards was right and is preserved — a
+// trajectory failure must not blank the tiles. What changed is that the
+// failure is now VISIBLE rather than silent.
+//
+// Source-text assertions for the same reason the rest of this file uses them:
+// apps/web has no DOM test runner by deliberate choice.
+
+describe("F-40 — the dashboard's secondary sections report failure instead of disappearing", () => {
+  const dashboard = () => source(FINANCE_DASHBOARD);
+
+  it("neither section is gated on its own data being present", () => {
+    // THE mutation check. Re-wrapping either section in `{trajectory && (`
+    // restores the vanishing bug and fails here.
+    expect(dashboard()).not.toContain("{trajectory && (");
+    expect(dashboard()).not.toContain("{byLevel && (");
+  });
+
+  it("each section tracks its own error, separately from the primary read", () => {
+    // Separate from `error`, which belongs to getFinanceDashboard. Sharing one
+    // error string would let a trajectory failure blank the KPI cards — the
+    // isolation this fix deliberately keeps.
+    for (const token of ["trajectoryError", "byLevelError"]) {
+      expect(dashboard()).toContain(token);
+    }
+  });
+
+  it("both failures set human-facing copy rather than only logging", () => {
+    // The original bug in one line: the catch logged and did nothing else.
+    expect(dashboard()).toContain("setTrajectoryError(financeErrorMessage(e))");
+    expect(dashboard()).toContain("setByLevelError(financeErrorMessage(e))");
+  });
+
+  it("each failure offers a retry that refetches only its own section", () => {
+    // Retrying via the whole effect would also refetch KPI data already on
+    // screen and correct.
+    expect(dashboard()).toContain("onClick: () => loadTrajectory(termId)");
+    expect(dashboard()).toContain("onClick: () => loadByLevel(termId)");
+  });
+
+  it("the raw error still reaches the console", () => {
+    // The sanitised copy is for the bursar; the real error is still needed for
+    // diagnosis. This fix adds a UI path, it does not remove the log.
+    for (const token of ['logFinanceError("getRevenueTrajectory", e)', 'logFinanceError("getCollectionByLevel", e)']) {
+      expect(dashboard()).toContain(token);
+    }
+  });
+});
