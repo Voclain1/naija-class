@@ -321,3 +321,75 @@ describe("F-40 — the dashboard's secondary sections report failure instead of 
     }
   });
 });
+
+// ── Pass 3: the finance dashboard's controls and header (2026-09-11) ───────
+//
+// These assertions are made against the source with COMMENTS STRIPPED.
+// Several of them assert that a string from the mockup does NOT appear —
+// and the code comments explaining *why* it was omitted necessarily quote
+// the very string being banned. Asserting on raw source would therefore fail
+// on the documentation of the decision it is protecting, which would push
+// the next person to delete the explanation to get CI green. Stripping
+// comments keeps the ban on shipped UI text, where it belongs.
+function code(relativeToRepoRoot: string): string {
+  return source(relativeToRepoRoot)
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/^\s*\/\/.*$/gm, "");
+}
+
+describe("F-41 — the dashboard header claims only what is built", () => {
+  const dashboard = () => source(FINANCE_DASHBOARD);
+
+  it("does not offer a Paystack Sync control", () => {
+    // The mockup showed one. No sync concept exists in this codebase, and a
+    // button whose label implies a reconciliation process that never runs is
+    // a claim about the system rather than a control. Same class of omission
+    // as the mockup's fabricated subaccount number and "3.4 seconds" webhook.
+    expect(code(FINANCE_DASHBOARD)).not.toContain("Paystack Sync");
+    expect(code(FINANCE_DASHBOARD)).not.toContain("paystackSync");
+  });
+
+  it("gates Record payment on the permission the API actually enforces", () => {
+    // Hidden for anyone who cannot record one, rather than 403-ing on
+    // arrival — the pattern pass 1's header actions established.
+    expect(dashboard()).toContain('hasPermission(permissions, "payment.record")');
+  });
+
+  it("points Record payment at a route that exists", () => {
+    // /finance/payments holds only the Paystack callback — it is not a page.
+    // /finance/invoices is where an invoice is picked and recorded against.
+    expect(dashboard()).toContain('href="/finance/invoices"');
+    expect(dashboard()).not.toContain('href="/finance/payments"');
+  });
+});
+
+describe("F-42 — the collection-rate card derives its figures, never invents them", () => {
+  const dashboard = () => source(FINANCE_DASHBOARD);
+
+  it("shows Recovered and Outstanding from real DTO fields", () => {
+    expect(dashboard()).toContain("formatKobo(dashboard.outstandingBalance)");
+    expect(dashboard()).toContain("Recovered:");
+    expect(dashboard()).toContain("Outstanding:");
+  });
+
+  it("derives the billing window instead of hard-coding the mockup's string", () => {
+    // The mockup printed "Week 3 of 13" as a literal. Terms are not a uniform
+    // length, so the count comes from the term's own stored dates.
+    expect(dashboard()).toContain("resolveBillingWindow(trajectory)");
+    expect(code(FINANCE_DASHBOARD)).not.toContain("Week 3 of 13");
+  });
+
+  it("still does not invent the mockup's fee-type breakdown", () => {
+    // No field on FinanceDashboardDto carries it. Unchanged from pass 2.
+    for (const invented of ["Tuition:", "Levy:", "Last recorded:"]) {
+      expect(code(FINANCE_DASHBOARD)).not.toContain(invented);
+    }
+  });
+
+  it("writes naira, not raw kobo, into the CSV export", () => {
+    // This file opens in a spreadsheet in front of a school owner. A raw kobo
+    // integer under a column headed "Collected" is wrong by 100x.
+    expect(dashboard()).toContain("accessor: (g) => formatKobo(g.collected)");
+    expect(dashboard()).not.toContain("accessor: (g) => g.collected");
+  });
+});
