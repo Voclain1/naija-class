@@ -7,8 +7,10 @@ import { toast } from "sonner";
 
 import {
   CalendarFormFields,
+  hasCalendarErrors,
   initialCalendarState,
   toCalendarInput,
+  validateCalendarState,
 } from "@/components/academic-calendar/calendar-form-fields";
 import { Button } from "@/components/ui/button";
 import {
@@ -20,6 +22,7 @@ import {
 } from "@/components/ui/card";
 import { ApiError } from "@/lib/api-client";
 import { useAuth } from "@/lib/auth/use-auth";
+import { apiErrorLines } from "@/lib/errors/api-error-lines";
 import { track } from "@/lib/observability/events";
 import { advanceStep5 } from "@/lib/onboarding/onboarding-api";
 
@@ -43,13 +46,23 @@ export function Step5Success() {
   const { school, setSchool } = useAuth();
   const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [errorLines, setErrorLines] = useState<string[]>([]);
 
   // Computed once on mount, not on every render — proposeAcademicCalendar()
   // reads `new Date()`, and a re-render mid-form must not shuffle the dates
   // out from under someone who is editing them.
   const [initial] = useState(() => initialCalendarState());
   const [calendar, setCalendar] = useState(initial.state);
+
+  // Whether the owner has tried to submit yet. Errors stay hidden until then,
+  // so the form does not open shouting at a set of defaults that are valid.
+  const [showValidation, setShowValidation] = useState(false);
+
+  // The server's own schema, run against the current state on every render.
+  // Cheap (three date comparisons), and always in step with what the user has
+  // just typed.
+  const fieldErrors = validateCalendarState(calendar);
+  const invalid = hasCalendarErrors(fieldErrors);
 
   // Fire onboarding_completed on mount — landing on step 5 *is* the
   // completion signal regardless of whether the user clicks the button.
@@ -67,22 +80,32 @@ export function Step5Success() {
 
   async function finish(e: React.FormEvent) {
     e.preventDefault();
+    setShowValidation(true);
+
+    // Stop here rather than spending a round-trip to be told the same thing.
+    // The messages are the server's own, so this cannot disagree with it.
+    if (invalid) {
+      setErrorLines(fieldErrors.all);
+      return;
+    }
+
     setSubmitting(true);
-    setError(null);
+    setErrorLines([]);
     try {
       const res = await advanceStep5({ calendar: toCalendarInput(calendar) });
       setSchool(res.school);
       router.replace("/dashboard");
     } catch (err) {
       // Server-side validation (overlapping terms, terms outside the year) is
-      // the authority; surface its message rather than a generic failure, so
-      // a date problem is actionable instead of mysterious.
-      const message =
-        err instanceof ApiError
-          ? err.message
-          : "Could not reach the server. Try again in a moment.";
-      setError(message);
-      toast.error(message);
+      // the authority. Read its details.issues[] — `err.message` is the
+      // constant "Invalid request payload", which is what left a real school
+      // stuck here on 2026-09-11 with nothing to act on.
+      const lines = apiErrorLines(
+        err instanceof ApiError ? err : null,
+        "Could not reach the server. Try again in a moment.",
+      );
+      setErrorLines(lines);
+      toast.error(lines[0]);
     } finally {
       setSubmitting(false);
     }
@@ -108,11 +131,20 @@ export function Step5Success() {
             onChange={setCalendar}
             currentTermContainsToday={initial.currentTermContainsToday}
             disabled={submitting}
+            errors={showValidation ? fieldErrors : undefined}
           />
 
-          {error && (
+          {errorLines.length > 0 && (
             <div className="rounded-md border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm text-destructive">
-              {error}
+              {errorLines.length === 1 ? (
+                errorLines[0]
+              ) : (
+                <ul className="list-disc space-y-1 pl-5">
+                  {errorLines.map((line) => (
+                    <li key={line}>{line}</li>
+                  ))}
+                </ul>
+              )}
             </div>
           )}
 

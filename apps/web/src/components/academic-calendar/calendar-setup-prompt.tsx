@@ -6,8 +6,10 @@ import { toast } from "sonner";
 
 import {
   CalendarFormFields,
+  hasCalendarErrors,
   initialCalendarState,
   toCalendarInput,
+  validateCalendarState,
 } from "@/components/academic-calendar/calendar-form-fields";
 import { Button } from "@/components/ui/button";
 import { ApiError } from "@/lib/api-client";
@@ -16,6 +18,7 @@ import {
   getCalendarStatus,
 } from "@/lib/academic-calendar/academic-calendar-api";
 import { useAuth } from "@/lib/auth/use-auth";
+import { apiErrorLines } from "@/lib/errors/api-error-lines";
 
 // The recovery surface for schools that completed onboarding BEFORE the
 // calendar step existed. The 2026-08-21 production census found 23 of them
@@ -37,10 +40,19 @@ export function CalendarSetupPrompt() {
   const [needsCalendar, setNeedsCalendar] = useState(false);
   const [open, setOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [errorLines, setErrorLines] = useState<string[]>([]);
 
   const [initial] = useState(() => initialCalendarState());
   const [calendar, setCalendar] = useState(initial.state);
+
+  // Same validation mirror as the wizard's step 5 — this surface shares the
+  // form, the schema and therefore the same failure mode. The 2026-08-21
+  // census put 23 already-active schools here against 13 in the wizard, so
+  // fixing only the wizard would have left the larger half of the affected
+  // population on the generic error.
+  const [showValidation, setShowValidation] = useState(false);
+  const fieldErrors = validateCalendarState(calendar);
+  const invalid = hasCalendarErrors(fieldErrors);
 
   // Only owner/admin can create a calendar (the API enforces it). A bursar or
   // teacher blocked by the missing calendar still sees the banner — knowing
@@ -70,8 +82,15 @@ export function CalendarSetupPrompt() {
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+    setShowValidation(true);
+
+    if (invalid) {
+      setErrorLines(fieldErrors.all);
+      return;
+    }
+
     setSubmitting(true);
-    setError(null);
+    setErrorLines([]);
     try {
       await createAcademicCalendar(toCalendarInput(calendar));
       setNeedsCalendar(false);
@@ -82,12 +101,14 @@ export function CalendarSetupPrompt() {
       // had no current term, so their caches are all stale-empty.
       window.location.reload();
     } catch (err) {
-      const message =
-        err instanceof ApiError
-          ? err.message
-          : "Could not reach the server. Try again in a moment.";
-      setError(message);
-      toast.error(message);
+      // details.issues[] carries the actionable sentence; err.message is the
+      // constant "Invalid request payload". See lib/errors/api-error-lines.ts.
+      const lines = apiErrorLines(
+        err instanceof ApiError ? err : null,
+        "Could not reach the server. Try again in a moment.",
+      );
+      setErrorLines(lines);
+      toast.error(lines[0]);
     } finally {
       setSubmitting(false);
     }
@@ -122,11 +143,20 @@ export function CalendarSetupPrompt() {
             onChange={setCalendar}
             currentTermContainsToday={initial.currentTermContainsToday}
             disabled={submitting}
+            errors={showValidation ? fieldErrors : undefined}
           />
 
-          {error && (
+          {errorLines.length > 0 && (
             <div className="rounded-md border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm text-destructive">
-              {error}
+              {errorLines.length === 1 ? (
+                errorLines[0]
+              ) : (
+                <ul className="list-disc space-y-1 pl-5">
+                  {errorLines.map((line) => (
+                    <li key={line}>{line}</li>
+                  ))}
+                </ul>
+              )}
             </div>
           )}
 

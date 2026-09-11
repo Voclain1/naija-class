@@ -1,8 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
-import { proposeAcademicCalendar, type AcademicCalendarInput } from "@school-kit/types";
+import {
+  hasTermErrors,
+  type CalendarFieldErrors,
+  type CalendarFormState,
+} from "@/lib/academic-calendar/calendar-form-state";
 
 // The academic-calendar form, shared by BOTH surfaces that need it: the
 // onboarding wizard's step 5, and the recovery prompt for schools that
@@ -18,60 +22,38 @@ import { proposeAcademicCalendar, type AcademicCalendarInput } from "@school-kit
 // finance attributes expenses by it, the report-card PDF prints it). A
 // visible default the owner confirms is a suggestion; the same value written
 // behind their back is a guess. See docs/modules/academic-calendar-bootstrap.md.
+//
+// The state shape, the payload mapping and the validation mirror now live in
+// lib/academic-calendar/calendar-form-state.ts so they can be unit-tested --
+// apps/web's Vitest runner is node-only and cannot import this file. They are
+// re-exported here so existing import sites are unchanged.
+export {
+  initialCalendarState,
+  toCalendarInput,
+  validateCalendarState,
+  hasCalendarErrors,
+  hasTermErrors,
+} from "@/lib/academic-calendar/calendar-form-state";
+export type {
+  CalendarFormState,
+  CalendarFieldErrors,
+  TermFieldErrors,
+} from "@/lib/academic-calendar/calendar-form-state";
 
 const INPUT_CLASSES =
   "rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring";
 
-function toDateInput(d: Date): string {
-  return d.toISOString().slice(0, 10);
+// Applied on top of INPUT_CLASSES for a field the validator flagged. The ring
+// colour moves too, so the field stays legibly wrong while it has focus.
+const INPUT_INVALID_CLASSES = "border-destructive focus:ring-destructive";
+
+function inputClasses(invalid: boolean | undefined): string {
+  return invalid ? `${INPUT_CLASSES} ${INPUT_INVALID_CLASSES}` : INPUT_CLASSES;
 }
 
-export interface CalendarFormState {
-  yearLabel: string;
-  yearStartDate: string;
-  yearEndDate: string;
-  terms: Array<{ sequence: 1 | 2 | 3; name: string; startDate: string; endDate: string }>;
-  currentTermSequence: 1 | 2 | 3;
-}
-
-export function initialCalendarState(today: Date = new Date()): {
-  state: CalendarFormState;
-  currentTermContainsToday: boolean;
-} {
-  const p = proposeAcademicCalendar(today);
-  return {
-    currentTermContainsToday: p.currentTermContainsToday,
-    state: {
-      yearLabel: p.yearLabel,
-      yearStartDate: toDateInput(p.yearStartDate),
-      yearEndDate: toDateInput(p.yearEndDate),
-      terms: p.terms.map((t) => ({
-        sequence: t.sequence,
-        name: t.name,
-        startDate: toDateInput(t.startDate),
-        endDate: toDateInput(t.endDate),
-      })),
-      currentTermSequence: p.currentTermSequence,
-    },
-  };
-}
-
-// Dates are sent as YYYY-MM-DD strings; the server's z.coerce.date() parses
-// them as UTC midnight, which is what the @db.Date columns want — see
-// CLAUDE.md's "midnight in which zone?" note.
-export function toCalendarInput(s: CalendarFormState): AcademicCalendarInput {
-  return {
-    yearLabel: s.yearLabel,
-    yearStartDate: new Date(s.yearStartDate),
-    yearEndDate: new Date(s.yearEndDate),
-    terms: s.terms.map((t) => ({
-      sequence: t.sequence,
-      name: t.name,
-      startDate: new Date(t.startDate),
-      endDate: new Date(t.endDate),
-    })),
-    currentTermSequence: s.currentTermSequence,
-  } as AcademicCalendarInput;
+function FieldError({ message }: { message?: string }) {
+  if (!message) return null;
+  return <span className="text-xs text-destructive">{message}</span>;
 }
 
 export function CalendarFormFields({
@@ -79,13 +61,31 @@ export function CalendarFormFields({
   onChange,
   currentTermContainsToday,
   disabled,
+  errors,
 }: {
   state: CalendarFormState;
   onChange: (next: CalendarFormState) => void;
   currentTermContainsToday: boolean;
   disabled?: boolean;
+  /**
+   * Field-level messages from validateCalendarState(). Optional so the
+   * component still renders for any caller that has not wired validation.
+   */
+  errors?: CalendarFieldErrors;
 }) {
   const [showTerms, setShowTerms] = useState(false);
+
+  const termsInvalid = errors ? hasTermErrors(errors) : false;
+
+  // AUTO-EXPAND. The term rows are collapsed by default, which is right when
+  // the defaults are being accepted -- but it was the trap in the 2026-09-11
+  // incident: changing the YEAR dates invalidates the pre-filled TERM dates,
+  // and the fields that had just gone wrong were not on screen to see. Reveal
+  // them the moment they are implicated. Not forced open: this sets the same
+  // state the toggle does, so an owner who has read them can still collapse.
+  useEffect(() => {
+    if (termsInvalid) setShowTerms(true);
+  }, [termsInvalid]);
 
   function setTerm(i: number, patch: Partial<CalendarFormState["terms"][number]>) {
     const terms = state.terms.map((t, idx) => (idx === i ? { ...t, ...patch } : t));
@@ -98,31 +98,37 @@ export function CalendarFormFields({
         <label className="flex flex-col gap-1">
           <span className="text-sm font-medium text-foreground">Academic year</span>
           <input
-            className={INPUT_CLASSES}
+            className={inputClasses(Boolean(errors?.yearLabel))}
             value={state.yearLabel}
             disabled={disabled}
+            aria-invalid={Boolean(errors?.yearLabel)}
             onChange={(e) => onChange({ ...state, yearLabel: e.target.value })}
           />
+          <FieldError message={errors?.yearLabel} />
         </label>
         <label className="flex flex-col gap-1">
           <span className="text-sm font-medium text-foreground">Starts</span>
           <input
             type="date"
-            className={INPUT_CLASSES}
+            className={inputClasses(Boolean(errors?.yearStartDate))}
             value={state.yearStartDate}
             disabled={disabled}
+            aria-invalid={Boolean(errors?.yearStartDate)}
             onChange={(e) => onChange({ ...state, yearStartDate: e.target.value })}
           />
+          <FieldError message={errors?.yearStartDate} />
         </label>
         <label className="flex flex-col gap-1">
           <span className="text-sm font-medium text-foreground">Ends</span>
           <input
             type="date"
-            className={INPUT_CLASSES}
+            className={inputClasses(Boolean(errors?.yearEndDate))}
             value={state.yearEndDate}
             disabled={disabled}
+            aria-invalid={Boolean(errors?.yearEndDate)}
             onChange={(e) => onChange({ ...state, yearEndDate: e.target.value })}
           />
+          <FieldError message={errors?.yearEndDate} />
         </label>
       </div>
 
@@ -147,6 +153,7 @@ export function CalendarFormFields({
             </button>
           ))}
         </div>
+        <FieldError message={errors?.currentTermSequence} />
         {/* Say so rather than implying precision we don't have. When today
             falls in a holiday gap the proposal picked the nearest term, and
             the owner is the only one who knows which is right. */}
@@ -171,41 +178,71 @@ export function CalendarFormFields({
           a look — you can change them later in Settings → Academic.
         </p>
 
+        {/* Name the connection the owner cannot otherwise see: it is the year
+            dates they just edited that put these rows out of range. */}
+        {termsInvalid && (
+          <p className="mt-2 text-sm text-destructive">
+            Your term dates need to fit inside the academic year above. Adjust the highlighted
+            dates below, or change the year&apos;s start and end dates back.
+          </p>
+        )}
+
         {showTerms && (
           <div className="mt-3 space-y-3">
-            {state.terms.map((t, i) => (
-              <div key={t.sequence} className="grid gap-3 sm:grid-cols-3">
-                <label className="flex flex-col gap-1">
-                  <span className="text-xs text-muted-foreground">Term {t.sequence} name</span>
-                  <input
-                    className={INPUT_CLASSES}
-                    value={t.name}
-                    disabled={disabled}
-                    onChange={(e) => setTerm(i, { name: e.target.value })}
-                  />
-                </label>
-                <label className="flex flex-col gap-1">
-                  <span className="text-xs text-muted-foreground">Starts</span>
-                  <input
-                    type="date"
-                    className={INPUT_CLASSES}
-                    value={t.startDate}
-                    disabled={disabled}
-                    onChange={(e) => setTerm(i, { startDate: e.target.value })}
-                  />
-                </label>
-                <label className="flex flex-col gap-1">
-                  <span className="text-xs text-muted-foreground">Ends</span>
-                  <input
-                    type="date"
-                    className={INPUT_CLASSES}
-                    value={t.endDate}
-                    disabled={disabled}
-                    onChange={(e) => setTerm(i, { endDate: e.target.value })}
-                  />
-                </label>
-              </div>
-            ))}
+            {state.terms.map((t, i) => {
+              const termError = errors?.terms[i];
+              return (
+                <div
+                  key={t.sequence}
+                  className={
+                    termError?.row
+                      ? "rounded-md border border-destructive/40 bg-destructive/5 p-3"
+                      : undefined
+                  }
+                >
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    <label className="flex flex-col gap-1">
+                      <span className="text-xs text-muted-foreground">Term {t.sequence} name</span>
+                      <input
+                        className={inputClasses(Boolean(termError?.name))}
+                        value={t.name}
+                        disabled={disabled}
+                        aria-invalid={Boolean(termError?.name)}
+                        onChange={(e) => setTerm(i, { name: e.target.value })}
+                      />
+                      <FieldError message={termError?.name} />
+                    </label>
+                    <label className="flex flex-col gap-1">
+                      <span className="text-xs text-muted-foreground">Starts</span>
+                      <input
+                        type="date"
+                        className={inputClasses(Boolean(termError?.startDate || termError?.row))}
+                        value={t.startDate}
+                        disabled={disabled}
+                        aria-invalid={Boolean(termError?.startDate || termError?.row)}
+                        onChange={(e) => setTerm(i, { startDate: e.target.value })}
+                      />
+                      <FieldError message={termError?.startDate} />
+                    </label>
+                    <label className="flex flex-col gap-1">
+                      <span className="text-xs text-muted-foreground">Ends</span>
+                      <input
+                        type="date"
+                        className={inputClasses(Boolean(termError?.endDate || termError?.row))}
+                        value={t.endDate}
+                        disabled={disabled}
+                        aria-invalid={Boolean(termError?.endDate || termError?.row)}
+                        onChange={(e) => setTerm(i, { endDate: e.target.value })}
+                      />
+                      <FieldError message={termError?.endDate} />
+                    </label>
+                  </div>
+                  {termError?.row && (
+                    <p className="mt-2 text-xs text-destructive">{termError.row}</p>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
       </div>

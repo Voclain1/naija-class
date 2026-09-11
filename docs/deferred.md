@@ -3084,3 +3084,71 @@ provenance.
    first real "how much did a teacher have to correct" reading — on the one
    document whose parse has been studied in detail.
 3. It is the natural pairing for any remaining manual verification visit.
+
+## Modelled 4xx errors never reach Sentry, so user-facing validation failures are invisible to monitoring (captured 2026-09-11)
+
+**Found while diagnosing the onboarding step-5 incident**, and it is the
+reason that diagnosis started from a lead's verbal report rather than from a
+dashboard. Logged as its own item because the fix for that incident
+(specific error copy) does not touch this, and this outlives it.
+
+**What it is.** `HttpExceptionFilter`
+(`apps/api/src/common/http-exception.filter.ts`) returns early for any
+`BaseError`:
+
+```ts
+if (exception instanceof BaseError) {
+  res.status(exception.httpStatus).json({ error: exception.toBody() });
+  return;                       // Sentry.captureException is below this line
+}
+```
+
+`ValidationError extends BaseError`, so **no validation failure on any
+endpoint has ever produced a Sentry event.** Same for `NotFoundError`,
+`ForbiddenError`, and every other modelled error. Only genuinely unexpected
+exceptions are captured.
+
+**Why it was written that way, and why that reasoning is still half right.**
+The filter's own comment says sending modelled 4xx "would flood the dashboard
+with normal validation / not-found noise; we want only what genuinely
+surprised us." That is correct for the common case: a 404 on a stale link, or
+a rejected malformed request, is not an incident. The half that does not hold
+is the assumption that a 4xx is always the *caller's* fault. A 400 that a
+legitimate user cannot get past by any action available to them is a product
+defect wearing a client-error status code.
+
+**What it cost, concretely.** On 2026-09-11 a school owner at onboarding step 5
+changed their academic year's dates, leaving the pre-filled term dates outside
+the new range. The API correctly returned 400 with
+`"First Term must fall within the academic year."` in `details.issues[]`. Every
+occurrence — for as long as the calendar step has existed, since 2026-08-21
+(#198) — was invisible: no event, no count, no alert. The bug surfaced only
+because a person hit it and said so. Nobody can currently answer "how many
+signups has this blocked", because there is no data to answer it with, and
+that is a direct consequence of this gap.
+
+**Why this is worth fixing rather than accepting.** Onboarding is the one flow
+where a blocked user does not file a bug — they leave. Validation failures on
+a signup wizard are the highest-value 4xx in the product and the ones we are
+most blind to.
+
+**Not proposing a specific mechanism here** — that is the fix's own decision.
+The shape of the problem, for whoever picks it up:
+
+- **Not** "capture all 4xx". That recreates exactly the noise the current
+  comment is right to avoid.
+- The interesting signal is *repetition on a flow that should succeed*: the
+  same endpoint + same issue path failing repeatedly, especially for a user
+  who then stops. A counter/metric per `(endpoint, issue.path)` may serve
+  better than an exception event, and would not touch the filter's
+  exception-capture behaviour at all.
+- PostHog is already wired on the web side and may be the cheaper home for
+  this than Sentry — a client-side event on a validation rejection carries the
+  funnel context (which step, did they recover, did they drop) that a
+  server-side exception does not.
+- Whatever is chosen must not log request bodies: these payloads carry school
+  and student PII, and the redaction rules in CLAUDE.md apply.
+
+**Scope note.** Onboarding is the motivating case, but the blindness is
+API-wide. Anything narrower than "validation failures are countable somewhere"
+leaves the same trap on the next form.

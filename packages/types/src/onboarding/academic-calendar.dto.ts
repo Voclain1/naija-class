@@ -43,10 +43,24 @@ export const academicCalendarTermSchema = z
 
 export type AcademicCalendarTermInput = z.infer<typeof academicCalendarTermSchema>;
 
-// Every rule here is enforced server-side. The form mirrors them for
-// immediate feedback, but the API is the authority — a hand-rolled request
-// must not be able to create the overlapping or out-of-bounds terms that
-// would make resolveTermForDate() ambiguous.
+// Every rule here is enforced server-side. The API is the authority — a
+// hand-rolled request must not be able to create the overlapping or
+// out-of-bounds terms that would make resolveTermForDate() ambiguous.
+//
+// The web form mirrors these rules for immediate feedback by importing THIS
+// SCHEMA and running it against its own state
+// (apps/web/src/lib/academic-calendar/calendar-form-state.ts →
+// validateCalendarState). It is not a second implementation, deliberately: a
+// hand-written copy drifts, and a drifted copy is worse than none.
+//
+// Until 2026-09-11 this comment claimed the mirroring existed when it did not
+// — there was no client-side validation of any kind. A real school was blocked
+// at onboarding step 5 by the gap: the owner changed the academic year's dates
+// and the pre-filled term dates fell outside the new range, so the bounds
+// check below fired, and the only thing the screen said was the constant
+// "Invalid request payload". Note for anyone editing these messages: they are
+// USER-FACING COPY, rendered verbatim next to the offending field on both
+// calendar surfaces, not just server-side diagnostics.
 export const academicCalendarSchema = z
   .object({
     // Matches AcademicYear.label's own max(20) in create-academic-year.dto.ts.
