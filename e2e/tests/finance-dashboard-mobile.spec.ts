@@ -1,9 +1,9 @@
 import { expect, test } from "@playwright/test";
 
-import { setupAcademicStructure } from "../fixtures/academic";
-import { setupFinanceScaffold } from "../fixtures/finance";
-import { loginAsAdmin } from "../fixtures/session";
-import { uniqueSuffix } from "../fixtures/unique";
+import { setupAcademicStructure } from "../fixtures/academic.js";
+import { setupFinanceScaffold } from "../fixtures/finance.js";
+import { loginAsAdmin } from "../fixtures/session.js";
+import { uniqueSuffix } from "../fixtures/unique.js";
 
 // Text CLIPPED INSIDE a card, on a phone.
 //
