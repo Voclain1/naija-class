@@ -49,12 +49,32 @@ export default function DashboardPage() {
 
   useEffect(() => {
     if (!termId) return;
+    // Superseded-response guard. Without it, switching term while a fetch is
+    // in flight lets the OLD request settle over the new one — and because
+    // `error` is checked before `dashboard` when rendering below, a stale
+    // rejection landing after a fresh success shows the error banner over
+    // data that loaded perfectly well. The stale `.finally` would also clear
+    // `loading` while the current request was still running.
+    let current = true;
     setLoading(true);
     setError(null);
     getAdminDashboard(termId)
-      .then(setDashboard)
-      .catch((e) => setError(dashboardErrorMessage(e)))
-      .finally(() => setLoading(false));
+      .then((d) => {
+        if (current) setDashboard(d);
+      })
+      .catch((e) => {
+        // dashboardErrorMessage still runs for a superseded request: the
+        // failure was real and worth capturing even though this render no
+        // longer wants to show it.
+        const message = dashboardErrorMessage(e);
+        if (current) setError(message);
+      })
+      .finally(() => {
+        if (current) setLoading(false);
+      });
+    return () => {
+      current = false;
+    };
   }, [termId]);
 
   // A brand-new school (every real signup) has no academic year yet — the
