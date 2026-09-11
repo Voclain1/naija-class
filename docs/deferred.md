@@ -3152,3 +3152,76 @@ The shape of the problem, for whoever picks it up:
 **Scope note.** Onboarding is the motivating case, but the blindness is
 API-wide. Anything narrower than "validation failures are countable somewhere"
 leaves the same trap on the next form.
+
+## `/dashboard` pool deadlock — follow-ups after the 2026-09-11 fix (captured 2026-09-11)
+
+The fix removed the nested `withTenant` on `GET /dashboard`, cut the endpoint
+from 34 round trips across 2 transactions to 20 across 1, gave it an explicit
+15s transaction timeout, and made the failure diagnosable on both sides.
+Reproduction and before/after evidence live in
+`apps/api/src/modules/dashboard/dashboard-pool-probe.spec.ts`; the standing CI
+gate is `dashboard-transaction.spec.ts`.
+
+Four things were deliberately left.
+
+### A — production's real `connection_limit` is still unverified
+
+Nothing in the repo sets `connection_limit`, so Prisma's default applies:
+`num_physical_cpus * 2 + 1`, which on `apps/api/fly.toml`'s `cpus = 1` is **3**.
+The whole deadlock analysis assumes that. It has NOT been confirmed against the
+running app, because Fly stores secrets write-only and `flyctl` is blocked on
+the maintainer's machine (see `docs/runbooks/neon-prod-setup.md`'s header).
+
+If `DATABASE_URL` does carry an explicit higher limit, the deadlock threshold
+was higher than 3 and the observed failures are even more likely to have been
+the latency/cold-start mechanism than the concurrency one. Nothing about the
+fix changes either way — this only affects what we CREDIT the fix with.
+
+Cheapest check that needs no secret value: the Neon dashboard's connection
+count for `app_user` while the API is warm.
+
+### B — `withTenant`'s retry amplifies a contention event
+
+`P2028` is in `RETRYABLE_PRISMA_CODES`, so a pool-exhaustion or body-timeout
+failure sleeps 500ms and then **re-runs the whole transaction**, adding load at
+exactly the moment the pool is exhausted. The file's own comment already notes
+the retry is a no-op for a body-timeout; what it does not say is that it is
+actively counterproductive under contention.
+
+Visible in the probe's before-numbers: N=3 did not fail, it took **5080ms**,
+because the retry rescued it after the first attempt blew its budget — a
+five-second dashboard load reported as "sometimes slow" rather than as an
+error.
+
+The fix removed the trigger on this endpoint, but the amplification stays
+latent for any future nested or long transaction. A real fix means not
+retrying body-timeouts (distinguishable now — see `describeAttemptFailure`'s
+`elapsedMs`), which is a change to a primitive on every tenant-scoped call path
+in the app. Deliberately not folded into a dashboard fix.
+
+### C — two execution strategies over one finance definition
+
+`finance-totals.ts` shares the status sets and the arithmetic, but
+`GET /finance/dashboard` aggregates DB-side while `GET /dashboard` derives from
+rows. That was the deliberate trade (D5 of `docs/modules/revenue-trajectory.md`
+says the KPI read must not scan rows it never renders), and the mitigation is
+`finance-totals.spec.ts`, which runs both paths plus an independent third
+computation against one seeded school.
+
+Not a defect. Recorded so the duplication reads as known rather than accidental
+if someone later finds the two implementations and "tidies" them.
+
+Also not swept: `notIn: ["DRAFT", "CANCELLED"]` still appears as a literal at
+five other sites in `finance.service.ts` (debtors, collection-by-level, revenue
+trajectory). Converting them is mechanical and safe, and was left out
+deliberately to keep a production hotfix off money code it did not need to
+touch.
+
+### D — no index for the dashboard's attendance reads
+
+Unchanged by this work and still open — see the existing entry above on
+`DashboardService` aggregation queries lacking a `[schoolId, date]` composite
+index. The round-trip reduction made the 8-week trend read do MORE work per row
+(it now also answers today's two aggregates), so that entry's trigger is
+slightly closer, not further away.
+
