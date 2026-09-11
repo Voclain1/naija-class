@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { AlertTriangle, BellRing, FileText, Receipt, Scale, Users, Wallet } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import type {
@@ -16,6 +17,7 @@ import { CollectionByLevel } from "@/components/finance/collection-by-level";
 import { RevenueTrajectoryChart } from "@/components/finance/revenue-trajectory-chart";
 import { InlineAlert } from "@/components/shared/inline-alert";
 import { StatCard } from "@/components/shared/stat-card";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { listAcademicYears, listTerms } from "@/lib/academic-years/academic-years-api";
 import { hasPermission } from "@/lib/auth/has-permission";
@@ -181,7 +183,32 @@ export default function FinanceDashboardPage() {
 
   return (
     <div className="mx-auto max-w-5xl space-y-6 px-4 py-8">
-      <h1 className="font-serif text-2xl font-medium tracking-tight text-foreground">Finance dashboard</h1>
+      {/* Eyebrow + title. The mockup paired this eyebrow with a Paystack
+          subaccount number and bank name; neither is reproduced here, and the
+          number is deliberately not repeated in this comment either — a
+          bank-account-shaped string does not belong in the repo at all. This
+          page renders on every finance
+          visit, so a bank account here would spread through logs, screenshots
+          and screen shares for information nobody needs at a glance. Same
+          reasoning that keeps banking detail out of
+          platform_admin_list_paystack_setup_requests (CLAUDE.md, SECURITY
+          DEFINER inventory). */}
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+            Bursary terminal
+          </p>
+          <h1 className="mt-1 font-serif text-2xl font-medium tracking-tight text-foreground sm:text-3xl">
+            Finance dashboard
+          </h1>
+          {dashboard && (
+            <p className="mt-1 text-sm text-muted-foreground">
+              Showing figures for{" "}
+              <span className="font-medium text-foreground">{dashboard.termName}</span>
+            </p>
+          )}
+        </div>
+      </div>
 
       {/* Term selector — identical pattern to /finance/debtors */}
       <div className="flex flex-wrap items-end gap-4">
@@ -294,18 +321,35 @@ export default function FinanceDashboardPage() {
 
       {dashboard && !loading && (
         <div className="space-y-6">
-          <p className="text-sm text-muted-foreground">
-            Showing figures for <span className="font-medium text-foreground">{dashboard.termName}</span>
-          </p>
-
-          {/* Collection rate meter — a single ratio against a limit */}
+          {/* Collection rate meter — a single ratio against a limit. The term
+              name moved into the page header, so it is stated once. */}
           <Card>
             <CardContent className="pt-6">
-              <div className="mb-2 flex items-baseline justify-between">
+              <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
                 <span className="text-sm font-medium text-foreground">Collection rate</span>
-                <span className="font-serif text-3xl font-medium text-foreground">
-                  {dashboard.collectionRatePercent}%
-                </span>
+                <div className="flex flex-wrap items-baseline gap-3">
+                  {/* Real destination, real gate: /finance/debtors is the page
+                      that actually sends batch reminders (POST
+                      /finance/debtors/remind, @Permissions
+                      "finance.debtors.remind"). Hidden for anyone who cannot
+                      send them rather than 403-ing on arrival. */}
+                  {hasPermission(permissions, "finance.debtors.remind") && (
+                    <Button asChild size="sm" variant="outline">
+                      <Link href="/finance/debtors">
+                        <BellRing className="mr-2 h-4 w-4" aria-hidden />
+                        Batch reminders
+                        {dashboard.debtorCount > 0 && (
+                          <span className="ml-1.5 text-muted-foreground">
+                            ({dashboard.debtorCount})
+                          </span>
+                        )}
+                      </Link>
+                    </Button>
+                  )}
+                  <span className="font-serif text-2xl font-medium tabular-nums text-foreground sm:text-3xl">
+                    {dashboard.collectionRatePercent}%
+                  </span>
+                </div>
               </div>
               <div className="h-2.5 w-full overflow-hidden rounded-full bg-primary/15">
                 <div
@@ -318,6 +362,53 @@ export default function FinanceDashboardPage() {
               </p>
             </CardContent>
           </Card>
+
+          {/* KPI row. Every footer below is derived from a field this DTO
+              actually returns — the mockup's "Tuition: N1,200 / Levy: N300"
+              and "Last recorded: Never" breakdowns have no source in
+              FinanceDashboardDto and are NOT invented here. */}
+          {/* One column on a phone, matching the admin dashboard. Two columns of
+              full naira figures at 430px is what clipped the numerals. */}
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <StatCard
+              label="Total invoiced"
+              value={formatKobo(dashboard.totalInvoiced)}
+              icon={<FileText className="h-4 w-4" />}
+              footer="Issued, non-cancelled invoices"
+            />
+            <StatCard
+              label="Total collected"
+              value={formatKobo(dashboard.totalCollected)}
+              icon={<Wallet className="h-4 w-4" />}
+              footer={`${dashboard.collectionRatePercent}% of invoiced`}
+            />
+            <StatCard
+              label="Outstanding balance"
+              value={formatKobo(dashboard.outstandingBalance)}
+              icon={<AlertTriangle className="h-4 w-4" />}
+              tone={dashboard.outstandingBalance > 0 ? "warning" : "default"}
+              footer={`${dashboard.debtorCount} unpaid invoice${dashboard.debtorCount === 1 ? "" : "s"}`}
+            />
+            <StatCard
+              label="Debtor count"
+              value={String(dashboard.debtorCount)}
+              icon={<Users className="h-4 w-4" />}
+              footer="One per student, per term"
+            />
+            <StatCard
+              label="Total expenses"
+              value={formatKobo(dashboard.totalExpenses)}
+              icon={<Receipt className="h-4 w-4" />}
+              footer="Recorded within this term's dates"
+            />
+            <StatCard
+              label="Net position"
+              value={formatKobo(dashboard.netPosition)}
+              icon={<Scale className="h-4 w-4" />}
+              tone={dashboard.netPosition >= 0 ? "positive" : "negative"}
+              footer="Collected minus expenses"
+            />
+          </div>
 
           {/* Revenue trajectory — how the term's collections built over
               time. Weeks that have not happened yet render as a shaded
@@ -349,23 +440,6 @@ export default function FinanceDashboardPage() {
             </Card>
           )}
 
-          {/* KPI row — plain descriptive numbers, text tokens throughout */}
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-            <StatCard label="Total invoiced" value={formatKobo(dashboard.totalInvoiced)} />
-            <StatCard label="Total collected" value={formatKobo(dashboard.totalCollected)} />
-            <StatCard
-              label="Outstanding balance"
-              value={formatKobo(dashboard.outstandingBalance)}
-              tone={dashboard.outstandingBalance > 0 ? "warning" : "default"}
-            />
-            <StatCard label="Debtor count" value={String(dashboard.debtorCount)} />
-            <StatCard label="Total expenses" value={formatKobo(dashboard.totalExpenses)} />
-            <StatCard
-              label="Net position"
-              value={formatKobo(dashboard.netPosition)}
-              tone={dashboard.netPosition >= 0 ? "positive" : "negative"}
-            />
-          </div>
         </div>
       )}
     </div>

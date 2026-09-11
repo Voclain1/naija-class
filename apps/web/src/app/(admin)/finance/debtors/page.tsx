@@ -1,8 +1,15 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { MessageCircle } from "lucide-react";
 
-import type { AcademicYearDto, DebtorDto, TermDto } from "@school-kit/types";
+import {
+  buildDebtorReminderMessage,
+  buildNoRecipientWhatsAppUrl,
+  type AcademicYearDto,
+  type DebtorDto,
+  type TermDto,
+} from "@school-kit/types";
 
 import { ExportCsvButton } from "@/components/shared/export-csv-button";
 import { InlineAlert } from "@/components/shared/inline-alert";
@@ -14,6 +21,7 @@ import { listAcademicYears, listTerms } from "@/lib/academic-years/academic-year
 import { exportRowsAsCsv, type CsvColumn } from "@/lib/csv-export";
 import { financeErrorMessage, logFinanceError } from "@/lib/finance/error-copy";
 import { formatKobo } from "@/lib/finance/format";
+import { useAuth } from "@/lib/auth/use-auth";
 import { listDebtors, sendReminders } from "@/lib/finance/finance-api";
 
 const DEBTOR_EXPORT_COLUMNS: CsvColumn<DebtorDto>[] = [
@@ -48,6 +56,9 @@ const SELECT_CLASSES =
 export default function DebtorsPage() {
   const [years, setYears] = useState<AcademicYearDto[]>([]);
   const [yearId, setYearId] = useState("");
+  // School name is quoted in the WhatsApp message so a parent knows who is
+  // asking before they read the amount.
+  const { school } = useAuth();
   const [terms, setTerms] = useState<TermDto[]>([]);
   const [termId, setTermId] = useState("");
 
@@ -63,7 +74,22 @@ export default function DebtorsPage() {
   // Load academic years on mount
   useEffect(() => {
     listAcademicYears()
-      .then(setYears)
+      .then((rows) => {
+        setYears(rows);
+        // Land on the current year/term instead of an empty "select a term"
+        // screen. The finance DASHBOARD already did this; debtors did not, so
+        // the two finance pages disagreed about whether you had to choose
+        // before seeing anything.
+        //
+        // `isCurrent` is a MANUALLY set flag, never derived from dates, so a
+        // school with nothing flagged still lands on the honest empty state —
+        // this changes the default, not the guarantee. Deliberately does NOT
+        // date-resolve a fallback term: isCurrent is the codebase-wide
+        // definition of "current", and inventing a second one here would let
+        // this page report a different term than the roster.
+        const current = rows.find((y) => y.isCurrent);
+        if (current) setYearId(current.id);
+      })
       .catch((e) => {
         logFinanceError("listDebtorAcademicYears", e);
         setReferenceError(financeErrorMessage(e));
@@ -79,7 +105,11 @@ export default function DebtorsPage() {
     setReferenceError(null);
     if (!yearId) return;
     listTerms(yearId)
-      .then(setTerms)
+      .then((rows) => {
+        setTerms(rows);
+        const current = rows.find((t) => t.isCurrent);
+        if (current) setTermId(current.id);
+      })
       .catch((e) => {
         logFinanceError("listDebtorTerms", e);
         setReferenceError(financeErrorMessage(e));
@@ -138,6 +168,8 @@ export default function DebtorsPage() {
   }
 
   const totalBalance = debtors.reduce((sum, d) => sum + d.balance, 0);
+  // Named in the shared message, so a parent knows WHICH term is owed.
+  const selectedTermName = terms.find((t) => t.id === termId)?.name ?? "this term";
 
   return (
     <div className="mx-auto max-w-5xl space-y-6 px-4 py-8">
@@ -249,6 +281,7 @@ export default function DebtorsPage() {
                   <TableHead>Due date</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Plan</TableHead>
+                  <TableHead className="print:hidden sr-only">Share</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -282,6 +315,35 @@ export default function DebtorsPage() {
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">
                       {d.hasPaymentPlan ? "✓ Plan" : "—"}
+                    </TableCell>
+                    {/* Per-row WhatsApp share. Deliberately ONE family at a
+                        time: wa.me opens with no recipient, so the sender picks
+                        the conversation — it cannot be looped over the list.
+                        Bulk reminders remain the "Send reminder" button above,
+                        which goes out over email + SMS + push through
+                        POST /finance/debtors/remind. stopPropagation because
+                        the row itself toggles selection. */}
+                    <TableCell className="print:hidden" onClick={(e) => e.stopPropagation()}>
+                      <a
+                        href={buildNoRecipientWhatsAppUrl(
+                          buildDebtorReminderMessage({
+                            schoolName: school?.name ?? "Your school",
+                            studentName: d.studentName,
+                            balance: d.balance,
+                            termName: selectedTermName,
+                            dueDate: d.dueDate,
+                          }),
+                        )}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        // Distinctive per row, so it cannot collide by
+                        // substring with another control's accessible name.
+                        aria-label={`Share ${d.studentName}'s balance on WhatsApp`}
+                        className="inline-flex items-center gap-1 whitespace-nowrap text-xs font-medium text-primary underline underline-offset-2 hover:text-primary/80"
+                      >
+                        <MessageCircle className="h-3.5 w-3.5" aria-hidden />
+                        WhatsApp
+                      </a>
                     </TableCell>
                   </TableRow>
                 ))}
