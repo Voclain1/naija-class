@@ -11,18 +11,28 @@ import {
 import type { AuthContext } from "../../common/auth/auth-context.js";
 import { MS_PER_DAY, startOfDay, weekStart } from "../../common/dates/week.util.js";
 import { buildCollectionByGroup } from "../finance/collection-by-group.js";
-import { FinanceService } from "../finance/finance.service.js";
+import {
+  BILLED_EXCLUDED_STATUSES,
+  buildFinanceTotalsFromRows,
+} from "../finance/finance-totals.js";
 
 const TREND_WEEKS = 8;
 
 // ---------------------------------------------------------------------------
 // DashboardService — the admin dashboard rebuild's aggregation layer.
 //
-// This is deliberately a thin composition over existing per-module services
-// and queries, not a new source of truth: fees/outstanding are delegated to
-// FinanceService.getDashboard() (Phase 3 / Slice 14) rather than re-computed
-// here, so there is exactly one place that knows how "collection rate" is
-// defined.
+// This is deliberately a thin composition over existing per-module queries,
+// not a new source of truth: fees/outstanding are derived through
+// finance-totals.ts, which is also what FinanceService.getDashboard() uses for
+// its status sets and arithmetic, so there is exactly one place that knows how
+// "collection rate" is defined.
+//
+// It used to CALL FinanceService.getDashboard() instead. That was a second
+// withTenant inside this one — a second pooled connection acquired while this
+// transaction still held the first — and it deadlocked production whenever
+// concurrent dashboard loads reached the pool size. FinanceService is no
+// longer injected here AT ALL, so the nesting cannot be reintroduced by
+// accident; dashboard-transaction.spec.ts gates the invariant directly.
 //
 // "needsYouToday" and "attendanceToday" deliberately do NOT scope by the
 // selected termId — they reflect the current real-world moment regardless of
@@ -32,8 +42,6 @@ const TREND_WEEKS = 8;
 // ---------------------------------------------------------------------------
 @Injectable()
 export class DashboardService {
-  constructor(private readonly finance: FinanceService) {}
-
   async getAdminDashboard(authCtx: AuthContext, termId: string): Promise<AdminDashboardDto> {
     return withTenant(authCtx.schoolId, async (db) => {
       const term = await db.term.findUnique({
@@ -48,7 +56,6 @@ export class DashboardService {
       const [
         enrolledCount,
         previousTerm,
-        financeDashboard,
         attendanceAgg,
         enrollmentsForGroups,
         invoicesForGroups,
@@ -69,7 +76,6 @@ export class DashboardService {
           orderBy: { startDate: "desc" },
           select: { id: true },
         }),
-        this.finance.getDashboard(authCtx, termId),
         db.attendanceRecord.groupBy({ by: ["status"], where: { date: today }, _count: true }),
         db.enrollment.findMany({
           where: { termId, status: "ENROLLED" },
@@ -78,9 +84,13 @@ export class DashboardService {
             classArm: { select: { classLevel: { select: { id: true, name: true, orderIndex: true } } } },
           },
         }),
+        // `status` is selected so buildFinanceTotalsFromRows can derive the
+        // fees/outstanding KPIs from these same rows. The predicate is
+        // BILLED_EXCLUDED_STATUSES, which is exactly what that function
+        // requires as input, and exactly what FinanceService aggregates over.
         db.invoice.findMany({
-          where: { termId, status: { notIn: ["DRAFT", "CANCELLED"] } },
-          select: { studentId: true, totalDue: true, totalPaid: true },
+          where: { termId, status: { notIn: [...BILLED_EXCLUDED_STATUSES] } },
+          select: { studentId: true, status: true, totalDue: true, totalPaid: true },
         }),
         db.term.findFirst({
           where: { isCurrent: true },
@@ -159,6 +169,11 @@ export class DashboardService {
 
       const collectionByGroup = buildCollectionByGroup(enrollmentsForGroups, invoicesForGroups);
 
+      // Same five figures FinanceService.getDashboard() computes with DB-side
+      // aggregates, from rows this request already had in hand. Costs zero
+      // extra queries and, more to the point, zero extra transactions.
+      const financeTotals = buildFinanceTotalsFromRows(invoicesForGroups);
+
       const needsYouToday = [
         { type: "overdue_fees" as const, count: overdueCount, href: "/finance/debtors" },
         {
@@ -194,9 +209,9 @@ export class DashboardService {
         asOf: now.toISOString(),
         enrolled: { count: enrolledCount, previousTermCount },
         fees: {
-          collected: financeDashboard.totalCollected,
-          billed: financeDashboard.totalInvoiced,
-          percent: financeDashboard.collectionRatePercent,
+          collected: financeTotals.totalCollected,
+          billed: financeTotals.totalInvoiced,
+          percent: financeTotals.collectionRatePercent,
         },
         attendanceToday: {
           date: today.toISOString().slice(0, 10),
@@ -206,8 +221,8 @@ export class DashboardService {
           percentPresent,
         },
         outstanding: {
-          amount: financeDashboard.outstandingBalance,
-          debtorCount: financeDashboard.debtorCount,
+          amount: financeTotals.outstandingBalance,
+          debtorCount: financeTotals.debtorCount,
         },
         collectionByGroup,
         needsYouToday,
