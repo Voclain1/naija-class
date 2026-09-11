@@ -201,6 +201,66 @@ describe("SchoolsService (Slice 6)", () => {
       await expect(schoolsService.findMe(teacher.authCtx)).rejects.toBeInstanceOf(ForbiddenError);
     });
 
+    it("patchMe — bank detail changes are audited with OLD and NEW values", async () => {
+      // The standard school.update audit records field NAMES only
+      // (`changed: Object.keys(data)`), which is right for most of this DTO
+      // and NOT enough for a displayed bank account.
+      //
+      // A displayed account number is a fraud target with a quiet, delayed
+      // failure: change the digits and every parent who transfers pays an
+      // attacker, and nobody notices until reconciliation — at which point
+      // "bankAccountNumber was changed" cannot distinguish a correction from
+      // a theft. This asserts the from/to that makes it answerable.
+      const { authCtx, schoolId } = await createOwnedSchool("patch-bank");
+
+      await schoolsService.patchMe(
+        authCtx,
+        { bankName: "Zenith Bank", bankAccountName: "Demo Academy", bankAccountNumber: "1234567890" },
+        ctx,
+      );
+      await schoolsService.patchMe(authCtx, { bankAccountNumber: "0987654321" }, ctx);
+
+      // withTenant, NOT basePrisma: audit_logs is under FORCE RLS and
+      // basePrisma connects as app_user with no school GUC, so a direct read
+      // returns zero rows regardless of what was written.
+      const rows = await withTenant(schoolId, (db) =>
+        db.auditLog.findMany({
+          where: { schoolId, action: "school.update" },
+          orderBy: { createdAt: "desc" },
+          take: 1,
+        }),
+      );
+      expect(rows).toHaveLength(1);
+
+      const meta = rows[0]!.metadata as Record<string, unknown>;
+      const change = meta.bankDetailsChange as Record<string, { from: unknown; to: unknown }>;
+      expect(change).toBeDefined();
+      // The whole point: the PREVIOUS number is recoverable from the row.
+      expect(change.bankAccountNumber.from).toBe("1234567890");
+      expect(change.bankAccountNumber.to).toBe("0987654321");
+      // Untouched fields are not invented into the change set.
+      expect(change.bankName).toBeUndefined();
+    });
+
+    it("patchMe — a patch touching no bank field records no bankDetailsChange", async () => {
+      // Scoped deliberately: `phone` is omitted from audit metadata under the
+      // no-PII rule, so this must not become "dump every value".
+      const { authCtx, schoolId } = await createOwnedSchool("patch-nobank");
+
+      await schoolsService.patchMe(authCtx, { name: "Still Renamed" }, ctx);
+
+      const rows = await withTenant(schoolId, (db) =>
+        db.auditLog.findMany({
+          where: { schoolId, action: "school.update" },
+          orderBy: { createdAt: "desc" },
+          take: 1,
+        }),
+      );
+      const meta = rows[0]!.metadata as Record<string, unknown>;
+      expect(meta.bankDetailsChange).toBeUndefined();
+      expect(meta.changed).toEqual(["name"]);
+    });
+
     it("patchMe as owner — updates fields and writes an audit row, does NOT bump onboardingStep", async () => {
       const { authCtx, schoolId } = await createOwnedSchool("patch-owner");
 

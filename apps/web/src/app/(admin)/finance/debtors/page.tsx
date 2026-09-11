@@ -6,6 +6,7 @@ import { MessageCircle } from "lucide-react";
 import {
   buildDebtorReminderMessage,
   buildNoRecipientWhatsAppUrl,
+  resolveSchoolBankDetails,
   type AcademicYearDto,
   type DebtorDto,
   type TermDto,
@@ -59,6 +60,8 @@ export default function DebtorsPage() {
   // School name is quoted in the WhatsApp message so a parent knows who is
   // asking before they read the amount.
   const { school } = useAuth();
+  // Same rule the finance dashboard and the settings preview apply.
+  const shareBankDetails = resolveSchoolBankDetails(school);
   const [terms, setTerms] = useState<TermDto[]>([]);
   const [termId, setTermId] = useState("");
 
@@ -332,6 +335,13 @@ export default function DebtorsPage() {
                             balance: d.balance,
                             termName: selectedTermName,
                             dueDate: d.dueDate,
+                            // Each option appears only if the school supports
+                            // it. Paystack links are per-invoice and stateful,
+                            // so they are NOT fetched per row — see the
+                            // plan-first (D5b); the message simply omits that
+                            // line rather than promising a link that 404s.
+                            portalUrl: school?.portalUrl ?? null,
+                            bankDetails: shareBankDetails,
                           }),
                         )}
                         target="_blank"

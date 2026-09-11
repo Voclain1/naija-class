@@ -20,6 +20,8 @@ import { StatCard } from "@/components/shared/stat-card";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { listAcademicYears, listTerms } from "@/lib/academic-years/academic-years-api";
+import { resolveSchoolBankDetails } from "@school-kit/types";
+
 import { hasPermission } from "@/lib/auth/has-permission";
 import { useAuth } from "@/lib/auth/use-auth";
 import {
@@ -113,7 +115,9 @@ export default function FinanceDashboardPage() {
   const [yearsFailed, setYearsFailed] = useState(false);
   const [referenceError, setReferenceError] = useState<string | null>(null);
 
-  const { permissions } = useAuth();
+  const { permissions, school } = useAuth();
+  // Same helper the settings preview and the reminder message use.
+  const bankDetails = resolveSchoolBankDetails(school);
 
   useEffect(() => {
     listAcademicYears()
@@ -362,6 +366,29 @@ export default function FinanceDashboardPage() {
               </p>
             </CardContent>
           </Card>
+
+          {/* Pay by transfer — rendered only when the school has filled in
+              all three bank fields AND switched them on. resolveSchoolBankDetails
+              is the single source of that rule, shared with the settings
+              preview and the reminder message so the three cannot disagree. */}
+          {bankDetails && (
+            <Card>
+              <CardContent className="pt-6">
+                <h2 className="mb-1 font-serif text-lg font-medium text-foreground">
+                  Pay by transfer
+                </h2>
+                <p className="mb-3 text-xs text-muted-foreground">
+                  Included in the payment reminders you send. There is no
+                  parent-facing portal view of this yet.
+                </p>
+                <div className="text-sm">
+                  <p className="font-medium text-foreground">{bankDetails.bankAccountName}</p>
+                  <p className="tabular-nums text-foreground">{bankDetails.bankAccountNumber}</p>
+                  <p className="text-muted-foreground">{bankDetails.bankName}</p>
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           {/* KPI row. Every footer below is derived from a field this DTO
               actually returns — the mockup's "Tuition: N1,200 / Levy: N300"

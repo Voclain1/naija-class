@@ -1,3 +1,4 @@
+export * from "./bank-details.js";
 export * from "./bvn.dto.js";
 export * from "./collection-by-level.dto.js";
 export * from "./dashboard.dto.js";

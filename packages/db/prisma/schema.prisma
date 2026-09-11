@@ -69,6 +69,29 @@ model School {
   // per school and stores its code here for every durable invoice link.
   paystackSplitCode        String?      @map("paystack_split_code")
   paystackPaymentsEnabled  Boolean      @default(false) @map("paystack_payments_enabled")
+
+  // ── Direct bank transfer (2026-09-11) ────────────────────────────────────
+  //
+  // The school's own COLLECTION account, shown to parents who would rather
+  // transfer than pay through Paystack.
+  //
+  // NOT the same thing as PaystackSetupRequest.accountNumber, even when the
+  // digits match: that one is the PAYOUT account the platform operator uses to
+  // create the subaccount, and it is deliberately kept out of list surfaces
+  // and behind an individually-audited reveal. This one exists to be
+  // displayed. Do not collapse the two later on the grounds that "we already
+  // store the school's account number" — the audience and the access rules are
+  // opposites.
+  //
+  // bankDetailsEnabled is the safety property, not decoration: without an
+  // explicit toggle, "visible once filled" means a half-finished form shows a
+  // wrong or partial account number to parents the moment someone saves.
+  // Display requires the toggle AND all three fields present — see
+  // schoolBankDetails() in packages/types.
+  bankName           String?  @map("bank_name")
+  bankAccountName    String?  @map("bank_account_name")
+  bankAccountNumber  String?  @map("bank_account_number")
+  bankDetailsEnabled Boolean  @default(false) @map("bank_details_enabled")
   // Staff mobile is deliberately enabled one school at a time. Shipping the
   // binary or API must never silently expose a new staff credential surface.
   staffMobileEnabled       Boolean      @default(false) @map("staff_mobile_enabled")

@@ -59,3 +59,77 @@ describe("buildDebtorReminderMessage", () => {
     expect(decodeURIComponent(url.split("text=")[1]!)).toContain("Chidi Okoro");
   });
 });
+
+// ── Payment options (added 2026-09-11) ──────────────────────────────────────
+//
+// The message offers only what the school actually supports. A line promising
+// a payment link that does not exist, or a transfer account never filled in,
+// is worse than a shorter message: the parent cannot act on it and has to ring
+// the school anyway, which is the outcome this message exists to avoid.
+
+const BANK = {
+  bankName: "Zenith Bank",
+  bankAccountName: "Demo Academy",
+  bankAccountNumber: "1234567890",
+};
+
+describe("buildDebtorReminderMessage — payment options", () => {
+  const base = {
+    schoolName: "Demo Academy",
+    studentName: "Chidi Okoro",
+    balance: 4_500_000,
+    termName: "Second Term",
+    dueDate: null,
+  };
+
+  it("falls back to 'contact the school' when the school supports nothing yet", () => {
+    const msg = buildDebtorReminderMessage(base);
+    expect(msg).toContain("contact the school");
+    expect(msg).not.toContain("http");
+    expect(msg).not.toContain("transfer to");
+  });
+
+  it("includes the portal link when there is one", () => {
+    const msg = buildDebtorReminderMessage({ ...base, portalUrl: "https://portal.schoolkit.ng" });
+    expect(msg).toContain("https://portal.schoolkit.ng");
+    expect(msg).not.toContain("contact the school");
+  });
+
+  it("includes the Paystack link when one is LIVE", () => {
+    const msg = buildDebtorReminderMessage({ ...base, paymentLinkUrl: "https://pay.example/abc" });
+    expect(msg).toContain("Pay online: https://pay.example/abc");
+  });
+
+  it("includes transfer details, with the account number intact", () => {
+    const msg = buildDebtorReminderMessage({ ...base, bankDetails: BANK });
+    expect(msg).toContain("Demo Academy");
+    expect(msg).toContain("1234567890");
+    expect(msg).toContain("Zenith Bank");
+  });
+
+  it("offers all three together when the school supports all three", () => {
+    const msg = buildDebtorReminderMessage({
+      ...base,
+      portalUrl: "https://portal.schoolkit.ng",
+      paymentLinkUrl: "https://pay.example/abc",
+      bankDetails: BANK,
+    });
+    expect(msg).toContain("Pay online:");
+    expect(msg).toContain("parent portal");
+    expect(msg).toContain("transfer to");
+    expect(msg).not.toContain("contact the school");
+  });
+
+  it("never renders undefined or null when an option is absent", () => {
+    // The failure this guards is a parent receiving "transfer to undefined".
+    for (const extra of [
+      { portalUrl: null, paymentLinkUrl: null, bankDetails: null },
+      { portalUrl: undefined },
+      { bankDetails: null, portalUrl: "https://portal.schoolkit.ng" },
+    ]) {
+      const msg = buildDebtorReminderMessage({ ...base, ...extra });
+      expect(msg).not.toContain("undefined");
+      expect(msg).not.toContain("null");
+    }
+  });
+});

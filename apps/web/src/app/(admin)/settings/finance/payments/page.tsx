@@ -14,6 +14,7 @@ import {
   createPaystackSetupRequest,
   getPaystackSetupRequest,
 } from "@/lib/finance/paystack-setup-api";
+import { BankTransferSettings } from "@/components/finance/bank-transfer-settings";
 import { getSchoolMe, patchSchoolMe } from "@/lib/onboarding/schools-api";
 import { cn } from "@/lib/utils";
 
@@ -163,6 +164,10 @@ export default function PaymentsSettingsPage() {
         </div>
       ) : (
         <div className="flex flex-col gap-6">
+          {/* Direct bank transfer — the account parents are SHOWN, distinct
+              from the Paystack setup details below. See the component. */}
+          <BankTransferSettings />
+
           {request?.status === "REJECTED" && request.notes && (
             <div className="rounded-md border border-destructive/40 bg-destructive/5 p-4 text-sm">
               <p className="font-medium text-destructive">
