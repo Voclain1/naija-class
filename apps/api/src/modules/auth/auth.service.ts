@@ -41,6 +41,7 @@ import * as password from "../../common/auth/password";
 import { createSession } from "../../common/auth/sessions";
 import { invalidateSessionCache } from "../../common/auth/session-cache.js";
 import { redactEmail } from "../../common/redact";
+import { portalBaseUrl } from "../../common/portal-url";
 import { generateUniqueSchoolSlug } from "../../common/slug/school-slug.js";
 import { TotpService } from "./totp.service.js";
 
@@ -863,7 +864,17 @@ export class AuthService {
 
     // paystackSubaccountBusinessName is never persisted — only PATCH
     // /schools/me's own return populates it, right after a fresh verify.
-    return { user, school: { ...school, paystackSubaccountBusinessName: null }, roles, permissions };
+    return {
+      user,
+      school: {
+        ...school,
+        paystackSubaccountBusinessName: null,
+        // Server-derived, from the one shared helper. See SchoolMeDto.
+        portalUrl: portalBaseUrl(),
+      },
+      roles,
+      permissions,
+    };
   }
 
   // Returns whether 2FA is currently enabled for the authenticated user.
@@ -1059,6 +1070,10 @@ const SCHOOL_RESPONSE_SELECT = {
   paystackSubaccountCode: true,
   paystackSplitCode: true,
   paystackPaymentsEnabled: true,
+  bankName: true,
+  bankAccountName: true,
+  bankAccountNumber: true,
+  bankDetailsEnabled: true,
   createdAt: true,
   updatedAt: true,
 } satisfies Prisma.SchoolSelect;

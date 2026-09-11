@@ -30,6 +30,30 @@ export interface SchoolMeDto {
   // Opt-in to subject-period attendance (Phase 2 / Slice 8). The admin settings
   // page reads + toggles this; the teacher portal learns it via /teacher-scope/me.
   subjectAttendanceEnabled: boolean;
+  // Direct bank transfer (2026-09-11) — the school's own COLLECTION account,
+  // shown to parents who would rather transfer than use Paystack. NOT the
+  // guarded Paystack payout account on PaystackSetupRequest; see
+  // packages/types/src/finance/bank-details.ts.
+  //
+  // Never render these three directly. Pass the whole school through
+  // resolveSchoolBankDetails(), which returns null unless the toggle is on AND
+  // all three are present — a partial "pay to:" block is worse than none.
+  bankName: string | null;
+  bankAccountName: string | null;
+  bankAccountNumber: string | null;
+  bankDetailsEnabled: boolean;
+  /**
+   * Where this school's parents log in — e.g. "https://portal.schoolkit.ng".
+   *
+   * Server-derived, NOT a school-editable column: it comes from the API's
+   * PORTAL_BASE_URL. Returned here rather than duplicated into apps/web as a
+   * NEXT_PUBLIC_ variable, because this project already has an incident of
+   * exactly that going wrong — recreating the school-kit-portal Vercel project
+   * silently dropped every environment variable, and NEXT_PUBLIC_API_URL was
+   * missing for five days before a real bug surfaced it. One source, no
+   * cross-platform drift.
+   */
+  portalUrl: string;
   // Paystack subaccount routing (compressed plan-first, 2026-07-31). The raw
   // code is safe to echo back — it's an opaque Paystack identifier, not a
   // secret (same trust level as a bank account's last-4, not its full BVN).

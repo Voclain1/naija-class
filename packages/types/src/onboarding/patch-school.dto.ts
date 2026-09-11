@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { bankAccountNumberSchema } from "../finance/bank-details.js";
+
 import { onboardingStep1Schema } from "./step1-basics.dto.js";
 import { onboardingStep2Schema } from "./step2-branding.dto.js";
 
@@ -26,6 +28,18 @@ const schoolSettingsSchema = z.object({
   subjectAttendanceEnabled: z.boolean(),
   paystackSubaccountCode: z.string().trim().min(1, "subaccount code cannot be blank").nullable(),
   paystackPaymentsEnabled: z.boolean(),
+  // Direct bank transfer (2026-09-11). All nullable so a school can clear what
+  // it previously entered.
+  //
+  // The account number is validated as a NUBAN — exactly ten digits — rather
+  // than accepted as free text. This is the one field where being strict costs
+  // a school nothing and being lax costs a parent their money: a typo'd
+  // account number is a transfer to a stranger, and nothing downstream can
+  // detect that for them.
+  bankName: z.string().trim().min(1, "bank name cannot be blank").nullable(),
+  bankAccountName: z.string().trim().min(1, "account name cannot be blank").nullable(),
+  bankAccountNumber: bankAccountNumberSchema.nullable(),
+  bankDetailsEnabled: z.boolean(),
 });
 
 export const patchSchoolSchema = onboardingStep1Schema

@@ -1,3 +1,4 @@
+import type { SchoolBankDetails } from "./bank-details.js";
 import { formatKobo } from "./format.js";
 import { z } from "zod";
 
@@ -69,11 +70,35 @@ export function buildDebtorReminderMessage(input: {
   balance: number; // kobo
   termName: string;
   dueDate: string | null;
+  /** Where this school's parents log in. From SchoolMeDto.portalUrl. */
+  portalUrl?: string | null;
+  /** A LIVE Paystack payment link for this invoice, when one exists. */
+  paymentLinkUrl?: string | null;
+  /** Only ever the resolved value — see resolveSchoolBankDetails. */
+  bankDetails?: SchoolBankDetails | null;
 }): string {
   const due = input.dueDate ? ` It was due on ${input.dueDate}.` : "";
+
+  // Each option is included ONLY when the school actually supports it. A line
+  // promising a payment link that does not exist, or a transfer account a
+  // school never filled in, is worse than a shorter message — the parent
+  // cannot act on it and has to ring the school anyway, which is the outcome
+  // this whole message exists to avoid.
+  const options: string[] = [];
+  if (input.paymentLinkUrl) options.push(`Pay online: ${input.paymentLinkUrl}`);
+  if (input.portalUrl) options.push(`Or log in to the parent portal: ${input.portalUrl}`);
+  if (input.bankDetails) {
+    options.push(
+      `Or transfer to ${input.bankDetails.bankAccountName}, ` +
+        `${input.bankDetails.bankAccountNumber}, ${input.bankDetails.bankName}`,
+    );
+  }
+
+  const howToPay = options.length > 0 ? ` ${options.join(". ")}.` : " Please contact the school to settle it.";
+
   return (
     `${input.schoolName}: ${formatKobo(input.balance)} is outstanding on ` +
-    `${input.studentName}'s school fees for ${input.termName}.${due} ` +
-    `Please contact the school to settle it.`
+    `${input.studentName}'s school fees for ${input.termName}.${due}` +
+    howToPay
   );
 }

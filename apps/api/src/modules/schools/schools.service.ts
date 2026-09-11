@@ -21,6 +21,7 @@ import type { AuthContext } from "../../common/auth/auth-context";
 import { assertUserActiveAndHasOneOf } from "../../common/auth/role-check";
 import { PaystackService } from "../../common/paystack/paystack.service";
 import { redactEmail } from "../../common/redact";
+import { portalBaseUrl } from "../../common/portal-url";
 import { StorageService } from "../../common/storage/storage.service";
 import { AcademicCalendarService } from "../academic-calendar/academic-calendar.service.js";
 
@@ -103,6 +104,14 @@ export class SchoolsService {
     if (input.phone !== undefined) data.phone = input.phone;
     if (input.email !== undefined) data.email = input.email;
     if (input.primaryColor !== undefined) data.primaryColor = input.primaryColor;
+    // Direct bank transfer (2026-09-11). Without these four lines the schema
+    // accepts the fields and patchMe silently drops them — the request
+    // succeeds, the response looks right, and nothing is written. Caught by
+    // the old->new audit spec, which found no change to record.
+    if (input.bankName !== undefined) data.bankName = input.bankName;
+    if (input.bankAccountName !== undefined) data.bankAccountName = input.bankAccountName;
+    if (input.bankAccountNumber !== undefined) data.bankAccountNumber = input.bankAccountNumber;
+    if (input.bankDetailsEnabled !== undefined) data.bankDetailsEnabled = input.bankDetailsEnabled;
     // Slice 8 — the subject-attendance opt-in rides this same PATCH (owner/admin,
     // school.update audit). Reaching this endpoint is itself the enable path, so
     // it carries no opt-in gate.
@@ -188,7 +197,49 @@ export class SchoolsService {
 
     return this.updateSchoolWithAudit(authCtx, data, "school.update", reqCtx, {
       changed: Object.keys(data),
+      ...(await this.bankDetailsAuditMetadata(authCtx, data)),
     });
+  }
+
+  // The standard school.update audit records field NAMES only
+  // (`changed: Object.keys(data)`), which is right for most of this DTO and
+  // NOT enough for a displayed bank account.
+  //
+  // A displayed account number is a fraud target with a quiet, delayed
+  // failure: change the digits and every parent who transfers pays an
+  // attacker, and nobody notices until reconciliation — by which point
+  // "bankAccountNumber was changed" cannot distinguish a correction from a
+  // theft. Old -> new is what makes that an answerable question.
+  //
+  // Deliberately scoped to these three fields rather than widening the whole
+  // payload: `phone` is omitted from audit metadata today under the no-PII
+  // rule, and dumping every value would reverse that decision as a side
+  // effect.
+  private async bankDetailsAuditMetadata(
+    authCtx: AuthContext,
+    data: Record<string, unknown>,
+  ): Promise<Record<string, unknown>> {
+    const TRACKED = ["bankName", "bankAccountName", "bankAccountNumber", "bankDetailsEnabled"] as const;
+    const touched = TRACKED.filter((k) => k in data);
+    if (touched.length === 0) return {};
+
+    const before = await withTenant(authCtx.schoolId, async (db) =>
+      db.school.findUnique({
+        where: { id: authCtx.schoolId },
+        select: {
+          bankName: true,
+          bankAccountName: true,
+          bankAccountNumber: true,
+          bankDetailsEnabled: true,
+        },
+      }),
+    );
+
+    const change: Record<string, { from: unknown; to: unknown }> = {};
+    for (const key of touched) {
+      change[key] = { from: before ? before[key] : null, to: data[key] ?? null };
+    }
+    return { bankDetailsChange: change };
   }
 
   // POST /schools/me/onboarding/:step — owner-only. Three gates run in order:
@@ -583,6 +634,10 @@ const SCHOOL_RESPONSE_SELECT = {
   paystackSubaccountCode: true,
   paystackSplitCode: true,
   paystackPaymentsEnabled: true,
+  bankName: true,
+  bankAccountName: true,
+  bankAccountNumber: true,
+  bankDetailsEnabled: true,
   createdAt: true,
   updatedAt: true,
 } satisfies Prisma.SchoolSelect;
@@ -605,6 +660,11 @@ function toSchoolMeDto(school: SchoolRow): SchoolMeDto {
     ndprConsent: school.ndprConsent,
     ndprConsentAt: school.ndprConsentAt,
     subjectAttendanceEnabled: school.subjectAttendanceEnabled,
+    bankName: school.bankName,
+    bankAccountName: school.bankAccountName,
+    bankAccountNumber: school.bankAccountNumber,
+    bankDetailsEnabled: school.bankDetailsEnabled,
+    portalUrl: portalBaseUrl(),
     paystackSubaccountCode: school.paystackSubaccountCode,
     paystackSplitCode: school.paystackSplitCode,
     paystackPaymentsEnabled: school.paystackPaymentsEnabled,
