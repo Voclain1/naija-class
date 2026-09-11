@@ -360,6 +360,57 @@ describe("SchoolsController (Slice 6)", () => {
     expect(res.body.error?.code).toBe("VALIDATION_ERROR");
   });
 
+  // REGRESSION (2026-09-11). A real school was blocked here: the owner changed
+  // the academic year's dates and left the pre-filled term dates alone, so the
+  // terms fell outside the new range. The API was correct to refuse — but
+  // `error.message` is the constant "Invalid request payload" for every
+  // validation failure in the codebase, and the web form rendered exactly that
+  // and nothing else. The owner had no way to learn which field was wrong.
+  //
+  // The empty-body case above asserts only `status === 400`, which is why it
+  // never caught this: the status was always right. THIS test asserts the
+  // actionable text is present, and says where the client must read it from.
+  // If details.issues[] is ever dropped or its messages made generic, the web
+  // fix (lib/errors/api-error-lines.ts) silently regresses to the old
+  // behaviour and this is what fails.
+  it("POST /schools/me/onboarding/5 — a term outside the year names the term in details.issues[]", async () => {
+    await request(app.getHttpServer())
+      .post("/api/v1/schools/me/onboarding/4")
+      .set(withAuth(ownerToken))
+      .send({ ndprConsent: true });
+
+    const body = step5Body();
+    // The owner moves the academic year later and does not touch the terms —
+    // the exact edit from the incident.
+    body.calendar.yearStartDate = new Date(Date.UTC(2026, 9, 1)).toISOString();
+    body.calendar.yearEndDate = new Date(Date.UTC(2027, 7, 31)).toISOString();
+
+    const res = await request(app.getHttpServer())
+      .post("/api/v1/schools/me/onboarding/5")
+      .set(withAuth(ownerToken))
+      .send(body);
+
+    expect(res.status).toBe(400);
+    expect(res.body.error?.code).toBe("VALIDATION_ERROR");
+
+    const issues = res.body.error?.details?.issues as
+      | Array<{ path: string; code: string; message: string }>
+      | undefined;
+    expect(Array.isArray(issues)).toBe(true);
+    expect(issues!.length).toBeGreaterThan(0);
+
+    // The sentence a human can act on, carried per-issue.
+    const messages = issues!.map((i) => i.message);
+    expect(messages).toContain("First Term must fall within the academic year.");
+
+    // And the path that lets the form highlight the right row.
+    expect(issues!.map((i) => i.path)).toContain("calendar.terms.0");
+
+    // The envelope message stays generic — that is precisely why the client
+    // must not render it on its own.
+    expect(res.body.error?.message).toBe("Invalid request payload");
+  });
+
   // ---------------------------------------------------------------------
   // POST /schools/me/logo + GET /schools/me/logo-url — visual/UX overhaul
   // initiative (2026-07-26). Real multipart upload through the real
