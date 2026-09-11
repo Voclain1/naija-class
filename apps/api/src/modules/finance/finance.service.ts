@@ -782,7 +782,7 @@ function buildReminderHtml(opts: {
     </tr>
   </table>
   ${dueLine}
-  <p>Please contact the school's bursar to arrange payment.</p>
+  <p>Please contact the school to arrange payment.</p>
   <p style="color:#6b7280;font-size:13px">This message was sent by ${opts.schoolName} via School Kit.</p>
 </body>
 </html>`;
@@ -791,6 +791,12 @@ function buildReminderHtml(opts: {
 // SMS body — plain text, kept short (Termii bills per 160-character page,
 // special characters drop that to 70 — see docs/modules/phase-4.md §8 D6).
 // No greeting/sign-off flourish the email version has room for.
+//
+// Says "the school", NOT "the bursar" (changed 2026-09-11): plenty of small
+// Nigerian private schools have no bursar at all, and naming a role the
+// reader's school does not staff makes the instruction unfollowable. "The
+// school" is true everywhere and is also one character shorter, which this
+// builder cares about.
 function buildReminderSms(opts: {
   studentName: string;
   schoolName: string;
@@ -798,5 +804,5 @@ function buildReminderSms(opts: {
   dueDate: string | null;
 }): string {
   const dueClause = opts.dueDate ? ` Due ${opts.dueDate}.` : "";
-  return `${opts.schoolName}: ${formatKoboForEmail(opts.balance)} outstanding for ${opts.studentName}.${dueClause} Contact the bursar to pay.`;
+  return `${opts.schoolName}: ${formatKoboForEmail(opts.balance)} outstanding for ${opts.studentName}.${dueClause} Contact the school to pay.`;
 }

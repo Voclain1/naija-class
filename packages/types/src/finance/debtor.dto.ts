@@ -48,7 +48,8 @@ export interface SendRemindersResult {
 // ---------------------------------------------------------------------------
 
 /**
- * The message a bursar shares with a single family about an unpaid balance.
+ * The message a staff member shares with a single family about an unpaid
+ * balance. (Not "a bursar" — many small schools have no such role.)
  *
  * Deliberately per-row, not bulk. `buildNoRecipientWhatsAppUrl` (payment-link.dto)
  * opens WhatsApp with NO recipient — the sender picks the conversation — so it
@@ -73,6 +74,6 @@ export function buildDebtorReminderMessage(input: {
   return (
     `${input.schoolName}: ${formatKobo(input.balance)} is outstanding on ` +
     `${input.studentName}'s school fees for ${input.termName}.${due} ` +
-    `Please contact the bursar to settle it.`
+    `Please contact the school to settle it.`
   );
 }
