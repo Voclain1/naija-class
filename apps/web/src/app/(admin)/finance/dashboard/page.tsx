@@ -320,12 +320,12 @@ export default function FinanceDashboardPage() {
           picker, which beats any custom listbox a bursar would meet on a
           budget Android device. Only the chrome changed. */}
       <div className="flex flex-wrap items-center gap-2">
-        <div className="inline-flex items-center gap-2 rounded-full border border-input bg-card px-3 py-1.5">
+        <div className="inline-flex items-center gap-2 rounded-full border border-input bg-card px-3 py-1.5 focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-1">
           <label
             htmlFor="fin-dash-year"
             className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground"
           >
-            Session
+            Academic year
           </label>
           <select
             id="fin-dash-year"
@@ -342,7 +342,7 @@ export default function FinanceDashboardPage() {
           </select>
         </div>
 
-        <div className="inline-flex items-center gap-2 rounded-full border border-input bg-card px-3 py-1.5 has-[select:disabled]:opacity-50">
+        <div className="inline-flex items-center gap-2 rounded-full border border-input bg-card px-3 py-1.5 focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-1 has-[select:disabled]:opacity-50">
           <label
             htmlFor="fin-dash-term"
             className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground"

@@ -438,3 +438,32 @@ describe("F-42 — the collection-rate card derives its figures, never invents t
     expect(dashboard()).not.toContain("accessor: (g) => g.collected");
   });
 });
+
+// ── Pass 3 regression: the restyled term pills (2026-09-12) ─────────────────
+//
+// Pass 3 relabelled "Academic year" as "Session" to match the mockup, and
+// stripped each <select>'s focus outline so it would sit flush in its pill.
+// CI's a11y-wave3a e2e caught the first (both tests locate the control by its
+// visible label). Nothing caught the second: a keyboard user tabbing into the
+// pill saw no focus indicator at all.
+
+describe("F-44 — the term pills keep the app's terminology and a visible focus state", () => {
+  it("says 'Academic year', matching Debtors and Fees", () => {
+    // The mockup said "Session". Nigerian schools do use that word, but the
+    // rest of Finance says "Academic year", and one screen using a different
+    // name for the same thing is worse than either choice made consistently.
+    expect(code(FINANCE_DASHBOARD)).toContain("Academic year");
+    expect(code(FINANCE_DASHBOARD)).not.toMatch(/>\s*Session\s*</);
+  });
+
+  it("every select that drops its own focus ring sits inside a pill that shows one", () => {
+    // focus:outline-none with no replacement fails WCAG 2.4.7. The pill
+    // carries the ring via focus-within, so the count of removals must never
+    // exceed the count of replacements.
+    const src = code(FINANCE_DASHBOARD);
+    const removed = (src.match(/focus:outline-none focus:ring-0/g) ?? []).length;
+    const replaced = (src.match(/focus-within:ring-2/g) ?? []).length;
+    expect(removed).toBeGreaterThan(0);
+    expect(replaced).toBeGreaterThanOrEqual(removed);
+  });
+});
