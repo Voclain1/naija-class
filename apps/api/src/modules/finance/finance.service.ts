@@ -16,6 +16,11 @@ import {
 import type { AuthContext } from "../../common/auth/auth-context.js";
 import { MS_PER_DAY, startOfDay, toIsoDate, weekStart } from "../../common/dates/week.util.js";
 import { buildCollectionByGroup } from "./collection-by-group.js";
+import {
+  BILLED_EXCLUDED_STATUSES,
+  OUTSTANDING_STATUSES,
+  collectionRatePercent,
+} from "./finance-totals.js";
 import { EmailService } from "../../common/email/email.service.js";
 import { redactPhone } from "../../common/redact.js";
 import { normalizeNigerianPhone, TermiiService } from "../../common/termii/termii.service.js";
@@ -197,13 +202,17 @@ export class FinanceService implements OnModuleInit {
       });
       if (!term) throw new NotFoundError("Term not found.");
 
+      // Status sets come from finance-totals.ts so this endpoint and the admin
+      // dashboard cannot drift apart on what counts as billed or outstanding.
+      // The AGGREGATION stays here on the DB side deliberately — see that
+      // module's header, and D5 of docs/modules/revenue-trajectory.md.
       const [invoicedAgg, debtorAgg, expenseAgg] = await Promise.all([
         db.invoice.aggregate({
-          where: { termId, status: { notIn: ["DRAFT", "CANCELLED"] } },
+          where: { termId, status: { notIn: [...BILLED_EXCLUDED_STATUSES] } },
           _sum: { totalDue: true, totalPaid: true },
         }),
         db.invoice.aggregate({
-          where: { termId, status: { in: ["ISSUED", "PARTIALLY_PAID", "OVERDUE"] } },
+          where: { termId, status: { in: [...OUTSTANDING_STATUSES] } },
           _sum: { totalDue: true, totalPaid: true },
           _count: true,
         }),
@@ -215,8 +224,6 @@ export class FinanceService implements OnModuleInit {
 
       const totalInvoiced = invoicedAgg._sum.totalDue ?? 0;
       const totalCollected = invoicedAgg._sum.totalPaid ?? 0;
-      const collectionRatePercent =
-        totalInvoiced > 0 ? Math.round((totalCollected / totalInvoiced) * 100) : 0;
 
       const outstandingBalance =
         (debtorAgg._sum.totalDue ?? 0) - (debtorAgg._sum.totalPaid ?? 0);
@@ -230,7 +237,7 @@ export class FinanceService implements OnModuleInit {
         termName: term.name,
         totalInvoiced,
         totalCollected,
-        collectionRatePercent,
+        collectionRatePercent: collectionRatePercent(totalInvoiced, totalCollected),
         outstandingBalance,
         debtorCount,
         totalExpenses,

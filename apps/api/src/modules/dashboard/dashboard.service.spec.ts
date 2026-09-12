@@ -3,36 +3,12 @@ import { afterAll, describe, expect, it } from "vitest";
 import { basePrisma, withTenant } from "@school-kit/db";
 import { NotFoundError } from "@school-kit/types";
 
-import type { EmailService } from "../../common/email/email.service.js";
-import type { TermiiService } from "../../common/termii/termii.service.js";
-import type { NotificationPreferencesService } from "../notifications/notification-preferences.service.js";
-import type { NotificationDispatchService } from "../notifications/notification-dispatch.service.js";
 import { AuthService } from "../auth/auth.service.js";
-import { FinanceService } from "../finance/finance.service.js";
 import { DashboardService } from "./dashboard.service.js";
 
 // Visual/UX overhaul initiative — admin dashboard aggregation. Integration
 // spec, same discipline as finance.service.spec.ts: real DB via withTenant,
 // each test creates its own isolated school.
-
-function makeFinanceService(): FinanceService {
-  const email = {
-    isConfigured: false,
-    send: async () => undefined,
-  } as unknown as EmailService;
-  const termii = {
-    isConfigured: false,
-    sendSms: async () => undefined,
-  } as unknown as TermiiService;
-  const notificationPreferences = {
-    getEnabledChannels: async () => ({ email: true, sms: false, push: false }),
-  } as unknown as NotificationPreferencesService;
-  // push OFF, so the dispatch answer is the pre-slice-5 behaviour: SMS.
-  const dispatch = {
-    notifyGuardian: async () => "SMS" as const,
-  } as unknown as NotificationDispatchService;
-  return new FinanceService(email, termii, notificationPreferences, dispatch);
-}
 
 let phoneCounter = 0;
 function randomPhone(): string {
@@ -89,7 +65,7 @@ describe("DashboardService (integration)", () => {
   }
 
   it("aggregates enrollment, fees, attendance, outstanding, collection-by-group, alerts, and the trend for a populated school", async () => {
-    const svc = new DashboardService(makeFinanceService());
+    const svc = new DashboardService();
     const { schoolId, ownerId } = await makeSchool("full");
 
     const scenario = await withTenant(schoolId, async (db) => {
@@ -329,7 +305,7 @@ describe("DashboardService (integration)", () => {
   });
 
   it("returns zeroed KPIs and no previousTermCount for a school with no data yet", async () => {
-    const svc = new DashboardService(makeFinanceService());
+    const svc = new DashboardService();
     const { schoolId, ownerId } = await makeSchool("empty");
 
     const termId = await withTenant(schoolId, async (db) => {
@@ -368,7 +344,7 @@ describe("DashboardService (integration)", () => {
   });
 
   it("throws NotFoundError for an unknown termId", async () => {
-    const svc = new DashboardService(makeFinanceService());
+    const svc = new DashboardService();
     const { schoolId, ownerId } = await makeSchool("no-term");
 
     await expect(

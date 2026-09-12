@@ -65,6 +65,33 @@ export interface WithTenantOptions {
   // blanket default, which would just let every transaction hold its Neon
   // connection open longer under normal load.
   timeoutMs?: number;
+
+  // Names this call site in the diagnostic emitted when a retryable error
+  // fires. Optional, and worth setting on any long or hot path.
+  label?: string;
+}
+
+/**
+ * How long the failing attempt actually ran before it threw. This is the field
+ * that separates the two failure modes P2028 covers, which are otherwise
+ * indistinguishable in Sentry and need OPPOSITE fixes:
+ *
+ *   elapsed ~= 0            the transaction never STARTED — no connection was
+ *                           free. Pool exhaustion. Fix: fewer concurrent
+ *                           connection holders, or a bigger pool.
+ *   elapsed ~= the budget   the transaction started and its BODY ran long.
+ *                           Fix: fewer round trips, or a higher timeoutMs.
+ *
+ * Before this existed, the 2026-09-11 /dashboard investigation had to reason
+ * from Sentry event COUNTS to guess which mechanism was firing.
+ */
+function describeAttemptFailure(e: unknown, elapsedMs: number, label?: string): string {
+  const code = e instanceof Prisma.PrismaClientKnownRequestError ? e.code : "init";
+  const mode =
+    elapsedMs < 100
+      ? "never-started (pool acquisition)"
+      : "body ran long (round-trip cost / latency)";
+  return `withTenant${label ? ` [${label}]` : ""}: retrying after connection-level error (${code}) after ${elapsedMs}ms — ${mode}`;
 }
 
 export async function withTenant<T>(
@@ -91,17 +118,14 @@ export async function withTenant<T>(
       return fn(tx as unknown as PrismaClient);
     }, txOptions);
 
+  const startedAt = Date.now();
   try {
     return await attempt();
   } catch (e) {
     if (!isRetryableConnectionError(e)) throw e;
     // packages/db has no injected Logger; this is the one chokepoint for
     // every tenant call, worth a visible signal when the retry path fires.
-    console.warn(
-      `withTenant: retrying after connection-level error (${
-        e instanceof Prisma.PrismaClientKnownRequestError ? e.code : "init"
-      })`,
-    );
+    console.warn(describeAttemptFailure(e, Date.now() - startedAt, options?.label));
     await sleep(RETRY_DELAY_MS);
     return attempt();
   }

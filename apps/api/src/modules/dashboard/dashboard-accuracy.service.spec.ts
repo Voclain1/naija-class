@@ -2,12 +2,7 @@ import { afterAll, describe, expect, it } from "vitest";
 
 import { basePrisma, withTenant } from "@school-kit/db";
 
-import type { EmailService } from "../../common/email/email.service.js";
-import type { TermiiService } from "../../common/termii/termii.service.js";
-import type { NotificationPreferencesService } from "../notifications/notification-preferences.service.js";
-import type { NotificationDispatchService } from "../notifications/notification-dispatch.service.js";
 import { AuthService } from "../auth/auth.service.js";
-import { FinanceService } from "../finance/finance.service.js";
 import { DashboardService } from "./dashboard.service.js";
 
 // Three pre-existing data-correctness defects on the admin dashboard, each
@@ -24,18 +19,6 @@ import { DashboardService } from "./dashboard.service.js";
 // Dates are built with Date.UTC(...) throughout, for the reason
 // dashboard.service.spec.ts states: a local-time fixture would agree with a
 // local-time bug and never catch it.
-
-function makeFinanceService(): FinanceService {
-  const email = { isConfigured: false, send: async () => undefined } as unknown as EmailService;
-  const termii = { isConfigured: false, sendSms: async () => undefined } as unknown as TermiiService;
-  const prefs = {
-    getEnabledChannels: async () => ({ email: true, sms: false, push: false }),
-  } as unknown as NotificationPreferencesService;
-  const dispatch = {
-    notifyGuardian: async () => "SMS" as const,
-  } as unknown as NotificationDispatchService;
-  return new FinanceService(email, termii, prefs, dispatch);
-}
 
 let phoneCounter = 0;
 function randomPhone(): string {
@@ -55,7 +38,7 @@ const daysAgo = (n: number) => new Date(TODAY.getTime() - n * DAY);
 describe("DashboardService accuracy fixes (integration)", () => {
   const runId = Math.random().toString(36).slice(2, 8);
   const auth = new AuthService();
-  const svc = new DashboardService(makeFinanceService());
+  const svc = new DashboardService();
   const schoolIds = new Set<string>();
 
   afterAll(async () => {
