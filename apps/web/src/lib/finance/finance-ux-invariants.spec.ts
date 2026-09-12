@@ -321,3 +321,149 @@ describe("F-40 — the dashboard's secondary sections report failure instead of 
     }
   });
 });
+
+// ── Pass 3: the finance dashboard's controls and header (2026-09-11) ───────
+//
+// These assertions are made against the source with COMMENTS STRIPPED.
+// Several of them assert that a string from the mockup does NOT appear —
+// and the code comments explaining *why* it was omitted necessarily quote
+// the very string being banned. Asserting on raw source would therefore fail
+// on the documentation of the decision it is protecting, which would push
+// the next person to delete the explanation to get CI green. Stripping
+// comments keeps the ban on shipped UI text, where it belongs.
+function code(relativeToRepoRoot: string): string {
+  return source(relativeToRepoRoot)
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/^\s*\/\/.*$/gm, "");
+}
+
+const FINANCE_SUB_NAV = "apps/web/src/components/finance/sub-nav.tsx";
+const PAYSTACK_STATUS = "apps/web/src/lib/finance/paystack-status.ts";
+
+describe("F-41 — the finance section row claims only what is built", () => {
+  const subNav = () => source(FINANCE_SUB_NAV);
+
+  it("does not offer a Paystack Sync control anywhere", () => {
+    // The mockup showed one, on the row this file now guards. Nothing in this
+    // codebase syncs with Paystack on demand — ensureSchoolPercentageSplit is
+    // called during setup and never exposed as an endpoint — so the button
+    // would name an operation that does not exist. Same class of omission as
+    // the mockup's fabricated subaccount number and "3.4 seconds" webhook.
+    for (const path of [FINANCE_DASHBOARD, FINANCE_SUB_NAV]) {
+      expect(code(path)).not.toContain("Paystack Sync");
+      expect(code(path)).not.toContain("paystackSync");
+    }
+  });
+
+  it("gates Record payment on the permission the API actually enforces", () => {
+    // Hidden for anyone who cannot record one, rather than 403-ing on
+    // arrival — the pattern pass 1's header actions established.
+    expect(subNav()).toContain('hasPermission(permissions, "payment.record")');
+  });
+
+  it("points Record payment at a route that exists", () => {
+    // /finance/payments holds only the Paystack callback — it is not a page.
+    // /finance/invoices is where an invoice is picked and recorded against.
+    expect(subNav()).toContain('href="/finance/invoices"');
+    expect(subNav()).not.toContain('href="/finance/payments"');
+  });
+
+  it("keeps exactly ONE Record payment control, on the section row", () => {
+    // THE anti-duplication check, and the reason the control moved here.
+    // #283 shipped a duplicated pair by giving a page its own copy of what
+    // the shell already rendered, and one copy had no permission gate at all.
+    // A second copy on the dashboard page is that bug returning.
+    expect(code(FINANCE_DASHBOARD)).not.toContain("Record payment");
+    expect(code(FINANCE_SUB_NAV)).toContain("Record payment");
+  });
+});
+
+describe("F-43 — the eyebrow reports card-payment STATUS, never an account number", () => {
+  it("the dashboard renders the status through the shared resolver", () => {
+    expect(code(FINANCE_DASHBOARD)).toContain("resolvePaystackStatus(school)");
+  });
+
+  it("no account-number-shaped literal reaches either file", () => {
+    // The mockup's eyebrow carried "#3021949182 (Wema Bank)". The status is
+    // real and worth showing; the number is not, and must never be pasted
+    // back in "just for the mockup" — this page renders on every finance
+    // visit, so it would spread through logs, screenshots and screen shares.
+    for (const path of [FINANCE_DASHBOARD, PAYSTACK_STATUS]) {
+      expect(code(path)).not.toMatch(/\d{10}/);
+      expect(code(path)).not.toContain("Wema");
+    }
+  });
+
+  it("the status labels themselves are digit-free", () => {
+    // Enforced at the unit level too (paystack-status.spec.ts), but pinned
+    // here so a label edited straight into the page cannot bypass it.
+    expect(code(PAYSTACK_STATUS)).toContain("Card payments live");
+    expect(code(PAYSTACK_STATUS)).toContain("Card payments not set up");
+  });
+
+  it("distinguishes switched-off from never-set-up", () => {
+    // Collapsing these sends a school down the wrong remediation path.
+    expect(code(PAYSTACK_STATUS)).toContain("CONFIGURED_OFF");
+    expect(code(PAYSTACK_STATUS)).toContain("NOT_CONNECTED");
+  });
+});
+
+describe("F-42 — the collection-rate card derives its figures, never invents them", () => {
+  const dashboard = () => source(FINANCE_DASHBOARD);
+
+  it("shows Recovered and Outstanding from real DTO fields", () => {
+    expect(dashboard()).toContain("formatKobo(dashboard.outstandingBalance)");
+    expect(dashboard()).toContain("Recovered:");
+    expect(dashboard()).toContain("Outstanding:");
+  });
+
+  it("derives the billing window instead of hard-coding the mockup's string", () => {
+    // The mockup printed "Week 3 of 13" as a literal. Terms are not a uniform
+    // length, so the count comes from the term's own stored dates.
+    expect(dashboard()).toContain("resolveBillingWindow(trajectory)");
+    expect(code(FINANCE_DASHBOARD)).not.toContain("Week 3 of 13");
+  });
+
+  it("still does not invent the mockup's fee-type breakdown", () => {
+    // No field on FinanceDashboardDto carries it. Unchanged from pass 2.
+    for (const invented of ["Tuition:", "Levy:", "Last recorded:"]) {
+      expect(code(FINANCE_DASHBOARD)).not.toContain(invented);
+    }
+  });
+
+  it("writes naira, not raw kobo, into the CSV export", () => {
+    // This file opens in a spreadsheet in front of a school owner. A raw kobo
+    // integer under a column headed "Collected" is wrong by 100x.
+    expect(dashboard()).toContain("accessor: (g) => formatKobo(g.collected)");
+    expect(dashboard()).not.toContain("accessor: (g) => g.collected");
+  });
+});
+
+// ── Pass 3 regression: the restyled term pills (2026-09-12) ─────────────────
+//
+// Pass 3 relabelled "Academic year" as "Session" to match the mockup, and
+// stripped each <select>'s focus outline so it would sit flush in its pill.
+// CI's a11y-wave3a e2e caught the first (both tests locate the control by its
+// visible label). Nothing caught the second: a keyboard user tabbing into the
+// pill saw no focus indicator at all.
+
+describe("F-44 — the term pills keep the app's terminology and a visible focus state", () => {
+  it("says 'Academic year', matching Debtors and Fees", () => {
+    // The mockup said "Session". Nigerian schools do use that word, but the
+    // rest of Finance says "Academic year", and one screen using a different
+    // name for the same thing is worse than either choice made consistently.
+    expect(code(FINANCE_DASHBOARD)).toContain("Academic year");
+    expect(code(FINANCE_DASHBOARD)).not.toMatch(/>\s*Session\s*</);
+  });
+
+  it("every select that drops its own focus ring sits inside a pill that shows one", () => {
+    // focus:outline-none with no replacement fails WCAG 2.4.7. The pill
+    // carries the ring via focus-within, so the count of removals must never
+    // exceed the count of replacements.
+    const src = code(FINANCE_DASHBOARD);
+    const removed = (src.match(/focus:outline-none focus:ring-0/g) ?? []).length;
+    const replaced = (src.match(/focus-within:ring-2/g) ?? []).length;
+    expect(removed).toBeGreaterThan(0);
+    expect(replaced).toBeGreaterThanOrEqual(removed);
+  });
+});

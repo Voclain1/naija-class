@@ -26,10 +26,20 @@ export function SectionTabs({
   items,
   ariaLabel,
   onNavigate,
+  actions,
 }: {
   items: readonly SectionTabItem[];
   ariaLabel: string;
   onNavigate?: (item: SectionTabItem, active: boolean, e: React.MouseEvent<HTMLAnchorElement>) => void;
+  /**
+   * Section-level actions, right-aligned on the tab row.
+   *
+   * OPTIONAL, and omitted by AcademicSubNav and GradingSubNav — this
+   * component is shared by three sub-navs and only Finance has actions that
+   * belong at section level. Without a slot they would have to live inside
+   * each page, which is where the duplicate-control bug of #283 came from.
+   */
+  actions?: React.ReactNode;
 }) {
   const pathname = usePathname() ?? "";
 
@@ -44,8 +54,12 @@ export function SectionTabs({
   // with `overflow-x: auto` computes `overflow-y` to `auto` as well, so putting
   // the scroll on the bordered row itself would clip each tab's `-mb-px`
   // underline. `min-w-max` lets that row stay wider than the scrollport.
-  return (
-    <nav aria-label={ariaLabel} className="overflow-x-auto">
+  // The actions sit BESIDE the scrollport, not inside it: they must stay
+  // reachable when the seven finance tabs overflow, and a primary action that
+  // scrolls off-screen is the same unreachable-control bug the scrollport
+  // below was added to fix.
+  const tabs = (
+    <nav aria-label={ariaLabel} className="min-w-0 flex-1 overflow-x-auto">
       <div className="flex min-w-max gap-1 border-b border-border text-sm">
         {items.map((item) => {
           const active = item.exact ? pathname === item.href : pathname.startsWith(item.href);
@@ -68,5 +82,25 @@ export function SectionTabs({
         })}
       </div>
     </nav>
+  );
+
+  if (!actions) return tabs;
+
+  // Below xl the actions get their OWN ROW, under the tabs. Side by side at
+  // every width meant a phone gave the button about half the row and squeezed
+  // the tab scrollport into what was left — "Discounts" rendered cut off
+  // mid-word at 430px. Nothing was technically unreachable (the strip still
+  // scrolled), which is why the scrollability check in a11y-wave3a passed
+  // while the row was barely usable.
+  //
+  // xl, not lg: at 1024px the admin sidebar leaves roughly 720px, less than
+  // seven tabs plus the button. The breakpoint is enforced by measurement in
+  // e2e/tests/finance-section-row.spec.ts across 390-1440px, not by this
+  // comment.
+  return (
+    <div className="flex flex-col gap-2 xl:flex-row xl:items-end xl:gap-3">
+      {tabs}
+      <div className="flex shrink-0 items-center justify-end gap-2 xl:pb-1">{actions}</div>
+    </div>
   );
 }

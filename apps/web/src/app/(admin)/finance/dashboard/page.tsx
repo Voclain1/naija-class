@@ -7,6 +7,7 @@ import { useCallback, useEffect, useState } from "react";
 import type {
   AcademicYearDto,
   CollectionByLevelDto,
+  DashboardCollectionGroupDto,
   FinanceDashboardDto,
   RevenueTrajectoryDto,
   TermDto,
@@ -19,10 +20,16 @@ import { InlineAlert } from "@/components/shared/inline-alert";
 import { StatCard } from "@/components/shared/stat-card";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { ExportCsvButton } from "@/components/shared/export-csv-button";
 import { listAcademicYears, listTerms } from "@/lib/academic-years/academic-years-api";
 import { resolveSchoolBankDetails } from "@school-kit/types";
 
+import { resolvePaystackStatus } from "@/lib/finance/paystack-status";
+import { cn } from "@/lib/utils";
+
 import { hasPermission } from "@/lib/auth/has-permission";
+import { resolveBillingWindow } from "@/lib/finance/billing-window";
+import { exportRowsAsCsv, type CsvColumn } from "@/lib/csv-export";
 import { useAuth } from "@/lib/auth/use-auth";
 import {
   getCollectionByLevel,
@@ -31,6 +38,23 @@ import {
 } from "@/lib/finance/finance-api";
 import { financeErrorMessage, logFinanceError } from "@/lib/finance/error-copy";
 import { formatKobo } from "@/lib/finance/format";
+
+// Export columns for the class-level breakdown — the only tabular data on
+// this page, and therefore the only thing an "Export" here can honestly mean.
+//
+// Money is written as NAIRA via the shared formatter, never raw kobo: this
+// file opens in a spreadsheet in front of a school owner, and "450000" in a
+// column headed Collected is a number wrong by a factor of 100.
+//
+// No extra permission gate, following ExportCsvButton's existing call sites
+// on /finance/debtors and /finance/expenses: this exports rows already
+// rendered on screen, so the read that fetched them is the gate.
+const BY_LEVEL_EXPORT_COLUMNS: CsvColumn<DashboardCollectionGroupDto>[] = [
+  { header: "Class level", accessor: (g) => g.label },
+  { header: "Billed", accessor: (g) => formatKobo(g.billed) },
+  { header: "Collected", accessor: (g) => formatKobo(g.collected) },
+  { header: "Collection rate (%)", accessor: (g) => g.percent },
+];
 
 // /finance/dashboard — Phase 3 / Slice 14. Read-only aggregation, all
 // numbers server-computed (CLAUDE.md: never compute money in the frontend).
@@ -126,8 +150,17 @@ export default function FinanceDashboardPage() {
   const [byLevelError, setByLevelError] = useState<string | null>(null);
 
   const { permissions, school } = useAuth();
+  // Where the term stands, derived from the trajectory's own week buckets
+  // rather than the mockup's hard-coded "Week 3 of 13". Null whenever there
+  // is nothing truthful to say — see resolveBillingWindow.
+  const billingWindow = resolveBillingWindow(trajectory);
   // Same helper the settings preview and the reminder message use.
   const bankDetails = resolveSchoolBankDetails(school);
+  const paystackStatus = resolvePaystackStatus(school);
+  // The status links to the page that can change it, for anyone who can.
+  // school.read is what gates the Settings nav item itself, so anyone without
+  // it has no route there and gets plain text instead of a dead link.
+  const canManagePayments = hasPermission(permissions, "school.read");
 
   useEffect(() => {
     listAcademicYears()
@@ -216,21 +249,53 @@ export default function FinanceDashboardPage() {
 
   return (
     <div className="mx-auto max-w-5xl space-y-6 px-4 py-8">
-      {/* Eyebrow + title. The mockup paired this eyebrow with a Paystack
-          subaccount number and bank name; neither is reproduced here, and the
-          number is deliberately not repeated in this comment either — a
-          bank-account-shaped string does not belong in the repo at all. This
-          page renders on every finance
-          visit, so a bank account here would spread through logs, screenshots
-          and screen shares for information nobody needs at a glance. Same
+      {/* Eyebrow + title + card-payment status.
+          The mockup paired this eyebrow with a Paystack subaccount NUMBER and
+          bank name. The status is real and useful — a school needs to know at
+          a glance whether parents can pay by card — so it is built; the
+          account number is not, and is deliberately not repeated in this
+          comment either, because a bank-account-shaped string does not belong
+          in the repo at all. This page renders on every finance visit, so an
+          account number here would spread through logs, screenshots and
+          screen shares for information nobody needs at a glance. Same
           reasoning that keeps banking detail out of
           platform_admin_list_paystack_setup_requests (CLAUDE.md, SECURITY
-          DEFINER inventory). */}
-      <div className="flex flex-wrap items-end justify-between gap-4">
+          DEFINER inventory). resolvePaystackStatus carries the rule and is
+          specced, including that its label can never contain a digit. */}
+      <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-            Bursary terminal
-          </p>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+              Bursary terminal
+            </p>
+            {/* Dot + label, never an identifier. Amber for "switched off" and
+                muted for "never set up" rather than red for both: neither is
+                an error, and colouring a school's ordinary un-onboarded state
+                as breakage teaches people to ignore the colour. */}
+            <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
+              <span
+                aria-hidden
+                className={cn(
+                  "h-1.5 w-1.5 rounded-full",
+                  paystackStatus.state === "LIVE"
+                    ? "bg-primary"
+                    : paystackStatus.state === "CONFIGURED_OFF"
+                      ? "bg-amber-500"
+                      : "bg-muted-foreground/40",
+                )}
+              />
+              {canManagePayments ? (
+                <Link
+                  href="/settings/finance/payments"
+                  className="underline underline-offset-2 hover:text-foreground"
+                >
+                  {paystackStatus.label}
+                </Link>
+              ) : (
+                paystackStatus.label
+              )}
+            </span>
+          </div>
           <h1 className="mt-1 font-serif text-2xl font-medium tracking-tight text-foreground sm:text-3xl">
             Finance dashboard
           </h1>
@@ -241,14 +306,30 @@ export default function FinanceDashboardPage() {
             </p>
           )}
         </div>
+
       </div>
 
-      {/* Term selector — identical pattern to /finance/debtors */}
-      <div className="flex flex-wrap items-end gap-4">
-        <div>
-          <label htmlFor="fin-dash-year" className="mb-1 block text-sm font-medium text-foreground">Academic year</label>
-          <select id="fin-dash-year"
-            className="rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+      {/* Session + term. Previously two bare native <select> boxes with
+          stacked labels in their own row — stock browser chrome sitting under
+          a restyled page, which is most of why this screen read as
+          unfinished. Now inline, on one line, with the label carried inside
+          the control the way the rest of this restyle does it.
+
+          Still native <select> underneath: it is keyboard- and
+          screen-reader-correct for free, and on a phone it opens the OS
+          picker, which beats any custom listbox a bursar would meet on a
+          budget Android device. Only the chrome changed. */}
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="inline-flex items-center gap-2 rounded-full border border-input bg-card px-3 py-1.5 focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-1">
+          <label
+            htmlFor="fin-dash-year"
+            className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground"
+          >
+            Academic year
+          </label>
+          <select
+            id="fin-dash-year"
+            className="cursor-pointer border-0 bg-transparent p-0 text-sm font-medium text-foreground focus:outline-none focus:ring-0"
             value={yearId}
             onChange={(e) => setYearId(e.target.value)}
           >
@@ -261,10 +342,16 @@ export default function FinanceDashboardPage() {
           </select>
         </div>
 
-        <div>
-          <label htmlFor="fin-dash-term" className="mb-1 block text-sm font-medium text-foreground">Term</label>
-          <select id="fin-dash-term"
-            className="rounded-md border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
+        <div className="inline-flex items-center gap-2 rounded-full border border-input bg-card px-3 py-1.5 focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-1 has-[select:disabled]:opacity-50">
+          <label
+            htmlFor="fin-dash-term"
+            className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground"
+          >
+            Term
+          </label>
+          <select
+            id="fin-dash-term"
+            className="cursor-pointer border-0 bg-transparent p-0 text-sm font-medium text-foreground focus:outline-none focus:ring-0 disabled:cursor-not-allowed"
             value={termId}
             onChange={(e) => setTermId(e.target.value)}
             disabled={!yearId}
@@ -390,9 +477,56 @@ export default function FinanceDashboardPage() {
                   style={{ width: `${Math.min(100, Math.max(0, dashboard.collectionRatePercent))}%` }}
                 />
               </div>
-              <p className="mt-2 text-xs text-muted-foreground">
-                {formatKobo(dashboard.totalCollected)} collected of {formatKobo(dashboard.totalInvoiced)} invoiced
-              </p>
+              {/* Recovered / Outstanding, and where the term stands.
+                  Both are DERIVED from fields already on screen —
+                  totalCollected, outstandingBalance, and the trajectory's own
+                  week buckets. The mockup's "Tuition: N1,200 / Levy: N300"
+                  split is still absent for the reason it always was: no field
+                  on FinanceDashboardDto carries it, and it is not invented
+                  here. The dot colours match the progress bar above so the
+                  two read as one figure, not two. */}
+              <div className="mt-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-xs">
+                <span className="inline-flex items-center gap-1.5 text-muted-foreground">
+                  <span className="h-2 w-2 rounded-full bg-primary" aria-hidden />
+                  Recovered:{" "}
+                  <span className="font-medium text-foreground">
+                    {formatKobo(dashboard.totalCollected)}
+                  </span>
+                </span>
+                <span className="inline-flex items-center gap-1.5 text-muted-foreground">
+                  <span className="h-2 w-2 rounded-full bg-primary/25" aria-hidden />
+                  Outstanding:{" "}
+                  <span className="font-medium text-foreground">
+                    {formatKobo(dashboard.outstandingBalance)}
+                  </span>
+                </span>
+              </div>
+              <div className="mt-2 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+                <p className="text-xs text-muted-foreground">
+                  {formatKobo(dashboard.totalCollected)} collected of {formatKobo(dashboard.totalInvoiced)} invoiced
+                  {billingWindow && <> · {billingWindow.label}</>}
+                </p>
+                {/* The invoices behind these aggregates. Gated on the same
+                    permission the invoice list itself requires, so this is
+                    never a link to a 403.
+
+                    It shares a destination with the section row's "Record
+                    payment", because /finance/invoices is both the ledger and
+                    the place a payment is recorded — there is no separate
+                    ledger page. They are not a duplicated control (different
+                    label, different intent, different region), but the shared
+                    href is worth knowing: a term-filtered deep link would
+                    need query-param support on the invoice list, which is a
+                    money screen and its own change. */}
+                {hasPermission(permissions, "invoice.read") && (
+                  <Link
+                    href="/finance/invoices"
+                    className="text-xs font-medium text-primary underline underline-offset-2 hover:text-primary/80 print:hidden"
+                  >
+                    Detailed ledger view <span aria-hidden>→</span>
+                  </Link>
+                )}
+              </div>
             </CardContent>
           </Card>
 
@@ -502,9 +636,24 @@ export default function FinanceDashboardPage() {
               key set is pinned because staff mobile consumes it. */}
           <Card>
             <CardContent className="pt-6">
-              <h2 className="mb-4 font-serif text-lg font-medium text-foreground">
-                Collection by class level
-              </h2>
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+                <h2 className="font-serif text-lg font-medium text-foreground">
+                  Collection by class level
+                </h2>
+                {byLevel && byLevel.groups.length > 0 && (
+                  <ExportCsvButton
+                    label="Export CSV"
+                    className="print:hidden"
+                    onExport={() =>
+                      exportRowsAsCsv(
+                        "collection-by-class-level.csv",
+                        byLevel.groups,
+                        BY_LEVEL_EXPORT_COLUMNS,
+                      )
+                    }
+                  />
+                )}
+              </div>
               {byLevelError ? (
                 <InlineAlert
                   title="Could not load collection by class level"
