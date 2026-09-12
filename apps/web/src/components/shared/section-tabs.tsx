@@ -26,10 +26,20 @@ export function SectionTabs({
   items,
   ariaLabel,
   onNavigate,
+  actions,
 }: {
   items: readonly SectionTabItem[];
   ariaLabel: string;
   onNavigate?: (item: SectionTabItem, active: boolean, e: React.MouseEvent<HTMLAnchorElement>) => void;
+  /**
+   * Section-level actions, right-aligned on the tab row.
+   *
+   * OPTIONAL, and omitted by AcademicSubNav and GradingSubNav — this
+   * component is shared by three sub-navs and only Finance has actions that
+   * belong at section level. Without a slot they would have to live inside
+   * each page, which is where the duplicate-control bug of #283 came from.
+   */
+  actions?: React.ReactNode;
 }) {
   const pathname = usePathname() ?? "";
 
@@ -44,8 +54,12 @@ export function SectionTabs({
   // with `overflow-x: auto` computes `overflow-y` to `auto` as well, so putting
   // the scroll on the bordered row itself would clip each tab's `-mb-px`
   // underline. `min-w-max` lets that row stay wider than the scrollport.
-  return (
-    <nav aria-label={ariaLabel} className="overflow-x-auto">
+  // The actions sit BESIDE the scrollport, not inside it: they must stay
+  // reachable when the seven finance tabs overflow, and a primary action that
+  // scrolls off-screen is the same unreachable-control bug the scrollport
+  // below was added to fix.
+  const tabs = (
+    <nav aria-label={ariaLabel} className="min-w-0 flex-1 overflow-x-auto">
       <div className="flex min-w-max gap-1 border-b border-border text-sm">
         {items.map((item) => {
           const active = item.exact ? pathname === item.href : pathname.startsWith(item.href);
@@ -68,5 +82,14 @@ export function SectionTabs({
         })}
       </div>
     </nav>
+  );
+
+  if (!actions) return tabs;
+
+  return (
+    <div className="flex items-end gap-3">
+      {tabs}
+      <div className="flex shrink-0 items-center gap-2 pb-1">{actions}</div>
+    </div>
   );
 }

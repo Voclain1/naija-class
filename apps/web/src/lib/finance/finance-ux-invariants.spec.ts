@@ -337,29 +337,74 @@ function code(relativeToRepoRoot: string): string {
     .replace(/^\s*\/\/.*$/gm, "");
 }
 
-describe("F-41 — the dashboard header claims only what is built", () => {
-  const dashboard = () => source(FINANCE_DASHBOARD);
+const FINANCE_SUB_NAV = "apps/web/src/components/finance/sub-nav.tsx";
+const PAYSTACK_STATUS = "apps/web/src/lib/finance/paystack-status.ts";
 
-  it("does not offer a Paystack Sync control", () => {
-    // The mockup showed one. No sync concept exists in this codebase, and a
-    // button whose label implies a reconciliation process that never runs is
-    // a claim about the system rather than a control. Same class of omission
-    // as the mockup's fabricated subaccount number and "3.4 seconds" webhook.
-    expect(code(FINANCE_DASHBOARD)).not.toContain("Paystack Sync");
-    expect(code(FINANCE_DASHBOARD)).not.toContain("paystackSync");
+describe("F-41 — the finance section row claims only what is built", () => {
+  const subNav = () => source(FINANCE_SUB_NAV);
+
+  it("does not offer a Paystack Sync control anywhere", () => {
+    // The mockup showed one, on the row this file now guards. Nothing in this
+    // codebase syncs with Paystack on demand — ensureSchoolPercentageSplit is
+    // called during setup and never exposed as an endpoint — so the button
+    // would name an operation that does not exist. Same class of omission as
+    // the mockup's fabricated subaccount number and "3.4 seconds" webhook.
+    for (const path of [FINANCE_DASHBOARD, FINANCE_SUB_NAV]) {
+      expect(code(path)).not.toContain("Paystack Sync");
+      expect(code(path)).not.toContain("paystackSync");
+    }
   });
 
   it("gates Record payment on the permission the API actually enforces", () => {
     // Hidden for anyone who cannot record one, rather than 403-ing on
     // arrival — the pattern pass 1's header actions established.
-    expect(dashboard()).toContain('hasPermission(permissions, "payment.record")');
+    expect(subNav()).toContain('hasPermission(permissions, "payment.record")');
   });
 
   it("points Record payment at a route that exists", () => {
     // /finance/payments holds only the Paystack callback — it is not a page.
     // /finance/invoices is where an invoice is picked and recorded against.
-    expect(dashboard()).toContain('href="/finance/invoices"');
-    expect(dashboard()).not.toContain('href="/finance/payments"');
+    expect(subNav()).toContain('href="/finance/invoices"');
+    expect(subNav()).not.toContain('href="/finance/payments"');
+  });
+
+  it("keeps exactly ONE Record payment control, on the section row", () => {
+    // THE anti-duplication check, and the reason the control moved here.
+    // #283 shipped a duplicated pair by giving a page its own copy of what
+    // the shell already rendered, and one copy had no permission gate at all.
+    // A second copy on the dashboard page is that bug returning.
+    expect(code(FINANCE_DASHBOARD)).not.toContain("Record payment");
+    expect(code(FINANCE_SUB_NAV)).toContain("Record payment");
+  });
+});
+
+describe("F-43 — the eyebrow reports card-payment STATUS, never an account number", () => {
+  it("the dashboard renders the status through the shared resolver", () => {
+    expect(code(FINANCE_DASHBOARD)).toContain("resolvePaystackStatus(school)");
+  });
+
+  it("no account-number-shaped literal reaches either file", () => {
+    // The mockup's eyebrow carried "#3021949182 (Wema Bank)". The status is
+    // real and worth showing; the number is not, and must never be pasted
+    // back in "just for the mockup" — this page renders on every finance
+    // visit, so it would spread through logs, screenshots and screen shares.
+    for (const path of [FINANCE_DASHBOARD, PAYSTACK_STATUS]) {
+      expect(code(path)).not.toMatch(/\d{10}/);
+      expect(code(path)).not.toContain("Wema");
+    }
+  });
+
+  it("the status labels themselves are digit-free", () => {
+    // Enforced at the unit level too (paystack-status.spec.ts), but pinned
+    // here so a label edited straight into the page cannot bypass it.
+    expect(code(PAYSTACK_STATUS)).toContain("Card payments live");
+    expect(code(PAYSTACK_STATUS)).toContain("Card payments not set up");
+  });
+
+  it("distinguishes switched-off from never-set-up", () => {
+    // Collapsing these sends a school down the wrong remediation path.
+    expect(code(PAYSTACK_STATUS)).toContain("CONFIGURED_OFF");
+    expect(code(PAYSTACK_STATUS)).toContain("NOT_CONNECTED");
   });
 });
 

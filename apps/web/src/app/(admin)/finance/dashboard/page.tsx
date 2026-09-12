@@ -24,6 +24,9 @@ import { ExportCsvButton } from "@/components/shared/export-csv-button";
 import { listAcademicYears, listTerms } from "@/lib/academic-years/academic-years-api";
 import { resolveSchoolBankDetails } from "@school-kit/types";
 
+import { resolvePaystackStatus } from "@/lib/finance/paystack-status";
+import { cn } from "@/lib/utils";
+
 import { hasPermission } from "@/lib/auth/has-permission";
 import { resolveBillingWindow } from "@/lib/finance/billing-window";
 import { exportRowsAsCsv, type CsvColumn } from "@/lib/csv-export";
@@ -153,6 +156,11 @@ export default function FinanceDashboardPage() {
   const billingWindow = resolveBillingWindow(trajectory);
   // Same helper the settings preview and the reminder message use.
   const bankDetails = resolveSchoolBankDetails(school);
+  const paystackStatus = resolvePaystackStatus(school);
+  // The status links to the page that can change it, for anyone who can.
+  // school.read is what gates the Settings nav item itself, so anyone without
+  // it has no route there and gets plain text instead of a dead link.
+  const canManagePayments = hasPermission(permissions, "school.read");
 
   useEffect(() => {
     listAcademicYears()
@@ -241,21 +249,53 @@ export default function FinanceDashboardPage() {
 
   return (
     <div className="mx-auto max-w-5xl space-y-6 px-4 py-8">
-      {/* Eyebrow + title. The mockup paired this eyebrow with a Paystack
-          subaccount number and bank name; neither is reproduced here, and the
-          number is deliberately not repeated in this comment either — a
-          bank-account-shaped string does not belong in the repo at all. This
-          page renders on every finance
-          visit, so a bank account here would spread through logs, screenshots
-          and screen shares for information nobody needs at a glance. Same
+      {/* Eyebrow + title + card-payment status.
+          The mockup paired this eyebrow with a Paystack subaccount NUMBER and
+          bank name. The status is real and useful — a school needs to know at
+          a glance whether parents can pay by card — so it is built; the
+          account number is not, and is deliberately not repeated in this
+          comment either, because a bank-account-shaped string does not belong
+          in the repo at all. This page renders on every finance visit, so an
+          account number here would spread through logs, screenshots and
+          screen shares for information nobody needs at a glance. Same
           reasoning that keeps banking detail out of
           platform_admin_list_paystack_setup_requests (CLAUDE.md, SECURITY
-          DEFINER inventory). */}
+          DEFINER inventory). resolvePaystackStatus carries the rule and is
+          specced, including that its label can never contain a digit. */}
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-            Bursary terminal
-          </p>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+              Bursary terminal
+            </p>
+            {/* Dot + label, never an identifier. Amber for "switched off" and
+                muted for "never set up" rather than red for both: neither is
+                an error, and colouring a school's ordinary un-onboarded state
+                as breakage teaches people to ignore the colour. */}
+            <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
+              <span
+                aria-hidden
+                className={cn(
+                  "h-1.5 w-1.5 rounded-full",
+                  paystackStatus.state === "LIVE"
+                    ? "bg-primary"
+                    : paystackStatus.state === "CONFIGURED_OFF"
+                      ? "bg-amber-500"
+                      : "bg-muted-foreground/40",
+                )}
+              />
+              {canManagePayments ? (
+                <Link
+                  href="/settings/finance/payments"
+                  className="underline underline-offset-2 hover:text-foreground"
+                >
+                  {paystackStatus.label}
+                </Link>
+              ) : (
+                paystackStatus.label
+              )}
+            </span>
+          </div>
           <h1 className="mt-1 font-serif text-2xl font-medium tracking-tight text-foreground sm:text-3xl">
             Finance dashboard
           </h1>
@@ -267,26 +307,6 @@ export default function FinanceDashboardPage() {
           )}
         </div>
 
-        {/* Record payment — the one action a bursar arrives on this page to
-            take. Real destination and real gate, verified the same way pass
-            1's header actions were: /finance/invoices is where you pick the
-            invoice and record against it (there is no standalone
-            /finance/payments page — that route holds only the Paystack
-            callback), and payment.record is the permission the API enforces.
-            Hidden rather than 403-ing on arrival for anyone without it.
-
-            The mockup also showed "Paystack Sync". That is NOT built here:
-            no sync concept exists in this codebase, and a button whose label
-            implies a reconciliation process that does not run would be a
-            claim about the system rather than a control. */}
-        {hasPermission(permissions, "payment.record") && (
-          <Button asChild size="sm" className="print:hidden">
-            <Link href="/finance/invoices">
-              <Wallet className="mr-2 h-4 w-4" aria-hidden />
-              Record payment
-            </Link>
-          </Button>
-        )}
       </div>
 
       {/* Session + term. Previously two bare native <select> boxes with
@@ -481,10 +501,32 @@ export default function FinanceDashboardPage() {
                   </span>
                 </span>
               </div>
-              <p className="mt-2 text-xs text-muted-foreground">
-                {formatKobo(dashboard.totalCollected)} collected of {formatKobo(dashboard.totalInvoiced)} invoiced
-                {billingWindow && <> · {billingWindow.label}</>}
-              </p>
+              <div className="mt-2 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+                <p className="text-xs text-muted-foreground">
+                  {formatKobo(dashboard.totalCollected)} collected of {formatKobo(dashboard.totalInvoiced)} invoiced
+                  {billingWindow && <> · {billingWindow.label}</>}
+                </p>
+                {/* The invoices behind these aggregates. Gated on the same
+                    permission the invoice list itself requires, so this is
+                    never a link to a 403.
+
+                    It shares a destination with the section row's "Record
+                    payment", because /finance/invoices is both the ledger and
+                    the place a payment is recorded — there is no separate
+                    ledger page. They are not a duplicated control (different
+                    label, different intent, different region), but the shared
+                    href is worth knowing: a term-filtered deep link would
+                    need query-param support on the invoice list, which is a
+                    money screen and its own change. */}
+                {hasPermission(permissions, "invoice.read") && (
+                  <Link
+                    href="/finance/invoices"
+                    className="text-xs font-medium text-primary underline underline-offset-2 hover:text-primary/80 print:hidden"
+                  >
+                    Detailed ledger view <span aria-hidden>→</span>
+                  </Link>
+                )}
+              </div>
             </CardContent>
           </Card>
 
