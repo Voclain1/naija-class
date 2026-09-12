@@ -86,10 +86,21 @@ export function SectionTabs({
 
   if (!actions) return tabs;
 
+  // Below xl the actions get their OWN ROW, under the tabs. Side by side at
+  // every width meant a phone gave the button about half the row and squeezed
+  // the tab scrollport into what was left — "Discounts" rendered cut off
+  // mid-word at 430px. Nothing was technically unreachable (the strip still
+  // scrolled), which is why the scrollability check in a11y-wave3a passed
+  // while the row was barely usable.
+  //
+  // xl, not lg: at 1024px the admin sidebar leaves roughly 720px, less than
+  // seven tabs plus the button. The breakpoint is enforced by measurement in
+  // e2e/tests/finance-section-row.spec.ts across 390-1440px, not by this
+  // comment.
   return (
-    <div className="flex items-end gap-3">
+    <div className="flex flex-col gap-2 xl:flex-row xl:items-end xl:gap-3">
       {tabs}
-      <div className="flex shrink-0 items-center gap-2 pb-1">{actions}</div>
+      <div className="flex shrink-0 items-center justify-end gap-2 xl:pb-1">{actions}</div>
     </div>
   );
 }
