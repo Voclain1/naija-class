@@ -28,6 +28,8 @@ const ALERT_LABELS: Record<DashboardAlertType, string> = {
   overdue_fees: "Overdue invoices",
   pending_report_card_approval: "Report cards awaiting your approval",
   pending_staff_invitations: "Pending staff invitations",
+  // Phase 8 / CP2 (§16 Q33) — count of active term-health signals; links to /reports.
+  term_health: "Term setup issues to fix",
 };
 
 function greeting(): string {
