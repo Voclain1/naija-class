@@ -199,10 +199,8 @@ block; targeted old→new auditing on the three bank fields; `portalUrl` on
 **NOT built, and deliberately named here so it is not mistaken for done:**
 
 - ~~**No parent-facing surface exists.**~~ Built 2026-09-13 — see §11.
-- **The Paystack link option is not wired into the message.** The builder
-  accepts `paymentLinkUrl` and is tested for it, but the debtors page never
-  passes one, so D5b's on-click fetch remains unimplemented. Of D5's three
-  options, two reach a real message: the portal link and the transfer details.
+- ~~**The Paystack link option is not wired into the message.**~~ Built
+  2026-09-13 — see §12.
 
 Both are real, additional scope — tracked as a follow-up, not as polish.
 
@@ -263,3 +261,48 @@ The settings card also said the Paystack details were "above" it; they render
 below. Fixed in the same PR.
 
 **Not covered:** the mobile app's parent screens do not show this yet.
+
+## 12. Paystack link in the WhatsApp reminder (2026-09-13)
+
+D5b, implemented. All three of D5's options now reach a real message.
+
+**On click, not per row.** The debtors page's WhatsApp control is a button;
+clicking it calls `GET /invoices/:id/payment-link` for that one invoice.
+
+**D10 — quoted only when LIVE *and* for exactly the balance in the message**
+(`shareablePaymentLinkUrl`, `apps/web/src/lib/finance/`). LIVE links are
+archived when an invoice's balance changes, but the list on screen can be older
+than the payment that changed it; without the equality check a parent could
+receive "₦45,000 is outstanding — Pay online: <link for ₦30,000>". This compares
+two API-returned numbers; it computes nothing.
+
+**D11 — never blocks the share.** Any failure resolves to "no link": a 403 (a
+custom role with `finance.debtors.read` but not `payment.read`), a 404, a
+network error, or a response slower than 4 s. The reminder still goes out with
+the portal and transfer options.
+
+**D12 — the window opens inside the click, before the fetch.** Browsers block
+`window.open` once the click's user activation has expired, and Safari treats an
+async gap that way — so opening WhatsApp *after* awaiting the link would make the
+button silently do nothing. A blank window opens synchronously, then is pointed
+at WhatsApp when the link resolves (opener severed by hand first; `noopener`
+would make `window.open` return null). If the popup is blocked anyway, the
+current tab navigates; if the staff member closes the blank tab while it
+prepares, nothing happens.
+
+**Tests.** Unit (`shareable-payment-link.spec.ts`, 8): LIVE+match returns the
+URL; every other state, a mismatched amount, a thrown fetch, a hang and a late
+arrival all return null. Mutation-checked: removing the amount check fails the
+stale-list test; removing the timeout race fails both timeout tests.
+
+E2E (`debtor-whatsapp-payment-link.spec.ts`, real API + Postgres, a LIVE link
+row seeded directly, `wa.me` stubbed): matching link → "Pay online: <url>";
+stale-amount link → no link line; no link → no link line, rest intact.
+
+**The popup-block itself cannot be tested in automation, and the spec says so.**
+Playwright launches Chromium with `--disable-popup-blocking`; a mutation that
+moved `window.open` after the await passed the first version of the spec in
+both Chromium and WebKit. The spec instead holds the link fetch for 2.5 s and
+asserts the window appears in under 1.5 s — the property that avoids the block.
+Against the same mutation it fails (window opened after 2825 ms); the correct
+code passes in Chromium and WebKit.

@@ -24,6 +24,8 @@ import { financeErrorMessage, logFinanceError } from "@/lib/finance/error-copy";
 import { formatKobo } from "@/lib/finance/format";
 import { useAuth } from "@/lib/auth/use-auth";
 import { listDebtors, sendReminders } from "@/lib/finance/finance-api";
+import { getPaymentLink } from "@/lib/finance/invoices-api";
+import { resolveShareablePaymentLink } from "@/lib/finance/shareable-payment-link";
 
 const DEBTOR_EXPORT_COLUMNS: CsvColumn<DebtorDto>[] = [
   { header: "Student", accessor: (d) => d.studentName },
@@ -73,6 +75,7 @@ export default function DebtorsPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [reminding, setReminding] = useState(false);
   const [reminderResult, setReminderResult] = useState<{ sent: number; skipped: number } | null>(null);
+  const [sharingInvoiceId, setSharingInvoiceId] = useState<string | null>(null);
 
   // Load academic years on mount
   useEffect(() => {
@@ -173,6 +176,54 @@ export default function DebtorsPage() {
   const totalBalance = debtors.reduce((sum, d) => sum + d.balance, 0);
   // Named in the shared message, so a parent knows WHICH term is owed.
   const selectedTermName = terms.find((t) => t.id === termId)?.name ?? "this term";
+
+  // Per-row WhatsApp share, with the invoice's Paystack link when it has a
+  // usable one. Plan-first D5b: fetched HERE, on click, not per row — a debtor
+  // list of 200 would otherwise be 200 requests for links most rows lack.
+  //
+  // THE WINDOW IS OPENED BEFORE THE FETCH, synchronously inside the click.
+  // Browsers only allow window.open during a user gesture; after an `await`
+  // that gesture has expired (Safari is strictest), so opening afterwards gets
+  // silently popup-blocked and the button appears to do nothing. The blank
+  // window is pointed at WhatsApp once the link resolves.
+  //
+  // It is opened WITHOUT "noopener" because a noopener window.open returns
+  // null and could not be navigated afterwards; opener is severed by hand
+  // before navigating, which gives the same protection.
+  function shareOnWhatsApp(d: DebtorDto) {
+    const win = window.open("", "_blank");
+    setSharingInvoiceId(d.invoiceId);
+
+    void resolveShareablePaymentLink(() => getPaymentLink(d.invoiceId), d.balance)
+      .then((paymentLinkUrl) => {
+        const href = buildNoRecipientWhatsAppUrl(
+          buildDebtorReminderMessage({
+            schoolName: school?.name ?? "Your school",
+            studentName: d.studentName,
+            balance: d.balance,
+            termName: selectedTermName,
+            dueDate: d.dueDate,
+            // Each option appears only if the school supports it. The link
+            // is included only when LIVE and for exactly this balance — see
+            // shareablePaymentLinkUrl.
+            paymentLinkUrl,
+            portalUrl: school?.portalUrl ?? null,
+            bankDetails: shareBankDetails,
+          }),
+        );
+        if (!win) {
+          // Popup blocked even inside the gesture. Navigate this tab rather
+          // than let the button do nothing.
+          window.location.assign(href);
+        } else if (!win.closed) {
+          win.opener = null;
+          win.location.href = href;
+        }
+        // win.closed: the staff member closed the blank tab while it was
+        // preparing. That is a decision not to share; respect it.
+      })
+      .finally(() => setSharingInvoiceId(null));
+  }
 
   return (
     <div className="mx-auto max-w-5xl space-y-6 px-4 py-8">
@@ -327,33 +378,18 @@ export default function DebtorsPage() {
                         POST /finance/debtors/remind. stopPropagation because
                         the row itself toggles selection. */}
                     <TableCell className="print:hidden" onClick={(e) => e.stopPropagation()}>
-                      <a
-                        href={buildNoRecipientWhatsAppUrl(
-                          buildDebtorReminderMessage({
-                            schoolName: school?.name ?? "Your school",
-                            studentName: d.studentName,
-                            balance: d.balance,
-                            termName: selectedTermName,
-                            dueDate: d.dueDate,
-                            // Each option appears only if the school supports
-                            // it. Paystack links are per-invoice and stateful,
-                            // so they are NOT fetched per row — see the
-                            // plan-first (D5b); the message simply omits that
-                            // line rather than promising a link that 404s.
-                            portalUrl: school?.portalUrl ?? null,
-                            bankDetails: shareBankDetails,
-                          }),
-                        )}
-                        target="_blank"
-                        rel="noopener noreferrer"
+                      <button
+                        type="button"
+                        onClick={() => shareOnWhatsApp(d)}
+                        disabled={sharingInvoiceId === d.invoiceId}
                         // Distinctive per row, so it cannot collide by
                         // substring with another control's accessible name.
                         aria-label={`Share ${d.studentName}'s balance on WhatsApp`}
-                        className="inline-flex items-center gap-1 whitespace-nowrap text-xs font-medium text-primary underline underline-offset-2 hover:text-primary/80"
+                        className="inline-flex items-center gap-1 whitespace-nowrap text-xs font-medium text-primary underline underline-offset-2 hover:text-primary/80 disabled:cursor-wait disabled:opacity-60"
                       >
                         <MessageCircle className="h-3.5 w-3.5" aria-hidden />
-                        WhatsApp
-                      </a>
+                        {sharingInvoiceId === d.invoiceId ? "Preparing…" : "WhatsApp"}
+                      </button>
                     </TableCell>
                   </TableRow>
                 ))}
