@@ -17,9 +17,11 @@ import { useEffect, useState } from "react";
 
 import type {
   PaystackInitResponseDto,
+  PortalBankDetailsResponse,
   PortalInvoiceDto,
   PortalParentSummaryDto,
   PortalStudentDto,
+  SchoolBankDetails,
 } from "@school-kit/types";
 import { invoiceStatusLabel } from "@school-kit/types";
 
@@ -46,7 +48,20 @@ type LoadState =
       // empty array rather than an error state — the section simply doesn't
       // render.
       summaries: PortalParentSummaryDto[];
+      // Same degrade-don't-fail treatment as summaries: a failure on this
+      // endpoint hides the transfer block, never the invoices. Already
+      // resolved server-side — null when the school has not switched it on
+      // or left a field blank (see PortalBankDetailsResponse).
+      bankTransfer: SchoolBankDetails | null;
     };
+
+// Invoice states a parent can still pay against. Driven by the status the API
+// returned — this page does no arithmetic to decide whether money is owed.
+const PAYABLE_STATUSES: ReadonlySet<PortalInvoiceDto["status"]> = new Set([
+  "ISSUED",
+  "PARTIALLY_PAID",
+  "OVERDUE",
+]);
 
 const STATUS_STYLES: Record<PortalInvoiceDto["status"], string> = {
   DRAFT: "bg-muted text-muted-foreground",
@@ -109,13 +124,15 @@ export default function StudentDetailPage() {
 
     async function load() {
       try {
-        const [studentRes, invoicesRes, summariesRes] = await Promise.all([
+        const [studentRes, invoicesRes, summariesRes, bankRes] = await Promise.all([
           fetch(`/api/portal/students/${params.id}`),
           fetch(`/api/portal/students/${params.id}/invoices`),
           // Deliberately not included in the status checks below. See the
           // note on LoadState.summaries: this endpoint is additive, and a
           // failure here must not take the page down.
           fetch(`/api/portal/students/${params.id}/summaries`).catch(() => null),
+          // Additive in the same way — see LoadState.bankTransfer.
+          fetch(`/api/portal/bank-details`).catch(() => null),
         ]);
 
         if (studentRes.status === 401 || invoicesRes.status === 401) {
@@ -184,7 +201,16 @@ export default function StudentDetailPage() {
           }
         }
 
-        if (!cancelled) setState({ kind: "loaded", student, invoices, summaries });
+        let bankTransfer: SchoolBankDetails | null = null;
+        if (bankRes?.ok) {
+          try {
+            bankTransfer = ((await bankRes.json()) as PortalBankDetailsResponse).bankTransfer ?? null;
+          } catch {
+            bankTransfer = null;
+          }
+        }
+
+        if (!cancelled) setState({ kind: "loaded", student, invoices, summaries, bankTransfer });
       } catch {
         if (!cancelled) {
           setState({
@@ -298,10 +324,94 @@ export default function StudentDetailPage() {
             {state.invoices.map((invoice) => (
               <InvoiceCard key={invoice.id} invoice={invoice} />
             ))}
+
+            {/* Below the invoices, not above: card payment stays the primary
+                path (it settles the invoice automatically), and transfer is
+                the alternative. Absent entirely when nothing is owed or the
+                school has not enabled it — no empty state. */}
+            {state.bankTransfer &&
+              state.invoices.some((invoice) => PAYABLE_STATUSES.has(invoice.status)) && (
+                <BankTransferCard
+                  details={state.bankTransfer}
+                  admissionNumber={state.student.admissionNumber}
+                />
+              )}
           </section>
         </>
       )}
     </main>
+  );
+}
+
+// The school's own account, for parents who would rather transfer than pay by
+// card. Plan-first: docs/modules/school-bank-details.md.
+//
+// The copy is careful about one thing in particular: a transfer does NOT
+// update the invoice above. Card payments settle through Paystack's webhook;
+// a transfer only reaches the ledger when the school records it by hand
+// (Record payment). A parent who transfers and then sees "Balance ₦…" still
+// showing needs to have been told that is expected, or they pay twice.
+function BankTransferCard({
+  details,
+  admissionNumber,
+}: {
+  details: SchoolBankDetails;
+  admissionNumber: string;
+}) {
+  const [copied, setCopied] = useState(false);
+
+  async function onCopy() {
+    try {
+      await navigator.clipboard.writeText(details.bankAccountNumber);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Clipboard can be unavailable (insecure context, denied permission).
+      // The number is on screen and selectable, so failing quietly is fine.
+    }
+  }
+
+  return (
+    <section
+      aria-labelledby="bank-transfer-heading"
+      className="flex flex-col gap-3 rounded-lg border bg-card p-4 shadow-sm"
+    >
+      <div className="flex flex-col gap-0.5">
+        <h3 id="bank-transfer-heading" className="font-medium">
+          Prefer to pay by bank transfer?
+        </h3>
+        <p className="text-sm text-muted-foreground">
+          You can transfer directly to the school&apos;s account.
+        </p>
+      </div>
+
+      <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm">
+        <dt className="text-muted-foreground">Bank</dt>
+        <dd className="font-medium">{details.bankName}</dd>
+        <dt className="text-muted-foreground">Account name</dt>
+        <dd className="font-medium">{details.bankAccountName}</dd>
+        <dt className="text-muted-foreground">Account number</dt>
+        <dd className="flex flex-wrap items-center gap-2">
+          <span className="font-medium tabular-nums tracking-wide">{details.bankAccountNumber}</span>
+          <button
+            type="button"
+            onClick={onCopy}
+            className="rounded-md border px-2 py-0.5 text-xs font-medium hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            {copied ? "Copied" : "Copy"}
+          </button>
+          <span aria-live="polite" className="sr-only">
+            {copied ? "Account number copied" : ""}
+          </span>
+        </dd>
+      </dl>
+
+      <p className="text-xs text-muted-foreground">
+        Use admission number <span className="font-medium text-foreground">{admissionNumber}</span>{" "}
+        as the transfer description so the school can match your payment. A transfer is not shown
+        on this page straight away — the invoice updates once the school has recorded it.
+      </p>
+    </section>
   );
 }
 

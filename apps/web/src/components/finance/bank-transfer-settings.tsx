@@ -18,8 +18,8 @@ import { getSchoolMe, patchSchoolMe } from "@/lib/onboarding/schools-api";
 //
 //   - The Paystack form's details are sent to us once so we can create the
 //     subaccount. They are operator-facing and are never displayed to parents.
-//   - These details are DISPLAYED — on the finance dashboard and in reminder
-//     messages — so a parent can transfer directly.
+//   - These details are DISPLAYED — in the parent portal, on the finance
+//     dashboard and in reminder messages — so a parent can transfer directly.
 //
 // Storing them separately rather than reusing the Paystack request is
 // deliberate: that record is guarded behind an individually-audited reveal,
@@ -93,10 +93,11 @@ export function BankTransferSettings() {
       <div className="flex flex-col gap-1">
         <h2 className="text-sm font-medium">Bank transfer details</h2>
         <p className="text-xs text-muted-foreground">
-          The account parents transfer into when they would rather not pay by card. Shown on your
-          finance dashboard and included in fee reminders.{" "}
+          The account parents transfer into when they would rather not pay by card. Shown to
+          parents in the parent portal beside any unpaid invoice, on your finance dashboard, and
+          in fee reminders.{" "}
           <strong className="font-medium text-foreground">
-            This is separate from the Paystack details above
+            This is separate from the Paystack details below
           </strong>{" "}
           — those are sent to us once to create your subaccount and are never shown to parents,
           while these are displayed. They are usually the same account.
@@ -147,23 +148,24 @@ export function BankTransferSettings() {
           onChange={(e) => setEnabled(e.target.checked)}
         />
         <span>
-          Include these details in payment reminders
+          Show these details to parents
           <span className="block text-xs text-muted-foreground">
-            Nothing is included until you turn this on and all three fields are filled in.
+            In the parent portal and in payment reminders. Nothing is shown until you turn this on
+            and all three fields are filled in.
           </span>
         </span>
       </label>
 
-      {/* Exactly what goes into a reminder — or an explicit statement that
-          nothing does, which is the more important case to make visible.
-          Deliberately NOT "what parents see": there is no parent-facing
-          surface for these details yet (the guardian portal was scoped out of
-          v1), so the only way a parent receives them is a reminder a staff
-          member sends. Copy that promised a portal view would be describing
-          something that does not exist. */}
+      {/* Exactly what parents see — or an explicit statement that they see
+          nothing, which is the more important case to make visible.
+          "What parents see" is TRUE now that the guardian portal shows these
+          (GET /portal/bank-details), and it was deliberately not claimed
+          before that surface existed. The portal and the reminder both run
+          resolveSchoolBankDetails, the same helper as this preview, so this
+          cannot show something they would not. */}
       <div className="rounded-md border border-dashed bg-muted/30 p-3 text-sm">
         <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-          What goes into a reminder
+          What parents see
         </p>
         {preview ? (
           <div className="mt-1.5">
@@ -174,7 +176,7 @@ export function BankTransferSettings() {
         ) : (
           <p className="mt-1.5 text-muted-foreground">
             Nothing yet — {enabled ? "fill in all three fields" : "turn on the switch above"} to
-            include transfer details.
+            show transfer details to parents.
           </p>
         )}
       </div>

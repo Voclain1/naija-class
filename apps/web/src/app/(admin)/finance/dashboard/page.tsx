@@ -533,7 +533,8 @@ export default function FinanceDashboardPage() {
           {/* Pay by transfer — rendered only when the school has filled in
               all three bank fields AND switched them on. resolveSchoolBankDetails
               is the single source of that rule, shared with the settings
-              preview and the reminder message so the three cannot disagree. */}
+              preview, the reminder message and the parent portal (applied
+              server-side there) so they cannot disagree. */}
           {bankDetails && (
             <Card>
               <CardContent className="pt-6">
@@ -541,8 +542,8 @@ export default function FinanceDashboardPage() {
                   Pay by transfer
                 </h2>
                 <p className="mb-3 text-xs text-muted-foreground">
-                  Included in the payment reminders you send. There is no
-                  parent-facing portal view of this yet.
+                  Shown to parents in the parent portal beside any unpaid
+                  invoice, and included in the payment reminders you send.
                 </p>
                 <div className="text-sm">
                   <p className="font-medium text-foreground">{bankDetails.bankAccountName}</p>
