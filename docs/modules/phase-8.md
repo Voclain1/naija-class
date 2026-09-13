@@ -1042,7 +1042,7 @@ group.
 ## 15. CP1 plan-first — Event Calendar
 
 Written 2026-09-13, after D19–D20 closed CP1's product questions. **Status:
-proposed, awaiting review. Nothing is built.**
+approved in full 2026-09-13 (§15.6); implementation in progress.**
 
 **Scope:** seeded national events, school-added events, per-school hiding of
 national events, and one calendar read for every principal (staff, guardians,
@@ -1095,7 +1095,7 @@ Checked against the repo on 2026-09-13:
 announcements, never be computed from the statute or from rules.** That
 shapes D24.
 
-### 15.2 Decisions (proposed)
+### 15.2 Decisions (approved 2026-09-13)
 
 #### D21 — Three tables: one platform table, two tenant tables, never merged
 
@@ -1405,16 +1405,21 @@ applying, per CLAUDE.md:
   holiday adds it as a school event.
 - A calendar on staff mobile (D30).
 
-### 15.6 Open questions for this review
+### 15.6 Review questions — all approved 2026-09-13
 
-1. **D22's write path.** Accept migration-only writes, with their CI/deploy
-   latency on announcement days, in exchange for runtime code never being
-   able to write platform data? This is the one decision here with a real
-   operational cost.
-2. **D30: agenda list rather than month grid** for v1.
-3. **D30: staff mobile excluded.**
-4. **D24: seed horizon** of the current year plus next, extended each
-   January.
+1. **D22's write path — APPROVED.** Migration-only writes, with the
+   operational cost accepted for v1: merge → CI → deploy on announcement days.
+   The platform-admin screen stays the recorded upgrade path if that cycle
+   proves too slow in practice.
+2. **D30: agenda list rather than month grid — APPROVED.**
+3. **D30: staff mobile excluded — APPROVED.**
+4. **D24: seed horizon of current year plus next, extended each January —
+   APPROVED.**
+
+**Condition attached to the approval:** the `app_user` privilege check
+(SELECT/INSERT/UPDATE/DELETE granted, TRUNCATE not granted) must be verified
+against **production**, not only local dev, before CP1 ships. See §15.7
+item 1.
 
 ### 15.7 Not verified
 
