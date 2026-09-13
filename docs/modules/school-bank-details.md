@@ -306,3 +306,7 @@ both Chromium and WebKit. The spec instead holds the link fetch for 2.5 s and
 asserts the window appears in under 1.5 s — the property that avoids the block.
 Against the same mutation it fails (window opened after 2825 ms); the correct
 code passes in Chromium and WebKit.
+
+**Not device-verified.** No real iOS Safari check yet — tracked in
+`docs/deferred.md` ("Debtor WhatsApp share — physical iOS Safari check
+outstanding").
