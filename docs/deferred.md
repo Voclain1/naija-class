@@ -2377,6 +2377,28 @@ link → browser reset → app sign-in, and guardian student reset → old
 credentials refused → one-time code accepted → new-password sign-in. Do not
 call mobile-auth hardening device-verified until both pass.
 
+### Debtor WhatsApp share — physical iOS Safari check outstanding (captured 2026-09-13)
+
+PR #293 made the debtors page's WhatsApp button fetch the invoice's Paystack
+link on click, opening the window synchronously *before* the fetch so browsers
+do not popup-block it (`docs/modules/school-bank-details.md` §12, D12). The
+evidence is automated only: an e2e asserts the window opens within 1.5 s while
+the link fetch is held for 2.5 s, passing in Chromium (CI) and in Playwright's
+WebKit (one local run). **Neither proves real popup-blocking behaviour** —
+Playwright launches Chromium with `--disable-popup-blocking`, and a
+popup-after-await mutation passed in both engines until the timing assertion
+was added. Real Safari's user-activation rules are the reason D12 exists, and
+they have not been exercised.
+
+At the first available iPhone (iOS Safari, not Chrome for iOS), with a
+disposable school that has a LIVE link on one debtor's invoice and none on
+another: tap WhatsApp on each and confirm (1) WhatsApp opens rather than
+nothing happening, (2) the LIVE row's draft contains "Pay online: <link>" and
+the other's does not, (3) the page is not left on a blank tab. Also confirm on
+a throttled connection (the 4 s timeout path), where the draft should arrive
+without the link line. Do not call the WhatsApp payment-link share
+device-verified until these pass.
+
 ## Guardian auth & recovery — follow-ups after PR #222 (captured 2026-08-27)
 
 PR #222 shipped guardian sign out and password recovery (F-06) and removed
