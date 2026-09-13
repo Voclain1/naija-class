@@ -5,8 +5,9 @@
 D9–D14, D15–D18), and a fourth closed CP1's questions (D19–D20).
 **CP0 is done** (§12.1). **CP1 (Event Calendar) is built and live in
 production** (PR #299, deployed 2026-09-13; evidence §15.10). CP2's questions
-were closed the same day (D21–D23 in §3.4); CP2 opens with a production data
-measurement (§4.6) before its plan-first.
+were closed the same day (D21–D23 in §3.4). The §4.6 production measurement
+re-scoped CP2 to recording completeness; **CP2's plan-first (§16) is written and
+awaiting review.**
 Each checkpoint still needs its remaining open questions (§11) answered, and
 its own short plan-first appended here, before it starts.
 
@@ -265,6 +266,12 @@ checkpoint;** they must be resolved before Phase 8b's CP7 begins.
 
 ## 4. Reports
 
+> **Superseded for v1 on 2026-09-13.** After the §4.6 production measurement,
+> CP2's v1 became a **recording-completeness report** (§16). The outcome
+> analytics in §4.2–§4.4 are **deferred, not dropped** (§16.9). This section is
+> kept as the record of the original scope and its access-control reasoning,
+> which the deferred item inherits.
+
 ### 4.1 What already exists (verified)
 
 | Domain | Source tables | Already surfaced |
@@ -447,6 +454,7 @@ any outcome report is built.
 ### 4.7 Size
 
 **9–13 working days:** 6–9 base plus 3–4 for teacher performance (D2).
+*Superseded: CP2 v1 is re-estimated at 6–9 days in §16.10.*
 
 ---
 
@@ -1046,7 +1054,7 @@ Neither is the safeguarding workstream (§6.4).
 |---|---|---|---|---|
 | **CP0** | **Done 2026-09-13.** Plan committed (PR #297); D9–D18 recorded; ARCHITECTURE.md §9 and `docs/deferred.md` reconciled per D14 (Assignments → Phase 9, CBT → own phase, Timetable out of the Phase 9 list, Tutor → Phase 8b, Phase 7's stale "not started" status corrected, and the Timetable generator, exam management, result checker, AI study assistant, event calendar and smart-timetable entries pointed here); Q9/Q10 and the safeguarding workstream recorded as Arinzechukwu-owned. Older module docs (`phase-4.md`, `phase-5.md`, `phase-6.md`) that say "Phase 8 owns assignments" were **left as historical record**, not rewritten | 2–3 days (took well under) | D14 | — |
 | **CP1** | Event Calendar v1 incl. national events and per-school hiding (§8.4; plan-first §15) | 7–10 days | D4 (+1), D19 (+1) | **Nothing — ready** (D19, D20) |
-| **CP2** | Reports v1 incl. teacher performance and its access control | 9–13 days | D2 (+3–4) | **Nothing — resolved** (§3.4); starts with the §4.6 measurement |
+| **CP2** | **Recording completeness** (§16): term health, attendance and score-entry coverage, report-card pipeline, teacher recording activity. Outcome analytics deferred (§16.9) | **6–9 days** (was 9–13) | D2 reframed after §4.6 | Q31–Q33 (§16.7) |
 | **CP3** | Timetable: model, time-of-day convention, bell schedules, grid builder, effective-timetable resolution, time-interval conflict detection, RLS spec | 11–16 days | D3 (+3–4); D13 confirms, no change | Q7, Q8 |
 | **CP4** | Timetable: fork/override, copy-forward, teacher / student / guardian read surfaces | 5–7 days | D3 (+1) | — |
 | **CP5** | Assessments & Exams v1: any-total marks with scaling, cumulative results | 6–10 days | D5 (scope narrowed) | Q15 |
@@ -1086,17 +1094,17 @@ again after CP4 — see §12.4.
 
 | | Before decisions | After decisions |
 |---|---|---|
-| **Phase 8** — CP0–CP6b (engineering-led) | 37–58 days | **54–81 days** |
+| **Phase 8** — CP0–CP6b (engineering-led) | 37–58 days | **51–77 days** |
 | **Phase 8b** — CP7–CP8 (Tutor engineering) | 25–40 days | **25–40 days**, plus the unestimated safeguarding workstream |
-| **Total engineering** | 62–98 days | **79–121 working days, ~16–24 calendar weeks** |
+| **Total engineering** | 62–98 days | **76–117 working days, ~15–23 calendar weeks** |
 
-**Where the growth comes from:** D6 (+8–12), D3 (+4–5), D2 (+3–4), D4 (+1), D19 (+1).
+**Where the growth comes from:** D6 (+8–12), D3 (+4–5), D4 (+1), D19 (+1). D2's +3–4 was removed when CP2 was re-scoped to recording completeness after the §4.6 measurement (§16.10: CP2 9–13 → 6–9).
 D5 changes no estimate — CBT was never inside the recommended scope — but it
 closes the risk of it entering by accident. **D9 removed the optional +5–8
 days for online PIN sales**, so the "58–88" and "83–128" upper variants no
 longer exist. D10–D13 are scope-neutral (§7.7, §10.5).
 
-At 54–81 days, **Phase 8 alone (CP0–CP6b) is ~11–16 weeks**, three to four
+At 51–77 days, **Phase 8 alone (CP0–CP6b) is ~11–16 weeks**, three to four
 times ARCHITECTURE.md's nominal phase. If it needs to split further, the next
 natural boundary is after CP4 (Calendar, Reports, Timetable) with CP5–CP6b
 (Exams, report card completeness, Result Checker) as a coherent "results"
@@ -1723,3 +1731,372 @@ applied." The post-release smoke test passed 6/6 (health, `/health/db` as
 - [Ministry of Interior — Eid-el-Fitr 2026 (19–20 March)](https://interior.gov.ng/federal-government-declares-thursday-19th-and-friday-20th-march-2026-as-public-holidays-to-mark-eid-ul-fitr/)
 - [Ministry of Interior — Eid-ul-Adha 2026 (27–28 May)](https://interior.gov.ng/federal-government-declares-wednesday-27th-may-and-thursday-28th-may-2026-as-public-holidays-to-mark-eid-ul-adha-celebration/)
 - [Public Holidays Act (PLAC copy)](https://www.placng.org/lawsofnigeria/print.php?sn=467)
+
+---
+
+## 16. CP2 plan-first — Recording Completeness (Reports v1)
+
+Written 2026-09-13, after the §4.6 production measurement. **Status: proposed,
+awaiting review. Nothing is built.**
+
+### 16.1 Why v1 changed, and what it is now
+
+§4.2's original v1 was outcome analytics: averages, pass rates, grade
+distributions, attendance trends and teacher performance. §4.6 measured
+production and found nothing for those to analyse:
+- 37 active students across 75 schools;
+- one day of attendance in total;
+- scores in a single term;
+- no school with more than one teacher.
+
+**Approved direction (Arinzechukwu, 2026-09-13):**
+- CP2's v1 is a **recording-completeness report**, useful from day one at any
+  data volume.
+- D2's teacher scope is folded into it as **recording activity** (registers
+  taken, marks entered), not a standalone performance view.
+- The original outcome analytics are **deferred, not dropped** (§16.9).
+
+The report answers one question per term: **is this school getting its records
+in, and where not?** It never shows a mark, a grade, an average or a position.
+It shows whether the thing that would produce them has been done.
+
+### 16.2 What already exists, and why this does not duplicate it (verified)
+
+| Existing surface | What it answers | Why CP2 is not a copy |
+|---|---|---|
+| `SetupStateService` (`setup-state.service.ts`) | One-time structural readiness: calendar, students, enrollments, fee catalogue, staff, form teachers, teacher assignments. Live counts | **Switches off once any single real activity exists** (`hasRealActivity`), never looks at a term's progress, and **never checks whether the current term has already ended**. CP2 is the ongoing, per-term complement, and links to the setup checklist for structural gaps rather than recomputing them |
+| Dashboard `needsYouToday` | `pending_report_card_approval` = count of cards at `FORM_REVIEWED`, **across all terms** | One number, no per-term or per-arm breakdown. CP2 shows the per-term pipeline and words its total differently, so the two numbers never appear to disagree |
+| `GET /assessments/aggregate/status` | When positions were last computed, for one arm | One arm at a time; about positions, not entry |
+| `GET /report-cards` (board) | Cards for one arm and term, **with student names** | One arm at a time and student-level. CP2 is school-wide aggregate counts with no student names at all |
+
+**No new tables and no RLS change.** Every figure is computed from existing
+tables inside `withTenant`. The only migration is role grants (D39).
+
+### 16.3 Decisions (proposed)
+
+Numbered from D31 to avoid colliding with §15's CP1 decisions (§15 D21–D30).
+
+#### D31 — Four sections, one term at a time
+
+For a chosen term (default: the current term), `GET /reports/completeness`
+returns four sections:
+
+1. **Term health** — the signals behind §4.6's sharpest findings.
+2. **Attendance recording** — registers taken against registers expected, per arm.
+3. **Score entry** — score slots entered against expected, per arm × subject.
+4. **Report-card pipeline** — cards per status, per arm, including arms with
+   no cards built.
+
+A fifth, **teacher recording activity** (D37), is a separate endpoint with a
+separate permission, and every read of it is audited (§3.4 D23).
+
+#### D32 — Term health signals, each with a plain explanation and a link to fix it
+
+Each signal is derived live, carries a one-sentence explanation, and names the
+existing screen that fixes it:
+
+| Signal | Condition | Links to |
+|---|---|---|
+| `NO_CURRENT_TERM` | no term has `isCurrent` | `/settings/academic` |
+| `CURRENT_TERM_ENDED` | current term's `endDate` is before today (Lagos) | `/settings/academic` |
+| `NEXT_TERM_NOT_CURRENT` | the current term has ended and a later term exists but is not current | `/settings/academic` |
+| `NO_ENROLLMENT_THIS_TERM` | students exist, 0 enrollments in this term | `/enrollments` |
+| `ENROLLMENT_NOT_ROLLED_OVER` | the previous term had enrollments, this term has none | `/enrollments` |
+| `ARMS_WITHOUT_FORM_TEACHER` | arms with enrolled students and no `classTeacherId` | `/settings/academic` |
+| `ARMS_WITHOUT_SUBJECT_TEACHERS` | arms with enrolled students and no active assignment effective for this term | `/staff` |
+
+"Today" uses `lagosTodayIso()`, shipped in CP1 in `packages/types`.
+Production today would raise `CURRENT_TERM_ENDED` and `NEXT_TERM_NOT_CURRENT`
+for Virgo Fidelis and `NO_ENROLLMENT_THIS_TERM` for several others — the §4.6
+finding, surfaced to the school that can act on it.
+
+#### D33 — What "a register expected" means, stated rather than implied
+
+**Expected arm-days** for an arm in a term = the **school days** from term start
+to `min(today, term end)`, for arms with at least one `ENROLLED` student in that
+term.
+
+**A school day** is Monday–Friday **minus** the days in D34. There is no
+school-week setting yet; CP3's Timetable introduces one, and this definition
+switches to it then (§16.8).
+
+**A register counts as taken** when an arm has **at least one**
+`AttendanceRecord` for that date, the same "arm has a register" notion the admin
+dashboard already uses. A partially marked register counts as taken; a
+per-student completeness breakdown is out of v1.
+
+Reported per arm and school-wide, always with numerator, denominator and date
+range, never a bare percentage. "12 of 61 school days" is honest; "20%" alone
+invites the reading that attendance was 20%.
+
+**Subject-period attendance is out of v1** (0 rows in production;
+`subjectAttendanceEnabled` is opt-in; §16.8).
+
+#### D34 — Holidays reduce EXPECTED days only — needs review (Q31)
+
+Without this, every public holiday shows as a "missed register" for every arm,
+and the report teaches schools to ignore it on its first Eid.
+
+**Proposed:** exclude from expected school days:
+- **confirmed** national events **not hidden** by this school (a school that hid
+  one because it opens that day is expected to mark it);
+- the school's own events in categories `HOLIDAY` and `BREAK`.
+
+It reads the calendar through **CP1's `buildCalendar`**, the single reader (§15
+D27), not the tables directly. An **unconfirmed** national holiday (an Eid
+estimate) is **not** excluded: the report must not forgive a missed register on
+a day that may not be the holiday.
+
+**This touches §3.3 D20** ("holidays are purely informational; they don't change
+attendance day counts"). The proposal keeps D20 intact for attendance **records
+and rates** — nothing about any student's attendance changes — and uses holidays
+only to decide which days a register was *expected*. That is still a real
+extension of what a holiday does in the product, so it is **Q31**, not assumed.
+If declined: weekdays only, with a visible note that holidays are not excluded.
+
+#### D35 — What "a score expected" means
+
+**Expected score slots** for a term = for every **arm × subject** with an active
+`TeacherAssignment` effective in that term (`termId` equal to the term, or `null`
+for the whole academic year) × the arm's `ENROLLED` students in that term × the
+school's grading components. **Entered** = matching `AssessmentScore` rows.
+
+**Why assignments, not `ClassSubject`:**
+- `setup-state.service.ts` documents that `ClassSubject` gates nothing; the
+  gradebook is built from `TeacherAssignment`.
+- Production shows why it matters: one school has 35 class-subject links but 12
+  assignments.
+
+Counting unassigned subjects would report work no teacher was ever given.
+Subjects with scores but **no** assignment are reported separately as "entered
+without an assignment", not silently dropped.
+
+Also per arm × subject: **signed off** (`Assessment.subjectSignedOffAt` set) over
+students with any score. Component-level detail (CA1 vs exam) is out of v1.
+
+#### D36 — The report-card pipeline
+
+Per arm with enrolled students this term: cards per `ReportCardStatus`, plus
+**enrolled students with no card built**. The total row is labelled distinctly
+from the dashboard — "awaiting principal approval **this term**" versus its
+all-terms count (§16.2).
+
+#### D37 — Teacher recording activity replaces D2's "performance" view
+
+Per user holding the `teacher` role, for the term:
+
+| Column | Source |
+|---|---|
+| Arms as form teacher | `ClassArm.classTeacherId` |
+| Registers taken / expected for those arms | D33, attributed to the arm, not to whoever clicked |
+| Registers this person marked (any arm) | `AttendanceRecord.markedBy`, distinct arm-dates |
+| Score slots entered / expected for their assignments | D35, restricted to their assignments |
+| Last register marked, last score entered | `max(markedAt)`, `max(enteredAt)` |
+
+**Deliberately absent:**
+- any mark, average, pass rate, position, grade distribution or class outcome;
+- any composite score, ranking or rating.
+
+§4.4's "class outcomes" column is removed from v1. It belongs to the deferred
+analytics (§16.9), and to a school with enough data to make it mean something.
+
+The page says, verbatim: *"Recording activity only — what has been entered, not
+how students performed or how well anyone teaches."*
+
+**Attribution caveat, shown in the UI.** Admins can and do mark registers and
+enter scores on a teacher's behalf (`markedBy`/`enteredBy` then names the admin).
+So "registers taken for your arms" is attributed to the arm, and "marked by this
+person" is shown separately. Otherwise a teacher whose admin keyed their marks
+would look inactive.
+
+**Access (§4.4 and §3.4 D22–D23), unchanged by the reframing:**
+- owner/admin only, with no self-view;
+- its own endpoint and permission, pinned in `permissions-coverage.spec.ts` as
+  never granted to teacher or bursar;
+- never an Insights intent;
+- **every read writes a tenant-scoped audit row** (`reports.teacher-activity.view`).
+
+With one teacher per school today, the table has one row. That is fine for
+recording activity, which describes the work rather than comparing people. It
+would not have been fine for performance.
+
+#### D38 — Endpoints and shapes
+
+| Endpoint | Permission | Notes |
+|---|---|---|
+| `GET /reports/completeness?termId=` | `reports.completeness.read` | Sections 1–4. `termId` optional → current term; another school's term is a 404 |
+| `GET /reports/teacher-activity?termId=` | `reports.teacher-activity.read` | D37; audited per read |
+
+- **Groups shape** (CLAUDE.md): per-arm rows are `{ groupId, label, … }` keyed on
+  `ClassArm.id`, with class level carried for grouping, so a future branch
+  dimension re-keys without a contract change.
+- **No student names** in either response; counts only.
+- **One transaction per request, a fixed number of grouped queries** (never one
+  per arm). Budget: ≤ 12 queries per request, given this database's history
+  (the dashboard's 26→20 round-trip work, `tenant-timeout.spec.ts`).
+
+#### D39 — Permissions
+
+A new `REPORTS_PERMISSIONS` constant: `reports.completeness.read` and
+`reports.teacher-activity.read`.
+- **Admin** receives both (owner via wildcard); **neither** goes to teacher or
+  bursar.
+- It is an idempotent append migration, following
+  `20260821000000_admin_dashboard_read_permission`, with `system-roles.ts`
+  updated in step.
+- The name deliberately avoids `report-card.*`.
+
+#### D40 — Surfaces
+
+- **Web `/reports`.** "Reports" leaves "Coming soon", gated on
+  `reports.completeness.read`. The page has:
+  - a term selector;
+  - term-health signals at the top, each with its fix link;
+  - attendance, score and report-card tables per arm;
+  - CSV export through the existing helper.
+- **Teacher recording activity** is a tab on the same page, **fetched only when
+  opened**, so an admin who never opens it writes no audit row for a view they
+  did not make.
+- **Dashboard link (Q33).** One `needsYouToday` item when any D32 signal is
+  active, linking to `/reports`. It reuses the completeness service's health
+  computation; there is no second definition.
+- **Not on mobile, not on the portal.** It is operator information.
+- **No teacher-shell view in v1 (Q32).**
+
+### 16.4 What §3.4 D21 means now
+
+D21 ("admin reports include unreleased marks, clearly labelled") has **no effect
+on v1**, because the completeness report shows no marks at all. It applies to
+the deferred analytics (§16.9) and is carried there unchanged.
+
+### 16.5 Tests
+
+1. **Service spec, real Postgres** (`reports-completeness.service.spec.ts`).
+   Fixtures for each shape the report must describe:
+   - a school with **zero** data (zeros and the right signals, never an error);
+   - a current term that has **ended** while a later term exists;
+   - enrollments last term but not this term;
+   - an arm with registers on some school days, plus:
+     - a weekend;
+     - a confirmed public holiday (excluded per Q31);
+     - a **hidden** public holiday (not excluded);
+     - an **unconfirmed** Eid (not excluded);
+   - a whole-year assignment and a term-specific one (both counted in their
+     term; the second not in other terms);
+   - scores entered with no assignment (reported separately);
+   - report cards across statuses, plus students with no card.
+
+   Every expected and actual number is asserted exactly.
+2. **Tenant isolation:** two schools; neither's counts move when the other's
+   data changes; a `termId` from the other school is a 404.
+3. **Teacher activity:**
+   - an admin keys scores for a teacher's assignment → counted for the arm and
+     shown as not the teacher's own entry;
+   - exactly one tenant-scoped audit row per read.
+4. **Both RBAC gates** via the real `PermissionsGuard` (the `bursar-scope`
+   harness): teacher and bursar refused on both endpoints; a deactivated admin
+   refused.
+5. **Conformance:**
+   - `permissions-coverage`, with a Reports block pinning that teacher and
+     bursar never hold either permission;
+   - `rbac-two-gate-conformance`;
+   - `audit-coverage` (`reports.teacher-activity.view`);
+   - `nav-items.spec`.
+6. **E2E (Playwright):**
+   - an owner whose current term has ended opens `/reports`;
+   - sees `CURRENT_TERM_ENDED` with its link;
+   - sees "1 of N school days" for an arm marked once;
+   - opening the teacher tab writes one audit row;
+   - a teacher account is refused the page.
+7. **Production verification after deploy.** Run the completeness computation
+   read-only against production and confirm it reports what §4.6 independently
+   measured (for example, Virgo Fidelis's ended current term). If they disagree,
+   one of them is wrong.
+
+### 16.6 What CP2 does NOT do
+
+- **Any outcome analytics** — averages, pass rates, distributions, positions,
+  trends, per-teacher class outcomes (§16.9).
+- Subject-period attendance completeness.
+- Per-student register completeness; component-level score detail.
+- Finance reports (existing finance surfaces cover them).
+- Enrollment trends (no multi-term history to trend).
+- PDF/Excel export; scheduled or emailed reports.
+- A teacher-facing view (Q32); mobile or portal surfaces.
+- Any change to Insights (§16.8).
+
+### 16.7 Open questions for this review
+
+| # | Question | Recommendation |
+|---|---|---|
+| **Q31** | May holidays (**confirmed**, non-hidden national holidays and the school's `HOLIDAY`/`BREAK` events) reduce **expected** register days, leaving attendance records and rates untouched? This extends §3.3 D20 | Yes — otherwise every holiday reads as a missed register |
+| **Q32** | Should teachers see their own recording completeness in v1? | No, per D22's spirit; the gradebook and register already show their gaps |
+| **Q33** | Add one dashboard `needsYouToday` item linking to `/reports` when a term-health signal is active? | Yes — one count, same computation |
+
+### 16.8 Known limits and follow-ups recorded
+
+- **School week is Monday–Friday** until CP3 defines one; D33 switches to it
+  then.
+- **Subject-period attendance completeness** — add when a school has enabled it
+  and recorded any.
+- **Insights (Phase 5) runs its four AI-narrated reports on the same thin
+  data.** It already caps rows and states the report it routed to, but "at-risk
+  students" among 12 is not meaningful either. **Not changed here**; flagged for
+  its own review rather than widened into CP2.
+
+### 16.9 DEFERRED, not dropped — outcome analytics
+
+The original §4.2/§4.4 scope remains a **real future item**, recorded in
+`docs/deferred.md` ("Outcome analytics — deferred until real data supports it"):
+- academic: class-arm and subject averages, pass rates, grade distributions, top
+  and bottom students;
+- attendance rates and trends;
+- enrollment trends;
+- teacher-level class outcomes, under all of §4.4's access rules and §3.4
+  D21–D23;
+- the SQL layer shared with Insights.
+
+**Trigger — measured, not guessed.** At least one production school meeting, for
+a completed term:
+
+| Bar | Proposed threshold |
+|---|---|
+| Enrolled students | ≥ 40 across ≥ 2 arms |
+| Attendance recording | ≥ 80% of expected arm-days (D33) |
+| Score entry | ≥ 90% of expected score slots (D35) |
+| Report cards | released for that term |
+| Teacher-level outcomes, additionally | ≥ 2 teachers with assignments that term |
+| Trends, additionally | ≥ 2 consecutive qualifying terms |
+
+The thresholds are proposals, to be confirmed when the item is picked up. The
+useful property is that **CP2's completeness report is the instrument that
+measures the trigger**: a school crossing the bar shows up in the report this
+checkpoint ships, not in another one-off production query.
+
+### 16.10 Estimate — recalculated
+
+| Work | Days |
+|---|---|
+| Permissions constant, grant migration, DTOs and Zod | 0.5 |
+| `ReportsCompletenessService`: term health (D32), attendance (D33–D34 via `buildCalendar`), scores (D35), report-card pipeline (D36) | 2–2.5 |
+| Teacher recording activity (D37) + audit | 0.5–1 |
+| Real-database specs incl. isolation, RBAC, conformance | 1–1.5 |
+| Web `/reports`: term selector, signals, three tables, teacher tab, CSV | 1.5–2 |
+| Dashboard `needsYouToday` item (Q33) | 0.25–0.5 |
+| E2E + production verification against §4.6 | 0.5–1 |
+| **Total** | **6.25–9 → 6–9 working days** (was 9–13) |
+
+| | Before | After |
+|---|---|---|
+| CP2 | 9–13 | **6–9** |
+| Phase 8 (CP0–CP6b) | 54–81 | **51–77** |
+| Total engineering incl. Phase 8b | 79–121 | **76–117** |
+
+**Why it shrinks:** the original scope needed a SQL layer shared with Insights,
+four analytics families, and outcome-bearing teacher views with interpretive
+safeguards.
+
+**Why it doesn't shrink further:** the "expected" definitions (school days net
+of holidays, assignment-effective score slots) are the real work. A report that
+tells a school it is behind has to be exactly right; one false "missed
+register" costs the report its credibility.
