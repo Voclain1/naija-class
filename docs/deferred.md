@@ -718,15 +718,19 @@ Format:
   estimates) was written 2026-08-09 — see "CBT / online exams — capability
   assessment" at the end of this file. This line stays as the
   market-research placeholder; that section is the engineering reality.**
+  **Decided 2026-09-13: out of Phase 8, and its own separate future phase**
+  (`docs/modules/phase-8.md` D5) — deliberately deferred, not dropped.
 - [ ] Predictive AI (at-risk-student early warning from attendance+grade
   trend, enrollment forecasting, auto billing reminders) — high-value,
   data already collected. Verify market framing before Phase 5.
 - [ ] Agentic vs generative AI positioning — market may have shifted
   toward adaptive/agentic by Phase 5. Run live search before committing
   AI roadmap. Do NOT build multi-agent orchestration as solo founder.
-- [ ] Timetable, transport, library, hostel — Phase 9 (auxiliary
+- [ ] Transport, library, hostel — Phase 9 (auxiliary
   modules; renumbered from Phase 7 on 2026-08-15). Named so
   "do you have X?" has a clear deferred answer, not a blank.
+  **Timetable left this line on 2026-09-13:** a manual builder with
+  conflict detection is Phase 8 (CP3–CP4, `docs/modules/phase-8.md` §7).
 - [ ] WAEC/NECO localization is the moat (Khanmigo/Squirrel AI aren't
   localized) — keep leaning on it. Verify competitor claims when planning.
 
@@ -1349,6 +1353,10 @@ not a commitment to that phase's exact shape or timing.
   on which phase owns it — flagging the discrepancy here rather than
   resolving it; whoever scopes this should reconcile §6.5 vs. the Phase 9
   roadmap note first.
+  **Reconciled 2026-09-13:** §6.5's builder wins, in Phase 8 — a **manual**
+  timetable builder with conflict detection, per-term or per-year, varying
+  by class arm (`docs/modules/phase-8.md` §7, D3, D13). **Automatic
+  generation is still unscheduled** and stays on this list.
 
 - [ ] Clinic/health records — ARCHITECTURE.md §6.14 (Health records) is
   fully specified conceptually (medical profile, sickbay log, medication/
@@ -1373,7 +1381,9 @@ not a commitment to that phase's exact shape or timing.
   approval, plagiarism flag). §9's original "Phase 6 — assignments and
   student portal" was split on 2026-08-15: the student-portal half is now
   Phase 6 (which builds the student principal assignments depend on), and
-  assignments themselves are **Phase 8**. Nothing built yet.
+  assignments themselves were **Phase 8**. **Moved to Phase 9 on
+  2026-09-13** (`docs/modules/phase-8.md` D14), when Phase 8 was taken by the
+  sidebar's "Coming soon" features. Nothing built yet.
 
 - [ ] Exam management, including AI-generated exam questions — overlaps two
   existing docs: ARCHITECTURE.md §6.7 (Assessment and grading, Phase 2) for
@@ -1385,6 +1395,11 @@ not a commitment to that phase's exact shape or timing.
   about full online exam-taking/proctoring, this ask is narrower (AI-
   generated question banks for a school's own exams). Worth reconciling
   scope with that item when this is picked up, not building in parallel.
+  **Scoped 2026-09-13 as Phase 8 "Assessments & Exams"**
+  (`docs/modules/phase-8.md` §9, CP5). CBT is out (its own future phase,
+  D5). The v1 recommendation is any-total mark entry with scaling plus
+  cumulative results. AI-generated question papers are option (iii), not
+  yet chosen (Q15 open).
 
 - [ ] Digital ID cards — not named anywhere in ARCHITECTURE.md. Net-new
   idea; would likely need a print-layout/PDF-render capability similar to
@@ -1398,6 +1413,12 @@ not a commitment to that phase's exact shape or timing.
   scoped to the right school, what proves the requester is entitled to see
   that result) — flag for a real plan-first, not a quick add, given
   CLAUDE.md's multi-tenancy and PII hard rules.
+  **Plan-first done 2026-09-13: Phase 8 CP6a–CP6b** (`docs/modules/phase-8.md`
+  §10). A school-scoped public page; access is free via the portals or by
+  offline batch PIN, the school's choice per release. PINs are hashed and
+  exported once. The report card gains attendance, promotion status and a
+  school-level position setting first. Decisions D6, D9–D12, D15–D18; online
+  PIN sales deferred.
 
 - [ ] AI study assistant — ARCHITECTURE.md §7's "Student tutor" is the
   matching spec (curriculum-grounded via RAG/pgvector, conversation history
@@ -1405,6 +1426,11 @@ not a commitment to that phase's exact shape or timing.
   is already named in the Phase 1 data model (§5) as AI-owned/Phase-5-shaped
   per the `AIInteractionLog`/`AIGeneration` precedent elsewhere in this file
   — Phase 5 (AI layer) per §9. Nothing built yet.
+  **Now Phase 8b (AI Tutor), decided 2026-09-13** (`docs/modules/phase-8.md`
+  §6, D8). Blocked on the tutor's NDPR position and the PII hard rule (Q9,
+  Q10), and on a dedicated safeguarding workstream that must complete before
+  any student uses it (§6.4). **No generic guardrail or content filter
+  satisfies that requirement.**
 
 - [ ] Internal messaging — **do not duplicate; this is already tracked.**
   Same feature as Phase 4 Slice 7 (in-app messaging), confirmed deferred at
@@ -1426,9 +1452,13 @@ not a commitment to that phase's exact shape or timing.
 
 - [ ] Event calendar — ARCHITECTURE.md §6.16 (Events and calendar) is
   specified (term calendar with holidays/breaks, events, parent RSVP, push
-  reminders) and falls under Phase 9 ("auxiliary modules — rolling"; renumbered from
+  reminders) and fell under Phase 9 ("auxiliary modules — rolling"; renumbered from
   Phase 7 on 2026-08-15) per
   §9. Nothing built yet.
+  **Moved to Phase 8 CP1 on 2026-09-13** (`docs/modules/phase-8.md` §8,
+  D4): seeded national events plus school-added events, visible to all
+  users. §6.16's **parent RSVP is not in v1**. Push reminders are read as not
+  in v1 either, pending confirmation (phase-8.md §8.1, Q3).
 
 - [ ] **Possible navigation race on `/dashboard`: clicking a sidebar link
   very shortly after landing on the dashboard can silently cancel that
@@ -1504,6 +1534,8 @@ Grouped into the three tiers he assessed them at, not by build order.
   which needs resolving before either the base generator or this AI-
   optimization layer on top of it gets scoped. Not a duplicate entry —
   cross-referenced.
+  **Discrepancy resolved 2026-09-13** (see that entry): the manual builder is
+  Phase 8. Optimisation, AI or otherwise, is still unscheduled.
 
 - [ ] Offline-first architecture — flagged by Arinzechukwu as **core
   infrastructure for the Nigerian context specifically, not a nice-to-have
@@ -1799,6 +1831,10 @@ ideas"; "CBT / online exams (JAMB/WAEC/UTME prep)" under "Roadmap /
 strategy". The sidebar already shows **Assessments & Exams** and **Result
 Checker** as greyed-out "Coming soon" items, so a lead who has seen a demo has
 seen those.
+
+**Update 2026-09-13:** both of those sidebar items are now Phase 8 scope
+(`docs/modules/phase-8.md` §9 and §10). **CBT itself is not.** It is its own
+separate future phase (D5), so this assessment remains its starting point.
 
 ### Bulk student add — ranked follow-ups
 

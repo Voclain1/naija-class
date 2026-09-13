@@ -1,7 +1,10 @@
 # Phase 8 — Reports, Timetable, Event Calendar, Exams, Result Checker, AI Tutor
 
-**Status:** plan-first investigation **approved 2026-09-13**. Arinzechukwu's
-first round of decisions was recorded the same day (§3). Nothing is built.
+**Status:** plan-first investigation **approved 2026-09-13** and merged
+(PR #297). Three rounds of decisions were recorded the same day (§3: D1–D8,
+D9–D14, D15–D18), and a fourth closed CP1's questions (D19–D20).
+**CP0 is done** (§12.1). CP1 is unblocked, and its own plan-first comes
+next. Nothing is built.
 Each checkpoint still needs its remaining open questions (§11) answered, and
 its own short plan-first appended here, before it starts.
 
@@ -55,17 +58,17 @@ PR.
 ## 2. Document conflicts this phase must reconcile
 
 Found during the investigation. **None of these docs are edited by this
-plan.**
+plan document itself; CP0 reconciles items 1–3.**
 
 1. **ARCHITECTURE.md §9 assigns Phase 8 to Assignments** ("Phase 8 —
-   assignments (3 weeks)"). → **Q1**, still open.
+   assignments (3 weeks)"). **Resolved by D14:** Assignments moves to Phase 9.
 2. **`docs/deferred.md` places Timetable in Phase 9** ("Timetable, transport,
    library, hostel — Phase 9"). Its own "Timetable generator" entry already
    flags the disagreement with ARCHITECTURE.md §6.5. This plan resolves it in
    favour of Phase 8 for a **manual builder**.
 3. **CBT is now explicitly its own future phase** (D5). The "CBT / online
-   exams" entries in `docs/deferred.md` should say so when Q1's
-   reconciliation happens in CP0.
+   exams" entries in `docs/deferred.md` should say so, as part of CP0's
+   reconciliation.
 4. **The NDPR review is still open** (`docs/deferred.md`, "NDPR compliance
    posture for third-party AI / embeddings vendors", captured 2026-09-01).
    The AI Tutor would be its sharpest expansion yet (§6.3).
@@ -137,6 +140,103 @@ confirmed after the D1–D7 re-scope).** Safeguarding (D7) already blocks any
 student rollout, however fast the engineering goes, so the Tutor (CP7–CP8) is
 planned as Phase 8b rather than held as a possible late split. Phase 8 is
 CP0–CP6b, and may itself split further after CP4 if it runs long. See §12.3.
+
+### 3.1 Second round — Arinzechukwu and the project lead, 2026-09-13
+
+Recorded after PR #297 merged. Each resolves an open question from §11.2 and
+keeps its question number for traceability.
+
+**D9 (Q19) — PINs are sold offline only in v1** (scratch cards, cash, at the
+school). **Online purchase through Paystack is deferred** as a clearly scoped
+fast follow-on, not built in Phase 8. Consequences:
+- No money moves through SchoolKit for results access in v1, so no
+  `FinanceService` path, payment webhook or PIN-delivery flow is needed. The
+  Money hard rules are not engaged by CP6b.
+- The **+5–8 days for online sales is removed** from every estimate (§10.5,
+  §12.4).
+- **Recorded so the fast follow-on isn't a blank:** when built, every sale
+  goes through `FinanceService` with `audit_logs`, via the school's existing
+  Paystack subaccount (`paystack-assisted-setup.md`), with a webhook and PIN
+  delivery. The +5–8 day estimate stands as its starting point.
+
+**D10 (Q17) — PINs are batch-generated; the school distributes them** in
+whatever quantity and grouping it chooses. No per-student purchase or
+issuance flow in v1. This implies a PIN is **not bound to a student when it
+is generated**. It binds on first successful redemption (§10.3). Two design
+points follow that D10 doesn't settle, recorded as **Q29** and **Q30** and
+resolved by D15 and D16 (§3.2).
+
+**D11 (Q21) — In paid (PIN) mode, results are locked behind the PIN in both
+the guardian portal and student mobile.** The access-mode gate goes in the
+shared `RELEASED` reader (Phase 6 D28), so both portals and the public checker
+enforce it from one place. Two details for CP6b's plan-first to confirm, with
+recommendations in §10.3: where a PIN is entered from inside a portal, and
+whether a school can change access mode after release.
+
+**D12 (Q23) — Promotion status is a display field on the report card, set at
+principal approval.** Not a promotion engine: it never creates, changes or
+reads `Enrollment` rows, and `EnrollmentStatus.PROMOTED` / `REPEATED` are left
+exactly as they are. Detail in §10.3 (CP6a).
+
+**D13 (Q18) — A year-wide timetable and a term timetable may coexist for the
+same class arm. When a term timetable exists, it replaces the year-wide one
+entirely for that term.** No slot-by-slot merging. This is the model §7.2 and
+§7.3 already assumed, so **the Timetable estimate does not change**.
+
+**D14 (Q1) — Assignments moves to Phase 9.** CP0 updates ARCHITECTURE.md §9
+and `docs/deferred.md` to match (§12.1).
+
+### 3.2 Third round — CP6b design approvals, 2026-09-13
+
+Approved as proposed in §10.3 and §11.2.
+
+**D15 (Q29) — A PIN batch is scoped to one academic year and term, chosen at
+generation.** A card sold for "First Term 2026/2027" can't be spent on any
+other term.
+
+**D16 (Q30) — PINs are exported once, at generation; storage stays hashed.**
+No re-export. A lost export is handled by voiding the batch and generating a
+new one. The plaintext PIN exists only at the moment of generation, so a
+database leak exposes no usable PINs. The `encrypt_bvn`-style encrypted
+alternative was considered and rejected.
+
+**D17 — A PIN redeemed anywhere unlocks that student's result for that term
+everywhere:** the public checker, the guardian portal and student mobile. A
+family never spends a second use of a card they have already redeemed.
+
+**D18 — Access mode (free / PIN) is fixed at release.** Changing it goes
+through the existing owner-only reopen. This closes both failure directions:
+free → paid would retract results families have already seen, and paid → free
+would silently void cards families have already bought.
+
+### 3.3 Fourth round — CP1 (Event Calendar), Arinzechukwu, 2026-09-13
+
+**D19 (Q25) — A school may hide a national (seeded) event from its own
+calendar.** This **reverses** the investigation's "no hiding" recommendation.
+Consequences:
+- Hiding is **per school, per national event**. It hides the event from
+  every user of that school (staff, guardians, students) — "its own calendar
+  view" is the school's calendar, not one person's. It never affects any
+  other school, and never alters the platform `national_events` row.
+- It needs a small **tenant-scoped** record of which national events a
+  school has hidden (FORCE RLS, like every tenant table), an admin
+  hide/unhide action, audit rows, and a filter in the merged read.
+- A hidden event stays visible to the school's admins in the management view,
+  so it can be unhidden. The read-only calendar views omit it.
+- Adds **about 1 day**: CP1 moves from 6–9 to **7–10 days** (§8.5, §12).
+
+**D20 (Q3, Q4, Q5) — The §8.1 interpretations are confirmed as read:**
+- **Q3:** no scheduled reminders in v1, and no push notification on
+  publish. The calendar is something people look at, not a notification
+  channel.
+- **Q4:** the announcement board stays a separate feature, still deferred
+  (`phase-4.md` §8), and is not merged into the calendar.
+- **Q5:** holidays are purely informational. They don't block attendance
+  marking and don't change attendance day counts.
+
+**Still open and owned by Arinzechukwu on his own timeline:** Q9 (NDPR for the
+tutor) and Q10 (the PII hard rule). **They do not block CP0 or any Phase 8
+checkpoint;** they must be resolved before Phase 8b's CP7 begins.
 
 ---
 
@@ -437,11 +537,10 @@ schema already has. Indicative model (names fixed in CP3's plan-first):
   also enforces that the term belongs to the stated academic year, following
   `Enrollment`'s precedent.
 - **Effective timetable** for (arm, term) = the term-specific header if one
-  exists, otherwise the year-wide one. Whether a year-wide timetable and a
-  term override may coexist, and whether the override replaces it wholesale
-  or merges per slot, is **Q18**. Recommendation: allow coexistence, with
-  wholesale replacement — per-slot merging makes "why is this period here?"
-  unanswerable for an admin reading the grid.
+  exists, otherwise the year-wide one. **Decided (D13):** the two may
+  coexist, and a term timetable replaces the year-wide one **entirely** for
+  that term — never merged slot by slot, which would make "why is this period
+  here?" unanswerable for an admin reading the grid.
 
 ### 7.3 Where the real cost of D3 lands: conflict detection
 
@@ -497,8 +596,7 @@ existing data); substitution and cover management.
 
 Q7 (bell schedule per school or per stage, double periods — partly softened
 by D3, since schedules now attach per timetable), Q8 (manual builder vs
-generator — recommendation: manual), Q18 (coexistence and override
-semantics).
+generator — recommendation: manual). Q18 is resolved by D13.
 
 ### 7.7 Size — D3 changes the estimate
 
@@ -522,9 +620,9 @@ mixed-schedule combinations.
 **Decided:** seeded national events plus school-admin-added events, on real
 dates, visible to all users, no RSVP in v1.
 
-D4 was given as resolving the calendar questions. The ones it doesn't address
-word for word are recorded here as **interpretations for Arinzechukwu to
-confirm**, not assumed silently:
+D4 was given as resolving the calendar questions. The ones it didn't address
+word for word were recorded here as interpretations, and **D20 confirmed all
+of them as read**:
 
 | Question | Interpretation |
 |---|---|
@@ -581,13 +679,15 @@ So v1 needs:
   can hold a platform-level row with no school is **not verified** and is a
   CP1 plan-first item.
 
-**Open:** Q25 — may a school hide or annotate a national event (e.g. "school
-open on Democracy Day")? Recommended v1: no hiding. A school can add its own
-event on the same date.
+**Decided (D19):** a school may hide a national event from its own calendar.
+Recorded as a hide, not an edit: the platform row is never changed per school.
+A school can still add its own event on the same date (e.g. "school open on
+Democracy Day").
 
 ### 8.4 v1 scope
 
 - Platform `national_events` table, seed script, platform-admin maintenance.
+- Per-school hiding of national events (D19).
 - Tenant-scoped school events table: title, category (holiday, break, exam
   period, meeting, event, resumption, other), start and end date
   (`@db.Date`, all-day), optional description.
@@ -598,9 +698,10 @@ event on the same date.
 
 ### 8.5 Size
 
-**6–9 working days** (was 5–8). The national-events platform table, seeding,
-the maintenance endpoint and lunar-date handling are added. Audience
-targeting and push-on-publish are removed.
+**7–10 working days** (was 5–8, then 6–9). The national-events platform
+table, seeding, the maintenance endpoint and lunar-date handling are added
+(D4), and per-school hiding (D19, +1). Audience targeting and push-on-publish
+are removed.
 
 ---
 
@@ -672,8 +773,8 @@ Four findings from the code, each a direct consequence of D6:
    - redeeming a PIN unlocks that student's result for that term.
 
    Because D28 put the gate in one helper, this is one change, not two. But
-   it modifies shipped, security-relevant code and its specs. → **Q21**
-   confirms the intended portal behaviour in PIN mode.
+   it modifies shipped, security-relevant code and its specs. **Decided
+   (D11): results lock in both portals in PIN mode.**
 
 2. **The report card doesn't carry what D6 lists.** Verified against
    `report-card-template.ts`, `ReportCard` and the family DTO:
@@ -684,13 +785,14 @@ Four findings from the code, each a direct consequence of D6:
    | Teacher comments | Present (subject, form teacher, principal note). The family DTO omits `principalNote`, a trivial fix |
    | **Position** | Present on the PDF, but **deliberately hidden from families**: `FAMILY_VISIBLE_POSITION = false`. The comment says it belongs to a missing **school-level setting**, and that the PDF and portal should move together when it lands. D6 makes that setting necessary. → **Q24** (default) |
    | **Attendance** | **Absent.** No attendance anywhere on `ReportCard` or its template. Needs a term attendance summary **snapshotted at build time**, like the rest of the frozen rollup, not recomputed live |
-   | **Promotion status** | **Absent.** The only related data is `EnrollmentStatus.PROMOTED` / `REPEATED`, reachable by manual PATCH; the promotion engine is deferred (`phase-2.md`). → **Q23**: a display field on the card vs an engine that moves enrollments. Recommendation: a display field set at principal approval for end-of-year cards, no engine |
+   | **Promotion status** | **Absent.** The only related data is `EnrollmentStatus.PROMOTED` / `REPEATED`, reachable by manual PATCH; the promotion engine is deferred (`phase-2.md`). **Decided (D12): a display field set at principal approval, no engine** |
 
 3. **Paid PINs raise how payment happens.** If PINs are sold offline (printed
-   cards, cash at the school), SchoolKit only generates, prints and redeems
+   cards, cash at the school), SchoolKit only generates, exports and redeems
    them. If parents buy online, every sale goes through `FinanceService` with
    `audit_logs` (Money hard rules), via the school's Paystack subaccount, with
-   a webhook and PIN delivery. → **Q19**.
+   a webhook and PIN delivery. **Decided (D9): offline only in v1**; online
+   sales are a deferred fast follow-on.
 
 4. **Withdrawing exists, but only as a full reopen.** `reopen` (owner-only,
    `report-card-workflow.service.ts`) rolls an arm × term back to `DRAFT` and
@@ -710,17 +812,39 @@ checker):
   `FAMILY_VISIBLE_POSITION`, applied to the PDF and portals together.
 - Term attendance summary snapshotted onto `ReportCard` at build and rendered
   on the PDF and portals.
-- Promotion status field on end-of-year cards (per Q23).
+- **Promotion status (D12):** a display field on `ReportCard` (e.g.
+  PROMOTED / REPEAT / PROMOTED_ON_TRIAL; exact values fixed in CP6a's
+  plan-first). Set per student during the principal-approval step, on cards
+  for the **final term of the academic year** (highest `Term.sequence` in that
+  year). Recommended: approval of those arms is blocked until every card has a
+  status. Frozen by `released-guard.ts` once released, like the rest of the
+  card. Never touches `Enrollment`.
 - `principalNote` added to the family DTO.
 
 **CP6b — Result Checker:**
 - **Access mode per release** (free / PIN), set by the school at the
   granularity decided in **Q20** (recommendation: per arm × term, matching the
-  existing release granularity), enforced in the shared reader (§10.2 item
-  1).
-- **PINs:** high-entropy generation, stored **hashed**, bound to a student
-  and term (or batch-issued — **Q17**), a use limit, batch print/export,
-  every redemption audited.
+  existing release granularity), enforced in the shared reader for both
+  portals and the checker (D11, §10.2 item 1).
+  - **Decided (D18):** access mode is fixed at release. Changing it goes
+    through the existing reopen. Switching free → paid after families have
+    already seen results would be a retraction; paid → free silently voids
+    PINs families have already bought.
+  - **Decided (D17):** a PIN redeemed anywhere (public checker or either
+    portal's "enter PIN" prompt) unlocks that student's result for that term
+    everywhere. A parent never spends a second use of a scratch card they
+    already redeemed.
+- **PINs (D9, D10) — batch-generated, sold offline by the school:**
+  - high-entropy generation, stored **hashed**;
+  - generated in a batch of a school-chosen size, scoped to one academic
+    year and term (D15);
+  - **unbound at generation; binds to a student and term on first successful
+    redemption**, after which only that student's result opens with it;
+  - a use limit per PIN (school-configurable, recommended default 5);
+  - **export for printing** (CSV for a print shop, plus a printable sheet),
+    **once, at generation**, with a clear warning (D16);
+  - voiding a whole batch or a single PIN (for lost or stolen cards);
+  - generation, export, voiding and every redemption audited.
 - **Public page** at a per-school URL in `apps/portal` (school slugs are
   already public): enter identifier(s) and PIN (**Q22**), select session
   (academic year) and term, view the structured card, download the PDF through
@@ -737,22 +861,29 @@ checker):
   a student before the PIN validates.
 - **Only `RELEASED` cards,** read through the shared helper, never a second
   query against `report_cards`.
-- **Online PIN sales** (if Q19 includes them): Paystack purchase through
-  `FinanceService`, webhook, PIN delivery, audit.
+- **Not in CP6b (D9):** online PIN purchase. Its recorded shape is in D9.
 
 ### 10.4 Open questions
 
-Q17, Q19, Q20, Q21, Q22, Q23, Q24, Q28. See §11.
+Q20, Q22, Q24, Q28. See §11. (Q17, Q19, Q21, Q23 resolved by D9–D12; Q29,
+Q30 by D15, D16.)
 
-### 10.5 Size — D6 changes the estimate
+### 10.5 Size — D6 changed the estimate; D9 confirmed CP6b's
 
 | | Estimate |
 |---|---|
 | Original CP6 | 6–10 days |
 | **CP6a** — report card completeness | **5–8 days** |
-| **CP6b** — checker, PINs, access-mode gate, SD function and review | **9–14 days** |
-| Online PIN sales via Paystack (if Q19 includes them) | **+5–8 days** |
-| **Result Checker total** | **14–22 days, or 19–30 with online sales** |
+| **CP6b** — access-mode gate, offline batch PINs, public checker, SD function and review | **9–14 days — confirmed** |
+| ~~Online PIN sales via Paystack~~ | ~~+5–8 days~~ — **removed by D9**; deferred fast follow-on |
+| **Result Checker total** | **14–22 days** |
+
+**Why CP6b stays at 9–14 rather than shrinking.** The 9–14 figure never
+included online sales, which were always the separate +5–8, so D9 removes
+that line without touching this one. D10's batch model then trades one piece
+of work for another of about the same size: it removes per-student issuance,
+but adds bind-on-first-redemption, batch voiding and print export. D11 was
+already costed in: the portal lock was §10.2's first finding.
 
 ---
 
@@ -763,19 +894,27 @@ Q17, Q19, Q20, Q21, Q22, Q23, Q24, Q28. See §11.
 | # | Question | Resolution |
 |---|---|---|
 | Q2 | Event Calendar: RSVP? | None in v1 (D4) |
-| Q3 | Event reminders? | Interpreted: none, no push on publish (§8.1) — **confirm** |
-| Q4 | Absorb Announcement board? | Interpreted: separate, stays deferred (§8.1) — **confirm** |
-| Q5 | Holiday source; attendance effect | Seeded national + school-added (D4); informational only (§8.1) — **confirm the attendance half** |
+| Q3 | Event reminders? | None in v1, no push on publish (D20) |
+| Q4 | Absorb Announcement board? | No; separate, stays deferred (D20) |
+| Q5 | Holiday source; attendance effect | Seeded national + school-added (D4); informational only (D20) |
+| Q25 | May a school hide a national event? | Yes, from its own calendar (D19) |
 | Q6 | Timetable per term or per year? | Both, varying by school and class arm (D3) |
 | Q11 | Tutor safeguarding | Replaced by a dedicated workstream (D7, §6.4) |
 | Q13 | Teacher performance in Reports? | Included, owner/admin only (D2) |
 | Q16 | Result Checker: sold or free? | School's choice, both supported (D6) |
+| Q1 | Assignments → Phase 9? | Yes; docs reconciled in CP0 (D14) |
+| Q17 | PINs per student per term, or batches? | Batches, distributed by the school (D10) |
+| Q18 | Year-wide and term timetables coexist? | Yes; term replaces year entirely (D13) |
+| Q19 | PIN sales channel | Offline only in v1; online deferred as a fast follow-on (D9) |
+| Q21 | Results locked in portals in PIN mode? | Yes, in both portals (D11) |
+| Q23 | Promotion status: field or engine? | Display field set at principal approval (D12) |
+| Q29 | PIN batch scope | One academic year + term, chosen at generation (D15) |
+| Q30 | Re-export PINs after generation? | No: export once, hashed storage, void and regenerate if lost (D16) |
 
 ### 11.2 Still open
 
 | # | Question | Blocks | Recommendation |
 |---|---|---|---|
-| **Q1** | Does Assignments (ARCHITECTURE.md §9 Phase 8) move to Phase 9? | CP0 | Yes; reconcile §9 and `deferred.md` in CP0 |
 | **Q7** | Bell schedules: one per school, per stage, or free-form? Double periods? | CP3 | Free-form named schedules attached per timetable; double periods as consecutive slots |
 | **Q8** | Manual builder vs automatic generator? | CP3 | Manual builder with conflict detection |
 | **Q9** | NDPR: recorded proceed-anyway decision **for the tutor specifically**? | CP7 | — (legal/business call) |
@@ -783,15 +922,9 @@ Q17, Q19, Q20, Q21, Q22, Q23, Q24, Q28. See §11.
 | **Q12** | Tutor behaviour with no approved curriculum document | CP8 | Refuse politely, naming the subject |
 | **Q14** | Reports: include unreleased marks? | CP2 | Yes for admins, clearly labelled |
 | **Q15** | Assessments & Exams: which of (i)–(iii)? | CP5 | (i) + (ii) |
-| **Q17** | PINs per student per term, or batches? | CP6b | Follows from Q19 |
-| **Q18** | Timetable: can year-wide and term timetables coexist for one arm; override wholesale or per slot? | CP3 | Coexist; wholesale replacement |
-| **Q19** | PIN sales: offline scratch cards, online Paystack purchase, or both? | CP6b | — (commercial call; online adds +5–8 days) |
 | **Q20** | "Per result" access mode: per school × term, per arm × term, or per student? | CP6b | Per arm × term, matching release |
-| **Q21** | In PIN mode, are results locked in the portals until a PIN is redeemed? | CP6b | Yes — otherwise PIN mode can be bypassed for free |
 | **Q22** | Checker identifiers: admission number **and** PIN, or either? | CP6b | Both required |
-| **Q23** | Promotion status: a display field, or an engine that moves enrollments? | CP6a | Display field, set at principal approval |
 | **Q24** | Default of the new school-level position-visibility setting? | CP6a | Hidden (today's behaviour) until a school turns it on |
-| **Q25** | May a school hide a national event? | CP1 | No; a school may add its own event on that date |
 | **Q26** | May a teacher see their own performance view? | CP2 | No in v1 |
 | **Q27** | Audit-log reads of teacher performance? | CP2 | Yes |
 | **Q28** | Is a lighter "unpublish" needed, beyond the existing owner-only reopen to DRAFT? | CP6b | Not in v1 |
@@ -807,14 +940,14 @@ Neither is the safeguarding workstream (§6.4).
 
 | CP | Content | Estimate | Changed by | Needs decided first |
 |---|---|---|---|---|
-| **CP0** | This plan committed; Q1 resolved and ARCHITECTURE.md §9 / `deferred.md` reconciled (incl. CBT → own phase); Tutor decision track (Q9, Q10) and safeguarding workstream started | 2–3 days | — | — |
-| **CP1** | Event Calendar v1 incl. national events (§8.4) | 6–9 days | D4 (+1) | Q25; confirm Q3–Q5 interpretations |
+| **CP0** | **Done 2026-09-13.** Plan committed (PR #297); D9–D18 recorded; ARCHITECTURE.md §9 and `docs/deferred.md` reconciled per D14 (Assignments → Phase 9, CBT → own phase, Timetable out of the Phase 9 list, Tutor → Phase 8b, Phase 7's stale "not started" status corrected, and the Timetable generator, exam management, result checker, AI study assistant, event calendar and smart-timetable entries pointed here); Q9/Q10 and the safeguarding workstream recorded as Arinzechukwu-owned. Older module docs (`phase-4.md`, `phase-5.md`, `phase-6.md`) that say "Phase 8 owns assignments" were **left as historical record**, not rewritten | 2–3 days (took well under) | D14 | — |
+| **CP1** | Event Calendar v1 incl. national events and per-school hiding (§8.4) | 7–10 days | D4 (+1), D19 (+1) | **Nothing — ready** (D19, D20) |
 | **CP2** | Reports v1 incl. teacher performance and its access control | 9–13 days | D2 (+3–4) | Q14, Q26, Q27 |
-| **CP3** | Timetable: model, time-of-day convention, bell schedules, grid builder, effective-timetable resolution, time-interval conflict detection, RLS spec | 11–16 days | D3 (+3–4) | Q7, Q8, Q18 |
+| **CP3** | Timetable: model, time-of-day convention, bell schedules, grid builder, effective-timetable resolution, time-interval conflict detection, RLS spec | 11–16 days | D3 (+3–4); D13 confirms, no change | Q7, Q8 |
 | **CP4** | Timetable: fork/override, copy-forward, teacher / student / guardian read surfaces | 5–7 days | D3 (+1) | — |
 | **CP5** | Assessments & Exams v1: any-total marks with scaling, cumulative results | 6–10 days | D5 (scope narrowed) | Q15 |
-| **CP6a** | Report card completeness: position setting, attendance snapshot, promotion status | 5–8 days | D6 (new) | Q23, Q24 |
-| **CP6b** | Result Checker: access-mode gate, PINs, public page, SD function and review at 23 (+ online sales if chosen) | 9–14 days (+5–8) | D6 (+3–4 over old CP6 excluding CP6a) | Q17, Q19–Q22, Q28 |
+| **CP6a** | Report card completeness: position setting, attendance snapshot, promotion status display field | 5–8 days | D6 (new); D12 | Q24 |
+| **CP6b** | Result Checker: access-mode gate in both portals, offline batch PINs, public page, SD function and review at 23 | **9–14 days** | D6; D9 removed online sales; D10, D11, D15–D18 | Q20, Q22, Q28 |
 | **CP7** | Tutor engineering foundations: `expo/fetch` spike, multi-turn streaming port, per-student ledger column and cap, eval harness for conversations. **No safeguarding handling of any kind (§6.4)** | 12–18 days | — | **Q9, Q10** |
 | **CP8** | Tutor mobile screen, admin console (non-safeguarding parts), rollout | 13–22 days | D7 | Q12; **rollout blocked on the safeguarding workstream** |
 
@@ -849,15 +982,17 @@ again after CP4 — see §12.4.
 
 | | Before decisions | After decisions |
 |---|---|---|
-| **Phase 8** — CP0–CP6b (engineering-led) | 37–58 days | **53–80 days** (+5–8 with online PIN sales → **58–88**) |
+| **Phase 8** — CP0–CP6b (engineering-led) | 37–58 days | **54–81 days** |
 | **Phase 8b** — CP7–CP8 (Tutor engineering) | 25–40 days | **25–40 days**, plus the unestimated safeguarding workstream |
-| **Total engineering** | 62–98 days | **78–120 working days, ~16–24 calendar weeks** (83–128 with online PIN sales) |
+| **Total engineering** | 62–98 days | **79–121 working days, ~16–24 calendar weeks** |
 
-**Where the growth comes from:** D6 (+8–12, or +13–20 with online sales), D3
-(+4–5), D2 (+3–4), D4 (+1). D5 changes no estimate — CBT was never inside
-the recommended scope — but it closes the risk of it entering by accident.
+**Where the growth comes from:** D6 (+8–12), D3 (+4–5), D2 (+3–4), D4 (+1), D19 (+1).
+D5 changes no estimate — CBT was never inside the recommended scope — but it
+closes the risk of it entering by accident. **D9 removed the optional +5–8
+days for online PIN sales**, so the "58–88" and "83–128" upper variants no
+longer exist. D10–D13 are scope-neutral (§7.7, §10.5).
 
-At 53–80 days, **Phase 8 alone (CP0–CP6b) is ~11–16 weeks**, three to four
+At 54–81 days, **Phase 8 alone (CP0–CP6b) is ~11–16 weeks**, three to four
 times ARCHITECTURE.md's nominal phase. If it needs to split further, the next
 natural boundary is after CP4 (Calendar, Reports, Timetable) with CP5–CP6b
 (Exams, report card completeness, Result Checker) as a coherent "results"
@@ -875,8 +1010,9 @@ group.
 4. **Whether `audit_logs` can hold a platform-level row with no school** for
    national-event maintenance (§8.3).
 5. **The Nigerian scratch-card result-checker pattern** comes from market
-   knowledge; D6 now confirms the product intent, but not the commercial model
-   (Q19).
+   knowledge. D6 confirmed the product intent and D9/D10 the commercial model
+   (offline batch cards); the recommended default use limit of 5 (§10.3) is
+   not sourced from any school.
 6. **Nigerian public-holiday rules** (§8.3) — the fixed / computable / lunar /
    ad hoc categories are general knowledge and should be checked against an
    authoritative source before the seed is written.
@@ -885,9 +1021,10 @@ group.
 
 ## 14. What must be true before implementation starts
 
-1. This plan-first is committed (CP0).
-2. Q1 is answered and ARCHITECTURE.md §9 and `docs/deferred.md` are
-   reconciled with it, including recording CBT as its own future phase (D5).
+1. ~~This plan-first is committed~~ — **done**, PR #297 (2026-09-13).
+2. ~~Q1 is answered~~ — **done** (D14). ARCHITECTURE.md §9 and
+   `docs/deferred.md` are reconciled with it in CP0, including recording CBT
+   as its own future phase (D5) and the Tutor as Phase 8b (D8).
 3. For each checkpoint, its "needs decided first" questions in §12.1 are
    answered and recorded here before its plan-first is written.
 4. CP7 does not begin without Q9 and Q10 recorded.
