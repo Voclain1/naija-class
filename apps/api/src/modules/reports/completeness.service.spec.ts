@@ -395,7 +395,7 @@ describe("CompletenessService (Phase 8 CP2) — real database", () => {
         ["ARMS_WITHOUT_FORM_TEACHER", ["Arm-Two"], "/settings/academic"],
         ["ARMS_WITHOUT_SUBJECT_TEACHERS", ["Arm-Two"], "/staff"],
       ]);
-      expect(r.health[0].message).toContain("2026-03-27");
+      expect(r.health[0].message).toContain("Fri 27 Mar 2026");
     });
 
     it("the same term viewed while it is still running raises no term-ended signals", async () => {

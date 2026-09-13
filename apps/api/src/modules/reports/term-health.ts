@@ -1,5 +1,5 @@
 import type { withTenant } from "@school-kit/db";
-import { TERM_HEALTH_HREFS, type TermHealthSignalCode, type TermHealthSignalDto } from "@school-kit/types";
+import { formatCalendarDate, TERM_HEALTH_HREFS, type TermHealthSignalCode, type TermHealthSignalDto } from "@school-kit/types";
 
 // Phase 8 / CP2 — term health signals (docs/modules/phase-8.md §16 D32).
 //
@@ -102,7 +102,7 @@ export async function computeTermHealth(
     out.push(
       signal(
         "CURRENT_TERM_ENDED",
-        `The current term ended on ${r.current_end}. Registers and scores are still being filed against a finished term.`,
+        `The current term ended on ${formatCalendarDate(r.current_end!)}. Registers and scores are still being filed against a finished term.`,
       ),
     );
     if (r.later_term_exists) {
