@@ -217,6 +217,35 @@ describe("PortalAuthService — logout and password recovery", () => {
 
   // ────────────────────────── forgot password ──────────────────────────
 
+  describe("forgotPassword — link base", () => {
+    // tokenFromEmail matches only the "/reset-password/" PATH, so every other
+    // test here would still pass if the emailed link were built on the staff
+    // app's base or on localhost. A parent's reset link must open the portal.
+    it("emails a reset link built on PORTAL_BASE_URL, not WEB_BASE_URL", async () => {
+      const email = `forgot-base-${runId}@example.test`;
+      await makeGuardian("forgot-base", email);
+
+      const original = { portal: process.env.PORTAL_BASE_URL, web: process.env.WEB_BASE_URL };
+      process.env.PORTAL_BASE_URL = "https://portal.prod.example.test";
+      process.env.WEB_BASE_URL = "https://staff.prod.example.test";
+      const before = sent.length;
+      try {
+        await portalAuth.forgotPassword(guardianForgotPasswordSchema.parse({ email }), reqCtx);
+      } finally {
+        for (const [key, value] of [["PORTAL_BASE_URL", original.portal], ["WEB_BASE_URL", original.web]] as const) {
+          if (value === undefined) delete process.env[key];
+          else process.env[key] = value;
+        }
+      }
+
+      const mine = sent.slice(before).filter((m) => m.to === email);
+      expect(mine).toHaveLength(1);
+      expect(mine[0]!.html).toContain("https://portal.prod.example.test/reset-password/");
+      expect(mine[0]!.html).not.toContain("staff.prod.example.test");
+      expect(mine[0]!.html).not.toContain("localhost");
+    });
+  });
+
   describe("forgotPassword — account enumeration", () => {
     it("returns the SAME response for a real account and an unknown email", async () => {
       const email = `forgot-real-${runId}@example.test`;

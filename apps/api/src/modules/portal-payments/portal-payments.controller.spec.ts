@@ -256,9 +256,22 @@ describe("PortalPaymentsController (Phase 4 / Slice 5)", () => {
   // ---------------------------------------------------------------------
 
   it("happy path: creates a PENDING payment for the exact outstanding balance, kobo-precise, and calls Paystack with it", async () => {
-    const res = await request(app.getHttpServer())
-      .post(`/api/v1/portal/students/${studentA1}/invoices/${invoiceA1}/pay`)
-      .set("Authorization", `Bearer ${tokenA1}`);
+    // Distinct portal and staff bases, so the callback assertion below proves
+    // WHICH base the checkout returns a parent to — not merely the path.
+    const originalEnv = { portal: process.env.PORTAL_BASE_URL, web: process.env.WEB_BASE_URL };
+    process.env.PORTAL_BASE_URL = "https://portal.prod.example.test";
+    process.env.WEB_BASE_URL = "https://staff.prod.example.test";
+    let res: request.Response;
+    try {
+      res = await request(app.getHttpServer())
+        .post(`/api/v1/portal/students/${studentA1}/invoices/${invoiceA1}/pay`)
+        .set("Authorization", `Bearer ${tokenA1}`);
+    } finally {
+      for (const [key, value] of [["PORTAL_BASE_URL", originalEnv.portal], ["WEB_BASE_URL", originalEnv.web]] as const) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+    }
     expect(res.status).toBe(200);
     expect(res.body.authorizationUrl).toContain("checkout.paystack.com");
     expect(res.body.reference).toMatch(/^PSK-[0-9a-f-]{36}-[0-9a-f-]{36}$/);
@@ -281,7 +294,9 @@ describe("PortalPaymentsController (Phase 4 / Slice 5)", () => {
     if (!initCall) throw new Error("unreachable — asserted above");
     expect(initCall.amount).toBe(invoiceA1Due);
     expect(initCall.email).toBe(`guardian-a1-${runId}@example.test`); // the CALLING guardian's own email
-    expect(initCall.callbackUrl).toContain("/payments/callback");
+    // Exact, not toContain: Paystack sends the parent's browser here after
+    // checkout, and the staff app has no /payments/callback for a guardian.
+    expect(initCall.callbackUrl).toBe("https://portal.prod.example.test/payments/callback");
   });
 
   it("cannot pay an already-fully-paid invoice → INVOICE_ALREADY_PAID", async () => {

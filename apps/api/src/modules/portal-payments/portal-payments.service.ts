@@ -11,6 +11,7 @@ import {
 
 import type { GuardianAuthContext } from "../../common/auth/guardian-auth-context";
 import { PaystackService } from "../../common/paystack/paystack.service.js";
+import { portalBaseUrl } from "../../common/portal-url";
 import { parsePaystackReference, PaymentsService } from "../payments/payments.service.js";
 
 interface RequestContext {
@@ -30,14 +31,6 @@ const AUDIT_INIT = "payment.guardian-init";
 // in-flight-payment guard itself, not in the original plan-first.
 const IN_FLIGHT_WINDOW_MS = 30 * 60 * 1000; // 30 minutes
 
-// Where the guardian's browser lands after completing (or abandoning)
-// Paystack checkout. Mirrors GuardiansService's own portalBaseUrl() helper
-// exactly — not shared as an import between the two, same "genuinely
-// independent constants that happen to agree" reasoning that file's own
-// comment gives for the analogous TTL constant.
-function portalBaseUrl(): string {
-  return process.env.PORTAL_BASE_URL ?? "http://localhost:3002";
-}
 
 // PaymentDto is a structural superset of PortalPaymentDto (schoolId,
 // recordedBy, paystackReference, reference, receiptNumber/receiptUrl
