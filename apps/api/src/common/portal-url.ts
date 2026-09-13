@@ -8,10 +8,18 @@
 // (PORTAL_BASE_URL added to the repo but never set on the Fly app, so
 // invitation links pointed at localhost:3002 for real guardians).
 //
-// Callers still to migrate onto this helper: guardians.service.ts,
-// portal-auth.service.ts, portal-payments.service.ts. Each holds its own
-// identical copy of the fallback string. Left alone deliberately — they are
-// outside this change's scope — but they belong here.
+// Every API caller that builds a portal URL uses this: the guardian
+// invitation link (guardians.service.ts), the guardian password-reset link
+// (portal-auth.service.ts), the Paystack checkout callback
+// (portal-payments.service.ts), and SchoolMeDto.portalUrl (schools/auth
+// services). Each once held its own copy of the fallback.
+//
+// Why shared rather than per-service copies: an earlier comment in
+// portal-payments.service.ts argued the copies were "genuinely independent
+// constants that happen to agree", by analogy with per-flow TTLs. That holds
+// for a TTL — a policy each flow may legitimately change on its own — but not
+// for the portal's address, which is ONE fact about the deployment. Copies can
+// only ever diverge by mistake, and a divergence is the silent failure above.
 export function portalBaseUrl(): string {
   return process.env.PORTAL_BASE_URL ?? "http://localhost:3002";
 }

@@ -21,6 +21,7 @@ import {
 import * as password from "../../common/auth/password";
 import { EmailService } from "../../common/email/email.service";
 import { createGuardianSession } from "../../common/auth/guardian-sessions";
+import { portalBaseUrl } from "../../common/portal-url";
 import { redactEmail } from "../../common/redact";
 import type { GuardianAuthContext } from "../../common/auth/guardian-auth-context";
 
@@ -34,13 +35,6 @@ const PASSWORD_RESET_COMPLETED_AUDIT_ACTION = "guardian.password-reset.completed
 // a link sitting in a shared or forwarded inbox stops working quickly; long
 // enough for a parent who checks email on a phone later in the day.
 const GUARDIAN_PASSWORD_RESET_TTL_MS = 1000 * 60 * 60;
-
-function portalBaseUrl(): string {
-  // Same helper shape as guardians.service.ts — the API constructs portal
-  // URLs for delivery but never follows them. Production must set
-  // PORTAL_BASE_URL explicitly (see CLAUDE.md); dev falls back to :3002.
-  return process.env.PORTAL_BASE_URL ?? "http://localhost:3002";
-}
 
 interface RequestContext {
   ipAddress: string | null;

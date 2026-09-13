@@ -22,6 +22,7 @@ import {
 import type { AuthContext } from "../../common/auth/auth-context";
 import { assertUserActiveAndHasOneOf } from "../../common/auth/role-check";
 import { EmailService } from "../../common/email/email.service.js";
+import { portalBaseUrl } from "../../common/portal-url";
 import { redactEmail, redactPhone } from "../../common/redact";
 import { normalizeNigerianPhone, TermiiService } from "../../common/termii/termii.service.js";
 import { NotificationPreferencesService } from "../notifications/notification-preferences.service";
@@ -55,12 +56,6 @@ const MAX_LIMIT = 200;
 // users.service.ts already documents.
 const GUARDIAN_INVITATION_TTL_MS = 1000 * 60 * 60 * 24 * 7;
 
-// Where the guardian portal accept URL points. Mirrors users.service.ts's
-// webBaseUrl() exactly — same "don't throw on missing env, just build a
-// wrong-but-recoverable URL" reasoning.
-function portalBaseUrl(): string {
-  return process.env.PORTAL_BASE_URL ?? "http://localhost:3002";
-}
 
 @Injectable()
 export class GuardiansService {

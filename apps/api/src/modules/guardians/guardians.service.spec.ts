@@ -1071,6 +1071,43 @@ describe("GuardiansService", () => {
       const res = await svc.invite(authCtx, g.id, reqCtx);
       expect(res.acceptUrl).toContain("/invitations/");
     });
+
+    // Every other assertion here checks only the "/invitations/" PATH, so a
+    // regression that built this link from the wrong base (WEB_BASE_URL — the
+    // staff app — or a hard-coded localhost) would pass them all. WEB_BASE_URL
+    // is set to a different distinctive value on purpose, so reading the wrong
+    // variable fails loudly rather than coincidentally matching.
+    it("builds the accept URL — returned AND emailed — from PORTAL_BASE_URL, not WEB_BASE_URL", async () => {
+      const { authCtx } = await createActiveSchool("inv-portal-base");
+      const email = `invite-base-${runId}@example.test`;
+      const g = await service.create(authCtx, { ...guardianFields("g1000008"), email }, reqCtx);
+
+      const emailStub = makeEmailStub();
+      const svc = new GuardiansService(
+        emailStub,
+        makeTermiiStub(),
+        makeNotificationPreferencesStub({
+          getEnabledChannels: vi.fn(async () => ({ email: true, sms: false, push: false })),
+        }),
+      );
+
+      const original = { portal: process.env.PORTAL_BASE_URL, web: process.env.WEB_BASE_URL };
+      process.env.PORTAL_BASE_URL = "https://portal.prod.example.test";
+      process.env.WEB_BASE_URL = "https://staff.prod.example.test";
+      try {
+        const res = await svc.invite(authCtx, g.id, reqCtx);
+        expect(res.acceptUrl.startsWith("https://portal.prod.example.test/invitations/")).toBe(true);
+        const delivered = JSON.stringify(vi.mocked(emailStub.send).mock.calls);
+        expect(delivered).toContain("https://portal.prod.example.test/invitations/");
+        expect(delivered).not.toContain("staff.prod.example.test");
+        expect(delivered).not.toContain("localhost");
+      } finally {
+        for (const [key, value] of [["PORTAL_BASE_URL", original.portal], ["WEB_BASE_URL", original.web]] as const) {
+          if (value === undefined) delete process.env[key];
+          else process.env[key] = value;
+        }
+      }
+    });
   });
 });
 
