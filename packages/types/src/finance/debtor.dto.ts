@@ -72,7 +72,10 @@ export function buildDebtorReminderMessage(input: {
   dueDate: string | null;
   /** Where this school's parents log in. From SchoolMeDto.portalUrl. */
   portalUrl?: string | null;
-  /** A LIVE Paystack payment link for this invoice, when one exists. */
+  /**
+   * A LIVE Paystack payment link for this invoice, for exactly `balance`.
+   * Resolve it with shareablePaymentLinkUrl (apps/web), never pass one blindly.
+   */
   paymentLinkUrl?: string | null;
   /** Only ever the resolved value — see resolveSchoolBankDetails. */
   bankDetails?: SchoolBankDetails | null;
