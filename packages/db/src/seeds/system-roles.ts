@@ -7,6 +7,8 @@
 
 import {
   ADMIN_DASHBOARD_PERMISSIONS,
+  CALENDAR_PERMISSIONS,
+  CALENDAR_READ_PERMISSIONS,
   OWNER_ONLY_PERMISSIONS,
   PHASE_0_PERMISSIONS,
   PHASE_1_PERMISSIONS,
@@ -75,6 +77,11 @@ const ADMIN_PERMISSIONS: readonly string[] = [
   // existing and CI databases via `migrate deploy`; this covers a fresh
   // `db:seed`). If you edit one, edit both.
   ...SMART_IMPORT_PERMISSIONS,
+  // Phase 8 / CP1 — Event Calendar: read, create/update/delete school events,
+  // and hide national events. Owner/admin manage the calendar (D28). Kept IN
+  // SYNC with the idempotent append in
+  // prisma/migrations/20260913120200_phase_8_cp1_calendar_permissions.
+  ...CALENDAR_PERMISSIONS,
 ];
 
 // System roles are global (school_id = NULL, is_system = true) and referenced
@@ -141,6 +148,9 @@ export const SYSTEM_ROLE_SEEDS: SystemRoleSeed[] = [
       // teacher may delete only what they uploaded. See
       // PHASE_7_TEACHER_PERMISSIONS for why it moved from excluded to scoped.
       ...PHASE_7_TEACHER_PERMISSIONS,
+      // Phase 8 / CP1 — the calendar is visible to all users (D4); teachers
+      // read it and never manage it (D28).
+      ...CALENDAR_READ_PERMISSIONS,
     ],
   },
   // Phase 3 / Slice 15 — `bursar` role wire-up + RBAC close-out. Finance-only
@@ -161,6 +171,9 @@ export const SYSTEM_ROLE_SEEDS: SystemRoleSeed[] = [
     name: "Bursar",
     description:
       "Finance operator — fee catalog, discounts, invoices, payments (excluding refunds), payment plans, debtor reminders, expenses, the finance dashboard, and running payroll (excluding the actual bank transfer). Read-only access to academic years/terms/class arms to scope finance work. No staff or school-settings access. Phase 3 slice 15 RBAC close-out, extended payroll CP3.",
-    permissions: [...PHASE_3_BURSAR_PERMISSIONS],
+    // Phase 8 / CP1 — plus calendar read (D4 "visible to all users", D28). The
+    // one non-finance grant bursar holds; the calendar carries no academic,
+    // roster or financial data.
+    permissions: [...PHASE_3_BURSAR_PERMISSIONS, ...CALENDAR_READ_PERMISSIONS],
   },
 ];
