@@ -2,7 +2,8 @@
 
 import { AlertTriangle, RotateCcw } from "lucide-react";
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   invoiceStatusLabel,
@@ -38,6 +39,7 @@ import {
   studentSecondaryLabel,
 } from "@/lib/finance/invoice-identity";
 import { resolveInvoiceListView } from "@/lib/finance/invoice-list-state";
+import { knownId, parseLedgerDeepLink } from "@/lib/finance/ledger-deep-link";
 import { listInvoices, previewInvoices } from "@/lib/finance/invoices-api";
 
 // Export reuses GET /invoices with the same filters currently applied to the
@@ -80,11 +82,39 @@ const SELECT_CLASSES =
 
 type Tab = "generate" | "list";
 
+const LINK_NOT_FOUND =
+  "The term in this link could not be found for your school, so the list is not filtered. Choose a term above.";
+
 export default function InvoicesPage() {
   // Cancelling is `@Permissions("invoice.cancel")` on the server. Read the
   // signed-in user's grant here so the row action reflects it, rather than
   // offering the action and letting a 403 be the answer.
   const { permissions } = useAuth();
+
+  // ── Deep link from the finance dashboard (?tab=list&yearId=&termId=) ──
+  // Read ONCE, on mount. See lib/finance/ledger-deep-link.ts for both rules:
+  // only ids the API returned are used, and a linked term filters the list but
+  // is never a choice for generation.
+  const searchParams = useSearchParams();
+  const [link] = useState(() => parseLedgerDeepLink(searchParams));
+  // True until the linked term is resolved (or found unusable). While true the
+  // list does not fetch — otherwise the whole-school ledger renders for a
+  // moment before the filter lands, and a bursar following "this term's
+  // ledger" briefly sees every term's.
+  const [linkPending, setLinkPending] = useState(link.termId !== null);
+  const linkUnresolved = useRef(link.termId !== null);
+  const linkYear = useRef<string | null>(null);
+  const [linkNotice, setLinkNotice] = useState<string | null>(null);
+  // The current term came from the link, not from the picker on this page.
+  const [termFromLink, setTermFromLink] = useState(false);
+  // Shown on the Generate tab after a link-sourced term was cleared there.
+  const [generateTermCleared, setGenerateTermCleared] = useState(false);
+
+  const finishLink = useCallback((notice?: string) => {
+    linkUnresolved.current = false;
+    setLinkPending(false);
+    if (notice) setLinkNotice(notice);
+  }, []);
   // Reference data
   const [years, setYears] = useState<AcademicYearDto[]>([]);
   const [arms, setArms] = useState<ClassArmDto[]>([]);
@@ -107,7 +137,7 @@ export default function InvoicesPage() {
   const [generateError, setGenerateError] = useState<string | null>(null);
 
   // List tab
-  const [tab, setTab] = useState<Tab>("generate");
+  const [tab, setTab] = useState<Tab>(link.openList ? "list" : "generate");
   const [statusFilter, setStatusFilter] = useState<InvoiceStatus | "">("");
   const [invoices, setInvoices] = useState<InvoiceDto[]>([]);
   const [total, setTotal] = useState(0);
@@ -131,14 +161,29 @@ export default function InvoicesPage() {
         // cause anything to be billed. The TERM is deliberately NOT
         // defaulted: see lib/finance/current-context.ts for why, and for the
         // existing repo decision it follows.
+        //
+        // A deep link's year takes precedence — but only if it is one of this
+        // school's years. The term is resolved once that year's terms load.
+        if (linkUnresolved.current) {
+          const linkedYearId = knownId(link.yearId, loadedYears);
+          if (linkedYearId) {
+            linkYear.current = linkedYearId;
+            setYearId(linkedYearId);
+            return;
+          }
+          finishLink(LINK_NOT_FOUND);
+        }
         const current = unambiguousCurrent(loadedYears);
         if (current) setYearId((existing) => existing || current.id);
       })
       .catch((e) => {
         logFinanceError("reference data", e);
         setReferenceError(financeErrorMessage(e));
+        // The reference-data alert already explains the failure; stop holding
+        // the list back for a link that cannot be resolved.
+        if (linkUnresolved.current) finishLink();
       });
-  }, []);
+  }, [link.yearId, finishLink]);
 
   useEffect(loadReferenceData, [loadReferenceData]);
 
@@ -148,13 +193,26 @@ export default function InvoicesPage() {
     setTerms([]);
     if (!yearId) return;
     listTerms(yearId)
-      .then(setTerms)
+      .then((rows) => {
+        setTerms(rows);
+        if (linkUnresolved.current && linkYear.current === yearId) {
+          const linkedTermId = knownId(link.termId, rows);
+          if (linkedTermId) {
+            setTermId(linkedTermId);
+            setTermFromLink(true);
+            finishLink();
+          } else {
+            finishLink(LINK_NOT_FOUND);
+          }
+        }
+      })
       .catch((e) => {
         logFinanceError("listTerms", e);
         setTerms([]);
         setReferenceError(financeErrorMessage(e));
+        if (linkUnresolved.current) finishLink();
       });
-  }, [yearId]);
+  }, [yearId, link.termId, finishLink]);
 
   // Reset downstream state when term/arm changes
   useEffect(() => {
@@ -165,7 +223,7 @@ export default function InvoicesPage() {
 
   // Load invoices list when tab, term, arm, status, or page changes
   useEffect(() => {
-    if (tab !== "list") return;
+    if (tab !== "list" || linkPending) return;
     let cancelled = false;
     setListLoading(true);
     setListError(null);
@@ -197,12 +255,33 @@ export default function InvoicesPage() {
     return () => {
       cancelled = true;
     };
-  }, [tab, termId, armId, statusFilter, page, listReloadKey]);
+  }, [tab, termId, armId, statusFilter, page, listReloadKey, linkPending]);
 
   const pickerReady = !!termId && !!armId;
 
+  // A link-sourced term is cleared when the Generate tab is opened, so the
+  // bursar picks the term they are about to bill. The link's term is often the
+  // dashboard's isCurrent default, and lib/finance/current-context.ts is the
+  // standing decision that generation never starts from one. The confirmation
+  // dialog (F-34) names the term too, but a dialog that restates a guessed
+  // term is a weaker gate than never guessing it.
+  function changeTab(next: Tab) {
+    if (next === "generate" && termFromLink) {
+      setTermId("");
+      setTermFromLink(false);
+      setGenerateTermCleared(true);
+    }
+    setTab(next);
+  }
+
+  function chooseTerm(nextTermId: string) {
+    setTermId(nextTermId);
+    setTermFromLink(false);
+    setGenerateTermCleared(false);
+  }
+
   const listView = resolveInvoiceListView({
-    loading: listLoading,
+    loading: listLoading || (tab === "list" && linkPending),
     error: listError,
     rowCount: invoices.length,
     statusFilter,
@@ -309,7 +388,10 @@ export default function InvoicesPage() {
             id="invoice-year"
             className={SELECT_CLASSES}
             value={yearId}
-            onChange={(e) => setYearId(e.target.value)}
+            onChange={(e) => {
+              setYearId(e.target.value);
+              setTermFromLink(false);
+            }}
           >
             <option value="">Choose an academic year</option>
             {years.map((y) => (
@@ -330,7 +412,7 @@ export default function InvoicesPage() {
             className={SELECT_CLASSES}
             disabled={!yearId}
             value={termId}
-            onChange={(e) => setTermId(e.target.value)}
+            onChange={(e) => chooseTerm(e.target.value)}
           >
             <option value="">{yearId ? "Choose a term" : "Choose an academic year first"}</option>
             {terms.map((t) => (
@@ -360,7 +442,13 @@ export default function InvoicesPage() {
         </div>
       </div>
 
-      <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)}>
+      {linkNotice && (
+        <InlineAlert title="Link term not found" className="print:hidden">
+          {linkNotice}
+        </InlineAlert>
+      )}
+
+      <Tabs value={tab} onValueChange={(v) => changeTab(v as Tab)}>
         <TabsList className="print:hidden">
           <TabsTrigger value="generate">Generate</TabsTrigger>
           <TabsTrigger value="list">Invoice list</TabsTrigger>
@@ -368,6 +456,12 @@ export default function InvoicesPage() {
 
         {/* ── Generate tab ── */}
         <TabsContent value="generate" className="space-y-4">
+          {generateTermCleared && !termId && (
+            <p role="status" className="rounded-md border border-dashed bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+              The term from the finance dashboard only filtered the invoice list. Choose the term you
+              want to bill above before generating.
+            </p>
+          )}
           <div className="flex flex-wrap items-end gap-3">
             <div>
               <label htmlFor="invoice-due-date" className="mb-1 block text-sm font-medium text-foreground">
