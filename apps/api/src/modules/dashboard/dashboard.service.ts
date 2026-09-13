@@ -2,6 +2,7 @@ import { Injectable } from "@nestjs/common";
 
 import { withTenant } from "@school-kit/db";
 import {
+  lagosTodayIso,
   NotFoundError,
   type AdminDashboardDto,
   type DashboardSchoolProfileDto,
@@ -15,6 +16,7 @@ import {
   BILLED_EXCLUDED_STATUSES,
   buildFinanceTotalsFromRows,
 } from "../finance/finance-totals.js";
+import { computeTermHealth } from "../reports/term-health.js";
 
 const TREND_WEEKS = 8;
 
@@ -85,6 +87,7 @@ export class DashboardService {
         lastAttendanceAgg,
         lastPaymentAgg,
         academicYearCount,
+        termHealthSignals,
       ] = await Promise.all([
         db.term.findFirst({
           where: { startDate: { lt: term.startDate } },
@@ -134,6 +137,12 @@ export class DashboardService {
         db.attendanceRecord.aggregate({ _max: { markedAt: true } }),
         db.payment.aggregate({ where: { status: "SUCCESS" }, _max: { paidAt: true } }),
         db.academicYear.count(),
+        // Phase 8 / CP2 (§16 Q33) — the term-health alert. ONE round trip, on
+        // this same connection (never a second withTenant — see the header),
+        // computed by the same helper the /reports page uses so the alert and
+        // the report can never disagree. Resolves the current term itself, so
+        // it needs nothing from this stage and belongs in it.
+        computeTermHealth(db, authCtx.schoolId, null, lagosTodayIso()),
       ]);
 
       // ─── Second (and ONLY second) query stage ────────────────────────────
@@ -241,6 +250,11 @@ export class DashboardService {
           type: "pending_staff_invitations" as const,
           count: pendingInvitationCount,
           href: "/staff",
+        },
+        {
+          type: "term_health" as const,
+          count: termHealthSignals.length,
+          href: "/reports",
         },
       ];
 

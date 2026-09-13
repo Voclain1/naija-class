@@ -3,6 +3,7 @@ import { SYSTEM_ROLE_SEEDS } from "@school-kit/db";
 import {
   CALENDAR_PERMISSIONS,
   CALENDAR_READ_PERMISSIONS,
+  REPORTS_PERMISSIONS,
   PHASE_0_PERMISSIONS,
   PHASE_2_OWNER_ONLY_PERMISSIONS,
   PHASE_2_PERMISSIONS,
@@ -20,6 +21,7 @@ import { PERMISSIONS_METADATA_KEY } from "../common/auth/permissions.decorator";
 
 import { AcademicYearsController } from "../modules/academic-years/academic-years.controller";
 import { CalendarController } from "../modules/calendar/calendar.controller";
+import { ReportsController } from "../modules/reports/reports.controller";
 import { AssessmentScoresController, AssessmentsController } from "../modules/assessment/assessment.controller";
 import { AttendanceController } from "../modules/attendance/attendance.controller";
 import { ClassArmsController } from "../modules/class-arms/class-arms.controller";
@@ -1049,6 +1051,37 @@ describe("Phase 8 CP1 RBAC coverage: calendar role grants match D28", () => {
       const perms = new Set(roleSeed(key).permissions);
       expect(perms.has("calendar-event.read"), `${key} should have calendar-event.read`).toBe(true);
       for (const p of MANAGE) expect(perms.has(p), `${key} should NOT have ${p}`).toBe(false);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 8 / CP2 RBAC coverage — Recording Completeness (docs/modules/phase-8.md §16 D39).
+//
+// Owner/admin only. The teacher-activity view names colleagues' recording work
+// (§4.4, §3.4 D22), so a future grant of EITHER permission to teacher or bursar
+// must fail here first rather than ship.
+// ---------------------------------------------------------------------------
+describe("Phase 8 CP2 RBAC coverage: reports route handlers declare @Permissions", () => {
+  it("ReportsController: every handler carries exactly its own reports permission", () => {
+    expect(routeHandlers(ReportsController).sort()).toEqual(["completeness", "teacherActivity"]);
+    const unknown = handlerPermissions(ReportsController).filter((p) => !(REPORTS_PERMISSIONS as readonly string[]).includes(p));
+    expect(unknown).toEqual([]);
+    expect(handlerPermissions(ReportsController).sort()).toEqual([...REPORTS_PERMISSIONS].sort());
+  });
+});
+
+describe("Phase 8 CP2 RBAC coverage: reports role grants match D39", () => {
+  it("admin holds both reports permissions; owner is the wildcard", () => {
+    const adminPerms = new Set(roleSeed("admin").permissions);
+    for (const p of REPORTS_PERMISSIONS) expect(adminPerms.has(p), `admin should have ${p}`).toBe(true);
+    expect(roleSeed("owner").permissions).toEqual(["*"]);
+  });
+
+  it("teacher and bursar hold NEITHER reports permission", () => {
+    for (const key of ["teacher", "bursar"]) {
+      const perms = new Set(roleSeed(key).permissions);
+      for (const p of REPORTS_PERMISSIONS) expect(perms.has(p), `${key} should NOT have ${p}`).toBe(false);
     }
   });
 });

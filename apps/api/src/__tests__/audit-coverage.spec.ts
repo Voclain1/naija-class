@@ -15,6 +15,7 @@ import { FilesystemStorageDriver } from "../common/storage/filesystem-storage.dr
 import { StorageService } from "../common/storage/storage.service";
 import { AcademicYearsService } from "../modules/academic-years/academic-years.service";
 import { CalendarService } from "../modules/calendar/calendar.service";
+import { CompletenessService } from "../modules/reports/completeness.service";
 import { AggregationService } from "../modules/assessment/aggregation.service";
 import { AssessmentService } from "../modules/assessment/assessment.service";
 import { AttendanceService } from "../modules/attendance/attendance.service";
@@ -1713,5 +1714,47 @@ describe("Phase 8 CP1 audit coverage — calendar mutations", () => {
       { action: "national-event.hide", schoolId },
       { action: "national-event.unhide", schoolId },
     ]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 8 / CP2 — every read of teacher recording activity writes one
+// tenant-scoped audit row (§3.4 D23, §16 D37). A READ that is audited, unlike
+// every other block in this file — the view names colleagues' recording work.
+// ---------------------------------------------------------------------------
+describe("Phase 8 CP2 audit coverage — teacher-activity views", () => {
+  const runId = Math.random().toString(36).slice(2, 8);
+  let schoolId: string;
+
+  afterAll(async () => {
+    if (schoolId) await basePrisma.school.delete({ where: { id: schoolId } }).catch(() => undefined);
+  });
+
+  it("reports.teacher-activity.view — one row per read, including a read that finds no current term", async () => {
+    const signed = await new AuthService().signupOwner(
+      {
+        schoolName: `Audit Reports ${runId}`,
+        schoolSlug: `audit-rep-${runId}`,
+        ownerFirstName: "Owen",
+        ownerLastName: "Owner",
+        ownerEmail: `audit-rep-${runId}@example.test`,
+        ownerPhone: randomPhone(),
+        password: "Correct-Horse-9",
+        ndprConsent: true,
+      },
+      { ipAddress: "127.0.0.1", userAgent: "vitest" },
+    );
+    schoolId = signed.school.id;
+    const ctx = { sessionId: "sess", userId: signed.user.id, schoolId } as AuthContext;
+    const service = new CompletenessService(new CalendarService());
+
+    await service.getTeacherActivity(ctx, undefined, { ipAddress: "127.0.0.1" });
+    const rows = await withTenant(schoolId, (db) =>
+      db.auditLog.findMany({
+        where: { action: "reports.teacher-activity.view" },
+        select: { schoolId: true, userId: true },
+      }),
+    );
+    expect(rows).toEqual([{ schoolId, userId: signed.user.id }]);
   });
 });

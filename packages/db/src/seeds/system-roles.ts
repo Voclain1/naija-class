@@ -9,6 +9,7 @@ import {
   ADMIN_DASHBOARD_PERMISSIONS,
   CALENDAR_PERMISSIONS,
   CALENDAR_READ_PERMISSIONS,
+  REPORTS_PERMISSIONS,
   OWNER_ONLY_PERMISSIONS,
   PHASE_0_PERMISSIONS,
   PHASE_1_PERMISSIONS,
@@ -82,6 +83,12 @@ const ADMIN_PERMISSIONS: readonly string[] = [
   // SYNC with the idempotent append in
   // prisma/migrations/20260913120200_phase_8_cp1_calendar_permissions.
   ...CALENDAR_PERMISSIONS,
+  // Phase 8 / CP2 — Recording Completeness: the school-wide report and the
+  // per-teacher recording-activity view (audited per read). Owner/admin only;
+  // never teacher or bursar (§16 D39, pinned in permissions-coverage.spec.ts).
+  // Kept IN SYNC with the idempotent append in
+  // prisma/migrations/20260914120000_phase_8_cp2_reports_permissions.
+  ...REPORTS_PERMISSIONS,
 ];
 
 // System roles are global (school_id = NULL, is_system = true) and referenced
