@@ -3283,3 +3283,37 @@ index. The round-trip reduction made the 8-week trend read do MORE work per row
 (it now also answers today's two aggregates), so that entry's trigger is
 slightly closer, not further away.
 
+
+---
+
+## National events need a migration every January, and every Eid (captured 2026-09-13, Phase 8 CP1)
+
+- [ ] **Recurring, not a one-off.** `national_events` is platform data that no
+  runtime path can write (`docs/modules/phase-8.md` §15 D22). Holidays reach
+  it only through migrations, so this is the maintenance loop:
+
+  1. **Each January** (or earlier): add a data migration seeding the *next*
+     calendar year, following
+     `20260913120100_phase_8_cp1_national_events_seed` — fixed dates and
+     Easter confirmed; the three Eids as `date_confirmed = false` estimates
+     with their source recorded. **Coverage today ends 31 December 2027**,
+     so the 2028 list is due by January 2027.
+  2. **When the Ministry of Interior declares an Eid** (typically 1–2 days
+     ahead, after the moon sighting): a one-line migration
+     `UPDATE national_events SET start_date = …, end_date = …,
+     date_confirmed = true, source = '<press release URL>' WHERE key = …`.
+     If the declared days are **not consecutive** (e.g. Friday and Monday),
+     split the row, one per consecutive run (D23).
+  3. **Declared substitute or special days**: insert only once announced;
+     never derive them.
+
+  **The safety net is a failing test, deliberately.**
+  `national-events-seed.spec.ts` fails as soon as an unconfirmed estimate's
+  start date arrives, so a forgotten confirmation breaks CI rather than
+  showing families a stale guess. The fix is the migration in step 2, never
+  editing the test.
+
+  **Upgrade path if the merge → CI → deploy cycle proves too slow on
+  announcement days:** the platform-admin screen recorded in D22, backed by
+  write-only SECURITY DEFINER functions. That was approved as the future path,
+  not built.

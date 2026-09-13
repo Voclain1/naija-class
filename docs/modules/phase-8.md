@@ -1042,7 +1042,7 @@ group.
 ## 15. CP1 plan-first — Event Calendar
 
 Written 2026-09-13, after D19–D20 closed CP1's product questions. **Status:
-approved in full 2026-09-13 (§15.6); implementation in progress.**
+approved in full 2026-09-13 (§15.6); built 2026-09-13 (§15.9), PR #299.**
 
 **Scope:** seeded national events, school-added events, per-school hiding of
 national events, and one calendar read for every principal (staff, guardians,
@@ -1071,7 +1071,7 @@ Checked against the repo on 2026-09-13:
 | RBAC gates | `@Permissions` plus role assertion, pinned by `rbac-two-gate-conformance.spec.ts` and `permissions-coverage.spec.ts`; audit actions by `audit-coverage.spec.ts` | `apps/api/src/__tests__/` |
 | Guardian sessions | Bound to one school (`auth_resolve_guardian_session` returns `school_id`) | CLAUDE.md SD inventory |
 | Mobile read pattern | Persisted React Query cache plus `FreshnessLabel` for offline reads | `apps/mobile/app/students/index.tsx` |
-| Lagos-date helper | `apps/api/src/common/dates/week.util.ts` uses `Africa/Lagos` | — |
+| Lagos-date helper | ~~`week.util.ts` uses `Africa/Lagos`~~ **Wrong — corrected during build (§15.9):** `week.util.ts` is deliberately UTC and only *mentions* Lagos in a comment. No Lagos-day helper existed in the API | — |
 
 **What the law and practice actually say about Nigerian public holidays**
 (researched 2026-09-13, sources at the end of this section):
@@ -1163,7 +1163,7 @@ additive; nothing in D22 has to be undone.
 | `id` | `TEXT` (uuid) | |
 | `key` | `TEXT`, unique | Stable, human-readable, e.g. `eid-el-fitr-2027`. Correction migrations `UPDATE … WHERE key = …`, so they are idempotent and readable in review |
 | `name` | `TEXT` | "Eid-el-Fitr" |
-| `start_date`, `end_date` | `DATE` | Inclusive; a two-day Eid is **one row**, not two. `CHECK (end_date >= start_date)` in raw SQL |
+| `start_date`, `end_date` | `DATE` | Inclusive. **One row per consecutive run of declared days** (amended during build, §15.9): a two-day Eid on consecutive days is one row, but Good Friday and Easter Monday are two rows, and so would be a non-consecutive declaration such as Eid-ul-Adha 2025 (Friday 6 and Monday 9 June). A single range would wrongly show the weekend between them as declared. `CHECK (end_date >= start_date)` in raw SQL |
 | `kind` | enum `PUBLIC_HOLIDAY` \| `SPECIAL_HOLIDAY` | The second covers presidential special days |
 | `date_confirmed` | `BOOLEAN` | `false` = an estimate awaiting the Ministry's announcement; rendered as "expected" |
 | `source` | `TEXT` | Where the date came from, e.g. the Ministry of Interior press-release URL, or "Public Holidays Act (fixed date)" |
@@ -1182,10 +1182,12 @@ No `school_id`, no `created_by`: no runtime actor exists (D22).
   observed, not the stale statute text (§15.1).
 - **Good Friday / Easter Monday:** the calendar date is unambiguous years
   ahead; `date_confirmed = true`.
-- **The three Eids:** `true` only once the Ministry has announced them. Past
-  2026 dates are confirmed (19–20 March; 27–28 May). **Eid-el-Maulud 2026 and
-  every 2027 Eid are seeded `false`.** The seed's estimates are recorded with
-  their source, and each confirmation is a one-line migration.
+- **The three Eids:** `true` only once the Ministry has announced them. All
+  three 2026 Eids are confirmed: 19–20 March, 27–28 May, and **Eid-el-Maulud
+  on Tuesday 25 August** (corrected during build: the plan assumed Maulud 2026
+  was unannounced, but the Ministry had declared it). **Every 2027 Eid is
+  seeded `false`**, with its estimate's source recorded, and each confirmation
+  is a one-line migration.
 - **Weekend substitutions and ad hoc special days:** **never derived.** Added
   only when announced.
 - **Every seeded date is checked against a Ministry of Interior or official
@@ -1309,10 +1311,14 @@ that isn't a numbered phase:
 
 - Every calendar date is `@db.Date`, following CLAUDE.md's calendar-date
   convention. No times and no timezones are stored.
-- Anything relative to "today" — the default window and the "upcoming" view —
-  uses `Africa/Lagos` through the existing helper in `week.util.ts`. It never
-  uses server-local time: Fly runs in UTC, and 00:30 in Lagos is still the
-  previous day there.
+- Anything relative to "today" — the default window — uses the Lagos calendar
+  day, never the viewer's device clock or server time (Fly runs in UTC).
+  **Corrected during build (§15.9):** there was no existing Lagos helper to
+  reuse. The API never needs "today", since every request names its window,
+  so the helper lives in `packages/types/src/calendar/calendar-dates.ts`,
+  shared by web, portal and mobile. It uses the fixed WAT offset (UTC+01:00, no
+  daylight saving) rather than `Intl`, because `Intl` output differs between
+  Node, browsers and React Native's Hermes.
 
 #### D30 — Surfaces
 
@@ -1423,13 +1429,24 @@ item 1.
 
 ### 15.7 Not verified
 
-1. **`app_user`'s default privileges in production.** Verified locally
-   (`arwd`, no TRUNCATE), not on Neon. CP1 reads them from production
-   before relying on D22's `REVOKE`. If production also grants TRUNCATE,
-   that is a finding for every tenant table, not just this one.
+1. ~~**`app_user`'s default privileges in production.**~~ **VERIFIED ON
+   PRODUCTION 2026-09-13**, before any CP1 code relied on it, as the approval
+   required — read-only catalog query from inside the running `school-kit-api`
+   container, connected as `app_user`:
+   - `current_user = app_user`, `rolsuper = false`, `rolbypassrls = false`;
+   - `pg_default_acl`: `app_user=arwd` for tables created by both `school_kit`
+     and `neondb_owner` (and `rU` for sequences);
+   - all **79** public tables grant `app_user` exactly DELETE, INSERT, SELECT,
+     UPDATE (79 each); **0 tables grant TRUNCATE**; 0 tables missing any of
+     the four.
+
+   A second read-only query established that production migrations will
+   succeed against the new FORCE-RLS table: `school_kit` owns all 79 tables
+   and has `rolbypassrls = true` (not SUPERUSER), so the seed INSERT runs,
+   while `app_user` (no BYPASSRLS) stays subject to both layers.
 2. **2027 Eid dates** don't exist yet; they are estimates by definition.
-3. **Eid-el-Maulud 2026** had not been checked against a Ministry
-   announcement at the time of writing.
+3. ~~**Eid-el-Maulud 2026**~~ — checked: declared by the Ministry for Tuesday
+   25 August 2026, and seeded confirmed with that declaration's URL.
 4. **Current substitute-day practice** for weekend holidays beyond individual
    declarations. D24 sidesteps it by never deriving substitutes.
 
@@ -1448,6 +1465,119 @@ item 1.
 D22 removes the platform-admin maintenance endpoint the §8.5 estimate
 included. That saving is roughly what the second defence layer, the extra
 RLS test matrix and the official-source seed checks cost, so the total holds.
+
+### 15.9 Built — 2026-09-13
+
+Implementation of CP1 as approved, on PR #299. Evidence below was freshly
+produced, not summarised from memory.
+
+#### The two-layer write block — each layer proven, and proven to FAIL when broken
+
+`apps/api/src/__tests__/calendar-rls.spec.ts`, 19 tests, real Postgres, as
+`app_user`. It asserts the preconditions (`app_user`, no SUPERUSER, no
+BYPASSRLS; RLS enabled **and** forced; exactly one policy, SELECT-only;
+privileges SELECT yes, INSERT/UPDATE/DELETE/TRUNCATE no). It then attempts
+writes through Prisma without a GUC, through the tenant client with a GUC, and
+through raw SQL — INSERT, UPDATE, DELETE and TRUNCATE, with and without a GUC.
+
+Each layer is also proven **alone**, in a migration-role transaction that is
+always rolled back, followed by `SET LOCAL ROLE app_user`:
+
+| Scenario | Result |
+|---|---|
+| Layer 2 removed (`GRANT` re-added), INSERT | refused: `new row violates row-level security policy` |
+| Layer 2 removed, UPDATE / DELETE | 0 rows affected (no UPDATE/DELETE policy makes every row invisible) |
+| Layer 1 removed (permissive write policy added) | INSERT/UPDATE/DELETE refused: `permission denied` |
+| **Control:** both removed | INSERT succeeds (1 row), so neither test above passes for the wrong reason; afterwards 0 rogue rows and only the original policy |
+
+**Sabotage runs**, to show the spec detects a real regression rather than
+passing vacuously. Performed on the local database, then reverted:
+
+| Real change made to the database | Spec result | Did the write still fail? |
+|---|---|---|
+| `GRANT INSERT, UPDATE, DELETE ON national_events TO app_user` | **5 failed**, 14 passed — exactly the privilege assertions | Yes, blocked by layer 1 (RLS), 0 rogue rows |
+| `CREATE POLICY sabotage_writes … FOR ALL USING (true)` | **4 failed**, 15 passed — the policy-set, layer-1-alone and control tests | Yes, blocked by layer 2 (privilege) |
+| Both reverted | **19 passed** | — |
+
+#### Cross-school isolation and the single read
+
+`apps/api/src/modules/calendar/calendar.service.spec.ts`, 16 tests, real
+Postgres, real roles, and the real `PermissionsGuard` reading
+`@Permissions` off `CalendarController`. It covers:
+- window overlap edges;
+- school B's events never in school A's calendar, and a hide applying only to
+  the hiding school;
+- term markers derived from `Term` rows;
+- ordering and id uniqueness;
+- an unconfirmed 2027 Eid returning `dateConfirmed: false`;
+- staff, guardian and student reads returning **identical** calendars;
+- another school's event id is a 404 on update and delete;
+- create/update/delete audited in order, and idempotent hide/unhide audited
+  once each;
+- both RBAC gates independently refusing teacher and bursar writes;
+- a deactivated owner refused.
+
+#### End to end, in a real browser
+
+`e2e/tests/event-calendar.spec.ts`, against the compiled API plus the web and
+portal apps:
+1. An owner opens `/events` and adds an event through the dialog. The "everyone
+   … will see this event" notice is asserted before submit.
+2. The owner hides Independence Day with the Hide button.
+3. That school's guardian signs into the portal, follows "School calendar →",
+   and sees the event and its details, but **not** Independence Day.
+4. A **second school's** guardian sees Independence Day and **no trace** of the
+   first school's event.
+5. After unhide, the first guardian sees the holiday again.
+
+Passed in 23.6s; screenshots reviewed (admin after hide; guardian on a 390px
+phone; other school's guardian). Because the portal proxy change touches every
+portal GET, the whole existing guardian e2e set was rerun alongside it: **20
+passed** (event-calendar, guardian-auth ×17, guardian-released-results,
+portal-bank-details).
+
+#### Wider regression
+
+| Suite | Result |
+|---|---|
+| `pnpm lint` | 9/9 tasks |
+| `pnpm typecheck` | 14/14 tasks |
+| API vitest, full run | 1,360 passed; **15 failed, all in `invoice-generation.service.spec.ts`** under full parallel load, most in 3–5 ms (a cascading setup failure). **Rerun alone: 48/48 passed.** Consistent with this machine's known parallel-load flakiness; no calendar code involved. CI is the clean check. |
+| `permissions-coverage`, `rbac-two-gate-conformance`, `audit-coverage`, `security-definer-inventory`, `app-module-boots` | all pass (SD inventory unchanged; no function added) |
+| `national-events-seed.spec.ts` | 4/4 |
+| web vitest | 333/333 |
+| mobile vitest | 167/167, including new `calendar-keys.spec.ts` |
+
+#### What the build found that the plan did not
+
+1. **The portal proxy silently dropped GET query strings** (`apps/portal/src/app/api/portal/[...portal]/route.ts`).
+   It was harmless until now because no portal GET took parameters; the
+   calendar's required `?from=&to=` would have failed validation for every
+   parent. Fixed by forwarding `req.nextUrl.search`, which is `""` for every
+   existing call.
+2. **No Lagos-day helper existed** — D29's citation was wrong (§15.1 row
+   corrected). Added to `packages/types`, using the fixed WAT offset rather
+   than `Intl`: a first draft using `Intl` produced "Fri, 12 Jun 2026" where
+   the spec expected "Fri 12 Jun 2026", the platform variance that also makes
+   Hermes risky.
+3. **Declared holidays are not always consecutive days** (Eid-ul-Adha 2025:
+   Friday 6 and Monday 9 June). D23 amended to one row per consecutive run.
+4. **Eid-el-Maulud 2026 had already been declared** (25 August). Seeded
+   confirmed; D24 corrected.
+5. **The mobile session has a third principal, `staff`.** Without a redirect, a
+   staff session opening the guardian calendar would sit on "Loading" forever.
+   It is redirected to the staff home, consistent with D30.
+6. **The generated migration diff carried unrelated drift** (curriculum HNSW
+   index, audit_logs PK rename, payments unique index, a fee_items index name).
+   It was hand-trimmed to calendar objects only, recorded in the migration
+   header.
+
+#### Recurring maintenance recorded
+
+`docs/deferred.md` — "National events need a migration every January, and every
+Eid": the January seed extension (coverage ends 31 December 2027), the
+one-line confirmation migration per Eid, the non-consecutive split rule, and
+the deliberately failing seed test that catches a forgotten confirmation.
 
 **Sources for §15.1:**
 - [Ministry of Interior — Public Holiday announcements](https://interior.gov.ng/category/public-holiday/)
