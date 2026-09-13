@@ -360,11 +360,89 @@ audit-logged (§3.4 D23).
 
 None blocking. Q14, Q26 and Q27 were resolved on 2026-09-13 (§3.4 D21–D23).
 
-### 4.6 Unverified
+### 4.6 Production data measurement — 2026-09-13
 
-Whether pilot schools enter attendance and scores on the platform in enough
-volume for reports to be useful. No production read was done; CP2 should
-start by measuring it.
+Measured before writing CP2's plan-first, on the approval's instruction, so
+the data actually present informs v1 rather than an assumption that it is rich.
+
+**Method.** One read-only script, run inside the production `school-kit-api`
+container as `app_user`. Each school was read inside its own `withTenant`
+transaction, so RLS applied exactly as for the app. **Aggregate counts only**:
+no student, guardian or staff names or contact fields were selected. The
+script was validated against the local database first. Five schools matching
+smoke/e2e naming were excluded. The heuristic is loose (some remaining schools
+are plainly trial sign-ups), but they hold no data, so the totals are
+unaffected.
+
+**Production, all 75 measured schools combined:**
+
+| Measure | Total |
+|---|---|
+| Active students | **37** |
+| Enrolled in the current term | 19 |
+| Daily attendance rows | **12 — one class, one day** (25 Aug 2026) |
+| Subject attendance rows | 0 |
+| Assessment score rows | **60** |
+| Report cards | 6 (3 released) |
+| Invoices / successful payments / expenses | 14 / 5 / 0 |
+| Users holding the teacher role | **2** |
+| Lesson plans | 10 |
+
+| Schools… | Count (of 75) |
+|---|---|
+| with any student | 17 |
+| with 10 or more active students | **1** |
+| with a current term set | 25 |
+| with enrollments this term | 8 |
+| with any attendance | **1** |
+| with any scores | **2** |
+| with more than one teacher | **0** |
+| with records in more than one term | 1 |
+| with students but no enrollment this term | 9 |
+| with students but no current term | 6 |
+| whose "current" term has already ended | 5 |
+
+**The only two schools with any academic records:**
+- **Virgo Fidelis** — 12 students, 1 teacher, 4 arms:
+  - scores entered for one term (24 rows, 3 cards);
+  - attendance marked on a single day, in the following term;
+  - its current term is still flagged as one that **ended on 31 August**, while
+    a 2026/2027 year exists but hasn't been made current;
+  - 10 lesson plans.
+- **A school created 2026-09-04** — 1 student, 1 teacher. 36 score rows cover
+  that one student's full subject list, entered **before its term has
+  started**, and 1 released card. It reads as a trial run.
+
+#### What this means for CP2
+
+1. **There is no production data for outcome analytics to analyse.**
+   Averages, pass rates, grade distributions, attendance trends and
+   term-over-term comparisons all need many students, many days and more than
+   one term. Production has at most 12 students in one school, one day of
+   attendance in total, and scores in a single term. A report built on that
+   would show numbers that look authoritative and mean nothing — a class
+   position among 1 student, a "trend" from one day.
+2. **Teacher performance cannot be meaningful yet.** No school has more than
+   one teacher. For the only two that have data, a per-teacher view is
+   literally the whole school's results under one name. That is not a
+   comparison, and it is not safe to present as a performance measure. D2's
+   scope stands, but its value is currently nil and its risk isn't.
+3. **The dominant real signal is incomplete setup and recording.** Schools
+   with students but no enrollment this term, no current term, or a current
+   term that already ended; scores entered for one term and attendance for
+   another; attendance marked once. The measured bottleneck is getting
+   records in, not analysing them.
+4. **The ARCHITECTURE.md §6.17 list was written for a school running
+   on-platform for a year.** No production school is that school yet.
+
+**Recorded as a finding, not decided here.** How this reshapes CP2's v1 is a
+product decision for Arinzechukwu.
+
+**Re-running the measurement.** The script is not committed (it was a one-off
+read). Its queries — per-school aggregate counts of students, enrollments,
+attendance, scores against expected slots, report cards, teaching
+assignments and finance rows — should be repeated before CP2 ships and before
+any outcome report is built.
 
 ### 4.7 Size
 
