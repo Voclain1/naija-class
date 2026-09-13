@@ -6,8 +6,8 @@ D9–D14, D15–D18), and a fourth closed CP1's questions (D19–D20).
 **CP0 is done** (§12.1). **CP1 (Event Calendar) is built and live in
 production** (PR #299, deployed 2026-09-13; evidence §15.10). CP2's questions
 were closed the same day (D21–D23 in §3.4). The §4.6 production measurement
-re-scoped CP2 to recording completeness; **CP2's plan-first (§16) is written and
-awaiting review.**
+re-scoped CP2 to recording completeness; **CP2's plan-first (§16) is approved and
+implementation is in progress.**
 Each checkpoint still needs its remaining open questions (§11) answered, and
 its own short plan-first appended here, before it starts.
 
@@ -1054,7 +1054,7 @@ Neither is the safeguarding workstream (§6.4).
 |---|---|---|---|---|
 | **CP0** | **Done 2026-09-13.** Plan committed (PR #297); D9–D18 recorded; ARCHITECTURE.md §9 and `docs/deferred.md` reconciled per D14 (Assignments → Phase 9, CBT → own phase, Timetable out of the Phase 9 list, Tutor → Phase 8b, Phase 7's stale "not started" status corrected, and the Timetable generator, exam management, result checker, AI study assistant, event calendar and smart-timetable entries pointed here); Q9/Q10 and the safeguarding workstream recorded as Arinzechukwu-owned. Older module docs (`phase-4.md`, `phase-5.md`, `phase-6.md`) that say "Phase 8 owns assignments" were **left as historical record**, not rewritten | 2–3 days (took well under) | D14 | — |
 | **CP1** | Event Calendar v1 incl. national events and per-school hiding (§8.4; plan-first §15) | 7–10 days | D4 (+1), D19 (+1) | **Nothing — ready** (D19, D20) |
-| **CP2** | **Recording completeness** (§16): term health, attendance and score-entry coverage, report-card pipeline, teacher recording activity. Outcome analytics deferred (§16.9) | **6–9 days** (was 9–13) | D2 reframed after §4.6 | Q31–Q33 (§16.7) |
+| **CP2** | **Recording completeness** (§16): term health, attendance and score-entry coverage, report-card pipeline, teacher recording activity. Outcome analytics deferred (§16.9) | **6–9 days** (was 9–13) | D2 reframed after §4.6 | **Nothing — Q31–Q33 resolved** (§16.7) |
 | **CP3** | Timetable: model, time-of-day convention, bell schedules, grid builder, effective-timetable resolution, time-interval conflict detection, RLS spec | 11–16 days | D3 (+3–4); D13 confirms, no change | Q7, Q8 |
 | **CP4** | Timetable: fork/override, copy-forward, teacher / student / guardian read surfaces | 5–7 days | D3 (+1) | — |
 | **CP5** | Assessments & Exams v1: any-total marks with scaling, cumulative results | 6–10 days | D5 (scope narrowed) | Q15 |
@@ -1736,8 +1736,8 @@ applied." The post-release smoke test passed 6/6 (health, `/health/db` as
 
 ## 16. CP2 plan-first — Recording Completeness (Reports v1)
 
-Written 2026-09-13, after the §4.6 production measurement. **Status: proposed,
-awaiting review. Nothing is built.**
+Written 2026-09-13, after the §4.6 production measurement. **Status: approved in
+full 2026-09-13 (§16.7); implementation in progress.**
 
 ### 16.1 Why v1 changed, and what it is now
 
@@ -1772,7 +1772,7 @@ It shows whether the thing that would produce them has been done.
 **No new tables and no RLS change.** Every figure is computed from existing
 tables inside `withTenant`. The only migration is role grants (D39).
 
-### 16.3 Decisions (proposed)
+### 16.3 Decisions (approved 2026-09-13)
 
 Numbered from D31 to avoid colliding with §15's CP1 decisions (§15 D21–D30).
 
@@ -2025,13 +2025,13 @@ the deferred analytics (§16.9) and is carried there unchanged.
 - A teacher-facing view (Q32); mobile or portal surfaces.
 - Any change to Insights (§16.8).
 
-### 16.7 Open questions for this review
+### 16.7 Review questions — all resolved 2026-09-13 (Arinzechukwu)
 
 | # | Question | Recommendation |
 |---|---|---|
-| **Q31** | May holidays (**confirmed**, non-hidden national holidays and the school's `HOLIDAY`/`BREAK` events) reduce **expected** register days, leaving attendance records and rates untouched? This extends §3.3 D20 | Yes — otherwise every holiday reads as a missed register |
-| **Q32** | Should teachers see their own recording completeness in v1? | No, per D22's spirit; the gradebook and register already show their gaps |
-| **Q33** | Add one dashboard `needsYouToday` item linking to `/reports` when a term-health signal is active? | Yes — one count, same computation |
+| **Q31 — APPROVED: yes** | May holidays (**confirmed**, non-hidden national holidays and the school's `HOLIDAY`/`BREAK` events) reduce **expected** register days, leaving attendance records and rates untouched? This extends §3.3 D20 | Yes — otherwise every holiday reads as a missed register |
+| **Q32 — APPROVED: no** | Should teachers see their own recording completeness in v1? | No, per D22's spirit; the gradebook and register already show their gaps |
+| **Q33 — APPROVED: yes** | Add one dashboard `needsYouToday` item linking to `/reports` when a term-health signal is active? | Yes — one count, same computation |
 
 ### 16.8 Known limits and follow-ups recorded
 
