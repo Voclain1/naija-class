@@ -1737,7 +1737,7 @@ applied." The post-release smoke test passed 6/6 (health, `/health/db` as
 ## 16. CP2 plan-first — Recording Completeness (Reports v1)
 
 Written 2026-09-13, after the §4.6 production measurement. **Status: approved in
-full 2026-09-13 (§16.7); implementation in progress.**
+full 2026-09-13 (§16.7); built 2026-09-13 (§16.11), PR #300.**
 
 ### 16.1 Why v1 changed, and what it is now
 
@@ -2100,3 +2100,124 @@ safeguards.
 of holidays, assignment-effective score slots) are the real work. A report that
 tells a school it is behind has to be exactly right; one false "missed
 register" costs the report its credibility.
+
+### 16.11 Built — 2026-09-13
+
+Implemented as approved, on PR #300. The evidence below was freshly produced.
+
+#### The expected definitions — tested against a real database and mutation-tested
+
+**`school-days.spec.ts`** (pure, 13 tests). Every answer is hand-counted against
+the March 2026 calendar:
+- whole term, mid-term (today counts), not yet started, starting today;
+- confirmed holiday excluded, and **unconfirmed estimate not excluded**;
+- school `HOLIDAY`/`BREAK` excluded, while `MEETING`, `EVENT`, `EXAM_PERIOD`,
+  `RESUMPTION`, `OTHER` and term markers are not;
+- a break spanning a weekend, and a holiday clipped at the term edge;
+- two reasons on one day, and a holiday falling on a weekend.
+
+**`completeness.service.spec.ts`** (real Postgres, 19 tests). One fixture school
+whose every figure is written next to its hand count:
+- **15 school days** (20 weekdays − Eid-el-Fitr 19–20 − a school holiday on the
+  10th − a break on the 12th–13th; the MEETING on the 5th is a school day);
+- registers **4 taken + 3 on non-school days**, with a day holding two students
+  counting once;
+- a class with no enrollment absent from the report, and a WITHDRAWN student
+  not counted;
+- mid-term **7**, before the term **0**;
+- hiding Eid restores it: **17** school days, and its register moves to "taken";
+- scores:
+  - arm1 × Maths **4 of 6** (whole-year assignment) and arm1 × English **2 of 6**
+    (term-specific);
+  - a later-term assignment and an inactive assignment owe nothing;
+  - an unassigned Science score reported separately;
+- report cards: 1 RELEASED + 1 DRAFT, and 1 student without a card;
+- term health, in exact order, for four fixture schools;
+- another school's term is a 404;
+- teacher activity: registers attributed to the arm, the **5 of 6** self-keyed
+  entries separated from the admin's 1, one audit row per read;
+- both RBAC gates refuse teacher and bursar; a deactivated owner is refused.
+
+**Mutation tests.** Each definition was broken in the real code, the spec rerun,
+and the code restored:
+
+| Definition broken | Spec result |
+|---|---|
+| Holidays never excluded | **6 failed** |
+| Registers on non-school days counted as taken | **5 failed** |
+| Whole-year assignments ignored | **4 failed** |
+| WITHDRAWN enrollments counted | **1 failed** |
+| All restored | **19 passed** |
+
+#### The dashboard alert (Q33) without a second transaction
+
+- `computeTermHealth` is **one** raw CTE query on the caller's transaction
+  handle.
+- It adds exactly one round trip to the dashboard's first stage.
+- `dashboard-transaction.spec.ts` (the deadlock regression gate: one transaction
+  per request) still passes.
+- One dashboard assertion changed, and was tightened rather than loosened. The
+  "school with no data" fixture's current term ended on 2025-12-15, so
+  `term_health` is asserted as **exactly 1**, where before every alert was
+  asserted zero.
+
+#### End to end, in a real browser
+
+`e2e/tests/recording-completeness.spec.ts` (passed, 21.1s):
+- the owner reaches `/reports` from the sidebar;
+- sees "The current term ended on Fri 27 Mar 2026" with its fix link;
+- sees "counted up to Fri 27 Mar 2026: 18 school days", "1 of 18 class registers
+  taken", "1 of 18 school days" on the class row, the two Eid days listed as not
+  counted, and "2 students with no card yet";
+- no "average", "position" or "pass rate" anywhere on the page;
+- opening the teacher tab writes **exactly one** audit row, re-checked after
+  1.5s so a double-mounted effect would show;
+- a teacher gets **403** on both endpoints, and the refusal writes no audit row;
+- the teacher never sees the page.
+
+Screenshots were reviewed. Run alongside `admin-roster-happy-path`,
+`first-school-setup` (which renders the dashboard), `phase-0-happy-path` and
+`event-calendar`: **5 passed**.
+
+#### Pre-deploy production dry run of the exact term-health SQL
+
+The SQL was **extracted from `term-health.ts` programmatically** (not retyped) and
+run read-only in the production container as `app_user`, per school under
+`withTenant`. Signal codes and counts only. Compared with the independent §4.6
+measurement:
+
+| Check | §4.6 | Dry run |
+|---|---|---|
+| Current term already ended | 6 | **6** |
+| Virgo Fidelis (12 students) | current term ended 31 Aug; a 2026/2027 year exists | **`CURRENT_TERM_ENDED` (2026-08-31), `NEXT_TERM_NOT_CURRENT`** |
+| Students but no enrollment this term | 9 (6 of them with no current term) | **3** = 9 − 6 (the signal applies only when a term exists) |
+| No current term | 50 of 75 | 54 of 79 — **reconciled**: the dry run filtered test schools by slug only; the 4 extra schools matched §4.6's name filter and all 4 have no current term (50 + 4 = 54) |
+
+The report and the independent measurement agree on every figure.
+
+#### Wider regression
+
+| Suite | Result |
+|---|---|
+| `pnpm lint` / `pnpm typecheck` | 9/9 · 14/14 |
+| API vitest, full run | **2,020 passed, 3 skipped, 0 failed** (141 files) |
+| `permissions-coverage` (new Reports block: teacher/bursar hold neither permission), `rbac-two-gate-conformance`, `audit-coverage` (`reports.teacher-activity.view`), `security-definer-inventory` | pass (SD count unchanged) |
+| web vitest | 334/334 (incl. `nav-items.spec`: Reports promoted and gated) |
+| mobile vitest | 167/167 |
+
+#### What the build found that the plan did not
+
+1. **A pre-existing `/dashboard` navigation race blocked the sidebar click in
+   e2e.** A link clicked before the dashboard's own `?termId=` replace lands is
+   cancelled. This is the race already recorded in `docs/deferred.md`. The spec
+   waits for the replace, as existing specs do. Not fixed here.
+2. **The term selector follows the current academic year, not just the current
+   term.** An e2e fixture that marked a term current without its year showed the
+   wrong year's terms. The fixture now keeps both current, which is the
+   invariant `setCurrentTerm` maintains.
+3. **A first dev-mode compile of `/reports` took ~15.6s**, just over the default
+   15s assertion timeout. That is dev-server behaviour, not the page; the first
+   assertion allows 60s.
+4. **The service needs a pinnable clock.** Every expected figure depends on
+   "today", so `todayFn` is a plain property specs set explicitly, keeping Nest
+   DI unaffected.
