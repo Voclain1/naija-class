@@ -60,7 +60,9 @@ export function middleware(req: NextRequest): NextResponse {
 }
 
 // The matcher IS the gate — the function above never runs for anything not
-// listed here. Deliberately narrow: only the two authenticated surfaces.
+// listed here. Deliberately narrow: only the authenticated surfaces. /calendar
+// joined on 2026-09-13 (Phase 8 / CP1) — it is authenticated like the others,
+// and needs the same no-store headers on a shared device.
 //
 // NOT matched, and each for a reason:
 //   /login                     — the destination of the redirect; matching it
@@ -77,5 +79,5 @@ export function middleware(req: NextRequest): NextResponse {
 //   /api/*                     — the proxy route handles its own auth by
 //                                forwarding (or not forwarding) the cookie.
 export const config = {
-  matcher: ["/", "/students/:path*"],
+  matcher: ["/", "/students/:path*", "/calendar"],
 };

@@ -170,7 +170,12 @@ type Context = { params: Promise<{ portal: string[] }> };
 
 export async function GET(req: NextRequest, ctx: Context): Promise<NextResponse> {
   const { portal } = await ctx.params;
-  const subPath = portal.join("/");
+  // The query string is forwarded (Phase 8 / CP1, 2026-09-13). Until then this
+  // proxy silently DROPPED it — harmless while no portal GET took parameters,
+  // but GET /portal/calendar requires ?from=&to=, and a dropped window would
+  // surface as a baffling validation error. `search` is "" when there is none,
+  // so every existing parameterless GET forwards exactly as before.
+  const subPath = `${portal.join("/")}${req.nextUrl.search}`;
   const cookieStore = await cookies();
   const sessionToken = cookieStore.get(COOKIE_NAME)?.value;
   const headerList = await headers();

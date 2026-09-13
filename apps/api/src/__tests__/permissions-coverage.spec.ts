@@ -1,6 +1,8 @@
 import { PATH_METADATA } from "@nestjs/common/constants";
 import { SYSTEM_ROLE_SEEDS } from "@school-kit/db";
 import {
+  CALENDAR_PERMISSIONS,
+  CALENDAR_READ_PERMISSIONS,
   PHASE_0_PERMISSIONS,
   PHASE_2_OWNER_ONLY_PERMISSIONS,
   PHASE_2_PERMISSIONS,
@@ -17,6 +19,7 @@ import { describe, expect, it } from "vitest";
 import { PERMISSIONS_METADATA_KEY } from "../common/auth/permissions.decorator";
 
 import { AcademicYearsController } from "../modules/academic-years/academic-years.controller";
+import { CalendarController } from "../modules/calendar/calendar.controller";
 import { AssessmentScoresController, AssessmentsController } from "../modules/assessment/assessment.controller";
 import { AttendanceController } from "../modules/attendance/attendance.controller";
 import { ClassArmsController } from "../modules/class-arms/class-arms.controller";
@@ -728,7 +731,12 @@ describe("Phase 3 RBAC close-out: seeded role grants", () => {
     // PHASE_3_BURSAR_PERMISSIONS itself carries these three (see its header
     // comment's 2026-08-02 addendum) — this equality still catches any OTHER
     // Phase 0/1/2 permission sneaking onto the seeded row.
-    expect(bursarPerms.size).toBe(PHASE_3_BURSAR_PERMISSIONS.length);
+    //
+    // + CALENDAR_READ_PERMISSIONS (Phase 8 CP1, 2026-09-13): the calendar is
+    // visible to all users (docs/modules/phase-8.md D4/D28) — bursar's one
+    // deliberate non-finance grant. Asserted by name in the Phase 8 block below,
+    // so this count still catches anything else.
+    expect(bursarPerms.size).toBe(PHASE_3_BURSAR_PERMISSIONS.length + CALENDAR_READ_PERMISSIONS.length);
   });
 
   it("bursar is excluded from payment.refund and all three staff-bvn.* permissions", () => {
@@ -1001,5 +1009,46 @@ describe("Phase 5 RBAC coverage: seeded role grants match the spec", () => {
     // teaching workflow. If a future slice grants it to teachers, that should
     // be a deliberate decision that fails here first.
     expect(teacherPerms.has("ai-usage.read"), "teacher should NOT have ai-usage.read").toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 8 / CP1 RBAC coverage — Event Calendar (docs/modules/phase-8.md §15 D28).
+//
+// Read is every staff role (D4: visible to all users). Manage — create, update,
+// delete, hide — is owner/admin only. A future grant of a manage permission to
+// teacher or bursar fails here first.
+// ---------------------------------------------------------------------------
+describe("Phase 8 CP1 RBAC coverage: calendar route handlers declare @Permissions", () => {
+  const known = new Set<string>(CALENDAR_PERMISSIONS);
+
+  it("CalendarController has route handlers, each with a non-empty @Permissions", () => {
+    expect(routeHandlers(CalendarController).length).toBeGreaterThan(0);
+    expect(handlerPermissions(CalendarController).length).toBeGreaterThanOrEqual(
+      routeHandlers(CalendarController).length,
+    );
+  });
+
+  it("every declared permission value is a known calendar permission", () => {
+    const unknown = handlerPermissions(CalendarController).filter((p) => !known.has(p));
+    expect(unknown, `unknown calendar permission(s): ${unknown.join(", ")}`).toEqual([]);
+  });
+});
+
+describe("Phase 8 CP1 RBAC coverage: calendar role grants match D28", () => {
+  const MANAGE = CALENDAR_PERMISSIONS.filter((p) => p !== "calendar-event.read");
+
+  it("admin holds every calendar permission; owner is the wildcard", () => {
+    const adminPerms = new Set(roleSeed("admin").permissions);
+    for (const p of CALENDAR_PERMISSIONS) expect(adminPerms.has(p), `admin should have ${p}`).toBe(true);
+    expect(roleSeed("owner").permissions).toEqual(["*"]);
+  });
+
+  it("teacher and bursar hold calendar-event.read and NO manage permission", () => {
+    for (const key of ["teacher", "bursar"]) {
+      const perms = new Set(roleSeed(key).permissions);
+      expect(perms.has("calendar-event.read"), `${key} should have calendar-event.read`).toBe(true);
+      for (const p of MANAGE) expect(perms.has(p), `${key} should NOT have ${p}`).toBe(false);
+    }
   });
 });

@@ -48,6 +48,9 @@ export interface NavItem {
 // teacher shell as /teacher/lesson-plans and only the nav entry was stale.) Same treatment: greyed out, non-clickable (NavList's
 // `!item.enabled` branch renders a non-link span with `title="Coming soon"`),
 // no functionality behind them yet.
+//
+// Event calendar left this list on 2026-09-13, promoted to NAV_ITEMS when
+// Phase 8 / CP1 shipped it (docs/modules/phase-8.md §15).
 export const NAV_ITEMS: NavItem[] = [
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard, enabled: true, requiredPermission: "dashboard.read" },
   { label: "Students", href: "/students", icon: GraduationCap, enabled: true, requiredPermission: "student.read" },
@@ -83,6 +86,12 @@ export const NAV_ITEMS: NavItem[] = [
   // about colleagues' work rather than teaching or finance workflow.
   { label: "Insights", href: "/insights", icon: Sparkles, enabled: true, requiredPermission: "insight.read" },
   { label: "Finance", href: "/finance/dashboard", icon: Wallet, enabled: true, requiredPermission: "finance.dashboard.read" },
+  // Phase 8 / CP1 (docs/modules/phase-8.md §15). Promoted from "Coming soon".
+  // Gated on calendar-event.read, which owner/admin/teacher/bursar all hold
+  // (D4: visible to all users) — so bursar's filtered sidebar shows it too, and
+  // the page itself hides management controls from anyone without the write
+  // permissions.
+  { label: "Event Calendar", href: "/events", icon: CalendarDays, enabled: true, requiredPermission: "calendar-event.read" },
   { label: "Settings", href: "/settings", icon: Settings, enabled: true, requiredPermission: "school.read" },
 ];
 
@@ -90,7 +99,6 @@ export const LATER_PHASE_ITEMS: NavItem[] = [
   { label: "Reports", href: "/reports", icon: BarChart3, enabled: false },
   { label: "AI Tutor", href: "/ai-tutor", icon: Sparkles, enabled: false },
   { label: "Timetable", href: "/timetable", icon: CalendarClock, enabled: false },
-  { label: "Event Calendar", href: "/events", icon: CalendarDays, enabled: false },
   { label: "Assessments & Exams", href: "/exams", icon: ClipboardList, enabled: false },
   { label: "Result Checker", href: "/result-checker", icon: FileSearch, enabled: false },
 ];

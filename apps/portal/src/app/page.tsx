@@ -93,6 +93,10 @@ export default function DashboardPage() {
           <p className="text-sm text-muted-foreground">
             Select a child to see their fees and invoices.
           </p>
+          {/* Phase 8 / CP1 — the school calendar is school-wide, not per child. */}
+          <Link href="/calendar" className="text-sm font-medium text-primary hover:underline">
+            School calendar →
+          </Link>
         </div>
         <SignOutButton />
       </header>

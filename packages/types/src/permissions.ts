@@ -625,6 +625,29 @@ export const PHASE_7_TEACHER_PERMISSIONS = [
   "curriculum.delete",
 ] as const;
 
+// Phase 8 / CP1 — Event Calendar (docs/modules/phase-8.md §15 D28). Named for
+// the feature rather than force-fit into a phase array, per CLAUDE.md's
+// permission-naming rule for work that isn't a numbered phase's own set.
+//
+// `national-event.hide` is separate from calendar-event.update on purpose:
+// hiding a national holiday changes what the WHOLE school sees without touching
+// any row the school owns, and it should read as its own decision in a role
+// grant and in the audit log.
+export const CALENDAR_PERMISSIONS = [
+  "calendar-event.read",
+  "calendar-event.create",
+  "calendar-event.update",
+  "calendar-event.delete",
+  "national-event.hide",
+] as const;
+
+// The read subset every staff role holds. D4: the calendar is visible to all
+// users — including bursar, whose grants are otherwise finance-only. That is a
+// deliberate, recorded widening (D28), not scope creep into
+// PHASE_3_BURSAR_PERMISSIONS' reasoned exclusions: the calendar carries no
+// academic, roster or financial data.
+export const CALENDAR_READ_PERMISSIONS = ["calendar-event.read"] as const;
+
 export const ALL_PERMISSIONS = [
   ...PHASE_0_PERMISSIONS,
   ...PHASE_1_PERMISSIONS,
@@ -636,6 +659,7 @@ export const ALL_PERMISSIONS = [
   ...PAYSTACK_SETUP_PERMISSIONS,
   ...SMART_IMPORT_PERMISSIONS,
   ...PHASE_7_PERMISSIONS,
+  ...CALENDAR_PERMISSIONS,
   /* extend per phase */
 ] as const;
 

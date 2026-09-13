@@ -56,6 +56,12 @@ export default function StudentsScreen() {
         </Heading>
         {school ? <Body muted>{school.name}</Body> : null}
         <FreshnessLabel updatedAt={query.dataUpdatedAt} />
+        {/* Phase 8 / CP1 — school-wide, so it sits above the per-child list. */}
+        <Link href="/calendar" asChild>
+          <Pressable accessibilityRole="button" accessibilityLabel="Open the school calendar">
+            <Body>School calendar →</Body>
+          </Pressable>
+        </Link>
       </View>
 
       {showSpinner ? (

@@ -8,11 +8,13 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { basePrisma, withTenant } from "@school-kit/db";
 
+import type { AuthContext } from "../common/auth/auth-context";
 import type { EmailService } from "../common/email/email.service";
 import { REPORT_CARDS_QUEUE } from "../common/queue";
 import { FilesystemStorageDriver } from "../common/storage/filesystem-storage.driver";
 import { StorageService } from "../common/storage/storage.service";
 import { AcademicYearsService } from "../modules/academic-years/academic-years.service";
+import { CalendarService } from "../modules/calendar/calendar.service";
 import { AggregationService } from "../modules/assessment/aggregation.service";
 import { AssessmentService } from "../modules/assessment/assessment.service";
 import { AttendanceService } from "../modules/attendance/attendance.service";
@@ -1637,5 +1639,79 @@ describe("Paystack assisted setup audit coverage", () => {
     );
     expect(persisted).not.toBeNull();
     expect(persisted?.status).toBe("PENDING");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 8 / CP1 — Event Calendar (docs/modules/phase-8.md §15). Every calendar
+// mutation writes exactly one TENANT-scoped audit row (schoolId set — never a
+// NULL-school row, which every tenant could read). Idempotent hide/unhide
+// repeats write nothing, so the trail records real changes only.
+// ---------------------------------------------------------------------------
+describe("Phase 8 CP1 audit coverage — calendar mutations", () => {
+  const runId = Math.random().toString(36).slice(2, 8);
+  const reqCtx = { ipAddress: "127.0.0.1" };
+  const calendar = new CalendarService();
+  let schoolId: string;
+  let ctx: AuthContext;
+
+  afterAll(async () => {
+    if (!schoolId) return;
+    await withTenant(schoolId, async (db) => {
+      await db.schoolHiddenNationalEvent.deleteMany({ where: { schoolId } });
+      await db.schoolEvent.deleteMany({ where: { schoolId } });
+    });
+    await basePrisma.school.delete({ where: { id: schoolId } }).catch(() => undefined);
+  });
+
+  async function auditActions(entityId: string): Promise<Array<{ action: string; schoolId: string | null }>> {
+    return withTenant(schoolId, (db) =>
+      db.auditLog.findMany({
+        where: { entityId },
+        select: { action: true, schoolId: true },
+        orderBy: { createdAt: "asc" },
+      }),
+    );
+  }
+
+  it("calendar-event create / update / delete and national-event hide / unhide", async () => {
+    const signed = await new AuthService().signupOwner(
+      {
+        schoolName: `Audit Calendar ${runId}`,
+        schoolSlug: `audit-cal-${runId}`,
+        ownerFirstName: "Owen",
+        ownerLastName: "Owner",
+        ownerEmail: `audit-cal-${runId}@example.test`,
+        ownerPhone: randomPhone(),
+        password: "Correct-Horse-9",
+        ndprConsent: true,
+      },
+      { ipAddress: "127.0.0.1", userAgent: "vitest" },
+    );
+    schoolId = signed.school.id;
+    ctx = { sessionId: "sess", userId: signed.user.id, schoolId } as AuthContext;
+
+    const e = await calendar.createSchoolEvent(
+      ctx,
+      { title: "Inter-house sports", category: "EVENT", startDate: "2026-11-13", endDate: "2026-11-13" },
+      reqCtx,
+    );
+    await calendar.updateSchoolEvent(ctx, e.id, { title: "Inter-house sports day" }, reqCtx);
+    await calendar.deleteSchoolEvent(ctx, e.id, reqCtx);
+    expect(await auditActions(e.id)).toEqual([
+      { action: "calendar-event.create", schoolId },
+      { action: "calendar-event.update", schoolId },
+      { action: "calendar-event.delete", schoolId },
+    ]);
+
+    const ne = await basePrisma.nationalEvent.findUnique({ where: { key: "independence-day-2026" }, select: { id: true } });
+    await calendar.hideNationalEvent(ctx, ne!.id, reqCtx);
+    await calendar.hideNationalEvent(ctx, ne!.id, reqCtx);
+    await calendar.unhideNationalEvent(ctx, ne!.id, reqCtx);
+    await calendar.unhideNationalEvent(ctx, ne!.id, reqCtx);
+    expect(await auditActions(ne!.id)).toEqual([
+      { action: "national-event.hide", schoolId },
+      { action: "national-event.unhide", schoolId },
+    ]);
   });
 });

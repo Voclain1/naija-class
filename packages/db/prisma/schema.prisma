@@ -2770,3 +2770,100 @@ model PaystackSetupRequest {
   @@index([schoolId, status])
   @@map("paystack_setup_requests")
 }
+
+// ---------- Phase 8 / CP1 — Event Calendar ----------
+//
+// Plan-first: docs/modules/phase-8.md §15 (D21–D30). Three tables, and the
+// split between them is the point:
+//
+//   national_events                — PLATFORM data. No school_id. The first
+//                                    content table in this schema that is not
+//                                    tenant-scoped.
+//   school_events                  — tenant data, FORCE RLS.
+//   school_hidden_national_events  — tenant data, FORCE RLS (D19/D26).
+//
+// A single table with a nullable school_id was rejected (D21): one bug in a
+// write path would publish a school's event to every school. With separate
+// tables that is structurally impossible rather than prevented by care.
+//
+// national_events is READ-ONLY to the runtime role, enforced twice in the
+// database (D22): FORCE RLS with a SELECT-only policy and no write policy,
+// plus REVOKE INSERT/UPDATE/DELETE FROM app_user. The ONLY write path is a
+// migration. See migration 20260913120000_phase_8_cp1_calendar and
+// policies/phase-8.sql. No SECURITY DEFINER function — count stays 22.
+
+enum NationalEventKind {
+  PUBLIC_HOLIDAY // a holiday under the Public Holidays Act
+  SPECIAL_HOLIDAY // a special day appointed by public notice
+}
+
+enum SchoolEventCategory {
+  HOLIDAY
+  BREAK
+  EXAM_PERIOD
+  MEETING
+  EVENT
+  RESUMPTION
+  OTHER
+}
+
+model NationalEvent {
+  id            String            @id @default(uuid())
+  // Stable, human-readable identifier (e.g. "eid-el-fitr-2027"). Correction
+  // migrations UPDATE ... WHERE key = ..., so they stay idempotent and
+  // reviewable (D23).
+  key           String            @unique
+  name          String
+  startDate     DateTime          @map("start_date") @db.Date // inclusive — calendar dates, see CLAUDE.md
+  endDate       DateTime          @map("end_date") @db.Date // inclusive; CHECK end_date >= start_date in raw SQL
+  kind          NationalEventKind
+  // false = an estimate awaiting the Ministry of Interior's announcement.
+  // Rendered as "expected", never as a fact (D23/D24).
+  dateConfirmed Boolean           @map("date_confirmed")
+  // Where the date came from — a Ministry press-release URL, or the Act for
+  // fixed dates. Required: an unsourced holiday is not allowed in (D24).
+  source        String
+  createdAt     DateTime          @default(now()) @map("created_at")
+  updatedAt     DateTime          @updatedAt @map("updated_at")
+
+  hiddenBySchools SchoolHiddenNationalEvent[]
+
+  @@index([startDate, endDate])
+  @@map("national_events")
+}
+
+model SchoolEvent {
+  id          String              @id @default(uuid())
+  schoolId    String              @map("school_id")
+  title       String
+  description String?
+  category    SchoolEventCategory
+  startDate   DateTime            @map("start_date") @db.Date // inclusive, all-day only
+  endDate     DateTime            @map("end_date") @db.Date // inclusive; CHECK end_date >= start_date in raw SQL
+  createdBy   String              @map("created_by") // users.id — plain FK convention
+  updatedBy   String              @map("updated_by") // users.id
+  createdAt   DateTime            @default(now()) @map("created_at")
+  updatedAt   DateTime            @updatedAt @map("updated_at")
+
+  @@index([schoolId])
+  @@index([schoolId, startDate, endDate])
+  @@map("school_events")
+}
+
+// One row per (school, national event) the school has hidden. Presence of the
+// row IS the hide; unhide deletes it. The FK to national_events is a real
+// constraint (a hide for a nonexistent holiday is meaningless), cascading so a
+// migration that removes a wrongly-seeded holiday cleans up its hides.
+model SchoolHiddenNationalEvent {
+  id              String   @id @default(uuid())
+  schoolId        String   @map("school_id")
+  nationalEventId String   @map("national_event_id")
+  hiddenBy        String   @map("hidden_by") // users.id
+  hiddenAt        DateTime @default(now()) @map("hidden_at")
+
+  nationalEvent NationalEvent @relation(fields: [nationalEventId], references: [id], onDelete: Cascade)
+
+  @@unique([schoolId, nationalEventId])
+  @@index([schoolId])
+  @@map("school_hidden_national_events")
+}

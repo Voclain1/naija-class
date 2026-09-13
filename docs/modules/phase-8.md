@@ -3,8 +3,8 @@
 **Status:** plan-first investigation **approved 2026-09-13** and merged
 (PR #297). Three rounds of decisions were recorded the same day (§3: D1–D8,
 D9–D14, D15–D18), and a fourth closed CP1's questions (D19–D20).
-**CP0 is done** (§12.1). CP1 is unblocked, and its own plan-first comes
-next. Nothing is built.
+**CP0 is done** (§12.1). **CP1's plan-first is written (§15) and awaiting
+review.** Nothing is built.
 Each checkpoint still needs its remaining open questions (§11) answered, and
 its own short plan-first appended here, before it starts.
 
@@ -674,10 +674,13 @@ national events need a decision on shape:
 
 So v1 needs:
 - a **`date_confirmed` flag**, shown to users as "expected" until confirmed;
-- a **platform-admin endpoint to add and correct national events** without a
-  deploy, audited. Whether `audit_logs` (monthly-partitioned, school-scoped)
-  can hold a platform-level row with no school is **not verified** and is a
-  CP1 plan-first item.
+- a way to add and correct national events. This section originally proposed
+  a platform-admin endpoint; **CP1's plan-first (§15, D22) proposes
+  migration-only writes instead**, so runtime code can never write platform
+  data. (The audit question raised here is answered in §15.1: `audit_logs`
+  already holds NULL-school platform rows, and such rows are readable by
+  every tenant. Under D22 no national-event audit row is written at all; git
+  is the trail.)
 
 **Decided (D19):** a school may hide a national event from its own calendar.
 Recorded as a hide, not an edit: the platform row is never changed per school.
@@ -686,7 +689,8 @@ Democracy Day").
 
 ### 8.4 v1 scope
 
-- Platform `national_events` table, seed script, platform-admin maintenance.
+- Platform `national_events` table, seed, maintenance by migration (§15 D22,
+  proposed).
 - Per-school hiding of national events (D19).
 - Tenant-scoped school events table: title, category (holiday, break, exam
   period, meeting, event, resumption, other), start and end date
@@ -941,7 +945,7 @@ Neither is the safeguarding workstream (§6.4).
 | CP | Content | Estimate | Changed by | Needs decided first |
 |---|---|---|---|---|
 | **CP0** | **Done 2026-09-13.** Plan committed (PR #297); D9–D18 recorded; ARCHITECTURE.md §9 and `docs/deferred.md` reconciled per D14 (Assignments → Phase 9, CBT → own phase, Timetable out of the Phase 9 list, Tutor → Phase 8b, Phase 7's stale "not started" status corrected, and the Timetable generator, exam management, result checker, AI study assistant, event calendar and smart-timetable entries pointed here); Q9/Q10 and the safeguarding workstream recorded as Arinzechukwu-owned. Older module docs (`phase-4.md`, `phase-5.md`, `phase-6.md`) that say "Phase 8 owns assignments" were **left as historical record**, not rewritten | 2–3 days (took well under) | D14 | — |
-| **CP1** | Event Calendar v1 incl. national events and per-school hiding (§8.4) | 7–10 days | D4 (+1), D19 (+1) | **Nothing — ready** (D19, D20) |
+| **CP1** | Event Calendar v1 incl. national events and per-school hiding (§8.4; plan-first §15) | 7–10 days | D4 (+1), D19 (+1) | **Nothing — ready** (D19, D20) |
 | **CP2** | Reports v1 incl. teacher performance and its access control | 9–13 days | D2 (+3–4) | Q14, Q26, Q27 |
 | **CP3** | Timetable: model, time-of-day convention, bell schedules, grid builder, effective-timetable resolution, time-interval conflict detection, RLS spec | 11–16 days | D3 (+3–4); D13 confirms, no change | Q7, Q8 |
 | **CP4** | Timetable: fork/override, copy-forward, teacher / student / guardian read surfaces | 5–7 days | D3 (+1) | — |
@@ -1007,15 +1011,16 @@ group.
 2. **`expo/fetch` streaming on Expo SDK 57** (§6.5).
 3. **Curriculum coverage in production** beyond the one document evidenced in
    `phase-7.md` §17.11.
-4. **Whether `audit_logs` can hold a platform-level row with no school** for
-   national-event maintenance (§8.3).
+4. ~~Whether `audit_logs` can hold a platform-level row with no school~~ —
+   **verified in CP1's plan-first** (§15.1): it can, and platform-admin already
+   does it.
 5. **The Nigerian scratch-card result-checker pattern** comes from market
    knowledge. D6 confirmed the product intent and D9/D10 the commercial model
    (offline batch cards); the recommended default use limit of 5 (§10.3) is
    not sourced from any school.
-6. **Nigerian public-holiday rules** (§8.3) — the fixed / computable / lunar /
-   ad hoc categories are general knowledge and should be checked against an
-   authoritative source before the seed is written.
+6. ~~Nigerian public-holiday rules~~ — **researched in CP1's plan-first**
+   (§15.1, with sources). Every seeded date is still checked against an
+   official source before its migration merges (§15 D24).
 
 ---
 
@@ -1031,3 +1036,551 @@ group.
 5. **No part of the AI Tutor reaches any student before the safeguarding
    workstream (§6.4) completes, and nothing in §6.4's prohibited list is
    implemented in the meantime.**
+
+---
+
+## 15. CP1 plan-first — Event Calendar
+
+Written 2026-09-13, after D19–D20 closed CP1's product questions. **Status:
+approved in full 2026-09-13 (§15.6); built 2026-09-13 (§15.9), PR #299.**
+
+**Scope:** seeded national events, school-added events, per-school hiding of
+national events, and one calendar read for every principal (staff, guardians,
+students). Decided product scope is D4, D19 and D20; this section decides the
+engineering.
+
+**Why this checkpoint needs more care than its size suggests:** it introduces
+the **first platform-wide content table** — rows that are not scoped to any
+school and are read by every school. Every other content table in this schema
+is tenant-scoped under FORCE RLS. Getting this one wrong means a single write
+becomes visible to every school on the platform.
+
+### 15.1 What CP1 inherits, verified not assumed
+
+Checked against the repo on 2026-09-13:
+
+| Thing | State | Where |
+|---|---|---|
+| `AcademicYear`, `Term` with `@db.Date` start/end | Shipped | `schema.prisma` |
+| The only table without RLS | `schools` — it *is* the tenant table; written through `basePrisma` | `policies/phase-0.sql` header |
+| `basePrisma` banned outside an allowlist | ESLint `no-restricted-imports` | `packages/config/eslint/base.js` |
+| Runtime role privileges | Default privileges give `app_user` exactly **SELECT, INSERT, UPDATE, DELETE** (`arwd`) on new tables, and **not TRUNCATE** — which matters, because TRUNCATE is not subject to RLS. **Verified on the local dev database** with `\ddp` and `information_schema.role_table_grants`; production not yet checked (§15.7) | migration header comments; local `school-kit-postgres` |
+| Platform-level audit rows | `schoolId: null`, written through `basePrisma` (platform-admin login, school toggles) | `platform-admin.service.ts` |
+| `audit_logs` policy | `USING (school_id IS NULL OR school_id = GUC)` — **a NULL-school row is readable under every tenant's GUC** | `20260628000000_phase_3_slice_3_audit_partitioning` |
+| Operator scripts | Deliberately connect as `app_user`, never `DIRECT_URL` (rail 4) | `packages/db/scripts/disable-ai-per-school.ts` |
+| RBAC gates | `@Permissions` plus role assertion, pinned by `rbac-two-gate-conformance.spec.ts` and `permissions-coverage.spec.ts`; audit actions by `audit-coverage.spec.ts` | `apps/api/src/__tests__/` |
+| Guardian sessions | Bound to one school (`auth_resolve_guardian_session` returns `school_id`) | CLAUDE.md SD inventory |
+| Mobile read pattern | Persisted React Query cache plus `FreshnessLabel` for offline reads | `apps/mobile/app/students/index.tsx` |
+| Lagos-date helper | ~~`week.util.ts` uses `Africa/Lagos`~~ **Wrong — corrected during build (§15.9):** `week.util.ts` is deliberately UTC and only *mentions* Lagos in a comment. No Lagos-day helper existed in the API | — |
+
+**What the law and practice actually say about Nigerian public holidays**
+(researched 2026-09-13, sources at the end of this section):
+- The Public Holidays Act's schedule lists New Year's Day, Good Friday, Easter
+  Monday, Workers' Day, Democracy Day, National Day (1 October), Christmas,
+  and Id el Fitr, Id el Kabir and Id el Maulud, **the last three on dates
+  declared by the Minister**. The President may also appoint special days,
+  nationally or for part of the country.
+- **The statute text published online is out of date against current
+  practice.** The copy found lists Democracy Day as 29 May (now observed on
+  12 June, since 2019) and omits Boxing Day, which current federal holiday
+  lists include. It also says a holiday falling on a weekend gets no
+  substitute day. Substitute days are reported to have been declared in some
+  years anyway; that isn't verified year by year here (§15.7).
+- **In practice the Ministry of Interior announces each Eid holiday 1–2 days
+  ahead**, after the Sultan of Sokoto's moon-sighting committee. In 2026:
+  Eid-el-Fitr was Thursday 19 and Friday 20 March; Eid-el-Kabir (Eid-ul-Adha)
+  was Wednesday 27 and Thursday 28 May.
+
+**Consequence: national event dates must come from Ministry of Interior
+announcements, never be computed from the statute or from rules.** That
+shapes D24.
+
+### 15.2 Decisions (approved 2026-09-13)
+
+#### D21 — Three tables: one platform table, two tenant tables, never merged
+
+| Table | Scope | Holds |
+|---|---|---|
+| `national_events` | **Platform** — no `school_id` | Public holidays and special days |
+| `school_events` | Tenant, FORCE RLS | Events a school adds |
+| `school_hidden_national_events` | Tenant, FORCE RLS | Which national events a school has hidden (D19) |
+
+The single-table alternative (nullable `school_id`, policy `school_id IS NULL
+OR school_id = GUC`) is rejected, as §8.3 already argued: one bug in a write
+path would publish a school's event to every school. With separate tables
+that is **structurally impossible**, not merely prevented.
+
+Note that `audit_logs` already uses exactly that nullable pattern, which is
+why a NULL-school audit row is readable by every tenant (§15.1). That is
+acceptable there because audit writes never carry school content under a
+NULL school. It is a reason not to copy the pattern for content.
+
+#### D22 — `national_events` is read-only to the runtime, enforced by the database twice
+
+1. **FORCE RLS with a SELECT-only policy** (`USING (true)`) **and no INSERT,
+   UPDATE or DELETE policy.** Under RLS a command with no permissive policy is
+   denied, so `app_user` cannot write the table through any path: the tenant
+   client, `basePrisma`, or raw SQL.
+2. **`REVOKE INSERT, UPDATE, DELETE ON national_events FROM app_user`** in the
+   same migration, so the guarantee survives even if someone later adds a
+   write policy by mistake.
+
+**The only write path is a migration**, which runs as `school_kit` through
+`DIRECT_URL`. No SECURITY DEFINER function is added; **the count stays at
+22**, and the review due at 23 remains CP6b's.
+
+**This revises §8.3/§8.4**, which proposed a platform-admin endpoint to
+correct national events without a deploy. The trade-off, stated plainly:
+
+| | Migration-only (proposed) | Platform-admin endpoint |
+|---|---|---|
+| Can runtime code ever write a national event? | **No — structurally** | Yes, via a new write path |
+| New SECURITY DEFINER functions | 0 | 2 (upsert, delete): count 22 → 24, the review at 23 moves into CP1 |
+| Time to publish an Eid date | Merge → CI (~15 min) → deploy | Seconds |
+| Audit trail | The migration and its PR, in git | `audit_logs` rows |
+
+Why accept the latency:
+- **An honest estimate is always on screen before confirmation.** Future
+  lunar dates are seeded with `date_confirmed = false` and shown as
+  "expected" (D23). A slow correction therefore shows a correctly labelled
+  estimate, not a wrong fact.
+- **The failure the other design risks is worse.** A platform-wide write
+  path exposed to runtime code means any authorisation bug in it can alter
+  what every school's families see.
+- **Changes are rare:** a handful of corrections a year.
+
+**Known cost:** this project's e2e job has a history of timeouts, and a
+flaky CI run on the day of an announcement could delay a correction by
+hours. The mitigation is the "expected" label, not a bypass. **Upgrade path,
+recorded rather than built:** if latency proves to be a real problem, add
+the platform-admin endpoint backed by write-only SD functions. It is purely
+additive; nothing in D22 has to be undone.
+
+#### D23 — `national_events` shape
+
+| Column | Type | Notes |
+|---|---|---|
+| `id` | `TEXT` (uuid) | |
+| `key` | `TEXT`, unique | Stable, human-readable, e.g. `eid-el-fitr-2027`. Correction migrations `UPDATE … WHERE key = …`, so they are idempotent and readable in review |
+| `name` | `TEXT` | "Eid-el-Fitr" |
+| `start_date`, `end_date` | `DATE` | Inclusive. **One row per consecutive run of declared days** (amended during build, §15.9): a two-day Eid on consecutive days is one row, but Good Friday and Easter Monday are two rows, and so would be a non-consecutive declaration such as Eid-ul-Adha 2025 (Friday 6 and Monday 9 June). A single range would wrongly show the weekend between them as declared. `CHECK (end_date >= start_date)` in raw SQL |
+| `kind` | enum `PUBLIC_HOLIDAY` \| `SPECIAL_HOLIDAY` | The second covers presidential special days |
+| `date_confirmed` | `BOOLEAN` | `false` = an estimate awaiting the Ministry's announcement; rendered as "expected" |
+| `source` | `TEXT` | Where the date came from, e.g. the Ministry of Interior press-release URL, or "Public Holidays Act (fixed date)" |
+| `created_at`, `updated_at` | `TIMESTAMP(3)` | |
+
+No `school_id`, no `created_by`: no runtime actor exists (D22).
+
+#### D24 — Seeding policy
+
+- **Coverage:** the current and next calendar year at seed time (2026 and
+  2027). Each year after that is added by a migration before it starts.
+  Adding next year's list goes on the January routine, recorded in
+  `docs/deferred.md` so it isn't forgotten.
+- **Fixed dates** (New Year's Day, Workers' Day, Democracy Day, National Day,
+  Christmas, Boxing Day): `date_confirmed = true`, with the date as currently
+  observed, not the stale statute text (§15.1).
+- **Good Friday / Easter Monday:** the calendar date is unambiguous years
+  ahead; `date_confirmed = true`.
+- **The three Eids:** `true` only once the Ministry has announced them. All
+  three 2026 Eids are confirmed: 19–20 March, 27–28 May, and **Eid-el-Maulud
+  on Tuesday 25 August** (corrected during build: the plan assumed Maulud 2026
+  was unannounced, but the Ministry had declared it). **Every 2027 Eid is
+  seeded `false`**, with its estimate's source recorded, and each confirmation
+  is a one-line migration.
+- **Weekend substitutions and ad hoc special days:** **never derived.** Added
+  only when announced.
+- **Every seeded date is checked against a Ministry of Interior or official
+  source before the migration merges**, with the check recorded in the PR.
+  §13 item 6's "general knowledge" caveat is closed by this rule, not by
+  memory.
+
+#### D25 — `school_events` shape and visibility
+
+| Column | Type | Notes |
+|---|---|---|
+| `id`, `school_id` | `TEXT` | FORCE RLS `tenant_isolation`, the standard direct-column policy |
+| `title` | `TEXT` | 1–120 chars (Zod) |
+| `description` | `TEXT` nullable | ≤ 1000 chars |
+| `category` | enum `HOLIDAY` \| `BREAK` \| `EXAM_PERIOD` \| `MEETING` \| `EVENT` \| `RESUMPTION` \| `OTHER` | |
+| `start_date`, `end_date` | `DATE` | Inclusive, all-day only. `CHECK (end_date >= start_date)` |
+| `created_by`, `updated_by` | `TEXT` | `users.id`, plain FK convention |
+| `created_at`, `updated_at` | `TIMESTAMP(3)` | |
+
+**Visibility is everyone in the school (D4), with no exceptions.** One
+consequence the admin UI must state at the moment of creation: *"Everyone at
+your school — staff, parents and students — will see this event."* There are
+no staff-only events in v1, so a "staff meeting" entry is visible to parents.
+That follows from D4, and the UI must not let an admin discover it after
+publishing.
+
+Editing and deleting are hard operations with an audit row each. There is no
+event history; the audit row's metadata carries the title and dates so a
+deletion stays explainable.
+
+#### D26 — Hiding national events (D19)
+
+`school_hidden_national_events`: `school_id`, `national_event_id` (FK →
+`national_events`, `ON DELETE CASCADE`), `hidden_by`, `hidden_at`; unique on
+`(school_id, national_event_id)`; FORCE RLS `tenant_isolation`.
+
+- `PUT …/national-events/:id/hide` and `DELETE …/national-events/:id/hide`
+  are idempotent. Each writes a **tenant-scoped** audit row: the school is
+  known, so these are not NULL-school rows.
+- Hidden events are omitted from every calendar read (D27). The admin
+  management list still shows them, labelled "Hidden from your school", with
+  unhide.
+- A foreign key from a tenant table to a platform table is new here but safe:
+  referential checks are not subject to RLS, and `national_events` is
+  readable by everyone anyway.
+
+#### D27 — One merged read, built in one place, served to three principals
+
+A single service method, `buildCalendar(db, schoolId, { from, to })`, returns
+one sorted list. It merges:
+1. `school_events` for that school;
+2. `national_events`, minus that school's hidden rows;
+3. **term boundaries derived from existing `Term` rows** — "First Term
+   begins", "First Term ends". Read-only markers, **not stored**, so they can
+   never drift from the terms an admin edits.
+
+Every principal's endpoint calls this method. None queries the three tables
+directly — the same instinct as Phase 6 D28's single results reader. A
+guardian calendar and a student calendar that filter "the same way today"
+would stop doing so the first time one is edited.
+
+Contract (`packages/types/src/calendar/`):
+
+```ts
+type CalendarEntryDto = {
+  id: string;                   // prefixed by source, so ids can't collide
+  source: "SCHOOL" | "NATIONAL" | "TERM";
+  title: string;
+  category: SchoolEventCategory | "PUBLIC_HOLIDAY" | "SPECIAL_HOLIDAY" | "TERM_START" | "TERM_END";
+  startDate: string;            // YYYY-MM-DD
+  endDate: string;              // YYYY-MM-DD, inclusive
+  dateConfirmed: boolean;       // always true except unconfirmed national events
+  description: string | null;
+};
+```
+
+- **Window:** `from` and `to` are required dates, with a maximum span of 400
+  days; an entry is included if it **overlaps** the window, so a multi-day
+  break starting before `from` still appears.
+- **Reads happen inside `withTenant`.** `national_events` is readable by
+  `app_user` under any GUC (D22's SELECT policy), so no `basePrisma` and no
+  ESLint allowlist change are needed.
+
+| Principal | Endpoint | Gate |
+|---|---|---|
+| Staff (owner, admin, teacher, bursar) | `GET /calendar?from=&to=` | `calendar-event.read` |
+| Guardian | `GET /portal/calendar?from=&to=` | `GuardianAuthGuard`; school from the session |
+| Student | `GET /student-portal/me/calendar?from=&to=` | `StudentAuthGuard`; school from the session |
+
+Management (owner, admin):
+- `GET /calendar/events`
+- `POST /calendar/events`
+- `PATCH /calendar/events/:id`
+- `DELETE /calendar/events/:id`
+- `GET /calendar/national-events` (with hidden flag)
+- `PUT` and `DELETE /calendar/national-events/:id/hide`
+
+**Re-validate tenancy on every id in the path** (CLAUDE.md): an event id from
+another school returns 404, exactly like a nonexistent one.
+
+#### D28 — Permissions
+
+A new `CALENDAR_PERMISSIONS` constant, following the naming rule for work
+that isn't a numbered phase:
+
+| Permission | owner | admin | teacher | bursar |
+|---|---|---|---|---|
+| `calendar-event.read` | ✓ (wildcard) | ✓ | ✓ | ✓ |
+| `calendar-event.create` / `.update` / `.delete` | ✓ | ✓ | — | — |
+| `national-event.hide` | ✓ | ✓ | — | — |
+
+- Admin, teacher and bursar are explicit-list roles, so a data migration
+  updates the existing role rows, and `system-roles.ts` is updated in step.
+- **Bursar gains a non-finance read.** That is D4's "visible to all users",
+  and it's recorded so it doesn't read as scope creep in
+  `PHASE_3_BURSAR_PERMISSIONS`' carefully argued exclusions.
+- Both gates (`@Permissions` and role assertion) must agree, or
+  `rbac-two-gate-conformance.spec.ts` fails.
+
+#### D29 — Dates
+
+- Every calendar date is `@db.Date`, following CLAUDE.md's calendar-date
+  convention. No times and no timezones are stored.
+- Anything relative to "today" — the default window — uses the Lagos calendar
+  day, never the viewer's device clock or server time (Fly runs in UTC).
+  **Corrected during build (§15.9):** there was no existing Lagos helper to
+  reuse. The API never needs "today", since every request names its window,
+  so the helper lives in `packages/types/src/calendar/calendar-dates.ts`,
+  shared by web, portal and mobile. It uses the fixed WAT offset (UTC+01:00, no
+  daylight saving) rather than `Intl`, because `Intl` output differs between
+  Node, browsers and React Native's Hermes.
+
+#### D30 — Surfaces
+
+| Principal | Surface | Notes |
+|---|---|---|
+| Owner / admin | Web `/events` — agenda list grouped by month, create/edit/delete, national events with hide | "Event Calendar" moves from `LATER_PHASE_ITEMS` to `NAV_ITEMS`, gated on `calendar-event.read` (`nav-items.spec.ts`) |
+| Bursar | Same page, read-only | Management controls hidden; the API enforces it regardless |
+| Teacher | Teacher shell: read-only calendar page, added to the teacher sidebar | |
+| Guardian | Portal web page, plus guardian mobile screen | Mobile uses the persisted cache and `FreshnessLabel`: offline, a family still sees the last calendar they loaded |
+| Student | Student mobile screen | Same pattern |
+
+**Agenda list, not a month grid, in v1.** It reads well at phone width, where
+most families will see it, and costs a fraction of a grid. A month grid is a
+later improvement.
+
+**Staff mobile is excluded.** Staff mobile is a deliberately narrow companion,
+enabled one school at a time. Adding a calendar screen there widens a surface
+that has its own rollout rail. Staff see the calendar on web.
+
+### 15.3 Shape
+
+**Migrations**, each checked with `migrate diff` and its SQL inspected before
+applying, per CLAUDE.md:
+1. `phase_8_cp1_calendar`: the three tables, two enums, `CHECK` constraints,
+   RLS enabled and forced on all three, policies (mirrored in
+   `packages/db/prisma/policies/phase-8.sql`), and the `REVOKE` on
+   `national_events`.
+2. `phase_8_cp1_national_events_seed`: data only, the 2026 and 2027 lists per
+   D24.
+3. `phase_8_cp1_calendar_permissions`: role-row updates for admin, teacher
+   and bursar.
+
+**Code:**
+- `packages/types/src/calendar/` (DTOs and Zod schemas)
+- `apps/api/src/modules/calendar/`, plus one method each on `portal` and
+  `student-portal`
+- web: `apps/web/src/app/(admin)/events/` and a teacher page
+- `apps/portal` calendar page
+- two mobile screens
+
+### 15.4 Tests
+
+1. **RLS spec, run as `app_user` against a real database:**
+   - `school_events` and `school_hidden_national_events`: a no-GUC read
+     returns 0 rows; a school-A GUC sees only school A; a cross-tenant INSERT
+     is rejected by `WITH CHECK` with a valid GUC set; a control insert under
+     the correct GUC succeeds, so the rejection isn't passing for the wrong
+     reason.
+   - **`national_events`, the structural claim of D22 tested directly:**
+     SELECT succeeds with no GUC; **INSERT, UPDATE and DELETE all fail as
+     `app_user`** — with a GUC set, without one, and through raw SQL. If
+     `DATABASE_URL` is ever a privileged role, this spec must fail loudly, in
+     line with the existing RLS hard rule.
+2. **`buildCalendar` service spec:**
+   - hidden events are excluded;
+   - window overlap edges: an event that starts before `from`, and one that
+     ends exactly on `to`;
+   - term markers come from `Term` rows;
+   - ordering is stable;
+   - **school B's events never appear for school A**;
+   - an unconfirmed national event carries `dateConfirmed: false`.
+3. **Principal specs:** a guardian and a student of school A see A's
+   calendar only; an unauthenticated request is rejected; a school-B event id
+   in a management path returns 404.
+4. **Seed spec:** keys are unique; `end_date >= start_date`; every row has a
+   `source`; no row has `date_confirmed = false` with a date already in the
+   past at the time of writing, which catches forgotten confirmations.
+5. **Conformance suites:** `permissions-coverage`, `rbac-two-gate-conformance`,
+   `audit-coverage` (create, update, delete, hide, unhide), `nav-items.spec`.
+6. **E2E (Playwright), the happy path:** an admin creates an event, and a
+   guardian sees it in the portal.
+7. **Verification in the running app, not just specs**, per this project's
+   habit:
+   - apply the migrations to a real database;
+   - confirm the RLS grants and `REVOKE` with `\dp national_events`;
+   - after deploy, a read-only production check that the seed rows exist and
+     that `app_user` cannot write them.
+
+### 15.5 What CP1 does NOT do
+
+- RSVP (D4).
+- Reminders or push notifications (D20).
+- Audience targeting or staff-only events (D4, D25).
+- Event times, recurring events, a month grid, iCal export or subscription.
+- The announcement board (D20).
+- Any effect on attendance (D20).
+- A platform-admin UI for national events (D22's upgrade path).
+- **State-level public holidays.** The Act allows holidays "in any part" of
+  Nigeria. Only federal holidays are seeded; a school in a state with its own
+  holiday adds it as a school event.
+- A calendar on staff mobile (D30).
+
+### 15.6 Review questions — all approved 2026-09-13
+
+1. **D22's write path — APPROVED.** Migration-only writes, with the
+   operational cost accepted for v1: merge → CI → deploy on announcement days.
+   The platform-admin screen stays the recorded upgrade path if that cycle
+   proves too slow in practice.
+2. **D30: agenda list rather than month grid — APPROVED.**
+3. **D30: staff mobile excluded — APPROVED.**
+4. **D24: seed horizon of current year plus next, extended each January —
+   APPROVED.**
+
+**Condition attached to the approval:** the `app_user` privilege check
+(SELECT/INSERT/UPDATE/DELETE granted, TRUNCATE not granted) must be verified
+against **production**, not only local dev, before CP1 ships. See §15.7
+item 1.
+
+### 15.7 Not verified
+
+1. ~~**`app_user`'s default privileges in production.**~~ **VERIFIED ON
+   PRODUCTION 2026-09-13**, before any CP1 code relied on it, as the approval
+   required — read-only catalog query from inside the running `school-kit-api`
+   container, connected as `app_user`:
+   - `current_user = app_user`, `rolsuper = false`, `rolbypassrls = false`;
+   - `pg_default_acl`: `app_user=arwd` for tables created by both `school_kit`
+     and `neondb_owner` (and `rU` for sequences);
+   - all **79** public tables grant `app_user` exactly DELETE, INSERT, SELECT,
+     UPDATE (79 each); **0 tables grant TRUNCATE**; 0 tables missing any of
+     the four.
+
+   A second read-only query established that production migrations will
+   succeed against the new FORCE-RLS table: `school_kit` owns all 79 tables
+   and has `rolbypassrls = true` (not SUPERUSER), so the seed INSERT runs,
+   while `app_user` (no BYPASSRLS) stays subject to both layers.
+2. **2027 Eid dates** don't exist yet; they are estimates by definition.
+3. ~~**Eid-el-Maulud 2026**~~ — checked: declared by the Ministry for Tuesday
+   25 August 2026, and seeded confirmed with that declaration's URL.
+4. **Current substitute-day practice** for weekend holidays beyond individual
+   declarations. D24 sidesteps it by never deriving substitutes.
+
+### 15.8 Estimate
+
+| Work | Days |
+|---|---|
+| Schema, RLS, `REVOKE`, policies file, RLS spec | 1.5–2 |
+| Seed research against official sources, seed migration, seed spec | 1 |
+| API: `buildCalendar`, management endpoints, three principal endpoints, permissions, audit | 2–2.5 |
+| Admin/bursar web page and teacher page | 1–1.5 |
+| Portal web page, guardian and student mobile screens | 1–1.5 |
+| E2E, deploy verification | 0.5–1.5 |
+| **Total** | **7–10 working days — unchanged** |
+
+D22 removes the platform-admin maintenance endpoint the §8.5 estimate
+included. That saving is roughly what the second defence layer, the extra
+RLS test matrix and the official-source seed checks cost, so the total holds.
+
+### 15.9 Built — 2026-09-13
+
+Implementation of CP1 as approved, on PR #299. Evidence below was freshly
+produced, not summarised from memory.
+
+#### The two-layer write block — each layer proven, and proven to FAIL when broken
+
+`apps/api/src/__tests__/calendar-rls.spec.ts`, 19 tests, real Postgres, as
+`app_user`. It asserts the preconditions (`app_user`, no SUPERUSER, no
+BYPASSRLS; RLS enabled **and** forced; exactly one policy, SELECT-only;
+privileges SELECT yes, INSERT/UPDATE/DELETE/TRUNCATE no). It then attempts
+writes through Prisma without a GUC, through the tenant client with a GUC, and
+through raw SQL — INSERT, UPDATE, DELETE and TRUNCATE, with and without a GUC.
+
+Each layer is also proven **alone**, in a migration-role transaction that is
+always rolled back, followed by `SET LOCAL ROLE app_user`:
+
+| Scenario | Result |
+|---|---|
+| Layer 2 removed (`GRANT` re-added), INSERT | refused: `new row violates row-level security policy` |
+| Layer 2 removed, UPDATE / DELETE | 0 rows affected (no UPDATE/DELETE policy makes every row invisible) |
+| Layer 1 removed (permissive write policy added) | INSERT/UPDATE/DELETE refused: `permission denied` |
+| **Control:** both removed | INSERT succeeds (1 row), so neither test above passes for the wrong reason; afterwards 0 rogue rows and only the original policy |
+
+**Sabotage runs**, to show the spec detects a real regression rather than
+passing vacuously. Performed on the local database, then reverted:
+
+| Real change made to the database | Spec result | Did the write still fail? |
+|---|---|---|
+| `GRANT INSERT, UPDATE, DELETE ON national_events TO app_user` | **5 failed**, 14 passed — exactly the privilege assertions | Yes, blocked by layer 1 (RLS), 0 rogue rows |
+| `CREATE POLICY sabotage_writes … FOR ALL USING (true)` | **4 failed**, 15 passed — the policy-set, layer-1-alone and control tests | Yes, blocked by layer 2 (privilege) |
+| Both reverted | **19 passed** | — |
+
+#### Cross-school isolation and the single read
+
+`apps/api/src/modules/calendar/calendar.service.spec.ts`, 16 tests, real
+Postgres, real roles, and the real `PermissionsGuard` reading
+`@Permissions` off `CalendarController`. It covers:
+- window overlap edges;
+- school B's events never in school A's calendar, and a hide applying only to
+  the hiding school;
+- term markers derived from `Term` rows;
+- ordering and id uniqueness;
+- an unconfirmed 2027 Eid returning `dateConfirmed: false`;
+- staff, guardian and student reads returning **identical** calendars;
+- another school's event id is a 404 on update and delete;
+- create/update/delete audited in order, and idempotent hide/unhide audited
+  once each;
+- both RBAC gates independently refusing teacher and bursar writes;
+- a deactivated owner refused.
+
+#### End to end, in a real browser
+
+`e2e/tests/event-calendar.spec.ts`, against the compiled API plus the web and
+portal apps:
+1. An owner opens `/events` and adds an event through the dialog. The "everyone
+   … will see this event" notice is asserted before submit.
+2. The owner hides Independence Day with the Hide button.
+3. That school's guardian signs into the portal, follows "School calendar →",
+   and sees the event and its details, but **not** Independence Day.
+4. A **second school's** guardian sees Independence Day and **no trace** of the
+   first school's event.
+5. After unhide, the first guardian sees the holiday again.
+
+Passed in 23.6s; screenshots reviewed (admin after hide; guardian on a 390px
+phone; other school's guardian). Because the portal proxy change touches every
+portal GET, the whole existing guardian e2e set was rerun alongside it: **20
+passed** (event-calendar, guardian-auth ×17, guardian-released-results,
+portal-bank-details).
+
+#### Wider regression
+
+| Suite | Result |
+|---|---|
+| `pnpm lint` | 9/9 tasks |
+| `pnpm typecheck` | 14/14 tasks |
+| API vitest, full run | 1,360 passed; **15 failed, all in `invoice-generation.service.spec.ts`** under full parallel load, most in 3–5 ms (a cascading setup failure). **Rerun alone: 48/48 passed.** Consistent with this machine's known parallel-load flakiness; no calendar code involved. CI is the clean check. |
+| `permissions-coverage`, `rbac-two-gate-conformance`, `audit-coverage`, `security-definer-inventory`, `app-module-boots` | all pass (SD inventory unchanged; no function added) |
+| `national-events-seed.spec.ts` | 4/4 |
+| web vitest | 333/333 |
+| mobile vitest | 167/167, including new `calendar-keys.spec.ts` |
+
+#### What the build found that the plan did not
+
+1. **The portal proxy silently dropped GET query strings** (`apps/portal/src/app/api/portal/[...portal]/route.ts`).
+   It was harmless until now because no portal GET took parameters; the
+   calendar's required `?from=&to=` would have failed validation for every
+   parent. Fixed by forwarding `req.nextUrl.search`, which is `""` for every
+   existing call.
+2. **No Lagos-day helper existed** — D29's citation was wrong (§15.1 row
+   corrected). Added to `packages/types`, using the fixed WAT offset rather
+   than `Intl`: a first draft using `Intl` produced "Fri, 12 Jun 2026" where
+   the spec expected "Fri 12 Jun 2026", the platform variance that also makes
+   Hermes risky.
+3. **Declared holidays are not always consecutive days** (Eid-ul-Adha 2025:
+   Friday 6 and Monday 9 June). D23 amended to one row per consecutive run.
+4. **Eid-el-Maulud 2026 had already been declared** (25 August). Seeded
+   confirmed; D24 corrected.
+5. **The mobile session has a third principal, `staff`.** Without a redirect, a
+   staff session opening the guardian calendar would sit on "Loading" forever.
+   It is redirected to the staff home, consistent with D30.
+6. **The generated migration diff carried unrelated drift** (curriculum HNSW
+   index, audit_logs PK rename, payments unique index, a fee_items index name).
+   It was hand-trimmed to calendar objects only, recorded in the migration
+   header.
+
+#### Recurring maintenance recorded
+
+`docs/deferred.md` — "National events need a migration every January, and every
+Eid": the January seed extension (coverage ends 31 December 2027), the
+one-line confirmation migration per Eid, the non-consecutive split rule, and
+the deliberately failing seed test that catches a forgotten confirmation.
+
+**Sources for §15.1:**
+- [Ministry of Interior — Public Holiday announcements](https://interior.gov.ng/category/public-holiday/)
+- [Ministry of Interior — Eid-el-Fitr 2026 (19–20 March)](https://interior.gov.ng/federal-government-declares-thursday-19th-and-friday-20th-march-2026-as-public-holidays-to-mark-eid-ul-fitr/)
+- [Ministry of Interior — Eid-ul-Adha 2026 (27–28 May)](https://interior.gov.ng/federal-government-declares-wednesday-27th-may-and-thursday-28th-may-2026-as-public-holidays-to-mark-eid-ul-adha-celebration/)
+- [Public Holidays Act (PLAC copy)](https://www.placng.org/lawsofnigeria/print.php?sn=467)
