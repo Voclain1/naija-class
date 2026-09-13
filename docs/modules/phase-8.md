@@ -3,8 +3,10 @@
 **Status:** plan-first investigation **approved 2026-09-13** and merged
 (PR #297). Three rounds of decisions were recorded the same day (§3: D1–D8,
 D9–D14, D15–D18), and a fourth closed CP1's questions (D19–D20).
-**CP0 is done** (§12.1). **CP1's plan-first is written (§15) and awaiting
-review.** Nothing is built.
+**CP0 is done** (§12.1). **CP1 (Event Calendar) is built and live in
+production** (PR #299, deployed 2026-09-13; evidence §15.10). CP2's questions
+were closed the same day (D21–D23 in §3.4); CP2 opens with a production data
+measurement (§4.6) before its plan-first.
 Each checkpoint still needs its remaining open questions (§11) answered, and
 its own short plan-first appended here, before it starts.
 
@@ -234,6 +236,27 @@ Consequences:
 - **Q5:** holidays are purely informational. They don't block attendance
   marking and don't change attendance day counts.
 
+### 3.4 Fifth round — CP2 (Reports), Arinzechukwu, 2026-09-13
+
+Recorded after CP1 went live. All three confirm the recommendations.
+
+**D21 (Q14) — Admin reports include unreleased marks, clearly labelled.**
+Owner/admin see figures computed from marks that are still in the approval
+workflow, and every such figure is visibly marked as not yet released. This
+never changes what families see: guardian and student visibility stays behind
+the `RELEASED` gate (Phase 6 D28).
+
+**D22 (Q26) — No teacher self-view of performance in v1.** Teacher performance
+views are owner/admin only (D2), and that includes the teacher's own row.
+
+**D23 (Q27) — Every view of teacher performance is audit-logged.** Each read
+writes a tenant-scoped audit row naming who viewed it, the same discipline as
+the BVN reveal.
+
+*(Numbering note: §15's CP1 engineering decisions also used D21–D30. Those are
+referenced as "§15 D22" etc.; the D-numbers in §3 remain the phase-level
+decision log.)*
+
 **Still open and owned by Arinzechukwu on his own timeline:** Q9 (NDPR for the
 tutor) and Q10 (the PII hard rule). **They do not block CP0 or any Phase 8
 checkpoint;** they must be resolved before Phase 8b's CP7 begins.
@@ -330,13 +353,12 @@ Class outcomes are shaped by intake, class composition and co-teaching, and
 an average is not a measure of a teacher. v1 shows the figures with that
 caveat and computes **no composite score, ranking or rating of teachers.**
 
-**Open:** Q26 — may a teacher see their own view? D2 rules out other
-teachers; the recommended v1 default is no. Q27 — should reads be
-audit-logged, as the BVN reveal is?
+**Decided:** no teacher self-view in v1 (§3.4 D22), and every view is
+audit-logged (§3.4 D23).
 
 ### 4.5 Open questions
 
-Q14 (unreleased marks), Q26, Q27. See §11.
+None blocking. Q14, Q26 and Q27 were resolved on 2026-09-13 (§3.4 D21–D23).
 
 ### 4.6 Unverified
 
@@ -912,6 +934,9 @@ already costed in: the portal lock was §10.2's first finding.
 | Q19 | PIN sales channel | Offline only in v1; online deferred as a fast follow-on (D9) |
 | Q21 | Results locked in portals in PIN mode? | Yes, in both portals (D11) |
 | Q23 | Promotion status: field or engine? | Display field set at principal approval (D12) |
+| Q14 | Reports: include unreleased marks? | Yes for admins, clearly labelled (§3.4 D21) |
+| Q26 | Teacher self-view of performance? | No in v1 (§3.4 D22) |
+| Q27 | Audit-log teacher-performance views? | Yes, every view (§3.4 D23) |
 | Q29 | PIN batch scope | One academic year + term, chosen at generation (D15) |
 | Q30 | Re-export PINs after generation? | No: export once, hashed storage, void and regenerate if lost (D16) |
 
@@ -924,13 +949,10 @@ already costed in: the portal lock was §10.2's first finding.
 | **Q9** | NDPR: recorded proceed-anyway decision **for the tutor specifically**? | CP7 | — (legal/business call) |
 | **Q10** | PII hard rule vs a child's free text | CP7 | — (policy call) |
 | **Q12** | Tutor behaviour with no approved curriculum document | CP8 | Refuse politely, naming the subject |
-| **Q14** | Reports: include unreleased marks? | CP2 | Yes for admins, clearly labelled |
 | **Q15** | Assessments & Exams: which of (i)–(iii)? | CP5 | (i) + (ii) |
 | **Q20** | "Per result" access mode: per school × term, per arm × term, or per student? | CP6b | Per arm × term, matching release |
 | **Q22** | Checker identifiers: admission number **and** PIN, or either? | CP6b | Both required |
 | **Q24** | Default of the new school-level position-visibility setting? | CP6a | Hidden (today's behaviour) until a school turns it on |
-| **Q26** | May a teacher see their own performance view? | CP2 | No in v1 |
-| **Q27** | Audit-log reads of teacher performance? | CP2 | Yes |
 | **Q28** | Is a lighter "unpublish" needed, beyond the existing owner-only reopen to DRAFT? | CP6b | Not in v1 |
 
 Q9 and Q10 are **not engineering decisions** and must not be closed by one.
@@ -946,7 +968,7 @@ Neither is the safeguarding workstream (§6.4).
 |---|---|---|---|---|
 | **CP0** | **Done 2026-09-13.** Plan committed (PR #297); D9–D18 recorded; ARCHITECTURE.md §9 and `docs/deferred.md` reconciled per D14 (Assignments → Phase 9, CBT → own phase, Timetable out of the Phase 9 list, Tutor → Phase 8b, Phase 7's stale "not started" status corrected, and the Timetable generator, exam management, result checker, AI study assistant, event calendar and smart-timetable entries pointed here); Q9/Q10 and the safeguarding workstream recorded as Arinzechukwu-owned. Older module docs (`phase-4.md`, `phase-5.md`, `phase-6.md`) that say "Phase 8 owns assignments" were **left as historical record**, not rewritten | 2–3 days (took well under) | D14 | — |
 | **CP1** | Event Calendar v1 incl. national events and per-school hiding (§8.4; plan-first §15) | 7–10 days | D4 (+1), D19 (+1) | **Nothing — ready** (D19, D20) |
-| **CP2** | Reports v1 incl. teacher performance and its access control | 9–13 days | D2 (+3–4) | Q14, Q26, Q27 |
+| **CP2** | Reports v1 incl. teacher performance and its access control | 9–13 days | D2 (+3–4) | **Nothing — resolved** (§3.4); starts with the §4.6 measurement |
 | **CP3** | Timetable: model, time-of-day convention, bell schedules, grid builder, effective-timetable resolution, time-interval conflict detection, RLS spec | 11–16 days | D3 (+3–4); D13 confirms, no change | Q7, Q8 |
 | **CP4** | Timetable: fork/override, copy-forward, teacher / student / guardian read surfaces | 5–7 days | D3 (+1) | — |
 | **CP5** | Assessments & Exams v1: any-total marks with scaling, cumulative results | 6–10 days | D5 (scope narrowed) | Q15 |
@@ -1578,6 +1600,45 @@ portal-bank-details).
 Eid": the January seed extension (coverage ends 31 December 2027), the
 one-line confirmation migration per Eid, the non-consecutive split rule, and
 the deliberately failing seed test that catches a forgotten confirmation.
+
+### 15.10 Deployed and verified in production — 2026-09-13
+
+PR #299 merged as `351cbed` after both required checks passed on its final
+head commit (`e2e (Playwright)`, `lint + typecheck + test + build`); branch
+protection re-read first. `main` CI passed, and deploy run `34777265229`
+succeeded.
+
+**Deploy log:** all three migrations applied at 19:18:59–19:19:00 UTC —
+`20260913120000_phase_8_cp1_calendar`, `…120100_…_national_events_seed`,
+`…120200_…_calendar_permissions` — then "All migrations have been successfully
+applied." The post-release smoke test passed 6/6 (health, `/health/db` as
+`app_user`, signup, login, `/schools/me`, portal health).
+
+**Production database** — read-only check from inside the running
+`school-kit-api` container, connected as `app_user`:
+
+| Check | Result |
+|---|---|
+| Runtime role | `app_user`, `rolsuper = false`, `rolbypassrls = false` |
+| `_prisma_migrations` | all three present, `rolled_back_at` null |
+| RLS on the three tables | enabled **and** forced on each |
+| Policies | `national_events`: only `national_events_read_all` (SELECT); both tenant tables: `tenant_isolation` |
+| `app_user` on `national_events` | SELECT yes; INSERT, UPDATE, DELETE, TRUNCATE **no** |
+| **Live write probe** | an INSERT into `national_events` as `app_user`, inside a transaction, was **refused: `permission denied for table national_events`** (SQLSTATE 42501); 0 probe rows exist afterwards |
+| Seed | 22 rows, 2026-01-01 → 2027-12-26; unconfirmed = exactly the three 2027 Eids |
+| System role grants | admin: read + create + hide; teacher and bursar: read only; owner: wildcard |
+| SECURITY DEFINER count | 22 (unchanged) |
+
+**Live HTTP:**
+
+| Request | Result |
+|---|---|
+| `GET /api/v1/calendar`, `/portal/calendar`, `/student-portal/me/calendar` (no auth) | 401 each |
+| Control: `GET /api/v1/calendar-does-not-exist` | 404 — so the 401s prove the routes are deployed |
+| `https://portal.schoolkit.ng/calendar` (no cookie) | 307 → `/login?next=%2Fcalendar` |
+| `https://app.schoolkit.ng/events` | 200 |
+
+**CP1 is closed.**
 
 **Sources for §15.1:**
 - [Ministry of Interior — Public Holiday announcements](https://interior.gov.ng/category/public-holiday/)
