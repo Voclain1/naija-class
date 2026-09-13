@@ -2,7 +2,8 @@
 
 **Status:** plan-first investigation **approved 2026-09-13** and merged
 (PR #297). Three rounds of decisions were recorded the same day (§3: D1–D8,
-D9–D14, D15–D18). CP0 (doc reconciliation) is in progress. Nothing is built.
+D9–D14, D15–D18). **CP0 is done** (§12.1). CP1 waits on Q25 and on
+confirmation of the §8.1 interpretations. Nothing is built.
 Each checkpoint still needs its remaining open questions (§11) answered, and
 its own short plan-first appended here, before it starts.
 
@@ -161,7 +162,8 @@ fast follow-on, not built in Phase 8. Consequences:
 whatever quantity and grouping it chooses. No per-student purchase or
 issuance flow in v1. This implies a PIN is **not bound to a student when it
 is generated**. It binds on first successful redemption (§10.3). Two design
-points follow that D10 doesn't settle, recorded as **Q29** and **Q30**.
+points follow that D10 doesn't settle, recorded as **Q29** and **Q30** and
+resolved by D15 and D16 (§3.2).
 
 **D11 (Q21) — In paid (PIN) mode, results are locked behind the PIN in both
 the guardian portal and student mobile.** The access-mode gate goes in the
@@ -909,7 +911,7 @@ Neither is the safeguarding workstream (§6.4).
 
 | CP | Content | Estimate | Changed by | Needs decided first |
 |---|---|---|---|---|
-| **CP0** | This plan committed (**done**, PR #297) plus D9–D14 recorded; ARCHITECTURE.md §9 and `docs/deferred.md` reconciled per D14 (Assignments → Phase 9, CBT → own phase, Timetable no longer Phase 9, Tutor → Phase 8b, the relevant "Future feature ideas" entries pointed here); Q9/Q10 and the safeguarding workstream recorded as Arinzechukwu-owned | 2–3 days | D14 | **Nothing — ready** |
+| **CP0** | **Done 2026-09-13.** Plan committed (PR #297); D9–D18 recorded; ARCHITECTURE.md §9 and `docs/deferred.md` reconciled per D14 (Assignments → Phase 9, CBT → own phase, Timetable out of the Phase 9 list, Tutor → Phase 8b, Phase 7's stale "not started" status corrected, and the Timetable generator, exam management, result checker, AI study assistant, event calendar and smart-timetable entries pointed here); Q9/Q10 and the safeguarding workstream recorded as Arinzechukwu-owned. Older module docs (`phase-4.md`, `phase-5.md`, `phase-6.md`) that say "Phase 8 owns assignments" were **left as historical record**, not rewritten | 2–3 days (took well under) | D14 | — |
 | **CP1** | Event Calendar v1 incl. national events (§8.4) | 6–9 days | D4 (+1) | Q25; confirm Q3–Q5 interpretations |
 | **CP2** | Reports v1 incl. teacher performance and its access control | 9–13 days | D2 (+3–4) | Q14, Q26, Q27 |
 | **CP3** | Timetable: model, time-of-day convention, bell schedules, grid builder, effective-timetable resolution, time-interval conflict detection, RLS spec | 11–16 days | D3 (+3–4); D13 confirms, no change | Q7, Q8 |

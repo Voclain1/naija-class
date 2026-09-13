@@ -477,14 +477,20 @@ Lesson plan generator, report comment generator, parent summaries, admin insight
 **Phase 6 — mobile app, student portal, guardian mobile (revised 2026-08-15)**
 Mobile shell (`apps/mobile` is the bare Phase 0 Expo scaffold), the student principal and student-facing surface, and the guardian experience on mobile. Offline resilience is a first-class design constraint, not a later pass. See `docs/modules/phase-6.md`.
 
-**Phase 7 — curriculum RAG + student tutor (PLANNED, not started)**
-Curriculum ingestion over `pgvector`, retrieval, and the curriculum-grounded student tutor. The embeddings-vendor decision that held this phase is now made — **Voyage AI**, since Anthropic ships no embeddings API. See `docs/modules/phase-7.md` for the plan-first: v1 grounds the existing lesson-plan generator in a school's own scheme of work; the student tutor is explicitly a later slice. Implementation is blocked on the NDPR review in `docs/deferred.md`; planning is not.
+**Phase 7 — curriculum RAG (v1 in production)**
+Curriculum ingestion over `pgvector` and retrieval, using **Voyage AI** for embeddings, since Anthropic ships no embeddings API. v1 grounds the existing lesson-plan generator in a school's own scheme of work, and is live in production (`docs/modules/phase-7.md` §17.10–17.11). The curriculum-grounded student tutor was always a later slice. It moved to **Phase 8b** on 2026-09-13 (see below). The NDPR review in `docs/deferred.md` is still open.
 
-**Phase 8 — assignments (3 weeks)**
-Assignment creation, submission, AI-assisted grading. Was the original Phase 6; renumbered when the mobile/student-portal work took that slot. Its student-portal half is absorbed into Phase 6, which builds the student principal it depended on.
+**Phase 8 — reports, timetable, event calendar, assessments & exams, result checker (plan-first approved 2026-09-13)**
+The five admin-sidebar "Coming soon" features other than the AI Tutor: Event Calendar (with seeded national events), Reports (including owner/admin-only teacher performance views), a manual Timetable builder with conflict detection (per-term or per-year, varying by class arm), Assessments & Exams v1, report card completeness, and the Result Checker (free via the portals or offline batch PINs, the school's choice per release). Estimated at 53–80 working days, and may split again after CP4 if it runs long. See `docs/modules/phase-8.md`, which records decisions D1–D18.
+
+**Phase 8b — AI Tutor**
+The curriculum-grounded student tutor, carried from Phase 7 (`docs/modules/phase-8.md` §6). Its engineering is estimated at 25–40 working days. It cannot begin until the tutor's NDPR position and the PII hard rule (phase-8.md Q9, Q10) are resolved. It cannot reach any student until the dedicated safeguarding workstream (phase-8.md §6.4) completes; that workstream is unestimated and not engineering-led.
+
+**CBT / online exams — its own future phase (not yet numbered)**
+Deliberately deferred beyond Phase 8 (phase-8.md D5), not dropped. The engineering reality is in `docs/deferred.md`, "CBT / online exams — capability assessment".
 
 **Phase 9 — auxiliary modules (rolling)**
-Library, transport, hostel, behaviour, health, full analytics. Ship as schools ask for them.
+Assignments (creation, submission, AI-assisted grading — moved here from Phase 8 on 2026-09-13, phase-8.md D14; originally Phase 6, whose student-portal half built the student principal it depends on), library, transport, hostel, behaviour, health, full analytics. Ship as schools ask for them.
 
 Estimated solo timeline with Claude Code: **3-4 months** to end of Phase 3 (first paying customer). **6 months** to end of Phase 5. The rest is iteration based on customer feedback. Note the Phase 5 figure held for what shipped, not for the original §7 component list — see phase-5.md §1 for the recalibration.
 
