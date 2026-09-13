@@ -38,6 +38,7 @@ import {
 } from "@/lib/finance/finance-api";
 import { financeErrorMessage, logFinanceError } from "@/lib/finance/error-copy";
 import { formatKobo } from "@/lib/finance/format";
+import { ledgerDeepLinkHref } from "@/lib/finance/ledger-deep-link";
 
 // Export columns for the class-level breakdown — the only tabular data on
 // this page, and therefore the only thing an "Export" here can honestly mean.
@@ -510,17 +511,16 @@ export default function FinanceDashboardPage() {
                     permission the invoice list itself requires, so this is
                     never a link to a 403.
 
-                    It shares a destination with the section row's "Record
-                    payment", because /finance/invoices is both the ledger and
-                    the place a payment is recorded — there is no separate
-                    ledger page. They are not a duplicated control (different
-                    label, different intent, different region), but the shared
-                    href is worth knowing: a term-filtered deep link would
-                    need query-param support on the invoice list, which is a
-                    money screen and its own change. */}
-                {hasPermission(permissions, "invoice.read") && (
+                    Filtered to the term these figures are for. The invoice
+                    list only accepts the ids if they are this school's, and a
+                    linked term filters the list without ever pre-selecting
+                    the term for invoice GENERATION — see
+                    lib/finance/ledger-deep-link.ts. That matters here in
+                    particular: this page defaults its term to the current
+                    one, so the linked term is often exactly that default. */}
+                {hasPermission(permissions, "invoice.read") && yearId && termId && (
                   <Link
-                    href="/finance/invoices"
+                    href={ledgerDeepLinkHref(yearId, termId)}
                     className="text-xs font-medium text-primary underline underline-offset-2 hover:text-primary/80 print:hidden"
                   >
                     Detailed ledger view <span aria-hidden>→</span>

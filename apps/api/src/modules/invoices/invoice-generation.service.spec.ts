@@ -1044,6 +1044,85 @@ describe("InvoiceGenerationService (integration)", () => {
       expect(result).toMatchObject({ data: [], total: 0 });
     });
 
+    // The finance dashboard's "Detailed ledger view" deep-links here with
+    // ?termId=. These two pin what that link promises: the list really is
+    // narrowed to that term, and a term id from another school narrows to
+    // nothing rather than being ignored. Before these, every findAll call in
+    // this suite passed a termId but none checked that ANOTHER term's
+    // invoices were excluded — an ignored termId would have passed them all.
+    it("filters invoices to the selected term instead of silently returning every term", async () => {
+      const { schoolId, ownerId } = await makeSchool("list-term-filter");
+      const { academicYearId, termId: term1Id, classLevelId, classArmId } =
+        await makeAcademicStructure(schoolId);
+      const { catId } = await makeFeeSetup(schoolId, ownerId, classLevelId, term1Id);
+
+      const term2Id = await withTenant(schoolId, async (db) => {
+        const term = await db.term.create({
+          data: {
+            schoolId,
+            academicYearId,
+            sequence: 2,
+            name: "Second Term",
+            startDate: new Date("2026-01-05"),
+            endDate: new Date("2026-04-10"),
+          },
+          select: { id: true },
+        });
+        await db.feeItem.create({
+          data: {
+            schoolId,
+            categoryId: catId,
+            name: "Term Tuition",
+            amount: 15_000_000,
+            classLevelId,
+            termId: term.id,
+            createdBy: ownerId,
+          },
+        });
+        return term.id;
+      });
+
+      const studentT1 = await makeStudent(schoolId, "list-term-1");
+      const studentT2 = await makeStudent(schoolId, "list-term-2");
+      await enrollStudent(schoolId, studentT1, classArmId, term1Id, academicYearId);
+      await enrollStudent(schoolId, studentT2, classArmId, term2Id, academicYearId);
+      await svc.generateForArm(ctx(schoolId, ownerId), { termId: term1Id, classArmId }, reqCtx);
+      await svc.generateForArm(ctx(schoolId, ownerId), { termId: term2Id, classArmId }, reqCtx);
+
+      const unfiltered = await svc.findAll(ctx(schoolId, ownerId), { page: 1, limit: 50 });
+      const term1 = await svc.findAll(ctx(schoolId, ownerId), { termId: term1Id, page: 1, limit: 50 });
+      const term2 = await svc.findAll(ctx(schoolId, ownerId), { termId: term2Id, page: 1, limit: 50 });
+
+      expect(unfiltered.total).toBe(2); // control: an invoice genuinely exists in each term
+      expect(term1.total).toBe(1);
+      expect(term1.data.map((i) => [i.studentId, i.termId])).toEqual([[studentT1, term1Id]]);
+      expect(term2.total).toBe(1);
+      expect(term2.data.map((i) => [i.studentId, i.termId])).toEqual([[studentT2, term2Id]]);
+    });
+
+    it("returns no invoices for another tenant's term", async () => {
+      const { schoolId: schoolA, ownerId: ownerA } = await makeSchool("list-term-tenant-a");
+      const structureA = await makeAcademicStructure(schoolA);
+      await makeFeeSetup(schoolA, ownerA, structureA.classLevelId, structureA.termId);
+      const studentA = await makeStudent(schoolA, "list-term-tenant-a");
+      await enrollStudent(schoolA, studentA, structureA.classArmId, structureA.termId, structureA.academicYearId);
+      await svc.generateForArm(
+        ctx(schoolA, ownerA),
+        { termId: structureA.termId, classArmId: structureA.classArmId },
+        reqCtx,
+      );
+
+      const { schoolId: schoolB } = await makeSchool("list-term-tenant-b");
+      const structureB = await makeAcademicStructure(schoolB);
+
+      // Control: school A's own term does return its invoice.
+      const own = await svc.findAll(ctx(schoolA, ownerA), { termId: structureA.termId, page: 1, limit: 50 });
+      expect(own.total).toBe(1);
+
+      const foreign = await svc.findAll(ctx(schoolA, ownerA), { termId: structureB.termId, page: 1, limit: 50 });
+      expect(foreign).toMatchObject({ data: [], total: 0 });
+    });
+
     it("keeps an issued invoice in its original arm after the enrollment is transferred", async () => {
       const { schoolId, ownerId } = await makeSchool("invoice-arm-snapshot-transfer");
       const { academicYearId, termId, classLevelId, classArmId: originalArmId } =
