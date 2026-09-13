@@ -108,6 +108,9 @@ would give. Worth revisiting if schools report mistyped details in practice.
 later is easy; narrowing after parents have seen it is not. The bursar-composed
 message and the admin surfaces are enough to answer the original request.
 
+**Widened 2026-09-13: the guardian portal is now in scope** (see §11). Any
+public, unauthenticated page remains out of scope.
+
 ## 6. D5 — The WhatsApp message's three options
 
 The message currently ends "Please contact the school to settle it". It should
@@ -143,7 +146,8 @@ Business API, whose approval state CLAUDE.md still lists as undecided.
 
 - Bulk WhatsApp (see D5c)
 - Bank-name resolution via the Paystack banks API (D3)
-- Showing bank details in the guardian portal or any public page (D4)
+- Showing bank details on any public page (D4). The guardian portal was
+  brought in on 2026-09-13 — §11.
 - Reconciling transfers against invoices — a parent who transfers directly is
   recorded the same way any cash payment is today, through the existing
   Record payment form. **Automatic matching is not part of this.**
@@ -194,14 +198,68 @@ block; targeted old→new auditing on the three bank fields; `portalUrl` on
 
 **NOT built, and deliberately named here so it is not mistaken for done:**
 
-- **No parent-facing surface exists.** D4 scoped the guardian portal out of
-  v1, so the only way these details reach a parent today is a reminder a staff
-  member sends by hand. Copy on both admin surfaces says exactly that rather
-  than claiming a portal view — an earlier draft read "What parents see",
-  which was not true.
+- ~~**No parent-facing surface exists.**~~ Built 2026-09-13 — see §11.
 - **The Paystack link option is not wired into the message.** The builder
   accepts `paymentLinkUrl` and is tested for it, but the debtors page never
   passes one, so D5b's on-click fetch remains unimplemented. Of D5's three
   options, two reach a real message: the portal link and the transfer details.
 
 Both are real, additional scope — tracked as a follow-up, not as polish.
+
+## 11. Guardian portal view (2026-09-13)
+
+**Endpoint: `GET /portal/bank-details`** → `{ bankTransfer: SchoolBankDetails | null }`,
+behind `GuardianAuthGuard`. The school id comes from the guardian session;
+there is no id in the request to swap.
+
+**D6 — resolved server-side, not in the page.** `SchoolMeDto` carries the raw
+four fields because admins edit them. A parent has no such need, so the API
+runs `resolveSchoolBankDetails` before responding: a school that has typed an
+account number but not switched it on sends `null`, and the digits never
+reach the parent's browser — rather than reaching it and being hidden by a
+conditional that a future edit could get wrong.
+
+**D7 — its own endpoint, not a field on the invoice list.**
+`PortalInvoicesService.listForStudentInTenant` is shared with the student
+portal (`StudentPortalService.listFees`), so a field there would have shown
+the school's account number to children. The account is also a property of
+the school, not of any one child's invoices. The student portal does not get
+this endpoint; a student session is refused (401).
+
+**D8 — shown only when something is owed.** The block renders under the
+invoices when at least one is `ISSUED`, `PARTIALLY_PAID` or `OVERDUE` — the
+status the API returned, so the page does no arithmetic to decide. A failure
+on this endpoint hides the block and never the invoices (same treatment as
+weekly summaries).
+
+**D9 — the copy says a transfer does not update the invoice.** Card payments
+settle automatically; a transfer reaches the ledger only when the school
+records it through Record payment (§7: no automatic matching). A parent who
+transfers and still sees a balance must have been told that is expected, or
+they pay twice. The block also suggests the admission number as the transfer
+description, to help the school match it by hand.
+
+**Admin copy corrected in the same PR.** The settings form's preview now reads
+"What parents see" and the toggle "Show these details to parents"; the
+dashboard's "Pay by transfer" card no longer says there is no portal view.
+Those statements were deliberately withheld until this surface existed.
+
+**Tests** (`portal-bank-details.controller.spec.ts`, real Postgres): enabled
+and complete returns exactly three fields; disabled and incomplete return
+`null` with the stored digits absent from the raw body; no cross-tenant leak;
+toggle-off takes effect on the next request; no token and a valid student
+token both 401. Leak assertions run before shape assertions so they are the
+ones observed failing — proven by a mutation that kept `bankTransfer: null`
+while returning the raw row beside it.
+
+**Browser** (`e2e/tests/portal-bank-details.spec.ts`, Chromium, setup through
+the real `PATCH /schools/me`): block visible with all three fields and the
+admission number beside an `ISSUED` invoice; Copy puts the account number on
+the clipboard; after the admin switches it off, a reload shows the invoice
+but no block and no digits anywhere in the page HTML; a child whose only
+invoice is `PAID` gets no block; the settings page shows the corrected copy.
+
+The settings card also said the Paystack details were "above" it; they render
+below. Fixed in the same PR.
+
+**Not covered:** the mobile app's parent screens do not show this yet.
