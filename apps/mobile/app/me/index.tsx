@@ -115,6 +115,15 @@ export default function MyHomeScreen() {
           </Pressable>
         </Link>
 
+        <Link href="/me/calendar" asChild>
+          <Pressable>
+            <Card>
+              <Heading>School calendar</Heading>
+              <Body muted>Holidays, term dates and school events.</Body>
+            </Card>
+          </Pressable>
+        </Link>
+
         <Link href="/me/fees" asChild>
           <Pressable>
             <Card>

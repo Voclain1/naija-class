@@ -40,6 +40,13 @@ export const queryKeys = {
   myAttendance: ["me", "attendance"] as const,
   myFees: ["me", "fees"] as const,
 
+  // Phase 8 / CP1 — the school calendar. Persistable on purpose: it carries no
+  // personal data (holidays, term dates, school events), and a family looking
+  // up resumption day offline is exactly who the persisted cache is for. The
+  // window is part of the key so a cached window is never shown for another.
+  guardianCalendar: (from: string, to: string) => ["calendar", from, to] as const,
+  myCalendar: (from: string, to: string) => ["me", "calendar", from, to] as const,
+
   // --- staff (CP2) --------------------------------------------------------
   //
   // EVERY staff key begins with the literal "staff". That prefix is not

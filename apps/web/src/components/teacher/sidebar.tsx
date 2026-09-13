@@ -4,6 +4,7 @@ import {
   BookOpen,
   CalendarCheck,
   CalendarClock,
+  CalendarDays,
   Library,
   Sparkles,
   ClipboardList,
@@ -44,6 +45,8 @@ const BASE_ITEMS: NavItem[] = [
   // its whole purpose is to make the item above it produce better output, and
   // separating them would leave a teacher wondering what it is for.
   { label: "Curriculum", href: "/teacher/curriculum", icon: Library, enabled: true },
+  // Phase 8 / CP1 — read-only school calendar (docs/modules/phase-8.md §15).
+  { label: "Calendar", href: "/teacher/calendar", icon: CalendarDays, enabled: true },
 ];
 
 const SUBJECT_ITEM: NavItem = {

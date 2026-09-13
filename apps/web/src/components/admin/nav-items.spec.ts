@@ -18,6 +18,7 @@ import { LATER_PHASE_ITEMS, NAV_ITEMS } from "./nav-items";
 //      exactly when it happens.
 
 const SHIPPED_HREFS = [
+  "/events",
   "/dashboard",
   "/students",
   "/enrollments",
@@ -37,6 +38,15 @@ describe("admin nav items", () => {
     // renames this, the item would appear for roles that get a 403 on the
     // page behind it.
     expect(item!.requiredPermission).toBe("lesson-plan.read");
+  });
+
+  it("lists Event Calendar as live, gated on the read permission every staff role holds (Phase 8 CP1)", () => {
+    const item = NAV_ITEMS.find((i) => i.label === "Event Calendar");
+    expect(item).toBeDefined();
+    expect(item!.enabled).toBe(true);
+    expect(item!.href).toBe("/events");
+    expect(item!.requiredPermission).toBe("calendar-event.read");
+    expect(LATER_PHASE_ITEMS.some((i) => i.label === "Event Calendar")).toBe(false);
   });
 
   it("has no reference left to the /lesson-notes route that never existed", () => {

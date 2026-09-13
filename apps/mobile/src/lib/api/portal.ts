@@ -13,6 +13,7 @@ import type {
   StudentPortalStatusDto,
   IssueStudentInvitationResponse,
   DeactivateStudentPortalResponse,
+  CalendarResponse,
 } from "@school-kit/types";
 import { apiFetch } from "./client";
 
@@ -172,5 +173,12 @@ export function deactivateStudentPortal(
   return apiFetch<DeactivateStudentPortalResponse>(
     `/portal/students/${encodeURIComponent(studentId)}/deactivate`,
     { method: "POST" },
+  );
+}
+
+/** Phase 8 / CP1 — the school calendar for a date window (the school comes from the session). */
+export function getGuardianCalendar(window: { from: string; to: string }): Promise<CalendarResponse> {
+  return apiFetch<CalendarResponse>(
+    `/portal/calendar?from=${encodeURIComponent(window.from)}&to=${encodeURIComponent(window.to)}`,
   );
 }

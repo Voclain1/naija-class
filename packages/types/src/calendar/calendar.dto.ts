@@ -123,3 +123,33 @@ export interface CalendarResponse {
   to: string;
   entries: CalendarEntryDto[];
 }
+
+/**
+ * Human labels for every category a calendar entry can carry — shared so web,
+ * portal and mobile never word the same event differently.
+ */
+export const CALENDAR_CATEGORY_LABELS: Record<CalendarEntryCategory, string> = {
+  HOLIDAY: "Holiday",
+  BREAK: "Break",
+  EXAM_PERIOD: "Exams",
+  MEETING: "Meeting",
+  EVENT: "Event",
+  RESUMPTION: "Resumption",
+  OTHER: "Other",
+  PUBLIC_HOLIDAY: "Public holiday",
+  SPECIAL_HOLIDAY: "Special holiday",
+  TERM_START: "Term",
+  TERM_END: "Term",
+};
+
+/** Groups entries (already sorted by the API) under "June 2026"-style month keys, preserving order. */
+export function groupCalendarEntriesByMonth<T extends { startDate: string }>(entries: T[]): Array<{ month: string; entries: T[] }> {
+  const groups: Array<{ month: string; entries: T[] }> = [];
+  for (const e of entries) {
+    const month = e.startDate.slice(0, 7);
+    const last = groups[groups.length - 1];
+    if (last && last.month === month) last.entries.push(e);
+    else groups.push({ month, entries: [e] });
+  }
+  return groups;
+}
