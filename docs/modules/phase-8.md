@@ -2,8 +2,9 @@
 
 **Status:** plan-first investigation **approved 2026-09-13** and merged
 (PR #297). Three rounds of decisions were recorded the same day (§3: D1–D8,
-D9–D14, D15–D18). **CP0 is done** (§12.1). CP1 waits on Q25 and on
-confirmation of the §8.1 interpretations. Nothing is built.
+D9–D14, D15–D18), and a fourth closed CP1's questions (D19–D20).
+**CP0 is done** (§12.1). CP1 is unblocked, and its own plan-first comes
+next. Nothing is built.
 Each checkpoint still needs its remaining open questions (§11) answered, and
 its own short plan-first appended here, before it starts.
 
@@ -207,6 +208,31 @@ family never spends a second use of a card they have already redeemed.
 through the existing owner-only reopen. This closes both failure directions:
 free → paid would retract results families have already seen, and paid → free
 would silently void cards families have already bought.
+
+### 3.3 Fourth round — CP1 (Event Calendar), Arinzechukwu, 2026-09-13
+
+**D19 (Q25) — A school may hide a national (seeded) event from its own
+calendar.** This **reverses** the investigation's "no hiding" recommendation.
+Consequences:
+- Hiding is **per school, per national event**. It hides the event from
+  every user of that school (staff, guardians, students) — "its own calendar
+  view" is the school's calendar, not one person's. It never affects any
+  other school, and never alters the platform `national_events` row.
+- It needs a small **tenant-scoped** record of which national events a
+  school has hidden (FORCE RLS, like every tenant table), an admin
+  hide/unhide action, audit rows, and a filter in the merged read.
+- A hidden event stays visible to the school's admins in the management view,
+  so it can be unhidden. The read-only calendar views omit it.
+- Adds **about 1 day**: CP1 moves from 6–9 to **7–10 days** (§8.5, §12).
+
+**D20 (Q3, Q4, Q5) — The §8.1 interpretations are confirmed as read:**
+- **Q3:** no scheduled reminders in v1, and no push notification on
+  publish. The calendar is something people look at, not a notification
+  channel.
+- **Q4:** the announcement board stays a separate feature, still deferred
+  (`phase-4.md` §8), and is not merged into the calendar.
+- **Q5:** holidays are purely informational. They don't block attendance
+  marking and don't change attendance day counts.
 
 **Still open and owned by Arinzechukwu on his own timeline:** Q9 (NDPR for the
 tutor) and Q10 (the PII hard rule). **They do not block CP0 or any Phase 8
@@ -594,9 +620,9 @@ mixed-schedule combinations.
 **Decided:** seeded national events plus school-admin-added events, on real
 dates, visible to all users, no RSVP in v1.
 
-D4 was given as resolving the calendar questions. The ones it doesn't address
-word for word are recorded here as **interpretations for Arinzechukwu to
-confirm**, not assumed silently:
+D4 was given as resolving the calendar questions. The ones it didn't address
+word for word were recorded here as interpretations, and **D20 confirmed all
+of them as read**:
 
 | Question | Interpretation |
 |---|---|
@@ -653,13 +679,15 @@ So v1 needs:
   can hold a platform-level row with no school is **not verified** and is a
   CP1 plan-first item.
 
-**Open:** Q25 — may a school hide or annotate a national event (e.g. "school
-open on Democracy Day")? Recommended v1: no hiding. A school can add its own
-event on the same date.
+**Decided (D19):** a school may hide a national event from its own calendar.
+Recorded as a hide, not an edit: the platform row is never changed per school.
+A school can still add its own event on the same date (e.g. "school open on
+Democracy Day").
 
 ### 8.4 v1 scope
 
 - Platform `national_events` table, seed script, platform-admin maintenance.
+- Per-school hiding of national events (D19).
 - Tenant-scoped school events table: title, category (holiday, break, exam
   period, meeting, event, resumption, other), start and end date
   (`@db.Date`, all-day), optional description.
@@ -670,9 +698,10 @@ event on the same date.
 
 ### 8.5 Size
 
-**6–9 working days** (was 5–8). The national-events platform table, seeding,
-the maintenance endpoint and lunar-date handling are added. Audience
-targeting and push-on-publish are removed.
+**7–10 working days** (was 5–8, then 6–9). The national-events platform
+table, seeding, the maintenance endpoint and lunar-date handling are added
+(D4), and per-school hiding (D19, +1). Audience targeting and push-on-publish
+are removed.
 
 ---
 
@@ -865,9 +894,10 @@ already costed in: the portal lock was §10.2's first finding.
 | # | Question | Resolution |
 |---|---|---|
 | Q2 | Event Calendar: RSVP? | None in v1 (D4) |
-| Q3 | Event reminders? | Interpreted: none, no push on publish (§8.1) — **confirm** |
-| Q4 | Absorb Announcement board? | Interpreted: separate, stays deferred (§8.1) — **confirm** |
-| Q5 | Holiday source; attendance effect | Seeded national + school-added (D4); informational only (§8.1) — **confirm the attendance half** |
+| Q3 | Event reminders? | None in v1, no push on publish (D20) |
+| Q4 | Absorb Announcement board? | No; separate, stays deferred (D20) |
+| Q5 | Holiday source; attendance effect | Seeded national + school-added (D4); informational only (D20) |
+| Q25 | May a school hide a national event? | Yes, from its own calendar (D19) |
 | Q6 | Timetable per term or per year? | Both, varying by school and class arm (D3) |
 | Q11 | Tutor safeguarding | Replaced by a dedicated workstream (D7, §6.4) |
 | Q13 | Teacher performance in Reports? | Included, owner/admin only (D2) |
@@ -895,7 +925,6 @@ already costed in: the portal lock was §10.2's first finding.
 | **Q20** | "Per result" access mode: per school × term, per arm × term, or per student? | CP6b | Per arm × term, matching release |
 | **Q22** | Checker identifiers: admission number **and** PIN, or either? | CP6b | Both required |
 | **Q24** | Default of the new school-level position-visibility setting? | CP6a | Hidden (today's behaviour) until a school turns it on |
-| **Q25** | May a school hide a national event? | CP1 | No; a school may add its own event on that date |
 | **Q26** | May a teacher see their own performance view? | CP2 | No in v1 |
 | **Q27** | Audit-log reads of teacher performance? | CP2 | Yes |
 | **Q28** | Is a lighter "unpublish" needed, beyond the existing owner-only reopen to DRAFT? | CP6b | Not in v1 |
@@ -912,7 +941,7 @@ Neither is the safeguarding workstream (§6.4).
 | CP | Content | Estimate | Changed by | Needs decided first |
 |---|---|---|---|---|
 | **CP0** | **Done 2026-09-13.** Plan committed (PR #297); D9–D18 recorded; ARCHITECTURE.md §9 and `docs/deferred.md` reconciled per D14 (Assignments → Phase 9, CBT → own phase, Timetable out of the Phase 9 list, Tutor → Phase 8b, Phase 7's stale "not started" status corrected, and the Timetable generator, exam management, result checker, AI study assistant, event calendar and smart-timetable entries pointed here); Q9/Q10 and the safeguarding workstream recorded as Arinzechukwu-owned. Older module docs (`phase-4.md`, `phase-5.md`, `phase-6.md`) that say "Phase 8 owns assignments" were **left as historical record**, not rewritten | 2–3 days (took well under) | D14 | — |
-| **CP1** | Event Calendar v1 incl. national events (§8.4) | 6–9 days | D4 (+1) | Q25; confirm Q3–Q5 interpretations |
+| **CP1** | Event Calendar v1 incl. national events and per-school hiding (§8.4) | 7–10 days | D4 (+1), D19 (+1) | **Nothing — ready** (D19, D20) |
 | **CP2** | Reports v1 incl. teacher performance and its access control | 9–13 days | D2 (+3–4) | Q14, Q26, Q27 |
 | **CP3** | Timetable: model, time-of-day convention, bell schedules, grid builder, effective-timetable resolution, time-interval conflict detection, RLS spec | 11–16 days | D3 (+3–4); D13 confirms, no change | Q7, Q8 |
 | **CP4** | Timetable: fork/override, copy-forward, teacher / student / guardian read surfaces | 5–7 days | D3 (+1) | — |
@@ -953,17 +982,17 @@ again after CP4 — see §12.4.
 
 | | Before decisions | After decisions |
 |---|---|---|
-| **Phase 8** — CP0–CP6b (engineering-led) | 37–58 days | **53–80 days** |
+| **Phase 8** — CP0–CP6b (engineering-led) | 37–58 days | **54–81 days** |
 | **Phase 8b** — CP7–CP8 (Tutor engineering) | 25–40 days | **25–40 days**, plus the unestimated safeguarding workstream |
-| **Total engineering** | 62–98 days | **78–120 working days, ~16–24 calendar weeks** |
+| **Total engineering** | 62–98 days | **79–121 working days, ~16–24 calendar weeks** |
 
-**Where the growth comes from:** D6 (+8–12), D3 (+4–5), D2 (+3–4), D4 (+1).
+**Where the growth comes from:** D6 (+8–12), D3 (+4–5), D2 (+3–4), D4 (+1), D19 (+1).
 D5 changes no estimate — CBT was never inside the recommended scope — but it
 closes the risk of it entering by accident. **D9 removed the optional +5–8
 days for online PIN sales**, so the "58–88" and "83–128" upper variants no
 longer exist. D10–D13 are scope-neutral (§7.7, §10.5).
 
-At 53–80 days, **Phase 8 alone (CP0–CP6b) is ~11–16 weeks**, three to four
+At 54–81 days, **Phase 8 alone (CP0–CP6b) is ~11–16 weeks**, three to four
 times ARCHITECTURE.md's nominal phase. If it needs to split further, the next
 natural boundary is after CP4 (Calendar, Reports, Timetable) with CP5–CP6b
 (Exams, report card completeness, Result Checker) as a coherent "results"
