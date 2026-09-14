@@ -4,6 +4,7 @@ import {
   CALENDAR_PERMISSIONS,
   CALENDAR_READ_PERMISSIONS,
   REPORTS_PERMISSIONS,
+  TIMETABLE_PERMISSIONS,
   PHASE_0_PERMISSIONS,
   PHASE_2_OWNER_ONLY_PERMISSIONS,
   PHASE_2_PERMISSIONS,
@@ -22,6 +23,7 @@ import { PERMISSIONS_METADATA_KEY } from "../common/auth/permissions.decorator";
 import { AcademicYearsController } from "../modules/academic-years/academic-years.controller";
 import { CalendarController } from "../modules/calendar/calendar.controller";
 import { ReportsController } from "../modules/reports/reports.controller";
+import { TimetableController } from "../modules/timetable/timetable.controller";
 import { AssessmentScoresController, AssessmentsController } from "../modules/assessment/assessment.controller";
 import { AttendanceController } from "../modules/attendance/attendance.controller";
 import { ClassArmsController } from "../modules/class-arms/class-arms.controller";
@@ -1082,6 +1084,42 @@ describe("Phase 8 CP2 RBAC coverage: reports role grants match D39", () => {
     for (const key of ["teacher", "bursar"]) {
       const perms = new Set(roleSeed(key).permissions);
       for (const p of REPORTS_PERMISSIONS) expect(perms.has(p), `${key} should NOT have ${p}`).toBe(false);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 8 / CP3 RBAC coverage — Timetable builder (docs/modules/phase-8.md §17 D35).
+//
+// Owner/admin only in CP3. The whole-school grid names every teacher's week;
+// teacher (and student/guardian) reads are CP4's, scoped, and decided by its
+// plan-first. A future grant of EITHER permission to teacher or bursar fails here.
+// ---------------------------------------------------------------------------
+describe("Phase 8 CP3 RBAC coverage: timetable route handlers declare @Permissions", () => {
+  it("TimetableController: reads carry timetable.read, every mutation carries timetable.manage", () => {
+    const perms = (m: string) =>
+      Reflect.getMetadata(PERMISSIONS_METADATA_KEY, (TimetableController.prototype as unknown as Record<string, object>)[m]) as string[];
+    expect(routeHandlers(TimetableController).sort()).toEqual(
+      ["bellSchedule", "clearLesson", "createTimetable", "deleteTimetable", "options", "saveBellSchedule", "saveLesson", "view"].sort(),
+    );
+    for (const m of ["bellSchedule", "options", "view"]) expect(perms(m), m).toEqual(["timetable.read"]);
+    for (const m of ["saveBellSchedule", "createTimetable", "deleteTimetable", "saveLesson", "clearLesson"]) {
+      expect(perms(m), m).toEqual(["timetable.manage"]);
+    }
+  });
+});
+
+describe("Phase 8 CP3 RBAC coverage: timetable role grants match D35", () => {
+  it("admin holds both timetable permissions; owner is the wildcard", () => {
+    const adminPerms = new Set(roleSeed("admin").permissions);
+    for (const p of TIMETABLE_PERMISSIONS) expect(adminPerms.has(p), `admin should have ${p}`).toBe(true);
+    expect(roleSeed("owner").permissions).toEqual(["*"]);
+  });
+
+  it("teacher and bursar hold NEITHER timetable permission", () => {
+    for (const key of ["teacher", "bursar"]) {
+      const perms = new Set(roleSeed(key).permissions);
+      for (const p of TIMETABLE_PERMISSIONS) expect(perms.has(p), `${key} should NOT have ${p}`).toBe(false);
     }
   });
 });

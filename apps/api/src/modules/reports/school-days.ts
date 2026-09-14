@@ -1,4 +1,10 @@
-import type { CalendarEntryDto, ExcludedDayDto, SchoolDaysDto } from "@school-kit/types";
+import {
+  DEFAULT_SCHOOL_WEEK_DAYS,
+  isoWeekday,
+  type CalendarEntryDto,
+  type ExcludedDayDto,
+  type SchoolDaysDto,
+} from "@school-kit/types";
 
 // Phase 8 / CP2 — what "a register expected" means (docs/modules/phase-8.md §16 D33–D34).
 //
@@ -6,8 +12,12 @@ import type { CalendarEntryDto, ExcludedDayDto, SchoolDaysDto } from "@school-ki
 // report claims about attendance rests on this function, so it is isolated to be
 // tested exhaustively on its own AND exercised through the real-database spec.
 //
-// A school day is a Monday–Friday in [term start, min(today, term end)] that is
-// not excluded. A day is excluded (Q31, approved 2026-09-13) when the calendar —
+// A school day is a day of THE SCHOOL'S WEEK in [term start, min(today, term
+// end)] that is not excluded. The school week is schools.school_week_days
+// (CP3 §17 D34, default Monday–Friday — so for every school that has not
+// changed it the result is exactly what CP2 shipped). A Saturday school's
+// Saturdays are school days.
+// A day is excluded (Q31, approved 2026-09-13) when the calendar —
 // read through CP1's single builder, which has already removed national events
 // this school hid — shows on it:
 //   * a NATIONAL event whose date is CONFIRMED. An unconfirmed estimate (a
@@ -38,8 +48,7 @@ export function eachDay(from: string, to: string): string[] {
 }
 
 export function isWeekend(iso: string): boolean {
-  const dow = toDate(iso).getUTCDay();
-  return dow === 0 || dow === 6;
+  return isoWeekday(iso) >= 6;
 }
 
 /** Why an entry removes its days, or null when it does not. */
@@ -61,13 +70,16 @@ export interface SchoolDaysResult {
  * @param termEnd   YYYY-MM-DD
  * @param today     YYYY-MM-DD (Lagos) — the report's "as of" day
  * @param calendar  entries from CalendarService.buildCalendar for [termStart, countedTo]
+ * @param schoolWeekDays ISO weekdays the school meets (schools.school_week_days)
  */
 export function computeSchoolDays(
   termStart: string,
   termEnd: string,
   today: string,
   calendar: CalendarEntryDto[],
+  schoolWeekDays: readonly number[] = DEFAULT_SCHOOL_WEEK_DAYS,
 ): SchoolDaysResult {
+  const week = new Set(schoolWeekDays);
   const countedTo = today < termEnd ? today : termEnd;
   if (countedTo < termStart) {
     // Term has not started: nothing is expected yet.
@@ -94,7 +106,7 @@ export function computeSchoolDays(
   const schoolDaySet = new Set<string>();
   const excludedDays: ExcludedDayDto[] = [];
   for (const d of eachDay(termStart, countedTo)) {
-    if (isWeekend(d)) continue; // weekends are not school days, and are not "excluded" either
+    if (!week.has(isoWeekday(d))) continue; // days the school does not meet are not school days, and are not "excluded" either
     const why = reasons.get(d);
     if (why) excludedDays.push({ date: d, reason: why.join("; ") });
     else schoolDaySet.add(d);

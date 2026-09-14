@@ -345,6 +345,22 @@ describe("CompletenessService (Phase 8 CP2) — real database", () => {
     });
   });
 
+  // CP3 §17 D34 — the school's own week. Every case above runs on the default
+  // Monday–Friday week and is unchanged from CP2.
+  describe("the school week (CP3 D34)", () => {
+    it("a SATURDAY school (Mon–Sat): 15 + Saturdays 7, 14, 21 = 18 expected; arm 1's Sat 7 register moves from non-school to taken", async () => {
+      await basePrisma.school.update({ where: { id: A.schoolId }, data: { schoolWeekDays: [1, 2, 3, 4, 5, 6] } });
+      try {
+        const r = await service().getCompleteness(A.owner, A.termId);
+        expect(r.schoolDays!.schoolDayCount).toBe(18);
+        expect(r.schoolDays!.excludedDays.map((x) => x.date)).toEqual(["2026-03-10", "2026-03-12", "2026-03-13", "2026-03-19", "2026-03-20"]);
+        expect(r.attendance!.rows[0]).toMatchObject({ registersExpected: 18, registersTaken: 5, registersOnNonSchoolDays: 2 });
+      } finally {
+        await basePrisma.school.update({ where: { id: A.schoolId }, data: { schoolWeekDays: [1, 2, 3, 4, 5] } });
+      }
+    });
+  });
+
   // ===========================================================================
   // Score slots (D35)
   // ===========================================================================

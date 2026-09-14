@@ -16,6 +16,7 @@ import { StorageService } from "../common/storage/storage.service";
 import { AcademicYearsService } from "../modules/academic-years/academic-years.service";
 import { CalendarService } from "../modules/calendar/calendar.service";
 import { CompletenessService } from "../modules/reports/completeness.service";
+import { createTimetableFixture, type TimetableFixture } from "../modules/timetable/timetable.fixture-spec";
 import { AggregationService } from "../modules/assessment/aggregation.service";
 import { AssessmentService } from "../modules/assessment/assessment.service";
 import { AttendanceService } from "../modules/attendance/attendance.service";
@@ -1757,4 +1758,47 @@ describe("Phase 8 CP2 audit coverage — teacher-activity views", () => {
     );
     expect(rows).toEqual([{ schoolId, userId: signed.user.id }]);
   });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 8 / CP3 — every timetable mutation writes exactly one TENANT-scoped
+// audit row (§17 D35). A refused mutation (clash) writes none — its transaction
+// rolls back with the audit row inside it. Clearing an empty cell writes none.
+// ---------------------------------------------------------------------------
+describe("Phase 8 CP3 audit coverage — timetable mutations", () => {
+  let fx: TimetableFixture;
+
+  afterAll(async () => {
+    await fx?.cleanup();
+  });
+
+  it("bell-schedule save, timetable create/delete, lesson save/clear — and none for a refused save or a no-op clear", async () => {
+    fx = await createTimetableFixture("audit"); // its bell-schedule save is the first audited mutation
+    const reqCtx = { ipAddress: "127.0.0.1" };
+    const rows = () =>
+      withTenant(fx.schoolId, (db) =>
+        db.auditLog.findMany({
+          where: { action: { startsWith: "timetable." } },
+          select: { action: true, schoolId: true, entityId: true },
+          orderBy: { createdAt: "asc" },
+        }),
+      );
+
+    const a = await fx.timetable("a", null);
+    const b = await fx.timetable("b", null);
+    await fx.lesson(a.id, 1, "p1", [fx.teachers.tunde]);
+    await expect(fx.lesson(b.id, 1, "p1", [fx.teachers.tunde])).rejects.toMatchObject({ code: "TIMETABLE_CLASH" });
+    await fx.service.clearLesson(fx.owner, { timetableId: a.id, dayOfWeek: 1, bellSlotId: fx.slots.p1 }, reqCtx);
+    await fx.service.clearLesson(fx.owner, { timetableId: a.id, dayOfWeek: 1, bellSlotId: fx.slots.p1 }, reqCtx);
+    await fx.service.deleteTimetable(fx.owner, b.id, reqCtx);
+
+    expect(await rows()).toEqual([
+      { action: "timetable.bell-schedule.save", schoolId: fx.schoolId, entityId: fx.schoolId },
+      { action: "timetable.create", schoolId: fx.schoolId, entityId: a.id },
+      { action: "timetable.create", schoolId: fx.schoolId, entityId: b.id },
+      { action: "timetable.lesson.save", schoolId: fx.schoolId, entityId: a.id },
+      { action: "timetable.lesson.clear", schoolId: fx.schoolId, entityId: a.id },
+      { action: "timetable.delete", schoolId: fx.schoolId, entityId: b.id },
+    ]);
+  }, 60_000);
 });

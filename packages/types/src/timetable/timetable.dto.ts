@@ -158,6 +158,28 @@ export interface TimetableViewDto {
   lessons: LessonDto[]; // of inForce
   slots: BellSlotDto[];
   schoolWeekDays: number[];
+  /** Active assignments for this class in this year — the lesson editor offers only these teachers (D33). */
+  assignments: TimetableAssignmentDto[];
+}
+
+export interface TimetableAssignmentDto {
+  teacherId: string;
+  teacherName: string;
+  subjectId: string;
+  subjectName: string;
+  /** null = the whole year. */
+  termId: string | null;
+}
+
+export interface TimetableOptionsDto {
+  academicYears: Array<{
+    id: string;
+    label: string;
+    isCurrent: boolean;
+    terms: Array<{ id: string; name: string; sequence: number; isCurrent: boolean }>;
+  }>;
+  /** Active classes only (§17.4 rule 5). */
+  classArms: Array<{ id: string; name: string }>;
 }
 
 /** One clash (D30), named precisely enough to act on. */
@@ -194,4 +216,6 @@ export const TIMETABLE_ERROR_CODES = {
   SLOT_IN_USE: "SLOT_IN_USE",
   TIMETABLE_EXISTS: "TIMETABLE_EXISTS",
   TERM_NOT_IN_YEAR: "TERM_NOT_IN_YEAR",
+  YEAR_HAS_NO_TERMS: "YEAR_HAS_NO_TERMS",
+  DAY_IN_USE: "DAY_IN_USE",
 } as const;

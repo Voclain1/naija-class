@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { CalendarEntryDto } from "@school-kit/types";
+import { isoWeekday, type CalendarEntryDto } from "@school-kit/types";
 
 import { computeSchoolDays, eachDay, isWeekend } from "./school-days";
 
@@ -130,5 +130,42 @@ describe("computeSchoolDays", () => {
   it("a holiday falling on a weekend changes nothing", () => {
     const cal = [entry({ source: "NATIONAL", category: "PUBLIC_HOLIDAY", title: "Weekend holiday", startDate: "2026-03-07" })];
     expect(computeSchoolDays("2026-03-02", "2026-03-27", "2026-04-15", cal).dto.schoolDayCount).toBe(20);
+  });
+});
+
+// Phase 8 / CP3 — the school's own week (docs/modules/phase-8.md §17 D34). The
+// cases above pass no week and therefore use the default, Monday–Friday — they
+// are unchanged from CP2 on purpose.
+describe("computeSchoolDays — the school week (CP3 D34)", () => {
+  it("isoWeekday: 1 = Monday … 7 = Sunday", () => {
+    expect(["2026-03-02", "2026-03-03", "2026-03-04", "2026-03-05", "2026-03-06", "2026-03-07", "2026-03-08"].map(isoWeekday)).toEqual([
+      1, 2, 3, 4, 5, 6, 7,
+    ]);
+  });
+
+  it("an explicit Monday–Friday week gives exactly the default result", () => {
+    const cal = [EID];
+    expect(computeSchoolDays("2026-03-02", "2026-03-27", "2026-04-15", cal, [1, 2, 3, 4, 5])).toEqual(
+      computeSchoolDays("2026-03-02", "2026-03-27", "2026-04-15", cal),
+    );
+  });
+
+  it("a SATURDAY school (Mon–Sat) counts Saturdays 7, 14 and 21: 20 + 3 = 23", () => {
+    const r = computeSchoolDays("2026-03-02", "2026-03-27", "2026-04-15", [], [1, 2, 3, 4, 5, 6]);
+    expect(r.dto.schoolDayCount).toBe(23);
+    expect(["2026-03-07", "2026-03-14", "2026-03-21"].every((d) => r.schoolDaySet.has(d))).toBe(true);
+    expect(r.schoolDaySet.has("2026-03-08")).toBe(false); // Sunday
+  });
+
+  it("a holiday on a Saturday IS excluded for a Saturday school (and ignored for a Mon–Fri one)", () => {
+    const cal = [entry({ source: "SCHOOL", category: "HOLIDAY", title: "Inter-house sports rest day", startDate: "2026-03-14" })];
+    const sat = computeSchoolDays("2026-03-02", "2026-03-27", "2026-04-15", cal, [1, 2, 3, 4, 5, 6]);
+    expect(sat.dto.schoolDayCount).toBe(22);
+    expect(sat.dto.excludedDays).toEqual([{ date: "2026-03-14", reason: "Inter-house sports rest day (school holiday)" }]);
+    expect(computeSchoolDays("2026-03-02", "2026-03-27", "2026-04-15", cal).dto).toMatchObject({ schoolDayCount: 20, excludedDays: [] });
+  });
+
+  it("a Mon/Wed/Fri week: 4 + 4 + 4 = 12 days", () => {
+    expect(computeSchoolDays("2026-03-02", "2026-03-27", "2026-04-15", [], [1, 3, 5]).dto.schoolDayCount).toBe(12);
   });
 });
