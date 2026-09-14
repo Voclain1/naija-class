@@ -2383,7 +2383,7 @@ the unfixed code) and the deployed value above.
 
 ## 17. CP3 plan-first — Timetable builder
 
-Written 2026-09-14. **Status: approved in full 2026-09-14 (§17.7); built 2026-09-14 (§17.9), awaiting merge and deploy.**
+Written 2026-09-14. **Status: approved 2026-09-14 (§17.7); built (§17.9); deployed and verified in production 2026-09-14 (§17.10). Closed.**
 
 **Scope:** the data model, one bell schedule per school, a manual per-class
 timetable builder with teacher-clash detection, and the admin screens. CP4
@@ -2994,3 +2994,103 @@ is the figure above.
 4. The basePrisma lint rule caught the shared test fixture. Rather than widen
    the allowlist, the fixture deletes its school through the tenant client
    (`schools` has no RLS). Verified: 0 leftover fixture schools after the full run.
+
+### 17.10 Deployed and verified in production — 2026-09-14
+
+**Merge and deploy.**
+- PR #302 merged (squash) as `8b9878c` after both required checks passed on its
+  final head (`a8b4166`), with branch protection re-read first (required checks
+  `lint + typecheck + test + build` and `e2e (Playwright)`; 0 approvals).
+- `main` CI `34890998648` passed; deploy `34892719551` succeeded.
+- Deploy log: `Applying migration 20260914140000_phase_8_cp3_timetable`, then
+  `20260914140100_phase_8_cp3_timetable_permissions`, then "All migrations have
+  been successfully applied." Post-release smoke test 6/6.
+- The local watcher reported failure; the cause was this machine losing its
+  connection to api.github.com mid-watch. Both runs were confirmed as success
+  directly before proceeding.
+
+**Read-only verification inside the production `school-kit-api` container**, as
+the runtime role (`app_user`, not superuser, no BYPASSRLS). Every statement was
+a SELECT; the CP2 re-run called only `getCompleteness`, which writes no audit
+row. The temporary scripts were removed afterwards (confirmed).
+
+| Check (§17.6 item 10) | Result |
+|---|---|
+| `_prisma_migrations` | both CP3 migrations finished 2026-09-14T20:25:33Z / 20:25:34Z, not rolled back |
+| RLS | enabled **and forced**, one `tenant_isolation` policy, on all 4 tables |
+| Composite foreign keys (D29) | all **8** present, each `(school_id, …) REFERENCES …(school_id, id)`; bell slot `ON DELETE RESTRICT` |
+| Supporting `UNIQUE (school_id, id)` indexes | academic_years, class_arms, subjects, terms, users — all present |
+| CHECK constraints | all 5 present |
+| Partial unique indexes | `timetables_one_year_wide_per_arm_year` (`WHERE term_id IS NULL`), `timetables_one_per_arm_term` (`WHERE term_id IS NOT NULL`) |
+| `schools.school_week_days` | NOT NULL, default Mon–Fri; **all 81 schools `{1,2,3,4,5}`** |
+| System role grants (D35) | admin: read + manage; teacher: neither; bursar: neither; owner: wildcard |
+| SECURITY DEFINER count | **22** (unchanged) |
+| `app_user` on the 4 tables | SELECT/INSERT/UPDATE/DELETE yes, TRUNCATE no |
+| No-GUC reads | 0 rows in each table |
+| Deployed code | timetable module and controller present; `pg_advisory_xact_lock` in the deployed clash module; the role gate in all **5** mutations; CP2 reads `school_week_days` |
+
+**CP2 re-run against the live code (D34 must change nothing).**
+
+| | §16.13 (morning) | Now |
+|---|---|---|
+| Schools checked | 70 (9 skipped, no active owner) | **71** (9 skipped) |
+| `CURRENT_TERM_ENDED` | 6 | 6 |
+| `ARMS_WITHOUT_FORM_TEACHER` | 7 | 7 |
+| `ARMS_WITHOUT_SUBJECT_TEACHERS` | 7 | 7 |
+| `NEXT_TERM_NOT_CURRENT` | 1 | 1 |
+| `NO_ENROLLMENT_THIS_TERM` | 3 | **4** |
+| `NO_CURRENT_TERM` | 45 | **44** |
+| Errors | 0 | 0 |
+| Virgo Fidelis (hand-verified school) | 59 school days, 236 registers expected, 1 on a non-school day, 36 score slots | **identical** |
+
+**The three differences are real data changes since the morning, each
+attributed, not inferred** (read-only per-school checks, then the deployed
+service run for just those schools):
+- `newera…` **signed up at 15:02 UTC today**, has 0 students and raises no
+  signal → 70 → 71 checked, no signal change;
+- `neheda…` created its **first terms at 16:54 UTC today** and has 1 student not
+  enrolled → it left `NO_CURRENT_TERM` (45 → 44) and now raises
+  `NO_ENROLLMENT_THIS_TERM` (3 → 4).
+
+Nothing else moved. With every school on the default week, D34 changed no figure,
+as the plan predicted.
+
+The run's output also listed a second "Virgo Fidelis" entry (Third Term, 66
+days, 1 class). Two schools of that name have existed since July; the second's
+terms, years and enrollments were not touched today. §16.12 recorded only the
+hand-verified one.
+
+**Live HTTP.**
+
+| Request | Result |
+|---|---|
+| `GET /timetable/options`, `/timetable/bell-schedule`, `/timetable/view?…`; `PUT /timetable/lessons` (no auth) | 401 each |
+| Control: `GET /timetable/does-not-exist` | 404, so the 401s prove the routes are deployed |
+| `https://app.schoolkit.ng/timetable` | 200 |
+| `https://app.schoolkit.ng/settings/bell-schedule` | 307 → `/login?next=/settings/bell-schedule` (the edge gate, as for every `/settings/*` page) |
+
+**Finding: three Phase 8 admin routes were missing from the web edge gate.**
+The 200/307 difference above led to `apps/web/src/middleware.ts`: `/events`
+(CP1), `/reports` (CP2) and `/timetable` (CP3) were never added to its matcher,
+despite the file asking for every new (admin) route to be. Nothing leaked —
+`RequireAuth` bounces the client and every API route returns 401 — but it is
+the same omission fixed for `/finance` and `/insights` on 2026-08-14. Fix: PR
+#303 (merged as `3897ea1`) adds the three entries and `middleware.spec.ts`, which fails when any
+(admin) route directory is missing; proven to fail against the unfixed file
+naming exactly `events, reports, timetable`.
+
+**#303 deployed and verified — 2026-09-14.** Merged as `3897ea1` after both
+required checks passed on its final head (`6ebf6d7`). Vercel production deploy of
+`school-kit-web` succeeded. Live, unauthenticated:
+
+| Route | Before | After |
+|---|---|---|
+| `/events` | 200 | **307 → `/login?next=/events`** |
+| `/reports` | 200 | **307 → `/login?next=/reports`** |
+| `/timetable` | 200 | **307 → `/login?next=/timetable`** |
+| `/settings/bell-schedule`, `/finance/dashboard` (controls) | 307 | 307 |
+
+Signed-in access is unaffected: CI's Playwright suite, which signs in and opens
+these pages, passed on the merged head.
+
+**CP3 is closed.**
