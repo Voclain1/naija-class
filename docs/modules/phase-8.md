@@ -3094,3 +3094,432 @@ Signed-in access is unaffected: CI's Playwright suite, which signs in and opens
 these pages, passed on the merged head.
 
 **CP3 is closed.**
+
+---
+
+## 18. CP4 plan-first — Timetable lifecycle and read surfaces
+
+Written 2026-09-14. **Status: proposed, awaiting review. Nothing is built.**
+
+**Scope (§12.1):**
+- **Lifecycle:** fork a year-wide timetable into a term override; copy a
+  timetable forward to another term or year.
+- **Read surfaces:** teacher "my timetable"; student mobile; guardian portal and
+  mobile.
+- **Additions from review:**
+  - the latent-clash edge recorded in §17.9 (approved for CP4, 2026-09-14);
+  - a CP3 defect found during this investigation (§18.2, D44).
+
+**Decided before this plan (2026-09-14 review, Arinzechukwu):**
+- **Teacher view:** own lessons only, not whole-class grids. To be checked
+  against what real teachers would find useful (§18.2 does that, and proposes one
+  narrow exception for review).
+- **Copy-forward:** when it meets an existing lesson or a clash, it **refuses
+  with a clear message** — never overwrites, never skips.
+- **Latent clash:** the term-added-later edge is addressed in CP4.
+
+### 18.1 What CP4 inherits, verified not assumed
+
+Checked on `main` @ `8b9878c` (CP3 live) and in production on 2026-09-14.
+
+| Thing | State |
+|---|---|
+| Timetable data, in-force resolution, clash query, advisory lock | Live since CP3. **Production: 0 bell slots, 0 timetables, 0 lessons in every school** (measured today) — no school has started using it |
+| Bell schedule | One per school (D26), so a copied lesson's slot is valid in every term and year of the same school. **Copying needs no slot mapping** |
+| Removing a used period or school day | Refused (CP3), so a source timetable's lessons are always valid in the current schedule |
+| Teacher scope | `getTeacherScope` returns the teacher's assigned arms and `formTeacherArmIds`; teacher surfaces live under `/teacher-scope/*`, gated to the teacher role in the service |
+| Student and guardian reads | Principal guards resolve the school from the session. Guardian-to-child access is an explicit link check (`withGuardian` / `assertLinked`) because **RLS does not separate families within one school** (Phase 6 D27). `loadCurrentEnrollmentForStudent` resolves the current term's enrollment |
+| CP1 precedent for three principals | One service reader; staff, `/portal`, `/student-portal` controllers; web teacher page, portal page, mobile screens |
+| Teacher names shown to families | **No precedent.** Released results carry the form teacher's comment text, not staff names (Q40) |
+
+**Production usage, measured today (read-only, aggregates only, 80 real schools):**
+
+| Measure | Value |
+|---|---|
+| Active teachers | **2** (in 2 schools); each assigned to **1** class, and form teacher of that same class |
+| Teachers signed in within 30 days | 2 |
+| Guardians / with portal access / signed in within 30 days | 13 / 7 / 2 |
+| Students activated / signed in within 30 days | 1 / 1 |
+| Schools with staff mobile enabled | 1 |
+| Subject-attendance records | 0 |
+
+This matters for two decisions below. **Real usage is too thin to settle
+"what teachers find useful" from data.** Two teachers, each with one class they
+also form-teach, cannot distinguish between the designs being compared. §18.2 is
+explicit about what is evidence and what is reasoning.
+
+### 18.2 The teacher view, checked against how teachers actually work
+
+**What the data can and cannot say.** It can't confirm anything: see the usage
+table above. Nothing below is user research; I have not spoken to a teacher. It
+is reasoning from the product's own model and from how Nigerian private schools
+are commonly organised, and it should be validated with the pilot schools'
+teachers where possible.
+
+**Where "own lessons only" is clearly right:** a subject teacher who moves between
+classes needs one thing daily — *where am I next?* Their lessons across every
+class, in order, answer that. Other classes' full grids would be noise, and
+listing other teachers' weeks is more surface than the job needs. This matches
+your instinct.
+
+**The one case it does not fit: the form (class) teacher.** The product already
+treats a form teacher as responsible for a whole class, not just their own
+lessons: `formTeacherArmIds` grants the daily register, the form-teacher report
+comment and the class roster. That responsibility is where "own lessons only"
+breaks:
+- **Nursery and primary:** the class teacher often teaches most subjects, but
+  specialist lessons (French, music, computer studies, PE) are taken by other
+  teachers. An own-lessons view shows gaps exactly when the class teacher most
+  needs to know where their pupils are and who has them.
+- **Secondary:** the form teacher is the parents' first contact and handles the
+  register and class welfare. "What does my class have after break?" is a
+  routine question they can't answer from their own lessons.
+
+**Proposed (D37):**
+- every teacher sees **their own lessons** across all classes;
+- **plus, read-only, the full grid of the class(es) they are form teacher of** —
+  and no other class.
+
+The exception is bounded by a relationship the product already enforces, so it
+adds no new judgement about who may see what.
+
+**Built so the exception is cheap to drop:** a separate section, a separate
+query, and a separate spec. If Q38 answers "strictly own lessons", it is removed
+without touching the rest.
+
+### 18.3 Decisions (proposed)
+
+#### D37 — Teacher "my timetable": own lessons, plus form classes read-only
+
+- `GET /teacher-scope/me/timetable?termId=` (current term by default). Teacher
+  role only, asserted in the service, like every `/teacher-scope` route.
+- **`ownLessons`:** every lesson where the caller is a teacher, in the timetable
+  **in force** for that term, across **active** classes, ordered by day then
+  period. Each row gives class name, subject, co-teachers and period times.
+- **`formClasses`:** for each active class in `formTeacherArmIds`, that class's
+  in-force grid for the term (the builder's shape, read-only).
+- A teacher with no lessons gets an explicit empty state, never an error.
+- **Web:** `/teacher/timetable` in the teacher shell. It is not added to the
+  admin builder.
+- **Staff mobile:** not in CP4 — enabled in 1 school, and the web teacher shell
+  is where teachers work today (Q39).
+
+#### D38 — Permissions
+
+- **New:** `timetable.own.read`, granted to **teacher** only. Owner/admin use
+  the builder (`timetable.read`).
+- The service gate is `["teacher"]`, matching `/teacher-scope/me`.
+- `permissions-coverage` pins teacher = `timetable.own.read` only (no
+  `timetable.read`, no `timetable.manage`), and bursar = none.
+- Any `rbac-two-gate` I2 disagreement this creates (the owner wildcard holding
+  a teacher-only permission) is documented with its reason, the way the
+  existing `teacher-scope` routes are.
+- **Students and guardians** have no permission system. Their principal guards
+  (`StudentAuthGuard`, `GuardianAuthGuard`) are the gate, plus the link check
+  (D39).
+
+#### D39 — Student and guardian reads: the child's class, current term, via one reader
+
+**One reader, as CP1's calendar did.** `TimetableReadService.classWeek(db, schoolId,
+studentId)`:
+- resolves the student's **current-term enrollment**, which must be
+  **`ENROLLED`**;
+- takes that class's in-force timetable for the current term;
+- returns the grid (periods, days, subject, teacher display names per Q40).
+
+Endpoints:
+- **Student:** `GET /student-portal/me/timetable`. The student is the session's
+  student; the request names no id.
+- **Guardian:** `GET /portal/students/:id/timetable` through `withGuardian`.
+  Distinct errors: not-linked → 403, no such student → 404. The school comes
+  from the session; RLS is not relied on for family separation (§18.1).
+
+Explicit empty states, never errors:
+- **no current term:** "Your school hasn't set the current term."
+- **not enrolled this term, or withdrawn/graduated:** "No class timetable for
+  this term."
+- **class has no timetable yet:** "Your school hasn't published a timetable for
+  JSS 1A yet."
+
+**What families see, and what they don't:**
+- no other class's grid, and nothing about any teacher's other lessons;
+- no draft or "coming soon" state. The in-force timetable is visible as soon as
+  it exists. There is no publish step in v1, and adding one would be a new
+  decision (Q41).
+
+Surfaces:
+- **Student mobile:** `/me/timetable` (beside `/me/calendar`).
+- **Guardian portal:** `/students/[id]/timetable`.
+- **Guardian mobile:** `/students/[id]/timetable`.
+
+#### D40 — Teacher names in family views (→ Q40)
+
+The grid is far more useful with "Mathematics — Mr Bello" than "Mathematics".
+But it is the first time staff names reach families in this product.
+
+**Proposed:** show each lesson teacher's first name and surname, exactly as the
+school entered them. No contact details, no photo, nothing else about the
+teacher.
+
+#### D41 — Fork: a year-wide timetable into a term override
+
+`POST /timetable/timetables/:id/fork { termId }` creates the class's term-only
+timetable for `termId` **as a copy of every lesson and teacher** of the
+year-wide timetable. CP3's "This term only" starts empty; after CP4 the builder
+offers **"Start from the whole-year timetable"** (fork) or **"Start empty"**.
+
+Refusals — never overwrite, never skip:
+- **the term already has a term-only timetable** → `TIMETABLE_EXISTS`;
+- **the source is not year-wide, or the term is not in its year** →
+  `VALIDATION`;
+- **a copied teacher has no effective assignment for that term** (D33) →
+  `TEACHER_NOT_ASSIGNED`, listing **every** affected (teacher, subject), not just
+  the first.
+
+**A fork cannot create a clash:** the same lessons move from the year-wide
+timetable to a term timetable, and what is in force in that term does not
+change. It still runs the clash query, because the rule is one path for every
+mutation (D31), not per-operation reasoning.
+
+#### D42 — Copy forward: to another term or year, same class
+
+`POST /timetable/timetables/:id/copy { academicYearId, termId | null }` copies
+every lesson and teacher into **the same class's** timetable at the destination.
+
+**The destination must be empty.** If no timetable exists, it is created; if it
+exists with **zero** lessons, the copy fills it. **Any existing lesson** →
+`DESTINATION_NOT_EMPTY`, naming the count and first cell. The admin clears or
+deletes the destination first; nothing is merged, overwritten or skipped.
+
+**Every problem is reported at once, then nothing is written.** A copy can fail
+three ways:
+- lessons the destination already has;
+- teachers not assigned for the destination;
+- clashes with other classes in the destination's terms.
+
+A refusal that names only the first problem makes the admin fix things one
+round-trip at a time. So the refusal carries **all** of them, in `details`.
+
+**Preview = the real copy, rolled back.**
+`POST /timetable/timetables/:id/copy?preview=true` runs **the identical code
+path** inside the transaction and always rolls back, returning what would be
+written and every problem. Because it is the same path, the preview cannot drift
+from the real copy. The UI shows the preview first, and "Copy" is enabled only
+when it is clean.
+
+**New-academic-year reality (→ Q42).** Teacher assignments are per academic year.
+Copying last year's timetable into a new year before next year's assignments
+exist refuses with every unassigned teacher listed. That is correct under "never
+guess", but it blocks the common "start from last year" flow until assignments
+are entered.
+
+**Proposed:** an **explicit, acknowledged** option, `leaveUnassignedTeachersOff`.
+- It copies those lessons with those teachers removed; subjects and other
+  teachers are kept.
+- It is accepted **only** if the request also carries the exact list of
+  (lesson cell, teacher) removals the admin was shown in the preview.
+- If the server's list differs — because assignments changed in between — the
+  copy is refused and a fresh preview is required.
+
+The loss is never silent and never larger than what was confirmed.
+
+**Not in CP4:** copying between classes (JSS 1A's grid into JSS 1B) and a
+school-wide bulk copy (Q43).
+
+#### D43 — Latent clashes: surfaced, never silent, and always fixable
+
+**Every path that can put clashing lessons into force without a timetable
+mutation, enumerated from the code:**
+
+| Path | Can it? | Why |
+|---|---|---|
+| `TermsService.create` (a term added to a year that has timetables) | **Yes** | Year-wide timetables come into force for the new term; if their lessons clash and the other terms avoided it only through term overrides, the clash now exists (§17.9) |
+| `AcademicCalendarService.createInTransaction` (onboarding) | No | Refuses any school that already has a year; a timetable needs a year |
+| Term update | No | Only sequence, name and dates change; a term cannot move year |
+| Term / year / class / subject / user deletion | No | Cascades only remove lessons |
+| Bell slot or school-day removal | No | Refused while used |
+| **Class re-activation** | **Yes, after D44** | See D44 |
+
+**Why term creation should not simply be refused.** The natural fix for a clash
+in a new term is a term-only timetable for one class in that term. That can't
+exist until the term does. Refusing the term would push the admin into the wrong
+fix: editing a year-wide lesson that is correct in every other term. So:
+
+1. **The term is created, and the clash is surfaced in the same response.**
+   `TermsService.create` takes the timetable lock and runs the clash query for
+   the year:
+   - the response carries `timetableClashes`;
+   - Academics shows it immediately ("Adding Third Term puts 1 timetable clash
+     into force: Tunde Bello — JSS 1A and JSS 1B, Monday P1. Fix it on the
+     Timetable page");
+   - the audit row records the count.
+2. **The timetable page shows a persistent banner** listing every clash in the
+   selected year, from the same query (`GET /timetable/clashes?academicYearId=`),
+   each linking to the class.
+3. **D31 becomes "a mutation must not add a clash"** (compare the clash set
+   before and after, under the lock), instead of "no clash may exist".
+   - Without this, a latent clash would block every timetable edit in that year,
+     including the edits that fix it.
+   - Every mutation still refuses a *new* clash, so no timetable edit can ever
+     create one.
+   - Clash identity is (teacher, day, slot, term, set of classes). Adding a
+     third class to an existing clash is therefore a new clash, and refused.
+
+The CP3 guarantee narrows to: **no timetable edit can create a clash; a clash
+from an academic-structure change is shown at once and in a standing banner, and
+can be fixed**. (→ Q44)
+
+#### D44 — A CP3 defect: deactivated classes still count in clash detection
+
+Found while enumerating D43's paths. CP3's clash query resolves in-force
+timetables for **every** class, active or not, while the builder lists **active
+classes only** (§17.4 rule 5).
+
+Effect:
+- a deactivated class's lessons keep blocking its teachers;
+- the refusal names a class the admin cannot open in the builder to fix it.
+
+**Production impact today: none** — no school has a timetable (§18.1). It is
+therefore folded into CP4 rather than hot-fixed; say if you want it split out
+first.
+
+**Proposed:**
+- the clash query and all read surfaces consider **active classes only** (a
+  deactivated class isn't being taught);
+- **re-activating** a class becomes the second latent-clash path, handled exactly
+  like term creation (D43): allowed, surfaced in the response, and shown in the
+  banner.
+
+### 18.4 Rules that are easy to get wrong, stated once
+
+1. **Preview and copy share one code path.** A preview that re-implements the
+   checks will drift from the copy.
+2. **A refusal lists every problem, and writes nothing.** No partial copy, ever.
+3. **Family separation is the link check, not RLS** (Phase 6 D27): cross-family
+   within one school must be a 403 in a spec, with a control.
+4. **"In force" is always resolved for the specific term** — the teacher's
+   chosen term, or the student's current term — through the same resolution as
+   the clash query. Never "the year-wide one" by default.
+5. **Withdrawn, graduated or unenrolled students get an empty state, not the
+   last class they were in.**
+6. **"No new clashes" compares clash identity including the class set.**
+
+### 18.5 What CP4 does NOT do
+
+- **Copy between classes; school-wide bulk copy** (Q43; trigger: a school with
+  many classes asking for it, and at least one school actually using timetables).
+- **Staff mobile timetable** (Q39).
+- **A publish or draft state for timetables** (Q41).
+- **Rooms, substitution and cover, printing and export.**
+- **Linking subject-attendance periods to slots** (§7.5).
+- **Per-class bell schedules** (deferred, `docs/deferred.md`).
+- **Flagging lessons whose teacher's assignment was later removed.** A possible
+  builder warning; not proposed without a real case.
+
+### 18.6 Tests
+
+1. **Teacher view (real Postgres):**
+   - own lessons across classes in the chosen term, resolved through in-force
+     (a term override hides the year-wide lessons);
+   - another teacher's lessons never appear;
+   - form-class grid only for form classes, and not for a class the teacher
+     merely teaches;
+   - inactive classes excluded;
+   - owner/admin/bursar refused at both gates.
+2. **Student and guardian negative walks (real Postgres):**
+   - the student sees only their current class;
+   - a guardian linked to child A gets A's class; the same guardian asking for
+     unlinked child B **in the same school** → 403, with a linked control
+     succeeding;
+   - another school's student → 404;
+   - withdrawn, graduated, not enrolled this term, no current term, no timetable
+     → each explicit empty state;
+   - the response carries no other class, and only display names for teachers
+     (Q40).
+3. **Fork / copy (real Postgres), each with the database checked afterwards:**
+   - fork copies every lesson and teacher; refuses an existing term timetable;
+     refuses unassigned teachers, listing all of them;
+   - copy into a non-empty destination → refused with count, nothing written;
+   - copy that would clash → refused, **every** clash listed;
+   - copy with multiple problems → all three kinds reported together;
+   - preview returns exactly what copy writes (assert equality of the preview's
+     planned rows and the committed rows);
+   - `leaveUnassignedTeachersOff` with a matching acknowledged list → copied
+     minus those teachers; with a stale list → refused.
+4. **Latent clashes (real Postgres):**
+   - adding a term that puts clashing year-wide lessons in force → term created,
+     response lists the clash, banner endpoint lists it;
+   - in that year, **forking a term override for the new term (the fix) is
+     allowed**, while a mutation adding a new clash is still refused;
+   - re-activating a class → same;
+   - deactivated classes no longer block.
+5. **Mutation tests:**
+   - "no new clashes" reverted to "no clashes" → the fix-by-fork case fails;
+   - clash identity without the class set → the "third class joins" case fails;
+   - guardian link check removed → the cross-family case fails;
+   - preview no longer rolled back → preview case fails;
+   - inactive-class filter removed → D44 case fails;
+   - CP3's existing clash and concurrency mutation suites rerun unchanged.
+6. **Conformance:**
+   - `permissions-coverage` (teacher = `timetable.own.read` only);
+   - `rbac-two-gate` (including any documented I2 exception);
+   - `audit-coverage` (fork, copy, and the clash count on term create);
+   - `nav-items` / teacher nav;
+   - `middleware.spec` (the #303 guard covers any new admin route; the teacher
+     route is already under `/teacher/*`);
+   - SD inventory unchanged.
+7. **E2E:**
+   - a teacher opens My timetable and sees their lessons across two classes plus
+     their form class grid;
+   - a guardian opens a child's timetable in the portal;
+   - an admin previews a copy to the next year, sees the refusal listing an
+     unassigned teacher, fixes the assignment, previews clean, copies;
+   - screenshots reviewed.
+8. **Production verification after deploy:**
+   - grants;
+   - routes 401 against a 404 control;
+   - no schema change expected beyond the permission migration;
+   - the CP2 live check unchanged;
+   - the term-create path verified read-only (no write in production).
+
+### 18.7 Open questions for this review
+
+| # | Question | Recommendation |
+|---|---|---|
+| **Q38** | Teacher view: own lessons **plus** the read-only grid of classes they form-teach (D37), or strictly own lessons? | Own lessons + form classes — bounded by an existing, enforced relationship. Validate with the pilot schools' teachers if you can reach them |
+| **Q39** | Staff mobile timetable in CP4? | No — web teacher shell only; staff mobile is enabled in 1 school |
+| **Q40** | Show lesson teachers' names (name only) in student and guardian views? | Yes, display name only |
+| **Q41** | Timetables visible to families as soon as they exist (no publish step in v1)? | Yes; revisit if a school asks for drafts |
+| **Q42** | Allow the explicit, acknowledged `leaveUnassignedTeachersOff` option for copies (D42)? | Yes — the loss is listed, confirmed exactly, and re-refused if it changed |
+| **Q43** | Per-class fork/copy only in CP4 (no bulk, no cross-class)? | Yes — year-wide timetables need no copy between terms; bulk matters only at a new year and no school has timetables yet |
+| **Q44** | Latent clashes: allow term creation / class re-activation and surface the clash (D43), and change D31 to "no new clashes"? | Yes — refusing the term forces the wrong fix |
+
+### 18.8 Estimate
+
+| Work | Days |
+|---|---|
+| Fork + copy + preview-as-rollback + acknowledged removals, refusals listing all problems, audit, specs | 1.5–2 |
+| Latent clashes: "no new clashes" rule, term create + class re-activation surfacing, clash banner endpoint, specs (CP3 mutation suite updated) | 1–1.5 |
+| D44 inactive classes (query + reads + spec) | 0.25 |
+| Teacher "my timetable" API + `/teacher/timetable` | 1–1.5 |
+| Student + guardian reader, endpoints, negative walks | 1 |
+| Portal page + student and guardian mobile screens | 1–1.5 |
+| Permission migration, nav, conformance, e2e, production verification | 0.5–1 |
+| **Total** | **6–9 working days** |
+
+**Against §12.1's 5–7:** up by 1–2 days, from:
+- D43, approved for CP4;
+- D44, found during this investigation;
+- the preview-as-rollback, needed because refusals list every problem.
+
+Nothing was removed.
+
+| | Before | After |
+|---|---|---|
+| CP4 | 5–7 | **6–9** |
+| Timetable total (CP3 9–13 + CP4) | 14–20 | **15–22** |
+| Phase 8 (CP0–CP6b) | 49–74 | **50–76** |
+| Total engineering incl. Phase 8b | 74–114 | **75–116** |
+
+§12.3 names the point after CP4 as the natural place to split Phase 8 if it runs
+long. That still holds, and it is where a split would be decided.
