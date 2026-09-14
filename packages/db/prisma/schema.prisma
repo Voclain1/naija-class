@@ -44,6 +44,11 @@ model School {
   // Opt-in to subject-period attendance (Phase 2 / Slice 8). Default false:
   // the subject-attendance surface 404s until a school turns it on.
   subjectAttendanceEnabled Boolean      @default(false) @map("subject_attendance_enabled")
+  // Phase 8 / CP3 (docs/modules/phase-8.md §17 D34). ISO weekdays the school
+  // teaches (1 = Monday … 7 = Sunday). Default Monday–Friday; some Nigerian
+  // private schools also teach Saturday. The timetable grid shows these days,
+  // and CP2's expected school days count only these weekdays.
+  schoolWeekDays           Int[]        @default([1, 2, 3, 4, 5]) @map("school_week_days") @db.SmallInt
   // Paystack subaccount routing (compressed plan-first, 2026-07-31).
   //
   // CORRECTED 2026-08-15: this comment used to say the school "creates its
@@ -288,6 +293,9 @@ model User {
   // one subject to it. The named relation pairs with TeacherAssignment.teacher.
   teacherAssignments TeacherAssignment[] @relation("TeacherSubjectAssignments")
 
+  timetableTeaching TimetableEntryTeacher[] // Phase 8 / CP3 — composite (school_id, id) FK target.
+
+  @@unique([schoolId, id]) // Phase 8 / CP3 — composite FK target (§17 D29)
   @@index([schoolId])
   @@map("users")
 }
@@ -435,7 +443,9 @@ model AcademicYear {
   terms              Term[]
   enrollments        Enrollment[] // Phase 1 / Slice 9 back-relation.
   teacherAssignments TeacherAssignment[] // Phase 1 / Slice 11 back-relation.
+  timetables         Timetable[] // Phase 8 / CP3 — composite (school_id, id) FK target.
 
+  @@unique([schoolId, id]) // Phase 8 / CP3 — composite FK target (§17 D29)
   @@unique([schoolId, label])
   @@index([schoolId])
   @@index([schoolId, isCurrent])
@@ -457,7 +467,9 @@ model Term {
   academicYear       AcademicYear        @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
   enrollments        Enrollment[] // Phase 1 / Slice 9 back-relation.
   teacherAssignments TeacherAssignment[] // Phase 1 / Slice 11 back-relation (term-specific assignments).
+  timetables         Timetable[] // Phase 8 / CP3 — composite (school_id, id) FK target.
 
+  @@unique([schoolId, id]) // Phase 8 / CP3 — composite FK target (§17 D29)
   @@unique([academicYearId, sequence])
   @@index([schoolId])
   @@index([schoolId, isCurrent])
@@ -537,7 +549,9 @@ model ClassArm {
   classTeacher       User?               @relation("ClassTeacherArms", fields: [classTeacherId], references: [id], onDelete: SetNull)
   enrollments        Enrollment[] // Phase 1 / Slice 9 back-relation.
   teacherAssignments TeacherAssignment[] // Phase 1 / Slice 11 back-relation (subject teachers of this arm).
+  timetables         Timetable[] // Phase 8 / CP3 — composite (school_id, id) FK target.
 
+  @@unique([schoolId, id]) // Phase 8 / CP3 — composite FK target (§17 D29)
   @@unique([schoolId, classLevelId, code])
   @@index([schoolId])
   @@index([classTeacherId])
@@ -557,7 +571,9 @@ model Subject {
   classSubjects      ClassSubject[]
   teacherAssignments TeacherAssignment[] // Phase 1 / Slice 11 back-relation.
   lessonPlans        LessonPlan[] // Phase 5 / Slice 2 back-relation.
+  timetableEntries   TimetableEntry[] // Phase 8 / CP3 — composite (school_id, id) FK target.
 
+  @@unique([schoolId, id]) // Phase 8 / CP3 — composite FK target (§17 D29)
   @@unique([schoolId, code])
   @@index([schoolId])
   @@map("subjects")
@@ -2866,4 +2882,115 @@ model SchoolHiddenNationalEvent {
   @@unique([schoolId, nationalEventId])
   @@index([schoolId])
   @@map("school_hidden_national_events")
+}
+
+// ---------- Phase 8 / CP3 — Timetable builder ----------
+//
+// Plan-first: docs/modules/phase-8.md §17 (D24–D36), approved 2026-09-14.
+//
+//   bell_slots                — the school's ONE bell schedule (D26). No
+//                               bell_schedules table in v1: per-class schedules
+//                               are deferred, not designed around (§17.2).
+//   timetables                — a header per class, per academic year, with an
+//                               optional term (null = in force for the whole
+//                               year; D3). A term timetable replaces the year one
+//                               for that term entirely (D13).
+//   timetable_entries         — one lesson per (timetable, weekday, slot).
+//   timetable_entry_teachers  — co-teaching.
+//
+// CROSS-TENANT SAFETY (D29). Postgres foreign-key checks BYPASS row-level
+// security, so a plain FK would accept another school's slot/subject/class/
+// teacher id. Every reference here is COMPOSITE on (school_id, id), against a
+// @@unique([schoolId, id]) on the target — a row naming another school's id
+// cannot exist.
+//
+// TIME OF DAY (D27): integer minutes since midnight, school wall-clock time. Not
+// @db.Time, which Prisma surfaces as a 1970-01-01 Date with a zone.
+
+enum BellSlotKind {
+  LESSON
+  BREAK
+  ASSEMBLY
+  OTHER
+}
+
+model BellSlot {
+  id          String       @id @default(uuid())
+  schoolId    String       @map("school_id")
+  position    Int // 1-based order within the day
+  label       String // "Period 1", "Break", "Assembly"
+  kind        BellSlotKind
+  startMinute Int          @map("start_minute") // minutes since midnight; CHECK 0 <= start < end <= 1440
+  endMinute   Int          @map("end_minute")
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+
+  // A lesson can never outlive its slot (§17.4): RESTRICT.
+  entries TimetableEntry[]
+
+  @@unique([schoolId, id])
+  @@unique([schoolId, position])
+  @@index([schoolId])
+  @@map("bell_slots")
+}
+
+model Timetable {
+  id             String   @id @default(uuid())
+  schoolId       String   @map("school_id")
+  classArmId     String   @map("class_arm_id")
+  academicYearId String   @map("academic_year_id")
+  termId         String?  @map("term_id") // null = in force for the whole academic year
+  createdBy      String   @map("created_by")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  classArm     ClassArm         @relation(fields: [schoolId, classArmId], references: [schoolId, id], onDelete: Cascade)
+  academicYear AcademicYear     @relation(fields: [schoolId, academicYearId], references: [schoolId, id], onDelete: Cascade)
+  term         Term?            @relation(fields: [schoolId, termId], references: [schoolId, id], onDelete: Cascade)
+  entries      TimetableEntry[]
+
+  // Partial unique indexes (one year-wide per class+year; one per class+term)
+  // live in the migration's raw SQL — Prisma cannot express WHERE clauses.
+  @@unique([schoolId, id])
+  @@index([schoolId])
+  @@index([schoolId, academicYearId])
+  @@map("timetables")
+}
+
+model TimetableEntry {
+  id          String   @id @default(uuid())
+  schoolId    String   @map("school_id")
+  timetableId String   @map("timetable_id")
+  dayOfWeek   Int      @map("day_of_week") @db.SmallInt // ISO: 1 = Monday … 7 = Sunday
+  bellSlotId  String   @map("bell_slot_id")
+  subjectId   String   @map("subject_id")
+  updatedBy   String   @map("updated_by")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  timetable Timetable               @relation(fields: [schoolId, timetableId], references: [schoolId, id], onDelete: Cascade)
+  bellSlot  BellSlot                @relation(fields: [schoolId, bellSlotId], references: [schoolId, id], onDelete: Restrict)
+  subject   Subject                 @relation(fields: [schoolId, subjectId], references: [schoolId, id], onDelete: Cascade)
+  teachers  TimetableEntryTeacher[]
+
+  @@unique([schoolId, id])
+  @@unique([timetableId, dayOfWeek, bellSlotId]) // one lesson per cell
+  @@index([schoolId])
+  @@index([schoolId, bellSlotId])
+  @@map("timetable_entries")
+}
+
+model TimetableEntryTeacher {
+  id        String @id @default(uuid())
+  schoolId  String @map("school_id")
+  entryId   String @map("entry_id")
+  teacherId String @map("teacher_id")
+
+  entry   TimetableEntry @relation(fields: [schoolId, entryId], references: [schoolId, id], onDelete: Cascade)
+  teacher User           @relation(fields: [schoolId, teacherId], references: [schoolId, id], onDelete: Cascade)
+
+  @@unique([entryId, teacherId])
+  @@index([schoolId])
+  @@index([schoolId, teacherId])
+  @@map("timetable_entry_teachers")
 }
