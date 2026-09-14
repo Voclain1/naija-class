@@ -221,6 +221,10 @@ describe("timetable fork and copy (Phase 8 CP4) — real database", () => {
         expect(err.details.acknowledgementMismatch).toBe(true);
         const none = await refusalOf(fx.service.copyTimetable(fx.owner, src, into({ leaveUnassignedTeachersOff: true, acknowledgedRemovals: [] }), reqCtx));
         expect(none.details.acknowledgementMismatch).toBe(true);
+        // A SUPERSET (the real removal plus one more) is not "exactly what was shown" either.
+        const superset = [{ dayOfWeek: TUE, bellSlotId: fx.slots.p2, teacherId: fx.teachers.uche }, ...wrong];
+        const more = await refusalOf(fx.service.copyTimetable(fx.owner, src, into({ leaveUnassignedTeachersOff: true, acknowledgedRemovals: superset }), reqCtx));
+        expect(more.details.acknowledgementMismatch).toBe(true);
         expect(await timetableFor("a", null, fx.year2)).toBeNull();
       });
     });
