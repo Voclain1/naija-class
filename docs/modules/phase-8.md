@@ -2221,3 +2221,119 @@ The report and the independent measurement agree on every figure.
 4. **The service needs a pinnable clock.** Every expected figure depends on
    "today", so `todayFn` is a plain property specs set explicitly, keeping Nest
    DI unaffected.
+
+### 16.12 Deployed and verified in production — 2026-09-14 (CP1 and CP2)
+
+**CP1 (Event Calendar)** was verified live on 2026-09-13; that evidence is in
+§15.10 and is not repeated here. In summary:
+- migrations applied;
+- a live INSERT into `national_events` as `app_user` refused (42501);
+- seed 22 rows;
+- routes 401 against a 404 control.
+
+**CP2 (Recording Completeness)** below.
+
+**Merge and deploy.**
+- PR #300 merged as `7478a32` after both required checks passed on its final
+  head commit (`3c4bd1c`), with branch protection re-read first.
+- `main` CI passed; deploy run `34813759125` succeeded.
+- The deploy log shows `Applying migration
+  20260914120000_phase_8_cp2_reports_permissions` then "All migrations have been
+  successfully applied."
+- The post-release smoke test passed 6/6.
+
+**Live-code verification.** A read-only script ran inside the production
+`school-kit-api` container, as `app_user`. It loaded the **deployed**
+`/app/dist/modules/reports/completeness.service.js`, the file the API serves,
+rather than re-running extracted SQL, and called `getCompleteness` as each
+school's real active owner, so the live role gate ran too. It deliberately did
+**not** call `getTeacherActivity`, which writes an audit row by design.
+
+| Check | Result |
+|---|---|
+| `_prisma_migrations` | `20260914120000_phase_8_cp2_reports_permissions` finished 2026-09-14T06:31:26Z, not rolled back |
+| System role grants | admin: both reports permissions; teacher and bursar: neither; owner: wildcard |
+| SECURITY DEFINER count | 22 (unchanged) |
+| Schools checked | 70, errors 0 (9 skipped: no active owner to run as) |
+
+**Signal counts — live code against the pre-deploy SQL dry run (§16.11):**
+
+| Signal | Dry run (79 schools) | Live code (70 schools) |
+|---|---|---|
+| `CURRENT_TERM_ENDED` | 6 | **6** |
+| `ARMS_WITHOUT_FORM_TEACHER` | 7 | **7** |
+| `ARMS_WITHOUT_SUBJECT_TEACHERS` | 7 | **7** |
+| `NEXT_TERM_NOT_CURRENT` | 1 | **1** |
+| `NO_ENROLLMENT_THIS_TERM` | 3 | **3** |
+| `NO_CURRENT_TERM` | 54 | **45** |
+
+**`NO_CURRENT_TERM` 54 → 45 is inferred, not individually verified.** The live
+run skipped 9 schools with no active owner (70 + 9 = 79). Every other signal
+count is identical, so those 9 carry no other signal, and 54 − 9 = 45 is
+consistent with all 9 having no current term. The 9 were not each re-checked.
+
+**Virgo Fidelis (12 students), hand-verified from first principles:**
+- The current term is Second Term 2025/2026, 7 Jun – 31 Aug 2026.
+- Weekdays in that range: **61**. Excluded weekdays: Democracy Day (Fri 12 Jun)
+  and Eid-el-Maulud (Tue 25 Aug) = **59 school days**, which is what the live
+  report returned.
+- 4 classes × 59 = **236** registers expected. The live report returned 236.
+- **0 registers taken on school days, 1 on a non-school day.** §4.6 found the
+  only attendance ever recorded in production was on **25 Aug 2026**, which is
+  Eid-el-Maulud. The report correctly does not count a register marked on a
+  public holiday as a school-day register.
+- Score slots: **36 expected, 0 entered this term.** This matches §4.6's 36
+  component slots; Virgo's 24 score rows are all in the previous term.
+- 12 students with no report card this term (its cards are in the previous
+  term).
+- Signals: `CURRENT_TERM_ENDED` (31 Aug), `NEXT_TERM_NOT_CURRENT`,
+  `ARMS_WITHOUT_FORM_TEACHER`, `ARMS_WITHOUT_SUBJECT_TEACHERS`.
+
+**Live HTTP:**
+
+| Request | Result |
+|---|---|
+| `GET /api/v1/reports/completeness`, `/reports/teacher-activity` (no auth) | 401 each |
+| Control: `GET /api/v1/reports/does-not-exist` | 404, so the 401s prove the routes are deployed |
+| `https://app.schoolkit.ng/reports` | 200 |
+
+**Reliability finding during the live check.** One school's report transaction
+ran past Prisma's 5000 ms interactive-transaction default: `withTenant` logged
+`retrying after connection-level error (P2028) after 5024ms — body ran long`,
+and the retry succeeded. That is the same class of failure as the 2026-09-11
+dashboard incident, on the same Fly-Johannesburg → Neon-Frankfurt link. The
+report runs ~12 statements in one transaction, like the dashboard's ~20.
+**Fixed immediately** rather than deferred, applying the dashboard's proven
+15-second override: see §16.13.
+
+**CP2 is closed.**
+
+### 16.13 Fix — the report's transaction budget (2026-09-14)
+
+**Problem (found in §16.12's live check).** The completeness report ran its ~12
+statements inside `withTenant` at Prisma's 5000 ms interactive-transaction
+default. One production run hit P2028 at 5024 ms and survived only on
+`withTenant`'s single retry. This is the same failure class as the 2026-09-11
+`/dashboard` incident.
+
+**Fix.** A new constant `REPORTS_TRANSACTION_TIMEOUT_MS = 15_000`, the value
+already proven by `DASHBOARD_TRANSACTION_TIMEOUT_MS`, is passed with a diagnostic
+label on both report transactions:
+- `reports.getCompleteness`
+- `reports.getTeacherActivity`
+
+It is safe for the dashboard's reason: every report read runs on one connection
+with no nested `withTenant`, so a longer hold waits on nothing and cannot
+deadlock.
+
+**Gate.** `reports-transaction.spec.ts` intercepts `withTenant`, the technique
+`dashboard-transaction.spec.ts` established. It asserts, for both endpoints,
+**exactly one** report transaction per request, carrying `timeoutMs: 15000`.
+- Run against the unfixed code first: **2 failed** (`expected undefined to be
+  15000`; `expected [] to deeply equal [{ label, timeoutMs: 15000 }]`).
+- After the fix: **passes**.
+- Timing is never involved, so the gate is deterministic.
+
+Not changed: `withTenant`'s own retry behaviour, the role-check transaction
+(short, unchanged), and `DashboardService`'s call to `computeTermHealth`, which
+already runs inside the dashboard's 15-second transaction.
