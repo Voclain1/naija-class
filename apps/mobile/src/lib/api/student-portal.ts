@@ -1,4 +1,5 @@
 import type {
+  FamilyTimetableDto,
   PortalInvoiceListResponse,
   StudentAttendanceResponse,
   AcceptStudentInvitationInput,
@@ -121,4 +122,9 @@ export function getStudentCalendar(window: { from: string; to: string }): Promis
   return apiFetch<CalendarResponse>(
     `/student-portal/me/calendar?from=${encodeURIComponent(window.from)}&to=${encodeURIComponent(window.to)}`,
   );
+}
+
+/** Phase 8 / CP4 — the student's own PUBLISHED class timetable for the current term (§18 D39, D45). */
+export function getMyTimetable(): Promise<FamilyTimetableDto> {
+  return apiFetch<FamilyTimetableDto>("/student-portal/me/timetable");
 }

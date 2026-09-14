@@ -135,6 +135,16 @@ export default function StudentDetailScreen() {
           </Pressable>
         </Link>
 
+        {/* Phase 8 / CP4 — the class timetable the school PUBLISHED (§18 D39). */}
+        <Link href={`/students/${studentId}/timetable`} asChild>
+          <Pressable accessibilityRole="button" accessibilityLabel="View class timetable">
+            <Card>
+              <Heading>Timetable</Heading>
+              <Body muted>{"This term’s class timetable, as published by the school."}</Body>
+            </Card>
+          </Pressable>
+        </Link>
+
         {/* Portal access sits under Results and above Fees: it is a
             one-off setup action, not something a parent returns to daily. */}
         <StudentPortalAccess

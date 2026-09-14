@@ -7,20 +7,34 @@ import { toast } from "sonner";
 
 import {
   ISO_WEEKDAY_LABELS,
+  describeTimetableClash,
   formatMinuteOfDay,
   type AssignmentWarningDto,
+  type CopyProblemsDto,
+  type TimetableClashDto,
   type SubjectDto,
   type TimetableOptionsDto,
   type TimetableViewDto,
 } from "@school-kit/types";
 
 import { InlineAlert } from "@/components/shared/inline-alert";
+import { CopyProblemsList, problemsOf } from "@/components/timetable/copy-problems";
+import { CopyTimetableDialog } from "@/components/timetable/copy-timetable-dialog";
 import { LessonEditorModal, type LessonTarget } from "@/components/timetable/lesson-editor-modal";
+import { PublicationPanel } from "@/components/timetable/publication-panel";
 import { Button } from "@/components/ui/button";
 import { ApiError } from "@/lib/api-client";
 import { useAuth } from "@/lib/auth/use-auth";
 import { listSubjects } from "@/lib/subjects/subjects-api";
-import { clashesOf, createTimetable, deleteTimetable, getTimetableOptions, getTimetableView } from "@/lib/timetable/timetable-api";
+import {
+  clashesOf,
+  createTimetable,
+  deleteTimetable,
+  forkTimetable,
+  getTimetableOptions,
+  getTimetableView,
+  getYearClashes,
+} from "@/lib/timetable/timetable-api";
 import { buildGrid } from "@/lib/timetable/timetable-grid";
 
 // Duplicated per-file rather than a shared hook — same pattern as the settings
@@ -33,9 +47,13 @@ function hasPermission(permissions: string[], perm: string): boolean {
 //
 // One class, one term at a time. The grid shows the timetable IN FORCE for that
 // term (D13): the class's "This term only" timetable if it has one, otherwise its
-// "Whole year" timetable. Switching to "This term only" creates an EMPTY term
-// timetable (copying is CP4); switching back deletes it, which the API refuses if
-// the whole-year lessons would then clash with another class.
+// "Whole year" timetable. "This term only" starts EMPTY or FROM the whole-year
+// timetable (a fork, CP4 D41); switching back deletes it, which the API refuses if
+// the whole-year lessons would then add a clash with another class.
+//
+// CP4 adds: what families see (publish / unpublished changes, D45), a standing
+// banner of every clash in force in the year (D43), and copy to another term or
+// year (D42).
 
 const SELECT = "h-10 rounded-md border border-input bg-background px-3 text-sm";
 
@@ -55,6 +73,10 @@ export default function TimetablePage() {
   const [error, setError] = useState<string | null>(null);
   const [warnings, setWarnings] = useState<AssignmentWarningDto[]>([]);
   const [target, setTarget] = useState<LessonTarget | null>(null);
+  const [yearClashes, setYearClashes] = useState<TimetableClashDto[]>([]);
+  const [copyOpen, setCopyOpen] = useState(false);
+  const [problemsTitle, setProblemsTitle] = useState<string | null>(null);
+  const [problems, setProblems] = useState<CopyProblemsDto | null>(null);
 
   useEffect(() => {
     if (!canRead) return;
@@ -87,11 +109,13 @@ export default function TimetablePage() {
       return;
     }
     try {
-      setView(await getTimetableView(classArmId, termId));
+      const [v, clashes] = await Promise.all([getTimetableView(classArmId, termId), getYearClashes(yearId)]);
+      setView(v);
+      setYearClashes(clashes);
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Could not load the timetable.");
     }
-  }, [classArmId, termId]);
+  }, [classArmId, termId, yearId]);
 
   useEffect(() => {
     setWarnings([]);
@@ -105,17 +129,41 @@ export default function TimetablePage() {
     if (!view) return;
     if (forTerm && view.yearWide) {
       const ok = window.confirm(
-        `Give ${className} a separate timetable for ${term?.name}? It starts empty and replaces the whole-year timetable for this term only.`,
+        `Give ${className} an EMPTY timetable for ${term?.name}? It replaces the whole-year timetable for this term only.`,
       );
       if (!ok) return;
     }
     setBusy(true);
     setError(null);
+    setProblems(null);
     try {
       await createTimetable({ classArmId, academicYearId: yearId, termId: forTerm ? termId : null });
       await loadView();
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Could not create the timetable.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // D41 — a term timetable that starts as a copy of the whole-year one.
+  async function fork() {
+    if (!view?.yearWide) return;
+    setBusy(true);
+    setError(null);
+    setProblems(null);
+    try {
+      const r = await forkTimetable(view.yearWide.id, termId, false);
+      toast.success(`${className} now has its own ${term?.name} timetable, copied from the whole year (${r.lessonsCopied} lessons). Not published yet.`);
+      await loadView();
+    } catch (e) {
+      const p = problemsOf(e);
+      if (p) {
+        setProblemsTitle(`${className}'s ${term?.name} timetable was not created`);
+        setProblems(p);
+      } else {
+        setError(e instanceof ApiError ? e.message : "Could not create the term timetable.");
+      }
     } finally {
       setBusy(false);
     }
@@ -286,8 +334,18 @@ export default function TimetablePage() {
                       </>
                     )}
                     {view.yearWide && !view.termOnly && (
-                      <Button type="button" variant="outline" onClick={() => void create(true)} disabled={busy}>
-                        Use a separate timetable for {term?.name}
+                      <>
+                        <Button type="button" variant="outline" onClick={() => void fork()} disabled={busy}>
+                          Separate {term?.name} timetable, starting from the whole year
+                        </Button>
+                        <Button type="button" variant="ghost" onClick={() => void create(true)} disabled={busy}>
+                          …starting empty
+                        </Button>
+                      </>
+                    )}
+                    {view.inForce && view.lessons.length > 0 && (
+                      <Button type="button" variant="outline" onClick={() => setCopyOpen(true)} disabled={busy}>
+                        Copy to another term or year…
                       </Button>
                     )}
                     {view.termOnly && (
@@ -303,6 +361,34 @@ export default function TimetablePage() {
                   </div>
                 )}
               </section>
+
+              {problems && (
+                <InlineAlert title={problemsTitle ?? "Not done"} tone="warning">
+                  <CopyProblemsList problems={problems} />
+                </InlineAlert>
+              )}
+
+              {yearClashes.length > 0 && (
+                <InlineAlert
+                  tone="warning"
+                  title={`${yearClashes.length} timetable clash${yearClashes.length === 1 ? "" : "es"} in force in ${year?.label}`}
+                >
+                  <p>A teacher is timetabled in two classes at once. This can happen when a term is added or a class is re-activated.</p>
+                  <ul className="mt-1 list-disc pl-4">
+                    {yearClashes.map((c) => (
+                      <li key={`${c.teacherId}-${c.dayOfWeek}-${c.bellSlotId}-${c.termId}`}>{describeTimetableClash(c)}</li>
+                    ))}
+                  </ul>
+                  <p className="mt-1">
+                    Fix it by giving one of the classes its own timetable for that term, or by moving one of the lessons. Edits that don&apos;t add a
+                    clash still save.
+                  </p>
+                </InlineAlert>
+              )}
+
+              {view.inForce && (
+                <PublicationPanel view={view} className={className} termName={term?.name ?? ""} canManage={canManage} onChanged={loadView} />
+              )}
 
               {warnings.length > 0 && (
                 <InlineAlert tone="warning" title="Saved — but check these assignments">
@@ -393,6 +479,22 @@ export default function TimetablePage() {
                 <div className="flex items-center gap-2 rounded-md border border-dashed bg-muted/30 p-4 text-sm text-muted-foreground">
                   <CalendarClock className="h-4 w-4" aria-hidden="true" /> {className} has no timetable for {term?.name} yet.
                 </div>
+              )}
+
+              {options && (
+                <CopyTimetableDialog
+                  open={copyOpen}
+                  source={view.inForce}
+                  className={className}
+                  options={options}
+                  onClose={() => setCopyOpen(false)}
+                  onCopied={(dest) => {
+                    setCopyOpen(false);
+                    const y = options.academicYears.find((x) => x.id === dest.academicYearId);
+                    setYearId(dest.academicYearId);
+                    setTermId(dest.termId ?? (y?.terms.find((t) => t.isCurrent) ?? y?.terms[0])?.id ?? "");
+                  }}
+                />
               )}
 
               {view.inForce && (

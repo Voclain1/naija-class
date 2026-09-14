@@ -47,6 +47,12 @@ export const queryKeys = {
   guardianCalendar: (from: string, to: string) => ["calendar", from, to] as const,
   myCalendar: (from: string, to: string) => ["me", "calendar", from, to] as const,
 
+  // Phase 8 / CP4 — the class timetable families see: the school's PUBLISHED
+  // snapshot (docs/modules/phase-8.md §18 D45). Persistable like released results:
+  // it is published, not a draft, and the cache is wiped on sign-out (D12).
+  studentTimetable: (studentId: string) => ["students", studentId, "timetable"] as const,
+  myTimetable: ["me", "timetable"] as const,
+
   // --- staff (CP2) --------------------------------------------------------
   //
   // EVERY staff key begins with the literal "staff". That prefix is not

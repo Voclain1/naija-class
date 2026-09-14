@@ -3,6 +3,11 @@
 
 import type {
   BellScheduleDto,
+  CopyResultDto,
+  CopyTimetableInput,
+  PublishResultDto,
+  TeacherTimetableDto,
+  WithdrawPublicationInput,
   ClearLessonInput,
   CreateTimetableInput,
   LessonDto,
@@ -48,6 +53,40 @@ export function saveLesson(input: SaveLessonInput): Promise<SaveLessonResultDto>
 
 export function clearLesson(input: ClearLessonInput): Promise<LessonDto[]> {
   return apiFetch<LessonDto[]>("/timetable/lessons/clear", { method: "POST", body: input });
+}
+
+// ---- CP4 (docs/modules/phase-8.md §18) ----
+
+export function getYearClashes(academicYearId: string): Promise<TimetableClashDto[]> {
+  return apiFetch<TimetableClashDto[]>(`/timetable/clashes?academicYearId=${encodeURIComponent(academicYearId)}`);
+}
+
+/** preview=true runs the real fork and rolls it back, returning every problem (D41/D42). */
+export function forkTimetable(id: string, termId: string, preview: boolean): Promise<CopyResultDto> {
+  return apiFetch<CopyResultDto>(`/timetable/timetables/${encodeURIComponent(id)}/fork${preview ? "?preview=true" : ""}`, {
+    method: "POST",
+    body: { termId },
+  });
+}
+
+/** A refused copy comes back as TIMETABLE_COPY_REFUSED with every problem in details; preview returns them instead. */
+export function copyTimetable(id: string, input: CopyTimetableInput, preview: boolean): Promise<CopyResultDto> {
+  return apiFetch<CopyResultDto>(`/timetable/timetables/${encodeURIComponent(id)}/copy${preview ? "?preview=true" : ""}`, {
+    method: "POST",
+    body: input,
+  });
+}
+
+export function publishTimetable(id: string): Promise<PublishResultDto> {
+  return apiFetch<PublishResultDto>(`/timetable/timetables/${encodeURIComponent(id)}/publish`, { method: "POST" });
+}
+
+export function withdrawPublication(input: WithdrawPublicationInput): Promise<void> {
+  return apiFetch<void>("/timetable/publications/withdraw", { method: "POST", body: input });
+}
+
+export function getMyTimetable(termId?: string): Promise<TeacherTimetableDto> {
+  return apiFetch<TeacherTimetableDto>(`/teacher-scope/me/timetable${termId ? `?termId=${encodeURIComponent(termId)}` : ""}`);
 }
 
 /** The clashes carried by a TIMETABLE_CLASH error, or null for any other error. */

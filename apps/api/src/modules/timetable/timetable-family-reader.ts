@@ -18,7 +18,7 @@ import type { TenantDb } from "./timetable-clash.js";
 // and timetable_publications. NEVER timetables, timetable_entries,
 // timetable_entry_teachers or bell_slots — the live timetable. A family cannot
 // see a half-built grid, an unresolved clash or an unpublished edit because this
-// code has no way to reach one. timetable-family-reader.spec.ts records every
+// code has no way to reach one. timetable-publication.spec.ts records every
 // table this class touches and fails if a live timetable table appears.
 //
 // Withdraw DELETES the publication row, so there is no "withdrawn" flag here to
