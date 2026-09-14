@@ -1,3 +1,5 @@
+import type { TimetableClashDto } from "../timetable/timetable.dto.js";
+
 // AcademicYear + Term DTO shapes returned by the API.
 //
 // Dates are serialized over JSON as strings. The DTO types accept both
@@ -24,4 +26,11 @@ export interface TermDto {
   isCurrent: boolean;
   createdAt: string | Date;
   updatedAt: string | Date;
+  /**
+   * Phase 8 / CP4 (§18 D43) — set only on the response to CREATING a term:
+   * timetable clashes the new term put into force (year-wide timetables of its
+   * year come into force for it). Surfaced, never silent; an empty array means
+   * none. Absent on every other term response.
+   */
+  timetableClashes?: TimetableClashDto[];
 }

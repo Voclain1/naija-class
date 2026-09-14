@@ -1802,3 +1802,52 @@ describe("Phase 8 CP3 audit coverage — timetable mutations", () => {
     ]);
   }, 60_000);
 });
+
+// ---------------------------------------------------------------------------
+// Phase 8 / CP4 — fork, copy, publish and withdraw each write exactly one
+// tenant-scoped audit row (§18). A PREVIEW writes none (it rolls back), a
+// REFUSED copy writes none, and a no-op withdraw writes none.
+// ---------------------------------------------------------------------------
+describe("Phase 8 CP4 audit coverage — timetable lifecycle and publishing", () => {
+  let fx: TimetableFixture;
+
+  afterAll(async () => {
+    await fx?.cleanup();
+  });
+
+  it("timetable.fork, timetable.copy, timetable.publish, timetable.publication.withdraw — and none for a preview, a refusal or a no-op", async () => {
+    fx = await createTimetableFixture("audit-cp4");
+    const reqCtx = { ipAddress: "127.0.0.1" };
+    const cp4 = ["timetable.fork", "timetable.copy", "timetable.publish", "timetable.publication.withdraw"];
+    const rows = () =>
+      withTenant(fx.schoolId, (db) =>
+        db.auditLog.findMany({
+          where: { action: { in: cp4 } },
+          select: { action: true, schoolId: true },
+          orderBy: { createdAt: "asc" },
+        }),
+      );
+
+    const yw = await fx.timetable("a", null);
+    await fx.lesson(yw.id, 1, "p1", [fx.teachers.tunde]);
+    const copyInput = { academicYearId: fx.year2, termId: null, leaveUnassignedTeachersOff: false, acknowledgedRemovals: [] };
+
+    await fx.service.forkTimetable(fx.owner, yw.id, { termId: fx.terms.second }, reqCtx, { preview: true });
+    await fx.service.copyTimetable(fx.owner, yw.id, copyInput, reqCtx, { preview: true });
+    expect(await rows()).toEqual([]); // previews roll back, audit rows included
+
+    await fx.service.forkTimetable(fx.owner, yw.id, { termId: fx.terms.second }, reqCtx);
+    await fx.service.copyTimetable(fx.owner, yw.id, copyInput, reqCtx);
+    await expect(fx.service.copyTimetable(fx.owner, yw.id, copyInput, reqCtx)).rejects.toMatchObject({ code: "TIMETABLE_COPY_REFUSED" }); // destination now non-empty
+    await fx.service.publishTimetable(fx.owner, yw.id, reqCtx);
+    await fx.service.withdrawPublication(fx.owner, { classArmId: fx.arms.a, termId: fx.terms.first }, reqCtx);
+    await fx.service.withdrawPublication(fx.owner, { classArmId: fx.arms.a, termId: fx.terms.first }, reqCtx);
+
+    expect(await rows()).toEqual([
+      { action: "timetable.fork", schoolId: fx.schoolId },
+      { action: "timetable.copy", schoolId: fx.schoolId },
+      { action: "timetable.publish", schoolId: fx.schoolId },
+      { action: "timetable.publication.withdraw", schoolId: fx.schoolId },
+    ]);
+  }, 60_000);
+});

@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import type { PublicationStatusDto } from "./timetable-lifecycle.dto.js";
+
 // Phase 8 / CP3 — Timetable builder (docs/modules/phase-8.md §17).
 //
 // Times of day are integer minutes since midnight, school wall-clock time (D27).
@@ -160,6 +162,8 @@ export interface TimetableViewDto {
   schoolWeekDays: number[];
   /** Active assignments for this class in this year — the lesson editor offers only these teachers (D33). */
   assignments: TimetableAssignmentDto[];
+  /** CP4 D45: what families see for this class and term, against the live timetable. */
+  publication: PublicationStatusDto;
 }
 
 export interface TimetableAssignmentDto {

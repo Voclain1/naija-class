@@ -1,9 +1,10 @@
 import { Injectable } from "@nestjs/common";
 
-import { withTenant } from "@school-kit/db";
+import { Prisma, withTenant } from "@school-kit/db";
 import {
   ConflictError,
   ISO_WEEKDAY_LABELS,
+  LIFECYCLE_ERROR_CODES,
   NotFoundError,
   TIMETABLE_ERROR_CODES,
   ValidationError,
@@ -12,6 +13,14 @@ import {
   type BellScheduleDto,
   type BellSlotDto,
   type ClearLessonInput,
+  type CopyResultDto,
+  type CopyTimetableInput,
+  type ForkTimetableInput,
+  type PublicationStatusDto,
+  type PublishResultDto,
+  type TeacherRemovalDto,
+  type UnassignedTeacherDto,
+  type WithdrawPublicationInput,
   type CreateTimetableInput,
   type LessonDto,
   type SaveBellScheduleInput,
@@ -28,6 +37,7 @@ import {
 import type { AuthContext } from "../../common/auth/auth-context.js";
 import { assertUserActiveAndHasOneOf } from "../../common/auth/role-check.js";
 import { addedClashes, findTimetableClashes, lockSchoolTimetables, type TenantDb } from "./timetable-clash.js";
+import { buildLiveSnapshot, type LiveSnapshot } from "./timetable-snapshot.js";
 
 // Phase 8 / CP3 — Timetable builder. Plan-first: docs/modules/phase-8.md §17.
 //
@@ -77,9 +87,59 @@ const AUDIT = {
   timetableDelete: "timetable.delete",
   lessonSave: "timetable.lesson.save",
   lessonClear: "timetable.lesson.clear",
+  timetableFork: "timetable.fork",
+  timetableCopy: "timetable.copy",
+  publish: "timetable.publish",
+  withdraw: "timetable.publication.withdraw",
 } as const;
 
 const C = TIMETABLE_ERROR_CODES;
+const L = LIFECYCLE_ERROR_CODES;
+
+interface CopySource {
+  id: string;
+  classArmId: string;
+  academicYearId: string;
+  termId: string | null;
+  className: string;
+  entries: Array<{
+    dayOfWeek: number;
+    bellSlotId: string;
+    slotLabel: string;
+    subjectId: string;
+    subjectName: string;
+    teachers: Array<{ id: string; name: string; isActive: boolean }>;
+  }>;
+}
+
+interface CopyOutcome {
+  sourceId: string;
+  className: string;
+  result: CopyResultDto;
+}
+
+/** Thrown inside the transaction to roll a preview back while carrying its result out. */
+class PreviewRollback extends Error {
+  constructor(readonly result: CopyResultDto) {
+    super("preview rollback");
+  }
+}
+
+/** One sentence naming every kind of problem a refused copy has (details carries them all). */
+function describeCopyProblems(o: CopyOutcome): string {
+  const p = o.result.problems;
+  const parts: string[] = [];
+  if (p.destinationLessonCount > 0) {
+    parts.push(`the destination already has ${p.destinationLessonCount} lesson${p.destinationLessonCount === 1 ? "" : "s"} (clear it first)`);
+  }
+  if (p.acknowledgementMismatch) parts.push("the teachers to leave off have changed since the preview (preview again)");
+  if (p.unassignedTeachers.length > 0) {
+    const n = new Set(p.unassignedTeachers.map((u) => u.teacherId)).size;
+    parts.push(`${n} teacher${n === 1 ? " is" : "s are"} not assigned for the destination`);
+  }
+  if (p.clashes.length > 0) parts.push(`${p.clashes.length} clash${p.clashes.length === 1 ? "" : "es"} with other classes`);
+  return `${o.className}'s timetable was not copied: ${parts.join("; ")}.`;
+}
 
 /** "Tunde Bello would be teaching JSS 1A and JSS 1B at the same time — Monday, P1, First Term." */
 function describeClash(c: TimetableClashDto): string {
@@ -92,6 +152,8 @@ export interface ClashGuard {
   begin(academicYearId: string): Promise<void>;
   /** After writing: refuse with TIMETABLE_CLASH if the write added a clash. */
   verify(): Promise<void>;
+  /** After writing: the clashes the write added, WITHOUT throwing (copy collects every problem). */
+  added(): Promise<TimetableClashDto[]>;
 }
 
 @Injectable()
@@ -108,6 +170,12 @@ export class TimetableService {
   afterWriteHook: (() => Promise<void>) | null = null;
   /** D43: which clashes a mutation is refused for. Production: the ones it ADDED. */
   clashRule: (before: TimetableClashDto[], after: TimetableClashDto[]) => TimetableClashDto[] = addedClashes;
+  /** D45: the ONE snapshot builder — publish stores it, the status compares against it. */
+  snapshotFn: (db: TenantDb, schoolId: string, classArmId: string, termId: string) => Promise<LiveSnapshot> = buildLiveSnapshot;
+  /** D45: withdraw DELETES the publication (a flag would be a state a reader could forget). */
+  withdrawFn: (db: TenantDb, publicationId: string) => Promise<void> = async (db, id) => {
+    await db.timetablePublication.delete({ where: { id } });
+  };
 
   private async runMutation<T>(
     authCtx: AuthContext,
@@ -131,13 +199,16 @@ export class TimetableService {
             yearId = academicYearId;
             before = await this.clashFn(db, schoolId, academicYearId);
           },
-          verify: async () => {
-            // A verify without begin is a programming error, not "no clashes":
+          added: async () => {
+            // An added() without begin is a programming error, not "no clashes":
             // fail loudly so a mutation cannot silently skip its check.
-            if (yearId === null) throw new Error("ClashGuard.verify() called before begin()");
+            if (yearId === null) throw new Error("ClashGuard used before begin()");
             if (this.afterWriteHook) await this.afterWriteHook();
             const after = await this.clashFn(db, schoolId, yearId);
-            const added = this.clashRule(before, after);
+            return this.clashRule(before, after);
+          },
+          verify: async () => {
+            const added = await clashes.added();
             const first = added[0];
             if (first) throw new ConflictError(C.CLASH, describeClash(first), { clashes: added });
           },
@@ -350,10 +421,13 @@ export class TimetableService {
         }),
       ]);
 
+      const publication = await this.publicationStatus(db, schoolId, arm.id, term.id);
+
       return {
         classArmId: arm.id,
         termId: term.id,
         academicYearId: term.academicYearId,
+        publication,
         inForce,
         yearWide,
         termOnly,
@@ -754,5 +828,466 @@ export class TimetableService {
       }
       return this.loadLessons(db, schoolId, timetable.id);
     });
+  }
+
+  // =========================================================================
+  // CP4 — clashes banner (D43)
+  // =========================================================================
+
+  /** Every clash in force in a year — the builder's standing banner. Same query as every check. */
+  async getYearClashes(authCtx: AuthContext, academicYearId: string): Promise<TimetableClashDto[]> {
+    return withTenant(authCtx.schoolId, async (db) => {
+      const year = await db.academicYear.findFirst({ where: { id: academicYearId, schoolId: authCtx.schoolId }, select: { id: true } });
+      if (!year) throw new NotFoundError("Academic year not found.");
+      return this.clashFn(db, authCtx.schoolId, year.id);
+    });
+  }
+
+  // =========================================================================
+  // CP4 — fork and copy (D41, D42)
+  //
+  // Both run copyLessons(), and a PREVIEW runs the identical path inside the
+  // same transaction, then throws PreviewRollback so nothing commits. A preview
+  // therefore cannot drift from the copy (§18.4 rule 1).
+  // =========================================================================
+
+  async forkTimetable(
+    authCtx: AuthContext,
+    sourceId: string,
+    input: ForkTimetableInput,
+    reqCtx: RequestContext,
+    options: { preview: boolean } = { preview: false },
+  ): Promise<CopyResultDto> {
+    await assertUserActiveAndHasOneOf(authCtx, TIMETABLE_MANAGER_ROLES);
+    return this.runCopy(authCtx, "timetable.forkTimetable", options.preview, reqCtx, async (db, clashes) => {
+      const schoolId = authCtx.schoolId;
+      const source = await this.loadCopySource(db, schoolId, sourceId);
+      if (source.termId !== null) {
+        throw new ValidationError(L.NOT_YEAR_WIDE, "Only a whole-year timetable can be split into a term timetable.");
+      }
+      const term = await db.term.findFirst({ where: { id: input.termId, schoolId }, select: { academicYearId: true, name: true } });
+      if (!term) throw new NotFoundError("Term not found.");
+      if (term.academicYearId !== source.academicYearId) {
+        throw new ValidationError(C.TERM_NOT_IN_YEAR, "That term does not belong to this timetable's academic year.");
+      }
+      // Never overwrite: a term that already has its own timetable is refused.
+      const exists = await db.timetable.findFirst({
+        where: { schoolId, classArmId: source.classArmId, termId: input.termId },
+        select: { id: true },
+      });
+      if (exists) {
+        throw new ConflictError(C.TIMETABLE_EXISTS, `${source.className} already has a timetable for ${term.name}.`, {
+          timetableId: exists.id,
+        });
+      }
+      return this.copyLessons(db, clashes, authCtx, source, { academicYearId: source.academicYearId, termId: input.termId }, {
+        leaveOff: false,
+        acknowledged: [],
+      });
+    });
+  }
+
+  async copyTimetable(
+    authCtx: AuthContext,
+    sourceId: string,
+    input: CopyTimetableInput,
+    reqCtx: RequestContext,
+    options: { preview: boolean } = { preview: false },
+  ): Promise<CopyResultDto> {
+    await assertUserActiveAndHasOneOf(authCtx, TIMETABLE_MANAGER_ROLES);
+    return this.runCopy(authCtx, "timetable.copyTimetable", options.preview, reqCtx, async (db, clashes) => {
+      const schoolId = authCtx.schoolId;
+      const source = await this.loadCopySource(db, schoolId, sourceId);
+      const year = await db.academicYear.findFirst({
+        where: { id: input.academicYearId, schoolId },
+        select: { id: true, terms: { select: { id: true } } },
+      });
+      if (!year) throw new NotFoundError("Academic year not found.");
+      if (year.terms.length === 0) {
+        throw new ValidationError(C.YEAR_HAS_NO_TERMS, "Add this academic year's terms before copying a timetable into it.");
+      }
+      if (input.termId !== null && !year.terms.some((t) => t.id === input.termId)) {
+        throw new ValidationError(C.TERM_NOT_IN_YEAR, "That term does not belong to the selected academic year.");
+      }
+      if (year.id === source.academicYearId && input.termId === source.termId) {
+        throw new ValidationError(L.SAME_AS_SOURCE, "A timetable cannot be copied onto itself.");
+      }
+      return this.copyLessons(db, clashes, authCtx, source, { academicYearId: year.id, termId: input.termId }, {
+        leaveOff: input.leaveUnassignedTeachersOff,
+        acknowledged: input.acknowledgedRemovals,
+      });
+    });
+  }
+
+  private async runCopy(
+    authCtx: AuthContext,
+    label: string,
+    preview: boolean,
+    reqCtx: RequestContext,
+    body: (db: TenantDb, clashes: ClashGuard) => Promise<CopyOutcome>,
+  ): Promise<CopyResultDto> {
+    try {
+      return await this.runMutation(authCtx, label, async (db, clashes) => {
+        const outcome = await body(db, clashes);
+        // A preview reports no destination id: the header it may have created is rolled back.
+        const result: CopyResultDto = { ...outcome.result, preview, timetable: preview ? null : outcome.result.timetable };
+        // A preview never commits — not even the destination header.
+        if (preview) throw new PreviewRollback(result);
+        if (!result.ok) {
+          throw new ConflictError(L.COPY_REFUSED, describeCopyProblems(outcome), { ...result.problems, removedTeachers: [] });
+        }
+        await db.auditLog.create({
+          data: {
+            schoolId: authCtx.schoolId,
+            userId: authCtx.userId,
+            action: label === "timetable.forkTimetable" ? AUDIT.timetableFork : AUDIT.timetableCopy,
+            entityType: "timetable",
+            entityId: result.timetable!.id,
+            ipAddress: reqCtx.ipAddress,
+            metadata: {
+              sourceTimetableId: outcome.sourceId,
+              destination: { academicYearId: result.timetable!.academicYearId, termId: result.timetable!.termId },
+              lessonsCopied: result.lessonsCopied,
+              removedTeachers: result.removedTeachers.map((r) => ({ dayOfWeek: r.dayOfWeek, bellSlotId: r.bellSlotId, teacherId: r.teacherId })),
+            },
+          },
+        });
+        return result;
+      });
+    } catch (e) {
+      if (e instanceof PreviewRollback) return e.result;
+      throw e;
+    }
+  }
+
+  private async loadCopySource(db: TenantDb, schoolId: string, sourceId: string): Promise<CopySource> {
+    const t = await db.timetable.findFirst({
+      where: { id: sourceId, schoolId },
+      select: {
+        id: true,
+        classArmId: true,
+        academicYearId: true,
+        termId: true,
+        classArm: { select: { name: true, isActive: true } },
+        entries: {
+          select: {
+            dayOfWeek: true,
+            bellSlotId: true,
+            subjectId: true,
+            bellSlot: { select: { label: true } },
+            subject: { select: { name: true } },
+            teachers: { select: { teacher: { select: { id: true, firstName: true, lastName: true, isActive: true } } } },
+          },
+        },
+      },
+    });
+    // An inactive class has no builder surface (D44), so it cannot be a copy source either.
+    if (!t || !t.classArm.isActive) throw new NotFoundError("Timetable not found.");
+    return {
+      id: t.id,
+      classArmId: t.classArmId,
+      academicYearId: t.academicYearId,
+      termId: t.termId,
+      className: t.classArm.name,
+      entries: t.entries.map((e) => ({
+        dayOfWeek: e.dayOfWeek,
+        bellSlotId: e.bellSlotId,
+        slotLabel: e.bellSlot.label,
+        subjectId: e.subjectId,
+        subjectName: e.subject.name,
+        teachers: e.teachers.map((x) => ({
+          id: x.teacher.id,
+          name: `${x.teacher.firstName} ${x.teacher.lastName}`,
+          isActive: x.teacher.isActive,
+        })),
+      })),
+    };
+  }
+
+  /**
+   * The shared core of fork and copy. Collects EVERY problem (§18.4 rule 2):
+   * lessons already at the destination, teachers without an effective
+   * assignment there, an acknowledgement that does not match, and — when the
+   * destination is empty, so the lessons can actually be written — the clashes
+   * the copy would add. The caller decides: preview → roll back and report;
+   * problems → refuse and roll back; none → commit.
+   */
+  private async copyLessons(
+    db: TenantDb,
+    clashes: ClashGuard,
+    authCtx: AuthContext,
+    source: CopySource,
+    dest: { academicYearId: string; termId: string | null },
+    opts: { leaveOff: boolean; acknowledged: TeacherRemovalDto[] },
+  ): Promise<CopyOutcome> {
+    const schoolId = authCtx.schoolId;
+    const existing = await db.timetable.findFirst({
+      where: { schoolId, classArmId: source.classArmId, academicYearId: dest.academicYearId, termId: dest.termId },
+      select: { id: true, classArmId: true, academicYearId: true, termId: true, _count: { select: { entries: true } } },
+    });
+    const destinationLessonCount = existing?._count.entries ?? 0;
+
+    // D33 at the destination, for every (subject, teacher) pair at once.
+    const coverage = await this.assignmentCoverage(db, schoolId, { classArmId: source.classArmId, ...dest }, source.entries);
+    const unassigned: UnassignedTeacherDto[] = [];
+    const warnings = new Map<string, AssignmentWarningDto>();
+    for (const e of source.entries) {
+      for (const t of e.teachers) {
+        const c = coverage.get(`${e.subjectId}|${t.id}`)!;
+        if (!t.isActive || c.covered.length === 0) {
+          unassigned.push({ dayOfWeek: e.dayOfWeek, bellSlotId: e.bellSlotId, slotLabel: e.slotLabel, teacherId: t.id, teacherName: t.name, subjectName: e.subjectName });
+        } else if (c.covered.length < c.inForce.length && !warnings.has(t.id)) {
+          warnings.set(t.id, {
+            teacherId: t.id,
+            teacherName: t.name,
+            uncoveredTermNames: c.inForce.filter((x) => !c.covered.includes(x.id)).map((x) => x.name),
+          });
+        }
+      }
+    }
+
+    // Q42 — leaving teachers off is accepted only against EXACTLY the list the
+    // server computes now. A stale confirmation is refused, never widened.
+    const removalKey = (r: { dayOfWeek: number; bellSlotId: string; teacherId: string }) => `${r.dayOfWeek}|${r.bellSlotId}|${r.teacherId}`;
+    const serverKeys = new Set(unassigned.map(removalKey));
+    const ackKeys = new Set(opts.acknowledged.map(removalKey));
+    const ackMatches = serverKeys.size === ackKeys.size && [...serverKeys].every((k) => ackKeys.has(k));
+    const acknowledgementMismatch = opts.leaveOff && !ackMatches;
+    const removing = opts.leaveOff && ackMatches ? serverKeys : new Set<string>();
+
+    const blockedBeforeWrite =
+      destinationLessonCount > 0 || acknowledgementMismatch || (unassigned.length > 0 && removing.size === 0);
+
+    let header: TimetableHeaderDto | null = existing
+      ? { id: existing.id, classArmId: existing.classArmId, academicYearId: existing.academicYearId, termId: existing.termId }
+      : null;
+    let added: TimetableClashDto[] = [];
+    let lessons: LessonDto[] = [];
+    const clashesChecked = destinationLessonCount === 0;
+
+    if (clashesChecked) {
+      await clashes.begin(dest.academicYearId);
+      if (!header) {
+        header = await db.timetable.create({
+          data: { schoolId, classArmId: source.classArmId, academicYearId: dest.academicYearId, termId: dest.termId, createdBy: authCtx.userId },
+          select: { id: true, classArmId: true, academicYearId: true, termId: true },
+        });
+      }
+      for (const e of source.entries) {
+        const entry = await db.timetableEntry.create({
+          data: { schoolId, timetableId: header.id, dayOfWeek: e.dayOfWeek, bellSlotId: e.bellSlotId, subjectId: e.subjectId, updatedBy: authCtx.userId },
+          select: { id: true },
+        });
+        const teacherIds = e.teachers
+          .filter((t) => !removing.has(removalKey({ dayOfWeek: e.dayOfWeek, bellSlotId: e.bellSlotId, teacherId: t.id })))
+          .map((t) => t.id);
+        if (teacherIds.length > 0) {
+          await db.timetableEntryTeacher.createMany({ data: teacherIds.map((teacherId) => ({ schoolId, entryId: entry.id, teacherId })) });
+        }
+      }
+      added = await clashes.added();
+      lessons = await this.loadLessons(db, schoolId, header.id);
+    }
+
+    const ok = !blockedBeforeWrite && added.length === 0;
+    return {
+      sourceId: source.id,
+      className: source.className,
+      result: {
+        preview: false,
+        ok,
+        timetable: ok ? header : null,
+        lessonsCopied: ok ? source.entries.length : 0,
+        removedTeachers: removing.size > 0 ? unassigned : [],
+        assignmentWarnings: [...warnings.values()],
+        lessons,
+        problems: {
+          destinationLessonCount,
+          unassignedTeachers: removing.size > 0 ? [] : unassigned,
+          clashes: added,
+          clashesChecked,
+          acknowledgementMismatch,
+        },
+      },
+    };
+  }
+
+  /** D33 coverage for many (subject, teacher) pairs at a destination that may not exist yet. */
+  private async assignmentCoverage(
+    db: TenantDb,
+    schoolId: string,
+    dest: { classArmId: string; academicYearId: string; termId: string | null },
+    entries: CopySource["entries"],
+  ): Promise<Map<string, { covered: string[]; inForce: Array<{ id: string; name: string }> }>> {
+    const [yearTerms, overrides, assignments] = await Promise.all([
+      db.term.findMany({ where: { schoolId, academicYearId: dest.academicYearId }, orderBy: { sequence: "asc" }, select: { id: true, name: true } }),
+      dest.termId === null
+        ? db.timetable.findMany({
+            where: { schoolId, classArmId: dest.classArmId, academicYearId: dest.academicYearId, termId: { not: null } },
+            select: { termId: true },
+          })
+        : Promise.resolve([]),
+      db.teacherAssignment.findMany({
+        where: { schoolId, classArmId: dest.classArmId, academicYearId: dest.academicYearId, isActive: true },
+        select: { teacherId: true, subjectId: true, termId: true },
+      }),
+    ]);
+    const replaced = new Set(overrides.map((o) => o.termId));
+    let inForce = dest.termId !== null ? yearTerms.filter((t) => t.id === dest.termId) : yearTerms.filter((t) => !replaced.has(t.id));
+    if (inForce.length === 0) inForce = yearTerms;
+
+    const out = new Map<string, { covered: string[]; inForce: Array<{ id: string; name: string }> }>();
+    for (const e of entries) {
+      for (const t of e.teachers) {
+        const key = `${e.subjectId}|${t.id}`;
+        if (out.has(key)) continue;
+        const mine = assignments.filter((a) => a.teacherId === t.id && a.subjectId === e.subjectId);
+        out.set(key, { covered: inForce.filter((x) => mine.some((a) => a.termId === null || a.termId === x.id)).map((x) => x.id), inForce });
+      }
+    }
+    return out;
+  }
+
+  // =========================================================================
+  // CP4 — publishing (D45)
+  // =========================================================================
+
+  async publishTimetable(authCtx: AuthContext, timetableId: string, reqCtx: RequestContext): Promise<PublishResultDto> {
+    await assertUserActiveAndHasOneOf(authCtx, TIMETABLE_MANAGER_ROLES);
+    return this.runMutation(authCtx, "timetable.publishTimetable", async (db) => {
+      const schoolId = authCtx.schoolId;
+      const t = await db.timetable.findFirst({
+        where: { id: timetableId, schoolId },
+        select: {
+          id: true,
+          classArmId: true,
+          academicYearId: true,
+          termId: true,
+          classArm: { select: { name: true, isActive: true } },
+          _count: { select: { entries: true } },
+        },
+      });
+      if (!t || !t.classArm.isActive) throw new NotFoundError("Timetable not found.");
+      if (t._count.entries === 0) {
+        throw new ValidationError(L.NOTHING_TO_PUBLISH, `${t.classArm.name}'s timetable has no lessons yet.`);
+      }
+
+      // The terms THIS timetable is in force right now.
+      const yearTerms = await db.term.findMany({
+        where: { schoolId, academicYearId: t.academicYearId },
+        orderBy: { sequence: "asc" },
+        select: { id: true, name: true },
+      });
+      let terms = yearTerms.filter((x) => x.id === t.termId);
+      if (t.termId === null) {
+        const overrides = await db.timetable.findMany({
+          where: { schoolId, classArmId: t.classArmId, academicYearId: t.academicYearId, termId: { not: null } },
+          select: { termId: true },
+        });
+        const replaced = new Set(overrides.map((o) => o.termId));
+        terms = yearTerms.filter((x) => !replaced.has(x.id));
+      }
+      if (terms.length === 0) {
+        throw new ValidationError(
+          L.NOTHING_TO_PUBLISH,
+          `${t.classArm.name}'s whole-year timetable is replaced by a term timetable in every term, so families would never see it.`,
+        );
+      }
+
+      // Never show a conflicted timetable as final.
+      const termIds = new Set(terms.map((x) => x.id));
+      const blocking = (await this.clashFn(db, schoolId, t.academicYearId)).filter(
+        (c) => termIds.has(c.termId) && c.classArms.some((a) => a.id === t.classArmId),
+      );
+      const firstBlock = blocking[0];
+      if (firstBlock) {
+        throw new ConflictError(
+          L.PUBLISH_BLOCKED_BY_CLASH,
+          `Resolve this clash before publishing: ${describeClash(firstBlock)}`,
+          { clashes: blocking },
+        );
+      }
+
+      const publishedAt = new Date();
+      const hashes: Record<string, string> = {};
+      for (const term of terms) {
+        const snap = await this.snapshotFn(db, schoolId, t.classArmId, term.id);
+        hashes[term.id] = snap.hash;
+        await db.timetablePublication.upsert({
+          where: { schoolId_classArmId_termId: { schoolId, classArmId: t.classArmId, termId: term.id } },
+          create: {
+            schoolId,
+            classArmId: t.classArmId,
+            termId: term.id,
+            grid: snap.grid as unknown as Prisma.InputJsonValue,
+            contentHash: snap.hash,
+            publishedBy: authCtx.userId,
+            publishedAt,
+          },
+          update: {
+            grid: snap.grid as unknown as Prisma.InputJsonValue,
+            contentHash: snap.hash,
+            publishedBy: authCtx.userId,
+            publishedAt,
+          },
+        });
+      }
+
+      await db.auditLog.create({
+        data: {
+          schoolId,
+          userId: authCtx.userId,
+          action: AUDIT.publish,
+          entityType: "timetable",
+          entityId: t.id,
+          ipAddress: reqCtx.ipAddress,
+          metadata: { classArmId: t.classArmId, termIds: terms.map((x) => x.id), contentHashes: hashes },
+        },
+      });
+      return { terms, publishedAt: publishedAt.toISOString() };
+    });
+  }
+
+  /** Withdraw DELETES the publication: nothing remains for a reader to show by mistake. Idempotent. */
+  async withdrawPublication(authCtx: AuthContext, input: WithdrawPublicationInput, reqCtx: RequestContext): Promise<void> {
+    await assertUserActiveAndHasOneOf(authCtx, TIMETABLE_MANAGER_ROLES);
+    await this.runMutation(authCtx, "timetable.withdrawPublication", async (db) => {
+      const schoolId = authCtx.schoolId;
+      const existing = await db.timetablePublication.findUnique({
+        where: { schoolId_classArmId_termId: { schoolId, classArmId: input.classArmId, termId: input.termId } },
+        select: { id: true, contentHash: true, publishedAt: true },
+      });
+      if (!existing) return;
+      await this.withdrawFn(db, existing.id);
+      await db.auditLog.create({
+        data: {
+          schoolId,
+          userId: authCtx.userId,
+          action: AUDIT.withdraw,
+          entityType: "timetable_publication",
+          entityId: existing.id,
+          ipAddress: reqCtx.ipAddress,
+          metadata: {
+            classArmId: input.classArmId,
+            termId: input.termId,
+            contentHash: existing.contentHash,
+            publishedAt: existing.publishedAt.toISOString(),
+          },
+        },
+      });
+    });
+  }
+
+  private async publicationStatus(db: TenantDb, schoolId: string, classArmId: string, termId: string): Promise<PublicationStatusDto> {
+    const pub = await db.timetablePublication.findUnique({
+      where: { schoolId_classArmId_termId: { schoolId, classArmId, termId } },
+      select: { contentHash: true, publishedAt: true },
+    });
+    if (!pub) return { state: "NOT_PUBLISHED", publishedAt: null };
+    const live = await this.snapshotFn(db, schoolId, classArmId, termId);
+    return {
+      state: live.hash === pub.contentHash ? "UP_TO_DATE" : "UNPUBLISHED_CHANGES",
+      publishedAt: pub.publishedAt.toISOString(),
+    };
   }
 }

@@ -12,6 +12,7 @@ import {
 
 import type { AuthContext } from "../../common/auth/auth-context";
 import { assertUserActiveAndHasOneOf } from "../../common/auth/role-check";
+import { clashesAddedBy } from "../timetable/timetable-latent";
 
 interface RequestContext {
   ipAddress: string | null;
@@ -124,17 +125,27 @@ export class TermsService {
       }
 
       try {
-        const created = await db.term.create({
-          data: {
-            schoolId: authCtx.schoolId,
-            academicYearId,
-            sequence: input.sequence,
-            name: input.name,
-            startDate: input.startDate,
-            endDate: input.endDate,
-          },
-          select: TERM_SELECT,
-        });
+        // Phase 8 / CP4 (§18 D43): a new term puts its year's whole-year
+        // timetables into force for it, which can bring a clash into force. The
+        // term is still created — the fix (a term timetable) needs the term to
+        // exist — and the clashes it added are returned and audited, never silent.
+        const { value: created, added: timetableClashes } = await clashesAddedBy(
+          db,
+          authCtx.schoolId,
+          [academicYearId],
+          () =>
+            db.term.create({
+              data: {
+                schoolId: authCtx.schoolId,
+                academicYearId,
+                sequence: input.sequence,
+                name: input.name,
+                startDate: input.startDate,
+                endDate: input.endDate,
+              },
+              select: TERM_SELECT,
+            }),
+        );
 
         await db.auditLog.create({
           data: {
@@ -148,11 +159,12 @@ export class TermsService {
               academicYearId,
               sequence: created.sequence,
               name: created.name,
+              timetableClashesAdded: timetableClashes.length,
             },
           },
         });
 
-        return toTermDto(created);
+        return { ...toTermDto(created), timetableClashes };
       } catch (e) {
         throw mapTermUniqueViolation(e);
       }

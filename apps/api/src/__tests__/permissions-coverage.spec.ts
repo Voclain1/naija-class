@@ -5,6 +5,7 @@ import {
   CALENDAR_READ_PERMISSIONS,
   REPORTS_PERMISSIONS,
   TIMETABLE_PERMISSIONS,
+  TIMETABLE_OWN_READ_PERMISSIONS,
   PHASE_0_PERMISSIONS,
   PHASE_2_OWNER_ONLY_PERMISSIONS,
   PHASE_2_PERMISSIONS,
@@ -24,6 +25,7 @@ import { AcademicYearsController } from "../modules/academic-years/academic-year
 import { CalendarController } from "../modules/calendar/calendar.controller";
 import { ReportsController } from "../modules/reports/reports.controller";
 import { TimetableController } from "../modules/timetable/timetable.controller";
+import { TeacherTimetableController } from "../modules/timetable/timetable-read.controllers";
 import { AssessmentScoresController, AssessmentsController } from "../modules/assessment/assessment.controller";
 import { AttendanceController } from "../modules/attendance/attendance.controller";
 import { ClassArmsController } from "../modules/class-arms/class-arms.controller";
@@ -1100,10 +1102,14 @@ describe("Phase 8 CP3 RBAC coverage: timetable route handlers declare @Permissio
     const perms = (m: string) =>
       Reflect.getMetadata(PERMISSIONS_METADATA_KEY, (TimetableController.prototype as unknown as Record<string, object>)[m]) as string[];
     expect(routeHandlers(TimetableController).sort()).toEqual(
-      ["bellSchedule", "clearLesson", "createTimetable", "deleteTimetable", "options", "saveBellSchedule", "saveLesson", "view"].sort(),
+      [
+        "bellSchedule", "clearLesson", "createTimetable", "deleteTimetable", "options", "saveBellSchedule", "saveLesson", "view",
+        // CP4 (§18): clash banner, fork, copy, publish, withdraw.
+        "clashes", "fork", "copy", "publish", "withdraw",
+      ].sort(),
     );
-    for (const m of ["bellSchedule", "options", "view"]) expect(perms(m), m).toEqual(["timetable.read"]);
-    for (const m of ["saveBellSchedule", "createTimetable", "deleteTimetable", "saveLesson", "clearLesson"]) {
+    for (const m of ["bellSchedule", "options", "view", "clashes"]) expect(perms(m), m).toEqual(["timetable.read"]);
+    for (const m of ["saveBellSchedule", "createTimetable", "deleteTimetable", "saveLesson", "clearLesson", "fork", "copy", "publish", "withdraw"]) {
       expect(perms(m), m).toEqual(["timetable.manage"]);
     }
   });
@@ -1121,5 +1127,31 @@ describe("Phase 8 CP3 RBAC coverage: timetable role grants match D35", () => {
       const perms = new Set(roleSeed(key).permissions);
       for (const p of TIMETABLE_PERMISSIONS) expect(perms.has(p), `${key} should NOT have ${p}`).toBe(false);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 8 / CP4 RBAC coverage — the teacher's own timetable (docs/modules/phase-8.md §18 D38).
+//
+// timetable.own.read is TEACHER ONLY and is not part of TIMETABLE_PERMISSIONS, so
+// granting the whole-school builder can never carry it and vice versa. A teacher
+// still holds NEITHER builder permission. Students and guardians have no
+// permission system; their principal guards and the link check are the gate.
+// ---------------------------------------------------------------------------
+describe("Phase 8 CP4 RBAC coverage: teacher timetable", () => {
+  it("TeacherTimetableController.myTimetable carries exactly timetable.own.read", () => {
+    expect(routeHandlers(TeacherTimetableController)).toEqual(["myTimetable"]);
+    expect(handlerPermissions(TeacherTimetableController)).toEqual(["timetable.own.read"]);
+  });
+
+  it("teacher holds timetable.own.read and NEITHER builder permission; admin and bursar do not hold it", () => {
+    const teacher = new Set(roleSeed("teacher").permissions);
+    expect(teacher.has("timetable.own.read")).toBe(true);
+    for (const p of TIMETABLE_PERMISSIONS) expect(teacher.has(p), `teacher should NOT have ${p}`).toBe(false);
+    for (const key of ["admin", "bursar"]) {
+      expect(new Set(roleSeed(key).permissions).has("timetable.own.read"), `${key} should NOT have timetable.own.read`).toBe(false);
+    }
+    expect([...TIMETABLE_OWN_READ_PERMISSIONS]).toEqual(["timetable.own.read"]);
+    expect((TIMETABLE_PERMISSIONS as readonly string[]).includes("timetable.own.read")).toBe(false);
   });
 });

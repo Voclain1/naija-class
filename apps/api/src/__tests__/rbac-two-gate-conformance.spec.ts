@@ -87,6 +87,10 @@ const I2_DESIGN_EXCEPTIONS = [
       "TeacherScopeController.getMyScope -> TeacherScopeService.getMyScope: admin holds teacher-assignment.read but is rejected by [teacher]",
       "TeacherScopeController.getMyArmRoster -> TeacherScopeService.getMyArmRoster: owner holds student.read but is rejected by [teacher]",
       "TeacherScopeController.getMyArmRoster -> TeacherScopeService.getMyArmRoster: admin holds student.read but is rejected by [teacher]",
+      // Phase 8 / CP4 (docs/modules/phase-8.md §18 D37/D38): "my timetable" is the
+      // caller's own lessons and form classes. The owner holds timetable.own.read
+      // only through the wildcard and uses the builder instead; admin does not hold it.
+      "TeacherTimetableController.myTimetable -> TimetableTeacherReader.getMyTimetable: owner holds timetable.own.read but is rejected by [teacher]",
     ],
   },
 ] as const;
