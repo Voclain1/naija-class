@@ -2307,3 +2307,33 @@ report runs ~12 statements in one transaction, like the dashboard's ~20.
 15-second override: see §16.13.
 
 **CP2 is closed.**
+
+### 16.13 Fix — the report's transaction budget (2026-09-14)
+
+**Problem (found in §16.12's live check).** The completeness report ran its ~12
+statements inside `withTenant` at Prisma's 5000 ms interactive-transaction
+default. One production run hit P2028 at 5024 ms and survived only on
+`withTenant`'s single retry. This is the same failure class as the 2026-09-11
+`/dashboard` incident.
+
+**Fix.** A new constant `REPORTS_TRANSACTION_TIMEOUT_MS = 15_000`, the value
+already proven by `DASHBOARD_TRANSACTION_TIMEOUT_MS`, is passed with a diagnostic
+label on both report transactions:
+- `reports.getCompleteness`
+- `reports.getTeacherActivity`
+
+It is safe for the dashboard's reason: every report read runs on one connection
+with no nested `withTenant`, so a longer hold waits on nothing and cannot
+deadlock.
+
+**Gate.** `reports-transaction.spec.ts` intercepts `withTenant`, the technique
+`dashboard-transaction.spec.ts` established. It asserts, for both endpoints,
+**exactly one** report transaction per request, carrying `timeoutMs: 15000`.
+- Run against the unfixed code first: **2 failed** (`expected undefined to be
+  15000`; `expected [] to deeply equal [{ label, timeoutMs: 15000 }]`).
+- After the fix: **passes**.
+- Timing is never involved, so the gate is deterministic.
+
+Not changed: `withTenant`'s own retry behaviour, the role-check transaction
+(short, unchanged), and `DashboardService`'s call to `computeTermHealth`, which
+already runs inside the dashboard's 15-second transaction.

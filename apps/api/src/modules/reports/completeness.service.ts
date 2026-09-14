@@ -47,6 +47,23 @@ interface RequestContext {
 
 const MANAGER_ROLES = ["owner", "admin"] as const;
 
+// Overrides Prisma's 5000 ms interactive-transaction default — the same value,
+// for the same reason, as DASHBOARD_TRANSACTION_TIMEOUT_MS
+// (dashboard.service.ts), whose header explains the arithmetic: a transaction
+// is ONE connection running one statement at a time, so ~12 statements across
+// the Fly-Johannesburg → Neon-Frankfurt hop leave ~400 ms each inside 5 s, with
+// Neon's autosuspend wake on top.
+//
+// NOT theoretical: CP2's live production verification on 2026-09-14 logged
+// "retrying after connection-level error (P2028) after 5024ms — body ran long"
+// on this report (docs/modules/phase-8.md §16.12). withTenant's single retry
+// rescued it that time; an admin on a slow morning would eventually get a 500.
+//
+// Safe for the same reason the dashboard's is: every report read runs on this
+// ONE connection with no nested withTenant, so a longer hold waits on nothing
+// and cannot deadlock. reports-transaction.spec.ts pins both properties.
+export const REPORTS_TRANSACTION_TIMEOUT_MS = 15_000;
+
 const AUDIT_TEACHER_ACTIVITY_VIEW = "reports.teacher-activity.view";
 
 interface TermRow {
@@ -166,7 +183,7 @@ export class CompletenessService {
         scores: this.buildScores(ctx, assessmentRows),
         reportCards: this.buildReportCards(ctx, cardRows),
       };
-    });
+    }, { timeoutMs: REPORTS_TRANSACTION_TIMEOUT_MS, label: "reports.getCompleteness" });
   }
 
   // ===========================================================================
@@ -212,7 +229,7 @@ export class CompletenessService {
       );
 
       return { term: ctx.term, schoolDays: ctx.days.dto, rows: this.buildTeacherRows(ctx, teachers) };
-    });
+    }, { timeoutMs: REPORTS_TRANSACTION_TIMEOUT_MS, label: "reports.getTeacherActivity" });
   }
 
   // ===========================================================================
