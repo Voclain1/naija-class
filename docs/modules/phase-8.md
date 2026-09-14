@@ -1073,7 +1073,7 @@ Neither is the safeguarding workstream (§6.4).
 | **CP0** | **Done 2026-09-13.** Plan committed (PR #297); D9–D18 recorded; ARCHITECTURE.md §9 and `docs/deferred.md` reconciled per D14 (Assignments → Phase 9, CBT → own phase, Timetable out of the Phase 9 list, Tutor → Phase 8b, Phase 7's stale "not started" status corrected, and the Timetable generator, exam management, result checker, AI study assistant, event calendar and smart-timetable entries pointed here); Q9/Q10 and the safeguarding workstream recorded as Arinzechukwu-owned. Older module docs (`phase-4.md`, `phase-5.md`, `phase-6.md`) that say "Phase 8 owns assignments" were **left as historical record**, not rewritten | 2–3 days (took well under) | D14 | — |
 | **CP1** | Event Calendar v1 incl. national events and per-school hiding (§8.4; plan-first §15) | 7–10 days | D4 (+1), D19 (+1) | **Nothing — ready** (D19, D20) |
 | **CP2** | **Recording completeness** (§16): term health, attendance and score-entry coverage, report-card pipeline, teacher recording activity. Outcome analytics deferred (§16.9) | **6–9 days** (was 9–13) | D2 reframed after §4.6 | **Nothing — Q31–Q33 resolved** (§16.7) |
-| **CP3** | Timetable: model, time-of-day convention, **one bell schedule per school**, grid builder, effective-timetable resolution, identity-based clash detection, RLS spec (plan-first §17) | **9–13 days** (was 11–16) | D3; D13; D26 (−2–3) | Q34–Q37 (§17.7) |
+| **CP3** | Timetable: model, time-of-day convention, **one bell schedule per school**, grid builder, effective-timetable resolution, identity-based clash detection, RLS spec (plan-first §17) | **9–13 days** (was 11–16) | D3; D13; D26 (−2–3) | **Nothing — Q34–Q37 approved** (§17.7) |
 | **CP4** | Timetable: fork/override, copy-forward, teacher / student / guardian read surfaces | 5–7 days | D3 (+1) | — |
 | **CP5** | Assessments & Exams v1: any-total marks with scaling, cumulative results | 6–10 days | D5 (scope narrowed) | Q15 |
 | **CP6a** | Report card completeness: position setting, attendance snapshot, promotion status display field | 5–8 days | D6 (new); D12 | Q24 |
@@ -2383,7 +2383,7 @@ the unfixed code) and the deployed value above.
 
 ## 17. CP3 plan-first — Timetable builder
 
-Written 2026-09-14. **Status: proposed, awaiting review. Nothing is built.**
+Written 2026-09-14. **Status: approved in full 2026-09-14 (§17.7); implementation in progress.**
 
 **Scope:** the data model, one bell schedule per school, a manual per-class
 timetable builder with teacher-clash detection, and the admin screens. CP4
@@ -2463,7 +2463,7 @@ additive:
 
 Recorded in `docs/deferred.md` when this checkpoint ships.
 
-### 17.3 Decisions (proposed)
+### 17.3 Decisions (approved 2026-09-14)
 
 Numbered from D27 to continue §3's phase-level log. (§15 and §16 used local
 D-numbers for their own engineering decisions and are referenced as "§15 D22",
@@ -2758,14 +2758,14 @@ week, and teacher reads follow the scoped-surface rule
     - route 401 against a 404 control;
     - the re-run CP2 live check shows unchanged figures (D34 default week).
 
-### 17.7 Open questions for this review
+### 17.7 Review questions — all approved 2026-09-14 (Arinzechukwu)
 
 | # | Question | Recommendation |
 |---|---|---|
-| **Q34** | May a lesson have no teacher yet? | Yes, shown as "No teacher" |
-| **Q35** | Add a per-school `school_week_days` setting in CP3 and switch CP2's expected days to it now (unchanged for every current school)? | Yes — CP2 already committed to switching when a week exists |
-| **Q36** | D33: refuse a lesson teacher with no effective assignment, and warn (not refuse) when only some terms are covered? | Yes |
-| **Q37** | Accept the first advisory lock in the codebase (D32) as the concurrency mechanism for timetable writes? | Yes |
+| **Q34 — APPROVED: yes** | May a lesson have no teacher yet? | Yes, shown as "No teacher" |
+| **Q35 — APPROVED: yes** | Add a per-school `school_week_days` setting in CP3 and switch CP2's expected days to it now (unchanged for every current school)? | Yes — CP2 already committed to switching when a week exists |
+| **Q36 — APPROVED: yes** | D33: refuse a lesson teacher with no effective assignment, and warn (not refuse) when only some terms are covered? | Yes |
+| **Q37 — APPROVED: yes** | Accept the first advisory lock in the codebase (D32) as the concurrency mechanism for timetable writes? | Yes |
 
 ### 17.8 Estimate
 
