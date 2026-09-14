@@ -25,8 +25,8 @@ export function useVisibleAdminNavItems(): { items: NavItem[]; laterPhaseItems: 
     (item) => !item.requiredPermission || hasPermission(permissions, item.requiredPermission),
   );
   // "Coming soon" placeholders are only meaningful to owner/admin — bursar's
-  // narrow finance scope has no bearing on any of them (Reports, AI Tutor,
-  // Lesson Notes, Timetable, Events, Exams, Result Checker).
+  // narrow finance scope has no bearing on any of them (today: AI Tutor,
+  // Exams, Result Checker — see LATER_PHASE_ITEMS).
   const isOwnerOrAdmin = roles.some((r) => r.key === "owner" || r.key === "admin");
   return { items, laterPhaseItems: isOwnerOrAdmin ? LATER_PHASE_ITEMS : [] };
 }

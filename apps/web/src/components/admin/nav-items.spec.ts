@@ -18,6 +18,7 @@ import { LATER_PHASE_ITEMS, NAV_ITEMS } from "./nav-items";
 //      exactly when it happens.
 
 const SHIPPED_HREFS = [
+  "/timetable",
   "/reports",
   "/events",
   "/dashboard",
@@ -57,6 +58,15 @@ describe("admin nav items", () => {
     expect(item!.href).toBe("/reports");
     expect(item!.requiredPermission).toBe("reports.completeness.read");
     expect(LATER_PHASE_ITEMS.some((i) => i.label === "Reports")).toBe(false);
+  });
+
+  it("lists Timetable as live, gated on the owner/admin-only timetable.read (Phase 8 CP3)", () => {
+    const item = NAV_ITEMS.find((i) => i.label === "Timetable");
+    expect(item).toBeDefined();
+    expect(item!.enabled).toBe(true);
+    expect(item!.href).toBe("/timetable");
+    expect(item!.requiredPermission).toBe("timetable.read");
+    expect(LATER_PHASE_ITEMS.some((i) => i.label === "Timetable")).toBe(false);
   });
 
   it("has no reference left to the /lesson-notes route that never existed", () => {

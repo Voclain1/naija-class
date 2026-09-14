@@ -1,4 +1,4 @@
-import { basePrisma, withTenant } from "@school-kit/db";
+import { withTenant } from "@school-kit/db";
 import type { SaveLessonResultDto, TimetableHeaderDto } from "@school-kit/types";
 
 import type { AuthContext } from "../../common/auth/auth-context";
@@ -201,8 +201,10 @@ export async function createTimetableFixture(tag: string): Promise<TimetableFixt
       await withTenant(schoolId, async (db) => {
         await db.timetable.deleteMany({ where: { schoolId } });
         await db.bellSlot.deleteMany({ where: { schoolId } });
-      });
-      await basePrisma.school.delete({ where: { id: schoolId } }).catch(() => undefined);
+        // `schools` carries no RLS policy (it is the tenant table), so the
+        // tenant client can delete it; the school's rows cascade under its GUC.
+        await db.school.delete({ where: { id: schoolId } });
+      }).catch(() => undefined);
     },
   };
   return fx;
