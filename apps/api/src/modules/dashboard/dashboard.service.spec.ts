@@ -340,7 +340,18 @@ describe("DashboardService (integration)", () => {
     expect(dto.attendanceToday).toMatchObject({ presentCount: 0, absentCount: 0, percentPresent: 0 });
     expect(dto.outstanding).toEqual({ amount: 0, debtorCount: 0 });
     expect(dto.collectionByGroup).toEqual([]);
-    expect(dto.needsYouToday.every((a) => a.count === 0)).toBe(true);
+    // Every data-driven alert is zero for a school with no data...
+    expect(dto.needsYouToday.filter((a) => a.type !== "term_health").every((a) => a.count === 0)).toBe(true);
+    // ...but this fixture's CURRENT term ended on 2025-12-15, and the term-health
+    // alert (Phase 8 CP2, §16 Q33) exists precisely to say so. One signal:
+    // CURRENT_TERM_ENDED. No later term exists, and with no students there is
+    // no enrollment or teacher-coverage signal. Asserted exactly rather than
+    // relaxed, so the dashboard and /reports stay provably in agreement.
+    expect(dto.needsYouToday.find((a) => a.type === "term_health")).toEqual({
+      type: "term_health",
+      count: 1,
+      href: "/reports",
+    });
   });
 
   it("throws NotFoundError for an unknown termId", async () => {

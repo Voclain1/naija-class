@@ -18,6 +18,7 @@ import { LATER_PHASE_ITEMS, NAV_ITEMS } from "./nav-items";
 //      exactly when it happens.
 
 const SHIPPED_HREFS = [
+  "/reports",
   "/events",
   "/dashboard",
   "/students",
@@ -47,6 +48,15 @@ describe("admin nav items", () => {
     expect(item!.href).toBe("/events");
     expect(item!.requiredPermission).toBe("calendar-event.read");
     expect(LATER_PHASE_ITEMS.some((i) => i.label === "Event Calendar")).toBe(false);
+  });
+
+  it("lists Reports as live, gated on the owner/admin-only completeness permission (Phase 8 CP2)", () => {
+    const item = NAV_ITEMS.find((i) => i.label === "Reports");
+    expect(item).toBeDefined();
+    expect(item!.enabled).toBe(true);
+    expect(item!.href).toBe("/reports");
+    expect(item!.requiredPermission).toBe("reports.completeness.read");
+    expect(LATER_PHASE_ITEMS.some((i) => i.label === "Reports")).toBe(false);
   });
 
   it("has no reference left to the /lesson-notes route that never existed", () => {

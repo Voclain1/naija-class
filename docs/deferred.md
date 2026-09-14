@@ -3317,3 +3317,45 @@ slightly closer, not further away.
   announcement days:** the platform-admin screen recorded in D22, backed by
   write-only SECURITY DEFINER functions. That was approved as the future path,
   not built.
+
+---
+
+## Outcome analytics — deferred until real data supports it (captured 2026-09-13, Phase 8 CP2)
+
+- [ ] **Deferred, not dropped.** Phase 8's Reports originally scoped these
+  outcome analytics (`docs/modules/phase-8.md` §4.2–§4.4):
+  - class-arm and subject averages, pass rates, grade distributions, and top and
+    bottom students;
+  - attendance rates and trends;
+  - enrollment trends;
+  - teacher-level class outcomes, owner/admin only, audited, and never an
+    Insights intent;
+  - a SQL layer shared with Insights.
+
+  **Why deferred.** A read-only production measurement on 2026-09-13 (§4.6)
+  found:
+  - 37 active students across 75 schools;
+  - one day of attendance in total;
+  - scores in a single term;
+  - **no school with more than one teacher**.
+
+  Outcome figures built on that look authoritative and mean nothing. A "teacher
+  performance" view with one teacher per school is just the school's results
+  under one name. CP2 ships a recording-completeness report instead (§16).
+
+  **Trigger** (proposed thresholds, to confirm when picked up — §16.9). At least
+  one production school, for a completed term:
+  - ≥ 40 enrolled students across ≥ 2 arms;
+  - ≥ 80% of expected registers taken;
+  - ≥ 90% of expected score slots entered;
+  - report cards released.
+
+  Teacher-level outcomes also need ≥ 2 teachers with assignments. Trends need ≥ 2
+  consecutive qualifying terms. **The CP2 completeness report is the instrument
+  that shows when a school crosses this bar.**
+
+  **Carries forward unchanged:**
+  - §3.4 D21 — admin figures may include unreleased marks, clearly labelled;
+  - D22 — no teacher self-view;
+  - D23 — every teacher-level view audited;
+  - all of §4.4's access rules.

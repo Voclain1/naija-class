@@ -648,6 +648,17 @@ export const CALENDAR_PERMISSIONS = [
 // academic, roster or financial data.
 export const CALENDAR_READ_PERMISSIONS = ["calendar-event.read"] as const;
 
+// Phase 8 / CP2 — Recording Completeness (docs/modules/phase-8.md §16 D39).
+// Owner/admin only. Named `reports.*`, deliberately not `report-card.*`.
+//
+// `reports.teacher-activity.read` is separate so a future grant of the
+// school-wide completeness report to a wider role cannot silently carry the
+// per-teacher view with it (§4.4, §3.4 D22). Every read of it is audited (D23).
+export const REPORTS_PERMISSIONS = [
+  "reports.completeness.read",
+  "reports.teacher-activity.read",
+] as const;
+
 export const ALL_PERMISSIONS = [
   ...PHASE_0_PERMISSIONS,
   ...PHASE_1_PERMISSIONS,
@@ -660,6 +671,7 @@ export const ALL_PERMISSIONS = [
   ...SMART_IMPORT_PERMISSIONS,
   ...PHASE_7_PERMISSIONS,
   ...CALENDAR_PERMISSIONS,
+  ...REPORTS_PERMISSIONS,
   /* extend per phase */
 ] as const;
 

@@ -38,7 +38,11 @@ export interface DashboardCollectionGroupDto {
 export type DashboardAlertType =
   | "overdue_fees"
   | "pending_report_card_approval"
-  | "pending_staff_invitations";
+  | "pending_staff_invitations"
+  // Phase 8 / CP2 (§16 Q33): count of active term-health signals for the
+  // current term, linking to /reports. Computed by the same helper the
+  // completeness report uses, inside the dashboard's one transaction.
+  | "term_health";
 
 export interface DashboardAlertDto {
   type: DashboardAlertType;

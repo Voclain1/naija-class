@@ -35,6 +35,7 @@ import { GradingModule } from "./modules/grading/grading.module";
 import { GuardiansModule } from "./modules/guardians/guardians.module";
 import { CurriculumModule } from "./modules/curriculum/curriculum.module";
 import { CalendarModule } from "./modules/calendar/calendar.module";
+import { ReportsModule } from "./modules/reports/reports.module";
 import { ImportsModule } from "./modules/imports/imports.module";
 import { StudentScanModule } from "./modules/student-scan/student-scan.module";
 import { InvitationsModule } from "./modules/invitations/invitations.module";
@@ -136,6 +137,8 @@ const isProd = process.env.NODE_ENV === "production";
     CurriculumModule,
     // Phase 8 / CP1 — Event Calendar (docs/modules/phase-8.md §15).
     CalendarModule,
+    // Phase 8 / CP2 — Recording Completeness (docs/modules/phase-8.md §16).
+    ReportsModule,
     StudentScanModule,
     GradingModule,
     AssessmentModule,

@@ -3,6 +3,7 @@ import {
   CalendarClock,
   CalendarDays,
   ClipboardList,
+  FileBarChart,
   FileSearch,
   FileText,
   GraduationCap,
@@ -50,7 +51,8 @@ export interface NavItem {
 // no functionality behind them yet.
 //
 // Event calendar left this list on 2026-09-13, promoted to NAV_ITEMS when
-// Phase 8 / CP1 shipped it (docs/modules/phase-8.md §15).
+// Phase 8 / CP1 shipped it (docs/modules/phase-8.md §15). Reports followed with
+// Phase 8 / CP2 (§16).
 export const NAV_ITEMS: NavItem[] = [
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard, enabled: true, requiredPermission: "dashboard.read" },
   { label: "Students", href: "/students", icon: GraduationCap, enabled: true, requiredPermission: "student.read" },
@@ -92,11 +94,15 @@ export const NAV_ITEMS: NavItem[] = [
   // the page itself hides management controls from anyone without the write
   // permissions.
   { label: "Event Calendar", href: "/events", icon: CalendarDays, enabled: true, requiredPermission: "calendar-event.read" },
+  // Phase 8 / CP2 (docs/modules/phase-8.md §16). Promoted from "Coming soon".
+  // v1 is a recording-completeness report, not outcome analytics (§16.1).
+  // Gated on reports.completeness.read — owner/admin only, so teacher and
+  // bursar sidebars never show it.
+  { label: "Reports", href: "/reports", icon: FileBarChart, enabled: true, requiredPermission: "reports.completeness.read" },
   { label: "Settings", href: "/settings", icon: Settings, enabled: true, requiredPermission: "school.read" },
 ];
 
 export const LATER_PHASE_ITEMS: NavItem[] = [
-  { label: "Reports", href: "/reports", icon: BarChart3, enabled: false },
   { label: "AI Tutor", href: "/ai-tutor", icon: Sparkles, enabled: false },
   { label: "Timetable", href: "/timetable", icon: CalendarClock, enabled: false },
   { label: "Assessments & Exams", href: "/exams", icon: ClipboardList, enabled: false },
