@@ -27,17 +27,26 @@ import {
 
 import type { AuthContext } from "../../common/auth/auth-context.js";
 import { assertUserActiveAndHasOneOf } from "../../common/auth/role-check.js";
-import { findTimetableClashes, lockSchoolTimetables, type TenantDb } from "./timetable-clash.js";
+import { addedClashes, findTimetableClashes, lockSchoolTimetables, type TenantDb } from "./timetable-clash.js";
 
 // Phase 8 / CP3 — Timetable builder. Plan-first: docs/modules/phase-8.md §17.
 //
-// EVERY MUTATION has the same shape (D31/D32), via runMutation():
+// EVERY MUTATION has the same shape (D31/D32, amended by CP4 §18 D43), via
+// runMutation():
 //   1. take the school's timetable advisory lock — FIRST statement;
-//   2. apply the change;
-//   3. for changes that can create a clash, run THE clash query for the
-//      affected academic year, and throw TIMETABLE_CLASH if it returns a row —
-//      the whole transaction, audit row included, rolls back;
-//   4. audit, commit.
+//   2. for changes that can create a clash, record THE clash query's result for
+//      the affected academic year (clashes.begin);
+//   3. apply the change;
+//   4. run the query again (clashes.verify) and throw TIMETABLE_CLASH if the
+//      change ADDED any clash — the whole transaction, audit row included,
+//      rolls back;
+//   5. audit, commit.
+//
+// "Must not ADD a clash" rather than "no clash may exist" (D43): a clash can come
+// into force without a timetable edit (a term added to a year, a class
+// re-activated), and those are surfaced where they happen. If every timetable
+// edit in that year were then refused, the edits that FIX the clash would be
+// refused too. No timetable edit can create a clash either way.
 // Checking by re-reading the result, not by reasoning about "what could this
 // change affect", is the point: one query answers for every operation.
 //
@@ -78,7 +87,12 @@ function describeClash(c: TimetableClashDto): string {
   return `${c.teacherName} would be teaching ${classes} at the same time — ${ISO_WEEKDAY_LABELS[c.dayOfWeek]}, ${c.slotLabel}, ${c.termName}.`;
 }
 
-type CheckClashes = (academicYearId: string) => Promise<void>;
+export interface ClashGuard {
+  /** Record the year's clashes BEFORE writing. Must be called before verify(). */
+  begin(academicYearId: string): Promise<void>;
+  /** After writing: refuse with TIMETABLE_CLASH if the write added a clash. */
+  verify(): Promise<void>;
+}
 
 @Injectable()
 export class TimetableService {
@@ -92,11 +106,13 @@ export class TimetableService {
   clashFn: (db: TenantDb, schoolId: string, academicYearId: string) => Promise<TimetableClashDto[]> =
     findTimetableClashes;
   afterWriteHook: (() => Promise<void>) | null = null;
+  /** D43: which clashes a mutation is refused for. Production: the ones it ADDED. */
+  clashRule: (before: TimetableClashDto[], after: TimetableClashDto[]) => TimetableClashDto[] = addedClashes;
 
   private async runMutation<T>(
     authCtx: AuthContext,
     label: string,
-    body: (db: TenantDb, checkClashes: CheckClashes) => Promise<T>,
+    body: (db: TenantDb, clashes: ClashGuard) => Promise<T>,
   ): Promise<T> {
     // The owner/admin + isActive gate is asserted in each PUBLIC mutation method
     // before calling here, not in this helper: rbac-two-gate-conformance.spec.ts
@@ -108,13 +124,25 @@ export class TimetableService {
       schoolId,
       async (db) => {
         await this.lockFn(db, schoolId);
-        const checkClashes: CheckClashes = async (academicYearId) => {
-          if (this.afterWriteHook) await this.afterWriteHook();
-          const clashes = await this.clashFn(db, schoolId, academicYearId);
-          const first = clashes[0];
-          if (first) throw new ConflictError(C.CLASH, describeClash(first), { clashes });
+        let yearId: string | null = null;
+        let before: TimetableClashDto[] = [];
+        const clashes: ClashGuard = {
+          begin: async (academicYearId) => {
+            yearId = academicYearId;
+            before = await this.clashFn(db, schoolId, academicYearId);
+          },
+          verify: async () => {
+            // A verify without begin is a programming error, not "no clashes":
+            // fail loudly so a mutation cannot silently skip its check.
+            if (yearId === null) throw new Error("ClashGuard.verify() called before begin()");
+            if (this.afterWriteHook) await this.afterWriteHook();
+            const after = await this.clashFn(db, schoolId, yearId);
+            const added = this.clashRule(before, after);
+            const first = added[0];
+            if (first) throw new ConflictError(C.CLASH, describeClash(first), { clashes: added });
+          },
         };
-        return body(db, checkClashes);
+        return body(db, clashes);
       },
       { timeoutMs: TIMETABLE_TRANSACTION_TIMEOUT_MS, label },
     );
@@ -382,7 +410,7 @@ export class TimetableService {
     reqCtx: RequestContext,
   ): Promise<TimetableHeaderDto> {
     await assertUserActiveAndHasOneOf(authCtx, TIMETABLE_MANAGER_ROLES);
-    return this.runMutation(authCtx, "timetable.createTimetable", async (db, checkClashes) => {
+    return this.runMutation(authCtx, "timetable.createTimetable", async (db, clashes) => {
       const schoolId = authCtx.schoolId;
       const [arm, year] = await Promise.all([
         db.classArm.findFirst({ where: { id: input.classArmId, schoolId, isActive: true }, select: { id: true, name: true } }),
@@ -424,6 +452,7 @@ export class TimetableService {
         );
       }
 
+      await clashes.begin(year.id);
       const created = await db.timetable.create({
         data: {
           schoolId,
@@ -436,7 +465,7 @@ export class TimetableService {
       });
 
       // A term timetable changes what is in force for its term (D31).
-      await checkClashes(year.id);
+      await clashes.verify();
 
       await db.auditLog.create({
         data: {
@@ -455,7 +484,7 @@ export class TimetableService {
 
   async deleteTimetable(authCtx: AuthContext, id: string, reqCtx: RequestContext): Promise<void> {
     await assertUserActiveAndHasOneOf(authCtx, TIMETABLE_MANAGER_ROLES);
-    await this.runMutation(authCtx, "timetable.deleteTimetable", async (db, checkClashes) => {
+    await this.runMutation(authCtx, "timetable.deleteTimetable", async (db, clashes) => {
       const schoolId = authCtx.schoolId;
       const existing = await db.timetable.findFirst({
         where: { id, schoolId },
@@ -463,12 +492,15 @@ export class TimetableService {
       });
       if (!existing) throw new NotFoundError("Timetable not found.");
 
-      await db.timetable.delete({ where: { id: existing.id } });
-
       // §17.4 rule 1: deleting a TERM timetable brings the year-wide one back
       // into force for that term, which can clash with another class. A
       // year-wide delete only removes lessons, so it cannot.
-      if (existing.termId !== null) await checkClashes(existing.academicYearId);
+      const checksClashes = existing.termId !== null;
+      if (checksClashes) await clashes.begin(existing.academicYearId);
+
+      await db.timetable.delete({ where: { id: existing.id } });
+
+      if (checksClashes) await clashes.verify();
 
       await db.auditLog.create({
         data: {
@@ -495,7 +527,7 @@ export class TimetableService {
 
   async saveLesson(authCtx: AuthContext, input: SaveLessonInput, reqCtx: RequestContext): Promise<SaveLessonResultDto> {
     await assertUserActiveAndHasOneOf(authCtx, TIMETABLE_MANAGER_ROLES);
-    return this.runMutation(authCtx, "timetable.saveLesson", async (db, checkClashes) => {
+    return this.runMutation(authCtx, "timetable.saveLesson", async (db, clashes) => {
       const schoolId = authCtx.schoolId;
       const timetable = await db.timetable.findFirst({
         where: { id: input.timetableId, schoolId },
@@ -561,6 +593,7 @@ export class TimetableService {
       const teacherIds = [...new Set(input.teacherIds)];
       const warnings = await this.checkAssignments(db, schoolId, timetable, subject.id, teacherIds);
 
+      await clashes.begin(timetable.academicYearId);
       if (occupants.length > 0) {
         await db.timetableEntry.deleteMany({ where: { schoolId, id: { in: occupants.map((o) => o.id) } } });
       }
@@ -583,8 +616,8 @@ export class TimetableService {
         }
       }
 
-      // D31 — write, then verify.
-      await checkClashes(timetable.academicYearId);
+      // D31: write, then verify (D43: refuse only a clash this write added).
+      await clashes.verify();
 
       await db.auditLog.create({
         data: {

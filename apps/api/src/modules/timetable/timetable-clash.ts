@@ -15,6 +15,11 @@ import type { TimetableClashDto } from "@school-kit/types";
 // Because the school has ONE bell schedule (D26), "same time" is "same slot id":
 // the query is an identity GROUP BY with no time arithmetic, and editing slot
 // times can never create or remove a clash (§17.2).
+//
+// ACTIVE CLASSES ONLY (CP4 §18 D44). A deactivated class is not being taught, and
+// the builder does not list it, so its timetable must neither block its teachers
+// nor be named in a refusal the admin cannot act on. Re-activating a class can
+// therefore bring a clash back into force; ClassArmsService surfaces that (D43).
 
 export type TenantDb = Parameters<Parameters<typeof withTenant>[1]>[0];
 
@@ -57,6 +62,10 @@ export async function findTimetableClashes(
       JOIN timetables tt
         ON tt.school_id = ${schoolId}
        AND tt.academic_year_id = ${academicYearId}
+      JOIN class_arms arm
+        ON arm.school_id = ${schoolId}
+       AND arm.id = tt.class_arm_id
+       AND arm.is_active
        AND (
              tt.term_id = yt.id
              OR (
@@ -112,6 +121,22 @@ export async function findTimetableClashes(
     termName: r.term_name,
     classArms: r.class_arms,
   }));
+}
+
+/**
+ * Clash IDENTITY (CP4 §18 D43): teacher, day, slot, term AND the set of classes.
+ * Two clashes with the same teacher/day/slot/term but a different class set are
+ * different clashes — a third class joining an existing clash is a NEW clash.
+ */
+export function clashKey(c: TimetableClashDto): string {
+  const arms = c.classArms.map((a) => a.id).sort().join(",");
+  return `${c.teacherId}|${c.dayOfWeek}|${c.bellSlotId}|${c.termId}|${arms}`;
+}
+
+/** The clashes in `after` that were not in `before` — what a mutation added. */
+export function addedClashes(before: TimetableClashDto[], after: TimetableClashDto[]): TimetableClashDto[] {
+  const known = new Set(before.map(clashKey));
+  return after.filter((c) => !known.has(clashKey(c)));
 }
 
 /**

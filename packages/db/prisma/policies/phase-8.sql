@@ -75,3 +75,18 @@ CREATE POLICY tenant_isolation ON timetable_entries
 CREATE POLICY tenant_isolation ON timetable_entry_teachers
   USING      (school_id::text = current_setting('app.current_school_id', true))
   WITH CHECK (school_id::text = current_setting('app.current_school_id', true));
+
+-- ---------------------------------------------------------------------
+-- CP4 — published timetable snapshots (docs/modules/phase-8.md §18 D45).
+-- Migration: 20260915120000_phase_8_cp4_timetable_publications
+--
+-- What families see. Composite (school_id, …) FKs to class_arms and terms (D29).
+-- timetable-rls.spec.ts covers it alongside the CP3 tables.
+-- ---------------------------------------------------------------------
+
+ALTER TABLE "timetable_publications" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "timetable_publications" FORCE  ROW LEVEL SECURITY;
+
+CREATE POLICY tenant_isolation ON timetable_publications
+  USING      (school_id::text = current_setting('app.current_school_id', true))
+  WITH CHECK (school_id::text = current_setting('app.current_school_id', true));

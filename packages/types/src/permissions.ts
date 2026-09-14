@@ -664,6 +664,12 @@ export const REPORTS_PERMISSIONS = [
 // surfaces arrive in CP4, whose plan-first decides their endpoints and grants.
 export const TIMETABLE_PERMISSIONS = ["timetable.read", "timetable.manage"] as const;
 
+// Phase 8 / CP4 — a teacher's own timetable (§18 D37/D38): their lessons across
+// classes, plus the read-only grid of classes they form-teach. Teacher only;
+// owner/admin use the builder (timetable.read). Kept separate from
+// TIMETABLE_PERMISSIONS so granting it can never carry the whole-school grid.
+export const TIMETABLE_OWN_READ_PERMISSIONS = ["timetable.own.read"] as const;
+
 export const ALL_PERMISSIONS = [
   ...PHASE_0_PERMISSIONS,
   ...PHASE_1_PERMISSIONS,
@@ -678,6 +684,7 @@ export const ALL_PERMISSIONS = [
   ...CALENDAR_PERMISSIONS,
   ...REPORTS_PERMISSIONS,
   ...TIMETABLE_PERMISSIONS,
+  ...TIMETABLE_OWN_READ_PERMISSIONS,
   /* extend per phase */
 ] as const;
 

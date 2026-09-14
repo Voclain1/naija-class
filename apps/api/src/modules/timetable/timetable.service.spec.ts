@@ -410,7 +410,7 @@ describe("TimetableService (Phase 8 CP3) — real database", () => {
       ).rejects.toMatchObject({ code: "DAY_IN_USE", details: { dayOfWeek: 1, lessonCount: 2 } });
     });
 
-    it("editing slot TIMES never runs the clash query; saving a lesson always does", async () => {
+    it("editing slot TIMES never runs the clash query; saving a lesson runs it before and after", async () => {
       const a = await fx.timetable("a", null);
       const spy = vi.fn(findTimetableClashes);
       fx.service.clashFn = spy;
@@ -421,7 +421,8 @@ describe("TimetableService (Phase 8 CP3) — real database", () => {
       expect(spy).not.toHaveBeenCalled();
 
       await fx.lesson(a.id, MON, "p1", [fx.teachers.tunde]);
-      expect(spy).toHaveBeenCalledTimes(1);
+      // CP4 D43: once BEFORE the write and once AFTER (refuse only an added clash).
+      expect(spy).toHaveBeenCalledTimes(2);
 
       // restore
       await fx.service.saveBellSchedule(
