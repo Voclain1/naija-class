@@ -2337,3 +2337,26 @@ deadlock.
 Not changed: `withTenant`'s own retry behaviour, the role-check transaction
 (short, unchanged), and `DashboardService`'s call to `computeTermHealth`, which
 already runs inside the dashboard's 15-second transaction.
+
+**Deployed and verified — 2026-09-14.**
+- PR #301 merged as `f21063f` after both required checks passed on its final head
+  commit (`244eea9`), with branch protection re-read first.
+- `main` CI passed; deploy run `34821152876` succeeded ("No pending migrations to
+  apply."; smoke test 6/6).
+- The background watcher reported a CI failure. The watcher, not CI, failed:
+  `gh` showed `main` CI as success, which was confirmed directly before
+  proceeding.
+
+In the production container:
+- the **deployed** `/app/dist/modules/reports/completeness.service.js` contains
+  `REPORTS_TRANSACTION_TIMEOUT_MS = 15_000` and both labelled calls
+  (`reports.getCompleteness`, `reports.getTeacherActivity`);
+- the §16.12 read-only live-code check was re-run against the fixed code: 70
+  schools, 0 errors, every signal count identical;
+- Virgo Fidelis unchanged: 59 school days, 236 expected registers, 1 on a
+  non-school day, 36 score slots expected — the fix changed no figure.
+
+**Zero P2028 retries occurred on this run. That is consistent with the fix, not
+proof of it** — the original slow transaction was intermittent. The evidence for
+the fix is the pinned gate (`reports-transaction.spec.ts`, which failed against
+the unfixed code) and the deployed value above.
