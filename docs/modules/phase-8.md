@@ -258,6 +258,20 @@ the BVN reveal.
 referenced as "§15 D22" etc.; the D-numbers in §3 remain the phase-level
 decision log.)*
 
+### 3.5 Sixth round — CP3 (Timetable), Arinzechukwu, 2026-09-14
+
+**D24 (Q7) — Bell schedules are free-form slots; a double period is consecutive
+slots.** No fixed period grid is imposed on a school.
+
+**D25 (Q8) — Manual timetable builder only.** Automatic generation and
+optimisation stay unscheduled (`docs/deferred.md`).
+
+**D26 — One bell schedule per school in v1; per-class schedules are deferred,
+not designed around.** Production has no school with more than 4 classes holding
+students, and no evidence any school needs different bell times across classes
+(§4.6). This follows the project's discipline of building the smallest real
+thing first. §17.2 confirms it simplifies clash checking, and by how much.
+
 **Still open and owned by Arinzechukwu on his own timeline:** Q9 (NDPR for the
 tutor) and Q10 (the PII hard rule). **They do not block CP0 or any Phase 8
 checkpoint;** they must be resolved before Phase 8b's CP7 begins.
@@ -617,6 +631,10 @@ Two existing things are adjacent:
   behind it.
 
 ### 7.2 Supporting D3: per-term or per-year, varying by school and by class arm
+
+> **Revised 2026-09-14 by D26 (one bell schedule per school):** the per-timetable
+> `BellSchedule` below and the interval-based clash logic in §7.3 are superseded
+> for v1. See CP3's plan-first, §17.
 
 **Confirmed: the data model supports this cleanly**, using a pattern the
 schema already has. Indicative model (names fixed in CP3's plan-first):
@@ -1020,6 +1038,8 @@ already costed in: the portal lock was §10.2's first finding.
 | Q19 | PIN sales channel | Offline only in v1; online deferred as a fast follow-on (D9) |
 | Q21 | Results locked in portals in PIN mode? | Yes, in both portals (D11) |
 | Q23 | Promotion status: field or engine? | Display field set at principal approval (D12) |
+| Q7 | Bell schedule shape; double periods | Free-form slots, one schedule per school in v1; doubles = consecutive slots (§3.5 D24, D26) |
+| Q8 | Manual builder vs generator | Manual builder only (§3.5 D25) |
 | Q14 | Reports: include unreleased marks? | Yes for admins, clearly labelled (§3.4 D21) |
 | Q26 | Teacher self-view of performance? | No in v1 (§3.4 D22) |
 | Q27 | Audit-log teacher-performance views? | Yes, every view (§3.4 D23) |
@@ -1030,8 +1050,6 @@ already costed in: the portal lock was §10.2's first finding.
 
 | # | Question | Blocks | Recommendation |
 |---|---|---|---|
-| **Q7** | Bell schedules: one per school, per stage, or free-form? Double periods? | CP3 | Free-form named schedules attached per timetable; double periods as consecutive slots |
-| **Q8** | Manual builder vs automatic generator? | CP3 | Manual builder with conflict detection |
 | **Q9** | NDPR: recorded proceed-anyway decision **for the tutor specifically**? | CP7 | — (legal/business call) |
 | **Q10** | PII hard rule vs a child's free text | CP7 | — (policy call) |
 | **Q12** | Tutor behaviour with no approved curriculum document | CP8 | Refuse politely, naming the subject |
@@ -1055,7 +1073,7 @@ Neither is the safeguarding workstream (§6.4).
 | **CP0** | **Done 2026-09-13.** Plan committed (PR #297); D9–D18 recorded; ARCHITECTURE.md §9 and `docs/deferred.md` reconciled per D14 (Assignments → Phase 9, CBT → own phase, Timetable out of the Phase 9 list, Tutor → Phase 8b, Phase 7's stale "not started" status corrected, and the Timetable generator, exam management, result checker, AI study assistant, event calendar and smart-timetable entries pointed here); Q9/Q10 and the safeguarding workstream recorded as Arinzechukwu-owned. Older module docs (`phase-4.md`, `phase-5.md`, `phase-6.md`) that say "Phase 8 owns assignments" were **left as historical record**, not rewritten | 2–3 days (took well under) | D14 | — |
 | **CP1** | Event Calendar v1 incl. national events and per-school hiding (§8.4; plan-first §15) | 7–10 days | D4 (+1), D19 (+1) | **Nothing — ready** (D19, D20) |
 | **CP2** | **Recording completeness** (§16): term health, attendance and score-entry coverage, report-card pipeline, teacher recording activity. Outcome analytics deferred (§16.9) | **6–9 days** (was 9–13) | D2 reframed after §4.6 | **Nothing — Q31–Q33 resolved** (§16.7) |
-| **CP3** | Timetable: model, time-of-day convention, bell schedules, grid builder, effective-timetable resolution, time-interval conflict detection, RLS spec | 11–16 days | D3 (+3–4); D13 confirms, no change | Q7, Q8 |
+| **CP3** | Timetable: model, time-of-day convention, **one bell schedule per school**, grid builder, effective-timetable resolution, identity-based clash detection, RLS spec (plan-first §17) | **9–13 days** (was 11–16) | D3; D13; D26 (−2–3) | Q34–Q37 (§17.7) |
 | **CP4** | Timetable: fork/override, copy-forward, teacher / student / guardian read surfaces | 5–7 days | D3 (+1) | — |
 | **CP5** | Assessments & Exams v1: any-total marks with scaling, cumulative results | 6–10 days | D5 (scope narrowed) | Q15 |
 | **CP6a** | Report card completeness: position setting, attendance snapshot, promotion status display field | 5–8 days | D6 (new); D12 | Q24 |
@@ -1094,17 +1112,17 @@ again after CP4 — see §12.4.
 
 | | Before decisions | After decisions |
 |---|---|---|
-| **Phase 8** — CP0–CP6b (engineering-led) | 37–58 days | **51–77 days** |
+| **Phase 8** — CP0–CP6b (engineering-led) | 37–58 days | **49–74 days** |
 | **Phase 8b** — CP7–CP8 (Tutor engineering) | 25–40 days | **25–40 days**, plus the unestimated safeguarding workstream |
-| **Total engineering** | 62–98 days | **76–117 working days, ~15–23 calendar weeks** |
+| **Total engineering** | 62–98 days | **74–114 working days, ~15–23 calendar weeks** |
 
-**Where the growth comes from:** D6 (+8–12), D3 (+4–5), D4 (+1), D19 (+1). D2's +3–4 was removed when CP2 was re-scoped to recording completeness after the §4.6 measurement (§16.10: CP2 9–13 → 6–9).
+**Where the growth comes from:** D6 (+8–12), D3 (+4–5), D4 (+1), D19 (+1). D2's +3–4 was removed when CP2 was re-scoped to recording completeness after the §4.6 measurement (§16.10: CP2 9–13 → 6–9). D26 (one bell schedule per school) then took CP3 from 11–16 to 9–13 (§17.8).
 D5 changes no estimate — CBT was never inside the recommended scope — but it
 closes the risk of it entering by accident. **D9 removed the optional +5–8
 days for online PIN sales**, so the "58–88" and "83–128" upper variants no
 longer exist. D10–D13 are scope-neutral (§7.7, §10.5).
 
-At 51–77 days, **Phase 8 alone (CP0–CP6b) is ~11–16 weeks**, three to four
+At 49–74 days, **Phase 8 alone (CP0–CP6b) is ~11–16 weeks**, three to four
 times ARCHITECTURE.md's nominal phase. If it needs to split further, the next
 natural boundary is after CP4 (Calendar, Reports, Timetable) with CP5–CP6b
 (Exams, report card completeness, Result Checker) as a coherent "results"
@@ -2360,3 +2378,425 @@ In the production container:
 proof of it** — the original slow transaction was intermittent. The evidence for
 the fix is the pinned gate (`reports-transaction.spec.ts`, which failed against
 the unfixed code) and the deployed value above.
+
+---
+
+## 17. CP3 plan-first — Timetable builder
+
+Written 2026-09-14. **Status: proposed, awaiting review. Nothing is built.**
+
+**Scope:** the data model, one bell schedule per school, a manual per-class
+timetable builder with teacher-clash detection, and the admin screens. CP4
+(§12.1) keeps the copy-forward/fork workflow and the teacher, student and
+guardian read screens.
+
+**Decided before this plan (§3.5):**
+- per-term or per-year, varying by class (D3);
+- a year and a term timetable may coexist, with the term timetable replacing the
+  year one entirely (D13);
+- free-form bell schedules with double periods as consecutive slots (D24, Q7);
+- manual builder only (D25, Q8);
+- **one bell schedule per school in v1** (D26).
+
+### 17.1 What CP3 inherits, verified not assumed
+
+Checked against `main` @ `f21063f` on 2026-09-14:
+
+| Thing | State |
+|---|---|
+| Any timetable, bell-schedule, period, lesson, `dayOfWeek` or time-of-day field | **None** (re-grepped `schema.prisma` today; §7.1 still holds) |
+| `TeacherAssignment` | teacher × class arm × subject × academic year, `termId` nullable (= whole year), `isActive`; co-teaching allowed |
+| `SubjectAttendanceRecord.period` | a bare `Int ≥ 1`, linked to nothing |
+| School-week setting | **none** — CP2's expected-days definition hard-codes Monday–Friday and records that it switches when CP3 defines a week (§16 D33, §16.8) |
+| Time-of-day column convention | **none** in CLAUDE.md or the schema |
+| Row locking / serializable / advisory locks | **no precedent anywhere in `apps/api`** (grepped `FOR UPDATE`, `isolationLevel`, `Serializable`, `pg_advisory`) — CP3 introduces the first, stated as such in D32 |
+| Current enrollment for a student | `loadCurrentEnrollmentForStudent` exists (portal-students) — what CP4's student and guardian reads will use |
+| Production data (§4.6) | 16 active teacher assignments across 2 schools; no school has more than one teacher or more than 4 classes with students |
+
+**A Postgres fact that shapes the data model:** foreign-key checks bypass
+row-level security, always. A plain `bell_slot_id → bell_slots.id` foreign key
+would therefore accept another school's slot id: RLS hides the row from reads,
+but the referential check does not consult RLS. D29 closes this in the schema
+rather than relying on the service to remember.
+
+### 17.2 Confirming D26: does one bell schedule per school simplify clash checking?
+
+**Yes, concretely, and the estimate moves accordingly (§17.8).**
+
+With a bell schedule per class (§7.3 as originally scoped), two lessons could
+clash while sitting in *different* slots of *different* schedules whose times
+overlap. Clash detection had to compare time intervals, and a teacher's lessons
+in two classes could overlap partially. That required:
+- interval-overlap logic, and re-checking every timetable whenever any
+  schedule's times changed;
+- a test matrix across mixed schedules;
+- a schedule picker per timetable and CRUD for many schedules.
+
+With **one** schedule per school, every class shares the same slots, so:
+1. **A clash is an identity match:** same teacher, same weekday, same
+   `bell_slot_id`, in two different classes whose timetables are in force in a
+   common term. It is a `GROUP BY … HAVING count(DISTINCT class) > 1`, with no
+   time arithmetic.
+2. **Editing slot times can never create or remove a clash**, because clashes
+   don't depend on times. A time edit needs no re-check at all.
+3. **The mixed-schedule test matrix disappears.** Tests cover term and year
+   combinations only.
+
+**What it does NOT remove, stated honestly.** The effective-timetable resolution
+that D3/D13 require is untouched. "Which timetable is in force for this class in
+this term" is still derived: a term timetable replaces the year one. So:
+- clash checking still has to evaluate **every term** a year-wide change
+  touches;
+- it still cannot be a database constraint;
+- it still needs a per-school lock against concurrent edits.
+
+That is the majority of D3's original cost, and it remains.
+
+**Per-class schedules are deferred, not designed around.** No `bell_schedules`
+table exists in v1, and slots belong directly to the school. If real usage later
+shows a school needs different bell times across classes, the migration is
+additive:
+- introduce a `bell_schedules` table;
+- backfill one per school;
+- add `bell_schedule_id` to slots and to timetables;
+- move clash detection back to interval logic.
+
+Recorded in `docs/deferred.md` when this checkpoint ships.
+
+### 17.3 Decisions (proposed)
+
+Numbered from D27 to continue §3's phase-level log. (§15 and §16 used local
+D-numbers for their own engineering decisions and are referenced as "§15 D22",
+"§16 D33".)
+
+#### D27 — Time of day is stored as integer minutes since midnight
+
+`start_minute` and `end_minute INTEGER`, with `CHECK (0 <= start_minute AND
+start_minute < end_minute AND end_minute <= 1440)`.
+
+**Not `@db.Time`:**
+- Prisma maps `TIME` to a JavaScript `Date` pinned to 1970-01-01. That turns a
+  wall-clock time into a timestamp that serialises with a `Z`.
+- It invites exactly the "midnight in which zone?" confusion CLAUDE.md's
+  date rule exists to prevent.
+
+**Integer minutes** are:
+- zone-free by construction;
+- trivially ordered;
+- checkable in SQL;
+- formatted once, at display ("08:10").
+
+School time is Lagos wall-clock time and is never converted. This is a **new
+convention** and is added to CLAUDE.md's "Prisma column types in raw SQL"
+section in the same PR.
+
+#### D28 — The data model
+
+| Table | Columns (beyond `id`, `school_id`, timestamps) | Notes |
+|---|---|---|
+| `bell_slots` | `position INT`, `label TEXT` ("Period 1", "Break"), `kind` enum `LESSON` \| `BREAK` \| `ASSEMBLY` \| `OTHER`, `start_minute`, `end_minute` | **One schedule per school** (D26): the school's slots are the schedule. Unique `(school_id, position)`. Slots must not overlap one another (service-checked on save of the whole schedule) |
+| `timetables` | `class_arm_id`, `academic_year_id`, `term_id` nullable | **A header per class** (D3). `term_id` null = in force for the whole year. Partial unique indexes: one year-wide per `(class_arm_id, academic_year_id) WHERE term_id IS NULL`; one per `(class_arm_id, term_id) WHERE term_id IS NOT NULL` (§7.2). The term must belong to the stated year (service-checked, the `Enrollment` precedent) |
+| `timetable_entries` | `timetable_id`, `day_of_week SMALLINT` (1 = Monday … 7 = Sunday, ISO), `bell_slot_id`, `subject_id` | Unique `(timetable_id, day_of_week, bell_slot_id)`: one lesson per cell |
+| `timetable_entry_teachers` | `entry_id`, `teacher_id` | Co-teaching (`TeacherAssignment` allows it). Unique `(entry_id, teacher_id)` |
+| `schools.school_week_days SMALLINT[]` | default `{1,2,3,4,5}` | The school week (D33) |
+
+**Double periods (D24)** are consecutive `LESSON` slots holding the same subject
+and teachers. There is no "double period" row. The builder offers "span N
+slots", which writes N entries in one mutation, and the grid renders adjacent
+identical entries merged. Nothing else in the system needs to know a lesson is
+double.
+
+**Only `LESSON` slots accept entries.** Changing a slot's kind away from
+`LESSON`, or deleting a slot, is refused while entries use it. A foreign key
+`ON DELETE RESTRICT` is the backstop, with a service message naming how many
+lessons use the slot.
+
+#### D29 — Composite foreign keys make cross-school references impossible in the database
+
+Because referential checks bypass RLS (§17.1), every reference from a timetable
+table to a tenant table is a **composite** foreign key on `(school_id, id)`:
+- `timetable_entries (school_id, bell_slot_id) → bell_slots (school_id, id)`
+- `timetable_entries (school_id, subject_id) → subjects (school_id, id)`
+- `timetable_entries (school_id, timetable_id) → timetables (school_id, id)`
+- `timetable_entry_teachers (school_id, entry_id) → timetable_entries (school_id, id)`
+- `timetable_entry_teachers (school_id, teacher_id) → users (school_id, id)`
+- `timetables (school_id, class_arm_id) → class_arms (school_id, id)`,
+  `(school_id, academic_year_id) → academic_years`, `(school_id, term_id) → terms`
+
+Each target gains a `UNIQUE (school_id, id)` index. That is always satisfiable,
+since `id` is already unique, and cheap.
+
+With these, an entry in school A **cannot** name school B's slot, subject,
+teacher or class, even through a service bug or raw SQL, because the row it
+would need, `(A, B's id)`, does not exist. The RLS spec proves it with a real
+cross-tenant insert that must fail on the constraint (§17.6).
+
+#### D30 — A clash, defined
+
+**Two lessons clash when, for some term τ:**
+- they share a teacher;
+- they fall on the same `day_of_week` and `bell_slot_id`;
+- they belong to **different** classes;
+- both of their timetables are **in force** in τ.
+
+**In force** (D3/D13): a class's term-τ timetable if one exists; otherwise its
+year-wide timetable for τ's academic year.
+
+Out of scope for a clash:
+- **the same class twice in one slot** — that is already impossible (the unique
+  cell);
+- **a teacher in two slots that overlap in time** — impossible in v1, because
+  slots don't overlap and are shared (§17.2).
+
+#### D31 — Clash checking is write-then-verify, one query, for every mutation
+
+Every mutating operation runs inside one `withTenant` transaction:
+1. take the school's timetable lock (D32);
+2. apply the change;
+3. run **the clash query** for the affected academic year;
+4. if it returns any row, **throw `ConflictError` `TIMETABLE_CLASH`** with the
+   clashing teacher, day, slot, term and classes, and the transaction rolls
+   back; otherwise commit.
+
+That one path covers every operation that can create a clash:
+- adding or moving a lesson;
+- spanning a double period;
+- adding a teacher to a lesson;
+- creating a term timetable (it changes what is in force for that term);
+- **deleting** a term timetable (the year-wide one comes back into force and
+  may clash with another class's term timetable).
+
+It needs no per-operation reasoning about "what could this change affect",
+which is where hand-written checks go wrong.
+
+The query computes, for the year, each class's timetable in force per term,
+then groups lessons by `(teacher, day, slot, term)` and returns groups spanning
+more than one class. It is bounded by one school's one academic year, and
+grouped in SQL, never one query per class.
+
+Operations that **cannot** create a clash skip it, each for a stated reason:
+- editing slot times (§17.2);
+- removing a lesson or a teacher (removal only removes lessons);
+- renaming.
+
+#### D32 — Serialise timetable writes per school with a transaction-scoped advisory lock
+
+Two admins editing two classes can each produce a timetable with no clash that,
+combined, has one. Under the default READ COMMITTED isolation, neither
+transaction sees the other's uncommitted lesson.
+
+**Fix:** `SELECT pg_advisory_xact_lock(hashtextextended('timetable:' || school_id, 0))`
+as the first statement of every timetable mutation. Timetable writers for one
+school run one at a time; different schools never contend; reads are never
+blocked.
+
+**Why this primitive, stated because it is the first lock in this codebase
+(§17.1):**
+- **It is transaction-scoped.** It releases at commit or rollback, so it can't
+  leak across a pooled connection. That makes it safe under PgBouncer
+  transaction pooling, which `withTenant`'s own `set_config(…, true)` already
+  relies on.
+- **`SERIALIZABLE` was considered and rejected.** It would surface as
+  serialization failures to retry, on a code path whose `withTenant` retry
+  covers connection errors, not serialization errors.
+- **`SELECT … FOR UPDATE` on a school row was considered and rejected.** It
+  would also block unrelated writes to `schools`.
+
+**Cost:** timetable edits in one school queue behind each other. A save is
+~10 ms of SQL, and admins edit rarely; this is the right trade.
+
+#### D33 — Assigning a teacher to a lesson must match a real assignment
+
+A lesson's teacher must hold an active `TeacherAssignment` for that class and
+subject, **effective in the term(s) the timetable is in force**:
+- **in none** of those terms → refused (`TEACHER_NOT_ASSIGNED`);
+- **in some but not all** (e.g. a year-wide timetable, but a term-only
+  assignment) → saved, with a warning returned and shown in the grid.
+
+This keeps the timetable consistent with the gradebook and teacher scope, which
+are built from assignments. (§7.3 item 5's recommendation, now a decision
+proposal.)
+
+**A lesson may have no teacher yet (Q34)** — a school can timetable a subject
+before hiring. It can't clash and is shown as "No teacher".
+
+#### D34 — The school week
+
+A per-school `school_week_days` setting (default Monday–Friday), edited
+alongside the bell schedule. Real reason, not speculation: some Nigerian private
+schools hold Saturday classes. **The grid shows these days only.**
+
+**CP2's expected-days definition switches to it in this checkpoint** (§16 D33
+recorded that it would). `computeSchoolDays` takes the school's week instead of
+hard-coding Monday–Friday, and the completeness spec gains a Saturday-school
+case. For every existing school the result is unchanged, because the default
+*is* Monday–Friday. → Q35 confirms.
+
+#### D35 — Permissions
+
+A new `TIMETABLE_PERMISSIONS` constant:
+- `timetable.read`
+- `timetable.manage` (bell schedule, school week, lessons, timetables)
+
+**CP3 grants both to owner/admin only.** Teachers, students and guardians get
+their read screens in CP4, whose plan-first decides their endpoints and grants.
+No teacher or bursar grant here: the whole-school grid names every teacher's
+week, and teacher reads follow the scoped-surface rule
+(`rbac-two-gate-conformance` I2 exceptions).
+
+**Every mutation is audited**, tenant-scoped, with the before/after of the cell.
+
+#### D36 — Surfaces (CP3)
+
+- **Settings → Bell schedule:**
+  - an ordered slot list (label, kind, start, end), saved as a whole;
+  - school-week days;
+  - validation messages for overlapping or out-of-order slots.
+- **Timetable** (`/timetable`, promoted from "Coming soon", gated on
+  `timetable.read`):
+  - a class picker;
+  - a **"Whole year" / "This term only"** choice per class (D3), showing which
+    timetable is in force for the selected term;
+  - a day × slot grid; click a lesson cell → subject, teacher(s), "span N
+    periods";
+  - clash errors name the teacher, the other class, day and period;
+  - partial-assignment warnings inline;
+  - creating a "This term only" timetable starts **empty** in CP3 (copy/fork is
+    CP4).
+- **Not in CP3:** teacher, student and guardian read views; copy-forward; fork;
+  printing.
+
+### 17.4 Rules that are easy to get wrong, stated once
+
+1. Deleting a term timetable is a mutation that **can** create a clash (D31).
+2. Editing slot times **cannot**, so it skips the check (§17.2).
+3. `day_of_week` is ISO (1 = Monday). `Date.getUTCDay()` is 0 = Sunday; every
+   conversion goes through one helper.
+4. A year-wide timetable is in force only for terms **of its own academic year**.
+5. Deactivating a class doesn't delete its timetables; builder and reads list
+   active classes only.
+6. A timetable on a term that is deleted cascades away (`terms` → `timetables`
+   `ON DELETE CASCADE`); a lesson can never outlive its slot (`RESTRICT`).
+
+### 17.5 What CP3 does NOT do
+
+- **Per-class bell schedules** (D26 — deferred until usage shows the need).
+- Automatic timetable generation or optimisation (D25).
+- Rooms and room clashes.
+- Copy-forward, fork-from-year, and the teacher/student/guardian read views (CP4).
+- Substitution/cover.
+- Periods-per-week targets. There is no target data anywhere, so §7.4's "soft
+  warning" has nothing to warn against; it is dropped rather than invented.
+- Linking `SubjectAttendanceRecord.period` to slots (existing data; §7.5).
+- Printing or exporting the grid.
+
+### 17.6 Tests
+
+1. **RLS + composite-FK spec (real Postgres, as `app_user`)** for all four
+   tables:
+   - no-GUC reads see nothing; each school sees only itself;
+   - cross-tenant INSERT rejected by `WITH CHECK`, with a control insert
+     succeeding;
+   - **under school A's own GUC, an entry referencing school B's slot, subject,
+     class or teacher is rejected by the composite foreign key** (D29), with
+     the control referencing A's own rows succeeding.
+2. **Clash spec (real Postgres)** — each case hand-constructed:
+   - same teacher, same day and slot, two classes, both year-wide → clash;
+   - different day, or different slot → no clash;
+   - class A year-wide, class B **term-2-only** → clash only in term 2's
+     effective set, and the error names term 2;
+   - class A has a term-2 timetable **without** that lesson → A's year-wide
+     lesson is not in force in term 2, so no clash in term 2 but a clash in
+     terms 1 and 3;
+   - **deleting** A's term-2 timetable brings the clash back → the delete is
+     refused and rolled back;
+   - co-taught lesson where only one teacher clashes → the clash names that
+     teacher;
+   - two classes in **different academic years** → never a clash;
+   - a lesson with no teacher → never a clash;
+   - spanning a double period into an occupied cell → refused; into a
+     non-LESSON slot → refused.
+3. **Concurrency spec:** two transactions writing lessons that clash only in
+   combination, started together. With the advisory lock, one commits and the
+   other gets `TIMETABLE_CLASH`. **Mutation-tested:** with the lock removed,
+   both commit and the clash query then finds the clash that was let in.
+4. **Mutation tests on the clash query**, in the CP2 manner:
+   - ignore term replacement (treat all timetables as in force);
+   - drop the "different class" condition;
+   - skip the check on term-timetable delete.
+
+   Each must fail specific cases.
+5. **Assignment validity (D33):** none → refused; partial → saved with warning;
+   inactive assignment → treated as none.
+6. **Bell schedule:**
+   - overlap refused;
+   - deleting or re-kinding a used slot refused with a count;
+   - time edits don't run the clash check (asserted by intercepting the query,
+     the `reports-transaction.spec` technique).
+7. **CP2 switch (D34):** the existing completeness spec unchanged; a new
+   Saturday-school case (Mon–Sat week) counts Saturdays.
+8. **Conformance:**
+   - `permissions-coverage` (teacher and bursar hold neither timetable
+     permission);
+   - `rbac-two-gate-conformance`;
+   - `audit-coverage` (every mutation);
+   - `nav-items.spec`;
+   - `security-definer-inventory` (count unchanged — no SD function).
+9. **E2E:**
+   - owner sets a bell schedule, builds class A's year-wide grid with teacher T
+     on Monday period 1;
+   - attempts T on Monday period 1 for class B → sees the clash message naming
+     class A;
+   - moves it to period 2 → saved;
+   - screenshots reviewed.
+10. **Production verification after deploy:**
+    - migrations applied;
+    - RLS forced and policies present on the four tables;
+    - composite FKs present (`pg_constraint`);
+    - grants correct;
+    - SD count 22;
+    - route 401 against a 404 control;
+    - the re-run CP2 live check shows unchanged figures (D34 default week).
+
+### 17.7 Open questions for this review
+
+| # | Question | Recommendation |
+|---|---|---|
+| **Q34** | May a lesson have no teacher yet? | Yes, shown as "No teacher" |
+| **Q35** | Add a per-school `school_week_days` setting in CP3 and switch CP2's expected days to it now (unchanged for every current school)? | Yes — CP2 already committed to switching when a week exists |
+| **Q36** | D33: refuse a lesson teacher with no effective assignment, and warn (not refuse) when only some terms are covered? | Yes |
+| **Q37** | Accept the first advisory lock in the codebase (D32) as the concurrency mechanism for timetable writes? | Yes |
+
+### 17.8 Estimate
+
+| Work | Days |
+|---|---|
+| Schema: 4 tables, `school_week_days`, composite FKs + supporting unique indexes, partial unique indexes, RLS, policies file; CLAUDE.md time convention | 1.5–2 |
+| RLS + composite-FK spec | 0.5 |
+| Bell schedule + school week API and settings screen | 1–1.5 |
+| Timetable API: headers, lessons, span, teachers, assignment validity (D33), audit | 1.5–2 |
+| Effective resolution + clash query + advisory lock (D30–D32); clash, concurrency and mutation specs | 2–3 |
+| `/timetable` grid builder UI with clash and warning display | 1.5–2.5 |
+| CP2 school-week switch (D34) + spec case | 0.5 |
+| Permissions migration, nav promotion, conformance, e2e, production verification | 0.5–1 |
+| **Total** | **9–13 working days** |
+
+**Against the previous CP3 estimate of 11–16:** smaller by 2–3 days, from D26.
+Removed:
+- interval-overlap clash logic and its re-check on time edits;
+- the mixed-schedule test matrix;
+- per-timetable schedule selection;
+- CRUD for many schedules.
+
+Two small things were **added** that the §7 estimate did not carry:
+- composite foreign keys (D29), found while checking how RLS and foreign keys
+  interact;
+- the CP2 school-week switch (D34), already committed to in §16.8.
+
+| | Before | After |
+|---|---|---|
+| CP3 | 11–16 | **9–13** |
+| CP4 | 5–7 | 5–7 (unchanged; its plan-first will re-check) |
+| Timetable total | 16–23 | **14–20** |
+| Phase 8 (CP0–CP6b) | 51–77 | **49–74** |
+| Total engineering incl. Phase 8b | 76–117 | **74–114** |
