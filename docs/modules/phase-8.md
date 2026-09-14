@@ -2383,7 +2383,7 @@ the unfixed code) and the deployed value above.
 
 ## 17. CP3 plan-first — Timetable builder
 
-Written 2026-09-14. **Status: approved in full 2026-09-14 (§17.7); implementation in progress.**
+Written 2026-09-14. **Status: approved in full 2026-09-14 (§17.7); built 2026-09-14 (§17.9), awaiting merge and deploy.**
 
 **Scope:** the data model, one bell schedule per school, a manual per-class
 timetable builder with teacher-clash detection, and the admin screens. CP4
@@ -2800,3 +2800,197 @@ Two small things were **added** that the §7 estimate did not carry:
 | Timetable total | 16–23 | **14–20** |
 | Phase 8 (CP0–CP6b) | 51–77 | **49–74** |
 | Total engineering incl. Phase 8b | 76–117 | **74–114** |
+
+### 17.9 Built — 2026-09-14
+
+Implemented as approved, on PR #302. Every figure below was freshly produced on
+this branch against a real local Postgres; nothing is carried over from the plan.
+
+#### The concurrency proof — the lock is necessary, not decorative
+
+`timetable-concurrency.spec.ts` (real concurrent transactions, 3 tests). Two
+admins save Tunde Bello on Monday P1 in JSS 1A and in JSS 1B at the same time.
+The service's `afterWriteHook` is a **barrier**: it holds the first transaction
+between its write and its clash query until the second arrives (or 1.5 s
+passes). That forces the dangerous interleaving deterministically instead of
+hoping a race lands.
+
+| Run | Lock | Result |
+|---|---|---|
+| CONTROL | removed (`lockFn` = no-op) | **both commit**; both reached the barrier together; the clash query afterwards finds the clash that was let in (3 rows, one per term) |
+| Real | `pg_advisory_xact_lock` | **one commits, one fails `TIMETABLE_CLASH`**; the second reached the barrier only ≥ 1.45 s after the first (blocked at its first statement); 1 lesson committed, 0 clashes |
+| Scope | held in an open transaction | a same-school write is **still blocked after 1 s** (control), while another school's write completes in < 1 s |
+
+The same operations run in both cases; only the lock differs. The reverse is
+also tested (mutation M7 below): making the lock key unique per transaction, so
+it never contends, fails the real run and the scope test.
+
+#### Clash rules — real Postgres, hand-constructed, mutation-tested
+
+`timetable.service.spec.ts` (real Postgres, 31 tests), on a fixture whose every
+assignment is stated in its header:
+- same teacher/day/slot in two year-wide classes → refused with 409, named
+  "Tunde Bello would be teaching JSS 1A and JSS 1B at the same time — Monday,
+  P1, First Term.", one clash per term; **rolled back** (no lesson, and exactly
+  one `timetable.lesson.save` audit row — the successful one);
+- different day, or different slot → saved, clash query empty;
+- A year-wide + B Second-Term-only → the clash exists **only in Second Term**;
+- A has an empty Second-Term timetable → A's year-wide lesson is out of force
+  there: the clash set is exactly **First and Third**;
+- **deleting** A's Second-Term timetable brings the clash back → delete refused,
+  timetable still present; a year-wide delete never runs the query;
+- co-taught lesson → the clash names only the teacher who clashes;
+- different academic years → never; no teacher (Q34) → never;
+- the second half of a double period clashes like any lesson;
+- span into an occupied cell / a break / past the day's end → refused, nothing
+  written; re-saving a double over its own second half → allowed;
+- a day outside the school week → refused.
+
+**Mutation runs.** Each rule was broken in the real code, the three specs
+(timetable service, concurrency, completeness — 51 tests) rerun, and the file
+restored from git; the tree was clean afterwards.
+
+| Mutation | Result |
+|---|---|
+| M1 ignore term replacement (in-force resolution) | **2 failed** — the First/Third clash set; the delete-brings-it-back case |
+| M2a `count(DISTINCT class_arm_id) > 1` → `count(*) > 1` | **0 failed — equivalent mutant**, see below |
+| M2b "different class" condition dropped (`> 0`) | **21 failed** |
+| M3 no clash check on term-timetable delete | **1 failed** — the delete case |
+| M4 `day_of_week` dropped from the grouping | **1 failed** — different day |
+| M5 `bell_slot_id` dropped from the grouping | **2 failed** — different slot; co-taught |
+| M6 year scoping removed from in-force timetables | **1 failed** — different academic years |
+| M7 lock key unique per transaction | **2 failed** — the real concurrency run; lock scope |
+| M8 CP2 ignores the school week (D34 reverted) | **1 failed** — Saturday school |
+| M9 inactive assignments count (D33) | **1 failed** — inactive assignment |
+| All restored | **51 passed** |
+
+**M2a is an equivalent mutant, stated rather than hidden.** Under correct
+in-force resolution each class has exactly one timetable per term; the unique
+cell `(timetable, day, slot)` allows one lesson per class per slot; and the
+unique `(entry, teacher)` allows a teacher once per lesson. So every row in a
+`(teacher, day, slot, term)` group comes from a different class, and `count(*)`
+equals `count(DISTINCT class_arm_id)`. No test can tell them apart because no
+reachable data can. The DISTINCT stays because it states the rule and remains
+correct if a future change ever lets one class contribute two rows; dropping the
+condition outright (M2b) is caught by 21 tests.
+
+#### Assignment validity (D33), bell schedule, two gates
+
+- No assignment → `TEACHER_NOT_ASSIGNED`. A First-Term-only assignment on a
+  year-wide timetable → saved with a warning naming **Second Term and Third
+  Term**; on a First-Term timetable → no warning; on a Second-Term timetable →
+  refused. An inactive assignment, and an active assignment held by an inactive
+  teacher → refused.
+- Overlapping periods refused **by the service itself**. Removing a used period
+  → `SLOT_IN_USE` "P3 has 2 lessons"; re-kinding a used period → refused with
+  count 1; removing Monday while it has 2 lessons → `DAY_IN_USE`. Reorder and
+  add keep ids; a Saturday school can timetable Saturdays.
+- **Editing slot times never calls the clash query; saving a lesson calls it
+  exactly once** (the query function intercepted with a spy).
+- The permission guard refuses a teacher on read and manage routes; the
+  service's own gate refuses a teacher on all five mutations and writes nothing;
+  a deactivated owner is refused.
+
+#### RLS and composite foreign keys (D29)
+
+`timetable-rls.spec.ts` (real Postgres as `app_user`, 13 tests):
+- RLS enabled **and forced**, one `tenant_isolation` policy, on all four tables;
+- no GUC → 0 rows in each (control: the migration role sees both schools);
+- each school sees only itself; a write carrying the other school's id is
+  rejected with a **row-level security** error, and the control write succeeds;
+- under school A's own GUC, a reference to school B's row fails on **the named
+  composite constraint** for all eight: bell slot, subject, timetable (entries);
+  class arm, academic year, term (timetables); teacher, entry (entry teachers) —
+  each with a control referencing A's own row succeeding;
+- **necessity:** in a rolled-back migration-role transaction, the bell-slot FK is
+  swapped for a plain `bell_slot_id → bell_slots(id)` FK and the session drops to
+  `app_user` under A's GUC. B's slot is invisible to a SELECT (0 rows), **and the
+  cross-school INSERT succeeds (1 row)**. RLS alone does not protect a reference;
+  the composite key does. The constraint is confirmed back in place afterwards.
+
+#### CP2 school-week switch (D34)
+
+`school-days.spec.ts` 13 → 18 tests and `completeness.service.spec.ts` 19 → 20;
+every pre-existing case unchanged. New: `isoWeekday`; an explicit Mon–Fri week
+equal to the default; a Mon–Sat week counting Saturdays (**23**); a Saturday
+holiday excluded only for a Saturday school; a Mon/Wed/Fri week (**12**); and on
+the real fixture a Saturday school gets **18** expected days, with the Sat 7
+register moving from "non-school" to "taken". Reports specs: 40 passed.
+
+#### Conformance
+
+- `rbac-two-gate-conformance`: passes. **It was initially passing blind.** The
+  first version asserted the owner/admin gate inside a shared `runMutation`
+  helper, and the gate spec reads role assertions only from the method the
+  controller calls, so it saw no gate on any timetable mutation. The assertion
+  moved into each public mutation. Proven by sabotage: with the roles set to
+  `["owner"]` the spec fails naming all five routes
+  (`TimetableController.saveLesson -> TimetableService.saveLesson: admin holds
+  timetable.manage but is rejected by [owner]`, …); restored, it passes.
+- `permissions-coverage`: every handler's exact permission pinned; admin holds
+  both; **teacher and bursar hold neither**.
+- `audit-coverage`: bell-schedule save, create ×2, lesson save, lesson clear,
+  delete — six tenant-scoped rows in order; the refused clash and the no-op
+  clear write none.
+- `security-definer-inventory`: passes, count unchanged at **22** (no SD
+  function in CP3). `app-module-boots`: passes.
+- `nav-items.spec`: Timetable live, gated on `timetable.read`, not under Coming
+  soon.
+
+#### End to end, in a real browser
+
+`e2e/tests/timetable-builder.spec.ts`, against the compiled API and the web dev
+server:
+1. owner opens Settings → Bell schedule, adds Period 1 (08:00–08:40) and
+   Period 2 (08:40–09:20), saves;
+2. Timetable → JSS 1A → "Create whole-year timetable" → Monday Period 1 →
+   Mathematics, Tunde Bello → saved;
+3. JSS 1B → the same → **"Timetable clash — nothing was saved. Tunde Bello
+   already teaches JSS 1A on Monday, Period 1 (First Term)."**; the database
+   shows no lesson for JSS 1B;
+4. in the same dialog, Period → Period 2 → saved; the grid shows it in Period 2
+   with Period 1 empty; the database shows exactly A: Mon P1 and B: Mon P2, and
+   2 lesson-save audit rows;
+5. a teacher's API calls to the timetable → 403.
+
+Screenshots reviewed (`test-results/timetable-builder/1–4`). The first run's
+clash screenshot also showed class A's lingering "Timetable saved." toast, which
+could be misread as a save; the test now waits for it to clear, and the rerun's
+screenshot shows only the refusal. Unauthenticated `GET /timetable/options` →
+401, against a 404 control on a non-existent route.
+
+#### Wider regression
+
+| Check | Result |
+|---|---|
+| `pnpm lint` | 9/9 tasks |
+| `pnpm typecheck` | 14/14 tasks |
+| API, full suite (run alone) | **148 files: 2076 passed, 3 skipped** (pre-existing env-gated specs), 0 failed |
+| Web | 35 files, 339 passed |
+| Mobile | 21 files, 167 passed |
+| Phase 8 e2e together (event calendar, recording completeness, timetable) | 3 passed |
+
+A first full API run, started while the web and mobile suites were also running,
+was **not** a pass: Chromium timed out launching for a report-card PDF render,
+the single test worker exited, and only 27 of 148 files ran. The rerun, alone,
+is the figure above.
+
+#### What the build found that the plan did not
+
+1. **The two-gate conformance spec could not see a gate inside a helper** (above).
+   Worth knowing for any future service that centralises its role assertion.
+2. **A year with no terms would make a timetable unchecked.** A year-wide
+   timetable is in force only in its year's terms, so with none the clash query
+   has nothing to check. Creating a timetable in such a year is refused
+   (`YEAR_HAS_NO_TERMS`). Residual edge, recorded rather than solved: a term
+   *added later* puts year-wide timetables in force for it, which could surface
+   a latent clash. The next timetable save in that year is then refused with a
+   message naming the teacher, classes and term, so it is visible and
+   actionable, never silent.
+3. **Moving a lesson in the editor is two requests.** The new cell is saved (and
+   clash-checked) first, then the old cells are cleared. If the clear fails, the
+   lesson briefly appears in both places: visible and fixable, never a hidden
+   clash.
+4. The basePrisma lint rule caught the shared test fixture. Rather than widen
+   the allowlist, the fixture deletes its school through the tenant client
+   (`schools` has no RLS). Verified: 0 leftover fixture schools after the full run.
