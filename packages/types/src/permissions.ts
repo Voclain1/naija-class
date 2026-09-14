@@ -659,6 +659,11 @@ export const REPORTS_PERMISSIONS = [
   "reports.teacher-activity.read",
 ] as const;
 
+// Phase 8 / CP3 — Timetable builder (docs/modules/phase-8.md §17 D35).
+// CP3 grants both to owner/admin only. Teacher, student and guardian read
+// surfaces arrive in CP4, whose plan-first decides their endpoints and grants.
+export const TIMETABLE_PERMISSIONS = ["timetable.read", "timetable.manage"] as const;
+
 export const ALL_PERMISSIONS = [
   ...PHASE_0_PERMISSIONS,
   ...PHASE_1_PERMISSIONS,
@@ -672,6 +677,7 @@ export const ALL_PERMISSIONS = [
   ...PHASE_7_PERMISSIONS,
   ...CALENDAR_PERMISSIONS,
   ...REPORTS_PERMISSIONS,
+  ...TIMETABLE_PERMISSIONS,
   /* extend per phase */
 ] as const;
 

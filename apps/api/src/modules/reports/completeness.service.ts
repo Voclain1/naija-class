@@ -74,6 +74,8 @@ interface TermRow {
   is_current: boolean;
   academic_year_id: string;
   year_label: string;
+  /** schools.school_week_days (§17 D34). */
+  school_week_days: number[];
 }
 
 interface ArmRow {
@@ -239,7 +241,8 @@ export class CompletenessService {
   private async loadTerm(db: TenantDb, schoolId: string, termId: string | undefined): Promise<TermRow | null> {
     const [row] = await db.$queryRawUnsafe<TermRow[]>(
       `SELECT t.id, t.name, t.start_date::text AS start_date, t.end_date::text AS end_date, t.is_current,
-              t.academic_year_id, ay.label AS year_label
+              t.academic_year_id, ay.label AS year_label,
+              (SELECT s.school_week_days::int[] FROM schools s WHERE s.id = $1) AS school_week_days
        FROM terms t JOIN academic_years ay ON ay.id = t.academic_year_id AND ay.school_id = $1
        WHERE t.school_id = $1
          AND t.id = COALESCE($2::text, (SELECT id FROM terms WHERE school_id = $1 AND is_current LIMIT 1))`,
@@ -332,7 +335,7 @@ export class CompletenessService {
         isCurrent: t.is_current,
       },
       academicYearId: t.academic_year_id,
-      days: computeSchoolDays(t.start_date, t.end_date, today, calendar),
+      days: computeSchoolDays(t.start_date, t.end_date, today, calendar, t.school_week_days),
       arms,
       componentCount: components[0]?.n ?? 0,
       marks,

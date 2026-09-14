@@ -52,7 +52,7 @@ export interface NavItem {
 //
 // Event calendar left this list on 2026-09-13, promoted to NAV_ITEMS when
 // Phase 8 / CP1 shipped it (docs/modules/phase-8.md §15). Reports followed with
-// Phase 8 / CP2 (§16).
+// Phase 8 / CP2 (§16). Timetable followed with Phase 8 / CP3 (§17).
 export const NAV_ITEMS: NavItem[] = [
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard, enabled: true, requiredPermission: "dashboard.read" },
   { label: "Students", href: "/students", icon: GraduationCap, enabled: true, requiredPermission: "student.read" },
@@ -99,12 +99,15 @@ export const NAV_ITEMS: NavItem[] = [
   // Gated on reports.completeness.read — owner/admin only, so teacher and
   // bursar sidebars never show it.
   { label: "Reports", href: "/reports", icon: FileBarChart, enabled: true, requiredPermission: "reports.completeness.read" },
+  // Phase 8 / CP3 (docs/modules/phase-8.md §17 D36). Promoted from "Coming soon".
+  // Gated on timetable.read — owner/admin only in CP3; teacher, student and
+  // guardian timetable views are CP4's.
+  { label: "Timetable", href: "/timetable", icon: CalendarClock, enabled: true, requiredPermission: "timetable.read" },
   { label: "Settings", href: "/settings", icon: Settings, enabled: true, requiredPermission: "school.read" },
 ];
 
 export const LATER_PHASE_ITEMS: NavItem[] = [
   { label: "AI Tutor", href: "/ai-tutor", icon: Sparkles, enabled: false },
-  { label: "Timetable", href: "/timetable", icon: CalendarClock, enabled: false },
   { label: "Assessments & Exams", href: "/exams", icon: ClipboardList, enabled: false },
   { label: "Result Checker", href: "/result-checker", icon: FileSearch, enabled: false },
 ];

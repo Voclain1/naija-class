@@ -40,3 +40,38 @@ CREATE POLICY tenant_isolation ON school_events
 CREATE POLICY tenant_isolation ON school_hidden_national_events
   USING      (school_id::text = current_setting('app.current_school_id', true))
   WITH CHECK (school_id::text = current_setting('app.current_school_id', true));
+
+-- ---------------------------------------------------------------------
+-- CP3 — Timetable builder (docs/modules/phase-8.md §17).
+-- Migration: 20260914140000_phase_8_cp3_timetable
+--
+-- Four ordinary tenant tables. Every reference between them and to other
+-- tenant tables is a COMPOSITE (school_id, id) foreign key (D29): FK checks
+-- bypass RLS, so the school is part of every key. timetable-rls.spec.ts proves
+-- a cross-tenant reference is rejected by the constraint itself.
+-- ---------------------------------------------------------------------
+
+ALTER TABLE "bell_slots"               ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "bell_slots"               FORCE  ROW LEVEL SECURITY;
+ALTER TABLE "timetables"               ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "timetables"               FORCE  ROW LEVEL SECURITY;
+ALTER TABLE "timetable_entries"        ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "timetable_entries"        FORCE  ROW LEVEL SECURITY;
+ALTER TABLE "timetable_entry_teachers" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "timetable_entry_teachers" FORCE  ROW LEVEL SECURITY;
+
+CREATE POLICY tenant_isolation ON bell_slots
+  USING      (school_id::text = current_setting('app.current_school_id', true))
+  WITH CHECK (school_id::text = current_setting('app.current_school_id', true));
+
+CREATE POLICY tenant_isolation ON timetables
+  USING      (school_id::text = current_setting('app.current_school_id', true))
+  WITH CHECK (school_id::text = current_setting('app.current_school_id', true));
+
+CREATE POLICY tenant_isolation ON timetable_entries
+  USING      (school_id::text = current_setting('app.current_school_id', true))
+  WITH CHECK (school_id::text = current_setting('app.current_school_id', true));
+
+CREATE POLICY tenant_isolation ON timetable_entry_teachers
+  USING      (school_id::text = current_setting('app.current_school_id', true))
+  WITH CHECK (school_id::text = current_setting('app.current_school_id', true));

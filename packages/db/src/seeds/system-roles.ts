@@ -10,6 +10,7 @@ import {
   CALENDAR_PERMISSIONS,
   CALENDAR_READ_PERMISSIONS,
   REPORTS_PERMISSIONS,
+  TIMETABLE_PERMISSIONS,
   OWNER_ONLY_PERMISSIONS,
   PHASE_0_PERMISSIONS,
   PHASE_1_PERMISSIONS,
@@ -89,6 +90,10 @@ const ADMIN_PERMISSIONS: readonly string[] = [
   // Kept IN SYNC with the idempotent append in
   // prisma/migrations/20260914120000_phase_8_cp2_reports_permissions.
   ...REPORTS_PERMISSIONS,
+  // Phase 8 / CP3 — Timetable builder: read + manage (bell schedule, school week,
+  // timetables, lessons). Owner/admin only in CP3 (§17 D35). Kept IN SYNC with
+  // prisma/migrations/20260914140100_phase_8_cp3_timetable_permissions.
+  ...TIMETABLE_PERMISSIONS,
 ];
 
 // System roles are global (school_id = NULL, is_system = true) and referenced

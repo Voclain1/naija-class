@@ -43,3 +43,4 @@ export * from './setup-state/index.js';
 export * from './curriculum/index.js';
 export * from './calendar/index.js';
 export * from './reports/index.js';
+export * from './timetable/index.js';

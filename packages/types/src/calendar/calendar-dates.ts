@@ -34,6 +34,21 @@ function parseIso(iso: string): Date {
   return new Date(`${iso}T00:00:00Z`);
 }
 
+/**
+ * ISO weekday of a YYYY-MM-DD date: 1 = Monday … 7 = Sunday.
+ *
+ * The ONE conversion from a calendar date to the weekday numbering timetables
+ * and the school week use (docs/modules/phase-8.md §17.4 rule 3). JavaScript's
+ * getUTCDay() is 0 = Sunday; every caller goes through here instead.
+ */
+export function isoWeekday(iso: string): number {
+  const dow = parseIso(iso).getUTCDay();
+  return dow === 0 ? 7 : dow;
+}
+
+/** Monday–Friday, the default school week (schools.school_week_days default, §17 D34). */
+export const DEFAULT_SCHOOL_WEEK_DAYS: readonly number[] = [1, 2, 3, 4, 5];
+
 /** Today's date in Lagos as YYYY-MM-DD. At 23:30 UTC on 31 Dec it is already 1 Jan in Lagos — Lagos is the day that counts. */
 export function lagosTodayIso(now: Date = new Date()): string {
   return new Date(now.getTime() + LAGOS_UTC_OFFSET_MS).toISOString().slice(0, 10);

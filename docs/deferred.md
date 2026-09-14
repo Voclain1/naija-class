@@ -3359,3 +3359,26 @@ slightly closer, not further away.
   - D22 — no teacher self-view;
   - D23 — every teacher-level view audited;
   - all of §4.4's access rules.
+
+## Per-class bell schedules — deferred, not designed around (captured 2026-09-14, Phase 8 CP3)
+
+**What v1 ships:** ONE bell schedule per school (`docs/modules/phase-8.md` §17
+D26). The school's `bell_slots` rows ARE the schedule; every class shares them.
+That is what lets a timetable clash be an identity match (same teacher, day and
+`bell_slot_id`) rather than a time-interval comparison (§17.2).
+
+**Trigger to revisit:** a real school reports that different classes (typically
+nursery/primary against secondary) keep different bell times — not a guess that
+some might.
+
+**The migration is additive, stated so nobody has to rediscover it:**
+1. add a `bell_schedules` table; backfill one per school;
+2. add `bell_schedule_id` to `bell_slots` and to `timetables`;
+3. move clash detection back to interval overlap — two lessons clash when their
+   slots' `[start_minute, end_minute)` intervals overlap — and re-run the clash
+   check whenever any schedule's TIMES change (in v1 time edits skip it, which is
+   correct only because slots are shared);
+4. extend the clash spec with a mixed-schedule matrix.
+
+Nothing in CP3 blocks this: no code outside `timetable-clash.ts` depends on
+"same slot means same time".
