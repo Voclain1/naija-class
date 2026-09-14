@@ -3,7 +3,8 @@
 // Paths are derived from the actual directory tree:
 //   (admin) route group → /dashboard, /settings/*, /students/*, /staff/*,
 //                          /guardians/*, /enrollments/*, /report-cards/*,
-//                          /finance/*, /insights/*
+//                          /finance/*, /insights/*, /events/*, /reports/*,
+//                          /timetable/*
 //   (teacher) route group → /teacher/*
 //   super-admin/dashboard → the platform-admin surface (real URL segment,
 //                          not a route group — see CLAUDE.md's "Platform
@@ -83,6 +84,15 @@ export const config = {
     // At this point every (admin) route IS listed; a new one should be added
     // here in the same PR that creates it.
     "/insights/:path*",
+    // Same omission a third time, found 2026-09-14 during Phase 8 CP3's
+    // production verification: /events (CP1), /reports (CP2) and /timetable
+    // (CP3) each shipped without a line here, despite the note above. Nothing
+    // leaked — RequireAuth and the API's 401 held — but the edge gate skipped
+    // them. middleware.spec.ts now fails when an (admin) route directory is
+    // missing from this list, so a note is no longer the only guard.
+    "/events/:path*",
+    "/reports/:path*",
+    "/timetable/:path*",
     "/teacher/:path*",
     "/super-admin/dashboard/:path*",
   ],
