@@ -1074,7 +1074,7 @@ Neither is the safeguarding workstream (§6.4).
 | **CP1** | Event Calendar v1 incl. national events and per-school hiding (§8.4; plan-first §15) | 7–10 days | D4 (+1), D19 (+1) | **Nothing — ready** (D19, D20) |
 | **CP2** | **Recording completeness** (§16): term health, attendance and score-entry coverage, report-card pipeline, teacher recording activity. Outcome analytics deferred (§16.9) | **6–9 days** (was 9–13) | D2 reframed after §4.6 | **Nothing — Q31–Q33 resolved** (§16.7) |
 | **CP3** | Timetable: model, time-of-day convention, **one bell schedule per school**, grid builder, effective-timetable resolution, identity-based clash detection, RLS spec (plan-first §17) | **9–13 days** (was 11–16) | D3; D13; D26 (−2–3) | **Nothing — Q34–Q37 approved** (§17.7) |
-| **CP4** | Timetable: fork/override, copy-forward, teacher / student / guardian read surfaces | 5–7 days | D3 (+1) | — |
+| **CP4** | Timetable: fork/override, copy-forward, publish, teacher / student / guardian read surfaces | **8–11 days** (§18.8) | D3 (+1); D43–D45 | — |
 | **CP5** | Assessments & Exams v1: any-total marks with scaling, cumulative results | 6–10 days | D5 (scope narrowed) | Q15 |
 | **CP6a** | Report card completeness: position setting, attendance snapshot, promotion status display field | 5–8 days | D6 (new); D12 | Q24 |
 | **CP6b** | Result Checker: access-mode gate in both portals, offline batch PINs, public page, SD function and review at 23 | **9–14 days** | D6; D9 removed online sales; D10, D11, D15–D18 | Q20, Q22, Q28 |
@@ -1112,17 +1112,17 @@ again after CP4 — see §12.4.
 
 | | Before decisions | After decisions |
 |---|---|---|
-| **Phase 8** — CP0–CP6b (engineering-led) | 37–58 days | **49–74 days** |
+| **Phase 8** — CP0–CP6b (engineering-led) | 37–58 days | **52–78 days** |
 | **Phase 8b** — CP7–CP8 (Tutor engineering) | 25–40 days | **25–40 days**, plus the unestimated safeguarding workstream |
-| **Total engineering** | 62–98 days | **74–114 working days, ~15–23 calendar weeks** |
+| **Total engineering** | 62–98 days | **77–118 working days, ~16–24 calendar weeks** |
 
-**Where the growth comes from:** D6 (+8–12), D3 (+4–5), D4 (+1), D19 (+1). D2's +3–4 was removed when CP2 was re-scoped to recording completeness after the §4.6 measurement (§16.10: CP2 9–13 → 6–9). D26 (one bell schedule per school) then took CP3 from 11–16 to 9–13 (§17.8).
+**Where the growth comes from:** D6 (+8–12), D3 (+4–5), D4 (+1), D19 (+1). D2's +3–4 was removed when CP2 was re-scoped to recording completeness after the §4.6 measurement (§16.10: CP2 9–13 → 6–9). D26 (one bell schedule per school) then took CP3 from 11–16 to 9–13 (§17.8). CP4 then grew from 5–7 to 8–11 (§18.8: D43 latent clashes, D44 inactive classes, preview-as-rollback, and D45 published snapshots).
 D5 changes no estimate — CBT was never inside the recommended scope — but it
 closes the risk of it entering by accident. **D9 removed the optional +5–8
 days for online PIN sales**, so the "58–88" and "83–128" upper variants no
 longer exist. D10–D13 are scope-neutral (§7.7, §10.5).
 
-At 49–74 days, **Phase 8 alone (CP0–CP6b) is ~11–16 weeks**, three to four
+At 52–78 days, **Phase 8 alone (CP0–CP6b) is ~11–16 weeks**, three to four
 times ARCHITECTURE.md's nominal phase. If it needs to split further, the next
 natural boundary is after CP4 (Calendar, Reports, Timetable) with CP5–CP6b
 (Exams, report card completeness, Result Checker) as a coherent "results"
@@ -3099,7 +3099,7 @@ these pages, passed on the merged head.
 
 ## 18. CP4 plan-first — Timetable lifecycle and read surfaces
 
-Written 2026-09-14. **Status: proposed, awaiting review. Nothing is built.**
+Written 2026-09-14. **Status: approved 2026-09-14 (§18.7) — Q38–Q40, Q42–Q44 as recommended; Q41 decided as Option C, a published snapshot (D45). Implementation in progress.**
 
 **Scope (§12.1):**
 - **Lifecycle:** fork a year-wide timetable into a term override; copy a
@@ -3224,8 +3224,10 @@ without touching the rest.
 studentId)`:
 - resolves the student's **current-term enrollment**, which must be
   **`ENROLLED`**;
-- takes that class's in-force timetable for the current term;
-- returns the grid (periods, days, subject, teacher display names per Q40).
+- reads that class's **published snapshot** for the current term (D45) — never
+  the live timetable;
+- returns the grid (periods, days, subject, teacher display names per Q40) and
+  when it was published.
 
 Endpoints:
 - **Student:** `GET /student-portal/me/timetable`. The student is the session's
@@ -3243,9 +3245,10 @@ Explicit empty states, never errors:
 
 **What families see, and what they don't:**
 - no other class's grid, and nothing about any teacher's other lessons;
-- no draft or "coming soon" state. The in-force timetable is visible as soon as
-  it exists. There is no publish step in v1, and adding one would be a new
-  decision (Q41).
+- **only what the school has PUBLISHED** (D45, superseding this plan's original
+  "visible as soon as it exists"). The family reader reads the published
+  snapshot for the child's class and current term and nothing else; it never
+  reads the live timetable tables.
 
 Surfaces:
 - **Student mobile:** `/me/timetable` (beside `/me/calendar`).
@@ -3260,6 +3263,71 @@ But it is the first time staff names reach families in this product.
 **Proposed:** show each lesson teacher's first name and surname, exactly as the
 school entered them. No contact details, no photo, nothing else about the
 teacher.
+
+#### D45 — Families see a published snapshot, never the live timetable (Q41 → Option C)
+
+**Decided 2026-09-14.** The original proposal (families see the in-force
+timetable as soon as it exists) was rejected in review, and rightly: the
+"no edit may add a clash" guarantee covers only double-booked teachers. It says
+nothing about a half-built grid, a wrong subject, an override under
+construction, or a latent clash from term creation (D43).
+
+Three options were compared:
+
+| Option | Families see | Verdict |
+|---|---|---|
+| A. A `published` flag | Nothing until first publish, then every later edit live | Rejected — a mid-term correction is exactly the "mid-edit" case, and it would be live |
+| B. The report-card model (editing requires unpublishing) | Nothing while a timetable is being edited | Rejected — a routine correction would blank every family's timetable |
+| **C. A published snapshot** | The last published version, dated; edits invisible until republished | **Chosen** |
+
+**The model:**
+- **Table `timetable_publications`:** one row per (class, term), holding a
+  self-contained JSON snapshot of the grid families will see. It carries:
+  - period labels, kinds and times;
+  - the school days;
+  - each lesson's subject name and teacher display names (Q40);
+  - a `content_hash`, `published_by` and `published_at`.
+
+  It has the ordinary tenant shape: composite `(school_id, …)` foreign keys to
+  `class_arms` and `terms` (`ON DELETE CASCADE`), and FORCE RLS. No SECURITY
+  DEFINER function.
+- **Publish** (`timetable.manage`, owner/admin) snapshots the timetable **in
+  force** for the class in every term of its year where that timetable is in
+  force now: all unreplaced terms for a year-wide timetable, or its one term for
+  a term override. It upserts one row per term.
+  - It is **refused while any clash involves that class in any of those terms**,
+    listing every clash. A conflicted timetable is never shown as final.
+  - An empty timetable cannot be published.
+- **Withdraw** deletes the (class, term) publication. Families then see "not
+  published". A deleted row cannot be read by mistake; the audit row keeps the
+  history.
+- **Unpublished changes:** the builder view computes the live snapshot for the
+  selected class and term with **the same function publish uses**, and compares
+  hashes:
+  - "Unpublished changes — families still see the version published on
+    14 Sep 2026", with Publish;
+  - "Published 14 Sep 2026 — up to date";
+  - "Not published — families can't see this timetable".
+- **Teachers read the live timetable** (D37). They are staff and follow what is
+  actually in force. Families may briefly see an older published version while
+  an admin works; that difference is dated and shown in the builder, never
+  silent.
+- **Fork and copy create unpublished timetables.** Editing a published timetable
+  never changes what families see until Publish.
+- **Every mutation is audited:** publish records the terms and the hash; withdraw
+  records the class, term and the hash withdrawn.
+
+**Structural guarantee, and how it is proven.** The family reader queries
+`enrollments` (to find the class) and `timetable_publications`, and nothing else.
+It never touches `timetables`, `timetable_entries` or
+`timetable_entry_teachers`. The spec proves this three ways:
+- **behaviour:** unpublished, withdrawn, and "published then edited" (families
+  see the old snapshot);
+- **interception:** every query the reader runs is recorded and asserted not to
+  reference a live timetable table;
+- **mutation:** a reader that falls back to the live timetable when no
+  publication exists, and a withdraw that only flags a row instead of deleting
+  it, each fail named cases.
 
 #### D41 — Fork: a year-wide timetable into a term override
 
@@ -3409,7 +3477,9 @@ first.
 - **Copy between classes; school-wide bulk copy** (Q43; trigger: a school with
   many classes asking for it, and at least one school actually using timetables).
 - **Staff mobile timetable** (Q39).
-- **A publish or draft state for timetables** (Q41).
+- **Scheduled publishing, publish notifications to families, or a history of
+  past published versions** (D45 keeps only the current one; the audit trail
+  records each publish and withdraw).
 - **Rooms, substitution and cover, printing and export.**
 - **Linking subject-attendance periods to slots** (§7.5).
 - **Per-class bell schedules** (deferred, `docs/deferred.md`).
@@ -3468,31 +3538,50 @@ first.
    - `middleware.spec` (the #303 guard covers any new admin route; the teacher
      route is already under `/teacher/*`);
    - SD inventory unchanged.
-7. **E2E:**
+7. **Published snapshots (D45, real Postgres):**
+   - an unpublished timetable is invisible to student and guardian; publish →
+     visible; edit after publishing → families still see the published version
+     and the builder reports "unpublished changes"; republish → the edit is
+     visible; withdraw → "not published";
+   - publish refused while the class is in a clash, every clash listed; an empty
+     timetable cannot be published;
+   - a year-wide publish writes one snapshot per term it is in force, and none
+     for a term with an override;
+   - **interception:** every query the family reader runs is recorded and none
+     references `timetables`, `timetable_entries` or `timetable_entry_teachers`;
+   - **mutation:** reader falls back to the live timetable → fails;
+     withdraw only flags the row → fails; publish skips the clash check → fails;
+     the hash compares a different builder than publish → fails;
+   - RLS + composite-FK spec extended to `timetable_publications`, with the
+     necessity counterfactual.
+8. **E2E:**
    - a teacher opens My timetable and sees their lessons across two classes plus
      their form class grid;
-   - a guardian opens a child's timetable in the portal;
+   - an admin publishes; a guardian opens the child's timetable in the portal and
+     sees it; the admin edits a lesson, the builder shows "unpublished changes",
+     and the guardian still sees the published version until republish;
    - an admin previews a copy to the next year, sees the refusal listing an
      unassigned teacher, fixes the assignment, previews clean, copies;
    - screenshots reviewed.
-8. **Production verification after deploy:**
+9. **Production verification after deploy:**
    - grants;
    - routes 401 against a 404 control;
-   - no schema change expected beyond the permission migration;
+   - the `timetable_publications` migration applied, RLS forced, composite FKs
+     present, `app_user` grants correct;
    - the CP2 live check unchanged;
    - the term-create path verified read-only (no write in production).
 
-### 18.7 Open questions for this review
+### 18.7 Review questions — decided 2026-09-14 (Arinzechukwu)
 
 | # | Question | Recommendation |
 |---|---|---|
-| **Q38** | Teacher view: own lessons **plus** the read-only grid of classes they form-teach (D37), or strictly own lessons? | Own lessons + form classes — bounded by an existing, enforced relationship. Validate with the pilot schools' teachers if you can reach them |
-| **Q39** | Staff mobile timetable in CP4? | No — web teacher shell only; staff mobile is enabled in 1 school |
-| **Q40** | Show lesson teachers' names (name only) in student and guardian views? | Yes, display name only |
-| **Q41** | Timetables visible to families as soon as they exist (no publish step in v1)? | Yes; revisit if a school asks for drafts |
-| **Q42** | Allow the explicit, acknowledged `leaveUnassignedTeachersOff` option for copies (D42)? | Yes — the loss is listed, confirmed exactly, and re-refused if it changed |
-| **Q43** | Per-class fork/copy only in CP4 (no bulk, no cross-class)? | Yes — year-wide timetables need no copy between terms; bulk matters only at a new year and no school has timetables yet |
-| **Q44** | Latent clashes: allow term creation / class re-activation and surface the clash (D43), and change D31 to "no new clashes"? | Yes — refusing the term forces the wrong fix |
+| **Q38 — APPROVED: yes** | Teacher view: own lessons **plus** the read-only grid of classes they form-teach (D37), or strictly own lessons? | Own lessons + form classes — bounded by an existing, enforced relationship. Validate with the pilot schools' teachers if you can reach them |
+| **Q39 — APPROVED: yes** | Staff mobile timetable in CP4? | No — web teacher shell only; staff mobile is enabled in 1 school |
+| **Q40 — APPROVED: yes** | Show lesson teachers' names (name only) in student and guardian views? | Yes, display name only |
+| **Q41 — DECIDED: Option C (D45)** | Timetables visible to families as soon as they exist (no publish step in v1)? | Originally: yes. **Review leaned to an explicit publish step; three options were compared (D45) and a published snapshot chosen** |
+| **Q42 — APPROVED: yes** | Allow the explicit, acknowledged `leaveUnassignedTeachersOff` option for copies (D42)? | Yes — the loss is listed, confirmed exactly, and re-refused if it changed |
+| **Q43 — APPROVED: yes** | Per-class fork/copy only in CP4 (no bulk, no cross-class)? | Yes — year-wide timetables need no copy between terms; bulk matters only at a new year and no school has timetables yet |
+| **Q44 — APPROVED: yes** | Latent clashes: allow term creation / class re-activation and surface the clash (D43), and change D31 to "no new clashes"? | Yes — refusing the term forces the wrong fix |
 
 ### 18.8 Estimate
 
@@ -3505,21 +3594,23 @@ first.
 | Student + guardian reader, endpoints, negative walks | 1 |
 | Portal page + student and guardian mobile screens | 1–1.5 |
 | Permission migration, nav, conformance, e2e, production verification | 0.5–1 |
-| **Total** | **6–9 working days** |
+| **D45 published snapshot** (added at review): table + RLS + composite FKs, publish / withdraw / unpublished-changes, family reader switched to snapshots, structural spec + mutation tests, builder status UI, production verification of the new table | 2–2.5 |
+| **Total** | **8–11 working days** (6–9 as first proposed, plus D45) |
 
-**Against §12.1's 5–7:** up by 1–2 days, from:
+**Against §12.1's 5–7:** up by 3–4 days, from:
 - D43, approved for CP4;
 - D44, found during this investigation;
-- the preview-as-rollback, needed because refusals list every problem.
+- the preview-as-rollback, needed because refusals list every problem;
+- **D45**, decided at review (Q41).
 
 Nothing was removed.
 
 | | Before | After |
 |---|---|---|
-| CP4 | 5–7 | **6–9** |
-| Timetable total (CP3 9–13 + CP4) | 14–20 | **15–22** |
-| Phase 8 (CP0–CP6b) | 49–74 | **50–76** |
-| Total engineering incl. Phase 8b | 74–114 | **75–116** |
+| CP4 | 5–7 | **8–11** |
+| Timetable total (CP3 9–13 + CP4) | 14–20 | **17–24** |
+| Phase 8 (CP0–CP6b) | 49–74 | **52–78** |
+| Total engineering incl. Phase 8b | 74–114 | **77–118** |
 
 §12.3 names the point after CP4 as the natural place to split Phase 8 if it runs
 long. That still holds, and it is where a split would be decided.
