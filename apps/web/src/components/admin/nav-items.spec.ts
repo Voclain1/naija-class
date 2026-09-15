@@ -18,6 +18,7 @@ import { LATER_PHASE_ITEMS, NAV_ITEMS } from "./nav-items";
 //      exactly when it happens.
 
 const SHIPPED_HREFS = [
+  "/gradebook",
   "/timetable",
   "/reports",
   "/events",
@@ -67,6 +68,16 @@ describe("admin nav items", () => {
     expect(item!.href).toBe("/timetable");
     expect(item!.requiredPermission).toBe("timetable.read");
     expect(LATER_PHASE_ITEMS.some((i) => i.label === "Timetable")).toBe(false);
+  });
+
+  it("lists Gradebook as live, gated on score entry, which owner and admin hold and bursar does not", () => {
+    const item = NAV_ITEMS.find((i) => i.label === "Gradebook");
+    expect(item).toBeDefined();
+    expect(item!.enabled).toBe(true);
+    // The admin route, not the teacher shell's /teacher/gradebook: that page's
+    // picker lists only the viewer's own teaching assignments.
+    expect(item!.href).toBe("/gradebook");
+    expect(item!.requiredPermission).toBe("assessment-score.create");
   });
 
   it("has no reference left to the /lesson-notes route that never existed", () => {

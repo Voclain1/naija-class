@@ -67,6 +67,13 @@ export const NAV_ITEMS: NavItem[] = [
   // showing just Finance, matching what they can actually do here.
   { label: "Academics", href: "/settings/academic", icon: BarChart3, enabled: true, requiredPermission: "academic-year.create" },
   { label: "Grading", href: "/settings/grading", icon: SlidersHorizontal, enabled: true, requiredPermission: "grading-scheme.read" },
+  // Added 2026-09-15. Owner/admin score entry for any class and subject. The
+  // API has allowed it since Phase 2 / Slice 2 (admins unscoped), but the only
+  // gradebook screen was the teacher's, so owners were inviting themselves as
+  // teachers to enter marks. Gated on assessment-score.create: owner (wildcard)
+  // and admin hold it; bursar does not; teachers hold it but use the teacher
+  // shell's own Gradebook and never see this sidebar.
+  { label: "Gradebook", href: "/gradebook", icon: ClipboardList, enabled: true, requiredPermission: "assessment-score.create" },
   { label: "Report Cards", href: "/report-cards", icon: FileText, enabled: true, requiredPermission: "report-card.read" },
   // Lesson plans (Phase 5 / slice 2, shipped). The admin sidebar previously
   // listed this under "Coming soon" pointing at /lesson-notes — a route that

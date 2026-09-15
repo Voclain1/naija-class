@@ -3416,3 +3416,50 @@ are known, unresolved, and not blocking anything:
      classes asking;
    - publication history and publish notifications to families;
    - flagging lessons whose teacher's assignment was later removed.
+
+## Owner/admin gradebook screen — deferred in Phase 2 and never tracked (CLOSED 2026-09-15)
+
+- [x] **CLOSED 2026-09-15 — `/gradebook` added (owner/admin gradebook), same PR as this entry.**
+
+**What was deferred.** Phase 2 / Slice 2 decided that owners and admins may
+enter scores for any class and subject, unscoped (journal 2026-06-02, Flag #1:
+a teacher quits mid-term, is sick, or a substitute covers; `enteredBy` records
+who keyed it). The API has enforced exactly that ever since:
+`AssessmentService.isTeacherScoped`, `AggregationService.assertCanAggregate`
+and the report-comment scope check all let owner and admin through. Slice 3
+then shipped **only the teacher gradebook** — "admins enter scores via the API;
+an admin gradebook view is deferred" (same journal) — and that deferral was
+never written here.
+
+**Why it mattered.** The only gradebook screen, `/teacher/gradebook`, builds its
+picker from `GET /teacher-scope/me`, which is teacher-only. An owner held the
+permission, the API accepted them, and there was no screen. On 2026-09-15 a
+live lead had to invite himself as a second "teacher" account just to enter
+marks for his own school. That workaround also misreports: the second account
+appears as a Teacher Activity row, and its self-assignments create score
+expectations in the completeness report.
+
+**The fix (web only — no API, permission or migration change).**
+- `/gradebook` (admin sidebar, gated on `assessment-score.create`): term and
+  class pickers; **every active subject** for the class, with subjects that
+  have a teacher assigned for the term listed first
+  (`lib/gradebook/admin-gradebook.ts`, D35's assignment rule).
+- `/gradebook/[armId]/[subjectId]?termId=`: the unchanged `GradebookGrid` and
+  `SubjectComments`, so save, sign-off, the released-card lock and the audit
+  rows are identical to the teacher's. "Recompute positions" is always offered.
+- Edge gate: `/gradebook/:path*` added to the middleware matcher.
+
+**Downstream attribution, checked before building.** Scores keyed by an owner
+record the owner in `entered_by` and `audit_logs`. The completeness report
+counts them by class and subject; Teacher Activity lists only teacher-role
+users, and for a teacher's subject separates "entered" (by anyone) from
+"entered by this person". Scores for a subject nobody is assigned to appear
+under the report's "unassigned" section (D35) — listed, not counted against an
+expectation. All of this is asserted in `e2e/tests/admin-gradebook.spec.ts`.
+
+**Not addressed here, observed during the e2e.** If an owner signs off every
+subject and *then* builds report cards, the cards are built in DRAFT and the
+board says "Subject teachers need to sign off every subject", because the
+SUBJECT_REVIEWED cascade runs at sign-off, before any card exists. Form review
+re-verifies sign-off, so the arm can still proceed. Pre-existing behaviour, not
+caused by this change; worth a look when report cards are next touched.

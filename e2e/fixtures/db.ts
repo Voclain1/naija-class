@@ -40,6 +40,9 @@ export async function seedTeacherInvitation(opts: {
   email: string;
   firstName: string;
   lastName: string;
+  // Defaults to teacher. The admin-gradebook e2e also seeds a bursar, to prove
+  // a role without score permissions is refused.
+  roleKey?: "teacher" | "bursar";
 }): Promise<SeededInvitation> {
   // Same token construction the API uses: a 32-byte base64url secret is the
   // bearer; only its SHA-256 hash is stored. The raw token goes in the URL.
@@ -57,7 +60,7 @@ export async function seedTeacherInvitation(opts: {
         email: opts.email,
         firstName: opts.firstName,
         lastName: opts.lastName,
-        roleKey: "teacher",
+        roleKey: opts.roleKey ?? "teacher",
         tokenHash,
         invitedBy: opts.invitedByUserId,
         expiresAt,
