@@ -1,18 +1,19 @@
 # Phase 8 — Reports, Timetable, Event Calendar, Exams, Result Checker, AI Tutor
 
-**Status:** plan-first investigation **approved 2026-09-13** and merged
-(PR #297). Three rounds of decisions were recorded the same day (§3: D1–D8,
-D9–D14, D15–D18), and a fourth closed CP1's questions (D19–D20).
-**CP0 is done** (§12.1). **CP1 (Event Calendar) is built and live in
-production** (PR #299, deployed 2026-09-13; evidence §15.10). CP2's questions
-were closed the same day (D21–D23 in §3.4). The §4.6 production measurement
-re-scoped CP2 to recording completeness; **CP2's plan-first (§16) is approved and
-implementation is in progress.**
-Each checkpoint still needs its remaining open questions (§11) answered, and
-its own short plan-first appended here, before it starts.
+**Status: Phase 8 CLOSED 2026-09-15 — see the close-out, §19.**
+- **Shipped and verified in production:**
+  - CP1 Event Calendar (§15.10);
+  - CP2 Reports v1, recording completeness (§16.12–§16.13);
+  - CP3–CP4 Timetable (§17.10, §18.10).
+- **Split after CP4 (D46, §12.5):** Assessments & Exams, report card completeness
+  and the Result Checker (CP5, CP6a, CP6b) are now **Phase 8c**, not started.
+- **Phase 8b (AI Tutor):** unchanged and blocked (§6.4, Q9, Q10).
+
+The investigation below (§0–§14) is kept as written on 2026-09-13; sections §15–§18
+are each checkpoint's plan-first, build and production record.
 
 **Scope decision (Arinzechukwu, 2026-09-13):** all six features are in scope.
-Five form **Phase 8 (CP0–CP6b)**; the AI Tutor is **Phase 8b (CP7–CP8)**
+Five formed **Phase 8 (CP0–CP6b)** — split on 2026-09-15 into Phase 8 (CP0–CP4) and Phase 8c (CP5–CP6b), D46; the AI Tutor is **Phase 8b (CP7–CP8)**
 from the start (D1, D8). This document doesn't re-argue either point. What it does do is calibrate the
 size honestly, sequence engineering-only work first, and separate out what is
 blocked on decisions that aren't engineering decisions.
@@ -4011,7 +4012,7 @@ Each checkpoint was deployed with the same chain:
 | RLS **enabled and forced**, `tenant_isolation` policy, on every new tenant table (school events, hidden national events, bell slots, timetables, entries, entry teachers, publications) | yes | §15.10, §17.10, §18.10 |
 | `national_events` is read-only to the runtime role | yes — a **live INSERT was refused** (`42501`) inside a rolled-back transaction; 0 probe rows afterwards | §15.10 |
 | Composite `(school_id, …)` foreign keys on every timetable reference (10 constraints) | **definitions** verified | §17.10, §18.10 |
-| Role grants | admin holds calendar, reports and timetable manage; teacher holds calendar read and `timetable.own.read` only; bursar calendar read only; owner wildcard | §15.10, §16.12, §17.10, §18.10 |
+| Role grants (Phase 8's permissions) | admin: calendar manage, both reports permissions, timetable read + manage; teacher: `calendar-event.read` and `timetable.own.read` only; bursar: `calendar-event.read` only; owner: wildcard | §15.10, §16.12, §17.10, §18.10 |
 | SECURITY DEFINER count | 22 throughout — Phase 8 added none | all four |
 | Every new API route deployed and refusing unauthenticated calls | yes — 401s against a 404 control | all four |
 | Every new admin, teacher and portal page behind the edge login redirect | yes — after #303 fixed three that were not | §17.10, §18.10 |
