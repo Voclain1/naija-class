@@ -3099,7 +3099,7 @@ these pages, passed on the merged head.
 
 ## 18. CP4 plan-first — Timetable lifecycle and read surfaces
 
-Written 2026-09-14. **Status: approved 2026-09-14 (§18.7) — Q38–Q40, Q42–Q44 as recommended; Q41 decided as Option C, a published snapshot (D45). Built 2026-09-15 (§18.9), awaiting merge and deploy.**
+Written 2026-09-14. **Status: approved 2026-09-14 (§18.7) — Q38–Q40, Q42–Q44 as recommended; Q41 decided as Option C, a published snapshot (D45). Built (§18.9); deployed and verified in production 2026-09-15 (§18.10). Closed.**
 
 **Scope (§12.1):**
 - **Lifecycle:** fork a year-wide timetable into a term override; copy a
@@ -3851,3 +3851,69 @@ Unauthenticated `GET /teacher-scope/me/timetable` and
 4. **Observed, not caused by CP4:** in the teacher shell the sidebar background
    stops partway down a short page. The teacher layout wasn't changed here; it
    has not been investigated.
+
+### 18.10 Deployed and verified in production — 2026-09-15
+
+**Merge and deploy.**
+- PR #304 merged (squash) as `f0fbf77` after both required checks passed on its
+  final head (`bb9dcb4`), with branch protection re-read first (required checks
+  `lint + typecheck + test + build` and `e2e (Playwright)`; 0 approvals).
+- `main` CI `34953911831` passed; deploy `34955522293` succeeded.
+- Deploy log: `Applying migration 20260915120000_phase_8_cp4_timetable_publications`,
+  then `20260915120100_phase_8_cp4_timetable_own_read_permission`, then "All
+  migrations have been successfully applied." Post-release smoke test 6/6.
+- Vercel production deploys of `school-kit-web` and `school-kit-portal` for
+  `f0fbf77`: success.
+
+**Read-only verification inside the production `school-kit-api` container**, as
+the runtime role (`app_user`, not superuser, no BYPASSRLS). Every statement was a
+SELECT. The temporary scripts were removed afterwards (confirmed).
+
+| Check | Result |
+|---|---|
+| `_prisma_migrations` | both CP4 migrations finished 2026-09-15T10:00:46Z / 10:00:47Z, not rolled back |
+| **D45** `timetable_publications` RLS | enabled **and forced**, one `tenant_isolation` policy |
+| **D45** cross-school keys | `(school_id, class_arm_id) → class_arms(school_id, id)` and `(school_id, term_id) → terms(school_id, id)`, both `ON DELETE CASCADE` |
+| **D45** constraints | `timetable_publications_grid_check`, `…_content_hash_check`, the unique `(school_id, class_arm_id, term_id)` index |
+| **D38** teacher permission | teacher: `timetable.own.read` **yes**, `timetable.read`/`manage` no · admin: own.read no, read+manage yes · bursar: none · owner: wildcard |
+| All five timetable tables | RLS forced; `app_user` SELECT/INSERT/UPDATE/DELETE yes, TRUNCATE no; no-GUC reads 0 rows |
+| CP3 structures intact | 8 composite FKs, 2 partial unique indexes |
+| SECURITY DEFINER count | **22** (unchanged) |
+| Deployed code | the family reader reads `timetablePublication` and **no live timetable table or raw SQL**; withdraw deletes; clash query counts active classes only; the "no edit may add a clash" rule; term create and class re-activation surface added clashes |
+
+The cross-school **rejection** is proven in `timetable-rls.spec.ts` (§18.9),
+including the plain-FK necessity counterfactual. Production verifies the
+constraint definitions that make it hold; no write was made to test it there.
+
+**CP2 re-run against the live code.**
+
+| | §17.10 (CP3, 2026-09-14) | Now |
+|---|---|---|
+| Schools checked | 71 (9 skipped) | **72** (9 skipped) |
+| `CURRENT_TERM_ENDED` | 6 | 6 |
+| `ARMS_WITHOUT_FORM_TEACHER` | 7 | **8** |
+| `ARMS_WITHOUT_SUBJECT_TEACHERS` | 7 | **8** |
+| `NEXT_TERM_NOT_CURRENT` | 1 | 1 |
+| `NO_ENROLLMENT_THIS_TERM` | 4 | 4 |
+| `NO_CURRENT_TERM` | 44 | 44 |
+| Errors | 0 | 0 |
+| Virgo Fidelis (hand-verified) | 59 school days, 236 registers expected, 36 score slots | **identical** |
+
+**The three differences are one new school, attributed rather than inferred.**
+`dedayo…` signed up at 08:40 UTC today. It has 14 classes, 3 terms and one
+enrollment, and no form or subject teachers yet, so the deployed service returns
+exactly `ARMS_WITHOUT_FORM_TEACHER` and `ARMS_WITHOUT_SUBJECT_TEACHERS` for it.
+No other real school's classes, assignments, enrollments or terms changed since
+the CP3 check.
+
+**Live HTTP.**
+
+| Request | Result |
+|---|---|
+| `GET /teacher-scope/me/timetable`, `/student-portal/me/timetable`, `/portal/students/:id/timetable`, `/timetable/clashes` (no auth) | 401 each |
+| `POST /timetable/timetables/:id/fork`, `/copy`, `/publish`; `/timetable/publications/withdraw` (no auth) | 401 each |
+| Control: `GET /timetable/does-not-exist` | 404, so the 401s prove the routes are deployed |
+| `app.schoolkit.ng/teacher/timetable`, `/timetable` | 307 → login (the edge gate) |
+| `portal.schoolkit.ng/students/:id/timetable` | 307 → login |
+
+**CP4 is closed, and with it the Timetable feature (CP3 + CP4).**
