@@ -3382,3 +3382,37 @@ some might.
 
 Nothing in CP3 blocks this: no code outside `timetable-clash.ts` depends on
 "same slot means same time".
+
+## Phase 8 close-out — items carried forward (captured 2026-09-15)
+
+Phase 8 closed after CP4 (`docs/modules/phase-8.md` §19; Assessments & Exams,
+report card completeness and the Result Checker moved to Phase 8c, D46). These
+are known, unresolved, and not blocking anything:
+
+1. **No school has used Phase 8's features yet.** On 2026-09-15, across 81 real
+   schools:
+   - 0 school events and 0 hidden holidays;
+   - 0 bell schedules, 0 timetables and 0 publications;
+   - 1 teacher-activity view.
+
+   **Trigger:** a pilot school adopting any of them — which also resolves items 2
+   and 3.
+2. **The mobile screens have never been run on a device or simulator** — CP1's
+   calendar (student and guardian) and CP4's class timetables (student and
+   guardian). They are typechecked and their pure logic is unit-tested.
+   **Do before:** telling a school's families to use the app for either.
+3. **The teacher "My timetable" form-class grid (Q38) is unvalidated with real
+   teachers** — production had 2 teachers, each form-teaching their only class.
+   **Trigger:** the first school with a real timetable.
+4. **Teacher shell: the sidebar background stops partway down a short page**
+   (seen in CP4's e2e screenshot of `/teacher/timetable`). The teacher layout was
+   not changed by Phase 8. Not investigated; may predate it.
+5. **Moving a lesson in the timetable builder is two requests** (save the new
+   cell, then clear the old). If the second fails, the lesson briefly shows in
+   both places — visible, never a hidden clash (phase-8.md §17.9).
+6. **CP4 scope left out on purpose** (phase-8.md §18.5):
+   - the staff-mobile timetable (Q39);
+   - bulk and cross-class copy (Q43), with the trigger of a school with many
+     classes asking;
+   - publication history and publish notifications to families;
+   - flagging lessons whose teacher's assignment was later removed.

@@ -480,8 +480,21 @@ Mobile shell (`apps/mobile` is the bare Phase 0 Expo scaffold), the student prin
 **Phase 7 — curriculum RAG (v1 in production)**
 Curriculum ingestion over `pgvector` and retrieval, using **Voyage AI** for embeddings, since Anthropic ships no embeddings API. v1 grounds the existing lesson-plan generator in a school's own scheme of work, and is live in production (`docs/modules/phase-7.md` §17.10–17.11). The curriculum-grounded student tutor was always a later slice. It moved to **Phase 8b** on 2026-09-13 (see below). The NDPR review in `docs/deferred.md` is still open.
 
-**Phase 8 — reports, timetable, event calendar, assessments & exams, result checker (plan-first approved 2026-09-13)**
-The five admin-sidebar "Coming soon" features other than the AI Tutor: Event Calendar (with seeded national events), Reports (v1 re-scoped 2026-09-13 to a recording-completeness report after a production data measurement; outcome analytics deferred until real data supports them), a manual Timetable builder with conflict detection (per-term or per-year, varying by class arm; one bell schedule per school in v1), Assessments & Exams v1, report card completeness, and the Result Checker (free via the portals or offline batch PINs, the school's choice per release). Estimated at 52–78 working days, and may split again after CP4 if it runs long. See `docs/modules/phase-8.md`, which records decisions D1–D18.
+**Phase 8 — event calendar, reports, timetable — SHIPPED (closed 2026-09-15)**
+Three of the admin sidebar's "Coming soon" features, each live in production:
+- **Event Calendar:** school events, seeded Nigerian national holidays and per-school hiding, on staff web, the parent portal and mobile.
+- **Reports v1:** a recording-completeness report — registers, score entry, the report-card pipeline and teacher recording activity. Outcome analytics are deferred until real data supports them.
+- **Timetable:** one bell schedule per school, per-class whole-year or term timetables with teacher-clash detection, and published snapshots for families. Teachers get a "My timetable" view; students and guardians get read screens.
+
+Split after CP4 on 2026-09-15 (phase-8.md D46). The close-out (phase-8.md §19) records what shipped, what is verified in production, and that no school has used the new features yet.
+
+**Phase 8c — assessments & exams, report card completeness, result checker (not started)**
+The remaining Phase 8 checkpoints, split out on 2026-09-15 (phase-8.md D46):
+- **Assessments & Exams v1** (CP5);
+- **report card completeness** (CP6a): position setting, attendance snapshot, promotion status;
+- **the Result Checker** (CP6b): free via the portals or offline batch PINs, the school's choice per release.
+
+Estimated at 20–32 working days in the original units; phase-8.md §19.4 records why those units overstated elapsed time for Phase 8. Before each plan-first it needs Q15 (CP5), Q24 (CP6a), and Q20/Q22/Q28 (CP6b). Its investigation and decisions stay in `docs/modules/phase-8.md` (§9, §10). It is lettered after 8b but does not wait for it: 8c is unblocked and 8b is not.
 
 **Phase 8b — AI Tutor**
 The curriculum-grounded student tutor, carried from Phase 7 (`docs/modules/phase-8.md` §6). Its engineering is estimated at 25–40 working days. It cannot begin until the tutor's NDPR position and the PII hard rule (phase-8.md Q9, Q10) are resolved. It cannot reach any student until the dedicated safeguarding workstream (phase-8.md §6.4) completes; that workstream is unestimated and not engineering-led.
