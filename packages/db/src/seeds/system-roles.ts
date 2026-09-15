@@ -11,6 +11,7 @@ import {
   CALENDAR_READ_PERMISSIONS,
   REPORTS_PERMISSIONS,
   TIMETABLE_PERMISSIONS,
+  TIMETABLE_OWN_READ_PERMISSIONS,
   OWNER_ONLY_PERMISSIONS,
   PHASE_0_PERMISSIONS,
   PHASE_1_PERMISSIONS,
@@ -163,6 +164,10 @@ export const SYSTEM_ROLE_SEEDS: SystemRoleSeed[] = [
       // Phase 8 / CP1 — the calendar is visible to all users (D4); teachers
       // read it and never manage it (D28).
       ...CALENDAR_READ_PERMISSIONS,
+      // Phase 8 / CP4 — the teacher's own timetable (§18 D38). NOT
+      // timetable.read: the whole-school builder stays owner/admin. Kept IN SYNC
+      // with prisma/migrations/20260915120100_phase_8_cp4_timetable_own_read_permission.
+      ...TIMETABLE_OWN_READ_PERMISSIONS,
     ],
   },
   // Phase 3 / Slice 15 — `bursar` role wire-up + RBAC close-out. Finance-only

@@ -5,6 +5,8 @@ import { basePrisma, Prisma, PrismaClient, withTenant } from "@school-kit/db";
 import { createTimetableFixture, MON, type TimetableFixture } from "../modules/timetable/timetable.fixture-spec";
 
 // Phase 8 / CP3 — timetable isolation. docs/modules/phase-8.md §17.6 item 1.
+// Phase 8 / CP4 — extended to timetable_publications (§18 D45): what FAMILIES see
+// must be isolated exactly like the live timetable.
 //
 // Runs against a REAL Postgres as the runtime role (app_user), because every
 // claim here is a property of the database.
@@ -29,7 +31,7 @@ import { createTimetableFixture, MON, type TimetableFixture } from "../modules/t
 //    insert SUCCEEDS. RLS alone does not protect a reference.
 
 const DIRECT_URL = process.env.DIRECT_URL;
-const TABLES = ["bell_slots", "timetables", "timetable_entries", "timetable_entry_teachers"] as const;
+const TABLES = ["bell_slots", "timetables", "timetable_entries", "timetable_entry_teachers", "timetable_publications"] as const;
 
 class Rollback extends Error {}
 
@@ -60,6 +62,9 @@ describe("Phase 8 CP3 — timetable RLS and composite foreign keys", () => {
     bTimetable = (await B.timetable("a", null)).id;
     aEntry = (await A.lesson(aTimetable, MON, "p1", [A.teachers.tunde])).lessons[0]!.id;
     bEntry = (await B.lesson(bTimetable, MON, "p1", [B.teachers.tunde])).lessons[0]!.id;
+    // CP4: one published snapshot per school, so the publications table has rows in both.
+    await A.service.publishTimetable(A.owner, aTimetable, { ipAddress: "127.0.0.1" });
+    await B.service.publishTimetable(B.owner, bTimetable, { ipAddress: "127.0.0.1" });
   }, 120_000);
 
   afterAll(async () => {
@@ -163,6 +168,21 @@ describe("Phase 8 CP3 — timetable RLS and composite foreign keys", () => {
           select: { id: true },
         });
 
+    const publication = (over: { classArmId?: string; termId?: string }): Insert =>
+      (db) =>
+        db.timetablePublication.create({
+          data: {
+            schoolId: A.schoolId,
+            classArmId: over.classArmId ?? A.arms.c,
+            termId: over.termId ?? A.terms.third,
+            grid: { slots: [], days: [], lessons: [] },
+            contentHash: "0".repeat(64),
+            publishedBy: A.owner.userId,
+            publishedAt: new Date(),
+          },
+          select: { id: true },
+        });
+
     const cases: Array<[string, () => Insert, () => Insert]> = [
       ["timetable_entries_school_id_bell_slot_id_fkey", () => entry(() => A, { bellSlotId: B.slots.p4 }), () => entry(() => A, {})],
       ["timetable_entries_school_id_subject_id_fkey", () => entry(() => A, { subjectId: B.subjects.maths }), () => entry(() => A, {})],
@@ -174,6 +194,16 @@ describe("Phase 8 CP3 — timetable RLS and composite foreign keys", () => {
         "timetable_entry_teachers_school_id_teacher_id_fkey",
         () => (db) => db.timetableEntryTeacher.create({ data: { schoolId: A.schoolId, entryId: aEntry, teacherId: B.teachers.uche }, select: { id: true } }),
         () => (db) => db.timetableEntryTeacher.create({ data: { schoolId: A.schoolId, entryId: aEntry, teacherId: A.teachers.uche }, select: { id: true } }),
+      ],
+      [
+        "timetable_publications_school_id_class_arm_id_fkey",
+        () => publication({ classArmId: B.arms.c }),
+        () => publication({}),
+      ],
+      [
+        "timetable_publications_school_id_term_id_fkey",
+        () => publication({ termId: B.terms.third }),
+        () => publication({}),
       ],
       [
         "timetable_entry_teachers_school_id_entry_id_fkey",

@@ -1,4 +1,5 @@
 import type {
+  FamilyTimetableDto,
   GuardianForgotPasswordInput,
   GuardianForgotPasswordResponse,
   GuardianLoginInput,
@@ -181,4 +182,9 @@ export function getGuardianCalendar(window: { from: string; to: string }): Promi
   return apiFetch<CalendarResponse>(
     `/portal/calendar?from=${encodeURIComponent(window.from)}&to=${encodeURIComponent(window.to)}`,
   );
+}
+
+/** Phase 8 / CP4 — a linked child's PUBLISHED class timetable for the current term (§18 D39, D45). */
+export function getChildTimetable(studentId: string): Promise<FamilyTimetableDto> {
+  return apiFetch<FamilyTimetableDto>(`/portal/students/${encodeURIComponent(studentId)}/timetable`);
 }

@@ -5,6 +5,7 @@ import {
   CalendarCheck,
   CalendarClock,
   CalendarDays,
+  Clock,
   Library,
   Sparkles,
   ClipboardList,
@@ -47,6 +48,8 @@ const BASE_ITEMS: NavItem[] = [
   { label: "Curriculum", href: "/teacher/curriculum", icon: Library, enabled: true },
   // Phase 8 / CP1 — read-only school calendar (docs/modules/phase-8.md §15).
   { label: "Calendar", href: "/teacher/calendar", icon: CalendarDays, enabled: true },
+  // Phase 8 / CP4 (docs/modules/phase-8.md §18 D37): own lessons + form-class grids.
+  { label: "My timetable", href: "/teacher/timetable", icon: Clock, enabled: true },
 ];
 
 const SUBJECT_ITEM: NavItem = {

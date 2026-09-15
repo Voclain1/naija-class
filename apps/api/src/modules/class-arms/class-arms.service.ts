@@ -12,6 +12,7 @@ import {
 
 import type { AuthContext } from "../../common/auth/auth-context";
 import { assertUserActiveAndHasOneOf } from "../../common/auth/role-check";
+import { clashesAddedBy } from "../timetable/timetable-latent";
 
 interface RequestContext {
   ipAddress: string | null;
@@ -193,7 +194,7 @@ export class ClassArmsService {
     return withTenant(authCtx.schoolId, async (db) => {
       const existing = await db.classArm.findUnique({
         where: { id },
-        select: { id: true },
+        select: { id: true, isActive: true },
       });
       if (!existing) throw new NotFoundError("Class arm not found.");
 
@@ -217,11 +218,20 @@ export class ClassArmsService {
       if (input.isActive !== undefined) data.isActive = input.isActive;
 
       try {
-        const updated = await db.classArm.update({
-          where: { id },
-          data,
-          select: CLASS_ARM_SELECT,
-        });
+        // Phase 8 / CP4 (§18 D43/D44): clash detection counts active classes
+        // only, so RE-ACTIVATING a class can bring its timetables' clashes back
+        // into force. Allowed, and the clashes it added are returned and audited.
+        const reactivating = existing.isActive === false && input.isActive === true;
+        const years = reactivating
+          ? (await db.timetable.findMany({ where: { classArmId: id }, select: { academicYearId: true } })).map((t) => t.academicYearId)
+          : [];
+        const { value: updated, added: timetableClashes } = await clashesAddedBy(db, authCtx.schoolId, years, () =>
+          db.classArm.update({
+            where: { id },
+            data,
+            select: CLASS_ARM_SELECT,
+          }),
+        );
 
         await db.auditLog.create({
           data: {
@@ -231,11 +241,14 @@ export class ClassArmsService {
             entityType: "class_arm",
             entityId: id,
             ipAddress: reqCtx.ipAddress,
-            metadata: { changed: Object.keys(data) },
+            metadata: {
+              changed: Object.keys(data),
+              ...(reactivating ? { timetableClashesAdded: timetableClashes.length } : {}),
+            },
           },
         });
 
-        return toClassArmDto(updated);
+        return reactivating ? { ...toClassArmDto(updated), timetableClashes } : toClassArmDto(updated);
       } catch (e) {
         throw mapCodeUniqueViolation(e);
       }

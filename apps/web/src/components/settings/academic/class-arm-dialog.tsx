@@ -5,6 +5,7 @@ import { Loader2 } from "lucide-react";
 import Link from "next/link";
 import { useEffect } from "react";
 import { useForm } from "react-hook-form";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { z } from "zod";
 
@@ -20,6 +21,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ApiError } from "@/lib/api-client";
+import { announceTimetableClashes } from "@/lib/timetable/clash-notice";
 import {
   createClassArm,
   updateClassArm,
@@ -87,6 +89,7 @@ export function ClassArmDialog({
   onClose,
   onSaved,
 }: Props) {
+  const router = useRouter();
   const form = useForm<FormValues>({
     resolver: zodResolver(classArmFormSchema) as never,
     defaultValues: {
@@ -138,6 +141,8 @@ export function ClassArmDialog({
         ? await updateClassArm(existing.id, input)
         : await createClassArm(values.classLevelId, input);
       toast.success(existing ? "Class arm updated." : "Class arm created.");
+      // Phase 8 / CP4 (D43/D44): re-activating a class can bring timetable clashes back into force.
+      announceTimetableClashes(saved.timetableClashes, `Re-activating ${saved.name}`, () => router.push("/timetable"));
       onSaved(saved);
       onClose();
     } catch (error) {

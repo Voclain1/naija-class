@@ -292,6 +292,18 @@ export default function StudentDetailPage() {
             </Link>
           </section>
 
+          {/* Phase 8 / CP4 (docs/modules/phase-8.md §18 D39): the class timetable the school PUBLISHED. */}
+          <section className="flex flex-col gap-2 rounded-lg border bg-card p-4 shadow-sm">
+            <h2 className="text-lg font-semibold tracking-tight">Timetable</h2>
+            <p className="text-sm text-muted-foreground">Your child&apos;s class timetable for this term, as published by the school.</p>
+            <Link
+              href={`/students/${state.student.id}/timetable`}
+              className="text-sm font-medium text-primary hover:underline"
+            >
+              View class timetable
+            </Link>
+          </section>
+
           {/* Weekly updates sit ABOVE invoices deliberately: a parent opening
               their child's page is more often checking on the child than on a
               bill, and this is the only section here that changes week to

@@ -4,6 +4,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { Loader2 } from "lucide-react";
 import { useEffect } from "react";
 import { useForm } from "react-hook-form";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
 import {
@@ -17,6 +18,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ApiError } from "@/lib/api-client";
+import { announceTimetableClashes } from "@/lib/timetable/clash-notice";
 import {
   createTerm,
   updateTerm,
@@ -60,6 +62,7 @@ export function TermDialog({
   onClose,
   onSaved,
 }: Props) {
+  const router = useRouter();
   const form = useForm<FormValues>({
     resolver: zodResolver(createTermSchema) as never,
     defaultValues: { sequence: 1, name: "First Term", startDate: "", endDate: "" },
@@ -98,6 +101,8 @@ export function TermDialog({
         ? await updateTerm(existing.id, input)
         : await createTerm(academicYearId, input);
       toast.success(existing ? "Term updated." : "Term created.");
+      // Phase 8 / CP4 (D43): a new term can bring timetable clashes into force.
+      if (!existing) announceTimetableClashes(saved.timetableClashes, `Adding ${saved.name}`, () => router.push("/timetable"));
       onSaved(saved);
       onClose();
     } catch (error) {

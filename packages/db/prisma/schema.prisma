@@ -468,6 +468,7 @@ model Term {
   enrollments        Enrollment[] // Phase 1 / Slice 9 back-relation.
   teacherAssignments TeacherAssignment[] // Phase 1 / Slice 11 back-relation (term-specific assignments).
   timetables         Timetable[] // Phase 8 / CP3 — composite (school_id, id) FK target.
+  timetablePublications TimetablePublication[] // Phase 8 / CP4 — published snapshots (D45).
 
   @@unique([schoolId, id]) // Phase 8 / CP3 — composite FK target (§17 D29)
   @@unique([academicYearId, sequence])
@@ -550,6 +551,7 @@ model ClassArm {
   enrollments        Enrollment[] // Phase 1 / Slice 9 back-relation.
   teacherAssignments TeacherAssignment[] // Phase 1 / Slice 11 back-relation (subject teachers of this arm).
   timetables         Timetable[] // Phase 8 / CP3 — composite (school_id, id) FK target.
+  timetablePublications TimetablePublication[] // Phase 8 / CP4 — published snapshots (D45).
 
   @@unique([schoolId, id]) // Phase 8 / CP3 — composite FK target (§17 D29)
   @@unique([schoolId, classLevelId, code])
@@ -2955,6 +2957,37 @@ model Timetable {
   @@index([schoolId])
   @@index([schoolId, academicYearId])
   @@map("timetables")
+}
+
+// Phase 8 / CP4 — what FAMILIES see (docs/modules/phase-8.md §18 D45).
+//
+// One row per (class, term): a self-contained, frozen snapshot of the grid as it
+// was when an owner/admin pressed Publish. The student and guardian readers read
+// ONLY this table — never timetables / timetable_entries — so editing a live
+// timetable can never change what a family sees until it is republished.
+// Withdraw DELETES the row: there is no "hidden" flag that a reader could forget
+// to respect.
+model TimetablePublication {
+  id          String   @id @default(uuid())
+  schoolId    String   @map("school_id")
+  classArmId  String   @map("class_arm_id")
+  termId      String   @map("term_id")
+  // The snapshot: periods (label, kind, times), school days, lessons (day,
+  // period position, subject name, teacher display names). JSON on purpose —
+  // it is a frozen document, not relational data anything joins against.
+  grid        Json
+  contentHash String   @map("content_hash") // sha256 of the canonical grid; "unpublished changes" compares against it
+  publishedBy String   @map("published_by")
+  publishedAt DateTime @map("published_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  classArm ClassArm @relation(fields: [schoolId, classArmId], references: [schoolId, id], onDelete: Cascade)
+  term     Term     @relation(fields: [schoolId, termId], references: [schoolId, id], onDelete: Cascade)
+
+  @@unique([schoolId, classArmId, termId])
+  @@index([schoolId])
+  @@map("timetable_publications")
 }
 
 model TimetableEntry {

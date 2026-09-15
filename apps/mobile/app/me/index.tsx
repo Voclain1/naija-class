@@ -115,6 +115,15 @@ export default function MyHomeScreen() {
           </Pressable>
         </Link>
 
+        <Link href="/me/timetable" asChild>
+          <Pressable>
+            <Card>
+              <Heading>My timetable</Heading>
+              <Body muted>Your class timetable for this term, as published by your school.</Body>
+            </Card>
+          </Pressable>
+        </Link>
+
         <Link href="/me/calendar" asChild>
           <Pressable>
             <Card>
