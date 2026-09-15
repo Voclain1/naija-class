@@ -4,7 +4,7 @@
 //   (admin) route group → /dashboard, /settings/*, /students/*, /staff/*,
 //                          /guardians/*, /enrollments/*, /report-cards/*,
 //                          /finance/*, /insights/*, /events/*, /reports/*,
-//                          /timetable/*
+//                          /timetable/*, /gradebook/*
 //   (teacher) route group → /teacher/*
 //   super-admin/dashboard → the platform-admin surface (real URL segment,
 //                          not a route group — see CLAUDE.md's "Platform
@@ -93,6 +93,8 @@ export const config = {
     "/events/:path*",
     "/reports/:path*",
     "/timetable/:path*",
+    // Owner/admin gradebook, added 2026-09-15 in the same PR as the page.
+    "/gradebook/:path*",
     "/teacher/:path*",
     "/super-admin/dashboard/:path*",
   ],

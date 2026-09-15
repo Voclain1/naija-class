@@ -59,7 +59,9 @@ interface Props {
   termId: string;
   classArmId: string;
   subjectId: string;
-  // The form teacher of the arm may recompute positions (slice 4).
+  // Whether to offer "Recompute positions" (slice 4): the arm's form teacher in
+  // the teacher gradebook; always for owner/admin in the admin gradebook. The
+  // API re-checks either way.
   canAggregate: boolean;
 }
 
