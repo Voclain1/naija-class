@@ -1071,13 +1071,13 @@ Neither is the safeguarding workstream (§6.4).
 | CP | Content | Estimate | Changed by | Needs decided first |
 |---|---|---|---|---|
 | **CP0** | **Done 2026-09-13.** Plan committed (PR #297); D9–D18 recorded; ARCHITECTURE.md §9 and `docs/deferred.md` reconciled per D14 (Assignments → Phase 9, CBT → own phase, Timetable out of the Phase 9 list, Tutor → Phase 8b, Phase 7's stale "not started" status corrected, and the Timetable generator, exam management, result checker, AI study assistant, event calendar and smart-timetable entries pointed here); Q9/Q10 and the safeguarding workstream recorded as Arinzechukwu-owned. Older module docs (`phase-4.md`, `phase-5.md`, `phase-6.md`) that say "Phase 8 owns assignments" were **left as historical record**, not rewritten | 2–3 days (took well under) | D14 | — |
-| **CP1** | Event Calendar v1 incl. national events and per-school hiding (§8.4; plan-first §15) | 7–10 days | D4 (+1), D19 (+1) | **Nothing — ready** (D19, D20) |
-| **CP2** | **Recording completeness** (§16): term health, attendance and score-entry coverage, report-card pipeline, teacher recording activity. Outcome analytics deferred (§16.9) | **6–9 days** (was 9–13) | D2 reframed after §4.6 | **Nothing — Q31–Q33 resolved** (§16.7) |
-| **CP3** | Timetable: model, time-of-day convention, **one bell schedule per school**, grid builder, effective-timetable resolution, identity-based clash detection, RLS spec (plan-first §17) | **9–13 days** (was 11–16) | D3; D13; D26 (−2–3) | **Nothing — Q34–Q37 approved** (§17.7) |
-| **CP4** | Timetable: fork/override, copy-forward, publish, teacher / student / guardian read surfaces | **8–11 days** (§18.8) | D3 (+1); D43–D45 | — |
-| **CP5** | Assessments & Exams v1: any-total marks with scaling, cumulative results | 6–10 days | D5 (scope narrowed) | Q15 |
-| **CP6a** | Report card completeness: position setting, attendance snapshot, promotion status display field | 5–8 days | D6 (new); D12 | Q24 |
-| **CP6b** | Result Checker: access-mode gate in both portals, offline batch PINs, public page, SD function and review at 23 | **9–14 days** | D6; D9 removed online sales; D10, D11, D15–D18 | Q20, Q22, Q28 |
+| **CP1** | **Done — shipped 2026-09-13 (#299; production §15.10).** Event Calendar v1 incl. national events and per-school hiding (§8.4; plan-first §15) | 7–10 days | D4 (+1), D19 (+1) | **Nothing — ready** (D19, D20) |
+| **CP2** | **Done — shipped 2026-09-14 (#300, #301; production §16.12–§16.13).** **Recording completeness** (§16): term health, attendance and score-entry coverage, report-card pipeline, teacher recording activity. Outcome analytics deferred (§16.9) | **6–9 days** (was 9–13) | D2 reframed after §4.6 | **Nothing — Q31–Q33 resolved** (§16.7) |
+| **CP3** | **Done — shipped 2026-09-14 (#302; production §17.10).** Timetable: model, time-of-day convention, **one bell schedule per school**, grid builder, effective-timetable resolution, identity-based clash detection, RLS spec (plan-first §17) | **9–13 days** (was 11–16) | D3; D13; D26 (−2–3) | **Nothing — Q34–Q37 approved** (§17.7) |
+| **CP4** | **Done — shipped 2026-09-15 (#304; production §18.10).** Timetable: fork/override, copy-forward, publish, teacher / student / guardian read surfaces | **8–11 days** (§18.8) | D3 (+1); D43–D45 | — |
+| **CP5** | **→ Phase 8c (D46).** Assessments & Exams v1: any-total marks with scaling, cumulative results | 6–10 days | D5 (scope narrowed) | Q15 |
+| **CP6a** | **→ Phase 8c (D46).** Report card completeness: position setting, attendance snapshot, promotion status display field | 5–8 days | D6 (new); D12 | Q24 |
+| **CP6b** | **→ Phase 8c (D46).** Result Checker: access-mode gate in both portals, offline batch PINs, public page, SD function and review at 23 | **9–14 days** | D6; D9 removed online sales; D10, D11, D15–D18 | Q20, Q22, Q28 |
 | **CP7** | Tutor engineering foundations: `expo/fetch` spike, multi-turn streaming port, per-student ledger column and cap, eval harness for conversations. **No safeguarding handling of any kind (§6.4)** | 12–18 days | — | **Q9, Q10** |
 | **CP8** | Tutor mobile screen, admin console (non-safeguarding parts), rollout | 13–22 days | D7 | Q12; **rollout blocked on the safeguarding workstream** |
 
@@ -1106,7 +1106,7 @@ the Tutor's decisions haven't landed"). D7 settled that question: the tutor
 cannot ship until work with no engineering estimate is done.
 
 **Further split, allowed but not decided:** if Phase 8 runs long, it may split
-again after CP4 — see §12.4.
+again after CP4 — see §12.4. **Decided 2026-09-15 — see §12.5.**
 
 ### 12.4 Revised estimate
 
@@ -1130,10 +1130,39 @@ group.
 
 ---
 
+### 12.5 D46 — Phase 8 split after CP4 (decided 2026-09-15, Arinzechukwu)
+
+**Phase 8 closes at CP4**, with three shipped features: Event Calendar, Reports
+(recording completeness) and Timetable. CP5–CP6b become **Phase 8c**.
+
+| Phase | Checkpoints | Status | Estimate |
+|---|---|---|---|
+| **Phase 8** | CP0–CP4 | **Closed 2026-09-15** (close-out §19) | was 32–46 days; see §19.4 for what happened |
+| **Phase 8c** | CP5 Assessments & Exams, CP6a report card completeness, CP6b Result Checker | Not started. Needs Q15 (CP5), Q24 (CP6a), Q20/Q22/Q28 (CP6b) | 20–32 working days, same units (§19.4) |
+| **Phase 8b** | CP7–CP8 AI Tutor | Unchanged; blocked on Q9, Q10 and the safeguarding workstream (§6.4) | 25–40 days + the unestimated workstream |
+
+**Why "8c".**
+- 8b was already reserved for the Tutor (D8).
+- 9 is the auxiliary-modules phase.
+- CBT is its own unnumbered phase (D5).
+- Nothing else uses "8c".
+
+The letter records lineage, not order: 8c is unblocked and 8b is not, so 8c is
+expected to ship first.
+
+**CP6a is in 8c** though not named when the split was requested. §12.2 and §12.4
+already group it with Exams and the Result Checker — cumulative results inform
+promotion status, and the checker should show the complete card — so leaving it
+in a closed phase would strand it.
+
+**Checkpoint numbers are kept** (CP5, CP6a, CP6b), and Phase 8c's decisions and
+investigation stay in this document (§9, §10, D5, D6, D9–D18), so no existing
+reference breaks.
+
 ## 13. Not verified by this investigation
 
-1. **Production data volume** — whether pilot schools actually record
-   attendance and scores on the platform (§4.6).
+1. ~~Production data volume~~ — **measured** in §4.6 (recording data) and, for
+   Phase 8's own features, in the close-out (§19.3: no school has used them yet).
 2. **`expo/fetch` streaming on Expo SDK 57** (§6.5).
 3. **Curriculum coverage in production** beyond the one document evidenced in
    `phase-7.md` §17.11.
@@ -3917,3 +3946,184 @@ the CP3 check.
 | `portal.schoolkit.ng/students/:id/timetable` | 307 → login |
 
 **CP4 is closed, and with it the Timetable feature (CP3 + CP4).**
+
+---
+
+## 19. Phase 8 close-out — 2026-09-15
+
+**Phase 8 is closed.** On 2026-09-15 it was split after CP4 (D46, §12.5):
+- **Phase 8** ends here, with three shipped features: Event Calendar, Reports
+  (recording completeness) and Timetable.
+- **Phase 8c** takes the results group:
+  - CP5 — Assessments & Exams;
+  - CP6a — report card completeness;
+  - CP6b — Result Checker.
+- **Phase 8b** (the AI Tutor) is unchanged.
+
+This section records what shipped, what is verified in production and what is
+not, and hands off to what comes next. Every production figure below comes from
+the verification sections it cites.
+
+### 19.1 What shipped
+
+| CP | Feature | PRs (merge commit) | Plan / build / production evidence |
+|---|---|---|---|
+| CP0 | Plan-first, decisions D1–D18, doc reconciliation | #297 (`2934e5f`), #298 (`a21f8a4`) | §0–§14 |
+| CP1 | **Event Calendar** — school events, seeded Nigerian national holidays (confirmed vs expected), per-school hiding; staff web, parent portal, mobile | #299 (`351cbed`) | §15; built §15.9; production §15.10 |
+| CP2 | **Reports v1: recording completeness** — term health, register and score-entry coverage against real school days, report-card pipeline, audited teacher recording activity; a dashboard alert | #300 (`7478a32`), #301 (`f21063f`, transaction budget fix) | §16; built §16.11; production §16.12–§16.13 |
+| CP3 | **Timetable builder** — one bell schedule and school week per school, per-class whole-year or term timetables, teacher-clash detection under an advisory lock, assignment validity | #302 (`8b9878c`) | §17; built §17.9; production §17.10 |
+| — | **Edge-gate fix** — `/events`, `/reports`, `/timetable` added to the web middleware matcher, with a spec that fails if any admin route is missing | #303 (`3897ea1`) | §17.10 |
+| CP4 | **Timetable lifecycle and read surfaces** — fork, copy with preview, published snapshots for families, teacher "My timetable", portal and mobile class timetables, latent-clash surfacing, inactive classes | #304 (`f0fbf77`) | §18; built §18.9; production §18.10 |
+
+**Decisions made during the build** (beyond D1–D18):
+- D19–D26 (CP1–CP3 scope);
+- CP1's §15 D-numbers and CP2's §16 D-numbers;
+- **D27–D36** (Timetable data model, clash rule, lock, permissions);
+- **D37–D45** (teacher view, family reads, fork, copy, latent clashes, inactive
+  classes, published snapshots);
+- **D46** (this split).
+
+**What each feature deliberately does not do** is recorded, not implied:
+- **Calendar:** RSVP and reminders (§8).
+- **Reports:** outcome analytics — deferred with a trigger (§16.9,
+  `docs/deferred.md`).
+- **Timetable:**
+  - per-class bell schedules (`docs/deferred.md`);
+  - rooms, cover, printing and generation (§17.5);
+  - staff-mobile timetable, bulk copy, publication history and notifications
+    (§18.5).
+
+### 19.2 What is verified in production — and how
+
+Each checkpoint was deployed with the same chain:
+- required checks green on the final head;
+- branch protection re-read;
+- squash merge;
+- `main` CI and deploy succeeded, with migrations confirmed applied in the deploy
+  log;
+- smoke test 6/6;
+- a **read-only** check inside the production API container, run as the runtime
+  role (`app_user`: not superuser, no BYPASSRLS).
+
+| Property | Verified in production | Where |
+|---|---|---|
+| All Phase 8 migrations applied, none rolled back | yes | §15.10, §16.12, §17.10, §18.10 |
+| RLS **enabled and forced**, `tenant_isolation` policy, on every new tenant table (school events, hidden national events, bell slots, timetables, entries, entry teachers, publications) | yes | §15.10, §17.10, §18.10 |
+| `national_events` is read-only to the runtime role | yes — a **live INSERT was refused** (`42501`) inside a rolled-back transaction; 0 probe rows afterwards | §15.10 |
+| Composite `(school_id, …)` foreign keys on every timetable reference (10 constraints) | **definitions** verified | §17.10, §18.10 |
+| Role grants | admin holds calendar, reports and timetable manage; teacher holds calendar read and `timetable.own.read` only; bursar calendar read only; owner wildcard | §15.10, §16.12, §17.10, §18.10 |
+| SECURITY DEFINER count | 22 throughout — Phase 8 added none | all four |
+| Every new API route deployed and refusing unauthenticated calls | yes — 401s against a 404 control | all four |
+| Every new admin, teacher and portal page behind the edge login redirect | yes — after #303 fixed three that were not | §17.10, §18.10 |
+| The deployed family reader reads only published snapshots; withdraw deletes; clash query counts active classes only | yes, from the deployed `dist` files | §18.10 |
+| The completeness report against real data | yes — run as each school's real owner, 72 schools, 0 errors; Virgo Fidelis hand-verified from first principles (59 school days, 236 registers expected) | §16.12, §17.10, §18.10 |
+| CP2's figures unchanged by CP3 and CP4 | yes — every difference attributed to a named real-world data change (a new school, a school adding terms), none to code | §17.10, §18.10 |
+
+### 19.3 What is NOT verified in production — stated plainly
+
+1. **Nobody has used the new features yet.** A read-only, aggregate-only
+   measurement on 2026-09-15 across **81 real schools**:
+
+   | Feature | Usage |
+   |---|---|
+   | Calendar | **0** school events created; **0** national holidays hidden. Every school sees the seeded holidays and term dates automatically. |
+   | Reports | **1** teacher-activity view, at 1 school. Completeness-report views are not audited, so their use is unknown. |
+   | Timetable | **0** bell schedules, **0** timetables, **0** lessons, **0** publications; every school on the default Monday–Friday week |
+
+   The features are deployed, secured and verified to behave correctly against
+   real data where real data exists (CP2). **They are not yet validated by a
+   school using them.**
+2. **Behaviour that could only be proven with writes** is proven in local and CI
+   specs against real Postgres, not exercised in production:
+   - cross-school foreign-key rejection, including the plain-FK counterfactual;
+   - the advisory lock's effect on concurrent saves;
+   - the clash rules;
+   - publish and withdraw;
+   - the family reader's structural limits.
+
+   Production verifies the constraints and deployed code those rely on.
+3. **The mobile screens have not been run on a device or simulator**: CP1's
+   calendar and CP4's student and guardian timetables. They are typechecked,
+   their pure logic is unit-tested, and they call the same API the portal's e2e
+   exercises — but nobody has looked at them on a phone.
+4. **The teacher view's form-class exception (Q38) is reasoned, not researched.**
+   Production had only 2 active teachers, each form-teaching the one class they
+   teach (§18.1). It should be checked with real teachers once a school builds a
+   timetable.
+5. **The CP2 transaction-budget fix** — zero P2028 retries on the post-fix run is
+   consistent with the fix, not proof of it; the original slow transaction was
+   intermittent (§16.13).
+
+### 19.4 Estimates against what happened
+
+The plan-first estimated **32–46 working days** for CP0–CP4 (§12.4: CP0 2–3,
+CP1 7–10, CP2 6–9, CP3 9–13, CP4 8–11). The work ran as a plan-first, review,
+build, evidence and deploy loop per checkpoint:
+- the plan-first merged 2026-09-13 17:45;
+- CP4 merged 2026-09-15 10:41 (UTC+1);
+- that is **under two calendar days**.
+
+The day estimates were sized for a solo developer's pace and did not model this
+workflow. They were accurate as a **relative** measure of size (CP3 and CP4 were
+the largest, as predicted) and poor as a measure of **elapsed time**.
+
+Phase 8c's figures (§12.5) are left in the same units rather than silently
+rescaled, because the pacing factor is not yet understood. The review and
+decision cycles — not the building — set the pace. Recalibrating is a planning
+decision for Arinzechukwu, not something to infer from one phase.
+
+### 19.5 Open items carried out of Phase 8
+
+Recorded in `docs/deferred.md` ("Phase 8 close-out — items carried forward") so
+none depends on this section being read:
+- the teacher-shell sidebar background stops short of the page on short pages
+  (seen in CP4's e2e screenshot; teacher layout untouched by Phase 8; not
+  investigated);
+- **mobile screens not yet run on a device** (§19.3 item 3);
+- **validate the teacher form-class view with real teachers** (§19.3 item 4);
+- moving a lesson in the builder is two requests — a failed second request
+  briefly shows the lesson twice, visibly (§17.9);
+- CP4's out-of-scope items (§18.5): staff-mobile timetable, bulk and cross-class
+  copy, publication history and notifications, flagging lessons whose teacher's
+  assignment was removed;
+- already tracked there: the national-events annual migration routine, outcome
+  analytics, per-class bell schedules.
+
+The event-calendar e2e once failed locally on a cold portal compile and passed on
+rerun and in CI (§18.9). It is a local-environment timing issue, not an open
+product item.
+
+### 19.6 Handoff
+
+**Phase 8c — Assessments & Exams, report card completeness, Result Checker.**
+- **Where it lives:** its investigation and decisions stay in this document — §9
+  (Exams), §10 (Result Checker), D5, D6, D9–D18 — as the Tutor's did for Phase
+  8b. Its checkpoints keep their numbers (CP5, CP6a, CP6b) so every existing
+  reference stays valid.
+- **Order unchanged** (§12.2): Exams, then report card completeness, then the
+  checker, which shows the complete card.
+- **Before CP5's plan-first:** **Q15** — which of (i)–(iii) Assessments & Exams
+  v1 covers (recommended: (i) + (ii)).
+- **Before CP6a's:** **Q24** — the default of the position-visibility setting
+  (recommended: hidden).
+- **Before CP6b's:** **Q20** (per-result access granularity), **Q22** (admission
+  number and PIN), **Q28** (a lighter unpublish).
+- **CP6b adds a SECURITY DEFINER function**, which reaches the "+3" review due at
+  23 (CLAUDE.md).
+- **Estimate** (same units as before, §19.4): CP5 6–10, CP6a 5–8, CP6b 9–14 =
+  **20–32 working days**.
+
+**Phase 8b — AI Tutor.** Unchanged and **blocked on decisions that are not
+engineering's**:
+- Q9 (the tutor's NDPR position) and Q10 (the PII hard rule against a child's
+  free text) before CP7 starts;
+- the safeguarding workstream (§6.4) before anything reaches a student;
+- nothing in §6.4's prohibited list is to be implemented in the meantime.
+
+The letter does not set the order: 8c is unblocked and 8b is not.
+
+**Worth weighing before starting 8c:** §19.3 item 1. Three features are live and
+unused. Whether the next best step is more features (8c) or getting a pilot
+school to actually use the calendar, reports and timetable — which would also
+answer §19.3 items 3 and 4 — is a product call, recorded here so it is made
+deliberately.
