@@ -13,6 +13,7 @@ import {
   type GuardianDetailDto,
   type GuardianDto,
   type GuardianListResponse,
+  type GuardianPortalStatusDto,
   type InviteGuardianResponse,
   type ResendGuardianInviteResponse,
   type RevokeGuardianInviteResponse,
@@ -102,10 +103,18 @@ export class GuardiansService {
       if (query.studentId) {
         where.students = { some: { studentId: query.studentId } };
       }
+      const statusWhere = query.portalStatus ? portalStatusWhere(query.portalStatus, new Date()) : null;
 
       const rows = await db.guardian.findMany({
-        where,
-        select: GUARDIAN_SELECT,
+        where: statusWhere ? { AND: [where, statusWhere] } : where,
+        select: {
+          ...GUARDIAN_SELECT,
+          students: {
+            select: {
+              student: { select: { id: true, firstName: true, lastName: true, admissionNumber: true } },
+            },
+          },
+        },
         orderBy: { id: "asc" },
         take: limit + 1,
       });
@@ -115,7 +124,17 @@ export class GuardiansService {
       const cursor = hasNext ? page[page.length - 1].id : undefined;
 
       return {
-        data: page.map(toGuardianDto),
+        data: page.map((row) => ({
+          ...toGuardianDto(row),
+          children: row.students
+            .map((link) => ({
+              studentId: link.student.id,
+              firstName: link.student.firstName,
+              lastName: link.student.lastName,
+              admissionNumber: link.student.admissionNumber,
+            }))
+            .sort((a, b) => a.lastName.localeCompare(b.lastName) || a.firstName.localeCompare(b.firstName)),
+        })),
         meta: cursor === undefined ? {} : { cursor },
       };
     });
@@ -899,6 +918,48 @@ export class GuardiansService {
 // -------------------------------------------------------------------------
 // helpers
 // -------------------------------------------------------------------------
+
+// The portal status as a database filter (2026-09-16), so the roster can list
+// "parents who have not been invited" across every page rather than within
+// one. Each branch is deriveGuardianPortalStatus's rule restated in Prisma,
+// in the same precedence order — see its header for why the order matters.
+// guardians.service.spec.ts ("portalStatus filter matches the derived status
+// for every guardian") fails if the two ever disagree.
+export function portalStatusWhere(
+  status: GuardianPortalStatusDto,
+  now: Date,
+): Prisma.GuardianWhereInput {
+  const live: Prisma.GuardianInvitationWhereInput = {
+    acceptedAt: null,
+    revokedAt: null,
+    expiresAt: { gt: now },
+  };
+  const lapsed: Prisma.GuardianInvitationWhereInput = {
+    acceptedAt: null,
+    revokedAt: null,
+    expiresAt: { lte: now },
+  };
+  switch (status) {
+    case "NO_EMAIL":
+      return { email: null };
+    case "ACTIVE":
+      return { email: { not: null }, passwordHash: { not: null } };
+    case "INVITED":
+      return { email: { not: null }, passwordHash: null, invitations: { some: live } };
+    case "EXPIRED":
+      return {
+        email: { not: null },
+        passwordHash: null,
+        invitations: { none: live, some: lapsed },
+      };
+    case "NOT_INVITED":
+      return {
+        email: { not: null },
+        passwordHash: null,
+        AND: [{ invitations: { none: live } }, { invitations: { none: lapsed } }],
+      };
+  }
+}
 
 export const GUARDIAN_SELECT = {
   id: true,
