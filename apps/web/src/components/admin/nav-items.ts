@@ -3,6 +3,7 @@ import {
   CalendarClock,
   CalendarDays,
   ClipboardList,
+  Contact,
   FileBarChart,
   FileSearch,
   FileText,
@@ -56,6 +57,10 @@ export interface NavItem {
 export const NAV_ITEMS: NavItem[] = [
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard, enabled: true, requiredPermission: "dashboard.read" },
   { label: "Students", href: "/students", icon: GraduationCap, enabled: true, requiredPermission: "student.read" },
+  // Added 2026-09-16. The guardian roster — the parent-facing product's front
+  // door, which did not exist: parents were reachable only one student at a
+  // time. Gated on guardian.read, which owner and admin hold.
+  { label: "Guardians", href: "/guardians", icon: Contact, enabled: true, requiredPermission: "guardian.read" },
   { label: "Enrollments", href: "/enrollments", icon: UserPlus, enabled: true, requiredPermission: "enrollment.read" },
   { label: "Staff", href: "/staff", icon: Users, enabled: true, requiredPermission: "user.read" },
   // Gated on a WRITE permission (not academic-year.read) on purpose: bursar

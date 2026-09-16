@@ -835,7 +835,13 @@ Format:
   in the error report (validate / commit / warning), which would also
   cost a small UI tweak on the preview screen.
 
-- [ ] `/guardians` roster page (canonical entry point for the guardian
+- [x] **CLOSED 2026-09-16 — `/guardians` roster shipped**, with a Guardians nav
+  item, a server-side portal-access filter, linked children per row, and
+  Invite / Resend / Cancel actions; the import wizard's "View roster" now points
+  at it. Prioritised by production data rather than this entry's trigger: only
+  14 guardians existed across 91 schools, and the only way to reach a parent was
+  one student at a time. Bulk invite (the item below) remains deferred.
+  Original entry: `/guardians` roster page (canonical entry point for the guardian
   bulk-import wizard). Slice 5 shipped guardian forms inline on the
   student-detail page; the standalone roster page hasn't landed yet.
   Slice 8 cp2 routes the wizard's "View roster" CTA to `/students` as

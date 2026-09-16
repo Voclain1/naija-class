@@ -22,9 +22,9 @@ import { Wizard } from "@/lib/imports/wizard-ui";
 // /guardians/import/[jobId]/done — Slice 8 cp2 step 4 (final).
 //
 // jobId-driven, no sessionStorage. Same poll-self-rearming pattern as
-// the students done page. The "View roster" primary CTA points at
-// /students (the canonical roster page) because /guardians doesn't
-// exist as a roster route yet (deferred to slice 11).
+// the students done page. The "View roster" primary CTA points at the
+// /guardians roster (added 2026-09-16; until then it pointed at /students as a
+// stopgap, because no guardian roster existed).
 
 const POLL_INTERVAL_MS = 2000;
 
@@ -258,13 +258,7 @@ export default function ImportGuardiansDonePage() {
           <Link href="/guardians/import">Import another guardian file</Link>
         </Button>
         <Button asChild>
-          {/*
-            /guardians roster page is slice 11 territory — until it
-            exists, the primary CTA routes to the student roster where
-            admins can drill into any student and see the new guardians
-            on the Guardians tab.
-          */}
-          <Link href="/students">
+          <Link href="/guardians">
             <Users className="h-4 w-4" />
             View roster
           </Link>

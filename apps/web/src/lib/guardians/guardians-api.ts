@@ -28,6 +28,7 @@ function buildListQuery(query: ListGuardiansQuery): string {
   const params = new URLSearchParams();
   if (query.search) params.set("search", query.search);
   if (query.studentId) params.set("studentId", query.studentId);
+  if (query.portalStatus) params.set("portalStatus", query.portalStatus);
   if (query.cursor) params.set("cursor", query.cursor);
   if (query.limit !== undefined) params.set("limit", String(query.limit));
   const qs = params.toString();

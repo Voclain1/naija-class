@@ -18,6 +18,7 @@ import { LATER_PHASE_ITEMS, NAV_ITEMS } from "./nav-items";
 //      exactly when it happens.
 
 const SHIPPED_HREFS = [
+  "/guardians",
   "/gradebook",
   "/timetable",
   "/reports",
@@ -78,6 +79,16 @@ describe("admin nav items", () => {
     // picker lists only the viewer's own teaching assignments.
     expect(item!.href).toBe("/gradebook");
     expect(item!.requiredPermission).toBe("assessment-score.create");
+  });
+
+  it("lists Guardians as live, pointing at the roster, gated on guardian.read", () => {
+    const item = NAV_ITEMS.find((i) => i.label === "Guardians");
+    expect(item).toBeDefined();
+    expect(item!.enabled).toBe(true);
+    // The roster itself — not /guardians/import, which is how parents are
+    // added, not where a school sees who can get into the portal.
+    expect(item!.href).toBe("/guardians");
+    expect(item!.requiredPermission).toBe("guardian.read");
   });
 
   it("has no reference left to the /lesson-notes route that never existed", () => {
