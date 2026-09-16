@@ -1,3 +1,5 @@
+import type { GuardianPortalStatusDto } from "../guardians/guardian.dto.js";
+
 // Phase 1 / Slice 4 — Student DTO shape returned by the API.
 //
 // First DTO carrying durable child PII. Read CLAUDE.md "Multi-tenancy"
@@ -82,6 +84,11 @@ export interface StudentGuardianRefDto {
   // invite action with an explanation instead of round-tripping to the
   // server just to learn GUARDIAN_HAS_NO_EMAIL.
   email: string | null;
+  // Added 2026-09-16 so the Guardians tab can show where this parent stands
+  // with the portal on load, and offer Resend/Cancel accordingly — before
+  // this it always rendered "Invite to portal" and only discovered a pending
+  // invitation by getting INVITATION_ALREADY_PENDING back from the server.
+  portalStatus: GuardianPortalStatusDto;
   isPrimary: boolean;
   canPickup: boolean;
 }

@@ -6,6 +6,7 @@ import {
   ConflictError,
   NotFoundError,
   ValidationError,
+  deriveGuardianPortalStatus,
   type CreateGuardianInput,
   type CreateAndLinkGuardianInput,
   type CreateStudentGuardianLinkResponse,
@@ -13,6 +14,8 @@ import {
   type GuardianDto,
   type GuardianListResponse,
   type InviteGuardianResponse,
+  type ResendGuardianInviteResponse,
+  type RevokeGuardianInviteResponse,
   type LinkExistingGuardianInput,
   type ListGuardiansQuery,
   type UpdateGuardianInput,
@@ -41,6 +44,8 @@ const AUDIT = {
   guardianUpdate: "guardian.update",
   guardianDelete: "guardian.delete",
   guardianInvite: "guardian.invite",
+  guardianInviteResend: "guardian.invite-resend",
+  guardianInviteRevoke: "guardian.invite-revoke",
   linkCreate: "student-guardian.create",
   linkUpdate: "student-guardian.update",
   linkDelete: "student-guardian.delete",
@@ -269,7 +274,7 @@ export class GuardiansService {
     const result = await withTenant(authCtx.schoolId, async (db) => {
       const existing = await db.guardian.findUnique({
         where: { id },
-        select: { id: true, email: true, phone: true, firstName: true },
+        select: { id: true, email: true, phone: true, firstName: true, passwordHash: true },
       });
       if (!existing) throw new NotFoundError("Guardian not found.");
       if (!existing.email) {
@@ -278,13 +283,27 @@ export class GuardiansService {
           "This guardian has no email on file. Add one before sending a portal invitation.",
         );
       }
+      // 2026-09-16 — an active parent must not be issued a set-password link.
+      // The accept endpoint now refuses to overwrite a password regardless
+      // (that is the security boundary); refusing here too means staff are
+      // never handed a link that looks usable and is not.
+      if (existing.passwordHash !== null) {
+        throw new ConflictError(
+          "GUARDIAN_ALREADY_ACTIVE",
+          "This guardian already has portal access. They can reset their own password from the portal's sign-in page.",
+        );
+      }
 
       // Reject a second invite while one is still outstanding. Guardian
       // has no unique constraint that would enforce this at the DB level
       // (unlike staff, where the email+outstanding-invitation check in
       // UsersService.invite serves the same purpose) — checked explicitly.
       const outstanding = await db.guardianInvitation.findFirst({
-        where: { guardianId: id, acceptedAt: null, expiresAt: { gt: new Date() } },
+        // revokedAt: null added 2026-09-16 — a revoked invitation is not
+        // outstanding, so it must not block a fresh invite. Without this a
+        // revoke would lock the guardian out of being re-invited until the old
+        // row expired, which is the opposite of what revoke is for.
+        where: { guardianId: id, acceptedAt: null, revokedAt: null, expiresAt: { gt: new Date() } },
         select: { id: true },
       });
       if (outstanding) {
@@ -358,6 +377,181 @@ export class GuardiansService {
     });
 
     return { guardianId: id, portalInvitedAt: result.portalInvitedAt, acceptUrl };
+  }
+
+  // ----------------------------------------------------------------------
+  // resendInvite — POST /guardians/:id/invite/resend (2026-09-16).
+  //
+  // WHY THIS EXISTS: an invitation could previously be issued once and then
+  // only waited out. The accept link is shown once in the admin's browser and
+  // never stored, delivery is best-effort (a Resend/Termii failure is logged,
+  // not surfaced), and the TTL is 7 days — so "the parent never got it" meant
+  // a week of nothing. In production on 2026-09-16, 5 of 17 real invitations
+  // had expired unaccepted.
+  //
+  // A resend REVOKES the outstanding invitation and issues a new one in the
+  // SAME transaction. That ordering is the point: the link in the old email
+  // stops working the instant the new one exists, so two live credentials for
+  // one parent never coexist. It is deliberately not "extend the expiry",
+  // which would leave the original token — possibly sent to a wrong address —
+  // alive for longer.
+  // ----------------------------------------------------------------------
+  async resendInvite(
+    authCtx: AuthContext,
+    id: string,
+    reqCtx: RequestContext,
+  ): Promise<ResendGuardianInviteResponse> {
+    await assertUserActiveAndHasOneOf(authCtx, ["owner", "admin"]);
+
+    const rawToken = crypto.randomBytes(32).toString("base64url");
+    const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
+
+    const result = await withTenant(authCtx.schoolId, async (db) => {
+      const existing = await db.guardian.findUnique({
+        where: { id },
+        select: { id: true, email: true, phone: true, firstName: true, passwordHash: true },
+      });
+      if (!existing) throw new NotFoundError("Guardian not found.");
+      if (!existing.email) {
+        throw new ValidationError(
+          "GUARDIAN_HAS_NO_EMAIL",
+          "This guardian has no email on file. Add one before sending a portal invitation.",
+        );
+      }
+      // An active parent must not be handed a fresh set-password link by
+      // school staff: that is a password reset, and the portal has its own
+      // self-service one that proves control of the mailbox.
+      if (existing.passwordHash !== null) {
+        throw new ConflictError(
+          "GUARDIAN_ALREADY_ACTIVE",
+          "This guardian already has portal access. They can reset their own password from the portal's sign-in page.",
+        );
+      }
+
+      const now = new Date();
+      const { count } = await db.guardianInvitation.updateMany({
+        where: { guardianId: id, acceptedAt: null, revokedAt: null },
+        data: { revokedAt: now },
+      });
+
+      await db.guardianInvitation.create({
+        data: {
+          schoolId: authCtx.schoolId,
+          guardianId: id,
+          tokenHash,
+          invitedBy: authCtx.userId,
+          expiresAt: new Date(now.getTime() + GUARDIAN_INVITATION_TTL_MS),
+        },
+      });
+
+      const updated = await db.guardian.update({
+        where: { id },
+        data: { portalInvitedAt: now },
+        select: { portalInvitedAt: true },
+      });
+
+      await db.auditLog.create({
+        data: {
+          schoolId: authCtx.schoolId,
+          userId: authCtx.userId,
+          action: AUDIT.guardianInviteResend,
+          entityType: "guardian",
+          entityId: id,
+          ipAddress: reqCtx.ipAddress,
+          metadata: { email: redactEmail(existing.email), revokedPrevious: count },
+        },
+      });
+
+      const school = await db.school.findUniqueOrThrow({
+        where: { id: authCtx.schoolId },
+        select: { name: true },
+      });
+
+      return {
+        portalInvitedAt: updated.portalInvitedAt as Date,
+        email: existing.email,
+        phone: existing.phone,
+        firstName: existing.firstName,
+        schoolName: school.name,
+        replaced: count > 0,
+      };
+    });
+
+    const acceptUrl = `${portalBaseUrl()}/invitations/${rawToken}`;
+    this.logger.log(`[GUARDIAN INVITATION RESEND] ${acceptUrl}`);
+
+    await this.deliverInvitation({
+      schoolId: authCtx.schoolId,
+      schoolName: result.schoolName,
+      firstName: result.firstName,
+      email: result.email,
+      phone: result.phone,
+      acceptUrl,
+    });
+
+    return {
+      guardianId: id,
+      portalInvitedAt: result.portalInvitedAt,
+      acceptUrl,
+      replaced: result.replaced,
+    };
+  }
+
+  // ----------------------------------------------------------------------
+  // revokeInvite — POST /guardians/:id/invite/revoke (2026-09-16).
+  //
+  // Cancels the live invitation WITHOUT issuing another: the case where the
+  // email address was wrong, or the person should not have been invited. The
+  // token stops resolving immediately, enforced in SQL by
+  // auth_resolve_guardian_invitation_by_token_hash's own WHERE clause, so a
+  // link already sitting in somebody's inbox is dead rather than merely
+  // superseded.
+  //
+  // Revoking does NOT touch a guardian who already accepted: their access is
+  // a password, not a token, and pretending otherwise would be the false
+  // safety control the student-portal design (D26) warns about. Removing a
+  // guardian's access is DELETE /guardians/:id or unlinking the student.
+  // ----------------------------------------------------------------------
+  async revokeInvite(
+    authCtx: AuthContext,
+    id: string,
+    reqCtx: RequestContext,
+  ): Promise<RevokeGuardianInviteResponse> {
+    await assertUserActiveAndHasOneOf(authCtx, ["owner", "admin"]);
+
+    return withTenant(authCtx.schoolId, async (db) => {
+      const existing = await db.guardian.findUnique({
+        where: { id },
+        select: { id: true, email: true },
+      });
+      if (!existing) throw new NotFoundError("Guardian not found.");
+
+      const now = new Date();
+      const { count } = await db.guardianInvitation.updateMany({
+        where: { guardianId: id, acceptedAt: null, revokedAt: null, expiresAt: { gt: now } },
+        data: { revokedAt: now },
+      });
+      if (count === 0) {
+        throw new ConflictError(
+          "NO_PENDING_INVITATION",
+          "This guardian has no pending invitation to cancel.",
+        );
+      }
+
+      await db.auditLog.create({
+        data: {
+          schoolId: authCtx.schoolId,
+          userId: authCtx.userId,
+          action: AUDIT.guardianInviteRevoke,
+          entityType: "guardian",
+          entityId: id,
+          ipAddress: reqCtx.ipAddress,
+          metadata: { email: redactEmail(existing.email), revoked: count },
+        },
+      });
+
+      return { guardianId: id, revokedAt: now };
+    });
   }
 
   // Phase 4 / Slice 6 — best-effort email/SMS delivery of the invite link,
@@ -708,6 +902,13 @@ export class GuardiansService {
 
 export const GUARDIAN_SELECT = {
   id: true,
+  // Portal facts (2026-09-16). passwordHash is selected ONLY to derive the
+  // hasPassword boolean in toGuardianDto — it never reaches a DTO, a log or a
+  // response. Same shape StudentAccessService already uses for the student
+  // portal's status. The invitation rows carry no token, only the three
+  // timestamps the status rules read.
+  passwordHash: true,
+  invitations: { select: { acceptedAt: true, revokedAt: true, expiresAt: true } },
   firstName: true,
   lastName: true,
   relationship: true,
@@ -724,6 +925,11 @@ export const GUARDIAN_SELECT = {
 type GuardianRow = Prisma.GuardianGetPayload<{ select: typeof GUARDIAN_SELECT }>;
 
 export function toGuardianDto(row: GuardianRow): GuardianDto {
+  const portal = deriveGuardianPortalStatus({
+    hasEmail: row.email !== null,
+    hasPassword: row.passwordHash !== null,
+    invitations: row.invitations,
+  });
   return {
     id: row.id,
     firstName: row.firstName,
@@ -737,6 +943,8 @@ export function toGuardianDto(row: GuardianRow): GuardianDto {
     notes: row.notes,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
+    portalStatus: portal.status,
+    portalInvitationExpiresAt: portal.liveInvitationExpiresAt,
   };
 }
 

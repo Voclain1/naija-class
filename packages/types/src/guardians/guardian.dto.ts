@@ -21,6 +21,26 @@ export type RelationshipDto =
   | "SIBLING"
   | "OTHER";
 
+/**
+ * Where this guardian stands with the parent portal, derived server-side from
+ * the guardian row plus their invitation history (2026-09-16). Derived, never
+ * stored: a stored copy would drift the moment an invitation expired, since
+ * expiry is the passage of time rather than an event anything writes.
+ *
+ *   NO_EMAIL     — nothing can be sent; the invite action needs an email first.
+ *   NOT_INVITED  — has an email, no invitation has ever been issued (or every
+ *                  one was revoked).
+ *   INVITED      — an invitation is live: not accepted, not revoked, not expired.
+ *   EXPIRED      — the most recent live-ish invitation ran out unaccepted.
+ *   ACTIVE       — the guardian has a password and can sign in.
+ */
+export type GuardianPortalStatusDto =
+  | "NO_EMAIL"
+  | "NOT_INVITED"
+  | "INVITED"
+  | "EXPIRED"
+  | "ACTIVE";
+
 export interface GuardianDto {
   id: string;
   firstName: string;
@@ -34,6 +54,10 @@ export interface GuardianDto {
   notes: string | null;
   createdAt: string | Date;
   updatedAt: string | Date;
+  /** Portal standing (2026-09-16). Never a credential — a state name only. */
+  portalStatus: GuardianPortalStatusDto;
+  /** When the live invitation expires; set only when portalStatus is INVITED. */
+  portalInvitationExpiresAt: string | Date | null;
 }
 
 // Detail view — Guardian plus the list of students currently linked. Mirrors
