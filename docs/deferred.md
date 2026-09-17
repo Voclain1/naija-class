@@ -3429,6 +3429,19 @@ are known, unresolved, and not blocking anything:
 ## Owner/admin gradebook screen — deferred in Phase 2 and never tracked (CLOSED 2026-09-15)
 
 - [x] **CLOSED 2026-09-15 — `/gradebook` added (owner/admin gradebook), same PR as this entry.**
+- [x] **Shipped and verified in production 2026-09-16** (PR #306, merged `a70450d`;
+  deploy `35036218998`, smoke 6/6). The deploy applied **no migrations** ("93
+  migrations found ... No pending migrations to apply"), and a read-only check
+  as `app_user` confirmed 93 applied / 0 rolled back, the SECURITY DEFINER count
+  still 22, admin and teacher holding all four score permissions, owner on its
+  wildcard, and **bursar none**. Live: `/gradebook` and its `[armId]/[subjectId]`
+  route redirect to login at the edge while a control path 404s; the deployed
+  picker chunk carries the page's own copy and **no reference to
+  `teacher-scope`**; the admin and teacher grid pages load the SAME component
+  chunk, so sign-off and the released-card lock are literally shared code. The
+  signed-in bursar 403 is proven in the e2e against real Postgres, not
+  re-exercised in production — that would need a real bursar's credentials and a
+  write.
 
 **What was deferred.** Phase 2 / Slice 2 decided that owners and admins may
 enter scores for any class and subject, unscoped (journal 2026-06-02, Flag #1:
@@ -3472,3 +3485,11 @@ board says "Subject teachers need to sign off every subject", because the
 SUBJECT_REVIEWED cascade runs at sign-off, before any card exists. Form review
 re-verifies sign-off, so the arm can still proceed. Pre-existing behaviour, not
 caused by this change; worth a look when report cards are next touched.
+
+**How widespread this was, measured 2026-09-16 across 91 real schools.** **89 of
+91 had no active teacher account at all**, and only **2 schools had ever entered
+a score** (60 scores in total, every one keyed by a teacher). So the missing
+screen was not an edge case: for nearly every school on the platform, the only
+route to score entry ran through an account type they had not created yet. Worth
+remembering when judging a report like Phase 8's zero-usage finding — "nobody
+uses it" can mean the path in is blocked, not that the feature is unwanted.
