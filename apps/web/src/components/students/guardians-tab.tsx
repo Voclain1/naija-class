@@ -1,11 +1,13 @@
 "use client";
 
 import {
+  Ban,
   Check,
   Copy,
   FileSpreadsheet,
   Loader2,
   PlusCircle,
+  RefreshCw,
   Search,
   Send,
   Star,
@@ -35,6 +37,8 @@ import { useAuth } from "@/lib/auth/use-auth";
 import {
   createAndLinkGuardian,
   inviteGuardian,
+  resendGuardianInvite,
+  revokeGuardianInvite,
   linkExistingGuardian,
   listGuardians,
   unlinkStudentGuardian,
@@ -179,9 +183,12 @@ function GuardianRow({
   // guardian already has a pending invitation, only after the server tells
   // us via INVITATION_ALREADY_PENDING. "invited" covers the just-sent case
   // this session, when the one-time accept link is still visible below.
-  const [inviteStatus, setInviteStatus] = useState<
-    "idle" | "pending" | "invited"
-  >("idle");
+  // Seeded from the server's portalStatus (2026-09-16) rather than always
+  // starting "idle": a pending invitation is a fact the row already knows, so
+  // the tab no longer has to send a doomed invite to discover it.
+  const [inviteStatus, setInviteStatus] = useState<"idle" | "pending" | "invited">(
+    guardian.portalStatus === "INVITED" ? "pending" : "idle",
+  );
   const [acceptUrl, setAcceptUrl] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
@@ -285,6 +292,54 @@ function GuardianRow({
           e instanceof ApiError ? e.message : "Could not send the invitation.",
         );
       }
+    } finally {
+      setBusy(null);
+    }
+  }, [busy, guardian]);
+
+  const onResendInvite = useCallback(async () => {
+    if (busy || !guardian.email) return;
+    setBusy("invite");
+    try {
+      const res = await resendGuardianInvite(guardian.id);
+      setAcceptUrl(res.acceptUrl);
+      setInviteStatus("invited");
+      toast.success(
+        res.replaced
+          ? `New invitation sent to ${guardian.firstName}. The previous link no longer works.`
+          : `Invitation sent to ${guardian.firstName}.`,
+      );
+    } catch (e) {
+      toast.error(
+        e instanceof ApiError && e.code === "GUARDIAN_ALREADY_ACTIVE"
+          ? "This guardian already has portal access. They can reset their own password from the portal sign-in page."
+          : e instanceof ApiError
+            ? e.message
+            : "Could not resend the invitation.",
+      );
+    } finally {
+      setBusy(null);
+    }
+  }, [busy, guardian]);
+
+  const onRevokeInvite = useCallback(async () => {
+    if (busy) return;
+    setBusy("invite");
+    try {
+      await revokeGuardianInvite(guardian.id);
+      setAcceptUrl(null);
+      setInviteStatus("idle");
+      toast.success(
+        `Invitation cancelled. The link sent to ${guardian.firstName} no longer works.`,
+      );
+    } catch (e) {
+      toast.error(
+        e instanceof ApiError && e.code === "NO_PENDING_INVITATION"
+          ? "There is no pending invitation to cancel."
+          : e instanceof ApiError
+            ? e.message
+            : "Could not cancel the invitation.",
+      );
     } finally {
       setBusy(null);
     }
@@ -397,6 +452,64 @@ function GuardianRow({
                 </Button>
               );
             })()}
+
+          {/* Resend / Cancel (2026-09-16). A pending invitation used to be a
+              dead end: the link is shown once and never stored, the TTL is 7
+              days, and a second invite is refused — so "the parent never got
+              it" meant waiting a week. Resend rotates the token (killing the
+              old link); Cancel kills it outright, for a wrong address. */}
+          {/* Only while an invitation is LIVE. With nothing outstanding (never
+              invited, cancelled, or expired) "Invite to portal" already does
+              exactly what a resend would, and showing both was two buttons for
+              one action. */}
+          {canInvite &&
+            guardian.email &&
+            guardian.portalStatus !== "ACTIVE" &&
+            (inviteStatus === "pending" || inviteStatus === "invited") && (
+            <>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={onResendInvite}
+                disabled={busy !== null}
+                title="Send a fresh invitation. Any link already sent stops working."
+              >
+                {busy === "invite" ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <RefreshCw className="h-4 w-4" />
+                )}
+                Resend invite
+              </Button>
+
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={onRevokeInvite}
+                disabled={busy !== null}
+                className="text-rose-700 hover:bg-rose-50"
+                title="Cancel the pending invitation. The link already sent stops working."
+              >
+                <Ban className="mr-1 h-4 w-4" />
+                Cancel invite
+              </Button>
+            </>
+          )}
+
+          {/* An expired invitation was previously indistinguishable from "never
+              invited". Say so, since "the parent didn't act within 7 days" is
+              the thing an admin needs to know before sending another. */}
+          {canInvite && guardian.portalStatus === "EXPIRED" && inviteStatus === "idle" && (
+            <span className="text-xs text-amber-700">Last invitation expired unused</span>
+          )}
+          {guardian.portalStatus === "ACTIVE" && (
+            <span className="inline-flex items-center gap-1 text-xs text-emerald-700">
+              <Check className="h-3 w-3" />
+              Portal access active
+            </span>
+          )}
 
           <Button
             type="button"
@@ -594,6 +707,7 @@ function LinkExistingForm({
         relationship: res.guardian.relationship,
         phone: res.guardian.phone,
         email: res.guardian.email,
+        portalStatus: res.guardian.portalStatus,
         isPrimary: res.link.isPrimary,
         canPickup: res.link.canPickup,
       };
@@ -828,6 +942,7 @@ function CreateAndLinkForm({
         relationship: res.guardian.relationship,
         phone: res.guardian.phone,
         email: res.guardian.email,
+        portalStatus: res.guardian.portalStatus,
         isPrimary: res.link.isPrimary,
         canPickup: res.link.canPickup,
       };

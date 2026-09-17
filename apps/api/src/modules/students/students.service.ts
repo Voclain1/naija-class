@@ -2,6 +2,7 @@ import { Injectable } from "@nestjs/common";
 
 import { Prisma, withTenant } from "@school-kit/db";
 import {
+  deriveGuardianPortalStatus,
   ConflictError,
   NotFoundError,
   type CreateStudentInput,
@@ -153,6 +154,12 @@ export class StudentsService {
                   relationship: true,
                   phone: true,
                   email: true,
+                  // Portal facts — passwordHash is read only to derive the
+                  // hasPassword boolean below and never reaches the DTO.
+                  passwordHash: true,
+                  invitations: {
+                    select: { acceptedAt: true, revokedAt: true, expiresAt: true },
+                  },
                 },
               },
             },
@@ -176,6 +183,11 @@ export class StudentsService {
           relationship: link.guardian.relationship,
           phone: link.guardian.phone,
           email: link.guardian.email,
+          portalStatus: deriveGuardianPortalStatus({
+            hasEmail: link.guardian.email !== null,
+            hasPassword: link.guardian.passwordHash !== null,
+            invitations: link.guardian.invitations,
+          }).status,
           isPrimary: link.isPrimary,
           canPickup: link.canPickup,
         })),

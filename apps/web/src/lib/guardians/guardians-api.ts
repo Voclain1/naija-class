@@ -14,6 +14,8 @@ import type {
   GuardianDto,
   GuardianListResponse,
   InviteGuardianResponse,
+  ResendGuardianInviteResponse,
+  RevokeGuardianInviteResponse,
   LinkExistingGuardianInput,
   ListGuardiansQuery,
   UpdateGuardianInput,
@@ -69,6 +71,25 @@ export function deleteGuardian(id: string): Promise<void> {
 // code GUARDIAN_HAS_NO_EMAIL (400) or INVITATION_ALREADY_PENDING (409).
 export function inviteGuardian(id: string): Promise<InviteGuardianResponse> {
   return apiFetch<InviteGuardianResponse>(`/guardians/${id}/invite`, {
+    method: "POST",
+  });
+}
+
+// Resend (2026-09-16): revokes whatever was outstanding and issues a fresh
+// invitation, so the link in the earlier email stops working.
+export function resendGuardianInvite(
+  id: string,
+): Promise<ResendGuardianInviteResponse> {
+  return apiFetch<ResendGuardianInviteResponse>(`/guardians/${id}/invite/resend`, {
+    method: "POST",
+  });
+}
+
+// Cancel a pending invitation without issuing another — for a wrong address.
+export function revokeGuardianInvite(
+  id: string,
+): Promise<RevokeGuardianInviteResponse> {
+  return apiFetch<RevokeGuardianInviteResponse>(`/guardians/${id}/invite/revoke`, {
     method: "POST",
   });
 }

@@ -5,3 +5,4 @@ export * from "./list-guardians.dto.js";
 export * from "./link-guardian.dto.js";
 export * from "./import.js";
 export * from "./invite-guardian.dto.js";
+export * from "./guardian-portal-status.js";
