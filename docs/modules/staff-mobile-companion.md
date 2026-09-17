@@ -388,7 +388,10 @@ never hit this because a register is a minute's work; a mark sheet is not.
   **never written to disk** (CP1: staff data is never persisted) and is **wiped
   on sign-out, session end, or a different user unlocking** — the same
   principal boundary the query keys enforce. Closing the app loses the draft,
-  and the screen warns before the user navigates away with unsaved marks.
+  and while any marks are unsaved the screen says so in those words. (Leaving
+  the screen loses nothing, since the draft is not screen state, so no
+  "leave without saving?" prompt is needed; the picker instead labels any
+  column that still holds unsaved marks.)
 - (b) Autosave each cell as typed. Rejected: every keystroke becomes an audited
   write, a half-typed "1" on its way to "17" reaches a student's record, and a
   stray tap on a signed-off column un-signs it (D20).
@@ -470,6 +473,38 @@ D20 edit.
 phone, sign it off, then confirm every mark and the sign-off stamp match the web
 gradebook for the same column — read from the database, not trusted from the
 app's success state.
+
+### CP6a status (2026-09-17)
+
+Implemented on `staff-mobile/gradebook`: `/staff/gradebook` (picker),
+`/staff/gradebook/[armId]/[subjectId]` (mark sheet), an "Enter marks" entry on
+`/staff`, bindings in `src/lib/api/staff-gradebook.ts`, rules in
+`src/lib/staff/gradebook-rules.ts`, and the D19 store in
+`src/lib/staff/gradebook-drafts.ts`, wiped from `session.tsx`'s `clearSession`
+and `adoptStaffSession` and deliberately not from the lock path.
+
+- **Gate 0 — done.** No server change. Refusals the phone's copy is built on:
+  weight overflow → `400` with `details.issues[].path = ["rows", i, "score"]`;
+  unenrolled → `400` with `["rows", i, "studentId"]`; out-of-scope column →
+  `404 NOT_FOUND`; released card → `409 REPORT_CARD_RELEASED`; sign-off with a
+  missing mark → `400`.
+- **Gates 1-3 — done in code.** Typecheck, lint and an Android `expo export`
+  pass. Screens cannot be driven on the web target: staff sign-in refuses there
+  by design (`canProtectStaffSession` returns false on web), so their visual
+  check is Gate 6.
+- **Gate 4 — done in specs; on-device half open.** `staff-keys.spec.ts` covers
+  both new keys; `gradebook-drafts.spec.ts` asserts survival across remount,
+  principal isolation, wipe-and-notify, no storage imports, and that
+  `session.tsx` wipes on session end and sign-in but not on lock. The
+  background-over-two-minutes device check is still to run.
+- **Gate 5 — satisfied by existing real-Postgres specs**, since CP6a sends
+  exactly what web sends: `assessment.service.spec.ts` (scope 404, weight
+  overflow, unenrolled, whole-batch rollback, one audit row, sign-off cleared
+  and counted, bulk sign-off incl. cross-tenant) and
+  `report-card-workflow.service.spec.ts` (released card → 409 on bulk save and
+  sign-off) — 47 tests, run 2026-09-17, all passing.
+- **Gate 6 — open.** Needs a real phone against a test school with
+  `staffMobileEnabled`.
 
 ### Gates — CP6b
 
