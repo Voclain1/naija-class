@@ -30,6 +30,7 @@ const STAFF_KEYS: Record<string, readonly unknown[]> = {
   // CP6a — a gradebook column is a whole class, by name, with marks.
   staffGradingScheme: queryKeys.staffGradingScheme(SCHOOL, USER),
   staffGradebook: queryKeys.staffGradebook(SCHOOL, USER, "term_1", "arm_1", "subject_1"),
+  staffSubjectComments: queryKeys.staffSubjectComments(SCHOOL, USER, "term_1", "arm_1", "subject_1"),
 };
 
 describe("staff query keys", () => {

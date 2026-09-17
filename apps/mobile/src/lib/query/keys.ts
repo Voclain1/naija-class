@@ -93,4 +93,15 @@ export const queryKeys = {
     classArmId: string,
     subjectId: string,
   ) => ["staff", schoolId, userId, "gradebook", termId, classArmId, subjectId] as const,
+
+  // CP6b — report-card comments for one column. Comment text about a named
+  // child is at least as sensitive as the marks beside it; same prefix, same
+  // refusal to persist.
+  staffSubjectComments: (
+    schoolId: string,
+    userId: string,
+    termId: string,
+    classArmId: string,
+    subjectId: string,
+  ) => ["staff", schoolId, userId, "comments", termId, classArmId, subjectId] as const,
 } as const;

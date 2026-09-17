@@ -522,6 +522,36 @@ and `adoptStaffSession` and deliberately not from the lock path.
 - **Gate 5** — real device, with the accepted comment confirmed on the web
   report card.
 
+### CP6b status (2026-09-17)
+
+Implemented on the same branch, on top of CP6a:
+`/staff/gradebook/[armId]/[subjectId]/comments`, reached from a "Report card
+comments" button under the mark sheet (below it deliberately, like web: the
+comment interprets the marks above it). Bindings in
+`src/lib/api/staff-comments.ts`; the roster comes from the gradebook feed's
+cache, because `SubjectCommentRowDto` deliberately carries no name.
+
+- **Gate 0 — done.** `generate` refuses up front with `403 AI_NOT_CONFIGURED`
+  when the deployment has no key, and the batch is refused outright for a
+  released arm (`409 REPORT_CARD_RELEASED`). The other three AI codes
+  (`AI_DISABLED_SCHOOL`, `AI_DISABLED_PLATFORM`, `AI_BUDGET_EXCEEDED`) are
+  raised per call ON THE WORKER, so a batch can be accepted and then produce
+  nothing — the screen's ~5-minute cap and retry line is the only thing that
+  closes that case, exactly as on web. `accept` refuses a signed-off student
+  with `409 SUBJECT_SIGNED_OFF`.
+- **Gate 1 — done.** One card per student, grade and total beside the name,
+  text visibly unsaved until accepted.
+- **Gate 2 — done.** Accept sends the teacher's edited text; a signed-off
+  student renders read-only with the reason.
+- **Gate 3 — done.** Polling runs only while the screen is focused
+  (`useFocusEffect`) and stops at 50 polls; unaccepted edits go through the D19
+  store under a `comment` key kept separate from the `score:` keys, so a
+  comment draft never counts as unsaved marks — and it blocks sign-off, since
+  sign-off would freeze it away.
+- **Gate 4 — deferred to the same real-DB specs.** `report-comments.service`
+  already has its own suite; the phone sends exactly what web sends.
+- **Gate 5 — open**, with CP6a's Gate 6, on a real device.
+
 ### Out of scope for CP6
 
 Owner/admin score entry on the phone (web `/gradebook`, #306 — admins are not in

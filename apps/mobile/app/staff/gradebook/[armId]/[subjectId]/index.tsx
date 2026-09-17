@@ -10,31 +10,32 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { Redirect, Stack, useLocalSearchParams } from "expo-router";
+import { Redirect, Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { AssessmentFeedRowDto, GradingComponentDto } from "@school-kit/types";
 
-import { staffTeacherScope } from "../../../../src/lib/api/staff-attendance";
+import { staffTeacherScope } from "../../../../../src/lib/api/staff-attendance";
 import {
   staffGradebookFeed,
   staffGradingScheme,
   staffSaveScores,
   staffSignOffColumn,
-} from "../../../../src/lib/api/staff-gradebook";
-import { ApiError, ApiNetworkError } from "../../../../src/lib/api/client";
-import { queryKeys } from "../../../../src/lib/query/keys";
-import { useSession } from "../../../../src/lib/auth/session";
+} from "../../../../../src/lib/api/staff-gradebook";
+import { ApiError, ApiNetworkError } from "../../../../../src/lib/api/client";
+import { queryKeys } from "../../../../../src/lib/query/keys";
+import { useSession } from "../../../../../src/lib/auth/session";
 import {
   clearDraft,
   clearDraftCells,
   componentsWithDrafts,
+  hasCommentDrafts,
   draftKey,
   getGradebookDraftsVersion,
   readDraft,
   setDraftCell,
   subscribeGradebookDrafts,
   type DraftScope,
-} from "../../../../src/lib/staff/gradebook-drafts";
+} from "../../../../../src/lib/staff/gradebook-drafts";
 import {
   collectComponentSave,
   columnSignedOffAt,
@@ -43,9 +44,9 @@ import {
   issuesByStudent,
   savedScore,
   signOffBlockReason,
-} from "../../../../src/lib/staff/gradebook-rules";
-import { useTheme } from "../../../../src/theme/theme-provider";
-import { fontSizes, fonts, radii, spacing } from "../../../../src/theme/tokens";
+} from "../../../../../src/lib/staff/gradebook-rules";
+import { useTheme } from "../../../../../src/theme/theme-provider";
+import { fontSizes, fonts, radii, spacing } from "../../../../../src/theme/tokens";
 import {
   Body,
   Button,
@@ -55,7 +56,7 @@ import {
   Label,
   Notice,
   Screen,
-} from "../../../../src/components/ui";
+} from "../../../../../src/components/ui";
 
 // CP6a — the mark sheet for one (arm × subject) in the current term.
 //
@@ -110,6 +111,7 @@ function describeSaveFailure(error: unknown): string {
 
 export default function MarkSheetScreen() {
   const { colors } = useTheme();
+  const router = useRouter();
   const queryClient = useQueryClient();
   const { armId, subjectId } = useLocalSearchParams<{ armId: string; subjectId: string }>();
   const { status, principal, staff } = useSession();
@@ -314,7 +316,13 @@ export default function MarkSheetScreen() {
 
   const fullyScored = feed.data ? isColumnFullyScored(feed.data, components) : false;
   const hasUnsaved = componentsWithUnsaved.length > 0;
-  const signOffReason = signOffBlockReason({ hasUnsaved, fullyScored });
+  const signOffReason = signOffBlockReason({
+    hasUnsavedMarks: hasUnsaved,
+    // CP6b: sign-off freezes the comment too, so an unaccepted draft must not
+    // be silently frozen out of existence.
+    hasUnsavedComments: termId !== "" && hasCommentDrafts(draftScope),
+    fullyScored,
+  });
 
   const header = <Stack.Screen options={{ headerShown: true, title: subject?.name ?? "Enter marks" }} />;
 
@@ -559,6 +567,14 @@ export default function MarkSheetScreen() {
         )}
 
         <View style={styles.actions}>
+          {/* CP6b. Below the marks deliberately, like web: a comment
+              interprets the marks above it. */}
+          <Button
+            title="Report card comments"
+            variant="secondary"
+            disabled={busy}
+            onPress={() => router.push(`/staff/gradebook/${armId}/${subjectId}/comments`)}
+          />
           <Button
             title={dirtyCount > 0 ? `Save ${dirtyCount} mark${dirtyCount === 1 ? "" : "s"}` : "Save marks"}
             loading={save.isPending}

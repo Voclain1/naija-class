@@ -152,12 +152,20 @@ export function columnSignedOffAt(feed: AssessmentFeedResponse): string | Date |
   return stamp;
 }
 
-/** Why sign-off is not available yet, or null when it is. Web's wording. */
+/**
+ * Why sign-off is not available yet, or null when it is.
+ *
+ * Unaccepted comment drafts block it too (CP6b): sign-off freezes the comment
+ * as well as the marks, so signing off with a draft on screen would quietly
+ * throw that draft away.
+ */
 export function signOffBlockReason(input: {
-  hasUnsaved: boolean;
+  hasUnsavedMarks: boolean;
+  hasUnsavedComments?: boolean;
   fullyScored: boolean;
 }): string | null {
-  if (input.hasUnsaved) return "Save your marks first.";
+  if (input.hasUnsavedMarks) return "Save your marks first.";
+  if (input.hasUnsavedComments) return "Accept or clear your comment drafts first.";
   if (!input.fullyScored) return "Every student needs every mark before you can sign off.";
   return null;
 }

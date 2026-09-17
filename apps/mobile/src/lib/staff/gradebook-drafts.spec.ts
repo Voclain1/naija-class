@@ -8,8 +8,10 @@ import {
   clearDraft,
   clearDraftCells,
   columnHasDrafts,
+  commentDraftKey,
   componentsWithDrafts,
   draftKey,
+  hasCommentDrafts,
   readDraft,
   setDraftCell,
   subscribeGradebookDrafts,
@@ -82,6 +84,16 @@ describe("gradebook drafts", () => {
     expect(componentsWithDrafts(SCOPE).sort()).toEqual(["ca1", "exam"]);
     clearDraft(draftKey(SCOPE, "exam"));
     expect(componentsWithDrafts(SCOPE)).toEqual(["ca1"]);
+  });
+
+  it("keeps comment drafts apart from mark drafts (CP6b)", () => {
+    setDraftCell(commentDraftKey(SCOPE), "student_1", "Works hard.");
+    // A comment draft must not be counted as unsaved marks for a test…
+    expect(componentsWithDrafts(SCOPE)).toEqual([]);
+    // …but it is still unsaved work in the column.
+    expect(hasCommentDrafts(SCOPE)).toBe(true);
+    expect(columnHasDrafts(SCOPE)).toBe(true);
+    expect(hasCommentDrafts({ ...SCOPE, userId: "user_b" })).toBe(false);
   });
 
   it("is wiped entirely at a principal boundary and notifies subscribers", () => {

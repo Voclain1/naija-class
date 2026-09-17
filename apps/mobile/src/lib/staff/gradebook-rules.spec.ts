@@ -155,10 +155,16 @@ describe("column state", () => {
   });
 
   it("explains why sign-off is unavailable, unsaved marks first", () => {
-    expect(signOffBlockReason({ hasUnsaved: true, fullyScored: false })).toBe(
+    expect(signOffBlockReason({ hasUnsavedMarks: true, fullyScored: false })).toBe(
       "Save your marks first.",
     );
-    expect(signOffBlockReason({ hasUnsaved: false, fullyScored: false })).not.toBeNull();
-    expect(signOffBlockReason({ hasUnsaved: false, fullyScored: true })).toBeNull();
+    expect(signOffBlockReason({ hasUnsavedMarks: false, fullyScored: false })).not.toBeNull();
+    expect(signOffBlockReason({ hasUnsavedMarks: false, fullyScored: true })).toBeNull();
+  });
+
+  it("blocks sign-off on an unaccepted comment draft, which sign-off would freeze", () => {
+    expect(
+      signOffBlockReason({ hasUnsavedMarks: false, hasUnsavedComments: true, fullyScored: true }),
+    ).toBe("Accept or clear your comment drafts first.");
   });
 });

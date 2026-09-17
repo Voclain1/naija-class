@@ -63,8 +63,17 @@ function columnPrefix(scope: DraftScope): string {
   ]);
 }
 
+// Two kinds of draft share this store and the same principal keying: unsaved
+// MARKS for one component, and unaccepted report-card COMMENTS for the column
+// (CP6b). The kind is part of the key so the mark sheet's "which tests have
+// unsaved marks" question cannot accidentally count a comment draft.
 export function draftKey(scope: DraftScope, componentId: string): string {
-  return columnPrefix(scope) + "|" + componentId;
+  return columnPrefix(scope) + "|score:" + componentId;
+}
+
+/** CP6b — unaccepted comment text, keyed by studentId within the column. */
+export function commentDraftKey(scope: DraftScope): string {
+  return columnPrefix(scope) + "|comment";
 }
 
 export function subscribeGradebookDrafts(listener: () => void): () => void {
@@ -107,9 +116,9 @@ export function clearDraft(key: string): void {
   emit();
 }
 
-/** Component ids in this column that still hold any draft cell. */
+/** Component ids in this column that still hold unsaved marks. */
 export function componentsWithDrafts(scope: DraftScope): string[] {
-  const prefix = columnPrefix(scope) + "|";
+  const prefix = columnPrefix(scope) + "|score:";
   const ids: string[] = [];
   for (const [key, cells] of drafts) {
     if (key.startsWith(prefix) && Object.keys(cells).length > 0) {
@@ -119,9 +128,14 @@ export function componentsWithDrafts(scope: DraftScope): string[] {
   return ids;
 }
 
+/** Whether the column holds any unaccepted comment text. */
+export function hasCommentDrafts(scope: DraftScope): boolean {
+  return Object.keys(readDraft(commentDraftKey(scope))).length > 0;
+}
+
 /** Whether a (school, user, term, arm, subject) column has any draft at all. */
 export function columnHasDrafts(scope: DraftScope): boolean {
-  return componentsWithDrafts(scope).length > 0;
+  return componentsWithDrafts(scope).length > 0 || hasCommentDrafts(scope);
 }
 
 /** Principal boundary: sign-out, session end, a new staff sign-in. */
