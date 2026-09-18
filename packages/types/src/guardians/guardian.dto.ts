@@ -80,8 +80,16 @@ export interface GuardianStudentLinkDto {
 
 // Cursor-paginated list response. Same shape as StudentListResponse — cursor
 // is an opaque Guardian id, stable across edits because id never moves.
+// A roster row (2026-09-16): the guardian plus the children they are linked
+// to. The roster's job is "which parent is this, and can they get in?" — a
+// name and phone alone rarely answers the first half in a school where the
+// same surname covers several families.
+export interface GuardianRosterRowDto extends GuardianDto {
+  children: Array<{ studentId: string; firstName: string; lastName: string; admissionNumber: string }>;
+}
+
 export interface GuardianListResponse {
-  data: GuardianDto[];
+  data: GuardianRosterRowDto[];
   meta: {
     cursor?: string;
   };
