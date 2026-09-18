@@ -37,6 +37,9 @@ export default function StaffHomeScreen() {
   const userId = staff?.user.id ?? "";
 
   const canSeeCollections = hasPermission(staff?.permissions ?? [], "finance.dashboard.read");
+  // CP6a — offered on the server's own answer to "what do I teach", not on a
+  // role name: a column appears only where subjectsByArm lists a subject.
+  const canEnterMarks = hasPermission(staff?.permissions ?? [], "assessment-score.create");
 
   const scope = useQuery({
     queryKey: queryKeys.staffScope(schoolId, userId),
@@ -56,6 +59,9 @@ export default function StaffHomeScreen() {
     (data?.formTeacherArmIds ?? []).includes(arm.id),
   );
   const teachesOtherArms = (data?.classArms.length ?? 0) > markableArms.length;
+  const teachesSubjects = Object.values(data?.subjectsByArm ?? {}).some(
+    (subjects) => subjects.length > 0,
+  );
 
   return (
     <Screen>
@@ -72,6 +78,16 @@ export default function StaffHomeScreen() {
           403 at them, which is the same rule the arm list below applies to
           form-teacher arms.
         */}
+        {canEnterMarks && teachesSubjects && (
+          <Card style={styles.armCard}>
+            <View style={styles.armText}>
+              <Body>Marks</Body>
+              <Label>Enter test and exam marks for the subjects you teach</Label>
+            </View>
+            <Button title="Enter marks" onPress={() => router.push("/staff/gradebook")} />
+          </Card>
+        )}
+
         {canSeeCollections && (
           <Card style={styles.armCard}>
             <View style={styles.armText}>
