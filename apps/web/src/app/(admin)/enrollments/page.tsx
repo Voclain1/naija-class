@@ -326,10 +326,17 @@ export default function EnrollmentsPage() {
       <header className="flex flex-col gap-2">
         <h1 className="text-2xl font-semibold tracking-tight">Enrollments</h1>
         <p className="text-sm text-muted-foreground">
-          Per-term roster by class arm. Pick a year + term to view; use{" "}
-          <strong>Carry over</strong> at the start of each term to bring
-          forward the previous term&apos;s arm.
+          Per-term roster by class arm. Pick a year + term to view. At the
+          start of a new term or session, use{" "}
+          <strong>Promote students</strong> to bring every class forward at
+          once.
         </p>
+        <Button asChild size="sm" variant="outline" className="mt-2 w-fit">
+          <Link href="/enrollments/promote">
+            Promote students
+            <ArrowRight className="ml-1 h-4 w-4" />
+          </Link>
+        </Button>
       </header>
 
       {/* Fourteen classes, all reading "No enrollments yet", is what a school
@@ -485,10 +492,23 @@ function ArmCard({
               // Rendered as an explanation rather than a disabled button: a
               // greyed-out control with no reason is how an administrator
               // concludes the product is broken.
-              <p className="text-sm text-muted-foreground">
-                <strong>{CARRY_OVER_DISABLED_TITLE}.</strong>{" "}
-                {CARRY_OVER_DISABLED_BODY}
-              </p>
+              //
+              // Since 2026-09-17 the explanation also has somewhere to GO. The
+              // per-arm carry-over this replaced is not coming back, so the
+              // notice points at the promotion engine, which does the same job
+              // for every class in one approval.
+              <div className="flex flex-col gap-2">
+                <p className="text-sm text-muted-foreground">
+                  <strong>{CARRY_OVER_DISABLED_TITLE}.</strong>{" "}
+                  {CARRY_OVER_DISABLED_BODY}
+                </p>
+                <Button asChild size="sm" variant="outline" className="w-fit">
+                  <Link href="/enrollments/promote">
+                    Bring students forward for the whole school
+                    <ArrowRight className="ml-1 h-4 w-4" />
+                  </Link>
+                </Button>
+              </div>
             )}
           </div>
         ) : (
