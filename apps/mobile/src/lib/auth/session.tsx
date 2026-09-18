@@ -40,6 +40,7 @@ import { wipeOfflineCache } from "../query/persist";
 import { canProtectStaffSession, unlockStaffSession } from "./local-lock";
 import { getStaffDevice } from "./staff-device";
 import { sessionEndMessage, type SessionEndNotice } from "./session-end";
+import { clearAllGradebookDrafts } from "../staff/gradebook-drafts";
 
 // Guardian session state for apps/mobile.
 //
@@ -121,6 +122,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     setStudent(null);
     setSchool(null);
     setStaff(null);
+    // CP6a D19: unsaved marks are in-memory staff data and end with the
+    // principal. They deliberately survive the LOCK below, not a session end.
+    clearAllGradebookDrafts();
     await clearToken();
     await wipeOfflineCache(queryClient);
   }, [queryClient]);
@@ -208,6 +212,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     }
     await saveToken(token, "staff");
     setSessionEnd(null);
+    // A fresh staff sign-in is a principal boundary even without a sign-out in
+    // between (e.g. the previous session was revoked remotely).
+    clearAllGradebookDrafts();
     try {
       const me = await staffMe();
       setPrincipal("staff");
