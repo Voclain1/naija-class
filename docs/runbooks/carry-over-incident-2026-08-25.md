@@ -336,3 +336,25 @@ show the bad carry-over and then an unexplained change of placement.
 Still outstanding at the time of writing: the kill switch and wizard fix are
 implemented and verified locally but NOT deployed — the wizard remains live and
 capable of reproducing this on any school with an un-enrolled term.
+
+---
+
+## Superseded by the promotion engine (2026-09-17)
+
+The per-arm carry-over this runbook diagnoses is **not being re-enabled**. Its
+replacement is the promotion engine — `docs/modules/promotion-engine.md`,
+`/enrollments/promote` — which does the same job for every class in one
+approval, and in year mode does the end-of-session promotion the old wizard
+refused outright.
+
+The root cause recorded above is structurally absent from the new module: every
+candidate row is derived from a real enrollment in the SOURCE TERM, and the
+commit independently refuses any student who does not hold one. There is no
+`listStudents({ status: "ACTIVE" })` anywhere in it, so group (c) — the
+school-wide, pre-ticked group that caused this — has no equivalent to go wrong.
+
+**Still outstanding from this incident, and NOT closed by that work:** there is
+no record that the affected school's placements were ever corrected, or that the
+default-selection fix was verified in production. Both were the stated
+conditions for flipping `CARRY_OVER_ENABLED`. Confirm the school's data before
+running a promotion there.

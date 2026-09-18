@@ -670,6 +670,26 @@ export const TIMETABLE_PERMISSIONS = ["timetable.read", "timetable.manage"] as c
 // TIMETABLE_PERMISSIONS so granting it can never carry the whole-school grid.
 export const TIMETABLE_OWN_READ_PERMISSIONS = ["timetable.own.read"] as const;
 
+// Promotion engine (2026-09-17) — cross-cutting initiative, not a numbered
+// Phase, so it gets its own descriptively-named constant per CLAUDE.md's
+// "Permission naming for work that isn't a numbered Phase".
+//
+// Two permissions, not one, and the split is the point: `promotion.read`
+// renders the whole-school preview (who would move where), while
+// `promotion.commit` is the single approval that writes an enrollment for
+// every student in the school at once. That is the largest single write any
+// school-scoped role can make, and the 2026-08-25 carry-over incident is what
+// it looks like when it goes wrong — so being able to LOOK at the plan is
+// deliberately cheaper than being able to APPLY it.
+//
+// teacher and bursar get neither. Owner holds "*"; admin gets both via the
+// ALL_PERMISSIONS-minus-owner-only assembly in
+// packages/db/src/seeds/system-roles.ts.
+export const PROMOTION_PERMISSIONS = [
+  "promotion.read",
+  "promotion.commit",
+] as const;
+
 export const ALL_PERMISSIONS = [
   ...PHASE_0_PERMISSIONS,
   ...PHASE_1_PERMISSIONS,
@@ -685,6 +705,7 @@ export const ALL_PERMISSIONS = [
   ...REPORTS_PERMISSIONS,
   ...TIMETABLE_PERMISSIONS,
   ...TIMETABLE_OWN_READ_PERMISSIONS,
+  ...PROMOTION_PERMISSIONS,
   /* extend per phase */
 ] as const;
 
