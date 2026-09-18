@@ -26,6 +26,8 @@ import {
   type GuardianDto,
   type GuardianListResponse,
   type InviteGuardianResponse,
+  type ResendGuardianInviteResponse,
+  type RevokeGuardianInviteResponse,
   type LinkExistingGuardianInput,
   type ListGuardiansQuery,
   type UpdateGuardianInput,
@@ -113,6 +115,34 @@ export class GuardiansController {
     @Req() req: Request,
   ): Promise<InviteGuardianResponse> {
     return this.service.invite(authCtx, id, requestContext(ip, req));
+  }
+
+  // 2026-09-16 — resend and revoke. Both reuse `guardian.invite`: the thing
+  // being authorized is "may issue or withdraw portal access for a parent",
+  // and splitting it would grant a school the ability to send invitations
+  // while being unable to take a wrong one back.
+  @Post("guardians/:id/invite/resend")
+  @HttpCode(200)
+  @Permissions("guardian.invite")
+  async resendInvite(
+    @Param("id") id: string,
+    @CurrentUser() authCtx: AuthContext,
+    @Ip() ip: string,
+    @Req() req: Request,
+  ): Promise<ResendGuardianInviteResponse> {
+    return this.service.resendInvite(authCtx, id, requestContext(ip, req));
+  }
+
+  @Post("guardians/:id/invite/revoke")
+  @HttpCode(200)
+  @Permissions("guardian.invite")
+  async revokeInvite(
+    @Param("id") id: string,
+    @CurrentUser() authCtx: AuthContext,
+    @Ip() ip: string,
+    @Req() req: Request,
+  ): Promise<RevokeGuardianInviteResponse> {
+    return this.service.revokeInvite(authCtx, id, requestContext(ip, req));
   }
 
   @Delete("guardians/:id")

@@ -251,12 +251,35 @@ export class PortalAuthService {
         );
       }
 
-      const guardian = await db.guardian.update({
-        where: { id: row.guardian_id },
+      // 2026-09-16 — NEVER overwrite an existing password. An invitation sets
+      // a parent's FIRST password; it is not a password reset. Before this
+      // guard, accepting any live invitation replaced the password of a
+      // guardian who already had portal access and signed the acceptor in —
+      // and because the admin UI shows staff the accept link, an owner or
+      // admin could invite an active parent, open that link themselves, and
+      // take over the parent's account (locking the real parent out).
+      //
+      // Conditional UPDATE, not read-then-write: the "no password yet" check
+      // and the write are one statement, so no concurrent accept or login
+      // can slip between them. A refusal throws, which rolls back the
+      // acceptance claim above — the invitation is not burned by a refused
+      // accept. The portal's own forgot-password flow is the way an active
+      // parent changes a password, because it proves control of the mailbox.
+      const set = await db.guardian.updateMany({
+        where: { id: row.guardian_id, passwordHash: null },
         data: {
           passwordHash,
           emailVerified: row.email !== null,
         },
+      });
+      if (set.count !== 1) {
+        throw new ConflictError(
+          "GUARDIAN_ALREADY_ACTIVE",
+          "This parent account is already set up. Sign in, or use Forgot password on the sign-in page.",
+        );
+      }
+      const guardian = await db.guardian.findUniqueOrThrow({
+        where: { id: row.guardian_id },
         select: GUARDIAN_LOGIN_SELECT,
       });
 

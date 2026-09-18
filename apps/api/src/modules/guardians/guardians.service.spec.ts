@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import { afterAll, describe, expect, it, vi } from "vitest";
 
 import { basePrisma, withTenant } from "@school-kit/db";
@@ -1107,6 +1109,296 @@ describe("GuardiansService", () => {
           else process.env[key] = value;
         }
       }
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // resendInvite / revokeInvite — 2026-09-16. The friction these close: an
+  // invitation could only be issued once and then waited out (7-day TTL), and
+  // the accept link is shown once and never stored. Production on 2026-09-16:
+  // 5 of 17 real invitations had expired unaccepted.
+  // -----------------------------------------------------------------------
+  describe("resendInvite / revokeInvite", () => {
+    function liveSvc(channels = { email: true, sms: false, push: false }) {
+      const emailStub = makeEmailStub();
+      const svc = new GuardiansService(
+        emailStub,
+        makeTermiiStub(),
+        makeNotificationPreferencesStub({ getEnabledChannels: vi.fn(async () => channels) }),
+      );
+      return { svc, emailStub };
+    }
+
+    const invitationsOf = (schoolId: string, guardianId: string) =>
+      withTenant(schoolId, (db) =>
+        db.guardianInvitation.findMany({
+          where: { guardianId },
+          select: { tokenHash: true, acceptedAt: true, revokedAt: true, expiresAt: true },
+          orderBy: { createdAt: "asc" },
+        }),
+      );
+
+    async function invitedGuardian(slug: string, suffix: string) {
+      const { authCtx } = await createActiveSchool(slug);
+      const g = await service.create(
+        authCtx,
+        { ...guardianFields(suffix), email: `${slug}-${runId}@example.test` },
+        reqCtx,
+      );
+      return { authCtx, g };
+    }
+
+    it("resend revokes the previous invitation and issues a new, different token", async () => {
+      const { authCtx, g } = await invitedGuardian("rsnd-rotate", "g2000001");
+      const first = await service.invite(authCtx, g.id, reqCtx);
+      const { svc } = liveSvc();
+
+      const second = await svc.resendInvite(authCtx, g.id, reqCtx);
+
+      expect(second.replaced).toBe(true);
+      expect(second.acceptUrl).not.toBe(first.acceptUrl);
+      const rows = await invitationsOf(authCtx.schoolId, g.id);
+      expect(rows).toHaveLength(2);
+      expect(rows[0]!.revokedAt).not.toBeNull(); // the old link is dead
+      expect(rows[1]!.revokedAt).toBeNull(); // exactly one live token
+      expect(rows[0]!.tokenHash).not.toBe(rows[1]!.tokenHash);
+    });
+
+    it("resend with nothing outstanding still works, and says it replaced nothing", async () => {
+      const { authCtx, g } = await invitedGuardian("rsnd-first", "g2000002");
+      const { svc, emailStub } = liveSvc();
+
+      const res = await svc.resendInvite(authCtx, g.id, reqCtx);
+
+      expect(res.replaced).toBe(false);
+      expect(res.acceptUrl).toContain("/invitations/");
+      expect(emailStub.send).toHaveBeenCalledTimes(1);
+    });
+
+    it("resend re-delivers by the school's enabled channels, leaving one live token", async () => {
+      const { authCtx, g } = await invitedGuardian("rsnd-deliver", "g2000003");
+      await service.invite(authCtx, g.id, reqCtx);
+      const { svc, emailStub } = liveSvc();
+
+      await svc.resendInvite(authCtx, g.id, reqCtx);
+
+      expect(emailStub.send).toHaveBeenCalledTimes(1);
+      expect(JSON.stringify(vi.mocked(emailStub.send).mock.calls)).toContain("/invitations/");
+      const rows = await invitationsOf(authCtx.schoolId, g.id);
+      expect(rows.filter((r) => r.revokedAt === null)).toHaveLength(1);
+    });
+
+    it("resend refuses a guardian who already has portal access, and sends nothing", async () => {
+      const { authCtx, g } = await invitedGuardian("rsnd-active", "g2000004");
+      await withTenant(authCtx.schoolId, (db) =>
+        db.guardian.update({ where: { id: g.id }, data: { passwordHash: "argon2-not-a-real-hash" } }),
+      );
+      const { svc, emailStub } = liveSvc();
+
+      await expect(svc.resendInvite(authCtx, g.id, reqCtx)).rejects.toMatchObject({
+        code: "GUARDIAN_ALREADY_ACTIVE",
+      });
+      expect(emailStub.send).not.toHaveBeenCalled();
+    });
+
+    it("resend refuses a guardian with no email, and sends nothing", async () => {
+      const { authCtx } = await createActiveSchool("rsnd-noemail");
+      const g = await service.create(authCtx, guardianFields("g2000005"), reqCtx);
+      const { svc, emailStub } = liveSvc();
+
+      await expect(svc.resendInvite(authCtx, g.id, reqCtx)).rejects.toMatchObject({
+        code: "GUARDIAN_HAS_NO_EMAIL",
+      });
+      expect(emailStub.send).not.toHaveBeenCalled();
+    });
+
+    it("resend on an unknown guardian → NotFoundError", async () => {
+      const { authCtx } = await createActiveSchool("rsnd-nf");
+      const { svc } = liveSvc();
+      await expect(
+        svc.resendInvite(authCtx, "00000000-0000-0000-0000-000000000000", reqCtx),
+      ).rejects.toBeInstanceOf(NotFoundError);
+    });
+
+    it("revoke kills the pending invitation and sends nothing", async () => {
+      const { authCtx, g } = await invitedGuardian("rvk-basic", "g2000006");
+      await service.invite(authCtx, g.id, reqCtx);
+      const { svc, emailStub } = liveSvc();
+
+      const res = await svc.revokeInvite(authCtx, g.id, reqCtx);
+
+      expect(res.guardianId).toBe(g.id);
+      const rows = await invitationsOf(authCtx.schoolId, g.id);
+      expect(rows.every((r) => r.revokedAt !== null)).toBe(true);
+      expect(emailStub.send).not.toHaveBeenCalled();
+    });
+
+    it("revoke with no pending invitation → NO_PENDING_INVITATION", async () => {
+      const { authCtx, g } = await invitedGuardian("rvk-none", "g2000007");
+      await expect(service.revokeInvite(authCtx, g.id, reqCtx)).rejects.toMatchObject({
+        code: "NO_PENDING_INVITATION",
+      });
+    });
+
+    it("revoke refuses an invitation that already expired — there is nothing live to cancel", async () => {
+      const { authCtx, g } = await invitedGuardian("rvk-expired", "g2000016");
+      await service.invite(authCtx, g.id, reqCtx);
+      await withTenant(authCtx.schoolId, (db) =>
+        db.guardianInvitation.updateMany({
+          where: { guardianId: g.id },
+          data: { expiresAt: new Date(Date.now() - 1000) },
+        }),
+      );
+
+      await expect(service.revokeInvite(authCtx, g.id, reqCtx)).rejects.toMatchObject({
+        code: "NO_PENDING_INVITATION",
+      });
+      // Nothing was stamped, and the guardian still reads EXPIRED rather than
+      // being silently reset to NOT_INVITED by a revoke that did nothing.
+      const rows = await invitationsOf(authCtx.schoolId, g.id);
+      expect(rows.every((r) => r.revokedAt === null)).toBe(true);
+      expect((await service.findById(authCtx, g.id)).portalStatus).toBe("EXPIRED");
+    });
+
+    it("revoke is not repeatable — a second call has nothing left to cancel", async () => {
+      const { authCtx, g } = await invitedGuardian("rvk-twice", "g2000008");
+      await service.invite(authCtx, g.id, reqCtx);
+      await service.revokeInvite(authCtx, g.id, reqCtx);
+      await expect(service.revokeInvite(authCtx, g.id, reqCtx)).rejects.toMatchObject({
+        code: "NO_PENDING_INVITATION",
+      });
+    });
+
+    it("after a revoke, a plain invite works again — revoking must not lock the guardian out", async () => {
+      const { authCtx, g } = await invitedGuardian("rvk-reinvite", "g2000009");
+      await service.invite(authCtx, g.id, reqCtx);
+      await service.revokeInvite(authCtx, g.id, reqCtx);
+
+      await expect(service.invite(authCtx, g.id, reqCtx)).resolves.toMatchObject({ guardianId: g.id });
+      const rows = await invitationsOf(authCtx.schoolId, g.id);
+      expect(rows.filter((r) => r.revokedAt === null)).toHaveLength(1);
+    });
+
+    it("revoke on an unknown guardian → NotFoundError", async () => {
+      const { authCtx } = await createActiveSchool("rvk-nf");
+      await expect(
+        service.revokeInvite(authCtx, "00000000-0000-0000-0000-000000000000", reqCtx),
+      ).rejects.toBeInstanceOf(NotFoundError);
+    });
+
+    it("each action writes exactly one audit row, naming what it did, with the email redacted", async () => {
+      const { authCtx, g } = await invitedGuardian("rvk-audit", "g2000010");
+      const { svc } = liveSvc();
+      await service.invite(authCtx, g.id, reqCtx);
+      await svc.resendInvite(authCtx, g.id, reqCtx);
+      await svc.revokeInvite(authCtx, g.id, reqCtx);
+
+      const rows = await withTenant(authCtx.schoolId, (db) =>
+        db.auditLog.findMany({
+          where: {
+            entityId: g.id,
+            action: { in: ["guardian.invite", "guardian.invite-resend", "guardian.invite-revoke"] },
+          },
+          select: { action: true, metadata: true },
+        }),
+      );
+      const byAction = new Map(rows.map((r) => [r.action, r.metadata as Record<string, unknown>]));
+      expect(rows).toHaveLength(3);
+      expect(byAction.get("guardian.invite-resend")).toMatchObject({ revokedPrevious: 1 });
+      expect(byAction.get("guardian.invite-revoke")).toMatchObject({ revoked: 1 });
+      for (const meta of byAction.values()) expect(JSON.stringify(meta)).toContain("***");
+    });
+
+    it("portalStatus tracks the whole lifecycle, and never leaks the password hash", async () => {
+      const { authCtx, g } = await invitedGuardian("status-life", "g2000011");
+      const read = async () => (await service.findById(authCtx, g.id)).portalStatus;
+
+      expect(await read()).toBe("NOT_INVITED");
+      await service.invite(authCtx, g.id, reqCtx);
+      expect(await read()).toBe("INVITED");
+      await service.revokeInvite(authCtx, g.id, reqCtx);
+      expect(await read()).toBe("NOT_INVITED");
+
+      await service.invite(authCtx, g.id, reqCtx);
+      const invited = await service.findById(authCtx, g.id);
+      expect(invited.portalStatus).toBe("INVITED");
+      expect(invited.portalInvitationExpiresAt).not.toBeNull();
+      expect(JSON.stringify(invited)).not.toContain("passwordHash");
+
+      await withTenant(authCtx.schoolId, (db) =>
+        db.guardian.update({ where: { id: g.id }, data: { passwordHash: "argon2-not-a-real-hash" } }),
+      );
+      const active = await service.findById(authCtx, g.id);
+      expect(active.portalStatus).toBe("ACTIVE");
+      expect(JSON.stringify(active)).not.toContain("argon2-not-a-real-hash");
+    });
+
+    it("an expired unaccepted invitation reads as EXPIRED, and does not block a fresh invite", async () => {
+      const { authCtx, g } = await invitedGuardian("status-expired", "g2000012");
+      await service.invite(authCtx, g.id, reqCtx);
+      await withTenant(authCtx.schoolId, (db) =>
+        db.guardianInvitation.updateMany({
+          where: { guardianId: g.id },
+          data: { expiresAt: new Date(Date.now() - 1000) },
+        }),
+      );
+
+      expect((await service.findById(authCtx, g.id)).portalStatus).toBe("EXPIRED");
+      await expect(service.invite(authCtx, g.id, reqCtx)).resolves.toBeTruthy();
+    });
+
+    // The load-bearing security property. Revocation is enforced in the
+    // resolver's own WHERE clause, so a link already sitting in a parent's
+    // inbox is dead as a PROPERTY of the function — not because some caller
+    // remembered to check. This asserts it against the real SQL function, the
+    // same one the public accept endpoints call before any tenant exists.
+    it("a revoked token stops resolving in SQL — the resolver itself refuses it", async () => {
+      const { authCtx, g } = await invitedGuardian("rvk-sql", "g2000014");
+      const { acceptUrl } = await service.invite(authCtx, g.id, reqCtx);
+      const rawToken = acceptUrl.split("/invitations/")[1]!;
+      const tokenHash = createHash("sha256").update(rawToken).digest("hex");
+      const resolve = () =>
+        basePrisma.$queryRawUnsafe<Array<{ guardian_id: string }>>(
+          `SELECT guardian_id FROM auth_resolve_guardian_invitation_by_token_hash($1)`,
+          tokenHash,
+        );
+
+      // Before: the live token resolves, which proves the query is right.
+      expect(await resolve()).toHaveLength(1);
+
+      await service.revokeInvite(authCtx, g.id, reqCtx);
+
+      expect(await resolve()).toHaveLength(0);
+    });
+
+    // Same property for the resend path: the link in the FIRST email must be
+    // dead the moment the second is issued, or a parent (or anyone who saw
+    // that first email) holds a second working credential.
+    it("resend kills the previous link in SQL while the new one resolves", async () => {
+      const { authCtx, g } = await invitedGuardian("rsnd-sql", "g2000015");
+      const first = await service.invite(authCtx, g.id, reqCtx);
+      const { svc } = liveSvc();
+      const second = await svc.resendInvite(authCtx, g.id, reqCtx);
+
+      const hashOf = (url: string) =>
+        createHash("sha256").update(url.split("/invitations/")[1]!).digest("hex");
+      const resolve = (hash: string) =>
+        basePrisma.$queryRawUnsafe<Array<{ guardian_id: string }>>(
+          `SELECT guardian_id FROM auth_resolve_guardian_invitation_by_token_hash($1)`,
+          hash,
+        );
+
+      expect(await resolve(hashOf(first.acceptUrl))).toHaveLength(0);
+      expect(await resolve(hashOf(second.acceptUrl))).toHaveLength(1);
+    });
+
+    it("the roster list carries the same status the detail view does", async () => {
+      const { authCtx, g } = await invitedGuardian("status-list", "g2000013");
+      await service.invite(authCtx, g.id, reqCtx);
+
+      const listed = (await service.list(authCtx, {})).data.find((row) => row.id === g.id);
+      expect(listed?.portalStatus).toBe("INVITED");
+      expect(JSON.stringify(listed)).not.toContain("passwordHash");
     });
   });
 });

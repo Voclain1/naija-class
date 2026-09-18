@@ -93,13 +93,13 @@ model School {
   // wrong or partial account number to parents the moment someone saves.
   // Display requires the toggle AND all three fields present — see
   // schoolBankDetails() in packages/types.
-  bankName           String?  @map("bank_name")
-  bankAccountName    String?  @map("bank_account_name")
-  bankAccountNumber  String?  @map("bank_account_number")
-  bankDetailsEnabled Boolean  @default(false) @map("bank_details_enabled")
+  bankName              String?   @map("bank_name")
+  bankAccountName       String?   @map("bank_account_name")
+  bankAccountNumber     String?   @map("bank_account_number")
+  bankDetailsEnabled    Boolean   @default(false) @map("bank_details_enabled")
   // Staff mobile is deliberately enabled one school at a time. Shipping the
   // binary or API must never silently expose a new staff credential surface.
-  staffMobileEnabled       Boolean      @default(false) @map("staff_mobile_enabled")
+  staffMobileEnabled    Boolean   @default(false) @map("staff_mobile_enabled")
   // Onboarding-nudge email (2026-08-08): stamped once, the first (and only,
   // v1) time OnboardingNudgeService emails a school's owner that finished
   // the 5-step wizard but never came back to add an academic year or
@@ -108,7 +108,7 @@ model School {
   // User.tourCompletedAt: set unconditionally after the send attempt
   // (success or logged failure) so a Resend outage doesn't cause a resend
   // storm once it clears.
-  onboardingNudgeSentAt    DateTime?    @map("onboarding_nudge_sent_at")
+  onboardingNudgeSentAt DateTime? @map("onboarding_nudge_sent_at")
   // Early-access marker (2026-08-09). Nullable stamp, NO enforcement logic
   // anywhere — deliberately just the flag, set by hand from the platform-admin
   // school list. Exists now because the platform has no concept of a plan,
@@ -124,7 +124,7 @@ model School {
   // Shape matches onboardingNudgeSentAt / ndprConsentAt: a timestamp, not a
   // boolean (the extra information is free) and not an enum (naming the tiers
   // before they are decided just buys a migration later).
-  earlyAccessGrantedAt     DateTime?    @map("early_access_granted_at")
+  earlyAccessGrantedAt  DateTime? @map("early_access_granted_at")
   // Phase 5 / Slice 1 CP2 — AI cost controls. Two deliberately separate knobs:
   //
   //   aiEnabled              per-school kill switch. Flipping it false stops
@@ -164,8 +164,8 @@ model School {
   // concept — none exists anywhere in the product code (see
   // earlyAccessGrantedAt's note directly above), and inventing one to hold an
   // AI budget would be the tail wagging the dog.
-  aiEnabled                Boolean      @default(false) @map("ai_enabled")
-  aiMonthlyTokenBudget     Int?         @map("ai_monthly_token_budget")
+  aiEnabled             Boolean   @default(false) @map("ai_enabled")
+  aiMonthlyTokenBudget  Int?      @map("ai_monthly_token_budget")
 
   //   parentSummaryEnabled   Phase 5 / Slice 5. Weekly AI progress summaries
   //                          sent to guardians. Defaults FALSE, and — since
@@ -329,17 +329,17 @@ model UserRole {
 }
 
 model Session {
-  id        String   @id @default(uuid())
-  userId    String   @map("user_id")
-  tokenHash String   @unique @map("token_hash")
-  ipAddress String?  @map("ip_address")
-  userAgent String?  @map("user_agent")
+  id         String            @id @default(uuid())
+  userId     String            @map("user_id")
+  tokenHash  String            @unique @map("token_hash")
+  ipAddress  String?           @map("ip_address")
+  userAgent  String?           @map("user_agent")
   clientType SessionClientType @default(WEB) @map("client_type")
-  deviceId   String?  @map("device_id")
-  deviceName String?  @map("device_name")
-  lastSeenAt DateTime @default(now()) @map("last_seen_at")
-  expiresAt DateTime @map("expires_at")
-  createdAt DateTime @default(now()) @map("created_at")
+  deviceId   String?           @map("device_id")
+  deviceName String?           @map("device_name")
+  lastSeenAt DateTime          @default(now()) @map("last_seen_at")
+  expiresAt  DateTime          @map("expires_at")
+  createdAt  DateTime          @default(now()) @map("created_at")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -464,10 +464,10 @@ model Term {
   createdAt      DateTime @default(now()) @map("created_at")
   updatedAt      DateTime @updatedAt @map("updated_at")
 
-  academicYear       AcademicYear        @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
-  enrollments        Enrollment[] // Phase 1 / Slice 9 back-relation.
-  teacherAssignments TeacherAssignment[] // Phase 1 / Slice 11 back-relation (term-specific assignments).
-  timetables         Timetable[] // Phase 8 / CP3 — composite (school_id, id) FK target.
+  academicYear          AcademicYear           @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+  enrollments           Enrollment[] // Phase 1 / Slice 9 back-relation.
+  teacherAssignments    TeacherAssignment[] // Phase 1 / Slice 11 back-relation (term-specific assignments).
+  timetables            Timetable[] // Phase 8 / CP3 — composite (school_id, id) FK target.
   timetablePublications TimetablePublication[] // Phase 8 / CP4 — published snapshots (D45).
 
   @@unique([schoolId, id]) // Phase 8 / CP3 — composite FK target (§17 D29)
@@ -546,11 +546,11 @@ model ClassArm {
   createdAt      DateTime @default(now()) @map("created_at")
   updatedAt      DateTime @updatedAt @map("updated_at")
 
-  classLevel         ClassLevel          @relation(fields: [classLevelId], references: [id], onDelete: Cascade)
-  classTeacher       User?               @relation("ClassTeacherArms", fields: [classTeacherId], references: [id], onDelete: SetNull)
-  enrollments        Enrollment[] // Phase 1 / Slice 9 back-relation.
-  teacherAssignments TeacherAssignment[] // Phase 1 / Slice 11 back-relation (subject teachers of this arm).
-  timetables         Timetable[] // Phase 8 / CP3 — composite (school_id, id) FK target.
+  classLevel            ClassLevel             @relation(fields: [classLevelId], references: [id], onDelete: Cascade)
+  classTeacher          User?                  @relation("ClassTeacherArms", fields: [classTeacherId], references: [id], onDelete: SetNull)
+  enrollments           Enrollment[] // Phase 1 / Slice 9 back-relation.
+  teacherAssignments    TeacherAssignment[] // Phase 1 / Slice 11 back-relation (subject teachers of this arm).
+  timetables            Timetable[] // Phase 8 / CP3 — composite (school_id, id) FK target.
   timetablePublications TimetablePublication[] // Phase 8 / CP4 — published snapshots (D45).
 
   @@unique([schoolId, id]) // Phase 8 / CP3 — composite FK target (§17 D29)
@@ -677,7 +677,7 @@ model Student {
   // Non-nullable with a FALSE default rather than nullable: every existing
   // student was demonstrably not scanned, so there is no "unknown" state to
   // represent and a nullable column would invite one.
-  aiExtracted     Boolean       @default(false) @map("ai_extracted")
+  aiExtracted Boolean @default(false) @map("ai_extracted")
 
   // ---- Phase 6 / Slice 3 — student portal auth (D18, D26) --------------
   // Credentials live on Student rather than a companion table, mirroring
@@ -782,8 +782,10 @@ model StudentSession {
 // the child holds is single-use, and deactivation burns it.
 //
 // Differences from GuardianInvitation, each deliberate:
-//   - revokedAt exists. GuardianInvitation has no revoke path; here it is
-//     the mechanism deactivation uses, so it must be storable.
+//   - revokedAt exists here as the mechanism DEACTIVATION uses, so it must be
+//     storable. (GuardianInvitation had no revoke path at all until
+//     2026-09-16; it now has the column too, for admin revoke/resend — the
+//     difference is what stamps it, not whether it exists.)
 //   - issuedBy is a GUARDIAN id, not a staff User id. A parent invites their
 //     own child; school staff are not involved.
 //   - No name/email/phone copies. Like GuardianInvitation (and unlike the
@@ -800,16 +802,16 @@ enum StudentPortalInvitationPurpose {
 }
 
 model StudentPortalInvitation {
-  id         String    @id @default(uuid())
-  schoolId   String    @map("school_id") // denormalised for direct RLS
-  studentId  String    @map("student_id")
-  tokenHash  String    @unique @map("token_hash")
-  issuedBy   String    @map("issued_by") // guardianId — plain scoping column
+  id         String                         @id @default(uuid())
+  schoolId   String                         @map("school_id") // denormalised for direct RLS
+  studentId  String                         @map("student_id")
+  tokenHash  String                         @unique @map("token_hash")
+  issuedBy   String                         @map("issued_by") // guardianId — plain scoping column
   purpose    StudentPortalInvitationPurpose @default(ACTIVATION)
-  expiresAt  DateTime  @map("expires_at")
-  acceptedAt DateTime? @map("accepted_at") // stamped on use — single-use
-  revokedAt  DateTime? @map("revoked_at") // stamped by deactivation (D26)
-  createdAt  DateTime  @default(now()) @map("created_at")
+  expiresAt  DateTime                       @map("expires_at")
+  acceptedAt DateTime?                      @map("accepted_at") // stamped on use — single-use
+  revokedAt  DateTime?                      @map("revoked_at") // stamped by deactivation (D26)
+  createdAt  DateTime                       @default(now()) @map("created_at")
 
   student Student @relation(fields: [studentId], references: [id], onDelete: Cascade)
 
@@ -971,6 +973,13 @@ model GuardianInvitation {
   invitedBy  String    @map("invited_by")
   expiresAt  DateTime  @map("expires_at")
   acceptedAt DateTime? @map("accepted_at")
+  // Added 2026-09-16. Stamped by an admin revoking a pending invitation, and
+  // by a resend (which revokes the old token before issuing a new one) — so a
+  // link a parent already holds stops working the moment it is replaced,
+  // rather than two live links existing at once. Filtered in the resolver's
+  // WHERE clause, which makes revocation structural rather than a check each
+  // caller must remember (same treatment as StudentPortalInvitation.revokedAt).
+  revokedAt  DateTime? @map("revoked_at")
   createdAt  DateTime  @default(now()) @map("created_at")
 
   guardian Guardian @relation(fields: [guardianId], references: [id], onDelete: Cascade)
@@ -1604,7 +1613,7 @@ model CurriculumDocument {
   errorMessage String?                  @map("error_message")
   chunkCount   Int                      @default(0) @map("chunk_count")
 
-  uploadedBy String   @map("uploaded_by")
+  uploadedBy String @map("uploaded_by")
 
   // The review gate (CP5 / D31). `reviewedAt` NULL is MEANINGFUL, not missing
   // data: it distinguishes "a human confirmed this structure through the gate"
@@ -1621,11 +1630,16 @@ model CurriculumDocument {
   headingEditCount    Int @default(0) @map("heading_edit_count")
   discardedChunkCount Int @default(0) @map("discarded_chunk_count")
 
-  createdAt  DateTime @default(now()) @map("created_at")
-  updatedAt  DateTime @updatedAt @map("updated_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   chunks CurriculumChunk[]
 
+  // Backs the COMPOSITE foreign key from curriculum_chunks. Not a uniqueness
+  // rule anyone needs on its own — `id` is already the primary key — it exists
+  // solely so the child can reference (id, school_id) as a pair. See the
+  // relation on CurriculumChunk for why that matters.
+  @@unique([id, schoolId])
   // The retrieval scope: chunks are searched within one school's subject +
   // class level, never across the whole tenant.
   @@index([schoolId, subjectId, classLevelId])
@@ -1635,11 +1649,6 @@ model CurriculumDocument {
   // the same scheme legitimately appears under two class levels, and a deleted
   // document must be re-uploadable.
   @@index([schoolId, checksum])
-  // Backs the COMPOSITE foreign key from curriculum_chunks. Not a uniqueness
-  // rule anyone needs on its own — `id` is already the primary key — it exists
-  // solely so the child can reference (id, school_id) as a pair. See the
-  // relation on CurriculumChunk for why that matters.
-  @@unique([id, schoolId])
   @@map("curriculum_documents")
 }
 
@@ -2314,11 +2323,11 @@ model PaymentLink {
   createdBy            String            @map("created_by")
   failureCode          String?           @map("failure_code")
   retryCount           Int               @default(0) @map("retry_count")
-  lastAttemptAt        DateTime           @default(now()) @map("last_attempt_at")
-  createdAt            DateTime           @default(now()) @map("created_at")
-  updatedAt            DateTime           @updatedAt @map("updated_at")
-  archivedAt           DateTime?          @map("archived_at")
-  paidAt               DateTime?          @map("paid_at")
+  lastAttemptAt        DateTime          @default(now()) @map("last_attempt_at")
+  createdAt            DateTime          @default(now()) @map("created_at")
+  updatedAt            DateTime          @updatedAt @map("updated_at")
+  archivedAt           DateTime?         @map("archived_at")
+  paidAt               DateTime?         @map("paid_at")
 
   invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
 
