@@ -1401,6 +1401,177 @@ describe("GuardiansService", () => {
       expect(JSON.stringify(listed)).not.toContain("passwordHash");
     });
   });
+
+  // -----------------------------------------------------------------------
+  // Roster (2026-09-16): the portal-status filter runs IN THE DATABASE, so it
+  // is a second statement of deriveGuardianPortalStatus's rules. These tests
+  // hold the two together: build a guardian in every state — including the
+  // awkward mixes — and require the filter and the derivation to agree on
+  // every one of them, and the five filters to partition the roster exactly.
+  // -----------------------------------------------------------------------
+  describe("roster — portalStatus filter and children", () => {
+    const DAY = 24 * 3600 * 1000;
+    type Inv = { acceptedAt?: Date | null; revokedAt?: Date | null; expiresAt: Date };
+
+    async function seed(
+      schoolId: string,
+      ownerId: string,
+      label: string,
+      opts: { email: boolean; password: boolean; invitations: Inv[] },
+    ): Promise<string> {
+      return withTenant(schoolId, async (db) => {
+        const g = await db.guardian.create({
+          data: {
+            schoolId,
+            firstName: label,
+            lastName: "Roster",
+            relationship: "MOTHER",
+            phone: `+2348${Math.floor(10_000_000 + Math.random() * 89_999_999)}`,
+            email: opts.email ? `${label.toLowerCase()}-${runId}-${Math.random().toString(36).slice(2, 6)}@example.test` : null,
+            passwordHash: opts.password ? "argon2-not-a-real-hash" : null,
+          },
+          select: { id: true },
+        });
+        for (const inv of opts.invitations) {
+          await db.guardianInvitation.create({
+            data: {
+              schoolId,
+              guardianId: g.id,
+              invitedBy: ownerId,
+              tokenHash: `hash-${label}-${Math.random().toString(36).slice(2)}`,
+              expiresAt: inv.expiresAt,
+              acceptedAt: inv.acceptedAt ?? null,
+              revokedAt: inv.revokedAt ?? null,
+            },
+          });
+        }
+        return g.id;
+      });
+    }
+
+    it("the database filter matches the derived status for every guardian, and the five filters partition the roster", async () => {
+      const { authCtx } = await createActiveSchool("roster-parity");
+      const now = Date.now();
+      const future = new Date(now + 5 * DAY);
+      const past = new Date(now - 5 * DAY);
+      const cases: Record<string, { email: boolean; password: boolean; invitations: Inv[] }> = {
+        NoEmail: { email: false, password: false, invitations: [] },
+        NoEmailButPassword: { email: false, password: true, invitations: [] },
+        Active: { email: true, password: true, invitations: [] },
+        ActiveWithOldExpired: { email: true, password: true, invitations: [{ expiresAt: past }] },
+        Invited: { email: true, password: false, invitations: [{ expiresAt: future }] },
+        InvitedOverExpired: { email: true, password: false, invitations: [{ expiresAt: past }, { expiresAt: future }] },
+        Expired: { email: true, password: false, invitations: [{ expiresAt: past }] },
+        ExpiredThenRevokedLive: {
+          email: true,
+          password: false,
+          invitations: [{ expiresAt: past }, { expiresAt: future, revokedAt: new Date(now) }],
+        },
+        NeverInvited: { email: true, password: false, invitations: [] },
+        OnlyRevoked: { email: true, password: false, invitations: [{ expiresAt: future, revokedAt: new Date(now) }] },
+        RevokedAndLapsed: {
+          email: true,
+          password: false,
+          invitations: [{ expiresAt: past, revokedAt: new Date(now - 6 * DAY) }],
+        },
+        AcceptedNoPassword: { email: true, password: false, invitations: [{ expiresAt: future, acceptedAt: new Date(now) }] },
+      };
+      const ids: Record<string, string> = {};
+      for (const [label, opts] of Object.entries(cases)) {
+        ids[label] = await seed(authCtx.schoolId, authCtx.userId, label, opts);
+      }
+
+      const all = (await service.list(authCtx, { limit: 200 })).data;
+      const derived = new Map(all.map((g) => [g.id, g.portalStatus]));
+
+      // The expected answers, stated independently of either implementation.
+      expect(Object.fromEntries(Object.entries(ids).map(([label, id]) => [label, derived.get(id)]))).toEqual({
+        NoEmail: "NO_EMAIL",
+        NoEmailButPassword: "NO_EMAIL",
+        Active: "ACTIVE",
+        ActiveWithOldExpired: "ACTIVE",
+        Invited: "INVITED",
+        InvitedOverExpired: "INVITED",
+        Expired: "EXPIRED",
+        ExpiredThenRevokedLive: "EXPIRED",
+        NeverInvited: "NOT_INVITED",
+        OnlyRevoked: "NOT_INVITED",
+        RevokedAndLapsed: "NOT_INVITED",
+        AcceptedNoPassword: "NOT_INVITED",
+      });
+
+      const seen = new Map<string, number>();
+      for (const status of ["NO_EMAIL", "NOT_INVITED", "INVITED", "EXPIRED", "ACTIVE"] as const) {
+        const filtered = (await service.list(authCtx, { limit: 200, portalStatus: status })).data;
+        for (const row of filtered) {
+          // Every row the filter returns has exactly that derived status...
+          expect({ id: row.id, status: row.portalStatus }).toEqual({ id: row.id, status });
+          seen.set(row.id, (seen.get(row.id) ?? 0) + 1);
+        }
+        // ...and the filter misses no guardian whose derived status it is.
+        const expected = all.filter((g) => g.portalStatus === status).map((g) => g.id).sort();
+        expect(filtered.map((r) => r.id).sort()).toEqual(expected);
+      }
+      // Partition: every guardian appears under exactly one status.
+      expect(seen.size).toBe(all.length);
+      expect([...seen.values()].every((n) => n === 1)).toBe(true);
+    });
+
+    it("the filter works across pages, not just within one", async () => {
+      const { authCtx } = await createActiveSchool("roster-pages");
+      const future = new Date(Date.now() + 5 * DAY);
+      for (let i = 0; i < 3; i++) {
+        await seed(authCtx.schoolId, authCtx.userId, `Invited${i}`, { email: true, password: false, invitations: [{ expiresAt: future }] });
+        await seed(authCtx.schoolId, authCtx.userId, `Never${i}`, { email: true, password: false, invitations: [] });
+      }
+
+      const collected: string[] = [];
+      let cursor: string | undefined;
+      let pages = 0;
+      do {
+        const page = await service.list(authCtx, { limit: 1, portalStatus: "NOT_INVITED", cursor });
+        collected.push(...page.data.map((r) => r.firstName));
+        cursor = page.meta.cursor;
+        pages++;
+      } while (cursor && pages < 20);
+
+      expect(collected.sort()).toEqual(["Never0", "Never1", "Never2"]);
+    });
+
+    it("roster rows carry the linked children, sorted, and nothing about unlinked students", async () => {
+      const { authCtx } = await createActiveSchool("roster-children");
+      const g = await service.create(authCtx, { ...guardianFields("g3000001"), email: `kids-${runId}@example.test` }, reqCtx);
+      // Linked in an order that is neither alphabetical nor reverse-alphabetical,
+      // with a shared surname, so only a real lastName-then-firstName sort
+      // produces the expected order.
+      const zara = await createStudent(authCtx, "Z1", { firstName: "Zara", lastName: "Okoro" });
+      const ade = await createStudent(authCtx, "A1", { firstName: "Ade", lastName: "Okoro" });
+      const bayo = await createStudent(authCtx, "B1", { firstName: "Bayo", lastName: "Adeyemi" });
+      await createStudent(authCtx, "U1", { firstName: "Unlinked", lastName: "Child" });
+      for (const st of [zara, bayo, ade]) {
+        await service.linkExisting(authCtx, st.id, { guardianId: g.id }, reqCtx);
+      }
+
+      const row = (await service.list(authCtx, {})).data.find((r) => r.id === g.id)!;
+      expect(row.children.map((c) => `${c.firstName} ${c.lastName}`)).toEqual([
+        "Bayo Adeyemi",
+        "Ade Okoro",
+        "Zara Okoro",
+      ]);
+      expect(row.children.some((c) => c.firstName === "Unlinked")).toBe(false);
+    });
+
+    it("the roster is tenant-isolated: another school's guardians never appear, under any filter", async () => {
+      const a = await createActiveSchool("roster-iso-a");
+      const b = await createActiveSchool("roster-iso-b");
+      const inB = await seed(b.authCtx.schoolId, b.authCtx.userId, "OtherSchool", { email: true, password: false, invitations: [] });
+
+      for (const portalStatus of [undefined, "NOT_INVITED"] as const) {
+        const rows = (await service.list(a.authCtx, { limit: 200, ...(portalStatus ? { portalStatus } : {}) })).data;
+        expect(rows.some((r) => r.id === inB)).toBe(false);
+      }
+    });
+  });
 });
 
 // Reference imports to satisfy unused-import linting when only used as matchers.

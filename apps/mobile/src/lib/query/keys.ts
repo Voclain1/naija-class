@@ -81,4 +81,27 @@ export const queryKeys = {
     ["staff", schoolId, userId, "collections", termId] as const,
   staffDebtors: (schoolId: string, userId: string, termId: string) =>
     ["staff", schoolId, userId, "debtors", termId] as const,
+
+  // CP6a — teacher gradebook. A column is every student in an arm, by name,
+  // with their marks: same "staff" prefix rule, never persisted.
+  staffGradingScheme: (schoolId: string, userId: string) =>
+    ["staff", schoolId, userId, "grading-scheme"] as const,
+  staffGradebook: (
+    schoolId: string,
+    userId: string,
+    termId: string,
+    classArmId: string,
+    subjectId: string,
+  ) => ["staff", schoolId, userId, "gradebook", termId, classArmId, subjectId] as const,
+
+  // CP6b — report-card comments for one column. Comment text about a named
+  // child is at least as sensitive as the marks beside it; same prefix, same
+  // refusal to persist.
+  staffSubjectComments: (
+    schoolId: string,
+    userId: string,
+    termId: string,
+    classArmId: string,
+    subjectId: string,
+  ) => ["staff", schoolId, userId, "comments", termId, classArmId, subjectId] as const,
 } as const;
