@@ -324,6 +324,14 @@ export default function SubjectCommentsScreen() {
 
   const drafting = waitingFor > 0;
 
+  // Sign-off freezes a comment, and the server skips signed-off students when
+  // drafting. Say that BEFORE the button is pressed: on the first device test
+  // the whole class had just been signed off, so "Draft comments" came back
+  // with "Nothing to draft — 3 already signed off", which is correct and
+  // useless. The order that works is comments first, sign-off last.
+  const frozen = (comments.data ?? []).filter((row) => row.signedOffAt !== null).length;
+  const allFrozen = rows.length > 0 && frozen >= rows.length;
+
   return (
     <Screen>
       {header}
@@ -337,11 +345,24 @@ export default function SubjectCommentsScreen() {
           Drafted from each student&apos;s marks. Nothing reaches a report card until you accept it.
         </Body>
 
+        {allFrozen ? (
+          <Notice tone="warning">
+            This subject is signed off, so its comments are frozen. Write comments before you
+            sign off — to change one now, edit a mark on the previous screen, which undoes the
+            sign-off.
+          </Notice>
+        ) : frozen > 0 ? (
+          <Notice tone="info">
+            {frozen} student{frozen === 1 ? " is" : "s are"} signed off and will be skipped.
+            Their comments are frozen.
+          </Notice>
+        ) : null}
+
         <View style={styles.actions}>
           <Button
             title={drafting ? "Drafting…" : "Draft comments with AI"}
             loading={generate.isPending || drafting}
-            disabled={generate.isPending || drafting || rows.length === 0}
+            disabled={generate.isPending || drafting || rows.length === 0 || allFrozen}
             onPress={() => generate.mutate()}
           />
         </View>

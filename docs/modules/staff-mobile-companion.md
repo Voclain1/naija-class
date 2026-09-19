@@ -550,7 +550,23 @@ cache, because `SubjectCommentRowDto` deliberately carries no name.
   sign-off would freeze it away.
 - **Gate 4 — deferred to the same real-DB specs.** `report-comments.service`
   already has its own suite; the phone sends exactly what web sends.
-- **Gate 5 — open**, with CP6a's Gate 6, on a real device.
+- **Gate 5 — first device pass, 2026-09-19.** CP6a passed end to end on a real
+  phone: picker, mark sheet, over-the-maximum refusal, D21 refusal to empty a
+  saved mark, the per-student summary, save verified against the web gradebook,
+  the D19 lock test (marks survived a >2-minute background and unlock, labelled
+  unsaved), sign-off, and the D20 edit-undoes-sign-off confirmation.
+
+  **CP6b found a real ordering trap, fixed in the same PR.** Drafting comments
+  after signing off returned "Nothing to draft — 3 already signed off", which is
+  the server behaving correctly (sign-off freezes the comment along with the
+  marks) and a useless thing to learn by pressing a button. Two fixes, both
+  copy, no behaviour change: the comments screen now states up front how many
+  students are frozen — and disables drafting entirely when all are, pointing at
+  the mark edit that would undo the sign-off — and the sign-off confirmation on
+  the mark sheet now says it freezes comments and to write them first. **The
+  workflow is comments first, sign-off last**, and both screens now say so.
+  CP6b's own device pass is still outstanding: nothing has yet drafted or
+  accepted a comment from the phone.
 
 ### Out of scope for CP6
 
