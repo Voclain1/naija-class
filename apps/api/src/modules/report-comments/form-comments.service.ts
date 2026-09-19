@@ -22,7 +22,7 @@ import { AiGenerationService } from "../../common/ai/ai-generation.service.js";
 import { AI_ERROR_CODES } from "../../common/ai/ai.constants.js";
 import type { AuthContext } from "../../common/auth/auth-context.js";
 import { assertUserActiveAndHasOneOf } from "../../common/auth/role-check.js";
-import { AI_JOB_FORM_COMMENT, AI_QUEUE } from "../../common/queue/index.js";
+import { AI_JOB_FORM_COMMENT, AI_QUEUE, queueJobId } from "../../common/queue/index.js";
 import { assertOwnerAdminOrFormTeacher } from "../report-cards/workflow/form-teacher-guard.js";
 
 // ---------------------------------------------------------------------------
@@ -148,7 +148,7 @@ export class FormCommentsService {
       // Stable job id: a double-clicked button cannot double-charge the budget
       // for the same card.
       await this.queue.add(AI_JOB_FORM_COMMENT, data, {
-        jobId: `${sessionRef}:${t.studentId}`,
+        jobId: queueJobId(sessionRef, t.studentId),
       });
     }
 

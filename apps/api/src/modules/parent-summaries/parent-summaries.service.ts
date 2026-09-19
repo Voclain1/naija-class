@@ -26,7 +26,7 @@ import type { AuthContext } from "../../common/auth/auth-context.js";
 import type { GuardianAuthContext } from "../../common/auth/guardian-auth-context.js";
 import { assertUserActiveAndHasOneOf } from "../../common/auth/role-check.js";
 import { EmailService } from "../../common/email/email.service.js";
-import { AI_JOB_PARENT_SUMMARY, AI_QUEUE } from "../../common/queue/index.js";
+import { AI_JOB_PARENT_SUMMARY, AI_QUEUE, queueJobId } from "../../common/queue/index.js";
 
 // ---------------------------------------------------------------------------
 // Weekly parent progress summary — Phase 5 / Slice 5.
@@ -221,7 +221,7 @@ export class ParentSummariesService {
       // unique constraint enforces at the DB level; both are wanted, because
       // they fail at different times and cost different amounts.
       await this.queue.add(AI_JOB_PARENT_SUMMARY, data, {
-        jobId: `parent-summary:${schoolId}:${studentId}:${isoWeek}`,
+        jobId: queueJobId("parent-summary", schoolId, studentId, isoWeek),
       });
     }
 
