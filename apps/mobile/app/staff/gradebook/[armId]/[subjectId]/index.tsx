@@ -293,7 +293,7 @@ export default function MarkSheetScreen() {
   const confirmSignOff = (title: string) => {
     Alert.alert(
       "Sign off " + title + "?",
-      "This tells your school these marks are final. You can still edit them later, but that will undo the sign-off.",
+      "This tells your school these marks are final, and it also freezes the report card comments for this subject. Write your comments first. You can still edit marks later, but that undoes the sign-off.",
       [
         { text: "Cancel", style: "cancel" },
         { text: "Sign off", onPress: () => signOff.mutate() },
