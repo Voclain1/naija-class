@@ -1,5 +1,7 @@
 import type {
-  CurriculumDocumentDto,
+  ApproveCurriculumDocumentResponse,
+  CurriculumDocumentDetailResponse,
+  CurriculumDocumentListResponse,
   CurriculumUploadAcceptedResponse,
   PasteCurriculumDocumentInput,
   TeacherProfileDto,
@@ -17,12 +19,23 @@ import { apiFetch } from "./client";
 // and waits for a parse failure would reasonably conclude the feature is
 // broken, so the screen says so BEFORE they try.
 
-export function staffListCurriculum(): Promise<CurriculumDocumentDto[]> {
-  return apiFetch<CurriculumDocumentDto[]>("/curriculum/documents");
+// NOT an array. The endpoint returns `{ documents, usage }` — the usage block
+// is cap telemetry so a teacher can be warned before they hit a refusal.
+//
+// Getting this wrong is what crashed the screen on the first device build:
+// `apiFetch<T>` is an unchecked assertion about the wire, the screen called
+// `.map` on the envelope object, and nothing upstream could have caught it —
+// typecheck believed the annotation, and the earlier spec asserted the URL but
+// never the shape. The specs now decode realistic payloads for that reason.
+export function staffListCurriculum(): Promise<CurriculumDocumentListResponse> {
+  return apiFetch<CurriculumDocumentListResponse>("/curriculum/documents");
 }
 
-export function staffGetCurriculumDocument(documentId: string): Promise<CurriculumDocumentDto> {
-  return apiFetch<CurriculumDocumentDto>(
+/** `{ document, chunks }` — the chunks ARE the review payload. */
+export function staffGetCurriculumDocument(
+  documentId: string,
+): Promise<CurriculumDocumentDetailResponse> {
+  return apiFetch<CurriculumDocumentDetailResponse>(
     `/curriculum/documents/${encodeURIComponent(documentId)}`,
   );
 }
@@ -71,10 +84,12 @@ export function staffUploadCurriculumFile(
   });
 }
 
-export function staffApproveCurriculum(documentId: string): Promise<CurriculumDocumentDto> {
+export function staffApproveCurriculum(
+  documentId: string,
+): Promise<ApproveCurriculumDocumentResponse> {
   // The review gate: a document stays out of lesson-note grounding until a
-  // human confirms the extracted structure.
-  return apiFetch<CurriculumDocumentDto>(
+  // human confirms the extracted structure. Returns `{ document, chunkCount }`.
+  return apiFetch<ApproveCurriculumDocumentResponse>(
     `/curriculum/documents/${encodeURIComponent(documentId)}/approve`,
     { method: "POST" },
   );
