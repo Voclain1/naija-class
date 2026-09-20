@@ -709,6 +709,28 @@ photo and gets a parse failure will conclude the feature is broken.
   cards, which does not survive seven more surfaces. *Recommendation: yes, but
   in the UI pass that follows CP7, not inside it.*
 
+### D14 — SETTLED 2026-09-20, in CP7's first PR
+
+CP2 railed mobile marking to the server's today and said plainly that it was a
+pilot default, not the policy. The policy is now decided, and by a market fact
+rather than a technical one: **most Nigerian teachers have no laptop**, so
+"use the web teacher portal to correct an earlier day" is not a workaround but
+a refusal. The window is therefore **parity with web** — any past date the
+server accepts, no future date.
+
+Three things did not change, which is why this widens nobody's authority: the
+server was always the boundary and is untouched (it accepts any past in-term
+date from a holder of `attendance.mark`, and rejects future dates itself);
+"today" still comes from the server's clock, never the handset's; and a
+correction is still audited and still visible through the register's
+last-marked stamp. What is lost is the pilot property that the phone could not
+touch history — worth having while the policy was open, not worth a teacher
+being unable to fix Friday.
+
+The screen names the day it is marking ("Today", "Yesterday", or the date) and
+warns when it is not today, so a back-dated register cannot be mistaken for
+the current one.
+
 ### Gates
 
 Each numbered feature above ships behind CP6's gate ladder — no-server-change

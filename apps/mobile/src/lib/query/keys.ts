@@ -104,4 +104,12 @@ export const queryKeys = {
     classArmId: string,
     subjectId: string,
   ) => ["staff", schoolId, userId, "comments", termId, classArmId, subjectId] as const,
+
+  // CP7 — the form teacher's overall comment, and the class list. Same "staff"
+  // prefix rule: a roster is every child in the class by name, and a form
+  // comment is a judgement about one of them.
+  staffFormComments: (schoolId: string, userId: string, termId: string, classArmId: string) =>
+    ["staff", schoolId, userId, "form-comments", termId, classArmId] as const,
+  staffRoster: (schoolId: string, userId: string, classArmId: string) =>
+    ["staff", schoolId, userId, "roster", classArmId] as const,
 } as const;

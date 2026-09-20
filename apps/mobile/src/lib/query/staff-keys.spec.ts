@@ -31,6 +31,9 @@ const STAFF_KEYS: Record<string, readonly unknown[]> = {
   staffGradingScheme: queryKeys.staffGradingScheme(SCHOOL, USER),
   staffGradebook: queryKeys.staffGradebook(SCHOOL, USER, "term_1", "arm_1", "subject_1"),
   staffSubjectComments: queryKeys.staffSubjectComments(SCHOOL, USER, "term_1", "arm_1", "subject_1"),
+  // CP7 — a roster is every child in the class, by name.
+  staffFormComments: queryKeys.staffFormComments(SCHOOL, USER, "term_1", "arm_1"),
+  staffRoster: queryKeys.staffRoster(SCHOOL, USER, "arm_1"),
 };
 
 describe("staff query keys", () => {

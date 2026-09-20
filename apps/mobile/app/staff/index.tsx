@@ -78,6 +78,14 @@ export default function StaffHomeScreen() {
           403 at them, which is the same rule the arm list below applies to
           form-teacher arms.
         */}
+        <Card style={styles.armCard}>
+          <View style={styles.armText}>
+            <Body>My classes</Body>
+            <Label>Who is in each class you teach</Label>
+          </View>
+          <Button title="Open classes" onPress={() => router.push("/staff/classes")} />
+        </Card>
+
         {canEnterMarks && teachesSubjects && (
           <Card style={styles.armCard}>
             <View style={styles.armText}>
@@ -130,6 +138,13 @@ export default function StaffHomeScreen() {
             <Button
               title="Open register"
               onPress={() => router.push(`/staff/attendance/${arm.id}`)}
+            />
+            {/* CP7: the overall report card comment is the form teacher's, so
+                it is offered exactly where form-teacher arms already are. */}
+            <Button
+              title="Report card comments"
+              variant="secondary"
+              onPress={() => router.push(`/staff/report-cards/${arm.id}`)}
             />
           </Card>
         ))}

@@ -76,6 +76,24 @@ export function commentDraftKey(scope: DraftScope): string {
   return columnPrefix(scope) + "|comment";
 }
 
+/**
+ * CP7 — the form teacher's overall comment, keyed by studentId within a
+ * (term, arm). No subject: this comment is about the child's whole term, so
+ * its scope is one element shorter than a gradebook column's and cannot
+ * collide with one.
+ */
+export function formCommentDraftKey(scope: {
+  schoolId: string;
+  userId: string;
+  termId: string;
+  classArmId: string;
+}): string {
+  return (
+    JSON.stringify([scope.schoolId, scope.userId, scope.termId, scope.classArmId]) +
+    "|form-comment"
+  );
+}
+
 export function subscribeGradebookDrafts(listener: () => void): () => void {
   listeners.add(listener);
   return () => {

@@ -2,6 +2,7 @@ import type {
   AttendanceMarkInput,
   AttendanceMarkResultDto,
   AttendanceRegisterResponse,
+  TeacherRosterResponse,
   TeacherScopeDto,
 } from "@school-kit/types";
 
@@ -39,4 +40,15 @@ export function staffMarkAttendance(
     method: "POST",
     body: input,
   });
+}
+
+// CP7 (3) — the class list. Scoped to arms the server already puts in this
+// teacher's scope; an out-of-scope arm 404s, so the arm is invisible rather
+// than merely forbidden. The roster DTO is deliberately narrow (name,
+// admission number, gender, photo, status) — no medical notes, address, DOB or
+// contact details.
+export function staffArmRoster(classArmId: string): Promise<TeacherRosterResponse> {
+  return apiFetch<TeacherRosterResponse>(
+    `/teacher-scope/me/arms/${encodeURIComponent(classArmId)}/students`,
+  );
 }
