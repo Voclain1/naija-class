@@ -208,6 +208,10 @@ export default function CurriculumScreen() {
   if (status === "locked") return <Redirect href="/unlock" />;
   if (!authed) return <Redirect href="/login" />;
 
+  // The list endpoint returns an envelope, not an array. Reading it as an
+  // array is what crashed this screen on the first device build.
+  const documentList = documents.data?.documents ?? [];
+  const usage = documents.data?.usage ?? null;
   const busy = paste.isPending || upload.isPending;
   const targeted = selectedArm !== null && subjectId !== null;
   const canPaste = targeted && title.trim().length > 0 && content.trim().length > 0 && !busy;
@@ -363,7 +367,16 @@ export default function CurriculumScreen() {
           {notice ? <Notice tone="info">{notice}</Notice> : null}
           {failure ? <Notice tone="danger">{failure}</Notice> : null}
 
-          <Label>What your school has</Label>
+          <Label>
+            What your school has
+            {usage ? ` — ${usage.documents} of ${usage.maxDocuments}` : ""}
+          </Label>
+          {usage && usage.documents >= usage.maxDocuments ? (
+            <Notice tone="warning">
+              Your school has reached its limit of {usage.maxDocuments} documents. Remove one
+              before adding another.
+            </Notice>
+          ) : null}
 
           {documents.isPending && (
             <CenteredMessage>
@@ -382,14 +395,14 @@ export default function CurriculumScreen() {
             </CenteredMessage>
           )}
 
-          {documents.data && documents.data.length === 0 && (
+          {documents.data && documentList.length === 0 && (
             <Notice tone="info">
               Nothing yet. Until a scheme of work is added, lesson notes are written from the topic
               alone.
             </Notice>
           )}
 
-          {(documents.data ?? []).map((document) => (
+          {documentList.map((document) => (
             <Card key={document.id} style={styles.docCard}>
               <View style={styles.docText}>
                 <Body>{document.title}</Body>

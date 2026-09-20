@@ -836,6 +836,34 @@ toggle) for the same accessibility reason the calendar list survives.
 
 Nothing in CP7 has run on a device yet.
 
+### The curriculum crash (2026-09-20) — and why nothing caught it
+
+The first device build crashed on the curriculum screen seconds after it
+loaded. `GET /curriculum/documents` returns `{ documents, usage }`; the binding
+declared `CurriculumDocumentDto[]`; the screen called `.map` on the envelope,
+and a throw during render takes the app down rather than showing an error.
+
+Three of the four curriculum bindings had the wrong response type — `list`,
+`getOne` and `approve`. Every OTHER staff binding was re-checked against its
+controller's declared return type and is correct.
+
+**Why it was invisible until a phone ran it:**
+
+- `apiFetch<T>` is an **unchecked assertion about the wire**. Typecheck
+  believes whatever the binding declares, so a wrong annotation is not a type
+  error anywhere in the repo.
+- The original spec asserted the request URL and stubbed the response as `[]`
+  — **the very shape the bug assumed**. A fixture invented by the client proves
+  the client agrees with itself, not with the server.
+- `expo export` compiles the screen; it never runs it against data.
+
+**The rule this establishes for any new binding:** the spec's fixture is typed
+as the API's OWN response type, imported from `@school-kit/types`. Then a
+controller shape change fails `pnpm typecheck` in the spec rather than failing
+on a teacher's phone. `staff-curriculum.spec.ts` is the worked example, and the
+screen additionally reads `data?.documents ?? []` so a future shape change
+degrades to an empty list rather than a crash.
+
 ### Out of scope for CP7
 
 Everything in the header's web-only list; report card build, approve and
