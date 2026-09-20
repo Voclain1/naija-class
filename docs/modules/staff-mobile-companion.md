@@ -776,15 +776,37 @@ It cannot be exercised by `expo export`, only by a real build: the first EAS
 build after this change is the check, and `apps/mobile/BUILD.md`'s warning
 applies — a local pass is not evidence about EAS.
 
-The timetable screen shows ONE DAY at a time, opening on the server's today —
-a week grid does not fit a phone, and "what am I teaching today" is the
-question a teacher actually has. It reads the narrow `timetable.own.read`
-surface (own lessons plus read-only form-class grids); the whole-school
+The timetable screen opens on ONE DAY, on the server's today, and expands to a
+WEEK on request (added 2026-09-20 at the maintainer's ask). Day answers "what
+am I teaching today" with room for the class, period label and co-teachers;
+week answers the planning question — "am I free Thursday afternoon" — and a
+full week cannot fit a phone's width at a readable size, so it scrolls
+SIDEWAYS with the period times pinned in the first column and each cell cut
+back to subject and class. Tapping a day heading in the week drops into that
+day in full. Only LESSON slots get a week row: a bell schedule carries break
+and assembly slots too, and spending a row on each pushes the lessons off
+screen. It reads the narrow `timetable.own.read` surface (own lessons plus read-only form-class grids); the whole-school
 builder grid is a different permission and stays on web with owner/admin. The
 calendar uses the STAFF endpoint rather than the portal one the family screens
 use: same shape on the wire, different session and permission, and reusing the
 portal route with a staff token would work by accident today and break the
 moment either surface's rules change.
+
+**The calendar is a MONTH GRID** (2026-09-20, same ask), in the shape people
+already know from their phone: dates laid out as weeks, a dot on any day
+something happens, and the day's events listed on tap. A list answers "what is
+next"; someone looking at a calendar is usually asking "what is happening ON a
+date", and a list makes them count. Colour carries category but never alone —
+the day list carries the words, because a legend nobody remembers is not
+information. The fetch window follows the month on screen rather than a fixed
+six-month span, so paging back to last term is ordinary, and each month caches
+in its own right. The grid maths lives in `src/lib/calendar/month-grid.ts`
+with its own spec: a month starting on Sunday, a leap February and a multi-day
+entry appearing on every day it covers are all the kind of thing that breaks
+silently and is noticed by a teacher, not by a test, unless it is pinned.
+
+`CalendarList` still backs the guardian and student screens; converting those
+to the grid is a separate change.
 
 Nothing in CP7 has run on a device yet.
 
