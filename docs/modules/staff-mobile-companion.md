@@ -743,6 +743,40 @@ with positive/control pairs, then a real device.
 work must have at least one test that hands a real job to real BullMQ. Mocked
 queues are how three AI features shipped broken.
 
+### CP7 build status (2026-09-20)
+
+Items 1-6 implemented; item 7 (timetable and calendar) not started.
+
+| # | Feature | State |
+|---|---|---|
+| 1 | Form teacher's overall comment | built |
+| 2 | Back-dated attendance (D14 settled) | built |
+| 3 | Class list + roster search | built |
+| 4 | Lesson notes: generate, edit per section, quiz | built |
+| 5 | Curriculum: paste, file picker, confirm, remove | built |
+| 6 | Profile: specialty and qualifications | built |
+| 7 | Timetable + calendar | not started |
+
+Two shared-client bugs were found by CP7's own specs, both of which would have
+shipped invisibly:
+
+1. **`apiFetch` wrapped an `AbortError` as `ApiNetworkError`**, so pressing
+   Stop during a lesson-note generation would have told the teacher their
+   network had failed. Aborts now reach the caller unchanged, which is what
+   makes D25's Stop button honest.
+2. **`apiFetch` JSON-stringified every body**, so a multipart upload would
+   have arrived as `"{}"`. FormData now passes through untouched, with
+   Content-Type left to the runtime so the multipart boundary is present —
+   setting that header by hand omits the boundary and the server finds no
+   fields at all.
+
+`expo-document-picker` is a NEW NATIVE dependency (SDK-matched, `~57.0.2`).
+It cannot be exercised by `expo export`, only by a real build: the first EAS
+build after this change is the check, and `apps/mobile/BUILD.md`'s warning
+applies — a local pass is not evidence about EAS.
+
+Nothing here has run on a device yet.
+
 ### Out of scope for CP7
 
 Everything in the header's web-only list; report card build, approve and

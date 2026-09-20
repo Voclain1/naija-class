@@ -89,6 +89,32 @@ export default function StaffHomeScreen() {
           </Card>
         )}
 
+        {canWriteLessonNotes && (
+          <Card style={styles.armCard}>
+            <View style={styles.armText}>
+              <Body>Curriculum</Body>
+              <Label>Add your scheme of work so notes follow it</Label>
+            </View>
+            <Button
+              title="Open curriculum"
+              variant="secondary"
+              onPress={() => router.push("/staff/curriculum")}
+            />
+          </Card>
+        )}
+
+        <Card style={styles.armCard}>
+          <View style={styles.armText}>
+            <Body>My profile</Body>
+            <Label>Your specialty and qualifications</Label>
+          </View>
+          <Button
+            title="Open profile"
+            variant="secondary"
+            onPress={() => router.push("/staff/profile")}
+          />
+        </Card>
+
         <Card style={styles.armCard}>
           <View style={styles.armText}>
             <Body>My classes</Body>

@@ -121,4 +121,10 @@ export const queryKeys = {
     ["staff", schoolId, userId, "lesson-plans"] as const,
   staffLessonPlan: (schoolId: string, userId: string, id: string) =>
     ["staff", schoolId, userId, "lesson-plans", id] as const,
+
+  // CP7 — curriculum documents and the teacher's own profile.
+  staffCurriculum: (schoolId: string, userId: string) =>
+    ["staff", schoolId, userId, "curriculum"] as const,
+  staffProfile: (schoolId: string, userId: string) =>
+    ["staff", schoolId, userId, "profile"] as const,
 } as const;

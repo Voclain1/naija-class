@@ -141,8 +141,14 @@ export async function apiFetch<T>(
 ): Promise<T> {
   const { body, headers, notifyOnUnauthorized = true, ...rest } = options;
 
+  // A FormData body is passed through untouched: the runtime serialises it and
+  // — crucially — sets its own Content-Type WITH the multipart boundary.
+  // Setting that header by hand omits the boundary, and the server then finds
+  // no fields at all. CP7's curriculum upload is the only caller today.
+  const isMultipart = typeof FormData !== "undefined" && body instanceof FormData;
+
   const finalHeaders = new Headers(headers);
-  if (body !== undefined && !finalHeaders.has("Content-Type")) {
+  if (body !== undefined && !isMultipart && !finalHeaders.has("Content-Type")) {
     finalHeaders.set("Content-Type", "application/json");
   }
   const token = tokenProvider();
@@ -155,7 +161,7 @@ export async function apiFetch<T>(
     response = await fetch(`${API_BASE_URL}${path}`, {
       ...rest,
       headers: finalHeaders,
-      body: body === undefined ? undefined : JSON.stringify(body),
+      body: body === undefined ? undefined : isMultipart ? (body as FormData) : JSON.stringify(body),
     });
   } catch (cause) {
     // An ABORT is the caller's own doing, not a transport failure, and the two

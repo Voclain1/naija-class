@@ -36,6 +36,8 @@ const STAFF_KEYS: Record<string, readonly unknown[]> = {
   staffRoster: queryKeys.staffRoster(SCHOOL, USER, "arm_1"),
   staffLessonPlans: queryKeys.staffLessonPlans(SCHOOL, USER),
   staffLessonPlan: queryKeys.staffLessonPlan(SCHOOL, USER, "plan_1"),
+  staffCurriculum: queryKeys.staffCurriculum(SCHOOL, USER),
+  staffProfile: queryKeys.staffProfile(SCHOOL, USER),
 };
 
 describe("staff query keys", () => {
