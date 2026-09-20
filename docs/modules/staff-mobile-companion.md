@@ -520,7 +520,35 @@ and `adoptStaffSession` and deliberately not from the lock path.
   generation enqueued from the phone lands its `ai_interaction_logs` row the
   same as one from web.
 - **Gate 5** — real device, with the accepted comment confirmed on the web
-  report card.
+  report card. **Drafting is proven on a real phone (2026-09-20)**, once the
+  production bug below was fixed and deployed; accepting a comment from the
+  phone and confirming it on the web report card is still unreported, so this
+  gate is PARTIAL, not closed.
+
+**CP6b's device pass found a PRODUCTION bug that had nothing to do with
+mobile.** The first tap on "Draft comments with AI" returned
+`500 An unexpected error occurred`. `school-kit-api`'s logs carried
+`Error: Custom Id cannot contain :` from `POST /report-card-comments/generate`:
+BullMQ refuses a custom job id containing a colon unless it splits into exactly
+three parts, and all three AI enqueue sites interpolated a colon-separated
+`sessionRef` into four or five. Subject comments, form-teacher comments and
+**weekly parent summaries** were therefore all broken in production — on WEB as
+much as on mobile, since the web gradebook's own "Draft comments" button hits
+the same endpoint. Fixed by `queueJobId`
+(`apps/api/src/common/queue/job-id.ts`, PR #313), deployed as `school-kit-api`
+v256, and drafting worked from the phone immediately afterwards.
+
+Two things worth carrying forward from how it was found and fixed:
+
+1. **Every existing spec mocked the queue**, so no test had ever handed a real
+   job id to real BullMQ. `job-id.spec.ts` now drives the real library against
+   real Redis, which CI already provides as a service.
+2. **The first version of that spec passed while production was failing**,
+   because its probe id happened to have three colon-separated parts — the one
+   shape BullMQ still allows. A rule verified with the wrong-shaped input reads
+   as "no such rule". The spec now pins that trapdoor explicitly.
+
+Neither is a mobile lesson; both belong to whoever next adds a queued job.
 
 ### CP6b status (2026-09-17)
 
