@@ -3,12 +3,12 @@ import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, TextInput } fro
 import { Redirect, Stack } from "expo-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { staffMyProfile, staffUpdateMyProfile } from "../../src/lib/api/staff-curriculum";
-import { ApiError, ApiNetworkError } from "../../src/lib/api/client";
-import { queryKeys } from "../../src/lib/query/keys";
-import { useSession } from "../../src/lib/auth/session";
-import { useTheme } from "../../src/theme/theme-provider";
-import { fontSizes, fonts, radii, spacing } from "../../src/theme/tokens";
+import { staffMyProfile, staffUpdateMyProfile } from "../../../src/lib/api/staff-curriculum";
+import { ApiError, ApiNetworkError } from "../../../src/lib/api/client";
+import { queryKeys } from "../../../src/lib/query/keys";
+import { useSession } from "../../../src/lib/auth/session";
+import { useTheme } from "../../../src/theme/theme-provider";
+import { fontSizes, fonts, radii, spacing } from "../../../src/theme/tokens";
 import {
   Body,
   Button,
@@ -18,7 +18,7 @@ import {
   Label,
   Notice,
   Screen,
-} from "../../src/components/ui";
+} from "../../../src/components/ui";
 
 // CP7 (6) — the teacher's own profile.
 //

@@ -8,13 +8,13 @@ import {
   type TeacherTimetableDto,
 } from "@school-kit/types";
 
-import { staffMyTimetable } from "../../src/lib/api/staff-schedule";
-import { queryKeys } from "../../src/lib/query/keys";
-import { useSession } from "../../src/lib/auth/session";
-import { TimetableGrid } from "../../src/components/timetable-grid";
-import { serverToday } from "../../src/lib/staff/server-date";
-import { useTheme } from "../../src/theme/theme-provider";
-import { fontSizes, fonts, radii, spacing } from "../../src/theme/tokens";
+import { staffMyTimetable } from "../../../src/lib/api/staff-schedule";
+import { queryKeys } from "../../../src/lib/query/keys";
+import { useSession } from "../../../src/lib/auth/session";
+import { TimetableGrid } from "../../../src/components/timetable-grid";
+import { serverToday } from "../../../src/lib/staff/server-date";
+import { useTheme } from "../../../src/theme/theme-provider";
+import { fontSizes, fonts, radii, spacing } from "../../../src/theme/tokens";
 import {
   Body,
   Button,
@@ -24,7 +24,7 @@ import {
   Label,
   Notice,
   Screen,
-} from "../../src/components/ui";
+} from "../../../src/components/ui";
 
 // CP7 (7) — the teacher's own timetable, as a DAY or a WEEK.
 //

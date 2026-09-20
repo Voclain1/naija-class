@@ -1,5 +1,5 @@
-import { ScrollView, StyleSheet, View } from "react-native";
-import { Redirect, Stack, useRouter } from "expo-router";
+import { ScrollView, StyleSheet } from "react-native";
+import { Redirect, useRouter } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
 
 import { staffTeacherScope } from "../../../src/lib/api/staff-attendance";
@@ -7,12 +7,14 @@ import { queryKeys } from "../../../src/lib/query/keys";
 import { useSession } from "../../../src/lib/auth/session";
 import { spacing } from "../../../src/theme/tokens";
 import {
-  Body,
+  EmptyState,
+  ListRow,
+  ScreenHeader,
+  Skeleton,
+} from "../../../src/components/layout";
+import {
   Button,
-  Card,
   CenteredMessage,
-  Heading,
-  Label,
   Notice,
   Screen,
 } from "../../../src/components/ui";
@@ -47,15 +49,10 @@ export default function ClassesScreen() {
 
   return (
     <Screen>
-      <Stack.Screen options={{ headerShown: true, title: "My classes" }} />
-      <Heading>My classes</Heading>
+      <ScreenHeader title="My classes" />
 
       <ScrollView contentContainerStyle={styles.content}>
-        {scope.isPending && (
-          <CenteredMessage>
-            <Body muted>Loading your classes…</Body>
-          </CenteredMessage>
-        )}
+        {scope.isPending && <Skeleton lines={3} />}
 
         {scope.isError && !data && (
           <CenteredMessage>
@@ -65,31 +62,26 @@ export default function ClassesScreen() {
         )}
 
         {data && arms.length === 0 && (
-          <Notice tone="info">
-            You have no classes assigned yet. Ask your school administrator to assign you.
-          </Notice>
+          <EmptyState
+            icon="people-outline"
+            title="No classes yet"
+            body="Your school hasn't assigned you a class. Ask your administrator to set that up."
+          />
         )}
 
         {arms.map((arm) => {
           const isFormTeacher = (data?.formTeacherArmIds ?? []).includes(arm.id);
           const subjects = data?.subjectsByArm[arm.id] ?? [];
           return (
-            <Card key={arm.id} style={styles.card}>
-              <View style={styles.text}>
-                <Body>{arm.name}</Body>
-                <Label>{arm.classLevelName}</Label>
-                <Label>
-                  {isFormTeacher ? "You are the form teacher. " : ""}
-                  {subjects.length > 0
-                    ? `You teach ${subjects.map((s) => s.name).join(", ")}.`
-                    : "You teach no subject in this class."}
-                </Label>
-              </View>
-              <Button
-                title="View students"
-                onPress={() => router.push(`/staff/classes/${arm.id}`)}
-              />
-            </Card>
+            <ListRow
+              key={arm.id}
+              icon={isFormTeacher ? "ribbon-outline" : "people-outline"}
+              title={arm.name}
+              subtitle={`${arm.classLevelName}${
+                isFormTeacher ? " · form teacher" : ""
+              }${subjects.length > 0 ? ` · ${subjects.map((s) => s.name).join(", ")}` : ""}`}
+              onPress={() => router.push(`/staff/classes/${arm.id}`)}
+            />
           );
         })}
       </ScrollView>

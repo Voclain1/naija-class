@@ -9,7 +9,7 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { Redirect, Stack, useRouter } from "expo-router";
+import { Redirect, useRouter } from "expo-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { staffTeacherScope } from "../../../src/lib/api/staff-attendance";
@@ -23,11 +23,17 @@ import { useSession } from "../../../src/lib/auth/session";
 import { useTheme } from "../../../src/theme/theme-provider";
 import { fontSizes, fonts, radii, spacing } from "../../../src/theme/tokens";
 import {
+  EmptyState,
+  ListRow,
+  ScreenHeader,
+  SectionHeader,
+  Skeleton,
+} from "../../../src/components/layout";
+import {
   Body,
   Button,
   Card,
   CenteredMessage,
-  Heading,
   Label,
   Notice,
   Screen,
@@ -155,12 +161,11 @@ export default function LessonNotesScreen() {
 
   return (
     <Screen>
-      <Stack.Screen options={{ headerShown: true, title: "Lesson notes" }} />
       <KeyboardAvoidingView
         style={styles.fill}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
-        <Heading>Lesson notes</Heading>
+        <ScreenHeader title="Lesson notes" subtitle="Write a note with AI, then edit it" />
 
         <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
           {generate.isPending ? (
@@ -304,13 +309,9 @@ export default function LessonNotesScreen() {
 
           {failure ? <Notice tone="danger">{failure}</Notice> : null}
 
-          <Label>Your notes</Label>
+          <SectionHeader title="Your notes" />
 
-          {plans.isPending && (
-            <CenteredMessage>
-              <Body muted>Loading your notes…</Body>
-            </CenteredMessage>
-          )}
+          {plans.isPending && <Skeleton lines={2} />}
 
           {plans.isError && !plans.data && (
             <CenteredMessage>
@@ -320,23 +321,21 @@ export default function LessonNotesScreen() {
           )}
 
           {plans.data && plans.data.length === 0 && (
-            <Notice tone="info">You haven&apos;t written any lesson notes yet.</Notice>
+            <EmptyState
+              icon="document-text-outline"
+              title="No notes yet"
+              body="Choose a class, a subject and a topic above, and the app will write the first draft for you."
+            />
           )}
 
           {(plans.data ?? []).map((plan) => (
-            <Card key={plan.id} style={styles.planCard}>
-              <View style={styles.planText}>
-                <Body>{plan.topic}</Body>
-                <Label>
-                  {plan.subjectName} · {plan.classLevelName}
-                </Label>
-              </View>
-              <Button
-                title="Open"
-                variant="secondary"
-                onPress={() => router.push(`/staff/lesson-notes/${plan.id}`)}
-              />
-            </Card>
+            <ListRow
+              key={plan.id}
+              icon="document-text-outline"
+              title={plan.topic}
+              subtitle={`${plan.subjectName} · ${plan.classLevelName}`}
+              onPress={() => router.push(`/staff/lesson-notes/${plan.id}`)}
+            />
           ))}
         </ScrollView>
       </KeyboardAvoidingView>

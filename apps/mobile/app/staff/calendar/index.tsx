@@ -3,13 +3,13 @@ import { ScrollView, StyleSheet } from "react-native";
 import { Redirect, Stack } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
 
-import { staffCalendar } from "../../src/lib/api/staff-schedule";
-import { queryKeys } from "../../src/lib/query/keys";
-import { useSession } from "../../src/lib/auth/session";
-import { serverToday } from "../../src/lib/staff/server-date";
-import { CalendarView } from "../../src/components/calendar-view";
-import { monthBounds, monthOf } from "../../src/lib/calendar/month-grid";
-import { spacing } from "../../src/theme/tokens";
+import { staffCalendar } from "../../../src/lib/api/staff-schedule";
+import { queryKeys } from "../../../src/lib/query/keys";
+import { useSession } from "../../../src/lib/auth/session";
+import { serverToday } from "../../../src/lib/staff/server-date";
+import { CalendarView } from "../../../src/components/calendar-view";
+import { monthBounds, monthOf } from "../../../src/lib/calendar/month-grid";
+import { spacing } from "../../../src/theme/tokens";
 import {
   Body,
   Button,
@@ -17,7 +17,7 @@ import {
   Heading,
   Notice,
   Screen,
-} from "../../src/components/ui";
+} from "../../../src/components/ui";
 
 // CP7 (7) — the school calendar, as a MONTH GRID.
 //
