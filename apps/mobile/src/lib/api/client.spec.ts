@@ -200,3 +200,35 @@ describe("apiFetch — unauthorized notification", () => {
     expect(listener).not.toHaveBeenCalled();
   });
 });
+
+describe("aborting a request", () => {
+  // CP7 / D25: the lesson-note screen offers Stop during a 10-30 s generation.
+  // An abort must stay an abort all the way to the caller — it is the
+  // teacher's own action, and reporting it as a network failure would tell
+  // them something untrue about their connection.
+  it("re-throws an AbortError instead of wrapping it as a network failure", async () => {
+    setTokenProvider(() => "test-token");
+    const controller = new AbortController();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((_url: string, init: RequestInit) =>
+        new Promise((_resolve, reject) => {
+          init.signal?.addEventListener("abort", () => {
+            const error = new Error("Aborted");
+            error.name = "AbortError";
+            reject(error);
+          });
+        }),
+      ),
+    );
+
+    const pending = apiFetch("/slow", { signal: controller.signal });
+    controller.abort();
+    const error = await pending.catch((e: unknown) => e);
+
+    expect((error as Error).name).toBe("AbortError");
+    expect(error).not.toBeInstanceOf(ApiNetworkError);
+    vi.unstubAllGlobals();
+    setTokenProvider(() => null);
+  });
+});

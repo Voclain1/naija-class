@@ -112,4 +112,13 @@ export const queryKeys = {
     ["staff", schoolId, userId, "form-comments", termId, classArmId] as const,
   staffRoster: (schoolId: string, userId: string, classArmId: string) =>
     ["staff", schoolId, userId, "roster", classArmId] as const,
+
+  // CP7 — lesson notes. A teacher's own work rather than student data, but the
+  // same prefix rule applies without exception: a staff key that did not start
+  // with "staff" would become persistable, and the rule is only usable if it
+  // has no "except when" attached to it.
+  staffLessonPlans: (schoolId: string, userId: string) =>
+    ["staff", schoolId, userId, "lesson-plans"] as const,
+  staffLessonPlan: (schoolId: string, userId: string, id: string) =>
+    ["staff", schoolId, userId, "lesson-plans", id] as const,
 } as const;

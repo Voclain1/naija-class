@@ -158,7 +158,15 @@ export async function apiFetch<T>(
       body: body === undefined ? undefined : JSON.stringify(body),
     });
   } catch (cause) {
-    // fetch() rejects only on transport failure; any HTTP status resolves.
+    // An ABORT is the caller's own doing, not a transport failure, and the two
+    // need different words on screen: "Stopped" versus "your phone couldn't
+    // reach the server". CP7's lesson-note generation offers a Stop button
+    // during a 10-30 s call, and collapsing its abort into ApiNetworkError
+    // would tell a teacher who just pressed Stop that their network failed.
+    // Re-thrown unchanged so callers can test `error.name === "AbortError"`.
+    if (cause instanceof Error && cause.name === "AbortError") throw cause;
+    // fetch() otherwise rejects only on transport failure; any HTTP status
+    // resolves.
     throw new ApiNetworkError(cause);
   }
 

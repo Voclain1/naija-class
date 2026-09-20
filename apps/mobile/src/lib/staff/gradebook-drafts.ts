@@ -156,6 +156,24 @@ export function columnHasDrafts(scope: DraftScope): boolean {
   return componentsWithDrafts(scope).length > 0 || hasCommentDrafts(scope);
 }
 
+/**
+ * CP7 — unsaved lesson-note text, keyed by SECTION within one plan.
+ *
+ * D24: still in memory only, like every other draft here. A lesson note is far
+ * longer than a mark or a comment, so losing one to an app kill costs more —
+ * that is a known, accepted limit for the first pass, said plainly on screen,
+ * and the thing to revisit first if teachers report lost work.
+ */
+export function lessonPlanDraftKey(scope: {
+  schoolId: string;
+  userId: string;
+  lessonPlanId: string;
+}): string {
+  return (
+    JSON.stringify([scope.schoolId, scope.userId, scope.lessonPlanId]) + "|lesson-plan"
+  );
+}
+
 /** Principal boundary: sign-out, session end, a new staff sign-in. */
 export function clearAllGradebookDrafts(): void {
   if (drafts.size === 0) return;

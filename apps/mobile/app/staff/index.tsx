@@ -40,6 +40,7 @@ export default function StaffHomeScreen() {
   // CP6a — offered on the server's own answer to "what do I teach", not on a
   // role name: a column appears only where subjectsByArm lists a subject.
   const canEnterMarks = hasPermission(staff?.permissions ?? [], "assessment-score.create");
+  const canWriteLessonNotes = hasPermission(staff?.permissions ?? [], "lesson-plan.create");
 
   const scope = useQuery({
     queryKey: queryKeys.staffScope(schoolId, userId),
@@ -78,6 +79,16 @@ export default function StaffHomeScreen() {
           403 at them, which is the same rule the arm list below applies to
           form-teacher arms.
         */}
+        {canWriteLessonNotes && (
+          <Card style={styles.armCard}>
+            <View style={styles.armText}>
+              <Body>Lesson notes</Body>
+              <Label>Write a lesson note with AI, then edit it</Label>
+            </View>
+            <Button title="Open lesson notes" onPress={() => router.push("/staff/lesson-notes")} />
+          </Card>
+        )}
+
         <Card style={styles.armCard}>
           <View style={styles.armText}>
             <Body>My classes</Body>
