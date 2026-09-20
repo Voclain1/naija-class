@@ -1,5 +1,5 @@
 import { ScrollView, StyleSheet, View } from "react-native";
-import { Redirect, Stack, useRouter } from "expo-router";
+import { Redirect, useRouter } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
 import { formatKobo } from "@school-kit/types";
 
@@ -10,6 +10,7 @@ import { hasPermission } from "../../../src/lib/auth/permissions";
 import { useTermContext } from "../../../src/lib/staff/use-term-context";
 import { termResolutionMessage } from "../../../src/lib/staff/term-context";
 import { spacing } from "../../../src/theme/tokens";
+import { ScreenHeader, Skeleton } from "../../../src/components/layout";
 import {
   Body,
   Button,
@@ -58,15 +59,14 @@ export default function CollectionsScreen() {
 
   return (
     <Screen>
-      <Stack.Screen options={{ headerShown: true, title: "Collections" }} />
-      <Heading>Collections</Heading>
-      {termContext.data?.term ? (
-        <Body muted>
-          {termContext.data.term.termName} · {termContext.data.term.yearLabel}
-        </Body>
-      ) : (
-        <Body muted>Finding the current term…</Body>
-      )}
+      <ScreenHeader
+        title="Collections"
+        subtitle={
+          termContext.data?.term
+            ? `${termContext.data.term.termName} · ${termContext.data.term.yearLabel}`
+            : "Finding the current term…"
+        }
+      />
 
       <ScrollView contentContainerStyle={styles.content}>
         {!canRead && (
@@ -87,9 +87,7 @@ export default function CollectionsScreen() {
         {failure && <Notice tone="warning">{termResolutionMessage(failure)}</Notice>}
 
         {canRead && !failure && (termContext.isPending || dashboard.isPending) && (
-          <CenteredMessage>
-            <Body muted>Loading collections…</Body>
-          </CenteredMessage>
+          <Skeleton lines={4} />
         )}
 
         {(termContext.isError || dashboard.isError) && !data && (

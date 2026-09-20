@@ -998,6 +998,36 @@ this checkpoint, and the icon work is not gated on an EAS build.
 6. **Real device.** Layout is the one thing a bundle cannot prove, and this
    checkpoint is entirely layout.
 
+### CP8 build status (2026-09-21)
+
+Gates 1-5 done; Gate 6 (real device) open.
+
+Every staff screen now sits on the shared vocabulary: `ScreenHeader`,
+`SectionHeader`, `ActionTile`/`TileGrid`, `StatRow`, `ListRow`, `EmptyState`
+and `Skeleton`. Three rules fell out of doing it, and they are what stop the
+next screen drifting again:
+
+1. **A pushed screen's native bar carries the BACK BUTTON and no title**; the
+   page states the title in the serif face. Printing the same words twice,
+   inches apart, is most of what made these screens read as unfinished.
+2. **A section landing has no native bar at all** — the tab bar is its context.
+3. **"Loading…" is replaced by a skeleton that holds the shape** of what is
+   coming, so the screen does not jump when content lands, and **every empty
+   state names its reason and, where there is one, the action** — "nothing yet"
+   alone leaves the reader to guess whether that is normal, their fault, or a
+   failure.
+
+What deliberately did NOT change: any query, mutation, permission check, or the
+meaning of any message. The collections figures keep their serif display
+numerals, matching the web dashboard's KPI treatment. Error states keep
+`CenteredMessage` with a Try again button — a failure is the one case where
+stopping the reader is right.
+
+`staff-navigation.spec.ts` reads the real `app/staff` directory against the
+real layout, so a future surface that forgets the tab bar fails CI rather than
+becoming a stray tab. That spec is the standing answer to how the old home
+screen grew into a ten-card list.
+
 ### Out of scope for CP8
 
 The parent and student screens (second pass, on the same components); dark

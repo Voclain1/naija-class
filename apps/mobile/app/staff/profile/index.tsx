@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, TextInput } from "react-native";
-import { Redirect, Stack } from "expo-router";
+import { Redirect } from "expo-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { staffMyProfile, staffUpdateMyProfile } from "../../../src/lib/api/staff-curriculum";
@@ -9,12 +9,12 @@ import { queryKeys } from "../../../src/lib/query/keys";
 import { useSession } from "../../../src/lib/auth/session";
 import { useTheme } from "../../../src/theme/theme-provider";
 import { fontSizes, fonts, radii, spacing } from "../../../src/theme/tokens";
+import { ScreenHeader, SectionHeader, Skeleton } from "../../../src/components/layout";
 import {
   Body,
   Button,
   Card,
   CenteredMessage,
-  Heading,
   Label,
   Notice,
   Screen,
@@ -97,7 +97,7 @@ export default function ProfileScreen() {
   if (status === "locked") return <Redirect href="/unlock" />;
   if (!authed) return <Redirect href="/login" />;
 
-  const header = <Stack.Screen options={{ headerShown: true, title: "My profile" }} />;
+  const header = null;
   const data = profile.data;
 
   if (profile.isPending || (profile.isError && !data)) {
@@ -111,7 +111,7 @@ export default function ProfileScreen() {
               <Button title="Try again" variant="secondary" onPress={() => void profile.refetch()} />
             </>
           ) : (
-            <Body muted>Loading your profile…</Body>
+            <Skeleton lines={3} />
           )}
         </CenteredMessage>
       </Screen>
@@ -131,10 +131,10 @@ export default function ProfileScreen() {
         style={styles.fill}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
-        <Heading>
-          {staff ? `${staff.user.firstName} ${staff.user.lastName}` : "My profile"}
-        </Heading>
-        <Body muted>{staff?.school.name ?? ""}</Body>
+        <ScreenHeader
+          title={staff ? `${staff.user.firstName} ${staff.user.lastName}` : "My profile"}
+          subtitle={staff?.school.name ?? null}
+        />
 
         <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
           <Card style={styles.card}>
@@ -187,7 +187,7 @@ export default function ProfileScreen() {
 
           {/* The school's records about the teacher: readable, not editable. */}
           <Card style={styles.card}>
-            <Label>Your school&apos;s record</Label>
+            <SectionHeader title="Your school's record" />
             <Body>Staff number: {data?.staffNumber ?? "—"}</Body>
             <Body>NUT number: {data?.nutNumber ?? "—"}</Body>
             <Body>

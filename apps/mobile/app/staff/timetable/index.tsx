@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
-import { Redirect, Stack } from "expo-router";
+import { Redirect } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
 import {
   formatMinuteOfDay,
@@ -15,12 +15,12 @@ import { TimetableGrid } from "../../../src/components/timetable-grid";
 import { serverToday } from "../../../src/lib/staff/server-date";
 import { useTheme } from "../../../src/theme/theme-provider";
 import { fontSizes, fonts, radii, spacing } from "../../../src/theme/tokens";
+import { EmptyState, ScreenHeader, Skeleton } from "../../../src/components/layout";
 import {
   Body,
   Button,
   Card,
   CenteredMessage,
-  Heading,
   Label,
   Notice,
   Screen,
@@ -92,7 +92,7 @@ export default function TimetableScreen() {
   if (status === "locked") return <Redirect href="/unlock" />;
   if (!authed) return <Redirect href="/login" />;
 
-  const header = <Stack.Screen options={{ headerShown: true, title: "My timetable" }} />;
+  const header = null;
   const days = data?.schoolWeekDays ?? [1, 2, 3, 4, 5];
 
   if (timetable.isPending || (timetable.isError && !data)) {
@@ -110,7 +110,7 @@ export default function TimetableScreen() {
               />
             </>
           ) : (
-            <Body muted>Loading your timetable…</Body>
+            <Skeleton lines={5} />
           )}
         </CenteredMessage>
       </Screen>
@@ -120,8 +120,7 @@ export default function TimetableScreen() {
   return (
     <Screen>
       {header}
-      <Heading>My timetable</Heading>
-      <Body muted>{data?.term?.name ?? "No current term"}</Body>
+      <ScreenHeader title="My timetable" subtitle={data?.term?.name ?? "No current term"} />
 
       <View style={styles.viewToggle}>
         <Button
@@ -193,9 +192,11 @@ export default function TimetableScreen() {
         )}
 
         {data?.term && lessons.length === 0 && (
-          <Notice tone="info">
-            Nothing scheduled for you on {DAY_NAMES[selectedDay] ?? "this day"}.
-          </Notice>
+          <EmptyState
+            icon="cafe-outline"
+            title="Nothing scheduled"
+            body={`You have no lessons on ${DAY_NAMES[selectedDay] ?? "this day"}.`}
+          />
         )}
 
         {lessons.map((lesson: TeacherOwnLessonDto, index) => (

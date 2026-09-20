@@ -47,12 +47,12 @@ import {
 } from "../../../../../src/lib/staff/gradebook-rules";
 import { useTheme } from "../../../../../src/theme/theme-provider";
 import { fontSizes, fonts, radii, spacing } from "../../../../../src/theme/tokens";
+import { ScreenHeader, Skeleton } from "../../../../../src/components/layout";
 import {
   Body,
   Button,
   Card,
   CenteredMessage,
-  Heading,
   Label,
   Notice,
   Screen,
@@ -324,7 +324,7 @@ export default function MarkSheetScreen() {
     fullyScored,
   });
 
-  const header = <Stack.Screen options={{ headerShown: true, title: subject?.name ?? "Enter marks" }} />;
+  const header = <Stack.Screen options={{ headerShown: true, headerTitle: "" }} />;
 
   if (outOfScope) {
     return (
@@ -369,7 +369,7 @@ export default function MarkSheetScreen() {
               />
             </>
           ) : (
-            <Body muted>Loading marks…</Body>
+            <Skeleton lines={5} />
           )}
         </CenteredMessage>
       </Screen>
@@ -392,7 +392,7 @@ export default function MarkSheetScreen() {
     return (
       <Screen>
         {header}
-        <Heading>{title}</Heading>
+        <ScreenHeader title={subject?.name ?? "Marks"} subtitle={arm?.name ?? null} />
         <Notice tone="info">No students are enrolled in this class for {term?.name ?? "this term"}.</Notice>
       </Screen>
     );
@@ -407,7 +407,7 @@ export default function MarkSheetScreen() {
         style={styles.fill}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
-        <Heading>{title}</Heading>
+        <ScreenHeader title={subject?.name ?? "Marks"} subtitle={arm?.name ?? null} />
         <Body muted>{term?.name ?? ""}</Body>
 
         <ScrollView

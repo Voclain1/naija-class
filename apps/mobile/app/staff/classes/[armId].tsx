@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { ScrollView, StyleSheet, TextInput, View } from "react-native";
+import { ScrollView, StyleSheet, TextInput } from "react-native";
 import { Redirect, Stack, useLocalSearchParams } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
 import type { TeacherRosterStudentDto } from "@school-kit/types";
@@ -11,11 +11,14 @@ import { useSession } from "../../../src/lib/auth/session";
 import { useTheme } from "../../../src/theme/theme-provider";
 import { fontSizes, fonts, radii, spacing } from "../../../src/theme/tokens";
 import {
-  Body,
+  EmptyState,
+  ListRow,
+  ScreenHeader,
+  Skeleton,
+} from "../../../src/components/layout";
+import {
   Button,
-  Card,
   CenteredMessage,
-  Heading,
   Label,
   Notice,
   Screen,
@@ -80,9 +83,8 @@ export default function ClassRosterScreen() {
 
   return (
     <Screen>
-      <Stack.Screen options={{ headerShown: true, title: arm?.name ?? "Class" }} />
-      <Heading>{arm?.name ?? "Class"}</Heading>
-      {arm ? <Body muted>{arm.classLevelName}</Body> : null}
+      <Stack.Screen options={{ headerShown: true, headerTitle: "" }} />
+      <ScreenHeader title={arm?.name ?? "Class"} subtitle={arm?.classLevelName ?? null} />
 
       {outOfScope ? (
         <Notice tone="info">This isn&apos;t one of your classes.</Notice>
@@ -109,9 +111,7 @@ export default function ClassRosterScreen() {
 
           <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
             {roster.isPending && (
-              <CenteredMessage>
-                <Body muted>Loading students…</Body>
-              </CenteredMessage>
+              <Skeleton lines={5} />
             )}
 
             {roster.isError && !roster.data && !outOfScope && (
@@ -126,7 +126,11 @@ export default function ClassRosterScreen() {
             )}
 
             {roster.data && students.length === 0 && (
-              <Notice tone="info">No students are enrolled in this class yet.</Notice>
+              <EmptyState
+                icon="people-outline"
+                title="No students yet"
+                body="Nobody is enrolled in this class. Ask your administrator if that looks wrong."
+              />
             )}
 
             {roster.data && students.length > 0 && filtered.length === 0 && (
@@ -134,15 +138,14 @@ export default function ClassRosterScreen() {
             )}
 
             {filtered.map((student) => (
-              <Card key={student.id} style={styles.row}>
-                <View style={styles.text}>
-                  <Body>{fullName(student)}</Body>
-                  <Label>
-                    {student.admissionNumber}
-                    {student.status === "ACTIVE" ? "" : ` · ${student.status.toLowerCase()}`}
-                  </Label>
-                </View>
-              </Card>
+              <ListRow
+                key={student.id}
+                icon="person-outline"
+                title={fullName(student)}
+                subtitle={`${student.admissionNumber}${
+                  student.status === "ACTIVE" ? "" : ` · ${student.status.toLowerCase()}`
+                }`}
+              />
             ))}
 
             {filtered.length > 0 ? (

@@ -10,12 +10,12 @@ import { hasPermission } from "../../../src/lib/auth/permissions";
 import { useTermContext } from "../../../src/lib/staff/use-term-context";
 import { termResolutionMessage } from "../../../src/lib/staff/term-context";
 import { spacing } from "../../../src/theme/tokens";
+import { EmptyState, ScreenHeader, Skeleton } from "../../../src/components/layout";
 import {
   Body,
   Button,
   Card,
   CenteredMessage,
-  Heading,
   Label,
   Notice,
   Screen,
@@ -63,8 +63,8 @@ export default function DebtorsScreen() {
 
   return (
     <Screen>
-      <Stack.Screen options={{ headerShown: true, title: "Who owes" }} />
-      <Heading>Who owes</Heading>
+      <Stack.Screen options={{ headerShown: true, headerTitle: "" }} />
+      <ScreenHeader title="Who owes" />
       {termContext.data?.term && (
         <Body muted>
           {termContext.data.term.termName} · {rows.length} unpaid ·{" "}
@@ -82,9 +82,7 @@ export default function DebtorsScreen() {
         {failure && <Notice tone="warning">{termResolutionMessage(failure)}</Notice>}
 
         {canRead && !failure && debtors.isPending && (
-          <CenteredMessage>
-            <Body muted>Loading…</Body>
-          </CenteredMessage>
+          <Skeleton lines={4} />
         )}
 
         {debtors.isError && !debtors.data && (
@@ -95,7 +93,11 @@ export default function DebtorsScreen() {
         )}
 
         {debtors.data && rows.length === 0 && (
-          <Notice tone="info">Every invoice for this term is fully paid.</Notice>
+          <EmptyState
+            icon="checkmark-circle-outline"
+            title="Nothing owed"
+            body="Every invoice for this term is fully paid."
+          />
         )}
 
         {rows.map((row) => (

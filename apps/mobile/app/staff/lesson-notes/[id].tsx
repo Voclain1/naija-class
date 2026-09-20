@@ -35,12 +35,12 @@ import {
 } from "../../../src/lib/staff/lesson-note-document";
 import { useTheme } from "../../../src/theme/theme-provider";
 import { fontSizes, fonts, radii, spacing } from "../../../src/theme/tokens";
+import { ScreenHeader, Skeleton } from "../../../src/components/layout";
 import {
   Body,
   Button,
   Card,
   CenteredMessage,
-  Heading,
   Label,
   Notice,
   Screen,
@@ -207,7 +207,7 @@ export default function LessonNoteScreen() {
   if (status === "locked") return <Redirect href="/unlock" />;
   if (!authed) return <Redirect href="/login" />;
 
-  const header = <Stack.Screen options={{ headerShown: true, title: "Lesson note" }} />;
+  const header = <Stack.Screen options={{ headerShown: true, headerTitle: "" }} />;
   const notFound = plan.error instanceof ApiError && plan.error.status === 404;
 
   if (notFound) {
@@ -230,7 +230,7 @@ export default function LessonNoteScreen() {
               <Button title="Try again" variant="secondary" onPress={() => void plan.refetch()} />
             </>
           ) : (
-            <Body muted>Loading the note…</Body>
+            <Skeleton lines={5} />
           )}
         </CenteredMessage>
       </Screen>
@@ -248,11 +248,12 @@ export default function LessonNoteScreen() {
         style={styles.fill}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
-        <Heading>{data.topic}</Heading>
-        <Body muted>
-          {data.subjectName} · {data.classLevelName}
-          {data.durationMinutes ? ` · ${data.durationMinutes} minutes` : ""}
-        </Body>
+        <ScreenHeader
+          title={data.topic}
+          subtitle={`${data.subjectName} · ${data.classLevelName}${
+            data.durationMinutes ? ` · ${data.durationMinutes} minutes` : ""
+          }`}
+        />
 
         {/* Where the content came from. A teacher signing a note deserves to
             know whether it was grounded in the school's own scheme of work. */}

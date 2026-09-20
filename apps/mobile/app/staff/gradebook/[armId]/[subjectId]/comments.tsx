@@ -32,12 +32,12 @@ import {
 } from "../../../../../src/lib/staff/gradebook-drafts";
 import { useTheme } from "../../../../../src/theme/theme-provider";
 import { fontSizes, fonts, radii, spacing } from "../../../../../src/theme/tokens";
+import { ScreenHeader, Skeleton } from "../../../../../src/components/layout";
 import {
   Body,
   Button,
   Card,
   CenteredMessage,
-  Heading,
   Label,
   Notice,
   Screen,
@@ -271,7 +271,7 @@ export default function SubjectCommentsScreen() {
   const arm = scope.data?.classArms.find((a) => a.id === armId) ?? null;
   const subject = (scope.data?.subjectsByArm[armId ?? ""] ?? []).find((s) => s.id === subjectId) ?? null;
   const header = (
-    <Stack.Screen options={{ headerShown: true, title: "Comments" }} />
+    <Stack.Screen options={{ headerShown: true, headerTitle: "" }} />
   );
 
   if (scope.data && (!arm || !subject)) {
@@ -315,7 +315,7 @@ export default function SubjectCommentsScreen() {
               />
             </>
           ) : (
-            <Body muted>Loading comments…</Body>
+            <Skeleton lines={4} />
           )}
         </CenteredMessage>
       </Screen>
@@ -339,11 +339,12 @@ export default function SubjectCommentsScreen() {
         style={styles.fill}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
-        <Heading>Report card comments</Heading>
-        <Body muted>
-          {subject && arm ? `${subject.name} — ${arm.name}. ` : ""}
-          Drafted from each student&apos;s marks. Nothing reaches a report card until you accept it.
-        </Body>
+        <ScreenHeader
+          title="Subject comments"
+          subtitle={`${
+            subject && arm ? subject.name + " · " + arm.name + " · " : ""
+          }Nothing reaches a report card until you accept it.`}
+        />
 
         {allFrozen ? (
           <Notice tone="warning">
