@@ -105,6 +105,30 @@ export default function StaffHomeScreen() {
 
         <Card style={styles.armCard}>
           <View style={styles.armText}>
+            <Body>My timetable</Body>
+            <Label>What you are teaching, day by day</Label>
+          </View>
+          <Button
+            title="Open timetable"
+            variant="secondary"
+            onPress={() => router.push("/staff/timetable")}
+          />
+        </Card>
+
+        <Card style={styles.armCard}>
+          <View style={styles.armText}>
+            <Body>School calendar</Body>
+            <Label>Term dates, holidays and events</Label>
+          </View>
+          <Button
+            title="Open calendar"
+            variant="secondary"
+            onPress={() => router.push("/staff/calendar")}
+          />
+        </Card>
+
+        <Card style={styles.armCard}>
+          <View style={styles.armText}>
             <Body>My profile</Body>
             <Label>Your specialty and qualifications</Label>
           </View>

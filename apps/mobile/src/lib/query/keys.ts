@@ -127,4 +127,13 @@ export const queryKeys = {
     ["staff", schoolId, userId, "curriculum"] as const,
   staffProfile: (schoolId: string, userId: string) =>
     ["staff", schoolId, userId, "profile"] as const,
+
+  // CP7 — the teacher's own timetable, and the staff calendar. The calendar
+  // carries no personal data and the FAMILY copies of it are persistable, but
+  // these are staff keys and the prefix rule has no exceptions: one exception
+  // is how the rule stops being checkable.
+  staffTimetable: (schoolId: string, userId: string) =>
+    ["staff", schoolId, userId, "timetable"] as const,
+  staffCalendar: (schoolId: string, userId: string, from: string, to: string) =>
+    ["staff", schoolId, userId, "calendar", from, to] as const,
 } as const;

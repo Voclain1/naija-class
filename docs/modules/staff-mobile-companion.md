@@ -745,7 +745,8 @@ queues are how three AI features shipped broken.
 
 ### CP7 build status (2026-09-20)
 
-Items 1-6 implemented; item 7 (timetable and calendar) not started.
+All seven items implemented. **A teacher can now do their whole week from a
+phone without opening the website**, which is what CP7 set out to do.
 
 | # | Feature | State |
 |---|---|---|
@@ -755,7 +756,7 @@ Items 1-6 implemented; item 7 (timetable and calendar) not started.
 | 4 | Lesson notes: generate, edit per section, quiz | built |
 | 5 | Curriculum: paste, file picker, confirm, remove | built |
 | 6 | Profile: specialty and qualifications | built |
-| 7 | Timetable + calendar | not started |
+| 7 | Timetable + calendar | built |
 
 Two shared-client bugs were found by CP7's own specs, both of which would have
 shipped invisibly:
@@ -775,7 +776,17 @@ It cannot be exercised by `expo export`, only by a real build: the first EAS
 build after this change is the check, and `apps/mobile/BUILD.md`'s warning
 applies — a local pass is not evidence about EAS.
 
-Nothing here has run on a device yet.
+The timetable screen shows ONE DAY at a time, opening on the server's today —
+a week grid does not fit a phone, and "what am I teaching today" is the
+question a teacher actually has. It reads the narrow `timetable.own.read`
+surface (own lessons plus read-only form-class grids); the whole-school
+builder grid is a different permission and stays on web with owner/admin. The
+calendar uses the STAFF endpoint rather than the portal one the family screens
+use: same shape on the wire, different session and permission, and reusing the
+portal route with a staff token would work by accident today and break the
+moment either surface's rules change.
+
+Nothing in CP7 has run on a device yet.
 
 ### Out of scope for CP7
 
