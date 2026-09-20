@@ -611,3 +611,119 @@ Owner/admin score entry on the phone (web `/gradebook`, #306 — admins are not 
 form-teacher overall comments (`PATCH /report-cards/:id` — the natural slice
 after CP6b); report card build, approve and release; past terms; subject-period
 attendance; removing a saved mark (D21); any offline or queued write.
+
+---
+
+## CP7 — finishing the teacher (plan-first, for review 2026-09-20)
+
+**Why, in the user's own words:** *"most teachers in Nigeria don't have a
+laptop — school owners may have."* That reframes the web-only line for this
+role. CP6's split assumed a teacher could reach a desk for the heavy work;
+for this market that assumption is wrong, and a feature a teacher cannot reach
+from a phone is a feature they do not have. CP7 therefore aims at **a teacher
+who never opens the website at all**.
+
+The web-only list in this document's header is unchanged: it covers money,
+identity and school configuration, and nothing in CP7 touches those.
+
+### Scope, in build order
+
+Ordered so half-built jobs are finished before new ones start.
+
+| # | Feature | Endpoints (all existing) | Permission (teacher holds) |
+|---|---|---|---|
+| 1 | Form teacher's overall comment | `GET /report-card-comments/form`, `POST …/form/generate`, `PATCH /report-cards/:id` | `report-card-comment.generate`, workflow guard |
+| 2 | Back-dated attendance | `GET /attendance/register?date=`, `POST /attendance/mark` | `attendance.mark` |
+| 3 | Class list | `GET /teacher-scope/roster` | teacher scope |
+| 4 | Lesson notes — generate, edit, quiz | `GET/POST /lesson-plans`, `POST /lesson-plans/:id/quiz`, `PATCH /lesson-plans/:id` | `lesson-plan.*` |
+| 5 | Curriculum — list, paste, upload, review, delete | `GET/POST /curriculum/documents*` | `curriculum.read/upload/delete` |
+| 6 | Profile | `GET/PATCH /teacher-profiles/me` | `teacher-profile.self.*` |
+| 7 | Timetable + calendar | `GET /timetable*`, `GET /calendar*` | existing reads |
+
+**No server change is expected**, on the CP2/CP3/CP6 precedent. If
+implementation finds itself wanting one, that is a signal to stop and re-plan
+rather than widen scope quietly.
+
+### The three hard parts
+
+**A. The two-minute lock versus long-form writing (D24).** CP6's D19 store
+exists because the lock unmounts a screen and discards unsaved marks. A lesson
+note is far worse: ten editable sections of up to 20,000 characters each,
+typed on a phone, possibly over several sittings. Every CP7 text surface —
+form comment, lesson note sections, curriculum paste box, profile fields —
+routes through the same in-memory draft store, extended with a namespace per
+surface. Still never written to disk (CP1), still wiped at the principal
+boundary. **An app kill still loses the draft**, which was acceptable for a
+mark and is NOT obviously acceptable for a 2,000-word lesson note — so D24
+asks whether lesson notes need on-disk drafts, which would reopen CP1's
+never-persist rule for the first time.
+
+**B. Generation takes 10-30 seconds, synchronously (D25).** Unlike report-card
+comments, `POST /lesson-plans` is a blocking Sonnet call — web cycles progress
+lines through it. On a Nigerian mobile network that is longer, and if the
+teacher backgrounds the app mid-wait the request may be killed by the OS with
+the school's budget already spent. Options: (i) mirror web's progress lines and
+accept the risk; (ii) ask for a queued/polled variant, which IS a server
+change; (iii) keep it synchronous but make a duplicate generation idempotent
+per (topic, class, subject) so a lost response can be recovered without paying
+twice. **Recommendation: (i) for the first pass, with (iii) measured before
+committing to it** — the same evidence-first move D16 settled on.
+
+**C. Curriculum upload from a handset (D26).** The web path is a 10 MB file
+picker. A phone-first teacher is more likely to have a photo of a syllabus than
+a PDF of one, and **the server parses documents, not images — there is no OCR
+on this path**. CP7 therefore ships the *paste* box first (already a
+first-class endpoint, and the easier one on a phone), plus a document picker
+for real PDF/DOCX files. **Photographing a syllabus is explicitly out of
+scope** and must be said on screen, not discovered: a teacher who attaches a
+photo and gets a parse failure will conclude the feature is broken.
+
+### Decisions for review
+
+- **D24 — SETTLED 2026-09-20 by default, not by argument.** Lesson-note drafts
+  stay IN MEMORY for the first pass and the screen says so plainly. Not
+  separately approved; it stands because nothing yet shows the loss is real.
+  Revisit on usage, and treat any report of lost work as the evidence that
+  reopens it.
+- **D25 — SETTLED 2026-09-20: synchronous, with a warning the teacher cannot
+  miss, and a cancel they control.** The approval was conditional — *"if
+  background job can't be enabled"* — so record honestly that it CAN be, and is
+  not being done yet. `POST /lesson-plans` blocks for 10-30 s on a Sonnet call,
+  and the AI queue that would carry it already exists (it runs report-card
+  comments and parent summaries). Making generation queued means a new job
+  type, a worker processor and a status read: a real server slice, and CP7's
+  own rule is to stop rather than widen scope quietly. So the first pass is
+  synchronous and the screen must:
+  1. **Warn before starting**, not after — plain words, on the button's own
+     screen: do not leave this screen or switch apps until the note is ready.
+  2. **Offer Cancel** during the wait, which aborts the request and says the
+     school may still have been charged for the work already done.
+  3. **Show progress that reads as work**, as web does, so a long wait is not
+     mistaken for a hang.
+  **Queued generation is the preferred end state** and is logged as the next
+  slice after CP7, not abandoned.
+- **D26 — SETTLED 2026-09-20, approved as recommended.** Paste box first, file
+  picker second, photographs explicitly excluded and said so ON SCREEN rather
+  than discovered through a parse failure.
+- **D27** — does CP7 add bottom-tab navigation? The staff home is a list of
+  cards, which does not survive seven more surfaces. *Recommendation: yes, but
+  in the UI pass that follows CP7, not inside it.*
+
+### Gates
+
+Each numbered feature above ships behind CP6's gate ladder — no-server-change
+proof against real Postgres, then screen behaviour, then CP1's security
+invariants (every query key `["staff", schoolId, userId, …]`, nothing
+persisted, drafts wiped at the principal boundary), then real-DB conformance
+with positive/control pairs, then a real device.
+
+**One standing rule, from the bug CP6b found:** any feature here that enqueues
+work must have at least one test that hands a real job to real BullMQ. Mocked
+queues are how three AI features shipped broken.
+
+### Out of scope for CP7
+
+Everything in the header's web-only list; report card build, approve and
+release; subject-period attendance unless the school has opted in; the owner
+and admin dashboard (CP4); and the staff UI visual pass, which follows CP7 as
+its own piece of work.
