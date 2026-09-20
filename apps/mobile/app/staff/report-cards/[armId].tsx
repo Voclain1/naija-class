@@ -30,12 +30,12 @@ import {
 } from "../../../src/lib/staff/gradebook-drafts";
 import { useTheme } from "../../../src/theme/theme-provider";
 import { fontSizes, fonts, radii, spacing } from "../../../src/theme/tokens";
+import { EmptyState, ScreenHeader, Skeleton } from "../../../src/components/layout";
 import {
   Body,
   Button,
   Card,
   CenteredMessage,
-  Heading,
   Label,
   Notice,
   Screen,
@@ -240,7 +240,7 @@ export default function FormCommentsScreen() {
 
   const arm = scope.data?.classArms.find((a) => a.id === armId) ?? null;
   const isFormTeacher = (scope.data?.formTeacherArmIds ?? []).includes(armId ?? "");
-  const header = <Stack.Screen options={{ headerShown: true, title: "Report comments" }} />;
+  const header = <Stack.Screen options={{ headerShown: true, headerTitle: "" }} />;
 
   if (scope.data && !isFormTeacher) {
     return (
@@ -279,7 +279,7 @@ export default function FormCommentsScreen() {
               <Button title="Try again" variant="secondary" onPress={() => void comments.refetch()} />
             </>
           ) : (
-            <Body muted>Loading comments…</Body>
+            <Skeleton lines={4} />
           )}
         </CenteredMessage>
       </Screen>
@@ -296,17 +296,19 @@ export default function FormCommentsScreen() {
         style={styles.fill}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
-        <Heading>Report card comments</Heading>
-        <Body muted>
-          {arm ? `${arm.name}. ` : ""}Your overall comment on each child&apos;s term. Nothing
-          reaches a report card until you save it.
-        </Body>
+        <ScreenHeader
+          title="Report card comments"
+          subtitle={`${
+            arm ? arm.name + " · " : ""
+          }Nothing reaches a report card until you save it.`}
+        />
 
         {rows.length === 0 ? (
-          <Notice tone="info">
-            Report cards haven&apos;t been built for this class yet. An administrator builds them
-            once subject marks are in; your comments can be written after that.
-          </Notice>
+          <EmptyState
+            icon="document-outline"
+            title="No report cards yet"
+            body="An administrator builds them once subject marks are in. Your comments can be written after that."
+          />
         ) : locked ? (
           <Notice tone="warning">
             These report cards have moved past the form teacher stage, so the comments are frozen.

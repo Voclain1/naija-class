@@ -17,12 +17,12 @@ import {
 } from "../../../src/lib/staff/marking-window";
 import { useTheme } from "../../../src/theme/theme-provider";
 import { spacing } from "../../../src/theme/tokens";
+import { EmptyState, ScreenHeader, Skeleton } from "../../../src/components/layout";
 import {
   Body,
   Button,
   Card,
   CenteredMessage,
-  Heading,
   Label,
   Notice,
   Screen,
@@ -162,8 +162,8 @@ export default function RegisterScreen() {
 
   return (
     <Screen>
-      <Stack.Screen options={{ headerShown: true, title: "Register" }} />
-      <Heading>{date ? describeMarkingDate(date, today) : "Today"}</Heading>
+      <Stack.Screen options={{ headerShown: true, headerTitle: "" }} />
+      <ScreenHeader title={date ? describeMarkingDate(date, today) : "Today"} />
       {date && today && date !== today ? (
         <Notice tone="warning">
           You are marking {date}, not today. Saving updates that day&apos;s register.
@@ -195,9 +195,7 @@ export default function RegisterScreen() {
 
       <ScrollView contentContainerStyle={styles.content}>
         {register.isPending && (
-          <CenteredMessage>
-            <Body muted>Loading the register…</Body>
-          </CenteredMessage>
+          <Skeleton lines={5} />
         )}
 
         {register.isError && !register.data && (
@@ -210,7 +208,11 @@ export default function RegisterScreen() {
         )}
 
         {register.data && records.length === 0 && (
-          <Notice tone="info">No students are enrolled in this class for this day.</Notice>
+          <EmptyState
+            icon="people-outline"
+            title="Nobody to mark"
+            body="No students are enrolled in this class for this day."
+          />
         )}
 
         {records.map((row) => {

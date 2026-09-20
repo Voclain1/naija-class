@@ -906,3 +906,130 @@ Everything in the header's web-only list; report card build, approve and
 release; subject-period attendance unless the school has opted in; the owner
 and admin dashboard (CP4); and the staff UI visual pass, which follows CP7 as
 its own piece of work.
+
+---
+
+## CP8 — making the staff surface look like software (plan-first, approved 2026-09-21)
+
+**The ask, verbatim:** *"the app doesn't look professional. I want to redesign
+the UI and make it look like a modern software with good aesthetics; just
+arranging the stuffs orderly on the page, a dashboard just like the web
+version with shortcuts/icons on the main page."*
+
+That is a fair description of what shipped. CP2 through CP7 added ten staff
+surfaces to a home screen that was a vertical list of cards with text buttons,
+because each checkpoint added one card and no checkpoint owned the whole. The
+result works and reads as a prototype.
+
+**This is a presentation pass. No endpoint, permission or data rule changes.**
+If implementation finds itself wanting a server change, that is a signal to
+stop and re-plan — the same rule every checkpoint here has followed.
+
+### Approved shape (2026-09-21)
+
+- **Dashboard + bottom tabs.** A home dashboard of icon shortcuts, plus a
+  persistent tab bar for the handful of destinations a teacher opens daily.
+- **Staff first**, with the shared components built so the parent and student
+  screens follow in a second pass.
+- **A short "today" strip** on the dashboard: the next lesson, and whether
+  today's register is marked. Both come from data the app already fetches
+  (`/teacher-scope/me/timetable`, `/attendance/register`) — no new endpoint,
+  and nothing new that can break.
+
+Rich dashboard statistics (attendance rates, collection charts) were considered
+and deliberately deferred: they need teacher-facing aggregate endpoints that do
+not exist, which is a server slice, not a paint job.
+
+### What the design is, concretely
+
+The brand already exists and is already wired into `src/theme/tokens.ts` —
+Paper `#F7F5EF`, Ink `#13262E`, Deep Emerald, Gold Spark, Fraunces for display
+and Hanken Grotesk for text, matching `apps/web`. **Nothing about the palette
+or the typefaces changes.** What is missing is everything above the token
+layer: hierarchy, spacing rhythm, iconography, and components that repeat.
+
+| Piece | Today | CP8 |
+|---|---|---|
+| Home | A list of cards, each with a text button | Greeting, today strip, icon shortcut grid |
+| Navigation | Push and back, ten deep | Tab bar for daily destinations; the rest reached from the dashboard |
+| Icons | None anywhere | `@expo/vector-icons`, one family, used consistently |
+| Screen headers | Ad-hoc `<Heading>` + `<Body muted>` per screen | One `ScreenHeader` with title, subtitle and optional action |
+| Loading | "Loading…" text | Skeletons that hold the shape of what is coming |
+| Empty states | A `Notice` | `EmptyState` with an icon, a sentence and the action that resolves it |
+| Lists | Cards of varying padding | One `ListRow`, consistent height and touch target |
+
+### Decisions
+
+**D28 — one icon family, and icons never carry meaning alone.** A single set
+(`Ionicons`) rather than a mix, and every icon sits beside its label. An icon
+grid where the picture IS the label fails the person who does not recognise the
+metaphor — which, for an audience that includes teachers new to smartphones, is
+the whole point of this work.
+
+**D29 — the tab bar carries DAILY destinations, not all ten.** Home, Marks,
+Register, Notes, and More. Everything else stays reachable from the dashboard
+grid and by direct navigation; `href: null` hides a route from the bar without
+removing it. A tab bar that lists everything is a menu, and a menu in a bar is
+harder to read than a grid on a page.
+
+**D30 — the today strip must degrade to nothing.** A teacher with no timetable
+published, or no current term, or no form class, sees the dashboard with no
+strip rather than a row of "—" placeholders. An empty state that pretends to be
+data is worse than an absent one.
+
+**D31 — `@expo/vector-icons` is a font, not a native module.** It ships with
+Expo and loads through `expo-font`, which the app already uses for Fraunces and
+Hanken. Unlike `expo-document-picker`, `expo-print` and `expo-sharing`, it
+needs no new native code — so `expo export` remains meaningful evidence for
+this checkpoint, and the icon work is not gated on an EAS build.
+
+### Gates
+
+1. **Components before screens.** `ScreenHeader`, `ActionTile`, `StatTile`,
+   `ListRow`, `EmptyState` and `Skeleton` land first, with the theme tokens
+   they use, so no screen invents its own spacing.
+2. **The dashboard**, including the today strip and its absent states.
+3. **The tab bar**, with every non-tab staff route still reachable and no
+   route lost — a redesign that strands a screen has removed a feature.
+4. **Every staff screen re-laid out** on the new components, with no change to
+   what any of them fetches or writes.
+5. **Typecheck, lint, the full suite and an Android `expo export`** — and,
+   per D31, an export is real evidence here.
+6. **Real device.** Layout is the one thing a bundle cannot prove, and this
+   checkpoint is entirely layout.
+
+### CP8 build status (2026-09-21)
+
+Gates 1-5 done; Gate 6 (real device) open.
+
+Every staff screen now sits on the shared vocabulary: `ScreenHeader`,
+`SectionHeader`, `ActionTile`/`TileGrid`, `StatRow`, `ListRow`, `EmptyState`
+and `Skeleton`. Three rules fell out of doing it, and they are what stop the
+next screen drifting again:
+
+1. **A pushed screen's native bar carries the BACK BUTTON and no title**; the
+   page states the title in the serif face. Printing the same words twice,
+   inches apart, is most of what made these screens read as unfinished.
+2. **A section landing has no native bar at all** — the tab bar is its context.
+3. **"Loading…" is replaced by a skeleton that holds the shape** of what is
+   coming, so the screen does not jump when content lands, and **every empty
+   state names its reason and, where there is one, the action** — "nothing yet"
+   alone leaves the reader to guess whether that is normal, their fault, or a
+   failure.
+
+What deliberately did NOT change: any query, mutation, permission check, or the
+meaning of any message. The collections figures keep their serif display
+numerals, matching the web dashboard's KPI treatment. Error states keep
+`CenteredMessage` with a Try again button — a failure is the one case where
+stopping the reader is right.
+
+`staff-navigation.spec.ts` reads the real `app/staff` directory against the
+real layout, so a future surface that forgets the tab bar fails CI rather than
+becoming a stray tab. That spec is the standing answer to how the old home
+screen grew into a ten-card list.
+
+### Out of scope for CP8
+
+The parent and student screens (second pass, on the same components); dark
+mode beyond what the tokens already give; animation; any change to what a
+screen fetches, writes or refuses.

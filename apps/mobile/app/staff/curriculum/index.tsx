@@ -9,7 +9,7 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { Redirect, Stack } from "expo-router";
+import { Redirect } from "expo-router";
 import * as DocumentPicker from "expo-document-picker";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -26,12 +26,12 @@ import { queryKeys } from "../../../src/lib/query/keys";
 import { useSession } from "../../../src/lib/auth/session";
 import { useTheme } from "../../../src/theme/theme-provider";
 import { fontSizes, fonts, radii, spacing } from "../../../src/theme/tokens";
+import { EmptyState, ScreenHeader, Skeleton } from "../../../src/components/layout";
 import {
   Body,
   Button,
   Card,
   CenteredMessage,
-  Heading,
   Label,
   Notice,
   Screen,
@@ -219,16 +219,14 @@ export default function CurriculumScreen() {
 
   return (
     <Screen>
-      <Stack.Screen options={{ headerShown: true, title: "Curriculum" }} />
       <KeyboardAvoidingView
         style={styles.fill}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
-        <Heading>Curriculum</Heading>
-        <Body muted>
-          Give the app your scheme of work, and lesson notes will be written from it instead of
-          from the topic alone.
-        </Body>
+        <ScreenHeader
+          title="Curriculum"
+          subtitle="Give the app your scheme of work, and lesson notes follow it instead of the topic alone."
+        />
 
         <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
           <Card style={styles.form}>
@@ -379,9 +377,7 @@ export default function CurriculumScreen() {
           ) : null}
 
           {documents.isPending && (
-            <CenteredMessage>
-              <Body muted>Loading…</Body>
-            </CenteredMessage>
+            <Skeleton lines={3} />
           )}
 
           {documents.isError && !documents.data && (
@@ -396,10 +392,11 @@ export default function CurriculumScreen() {
           )}
 
           {documents.data && documentList.length === 0 && (
-            <Notice tone="info">
-              Nothing yet. Until a scheme of work is added, lesson notes are written from the topic
-              alone.
-            </Notice>
+            <EmptyState
+              icon="library-outline"
+              title="No scheme of work yet"
+              body="Until one is added, lesson notes are written from the topic alone."
+            />
           )}
 
           {documentList.map((document) => (

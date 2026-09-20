@@ -1,23 +1,22 @@
 import { useMemo, useState } from "react";
 import { ScrollView, StyleSheet } from "react-native";
-import { Redirect, Stack } from "expo-router";
+import { Redirect } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
 
-import { staffCalendar } from "../../src/lib/api/staff-schedule";
-import { queryKeys } from "../../src/lib/query/keys";
-import { useSession } from "../../src/lib/auth/session";
-import { serverToday } from "../../src/lib/staff/server-date";
-import { CalendarView } from "../../src/components/calendar-view";
-import { monthBounds, monthOf } from "../../src/lib/calendar/month-grid";
-import { spacing } from "../../src/theme/tokens";
+import { staffCalendar } from "../../../src/lib/api/staff-schedule";
+import { queryKeys } from "../../../src/lib/query/keys";
+import { useSession } from "../../../src/lib/auth/session";
+import { serverToday } from "../../../src/lib/staff/server-date";
+import { CalendarView } from "../../../src/components/calendar-view";
+import { monthBounds, monthOf } from "../../../src/lib/calendar/month-grid";
+import { spacing } from "../../../src/theme/tokens";
+import { ScreenHeader, Skeleton } from "../../../src/components/layout";
 import {
-  Body,
   Button,
   CenteredMessage,
-  Heading,
   Notice,
   Screen,
-} from "../../src/components/ui";
+} from "../../../src/components/ui";
 
 // CP7 (7) — the school calendar, as a MONTH GRID.
 //
@@ -61,9 +60,10 @@ export default function StaffCalendarScreen() {
 
   return (
     <Screen>
-      <Stack.Screen options={{ headerShown: true, title: "School calendar" }} />
-      <Heading>School calendar</Heading>
-      <Body muted>Term dates, holidays and school events. Tap a day to see what is on.</Body>
+      <ScreenHeader
+        title="School calendar"
+        subtitle="Term dates, holidays and events. Tap a day to see what is on."
+      />
 
       <ScrollView contentContainerStyle={styles.content}>
         <CalendarView
@@ -80,9 +80,7 @@ export default function StaffCalendarScreen() {
         />
 
         {calendar.isPending && (
-          <CenteredMessage>
-            <Body muted>Loading the calendar…</Body>
-          </CenteredMessage>
+          <Skeleton lines={3} />
         )}
 
         {calendar.isError && !calendar.data && (

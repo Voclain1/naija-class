@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from "react";
-import { ScrollView, StyleSheet, View } from "react-native";
-import { Redirect, Stack, useRouter } from "expo-router";
+import { ScrollView, StyleSheet } from "react-native";
+import { Redirect, useRouter } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
 
 import { staffTeacherScope } from "../../../src/lib/api/staff-attendance";
@@ -13,12 +13,14 @@ import {
 } from "../../../src/lib/staff/gradebook-drafts";
 import { spacing } from "../../../src/theme/tokens";
 import {
-  Body,
+  EmptyState,
+  ListRow,
+  ScreenHeader,
+  Skeleton,
+} from "../../../src/components/layout";
+import {
   Button,
-  Card,
   CenteredMessage,
-  Heading,
-  Label,
   Notice,
   Screen,
 } from "../../../src/components/ui";
@@ -67,16 +69,10 @@ export default function GradebookPickerScreen() {
 
   return (
     <Screen>
-      <Stack.Screen options={{ headerShown: true, title: "Enter marks" }} />
-      <Heading>Enter marks</Heading>
-      {term ? <Body muted>{term.name}</Body> : null}
+      <ScreenHeader title="Enter marks" subtitle={term?.name ?? null} />
 
       <ScrollView contentContainerStyle={styles.content}>
-        {scope.isPending && (
-          <CenteredMessage>
-            <Body muted>Loading your subjects…</Body>
-          </CenteredMessage>
-        )}
+        {scope.isPending && <Skeleton lines={3} />}
 
         {scope.isError && !data && (
           <CenteredMessage>
@@ -93,11 +89,15 @@ export default function GradebookPickerScreen() {
         )}
 
         {data && term && columns.length === 0 && (
-          <Notice tone="info">
-            {data.classArms.length > 0
-              ? "You aren't assigned to teach a subject yet. Marks are entered by the subject teacher. Ask your school administrator if this is wrong."
-              : "You have no classes assigned yet. Ask your school administrator to assign your subjects."}
-          </Notice>
+          <EmptyState
+            icon="create-outline"
+            title="No subjects to mark"
+            body={
+              data.classArms.length > 0
+                ? "You aren't assigned to teach a subject yet. Marks are entered by the subject teacher — ask your administrator if that looks wrong."
+                : "You have no classes yet. Ask your administrator to assign your subjects."
+            }
+          />
         )}
 
         {term &&
@@ -110,17 +110,13 @@ export default function GradebookPickerScreen() {
               subjectId: subject.id,
             });
             return (
-              <Card key={arm.id + subject.id} style={styles.card}>
-                <View style={styles.text}>
-                  <Body>{subject.name}</Body>
-                  <Label>{arm.name}</Label>
-                  {unsaved ? <Body muted>You have unsaved marks here.</Body> : null}
-                </View>
-                <Button
-                  title={unsaved ? "Continue entering marks" : "Open"}
-                  onPress={() => router.push(`/staff/gradebook/${arm.id}/${subject.id}`)}
-                />
-              </Card>
+              <ListRow
+                key={arm.id + subject.id}
+                icon={unsaved ? "alert-circle-outline" : "create-outline"}
+                title={subject.name}
+                subtitle={unsaved ? `${arm.name} · unsaved marks` : arm.name}
+                onPress={() => router.push(`/staff/gradebook/${arm.id}/${subject.id}`)}
+              />
             );
           })}
       </ScrollView>
