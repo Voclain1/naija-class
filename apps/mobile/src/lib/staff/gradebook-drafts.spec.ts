@@ -9,6 +9,7 @@ import {
   clearDraftCells,
   columnHasDrafts,
   commentDraftKey,
+  formCommentDraftKey,
   componentsWithDrafts,
   draftKey,
   hasCommentDrafts,
@@ -94,6 +95,34 @@ describe("gradebook drafts", () => {
     expect(hasCommentDrafts(SCOPE)).toBe(true);
     expect(columnHasDrafts(SCOPE)).toBe(true);
     expect(hasCommentDrafts({ ...SCOPE, userId: "user_b" })).toBe(false);
+  });
+
+  it("keeps the form teacher's overall comment apart from a column's drafts (CP7)", () => {
+    const formKey = formCommentDraftKey({
+      schoolId: SCOPE.schoolId,
+      userId: SCOPE.userId,
+      termId: SCOPE.termId,
+      classArmId: SCOPE.classArmId,
+    });
+    setDraftCell(formKey, "student_1", "A steady term.");
+    // The overall comment is about the whole term, not one subject, so it must
+    // not count as unsaved work in any column — otherwise it would block a
+    // subject sign-off it has nothing to do with.
+    expect(componentsWithDrafts(SCOPE)).toEqual([]);
+    expect(hasCommentDrafts(SCOPE)).toBe(false);
+    expect(columnHasDrafts(SCOPE)).toBe(false);
+    expect(readDraft(formKey)).toEqual({ student_1: "A steady term." });
+    // Still principal-scoped like everything else in this store.
+    expect(
+      readDraft(
+        formCommentDraftKey({
+          schoolId: SCOPE.schoolId,
+          userId: "user_b",
+          termId: SCOPE.termId,
+          classArmId: SCOPE.classArmId,
+        }),
+      ),
+    ).toEqual({});
   });
 
   it("is wiped entirely at a principal boundary and notifies subscribers", () => {

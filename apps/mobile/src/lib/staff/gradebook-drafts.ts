@@ -76,6 +76,24 @@ export function commentDraftKey(scope: DraftScope): string {
   return columnPrefix(scope) + "|comment";
 }
 
+/**
+ * CP7 — the form teacher's overall comment, keyed by studentId within a
+ * (term, arm). No subject: this comment is about the child's whole term, so
+ * its scope is one element shorter than a gradebook column's and cannot
+ * collide with one.
+ */
+export function formCommentDraftKey(scope: {
+  schoolId: string;
+  userId: string;
+  termId: string;
+  classArmId: string;
+}): string {
+  return (
+    JSON.stringify([scope.schoolId, scope.userId, scope.termId, scope.classArmId]) +
+    "|form-comment"
+  );
+}
+
 export function subscribeGradebookDrafts(listener: () => void): () => void {
   listeners.add(listener);
   return () => {
@@ -136,6 +154,24 @@ export function hasCommentDrafts(scope: DraftScope): boolean {
 /** Whether a (school, user, term, arm, subject) column has any draft at all. */
 export function columnHasDrafts(scope: DraftScope): boolean {
   return componentsWithDrafts(scope).length > 0 || hasCommentDrafts(scope);
+}
+
+/**
+ * CP7 — unsaved lesson-note text, keyed by SECTION within one plan.
+ *
+ * D24: still in memory only, like every other draft here. A lesson note is far
+ * longer than a mark or a comment, so losing one to an app kill costs more —
+ * that is a known, accepted limit for the first pass, said plainly on screen,
+ * and the thing to revisit first if teachers report lost work.
+ */
+export function lessonPlanDraftKey(scope: {
+  schoolId: string;
+  userId: string;
+  lessonPlanId: string;
+}): string {
+  return (
+    JSON.stringify([scope.schoolId, scope.userId, scope.lessonPlanId]) + "|lesson-plan"
+  );
 }
 
 /** Principal boundary: sign-out, session end, a new staff sign-in. */

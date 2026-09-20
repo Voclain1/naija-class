@@ -611,3 +611,234 @@ Owner/admin score entry on the phone (web `/gradebook`, #306 — admins are not 
 form-teacher overall comments (`PATCH /report-cards/:id` — the natural slice
 after CP6b); report card build, approve and release; past terms; subject-period
 attendance; removing a saved mark (D21); any offline or queued write.
+
+---
+
+## CP7 — finishing the teacher (plan-first, for review 2026-09-20)
+
+**Why, in the user's own words:** *"most teachers in Nigeria don't have a
+laptop — school owners may have."* That reframes the web-only line for this
+role. CP6's split assumed a teacher could reach a desk for the heavy work;
+for this market that assumption is wrong, and a feature a teacher cannot reach
+from a phone is a feature they do not have. CP7 therefore aims at **a teacher
+who never opens the website at all**.
+
+The web-only list in this document's header is unchanged: it covers money,
+identity and school configuration, and nothing in CP7 touches those.
+
+### Scope, in build order
+
+Ordered so half-built jobs are finished before new ones start.
+
+| # | Feature | Endpoints (all existing) | Permission (teacher holds) |
+|---|---|---|---|
+| 1 | Form teacher's overall comment | `GET /report-card-comments/form`, `POST …/form/generate`, `PATCH /report-cards/:id` | `report-card-comment.generate`, workflow guard |
+| 2 | Back-dated attendance | `GET /attendance/register?date=`, `POST /attendance/mark` | `attendance.mark` |
+| 3 | Class list | `GET /teacher-scope/roster` | teacher scope |
+| 4 | Lesson notes — generate, edit, quiz | `GET/POST /lesson-plans`, `POST /lesson-plans/:id/quiz`, `PATCH /lesson-plans/:id` | `lesson-plan.*` |
+| 5 | Curriculum — list, paste, upload, review, delete | `GET/POST /curriculum/documents*` | `curriculum.read/upload/delete` |
+| 6 | Profile | `GET/PATCH /teacher-profiles/me` | `teacher-profile.self.*` |
+| 7 | Timetable + calendar | `GET /timetable*`, `GET /calendar*` | existing reads |
+
+**No server change is expected**, on the CP2/CP3/CP6 precedent. If
+implementation finds itself wanting one, that is a signal to stop and re-plan
+rather than widen scope quietly.
+
+### The three hard parts
+
+**A. The two-minute lock versus long-form writing (D24).** CP6's D19 store
+exists because the lock unmounts a screen and discards unsaved marks. A lesson
+note is far worse: ten editable sections of up to 20,000 characters each,
+typed on a phone, possibly over several sittings. Every CP7 text surface —
+form comment, lesson note sections, curriculum paste box, profile fields —
+routes through the same in-memory draft store, extended with a namespace per
+surface. Still never written to disk (CP1), still wiped at the principal
+boundary. **An app kill still loses the draft**, which was acceptable for a
+mark and is NOT obviously acceptable for a 2,000-word lesson note — so D24
+asks whether lesson notes need on-disk drafts, which would reopen CP1's
+never-persist rule for the first time.
+
+**B. Generation takes 10-30 seconds, synchronously (D25).** Unlike report-card
+comments, `POST /lesson-plans` is a blocking Sonnet call — web cycles progress
+lines through it. On a Nigerian mobile network that is longer, and if the
+teacher backgrounds the app mid-wait the request may be killed by the OS with
+the school's budget already spent. Options: (i) mirror web's progress lines and
+accept the risk; (ii) ask for a queued/polled variant, which IS a server
+change; (iii) keep it synchronous but make a duplicate generation idempotent
+per (topic, class, subject) so a lost response can be recovered without paying
+twice. **Recommendation: (i) for the first pass, with (iii) measured before
+committing to it** — the same evidence-first move D16 settled on.
+
+**C. Curriculum upload from a handset (D26).** The web path is a 10 MB file
+picker. A phone-first teacher is more likely to have a photo of a syllabus than
+a PDF of one, and **the server parses documents, not images — there is no OCR
+on this path**. CP7 therefore ships the *paste* box first (already a
+first-class endpoint, and the easier one on a phone), plus a document picker
+for real PDF/DOCX files. **Photographing a syllabus is explicitly out of
+scope** and must be said on screen, not discovered: a teacher who attaches a
+photo and gets a parse failure will conclude the feature is broken.
+
+### Decisions for review
+
+- **D24 — SETTLED 2026-09-20 by default, not by argument.** Lesson-note drafts
+  stay IN MEMORY for the first pass and the screen says so plainly. Not
+  separately approved; it stands because nothing yet shows the loss is real.
+  Revisit on usage, and treat any report of lost work as the evidence that
+  reopens it.
+- **D25 — SETTLED 2026-09-20: synchronous, with a warning the teacher cannot
+  miss, and a cancel they control.** The approval was conditional — *"if
+  background job can't be enabled"* — so record honestly that it CAN be, and is
+  not being done yet. `POST /lesson-plans` blocks for 10-30 s on a Sonnet call,
+  and the AI queue that would carry it already exists (it runs report-card
+  comments and parent summaries). Making generation queued means a new job
+  type, a worker processor and a status read: a real server slice, and CP7's
+  own rule is to stop rather than widen scope quietly. So the first pass is
+  synchronous and the screen must:
+  1. **Warn before starting**, not after — plain words, on the button's own
+     screen: do not leave this screen or switch apps until the note is ready.
+  2. **Offer Cancel** during the wait, which aborts the request and says the
+     school may still have been charged for the work already done.
+  3. **Show progress that reads as work**, as web does, so a long wait is not
+     mistaken for a hang.
+  **Queued generation is the preferred end state** and is logged as the next
+  slice after CP7, not abandoned.
+- **D26 — SETTLED 2026-09-20, approved as recommended.** Paste box first, file
+  picker second, photographs explicitly excluded and said so ON SCREEN rather
+  than discovered through a parse failure.
+- **D27** — does CP7 add bottom-tab navigation? The staff home is a list of
+  cards, which does not survive seven more surfaces. *Recommendation: yes, but
+  in the UI pass that follows CP7, not inside it.*
+
+### D14 — SETTLED 2026-09-20, in CP7's first PR
+
+CP2 railed mobile marking to the server's today and said plainly that it was a
+pilot default, not the policy. The policy is now decided, and by a market fact
+rather than a technical one: **most Nigerian teachers have no laptop**, so
+"use the web teacher portal to correct an earlier day" is not a workaround but
+a refusal. The window is therefore **parity with web** — any past date the
+server accepts, no future date.
+
+Three things did not change, which is why this widens nobody's authority: the
+server was always the boundary and is untouched (it accepts any past in-term
+date from a holder of `attendance.mark`, and rejects future dates itself);
+"today" still comes from the server's clock, never the handset's; and a
+correction is still audited and still visible through the register's
+last-marked stamp. What is lost is the pilot property that the phone could not
+touch history — worth having while the policy was open, not worth a teacher
+being unable to fix Friday.
+
+The screen names the day it is marking ("Today", "Yesterday", or the date) and
+warns when it is not today, so a back-dated register cannot be mistaken for
+the current one.
+
+### Gates
+
+Each numbered feature above ships behind CP6's gate ladder — no-server-change
+proof against real Postgres, then screen behaviour, then CP1's security
+invariants (every query key `["staff", schoolId, userId, …]`, nothing
+persisted, drafts wiped at the principal boundary), then real-DB conformance
+with positive/control pairs, then a real device.
+
+**One standing rule, from the bug CP6b found:** any feature here that enqueues
+work must have at least one test that hands a real job to real BullMQ. Mocked
+queues are how three AI features shipped broken.
+
+### CP7 build status (2026-09-20)
+
+All seven items implemented. **A teacher can now do their whole week from a
+phone without opening the website**, which is what CP7 set out to do.
+
+| # | Feature | State |
+|---|---|---|
+| 1 | Form teacher's overall comment | built |
+| 2 | Back-dated attendance (D14 settled) | built |
+| 3 | Class list + roster search | built |
+| 4 | Lesson notes: generate, edit per section, quiz | built |
+| 5 | Curriculum: paste, file picker, confirm, remove | built |
+| 6 | Profile: specialty and qualifications | built |
+| 7 | Timetable + calendar | built |
+
+Two shared-client bugs were found by CP7's own specs, both of which would have
+shipped invisibly:
+
+1. **`apiFetch` wrapped an `AbortError` as `ApiNetworkError`**, so pressing
+   Stop during a lesson-note generation would have told the teacher their
+   network had failed. Aborts now reach the caller unchanged, which is what
+   makes D25's Stop button honest.
+2. **`apiFetch` JSON-stringified every body**, so a multipart upload would
+   have arrived as `"{}"`. FormData now passes through untouched, with
+   Content-Type left to the runtime so the multipart boundary is present —
+   setting that header by hand omits the boundary and the server finds no
+   fields at all.
+
+`expo-document-picker` is a NEW NATIVE dependency (SDK-matched, `~57.0.2`).
+It cannot be exercised by `expo export`, only by a real build: the first EAS
+build after this change is the check, and `apps/mobile/BUILD.md`'s warning
+applies — a local pass is not evidence about EAS.
+
+The timetable screen opens on ONE DAY, on the server's today, and expands to a
+WEEK on request (added 2026-09-20 at the maintainer's ask). Day answers "what
+am I teaching today" with room for the class, period label and co-teachers;
+week answers the planning question — "am I free Thursday afternoon" — and a
+full week cannot fit a phone's width at a readable size, so it scrolls
+SIDEWAYS with the period times pinned in the first column and each cell cut
+back to subject and class. Tapping a day heading in the week drops into that
+day in full. Only LESSON slots get a week row: a bell schedule carries break
+and assembly slots too, and spending a row on each pushes the lessons off
+screen. It reads the narrow `timetable.own.read` surface (own lessons plus read-only form-class grids); the whole-school
+builder grid is a different permission and stays on web with owner/admin. The
+calendar uses the STAFF endpoint rather than the portal one the family screens
+use: same shape on the wire, different session and permission, and reusing the
+portal route with a staff token would work by accident today and break the
+moment either surface's rules change.
+
+**The calendar is a MONTH GRID** (2026-09-20, same ask), in the shape people
+already know from their phone: dates laid out as weeks, a dot on any day
+something happens, and the day's events listed on tap. A list answers "what is
+next"; someone looking at a calendar is usually asking "what is happening ON a
+date", and a list makes them count. Colour carries category but never alone —
+the day list carries the words, because a legend nobody remembers is not
+information. The fetch window follows the month on screen rather than a fixed
+six-month span, so paging back to last term is ordinary, and each month caches
+in its own right. The grid maths lives in `src/lib/calendar/month-grid.ts`
+with its own spec: a month starting on Sunday, a leap February and a multi-day
+entry appearing on every day it covers are all the kind of thing that breaks
+silently and is noticed by a teacher, not by a test, unless it is pinned.
+
+**Every role's calendar is now the same component** (2026-09-20, same ask):
+teacher, guardian and student all render `CalendarView` — month grid by
+default, with the old list kept as a second view. The list is not dead weight:
+it answers "what is coming up" without tapping through days, and it reads
+aloud in order for a screen reader, which a grid does not. The three screens
+differ only in which endpoint feeds them, which is a session and permission
+matter, not a presentation one.
+
+**A CLASS timetable is now a table, and a TEACHER's own timetable is not**
+(2026-09-20, same ask, and the distinction is the maintainer's). They are
+different questions:
+
+- A **class** timetable — what a student, a guardian, or a form teacher asked
+  by their class is reading — is dense by definition, every period filled, and
+  the alignment IS the information: "what follows Maths on Tuesday" is
+  answered by reading down a column. It renders as `TimetableGrid`: days
+  across, periods down, times pinned in the first column, scrolling sideways.
+  Break and assembly rows are KEPT and span the full width, because on a class
+  timetable break is part of the shape of the day, and dropping it would make
+  the periods either side look adjacent when they are not.
+- A **teacher's own** lessons are scattered across classes and are mostly empty
+  space, so the same grid would be mostly blank. That stays day-first, with the
+  week view as the planning answer.
+
+`TimetableGrid` therefore backs the student screen, the guardian's view of a
+child, and the form-class section of a teacher's own timetable. The family
+screens keep the per-day list as a second view (`FamilyTimetable` owns the
+toggle) for the same accessibility reason the calendar list survives.
+
+Nothing in CP7 has run on a device yet.
+
+### Out of scope for CP7
+
+Everything in the header's web-only list; report card build, approve and
+release; subject-period attendance unless the school has opted in; the owner
+and admin dashboard (CP4); and the staff UI visual pass, which follows CP7 as
+its own piece of work.

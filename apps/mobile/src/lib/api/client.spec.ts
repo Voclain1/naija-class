@@ -200,3 +200,78 @@ describe("apiFetch — unauthorized notification", () => {
     expect(listener).not.toHaveBeenCalled();
   });
 });
+
+describe("aborting a request", () => {
+  // CP7 / D25: the lesson-note screen offers Stop during a 10-30 s generation.
+  // An abort must stay an abort all the way to the caller — it is the
+  // teacher's own action, and reporting it as a network failure would tell
+  // them something untrue about their connection.
+  it("re-throws an AbortError instead of wrapping it as a network failure", async () => {
+    setTokenProvider(() => "test-token");
+    const controller = new AbortController();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((_url: string, init: RequestInit) =>
+        new Promise((_resolve, reject) => {
+          init.signal?.addEventListener("abort", () => {
+            const error = new Error("Aborted");
+            error.name = "AbortError";
+            reject(error);
+          });
+        }),
+      ),
+    );
+
+    const pending = apiFetch("/slow", { signal: controller.signal });
+    controller.abort();
+    const error = await pending.catch((e: unknown) => e);
+
+    expect((error as Error).name).toBe("AbortError");
+    expect(error).not.toBeInstanceOf(ApiNetworkError);
+    vi.unstubAllGlobals();
+    setTokenProvider(() => null);
+  });
+});
+
+describe("multipart bodies", () => {
+  // CP7 / D26: the curriculum file upload is the only multipart caller. Both
+  // assertions below exist because getting either wrong fails the same
+  // invisible way — the server sees no fields and rejects the upload.
+  it("passes FormData through and leaves Content-Type to the runtime", async () => {
+    setTokenProvider(() => "test-token");
+    const fetchMock = vi.fn(() =>
+      Promise.resolve(new Response(JSON.stringify({ ok: true }), { status: 202 })),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const form = new FormData();
+    form.append("title", "Scheme of work");
+    await apiFetch("/curriculum/documents/upload", { method: "POST", body: form });
+
+    const [, init] = fetchMock.mock.calls.at(-1) as unknown as [string, RequestInit];
+    // Not stringified: JSON.stringify(FormData) is "{}", which is how a broken
+    // upload looks from the client side.
+    expect(init.body).toBe(form);
+    // No hand-set Content-Type, so fetch can add the multipart boundary.
+    expect(new Headers(init.headers).get("Content-Type")).toBeNull();
+    // The bearer token still travels.
+    expect(new Headers(init.headers).get("Authorization")).toBe("Bearer test-token");
+
+    vi.unstubAllGlobals();
+    setTokenProvider(() => null);
+  });
+
+  it("still serialises an ordinary object body as JSON", async () => {
+    setTokenProvider(() => null);
+    const fetchMock = vi.fn(() => Promise.resolve(new Response("{}", { status: 200 })));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await apiFetch("/anything", { method: "POST", body: { a: 1 } });
+
+    const [, init] = fetchMock.mock.calls.at(-1) as unknown as [string, RequestInit];
+    expect(init.body).toBe('{"a":1}');
+    expect(new Headers(init.headers).get("Content-Type")).toBe("application/json");
+
+    vi.unstubAllGlobals();
+  });
+});

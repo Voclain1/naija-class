@@ -104,4 +104,36 @@ export const queryKeys = {
     classArmId: string,
     subjectId: string,
   ) => ["staff", schoolId, userId, "comments", termId, classArmId, subjectId] as const,
+
+  // CP7 — the form teacher's overall comment, and the class list. Same "staff"
+  // prefix rule: a roster is every child in the class by name, and a form
+  // comment is a judgement about one of them.
+  staffFormComments: (schoolId: string, userId: string, termId: string, classArmId: string) =>
+    ["staff", schoolId, userId, "form-comments", termId, classArmId] as const,
+  staffRoster: (schoolId: string, userId: string, classArmId: string) =>
+    ["staff", schoolId, userId, "roster", classArmId] as const,
+
+  // CP7 — lesson notes. A teacher's own work rather than student data, but the
+  // same prefix rule applies without exception: a staff key that did not start
+  // with "staff" would become persistable, and the rule is only usable if it
+  // has no "except when" attached to it.
+  staffLessonPlans: (schoolId: string, userId: string) =>
+    ["staff", schoolId, userId, "lesson-plans"] as const,
+  staffLessonPlan: (schoolId: string, userId: string, id: string) =>
+    ["staff", schoolId, userId, "lesson-plans", id] as const,
+
+  // CP7 — curriculum documents and the teacher's own profile.
+  staffCurriculum: (schoolId: string, userId: string) =>
+    ["staff", schoolId, userId, "curriculum"] as const,
+  staffProfile: (schoolId: string, userId: string) =>
+    ["staff", schoolId, userId, "profile"] as const,
+
+  // CP7 — the teacher's own timetable, and the staff calendar. The calendar
+  // carries no personal data and the FAMILY copies of it are persistable, but
+  // these are staff keys and the prefix rule has no exceptions: one exception
+  // is how the rule stops being checkable.
+  staffTimetable: (schoolId: string, userId: string) =>
+    ["staff", schoolId, userId, "timetable"] as const,
+  staffCalendar: (schoolId: string, userId: string, from: string, to: string) =>
+    ["staff", schoolId, userId, "calendar", from, to] as const,
 } as const;

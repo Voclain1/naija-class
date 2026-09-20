@@ -40,6 +40,7 @@ export default function StaffHomeScreen() {
   // CP6a — offered on the server's own answer to "what do I teach", not on a
   // role name: a column appears only where subjectsByArm lists a subject.
   const canEnterMarks = hasPermission(staff?.permissions ?? [], "assessment-score.create");
+  const canWriteLessonNotes = hasPermission(staff?.permissions ?? [], "lesson-plan.create");
 
   const scope = useQuery({
     queryKey: queryKeys.staffScope(schoolId, userId),
@@ -78,6 +79,74 @@ export default function StaffHomeScreen() {
           403 at them, which is the same rule the arm list below applies to
           form-teacher arms.
         */}
+        {canWriteLessonNotes && (
+          <Card style={styles.armCard}>
+            <View style={styles.armText}>
+              <Body>Lesson notes</Body>
+              <Label>Write a lesson note with AI, then edit it</Label>
+            </View>
+            <Button title="Open lesson notes" onPress={() => router.push("/staff/lesson-notes")} />
+          </Card>
+        )}
+
+        {canWriteLessonNotes && (
+          <Card style={styles.armCard}>
+            <View style={styles.armText}>
+              <Body>Curriculum</Body>
+              <Label>Add your scheme of work so notes follow it</Label>
+            </View>
+            <Button
+              title="Open curriculum"
+              variant="secondary"
+              onPress={() => router.push("/staff/curriculum")}
+            />
+          </Card>
+        )}
+
+        <Card style={styles.armCard}>
+          <View style={styles.armText}>
+            <Body>My timetable</Body>
+            <Label>What you are teaching, day by day</Label>
+          </View>
+          <Button
+            title="Open timetable"
+            variant="secondary"
+            onPress={() => router.push("/staff/timetable")}
+          />
+        </Card>
+
+        <Card style={styles.armCard}>
+          <View style={styles.armText}>
+            <Body>School calendar</Body>
+            <Label>Term dates, holidays and events</Label>
+          </View>
+          <Button
+            title="Open calendar"
+            variant="secondary"
+            onPress={() => router.push("/staff/calendar")}
+          />
+        </Card>
+
+        <Card style={styles.armCard}>
+          <View style={styles.armText}>
+            <Body>My profile</Body>
+            <Label>Your specialty and qualifications</Label>
+          </View>
+          <Button
+            title="Open profile"
+            variant="secondary"
+            onPress={() => router.push("/staff/profile")}
+          />
+        </Card>
+
+        <Card style={styles.armCard}>
+          <View style={styles.armText}>
+            <Body>My classes</Body>
+            <Label>Who is in each class you teach</Label>
+          </View>
+          <Button title="Open classes" onPress={() => router.push("/staff/classes")} />
+        </Card>
+
         {canEnterMarks && teachesSubjects && (
           <Card style={styles.armCard}>
             <View style={styles.armText}>
@@ -130,6 +199,13 @@ export default function StaffHomeScreen() {
             <Button
               title="Open register"
               onPress={() => router.push(`/staff/attendance/${arm.id}`)}
+            />
+            {/* CP7: the overall report card comment is the form teacher's, so
+                it is offered exactly where form-teacher arms already are. */}
+            <Button
+              title="Report card comments"
+              variant="secondary"
+              onPress={() => router.push(`/staff/report-cards/${arm.id}`)}
             />
           </Card>
         ))}

@@ -31,6 +31,15 @@ const STAFF_KEYS: Record<string, readonly unknown[]> = {
   staffGradingScheme: queryKeys.staffGradingScheme(SCHOOL, USER),
   staffGradebook: queryKeys.staffGradebook(SCHOOL, USER, "term_1", "arm_1", "subject_1"),
   staffSubjectComments: queryKeys.staffSubjectComments(SCHOOL, USER, "term_1", "arm_1", "subject_1"),
+  // CP7 — a roster is every child in the class, by name.
+  staffFormComments: queryKeys.staffFormComments(SCHOOL, USER, "term_1", "arm_1"),
+  staffRoster: queryKeys.staffRoster(SCHOOL, USER, "arm_1"),
+  staffLessonPlans: queryKeys.staffLessonPlans(SCHOOL, USER),
+  staffLessonPlan: queryKeys.staffLessonPlan(SCHOOL, USER, "plan_1"),
+  staffCurriculum: queryKeys.staffCurriculum(SCHOOL, USER),
+  staffProfile: queryKeys.staffProfile(SCHOOL, USER),
+  staffTimetable: queryKeys.staffTimetable(SCHOOL, USER),
+  staffCalendar: queryKeys.staffCalendar(SCHOOL, USER, "2026-09-01", "2027-03-01"),
 };
 
 describe("staff query keys", () => {

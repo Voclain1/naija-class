@@ -1,33 +1,36 @@
 // ===========================================================================
-// TEMPORARY — CP2 marking-window safety rail. NOT the answer to D14.
+// D14 — SETTLED 2026-09-20. The marking window is now PARITY WITH WEB.
 // ===========================================================================
 //
-// D14 (how far back a teacher may mark attendance) is deliberately NOT decided
-// here. The real policy is a product decision about how Nigerian schools
-// actually reconcile a register — whether a Friday absence can be corrected on
-// Monday, who may correct it, and whether a correction is visible. None of
-// that is settled, and CP2 is not the place to settle it by accident.
+// CP2 shipped a deliberately blunt rail: the phone could mark only the
+// server's today, so a real device pilot could not produce back-dated
+// attendance while the policy was open. That file said, in as many words, that
+// it was temporary and that deleting it would restore web's behaviour.
 //
-// What this file is: a cheap, deliberately blunt default so that CP2's real
-// device pilot, with a real teacher and a real register, cannot produce
-// back-dated attendance while the policy is still open. It restricts marking
-// from the phone to the SERVER's today.
+// What settled it is a market fact, not a technical one: **most Nigerian
+// teachers have no laptop.** "Use the web teacher portal to correct an earlier
+// day" reads as a workaround and is in practice a refusal — the teacher who
+// forgot Friday's register cannot reach the surface the rail points them at.
+// A rail that assumes a desk is worse than back-dating.
 //
-// What it is NOT:
-//   - Not a security boundary. The server still accepts any past date inside a
-//     term from any caller holding `attendance.mark` — the web teacher surface
-//     does exactly that today, by design. Removing this file would restore
-//     mobile to web's behaviour, not open a hole.
-//   - Not parity with web. Web allows back-dating with a date picker capped at
-//     today. Mobile is deliberately narrower FOR NOW, and says so on screen.
-//   - Not a reason to skip D14. When the window policy is decided, this file
-//     is deleted and the decision replaces it in one place.
+// So the window is now what web has always had: any past date the server
+// accepts, and no future date. Three things did NOT change, and they are why
+// this is not a widening of anyone's authority:
 //
-// The read path is deliberately unrestricted: a teacher may LOOK at an earlier
-// register. Only the write is railed. Reading yesterday to check what happened
-// is not the risk; silently writing to yesterday is.
+//   - The SERVER is unchanged and always was the boundary. It accepts any past
+//     in-term date from a caller holding `attendance.mark`, and rejects future
+//     dates itself (`resolveTermForDate`). This file has never been a security
+//     control, and is not one now.
+//   - "Today" still comes from the SERVER's clock, never the handset's. A
+//     phone with a wrong date must not be able to define the window.
+//   - A mark is still audited, and an amendment is still visible: the register
+//     carries its last-marked stamp, so a corrected day is never silent.
+//
+// What IS lost is the pilot safety of "the phone cannot touch history". That
+// was worth having while the policy was open; it is not worth a teacher being
+// unable to fix Friday.
 
-export type MarkingBlockReason = "NOT_TODAY" | "NO_SERVER_CLOCK";
+export type MarkingBlockReason = "FUTURE_DATE" | "NO_SERVER_CLOCK";
 
 export interface MarkingWindow {
   canMark: boolean;
@@ -38,22 +41,42 @@ export interface MarkingWindow {
  * May the phone submit marks for `date`?
  *
  * `serverToday` is the server's calendar day (UTC, see server-date.ts), or
- * null when no API response has established the clock yet. A null clock
- * BLOCKS marking rather than falling back to the device clock: the whole point
- * of the rail is that the handset's own date is not trusted to define "today".
- * In practice this state is unreachable on a screen that just loaded a
- * register, because that load itself established the clock.
+ * null when no API response has established the clock yet. A null clock BLOCKS
+ * marking rather than falling back to the device clock: the handset's own date
+ * is not trusted to define "today". In practice this state is unreachable on a
+ * screen that just loaded a register, because that load established the clock.
  */
 export function markingWindow(date: string, serverToday: string | null): MarkingWindow {
   if (serverToday === null) return { canMark: false, reason: "NO_SERVER_CLOCK" };
-  if (date !== serverToday) return { canMark: false, reason: "NOT_TODAY" };
+  // String comparison is correct for ISO yyyy-mm-dd and avoids re-parsing a
+  // date into a zone, which is the trap the @db.Date convention exists to dodge.
+  if (date > serverToday) return { canMark: false, reason: "FUTURE_DATE" };
   return { canMark: true, reason: null };
 }
 
-/** On-screen explanation. Says "for now" out loud — this rail is temporary. */
+/** On-screen explanation for a blocked window. */
 export function markingBlockMessage(reason: MarkingBlockReason): string {
   if (reason === "NO_SERVER_CLOCK") {
     return "We couldn't confirm today's date with the server. Reload before marking.";
   }
-  return "For now, the app can only mark today's register. Use the web teacher portal to correct an earlier day.";
+  return "You can't mark a register for a day that hasn't happened yet.";
+}
+
+/** Shift an ISO yyyy-mm-dd date by whole days, in UTC. */
+export function shiftIsoDate(date: string, days: number): string {
+  const ms = Date.parse(date + "T00:00:00.000Z");
+  if (Number.isNaN(ms)) return date;
+  return new Date(ms + days * 86_400_000).toISOString().slice(0, 10);
+}
+
+/**
+ * How a chosen date reads to a teacher. "Today"/"Yesterday" carry more meaning
+ * at a glance than a date string, and a back-dated register must never be
+ * mistaken for today's.
+ */
+export function describeMarkingDate(date: string, serverToday: string | null): string {
+  if (serverToday === null) return date;
+  if (date === serverToday) return "Today";
+  if (date === shiftIsoDate(serverToday, -1)) return "Yesterday";
+  return date;
 }

@@ -9,7 +9,12 @@ import { ApiNetworkError } from "../../../src/lib/api/client";
 import { queryKeys } from "../../../src/lib/query/keys";
 import { useSession } from "../../../src/lib/auth/session";
 import { serverToday } from "../../../src/lib/staff/server-date";
-import { markingBlockMessage, markingWindow } from "../../../src/lib/staff/marking-window";
+import {
+  describeMarkingDate,
+  markingBlockMessage,
+  markingWindow,
+  shiftIsoDate,
+} from "../../../src/lib/staff/marking-window";
 import { useTheme } from "../../../src/theme/theme-provider";
 import { spacing } from "../../../src/theme/tokens";
 import {
@@ -69,14 +74,23 @@ export default function RegisterScreen() {
   const schoolId = staff?.school.id ?? "";
   const userId = staff?.user.id ?? "";
 
-  // The date is fixed to the SERVER's today for CP2 (see marking-window.ts —
-  // temporary rail, not D14's answer). Read per render rather than held in
-  // state so a register left open across midnight cannot keep writing to
-  // yesterday under a stale value.
+  // CP7 / D14: the teacher may move back through past days and correct them.
+  // `today` stays read per render — a register left open across midnight must
+  // not keep writing to yesterday under a stale value — while `offset` is the
+  // teacher's own navigation away from it, so the two cannot drift apart.
   const today = serverToday();
-  const date = today ?? "";
+  const [offset, setOffset] = useState(0);
+  const date = today ? shiftIsoDate(today, offset) : "";
 
   const [edits, setEdits] = useState<Record<string, AttendanceStatusDto>>({});
+  const goToDay = useCallback((days: number) => {
+    // Changing day discards nothing saved and everything unsaved, so it clears
+    // the edit buffer rather than carrying marks onto another day's register.
+    setEdits({});
+    setFailure(null);
+    setSaved(null);
+    setOffset((current) => Math.min(0, current + days));
+  }, []);
   const [failure, setFailure] = useState<string | null>(null);
   const [saved, setSaved] = useState<number | null>(null);
 
@@ -149,11 +163,30 @@ export default function RegisterScreen() {
   return (
     <Screen>
       <Stack.Screen options={{ headerShown: true, title: "Register" }} />
-      <Heading>{date || "Today"}</Heading>
+      <Heading>{date ? describeMarkingDate(date, today) : "Today"}</Heading>
+      {date && today && date !== today ? (
+        <Notice tone="warning">
+          You are marking {date}, not today. Saving updates that day&apos;s register.
+        </Notice>
+      ) : null}
+      <View style={styles.dayNav}>
+        <Button
+          title="◀ Earlier day"
+          variant="secondary"
+          disabled={!today || mark.isPending}
+          onPress={() => goToDay(-1)}
+        />
+        <Button
+          title="Later day ▶"
+          variant="secondary"
+          disabled={!today || offset === 0 || mark.isPending}
+          onPress={() => goToDay(1)}
+        />
+      </View>
       {stamp ? (
         <Body muted>Already marked. Last saved at {stamp} — saving again updates it.</Body>
       ) : (
-        <Body muted>Not marked yet today.</Body>
+        <Body muted>Not marked yet.</Body>
       )}
 
       {!window.canMark && window.reason && (
@@ -177,7 +210,7 @@ export default function RegisterScreen() {
         )}
 
         {register.data && records.length === 0 && (
-          <Notice tone="info">No students are enrolled in this class for today.</Notice>
+          <Notice tone="info">No students are enrolled in this class for this day.</Notice>
         )}
 
         {records.map((row) => {
@@ -270,4 +303,5 @@ const styles = StyleSheet.create({
   },
   chipText: { fontWeight: "600" },
   actions: { gap: spacing.sm, paddingTop: spacing.sm },
+  dayNav: { flexDirection: "row", gap: spacing.sm, paddingTop: spacing.sm },
 });

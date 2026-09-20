@@ -8,7 +8,7 @@ import { useSession } from "../../../src/lib/auth/session";
 import { useTheme } from "../../../src/theme/theme-provider";
 import { spacing } from "../../../src/theme/tokens";
 import { Body, Button, CenteredMessage, Notice, Screen } from "../../../src/components/ui";
-import { TimetableDays } from "../../../src/components/timetable-days";
+import { FamilyTimetable } from "../../../src/components/family-timetable";
 import { FreshnessLabel, useIsOnline } from "../../../src/components/freshness-label";
 
 // Phase 8 / CP4 — a guardian's view of one child's class timetable (docs/modules/phase-8.md §18 D39, D45).
@@ -59,7 +59,7 @@ export default function ChildTimetableScreen() {
         {query.data && (
           <>
             <FreshnessLabel updatedAt={query.dataUpdatedAt} />
-            <TimetableDays data={query.data} />
+            <FamilyTimetable data={query.data} />
           </>
         )}
       </ScrollView>
