@@ -1,16 +1,16 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { RefreshControl, ScrollView, StyleSheet } from "react-native";
 import { Redirect, Stack } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
-import { defaultCalendarWindow } from "@school-kit/types";
 
 import { getGuardianCalendar } from "../src/lib/api/portal";
 import { queryKeys } from "../src/lib/query/keys";
+import { CalendarView } from "../src/components/calendar-view";
+import { monthBounds, monthOf } from "../src/lib/calendar/month-grid";
 import { useSession } from "../src/lib/auth/session";
 import { useTheme } from "../src/theme/theme-provider";
 import { spacing } from "../src/theme/tokens";
 import { Body, Button, CenteredMessage, Notice, Screen } from "../src/components/ui";
-import { CalendarList } from "../src/components/calendar-list";
 import { FreshnessLabel, useIsOnline } from "../src/components/freshness-label";
 
 // Phase 8 / CP1 — the school calendar for a guardian (docs/modules/phase-8.md §15).
@@ -25,7 +25,11 @@ export default function GuardianCalendarScreen() {
   const { status, principal } = useSession();
   const { colors } = useTheme();
   const online = useIsOnline();
-  const calendarWindow = useMemo(() => defaultCalendarWindow(), []);
+  // The month on screen drives the window, so paging back to last term is
+  // an ordinary thing to do rather than the edge of a fixed six-month span.
+  const [month, setMonth] = useState(() => monthOf(new Date().toISOString().slice(0, 10)));
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const calendarWindow = useMemo(() => monthBounds(month), [month]);
 
   const query = useQuery({
     queryKey: queryKeys.guardianCalendar(calendarWindow.from, calendarWindow.to),
@@ -70,7 +74,17 @@ export default function GuardianCalendarScreen() {
         {query.data && (
           <>
             <FreshnessLabel updatedAt={query.dataUpdatedAt} />
-            <CalendarList entries={query.data.entries} />
+            <CalendarView
+              entries={query.data.entries}
+              month={month}
+              selectedDate={selectedDate}
+              today={new Date().toISOString().slice(0, 10)}
+              onSelectDate={setSelectedDate}
+              onChangeMonth={(next) => {
+                setMonth(next);
+                setSelectedDate(null);
+              }}
+            />
           </>
         )}
       </ScrollView>

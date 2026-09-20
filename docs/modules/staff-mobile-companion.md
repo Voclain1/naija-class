@@ -805,8 +805,34 @@ with its own spec: a month starting on Sunday, a leap February and a multi-day
 entry appearing on every day it covers are all the kind of thing that breaks
 silently and is noticed by a teacher, not by a test, unless it is pinned.
 
-`CalendarList` still backs the guardian and student screens; converting those
-to the grid is a separate change.
+**Every role's calendar is now the same component** (2026-09-20, same ask):
+teacher, guardian and student all render `CalendarView` — month grid by
+default, with the old list kept as a second view. The list is not dead weight:
+it answers "what is coming up" without tapping through days, and it reads
+aloud in order for a screen reader, which a grid does not. The three screens
+differ only in which endpoint feeds them, which is a session and permission
+matter, not a presentation one.
+
+**A CLASS timetable is now a table, and a TEACHER's own timetable is not**
+(2026-09-20, same ask, and the distinction is the maintainer's). They are
+different questions:
+
+- A **class** timetable — what a student, a guardian, or a form teacher asked
+  by their class is reading — is dense by definition, every period filled, and
+  the alignment IS the information: "what follows Maths on Tuesday" is
+  answered by reading down a column. It renders as `TimetableGrid`: days
+  across, periods down, times pinned in the first column, scrolling sideways.
+  Break and assembly rows are KEPT and span the full width, because on a class
+  timetable break is part of the shape of the day, and dropping it would make
+  the periods either side look adjacent when they are not.
+- A **teacher's own** lessons are scattered across classes and are mostly empty
+  space, so the same grid would be mostly blank. That stays day-first, with the
+  week view as the planning answer.
+
+`TimetableGrid` therefore backs the student screen, the guardian's view of a
+child, and the form-class section of a teacher's own timetable. The family
+screens keep the per-day list as a second view (`FamilyTimetable` owns the
+toggle) for the same accessibility reason the calendar list survives.
 
 Nothing in CP7 has run on a device yet.
 

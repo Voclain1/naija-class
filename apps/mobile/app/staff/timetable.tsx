@@ -11,6 +11,7 @@ import {
 import { staffMyTimetable } from "../../src/lib/api/staff-schedule";
 import { queryKeys } from "../../src/lib/query/keys";
 import { useSession } from "../../src/lib/auth/session";
+import { TimetableGrid } from "../../src/components/timetable-grid";
 import { serverToday } from "../../src/lib/staff/server-date";
 import { useTheme } from "../../src/theme/theme-provider";
 import { fontSizes, fonts, radii, spacing } from "../../src/theme/tokens";
@@ -215,30 +216,35 @@ export default function TimetableScreen() {
           </Card>
         ))}
 
-        {/* Classes this teacher form-teaches: the whole class's day, which is
-            what a form teacher is asked about by their students.
-
-            These lessons reference a slot by id rather than embedding it (a
-            form-class grid repeats the same slots for every lesson), so the
-            time comes from the shared slot list. */}
+        {/* Classes this teacher FORM-teaches. A form teacher is asked about
+            the whole class's week — "what do we have after break on
+            Wednesday" — so this is the same aligned table a student sees,
+            not a list of the teacher's own lessons. */}
         {(data?.formClasses ?? []).map((formClass) => {
-          const dayLessons = formClass.lessons
-            .filter((lesson) => lesson.dayOfWeek === selectedDay)
-            .map((lesson) => ({
-              lesson,
-              slot: slotById.get(lesson.bellSlotId) ?? null,
-            }))
-            .sort((a, b) => (a.slot?.startMinute ?? 0) - (b.slot?.startMinute ?? 0));
-          if (dayLessons.length === 0) return null;
+          const byDayAndSlot = new Map(
+            formClass.lessons.map((lesson) => {
+              const slot = slotById.get(lesson.bellSlotId);
+              return [lesson.dayOfWeek + ":" + (slot?.position ?? -1), lesson];
+            }),
+          );
           return (
             <Card key={formClass.classArmId} style={styles.lesson}>
-              <Label>{formClass.className} — the whole class&apos;s day</Label>
-              {dayLessons.map(({ lesson, slot }) => (
-                <Body key={lesson.id} muted>
-                  {slot ? `${formatMinuteOfDay(slot.startMinute)} ` : ""}
-                  {lesson.subjectName}
-                </Body>
-              ))}
+              <Label>{formClass.className} — the whole class</Label>
+              <TimetableGrid
+                days={days}
+                slots={data?.slots ?? []}
+                todayWeekday={todayWeekday}
+                showTeachers
+                lessonAt={(weekday, position) => {
+                  const lesson = byDayAndSlot.get(weekday + ":" + position);
+                  return lesson
+                    ? {
+                        subjectName: lesson.subjectName,
+                        teacherNames: lesson.teachers.map((teacher) => teacher.name),
+                      }
+                    : null;
+                }}
+              />
             </Card>
           );
         })}

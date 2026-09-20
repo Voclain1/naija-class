@@ -1,7 +1,6 @@
 import { StyleSheet, View } from "react-native";
 import {
   ISO_WEEKDAY_LABELS,
-  formatCalendarDate,
   formatMinuteOfDay,
   publishedDay,
   type FamilyTimetableDto,
@@ -38,9 +37,6 @@ export function TimetableDays({ data }: { data: FamilyTimetableDto }) {
 
   return (
     <>
-      <Body muted>
-        {data.className} · {data.termName} · published {formatCalendarDate(data.publishedAt!.slice(0, 10))}
-      </Body>
       {data.grid.days.map((day) => (
         <Card key={day}>
           <Heading>{ISO_WEEKDAY_LABELS[day]}</Heading>
