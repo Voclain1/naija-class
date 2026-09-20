@@ -520,10 +520,18 @@ and `adoptStaffSession` and deliberately not from the lock path.
   generation enqueued from the phone lands its `ai_interaction_logs` row the
   same as one from web.
 - **Gate 5** — real device, with the accepted comment confirmed on the web
-  report card. **Drafting is proven on a real phone (2026-09-20)**, once the
-  production bug below was fixed and deployed; accepting a comment from the
-  phone and confirming it on the web report card is still unreported, so this
-  gate is PARTIAL, not closed.
+  report card. **CLOSED on device, 2026-09-20**, once the production bug below
+  was fixed and deployed: a teacher drafted comments with AI from the phone,
+  accepted one, and the accepted text was then read back on the web report
+  card. Accept is the only writer of `Assessment.subjectComment`, so that
+  round trip is the gate's real subject.
+
+  What was NOT exercised, deliberately and correctly: building or releasing the
+  report card itself. The test school's other subjects are not compiled yet, so
+  there is nothing to build — and a RELEASED card is frozen by
+  `released-guard.ts`, which the app already refuses against with its own
+  message. Release remains a web-only, owner/admin action; nothing in CP6
+  claims otherwise.
 
 **CP6b's device pass found a PRODUCTION bug that had nothing to do with
 mobile.** The first tap on "Draft comments with AI" returned
