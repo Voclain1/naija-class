@@ -836,6 +836,42 @@ toggle) for the same accessibility reason the calendar list survives.
 
 Nothing in CP7 has run on a device yet.
 
+### Printing a lesson note (2026-09-20)
+
+Asked for after the first device pass: a teacher must be able to print or send
+a lesson note, and **as ONE document, not section by section**. A Nigerian
+lesson note is submitted as a single sheet for a head teacher to read and
+sign; handing someone ten fragments is handing them a form to assemble.
+
+On screen the note stays split into editable sections, because that is how it
+is written and saved. On paper the sections become headings in one continuous
+flow — `page-break-after: avoid` on the headings so none is orphaned at the
+foot of a page, and deliberately NO `page-break-before`, which would print ten
+near-empty pages. Empty sections are omitted rather than printed as bare
+headings, and pre-v2 notes still print their legacy `introduction`/`activities`
+sections so an older note comes out whole. The document carries the school,
+teacher, subject, class and duration, and ends with signature lines, because
+this is a document somebody signs.
+
+Two actions, both rendering the same HTML: **Print** (the system dialog, which
+on Android is also the Save-as-PDF path) and **Share as PDF**
+(`printToFileAsync` then the share sheet, so a note can go by WhatsApp or
+email — which is how a note actually reaches a head teacher).
+
+**What prints is what is SAVED.** Unsaved section text would otherwise appear
+on paper and then be lost with the next lock or app close, so the screen says
+to save first rather than quietly including drafts.
+
+The HTML builder (`src/lib/staff/lesson-note-document.ts`) is pure and
+separately tested: section order, omission of empties, escaping (a note saying
+"x < y" must print as typed rather than vanish as a broken tag), the teacher's
+own line breaks, and system fonts only — a print stylesheet that reaches for a
+web font fails quietly on a phone with no data.
+
+`expo-print` and `expo-sharing` are NEW NATIVE dependencies, so like
+`expo-document-picker` they cannot be exercised by `expo export`; the next EAS
+build is the check.
+
 ### The curriculum crash (2026-09-20) — and why nothing caught it
 
 The first device build crashed on the curriculum screen seconds after it

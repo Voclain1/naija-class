@@ -8,6 +8,8 @@ import {
   View,
 } from "react-native";
 import { Redirect, Stack, useLocalSearchParams } from "expo-router";
+import * as Print from "expo-print";
+import * as Sharing from "expo-sharing";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { LessonPlanDto, UpdateLessonPlanInput } from "@school-kit/types";
 
@@ -27,6 +29,10 @@ import {
   setDraftCell,
   subscribeGradebookDrafts,
 } from "../../../src/lib/staff/gradebook-drafts";
+import {
+  buildLessonNoteHtml,
+  lessonNoteFileName,
+} from "../../../src/lib/staff/lesson-note-document";
 import { useTheme } from "../../../src/theme/theme-provider";
 import { fontSizes, fonts, radii, spacing } from "../../../src/theme/tokens";
 import {
@@ -159,6 +165,45 @@ export default function LessonNoteScreen() {
     },
   });
 
+  // Printing and sharing both render the SAME document: every section, in
+  // teaching order, as one continuous note rather than ten fragments. What
+  // they print is what is SAVED — an unsaved section would otherwise appear on
+  // paper and then be lost, so the screen says to save first instead.
+  const [documentBusy, setDocumentBusy] = useState<"print" | "share" | null>(null);
+
+  async function withDocument(
+    kind: "print" | "share",
+    run: (html: string, fileName: string) => Promise<void>,
+  ): Promise<void> {
+    const current = plan.data;
+    if (!current) return;
+    setFailure(null);
+    setNotice(null);
+    setDocumentBusy(kind);
+    try {
+      await run(
+        buildLessonNoteHtml(current, {
+          schoolName: staff?.school.name ?? null,
+          teacherName: staff ? `${staff.user.firstName} ${staff.user.lastName}` : null,
+        }),
+        lessonNoteFileName(current),
+      );
+    } catch (error) {
+      // A cancelled print dialog rejects on some devices; it is not a failure
+      // worth shouting about, and the teacher already knows they cancelled.
+      const message = error instanceof Error ? error.message : "";
+      if (!/cancel/i.test(message)) {
+        setFailure(
+          kind === "print"
+            ? "Your phone couldn't open the printer. Try sharing it as a PDF instead."
+            : "That note couldn't be turned into a PDF. Try printing it instead.",
+        );
+      }
+    } finally {
+      setDocumentBusy(null);
+    }
+  }
+
   if (status === "locked") return <Redirect href="/unlock" />;
   if (!authed) return <Redirect href="/login" />;
 
@@ -226,6 +271,47 @@ export default function LessonNoteScreen() {
                   : grounding.reason === "not-configured"
                     ? "Written from the topic alone."
                     : "Written from the topic alone — no matching section was found in your scheme of work."}
+          </Label>
+        ) : null}
+
+        <View style={styles.documentActions}>
+          <Button
+            title="Print"
+            variant="secondary"
+            loading={documentBusy === "print"}
+            disabled={documentBusy !== null}
+            onPress={() =>
+              void withDocument("print", async (html) => {
+                // The system dialog also offers "Save as PDF" on Android, so
+                // this is the print AND the save path.
+                await Print.printAsync({ html });
+              })
+            }
+          />
+          <Button
+            title="Share as PDF"
+            variant="secondary"
+            loading={documentBusy === "share"}
+            disabled={documentBusy !== null}
+            onPress={() =>
+              void withDocument("share", async (html, fileName) => {
+                const { uri } = await Print.printToFileAsync({ html });
+                if (!(await Sharing.isAvailableAsync())) {
+                  setNotice(`Saved as ${fileName}.`);
+                  return;
+                }
+                await Sharing.shareAsync(uri, {
+                  mimeType: "application/pdf",
+                  dialogTitle: fileName,
+                  UTI: "com.adobe.pdf",
+                });
+              })
+            }
+          />
+        </View>
+        {unsavedCount > 0 ? (
+          <Label>
+            Save your changes first — a printed note only carries what has been saved.
           </Label>
         ) : null}
 
@@ -333,6 +419,7 @@ export default function LessonNoteScreen() {
 
 const styles = StyleSheet.create({
   fill: { flex: 1 },
+  documentActions: { flexDirection: "row", gap: spacing.sm, paddingTop: spacing.sm },
   list: { gap: spacing.sm, paddingVertical: spacing.md },
   section: { gap: spacing.sm },
   sectionHead: { flexDirection: "row", justifyContent: "space-between", alignItems: "baseline" },
