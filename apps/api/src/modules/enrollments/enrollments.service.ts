@@ -3,6 +3,7 @@ import { Injectable } from "@nestjs/common";
 import { Prisma, withTenant, type PrismaClient } from "@school-kit/db";
 import {
   ConflictError,
+  ForbiddenError,
   NotFoundError,
   ValidationError,
   type BulkCreateEnrollmentInput,
@@ -13,10 +14,14 @@ import {
   type EnrollmentListResponse,
   type EnrollmentStatusDto,
   type ListEnrollmentsQuery,
+  type MoveEnrollmentInput,
+  type MoveEnrollmentRecordsDto,
+  type MoveEnrollmentResultDto,
   type UpdateEnrollmentInput,
 } from "@school-kit/types";
 
 import type { AuthContext } from "../../common/auth/auth-context";
+import * as password from "../../common/auth/password";
 import { assertUserActiveAndHasOneOf } from "../../common/auth/role-check";
 
 interface RequestContext {
@@ -30,6 +35,7 @@ const AUDIT = {
   update: "enrollment.update",
   delete: "enrollment.delete",
   bulkCreate: "enrollment.bulk-create",
+  move: "enrollment.move-class",
 } as const;
 
 const DEFAULT_LIMIT = 100;
@@ -223,6 +229,23 @@ export class EnrollmentsService {
             "Cannot move an enrollment to an inactive class arm.",
           );
         }
+        // D39: a bare PATCH moves only this row, leaving the child's
+        // assessment rows and report card on the OLD class. Once either
+        // exists, the change must go through POST /enrollments/:id/move,
+        // which carries them across under a password check.
+        if (input.classArmId !== existing.classArmId) {
+          const full = await db.enrollment.findUniqueOrThrow({
+            where: { id },
+            select: { studentId: true, termId: true },
+          });
+          const records = await termRecords(db, full.studentId, full.termId);
+          if (records.markCount > 0 || records.assessmentCount > 0 || records.reportCardStatus !== null) {
+            throw new ConflictError(
+              "ENROLLMENT_HAS_TERM_RECORDS",
+              "This student already has marks or a report card this term. Use the move action, which carries them to the new class.",
+            );
+          }
+        }
         data.classArm = { connect: { id: input.classArmId } };
       }
       if (input.status !== undefined) {
@@ -302,6 +325,162 @@ export class EnrollmentsService {
           },
         },
       });
+    });
+  }
+
+  // ----------------------------------------------------------------------
+  // move — POST /enrollments/:id/move (D39). Same term, another class.
+  //
+  // Carries the child's records across in ONE transaction:
+  //   - the enrolment row's class;
+  //   - their assessment rows' denormalised class_arm_id, with positions
+  //     cleared (they belonged to the old class's ranking; the next build or
+  //     aggregation pass recomputes both classes);
+  //   - their DRAFT report card is deleted — it is a snapshot of the old
+  //     class, and a build in the new class makes a fresh one.
+  // Entered marks (assessment_scores) are keyed by student, not class, and
+  // need no change.
+  //
+  // Refused: a report card past DRAFT (reopen first — the "all cards in a
+  // class share a status" invariant), a non-ENROLLED row, the same class, an
+  // inactive or missing class.
+  //
+  // PASSWORD (maintainer's safeguard, 2026-09-21): when the child has any
+  // marks or a report card this term, the caller must re-enter their password.
+  // Without it: 409 MOVE_NEEDS_PASSWORD, with what would change in `details`.
+  // A wrong one: 403 PASSWORD_INCORRECT — deliberately NOT 401, which clients
+  // treat as "session over" and would sign the admin out for a typo.
+  //
+  // Fees are never touched (money goes through FinanceService). If the move
+  // changes class LEVEL and an invoice exists, the result says so.
+  // ----------------------------------------------------------------------
+  async move(
+    authCtx: AuthContext,
+    id: string,
+    input: MoveEnrollmentInput,
+    reqCtx: RequestContext,
+  ): Promise<MoveEnrollmentResultDto> {
+    await assertUserActiveAndHasOneOf(authCtx, ["owner", "admin"]);
+
+    return withTenant(authCtx.schoolId, async (db) => {
+      const existing = await db.enrollment.findUnique({
+        where: { id },
+        select: { id: true, studentId: true, termId: true, classArmId: true, status: true },
+      });
+      if (!existing) throw new NotFoundError("Enrollment not found.");
+      if (existing.status !== "ENROLLED") {
+        throw new ConflictError(
+          "ENROLLMENT_NOT_ACTIVE",
+          "Only a student currently enrolled in the class can be moved.",
+        );
+      }
+      if (existing.classArmId === input.classArmId) {
+        throw new ValidationError("SAME_CLASS_ARM", "The student is already in that class.");
+      }
+
+      const fromArm = await db.classArm.findUnique({
+        where: { id: existing.classArmId },
+        select: { classLevelId: true },
+      });
+      const toArm = await db.classArm.findUnique({
+        where: { id: input.classArmId },
+        select: { id: true, isActive: true, classLevelId: true },
+      });
+      if (!toArm) throw new NotFoundError("Class arm not found.");
+      if (!toArm.isActive) {
+        throw new ValidationError("INACTIVE_CLASS_ARM", "Cannot move a student into an inactive class arm.");
+      }
+
+      const records = await termRecords(db, existing.studentId, existing.termId);
+      if (records.reportCardStatus !== null && records.reportCardStatus !== "DRAFT") {
+        throw new ConflictError(
+          "REPORT_CARD_IN_PROGRESS",
+          "This student's report card is already being reviewed or has been released. Reopen the class before moving them.",
+        );
+      }
+
+      const hasRecords =
+        records.markCount > 0 || records.assessmentCount > 0 || records.reportCardStatus !== null;
+      if (hasRecords) {
+        if (!input.currentPassword) {
+          const details: MoveEnrollmentRecordsDto = {
+            markCount: records.markCount,
+            hasReportCard: records.reportCardStatus !== null,
+          };
+          throw new ConflictError(
+            "MOVE_NEEDS_PASSWORD",
+            "This student already has records this term. Enter your password to move them.",
+            details,
+          );
+        }
+        const user = await db.user.findUnique({
+          where: { id: authCtx.userId },
+          select: { passwordHash: true },
+        });
+        const ok = user?.passwordHash
+          ? await password.verifyPassword(user.passwordHash, input.currentPassword).catch(() => false)
+          : false;
+        if (!ok) {
+          throw new ForbiddenError("PASSWORD_INCORRECT", "That password is not correct. Nothing was changed.");
+        }
+      }
+
+      const updated = await db.enrollment.update({
+        where: { id },
+        data: { classArm: { connect: { id: input.classArmId } } },
+        select: ENROLLMENT_SELECT,
+      });
+      const moved = await db.assessment.updateMany({
+        where: { studentId: existing.studentId, termId: existing.termId },
+        data: {
+          classArmId: input.classArmId,
+          subjectPosition: null,
+          classPosition: null,
+          positionsComputedAt: null,
+        },
+      });
+      const discarded = await db.reportCard.deleteMany({
+        where: { studentId: existing.studentId, termId: existing.termId, status: "DRAFT" },
+      });
+
+      const levelChanged = fromArm?.classLevelId !== toArm.classLevelId;
+      const invoice = levelChanged
+        ? await db.invoice.findFirst({
+            where: { studentId: existing.studentId, termId: existing.termId },
+            select: { id: true },
+          })
+        : null;
+
+      await db.auditLog.create({
+        data: {
+          schoolId: authCtx.schoolId,
+          userId: authCtx.userId,
+          action: AUDIT.move,
+          entityType: "enrollment",
+          entityId: id,
+          ipAddress: reqCtx.ipAddress,
+          // PII-free: ids and counts. passwordConfirmed records that the
+          // records-changing path was re-authenticated.
+          metadata: {
+            studentId: existing.studentId,
+            termId: existing.termId,
+            fromArmId: existing.classArmId,
+            toArmId: input.classArmId,
+            assessmentsMoved: moved.count,
+            marksCarried: records.markCount,
+            reportCardDiscarded: discarded.count > 0,
+            passwordConfirmed: hasRecords,
+            levelChanged,
+          },
+        },
+      });
+
+      return {
+        enrollment: toEnrollmentDto(updated),
+        assessmentsMoved: moved.count,
+        reportCardDiscarded: discarded.count > 0,
+        invoiceNeedsReview: invoice !== null,
+      };
     });
   }
 
@@ -673,4 +852,16 @@ export async function loadCurrentEnrollmentsForStudents(
     });
   }
   return map;
+}
+
+// What a child already has in a term, for D39's move rules.
+async function termRecords(
+  db: PrismaClient,
+  studentId: string,
+  termId: string,
+): Promise<{ markCount: number; assessmentCount: number; reportCardStatus: string | null }> {
+  const markCount = await db.assessmentScore.count({ where: { studentId, termId } });
+  const assessmentCount = await db.assessment.count({ where: { studentId, termId } });
+  const card = await db.reportCard.findFirst({ where: { studentId, termId }, select: { status: true } });
+  return { markCount, assessmentCount, reportCardStatus: card?.status ?? null };
 }

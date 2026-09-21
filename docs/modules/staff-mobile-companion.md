@@ -1371,3 +1371,39 @@ any phone payment screen, as planned:
   the index, so it genuinely exercises the database guard.
 
 The website does not send a key yet; it keeps its previous behaviour exactly.
+
+### D39 — moving a child between classes: decided and built (2026-09-21)
+
+**Correction to the earlier finding.** Entered marks (`assessment_scores`)
+are keyed by student, subject and term — NOT by class — so they already
+follow a child to a new class's gradebook. What stays on the old class is
+the per-subject `assessments` row (`class_arm_id` is denormalised there for
+position ranking) and the report card. So a move does not have to erase any
+teacher's work.
+
+**Maintainer's decision (2026-09-21):** admins may move a child mid-term,
+behind a security check — a confirmation, and the admin's own password when
+records would change. Not for end-of-session promotion, which is its own flow
+and does not come here.
+
+**Built — `POST /enrollments/:id/move`** (`enrollment.update` + owner/admin
+role, throttled 10/min):
+
+- No marks and no report card → moves on confirmation alone.
+- Marks or a report card → 409 `MOVE_NEEDS_PASSWORD` with
+  `{ markCount, hasReportCard }` in `details`, so the phone can say exactly what
+  will change; with `currentPassword` it re-verifies against the admin's own
+  hash. A wrong password is **403** `PASSWORD_INCORRECT`, deliberately not 401,
+  which the clients treat as "session over".
+- In one transaction: the enrolment moves; the assessment rows move with their
+  positions cleared (the next build re-ranks both classes); a DRAFT report
+  card is discarded to be rebuilt. Marks are untouched.
+- A report card past DRAFT → 409 `REPORT_CARD_IN_PROGRESS` (reopen first).
+- Fees are never touched. If the class LEVEL changed and an invoice exists,
+  the result carries `invoiceNeedsReview` for the bursar.
+- One `enrollment.move-class` audit row: from/to class, counts, and whether
+  the password path ran.
+- `PATCH /enrollments/:id` with a new `classArmId` is now refused (409
+  `ENROLLMENT_HAS_TERM_RECORDS`) once the child has records, so the old
+  split-the-record path is closed. With no records it still works; no current
+  caller sends `classArmId`.
