@@ -48,6 +48,8 @@ const STAFF_KEYS: Record<string, readonly unknown[]> = {
   staffStudents: queryKeys.staffStudents(SCHOOL, USER, ""),
   staffStudent: queryKeys.staffStudent(SCHOOL, USER, "student_1"),
   staffClassArms: queryKeys.staffClassArms(SCHOOL, USER),
+  // CP4d — named colleagues' activity; an audited read.
+  staffTeacherActivity: queryKeys.staffTeacherActivity(SCHOOL, USER),
 };
 
 describe("staff query keys", () => {

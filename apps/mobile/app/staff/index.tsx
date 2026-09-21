@@ -223,6 +223,13 @@ export default function StaffDashboardScreen() {
       show: canApprove,
     },
     {
+      icon: "bar-chart-outline",
+      label: "Reports",
+      hint: "What's behind",
+      onPress: () => router.push("/staff/reports"),
+      show: schoolAdmin && hasPermission(permissions, "reports.completeness.read"),
+    },
+    {
       icon: "people-circle-outline",
       label: "Students",
       hint: "Find, add, update",
@@ -328,7 +335,15 @@ export default function StaffDashboardScreen() {
                     const copy = ALERT_COPY[alert.type](alert.count);
                     // Report card approval is on the phone now (CP4b); every
                     // other alert still resolves on the website.
-                    const inApp = alert.type === "pending_report_card_approval" && canApprove;
+                    const inAppRoute =
+                      alert.type === "pending_report_card_approval" && canApprove
+                        ? "/staff/approvals"
+                        : alert.type === "term_health" &&
+                            schoolAdmin &&
+                            hasPermission(permissions, "reports.completeness.read")
+                          ? "/staff/reports"
+                          : null;
+                    const inApp = inAppRoute !== null;
                     return (
                       <StatRow
                         key={alert.type}
@@ -344,7 +359,7 @@ export default function StaffDashboardScreen() {
                         }
                         onPress={
                           inApp
-                            ? () => router.push("/staff/approvals")
+                            ? () => router.push(inAppRoute)
                             : webConfigured
                               ? () => openOnWeb(alert.href)
                               : undefined

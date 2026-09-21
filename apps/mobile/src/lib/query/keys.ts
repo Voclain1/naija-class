@@ -158,4 +158,9 @@ export const queryKeys = {
     ["staff", schoolId, userId, "student", id] as const,
   staffClassArms: (schoolId: string, userId: string) =>
     ["staff", schoolId, userId, "class-arms"] as const,
+
+  // CP4d — the per-teacher activity report. Every fetch is an AUDITED read
+  // (D35), so the query using this key never refetches in the background.
+  staffTeacherActivity: (schoolId: string, userId: string) =>
+    ["staff", schoolId, userId, "teacher-activity"] as const,
 } as const;

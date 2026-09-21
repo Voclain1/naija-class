@@ -1162,6 +1162,42 @@ Four PRs, each reviewable alone, each merged before the next begins:
 3. **CP4c** — student records.
 4. **CP4d** — reports, including audited teacher activity (D35).
 
+### CP4 build status (2026-09-21)
+
+All four parts implemented on one branch, as four reviewable commits. **This
+deviates from "four PRs, each merged before the next begins"** — the parts
+were built back to back while the previous PR's CI ran, and stacked PRs in
+this repository need their bases deleted by hand to retarget
+(see the stacked-PR note in the maintainer's working notes), so they ship as
+one PR with the commits kept separate for review.
+
+| Part | State |
+|---|---|
+| CP4a — role-aware dashboard, school overview, web handoff | built |
+| CP4b — report card approval | built |
+| CP4c — student records | built |
+| CP4d — reports + audited teacher activity | built |
+
+**The pattern CP4 kept finding: the admin surfaces are gated on ROLE.**
+`TeacherScopeService` (teacher), `StudentsService`, the report-card workflow
+and `CompletenessService` (owner/admin) all call `assertUserActiveAndHasOneOf`
+in addition to their `@Permissions` guard. So every CP4 gate checks the role
+AND the permission — the role because the service refuses without it, the
+permission because the guard does. `isSchoolAdmin` / `isTeacher` in
+`src/lib/auth/roles.ts` are the only role checks in the app, each documented
+against the service line it mirrors.
+
+Two consequences worth recording:
+
+- A teacher holds `student.read` (for their own class lists) but is refused
+  by `/students`. A Students tile gated on the permission would have been a
+  broken tile for every teacher in the school.
+- A custom role granted `report-card.principal-approve` alone would still be
+  refused by the workflow service. The approvals tab therefore needs both.
+
+Nothing in CP4 has run on a device, and **no device pass has ever signed in as
+an owner** — that is the first thing CP4's Gate 6 must do.
+
 ### Gates
 
 The CP8 ladder, per PR: components before screens; screens on the CP8
