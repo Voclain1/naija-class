@@ -1,9 +1,13 @@
-import { ScrollView, StyleSheet, View } from "react-native";
-import { Redirect, Stack } from "expo-router";
-import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import { Alert, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { Redirect, Stack, useRouter } from "expo-router";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { formatKobo } from "@school-kit/types";
 
 import { staffDebtors } from "../../../src/lib/api/staff-finance";
+import { staffSendReminders } from "../../../src/lib/api/staff-money";
+import { ApiError, ApiNetworkError } from "../../../src/lib/api/client";
+import { moneyAbilities } from "../../../src/lib/staff/money";
 import { queryKeys } from "../../../src/lib/query/keys";
 import { useSession } from "../../../src/lib/auth/session";
 import { hasPermission } from "../../../src/lib/auth/permissions";
@@ -35,7 +39,13 @@ import {
 //      add any. finance.mobile-cp3.spec.ts asserts the key set EXACTLY, so a
 //      future field cannot arrive here quietly. "Who owes" is a finance
 //      question; "how to reach them" is a different one with a different
-//      answer, and the reminder flow that needs it stays on web.
+//      answer. CP9b's reminders keep it that way: the phone sends student ids
+//      and the SERVER looks up each family's contact — the phone never holds a
+//      parent's phone number to send one.
+//
+// CP9b (D38): each row opens that family's page (record a payment, remind,
+// share a payment link), and "Remind every family" sends in batches of the
+// server's limit after a confirmation that says texts cost money.
 
 export default function DebtorsScreen() {
   const { status, principal, staff } = useSession();
@@ -54,12 +64,50 @@ export default function DebtorsScreen() {
     staleTime: 60_000,
   });
 
+  const router = useRouter();
+  const abilities = moneyAbilities(staff?.roles, staff?.permissions ?? []);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [remindFailure, setRemindFailure] = useState<string | null>(null);
+
+  const remindAll = useMutation({
+    mutationFn: (studentIds: string[]) => staffSendReminders(termId, studentIds),
+    onMutate: () => {
+      setNotice(null);
+      setRemindFailure(null);
+    },
+    onSuccess: (result) =>
+      setNotice(
+        `Reminders sent to ${result.sent} famil${result.sent === 1 ? "y" : "ies"}.` +
+          (result.skipped > 0 ? ` ${result.skipped} could not be reached (no main contact, or already paid).` : ""),
+      ),
+    onError: (error) =>
+      setRemindFailure(
+        error instanceof ApiNetworkError
+          ? "Your phone lost the connection while sending. Some reminders may have gone — check before sending again, so no family is texted twice."
+          : error instanceof ApiError
+            ? error.message
+            : "The reminders could not be sent.",
+      ),
+  });
+
   if (status === "locked") return <Redirect href="/unlock" />;
   if (!authed) return <Redirect href="/login" />;
 
   const failure = termContext.data?.failure ?? null;
   const rows = debtors.data ?? [];
   const totalOwed = rows.reduce((sum, r) => sum + r.balance, 0);
+
+  function confirmRemindAll(): void {
+    const ids = [...new Set(rows.map((r) => r.studentId))];
+    Alert.alert(
+      `Remind ${ids.length} famil${ids.length === 1 ? "y" : "ies"}?`,
+      `Every family that owes this term gets a reminder of their balance, through the channels your school has switched on (app notification, email, text). Texts are charged to the school — up to ${ids.length} of them.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: "Send reminders", onPress: () => remindAll.mutate(ids) },
+      ],
+    );
+  }
 
   return (
     <Screen>
@@ -100,8 +148,31 @@ export default function DebtorsScreen() {
           />
         )}
 
+        {notice ? <Notice tone="info">{notice}</Notice> : null}
+        {remindFailure ? <Notice tone="danger">{remindFailure}</Notice> : null}
+        {abilities.remind && rows.length > 0 ? (
+          <Button
+            title="Remind every family"
+            variant="secondary"
+            loading={remindAll.isPending}
+            disabled={remindAll.isPending}
+            onPress={confirmRemindAll}
+          />
+        ) : null}
+
         {rows.map((row) => (
-          <Card key={row.invoiceId} style={styles.row}>
+          <Pressable
+            key={row.invoiceId}
+            accessibilityRole="button"
+            accessibilityLabel={`${row.studentName}, ${formatKobo(row.balance)} outstanding`}
+            onPress={() =>
+              router.push({
+                pathname: "/staff/collections/[invoiceId]",
+                params: { invoiceId: row.invoiceId, termId },
+              })
+            }
+          >
+          <Card style={styles.row}>
             <View style={styles.rowHead}>
               <Body>{row.studentName}</Body>
               <Body>{formatKobo(row.balance)}</Body>
@@ -115,13 +186,8 @@ export default function DebtorsScreen() {
               {row.hasPaymentPlan ? " · on a payment plan" : ""}
             </Label>
           </Card>
+          </Pressable>
         ))}
-
-        {rows.length > 0 && (
-          <Notice tone="info">
-            Reminders are sent from the web app. This list is read-only.
-          </Notice>
-        )}
       </ScrollView>
     </Screen>
   );

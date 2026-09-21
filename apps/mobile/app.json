@@ -33,6 +33,14 @@
         }
       ],
       [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow School Kit to attach a photo of a receipt to an expense.",
+          "cameraPermission": "Allow School Kit to take a photo of a receipt for an expense.",
+          "microphonePermission": false
+        }
+      ],
+      [
         "expo-splash-screen",
         {
           "image": "./assets/splash.png",
