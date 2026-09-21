@@ -261,6 +261,18 @@ describe("eas.json — build profiles", () => {
     }
   });
 
+  it("points preview and production at the real website for the web handoff", () => {
+    // CP4 D36. The handoff opens this address on a head teacher's phone, and
+    // it is baked in at build time exactly like the API URL. The value is the
+    // custom domain, not the raw Vercel URL — neon-prod-setup.md records why
+    // the platform URL is the wrong one to hard-code. There is deliberately NO
+    // runtime fallback: a missing value is shown as unconfigured rather than
+    // quietly opening localhost.
+    for (const profile of ["preview", "production"]) {
+      expect(eas.build[profile]?.env?.EXPO_PUBLIC_WEB_URL).toBe("https://app.schoolkit.ng");
+    }
+  });
+
   it("keeps the development profile off the production API", () => {
     // A development build is the one handed round on a laptop with a debugger
     // attached. Pointing it at production means every experiment writes to

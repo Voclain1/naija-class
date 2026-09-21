@@ -40,6 +40,16 @@ const STAFF_KEYS: Record<string, readonly unknown[]> = {
   staffProfile: queryKeys.staffProfile(SCHOOL, USER),
   staffTimetable: queryKeys.staffTimetable(SCHOOL, USER),
   staffCalendar: queryKeys.staffCalendar(SCHOOL, USER, "2026-09-01", "2027-03-01"),
+  // CP4 — whole-school figures.
+  staffAdminDashboard: queryKeys.staffAdminDashboard(SCHOOL, USER, "term_1"),
+  staffCompleteness: queryKeys.staffCompleteness(SCHOOL, USER, null),
+  staffReportCardBoard: queryKeys.staffReportCardBoard(SCHOOL, USER, "term_1", "arm_1"),
+  // CP4c — full student records, including medical notes.
+  staffStudents: queryKeys.staffStudents(SCHOOL, USER, ""),
+  staffStudent: queryKeys.staffStudent(SCHOOL, USER, "student_1"),
+  staffClassArms: queryKeys.staffClassArms(SCHOOL, USER),
+  // CP4d — named colleagues' activity; an audited read.
+  staffTeacherActivity: queryKeys.staffTeacherActivity(SCHOOL, USER),
 };
 
 describe("staff query keys", () => {

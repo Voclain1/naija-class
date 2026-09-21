@@ -1073,3 +1073,136 @@ screen grew into a ten-card list.
 The parent and student screens (second pass, on the same components); dark
 mode beyond what the tokens already give; animation; any change to what a
 screen fetches, writes or refuses.
+
+---
+
+## CP4 — owner and admin on the phone (plan-first, approved 2026-09-21)
+
+Teacher-facing work is complete (CP6-CP8). CP4 is the next role in the agreed
+order, and was always "the owner/admin operational dashboard and web
+handoffs". The 2026-09-17 widening applies here too: an administrator who is
+phone-first should rarely need the website — but the web-only list in this
+document's header (money, identity, school configuration, bulk work) is
+unchanged, and it is exactly what the handoff exists for.
+
+### Approved scope (2026-09-21)
+
+| Area | Endpoints (all existing) | Permission |
+|---|---|---|
+| School overview | `GET /dashboard?termId=` | `dashboard.read` |
+| Report card approval | `GET /reports/completeness` (per-arm pipeline), `GET /report-cards?termId&classArmId`, `POST /report-cards/arm/approve`, `/arm/release`, `/arm/reopen` | `report-card.principal-approve`, `.release`, `.reopen`, `.read` |
+| Student records | `GET/POST /students`, `GET/PATCH /students/:id`, `POST /students/:id/withdraw`, `/graduate` | `student.read/create/update/deactivate` |
+| Reports | `GET /reports/completeness`, `GET /reports/teacher-activity` | `reports.completeness.read`, `reports.teacher-activity.read` |
+| Web handoff | a plain link to the website | none |
+
+**Deferred, by decision:** announcements (they do not exist anywhere in the
+system; a new feature for web AND phone with its own sending rules and SMS
+cost, so it gets its own plan), and automatic sign-in on the web handoff (a
+one-time login token is a security-sensitive server change and needs its own
+plan and review). The handoff ships as a plain link; the admin signs in on the
+website if their browser session has lapsed.
+
+### The bug CP4 has to fix first
+
+**A pure owner or admin who signs in today sees "We couldn't load your
+classes".** The CP8 dashboard calls `GET /teacher-scope/me` for every staff
+user, and `TeacherScopeService.getMyScope` gates on the `teacher` ROLE
+(`assertUserActiveAndHasOneOf(["teacher"])`) — a deliberate 403 for anyone
+else. `/teacher-scope/me/timetable` does the same. Holding `*` permissions does
+not get an owner past it, because the gate is a role check, not a permission
+check.
+
+### Decisions
+
+**D32 — the dashboard is role-aware, and the teacher band is gated on the
+`teacher` ROLE.** This looks like it breaks the "permission, never role name"
+rule every tile has followed. It does not: the rule exists so the phone never
+offers what the server would refuse, and the server's gate on
+`/teacher-scope/*` IS a role check. Mirroring the server's own gate exactly is
+the rule applied, not broken. Everything else stays on permissions. A person
+holding both roles (an owner who also teaches) sees both bands.
+
+**D33 — releasing report cards is confirmed, and says who will see them.**
+Release is the moment parents can read a child's results, and it freezes the
+card (`released-guard.ts`). The confirmation names the class and the number of
+cards, and says plainly that parents and students will see them. Approve is
+lighter — it is internal — but still confirmed. Reopen requires a reason,
+because the server requires one (`reportCardArmReopenSchema`) and the audit
+trail is its whole point.
+
+**D34 — the report-card overview is ONE call.** `GET /reports/completeness`
+already returns a per-arm pipeline (`reportCards.rows`, keyed by arm id, with a
+count per status). The alternative — one board request per arm — is N round
+trips on a Nigerian mobile network to draw a list. The per-arm board is fetched
+only when an admin opens one arm.
+
+**D35 — teacher activity is AUDITED on every read, and the phone says so.**
+`GET /reports/teacher-activity` writes an audit row per call (§16 D23): it is a
+per-person view of named staff. The phone fetches it only when that screen is
+opened, never in the background or on the dashboard, and tells the admin the
+view is recorded — an admin browsing a colleague's activity should know that
+browsing is itself logged.
+
+**D36 — the web handoff is a plain link, and a MISSING URL is an error, not a
+default.** The website address is build-time config (`EXPO_PUBLIC_WEB_URL`).
+This codebase has shipped the same class of bug four times — config added to
+the repo and never set on the real environment (`STORAGE_DRIVER`,
+`PORTAL_BASE_URL`, a recreated Vercel project's vanished variables,
+`RESEND_API_KEY`). So there is NO localhost fallback in a production build: if
+the variable is absent the button explains that the website link is not
+configured, rather than silently opening localhost on a head teacher's phone.
+
+### Shipping order
+
+Four PRs, each reviewable alone, each merged before the next begins:
+
+1. **CP4a** — role-aware dashboard (D32, the owner bug), school overview KPIs,
+   and the web handoff (D36).
+2. **CP4b** — report card approval (D33, D34).
+3. **CP4c** — student records.
+4. **CP4d** — reports, including audited teacher activity (D35).
+
+### CP4 build status (2026-09-21)
+
+All four parts implemented on one branch, as four reviewable commits. **This
+deviates from "four PRs, each merged before the next begins"** — the parts
+were built back to back while the previous PR's CI ran, and stacked PRs in
+this repository need their bases deleted by hand to retarget
+(see the stacked-PR note in the maintainer's working notes), so they ship as
+one PR with the commits kept separate for review.
+
+| Part | State |
+|---|---|
+| CP4a — role-aware dashboard, school overview, web handoff | built |
+| CP4b — report card approval | built |
+| CP4c — student records | built |
+| CP4d — reports + audited teacher activity | built |
+
+**The pattern CP4 kept finding: the admin surfaces are gated on ROLE.**
+`TeacherScopeService` (teacher), `StudentsService`, the report-card workflow
+and `CompletenessService` (owner/admin) all call `assertUserActiveAndHasOneOf`
+in addition to their `@Permissions` guard. So every CP4 gate checks the role
+AND the permission — the role because the service refuses without it, the
+permission because the guard does. `isSchoolAdmin` / `isTeacher` in
+`src/lib/auth/roles.ts` are the only role checks in the app, each documented
+against the service line it mirrors.
+
+Two consequences worth recording:
+
+- A teacher holds `student.read` (for their own class lists) but is refused
+  by `/students`. A Students tile gated on the permission would have been a
+  broken tile for every teacher in the school.
+- A custom role granted `report-card.principal-approve` alone would still be
+  refused by the workflow service. The approvals tab therefore needs both.
+
+Nothing in CP4 has run on a device, and **no device pass has ever signed in as
+an owner** — that is the first thing CP4's Gate 6 must do.
+
+### Gates
+
+The CP8 ladder, per PR: components before screens; screens on the CP8
+vocabulary; `staff-navigation.spec.ts` kept green (a new section must be
+declared); every new binding's spec fixture typed as the API's OWN response
+type (the curriculum-crash rule); typecheck, lint, full suite and an Android
+`expo export`; and a real device, which for CP4 means signing in as an OWNER —
+the one role no device pass has yet exercised.

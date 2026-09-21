@@ -65,7 +65,9 @@ describe("staff navigation", () => {
       .sort();
     // A bar listing everything is a menu, and a menu in a bar is harder to
     // read than a grid on a page. If this needs to change, change D29 first.
-    expect(visible).toEqual(["classes", "gradebook", "index", "lesson-notes"]);
+    // These are the tab CANDIDATES; which of them a given person sees is
+    // decided by visibleStaffTabs (tabs.ts) and tested there.
+    expect(visible).toEqual(["approvals", "classes", "gradebook", "index", "lesson-notes"]);
     expect(visible.length).toBeLessThanOrEqual(5);
   });
 

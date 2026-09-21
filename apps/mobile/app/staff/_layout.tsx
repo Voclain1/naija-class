@@ -1,6 +1,8 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Tabs } from "expo-router";
 
+import { useSession } from "../../src/lib/auth/session";
+import { visibleStaffTabs } from "../../src/lib/staff/tabs";
 import { useTheme } from "../../src/theme/theme-provider";
 import { fontSizes, fonts } from "../../src/theme/tokens";
 
@@ -20,6 +22,11 @@ import { fontSizes, fonts } from "../../src/theme/tokens";
 
 export default function StaffTabsLayout() {
   const { colors } = useTheme();
+  const { staff } = useSession();
+  // CP4 D32: Marks, Classes and Notes read /teacher-scope/*, which the server
+  // refuses without the teacher role. An owner is shown only what works.
+  const tabs = visibleStaffTabs(staff?.roles, staff?.permissions ?? []);
+  const hideUnless = (name: Parameters<typeof tabs.has>[0]) => (tabs.has(name) ? {} : { href: null });
 
   return (
     <Tabs
@@ -41,6 +48,7 @@ export default function StaffTabsLayout() {
       <Tabs.Screen
         name="gradebook"
         options={{
+          ...hideUnless("gradebook"),
           title: "Marks",
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="create-outline" size={size} color={color} />
@@ -50,6 +58,7 @@ export default function StaffTabsLayout() {
       <Tabs.Screen
         name="classes"
         options={{
+          ...hideUnless("classes"),
           title: "Classes",
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="people-outline" size={size} color={color} />
@@ -59,9 +68,20 @@ export default function StaffTabsLayout() {
       <Tabs.Screen
         name="lesson-notes"
         options={{
+          ...hideUnless("lesson-notes"),
           title: "Notes",
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="document-text-outline" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="approvals"
+        options={{
+          ...hideUnless("approvals"),
+          title: "Approvals",
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="ribbon-outline" size={size} color={color} />
           ),
         }}
       />
@@ -74,6 +94,8 @@ export default function StaffTabsLayout() {
       <Tabs.Screen name="timetable" options={{ href: null }} />
       <Tabs.Screen name="calendar" options={{ href: null }} />
       <Tabs.Screen name="profile" options={{ href: null }} />
+      <Tabs.Screen name="students" options={{ href: null }} />
+      <Tabs.Screen name="reports" options={{ href: null }} />
     </Tabs>
   );
 }

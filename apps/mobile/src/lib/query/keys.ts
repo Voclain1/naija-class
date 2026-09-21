@@ -136,4 +136,31 @@ export const queryKeys = {
     ["staff", schoolId, userId, "timetable"] as const,
   staffCalendar: (schoolId: string, userId: string, from: string, to: string) =>
     ["staff", schoolId, userId, "calendar", from, to] as const,
+
+  // CP4 — the owner/admin school overview: enrolment, fees and attendance for
+  // the whole school. Never persisted, like every staff key.
+  staffAdminDashboard: (schoolId: string, userId: string, termId: string) =>
+    ["staff", schoolId, userId, "admin-dashboard", termId] as const,
+
+  // CP4b — report card approval. The completeness report is keyed "current"
+  // when no term is named, matching the endpoint's own default.
+  staffCompleteness: (schoolId: string, userId: string, termId: string | null) =>
+    ["staff", schoolId, userId, "completeness", termId ?? "current"] as const,
+  staffReportCardBoard: (schoolId: string, userId: string, termId: string, classArmId: string) =>
+    ["staff", schoolId, userId, "report-card-board", termId, classArmId] as const,
+
+  // CP4c — student records. A student's full record (address, phone, medical
+  // notes) is the most sensitive thing staff mobile reads; the "staff" prefix
+  // is what keeps it off the disk.
+  staffStudents: (schoolId: string, userId: string, search: string) =>
+    ["staff", schoolId, userId, "students", search] as const,
+  staffStudent: (schoolId: string, userId: string, id: string) =>
+    ["staff", schoolId, userId, "student", id] as const,
+  staffClassArms: (schoolId: string, userId: string) =>
+    ["staff", schoolId, userId, "class-arms"] as const,
+
+  // CP4d — the per-teacher activity report. Every fetch is an AUDITED read
+  // (D35), so the query using this key never refetches in the background.
+  staffTeacherActivity: (schoolId: string, userId: string) =>
+    ["staff", schoolId, userId, "teacher-activity"] as const,
 } as const;
