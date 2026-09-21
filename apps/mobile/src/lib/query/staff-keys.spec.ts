@@ -44,6 +44,10 @@ const STAFF_KEYS: Record<string, readonly unknown[]> = {
   staffAdminDashboard: queryKeys.staffAdminDashboard(SCHOOL, USER, "term_1"),
   staffCompleteness: queryKeys.staffCompleteness(SCHOOL, USER, null),
   staffReportCardBoard: queryKeys.staffReportCardBoard(SCHOOL, USER, "term_1", "arm_1"),
+  // CP4c — full student records, including medical notes.
+  staffStudents: queryKeys.staffStudents(SCHOOL, USER, ""),
+  staffStudent: queryKeys.staffStudent(SCHOOL, USER, "student_1"),
+  staffClassArms: queryKeys.staffClassArms(SCHOOL, USER),
 };
 
 describe("staff query keys", () => {

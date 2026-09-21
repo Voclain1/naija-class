@@ -10,7 +10,7 @@ import { staffAdminDashboard } from "../../src/lib/api/staff-admin";
 import { queryKeys } from "../../src/lib/query/keys";
 import { useSession } from "../../src/lib/auth/session";
 import { hasPermission } from "../../src/lib/auth/permissions";
-import { isTeacher } from "../../src/lib/auth/roles";
+import { isSchoolAdmin, isTeacher } from "../../src/lib/auth/roles";
 import { serverToday } from "../../src/lib/staff/server-date";
 import { useTermContext } from "../../src/lib/staff/use-term-context";
 import { WEB_NOT_CONFIGURED_MESSAGE, webUrl } from "../../src/lib/web-handoff";
@@ -103,6 +103,10 @@ export default function StaffDashboardScreen() {
   const permissions = staff?.permissions ?? [];
 
   const teacher = isTeacher(staff?.roles);
+  const schoolAdmin = isSchoolAdmin(staff?.roles);
+  // Mirrors tabs.ts: the workflow service gates on owner/admin AND the
+  // endpoint on the permission, so both must hold.
+  const canApprove = schoolAdmin && hasPermission(permissions, "report-card.principal-approve");
   const canSeeSchool = hasPermission(permissions, "dashboard.read");
 
   // --- teacher band: fetched ONLY for teachers (D32) -----------------------
@@ -216,7 +220,14 @@ export default function StaffDashboardScreen() {
       label: "Report cards",
       hint: "Approve and release",
       onPress: () => router.push("/staff/approvals"),
-      show: hasPermission(permissions, "report-card.principal-approve"),
+      show: canApprove,
+    },
+    {
+      icon: "people-circle-outline",
+      label: "Students",
+      hint: "Find, add, update",
+      onPress: () => router.push("/staff/students"),
+      show: schoolAdmin,
     },
     {
       icon: "cash-outline",
@@ -317,9 +328,7 @@ export default function StaffDashboardScreen() {
                     const copy = ALERT_COPY[alert.type](alert.count);
                     // Report card approval is on the phone now (CP4b); every
                     // other alert still resolves on the website.
-                    const inApp =
-                      alert.type === "pending_report_card_approval" &&
-                      hasPermission(permissions, "report-card.principal-approve");
+                    const inApp = alert.type === "pending_report_card_approval" && canApprove;
                     return (
                       <StatRow
                         key={alert.type}

@@ -148,4 +148,14 @@ export const queryKeys = {
     ["staff", schoolId, userId, "completeness", termId ?? "current"] as const,
   staffReportCardBoard: (schoolId: string, userId: string, termId: string, classArmId: string) =>
     ["staff", schoolId, userId, "report-card-board", termId, classArmId] as const,
+
+  // CP4c — student records. A student's full record (address, phone, medical
+  // notes) is the most sensitive thing staff mobile reads; the "staff" prefix
+  // is what keeps it off the disk.
+  staffStudents: (schoolId: string, userId: string, search: string) =>
+    ["staff", schoolId, userId, "students", search] as const,
+  staffStudent: (schoolId: string, userId: string, id: string) =>
+    ["staff", schoolId, userId, "student", id] as const,
+  staffClassArms: (schoolId: string, userId: string) =>
+    ["staff", schoolId, userId, "class-arms"] as const,
 } as const;

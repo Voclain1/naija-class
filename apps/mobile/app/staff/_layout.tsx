@@ -94,6 +94,7 @@ export default function StaffTabsLayout() {
       <Tabs.Screen name="timetable" options={{ href: null }} />
       <Tabs.Screen name="calendar" options={{ href: null }} />
       <Tabs.Screen name="profile" options={{ href: null }} />
+      <Tabs.Screen name="students" options={{ href: null }} />
     </Tabs>
   );
 }

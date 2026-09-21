@@ -57,6 +57,14 @@ describe("tab bar by person", () => {
     expect(visibleStaffTabs(TEACHER, ["assessment-score.create"]).has("approvals")).toBe(false);
   });
 
+  it("needs the admin ROLE as well as the permission, as the server does", () => {
+    // A custom role granted report-card.principal-approve alone would still be
+    // refused by the workflow service's owner/admin check.
+    expect(
+      visibleStaffTabs([{ key: "deputy" }], ["report-card.principal-approve"]).has("approvals"),
+    ).toBe(false);
+  });
+
   it("gives an owner who also teaches the teacher's bar", () => {
     expect(visibleStaffTabs(OWNER_WHO_TEACHES).has("classes")).toBe(true);
   });

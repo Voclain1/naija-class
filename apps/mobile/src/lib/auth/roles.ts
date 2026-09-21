@@ -22,3 +22,17 @@ export function hasRole(roles: readonly Pick<AuthMeRoleDto, "key">[] | undefined
 export function isTeacher(roles: readonly Pick<AuthMeRoleDto, "key">[] | undefined): boolean {
   return hasRole(roles, "teacher");
 }
+
+/**
+ * Whether the server will answer the ADMIN student endpoints (`/students`,
+ * `/students/:id`, create, update, withdraw, graduate) for this person.
+ *
+ * Same reasoning as isTeacher: StudentsService gates on the owner/admin ROLE
+ * (`assertUserActiveAndHasOneOf(["owner", "admin"])`), and a teacher also
+ * holds `student.read` — for their own class lists — so gating the Students
+ * screen on that permission would offer every teacher a screen that can only
+ * refuse them.
+ */
+export function isSchoolAdmin(roles: readonly Pick<AuthMeRoleDto, "key">[] | undefined): boolean {
+  return hasRole(roles, "owner") || hasRole(roles, "admin");
+}

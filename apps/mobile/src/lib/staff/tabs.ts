@@ -1,5 +1,5 @@
 import { hasPermission } from "../auth/permissions";
-import { isTeacher } from "../auth/roles";
+import { isSchoolAdmin, isTeacher } from "../auth/roles";
 import type { AuthMeRoleDto } from "@school-kit/types";
 
 // Which staff sections appear in the bottom bar, for WHICH person.
@@ -39,7 +39,9 @@ export function visibleStaffTabs(
   // CP4b — report card approval is a head's daily job at term end, so it
   // earns a tab for whoever can do it. On permission, like every other gate
   // that is not /teacher-scope/*.
-  if (hasPermission(permissions, "report-card.principal-approve")) {
+  // Role AND permission: the workflow service ALSO gates on owner/admin, so a
+  // custom role granted the permission alone would still be refused.
+  if (isSchoolAdmin(roles) && hasPermission(permissions, "report-card.principal-approve")) {
     visible.add("approvals");
   }
   return visible;
