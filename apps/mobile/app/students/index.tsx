@@ -7,6 +7,8 @@ import { listStudents } from "../../src/lib/api/portal";
 import { queryKeys } from "../../src/lib/query/keys";
 import { useSession } from "../../src/lib/auth/session";
 import { useTheme } from "../../src/theme/theme-provider";
+import { AppMenu, MenuButton, useAppMenu } from "../../src/components/app-menu";
+import { guardianDestinations } from "../../src/lib/navigation/destinations";
 import { spacing } from "../../src/theme/tokens";
 import {
   Body,
@@ -29,6 +31,7 @@ function fullName(student: PortalStudentDto): string {
 export default function StudentsScreen() {
   const { status, guardian, school, signOut } = useSession();
   const { colors } = useTheme();
+  const menu = useAppMenu();
   const online = useIsOnline();
 
   const query = useQuery({
@@ -51,9 +54,14 @@ export default function StudentsScreen() {
   return (
     <Screen>
       <View style={styles.header}>
-        <Heading>
-          {guardian ? `Hello, ${guardian.firstName}` : "Your children"}
-        </Heading>
+        <View style={styles.headerRow}>
+          <View style={styles.headerTitle}>
+            <Heading>
+              {guardian ? `Hello, ${guardian.firstName}` : "Your children"}
+            </Heading>
+          </View>
+          <MenuButton onPress={menu.open} />
+        </View>
         {school ? <Body muted>{school.name}</Body> : null}
         <FreshnessLabel updatedAt={query.dataUpdatedAt} />
         {/* Phase 8 / CP1 — school-wide, so it sits above the per-child list. */}
@@ -121,11 +129,23 @@ export default function StudentsScreen() {
       )}
 
       <Button title="Sign out" variant="secondary" onPress={() => void signOut()} />
+      <AppMenu
+        visible={menu.visible}
+        onClose={menu.close}
+        destinations={guardianDestinations()}
+        person={{
+          name: guardian ? `${guardian.firstName} ${guardian.lastName}` : "Parent",
+          detail: ["Parent", school?.name].filter(Boolean).join(" · "),
+        }}
+        onSignOut={() => void signOut()}
+      />
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
+  headerRow: { flexDirection: "row", alignItems: "flex-start", gap: spacing.md },
+  headerTitle: { flex: 1 },
   header: { gap: spacing.xs },
   list: { gap: spacing.sm, paddingBottom: spacing.md },
 });
