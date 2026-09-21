@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { afterAll, describe, expect, it, vi } from "vitest";
 
 import { basePrisma, withTenant } from "@school-kit/db";
@@ -394,6 +395,134 @@ describe("PaymentsService (integration)", () => {
     expect(log?.action).toBe("payment.record");
     expect(log?.entityType).toBe("payment");
     expect(log?.entityId).toBe(payment.id);
+  });
+
+  // ── D37: idempotency key ─────────────────────────────────────────────────
+  // Real Postgres, real unique index. The race test is the one that matters:
+  // the lookup can be passed by two requests at once, and only the index
+  // makes the answer "one payment".
+
+  async function idemSvc(tag: string) {
+    const { PaymentsService } = await import("./payments.service.js");
+    const { StorageService } = await import("../../common/storage/storage.service.js");
+    const { FilesystemStorageDriver } = await import("../../common/storage/filesystem-storage.driver.js");
+    const os = await import("node:os");
+    const path = await import("node:path");
+    return new PaymentsService(
+      new StorageService(
+        new FilesystemStorageDriver(path.join(os.tmpdir(), `sk-test-${runId}-${tag}`), {
+          baseUrl: "http://localhost:4000/api/v1",
+          secret: "test-secret",
+        }),
+      ),
+      null as never,
+      new PaymentPlanService(),
+    );
+  }
+
+  async function paymentState(schoolId: string, invoiceId: string) {
+    return withTenant(schoolId, async (db) => ({
+      payments: await db.payment.count({ where: { invoiceId } }),
+      audits: await db.auditLog.count({ where: { entityType: "payment", action: "payment.record" } }),
+      invoice: await db.invoice.findUniqueOrThrow({ where: { id: invoiceId }, select: { totalPaid: true, status: true } }),
+    }));
+  }
+
+  it("D37: the same key twice records ONE payment, one audit row, and replays the first", async () => {
+    const svc = await idemSvc("idem-a");
+    const { schoolId, ownerId } = await makeSchool("idem-a");
+    const invoiceId = await makeIssuedInvoice(schoolId, ownerId, 100_000_00);
+    const key = randomUUID();
+    const input = { invoiceId, amount: 50_000_00, method: "CASH" as const, paidAt: "2026-09-21T09:00:00.000Z", idempotencyKey: key };
+
+    const first = await svc.recordManual(ctx(schoolId, ownerId), input, reqCtx);
+    const again = await svc.recordManual(ctx(schoolId, ownerId), input, reqCtx);
+
+    expect(first.replayed).toBe(false);
+    expect(again.replayed).toBe(true);
+    expect(again.id).toBe(first.id);
+    expect(again.receiptNumber).toBe(first.receiptNumber);
+    const state = await paymentState(schoolId, invoiceId);
+    expect(state.payments).toBe(1);
+    expect(state.audits).toBe(1);
+    expect(state.invoice).toEqual({ totalPaid: 50_000_00, status: "PARTIALLY_PAID" });
+  });
+
+  it("D37: CONCURRENT requests with the same key record one payment — the index, not the lookup, decides", async () => {
+    const svc = await idemSvc("idem-race");
+    const { schoolId, ownerId } = await makeSchool("idem-race");
+    const invoiceId = await makeIssuedInvoice(schoolId, ownerId, 100_000_00);
+    const input = { invoiceId, amount: 20_000_00, method: "POS" as const, paidAt: "2026-09-21T09:00:00.000Z", idempotencyKey: randomUUID() };
+
+    const results = await Promise.all(
+      Array.from({ length: 4 }, () => svc.recordManual(ctx(schoolId, ownerId), input, reqCtx)),
+    );
+
+    expect(new Set(results.map((r) => r.id)).size).toBe(1);
+    expect(results.filter((r) => !r.replayed)).toHaveLength(1);
+    const state = await paymentState(schoolId, invoiceId);
+    expect(state.payments).toBe(1);
+    expect(state.audits).toBe(1);
+    expect(state.invoice.totalPaid).toBe(20_000_00);
+  });
+
+  it("D37: different keys are different payments — instalments of the same amount are legitimate", async () => {
+    const svc = await idemSvc("idem-b");
+    const { schoolId, ownerId } = await makeSchool("idem-b");
+    const invoiceId = await makeIssuedInvoice(schoolId, ownerId, 100_000_00);
+    const base = { invoiceId, amount: 5_000_00, method: "CASH" as const, paidAt: "2026-09-21T09:00:00.000Z" };
+
+    await svc.recordManual(ctx(schoolId, ownerId), { ...base, idempotencyKey: randomUUID() }, reqCtx);
+    await svc.recordManual(ctx(schoolId, ownerId), { ...base, idempotencyKey: randomUUID() }, reqCtx);
+    // And no key at all — the website's path — is unchanged.
+    await svc.recordManual(ctx(schoolId, ownerId), base, reqCtx);
+
+    const state = await paymentState(schoolId, invoiceId);
+    expect(state.payments).toBe(3);
+    expect(state.invoice.totalPaid).toBe(15_000_00);
+  });
+
+  it("D37: a key reused for a DIFFERENT payment is refused, and nothing is recorded", async () => {
+    const svc = await idemSvc("idem-c");
+    const { schoolId, ownerId } = await makeSchool("idem-c");
+    const invoiceId = await makeIssuedInvoice(schoolId, ownerId, 100_000_00);
+    const key = randomUUID();
+    const input = { invoiceId, amount: 10_000_00, method: "CASH" as const, paidAt: "2026-09-21T09:00:00.000Z", idempotencyKey: key };
+    await svc.recordManual(ctx(schoolId, ownerId), input, reqCtx);
+
+    await expect(
+      svc.recordManual(ctx(schoolId, ownerId), { ...input, amount: 20_000_00 }, reqCtx),
+    ).rejects.toMatchObject({ code: "IDEMPOTENCY_KEY_REUSED" });
+    await expect(
+      svc.recordManual(ctx(schoolId, ownerId), { ...input, method: "BANK_TRANSFER" }, reqCtx),
+    ).rejects.toMatchObject({ code: "IDEMPOTENCY_KEY_REUSED" });
+
+    const state = await paymentState(schoolId, invoiceId);
+    expect(state.payments).toBe(1);
+    expect(state.invoice.totalPaid).toBe(10_000_00);
+  });
+
+  it("D37: keys are per school — another school's key never collides or replays", async () => {
+    const svc = await idemSvc("idem-d");
+    const a = await makeSchool("idem-da");
+    const b = await makeSchool("idem-db");
+    const invoiceA = await makeIssuedInvoice(a.schoolId, a.ownerId, 50_000_00);
+    const invoiceB = await makeIssuedInvoice(b.schoolId, b.ownerId, 50_000_00);
+    const key = randomUUID();
+
+    const payA = await svc.recordManual(ctx(a.schoolId, a.ownerId), { invoiceId: invoiceA, amount: 1_000_00, method: "CASH", paidAt: "2026-09-21T09:00:00.000Z", idempotencyKey: key }, reqCtx);
+    const payB = await svc.recordManual(ctx(b.schoolId, b.ownerId), { invoiceId: invoiceB, amount: 1_000_00, method: "CASH", paidAt: "2026-09-21T09:00:00.000Z", idempotencyKey: key }, reqCtx);
+
+    expect(payB.replayed).toBe(false);
+    expect(payB.id).not.toBe(payA.id);
+    expect(payB.schoolId).toBe(b.schoolId);
+  });
+
+  it("D37: the schema accepts a UUID key and refuses anything else", () => {
+    const base = { invoiceId: randomUUID(), amount: 100, method: "CASH", paidAt: "2026-09-21T09:00:00.000Z" };
+    expect(recordManualPaymentSchema.safeParse({ ...base, idempotencyKey: randomUUID() }).success).toBe(true);
+    expect(recordManualPaymentSchema.safeParse({ ...base, idempotencyKey: "tap-1" }).success).toBe(false);
+    expect(recordManualPaymentSchema.safeParse(base).success).toBe(true);
   });
 });
 
