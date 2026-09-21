@@ -161,6 +161,12 @@ export const queryKeys = {
   // is what keeps it off the disk.
   staffStudents: (schoolId: string, userId: string, search: string) =>
     ["staff", schoolId, userId, "students", search] as const,
+  // CP9a — parents. A guardian record carries contact details; staff prefix,
+  // never persisted, like the student record beside it.
+  staffGuardianSearch: (schoolId: string, userId: string, search: string) =>
+    ["staff", schoolId, userId, "guardians", "search", search] as const,
+  staffGuardian: (schoolId: string, userId: string, id: string) =>
+    ["staff", schoolId, userId, "guardians", id] as const,
   staffStudent: (schoolId: string, userId: string, id: string) =>
     ["staff", schoolId, userId, "student", id] as const,
   staffClassArms: (schoolId: string, userId: string) =>

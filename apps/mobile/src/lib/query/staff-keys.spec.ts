@@ -47,6 +47,10 @@ const STAFF_KEYS: Record<string, readonly unknown[]> = {
   // CP4c — full student records, including medical notes.
   staffStudents: queryKeys.staffStudents(SCHOOL, USER, ""),
   staffStudent: queryKeys.staffStudent(SCHOOL, USER, "student_1"),
+  staffCalendarAll: queryKeys.staffCalendarAll(SCHOOL, USER),
+  staffSchoolEvents: queryKeys.staffSchoolEvents(SCHOOL, USER, "2026-10-01", "2026-10-31"),
+  staffGuardianSearch: queryKeys.staffGuardianSearch(SCHOOL, USER, "Okafor"),
+  staffGuardian: queryKeys.staffGuardian(SCHOOL, USER, "guardian_1"),
   staffClassArms: queryKeys.staffClassArms(SCHOOL, USER),
   // CP4d — named colleagues' activity; an audited read.
   staffTeacherActivity: queryKeys.staffTeacherActivity(SCHOOL, USER),
