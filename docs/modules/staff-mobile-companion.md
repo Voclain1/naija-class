@@ -1313,3 +1313,39 @@ column, one partial index), which is the safest shape a migration can take.
 CP9a first (no server change), then CP9b beginning with D37 alone as its own
 PR — server change, migration and real-DB specs, reviewed and merged BEFORE any
 phone screen can record a payment. The phone screens follow in the next PR.
+
+### D39 — moving a placed child to another class is held back (found building CP9a)
+
+`PATCH /enrollments/:id` accepts a new `classArmId`, but it moves only the
+enrolment row. The child's marks (`assessments.class_arm_id`), report card
+(`report_cards.class_arm_id`) and past registers keep the OLD class, so after a
+move the new class's gradebook does not show the marks already entered, and
+the report card stays with the old class's batch. The website never offers a
+move (its enrolments tab only creates a placement for a term), so this has not
+bitten anyone yet. The phone would be the first surface to offer it.
+
+**Not built.** The proposed fix is a server guard: refuse a class change
+(409) once the child has any mark or report card in that term, so the common
+real case — "I put her in JSS1A, I meant JSS1B", fixed the same day — works,
+and the dangerous one is refused rather than silently splitting a child's
+record. It is a server change, so it waits for sign-off like D37.
+
+### CP9a status (2026-09-21)
+
+Built, on the phone, for owners and admins (role + permission, as the
+services check):
+
+- **Calendar:** add, edit and remove school events. National holidays and
+  term dates are never offered for editing. Edits are read fresh from
+  `/calendar/events` and send only the changed fields.
+- **Report cards:** Build/Rebuild while every card is a draft (mirrors
+  `ARM_NOT_DRAFT`); the principal's note while every card is form-reviewed
+  (mirrors `editPrincipalNote`). PDF rendering stays a website job.
+- **Parents:** search-first linking (siblings share one parent record), add a
+  new parent as the fallback, and invite/resend/cancel parent-app access
+  exactly per the server's portal status. The invitation link is kept only in
+  screen memory and shared deliberately by the admin, with a warning.
+- **Placement:** place a child who has no class this term, with an explicit
+  choice of class — nothing pre-picked. Moving is held back (D39).
+
+Shared form pieces (`components/form.tsx`) now back every CP9 form.
