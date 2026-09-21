@@ -136,4 +136,9 @@ export const queryKeys = {
     ["staff", schoolId, userId, "timetable"] as const,
   staffCalendar: (schoolId: string, userId: string, from: string, to: string) =>
     ["staff", schoolId, userId, "calendar", from, to] as const,
+
+  // CP4 — the owner/admin school overview: enrolment, fees and attendance for
+  // the whole school. Never persisted, like every staff key.
+  staffAdminDashboard: (schoolId: string, userId: string, termId: string) =>
+    ["staff", schoolId, userId, "admin-dashboard", termId] as const,
 } as const;

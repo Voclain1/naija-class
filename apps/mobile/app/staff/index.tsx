@@ -1,15 +1,19 @@
 import { useMemo } from "react";
-import { ScrollView, StyleSheet } from "react-native";
+import { Linking, ScrollView, StyleSheet } from "react-native";
 import { Redirect, useRouter } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
-import { formatMinuteOfDay } from "@school-kit/types";
+import { formatKobo, formatMinuteOfDay, type DashboardAlertType } from "@school-kit/types";
 
 import { staffTeacherScope } from "../../src/lib/api/staff-attendance";
 import { staffMyTimetable } from "../../src/lib/api/staff-schedule";
+import { staffAdminDashboard } from "../../src/lib/api/staff-admin";
 import { queryKeys } from "../../src/lib/query/keys";
 import { useSession } from "../../src/lib/auth/session";
 import { hasPermission } from "../../src/lib/auth/permissions";
+import { isTeacher } from "../../src/lib/auth/roles";
 import { serverToday } from "../../src/lib/staff/server-date";
+import { useTermContext } from "../../src/lib/staff/use-term-context";
+import { WEB_NOT_CONFIGURED_MESSAGE, webUrl } from "../../src/lib/web-handoff";
 import { spacing } from "../../src/theme/tokens";
 import { Body, Card, Notice, Screen } from "../../src/components/ui";
 import {
@@ -23,21 +27,24 @@ import {
   type IconName,
 } from "../../src/components/layout";
 
-// CP8 — the staff dashboard.
+// The staff dashboard — one screen, shaped by WHO is signed in.
 //
-// What this replaces: a vertical list of cards, each with a text button, grown
-// one card per checkpoint. It worked and it read as a prototype.
+// CP8 built it for teachers only, and CP4 found the cost: every staff user was
+// sent to `/teacher-scope/me`, which the server refuses without the teacher
+// role, so a pure owner or admin saw "We couldn't load your classes" on the
+// very first screen. Now each band renders only for the people it works for:
 //
-// Three bands, in the order a teacher's attention goes:
-//   1. Who and when — the greeting, the school, the date.
-//   2. TODAY — the next lesson, and whether the register is marked. Both come
-//      from data the app already fetches; CP8 adds no endpoint.
-//   3. Everywhere else — an icon grid, offered on PERMISSION and on what the
-//      server says this person teaches, never on a role name.
+//   TEACHER band — next lesson, today's register, and the teaching tiles.
+//     Gated on the teacher ROLE, because that is the server's own gate on
+//     /teacher-scope/* (D32). Nothing in it is fetched for anyone else.
+//   SCHOOL band — enrolment, fees, attendance today, and what needs the
+//     head's attention. Gated on `dashboard.read`, the endpoint's permission.
 //
-// D30: the today band renders nothing at all when there is nothing true to
-// say. No timetable published, no current term, no form class — then no strip,
-// rather than a row of dashes pretending to be data.
+// Someone holding both (an owner who also teaches) sees both. Everything below
+// the bands is still offered on permission, never on a role name.
+//
+// D30 still holds for every band: say nothing rather than print a placeholder
+// pretending to be data.
 
 const DAY_MS = 86_400_000;
 
@@ -47,7 +54,6 @@ function greeting(hour: number): string {
   return "Good evening";
 }
 
-/** ISO weekday (1 = Monday … 7 = Sunday) for a yyyy-mm-dd date, in UTC. */
 function isoWeekdayOf(date: string | null): number | null {
   if (date === null) return null;
   const parsed = Date.parse(date + "T00:00:00.000Z");
@@ -67,6 +73,26 @@ function formatToday(date: string | null): string | null {
   });
 }
 
+/** What each dashboard alert means to a head, in their words. */
+const ALERT_COPY: Record<DashboardAlertType, (count: number) => { label: string; icon: IconName }> = {
+  overdue_fees: (n) => ({
+    label: `${n} famil${n === 1 ? "y owes" : "ies owe"} overdue fees`,
+    icon: "alert-circle-outline",
+  }),
+  pending_report_card_approval: (n) => ({
+    label: `${n} report card${n === 1 ? "" : "s"} waiting for your approval`,
+    icon: "document-text-outline",
+  }),
+  pending_staff_invitations: (n) => ({
+    label: `${n} staff invitation${n === 1 ? "" : "s"} not yet accepted`,
+    icon: "mail-unread-outline",
+  }),
+  term_health: (n) => ({
+    label: `${n} thing${n === 1 ? "" : "s"} to fix in this term's setup`,
+    icon: "construct-outline",
+  }),
+};
+
 export default function StaffDashboardScreen() {
   const router = useRouter();
   const { status, principal, staff } = useSession();
@@ -74,32 +100,41 @@ export default function StaffDashboardScreen() {
   const schoolId = staff?.school.id ?? "";
   const userId = staff?.user.id ?? "";
   const ready = authed && schoolId !== "" && userId !== "";
+  const permissions = staff?.permissions ?? [];
 
+  const teacher = isTeacher(staff?.roles);
+  const canSeeSchool = hasPermission(permissions, "dashboard.read");
+
+  // --- teacher band: fetched ONLY for teachers (D32) -----------------------
   const scope = useQuery({
     queryKey: queryKeys.staffScope(schoolId, userId),
     queryFn: staffTeacherScope,
-    enabled: ready,
+    enabled: ready && teacher,
     staleTime: 60_000,
   });
-
   const timetable = useQuery({
     queryKey: queryKeys.staffTimetable(schoolId, userId),
     queryFn: () => staffMyTimetable(),
-    enabled: ready,
+    enabled: ready && teacher,
     staleTime: 5 * 60_000,
+  });
+
+  // --- school band: fetched ONLY for dashboard.read ------------------------
+  const termContext = useTermContext({ schoolId, userId, enabled: ready && canSeeSchool });
+  const termId = termContext.data?.term?.termId ?? "";
+  const overview = useQuery({
+    queryKey: queryKeys.staffAdminDashboard(schoolId, userId, termId),
+    queryFn: () => staffAdminDashboard(termId),
+    enabled: ready && canSeeSchool && termId !== "",
+    staleTime: 60_000,
   });
 
   const today = serverToday();
   const weekday = isoWeekdayOf(today);
 
-  // The next lesson still to come today, by the server's clock. Deliberately
-  // "still to come": a teacher at 2pm wants their next period, not the 8am one.
   const nextLesson = useMemo(() => {
     if (weekday === null) return null;
-    const nowMinutes = (() => {
-      const ms = Date.now() % DAY_MS;
-      return Math.floor(ms / 60_000);
-    })();
+    const nowMinutes = Math.floor((Date.now() % DAY_MS) / 60_000);
     return (
       (timetable.data?.ownLessons ?? [])
         .filter((lesson) => lesson.dayOfWeek === weekday && lesson.slot.endMinute >= nowMinutes)
@@ -107,120 +142,231 @@ export default function StaffDashboardScreen() {
     );
   }, [timetable.data, weekday]);
 
+  if (status === "locked") return <Redirect href="/unlock" />;
+  if (!authed) return <Redirect href="/login" />;
+
   const data = scope.data;
-  const canEnterMarks = hasPermission(staff?.permissions ?? [], "assessment-score.create");
-  const canWriteLessonNotes = hasPermission(staff?.permissions ?? [], "lesson-plan.create");
-  const canSeeCollections = hasPermission(staff?.permissions ?? [], "finance.dashboard.read");
+  const canEnterMarks = teacher && hasPermission(permissions, "assessment-score.create");
+  const canWriteLessonNotes = teacher && hasPermission(permissions, "lesson-plan.create");
+  const canSeeCollections = hasPermission(permissions, "finance.dashboard.read");
   const teachesSubjects = Object.values(data?.subjectsByArm ?? {}).some((s) => s.length > 0);
   const formArms = (data?.classArms ?? []).filter((arm) =>
     (data?.formTeacherArmIds ?? []).includes(arm.id),
   );
 
-  if (status === "locked") return <Redirect href="/unlock" />;
-  if (!authed) return <Redirect href="/login" />;
+  function openOnWeb(path: string): void {
+    const url = webUrl(path);
+    if (url === null) return;
+    void Linking.openURL(url);
+  }
+  const webConfigured = webUrl("/") !== null;
 
-  const tiles: Array<{ icon: IconName; label: string; hint?: string; href: string; show: boolean }> = [
+  const tiles: Array<{ icon: IconName; label: string; hint?: string; onPress: () => void; show: boolean }> = [
     {
       icon: "create-outline",
       label: "Enter marks",
       hint: "Tests and exams",
-      href: "/staff/gradebook",
+      onPress: () => router.push("/staff/gradebook"),
       show: canEnterMarks && teachesSubjects,
     },
     {
       icon: "checkbox-outline",
       label: "Attendance",
       hint: formArms[0]?.name,
-      href: formArms[0] ? `/staff/attendance/${formArms[0].id}` : "/staff/classes",
-      show: formArms.length > 0,
+      onPress: () =>
+        router.push(formArms[0] ? `/staff/attendance/${formArms[0].id}` : "/staff/classes"),
+      show: teacher && formArms.length > 0,
     },
     {
       icon: "document-text-outline",
       label: "Lesson notes",
       hint: "Write with AI",
-      href: "/staff/lesson-notes",
+      onPress: () => router.push("/staff/lesson-notes"),
       show: canWriteLessonNotes,
     },
     {
       icon: "library-outline",
       label: "Curriculum",
       hint: "Scheme of work",
-      href: "/staff/curriculum",
+      onPress: () => router.push("/staff/curriculum"),
       show: canWriteLessonNotes,
     },
     {
       icon: "chatbox-ellipses-outline",
       label: "Report comments",
       hint: formArms[0]?.name,
-      href: formArms[0] ? `/staff/report-cards/${formArms[0].id}` : "/staff/classes",
-      show: formArms.length > 0,
+      onPress: () =>
+        router.push(formArms[0] ? `/staff/report-cards/${formArms[0].id}` : "/staff/classes"),
+      show: teacher && formArms.length > 0,
     },
-    { icon: "people-outline", label: "My classes", href: "/staff/classes", show: true },
-    { icon: "calendar-outline", label: "Timetable", href: "/staff/timetable", show: true },
-    { icon: "today-outline", label: "School calendar", href: "/staff/calendar", show: true },
+    {
+      icon: "people-outline",
+      label: "My classes",
+      onPress: () => router.push("/staff/classes"),
+      show: teacher,
+    },
+    {
+      icon: "calendar-outline",
+      label: "Timetable",
+      onPress: () => router.push("/staff/timetable"),
+      show: teacher,
+    },
     {
       icon: "cash-outline",
       label: "Collections",
       hint: "Fees owed",
-      href: "/staff/collections",
+      onPress: () => router.push("/staff/collections"),
       show: canSeeCollections,
     },
-    { icon: "person-outline", label: "My profile", href: "/staff/profile", show: true },
+    {
+      icon: "today-outline",
+      label: "School calendar",
+      onPress: () => router.push("/staff/calendar"),
+      show: hasPermission(permissions, "calendar-event.read"),
+    },
+    {
+      icon: "person-outline",
+      label: "My profile",
+      onPress: () => router.push("/staff/profile"),
+      show: teacher,
+    },
+    {
+      icon: "globe-outline",
+      label: "Open the website",
+      hint: "Settings, staff, payroll",
+      onPress: () => openOnWeb("/dashboard"),
+      // Offered to whoever has jobs that live only on the website.
+      show: canSeeSchool,
+    },
   ];
 
   const visible = tiles.filter((tile) => tile.show);
-  const todayLabel = formatToday(today);
-  const hasToday = nextLesson !== null || formArms.length > 0;
+  const hasToday = teacher && (nextLesson !== null || formArms.length > 0);
+  const school = overview.data;
+  const alerts = (school?.needsYouToday ?? []).filter((alert) => alert.count > 0);
 
   return (
     <Screen>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         <ScreenHeader
           title={`${greeting(new Date().getHours())}${staff ? `, ${staff.user.firstName}` : ""}`}
-          subtitle={[staff?.school.name, todayLabel].filter(Boolean).join(" · ")}
+          subtitle={[staff?.school.name, formatToday(today)].filter(Boolean).join(" · ")}
         />
 
-        {scope.isError && !data ? (
-          <Notice tone="danger">
-            We couldn&apos;t load your classes. Pull down or try again shortly.
+        {/* ---- SCHOOL band (dashboard.read) ---- */}
+        {canSeeSchool && termContext.data?.failure ? (
+          <Notice tone="warning">
+            There is no current term, so the school figures can&apos;t be shown. Set the current
+            term on the website.
           </Notice>
         ) : null}
 
-        {/* Today — rendered only when there is something true to say (D30). */}
-        {hasToday ? (
-          <Card style={styles.todayCard}>
-            {nextLesson ? (
+        {canSeeSchool && (overview.isPending && termId !== "") ? <Skeleton lines={4} /> : null}
+
+        {school ? (
+          <>
+            <SectionHeader title="Your school" note={school.termName} />
+            <Card style={styles.band}>
               <StatRow
-                icon="time-outline"
-                value={`${nextLesson.subjectName} · ${formatMinuteOfDay(nextLesson.slot.startMinute)}`}
-                label={`Next lesson · ${nextLesson.className}`}
-                onPress={() => router.push("/staff/timetable")}
+                icon="people-outline"
+                value={`${school.enrolled.count} students`}
+                label={
+                  school.enrolled.previousTermCount === null
+                    ? "Enrolled this term"
+                    : `Enrolled · ${school.enrolled.previousTermCount} last term`
+                }
               />
+              <StatRow
+                icon="wallet-outline"
+                value={`${school.fees.percent}% of fees collected`}
+                label={`${formatKobo(school.fees.collected)} of ${formatKobo(school.fees.billed)}`}
+                onPress={canSeeCollections ? () => router.push("/staff/collections") : undefined}
+              />
+              {school.attendanceToday.totalMarked > 0 ? (
+                <StatRow
+                  icon="checkmark-done-outline"
+                  value={`${school.attendanceToday.percentPresent}% present today`}
+                  label={`${school.attendanceToday.presentCount} present, ${school.attendanceToday.absentCount} absent`}
+                />
+              ) : null}
+              {school.outstanding.debtorCount > 0 ? (
+                <StatRow
+                  icon="alert-circle-outline"
+                  tone="warning"
+                  value={`${formatKobo(school.outstanding.amount)} outstanding`}
+                  label={`${school.outstanding.debtorCount} famil${
+                    school.outstanding.debtorCount === 1 ? "y" : "ies"
+                  } owing`}
+                  onPress={canSeeCollections ? () => router.push("/staff/collections/debtors") : undefined}
+                />
+              ) : null}
+            </Card>
+
+            {alerts.length > 0 ? (
+              <>
+                <SectionHeader title="Needs you" />
+                <Card style={styles.band}>
+                  {alerts.map((alert) => {
+                    const copy = ALERT_COPY[alert.type](alert.count);
+                    return (
+                      <StatRow
+                        key={alert.type}
+                        icon={copy.icon}
+                        tone="warning"
+                        value={copy.label}
+                        label={webConfigured ? "Open on the website" : "Handled on the website"}
+                        onPress={webConfigured ? () => openOnWeb(alert.href) : undefined}
+                      />
+                    );
+                  })}
+                </Card>
+              </>
             ) : null}
-            {formArms.map((arm) => (
-              <StatRow
-                key={arm.id}
-                icon="clipboard-outline"
-                value={arm.name}
-                label="Take today's register"
-                tone="warning"
-                onPress={() => router.push(`/staff/attendance/${arm.id}`)}
-              />
-            ))}
-          </Card>
+          </>
         ) : null}
 
-        {scope.isPending ? <Skeleton lines={4} /> : null}
+        {/* ---- TEACHER band (teacher role, D32) ---- */}
+        {teacher && scope.isError && !data ? (
+          <Notice tone="danger">
+            We couldn&apos;t load your classes. Try again shortly.
+          </Notice>
+        ) : null}
 
-        {data && visible.length === 0 ? (
+        {hasToday ? (
+          <>
+            <SectionHeader title="Your day" />
+            <Card style={styles.band}>
+              {nextLesson ? (
+                <StatRow
+                  icon="time-outline"
+                  value={`${nextLesson.subjectName} · ${formatMinuteOfDay(nextLesson.slot.startMinute)}`}
+                  label={`Next lesson · ${nextLesson.className}`}
+                  onPress={() => router.push("/staff/timetable")}
+                />
+              ) : null}
+              {formArms.map((arm) => (
+                <StatRow
+                  key={arm.id}
+                  icon="clipboard-outline"
+                  value={arm.name}
+                  label="Take today's register"
+                  tone="warning"
+                  onPress={() => router.push(`/staff/attendance/${arm.id}`)}
+                />
+              ))}
+            </Card>
+          </>
+        ) : null}
+
+        {teacher && scope.isPending ? <Skeleton lines={3} /> : null}
+
+        {visible.length === 0 ? (
           <EmptyState
             icon="school-outline"
             title="Nothing assigned yet"
-            body="Your school hasn't given you classes or subjects. Ask your administrator to set that up."
+            body="Your account doesn't have any jobs set up on the phone. Ask your school administrator."
           />
-        ) : null}
-
-        {visible.length > 0 ? (
+        ) : (
           <>
             <SectionHeader title="Everything you do" />
             <TileGrid>
@@ -230,16 +376,16 @@ export default function StaffDashboardScreen() {
                   icon={tile.icon}
                   label={tile.label}
                   hint={tile.hint ?? null}
-                  onPress={() => router.push(tile.href)}
+                  onPress={tile.onPress}
                 />
               ))}
             </TileGrid>
           </>
-        ) : null}
+        )}
 
-        <Body muted>
-          {staff ? `Signed in as ${staff.user.firstName} ${staff.user.lastName}.` : ""}
-        </Body>
+        {canSeeSchool && !webConfigured ? (
+          <Body muted>{WEB_NOT_CONFIGURED_MESSAGE}</Body>
+        ) : null}
       </ScrollView>
     </Screen>
   );
@@ -247,5 +393,5 @@ export default function StaffDashboardScreen() {
 
 const styles = StyleSheet.create({
   content: { gap: spacing.md, paddingBottom: spacing.xl },
-  todayCard: { gap: spacing.xs },
+  band: { gap: spacing.xs },
 });

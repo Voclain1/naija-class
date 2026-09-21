@@ -40,6 +40,8 @@ const STAFF_KEYS: Record<string, readonly unknown[]> = {
   staffProfile: queryKeys.staffProfile(SCHOOL, USER),
   staffTimetable: queryKeys.staffTimetable(SCHOOL, USER),
   staffCalendar: queryKeys.staffCalendar(SCHOOL, USER, "2026-09-01", "2027-03-01"),
+  // CP4 — whole-school figures.
+  staffAdminDashboard: queryKeys.staffAdminDashboard(SCHOOL, USER, "term_1"),
 };
 
 describe("staff query keys", () => {
