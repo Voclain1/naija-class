@@ -14,6 +14,8 @@ import { isSchoolAdmin, isTeacher } from "../../src/lib/auth/roles";
 import { serverToday } from "../../src/lib/staff/server-date";
 import { useTermContext } from "../../src/lib/staff/use-term-context";
 import { WEB_NOT_CONFIGURED_MESSAGE, webUrl } from "../../src/lib/web-handoff";
+import { staffDestinations, type Destination } from "../../src/lib/navigation/destinations";
+import { AppMenu, MenuButton, useAppMenu } from "../../src/components/app-menu";
 import { spacing } from "../../src/theme/tokens";
 import { Body, Card, Notice, Screen } from "../../src/components/ui";
 import {
@@ -95,7 +97,8 @@ const ALERT_COPY: Record<DashboardAlertType, (count: number) => { label: string;
 
 export default function StaffDashboardScreen() {
   const router = useRouter();
-  const { status, principal, staff } = useSession();
+  const { status, principal, staff, signOut } = useSession();
+  const menu = useAppMenu();
   const authed = status === "authenticated" && principal === "staff";
   const schoolId = staff?.school.id ?? "";
   const userId = staff?.user.id ?? "";
@@ -150,8 +153,6 @@ export default function StaffDashboardScreen() {
   if (!authed) return <Redirect href="/login" />;
 
   const data = scope.data;
-  const canEnterMarks = teacher && hasPermission(permissions, "assessment-score.create");
-  const canWriteLessonNotes = teacher && hasPermission(permissions, "lesson-plan.create");
   const canSeeCollections = hasPermission(permissions, "finance.dashboard.read");
   const teachesSubjects = Object.values(data?.subjectsByArm ?? {}).some((s) => s.length > 0);
   const formArms = (data?.classArms ?? []).filter((arm) =>
@@ -165,107 +166,23 @@ export default function StaffDashboardScreen() {
   }
   const webConfigured = webUrl("/") !== null;
 
-  const tiles: Array<{ icon: IconName; label: string; hint?: string; onPress: () => void; show: boolean }> = [
-    {
-      icon: "create-outline",
-      label: "Enter marks",
-      hint: "Tests and exams",
-      onPress: () => router.push("/staff/gradebook"),
-      show: canEnterMarks && teachesSubjects,
-    },
-    {
-      icon: "checkbox-outline",
-      label: "Attendance",
-      hint: formArms[0]?.name,
-      onPress: () =>
-        router.push(formArms[0] ? `/staff/attendance/${formArms[0].id}` : "/staff/classes"),
-      show: teacher && formArms.length > 0,
-    },
-    {
-      icon: "document-text-outline",
-      label: "Lesson notes",
-      hint: "Write with AI",
-      onPress: () => router.push("/staff/lesson-notes"),
-      show: canWriteLessonNotes,
-    },
-    {
-      icon: "library-outline",
-      label: "Curriculum",
-      hint: "Scheme of work",
-      onPress: () => router.push("/staff/curriculum"),
-      show: canWriteLessonNotes,
-    },
-    {
-      icon: "chatbox-ellipses-outline",
-      label: "Report comments",
-      hint: formArms[0]?.name,
-      onPress: () =>
-        router.push(formArms[0] ? `/staff/report-cards/${formArms[0].id}` : "/staff/classes"),
-      show: teacher && formArms.length > 0,
-    },
-    {
-      icon: "people-outline",
-      label: "My classes",
-      onPress: () => router.push("/staff/classes"),
-      show: teacher,
-    },
-    {
-      icon: "calendar-outline",
-      label: "Timetable",
-      onPress: () => router.push("/staff/timetable"),
-      show: teacher,
-    },
-    {
-      icon: "ribbon-outline",
-      label: "Report cards",
-      hint: "Approve and release",
-      onPress: () => router.push("/staff/approvals"),
-      show: canApprove,
-    },
-    {
-      icon: "bar-chart-outline",
-      label: "Reports",
-      hint: "What's behind",
-      onPress: () => router.push("/staff/reports"),
-      show: schoolAdmin && hasPermission(permissions, "reports.completeness.read"),
-    },
-    {
-      icon: "people-circle-outline",
-      label: "Students",
-      hint: "Find, add, update",
-      onPress: () => router.push("/staff/students"),
-      show: schoolAdmin,
-    },
-    {
-      icon: "cash-outline",
-      label: "Collections",
-      hint: "Fees owed",
-      onPress: () => router.push("/staff/collections"),
-      show: canSeeCollections,
-    },
-    {
-      icon: "today-outline",
-      label: "School calendar",
-      onPress: () => router.push("/staff/calendar"),
-      show: hasPermission(permissions, "calendar-event.read"),
-    },
-    {
-      icon: "person-outline",
-      label: "My profile",
-      onPress: () => router.push("/staff/profile"),
-      show: teacher,
-    },
-    {
-      icon: "globe-outline",
-      label: "Open the website",
-      hint: "Settings, staff, payroll",
-      onPress: () => openOnWeb("/dashboard"),
-      // Offered to whoever has jobs that live only on the website.
-      show: canSeeSchool,
-    },
-  ];
+  // ONE list for both the grid below and the app menu (destinations.ts), so
+  // the two can never disagree about what this person may open.
+  const destinations = staffDestinations({
+    roles: staff?.roles,
+    permissions,
+    formArms,
+    teachesSubjects,
+    webConfigured,
+  });
 
-  const visible = tiles.filter((tile) => tile.show);
+  function openDestination(destination: Destination): void {
+    if (destination.route) router.push(destination.route);
+    else if (destination.web) openOnWeb(destination.web);
+  }
+
+  const visible = destinations;
+  const roleName = staff?.roles?.[0]?.name ?? "Staff";
   const hasToday = teacher && (nextLesson !== null || formArms.length > 0);
   const school = overview.data;
   const alerts = (school?.needsYouToday ?? []).filter((alert) => alert.count > 0);
@@ -276,6 +193,7 @@ export default function StaffDashboardScreen() {
         <ScreenHeader
           title={`${greeting(new Date().getHours())}${staff ? `, ${staff.user.firstName}` : ""}`}
           subtitle={[staff?.school.name, formatToday(today)].filter(Boolean).join(" · ")}
+          action={<MenuButton onPress={menu.open} />}
         />
 
         {/* ---- SCHOOL band (dashboard.read) ---- */}
@@ -418,13 +336,13 @@ export default function StaffDashboardScreen() {
           <>
             <SectionHeader title="Everything you do" />
             <TileGrid>
-              {visible.map((tile) => (
+              {visible.map((destination) => (
                 <ActionTile
-                  key={tile.label}
-                  icon={tile.icon}
-                  label={tile.label}
-                  hint={tile.hint ?? null}
-                  onPress={tile.onPress}
+                  key={destination.key}
+                  icon={destination.icon}
+                  label={destination.label}
+                  hint={destination.hint ?? null}
+                  onPress={() => openDestination(destination)}
                 />
               ))}
             </TileGrid>
@@ -435,6 +353,17 @@ export default function StaffDashboardScreen() {
           <Body muted>{WEB_NOT_CONFIGURED_MESSAGE}</Body>
         ) : null}
       </ScrollView>
+
+      <AppMenu
+        visible={menu.visible}
+        onClose={menu.close}
+        destinations={destinations}
+        person={{
+          name: staff ? `${staff.user.firstName} ${staff.user.lastName}` : "Staff",
+          detail: [roleName, staff?.school.name].filter(Boolean).join(" · "),
+        }}
+        onSignOut={() => void signOut()}
+      />
     </Screen>
   );
 }

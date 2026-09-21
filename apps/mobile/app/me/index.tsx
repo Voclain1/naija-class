@@ -5,6 +5,8 @@ import { useQuery } from "@tanstack/react-query";
 import { getStudentMe } from "../../src/lib/api/student-portal";
 import { queryKeys } from "../../src/lib/query/keys";
 import { useSession } from "../../src/lib/auth/session";
+import { AppMenu, MenuButton, useAppMenu } from "../../src/components/app-menu";
+import { studentDestinations } from "../../src/lib/navigation/destinations";
 import { spacing } from "../../src/theme/tokens";
 import {
   Body,
@@ -28,6 +30,7 @@ import { FreshnessLabel } from "../../src/components/freshness-label";
 // process that signed in; this query is what makes a relaunch work.
 export default function MyHomeScreen() {
   const { status, principal, student: sessionStudent, signOut } = useSession();
+  const menu = useAppMenu();
 
   const meQuery = useQuery({
     queryKey: queryKeys.me,
@@ -50,9 +53,14 @@ export default function MyHomeScreen() {
     <Screen>
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.header}>
-          <Heading>
-            {student ? `Hello, ${student.firstName}` : "Your school work"}
-          </Heading>
+          <View style={styles.headerRow}>
+            <View style={styles.headerTitle}>
+              <Heading>
+                {student ? `Hello, ${student.firstName}` : "Your school work"}
+              </Heading>
+            </View>
+            <MenuButton onPress={menu.open} />
+          </View>
           {school ? <Body muted>{school.name}</Body> : null}
           <FreshnessLabel updatedAt={meQuery.dataUpdatedAt} />
         </View>
@@ -144,11 +152,23 @@ export default function MyHomeScreen() {
 
         <Button title="Sign out" variant="secondary" onPress={() => void signOut()} />
       </ScrollView>
+      <AppMenu
+        visible={menu.visible}
+        onClose={menu.close}
+        destinations={studentDestinations()}
+        person={{
+          name: student ? `${student.firstName} ${student.lastName}` : "Student",
+          detail: ["Student", school?.name].filter(Boolean).join(" · "),
+        }}
+        onSignOut={() => void signOut()}
+      />
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
+  headerRow: { flexDirection: "row", alignItems: "flex-start", gap: spacing.md },
+  headerTitle: { flex: 1 },
   content: { padding: spacing.md, gap: spacing.md },
   header: { gap: spacing.xs },
 });
