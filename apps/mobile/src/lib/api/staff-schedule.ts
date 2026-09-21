@@ -1,4 +1,10 @@
-import type { CalendarResponse, TeacherTimetableDto } from "@school-kit/types";
+import type {
+  CalendarResponse,
+  CreateSchoolEventInput,
+  SchoolEventDto,
+  TeacherTimetableDto,
+  UpdateSchoolEventInput,
+} from "@school-kit/types";
 
 import { apiFetch } from "./client";
 
@@ -22,4 +28,28 @@ export function staffMyTimetable(termId?: string): Promise<TeacherTimetableDto> 
 export function staffCalendar(window: { from: string; to: string }): Promise<CalendarResponse> {
   const params = new URLSearchParams({ from: window.from, to: window.to });
   return apiFetch<CalendarResponse>(`/calendar?${params.toString()}`);
+}
+
+// CP9a — school events, for owners and admins. The merged calendar above is
+// read-only by nature (national holidays, term dates); these touch only the
+// school's own events, which is all the API lets anyone edit.
+
+export function staffSchoolEvents(window: { from: string; to: string }): Promise<SchoolEventDto[]> {
+  const params = new URLSearchParams({ from: window.from, to: window.to });
+  return apiFetch<SchoolEventDto[]>(`/calendar/events?${params.toString()}`);
+}
+
+export function staffCreateSchoolEvent(input: CreateSchoolEventInput): Promise<SchoolEventDto> {
+  return apiFetch<SchoolEventDto>("/calendar/events", { method: "POST", body: input });
+}
+
+export function staffUpdateSchoolEvent(id: string, input: UpdateSchoolEventInput): Promise<SchoolEventDto> {
+  return apiFetch<SchoolEventDto>(`/calendar/events/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: input,
+  });
+}
+
+export function staffDeleteSchoolEvent(id: string): Promise<void> {
+  return apiFetch<void>(`/calendar/events/${encodeURIComponent(id)}`, { method: "DELETE" });
 }

@@ -70,3 +70,33 @@ export function describeStage(stage: ArmStage, byStatus: StatusCounts): string {
 export function stageNeedsAction(stage: ArmStage): boolean {
   return stage === "READY_TO_APPROVE" || stage === "READY_TO_RELEASE";
 }
+
+// CP9a — the two arm-level actions that come BEFORE approval.
+
+/**
+ * Whether the server will build (or rebuild) this class's cards: only while
+ * there are none yet, or every one is still DRAFT. ReportCardService.build
+ * refuses any class with a card past DRAFT (409 ARM_NOT_DRAFT), because a
+ * rebuild would re-snapshot results a teacher has already reviewed.
+ */
+export function canBuildArm(byStatus: StatusCounts): boolean {
+  const total = cardTotal(byStatus);
+  return total === 0 || byStatus.DRAFT === total;
+}
+
+/**
+ * Whether the principal's note is editable: only while EVERY card is
+ * FORM_REVIEWED — the state editPrincipalNote requires. That is exactly the
+ * READY_TO_APPROVE stage, so the note is written just before approving.
+ */
+export function canEditPrincipalNote(stage: ArmStage): boolean {
+  return stage === "READY_TO_APPROVE";
+}
+
+export const PRINCIPAL_NOTE_MAX = 2000;
+
+/** The note as the API takes it: trimmed, and blank means "no note". */
+export function principalNoteValue(text: string): string | null {
+  const trimmed = text.trim();
+  return trimmed === "" ? null : trimmed;
+}

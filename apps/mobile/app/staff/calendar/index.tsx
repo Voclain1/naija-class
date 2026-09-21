@@ -1,12 +1,13 @@
 import { useMemo, useState } from "react";
 import { ScrollView, StyleSheet } from "react-native";
-import { Redirect } from "expo-router";
+import { Redirect, useRouter } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
 
 import { staffCalendar } from "../../../src/lib/api/staff-schedule";
 import { queryKeys } from "../../../src/lib/query/keys";
 import { useSession } from "../../../src/lib/auth/session";
 import { serverToday } from "../../../src/lib/staff/server-date";
+import { calendarAbilities, schoolEventId } from "../../../src/lib/staff/event-form";
 import { CalendarView } from "../../../src/components/calendar-view";
 import { monthBounds, monthOf } from "../../../src/lib/calendar/month-grid";
 import { spacing } from "../../../src/theme/tokens";
@@ -39,6 +40,10 @@ export default function StaffCalendarScreen() {
   const authed = status === "authenticated" && principal === "staff";
   const schoolId = staff?.school.id ?? "";
   const userId = staff?.user.id ?? "";
+  const router = useRouter();
+  // CP9a — owners and admins can change the school's own events from here.
+  const abilities = calendarAbilities(staff?.roles, staff?.permissions ?? []);
+  const canEdit = abilities.update || abilities.remove;
 
   // Open on the server's month, not the handset's.
   const today = serverToday();
@@ -65,6 +70,18 @@ export default function StaffCalendarScreen() {
         subtitle="Term dates, holidays and events. Tap a day to see what is on."
       />
 
+      {abilities.create ? (
+        <Button
+          title={selectedDate ? "Add an event on this day" : "Add an event"}
+          onPress={() =>
+            router.push({
+              pathname: "/staff/calendar/event",
+              params: selectedDate ? { date: selectedDate } : {},
+            })
+          }
+        />
+      ) : null}
+
       <ScrollView contentContainerStyle={styles.content}>
         <CalendarView
           entries={calendar.data?.entries ?? []}
@@ -77,6 +94,21 @@ export default function StaffCalendarScreen() {
             // A date from the month being left would sit outside the grid.
             setSelectedDate(null);
           }}
+          isEditable={canEdit ? (entry) => schoolEventId(entry) !== null : undefined}
+          onEditEntry={
+            canEdit
+              ? (entry) => {
+                  const id = schoolEventId(entry);
+                  if (!id) return;
+                  // The window the event lies in, so the edit screen reads it
+                  // fresh from /calendar/events rather than trusting this row.
+                  router.push({
+                    pathname: "/staff/calendar/event",
+                    params: { id, from: entry.startDate, to: entry.endDate },
+                  });
+                }
+              : undefined
+          }
         />
 
         {calendar.isPending && (

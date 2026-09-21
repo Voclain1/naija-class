@@ -8,7 +8,7 @@ import {
 } from "@school-kit/types";
 
 import { spacing } from "../theme/tokens";
-import { Body, Card, Heading, Label, Notice } from "./ui";
+import { Body, Button, Card, Heading, Label, Notice } from "./ui";
 
 // Phase 8 / CP1 — the school calendar as an agenda, grouped by month (D30).
 // Shared by the guardian and student screens: both render the SAME merged
@@ -16,7 +16,15 @@ import { Body, Card, Heading, Label, Notice } from "./ui";
 //
 // Dates are formatted by @school-kit/types' fixed-offset helpers, not Intl —
 // Hermes' Intl support is not something a holiday date should depend on.
-export function CalendarList({ entries }: { entries: CalendarEntryDto[] }) {
+export function CalendarList({
+  entries,
+  onEditEntry,
+  isEditable,
+}: {
+  entries: CalendarEntryDto[];
+  onEditEntry?: (entry: CalendarEntryDto) => void;
+  isEditable?: (entry: CalendarEntryDto) => boolean;
+}) {
   if (entries.length === 0) {
     return (
       <Card>
@@ -40,6 +48,9 @@ export function CalendarList({ entries }: { entries: CalendarEntryDto[] }) {
                 <Notice tone="warning">Expected — the exact date has not been announced yet.</Notice>
               ) : null}
               {e.description ? <Body muted>{e.description}</Body> : null}
+              {onEditEntry && isEditable?.(e) ? (
+                <Button title="Edit event" variant="secondary" onPress={() => onEditEntry(e)} />
+              ) : null}
             </View>
           ))}
         </Card>

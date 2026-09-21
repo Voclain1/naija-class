@@ -8,7 +8,11 @@ principals. Native scope is teacher daily attendance, bursar collection
 monitoring, and the owner/admin operational dashboard. Everything else uses a
 fixed-origin browser handoff. Payroll, BVN, staff/role management, school
 configuration, bulk imports, refunds, payment recording or approval, and 2FA
-setup/disable remain web-only.
+setup/disable remain web-only. **Amended 2026-09-21 (CP9):** recording a
+manual payment, sending fee reminders, sharing a payment link and logging an
+expense move to the phone behind the D37/D38 safeguards; refunds, payroll, BVN,
+fee and discount setup, whole-class invoice generation, staff/roles, settings
+and bulk work stay web-only.
 
 **Scope widened 2026-09-17.** The "companion" boundary above is superseded for
 native scope: staff mobile now aims to carry what each role does **daily or
@@ -1206,3 +1210,142 @@ declared); every new binding's spec fixture typed as the API's OWN response
 type (the curriculum-crash rule); typecheck, lint, full suite and an Android
 `expo export`; and a real device, which for CP4 means signing in as an OWNER —
 the one role no device pass has yet exercised.
+
+---
+
+## CP9 — the admin's routine week, and money, on the phone (plan-first, approved 2026-09-21)
+
+**The ask:** *"confirm that all basic, repetitive tasks can be done on the app,
+and the website would be needed not too often."* An audit against the
+website's admin sidebar found they could not — eight routine jobs still needed
+the website. The maintainer chose to move all eight.
+
+### This REVERSES a recorded decision, deliberately
+
+The module header has said since 2026-08-24 that "payment recording or
+approval, refunds" stay web-only, and CP3's D17 excluded payment links for the
+same reason. **That line is now moved for four money jobs**, by the
+maintainer's decision on 2026-09-21, on the reasoning that recording payments
+is the most frequent job in a Nigerian school office and for a phone-first
+school the line was costing more than it protected. What stays web-only is
+unchanged in spirit: **refunds, payroll, BVN, fee and discount SETUP, invoice
+generation for a whole class, staff and roles, school settings, bulk work.**
+The header is amended to say so.
+
+### Scope
+
+| Part | Job | Endpoints (existing unless noted) |
+|---|---|---|
+| CP9a | Link a parent to a student; invite, resend, revoke portal access | `POST /students/:id/guardians`, `.../guardians/new`, `POST /guardians/:id/invite` (+ `/resend`, `/revoke`) |
+| CP9a | Place a student in a class, or move them | `POST /enrollments`, `PATCH /enrollments/:id` |
+| CP9a | Add, edit, remove a school event | `POST/PATCH/DELETE /calendar/events` |
+| CP9a | Build a class's report cards; write the principal's note | `POST /report-cards/arm/build`, `PUT /report-cards/arm/principal-note` |
+| CP9b | Record a cash/POS/transfer payment | `POST /payments/manual` **+ a server change (D37)** |
+| CP9b | Send fee reminders | `POST /finance/debtors/remind` |
+| CP9b | Share an invoice's payment link (WhatsApp) | `POST /invoices/:id/payment-link` |
+| CP9b | Log an expense, with a receipt photo | `POST /expenses`, `POST /expenses/:id/receipt` |
+
+**CP9a needs no server change. CP9b needs exactly one**, and it is a
+production migration on the money path, so it is called out on its own.
+
+### D37 — recording a payment must be idempotent, and today it is not
+
+`recordManualPaymentSchema` carries `invoiceId, amount, method, paidAt,
+reference?` — **no idempotency key**, and `reference` is optional free text,
+not unique. So: a bursar records ₦50,000, the mobile network drops the
+response, the bursar taps again — and the school has recorded ₦100,000
+received for ₦50,000 of cash. The website carries the same flaw, but a phone on
+a Nigerian mobile network meets a dropped response far more often, and the
+CP2 rule (no queue, no automatic retry) means the human retry is the ONLY
+retry, which makes it the likely one.
+
+**The fix (server):**
+
+- `recordManualPaymentSchema` gains an optional `idempotencyKey` (a UUID the
+  client generates once per payment FORM, not per tap).
+- `payments.idempotency_key` — nullable TEXT, with a partial unique index on
+  `(school_id, idempotency_key) WHERE idempotency_key IS NOT NULL`. Nullable so
+  every existing row and every existing web caller is untouched.
+- `FinanceService`/`PaymentsService` looks the key up first inside the same
+  transaction; a repeat returns the ORIGINAL payment with a flag saying it was
+  a repeat, writes NO second payment, NO second audit row, and does NOT
+  recompute totals again. A key reused with a DIFFERENT amount or invoice is a
+  409, never a silent success.
+- Proven against real Postgres: same key twice → one row; concurrent same-key
+  requests → one row (the unique index, not the lookup, is the guarantee);
+  different key → two rows; same key, different amount → 409; RLS still scopes
+  the key to the school, so another school's key can never collide.
+
+**Why a key and not "dedupe identical payments":** two genuine ₦5,000 cash
+payments for the same invoice on the same day are legitimate and common
+(instalments). Only the CLIENT knows whether a second request is a second
+payment or a repeat of the first, so only a client-generated key can tell
+them apart.
+
+Because there is no staging tier, this migration runs against the database
+real schools use on the first deploy after merge. It is additive (one nullable
+column, one partial index), which is the safest shape a migration can take.
+
+### D38 — the money safeguards on the phone
+
+1. **Amounts are entered in naira and converted to kobo by exact string
+   arithmetic, never floating point.** `"50,000.50"` → `5000050`. A value with
+   more than two decimal places, or anything that is not a number, is refused
+   rather than rounded.
+2. **Confirmation shows the amount in figures AND in words** ("₦50,000.00 —
+   fifty thousand naira"), with the student, the invoice, the method and the
+   date. A misplaced zero is the most likely costly error on a phone keyboard,
+   and words catch it where digits do not.
+3. **The server's figures are what is shown afterwards.** Balances come back
+   from the API; the phone computes no fee, discount or balance (CLAUDE.md
+   money rule).
+4. **One idempotency key per form (D37)**, so a lost response is safe to retry
+   — and the screen says "Checking whether that payment went through…" rather
+   than inviting a blind second tap.
+5. **Who may:** the same permissions the website requires (`payment.record`,
+   `finance.debtors.remind`, `expense.create`), plus whatever role the service
+   itself checks. No new permission is created, and none is widened.
+6. **Reminders show their cost before sending**: how many families, and that
+   each is an SMS the school pays for.
+
+### Shipping order
+
+CP9a first (no server change), then CP9b beginning with D37 alone as its own
+PR — server change, migration and real-DB specs, reviewed and merged BEFORE any
+phone screen can record a payment. The phone screens follow in the next PR.
+
+### D39 — moving a placed child to another class is held back (found building CP9a)
+
+`PATCH /enrollments/:id` accepts a new `classArmId`, but it moves only the
+enrolment row. The child's marks (`assessments.class_arm_id`), report card
+(`report_cards.class_arm_id`) and past registers keep the OLD class, so after a
+move the new class's gradebook does not show the marks already entered, and
+the report card stays with the old class's batch. The website never offers a
+move (its enrolments tab only creates a placement for a term), so this has not
+bitten anyone yet. The phone would be the first surface to offer it.
+
+**Not built.** The proposed fix is a server guard: refuse a class change
+(409) once the child has any mark or report card in that term, so the common
+real case — "I put her in JSS1A, I meant JSS1B", fixed the same day — works,
+and the dangerous one is refused rather than silently splitting a child's
+record. It is a server change, so it waits for sign-off like D37.
+
+### CP9a status (2026-09-21)
+
+Built, on the phone, for owners and admins (role + permission, as the
+services check):
+
+- **Calendar:** add, edit and remove school events. National holidays and
+  term dates are never offered for editing. Edits are read fresh from
+  `/calendar/events` and send only the changed fields.
+- **Report cards:** Build/Rebuild while every card is a draft (mirrors
+  `ARM_NOT_DRAFT`); the principal's note while every card is form-reviewed
+  (mirrors `editPrincipalNote`). PDF rendering stays a website job.
+- **Parents:** search-first linking (siblings share one parent record), add a
+  new parent as the fallback, and invite/resend/cancel parent-app access
+  exactly per the server's portal status. The invitation link is kept only in
+  screen memory and shared deliberately by the admin, with a warning.
+- **Placement:** place a child who has no class this term, with an explicit
+  choice of class — nothing pre-picked. Moving is held back (D39).
+
+Shared form pieces (`components/form.tsx`) now back every CP9 form.

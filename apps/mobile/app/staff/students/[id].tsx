@@ -9,11 +9,12 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { Redirect, Stack, useLocalSearchParams } from "expo-router";
+import { Redirect, Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { UpdateStudentInput } from "@school-kit/types";
 
 import {
+  staffClassArms,
   staffGetStudent,
   staffGraduateStudent,
   staffUpdateStudent,
@@ -24,6 +25,10 @@ import { queryKeys } from "../../../src/lib/query/keys";
 import { useSession } from "../../../src/lib/auth/session";
 import { isSchoolAdmin } from "../../../src/lib/auth/roles";
 import { webUrl } from "../../../src/lib/web-handoff";
+import { staffEnrollStudent } from "../../../src/lib/api/staff-guardians";
+import { useTermContext } from "../../../src/lib/staff/use-term-context";
+import { describePortalStatus, needsPlacement, parentAbilities } from "../../../src/lib/staff/guardian-form";
+import { ChoiceChips } from "../../../src/components/form";
 import { useTheme } from "../../../src/theme/theme-provider";
 import { fontSizes, fonts, radii, spacing } from "../../../src/theme/tokens";
 import { Body, Button, Card, CenteredMessage, Label, Notice, Screen } from "../../../src/components/ui";
@@ -34,8 +39,11 @@ import { ListRow, ScreenHeader, SectionHeader, Skeleton, StatRow } from "../../.
 // What an administrator actually does from a phone: look a child up, fix a
 // phone number or an address, and — at the end of a term — withdraw or
 // graduate them. The full record editor (medical notes, religion, state of
-// origin, guardian links) stays on the website, reached by a link, because a
+// origin) stays on the website, reached by a link, because a
 // long form is exactly where a phone makes mistakes easy.
+//
+// CP9a adds the two jobs that used to send the admin to the website: placing
+// a child who has no class this term, and linking and inviting their parents.
 //
 // Withdraw and graduate are confirmed: both remove a child from the active
 // roll, and graduate is not something a school expects to undo.
@@ -53,7 +61,11 @@ function describeFailure(error: unknown): string {
   if (error instanceof ApiNetworkError) {
     return "Your phone couldn't reach the server. Nothing changed — try again when you have signal.";
   }
-  if (error instanceof ApiError) return error.message || "That couldn't be saved.";
+  if (error instanceof ApiError) {
+    if (error.code === "ENROLLMENT_ALREADY_EXISTS") return "This student already has a class this term.";
+    if (error.code === "INACTIVE_CLASS_ARM") return "That class is closed. Choose another.";
+    return error.message || "That couldn't be saved.";
+  }
   return "That couldn't be saved.";
 }
 
@@ -67,6 +79,17 @@ export default function StudentScreen() {
   const userId = staff?.user.id ?? "";
   const admin = isSchoolAdmin(staff?.roles);
   const key = queryKeys.staffStudent(schoolId, userId, id ?? "");
+  const router = useRouter();
+  const abilities = parentAbilities(staff?.roles, staff?.permissions ?? []);
+  const termContext = useTermContext({ schoolId, userId, enabled: authed && abilities.place });
+  const currentTerm = termContext.data?.term ?? null;
+  const arms = useQuery({
+    queryKey: queryKeys.staffClassArms(schoolId, userId),
+    queryFn: () => staffClassArms(),
+    enabled: authed && abilities.place && schoolId !== "",
+    staleTime: 5 * 60_000,
+  });
+  const [placeArmId, setPlaceArmId] = useState<string | null>(null);
 
   const student = useQuery({
     queryKey: key,
@@ -97,6 +120,21 @@ export default function StudentScreen() {
     onSuccess: async () => {
       setEditing(false);
       setNotice("Saved.");
+      await refresh();
+    },
+    onError: (error: unknown) => setFailure(describeFailure(error)),
+  });
+
+  const place = useMutation({
+    mutationFn: (classArmId: string) =>
+      staffEnrollStudent({ studentId: id as string, termId: currentTerm!.termId, classArmId }),
+    onMutate: () => {
+      setFailure(null);
+      setNotice(null);
+    },
+    onSuccess: async () => {
+      setPlaceArmId(null);
+      setNotice("Placed in the class.");
       await refresh();
     },
     onError: (error: unknown) => setFailure(describeFailure(error)),
@@ -161,7 +199,22 @@ export default function StudentScreen() {
   const s = student.data;
   const name = [s.firstName, s.middleName, s.lastName].filter(Boolean).join(" ");
   const active = s.status === "ACTIVE";
-  const busy = update.isPending || leave.isPending;
+  const busy = update.isPending || leave.isPending || place.isPending;
+  const unplaced = abilities.place && needsPlacement(s, currentTerm?.termId ?? null);
+  const activeArms = (arms.data ?? []).filter((arm) => arm.isActive);
+
+  function confirmPlace(): void {
+    const arm = activeArms.find((a) => a.id === placeArmId);
+    if (!arm || !currentTerm) return;
+    Alert.alert(
+      `Place ${s.firstName} in ${arm.name}?`,
+      `For ${currentTerm.termName}. They will appear on ${arm.name}'s register and in its gradebook.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: "Place", onPress: () => place.mutate(arm.id) },
+      ],
+    );
+  }
   const fullEditor = webUrl(`/students/${s.id}`);
 
   function startEdit(): void {
@@ -215,6 +268,27 @@ export default function StudentScreen() {
             <StatRow icon="enter-outline" value={formatDate(s.admittedAt)} label="Admitted" />
           </Card>
 
+          {unplaced ? (
+            <Card style={styles.card}>
+              <Body>
+                {s.firstName} has no class for {currentTerm?.termName ?? "this term"}. Choose one — nothing is
+                picked for you.
+              </Body>
+              {arms.isPending ? <Skeleton lines={2} /> : null}
+              <ChoiceChips
+                options={activeArms.map((arm) => ({ value: arm.id, label: arm.name }))}
+                value={placeArmId}
+                onChange={setPlaceArmId}
+              />
+              <Button
+                title="Place in this class"
+                loading={place.isPending}
+                disabled={busy || placeArmId === null}
+                onPress={confirmPlace}
+              />
+            </Card>
+          ) : null}
+
           <SectionHeader title="Contact" />
           {editing ? (
             <Card style={styles.card}>
@@ -256,18 +330,34 @@ export default function StudentScreen() {
             </Card>
           )}
 
-          {s.guardians.length > 0 ? (
-            <>
-              <SectionHeader title="Parents and guardians" />
-              {s.guardians.map((guardian) => (
-                <ListRow
-                  key={guardian.linkId}
-                  icon="people-outline"
-                  title={`${guardian.firstName} ${guardian.lastName}`}
-                  subtitle={`${guardian.relationship.toLowerCase()} · ${guardian.phone}`}
-                />
-              ))}
-            </>
+          {s.guardians.length > 0 || abilities.link ? (
+            <SectionHeader title="Parents and guardians" />
+          ) : null}
+          {s.guardians.map((guardian) => (
+            <ListRow
+              key={guardian.linkId}
+              icon="people-outline"
+              title={`${guardian.firstName} ${guardian.lastName}${guardian.isPrimary ? " · main contact" : ""}`}
+              subtitle={`${guardian.relationship.toLowerCase()} · ${guardian.phone} · ${describePortalStatus(guardian.portalStatus)}`}
+              onPress={
+                abilities.invite || abilities.update
+                  ? () =>
+                      router.push({
+                        pathname: "/staff/students/parent",
+                        params: { id: guardian.id, studentId: s.id },
+                      })
+                  : undefined
+              }
+            />
+          ))}
+          {abilities.link && active ? (
+            <Button
+              title={s.guardians.length === 0 ? "Link a parent" : "Link another parent"}
+              variant="secondary"
+              onPress={() =>
+                router.push({ pathname: "/staff/students/link-parent", params: { studentId: s.id } })
+              }
+            />
           ) : null}
 
           {fullEditor ? (

@@ -136,6 +136,13 @@ export const queryKeys = {
     ["staff", schoolId, userId, "timetable"] as const,
   staffCalendar: (schoolId: string, userId: string, from: string, to: string) =>
     ["staff", schoolId, userId, "calendar", from, to] as const,
+  // Every month of the calendar at once — what an event write invalidates, since
+  // an event can span a month boundary and the months on screen are separate
+  // cache entries.
+  staffCalendarAll: (schoolId: string, userId: string) =>
+    ["staff", schoolId, userId, "calendar"] as const,
+  staffSchoolEvents: (schoolId: string, userId: string, from: string, to: string) =>
+    ["staff", schoolId, userId, "calendar-events", from, to] as const,
 
   // CP4 — the owner/admin school overview: enrolment, fees and attendance for
   // the whole school. Never persisted, like every staff key.
@@ -154,6 +161,12 @@ export const queryKeys = {
   // is what keeps it off the disk.
   staffStudents: (schoolId: string, userId: string, search: string) =>
     ["staff", schoolId, userId, "students", search] as const,
+  // CP9a — parents. A guardian record carries contact details; staff prefix,
+  // never persisted, like the student record beside it.
+  staffGuardianSearch: (schoolId: string, userId: string, search: string) =>
+    ["staff", schoolId, userId, "guardians", "search", search] as const,
+  staffGuardian: (schoolId: string, userId: string, id: string) =>
+    ["staff", schoolId, userId, "guardians", id] as const,
   staffStudent: (schoolId: string, userId: string, id: string) =>
     ["staff", schoolId, userId, "student", id] as const,
   staffClassArms: (schoolId: string, userId: string) =>
