@@ -14,6 +14,7 @@ import {
   recordManualPaymentSchema,
   type ListPaymentsInput,
   type PaginatedPaymentsDto,
+  type ManualPaymentResultDto,
   type PaymentDto,
   type PaymentReceiptUrlDto,
   type RecordManualPaymentInput,
@@ -52,7 +53,7 @@ export class PaymentsController {
     @Body(new ZodValidationPipe(recordManualPaymentSchema)) dto: RecordManualPaymentInput,
     @CurrentUser() authCtx: AuthContext,
     @Ip() ip: string,
-  ): Promise<PaymentDto> {
+  ): Promise<ManualPaymentResultDto> {
     return this.service.recordManual(authCtx, dto, { ipAddress: ip });
   }
 

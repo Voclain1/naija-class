@@ -1,12 +1,13 @@
 import { Injectable, Logger, Optional } from "@nestjs/common";
 
-import { type PrismaClient, withTenant } from "@school-kit/db";
+import { Prisma, type PrismaClient, withTenant } from "@school-kit/db";
 import {
   ConflictError,
   NotFoundError,
   type InitPaystackPaymentInput,
   type InvoiceStatus,
   type ListPaymentsInput,
+  type ManualPaymentResultDto,
   type PaginatedPaymentsDto,
   type PaymentDto,
   type PaymentMethod,
@@ -159,9 +160,18 @@ type PaymentRow = {
   receiptUrl: string | null;
   recordedBy: string | null;
   paidAt: Date | null;
+  idempotencyKey: string | null;
   createdAt: Date;
   updatedAt: Date;
 };
+
+// A unique violation. Under FORCE RLS the P2002 target is not reported, so
+// this cannot say WHICH constraint fired; recordManual only consults it when
+// the request carried an idempotency key, and then re-reads by that key — the
+// re-read, not this check, is what decides a replay.
+function isUniqueViolation(e: unknown): boolean {
+  return e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002";
+}
 
 // Minimal payment shape needed by the Paystack apply helpers.
 type PaymentCore = {
@@ -210,12 +220,73 @@ export class PaymentsService {
 
   // ─── Record manual payment ────────────────────────────────────────────────
 
+  // D37 — idempotent by client key. A request whose key this school has
+  // already used returns the ORIGINAL payment (replayed: true) and writes
+  // nothing: no second payment, no second audit row, no second recompute.
+  // Two guards, deliberately:
+  //   - the lookup below answers the ordinary retry cheaply;
+  //   - the (school_id, idempotency_key) unique index answers the race, where
+  //     two requests pass the lookup together. The loser's INSERT fails, its
+  //     transaction rolls back whole, and it re-reads the winner's row.
+  // A key reused for a DIFFERENT payment is a 409, never a silent success —
+  // replaying the wrong payment would tell the bursar cash was recorded when
+  // it was not.
   async recordManual(
     authCtx: AuthContext,
     dto: RecordManualPaymentInput,
     reqCtx: { ipAddress: string | null; userAgent?: string | null },
+  ): Promise<ManualPaymentResultDto> {
+    if (dto.idempotencyKey) {
+      const prior = await this.findByIdempotencyKey(authCtx.schoolId, dto.idempotencyKey);
+      if (prior) return this.replay(prior, dto);
+    }
+
+    let result: PaymentDto;
+    try {
+      result = await this.recordManualOnce(authCtx, dto, reqCtx);
+    } catch (e) {
+      if (dto.idempotencyKey && isUniqueViolation(e)) {
+        const prior = await this.findByIdempotencyKey(authCtx.schoolId, dto.idempotencyKey);
+        if (prior) return this.replay(prior, dto);
+      }
+      throw e;
+    }
+    await this.paymentLinkInvalidation?.archivePending(authCtx.schoolId, dto.invoiceId);
+    return { ...result, replayed: false };
+  }
+
+  private findByIdempotencyKey(schoolId: string, key: string): Promise<PaymentRow | null> {
+    return withTenant(schoolId, (db) =>
+      db.payment.findUnique({
+        where: { schoolId_idempotencyKey: { schoolId, idempotencyKey: key } },
+      }) as Promise<PaymentRow | null>,
+    );
+  }
+
+  private replay(prior: PaymentRow, dto: RecordManualPaymentInput): ManualPaymentResultDto {
+    const same =
+      prior.invoiceId === dto.invoiceId &&
+      prior.amount === dto.amount &&
+      prior.method === dto.method &&
+      (prior.reference ?? null) === (dto.reference ?? null) &&
+      prior.paidAt !== null &&
+      prior.paidAt.getTime() === new Date(dto.paidAt).getTime();
+    if (!same) {
+      throw new ConflictError(
+        "IDEMPOTENCY_KEY_REUSED",
+        "This payment form was already used to record a different payment. Start a new payment.",
+      );
+    }
+    this.logger.log(`Manual payment replayed for key on payment ${prior.id}; nothing new recorded.`);
+    return { ...toDto(prior), replayed: true };
+  }
+
+  private async recordManualOnce(
+    authCtx: AuthContext,
+    dto: RecordManualPaymentInput,
+    reqCtx: { ipAddress: string | null; userAgent?: string | null },
   ): Promise<PaymentDto> {
-    const result = await withTenant(authCtx.schoolId, async (db) => {
+    return withTenant(authCtx.schoolId, async (db) => {
       // 1. Load invoice — RLS ensures school_id matches; double-check to be explicit.
       const invoice = await db.invoice.findUnique({
         where: { id: dto.invoiceId },
@@ -252,6 +323,7 @@ export class PaymentsService {
           reference: dto.reference ?? null,
           recordedBy: authCtx.userId,
           paidAt: new Date(dto.paidAt),
+          idempotencyKey: dto.idempotencyKey ?? null,
         },
       });
 
@@ -328,8 +400,6 @@ export class PaymentsService {
 
       return toDto(updated as PaymentRow);
     });
-    await this.paymentLinkInvalidation?.archivePending(authCtx.schoolId, dto.invoiceId);
-    return result;
   }
 
   // ─── Initiate Paystack payment ─────────────────────────────────────────────

@@ -1349,3 +1349,25 @@ services check):
   choice of class — nothing pre-picked. Moving is held back (D39).
 
 Shared form pieces (`components/form.tsx`) now back every CP9 form.
+
+### D37 — status (2026-09-21): approved and built
+
+Approved by the maintainer 2026-09-21. Shipped on its own, server-only, before
+any phone payment screen, as planned:
+
+- `payments.idempotency_key` (nullable TEXT) + unique index
+  `(school_id, idempotency_key)` — migration
+  `20260921120000_payment_idempotency_key`. A plain composite unique rather
+  than a partial one: Postgres admits any number of NULLs, so it behaves the
+  same and Prisma can express it, which keeps the schema drift-free.
+- `recordManualPaymentSchema.idempotencyKey` (optional UUID). The response
+  (`ManualPaymentResultDto`) carries `replayed`.
+- Proven against real Postgres in `payments.service.spec.ts`: same key twice →
+  one payment and one audit row; four concurrent same-key requests → one
+  payment; different keys → separate payments; no key → unchanged behaviour;
+  same key with a different amount or method → 409 `IDEMPOTENCY_KEY_REUSED`;
+  the same key at two schools → two independent payments. The race test was
+  mutation-checked: with the unique-violation recovery disabled it fails on
+  the index, so it genuinely exercises the database guard.
+
+The website does not send a key yet; it keeps its previous behaviour exactly.

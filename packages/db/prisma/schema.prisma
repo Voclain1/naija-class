@@ -2377,6 +2377,11 @@ model Payment {
   receiptUrl        String?       @map("receipt_url") // R2 canonical path; signed on demand
   recordedBy        String?       @map("recorded_by") // userId; null for Paystack webhook (slice 8)
   paidAt            DateTime?     @map("paid_at")
+  // D37 (staff-mobile-companion.md): a client-generated key, one per payment
+  // FORM, so a retry after a lost response returns the first payment instead
+  // of recording the cash twice. Nullable — web callers and every existing row
+  // carry none, and Postgres unique indexes allow any number of NULLs.
+  idempotencyKey    String?       @map("idempotency_key")
   createdAt         DateTime      @default(now()) @map("created_at")
   updatedAt         DateTime      @updatedAt @map("updated_at")
 
@@ -2384,6 +2389,7 @@ model Payment {
   refunds Refund[]
 
   @@unique([schoolId, paystackReference])
+  @@unique([schoolId, idempotencyKey])
   @@index([schoolId, invoiceId])
   @@index([schoolId, studentId])
   @@map("payments")
