@@ -22,6 +22,7 @@ import {
   staffUploadCurriculumFile,
 } from "../../../src/lib/api/staff-curriculum";
 import { ApiError, ApiNetworkError } from "../../../src/lib/api/client";
+import { uploadFailureDetail } from "../../../src/lib/api/native-upload";
 import { queryKeys } from "../../../src/lib/query/keys";
 import { useSession } from "../../../src/lib/auth/session";
 import { useTheme } from "../../../src/theme/theme-provider";
@@ -84,6 +85,27 @@ function describeFailure(error: unknown, fallback: string): string {
     return error.message || fallback;
   }
   return fallback;
+}
+
+/**
+ * An upload failure, in words that do not mislead.
+ *
+ * The first device build said "Your phone couldn't reach the server" for an
+ * upload that failed ON THE PHONE, while every other screen worked — so a
+ * teacher with a perfectly good connection was told to go and find signal.
+ * An upload that never left the handset is reported as exactly that, with the
+ * native reason attached so a repeat failure can be diagnosed from a
+ * screenshot instead of guessed at.
+ */
+function describeUploadFailure(error: unknown): string {
+  if (error instanceof ApiNetworkError) {
+    const detail = uploadFailureDetail(error);
+    return (
+      "The file couldn't be sent from your phone. Try a different file, or paste the text instead." +
+      (detail ? ` (Details: ${detail})` : "")
+    );
+  }
+  return describeFailure(error, "That file was not accepted.");
 }
 
 export default function CurriculumScreen() {
@@ -181,7 +203,7 @@ export default function CurriculumScreen() {
       setNotice("Received. It takes a moment to read — check back shortly to confirm it.");
       refresh();
     },
-    onError: (error: unknown) => setFailure(describeFailure(error, "That file was not accepted.")),
+    onError: (error: unknown) => setFailure(describeUploadFailure(error)),
   });
 
   const approve = useMutation({

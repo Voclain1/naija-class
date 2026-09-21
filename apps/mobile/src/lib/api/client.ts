@@ -185,7 +185,30 @@ export async function apiFetch<T>(
     return undefined as T;
   }
 
-  const text = await response.text();
+  return interpretResponse<T>(
+    response.status,
+    response.statusText,
+    await response.text(),
+    notifyOnUnauthorized,
+  );
+}
+
+/**
+ * Turn a finished HTTP exchange into a value or an ApiError.
+ *
+ * Shared by apiFetch and by the native multipart upload (native-upload.ts),
+ * which cannot go through fetch at all. One interpreter means an upload
+ * refusal carries exactly the same code, message and 401 session teardown as
+ * any other request — a second copy would drift, and the drift would only
+ * show on the one screen that uploads files.
+ */
+export function interpretResponse<T>(
+  status: number,
+  statusText: string,
+  text: string,
+  notifyOnUnauthorized = true,
+): T {
+  const ok = status >= 200 && status < 300;
   let parsed: unknown = null;
   if (text) {
     try {
@@ -193,8 +216,8 @@ export async function apiFetch<T>(
     } catch {
       // A non-JSON body on a non-2xx is handled by the envelope fallback
       // below. On a 2xx it is a contract violation worth surfacing loudly.
-      if (response.ok) {
-        throw new ApiError(response.status, {
+      if (ok) {
+        throw new ApiError(status, {
           code: "MALFORMED_RESPONSE",
           message: "The server returned a response that was not valid JSON.",
         });
@@ -202,7 +225,7 @@ export async function apiFetch<T>(
     }
   }
 
-  if (!response.ok) {
+  if (!ok) {
     const errorBody: ErrorBody =
       parsed &&
       typeof parsed === "object" &&
@@ -210,14 +233,29 @@ export async function apiFetch<T>(
       parsed.error &&
       typeof parsed.error === "object"
         ? (parsed.error as ErrorBody)
-        : { code: "UNKNOWN_ERROR", message: response.statusText };
+        : { code: "UNKNOWN_ERROR", message: statusText || `HTTP ${status}` };
 
-    if (response.status === 401 && notifyOnUnauthorized) {
+    if (status === 401 && notifyOnUnauthorized) {
       notifyUnauthorized(normalizeSessionEndReason(errorBody.code));
     }
 
-    throw new ApiError(response.status, errorBody);
+    throw new ApiError(status, errorBody);
   }
 
   return parsed as T;
+}
+
+/** The absolute URL for an API path, e.g. "/curriculum/documents/upload". */
+export function apiUrl(path: string): string {
+  return `${API_BASE_URL}${path}`;
+}
+
+/**
+ * The bearer header for a request made OUTSIDE apiFetch — the native upload
+ * is the only one. Empty when signed out, so nothing is sent with a blank
+ * "Bearer " that the guard would reject with a less useful message.
+ */
+export function bearerHeader(): Record<string, string> {
+  const token = tokenProvider();
+  return token ? { Authorization: `Bearer ${token}` } : {};
 }

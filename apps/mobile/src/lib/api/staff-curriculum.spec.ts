@@ -4,6 +4,14 @@ import type {
 } from "@school-kit/types";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+// staff-curriculum imports the native uploader, which cannot load under Node.
+// The upload itself is specified in native-upload.spec.ts; here it only has
+// to be importable.
+vi.mock("expo-file-system/legacy", () => ({
+  uploadAsync: vi.fn(),
+  FileSystemUploadType: { MULTIPART: 1, BINARY_CONTENT: 0 },
+}));
+
 import { setTokenProvider } from "./client";
 import {
   staffApproveCurriculum,
@@ -11,7 +19,6 @@ import {
   staffListCurriculum,
   staffMyProfile,
   staffPasteCurriculum,
-  staffUploadCurriculumFile,
 } from "./staff-curriculum";
 import { resetServerClock } from "../staff/server-date";
 
@@ -121,21 +128,9 @@ describe("the other curriculum bindings", () => {
     expect(init.method).toBe("POST");
   });
 
-  it("uploads a file as multipart, letting the runtime set Content-Type", async () => {
-    fetchMock.mockImplementation(() =>
-      Promise.resolve(jsonResponse({ documentId: "doc-2", status: "PENDING", chunkCount: 0 }, 202)),
-    );
-    await staffUploadCurriculumFile(
-      { classLevelId: "level-1", subjectId: "subject-1", title: "Scheme" },
-      { uri: "file:///tmp/scheme.pdf", name: "scheme.pdf", mimeType: "application/pdf" },
-    );
-    const { url, init } = lastCall();
-    expect(url).toMatch(/\/curriculum\/documents\/upload$/);
-    expect(init.body).toBeInstanceOf(FormData);
-    // Set by hand, the multipart boundary would be missing and the server
-    // would find no fields at all.
-    expect(new Headers(init.headers).get("Content-Type")).toBeNull();
-  });
+  // The file upload is NOT tested here any more: it moved off fetch + FormData
+  // onto the native uploader after that path failed on every attempt on a real
+  // Android phone. native-upload.spec.ts pins the new path.
 
   it("approve returns { document, chunkCount }, not a bare document", async () => {
     const approved: ApproveCurriculumDocumentResponse = {

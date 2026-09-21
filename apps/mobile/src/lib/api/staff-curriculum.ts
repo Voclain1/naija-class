@@ -9,6 +9,7 @@ import type {
 } from "@school-kit/types";
 
 import { apiFetch } from "./client";
+import { uploadMultipart } from "./native-upload";
 
 // CP7 (5) and (6) — the scheme of work a lesson note is grounded in, and the
 // teacher's own profile.
@@ -61,26 +62,21 @@ export function staffUploadCurriculumFile(
   fields: { subjectId: string; classLevelId: string; title: string },
   file: CurriculumFileUpload,
 ): Promise<CurriculumUploadAcceptedResponse> {
-  // React Native's FormData takes { uri, name, type } for a file part and the
-  // runtime streams it — the file is never read into JS memory, which matters
-  // for a 10 MB cap on a low-end handset.
+  // Through the NATIVE uploader, not fetch + FormData — see native-upload.ts
+  // for why: the FormData path failed on every attempt on a real Android
+  // phone while the server was up and every other request worked.
   //
-  // Content-Type is deliberately NOT set: fetch must add its own multipart
-  // boundary, and setting the header by hand omits it, which makes the server
-  // fail to find the 'file' field at all.
-  const form = new FormData();
-  form.append("subjectId", fields.subjectId);
-  form.append("classLevelId", fields.classLevelId);
-  form.append("title", fields.title);
-  form.append("file", {
-    uri: file.uri,
-    name: file.name,
-    type: file.mimeType,
-  } as unknown as Blob);
-
-  return apiFetch<CurriculumUploadAcceptedResponse>("/curriculum/documents/upload", {
-    method: "POST",
-    body: form,
+  // The field name "file" and the three form fields are exactly what the
+  // controller reads (FileInterceptor("file") + uploadCurriculumDocumentSchema).
+  return uploadMultipart<CurriculumUploadAcceptedResponse>("/curriculum/documents/upload", {
+    fileUri: file.uri,
+    fieldName: "file",
+    mimeType: file.mimeType,
+    parameters: {
+      subjectId: fields.subjectId,
+      classLevelId: fields.classLevelId,
+      title: fields.title,
+    },
   });
 }
 
