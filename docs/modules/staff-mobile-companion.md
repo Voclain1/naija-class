@@ -872,6 +872,46 @@ web font fails quietly on a phone with no data.
 `expo-document-picker` they cannot be exercised by `expo export`; the next EAS
 build is the check.
 
+### The curriculum upload failure (2026-09-21)
+
+On the first build with the document picker, **every** curriculum file upload
+failed with "Your phone couldn't reach the server", repeatedly, while every
+other screen on the same phone worked.
+
+Diagnosed from evidence rather than guessed:
+
+- The live API was up and answering on every curriculum route — an
+  unauthenticated probe of `POST /curriculum/documents/upload` returned `401
+  MISSING_BEARER_TOKEN`, which proves the route exists and is reachable.
+- So the failure was **on the handset**, inside React Native's `fetch` +
+  `FormData` path, which is known to be unreliable for real files on Android.
+- **The app mislabelled it.** `apiFetch` maps any transport failure to
+  `ApiNetworkError`, and the screen printed the "find signal" message — so a
+  teacher with a working connection was told their signal was the problem, and
+  the actual native reason was thrown away.
+
+The fix moves file upload onto Expo's NATIVE uploader,
+`FileSystem.uploadAsync` from `expo-file-system/legacy` (OkHttp on Android,
+URLSession on iOS). It streams from disk in native code and never passes the
+file through JavaScript. Three details that matter:
+
+1. `src/lib/api/native-upload.ts` is kept OUT of `client.ts`, which stays free
+   of native imports so it remains testable under Node.
+2. Response handling was extracted into one `interpretResponse`, shared by
+   `apiFetch` and the native upload — so an upload refusal carries the same
+   error code, message and 401 session teardown as every other request. A
+   second copy would drift, and the drift would only ever show on the one
+   screen that uploads.
+3. The native error is **kept** and shown on screen as "Details: …". If this
+   still fails on a device, the next fix starts from a screenshot, not a guess.
+
+`expo-file-system` was already inside the build as a dependency of `expo`, but
+not resolvable from `apps/mobile` under pnpm's isolated linker, so it is now a
+direct dependency. **The upload is unproven until a device runs it** — the
+spec mocks the native module wholesale, which proves the request is built
+correctly and the response is interpreted correctly, not that Android accepts
+it.
+
 ### The curriculum crash (2026-09-20) — and why nothing caught it
 
 The first device build crashed on the curriculum screen seconds after it
