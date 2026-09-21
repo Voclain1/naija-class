@@ -25,7 +25,7 @@ export default function StaffTabsLayout() {
   const { staff } = useSession();
   // CP4 D32: Marks, Classes and Notes read /teacher-scope/*, which the server
   // refuses without the teacher role. An owner is shown only what works.
-  const tabs = visibleStaffTabs(staff?.roles);
+  const tabs = visibleStaffTabs(staff?.roles, staff?.permissions ?? []);
   const hideUnless = (name: Parameters<typeof tabs.has>[0]) => (tabs.has(name) ? {} : { href: null });
 
   return (
@@ -72,6 +72,16 @@ export default function StaffTabsLayout() {
           title: "Notes",
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="document-text-outline" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="approvals"
+        options={{
+          ...hideUnless("approvals"),
+          title: "Approvals",
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="ribbon-outline" size={size} color={color} />
           ),
         }}
       />

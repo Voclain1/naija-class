@@ -49,6 +49,12 @@ describe("tab bar by person", () => {
     // Marks, Classes and Notes all read /teacher-scope/*, which refuses an
     // owner. Offering them would put three broken screens one tap away.
     expect([...visibleStaffTabs(OWNER)]).toEqual(["index"]);
+    // An owner holds "*", so report card approval — a head's job — is theirs.
+    expect([...visibleStaffTabs(OWNER, ["*"])].sort()).toEqual(["approvals", "index"]);
+  });
+
+  it("does not give a plain teacher the approvals tab", () => {
+    expect(visibleStaffTabs(TEACHER, ["assessment-score.create"]).has("approvals")).toBe(false);
   });
 
   it("gives an owner who also teaches the teacher's bar", () => {
@@ -57,7 +63,8 @@ describe("tab bar by person", () => {
 
   it("only ever offers tab candidates, and never more than five (D29)", () => {
     for (const roles of [TEACHER, OWNER, OWNER_WHO_TEACHES, undefined]) {
-      const visible = visibleStaffTabs(roles);
+      // Worst case: every permission, on every role combination.
+      const visible = visibleStaffTabs(roles, ["*"]);
       for (const name of visible) expect(TAB_CANDIDATES).toContain(name);
       expect(visible.size).toBeLessThanOrEqual(5);
     }

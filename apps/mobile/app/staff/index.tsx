@@ -212,6 +212,13 @@ export default function StaffDashboardScreen() {
       show: teacher,
     },
     {
+      icon: "ribbon-outline",
+      label: "Report cards",
+      hint: "Approve and release",
+      onPress: () => router.push("/staff/approvals"),
+      show: hasPermission(permissions, "report-card.principal-approve"),
+    },
+    {
       icon: "cash-outline",
       label: "Collections",
       hint: "Fees owed",
@@ -308,14 +315,31 @@ export default function StaffDashboardScreen() {
                 <Card style={styles.band}>
                   {alerts.map((alert) => {
                     const copy = ALERT_COPY[alert.type](alert.count);
+                    // Report card approval is on the phone now (CP4b); every
+                    // other alert still resolves on the website.
+                    const inApp =
+                      alert.type === "pending_report_card_approval" &&
+                      hasPermission(permissions, "report-card.principal-approve");
                     return (
                       <StatRow
                         key={alert.type}
                         icon={copy.icon}
                         tone="warning"
                         value={copy.label}
-                        label={webConfigured ? "Open on the website" : "Handled on the website"}
-                        onPress={webConfigured ? () => openOnWeb(alert.href) : undefined}
+                        label={
+                          inApp
+                            ? "Review now"
+                            : webConfigured
+                              ? "Open on the website"
+                              : "Handled on the website"
+                        }
+                        onPress={
+                          inApp
+                            ? () => router.push("/staff/approvals")
+                            : webConfigured
+                              ? () => openOnWeb(alert.href)
+                              : undefined
+                        }
                       />
                     );
                   })}

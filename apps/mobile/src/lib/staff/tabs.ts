@@ -1,3 +1,4 @@
+import { hasPermission } from "../auth/permissions";
 import { isTeacher } from "../auth/roles";
 import type { AuthMeRoleDto } from "@school-kit/types";
 
@@ -14,7 +15,7 @@ import type { AuthMeRoleDto } from "@school-kit/types";
 // holds — the bar carries daily destinations only, at most five — still
 // applies to every combination.
 
-export type StaffTabName = "index" | "gradebook" | "classes" | "lesson-notes";
+export type StaffTabName = "index" | "gradebook" | "classes" | "lesson-notes" | "approvals";
 
 /** Every staff route that CAN be a tab. Anything else is always hidden. */
 export const TAB_CANDIDATES: readonly StaffTabName[] = [
@@ -22,16 +23,24 @@ export const TAB_CANDIDATES: readonly StaffTabName[] = [
   "gradebook",
   "classes",
   "lesson-notes",
+  "approvals",
 ];
 
 export function visibleStaffTabs(
   roles: readonly Pick<AuthMeRoleDto, "key">[] | undefined,
+  permissions: readonly string[] = [],
 ): Set<StaffTabName> {
   const visible = new Set<StaffTabName>(["index"]);
   if (isTeacher(roles)) {
     visible.add("gradebook");
     visible.add("classes");
     visible.add("lesson-notes");
+  }
+  // CP4b — report card approval is a head's daily job at term end, so it
+  // earns a tab for whoever can do it. On permission, like every other gate
+  // that is not /teacher-scope/*.
+  if (hasPermission(permissions, "report-card.principal-approve")) {
+    visible.add("approvals");
   }
   return visible;
 }
