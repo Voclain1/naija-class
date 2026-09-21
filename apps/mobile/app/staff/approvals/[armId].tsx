@@ -1,26 +1,39 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, TextInput } from "react-native";
 import { Redirect, Stack, useLocalSearchParams } from "expo-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
   staffApproveArm,
+  staffBuildArm,
   staffCompleteness,
   staffReleaseArm,
   staffReopenArm,
   staffReportCardBoard,
+  staffSetPrincipalNote,
 } from "../../../src/lib/api/staff-approvals";
 import { ApiError, ApiNetworkError } from "../../../src/lib/api/client";
 import { queryKeys } from "../../../src/lib/query/keys";
 import { useSession } from "../../../src/lib/auth/session";
 import { hasPermission } from "../../../src/lib/auth/permissions";
-import { armStage, cardTotal, describeStage } from "../../../src/lib/staff/approval-stage";
+import { isSchoolAdmin } from "../../../src/lib/auth/roles";
+import {
+  PRINCIPAL_NOTE_MAX,
+  armStage,
+  canBuildArm,
+  canEditPrincipalNote,
+  cardTotal,
+  describeStage,
+  principalNoteValue,
+} from "../../../src/lib/staff/approval-stage";
 import { useTheme } from "../../../src/theme/theme-provider";
 import { fontSizes, fonts, radii, spacing } from "../../../src/theme/tokens";
 import { Button, Card, CenteredMessage, Label, Notice, Screen } from "../../../src/components/ui";
 import { ListRow, ScreenHeader, SectionHeader, Skeleton, StatRow } from "../../../src/components/layout";
 
 // CP4b — one class's report cards, and the three things a head can do.
+// CP9a adds the two that come before them: BUILDING the cards from this
+// term's marks, and the principal's note written just before approval.
 //
 // D33: every action is confirmed, and RELEASE says who will see it. Release is
 // the moment parents and students can read a child's results, and it freezes
@@ -36,6 +49,12 @@ function describeFailure(error: unknown): string {
     return "Your phone couldn't reach the server. Nothing changed — try again when you have signal.";
   }
   if (error instanceof ApiError) {
+    if (error.code === "ARM_NOT_DRAFT") {
+      return "Some of these cards have already been reviewed, so they can't be rebuilt. Reopen the class first.";
+    }
+    if (error.code === "COMMENT_NOT_EDITABLE") {
+      return "The principal's note can only be written once every card has been reviewed by the form teacher, and before approval.";
+    }
     if (error.code === "ARM_RENDER_IN_FLIGHT") {
       return "These report cards are still being prepared as PDFs. Try again in a minute.";
     }
@@ -58,6 +77,10 @@ export default function ApprovalArmScreen() {
   const canApprove = hasPermission(permissions, "report-card.principal-approve");
   const canRelease = hasPermission(permissions, "report-card.release");
   const canReopen = hasPermission(permissions, "report-card.reopen");
+  // Build and the note are ALSO role-gated in the service (owner/admin).
+  const admin = isSchoolAdmin(staff?.roles);
+  const canBuild = admin && hasPermission(permissions, "report-card.build");
+  const canNote = admin && hasPermission(permissions, "report-card.comment");
 
   // The overview is almost always already cached from the list screen.
   const report = useQuery({
@@ -80,6 +103,8 @@ export default function ApprovalArmScreen() {
   const [failure, setFailure] = useState<string | null>(null);
   const [reopening, setReopening] = useState(false);
   const [reason, setReason] = useState("");
+  const [note, setNote] = useState("");
+  const [noteLoadedFor, setNoteLoadedFor] = useState<string | null>(null);
 
   async function refresh(): Promise<void> {
     await Promise.all([
@@ -111,6 +136,51 @@ export default function ApprovalArmScreen() {
             ? `Released ${result.cardCount} report card${result.cardCount === 1 ? "" : "s"}. Families can see them now.`
             : `Reopened ${result.cardCount} report card${result.cardCount === 1 ? "" : "s"} for correction.`,
       );
+      await refresh();
+    },
+    onError: (error: unknown) => setFailure(describeFailure(error)),
+  });
+
+  // The note is fanned out identically onto every card, so any card carries
+  // it. Filled once per board load, never over what the head is typing.
+  const currentNote = board.data?.data[0]?.reportCard.principalNote ?? null;
+  const boardStamp = board.data ? `${armId}:${board.dataUpdatedAt}` : null;
+  useEffect(() => {
+    if (boardStamp && noteLoadedFor === null) {
+      setNote(currentNote ?? "");
+      setNoteLoadedFor(boardStamp);
+    }
+  }, [boardStamp, currentNote, noteLoadedFor]);
+
+  const build = useMutation({
+    mutationFn: () => staffBuildArm({ termId, classArmId: armId as string }),
+    onMutate: () => {
+      setFailure(null);
+      setNotice(null);
+    },
+    onSuccess: async (result) => {
+      setNotice(
+        `Built ${result.cardCount} report card${result.cardCount === 1 ? "" : "s"} from this term's marks. Form teachers can now review them.`,
+      );
+      await refresh();
+    },
+    onError: (error: unknown) => setFailure(describeFailure(error)),
+  });
+
+  const saveNote = useMutation({
+    mutationFn: () =>
+      staffSetPrincipalNote({ termId, classArmId: armId as string, principalNote: principalNoteValue(note) }),
+    onMutate: () => {
+      setFailure(null);
+      setNotice(null);
+    },
+    onSuccess: async (result) => {
+      setNotice(
+        principalNoteValue(note) === null
+          ? "The principal's note was cleared."
+          : `The principal's note is on all ${result.cardCount} card${result.cardCount === 1 ? "" : "s"}.`,
+      );
+      setNoteLoadedFor(null);
       await refresh();
     },
     onError: (error: unknown) => setFailure(describeFailure(error)),
@@ -161,7 +231,24 @@ export default function ApprovalArmScreen() {
   const stage = armStage(pipeline.byStatus);
   const total = cardTotal(pipeline.byStatus);
   const rows = board.data?.data ?? [];
-  const busy = transition.isPending;
+  const busy = transition.isPending || build.isPending || saveNote.isPending;
+  const buildable = canBuild && canBuildArm(pipeline.byStatus);
+  const noteDirty = principalNoteValue(note) !== (currentNote ?? null);
+
+  function confirmBuild(): void {
+    Alert.alert(
+      total === 0 ? "Build report cards?" : "Rebuild report cards?",
+      `${pipeline!.label}: one card for each of the ${pipeline!.enrolledCount} enrolled student${
+        pipeline!.enrolledCount === 1 ? "" : "s"
+      }, from the marks entered so far, with class positions worked out now.${
+        total === 0 ? "" : " The drafts already there are replaced with fresh ones."
+      } Nothing is shown to families.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: total === 0 ? "Build" : "Rebuild", onPress: () => build.mutate() },
+      ],
+    );
+  }
 
   function confirmApprove(): void {
     Alert.alert(
@@ -206,13 +293,57 @@ export default function ApprovalArmScreen() {
                 icon="alert-circle-outline"
                 tone="warning"
                 value={`${pipeline.studentsWithoutCard} without a card`}
-                label="Enrolled but not included — rebuild on the website to add them"
+                label={
+                  buildable
+                    ? "Enrolled but not included — rebuild below to add them"
+                    : "Enrolled but not included — reopen the class, then rebuild, to add them"
+                }
               />
             ) : null}
           </Card>
 
           {notice ? <Notice tone="info">{notice}</Notice> : null}
           {failure ? <Notice tone="danger">{failure}</Notice> : null}
+
+          {buildable ? (
+            <Button
+              title={total === 0 ? "Build report cards" : "Rebuild report cards"}
+              variant={total === 0 ? "primary" : "secondary"}
+              loading={build.isPending}
+              disabled={busy || termId === ""}
+              onPress={confirmBuild}
+            />
+          ) : null}
+          {stage === "NOT_BUILT" && !canBuild ? (
+            <Notice tone="info">Report cards for this class haven&apos;t been built yet.</Notice>
+          ) : null}
+
+          {canNote && canEditPrincipalNote(stage) ? (
+            <Card style={styles.band}>
+              <Label>Principal&apos;s note</Label>
+              <TextInput
+                value={note}
+                onChangeText={setNote}
+                multiline
+                maxLength={PRINCIPAL_NOTE_MAX}
+                placeholder="e.g. A good term for JSS2. Keep it up."
+                placeholderTextColor={colors.mutedForeground}
+                accessibilityLabel="Principal's note"
+                style={[
+                  styles.input,
+                  { color: colors.foreground, backgroundColor: colors.card, borderColor: colors.border },
+                ]}
+              />
+              <Label>The same note goes on every card in {pipeline.label}. Leave it blank for none.</Label>
+              <Button
+                title="Save note"
+                variant="secondary"
+                loading={saveNote.isPending}
+                disabled={busy || !noteDirty}
+                onPress={() => saveNote.mutate()}
+              />
+            </Card>
+          ) : null}
 
           {stage === "READY_TO_APPROVE" && canApprove ? (
             <Button title="Approve report cards" loading={busy} disabled={busy} onPress={confirmApprove} />

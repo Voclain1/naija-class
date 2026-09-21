@@ -1,5 +1,9 @@
 import type {
+  BuildReportCardsInput,
+  BuildReportCardsResultDto,
   CompletenessReportDto,
+  PrincipalNoteResultDto,
+  PrincipalNoteUpdateInput,
   ReportCardArmActionInput,
   ReportCardArmReopenInput,
   ReportCardBoardResponse,
@@ -58,6 +62,28 @@ export function staffReleaseArm(input: ReportCardArmActionInput): Promise<Report
 export function staffReopenArm(input: ReportCardArmReopenInput): Promise<ReportCardTransitionResultDto> {
   return apiFetch<ReportCardTransitionResultDto>("/report-cards/arm/reopen", {
     method: "POST",
+    body: input,
+  });
+}
+
+// CP9a — building the cards, and the principal's note. Both are gated on the
+// owner/admin ROLE in the service on top of their permissions
+// (`report-card.build`, `report-card.comment`).
+//
+// Building is deliberately NOT PDF rendering: `/arm/render` is a separate,
+// queued job the website still starts. Build only turns this term's marks into
+// draft cards that the form teacher then reviews on their phone.
+
+export function staffBuildArm(input: BuildReportCardsInput): Promise<BuildReportCardsResultDto> {
+  return apiFetch<BuildReportCardsResultDto>("/report-cards/arm/build", {
+    method: "POST",
+    body: input,
+  });
+}
+
+export function staffSetPrincipalNote(input: PrincipalNoteUpdateInput): Promise<PrincipalNoteResultDto> {
+  return apiFetch<PrincipalNoteResultDto>("/report-cards/arm/principal-note", {
+    method: "PUT",
     body: input,
   });
 }
