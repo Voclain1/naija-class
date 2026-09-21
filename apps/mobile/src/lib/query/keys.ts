@@ -136,6 +136,13 @@ export const queryKeys = {
     ["staff", schoolId, userId, "timetable"] as const,
   staffCalendar: (schoolId: string, userId: string, from: string, to: string) =>
     ["staff", schoolId, userId, "calendar", from, to] as const,
+  // Every month of the calendar at once — what an event write invalidates, since
+  // an event can span a month boundary and the months on screen are separate
+  // cache entries.
+  staffCalendarAll: (schoolId: string, userId: string) =>
+    ["staff", schoolId, userId, "calendar"] as const,
+  staffSchoolEvents: (schoolId: string, userId: string, from: string, to: string) =>
+    ["staff", schoolId, userId, "calendar-events", from, to] as const,
 
   // CP4 — the owner/admin school overview: enrolment, fees and attendance for
   // the whole school. Never persisted, like every staff key.

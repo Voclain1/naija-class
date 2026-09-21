@@ -40,6 +40,9 @@ interface Props {
   today: string | null;
   onSelectDate: (date: string) => void;
   onChangeMonth: (month: string) => void;
+  /** Offered on entries `isEditable` accepts — the staff calendar passes it for owners/admins. */
+  onEditEntry?: (entry: CalendarEntryDto) => void;
+  isEditable?: (entry: CalendarEntryDto) => boolean;
 }
 
 export function CalendarMonth({
@@ -48,6 +51,8 @@ export function CalendarMonth({
   selectedDate,
   today,
   onSelectDate,
+  onEditEntry,
+  isEditable,
   onChangeMonth,
 }: Props) {
   const { colors } = useTheme();
@@ -166,6 +171,9 @@ export function CalendarMonth({
                   {entry.dateConfirmed ? "" : " · date not confirmed"}
                 </Label>
                 {entry.description ? <Body muted>{entry.description}</Body> : null}
+                {onEditEntry && isEditable?.(entry) ? (
+                  <Button title="Edit event" variant="secondary" onPress={() => onEditEntry(entry)} />
+                ) : null}
               </View>
             ))
           )}

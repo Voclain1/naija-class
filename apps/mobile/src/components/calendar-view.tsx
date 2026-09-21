@@ -29,6 +29,9 @@ interface Props {
   today: string | null;
   onSelectDate: (date: string) => void;
   onChangeMonth: (month: string) => void;
+  /** Offered on entries `isEditable` accepts — the staff calendar passes it for owners/admins. */
+  onEditEntry?: (entry: CalendarEntryDto) => void;
+  isEditable?: (entry: CalendarEntryDto) => boolean;
 }
 
 export function CalendarView({
@@ -38,6 +41,8 @@ export function CalendarView({
   today,
   onSelectDate,
   onChangeMonth,
+  onEditEntry,
+  isEditable,
 }: Props) {
   const [view, setView] = useState<"month" | "list">("month");
 
@@ -64,12 +69,14 @@ export function CalendarView({
           today={today}
           onSelectDate={onSelectDate}
           onChangeMonth={onChangeMonth}
+          onEditEntry={onEditEntry}
+          isEditable={isEditable}
         />
       ) : (
         // The list shows the loaded window, which is the month on screen —
         // the same entries the grid is drawing, never a wider set the user
         // did not ask for.
-        <CalendarList entries={entries} />
+        <CalendarList entries={entries} onEditEntry={onEditEntry} isEditable={isEditable} />
       )}
     </>
   );
