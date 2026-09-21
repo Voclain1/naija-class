@@ -28,6 +28,7 @@ export function TextField({
   placeholder,
   maxLength,
   autoCapitalize,
+  secureTextEntry = false,
 }: {
   label: string;
   value: string;
@@ -38,6 +39,7 @@ export function TextField({
   placeholder?: string;
   maxLength?: number;
   autoCapitalize?: "none" | "sentences" | "words";
+  secureTextEntry?: boolean;
 }) {
   const { colors } = useTheme();
   return (
@@ -52,6 +54,8 @@ export function TextField({
         placeholderTextColor={colors.mutedForeground}
         maxLength={maxLength}
         autoCapitalize={autoCapitalize}
+        secureTextEntry={secureTextEntry}
+        autoCorrect={secureTextEntry ? false : undefined}
         accessibilityLabel={label}
         style={[
           multiline ? styles.textarea : styles.input,

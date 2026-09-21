@@ -1,5 +1,7 @@
 import type {
   CreateExpenseInput,
+  ManualPaymentResultDto,
+  RecordManualPaymentInput,
   ExpenseCategoryDto,
   ExpenseDto,
   PaymentLinkStateDto,
@@ -43,6 +45,18 @@ export async function staffSendReminders(
     batchesSent += 1;
   }
   return { sent, skipped, batchesSent, batchesTotal: batches.length };
+}
+
+/**
+ * Record money received (POST /payments/manual). The body MUST carry the
+ * form's idempotencyKey (D37), and a retry MUST resend the identical body —
+ * same key, same paidAt — so a lost reply can be retried without recording the
+ * cash twice. `replayed: true` means the first attempt had got through.
+ */
+export function staffRecordPayment(
+  input: RecordManualPaymentInput & { idempotencyKey: string },
+): Promise<ManualPaymentResultDto> {
+  return apiFetch<ManualPaymentResultDto>("/payments/manual", { method: "POST", body: input });
 }
 
 export function staffPaymentLink(invoiceId: string): Promise<PaymentLinkStateDto> {

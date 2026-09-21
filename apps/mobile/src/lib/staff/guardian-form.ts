@@ -32,6 +32,8 @@ export interface ParentAbilities {
   invite: boolean;
   update: boolean;
   place: boolean;
+  /** D39 — move a placed child to another class, same term. */
+  move: boolean;
 }
 
 export function parentAbilities(
@@ -44,6 +46,7 @@ export function parentAbilities(
     invite: admin && hasPermission(permissions, "guardian.invite"),
     update: admin && hasPermission(permissions, "guardian.update"),
     place: admin && hasPermission(permissions, "enrollment.create"),
+    move: admin && hasPermission(permissions, "enrollment.update"),
   };
 }
 
@@ -166,4 +169,27 @@ export function needsPlacement(
 ): boolean {
   if (student.status !== "ACTIVE" || currentTermId === null) return false;
   return student.currentEnrollment?.term.id !== currentTermId;
+}
+
+/**
+ * Whether a child can be moved to another class this term: active, and
+ * ENROLLED in the current term — the state EnrollmentsService.move requires.
+ */
+export function canMoveClass(
+  student: Pick<StudentDto, "status" | "currentEnrollment">,
+  currentTermId: string | null,
+): boolean {
+  if (student.status !== "ACTIVE" || currentTermId === null) return false;
+  const e = student.currentEnrollment;
+  return !!e && e.term.id === currentTermId && e.status === "ENROLLED";
+}
+
+/** What the password prompt tells the admin will change (from MOVE_NEEDS_PASSWORD's details). */
+export function describeMoveRecords(details: unknown): string {
+  const d = (details ?? {}) as { markCount?: unknown; hasReportCard?: unknown };
+  const marks = typeof d.markCount === "number" ? d.markCount : 0;
+  const parts: string[] = [];
+  if (marks > 0) parts.push(`${marks} mark${marks === 1 ? "" : "s"} already entered will move with them`);
+  if (d.hasReportCard === true) parts.push("their draft report card will be rebuilt in the new class");
+  return parts.length > 0 ? `${parts.join(", and ")}.` : "their records this term will move with them.";
 }

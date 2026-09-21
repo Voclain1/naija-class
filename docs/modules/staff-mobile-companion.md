@@ -1407,3 +1407,36 @@ role, throttled 10/min):
   `ENROLLMENT_HAS_TERM_RECORDS`) once the child has records, so the old
   split-the-record path is closed. With no records it still works; no current
   caller sends `classArmId`.
+
+### CP9b status (2026-09-22) — money on the phone, and moving a child
+
+Built on the phone, behind D37/D38/D39:
+
+- **Record a payment** (`payment.record`). One idempotency key per form; on
+  confirm the exact request is frozen, and "Try again" after a lost reply
+  resends it unchanged — the server replays the first payment rather than
+  recording twice. While a request may have landed, the form is locked;
+  "Start over" warns and makes a new key. Confirmation shows the amount in
+  figures and words; the receipt number is shown afterwards, with a plain note
+  when the result was a replay.
+- **Fee reminders** (`finance.debtors.remind`): one family from their page, or
+  every family, in batches of the server's 50, confirmed with a warning that
+  texts are charged. Stops at the first failed batch and says some may have
+  gone, rather than inviting a blind resend. The phone sends student ids only
+  — the server looks up each family's contact.
+- **Payment links** (owner/admin/bursar + `payment.read`/`payment.record`):
+  make one, and share it on WhatsApp (wa.me with no recipient — the admin
+  picks the chat). Shared only when LIVE and for exactly the current balance,
+  the website's own rule.
+- **Expenses** (`expense.create`): naira → kobo by exact string arithmetic;
+  receipt from the camera, the gallery or a PDF, uploaded after the expense is
+  saved and retried on its own if it fails. Expenses have no idempotency key
+  yet, so a lost reply never offers a plain retry — the screen asks the admin
+  to check first and makes them choose "save anyway". A key like D37's is the
+  natural follow-up if this proves common.
+- **Move a child to another class** (D39): confirmation always; the admin's
+  password when the child has records, with what will change spelled out
+  first. The password is held only in screen state and cleared as soon as
+  the request settles.
+
+Adds `expo-image-picker` (native — lands with the next APK build).

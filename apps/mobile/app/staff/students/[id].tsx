@@ -25,10 +25,16 @@ import { queryKeys } from "../../../src/lib/query/keys";
 import { useSession } from "../../../src/lib/auth/session";
 import { isSchoolAdmin } from "../../../src/lib/auth/roles";
 import { webUrl } from "../../../src/lib/web-handoff";
-import { staffEnrollStudent } from "../../../src/lib/api/staff-guardians";
+import { staffEnrollStudent, staffMoveEnrollment } from "../../../src/lib/api/staff-guardians";
 import { useTermContext } from "../../../src/lib/staff/use-term-context";
-import { describePortalStatus, needsPlacement, parentAbilities } from "../../../src/lib/staff/guardian-form";
-import { ChoiceChips } from "../../../src/components/form";
+import {
+  canMoveClass,
+  describeMoveRecords,
+  describePortalStatus,
+  needsPlacement,
+  parentAbilities,
+} from "../../../src/lib/staff/guardian-form";
+import { ChoiceChips, TextField } from "../../../src/components/form";
 import { useTheme } from "../../../src/theme/theme-provider";
 import { fontSizes, fonts, radii, spacing } from "../../../src/theme/tokens";
 import { Body, Button, Card, CenteredMessage, Label, Notice, Screen } from "../../../src/components/ui";
@@ -44,6 +50,12 @@ import { ListRow, ScreenHeader, SectionHeader, Skeleton, StatRow } from "../../.
 //
 // CP9a adds the two jobs that used to send the admin to the website: placing
 // a child who has no class this term, and linking and inviting their parents.
+//
+// D39 adds MOVING a placed child to another class this term. Always confirmed;
+// when the child already has marks or a report card the server asks for the
+// admin's password (409 MOVE_NEEDS_PASSWORD) and this screen says exactly
+// what will change before they type it. The password lives only in this
+// screen's state and is cleared the moment the request settles.
 //
 // Withdraw and graduate are confirmed: both remove a child from the active
 // roll, and graduate is not something a school expects to undo.
@@ -81,15 +93,19 @@ export default function StudentScreen() {
   const key = queryKeys.staffStudent(schoolId, userId, id ?? "");
   const router = useRouter();
   const abilities = parentAbilities(staff?.roles, staff?.permissions ?? []);
-  const termContext = useTermContext({ schoolId, userId, enabled: authed && abilities.place });
+  const termContext = useTermContext({ schoolId, userId, enabled: authed && (abilities.place || abilities.move) });
   const currentTerm = termContext.data?.term ?? null;
   const arms = useQuery({
     queryKey: queryKeys.staffClassArms(schoolId, userId),
     queryFn: () => staffClassArms(),
-    enabled: authed && abilities.place && schoolId !== "",
+    enabled: authed && (abilities.place || abilities.move) && schoolId !== "",
     staleTime: 5 * 60_000,
   });
   const [placeArmId, setPlaceArmId] = useState<string | null>(null);
+  const [moving, setMoving] = useState(false);
+  const [moveArmId, setMoveArmId] = useState<string | null>(null);
+  const [movePassword, setMovePassword] = useState("");
+  const [moveNeedsPassword, setMoveNeedsPassword] = useState<string | null>(null);
 
   const student = useQuery({
     queryKey: key,
@@ -138,6 +154,52 @@ export default function StudentScreen() {
       await refresh();
     },
     onError: (error: unknown) => setFailure(describeFailure(error)),
+  });
+
+  const move = useMutation({
+    mutationFn: (args: { enrollmentId: string; classArmId: string; password?: string }) =>
+      staffMoveEnrollment(args.enrollmentId, {
+        classArmId: args.classArmId,
+        ...(args.password ? { currentPassword: args.password } : {}),
+      }),
+    onMutate: () => {
+      setFailure(null);
+      setNotice(null);
+    },
+    onSettled: () => setMovePassword(""),
+    onSuccess: async (result) => {
+      setMoving(false);
+      setMoveArmId(null);
+      setMoveNeedsPassword(null);
+      setNotice(
+        [
+          "Moved to the new class.",
+          result.reportCardDiscarded ? "Their report card will be built again with the new class." : null,
+          result.invoiceNeedsReview
+            ? "The class level changed, so ask the bursar to check this term's fee invoice — it was not changed."
+            : null,
+        ]
+          .filter(Boolean)
+          .join(" "),
+      );
+      await refresh();
+    },
+    onError: (error: unknown) => {
+      if (error instanceof ApiError && error.code === "MOVE_NEEDS_PASSWORD") {
+        setMoveNeedsPassword(describeMoveRecords(error.details));
+        return;
+      }
+      if (error instanceof ApiError && error.code === "PASSWORD_INCORRECT") {
+        setFailure("That password is not correct. Nothing was changed.");
+        return;
+      }
+      if (error instanceof ApiError && error.code === "REPORT_CARD_IN_PROGRESS") {
+        setMoving(false);
+        setFailure("Their report card is already being reviewed or has been released. Reopen the class's report cards before moving them.");
+        return;
+      }
+      setFailure(describeFailure(error));
+    },
   });
 
   const leave = useMutation({
@@ -199,7 +261,22 @@ export default function StudentScreen() {
   const s = student.data;
   const name = [s.firstName, s.middleName, s.lastName].filter(Boolean).join(" ");
   const active = s.status === "ACTIVE";
-  const busy = update.isPending || leave.isPending || place.isPending;
+  const busy = update.isPending || leave.isPending || place.isPending || move.isPending;
+  const movable = abilities.move && canMoveClass(s, currentTerm?.termId ?? null);
+  const enrollment = s.currentEnrollment ?? null;
+
+  function confirmMove(): void {
+    const arm = activeArms.find((a) => a.id === moveArmId);
+    if (!arm || !enrollment) return;
+    Alert.alert(
+      `Move ${s.firstName} to ${arm.name}?`,
+      `From ${enrollment.classArm.name}, for the rest of ${currentTerm?.termName ?? "this term"}. They leave ${enrollment.classArm.name}'s register and gradebook and join ${arm.name}'s.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: "Move", onPress: () => move.mutate({ enrollmentId: enrollment.id, classArmId: arm.id }) },
+      ],
+    );
+  }
   const unplaced = abilities.place && needsPlacement(s, currentTerm?.termId ?? null);
   const activeArms = (arms.data ?? []).filter((arm) => arm.isActive);
 
@@ -287,6 +364,62 @@ export default function StudentScreen() {
                 onPress={confirmPlace}
               />
             </Card>
+          ) : null}
+
+          {movable && !unplaced ? (
+            moving ? (
+              <Card style={styles.card}>
+                <Body>Move {s.firstName} from {enrollment?.classArm.name} to:</Body>
+                <ChoiceChips
+                  options={activeArms
+                    .filter((arm) => arm.id !== enrollment?.classArm.id)
+                    .map((arm) => ({ value: arm.id, label: arm.name }))}
+                  value={moveArmId}
+                  onChange={(armId) => {
+                    setMoveArmId(armId);
+                    setMoveNeedsPassword(null);
+                  }}
+                />
+                {moveNeedsPassword ? (
+                  <>
+                    <Notice tone="warning">
+                      {s.firstName} already has records this term: {moveNeedsPassword} Enter your password to confirm
+                      it is you.
+                    </Notice>
+                    <TextField
+                      label="Your password"
+                      value={movePassword}
+                      onChangeText={setMovePassword}
+                      secureTextEntry
+                      autoCapitalize="none"
+                    />
+                    <Button
+                      title="Confirm move"
+                      loading={move.isPending}
+                      disabled={busy || movePassword === "" || !moveArmId || !enrollment}
+                      onPress={() =>
+                        move.mutate({ enrollmentId: enrollment!.id, classArmId: moveArmId!, password: movePassword })
+                      }
+                    />
+                  </>
+                ) : (
+                  <Button title="Move" loading={move.isPending} disabled={busy || !moveArmId} onPress={confirmMove} />
+                )}
+                <Button
+                  title="Cancel"
+                  variant="secondary"
+                  disabled={move.isPending}
+                  onPress={() => {
+                    setMoving(false);
+                    setMoveArmId(null);
+                    setMoveNeedsPassword(null);
+                    setMovePassword("");
+                  }}
+                />
+              </Card>
+            ) : (
+              <Button title="Move to another class" variant="secondary" disabled={busy} onPress={() => setMoving(true)} />
+            )
           ) : null}
 
           <SectionHeader title="Contact" />
