@@ -38,7 +38,14 @@ import {
   deletePaymentPlan,
   getPaymentPlan,
 } from "@/lib/finance/payment-plans-api";
-import { createRefund, getPaymentReceiptUrl, initPaystackPayment, listPayments, recordManualPayment } from "@/lib/finance/payments-api";
+import {
+  createRefund,
+  getPaymentReceiptUrl,
+  initPaystackPayment,
+  listPayments,
+  recordManualPayment,
+  reissuePaymentReceipt,
+} from "@/lib/finance/payments-api";
 import { getStudent } from "@/lib/students/students-api";
 
 // Same mapping as /finance/invoices and /finance/debtors.
@@ -141,6 +148,12 @@ export default function InvoiceDetailPage() {
   // Record payment form
   const [recording, setRecording] = useState(false);
   const [recordError, setRecordError] = useState<string | null>(null);
+  // Branded receipts (docs/modules/branded-receipts.md D5): the payment just
+  // recorded, so its receipt can be opened straight away — kept outside the
+  // record form, which disappears once the invoice is fully paid.
+  const [lastRecorded, setLastRecorded] = useState<{ id: string; receiptNumber: string | null } | null>(null);
+  const [receiptError, setReceiptError] = useState<string | null>(null);
+  const [reissuingId, setReissuingId] = useState<string | null>(null);
   const [form, setForm] = useState({
     amount: "",
     method: "CASH" as ManualPaymentMethod,
@@ -232,7 +245,7 @@ export default function InvoiceDetailPage() {
     setRecording(true);
     setRecordError(null);
     try {
-      await recordManualPayment({
+      const recorded = await recordManualPayment({
         invoiceId: invoice.id,
         amount: amountKobo,
         method: form.method,
@@ -249,6 +262,7 @@ export default function InvoiceDetailPage() {
       setPlan(updatedPlan);
       await refreshPaymentLink();
       setForm({ amount: "", method: "CASH", paidAt: nowLocalDatetimeValue(), reference: "" });
+      setLastRecorded({ id: recorded.id, receiptNumber: recorded.receiptNumber });
     } catch (e) {
       setRecordError(financeErrorMessage(e));
     } finally {
@@ -306,11 +320,38 @@ export default function InvoiceDetailPage() {
   }
 
   async function handleOpenReceipt(paymentId: string) {
+    setReceiptError(null);
+    // Open the tab NOW, inside the click, and point it at the receipt once the
+    // signed URL arrives — a window.open after an await is treated as a pop-up
+    // and blocked by most browsers.
+    const tab = window.open("", "_blank");
+    if (tab) tab.opener = null;
     try {
       const { url } = await getPaymentReceiptUrl(paymentId);
-      window.open(url, "_blank", "noopener,noreferrer");
-    } catch {
-      // Non-fatal — receipt may not be ready yet
+      if (tab) tab.location.href = url;
+      else window.location.href = url;
+    } catch (e) {
+      tab?.close();
+      setReceiptError(financeErrorMessage(e));
+    }
+  }
+
+  async function handleReissueReceipt(paymentId: string, receiptNumber: string | null) {
+    const ok = window.confirm(
+      `Re-issue receipt ${receiptNumber ?? ""} in the current design?\n\n` +
+        "It keeps the same number, date and amount; only the layout and the school's details are refreshed. " +
+        "This is recorded in the audit log.",
+    );
+    if (!ok) return;
+    setReceiptError(null);
+    setReissuingId(paymentId);
+    try {
+      await reissuePaymentReceipt(paymentId);
+      await handleOpenReceipt(paymentId);
+    } catch (e) {
+      setReceiptError(financeErrorMessage(e));
+    } finally {
+      setReissuingId(null);
     }
   }
 
@@ -654,6 +695,27 @@ export default function InvoiceDetailPage() {
       {/* Payment history */}
       <div>
         <h2 className="mb-3 text-base font-semibold text-foreground">Payments</h2>
+        {lastRecorded && (
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-primary/40 bg-primary/5 p-3">
+            <p className="text-sm">
+              Payment recorded.{" "}
+              {lastRecorded.receiptNumber ? (
+                <>Receipt <span className="font-mono font-medium">{lastRecorded.receiptNumber}</span> is ready.</>
+              ) : (
+                "Its receipt is ready."
+              )}
+            </p>
+            <div className="flex gap-2">
+              <Button size="sm" onClick={() => handleOpenReceipt(lastRecorded.id)}>
+                View / print receipt
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setLastRecorded(null)}>
+                Dismiss
+              </Button>
+            </div>
+          </div>
+        )}
+        {receiptError && <p className="mb-3 text-sm text-destructive">{receiptError}</p>}
         {payments.length === 0 ? (
           <p className="text-sm text-muted-foreground">No payments recorded.</p>
         ) : (
@@ -693,8 +755,18 @@ export default function InvoiceDetailPage() {
                           <button
                             onClick={() => handleOpenReceipt(p.id)}
                             className="text-xs text-primary hover:underline"
+                            title={p.receiptNumber ? `Receipt ${p.receiptNumber}` : undefined}
                           >
-                            Receipt
+                            {p.receiptNumber ? `Receipt ${p.receiptNumber}` : "Receipt"}
+                          </button>
+                        )}
+                        {p.status === "SUCCESS" && (
+                          <button
+                            onClick={() => handleReissueReceipt(p.id, p.receiptNumber)}
+                            disabled={reissuingId === p.id}
+                            className="text-xs text-muted-foreground hover:underline disabled:opacity-50"
+                          >
+                            {reissuingId === p.id ? "Re-issuing…" : "Re-issue"}
                           </button>
                         )}
                         {p.status === "SUCCESS" && (
