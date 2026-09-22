@@ -1,5 +1,9 @@
 import type {
   CreateExpenseInput,
+  ListReceiptsInput,
+  PaymentReceiptUrlDto,
+  ReceiptListResponse,
+  ReissueReceiptResultDto,
   ManualPaymentResultDto,
   RecordManualPaymentInput,
   ExpenseCategoryDto,
@@ -88,4 +92,41 @@ export function staffUploadExpenseReceipt(
     mimeType: file.mimeType,
     parameters: {},
   });
+}
+
+// Branded receipts (docs/modules/branded-receipts.md D6). Owner, admin and
+// bursar only — the server checks the role as well as the permission.
+
+export function staffListReceipts(query: Partial<ListReceiptsInput> = {}): Promise<ReceiptListResponse> {
+  const params = new URLSearchParams();
+  if (query.search) params.set("search", query.search);
+  if (query.page) params.set("page", String(query.page));
+  const suffix = params.toString();
+  return apiFetch<ReceiptListResponse>(`/payments/receipts${suffix ? `?${suffix}` : ""}`);
+}
+
+export function staffReceiptUrl(paymentId: string): Promise<PaymentReceiptUrlDto> {
+  return apiFetch<PaymentReceiptUrlDto>(`/payments/${encodeURIComponent(paymentId)}/receipt`);
+}
+
+export function staffReissueReceipt(paymentId: string): Promise<ReissueReceiptResultDto> {
+  return apiFetch<ReissueReceiptResultDto>(`/payments/${encodeURIComponent(paymentId)}/receipt/reissue`, {
+    method: "POST",
+  });
+}
+
+/**
+ * The receipt document itself. The signed URL points at storage, not the API,
+ * so no bearer token goes with it — the signature is the authorisation, and
+ * it expires in minutes.
+ */
+export async function staffFetchReceiptHtml(paymentId: string): Promise<string> {
+  const { url } = await staffReceiptUrl(paymentId);
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`RECEIPT_FETCH_FAILED_${response.status}`);
+  const html = await response.text();
+  if (!html.includes("OFFICIAL RECEIPT") && !html.includes("Official Receipt")) {
+    throw new Error("RECEIPT_NOT_A_RECEIPT");
+  }
+  return html;
 }

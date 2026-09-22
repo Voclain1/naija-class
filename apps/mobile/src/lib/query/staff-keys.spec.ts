@@ -53,6 +53,7 @@ const STAFF_KEYS: Record<string, readonly unknown[]> = {
   staffGuardian: queryKeys.staffGuardian(SCHOOL, USER, "guardian_1"),
   staffPaymentLink: queryKeys.staffPaymentLink(SCHOOL, USER, "invoice_1"),
   staffExpenseCategories: queryKeys.staffExpenseCategories(SCHOOL, USER),
+  staffReceipts: queryKeys.staffReceipts(SCHOOL, USER, ""),
   staffClassArms: queryKeys.staffClassArms(SCHOOL, USER),
   // CP4d — named colleagues' activity; an audited read.
   staffTeacherActivity: queryKeys.staffTeacherActivity(SCHOOL, USER),

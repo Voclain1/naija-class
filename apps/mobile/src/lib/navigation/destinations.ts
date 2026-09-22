@@ -1,6 +1,6 @@
 import type { IconName } from "../../components/layout";
 import { hasPermission } from "../auth/permissions";
-import { isSchoolAdmin, isTeacher } from "../auth/roles";
+import { hasRole, isSchoolAdmin, isTeacher } from "../auth/roles";
 import type { AuthMeRoleDto } from "@school-kit/types";
 
 // Everywhere a person can go, in ONE place, per role.
@@ -97,6 +97,10 @@ export function staffDestinations(ctx: StaffContext): Destination[] {
   }
   if (can("finance.debtors.read")) {
     out.push({ key: "debtors", label: "Who owes", hint: "Outstanding fees", icon: "alert-circle-outline", group: "Money", route: "/staff/collections/debtors" });
+  }
+  // Branded receipts — the server also checks the owner/admin/bursar ROLE.
+  if ((admin || hasRole(ctx.roles, "bursar")) && can("payment.read")) {
+    out.push({ key: "receipts", label: "Receipts", hint: "Share or print", icon: "document-text-outline", group: "Money", route: "/staff/receipts" });
   }
   // CP9b — both permissions: the form lists categories before it can save.
   if (can("expense.create") && can("expense-category.read")) {

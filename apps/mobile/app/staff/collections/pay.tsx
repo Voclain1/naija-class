@@ -30,6 +30,7 @@ import { spacing } from "../../../src/theme/tokens";
 import { Body, Button, Card, CenteredMessage, Label, Notice, Screen } from "../../../src/components/ui";
 import { ScreenHeader, Skeleton, StatRow } from "../../../src/components/layout";
 import { ChoiceChips, DateBoxes, TextField, type DateBoxValues } from "../../../src/components/form";
+import { ReceiptActions } from "../../../src/components/receipt-actions";
 
 // CP9b / D37 + D38 — record money received, from the phone.
 //
@@ -160,7 +161,10 @@ export default function RecordPaymentScreen() {
               Your first attempt had already got through, so this is that same payment. Nothing was recorded twice.
             </Notice>
           ) : null}
-          <Button title="Back to the family" onPress={() => router.back()} />
+          {abilities.viewReceipts ? (
+            <ReceiptActions paymentId={result.id} receiptNumber={result.receiptNumber} />
+          ) : null}
+          <Button title="Back to the family" variant="secondary" onPress={() => router.back()} />
         </ScrollView>
       </Screen>
     );
