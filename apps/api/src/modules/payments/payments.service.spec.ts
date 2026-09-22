@@ -625,19 +625,45 @@ describe("PaymentsService (integration)", () => {
     expect(numbers).toEqual([1, 2, 3, 4, 5].map((n) => `RCP/2026/00000${n}`));
   });
 
-  it("receipts: a payment that rolls back returns its number — no gap from a failure", async () => {
+  it("receipts: a receipt failure NEVER refuses the payment, burns no number, and can be re-issued", async () => {
     const { svc } = await receiptSvc("rcpt-rollback", { failPutOnce: true });
     const { schoolId, ownerId } = await makeSchool("rcpt-rollback");
     const invoiceId = await makeIssuedInvoice(schoolId, ownerId, 100_000_00);
 
-    await expect(svc.recordManual(ctx(schoolId, ownerId), pay(invoiceId, 1_000_00), reqCtx)).rejects.toThrow(
-      "storage unavailable",
-    );
-    const ok = await svc.recordManual(ctx(schoolId, ownerId), pay(invoiceId, 1_000_00), reqCtx);
+    // Storage is down for the first receipt: the cash is still recorded.
+    const first = await svc.recordManual(ctx(schoolId, ownerId), pay(invoiceId, 1_000_00), reqCtx);
+    expect(first.status).toBe("SUCCESS");
+    expect(first.receiptNumber).toBeNull();
 
-    expect(ok.receiptNumber).toBe("RCP/2026/000001");
-    const payments = await withTenant(schoolId, (db) => db.payment.count({ where: { invoiceId } }));
-    expect(payments).toBe(1);
+    // The failed receipt returned its number: the next receipt is still 1.
+    const second = await svc.recordManual(ctx(schoolId, ownerId), pay(invoiceId, 1_000_00), reqCtx);
+    expect(second.receiptNumber).toBe("RCP/2026/000001");
+
+    // And the first payment's receipt can be issued afterwards.
+    const reissued = await svc.reissueReceipt(ctx(schoolId, ownerId), first.id, reqCtx);
+    expect(reissued.receiptNumber).toBe("RCP/2026/000002");
+    const state = await withTenant(schoolId, async (db) => ({
+      payments: await db.payment.count({ where: { invoiceId } }),
+      totalPaid: (await db.invoice.findUniqueOrThrow({ where: { id: invoiceId } })).totalPaid,
+    }));
+    expect(state).toEqual({ payments: 2, totalPaid: 2_000_00 });
+  });
+
+  it("receipts: concurrent issuers for one payment produce ONE receipt, not two numbers", async () => {
+    // The first receipt fails, so the payment exists WITHOUT one — the state
+    // the webhook and the verify-poll both find when they race.
+    const { svc } = await receiptSvc("rcpt-once", { failPutOnce: true });
+    const { schoolId, ownerId } = await makeSchool("rcpt-once");
+    const invoiceId = await makeIssuedInvoice(schoolId, ownerId, 100_000_00);
+    const payment = await svc.recordManual(ctx(schoolId, ownerId), pay(invoiceId, 1_000_00), reqCtx);
+    expect(payment.receiptNumber).toBeNull();
+    // Simulate the webhook and the verify-poll racing to issue the same receipt.
+    const issue = (svc as unknown as { tryIssueReceipt: (s: string, p: string) => Promise<{ receiptNumber: string } | null> })
+      .tryIssueReceipt.bind(svc);
+    const results = await Promise.all([issue(schoolId, payment.id), issue(schoolId, payment.id), issue(schoolId, payment.id)]);
+    expect(new Set(results.map((r) => r?.receiptNumber))).toEqual(new Set(["RCP/2026/000001"]));
+    const next = await svc.recordManual(ctx(schoolId, ownerId), pay(invoiceId, 1_000_00), reqCtx);
+    expect(next.receiptNumber).toBe("RCP/2026/000002");
   });
 
   it("receipts: re-issue keeps the number, uses the current branding, and is audited", async () => {
@@ -676,6 +702,32 @@ describe("PaymentsService (integration)", () => {
     await expect(svc.reissueReceipt(ctx(a.schoolId, teacherId), payment.id, reqCtx)).rejects.toMatchObject({ httpStatus: 403 });
     await expect(svc.listReceipts(ctx(a.schoolId, teacherId), { page: 1, limit: 30 })).rejects.toMatchObject({ httpStatus: 403 });
     await expect(svc.reissueReceipt(ctx(b.schoolId, b.ownerId), payment.id, reqCtx)).rejects.toMatchObject({ httpStatus: 404 });
+  });
+
+  it("receipts: an online payment with NO receipt (payment-link path, before the fix) can be re-issued", async () => {
+    const { svc, storage } = await receiptSvc("rcpt-online");
+    const { schoolId, ownerId } = await makeSchool("rcpt-online");
+    const invoiceId = await makeIssuedInvoice(schoolId, ownerId, 20_000);
+    const paymentId = await withTenant(schoolId, async (db) => {
+      const invoice = await db.invoice.findUniqueOrThrow({ where: { id: invoiceId } });
+      const p = await db.payment.create({
+        data: {
+          schoolId, invoiceId, studentId: invoice.studentId, amount: 20_000, method: "PAYSTACK", status: "SUCCESS",
+          paystackReference: `ref-${runId}`, paystackData: { status: "success" }, recordedBy: ownerId, paidAt: new Date("2026-09-22T10:52:00.000Z"),
+        },
+      });
+      await db.invoice.update({ where: { id: invoiceId }, data: { totalPaid: 20_000, status: "PAID" } });
+      return p.id;
+    });
+
+    const result = await svc.reissueReceipt(ctx(schoolId, ownerId), paymentId, reqCtx);
+    const html = (await storage.get(schoolId, { kind: "payment-receipt", paymentId })).toString("utf8");
+
+    expect(result.receiptNumber).toBe("RCP/2026/000001");
+    expect(html).toContain("Received by: Paid online (Paystack)");
+    expect(html).toContain("Balance<b>₦0.00</b>");
+    const url = await svc.getReceiptUrl(ctx(schoolId, ownerId), paymentId);
+    expect(url.url).toBeTruthy();
   });
 
   it("receipts: the list is newest first, searchable by name, and scoped to the school", async () => {

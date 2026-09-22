@@ -211,3 +211,31 @@ production on deploy, like D37's.
   re-issued. The PDF is made in the phone's cache and deleted after sharing.
   The signed receipt URL is fetched without the bearer token, because the
   signature alone authorises it.
+
+### Fix (2026-09-22, after the first production test)
+
+Two problems appeared in production:
+
+1. **Payment-link payments got no receipt.** `handlePaymentRequestWebhook`
+   (a Paystack payment link paid from WhatsApp) records the payment on its own
+   path, which never issued a receipt. It now does.
+2. **Re-issue failed with a server error.** No production logs could be read
+   from here, so the cause is inferred, not observed. The receipt was issued
+   inside the payment's 5-second transaction, which included downloading the
+   school's logo from storage, and a school with a large logo could run past
+   the budget. Local tests have no logo, so they never hit it.
+
+**The design change, on its merits:** receipts are now issued in their own
+transaction after the payment commits (`issueReceiptFor`, 20-second budget,
+logo fetched beforehand and cached). A receipt problem can no longer refuse a
+payment. The receipt is simply missing, and "Issue receipt" makes it later.
+Numbers stay gap-free, because the number is drawn in the receipt's own
+transaction. Issuance is also exactly-once: the payment row is locked
+`FOR UPDATE` and re-checked, so the webhook and the verify-poll cannot both
+issue a receipt. A mutation check (lock removed) produced three different
+numbers for one payment.
+
+Also: an online payment's receipt now reads "Received by: Paid online
+(Paystack)" even when a staff member created the link. On the web, the receipt
+is a real **View receipt** button with its number beneath, and a payment with
+no receipt shows **Issue receipt**.

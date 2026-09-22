@@ -27,7 +27,7 @@ import { PaystackService } from "../../common/paystack/paystack.service.js";
 import { StorageService } from "../../common/storage/storage.service.js";
 import { PaymentLinkInvalidationService } from "../invoices/payment-link-invalidation.service.js";
 import { PaymentPlanService } from "./payment-plan.service.js";
-import { issueReceipt } from "./receipt.js";
+import { issueReceipt, loadReceiptLogo } from "./receipt.js";
 
 const RECEIPT_URL_TTL_SECONDS = 15 * 60; // 15 minutes
 
@@ -208,7 +208,8 @@ export class PaymentsService {
       throw e;
     }
     await this.paymentLinkInvalidation?.archivePending(authCtx.schoolId, dto.invoiceId);
-    return { ...result, replayed: false };
+    const receipt = await this.tryIssueReceipt(authCtx.schoolId, result.id);
+    return { ...result, ...(receipt ?? {}), replayed: false };
   }
 
   private findByIdempotencyKey(schoolId: string, key: string): Promise<PaymentRow | null> {
@@ -302,22 +303,8 @@ export class PaymentsService {
         data: { totalPaid: newTotalPaid, status: newStatus },
       });
 
-      // 6. Issue the branded receipt (docs/modules/branded-receipts.md): the
-      //    next sequential number is drawn INSIDE this transaction, so a
-      //    payment that rolls back returns its number. Issued after the
-      //    totals above so the receipt's balance is the balance after this
-      //    payment.
-      const { receiptNumber, receiptUrl } = await issueReceipt(db, this.storage, {
-        schoolId: authCtx.schoolId,
-        paymentId: payment.id,
-        totalPaidAfter: newTotalPaid,
-      });
-
-      // 7. Persist receipt metadata on payment row.
-      const updated = await db.payment.update({
-        where: { id: payment.id },
-        data: { receiptNumber, receiptUrl },
-      });
+      // 6. The receipt is NOT issued here — see issueReceiptFor. A receipt
+      //    problem must never refuse cash that was received.
 
       // 8. Audit log — goes through withTenant so FORCE RLS is satisfied.
       await db.auditLog.create({
@@ -346,7 +333,7 @@ export class PaymentsService {
         dto.invoiceId,
       );
 
-      return toDto(updated as PaymentRow);
+      return toDto(payment as PaymentRow);
     });
   }
 
@@ -475,6 +462,7 @@ export class PaymentsService {
     const { schoolId, paymentId } = parsed;
 
     let balanceChanged = false;
+    let succeeded = false;
     await withTenant(schoolId, async (db) => {
       const payment = await db.payment.findUnique({
         where: { id: paymentId },
@@ -511,6 +499,7 @@ export class PaymentsService {
         await this.applyPaystackSuccess(db, payment, data as Record<string, unknown>, paidAt);
         await this.paymentLinkInvalidation?.markForArchive(db, schoolId, payment.invoiceId);
         balanceChanged = true;
+        succeeded = true;
       } else {
         await this.applyPaystackFailed(db, payment);
       }
@@ -518,6 +507,7 @@ export class PaymentsService {
     if (balanceChanged) {
       await this.paymentLinkInvalidation?.archivePending(schoolId);
     }
+    if (succeeded) await this.tryIssueReceipt(schoolId, paymentId);
   }
 
   async handlePaymentRequestWebhook(event: PaystackWebhookEvent): Promise<void> {
@@ -590,12 +580,12 @@ export class PaymentsService {
     const paidAt = transaction.paid_at ? new Date(transaction.paid_at) : new Date();
     const applied = await withTenant(schoolId, async (db) => {
       const invoice = await db.invoice.findUnique({ where: { id: invoiceId } });
-      if (!invoice || invoice.schoolId !== schoolId) return false;
+      if (!invoice || invoice.schoolId !== schoolId) return null;
       const claim = await db.paymentLink.updateMany({
         where: { id: linkId, schoolId, invoiceId, status: "LIVE" },
         data: { status: "PAID", paidAt, hostedUrl: null, failureCode: null },
       });
-      if (claim.count === 0) return false;
+      if (claim.count === 0) return null;
 
       const payment = await db.payment.create({
           data: {
@@ -643,9 +633,13 @@ export class PaymentsService {
           ],
       });
       await this.paymentPlan.recomputeInstallmentsPaid(db, invoiceId, newTotalPaid);
-      return true;
+      return payment.id;
     });
-    if (applied) await this.paymentLinkInvalidation?.archivePending(schoolId, invoiceId);
+    if (applied) {
+      await this.paymentLinkInvalidation?.archivePending(schoolId, invoiceId);
+      // Payment-link payments had no receipt at all before 2026-09-22.
+      await this.tryIssueReceipt(schoolId, applied);
+    }
   }
 
   // ─── Verify Paystack payment (self-heal) ───────────────────────────────────
@@ -743,6 +737,10 @@ export class PaymentsService {
 
       const row = await db.payment.findUniqueOrThrow({ where: { id: payment.id } });
       return toDto(row as PaymentRow);
+    }).then(async (dto) => {
+      if (dto.status !== "SUCCESS" || dto.receiptNumber) return dto;
+      const receipt = await this.tryIssueReceipt(schoolId, dto.id);
+      return receipt ? { ...dto, ...receipt } : dto;
     });
   }
 
@@ -874,41 +872,114 @@ export class PaymentsService {
     reqCtx: { ipAddress: string | null },
   ): Promise<ReissueReceiptResultDto> {
     await assertUserActiveAndHasOneOf(authCtx, ["owner", "admin", "bursar"]);
-    return withTenant(authCtx.schoolId, async (db) => {
-      const payment = await db.payment.findUnique({
-        where: { id },
-        select: { id: true, schoolId: true, invoiceId: true, status: true, receiptNumber: true, createdAt: true },
-      });
-      if (!payment || payment.schoolId !== authCtx.schoolId) {
-        throw new NotFoundError("Payment not found.");
-      }
-      if (payment.status !== "SUCCESS") {
-        throw new ConflictError("RECEIPT_NOT_AVAILABLE", "Only a successful payment has a receipt.");
-      }
-      const { _sum } = await db.payment.aggregate({
-        where: { invoiceId: payment.invoiceId, status: "SUCCESS", createdAt: { lte: payment.createdAt } },
-        _sum: { amount: true },
-      });
-      const { receiptNumber, receiptUrl } = await issueReceipt(db, this.storage, {
-        schoolId: authCtx.schoolId,
-        paymentId: payment.id,
-        totalPaidAfter: _sum.amount ?? 0,
-        ...(payment.receiptNumber ? { receiptNumber: payment.receiptNumber } : {}),
-      });
-      await db.payment.update({ where: { id: payment.id }, data: { receiptNumber, receiptUrl } });
-      await db.auditLog.create({
-        data: {
-          schoolId: authCtx.schoolId,
-          userId: authCtx.userId,
-          action: AUDIT_RECEIPT_REISSUE,
-          entityType: "payment",
-          entityId: payment.id,
-          ipAddress: reqCtx.ipAddress,
-          metadata: { receiptNumber, keptNumber: payment.receiptNumber !== null },
-        },
-      });
-      return { paymentId: payment.id, receiptNumber };
+    const result = await this.issueReceiptFor(authCtx.schoolId, id, {
+      force: true,
+      audit: { userId: authCtx.userId, ipAddress: reqCtx.ipAddress },
     });
+    return { paymentId: id, receiptNumber: result.receiptNumber };
+  }
+
+  // ─── Issuing a receipt — always in its own transaction ───────────────────
+  //
+  // Why not inside the payment's transaction (as first shipped): a receipt
+  // reads the school, student, term and recorder, downloads the logo and
+  // uploads the document — enough work, on production's network, to run past
+  // the 5-second transaction budget. When that happened the whole payment
+  // rolled back. A receipt problem must never refuse cash that was received,
+  // so the payment commits first and the receipt follows.
+  //
+  // Still gap-free: the number is drawn inside THIS transaction, which also
+  // stores the document, so a failed receipt returns its number. And still
+  // one receipt per payment: the payment row is locked (FOR UPDATE) and
+  // re-checked, so the webhook and the verify-poll arriving together cannot
+  // both issue one.
+  //
+  // "Balance after" is as it stood at this payment — every successful
+  // payment on the invoice recorded up to and including it.
+  private async issueReceiptFor(
+    schoolId: string,
+    paymentId: string,
+    opts: { force?: boolean; audit?: { userId: string; ipAddress: string | null } } = {},
+  ): Promise<{ receiptNumber: string; receiptUrl: string }> {
+    const school = await withTenant(schoolId, (db) =>
+      db.school.findUnique({ where: { id: schoolId }, select: { logoUrl: true } }),
+    );
+    const logoDataUri = await loadReceiptLogo(this.storage, schoolId, school?.logoUrl ?? null);
+
+    return withTenant(
+      schoolId,
+      async (db) => {
+        await db.$queryRaw`SELECT id FROM payments WHERE id = ${paymentId} FOR UPDATE`;
+        const payment = await db.payment.findUnique({
+          where: { id: paymentId },
+          select: {
+            id: true,
+            schoolId: true,
+            invoiceId: true,
+            status: true,
+            receiptNumber: true,
+            receiptUrl: true,
+            createdAt: true,
+          },
+        });
+        if (!payment || payment.schoolId !== schoolId) {
+          throw new NotFoundError("Payment not found.");
+        }
+        if (payment.status !== "SUCCESS") {
+          throw new ConflictError("RECEIPT_NOT_AVAILABLE", "Only a successful payment has a receipt.");
+        }
+        if (!opts.force && payment.receiptNumber && payment.receiptUrl) {
+          return { receiptNumber: payment.receiptNumber, receiptUrl: payment.receiptUrl };
+        }
+        const { _sum } = await db.payment.aggregate({
+          where: { invoiceId: payment.invoiceId, status: "SUCCESS", createdAt: { lte: payment.createdAt } },
+          _sum: { amount: true },
+        });
+        const issued = await issueReceipt(db, this.storage, {
+          schoolId,
+          paymentId,
+          totalPaidAfter: _sum.amount ?? 0,
+          logoDataUri,
+          ...(payment.receiptNumber ? { receiptNumber: payment.receiptNumber } : {}),
+        });
+        await db.payment.update({
+          where: { id: paymentId },
+          data: { receiptNumber: issued.receiptNumber, receiptUrl: issued.receiptUrl },
+        });
+        if (opts.audit) {
+          await db.auditLog.create({
+            data: {
+              schoolId,
+              userId: opts.audit.userId,
+              action: AUDIT_RECEIPT_REISSUE,
+              entityType: "payment",
+              entityId: paymentId,
+              ipAddress: opts.audit.ipAddress,
+              metadata: { receiptNumber: issued.receiptNumber, keptNumber: payment.receiptNumber !== null },
+            },
+          });
+        }
+        return issued;
+      },
+      // Documented override (WithTenantOptions): storage upload inside the
+      // body. The payment itself is already committed; only the receipt waits.
+      { timeoutMs: 20_000, label: "payments.issueReceipt" },
+    );
+  }
+
+  /** issueReceiptFor, for the payment paths: never throws — the payment already stands. */
+  private async tryIssueReceipt(
+    schoolId: string,
+    paymentId: string,
+  ): Promise<{ receiptNumber: string; receiptUrl: string } | null> {
+    try {
+      return await this.issueReceiptFor(schoolId, paymentId);
+    } catch (err) {
+      this.logger.error(
+        `Receipt could not be issued for payment ${paymentId} (school ${schoolId}); the payment stands and the receipt can be re-issued. ${String(err)}`,
+      );
+      return null;
+    }
   }
 
   // ─── Private: apply Paystack success ──────────────────────────────────────
@@ -952,26 +1023,14 @@ export class PaymentsService {
     });
     const newTotalPaid = _sum.amount ?? 0;
 
-    // 3. Issue the branded receipt, after the totals so it shows the balance
-    //    after this payment. "Received by" reads "Paid online (Paystack)"
-    //    because an online payment has no recorder.
-    const { receiptNumber, receiptUrl } = await issueReceipt(db, this.storage, {
-      schoolId: payment.schoolId,
-      paymentId: payment.id,
-      totalPaidAfter: newTotalPaid,
-    });
+    // 3. The receipt is issued AFTER this transaction commits, by the caller
+    //    (issueReceiptFor) — never inside it.
 
     const invoice = await db.invoice.findUniqueOrThrow({
       where: { id: payment.invoiceId },
       select: { totalDue: true },
     });
     const newStatus = computeInvoiceStatus(newTotalPaid, invoice.totalDue);
-
-    // 4. Persist receipt metadata.
-    await db.payment.update({
-      where: { id: payment.id },
-      data: { receiptNumber, receiptUrl },
-    });
 
     // 5. Update invoice.
     await db.invoice.update({

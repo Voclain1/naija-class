@@ -226,6 +226,31 @@ function logoExt(logoUrl: string | null): LogoExt | null {
   return ext === "png" || ext === "jpg" || ext === "webp" ? ext : null;
 }
 
+// Logos change rarely and are read on every receipt; a short in-memory cache
+// keeps the storage round trip off the hot path. Keyed by school and the
+// stored logo path, so a new upload (a new path or extension) is picked up.
+const LOGO_CACHE_TTL_MS = 10 * 60 * 1000;
+const logoCache = new Map<string, { at: number; value: string | null }>();
+
+/**
+ * The school's logo as a data URI for a receipt — fetched OUTSIDE any
+ * transaction (a storage download inside one is what made receipts slow
+ * enough to time out). Never throws: a missing, unreadable or oversized logo
+ * gives a receipt without one.
+ */
+export async function loadReceiptLogo(
+  storage: StorageService,
+  schoolId: string,
+  logoUrl: string | null,
+): Promise<string | null> {
+  const key = `${schoolId}:${logoUrl ?? ""}`;
+  const hit = logoCache.get(key);
+  if (hit && Date.now() - hit.at < LOGO_CACHE_TTL_MS) return hit.value;
+  const value = await loadLogoDataUri(storage, schoolId, logoUrl);
+  logoCache.set(key, { at: Date.now(), value });
+  return value;
+}
+
 async function loadLogoDataUri(storage: StorageService, schoolId: string, logoUrl: string | null): Promise<string | null> {
   const ext = logoExt(logoUrl);
   if (!ext) return null;
@@ -255,6 +280,8 @@ export async function issueReceipt(
     paymentId: string;
     totalPaidAfter: number;
     receiptNumber?: string;
+    /** From loadReceiptLogo, fetched before the transaction opened. */
+    logoDataUri: string | null;
   },
 ): Promise<{ receiptNumber: string; receiptUrl: string }> {
   const payment = await db.payment.findUniqueOrThrow({
@@ -278,7 +305,7 @@ export async function issueReceipt(
   const [school, student, invoice] = await Promise.all([
     db.school.findUniqueOrThrow({
       where: { id: args.schoolId },
-      select: { name: true, motto: true, address: true, phone: true, email: true, primaryColor: true, logoUrl: true },
+      select: { name: true, motto: true, address: true, phone: true, email: true, primaryColor: true },
     }),
     db.student.findUnique({
       where: { id: payment.studentId },
@@ -322,7 +349,7 @@ export async function issueReceipt(
       phone: school.phone,
       email: school.email,
       primaryColor: school.primaryColor,
-      logoDataUri: await loadLogoDataUri(storage, args.schoolId, school.logoUrl),
+      logoDataUri: args.logoDataUri,
     },
     student: {
       name: student ? [student.firstName, student.middleName, student.lastName].filter(Boolean).join(" ") : "the student",
@@ -334,7 +361,8 @@ export async function issueReceipt(
     method: payment.method,
     reference: payment.reference,
     invoice: { totalDue: invoice.totalDue, totalPaidAfter: args.totalPaidAfter },
-    receivedBy: recorder
+    // An online payment was received by Paystack, whoever made the link.
+    receivedBy: recorder && payment.method !== "PAYSTACK"
       ? {
           name: `${recorder.firstName} ${recorder.lastName}`,
           role: recorder.roles[0]?.role.name ?? null,
