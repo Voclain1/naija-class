@@ -17,6 +17,7 @@ import {
   bulkCreateEnrollmentSchema,
   createEnrollmentSchema,
   listEnrollmentsQuerySchema,
+  moveEnrollmentSchema,
   updateEnrollmentSchema,
   type BulkCreateEnrollmentInput,
   type BulkEnrollmentResponse,
@@ -24,8 +25,11 @@ import {
   type EnrollmentDto,
   type EnrollmentListResponse,
   type ListEnrollmentsQuery,
+  type MoveEnrollmentInput,
+  type MoveEnrollmentResultDto,
   type UpdateEnrollmentInput,
 } from "@school-kit/types";
+import { Throttle } from "@nestjs/throttler";
 import type { Request } from "express";
 
 import type { AuthContext } from "../../common/auth/auth-context";
@@ -106,6 +110,27 @@ export class EnrollmentsController {
     @Req() req: Request,
   ): Promise<EnrollmentDto> {
     return this.service.update(authCtx, id, dto, {
+      ipAddress: ip,
+      userAgent: req.header("user-agent") ?? null,
+    });
+  }
+
+  // POST /enrollments/:id/move — same term, another class, carrying the
+  // child's records across (D39). Password-gated in the service when records
+  // exist; throttled here because it verifies a password.
+  @Post(":id/move")
+  @HttpCode(200)
+  @Throttle({ default: { ttl: 60000, limit: 10 } })
+  @Permissions("enrollment.update")
+  async move(
+    @CurrentUser() authCtx: AuthContext,
+    @Param("id", new ParseUUIDPipe()) id: string,
+    @Body(new ZodValidationPipe(moveEnrollmentSchema))
+    dto: MoveEnrollmentInput,
+    @Ip() ip: string,
+    @Req() req: Request,
+  ): Promise<MoveEnrollmentResultDto> {
+    return this.service.move(authCtx, id, dto, {
       ipAddress: ip,
       userAgent: req.header("user-agent") ?? null,
     });

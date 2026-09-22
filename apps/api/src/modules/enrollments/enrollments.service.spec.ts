@@ -132,6 +132,190 @@ describe("EnrollmentsService", () => {
   }
 
   // -----------------------------------------------------------------------
+  // D39 — move to another class, same term (POST /enrollments/:id/move)
+  // -----------------------------------------------------------------------
+
+  describe("move (D39)", () => {
+    async function secondArm(f: SchoolFixture, sameLevel: boolean): Promise<string> {
+      return withTenant(f.schoolId, async (db) => {
+        const first = await db.classArm.findUniqueOrThrow({ where: { id: f.classArmId }, select: { classLevelId: true } });
+        const level = sameLevel
+          ? await db.classLevel.findUniqueOrThrow({ where: { id: first.classLevelId } })
+          : await db.classLevel.findFirstOrThrow({ where: { schoolId: f.schoolId, id: { not: first.classLevelId } }, orderBy: { orderIndex: "asc" } });
+        const arm = await db.classArm.create({
+          data: { schoolId: f.schoolId, classLevelId: level.id, name: `${level.name} B`, code: `${level.code}-b-${runId}-${Math.random().toString(36).slice(2, 6)}` },
+        });
+        return arm.id;
+      });
+    }
+
+    async function enrol(f: SchoolFixture, studentId: string): Promise<string> {
+      const e = await service.create(f.authCtx, { studentId, termId: f.termId, classArmId: f.classArmId }, reqCtx);
+      return e.id;
+    }
+
+    // One subject, three component marks, the per-subject assessment row,
+    // and a DRAFT report card — the records a child has mid-term.
+    async function giveRecords(f: SchoolFixture, studentId: string, cardStatus: "DRAFT" | "FORM_REVIEWED" = "DRAFT") {
+      await withTenant(f.schoolId, async (db) => {
+        const subject = await db.subject.create({
+          data: { schoolId: f.schoolId, name: `Maths ${runId}`, code: `m-${runId}-${Math.random().toString(36).slice(2, 6)}` },
+        });
+        const components = await db.gradingComponent.findMany({ select: { id: true } });
+        for (const c of components.slice(0, 3)) {
+          await db.assessmentScore.create({
+            data: { schoolId: f.schoolId, studentId, subjectId: subject.id, termId: f.termId, componentId: c.id, score: 10, enteredBy: f.userId },
+          });
+        }
+        await db.assessment.create({
+          data: {
+            schoolId: f.schoolId, studentId, subjectId: subject.id, termId: f.termId, academicYearId: f.academicYearId,
+            classArmId: f.classArmId, totalScore: 30, subjectPosition: 1, classPosition: 1, computedAt: new Date(), positionsComputedAt: new Date(),
+          },
+        });
+        await db.reportCard.create({
+          data: { schoolId: f.schoolId, studentId, termId: f.termId, academicYearId: f.academicYearId, classArmId: f.classArmId, status: cardStatus },
+        });
+      });
+    }
+
+    async function moveAudits(f: SchoolFixture, enrollmentId: string): Promise<number> {
+      return withTenant(f.schoolId, (db) =>
+        db.auditLog.count({ where: { action: "enrollment.move-class", entityId: enrollmentId } }),
+      );
+    }
+
+    it("moves a child with no records on confirmation alone — no password needed", async () => {
+      const f = await fixture("mv-plain", 1);
+      const to = await secondArm(f, true);
+      const id = await enrol(f, f.studentIds[0]!);
+
+      const result = await service.move(f.authCtx, id, { classArmId: to }, reqCtx);
+
+      expect(result.enrollment.classArmId).toBe(to);
+      expect(result).toMatchObject({ assessmentsMoved: 0, reportCardDiscarded: false, invoiceNeedsReview: false });
+      expect(await moveAudits(f, id)).toBe(1);
+    });
+
+    it("with records and no password: 409 MOVE_NEEDS_PASSWORD, saying what would change, and nothing moves", async () => {
+      const f = await fixture("mv-nopw", 1);
+      const to = await secondArm(f, true);
+      const id = await enrol(f, f.studentIds[0]!);
+      await giveRecords(f, f.studentIds[0]!);
+
+      await expect(service.move(f.authCtx, id, { classArmId: to }, reqCtx)).rejects.toMatchObject({
+        code: "MOVE_NEEDS_PASSWORD",
+        details: { markCount: 3, hasReportCard: true },
+      });
+      const row = await withTenant(f.schoolId, (db) => db.enrollment.findUniqueOrThrow({ where: { id } }));
+      expect(row.classArmId).toBe(f.classArmId);
+      expect(await moveAudits(f, id)).toBe(0);
+    });
+
+    it("a WRONG password is 403 PASSWORD_INCORRECT (never 401), and nothing moves", async () => {
+      const f = await fixture("mv-badpw", 1);
+      const to = await secondArm(f, true);
+      const id = await enrol(f, f.studentIds[0]!);
+      await giveRecords(f, f.studentIds[0]!);
+
+      const err = await service.move(f.authCtx, id, { classArmId: to, currentPassword: "not-it" }, reqCtx).catch((e) => e);
+      expect(err).toMatchObject({ code: "PASSWORD_INCORRECT", httpStatus: 403 });
+      const state = await withTenant(f.schoolId, async (db) => ({
+        arm: (await db.enrollment.findUniqueOrThrow({ where: { id } })).classArmId,
+        cards: await db.reportCard.count({ where: { studentId: f.studentIds[0]!, termId: f.termId } }),
+      }));
+      expect(state).toEqual({ arm: f.classArmId, cards: 1 });
+    });
+
+    it("the right password carries marks across, clears positions, discards the DRAFT card, and audits once", async () => {
+      const f = await fixture("mv-ok", 1);
+      const to = await secondArm(f, true);
+      const student = f.studentIds[0]!;
+      const id = await enrol(f, student);
+      await giveRecords(f, student);
+
+      const result = await service.move(f.authCtx, id, { classArmId: to, currentPassword: "Correct-Horse-9" }, reqCtx);
+
+      expect(result).toMatchObject({ assessmentsMoved: 1, reportCardDiscarded: true, invoiceNeedsReview: false });
+      const state = await withTenant(f.schoolId, async (db) => ({
+        scores: await db.assessmentScore.count({ where: { studentId: student, termId: f.termId } }),
+        assessment: await db.assessment.findFirstOrThrow({
+          where: { studentId: student, termId: f.termId },
+          select: { classArmId: true, totalScore: true, subjectPosition: true, classPosition: true },
+        }),
+        cards: await db.reportCard.count({ where: { studentId: student, termId: f.termId } }),
+        audit: await db.auditLog.findFirstOrThrow({ where: { action: "enrollment.move-class", entityId: id }, select: { metadata: true } }),
+      }));
+      // Nothing a teacher entered is lost.
+      expect(state.scores).toBe(3);
+      expect(state.assessment).toEqual({ classArmId: to, totalScore: 30, subjectPosition: null, classPosition: null });
+      expect(state.cards).toBe(0);
+      expect(state.audit.metadata).toMatchObject({ fromArmId: f.classArmId, toArmId: to, passwordConfirmed: true, marksCarried: 3 });
+      expect(await moveAudits(f, id)).toBe(1);
+    });
+
+    it("refuses when the report card is past DRAFT, even with the right password", async () => {
+      const f = await fixture("mv-review", 1);
+      const to = await secondArm(f, true);
+      const id = await enrol(f, f.studentIds[0]!);
+      await giveRecords(f, f.studentIds[0]!, "FORM_REVIEWED");
+
+      await expect(
+        service.move(f.authCtx, id, { classArmId: to, currentPassword: "Correct-Horse-9" }, reqCtx),
+      ).rejects.toMatchObject({ code: "REPORT_CARD_IN_PROGRESS" });
+    });
+
+    it("flags the invoice for review when the class LEVEL changes, and never touches it", async () => {
+      const f = await fixture("mv-level", 1);
+      const to = await secondArm(f, false);
+      const student = f.studentIds[0]!;
+      const id = await enrol(f, student);
+      const invoiceBefore = await withTenant(f.schoolId, (db) =>
+        db.invoice.create({
+          data: {
+            schoolId: f.schoolId, studentId: student, termId: f.termId, academicYearId: f.academicYearId, classArmId: f.classArmId,
+            status: "ISSUED", items: [], totalAmount: 5_000_00, totalDiscount: 0, totalDue: 5_000_00, issuedAt: new Date(), issuedBy: f.userId,
+          },
+        }),
+      );
+
+      const result = await service.move(f.authCtx, id, { classArmId: to }, reqCtx);
+
+      expect(result.invoiceNeedsReview).toBe(true);
+      const invoiceAfter = await withTenant(f.schoolId, (db) => db.invoice.findUniqueOrThrow({ where: { id: invoiceBefore.id } }));
+      expect(invoiceAfter.totalDue).toBe(invoiceBefore.totalDue);
+      expect(invoiceAfter.classArmId).toBe(f.classArmId);
+    });
+
+    it("refuses the same class and a withdrawn enrolment", async () => {
+      const f = await fixture("mv-refuse", 1);
+      const id = await enrol(f, f.studentIds[0]!);
+      await expect(service.move(f.authCtx, id, { classArmId: f.classArmId }, reqCtx)).rejects.toMatchObject({ code: "SAME_CLASS_ARM" });
+
+      const to = await secondArm(f, true);
+      await service.update(f.authCtx, id, { status: "WITHDRAWN" }, reqCtx);
+      await expect(service.move(f.authCtx, id, { classArmId: to }, reqCtx)).rejects.toMatchObject({ code: "ENROLLMENT_NOT_ACTIVE" });
+    });
+
+    it("a bare PATCH can no longer split a child's records across two classes", async () => {
+      const f = await fixture("mv-patch", 1);
+      const to = await secondArm(f, true);
+      const id = await enrol(f, f.studentIds[0]!);
+
+      // No records yet: PATCH still works as before.
+      await service.update(f.authCtx, id, { classArmId: to }, reqCtx);
+      await service.update(f.authCtx, id, { classArmId: f.classArmId }, reqCtx);
+
+      await giveRecords(f, f.studentIds[0]!);
+      await expect(service.update(f.authCtx, id, { classArmId: to }, reqCtx)).rejects.toMatchObject({
+        code: "ENROLLMENT_HAS_TERM_RECORDS",
+      });
+      // A status-only PATCH is unaffected.
+      await expect(service.update(f.authCtx, id, { notes: "checked" }, reqCtx)).resolves.toBeDefined();
+    });
+  });
+
+  // -----------------------------------------------------------------------
   // Case 1 — happy paths for create, update (status flip), delete
   // -----------------------------------------------------------------------
 
