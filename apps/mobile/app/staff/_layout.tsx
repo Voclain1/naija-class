@@ -91,6 +91,7 @@ export default function StaffTabsLayout() {
       <Tabs.Screen name="report-cards" options={{ href: null }} />
       <Tabs.Screen name="curriculum" options={{ href: null }} />
       <Tabs.Screen name="collections" options={{ href: null }} />
+      <Tabs.Screen name="expenses" options={{ href: null }} />
       <Tabs.Screen name="timetable" options={{ href: null }} />
       <Tabs.Screen name="calendar" options={{ href: null }} />
       <Tabs.Screen name="profile" options={{ href: null }} />

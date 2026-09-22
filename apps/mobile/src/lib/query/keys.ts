@@ -81,6 +81,11 @@ export const queryKeys = {
     ["staff", schoolId, userId, "collections", termId] as const,
   staffDebtors: (schoolId: string, userId: string, termId: string) =>
     ["staff", schoolId, userId, "debtors", termId] as const,
+  // CP9b — a Paystack payment link carries a live pay URL; staff prefix.
+  staffPaymentLink: (schoolId: string, userId: string, invoiceId: string) =>
+    ["staff", schoolId, userId, "payment-link", invoiceId] as const,
+  staffExpenseCategories: (schoolId: string, userId: string) =>
+    ["staff", schoolId, userId, "expense-categories"] as const,
 
   // CP6a — teacher gradebook. A column is every student in an arm, by name,
   // with their marks: same "staff" prefix rule, never persisted.

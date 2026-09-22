@@ -23,6 +23,8 @@ import {
 } from "../api/staff-guardians";
 import {
   buildCreateParentInput,
+  canMoveClass,
+  describeMoveRecords,
   emptyParentForm,
   needsPlacement,
   parentAbilities,
@@ -52,8 +54,9 @@ describe("who may manage parents and placement", () => {
       invite: true,
       update: false,
       place: false,
+      move: false,
     });
-    expect(parentAbilities([{ key: "owner" }], ["*"])).toEqual({ link: true, invite: true, update: true, place: true });
+    expect(parentAbilities([{ key: "owner" }], ["*"])).toEqual({ link: true, invite: true, update: true, place: true, move: true });
   });
 
   it("is never a teacher or a bursar, whatever they hold", () => {
@@ -211,5 +214,39 @@ describe("parent and placement bindings", () => {
     await staffEnrollStudent({ studentId: STUDENT, termId: TERM, classArmId: ARM });
     expect(lastCall().init.method).toBe("POST");
     expect(createEnrollmentSchema.safeParse(lastCall().body).success).toBe(true);
+  });
+});
+
+describe("moving a child between classes (D39)", () => {
+  const TERM_ID = "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d";
+  const placed = (status: "ENROLLED" | "WITHDRAWN", termId = TERM_ID): Pick<StudentDto, "status" | "currentEnrollment"> => ({
+    status: "ACTIVE",
+    currentEnrollment: {
+      id: "e-1",
+      status,
+      classArm: { id: "arm-a", name: "JSS1A", classLevel: { id: "l-1", name: "JSS1" } },
+      term: { id: termId, name: "First term", sequence: 1 },
+      academicYearId: "y-1",
+    },
+  });
+
+  it("is offered only for a child ENROLLED in the current term — the state the server requires", () => {
+    expect(canMoveClass(placed("ENROLLED"), TERM_ID)).toBe(true);
+    expect(canMoveClass(placed("WITHDRAWN"), TERM_ID)).toBe(false);
+    expect(canMoveClass(placed("ENROLLED", "last-term"), TERM_ID)).toBe(false);
+    expect(canMoveClass({ status: "ACTIVE", currentEnrollment: null }, TERM_ID)).toBe(false);
+  });
+
+  it("tells the admin what will change before they type their password", () => {
+    expect(describeMoveRecords({ markCount: 3, hasReportCard: true })).toBe(
+      "3 marks already entered will move with them, and their draft report card will be rebuilt in the new class.",
+    );
+    expect(describeMoveRecords({ markCount: 1, hasReportCard: false })).toBe("1 mark already entered will move with them.");
+    expect(describeMoveRecords(undefined)).toMatch(/records this term/);
+  });
+
+  it("is gated on the role and enrollment.update", () => {
+    expect(parentAbilities([{ key: "admin" }], ["enrollment.update"]).move).toBe(true);
+    expect(parentAbilities([{ key: "teacher" }], ["enrollment.update"]).move).toBe(false);
   });
 });

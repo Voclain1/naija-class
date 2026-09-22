@@ -98,6 +98,10 @@ export function staffDestinations(ctx: StaffContext): Destination[] {
   if (can("finance.debtors.read")) {
     out.push({ key: "debtors", label: "Who owes", hint: "Outstanding fees", icon: "alert-circle-outline", group: "Money", route: "/staff/collections/debtors" });
   }
+  // CP9b — both permissions: the form lists categories before it can save.
+  if (can("expense.create") && can("expense-category.read")) {
+    out.push({ key: "expense", label: "Log an expense", hint: "With a receipt photo", icon: "receipt-outline", group: "Money", route: "/staff/expenses" });
+  }
 
   // --- Calendar ---
   if (teacher) {

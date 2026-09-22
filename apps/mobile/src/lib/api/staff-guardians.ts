@@ -8,6 +8,8 @@ import type {
   GuardianListResponse,
   InviteGuardianResponse,
   LinkExistingGuardianInput,
+  MoveEnrollmentInput,
+  MoveEnrollmentResultDto,
   ResendGuardianInviteResponse,
   RevokeGuardianInviteResponse,
   UpdateGuardianInput,
@@ -77,4 +79,17 @@ export function staffRevokeGuardianInvite(id: string): Promise<RevokeGuardianInv
 /** Place a student in a class for a term (POST /enrollments). */
 export function staffEnrollStudent(input: CreateEnrollmentInput): Promise<EnrollmentDto> {
   return apiFetch<EnrollmentDto>("/enrollments", { method: "POST", body: input });
+}
+
+/**
+ * Move a placed child to another class, same term (D39). The server answers
+ * 409 MOVE_NEEDS_PASSWORD (with what would change) when the child already has
+ * records, and 403 PASSWORD_INCORRECT for a wrong password — never 401, so a
+ * typo cannot sign the admin out.
+ */
+export function staffMoveEnrollment(enrollmentId: string, input: MoveEnrollmentInput): Promise<MoveEnrollmentResultDto> {
+  return apiFetch<MoveEnrollmentResultDto>(`/enrollments/${encodeURIComponent(enrollmentId)}/move`, {
+    method: "POST",
+    body: input,
+  });
 }
