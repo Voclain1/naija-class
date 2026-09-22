@@ -81,6 +81,11 @@ describe("buildBrandedReceiptHtml — what the receipt shows (D1)", () => {
     expect(over).toContain("Balance<b>₦0.00</b>");
   });
 
+  it("has a Print button that never appears on paper or in a PDF", () => {
+    expect(html).toContain('onclick="window.print()"');
+    expect(html).toMatch(/@media print \{[^}]*\}[^}]*\.actions \{ display: none; \}/);
+  });
+
   it("does not expose internal ids", () => {
     expect(html).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}/);
   });

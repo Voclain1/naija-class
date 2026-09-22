@@ -1,5 +1,7 @@
 import type {
   CreateRefundInput,
+  ManualPaymentResultDto,
+  ReissueReceiptResultDto,
   InitPaystackPaymentInput,
   PaginatedPaymentsDto,
   PaymentDto,
@@ -11,8 +13,8 @@ import type {
 
 import { apiFetch } from "../api-client";
 
-export function recordManualPayment(input: RecordManualPaymentInput): Promise<PaymentDto> {
-  return apiFetch<PaymentDto>("/payments/manual", { method: "POST", body: input });
+export function recordManualPayment(input: RecordManualPaymentInput): Promise<ManualPaymentResultDto> {
+  return apiFetch<ManualPaymentResultDto>("/payments/manual", { method: "POST", body: input });
 }
 
 export function listPayments(options: {
@@ -36,6 +38,11 @@ export function getPayment(id: string): Promise<PaymentDto> {
 
 export function getPaymentReceiptUrl(id: string): Promise<PaymentReceiptUrlDto> {
   return apiFetch<PaymentReceiptUrlDto>(`/payments/${id}/receipt`, { method: "GET" });
+}
+
+// Branded receipts D4 — regenerate in the current design; keeps number and date.
+export function reissuePaymentReceipt(id: string): Promise<ReissueReceiptResultDto> {
+  return apiFetch<ReissueReceiptResultDto>(`/payments/${id}/receipt/reissue`, { method: "POST" });
 }
 
 export function initPaystackPayment(input: InitPaystackPaymentInput): Promise<PaystackInitResponseDto> {

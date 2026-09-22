@@ -141,11 +141,17 @@ export function buildBrandedReceiptHtml(r: ReceiptData): string {
   .totals b { display: block; font-size: 14px; }
   footer { margin-top: 22px; display: flex; justify-content: space-between; align-items: flex-end; font-size: 12px; }
   .thanks { font-weight: 600; color: var(--brand); }
+  .actions { max-width: 680px; margin: 16px auto 0; text-align: right; }
+  .actions button { font: inherit; font-size: 14px; padding: 8px 18px; border: 0; border-radius: 6px; background: var(--brand); color: #fff; cursor: pointer; }
   @page { size: A5; margin: 10mm; }
-  @media print { .sheet { margin: 0; border: none; border-top: 6px solid var(--brand); max-width: none; } }
+  @media print {
+    .sheet { margin: 0; border: none; border-top: 6px solid var(--brand); max-width: none; }
+    .actions { display: none; }
+  }
 </style>
 </head>
 <body>
+<div class="actions"><button type="button" onclick="window.print()">Print or save as PDF</button></div>
 <div class="sheet">
 <header>
   <div class="school">
