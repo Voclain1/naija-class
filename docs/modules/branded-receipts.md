@@ -182,3 +182,22 @@ production on deploy, like D37's.
 2. **Web:** View/Print on the invoice page and after recording. PR.
 3. **Phone:** Share receipt after recording, and the Receipts screen. PR, then
    one APK.
+
+## Status
+
+- **2026-09-22: approved** as written, including both open points: sequential
+  numbers (D3), and the owner included in "bursar or admin".
+- **Part 1, server: built.** `receipt.ts` (a pure renderer plus the issuer),
+  `receipt_sequences` (migration `20260922120000_receipt_sequences`, RLS
+  ENABLE + FORCE), both payment paths issue the branded receipt, the
+  owner/admin/bursar role gate on open/list/re-issue, `GET /payments/receipts`
+  and `POST /payments/:id/receipt/reissue`.
+  - Deviation from the endpoint table: the recent-receipts list is its own
+    route, `GET /payments/receipts`, rather than new parameters on
+    `GET /payments`. That keeps the web's existing paginated `PaymentDto`
+    list untouched.
+  - A missing student or term (both plain foreign keys) gives a plainer
+    receipt, never a refused payment. Only the school and invoice are
+    required.
+  - The Paystack path now issues the receipt after recomputing the totals,
+    so the balance on an online payment's receipt is the balance after it.

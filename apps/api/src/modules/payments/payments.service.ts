@@ -7,6 +7,9 @@ import {
   type InitPaystackPaymentInput,
   type InvoiceStatus,
   type ListPaymentsInput,
+  type ListReceiptsInput,
+  type ReceiptListResponse,
+  type ReissueReceiptResultDto,
   type ManualPaymentResultDto,
   type PaginatedPaymentsDto,
   type PaymentDto,
@@ -19,14 +22,22 @@ import {
 } from "@school-kit/types";
 
 import type { AuthContext } from "../../common/auth/auth-context.js";
+import { assertUserActiveAndHasOneOf } from "../../common/auth/role-check.js";
 import { PaystackService } from "../../common/paystack/paystack.service.js";
 import { StorageService } from "../../common/storage/storage.service.js";
 import { PaymentLinkInvalidationService } from "../invoices/payment-link-invalidation.service.js";
 import { PaymentPlanService } from "./payment-plan.service.js";
+import { issueReceipt } from "./receipt.js";
 
 const RECEIPT_URL_TTL_SECONDS = 15 * 60; // 15 minutes
 
 const AUDIT_RECORD = "payment.record";
+const AUDIT_RECEIPT_REISSUE = "payment.receipt-reissue";
+
+// Branded receipts: opening, listing and re-issuing check the owner/admin/
+// bursar ROLE on top of payment.read / payment.record, so a custom role ever
+// granted payment.read still cannot issue receipts. Written as literal arrays
+// at each call: rbac-two-gate-conformance.spec.ts reads them from source.
 const AUDIT_PAYSTACK_CONFIRM = "payment.paystack-confirm";
 const AUDIT_PAYSTACK_FAILED = "payment.paystack-failed";
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -85,63 +96,8 @@ export function parsePaystackReference(
 // Internal helpers
 // ---------------------------------------------------------------------------
 
-function receiptNumberFor(paymentId: string): string {
-  return `RCP-${paymentId.slice(0, 8).toUpperCase()}`;
-}
-
 function formatKoboForMessage(kobo: number): string {
   return `₦${(kobo / 100).toLocaleString("en-NG", { minimumFractionDigits: 2 })}`;
-}
-
-function escapeHtml(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-}
-
-function buildReceiptHtml(p: {
-  receiptNumber: string;
-  paymentId: string;
-  invoiceId: string;
-  amount: number;
-  method: string;
-  reference: string | null;
-  paidAt: Date;
-}): string {
-  const naira = (kobo: number) =>
-    `₦${(kobo / 100).toLocaleString("en-NG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-  const dateStr = p.paidAt.toLocaleString("en-NG", { dateStyle: "long", timeStyle: "short" });
-  const methodLabel = p.method.replace(/_/g, " ");
-  const refRow = p.reference
-    ? `<tr><td>Reference</td><td>${escapeHtml(p.reference)}</td></tr>`
-    : "";
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8" />
-<title>Receipt ${escapeHtml(p.receiptNumber)}</title>
-<style>
-  body { font-family: Arial, sans-serif; max-width: 600px; margin: 40px auto; color: #111; }
-  h1   { font-size: 1.4rem; margin-bottom: 0; }
-  .sub { color: #666; font-size: .875rem; margin-top: 4px; }
-  table { width: 100%; border-collapse: collapse; margin-top: 24px; }
-  td   { padding: 8px 0; border-bottom: 1px solid #eee; }
-  td:last-child { text-align: right; }
-  .total td { border-top: 2px solid #111; border-bottom: none; font-weight: 700; font-size: 1.1rem; }
-  @media print { body { margin: 0; } }
-</style>
-</head>
-<body>
-<h1>Official Receipt</h1>
-<p class="sub">${escapeHtml(p.receiptNumber)}</p>
-<table>
-  <tr><td>Date</td><td>${escapeHtml(dateStr)}</td></tr>
-  <tr><td>Invoice</td><td>${escapeHtml(p.invoiceId)}</td></tr>
-  <tr><td>Payment method</td><td>${escapeHtml(methodLabel)}</td></tr>
-  ${refRow}
-  <tr class="total"><td>Amount paid</td><td>${naira(p.amount)}</td></tr>
-</table>
-<p style="margin-top:32px;font-size:.75rem;color:#888">Payment ID: ${escapeHtml(p.paymentId)}</p>
-</body>
-</html>`;
 }
 
 // Row shape returned by Prisma for the payments table.
@@ -346,24 +302,16 @@ export class PaymentsService {
         data: { totalPaid: newTotalPaid, status: newStatus },
       });
 
-      // 6. Generate receipt HTML and upload to R2.
-      const receiptNumber = receiptNumberFor(payment.id);
-      const html = buildReceiptHtml({
-        receiptNumber,
+      // 6. Issue the branded receipt (docs/modules/branded-receipts.md): the
+      //    next sequential number is drawn INSIDE this transaction, so a
+      //    payment that rolls back returns its number. Issued after the
+      //    totals above so the receipt's balance is the balance after this
+      //    payment.
+      const { receiptNumber, receiptUrl } = await issueReceipt(db, this.storage, {
+        schoolId: authCtx.schoolId,
         paymentId: payment.id,
-        invoiceId: dto.invoiceId,
-        amount: dto.amount,
-        method: dto.method,
-        reference: dto.reference ?? null,
-        paidAt: new Date(dto.paidAt),
+        totalPaidAfter: newTotalPaid,
       });
-      const receiptUrl = await this.storage.put(
-        authCtx.schoolId,
-        { kind: "payment-receipt", paymentId: payment.id },
-        Buffer.from(html, "utf8"),
-        "text/html",
-        "inline",
-      );
 
       // 7. Persist receipt metadata on payment row.
       const updated = await db.payment.update({
@@ -839,6 +787,7 @@ export class PaymentsService {
   // ─── Signed receipt URL ───────────────────────────────────────────────────
 
   async getReceiptUrl(authCtx: AuthContext, id: string): Promise<PaymentReceiptUrlDto> {
+    await assertUserActiveAndHasOneOf(authCtx, ["owner", "admin", "bursar"]);
     return withTenant(authCtx.schoolId, async (db) => {
       const row = await db.payment.findUnique({
         where: { id },
@@ -856,6 +805,109 @@ export class PaymentsService {
         RECEIPT_URL_TTL_SECONDS,
       );
       return { url, expiresAt: new Date(Date.now() + RECEIPT_URL_TTL_SECONDS * 1000) };
+    });
+  }
+
+  // ─── Branded receipts: list and re-issue ─────────────────────────────────
+
+  // GET /payments/receipts — issued receipts, newest first. Search matches the
+  // student's first/last name or admission number. One query for the page
+  // plus one for the students on it.
+  async listReceipts(authCtx: AuthContext, query: ListReceiptsInput): Promise<ReceiptListResponse> {
+    await assertUserActiveAndHasOneOf(authCtx, ["owner", "admin", "bursar"]);
+    return withTenant(authCtx.schoolId, async (db) => {
+      let studentFilter: { studentId: { in: string[] } } | Record<string, never> = {};
+      if (query.search) {
+        const matches = await db.student.findMany({
+          where: {
+            OR: [
+              { firstName: { contains: query.search, mode: "insensitive" } },
+              { lastName: { contains: query.search, mode: "insensitive" } },
+              { admissionNumber: { contains: query.search, mode: "insensitive" } },
+            ],
+          },
+          select: { id: true },
+          take: 200,
+        });
+        studentFilter = { studentId: { in: matches.map((m) => m.id) } };
+      }
+      const rows = await db.payment.findMany({
+        where: { status: "SUCCESS", receiptNumber: { not: null }, ...studentFilter },
+        orderBy: [{ paidAt: "desc" }, { createdAt: "desc" }],
+        skip: (query.page - 1) * query.limit,
+        take: query.limit + 1,
+        select: { id: true, receiptNumber: true, amount: true, method: true, paidAt: true, studentId: true },
+      });
+      const page = rows.slice(0, query.limit);
+      const students = await db.student.findMany({
+        where: { id: { in: [...new Set(page.map((r) => r.studentId))] } },
+        select: { id: true, firstName: true, lastName: true, admissionNumber: true },
+      });
+      const byId = new Map(students.map((st) => [st.id, st]));
+      return {
+        page: query.page,
+        hasMore: rows.length > query.limit,
+        data: page.map((r) => {
+          const st = byId.get(r.studentId);
+          return {
+            paymentId: r.id,
+            receiptNumber: r.receiptNumber as string,
+            amount: r.amount,
+            method: r.method as PaymentMethod,
+            paidAt: r.paidAt,
+            studentName: st ? `${st.firstName} ${st.lastName}` : "Unknown student",
+            admissionNumber: st?.admissionNumber ?? "",
+          };
+        }),
+      };
+    });
+  }
+
+  // POST /payments/:id/receipt/reissue (D4). Regenerates the receipt in the
+  // current design and branding, KEEPING its number and date — the facts on a
+  // receipt never change, only how it looks. "Balance after" is recomputed as
+  // it stood at this payment: every successful payment on the invoice recorded
+  // up to and including this one. Audited, every time.
+  async reissueReceipt(
+    authCtx: AuthContext,
+    id: string,
+    reqCtx: { ipAddress: string | null },
+  ): Promise<ReissueReceiptResultDto> {
+    await assertUserActiveAndHasOneOf(authCtx, ["owner", "admin", "bursar"]);
+    return withTenant(authCtx.schoolId, async (db) => {
+      const payment = await db.payment.findUnique({
+        where: { id },
+        select: { id: true, schoolId: true, invoiceId: true, status: true, receiptNumber: true, createdAt: true },
+      });
+      if (!payment || payment.schoolId !== authCtx.schoolId) {
+        throw new NotFoundError("Payment not found.");
+      }
+      if (payment.status !== "SUCCESS") {
+        throw new ConflictError("RECEIPT_NOT_AVAILABLE", "Only a successful payment has a receipt.");
+      }
+      const { _sum } = await db.payment.aggregate({
+        where: { invoiceId: payment.invoiceId, status: "SUCCESS", createdAt: { lte: payment.createdAt } },
+        _sum: { amount: true },
+      });
+      const { receiptNumber, receiptUrl } = await issueReceipt(db, this.storage, {
+        schoolId: authCtx.schoolId,
+        paymentId: payment.id,
+        totalPaidAfter: _sum.amount ?? 0,
+        ...(payment.receiptNumber ? { receiptNumber: payment.receiptNumber } : {}),
+      });
+      await db.payment.update({ where: { id: payment.id }, data: { receiptNumber, receiptUrl } });
+      await db.auditLog.create({
+        data: {
+          schoolId: authCtx.schoolId,
+          userId: authCtx.userId,
+          action: AUDIT_RECEIPT_REISSUE,
+          entityType: "payment",
+          entityId: payment.id,
+          ipAddress: reqCtx.ipAddress,
+          metadata: { receiptNumber, keptNumber: payment.receiptNumber !== null },
+        },
+      });
+      return { paymentId: payment.id, receiptNumber };
     });
   }
 
@@ -893,31 +945,21 @@ export class PaymentsService {
       return;
     }
 
-    // 2. Generate and upload receipt HTML.
-    const receiptNumber = receiptNumberFor(payment.id);
-    const html = buildReceiptHtml({
-      receiptNumber,
-      paymentId: payment.id,
-      invoiceId: payment.invoiceId,
-      amount: payment.amount,
-      method: payment.method,
-      reference: null,
-      paidAt,
-    });
-    const receiptUrl = await this.storage.put(
-      payment.schoolId,
-      { kind: "payment-receipt", paymentId: payment.id },
-      Buffer.from(html, "utf8"),
-      "text/html",
-      "inline",
-    );
-
-    // 3. Recompute totalPaid aggregate (idempotent — includes this payment now it's SUCCESS).
+    // 2. Recompute totalPaid aggregate (idempotent — includes this payment now it's SUCCESS).
     const { _sum } = await db.payment.aggregate({
       where: { invoiceId: payment.invoiceId, status: "SUCCESS" },
       _sum: { amount: true },
     });
     const newTotalPaid = _sum.amount ?? 0;
+
+    // 3. Issue the branded receipt, after the totals so it shows the balance
+    //    after this payment. "Received by" reads "Paid online (Paystack)"
+    //    because an online payment has no recorder.
+    const { receiptNumber, receiptUrl } = await issueReceipt(db, this.storage, {
+      schoolId: payment.schoolId,
+      paymentId: payment.id,
+      totalPaidAfter: newTotalPaid,
+    });
 
     const invoice = await db.invoice.findUniqueOrThrow({
       where: { id: payment.invoiceId },

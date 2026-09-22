@@ -3042,3 +3042,17 @@ model TimetableEntryTeacher {
   @@index([schoolId, teacherId])
   @@map("timetable_entry_teachers")
 }
+
+// Branded receipts (docs/modules/branded-receipts.md D3): one running receipt
+// number per school per calendar year — RCP/2026/000123. Incremented by a
+// single atomic upsert inside the payment's own transaction, so a payment that
+// rolls back takes its number with it and a failed payment never burns one.
+model ReceiptSequence {
+  schoolId   String   @map("school_id")
+  year       Int
+  lastNumber Int      @map("last_number")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@id([schoolId, year])
+  @@map("receipt_sequences")
+}

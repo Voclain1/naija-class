@@ -11,8 +11,12 @@ import {
 } from "@nestjs/common";
 import {
   listPaymentsSchema,
+  listReceiptsSchema,
   recordManualPaymentSchema,
   type ListPaymentsInput,
+  type ListReceiptsInput,
+  type ReceiptListResponse,
+  type ReissueReceiptResultDto,
   type PaginatedPaymentsDto,
   type ManualPaymentResultDto,
   type PaymentDto,
@@ -57,6 +61,17 @@ export class PaymentsController {
     return this.service.recordManual(authCtx, dto, { ipAddress: ip });
   }
 
+  // Branded receipts (docs/modules/branded-receipts.md) — owner/admin/bursar,
+  // enforced in the service on top of the permission. Declared before ":id".
+  @Get("receipts")
+  @Permissions("payment.read")
+  async listReceipts(
+    @CurrentUser() authCtx: AuthContext,
+    @Query(new ZodValidationPipe(listReceiptsSchema)) query: ListReceiptsInput,
+  ): Promise<ReceiptListResponse> {
+    return this.service.listReceipts(authCtx, query);
+  }
+
   // ─── Dynamic routes ────────────────────────────────────────────────────────
 
   @Get(":id")
@@ -75,5 +90,17 @@ export class PaymentsController {
     @Param("id") id: string,
   ): Promise<PaymentReceiptUrlDto> {
     return this.service.getReceiptUrl(authCtx, id);
+  }
+
+  // Re-issue in the current design; keeps the number and date (D4). Audited.
+  @Post(":id/receipt/reissue")
+  @HttpCode(200)
+  @Permissions("payment.record")
+  async reissueReceipt(
+    @CurrentUser() authCtx: AuthContext,
+    @Param("id") id: string,
+    @Ip() ip: string,
+  ): Promise<ReissueReceiptResultDto> {
+    return this.service.reissueReceipt(authCtx, id, { ipAddress: ip });
   }
 }
