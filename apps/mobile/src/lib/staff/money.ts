@@ -71,6 +71,10 @@ export interface MoneyAbilities {
   paymentLink: boolean;
   logExpense: boolean;
   attachReceipt: boolean;
+  /** Branded receipts: open and share (payment.read + the owner/admin/bursar role). */
+  viewReceipts: boolean;
+  /** Re-issue in the current design (payment.record + the same role). */
+  reissueReceipt: boolean;
 }
 
 export function moneyAbilities(
@@ -85,6 +89,9 @@ export function moneyAbilities(
     paymentLink: financeRole && hasPermission(permissions, "payment.read") && hasPermission(permissions, "payment.record"),
     logExpense: hasPermission(permissions, "expense.create") && hasPermission(permissions, "expense-category.read"),
     attachReceipt: hasPermission(permissions, "expense.update"),
+    // PaymentsService checks the owner/admin/bursar ROLE on every receipt call.
+    viewReceipts: financeRole && hasPermission(permissions, "payment.read"),
+    reissueReceipt: financeRole && hasPermission(permissions, "payment.record"),
   };
 }
 
@@ -114,4 +121,10 @@ export function reminderBatches<T>(items: readonly T[], size = REMINDER_BATCH_SI
 export function paidAtFor(date: string | null, nowMs: number): string {
   if (date === null) return new Date(nowMs).toISOString();
   return `${date}T11:00:00.000Z`;
+}
+
+/** "RCP/2026/000123" → "Receipt RCP-2026-000123" — safe as a file name everywhere. */
+export function receiptFileName(receiptNumber: string | null): string {
+  const cleaned = (receiptNumber ?? "").replace(/[^A-Za-z0-9-]+/g, "-").replace(/^-+|-+$/g, "");
+  return cleaned ? `Receipt ${cleaned}` : "Receipt";
 }

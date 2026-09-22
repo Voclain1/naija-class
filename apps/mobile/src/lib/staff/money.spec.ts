@@ -100,7 +100,15 @@ describe("who may do what with money", () => {
       "expense-category.read",
       "expense.update",
     ]);
-    expect(bursar).toEqual({ recordPayment: true, remind: true, paymentLink: true, logExpense: true, attachReceipt: true });
+    expect(bursar).toEqual({
+      recordPayment: true,
+      remind: true,
+      paymentLink: true,
+      logExpense: true,
+      attachReceipt: true,
+      viewReceipts: true,
+      reissueReceipt: true,
+    });
   });
 
   it("offers payment links only to owner, admin or bursar — the role PaymentLinksService checks", () => {
@@ -115,6 +123,8 @@ describe("who may do what with money", () => {
       paymentLink: false,
       logExpense: false,
       attachReceipt: false,
+      viewReceipts: false,
+      reissueReceipt: false,
     });
   });
 });

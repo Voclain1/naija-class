@@ -84,6 +84,9 @@ export const queryKeys = {
   // CP9b — a Paystack payment link carries a live pay URL; staff prefix.
   staffPaymentLink: (schoolId: string, userId: string, invoiceId: string) =>
     ["staff", schoolId, userId, "payment-link", invoiceId] as const,
+  // Branded receipts — a child's name and a payment per row; staff prefix.
+  staffReceipts: (schoolId: string, userId: string, search: string) =>
+    ["staff", schoolId, userId, "receipts", search] as const,
   staffExpenseCategories: (schoolId: string, userId: string) =>
     ["staff", schoolId, userId, "expense-categories"] as const,
 

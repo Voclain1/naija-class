@@ -201,3 +201,13 @@ production on deploy, like D37's.
     required.
   - The Paystack path now issues the receipt after recomputing the totals,
     so the balance on an online payment's receipt is the balance after it.
+- **Part 2, web: built.** The invoice page shows receipt numbers, View opens
+  the receipt without being blocked as a pop-up, Re-issue asks for
+  confirmation, and a "Receipt ready" banner appears after recording. The
+  receipt has a Print button that is hidden in print.
+- **Part 3, phone: built.** Share receipt (PDF) and Print appear after
+  recording a payment. A new Receipts screen in the Money menu lists receipts
+  newest first, with search; each receipt can be shared, printed or
+  re-issued. The PDF is made in the phone's cache and deleted after sharing.
+  The signed receipt URL is fetched without the bearer token, because the
+  signature alone authorises it.
