@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { Archive, Copy, ExternalLink, Link2, MessageCircle, RefreshCw } from "lucide-react";
+import { Archive, Copy, ExternalLink, Link2, MessageCircle, Receipt, RefreshCw } from "lucide-react";
 
 import {
   invoiceStatusLabel,
@@ -336,6 +336,23 @@ export default function InvoiceDetailPage() {
     }
   }
 
+  // A successful payment with no receipt yet (an online payment recorded
+  // before receipts covered payment links, or one whose receipt failed):
+  // issue it now — no confirmation needed, nothing existing is replaced.
+  async function handleIssueReceipt(paymentId: string) {
+    setReceiptError(null);
+    setReissuingId(paymentId);
+    try {
+      await reissuePaymentReceipt(paymentId);
+      const updatedPayments = await listPayments({ invoiceId: invoice!.id });
+      setPayments(updatedPayments.data);
+    } catch (e) {
+      setReceiptError(financeErrorMessage(e));
+    } finally {
+      setReissuingId(null);
+    }
+  }
+
   async function handleReissueReceipt(paymentId: string, receiptNumber: string | null) {
     const ok = window.confirm(
       `Re-issue receipt ${receiptNumber ?? ""} in the current design?\n\n` +
@@ -347,7 +364,10 @@ export default function InvoiceDetailPage() {
     setReissuingId(paymentId);
     try {
       await reissuePaymentReceipt(paymentId);
-      await handleOpenReceipt(paymentId);
+      const updatedPayments = await listPayments({ invoiceId: invoice!.id });
+      setPayments(updatedPayments.data);
+      // Not opened automatically: after an await, browsers treat a new tab as
+      // a pop-up. The refreshed row's "View receipt" is one click away.
     } catch (e) {
       setReceiptError(financeErrorMessage(e));
     } finally {
@@ -728,7 +748,7 @@ export default function InvoiceDetailPage() {
                   <TableHead>Reference</TableHead>
                   <TableHead className="text-right">Amount</TableHead>
                   <TableHead>Status</TableHead>
-                  <TableHead />
+                  <TableHead className="text-right">Receipt</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -750,17 +770,31 @@ export default function InvoiceDetailPage() {
                       </Badge>
                     </TableCell>
                     <TableCell className="text-right">
-                      <div className="flex justify-end gap-3">
-                        {p.receiptUrl && (
-                          <button
-                            onClick={() => handleOpenReceipt(p.id)}
-                            className="text-xs text-primary hover:underline"
-                            title={p.receiptNumber ? `Receipt ${p.receiptNumber}` : undefined}
+                      <div className="flex items-center justify-end gap-3">
+                        {/* The receipt is the main action on a paid row — a real
+                            button, with its number beside it (2026-09-22). */}
+                        {p.receiptUrl ? (
+                          <div className="flex flex-col items-end gap-0.5">
+                            <Button size="sm" onClick={() => handleOpenReceipt(p.id)}>
+                              <Receipt className="mr-1.5 h-4 w-4" />
+                              View receipt
+                            </Button>
+                            {p.receiptNumber && (
+                              <span className="font-mono text-[11px] text-muted-foreground">{p.receiptNumber}</span>
+                            )}
+                          </div>
+                        ) : p.status === "SUCCESS" ? (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={reissuingId === p.id}
+                            onClick={() => handleIssueReceipt(p.id)}
                           >
-                            {p.receiptNumber ? `Receipt ${p.receiptNumber}` : "Receipt"}
-                          </button>
-                        )}
-                        {p.status === "SUCCESS" && (
+                            <Receipt className="mr-1.5 h-4 w-4" />
+                            {reissuingId === p.id ? "Issuing…" : "Issue receipt"}
+                          </Button>
+                        ) : null}
+                        {p.status === "SUCCESS" && p.receiptUrl && (
                           <button
                             onClick={() => handleReissueReceipt(p.id, p.receiptNumber)}
                             disabled={reissuingId === p.id}
