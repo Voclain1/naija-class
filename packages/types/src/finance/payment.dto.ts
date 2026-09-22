@@ -120,3 +120,41 @@ export interface PaystackWebhookEvent {
     [key: string]: unknown;
   };
 }
+
+// ---------------------------------------------------------------------------
+// Branded receipts (docs/modules/branded-receipts.md)
+// ---------------------------------------------------------------------------
+
+/**
+ * GET /payments/receipts — the most recent issued receipts across the school,
+ * newest first, for finding a receipt after a family has paid in full and left
+ * the debtor list. Owner, admin and bursar only.
+ */
+export const listReceiptsSchema = z.object({
+  search: z.string().trim().min(1).max(100).optional(),
+  page: z.coerce.number().int().positive().max(1000).default(1),
+  limit: z.coerce.number().int().positive().max(50).default(30),
+});
+export type ListReceiptsInput = z.infer<typeof listReceiptsSchema>;
+
+export interface ReceiptListRowDto {
+  paymentId: string;
+  receiptNumber: string;
+  amount: number; // kobo
+  method: PaymentMethod;
+  paidAt: Date | null;
+  studentName: string;
+  admissionNumber: string;
+}
+
+export interface ReceiptListResponse {
+  data: ReceiptListRowDto[];
+  page: number;
+  hasMore: boolean;
+}
+
+/** POST /payments/:id/receipt/reissue — same number and date, current design. */
+export interface ReissueReceiptResultDto {
+  paymentId: string;
+  receiptNumber: string;
+}

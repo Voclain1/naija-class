@@ -197,7 +197,7 @@ describe("PaymentsService (integration)", () => {
 
     expect(payment.status).toBe("SUCCESS");
     expect(payment.amount).toBe(150_000_00);
-    expect(payment.receiptNumber).toMatch(/^RCP-[0-9A-F]{8}$/);
+    expect(payment.receiptNumber).toMatch(/^RCP\/\d{4}\/000001$/);
 
     const invoice = await withTenant(schoolId, (db) =>
       db.invoice.findUniqueOrThrow({ where: { id: invoiceId }, select: { status: true, totalPaid: true } }),
@@ -523,6 +523,180 @@ describe("PaymentsService (integration)", () => {
     expect(recordManualPaymentSchema.safeParse({ ...base, idempotencyKey: randomUUID() }).success).toBe(true);
     expect(recordManualPaymentSchema.safeParse({ ...base, idempotencyKey: "tap-1" }).success).toBe(false);
     expect(recordManualPaymentSchema.safeParse(base).success).toBe(true);
+  });
+
+  // ── Branded receipts (docs/modules/branded-receipts.md) ──────────────────
+
+  async function receiptSvc(tag: string, opts: { failPutOnce?: boolean } = {}) {
+    const { PaymentsService } = await import("./payments.service.js");
+    const { StorageService } = await import("../../common/storage/storage.service.js");
+    const { FilesystemStorageDriver } = await import("../../common/storage/filesystem-storage.driver.js");
+    const os = await import("node:os");
+    const path = await import("node:path");
+    const driver = new FilesystemStorageDriver(path.join(os.tmpdir(), `sk-test-${runId}-${tag}`), {
+      baseUrl: "http://localhost:4000/api/v1",
+      secret: "test-secret",
+    });
+    let failNext = opts.failPutOnce ?? false;
+    const storage = new StorageService(driver);
+    const realPut = storage.put.bind(storage);
+    storage.put = ((...args: Parameters<typeof storage.put>) => {
+      if (failNext) {
+        failNext = false;
+        return Promise.reject(new Error("storage unavailable"));
+      }
+      return realPut(...args);
+    }) as typeof storage.put;
+    return { svc: new PaymentsService(storage, null as never, new PaymentPlanService()), storage };
+  }
+
+  const pay = (invoiceId: string, amount: number) => ({
+    invoiceId,
+    amount,
+    method: "CASH" as const,
+    paidAt: "2026-09-22T09:00:00.000Z",
+  });
+
+  async function makeTeacherUser(schoolId: string): Promise<string> {
+    const teacherRole = await basePrisma.role.findFirstOrThrow({
+      where: { schoolId: null, key: "teacher", isSystem: true },
+      select: { id: true },
+    });
+    return withTenant(schoolId, async (db) => {
+      const user = await db.user.create({
+        data: { schoolId, email: `rcpt-teacher-${runId}-${Math.random().toString(36).slice(2, 6)}@example.test`, firstName: "Tunde", lastName: "Teacher" },
+        select: { id: true },
+      });
+      await db.userRole.create({ data: { userId: user.id, roleId: teacherRole.id } });
+      return user.id;
+    });
+  }
+
+  it("receipts: the stored receipt is branded — school, student, figures, words, balance, recorder", async () => {
+    const { svc, storage } = await receiptSvc("rcpt-content");
+    const { schoolId, ownerId } = await makeSchool("rcpt-content");
+    await basePrisma.school.update({
+      where: { id: schoolId },
+      data: { address: "12 Awolowo Road, Ikeja", phone: "08031234567", motto: "Light and Truth" },
+    });
+    const invoiceId = await makeIssuedInvoice(schoolId, ownerId, 150_000_00);
+
+    const payment = await svc.recordManual(ctx(schoolId, ownerId), pay(invoiceId, 50_000_00), reqCtx);
+    const html = (await storage.get(schoolId, { kind: "payment-receipt", paymentId: payment.id })).toString("utf8");
+
+    expect(payment.receiptNumber).toBe("RCP/2026/000001");
+    expect(html).toContain(`Pay rcpt-content ${runId}`);
+    expect(html).toContain("12 Awolowo Road, Ikeja");
+    expect(html).toContain("Light and Truth");
+    expect(html).toContain("Test Student");
+    expect(html).toContain("First Term 2025/2026-pay-");
+    expect(html).toContain("Fifty thousand naira only");
+    expect(html).toContain("Balance<b>₦100,000.00</b>");
+    expect(html).toContain("Received by: Chidi Admin");
+    expect(html).toContain("22 September 2026, 10:00");
+  });
+
+  it("receipts: numbers run 1, 2, 3 per school, and each school has its own sequence", async () => {
+    const { svc } = await receiptSvc("rcpt-seq");
+    const a = await makeSchool("rcpt-seq-a");
+    const b = await makeSchool("rcpt-seq-b");
+    const invA = await makeIssuedInvoice(a.schoolId, a.ownerId, 100_000_00);
+    const invB = await makeIssuedInvoice(b.schoolId, b.ownerId, 100_000_00);
+
+    const numbers: string[] = [];
+    for (let i = 0; i < 3; i++) {
+      numbers.push((await svc.recordManual(ctx(a.schoolId, a.ownerId), pay(invA, 1_000_00), reqCtx)).receiptNumber as string);
+    }
+    const first = await svc.recordManual(ctx(b.schoolId, b.ownerId), pay(invB, 1_000_00), reqCtx);
+
+    expect(numbers).toEqual(["RCP/2026/000001", "RCP/2026/000002", "RCP/2026/000003"]);
+    expect(first.receiptNumber).toBe("RCP/2026/000001");
+  });
+
+  it("receipts: CONCURRENT payments draw distinct, gap-free numbers", async () => {
+    const { svc } = await receiptSvc("rcpt-race");
+    const { schoolId, ownerId } = await makeSchool("rcpt-race");
+    const invoiceId = await makeIssuedInvoice(schoolId, ownerId, 100_000_00);
+
+    const results = await Promise.all(
+      Array.from({ length: 5 }, () => svc.recordManual(ctx(schoolId, ownerId), pay(invoiceId, 1_000_00), reqCtx)),
+    );
+    const numbers = results.map((r) => r.receiptNumber).sort();
+    expect(numbers).toEqual([1, 2, 3, 4, 5].map((n) => `RCP/2026/00000${n}`));
+  });
+
+  it("receipts: a payment that rolls back returns its number — no gap from a failure", async () => {
+    const { svc } = await receiptSvc("rcpt-rollback", { failPutOnce: true });
+    const { schoolId, ownerId } = await makeSchool("rcpt-rollback");
+    const invoiceId = await makeIssuedInvoice(schoolId, ownerId, 100_000_00);
+
+    await expect(svc.recordManual(ctx(schoolId, ownerId), pay(invoiceId, 1_000_00), reqCtx)).rejects.toThrow(
+      "storage unavailable",
+    );
+    const ok = await svc.recordManual(ctx(schoolId, ownerId), pay(invoiceId, 1_000_00), reqCtx);
+
+    expect(ok.receiptNumber).toBe("RCP/2026/000001");
+    const payments = await withTenant(schoolId, (db) => db.payment.count({ where: { invoiceId } }));
+    expect(payments).toBe(1);
+  });
+
+  it("receipts: re-issue keeps the number, uses the current branding, and is audited", async () => {
+    const { svc, storage } = await receiptSvc("rcpt-reissue");
+    const { schoolId, ownerId } = await makeSchool("rcpt-reissue");
+    const invoiceId = await makeIssuedInvoice(schoolId, ownerId, 100_000_00);
+    const first = await svc.recordManual(ctx(schoolId, ownerId), pay(invoiceId, 40_000_00), reqCtx);
+    await svc.recordManual(ctx(schoolId, ownerId), pay(invoiceId, 10_000_00), reqCtx);
+
+    await basePrisma.school.update({ where: { id: schoolId }, data: { address: "New Campus, Lekki" } });
+    const result = await svc.reissueReceipt(ctx(schoolId, ownerId), first.id, reqCtx);
+    const html = (await storage.get(schoolId, { kind: "payment-receipt", paymentId: first.id })).toString("utf8");
+
+    expect(result.receiptNumber).toBe(first.receiptNumber);
+    expect(html).toContain("New Campus, Lekki");
+    // The balance as it stood at THIS payment, not after the later one.
+    expect(html).toContain("Balance<b>₦60,000.00</b>");
+    const audits = await withTenant(schoolId, (db) =>
+      db.auditLog.count({ where: { action: "payment.receipt-reissue", entityId: first.id } }),
+    );
+    expect(audits).toBe(1);
+    // Re-issue drew no new number.
+    const next = await svc.recordManual(ctx(schoolId, ownerId), pay(invoiceId, 1_000_00), reqCtx);
+    expect(next.receiptNumber).toBe("RCP/2026/000003");
+  });
+
+  it("receipts: only owner, admin or bursar — a teacher is refused, and another school's payment is not found", async () => {
+    const { svc } = await receiptSvc("rcpt-gate");
+    const a = await makeSchool("rcpt-gate-a");
+    const b = await makeSchool("rcpt-gate-b");
+    const invoiceId = await makeIssuedInvoice(a.schoolId, a.ownerId, 100_000_00);
+    const payment = await svc.recordManual(ctx(a.schoolId, a.ownerId), pay(invoiceId, 1_000_00), reqCtx);
+    const teacherId = await makeTeacherUser(a.schoolId);
+
+    await expect(svc.getReceiptUrl(ctx(a.schoolId, teacherId), payment.id)).rejects.toMatchObject({ httpStatus: 403 });
+    await expect(svc.reissueReceipt(ctx(a.schoolId, teacherId), payment.id, reqCtx)).rejects.toMatchObject({ httpStatus: 403 });
+    await expect(svc.listReceipts(ctx(a.schoolId, teacherId), { page: 1, limit: 30 })).rejects.toMatchObject({ httpStatus: 403 });
+    await expect(svc.reissueReceipt(ctx(b.schoolId, b.ownerId), payment.id, reqCtx)).rejects.toMatchObject({ httpStatus: 404 });
+  });
+
+  it("receipts: the list is newest first, searchable by name, and scoped to the school", async () => {
+    const { svc } = await receiptSvc("rcpt-list");
+    const a = await makeSchool("rcpt-list-a");
+    const b = await makeSchool("rcpt-list-b");
+    const invA = await makeIssuedInvoice(a.schoolId, a.ownerId, 100_000_00);
+    const invB = await makeIssuedInvoice(b.schoolId, b.ownerId, 100_000_00);
+    await svc.recordManual(ctx(a.schoolId, a.ownerId), { ...pay(invA, 1_000_00), paidAt: "2026-09-20T09:00:00.000Z" }, reqCtx);
+    await svc.recordManual(ctx(a.schoolId, a.ownerId), { ...pay(invA, 2_000_00), paidAt: "2026-09-21T09:00:00.000Z" }, reqCtx);
+    await svc.recordManual(ctx(b.schoolId, b.ownerId), pay(invB, 3_000_00), reqCtx);
+
+    const list = await svc.listReceipts(ctx(a.schoolId, a.ownerId), { page: 1, limit: 30 });
+    expect(list.data.map((r) => r.amount)).toEqual([2_000_00, 1_000_00]);
+    expect(list.data[0]).toMatchObject({ studentName: "Test Student", receiptNumber: "RCP/2026/000002" });
+    expect(list.hasMore).toBe(false);
+
+    const found = await svc.listReceipts(ctx(a.schoolId, a.ownerId), { search: "test", page: 1, limit: 30 });
+    expect(found.data).toHaveLength(2);
+    const none = await svc.listReceipts(ctx(a.schoolId, a.ownerId), { search: "nobody-by-this-name", page: 1, limit: 30 });
+    expect(none.data).toHaveLength(0);
   });
 });
 
@@ -885,7 +1059,7 @@ describe("PaymentsService — Paystack methods (integration)", () => {
       }),
     );
     expect(payment.status).toBe("SUCCESS");
-    expect(payment.receiptNumber).toMatch(/^RCP-[0-9A-F]{8}$/);
+    expect(payment.receiptNumber).toMatch(/^RCP\/\d{4}\/000001$/);
     expect(payment.receiptUrl).toBeTruthy();
 
     const invoice = await withTenant(schoolId, (db) =>
