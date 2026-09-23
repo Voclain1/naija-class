@@ -8,6 +8,8 @@ import { staffDebtors } from "../../../src/lib/api/staff-finance";
 import { staffSendReminders } from "../../../src/lib/api/staff-money";
 import { ApiError, ApiNetworkError } from "../../../src/lib/api/client";
 import { moneyAbilities } from "../../../src/lib/staff/money";
+import { filterDebtors } from "../../../src/lib/staff/bursar";
+import { TextField } from "../../../src/components/form";
 import { queryKeys } from "../../../src/lib/query/keys";
 import { useSession } from "../../../src/lib/auth/session";
 import { hasPermission } from "../../../src/lib/auth/permissions";
@@ -66,6 +68,7 @@ export default function DebtorsScreen() {
 
   const router = useRouter();
   const abilities = moneyAbilities(staff?.roles, staff?.permissions ?? []);
+  const [search, setSearch] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
   const [remindFailure, setRemindFailure] = useState<string | null>(null);
 
@@ -94,8 +97,12 @@ export default function DebtorsScreen() {
   if (!authed) return <Redirect href="/login" />;
 
   const failure = termContext.data?.failure ?? null;
-  const rows = debtors.data ?? [];
-  const totalOwed = rows.reduce((sum, r) => sum + r.balance, 0);
+  const all = debtors.data ?? [];
+  // Filtered on the phone, not the server: the whole term's debtor list is
+  // already here, and a bursar with a parent at the counter should not wait
+  // for a round trip to find them.
+  const rows = filterDebtors(all, search);
+  const totalOwed = all.reduce((sum, r) => sum + r.balance, 0);
 
   function confirmRemindAll(): void {
     const ids = [...new Set(rows.map((r) => r.studentId))];
@@ -113,6 +120,15 @@ export default function DebtorsScreen() {
     <Screen>
       <Stack.Screen options={{ headerShown: true, headerTitle: "" }} />
       <ScreenHeader title="Who owes" />
+      {all.length > 0 ? (
+        <TextField
+          label="Find a family"
+          value={search}
+          onChangeText={setSearch}
+          placeholder="Name, admission number or class"
+        />
+      ) : null}
+
       {termContext.data?.term && (
         <Body muted>
           {termContext.data.term.termName} · {rows.length} unpaid ·{" "}
@@ -140,7 +156,15 @@ export default function DebtorsScreen() {
           </CenteredMessage>
         )}
 
-        {debtors.data && rows.length === 0 && (
+        {debtors.data && all.length > 0 && rows.length === 0 ? (
+          <EmptyState
+            icon="search-outline"
+            title="No family matches"
+            body={`Nobody owing matches "${search.trim()}".`}
+          />
+        ) : null}
+
+        {debtors.data && all.length === 0 && (
           <EmptyState
             icon="checkmark-circle-outline"
             title="Nothing owed"
