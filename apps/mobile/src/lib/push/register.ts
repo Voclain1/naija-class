@@ -9,7 +9,9 @@ import type { RegisterDeviceInput } from "@school-kit/types";
 import { apiFetch } from "../api/client";
 import type { Principal } from "../auth/principal";
 
-type PushPrincipal = Exclude<Principal, "staff">;
+// Staff joined in notifications v1 (N2): a teacher is told their register is
+// not taken, on the same rail and the same token table as families.
+type PushPrincipal = Principal;
 import {
   canRequestToken,
   needsRegistration,
@@ -31,9 +33,11 @@ import {
 const LAST_TOKEN_KEY = "sk_push_last_token";
 const LAST_PRINCIPAL_KEY = "sk_push_last_principal";
 
-/** Where the guardian and student surfaces each accept a device. */
+/** Where each surface accepts a device. */
 function endpointFor(principal: PushPrincipal): string {
-  return principal === "student" ? "/student-portal/devices" : "/portal/devices";
+  if (principal === "student") return "/student-portal/devices";
+  if (principal === "staff") return "/devices";
+  return "/portal/devices";
 }
 
 function currentPlatform(): RegisterDeviceInput["platform"] | null {
@@ -122,7 +126,9 @@ export async function registerForPush(principal: PushPrincipal): Promise<void> {
   } catch {
     // Intentionally silent to the user. Push is an enhancement; a parent
     // whose registration failed still gets SMS, which is exactly the
-    // fallback D37 describes.
+    // fallback D37 describes. For staff there is no fallback at all — a
+    // reminder simply does not arrive — and that is still not worth
+    // interrupting a sign-in for.
   }
 }
 

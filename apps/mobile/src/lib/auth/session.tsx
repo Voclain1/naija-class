@@ -139,8 +139,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     //
     // Only the student surface has a logout endpoint today; the guardian one
     // does not, which is why that half is not symmetrical. Push release is.
+    // Every principal releases its device, staff included (notifications v1).
+    // A token left claimed by a teacher who signed out would keep sending
+    // that school's reminders to a phone nobody is signed in on.
     const leaving = getCachedPrincipal();
-    if (leaving && leaving !== "staff") {
+    if (leaving) {
       await unregisterForPush(leaving);
     }
     if (leaving === "student") {
@@ -223,6 +226,15 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       setStudent(null);
       setSchool(me.school);
       setStatus("authenticated");
+      // Same fire-and-forget rule as the family paths: a permission prompt
+      // must not stand between a teacher and their register.
+      //
+      // Deliberately NOT released at the 2-minute background lock: the lock
+      // hides the screen, it does not end the session, and a notification
+      // carries nothing private (N3). Releasing it there would mean a
+      // teacher stops being told their register is missing precisely while
+      // the app is in their pocket.
+      void registerForPush("staff");
     } catch (error) {
       await clearToken();
       throw error;
