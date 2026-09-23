@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { Pressable, ScrollView, StyleSheet, View } from "react-native";
+import * as Clipboard from "expo-clipboard";
 import { Link, Redirect, Stack, useLocalSearchParams } from "expo-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { formatKobo, type PortalInvoiceDto } from "@school-kit/types";
 
-import { getStudent, listInvoices } from "../../../src/lib/api/portal";
+import { getBankDetails, getStudent, listInvoices } from "../../../src/lib/api/portal";
 import { queryKeys } from "../../../src/lib/query/keys";
 import { runCheckout } from "../../../src/lib/payments/checkout";
 import { describeOutcome, type CheckoutOutcome } from "../../../src/lib/payments/poll";
@@ -23,11 +24,20 @@ import {
 } from "../../../src/components/ui";
 import { FreshnessLabel, useIsOnline } from "../../../src/components/freshness-label";
 import { StudentPortalAccess } from "../../../src/components/student-portal-access";
+import {
+  canPay,
+  describeInvoiceStatus,
+  invoiceBalance,
+  transferClipboardText,
+  transferDetails,
+} from "../../../src/lib/family/fees";
 
-/** An invoice is payable when the school is still owed money on it. */
-function outstanding(invoice: PortalInvoiceDto): number {
-  return invoice.totalDue - invoice.totalPaid;
-}
+// Fees, extended 2026-09-23 (phone-for-every-role.md D3) with what the web
+// portal showed and the app did not: what each fee is FOR, and the school's
+// bank account for a transfer. Paying itself was already here.
+//
+// Receipts are deliberately NOT here: a receipt is issued by the school
+// (C1), and a parent asks the office for theirs.
 
 export default function StudentDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -38,6 +48,7 @@ export default function StudentDetailScreen() {
     { outcome: CheckoutOutcome; invoice: PortalInvoiceDto } | null
   >(null);
   const [payError, setPayError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
 
   const studentId = typeof id === "string" ? id : "";
 
@@ -51,6 +62,14 @@ export default function StudentDetailScreen() {
     queryKey: queryKeys.invoices(studentId),
     queryFn: () => listInvoices(studentId),
     enabled: studentId.length > 0,
+  });
+
+  const bankQuery = useQuery({
+    queryKey: queryKeys.bankDetails,
+    queryFn: () => getBankDetails(),
+    enabled: studentId.length > 0,
+    staleTime: 30 * 60_000,
+    retry: false,
   });
 
   const pay = useMutation({
@@ -84,6 +103,9 @@ export default function StudentDetailScreen() {
 
   const student = studentQuery.data;
   const invoices = invoicesQuery.data?.data ?? [];
+  // Shown only when the school both switched transfers on and filled the
+  // account in (transferDetails); otherwise there is nothing to promise.
+  const transfer = transferDetails(bankQuery.data?.bankTransfer);
   const oldestUpdate = Math.min(
     studentQuery.dataUpdatedAt || Infinity,
     invoicesQuery.dataUpdatedAt || Infinity,
@@ -172,11 +194,22 @@ export default function StudentDetailScreen() {
           <Body muted>No invoices have been issued yet.</Body>
         ) : (
           invoices.map((invoice) => {
-            const owed = outstanding(invoice);
-            const payable = owed > 0;
+            const owed = invoiceBalance(invoice);
+            const payable = canPay(invoice);
             return (
               <Card key={invoice.id}>
-                <Label>{invoice.term.name}</Label>
+                <View style={styles.invoiceHead}>
+                  <Label>{invoice.term.name}</Label>
+                  <Label>{describeInvoiceStatus(invoice.status)}</Label>
+                </View>
+                {/* What the fee is FOR — the school's own lines, at the
+                    amount the server worked out after its discounts. */}
+                {invoice.items.map((item, index) => (
+                  <View key={`${invoice.id}-${index}`} style={styles.invoiceLine}>
+                    <Body muted>{`${item.categoryName} · ${item.feeName}`}</Body>
+                    <Body muted>{formatKobo(item.netAmount)}</Body>
+                  </View>
+                ))}
                 <Body>{formatKobo(invoice.totalDue)} due</Body>
                 <Body muted>
                   {formatKobo(invoice.totalPaid)} paid
@@ -197,6 +230,29 @@ export default function StudentDetailScreen() {
             );
           })
         )}
+
+        {transfer ? (
+          <Card>
+            <Label>Or pay by bank transfer</Label>
+            <Heading>{transfer.bankAccountNumber}</Heading>
+            <Body muted>{`${transfer.bankName} · ${transfer.bankAccountName}`}</Body>
+            <Body muted>
+              {`Use ${student?.admissionNumber ?? "your child's admission number"} as the reference so the school knows who paid. A transfer shows here once the school records it.`}
+            </Body>
+            <Button
+              title={copied ? "Copied" : "Copy account details"}
+              variant="secondary"
+              onPress={() => {
+                if (!transfer) return;
+                void Clipboard.setStringAsync(
+                  transferClipboardText(transfer, student?.admissionNumber ?? ""),
+                ).then(() => setCopied(true));
+              }}
+            />
+          </Card>
+        ) : null}
+
+        <Label>Receipts are issued by the school — ask the office and they will send yours.</Label>
       </ScrollView>
     </Screen>
   );
@@ -204,5 +260,7 @@ export default function StudentDetailScreen() {
 
 const styles = StyleSheet.create({
   content: { gap: spacing.sm, paddingBottom: spacing.xl },
+  invoiceHead: { flexDirection: "row", justifyContent: "space-between", gap: spacing.sm },
+  invoiceLine: { flexDirection: "row", justifyContent: "space-between", gap: spacing.sm },
   header: { gap: spacing.xs, marginBottom: spacing.sm },
 });

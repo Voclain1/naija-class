@@ -16,6 +16,9 @@ export const queryKeys = {
   student: (studentId: string) => ["students", studentId] as const,
   invoices: (studentId: string) => ["students", studentId, "invoices"] as const,
   payment: (reference: string) => ["payments", reference] as const,
+  // The school's bank account for transfers. Persistable like the rest of the
+  // family surface, and it changes about never.
+  bankDetails: ["bank-details"] as const,
   // Released results. Safe to persist and DELIBERATELY long-lived: a released
   // report card is frozen by released-guard.ts on the server, so a cached one
   // cannot be wrong, only absent (D32).
