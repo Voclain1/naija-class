@@ -7,6 +7,8 @@ import { formatKobo, formatMinuteOfDay, type DashboardAlertType } from "@school-
 import { staffTeacherScope } from "../../src/lib/api/staff-attendance";
 import { staffMyTimetable } from "../../src/lib/api/staff-schedule";
 import { staffAdminDashboard } from "../../src/lib/api/staff-admin";
+import { staffFinanceDashboard } from "../../src/lib/api/staff-finance";
+import { moneyBand, quickActions, showsMoneyBand } from "../../src/lib/staff/bursar";
 import { queryKeys } from "../../src/lib/query/keys";
 import { useSession } from "../../src/lib/auth/session";
 import { hasPermission } from "../../src/lib/auth/permissions";
@@ -111,6 +113,10 @@ export default function StaffDashboardScreen() {
   // endpoint on the permission, so both must hold.
   const canApprove = schoolAdmin && hasPermission(permissions, "report-card.principal-approve");
   const canSeeSchool = hasPermission(permissions, "dashboard.read");
+  // The bursar's home (phone-for-every-role.md D1): money figures for someone
+  // whose day is money and who holds no school dashboard.
+  const canSeeMoney = showsMoneyBand(staff?.roles, permissions);
+  const actions = quickActions(permissions);
 
   // --- teacher band: fetched ONLY for teachers (D32) -----------------------
   const scope = useQuery({
@@ -127,12 +133,21 @@ export default function StaffDashboardScreen() {
   });
 
   // --- school band: fetched ONLY for dashboard.read ------------------------
-  const termContext = useTermContext({ schoolId, userId, enabled: ready && canSeeSchool });
+  // The term chain is shared: the money band needs the same current term.
+  const termContext = useTermContext({ schoolId, userId, enabled: ready && (canSeeSchool || canSeeMoney) });
   const termId = termContext.data?.term?.termId ?? "";
   const overview = useQuery({
     queryKey: queryKeys.staffAdminDashboard(schoolId, userId, termId),
     queryFn: () => staffAdminDashboard(termId),
     enabled: ready && canSeeSchool && termId !== "",
+    staleTime: 60_000,
+  });
+
+  // --- money band: fetched ONLY for the finance dashboard permission -------
+  const finance = useQuery({
+    queryKey: queryKeys.staffCollections(schoolId, userId, termId),
+    queryFn: () => staffFinanceDashboard(termId),
+    enabled: ready && canSeeMoney && termId !== "",
     staleTime: 60_000,
   });
 
@@ -195,6 +210,49 @@ export default function StaffDashboardScreen() {
           subtitle={[staff?.school.name, formatToday(today)].filter(Boolean).join(" · ")}
           action={<MenuButton onPress={menu.open} />}
         />
+
+        {/* ---- MONEY band (finance.dashboard.read, no school dashboard) ---- */}
+        {canSeeMoney && actions.length > 0 ? (
+          <>
+            <SectionHeader title="Money" note={finance.data?.termName ?? null} />
+            <TileGrid>
+              {actions.map((action) => (
+                <ActionTile
+                  key={action.key}
+                  icon={action.icon}
+                  label={action.label}
+                  hint={null}
+                  onPress={() => router.push(action.route as never)}
+                />
+              ))}
+            </TileGrid>
+          </>
+        ) : null}
+
+        {canSeeMoney && finance.isPending && termId !== "" ? <Skeleton lines={3} /> : null}
+        {canSeeMoney && termContext.data?.failure ? (
+          <Notice tone="warning">
+            There is no current term, so this term&apos;s figures can&apos;t be shown. Ask an
+            administrator to set the current term.
+          </Notice>
+        ) : null}
+        {canSeeMoney && finance.isError && !finance.data ? (
+          <Notice tone="danger">We couldn&apos;t load this term&apos;s figures. Try again shortly.</Notice>
+        ) : null}
+        {finance.data ? (
+          <Card style={styles.band}>
+            {moneyBand(finance.data).map((stat) => (
+              <StatRow
+                key={stat.key}
+                icon={stat.icon}
+                value={stat.value}
+                label={stat.label}
+                {...(stat.tone ? { tone: stat.tone } : {})}
+                {...(stat.route ? { onPress: () => router.push(stat.route as never) } : {})}
+              />
+            ))}
+          </Card>
+        ) : null}
 
         {/* ---- SCHOOL band (dashboard.read) ---- */}
         {canSeeSchool && termContext.data?.failure ? (
