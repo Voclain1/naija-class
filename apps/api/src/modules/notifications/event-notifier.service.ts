@@ -27,6 +27,7 @@ export const EVENT = {
   paymentRecorded: "payment.recorded",
   registerNotTaken: "register.not-taken",
   marksNotEntered: "marks.not-entered",
+  announcementPosted: "announcement.posted",
 } as const;
 
 @Injectable()
@@ -270,6 +271,78 @@ export class EventNotifierService {
         school?.schoolWeekDays ?? undefined,
       );
       return { termId: term.id, isSchoolDay: schoolDaySet.has(today) };
+    });
+  }
+
+  /**
+   * A school announcement was posted: tell its audience (announcements.md A3).
+   *
+   * The notification says an announcement ARRIVED and nothing about what it
+   * says — the words live in the app (N3). An urgent one skips quiet hours,
+   * which is the whole point of that flag.
+   */
+  async announcementPosted(args: { schoolId: string; announcementId: string }): Promise<void> {
+    await this.safely("announcementPosted", async () => {
+      const audience = await withTenant(args.schoolId, async (db) => {
+        const announcement = await db.announcement.findUnique({
+          where: { id: args.announcementId },
+          select: { audience: true, classArmId: true, urgent: true, withdrawnAt: true },
+        });
+        if (!announcement || announcement.withdrawnAt) return null;
+        const school = await db.school.findUniqueOrThrow({
+          where: { id: args.schoolId },
+          select: { name: true },
+        });
+
+        const guardianIds: string[] = [];
+        const studentIds: string[] = [];
+        const userIds: string[] = [];
+
+        if (announcement.audience === "STAFF" || announcement.audience === "EVERYONE") {
+          const staff = await db.user.findMany({ where: { isActive: true }, select: { id: true } });
+          userIds.push(...staff.map((u) => u.id));
+        }
+        if (announcement.audience !== "STAFF") {
+          // Families: everyone in the school, or just one class's.
+          const enrollments = await db.enrollment.findMany({
+            where: {
+              term: { isCurrent: true },
+              ...(announcement.classArmId ? { classArmId: announcement.classArmId } : {}),
+            },
+            select: { studentId: true },
+          });
+          const ids = [...new Set(enrollments.map((e) => e.studentId))];
+          const links = await db.studentGuardian.findMany({
+            where: { studentId: { in: ids } },
+            select: { guardianId: true },
+          });
+          guardianIds.push(...new Set(links.map((l) => l.guardianId)));
+          // Students hear about EVERYONE and CLASS, never PARENTS.
+          if (announcement.audience !== "PARENTS") studentIds.push(...ids);
+        }
+
+        return { schoolName: school.name, urgent: announcement.urgent, guardianIds, studentIds, userIds };
+      });
+      if (!audience) return;
+
+      const common = {
+        schoolId: args.schoolId,
+        eventType: EVENT.announcementPosted,
+        eventId: args.announcementId,
+        title: audience.schoolName,
+        body: "New announcement from your school.",
+        data: { screen: "announcements" },
+        urgent: audience.urgent,
+      };
+      for (const guardianId of audience.guardianIds) {
+        await this.dispatch.notifyOfEvent({ ...common, principal: { type: "GUARDIAN", guardianId } });
+      }
+      for (const studentId of audience.studentIds) {
+        await this.dispatch.notifyOfEvent({ ...common, principal: { type: "STUDENT", studentId } });
+      }
+      for (const userId of audience.userIds) {
+        await this.dispatch.notifyOfEvent({ ...common, principal: { type: "STAFF", userId } });
+      }
     });
   }
 

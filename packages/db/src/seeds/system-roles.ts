@@ -7,6 +7,8 @@
 
 import {
   ADMIN_DASHBOARD_PERMISSIONS,
+  ANNOUNCEMENT_MANAGE_PERMISSIONS,
+  ANNOUNCEMENT_READ_PERMISSIONS,
   CALENDAR_PERMISSIONS,
   CALENDAR_READ_PERMISSIONS,
   REPORTS_PERMISSIONS,
@@ -86,6 +88,8 @@ const ADMIN_PERMISSIONS: readonly string[] = [
   // SYNC with the idempotent append in
   // prisma/migrations/20260913120200_phase_8_cp1_calendar_permissions.
   ...CALENDAR_PERMISSIONS,
+  // Announcements (A1): owner and admin send; every staff role reads.
+  ...ANNOUNCEMENT_MANAGE_PERMISSIONS,
   // Phase 8 / CP2 — Recording Completeness: the school-wide report and the
   // per-teacher recording-activity view (audited per read). Owner/admin only;
   // never teacher or bursar (§16 D39, pinned in permissions-coverage.spec.ts).
@@ -170,6 +174,7 @@ export const SYSTEM_ROLE_SEEDS: SystemRoleSeed[] = [
       // Phase 8 / CP1 — the calendar is visible to all users (D4); teachers
       // read it and never manage it (D28).
       ...CALENDAR_READ_PERMISSIONS,
+      ...ANNOUNCEMENT_READ_PERMISSIONS,
       // Phase 8 / CP4 — the teacher's own timetable (§18 D38). NOT
       // timetable.read: the whole-school builder stays owner/admin. Kept IN SYNC
       // with prisma/migrations/20260915120100_phase_8_cp4_timetable_own_read_permission.
@@ -197,6 +202,10 @@ export const SYSTEM_ROLE_SEEDS: SystemRoleSeed[] = [
     // Phase 8 / CP1 — plus calendar read (D4 "visible to all users", D28). The
     // one non-finance grant bursar holds; the calendar carries no academic,
     // roster or financial data.
-    permissions: [...PHASE_3_BURSAR_PERMISSIONS, ...CALENDAR_READ_PERMISSIONS],
+    permissions: [
+      ...PHASE_3_BURSAR_PERMISSIONS,
+      ...CALENDAR_READ_PERMISSIONS,
+      ...ANNOUNCEMENT_READ_PERMISSIONS,
+    ],
   },
 ];

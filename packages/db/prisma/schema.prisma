@@ -3086,3 +3086,52 @@ model NotificationDelivery {
   @@index([schoolId, sentAt])
   @@map("notification_deliveries")
 }
+
+// Announcements (docs/modules/announcements.md). Deferred three times as its
+// own feature (phase-4 D2, phase-8 D20/Q4) and built as one here.
+enum AnnouncementAudience {
+  EVERYONE
+  PARENTS
+  STAFF
+  CLASS
+
+  @@map("announcement_audience")
+}
+
+model Announcement {
+  id          String               @id @default(uuid())
+  schoolId    String               @map("school_id")
+  title       String
+  body        String
+  audience    AnnouncementAudience
+  classArmId  String?              @map("class_arm_id") // set only when audience = CLASS
+  // A4: skips quiet hours and wakes phones. Audited on every send.
+  urgent      Boolean              @default(false)
+  createdBy   String               @map("created_by")
+  createdAt   DateTime             @default(now()) @map("created_at")
+  // A2: an announcement is sent once and never silently reworded. It can be
+  // withdrawn — it stops appearing and says so — and a correction is a new
+  // announcement. There is deliberately no updatedAt and no edit path.
+  withdrawnAt DateTime?            @map("withdrawn_at")
+  withdrawnBy String?              @map("withdrawn_by")
+
+  reads AnnouncementRead[]
+
+  @@index([schoolId, createdAt])
+  @@map("announcements")
+}
+
+// A5: read state is per person and stays in the app. No read receipts go back
+// to the school — "37 parents have not read this" turns into chasing parents
+// over a notification setting, which is a support burden, not a feature.
+model AnnouncementRead {
+  announcementId String        @map("announcement_id")
+  principalType  PrincipalType @map("principal_type")
+  principalId    String        @map("principal_id") // guardian, student or user id
+  readAt         DateTime      @default(now()) @map("read_at")
+
+  announcement Announcement @relation(fields: [announcementId], references: [id], onDelete: Cascade)
+
+  @@id([announcementId, principalType, principalId])
+  @@map("announcement_reads")
+}
