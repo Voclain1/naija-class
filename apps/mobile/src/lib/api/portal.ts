@@ -1,4 +1,5 @@
 import type {
+  PortalBankDetailsResponse,
   FamilyTimetableDto,
   GuardianForgotPasswordInput,
   GuardianForgotPasswordResponse,
@@ -178,6 +179,11 @@ export function deactivateStudentPortal(
 }
 
 /** Phase 8 / CP1 — the school calendar for a date window (the school comes from the session). */
+/** The school's bank account for a transfer, when the school takes transfers. */
+export function getBankDetails(): Promise<PortalBankDetailsResponse> {
+  return apiFetch<PortalBankDetailsResponse>("/portal/bank-details");
+}
+
 export function getGuardianCalendar(window: { from: string; to: string }): Promise<CalendarResponse> {
   return apiFetch<CalendarResponse>(
     `/portal/calendar?from=${encodeURIComponent(window.from)}&to=${encodeURIComponent(window.to)}`,

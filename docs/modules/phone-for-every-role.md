@@ -12,7 +12,7 @@ owner."
 | Role | On the phone now | Gap |
 |---|---|---|
 | Bursar | Every money screen exists and works (collections, who owes, record a payment, reminders, payment links, expenses, receipts) | No dashboard of their own — they land on a page written for teachers and owners, with no money summary and no "today". Nobody has signed in as a bursar and used the app. |
-| Parent | Children, a child's results, their timetable, the school calendar, and managing a child's own app access | **Cannot see or pay fees.** The parent portal's whole money half is missing from the app: invoices, paying with Paystack, and the school's bank details for a transfer. No receipts. |
+| Parent | Children, a child's results, their timetable, the school calendar, managing a child's own app access, **fees and paying them** | Small gaps only: no breakdown of what a fee is FOR, and no bank-transfer details. |
 | Student | Home, results, attendance, fees, timetable, calendar | Already covers **everything** the student portal does — the student API is read-only. What is missing is polish, not features. |
 
 **The finding that shapes this plan:** the student portal has no write
@@ -176,3 +176,29 @@ different, so each gets its own answer rather than one blanket "later".
   boundary test).
 - Every new query key stays under the family prefixes, and the staff prefix
   rule is untouched.
+
+## Corrections found while building (2026-09-23)
+
+Two claims in the table above were wrong when this plan was written. Both were
+found by reading the code rather than grepping headings, and both make the
+work smaller. Recorded rather than quietly fixed, because a plan that
+overstates a gap wastes a build.
+
+1. **Parents could already pay.** `app/students/[id]/index.tsx` has listed
+   invoices and offered "Pay ₦x" since Phase 6, through
+   `src/lib/payments/checkout.ts` (hosted checkout in an in-app browser) and
+   `poll.ts` (the SERVER decides the outcome; the browser closing proves
+   nothing). D3's real remainder was therefore only: **what each fee is for**
+   (the invoice's own line items) and **bank-transfer details**. Both are now
+   on that page. The separate fees screen this plan implied was dropped —
+   a second place to pay is a second place to get it wrong.
+2. **Family offline reading already exists.** C3 listed it as in scope. In
+   fact the family cache is persisted for 7 days (`src/lib/query/client.ts`,
+   `persist.ts`) and family screens already carry `FreshnessLabel`'s "as of"
+   line, with `useIsOnline` wording the offline case. Nothing to build; the
+   redesign keeps both.
+
+**What stands from C3:** notifications (push exists but only fee reminders
+send one, and staff have no device endpoint), announcements (nothing exists),
+and automatic web sign-in (nothing exists). Those remain sequenced after the
+redesign, each with its own plan-first.
