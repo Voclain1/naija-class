@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildBrandedReceiptHtml,
+  schoolMonogram,
   formatReceiptDate,
   formatSequentialReceiptNumber,
   lagosYear,
@@ -42,7 +43,7 @@ describe("buildBrandedReceiptHtml — what the receipt shows (D1)", () => {
     expect(html).toContain("Greenfield Academy");
     expect(html).toContain("Knowledge and Character");
     expect(html).toContain("12 Awolowo Road, Ikeja, Lagos");
-    expect(html).toContain("0803 123 4567 · accounts@greenfield.ng");
+    expect(html).toContain("0803 123 4567 &nbsp;·&nbsp; accounts@greenfield.ng");
     expect(html).toContain(`src="${LOGO}"`);
     expect(html).toContain("--brand: #1A4D8F");
   });
@@ -54,23 +55,47 @@ describe("buildBrandedReceiptHtml — what the receipt shows (D1)", () => {
   });
 
   it("says who paid, for what, how much — in figures AND words", () => {
-    expect(html).toContain("The parent/guardian of <b>Adaeze Okafor</b>");
+    expect(html).toContain("Adaeze Okafor");
     expect(html).toContain("Admission no. GFA/2021/041 · JSS2 Blue");
-    expect(html).toContain("School fees — First Term 2026/2027");
+    expect(html).toContain("First Term 2026/2027");
     expect(html).toContain("₦50,000.00");
     expect(html).toContain("Fifty thousand naira only");
-    expect(html).toContain("Bank transfer · Ref. TRF-889213");
+    expect(html).toContain("Bank transfer");
+    expect(html).toContain("Ref. TRF-889213");
   });
 
   it("shows the invoice position AFTER this payment, from the server's figures", () => {
-    expect(html).toContain("Invoice total<b>₦150,000.00</b>");
-    expect(html).toContain("Paid to date<b>₦100,000.00</b>");
-    expect(html).toContain("Balance<b>₦50,000.00</b>");
+    expect(html).toContain("Invoice total</div><div class=\"v\">₦150,000.00");
+    expect(html).toContain("Paid to date</div><div class=\"v\">₦100,000.00");
+    expect(html).toContain("Balance</div><div class=\"v due\">₦50,000.00");
+  });
+
+  it("marks a part payment, and a settled invoice as paid in full", () => {
+    // Part payment: what is still owed is on the receipt, and stamped.
+    expect(html).toContain("₦50,000.00 outstanding");
+    expect(html).toContain(">PART PAYMENT<");
+    const settled = buildBrandedReceiptHtml({ ...RECEIPT, invoice: { totalDue: 150_000_00, totalPaidAfter: 150_000_00 } });
+    expect(settled).toContain("Paid in full");
+    expect(settled).toContain(">PAID<");
+    expect(settled).not.toContain("outstanding");
+  });
+
+  it("falls back to a monogram when the school has no logo", () => {
+    expect(schoolMonogram("Virgo Fidelis Montessori School")).toBe("VFM");
+    expect(schoolMonogram("Greenfield Academy")).toBe("GA");
+    expect(schoolMonogram("  ")).toBe("S");
+    const noLogo = buildBrandedReceiptHtml({ ...RECEIPT, school: { ...RECEIPT.school, logoDataUri: null } });
+    expect(noLogo).toContain('class="monogram">GA<');
+  });
+
+  it("prints on A4 without the browser chrome or the page background", () => {
+    expect(html).toContain("@page { size: A4; margin: 12mm; }");
+    expect(html).toContain("print-color-adjust: exact");
   });
 
   it("names who received it — or says it was paid online", () => {
     expect(html).toContain("Received by: Ngozi Eze");
-    expect(html).toContain("(Bursar)");
+    expect(html).toContain("· Bursar");
     const online = buildBrandedReceiptHtml({ ...RECEIPT, method: "PAYSTACK", reference: null, receivedBy: null });
     expect(online).toContain("Received by: Paid online (Paystack)");
     expect(online).toContain("Online (Paystack)");
@@ -78,12 +103,13 @@ describe("buildBrandedReceiptHtml — what the receipt shows (D1)", () => {
 
   it("never shows a negative balance, even on an overpaid invoice", () => {
     const over = buildBrandedReceiptHtml({ ...RECEIPT, invoice: { totalDue: 100, totalPaidAfter: 150 } });
-    expect(over).toContain("Balance<b>₦0.00</b>");
+    expect(over).toContain("Balance</div><div class=\"v due\">₦0.00");
+    expect(over).toContain("Paid in full");
   });
 
   it("has a Print button that never appears on paper or in a PDF", () => {
     expect(html).toContain('onclick="window.print()"');
-    expect(html).toMatch(/@media print \{[^}]*\}[^}]*\.actions \{ display: none; \}/);
+    expect(html).toMatch(/@media print \{[\s\S]*?\.actions \{ display: none; \}/);
   });
 
   it("does not expose internal ids", () => {
@@ -101,7 +127,7 @@ describe("missing branding leaves no blanks", () => {
     });
     expect(html).not.toContain("<img");
     expect(html).not.toContain('class="motto"');
-    expect(html).not.toContain("School fees —");
+    expect(html).not.toContain("First Term");
     expect(html).not.toContain(" · JSS2");
     expect(html).not.toContain("<p></p>");
     expect(html).not.toMatch(/null|undefined/);

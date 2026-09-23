@@ -96,20 +96,39 @@ export function lagosYear(d: Date): number {
   return Number(new Intl.DateTimeFormat("en-GB", { timeZone: "Africa/Lagos", year: "numeric" }).format(d));
 }
 
+/**
+ * A monogram for a school with no logo: up to three initials, so the header
+ * never has a hole where a crest should be.
+ */
+export function schoolMonogram(name: string): string {
+  const letters = name
+    .split(/\s+/)
+    .filter((word) => /[A-Za-z]/.test(word))
+    .map((word) => word[0] as string)
+    .slice(0, 3)
+    .join("");
+  return letters.toUpperCase() || "S";
+}
+
 export function buildBrandedReceiptHtml(r: ReceiptData): string {
   const e = escapeHtml;
   const brand = safeBrandColor(r.school.primaryColor);
   const balance = Math.max(r.invoice.totalDue - r.invoice.totalPaidAfter, 0);
+  const settled = balance === 0;
   const method = METHOD_LABELS[r.method] ?? r.method.replace(/_/g, " ").toLowerCase();
   const contact = [r.school.phone, r.school.email].filter((x): x is string => !!x && x.trim() !== "");
 
-  const line = (label: string, value: string) =>
-    `<tr><th scope="row">${e(label)}</th><td>${value}</td></tr>`;
+  const row = (label: string, value: string) =>
+    `<div class="row"><div class="label">${e(label)}</div><div class="value">${value}</div></div>`;
 
   const receivedBy = r.receivedBy
-    ? `${e(r.receivedBy.name)}${r.receivedBy.role ? ` <span class="muted">(${e(r.receivedBy.role)})</span>` : ""}`
+    ? `${e(r.receivedBy.name)}${r.receivedBy.role ? ` <span class="muted">· ${e(r.receivedBy.role)}</span>` : ""}`
     : "Paid online (Paystack)";
 
+  // Typography is deliberately system fonts, not a web font: this document is
+  // also turned into a PDF on a phone (expo-print) and printed in offices with
+  // poor connections. A downloaded font that fails to arrive would re-flow the
+  // whole receipt; Georgia and Helvetica/Arial are everywhere.
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -117,79 +136,192 @@ export function buildBrandedReceiptHtml(r: ReceiptData): string {
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Receipt ${e(r.receiptNumber)} — ${e(r.school.name)}</title>
 <style>
-  :root { --brand: ${brand}; }
+  :root {
+    --brand: ${brand};
+    --ink: #10242B;
+    --muted: #6B7280;
+    --hairline: #E5E1D8;
+    --paper: #FFFFFF;
+    --tint: #F7F5EF;
+  }
   * { box-sizing: border-box; }
-  body { font-family: "Helvetica Neue", Arial, sans-serif; color: #13262E; margin: 0; background: #fff; }
-  .sheet { max-width: 680px; margin: 24px auto; padding: 28px 32px; border: 1px solid #e3e0d8; border-top: 6px solid var(--brand); }
-  header { display: flex; gap: 16px; align-items: flex-start; justify-content: space-between; }
-  .school { display: flex; gap: 14px; align-items: flex-start; }
-  .logo { width: 64px; height: 64px; object-fit: contain; }
-  .school h1 { margin: 0; font-size: 20px; letter-spacing: .02em; text-transform: uppercase; color: var(--brand); }
-  .motto { margin: 2px 0 6px; font-style: italic; font-size: 12px; color: #555; }
-  .school p { margin: 0; font-size: 12px; line-height: 1.5; }
-  .doc { text-align: right; }
-  .doc .title { font-size: 15px; font-weight: 700; letter-spacing: .08em; }
-  .doc .no { font-size: 14px; font-weight: 700; color: var(--brand); margin-top: 4px; }
-  .doc .date { font-size: 12px; margin-top: 2px; }
-  table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-  th, td { text-align: left; vertical-align: top; padding: 9px 0; border-bottom: 1px solid #ece9e1; font-size: 13px; }
-  th { width: 34%; font-weight: 600; color: #555; }
-  .amount td { font-size: 20px; font-weight: 700; }
-  .words { font-size: 13px; font-style: italic; }
-  .muted { color: #666; font-weight: 400; }
-  .totals { display: flex; justify-content: space-between; gap: 8px; margin-top: 16px; padding: 10px 12px; background: #F7F5EF; font-size: 12px; }
-  .totals b { display: block; font-size: 14px; }
-  footer { margin-top: 22px; display: flex; justify-content: space-between; align-items: flex-end; font-size: 12px; }
-  .thanks { font-weight: 600; color: var(--brand); }
-  .actions { max-width: 680px; margin: 16px auto 0; text-align: right; }
-  .actions button { font: inherit; font-size: 14px; padding: 8px 18px; border: 0; border-radius: 6px; background: var(--brand); color: #fff; cursor: pointer; }
-  @page { size: A5; margin: 10mm; }
+  html, body { margin: 0; padding: 0; background: #EFEDE6; }
+  body {
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    color: var(--ink);
+    -webkit-font-smoothing: antialiased;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .actions { max-width: 760px; margin: 20px auto 0; text-align: right; }
+  .actions button {
+    font: inherit; font-size: 14px; font-weight: 600; letter-spacing: .01em;
+    padding: 10px 22px; border: 0; border-radius: 999px;
+    background: var(--brand); color: #fff; cursor: pointer;
+  }
+  .sheet {
+    position: relative; overflow: hidden;
+    max-width: 760px; margin: 20px auto 40px; padding: 0 0 34px;
+    background: var(--paper); border: 1px solid var(--hairline);
+    box-shadow: 0 18px 48px rgba(16, 36, 43, .10);
+  }
+  .band { height: 5px; background: var(--brand); }
+  .inner { padding: 34px 46px 0; }
+
+  header { display: flex; gap: 26px; align-items: flex-start; justify-content: space-between; }
+  .identity { display: flex; gap: 18px; align-items: flex-start; min-width: 0; }
+  .crest { width: 70px; height: 70px; object-fit: contain; flex: none; }
+  .monogram {
+    width: 70px; height: 70px; flex: none; border-radius: 50%;
+    border: 2px solid var(--brand); color: var(--brand);
+    display: flex; align-items: center; justify-content: center;
+    font-family: Georgia, "Times New Roman", serif; font-size: 24px; letter-spacing: .04em;
+  }
+  h1 {
+    margin: 0; font-family: Georgia, "Times New Roman", serif;
+    font-size: 25px; line-height: 1.15; letter-spacing: .01em; color: var(--ink);
+  }
+  .motto { margin: 5px 0 0; font-family: Georgia, serif; font-style: italic; font-size: 13px; color: var(--brand); }
+  .contact { margin: 9px 0 0; font-size: 12px; line-height: 1.6; color: var(--muted); }
+  .doc { text-align: right; flex: none; }
+  .doc .kicker { font-size: 10px; font-weight: 700; letter-spacing: .22em; color: var(--muted); }
+  .doc .no {
+    margin-top: 7px; font-family: Georgia, "Times New Roman", serif;
+    font-size: 19px; font-weight: 700; color: var(--brand); white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+  .doc .date { margin-top: 3px; font-size: 12px; color: var(--muted); white-space: nowrap; }
+
+  .rule { height: 1px; background: var(--hairline); margin: 26px 0 4px; }
+  .rule.thick { height: 2px; background: var(--ink); opacity: .08; }
+
+  .row { display: flex; gap: 22px; padding: 13px 0; border-bottom: 1px solid var(--hairline); }
+  .label { width: 34%; flex: none; font-size: 10px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); padding-top: 3px; }
+  .value { flex: 1; font-size: 14px; line-height: 1.55; min-width: 0; word-wrap: break-word; }
+  .value .name { font-weight: 700; letter-spacing: .01em; }
+  .muted { color: var(--muted); }
+  .sub { display: block; margin-top: 3px; font-size: 12px; color: var(--muted); }
+
+  .amount { display: flex; align-items: flex-end; justify-content: space-between; gap: 22px; padding: 20px 0 16px; border-bottom: 1px solid var(--hairline); }
+  .amount .figure {
+    font-family: Georgia, "Times New Roman", serif; font-size: 38px; line-height: 1;
+    font-variant-numeric: tabular-nums; letter-spacing: -.01em;
+  }
+  .chip {
+    font-size: 10px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase;
+    padding: 7px 14px; border-radius: 999px; white-space: nowrap;
+    background: ${settled ? "rgba(14, 92, 67, .10)" : "rgba(224, 165, 46, .16)"};
+    color: ${settled ? "#0E5C43" : "#8A6410"};
+  }
+  .words { margin-top: 14px; padding: 12px 16px; background: var(--tint); border-left: 3px solid var(--brand); font-family: Georgia, serif; font-style: italic; font-size: 14px; }
+
+  .ledger { display: flex; gap: 14px; margin-top: 22px; }
+  .ledger div { flex: 1; padding: 13px 16px; background: var(--tint); }
+  .ledger .k { font-size: 10px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+  .ledger .v { margin-top: 5px; font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .ledger .v.due { color: ${settled ? "var(--ink)" : "#8A6410"}; }
+
+  footer { display: flex; align-items: flex-end; justify-content: space-between; gap: 26px; margin-top: 30px; }
+  .sign { min-width: 220px; }
+  .sign .line { height: 1px; background: var(--ink); opacity: .35; }
+  .sign .who { margin-top: 7px; font-size: 12px; }
+  .sign .cap { margin-top: 2px; font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
+  .thanks { text-align: right; }
+  .thanks .big { font-family: Georgia, serif; font-style: italic; font-size: 16px; color: var(--brand); }
+  .thanks .note { margin-top: 5px; font-size: 10px; color: var(--muted); max-width: 260px; }
+
+  .stamp {
+    position: absolute; right: 46px; bottom: 96px; transform: rotate(-16deg);
+    border: 3px double ${settled ? "rgba(14, 92, 67, .30)" : "rgba(138, 100, 16, .30)"};
+    color: ${settled ? "rgba(14, 92, 67, .32)" : "rgba(138, 100, 16, .32)"};
+    border-radius: 10px; padding: 8px 18px;
+    font-size: 19px; font-weight: 700; letter-spacing: .18em;
+    pointer-events: none;
+  }
+
+  @page { size: A4; margin: 12mm; }
   @media print {
-    .sheet { margin: 0; border: none; border-top: 6px solid var(--brand); max-width: none; }
+    html, body { background: #fff; }
     .actions { display: none; }
+    .sheet { margin: 0; max-width: none; border: none; box-shadow: none; }
+    .inner { padding: 0 6mm; }
+  }
+  @media (max-width: 600px) {
+    .inner { padding: 22px 20px 0; }
+    header { flex-direction: column; gap: 16px; }
+    .doc { text-align: left; }
+    .row { flex-direction: column; gap: 4px; }
+    .label { width: auto; }
+    .ledger { flex-direction: column; }
+    .stamp { display: none; }
   }
 </style>
 </head>
 <body>
 <div class="actions"><button type="button" onclick="window.print()">Print or save as PDF</button></div>
 <div class="sheet">
-<header>
-  <div class="school">
-    ${r.school.logoDataUri ? `<img class="logo" src="${r.school.logoDataUri}" alt="" />` : ""}
-    <div>
-      <h1>${e(r.school.name)}</h1>
-      ${r.school.motto ? `<p class="motto">${e(r.school.motto)}</p>` : ""}
-      ${r.school.address ? `<p>${e(r.school.address)}</p>` : ""}
-      ${contact.length > 0 ? `<p>${contact.map(e).join(" · ")}</p>` : ""}
+<div class="band"></div>
+<div class="inner">
+  <header>
+    <div class="identity">
+      ${
+        r.school.logoDataUri
+          ? `<img class="crest" src="${r.school.logoDataUri}" alt="" />`
+          : `<div class="monogram">${e(schoolMonogram(r.school.name))}</div>`
+      }
+      <div>
+        <h1>${e(r.school.name)}</h1>
+        ${r.school.motto ? `<p class="motto">${e(r.school.motto)}</p>` : ""}
+        ${r.school.address ? `<p class="contact">${e(r.school.address)}</p>` : ""}
+        ${contact.length > 0 ? `<p class="contact">${contact.map(e).join(" &nbsp;·&nbsp; ")}</p>` : ""}
+      </div>
     </div>
-  </div>
-  <div class="doc">
-    <div class="title">OFFICIAL RECEIPT</div>
-    <div class="no">No. ${e(r.receiptNumber)}</div>
-    <div class="date">${e(formatReceiptDate(r.paidAt))}</div>
-  </div>
-</header>
-<table>
-  ${line(
+    <div class="doc">
+      <div class="kicker">OFFICIAL RECEIPT</div>
+      <div class="no">No. ${e(r.receiptNumber)}</div>
+      <div class="date">${e(formatReceiptDate(r.paidAt))}</div>
+    </div>
+  </header>
+
+  <div class="rule thick"></div>
+
+  ${row(
     "Received from",
-    `The parent/guardian of <b>${e(r.student.name)}</b><br /><span class="muted">Admission no. ${e(r.student.admissionNumber)}${
+    `<span class="name">${e(r.student.name)}</span><span class="sub">The parent/guardian · Admission no. ${e(r.student.admissionNumber)}${
       r.student.className ? ` · ${e(r.student.className)}` : ""
     }</span>`,
   )}
-  ${r.termLabel ? line("For", `School fees — ${e(r.termLabel)}`) : ""}
-  <tr class="amount"><th scope="row">Amount</th><td>${e(formatKobo(r.amount))}</td></tr>
-  <tr><th scope="row">In words</th><td class="words">${e(receiptAmountInWords(r.amount))}</td></tr>
-  ${line("Paid by", `${e(method)}${r.reference ? ` · Ref. ${e(r.reference)}` : ""}`)}
-</table>
-<div class="totals">
-  <div>Invoice total<b>${e(formatKobo(r.invoice.totalDue))}</b></div>
-  <div>Paid to date<b>${e(formatKobo(r.invoice.totalPaidAfter))}</b></div>
-  <div>Balance<b>${e(formatKobo(balance))}</b></div>
+  ${r.termLabel ? row("For", `School fees<span class="sub">${e(r.termLabel)}</span>`) : ""}
+  ${row("Paid by", `${e(method)}${r.reference ? `<span class="sub">Ref. ${e(r.reference)}</span>` : ""}`)}
+
+  <div class="amount">
+    <div>
+      <div class="label">Amount received</div>
+      <div class="figure">${e(formatKobo(r.amount))}</div>
+    </div>
+    <div class="chip">${settled ? "Paid in full" : `${e(formatKobo(balance))} outstanding`}</div>
+  </div>
+  <div class="words">${e(receiptAmountInWords(r.amount))}</div>
+
+  <div class="ledger">
+    <div><div class="k">Invoice total</div><div class="v">${e(formatKobo(r.invoice.totalDue))}</div></div>
+    <div><div class="k">Paid to date</div><div class="v">${e(formatKobo(r.invoice.totalPaidAfter))}</div></div>
+    <div><div class="k">Balance</div><div class="v due">${e(formatKobo(balance))}</div></div>
+  </div>
+
+  <footer>
+    <div class="sign">
+      <div class="line"></div>
+      <div class="who">Received by: ${receivedBy}</div>
+      <div class="cap">For ${e(r.school.name)}</div>
+    </div>
+    <div class="thanks">
+      <div class="big">Thank you.</div>
+      <div class="note">Computer-generated receipt · No. ${e(r.receiptNumber)}</div>
+    </div>
+  </footer>
 </div>
-<footer>
-  <div>Received by: ${receivedBy}</div>
-  <div class="thanks">Thank you.</div>
-</footer>
+<div class="stamp">${settled ? "PAID" : "PART PAYMENT"}</div>
 </div>
 </body>
 </html>`;

@@ -239,3 +239,27 @@ Also: an online payment's receipt now reads "Received by: Paid online
 (Paystack)" even when a staff member created the link. On the web, the receipt
 is a real **View receipt** button with its number beneath, and a payment with
 no receipt shows **Issue receipt**.
+
+### D8 — the premium redesign (2026-09-23)
+
+The first receipt shipped correct but plain. Redesigned as a document a school
+is happy to hand over:
+
+- **Type:** Georgia for the school name, amount and closing line; Helvetica /
+  Arial for everything else. **Deliberately system fonts, not a web font** —
+  this document is also turned into a PDF on a phone and printed in offices
+  with poor connections, and a downloaded font that failed to arrive would
+  re-flow the whole receipt.
+- **Structure:** a brand-coloured band, generous margins, small-caps
+  letter-spaced labels, hairline rules instead of table borders, and a
+  large tabular-figure amount with the words in a tinted quote panel.
+- **Status:** a chip reading "Paid in full" or "₦x outstanding", a
+  three-column ledger (invoice total / paid to date / balance), and a
+  PAID or PART PAYMENT stamp.
+- **Signature line** for the person who received the money, "For <school>",
+  and a quiet "computer-generated receipt" note carrying the number again.
+- **No logo?** The school's initials in a brand-coloured roundel, so the
+  header never has a hole where a crest should be.
+- **Print:** A4 with 12mm margins, `print-color-adjust: exact` so the brand
+  band and tints survive, and the Print button hidden. Narrow screens get a
+  stacked layout.

@@ -591,7 +591,7 @@ describe("PaymentsService (integration)", () => {
     expect(html).toContain("Test Student");
     expect(html).toContain("First Term 2025/2026-pay-");
     expect(html).toContain("Fifty thousand naira only");
-    expect(html).toContain("Balance<b>₦100,000.00</b>");
+    expect(html).toContain("Balance</div><div class=\"v due\">₦100,000.00");
     expect(html).toContain("Received by: Chidi Admin");
     expect(html).toContain("22 September 2026, 10:00");
   });
@@ -680,7 +680,7 @@ describe("PaymentsService (integration)", () => {
     expect(result.receiptNumber).toBe(first.receiptNumber);
     expect(html).toContain("New Campus, Lekki");
     // The balance as it stood at THIS payment, not after the later one.
-    expect(html).toContain("Balance<b>₦60,000.00</b>");
+    expect(html).toContain("Balance</div><div class=\"v due\">₦60,000.00");
     const audits = await withTenant(schoolId, (db) =>
       db.auditLog.count({ where: { action: "payment.receipt-reissue", entityId: first.id } }),
     );
@@ -725,7 +725,7 @@ describe("PaymentsService (integration)", () => {
 
     expect(result.receiptNumber).toBe("RCP/2026/000001");
     expect(html).toContain("Received by: Paid online (Paystack)");
-    expect(html).toContain("Balance<b>₦0.00</b>");
+    expect(html).toContain("Balance</div><div class=\"v due\">₦0.00");
     const url = await svc.getReceiptUrl(ctx(schoolId, ownerId), paymentId);
     expect(url.url).toBeTruthy();
   });
