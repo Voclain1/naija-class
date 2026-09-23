@@ -15,6 +15,8 @@ import {
   forgotPasswordSchema,
   loginSchema,
   resetPasswordSchema,
+  webHandoffExchangeSchema,
+  webHandoffSchema,
   signupOwnerSchema,
   totpChallengeSchema,
   totpConfirmSchema,
@@ -30,6 +32,9 @@ import {
   type StaffSessionListResponse,
   type MeResponse,
   type ResetPasswordInput,
+  type WebHandoffExchangeInput,
+  type WebHandoffInput,
+  type WebHandoffResponse,
   type ResetPasswordResponse,
   type SignupOwnerInput,
   type SignupOwnerResponse,
@@ -49,10 +54,14 @@ import { PermissionsGuard } from "../../common/auth/permissions.guard";
 import { RateLimitByEmailGuard } from "../../common/guards/rate-limit-by-email.guard";
 import { ZodValidationPipe } from "../../common/zod-validation.pipe";
 import { AuthService } from "./auth.service";
+import { WebHandoffService } from "./web-handoff.service";
 
 @Controller("auth")
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly authService: AuthService,
+    private readonly webHandoffService: WebHandoffService,
+  ) {}
 
   // Public endpoint — no auth guard. Creates the school + owner user + owner
   // role grant + session in one shot. Response carries the bearer token in
@@ -134,6 +143,45 @@ export class AuthController {
       ipAddress: ip,
       userAgent: req.header("user-agent") ?? null,
     });
+  }
+
+  // Opening the website from the app, already signed in
+  // (docs/modules/web-handoff-signin.md).
+  //
+  // Minting is AUTHENTICATED and throttled: it is the app asking, on behalf
+  // of the session it already holds.
+  @Post("web-handoff")
+  @HttpCode(201)
+  @Throttle({ default: { ttl: 60000, limit: 10 } })
+  @UseGuards(AuthGuard)
+  async webHandoff(
+    @CurrentUser() authCtx: AuthContext,
+    @Body(new ZodValidationPipe(webHandoffSchema)) dto: WebHandoffInput,
+    @Ip() ip: string,
+    @Req() req: Request,
+  ): Promise<WebHandoffResponse> {
+    return this.webHandoffService.mint(authCtx, dto, {
+      ipAddress: ip,
+      userAgent: req.header("user-agent") ?? null,
+    });
+  }
+
+  // PUBLIC: the browser has the token and nothing else. Same 20/min cap as
+  // reset-password, for the same reason — the 32-byte token space makes
+  // brute force irrelevant; this caps abuse volume.
+  @Post("web-handoff/exchange")
+  @HttpCode(200)
+  @Throttle({ default: { ttl: 60000, limit: 20 } })
+  async webHandoffExchange(
+    @Body(new ZodValidationPipe(webHandoffExchangeSchema)) dto: WebHandoffExchangeInput,
+    @Ip() ip: string,
+    @Req() req: Request,
+  ): Promise<{ token: string }> {
+    const { token } = await this.webHandoffService.exchange(dto.token, {
+      ipAddress: ip,
+      userAgent: req.header("user-agent") ?? null,
+    });
+    return { token };
   }
 
   // Public endpoint. Throttle mirrors the invitation-accept endpoint's

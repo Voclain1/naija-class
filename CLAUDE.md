@@ -210,6 +210,7 @@ Discipline for every function in this category:
 | `auth_resolve_student_invitation(token_hash)` | `20260815120000_phase_6_slice_3_student_portal_auth`; return shape extended `20260831120000_student_password_recovery` | Resolves the single-use portal invitation a GUARDIAN issues for their child, for the two public endpoints a child hits before holding any credential. **Liveness is enforced in SQL, not in the service**: the WHERE clause requires `accepted_at IS NULL AND revoked_at IS NULL`, which is the enforcement point for both of D26's guarantees — single-use (an already-accepted token, e.g. a forwarded screenshot, resolves to nothing) and burnable (deactivation stamps `revoked_at` and this function stops returning it in the same transaction). In the service layer a future second caller could forget it, and "single-use" would become a convention rather than a property. Expiry is deliberately NOT in the WHERE clause — `expires_at` is returned so the caller can distinguish EXPIRED from INVALID, matching every other resolver here. `purpose` (added 2026-08-31) is the one field this function returns that is not about liveness or identity: it discriminates a first ACTIVATION from a guardian-mediated PASSWORD_RESET so the acceptance transaction can write the correct audit action. It is safe to return pre-auth for the same reason `expires_at` is — it describes the token the caller already holds, not the child it belongs to. | `token_hash` (the caller holds it); `issued_by`; `accepted_at`/`revoked_at` (never non-NULL in a returned row). And **the student's name** — the sharpest omission here: the accept page would read better as "Set a password for Adaeze", but this endpoint is public and takes an attacker-supplied token, so a name turns a leaked or brute-forced token into a disclosure of which child it belongs to. The page says "your password"; the child knows who they are. |
 | `auth_lookup_guardians_for_password_reset(email)` | `20260827000000_guardian_password_reset` | `POST /portal/forgot-password`'s pre-tenant lookup. **Multi-row**, like `auth_lookup_guardians_for_login` and for the same root cause (`Guardian.email` is unique only per school, Decision C) — but for a sharper reason: login disambiguates candidates by verifying the supplied password against each, and forgot-password has **no secret to disambiguate with**, so it must not try. Returns `{ guardian_id, school_id, school_name }` per portal-enabled match; the caller issues one token per account and mails each separately with its school named. Filters `password_hash IS NOT NULL` **in SQL, not in the service** — a guardian who was never invited (or whose access was revoked by clearing the hash) must not be able to obtain a password through recovery, which would make this an activation backdoor around the invitation flow. | `password_hash` — the whole reason this is separate from `auth_lookup_guardians_for_login` rather than a reuse of it, exactly as `auth_lookup_user_for_password_reset` is kept apart from `auth_lookup_user_for_login`. Also names, phone, `email_verified`. |
 | `auth_resolve_guardian_password_reset_token(token_hash)` | `20260827000000_guardian_password_reset` | `POST /portal/reset-password` resolves a token hash to `{ reset_id, guardian_id, school_id, expires_at, used_at }` before `withTenant()` can apply. Liveness is deliberately NOT in the `WHERE` clause (unlike `auth_resolve_student_invitation`): both `used_at` and `expires_at` are returned so the service can distinguish "already used" from "expired" — different, actionable messages. Single-use is still enforced atomically at the UPDATE, never by trusting this read. | `token_hash` (the caller holds it), and — the sharpest omission — the guardian's **name and email**. This endpoint is public and takes an attacker-supplied token; returning contact details would turn a leaked or brute-forced token into a disclosure of whose account it opens. Same reasoning as `auth_resolve_student_invitation`. |
+| `auth_resolve_web_handoff_token(token_hash)` | `20260923140000_web_handoff_tokens` | `POST /auth/web-handoff/exchange` resolves the single-use, 60-second token the APP minted so a browser can trade it for a session of its own — pre-tenant, because the browser arrives with a token and no school. Returns `{ handoff_id, user_id, school_id, session_id, expires_at, used_at }`. Liveness is deliberately NOT in the `WHERE`: `used_at`/`expires_at` are returned so the caller can tell the cases apart, and single-use is enforced atomically at the UPDATE, never by trusting this read (same shape as `auth_resolve_guardian_password_reset_token`). | `token_hash` (the caller holds it), and **anything about the person** — no name, no email, no role. This endpoint is PUBLIC and takes an attacker-supplied token; a name would turn a guessed token into a disclosure of whose account it opens. |
 
 **SECURITY DEFINER inventory audit (Phase 3 / Slice 12, 2026-07-08):** reviewed
 all 5 pre-existing functions for consolidation when the count crossed the
@@ -493,9 +494,40 @@ level by `guardians.service.spec.ts` ("a revoked token stops resolving in SQL",
 real token hash before and after. `security-definer-inventory.spec.ts` still
 passes on all four properties.
 
-**Next review due at 23.**
+**Web handoff sign-in (2026-09-23):** added one function,
+`auth_resolve_web_handoff_token` — count moves **22 → 23**, exactly the
+cadence trigger the 2026-08-16 review set.
 
-**Current count: 22.**
+**THE "+3" CADENCE REVIEW IS DONE (2026-09-23), at count 23.** Performed
+against `pg_proc` on a live database, not against this table's description of
+itself: all 23 `prosecdef` functions owned by `school_kit`, each with
+`search_path=public, pg_temp` pinned and EXECUTE revoked from PUBLIC and
+granted to `app_user` — the four properties
+`security-definer-inventory.spec.ts` gates on every CI run, which passed.
+
+**Verdict: NO consolidation, and the new function belongs where it is.**
+
+The 23 fall into the same five families the last review mapped. This one joins
+"invitation / token resolvers", now five members (staff, guardian and student
+invitations, the guardian password-reset token, and this). All five share the
+signature `(p_token_hash text)`, and that similarity is again what a "merge
+these" instinct keys on — and again the reason to refuse is that **the tables
+are separate on purpose**: a password-reset token presented to the handoff
+exchange resolves to nothing, because this function reads only
+`web_handoff_tokens`. Merging them would make every token resolvable at every
+endpoint, leaving the boundary to rest on each caller remembering to check a
+returned `kind` — converting an impossibility into a convention, the trade
+this codebase has now refused four times.
+
+One property worth carrying to the next review: this is the FIRST token
+resolver whose row is consumed by a REDIRECT rather than a form. Its TTL is 60
+seconds rather than hours, and its `used_at` is written in the same
+transaction that creates the session. If another short-lived handoff is ever
+added, those two properties — not the signature — are what it should copy.
+
+**Next review due at 26.**
+
+**Current count: 23.**
 
 ### ESM module resolution
 

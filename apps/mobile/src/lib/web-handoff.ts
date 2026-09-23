@@ -1,9 +1,15 @@
 // CP4 D36 — sending an administrator to the website for the jobs that stay
 // there (school settings, staff and roles, payroll, refunds, bulk imports).
 //
-// A PLAIN LINK, by decision: automatic sign-in needs a one-time login token,
-// which is a security-sensitive server change with its own plan still to come.
-// If the admin's browser session has lapsed, they sign in on the website.
+// SIGNED IN AUTOMATICALLY, since 2026-09-23 (docs/modules/web-handoff-signin.md):
+// the app asks the API for a single-use, 60-second token and opens
+// /handoff?t=…&next=…, which the website trades for its own session cookie.
+// The app's session token NEVER travels in the URL — that is how credentials
+// end up in browser history, referrer headers and server logs.
+//
+// It degrades to the plain link it used to be: if minting fails for any
+// reason, the admin lands on the same page and signs in. A handoff is never
+// worse than before.
 //
 // The address is build-time config (`EXPO_PUBLIC_WEB_URL`, set per profile in
 // eas.json and pinned by app-config.spec.ts). There is deliberately NO
@@ -34,3 +40,26 @@ export function webUrl(path: string, origin: string | null = webOrigin()): strin
 
 export const WEB_NOT_CONFIGURED_MESSAGE =
   "The website link isn't set up in this version of the app. Open the School Kit website in your browser instead.";
+
+/**
+ * The URL to open for a website path, signed in when possible.
+ *
+ * Never throws and never blocks on failure: a minting error, an expired app
+ * session or an offline phone all fall back to the plain link.
+ */
+export async function signedInWebUrl(
+  path: string,
+  mint: (next: string) => Promise<{ token: string }>,
+  origin: string | null = webOrigin(),
+): Promise<string | null> {
+  const plain = webUrl(path, origin);
+  if (plain === null) return null;
+  const next = path.startsWith("/") ? path : `/${path}`;
+  try {
+    const { token } = await mint(next);
+    if (!token) return plain;
+    return `${origin}/handoff?t=${encodeURIComponent(token)}&next=${encodeURIComponent(next)}`;
+  } catch {
+    return plain;
+  }
+}

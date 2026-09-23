@@ -14,7 +14,8 @@ import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { groupDestinations, type Destination } from "../lib/navigation/destinations";
-import { webUrl } from "../lib/web-handoff";
+import { signedInWebUrl } from "../lib/web-handoff";
+import { staffWebHandoff } from "../lib/api/staff-auth";
 import { useTheme } from "../theme/theme-provider";
 import { fontSizes, fonts, radii, spacing } from "../theme/tokens";
 
@@ -90,8 +91,11 @@ export function AppMenu({
       return;
     }
     if (destination.web) {
-      const url = webUrl(destination.web);
-      if (url) void Linking.openURL(url);
+      // Staff menus are the only ones carrying a website link, so the
+      // handoff mint is always the staff one.
+      void signedInWebUrl(destination.web, (next) => staffWebHandoff(next)).then((url) => {
+        if (url) void Linking.openURL(url);
+      });
     }
   }
 

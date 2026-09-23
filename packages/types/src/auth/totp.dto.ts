@@ -32,3 +32,38 @@ export type TotpChallengeInput = z.infer<typeof totpChallengeSchema>;
 // (i.e. it issues a full session). Named explicitly so the web client can
 // import the concrete type without narrowing.
 export type TotpChallengeResponse = Extract<LoginResponse, { requiresTwoFactor: false }>;
+
+// ---------------------------------------------------------------------------
+// Opening the website from the app, already signed in
+// (docs/modules/web-handoff-signin.md)
+// ---------------------------------------------------------------------------
+
+/**
+ * `next` is a PATH, never a URL (H5). A handoff link that accepts a full URL
+ * is an open redirect wearing the school's own domain.
+ */
+export const webHandoffSchema = z
+  .object({
+    next: z
+      .string()
+      .trim()
+      .max(200)
+      // A single leading slash (never "//host"), then ordinary path and
+      // query characters. No scheme, no host, and ".." is refused below.
+      .regex(/^\/(?!\/)[A-Za-z0-9\-._~!$&'()*+,;=:@%/?]*$/, "next must be a path on this site.")
+      .refine((v) => !v.includes(".."), "next must not climb out of the site.")
+      .optional(),
+  })
+  .strict();
+export type WebHandoffInput = z.infer<typeof webHandoffSchema>;
+
+export interface WebHandoffResponse {
+  /** The one-time token. Returned once, never stored in the clear. */
+  token: string;
+  expiresAt: string | Date;
+  /** Where the browser should land after the exchange. */
+  next: string;
+}
+
+export const webHandoffExchangeSchema = z.object({ token: z.string().min(1) }).strict();
+export type WebHandoffExchangeInput = z.infer<typeof webHandoffExchangeSchema>;
