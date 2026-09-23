@@ -102,6 +102,9 @@ describe("families", () => {
       "/me/fees",
       "/me/timetable",
       "/me/calendar",
+      // Phase 7's tutor, present as an honest "coming soon" route so the
+      // menu, the path and the expectation are all in place before it works.
+      "/me/tutor",
     ]);
   });
 });
