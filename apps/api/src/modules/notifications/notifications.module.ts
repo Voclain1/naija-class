@@ -4,9 +4,8 @@ import { Module } from "@nestjs/common";
 import { PushModule } from "../../common/push/push.module";
 import { PUSH_QUEUE } from "../../common/queue";
 import { AuthModule } from "../auth/auth.module";
-import { NotificationDispatchService } from "./notification-dispatch.service";
+import { NotificationDispatchModule } from "./notification-dispatch.module";
 import { NotificationPreferencesController } from "./notification-preferences.controller";
-import { NotificationPreferencesService } from "./notification-preferences.service";
 import { PushProcessor } from "./push.processor";
 
 // Exports NotificationPreferencesService so GuardiansModule and
@@ -17,10 +16,18 @@ import { PushProcessor } from "./push.processor";
 // in a new module because the channel decision reads the very preferences
 // this module already owns — a separate module would either duplicate that
 // read or import this one for a single method.
+// The worker lives HERE, and only here: a @Processor builds a BullMQ Worker
+// that needs Redis at instantiation, so modules that merely SEND import
+// NotificationDispatchModule instead.
 @Module({
-  imports: [AuthModule, PushModule, BullModule.registerQueue({ name: PUSH_QUEUE })],
+  imports: [
+    AuthModule,
+    PushModule,
+    NotificationDispatchModule,
+    BullModule.registerQueue({ name: PUSH_QUEUE }),
+  ],
   controllers: [NotificationPreferencesController],
-  providers: [NotificationPreferencesService, NotificationDispatchService, PushProcessor],
-  exports: [NotificationPreferencesService, NotificationDispatchService],
+  providers: [PushProcessor],
+  exports: [NotificationDispatchModule],
 })
 export class NotificationsModule {}

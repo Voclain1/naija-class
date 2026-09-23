@@ -295,6 +295,8 @@ model User {
 
   timetableTeaching TimetableEntryTeacher[] // Phase 8 / CP3 — composite (school_id, id) FK target.
 
+  deviceTokens DeviceToken[] // Notifications v1 (N2) — this staff member's phones.
+
   @@unique([schoolId, id]) // Phase 8 / CP3 — composite FK target (§17 D29)
   @@index([schoolId])
   @@map("users")
@@ -1036,6 +1038,7 @@ model DeviceToken {
   principalType PrincipalType  @map("principal_type")
   guardianId    String?        @map("guardian_id")
   studentId     String?        @map("student_id")
+  userId        String?        @map("user_id") // staff (notifications v1, N2)
   // Expo's token, e.g. "ExponentPushToken[xxxxxxxx]". Globally unique: the
   // same install re-registering must UPDATE its row (and can legitimately
   // move between principals on a shared handset), never accumulate copies.
@@ -1049,16 +1052,22 @@ model DeviceToken {
 
   guardian Guardian? @relation(fields: [guardianId], references: [id], onDelete: Cascade)
   student  Student?  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  user     User?     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([schoolId])
   @@index([guardianId])
   @@index([studentId])
+  @@index([userId])
   @@map("device_tokens")
 }
 
 enum PrincipalType {
   GUARDIAN
   STUDENT
+  // Notifications v1 (N2): staff devices live on the same table as families'.
+  // The token, platform, last-seen stamp and send path are identical, and a
+  // second table would mean two places to revoke a device.
+  STAFF
 
   @@map("principal_type")
 }
@@ -3055,4 +3064,25 @@ model ReceiptSequence {
 
   @@id([schoolId, year])
   @@map("receipt_sequences")
+}
+
+// Notifications v1 (N6) — one row per (event, person), which is what makes
+// "one notification per person per event" a property rather than a hope: the
+// unique constraint refuses the second attempt, so a sibling fan-out, a retry
+// and a double-fired cron all collapse to one message.
+//
+// It is also the answer to a school asking "did you tell this parent?".
+model NotificationDelivery {
+  id            String        @id @default(uuid())
+  schoolId      String        @map("school_id")
+  eventType     String        @map("event_type") // "results.released", "payment.recorded", …
+  eventId       String        @map("event_id")   // the term/payment/arm this was about
+  principalType PrincipalType @map("principal_type")
+  principalId   String        @map("principal_id") // guardian, student or user id
+  channel       String        // PUSH | SMS | EMAIL | NONE — what the rail chose
+  sentAt        DateTime      @default(now()) @map("sent_at")
+
+  @@unique([schoolId, eventType, eventId, principalType, principalId])
+  @@index([schoolId, sentAt])
+  @@map("notification_deliveries")
 }

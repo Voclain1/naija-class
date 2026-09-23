@@ -1,0 +1,46 @@
+
+## Status
+
+**Part 1 built (2026-09-23): the rail, and the two family events.**
+
+- `PrincipalType.STAFF` and `device_tokens.user_id`, in **two** migrations:
+  Postgres refuses to use a new enum value in the transaction that added it,
+  and the second migration needs `'STAFF'` inside a CHECK. Both CHECKs that
+  make a device row routable were widened — exactly one owner, and
+  `principal_type` agreeing with it — or a staff device could not be stored
+  at all.
+- `POST /devices` and `DELETE /devices/:token` under the staff guard.
+- `notification_deliveries` with its unique (school, event, event id,
+  principal) index, RLS ENABLE + FORCE. The row is claimed BEFORE the send,
+  so a crash between them means a missed notification rather than a duplicate.
+- `notifyOfEvent` — every principal, quiet hours, once-only, **never SMS**.
+- `EventNotifierService` owns the audiences, so the report-card workflow and
+  the payments service stay about report cards and payments. Both call it
+  after their transaction commits, and neither can fail because of it.
+- Wired: **results released** (a class's guardians once each, plus each
+  student) and **payment recorded** (the child's guardians).
+
+**Part 2 built (2026-09-23): the two teacher reminders.**
+
+- **Register not taken** — 10:00 Lagos on weekdays. Only on a real school day:
+  weekends, holidays and breaks are excluded by the same `computeSchoolDays`
+  the completeness report uses, reading the school's own merged calendar, so a
+  teacher is never chased on a day the school was shut. One notification per
+  TEACHER (a teacher who forms two classes hears once), keyed on the date so
+  the sweep is safe to re-run.
+- **Marks not entered** — the honest version. **The schema carries no
+  per-assessment deadline**, so "your marks are due today" would have been an
+  invented rule about someone's work. What it does carry is the TERM'S END
+  DATE, and marks are what a term ends with. So the reminder fires exactly
+  seven days before the term ends, to teachers with an assigned subject that
+  has no marks at all, and says precisely that. Keyed on the term, so it is a
+  deadline reminder rather than a daily nag.
+- Both sweeps copy the shape `FinanceService.transitionOverdueInvoices` and
+  `OnboardingNudgeService` already use — walk ACTIVE schools, each inside its
+  own tenant transaction, never let one school's failure stop the next — and
+  `teacher-reminders.service.ts` was added to the `basePrisma` allowlist with
+  that justification, as the allowlist requires.
+
+**Part 3, mobile:** staff device registration at sign-in, removal at sign-out
+and at the background lock, and tapping a notification opening the right
+screen.

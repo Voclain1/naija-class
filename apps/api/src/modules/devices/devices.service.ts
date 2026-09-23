@@ -1,6 +1,8 @@
 import { Injectable, Logger } from "@nestjs/common";
 
 import { withTenant } from "@school-kit/db";
+
+import type { AuthContext } from "../../common/auth/auth-context.js";
 import type { RegisterDeviceInput, RegisterDeviceResponse } from "@school-kit/types";
 
 import type { GuardianAuthContext } from "../../common/auth/guardian-auth-context";
@@ -42,6 +44,13 @@ export class DevicesService {
     return this.register(ctx.schoolId, "STUDENT", ctx.studentId, input);
   }
 
+  // Notifications v1 (N2). Staff devices are the same row shape as a
+  // family's, so the shared-handset reassignment above applies unchanged: a
+  // teacher signing in on a phone a parent used takes the token with them.
+  async registerForStaff(ctx: AuthContext, input: RegisterDeviceInput): Promise<RegisterDeviceResponse> {
+    return this.register(ctx.schoolId, "STAFF", ctx.userId, input);
+  }
+
   /**
    * Claim a token for the signed-in principal.
    *
@@ -58,14 +67,19 @@ export class DevicesService {
    */
   private async register(
     schoolId: string,
-    principalType: "GUARDIAN" | "STUDENT",
+    principalType: "GUARDIAN" | "STUDENT" | "STAFF",
     ownerId: string,
     input: RegisterDeviceInput,
   ): Promise<RegisterDeviceResponse> {
+    // All three owner columns are written on every path, so the previous
+    // owner is CLEARED rather than left alongside the new one — which the
+    // exactly-one-owner CHECK would reject anyway.
     const owner =
       principalType === "GUARDIAN"
-        ? { guardianId: ownerId, studentId: null }
-        : { guardianId: null, studentId: ownerId };
+        ? { guardianId: ownerId, studentId: null, userId: null }
+        : principalType === "STUDENT"
+          ? { guardianId: null, studentId: ownerId, userId: null }
+          : { guardianId: null, studentId: null, userId: ownerId };
 
     await withTenant(schoolId, async (db) => {
       await db.deviceToken.upsert({
@@ -106,6 +120,10 @@ export class DevicesService {
     return this.unregister(ctx.schoolId, { studentId: ctx.studentId }, expoPushToken);
   }
 
+  async unregisterForStaff(ctx: AuthContext, expoPushToken: string): Promise<void> {
+    return this.unregister(ctx.schoolId, { userId: ctx.userId }, expoPushToken);
+  }
+
   /**
    * Release a token on sign-out (D40).
    *
@@ -117,7 +135,7 @@ export class DevicesService {
    */
   private async unregister(
     schoolId: string,
-    owner: { guardianId: string } | { studentId: string },
+    owner: { guardianId: string } | { studentId: string } | { userId: string },
     expoPushToken: string,
   ): Promise<void> {
     await withTenant(schoolId, async (db) => {

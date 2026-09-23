@@ -1,10 +1,14 @@
 import { Module } from "@nestjs/common";
 
-import { PortalDevicesController, StudentDevicesController } from "./devices.controller";
+import {
+  PortalDevicesController,
+  StaffDevicesController,
+  StudentDevicesController,
+} from "./devices.controller";
 import { DevicesService } from "./devices.service";
 
 @Module({
-  controllers: [PortalDevicesController, StudentDevicesController],
+  controllers: [PortalDevicesController, StudentDevicesController, StaffDevicesController],
   providers: [DevicesService],
   exports: [DevicesService],
 })
