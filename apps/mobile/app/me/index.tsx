@@ -1,157 +1,183 @@
-import { Pressable, ScrollView, StyleSheet, View } from "react-native";
-import { Link, Redirect } from "expo-router";
+import { ScrollView, StyleSheet } from "react-native";
+import { Redirect, useRouter } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
+import { formatKobo } from "@school-kit/types";
 
-import { getStudentMe } from "../../src/lib/api/student-portal";
+import {
+  getMyTimetable,
+  getStudentMe,
+  listStudentAttendance,
+  listStudentFees,
+  listStudentResults,
+} from "../../src/lib/api/student-portal";
 import { queryKeys } from "../../src/lib/query/keys";
 import { useSession } from "../../src/lib/auth/session";
 import { AppMenu, MenuButton, useAppMenu } from "../../src/components/app-menu";
 import { studentDestinations } from "../../src/lib/navigation/destinations";
-import { spacing } from "../../src/theme/tokens";
+import { serverToday } from "../../src/lib/staff/server-date";
+import { isoWeekdayOf, greeting, nowMinutesOfDay } from "../../src/lib/when";
 import {
-  Body,
-  Button,
-  Card,
-  CenteredMessage,
-  Heading,
-  Label,
-  Notice,
-  Screen,
-} from "../../src/components/ui";
+  describeLesson,
+  formatHundredths,
+  latestAttendance,
+  latestResult,
+  nextLesson,
+} from "../../src/lib/family/today";
+import { totalOwed } from "../../src/lib/family/fees";
+import { spacing } from "../../src/theme/tokens";
+import { Card, CenteredMessage, Label, Notice, Screen } from "../../src/components/ui";
+import { ListRow, ScreenHeader, SectionHeader, Skeleton, StatRow } from "../../src/components/layout";
 import { FreshnessLabel } from "../../src/components/freshness-label";
 
-// The student principal's home screen.
+// A student's home, redesigned (D6): "what do I have today" first — the next
+// lesson, how their attendance stands, their newest result and anything owed
+// — then the screens themselves.
 //
-// WHY THIS FETCHES ITS OWN PROFILE: the session persists the token but
-// deliberately NOT the profile (session.tsx — a name and school written to
-// plaintext storage to save one request is a bad trade on a shared handset).
-// So after a cold start the app knows it is signed in as a student but not
-// which one. `session.student` is populated only for the lifetime of the
-// process that signed in; this query is what makes a relaunch work.
+// Every figure here is the server's: percentages arrive as integer hundredths
+// and are only formatted, money through formatKobo. The home computes nothing.
+
 export default function MyHomeScreen() {
   const { status, principal, student: sessionStudent, signOut } = useSession();
   const menu = useAppMenu();
+  const router = useRouter();
+  const enabled = status === "authenticated" && principal === "student";
 
-  const meQuery = useQuery({
-    queryKey: queryKeys.me,
-    queryFn: getStudentMe,
-    enabled: status === "authenticated" && principal === "student",
+  const meQuery = useQuery({ queryKey: queryKeys.me, queryFn: getStudentMe, enabled });
+  const timetable = useQuery({
+    queryKey: queryKeys.myTimetable,
+    queryFn: getMyTimetable,
+    enabled,
+    staleTime: 60 * 60_000,
+  });
+  const attendance = useQuery({
+    queryKey: queryKeys.myAttendance,
+    queryFn: listStudentAttendance,
+    enabled,
+    staleTime: 30 * 60_000,
+  });
+  const results = useQuery({
+    queryKey: queryKeys.myResults,
+    queryFn: listStudentResults,
+    enabled,
+    staleTime: 30 * 60_000,
+  });
+  const fees = useQuery({
+    queryKey: queryKeys.myFees,
+    queryFn: listStudentFees,
+    enabled,
+    staleTime: 30 * 60_000,
   });
 
+  if (status === "locked") return <Redirect href="/unlock" />;
   if (status === "guest") return <Redirect href="/login" />;
-  if (status === "authenticated" && principal !== "student") {
-    return <Redirect href="/students" />;
-  }
+  if (status === "authenticated" && principal !== "student") return <Redirect href="/students" />;
 
-  // Prefer the freshly fetched profile, fall back to whatever the sign-in put
-  // in memory. Either can be absent on a cold, offline start.
+  // Prefer the freshly fetched profile, fall back to what sign-in put in
+  // memory. Either can be absent on a cold, offline start.
   const student = meQuery.data?.student ?? sessionStudent;
   const school = meQuery.data?.school ?? null;
   const enrollment = student?.currentEnrollment ?? null;
 
+  const today = serverToday();
+  const lesson = nextLesson(timetable.data, isoWeekdayOf(today), nowMinutesOfDay());
+  const term = latestAttendance(attendance.data?.data ?? []);
+  const newest = latestResult(results.data?.data ?? []);
+  const owed = totalOwed(fees.data?.data ?? []);
+
   return (
     <Screen>
       <ScrollView contentContainerStyle={styles.content}>
-        <View style={styles.header}>
-          <View style={styles.headerRow}>
-            <View style={styles.headerTitle}>
-              <Heading>
-                {student ? `Hello, ${student.firstName}` : "Your school work"}
-              </Heading>
-            </View>
-            <MenuButton onPress={menu.open} />
-          </View>
-          {school ? <Body muted>{school.name}</Body> : null}
-          <FreshnessLabel updatedAt={meQuery.dataUpdatedAt} />
-        </View>
+        <ScreenHeader
+          title={`${greeting(new Date().getHours())}${student ? `, ${student.firstName}` : ""}`}
+          subtitle={[school?.name, enrollment ? enrollment.classArm.name : null].filter(Boolean).join(" · ")}
+          action={<MenuButton onPress={menu.open} />}
+        />
+        <FreshnessLabel updatedAt={meQuery.dataUpdatedAt} />
 
-        {meQuery.isPending && !student && (
+        {meQuery.isPending && !student ? <Skeleton lines={4} /> : null}
+        {meQuery.isError && !student ? (
           <CenteredMessage>
-            <Body muted>Loading…</Body>
+            <Notice tone="danger">We couldn&apos;t load your details just now.</Notice>
           </CenteredMessage>
-        )}
+        ) : null}
 
-        {meQuery.isError && !student && (
-          <CenteredMessage>
-            <Notice tone="danger">
-              We couldn&apos;t load your details just now.
-            </Notice>
-          </CenteredMessage>
-        )}
-
-        {student && (
-          <Card>
-            <Label>Admission number</Label>
-            <Body>{student.admissionNumber}</Body>
-            {/* The two things a child needs to sign in again, shown together
-                and while they are still signed in — the app remembers the
-                school code for them, but a new or reset phone will not, and
-                nobody else in their life is likely to know it. */}
-            {school ? (
-              <>
-                <Label>School code</Label>
-                <Body>{school.slug}</Body>
-              </>
-            ) : null}
-            {enrollment ? (
-              <>
-                <Label>Class</Label>
-                <Body>
-                  {enrollment.classArm.classLevel.name} ·{" "}
-                  {enrollment.classArm.name}
-                </Body>
-              </>
-            ) : null}
-          </Card>
-        )}
-
-        <Link href="/me/results" asChild>
-          <Pressable>
-            <Card>
-              <Heading>My results</Heading>
-              <Body muted>Report cards your school has released.</Body>
+        {student ? (
+          <>
+            <SectionHeader title="Today" />
+            <Card style={styles.band}>
+              {lesson ? (
+                <StatRow
+                  icon="time-outline"
+                  value={describeLesson(lesson)}
+                  label="Next lesson"
+                  onPress={() => router.push("/me/timetable")}
+                />
+              ) : (
+                <StatRow
+                  icon="cafe-outline"
+                  value="No more lessons today"
+                  label={timetable.data?.className ?? "Your timetable"}
+                  onPress={() => router.push("/me/timetable")}
+                />
+              )}
+              {term ? (
+                <StatRow
+                  icon="checkbox-outline"
+                  value={formatHundredths(term.attendanceRate) ?? "—"}
+                  label={`Attendance · ${term.termName}`}
+                  onPress={() => router.push("/me/attendance")}
+                />
+              ) : null}
+              {newest ? (
+                <StatRow
+                  icon="ribbon-outline"
+                  value={formatHundredths(newest.overallAverage) ?? newest.termName}
+                  label={`${newest.termName} results are ready`}
+                  onPress={() => router.push("/me/results")}
+                />
+              ) : null}
+              {owed > 0 ? (
+                <StatRow
+                  icon="wallet-outline"
+                  tone="warning"
+                  value={formatKobo(owed)}
+                  label="School fees outstanding"
+                  onPress={() => router.push("/me/fees")}
+                />
+              ) : null}
             </Card>
-          </Pressable>
-        </Link>
+          </>
+        ) : null}
 
-        <Link href="/me/attendance" asChild>
-          <Pressable>
-            <Card>
-              <Heading>My attendance</Heading>
-              <Body muted>How many days you have been in school.</Body>
+        <SectionHeader title="Your school work" />
+        <ListRow icon="ribbon-outline" title="My results" subtitle="Report cards the school has released" onPress={() => router.push("/me/results")} />
+        <ListRow icon="checkbox-outline" title="My attendance" subtitle="How many days you were present" onPress={() => router.push("/me/attendance")} />
+        <ListRow icon="calendar-outline" title="My timetable" subtitle="Your class's published timetable" onPress={() => router.push("/me/timetable")} />
+        <ListRow icon="wallet-outline" title="My fees" subtitle="What has been billed and paid" onPress={() => router.push("/me/fees")} />
+        <ListRow icon="today-outline" title="School calendar" subtitle="Holidays, exams and events" onPress={() => router.push("/me/calendar")} />
+
+        {/* The AI tutor is Phase 7 and honestly labelled: it needs curriculum
+            grounding to be worth anything, and that is a vendor decision, not
+            a screen. A shallow chatbot here would teach a student the feature
+            is useless. */}
+        <SectionHeader title="Coming soon" />
+        <ListRow icon="sparkles-outline" title="Ask about your work" subtitle="Help with a topic you're stuck on — not ready yet" onPress={() => router.push("/me/tutor")} />
+
+        {student ? (
+          <>
+            <SectionHeader title="Signing in again" />
+            <Card style={styles.band}>
+              {/* The two things a child needs to sign in on a new phone,
+                  shown while they are still signed in — nobody else in their
+                  life is likely to know the school code. */}
+              <StatRow icon="id-card-outline" value={student.admissionNumber} label="Admission number" />
+              {school ? <StatRow icon="school-outline" value={school.slug} label="School code" /> : null}
             </Card>
-          </Pressable>
-        </Link>
-
-        <Link href="/me/timetable" asChild>
-          <Pressable>
-            <Card>
-              <Heading>My timetable</Heading>
-              <Body muted>Your class timetable for this term, as published by your school.</Body>
-            </Card>
-          </Pressable>
-        </Link>
-
-        <Link href="/me/calendar" asChild>
-          <Pressable>
-            <Card>
-              <Heading>School calendar</Heading>
-              <Body muted>Holidays, term dates and school events.</Body>
-            </Card>
-          </Pressable>
-        </Link>
-
-        <Link href="/me/fees" asChild>
-          <Pressable>
-            <Card>
-              <Heading>My fees</Heading>
-              <Body muted>What your school has invoiced this year.</Body>
-            </Card>
-          </Pressable>
-        </Link>
-
-        <Button title="Sign out" variant="secondary" onPress={() => void signOut()} />
+            <Label>Keep these somewhere safe.</Label>
+          </>
+        ) : null}
       </ScrollView>
+
       <AppMenu
         visible={menu.visible}
         onClose={menu.close}
@@ -167,8 +193,6 @@ export default function MyHomeScreen() {
 }
 
 const styles = StyleSheet.create({
-  headerRow: { flexDirection: "row", alignItems: "flex-start", gap: spacing.md },
-  headerTitle: { flex: 1 },
-  content: { padding: spacing.md, gap: spacing.md },
-  header: { gap: spacing.xs },
+  content: { gap: spacing.sm, paddingBottom: spacing.xl },
+  band: { gap: spacing.xs },
 });

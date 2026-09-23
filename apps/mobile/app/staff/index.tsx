@@ -14,6 +14,7 @@ import { useSession } from "../../src/lib/auth/session";
 import { hasPermission } from "../../src/lib/auth/permissions";
 import { isSchoolAdmin, isTeacher } from "../../src/lib/auth/roles";
 import { serverToday } from "../../src/lib/staff/server-date";
+import { formatLongDate as formatToday, greeting, isoWeekdayOf } from "../../src/lib/when";
 import { useTermContext } from "../../src/lib/staff/use-term-context";
 import { WEB_NOT_CONFIGURED_MESSAGE, webUrl } from "../../src/lib/web-handoff";
 import { staffDestinations, type Destination } from "../../src/lib/navigation/destinations";
@@ -51,31 +52,6 @@ import {
 // pretending to be data.
 
 const DAY_MS = 86_400_000;
-
-function greeting(hour: number): string {
-  if (hour < 12) return "Good morning";
-  if (hour < 17) return "Good afternoon";
-  return "Good evening";
-}
-
-function isoWeekdayOf(date: string | null): number | null {
-  if (date === null) return null;
-  const parsed = Date.parse(date + "T00:00:00.000Z");
-  if (Number.isNaN(parsed)) return null;
-  const day = new Date(parsed).getUTCDay();
-  return day === 0 ? 7 : day;
-}
-
-function formatToday(date: string | null): string | null {
-  if (date === null) return null;
-  const parsed = Date.parse(date + "T00:00:00.000Z");
-  if (Number.isNaN(parsed)) return null;
-  return new Date(parsed).toLocaleDateString(undefined, {
-    weekday: "long",
-    day: "numeric",
-    month: "long",
-  });
-}
 
 /** What each dashboard alert means to a head, in their words. */
 const ALERT_COPY: Record<DashboardAlertType, (count: number) => { label: string; icon: IconName }> = {

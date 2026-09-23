@@ -140,6 +140,8 @@ export function studentDestinations(): Destination[] {
     { key: "fees", label: "My fees", icon: "cash-outline", group: "Your school work", route: "/me/fees" },
     { key: "timetable", label: "My timetable", icon: "calendar-outline", group: "Calendar", route: "/me/timetable" },
     { key: "calendar", label: "School calendar", icon: "today-outline", group: "Calendar", route: "/me/calendar" },
+    // Phase 7's tutor, honestly labelled until it exists (C2).
+    { key: "tutor", label: "Ask about your work", hint: "Coming soon", icon: "sparkles-outline", group: "Your school work", route: "/me/tutor" },
   ];
 }
 

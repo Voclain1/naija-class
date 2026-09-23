@@ -202,3 +202,21 @@ overstates a gap wastes a build.
 send one, and staff have no device endpoint), announcements (nothing exists),
 and automatic web sign-in (nothing exists). Those remain sequenced after the
 redesign, each with its own plan-first.
+
+### Part 3 status (2026-09-23) — built
+
+- **Parent home:** the staff app's header and menu, a card per child with
+  initials, class, and the ONE line worth attention — money owed first
+  (`childHighlight`), fresh results otherwise, and **nothing when there is
+  nothing**, because a home that always shows a banner teaches people to
+  ignore banners. The stray "Sign out" button is gone; it lives in the menu.
+- **Student home:** a "Today" band — next lesson from the published
+  timetable, attendance, the newest released result, and anything owed — then
+  the screens, then the admission number and school code kept where a child
+  can find them before they are locked out of a new phone.
+- **The AI tutor's pathway (C2):** a "Coming soon" entry and a `/me/tutor`
+  screen that says what it will do and why it is not switched on early. No
+  prompt, no model call.
+- **Shared:** `src/lib/when.ts` (greeting, ISO weekday, long date, minutes of
+  day) lifted out of the staff home so both sides read the school's day the
+  same way, and `src/lib/family/today.ts` for the home-screen judgements.

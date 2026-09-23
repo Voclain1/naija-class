@@ -1,134 +1,157 @@
-import { FlatList, Pressable, RefreshControl, StyleSheet, View } from "react-native";
-import { Link, Redirect } from "expo-router";
-import { useQuery } from "@tanstack/react-query";
+import { RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Redirect, useRouter } from "expo-router";
+import { useQueries, useQuery } from "@tanstack/react-query";
 import type { PortalStudentDto } from "@school-kit/types";
 
-import { listStudents } from "../../src/lib/api/portal";
+import { listInvoices, listResults, listStudents } from "../../src/lib/api/portal";
 import { queryKeys } from "../../src/lib/query/keys";
 import { useSession } from "../../src/lib/auth/session";
 import { useTheme } from "../../src/theme/theme-provider";
 import { AppMenu, MenuButton, useAppMenu } from "../../src/components/app-menu";
 import { guardianDestinations } from "../../src/lib/navigation/destinations";
-import { spacing } from "../../src/theme/tokens";
-import {
-  Body,
-  Button,
-  Card,
-  CenteredMessage,
-  Heading,
-  Label,
-  Notice,
-  Screen,
-} from "../../src/components/ui";
+import { childHighlight, initials } from "../../src/lib/family/today";
+import { greeting } from "../../src/lib/when";
+import { fontSizes, fonts, radii, spacing } from "../../src/theme/tokens";
+import { Body, Button, Card, CenteredMessage, Label, Notice, Screen } from "../../src/components/ui";
+import { EmptyState, ListRow, ScreenHeader, SectionHeader, Skeleton } from "../../src/components/layout";
 import { FreshnessLabel, useIsOnline } from "../../src/components/freshness-label";
 
+// A parent's home, redesigned to match the staff app (D4).
+//
+// One card per child, each carrying the ONE line worth a parent's attention —
+// money owed, or freshly released results — and nothing when there is nothing
+// (childHighlight). A home that always shows a banner teaches people to
+// ignore banners.
+//
+// The per-child fee and result queries are ordinary cached reads with a long
+// staleTime, not a background poll: families are on prepaid data, and this
+// app's rule is that the only automatic-feeling refresh is pull-to-refresh.
+
 function fullName(student: PortalStudentDto): string {
-  return [student.firstName, student.middleName, student.lastName]
-    .filter(Boolean)
-    .join(" ");
+  return [student.firstName, student.middleName, student.lastName].filter(Boolean).join(" ");
 }
 
 export default function StudentsScreen() {
   const { status, guardian, school, signOut } = useSession();
   const { colors } = useTheme();
+  const router = useRouter();
   const menu = useAppMenu();
   const online = useIsOnline();
 
-  const query = useQuery({
-    queryKey: queryKeys.students,
-    queryFn: listStudents,
+  const query = useQuery({ queryKey: queryKeys.students, queryFn: listStudents });
+  const students = query.data?.data ?? [];
+
+  const extras = useQueries({
+    queries: students.flatMap((student) => [
+      {
+        queryKey: queryKeys.invoices(student.id),
+        queryFn: () => listInvoices(student.id),
+        staleTime: 5 * 60_000,
+      },
+      {
+        queryKey: queryKeys.results(student.id),
+        queryFn: () => listResults(student.id),
+        staleTime: 5 * 60_000,
+      },
+    ]),
   });
 
+  if (status === "locked") return <Redirect href="/unlock" />;
   if (status !== "authenticated") return <Redirect href="/login" />;
 
-  const students = query.data?.data ?? [];
-  // `isLoading` is true only when there is NO cached data. With a persisted
-  // cache a returning user goes straight to content, so the spinner is for
-  // genuine first runs rather than every launch.
+  // `isLoading` is true only when there is NO cached data, so a returning
+  // parent goes straight to content (the persisted cache) rather than a
+  // spinner. A fetch error WITH cached data is not an error state — it is
+  // stale data, which the freshness line already says.
   const showSpinner = query.isLoading;
-  // A fetch error with cached data present is NOT an error state — it is
-  // stale data, which the freshness line already communicates. Only surface
-  // it when there is nothing to show.
   const showError = query.isError && students.length === 0;
 
   return (
     <Screen>
-      <View style={styles.header}>
-        <View style={styles.headerRow}>
-          <View style={styles.headerTitle}>
-            <Heading>
-              {guardian ? `Hello, ${guardian.firstName}` : "Your children"}
-            </Heading>
-          </View>
-          <MenuButton onPress={menu.open} />
-        </View>
-        {school ? <Body muted>{school.name}</Body> : null}
-        <FreshnessLabel updatedAt={query.dataUpdatedAt} />
-        {/* Phase 8 / CP1 — school-wide, so it sits above the per-child list. */}
-        <Link href="/calendar" asChild>
-          <Pressable accessibilityRole="button" accessibilityLabel="Open the school calendar">
-            <Body>School calendar →</Body>
-          </Pressable>
-        </Link>
-      </View>
-
-      {showSpinner ? (
-        <CenteredMessage>
-          <Body muted>Loading your children…</Body>
-        </CenteredMessage>
-      ) : showError ? (
-        <CenteredMessage>
-          <Notice tone="danger">
-            {online
-              ? "We couldn't load your children just now."
-              : "You're offline and there's no saved copy yet."}
-          </Notice>
-          <Button title="Try again" variant="secondary" onPress={() => void query.refetch()} />
-        </CenteredMessage>
-      ) : students.length === 0 ? (
-        <CenteredMessage>
-          <Body muted>
-            No children are linked to your account yet. Your school can add
-            them.
-          </Body>
-        </CenteredMessage>
-      ) : (
-        <FlatList
-          data={students}
-          keyExtractor={(student) => student.id}
-          contentContainerStyle={styles.list}
-          refreshControl={
-            // Pull-to-refresh is the ONLY automatic-feeling refresh in the
-            // app: everything else is explicit, because a background refetch
-            // on a prepaid bundle is money the user did not agree to spend.
-            <RefreshControl
-              refreshing={query.isRefetching}
-              onRefresh={() => void query.refetch()}
-              tintColor={colors.primary}
-            />
-          }
-          renderItem={({ item }) => (
-            <Link href={`/students/${item.id}`} asChild>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={`View ${fullName(item)}`}
-              >
-                <Card>
-                  <Label>{item.admissionNumber}</Label>
-                  <Body>{fullName(item)}</Body>
-                  <Body muted>
-                    {item.currentEnrollment
-                      ? `${item.currentEnrollment.classArm.classLevel.name} · ${item.currentEnrollment.classArm.name}`
-                      : "Not currently enrolled"}
-                  </Body>
-                </Card>
-              </Pressable>
-            </Link>
-          )}
+      <ScrollView
+        contentContainerStyle={styles.content}
+        refreshControl={
+          <RefreshControl
+            refreshing={query.isRefetching}
+            onRefresh={() => void query.refetch()}
+            tintColor={colors.primary}
+          />
+        }
+      >
+        <ScreenHeader
+          title={`${greeting(new Date().getHours())}${guardian ? `, ${guardian.firstName}` : ""}`}
+          subtitle={school?.name ?? null}
+          action={<MenuButton onPress={menu.open} />}
         />
-      )}
+        <FreshnessLabel updatedAt={query.dataUpdatedAt} />
 
-      <Button title="Sign out" variant="secondary" onPress={() => void signOut()} />
+        {showSpinner ? <Skeleton lines={4} /> : null}
+
+        {showError ? (
+          <CenteredMessage>
+            <Notice tone="danger">
+              {online
+                ? "We couldn't load your children just now."
+                : "You're offline and there's no saved copy yet."}
+            </Notice>
+            <Button title="Try again" variant="secondary" onPress={() => void query.refetch()} />
+          </CenteredMessage>
+        ) : null}
+
+        {query.data && students.length === 0 ? (
+          <EmptyState
+            icon="people-outline"
+            title="No children linked yet"
+            body="Your school links your children to your account. Ask the school office if this looks wrong."
+          />
+        ) : null}
+
+        {students.length > 0 ? <SectionHeader title={students.length === 1 ? "Your child" : "Your children"} /> : null}
+
+        {students.map((student, index) => {
+          const invoices = extras[index * 2]?.data as { data: never[] } | undefined;
+          const results = extras[index * 2 + 1]?.data as { data: never[] } | undefined;
+          const highlight = childHighlight({ invoices: invoices?.data, results: results?.data });
+          return (
+            <Card key={student.id} style={styles.child}>
+              <View style={styles.childHead}>
+                <View style={[styles.avatar, { borderColor: colors.primary }]}>
+                  <Text style={[styles.avatarText, { color: colors.primary }]}>
+                    {initials(student.firstName, student.lastName)}
+                  </Text>
+                </View>
+                <View style={styles.childText}>
+                  <Body>{fullName(student)}</Body>
+                  <Label>
+                    {student.currentEnrollment
+                      ? `${student.currentEnrollment.classArm.classLevel.name} · ${student.currentEnrollment.classArm.name}`
+                      : "Not currently enrolled"}
+                  </Label>
+                </View>
+              </View>
+
+              {highlight ? (
+                <Notice tone={highlight.tone}>{highlight.text}</Notice>
+              ) : null}
+
+              <Button
+                title={highlight?.kind === "fees" ? "Open and pay" : "Open"}
+                variant={highlight?.kind === "fees" ? "primary" : "secondary"}
+                onPress={() => router.push(`/students/${student.id}`)}
+              />
+            </Card>
+          );
+        })}
+
+        <SectionHeader title="The school" />
+        <ListRow
+          icon="today-outline"
+          title="School calendar"
+          subtitle="Holidays, exams and events"
+          onPress={() => router.push("/calendar")}
+        />
+      </ScrollView>
+
       <AppMenu
         visible={menu.visible}
         onClose={menu.close}
@@ -144,8 +167,17 @@ export default function StudentsScreen() {
 }
 
 const styles = StyleSheet.create({
-  headerRow: { flexDirection: "row", alignItems: "flex-start", gap: spacing.md },
-  headerTitle: { flex: 1 },
-  header: { gap: spacing.xs },
-  list: { gap: spacing.sm, paddingBottom: spacing.md },
+  content: { gap: spacing.sm, paddingBottom: spacing.xl },
+  child: { gap: spacing.sm },
+  childHead: { flexDirection: "row", alignItems: "center", gap: spacing.md },
+  childText: { flex: 1, gap: spacing.xs },
+  avatar: {
+    width: 44,
+    height: 44,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  avatarText: { fontFamily: fonts.sansSemibold, fontSize: fontSizes.body },
 });
