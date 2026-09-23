@@ -8,6 +8,7 @@ import { EXPO_BATCH_SIZE } from "../../common/push/expo-push.service";
 import { PUSH_JOB_SEND, PUSH_QUEUE } from "../../common/queue";
 import { NotificationPreferencesService } from "./notification-preferences.service";
 import type { PushSendJobData } from "./push.jobs";
+import { quietHoursDelayMs } from "./quiet-hours";
 
 // Phase 6 / Slice 5 (D36, D37, D38) — the one place that decides HOW a
 // person is reached.
@@ -49,6 +50,54 @@ export interface NotificationRequest {
 }
 
 export type DeliveryChannel = "PUSH" | "SMS" | "NONE";
+
+/** Who a notification is for. Families and staff differ only in the id. */
+export type NotificationPrincipal =
+  | { type: "GUARDIAN"; guardianId: string }
+  | { type: "STUDENT"; studentId: string }
+  | { type: "STAFF"; userId: string };
+
+/**
+ * An EVENT notification (notifications-v1.md N1) — results released, a
+ * payment recorded, marks due, a register not taken.
+ *
+ * Three fields the guardian request does not have, each carrying a rule:
+ *
+ *   - `principal` — the same rail now reaches students and staff (N2).
+ *   - `eventType` + `eventId` — one notification per person per event (N6),
+ *     enforced by a unique row rather than by each caller remembering.
+ *   - `urgent` — skips quiet hours (N5). Only announcements set it; every
+ *     event in v1 leaves it false.
+ *
+ * There is deliberately NO smsBody: nothing added in v1 may reach SMS (N4),
+ * so a school never discovers a feature through a Termii bill.
+ */
+export interface EventNotification {
+  schoolId: string;
+  principal: NotificationPrincipal;
+  eventType: string;
+  eventId: string;
+  /** The school's name. Public, and the only identifying thing on screen. */
+  title: string;
+  /** Lockscreen-safe (N3). What happened, never what it was. */
+  body: string;
+  data?: Record<string, string>;
+  urgent?: boolean;
+}
+
+function principalColumns(principal: NotificationPrincipal): {
+  principalType: "GUARDIAN" | "STUDENT" | "STAFF";
+  principalId: string;
+} {
+  switch (principal.type) {
+    case "GUARDIAN":
+      return { principalType: "GUARDIAN", principalId: principal.guardianId };
+    case "STUDENT":
+      return { principalType: "STUDENT", principalId: principal.studentId };
+    case "STAFF":
+      return { principalType: "STAFF", principalId: principal.userId };
+  }
+}
 
 @Injectable()
 export class NotificationDispatchService {
@@ -120,7 +169,11 @@ export class NotificationDispatchService {
    * what a future school-wide fan-out reuses, and a batch limit discovered
    * at 400 recipients is a limit discovered in production.
    */
-  private async enqueuePush(req: NotificationRequest, tokens: string[]): Promise<void> {
+  private async enqueuePush(
+    req: { schoolId: string; title: string; body: string; data?: Record<string, string> },
+    tokens: string[],
+    delayMs = 0,
+  ): Promise<void> {
     for (let i = 0; i < tokens.length; i += EXPO_BATCH_SIZE) {
       const data: PushSendJobData = {
         schoolId: req.schoolId,
@@ -130,6 +183,9 @@ export class NotificationDispatchService {
         ...(req.data ? { payload: req.data } : {}),
       };
       await this.pushQueue.add(PUSH_JOB_SEND, data, {
+        // Quiet hours (N5): held, not dropped — the news still arrives, at an
+        // hour a person can act on.
+        ...(delayMs > 0 ? { delay: delayMs } : {}),
         // Deliberately fewer retries than a money path would get: nothing
         // here is a mutation, a notification that failed twice is stale by
         // the third attempt, and a missed one is recoverable by opening the
@@ -139,5 +195,81 @@ export class NotificationDispatchService {
         removeOnComplete: true,
       });
     }
+  }
+
+  /**
+   * Tell one person about one event, at most once (N6), never by SMS (N4),
+   * and not in the middle of the night unless it is urgent (N5).
+   *
+   * Returns the channel used, or "NONE" — said out loud, because "they were
+   * never told" is the actual outcome and is otherwise invisible.
+   */
+  async notifyOfEvent(req: EventNotification): Promise<DeliveryChannel> {
+    const { principalType, principalId } = principalColumns(req.principal);
+
+    // The claim and the send are separate on purpose: the row is what makes
+    // "once" true even when two callers race, and it is written FIRST so a
+    // crash after it means a missed notification rather than a duplicate one.
+    const claimed = await withTenant(req.schoolId, async (db) => {
+      try {
+        await db.notificationDelivery.create({
+          data: {
+            schoolId: req.schoolId,
+            eventType: req.eventType,
+            eventId: req.eventId,
+            principalType,
+            principalId,
+            channel: "PENDING",
+          },
+        });
+        return true;
+      } catch {
+        // The unique index refused it: this person has already been told.
+        return false;
+      }
+    });
+    if (!claimed) {
+      this.logger.log(`Already notified ${principalType} ${principalId} of ${req.eventType} ${req.eventId}`);
+      return "NONE";
+    }
+
+    const channels = await this.preferences.getEnabledChannels(req.schoolId);
+    const tokens = channels.push ? await this.liveTokensFor(req.schoolId, req.principal) : [];
+    const channel: DeliveryChannel = channels.push && tokens.length > 0 ? "PUSH" : "NONE";
+
+    if (channel === "PUSH") {
+      await this.enqueuePush(
+        { schoolId: req.schoolId, title: req.title, body: req.body, ...(req.data ? { data: req.data } : {}) },
+        tokens,
+        quietHoursDelayMs(new Date(), req.urgent ?? false),
+      );
+    } else {
+      this.logger.warn(
+        `No push for ${principalType} ${principalId} in school ${req.schoolId} ` +
+          `(push=${channels.push}, tokens=${tokens.length}) — event ${req.eventType}`,
+      );
+    }
+
+    await withTenant(req.schoolId, (db) =>
+      db.notificationDelivery.updateMany({
+        where: { schoolId: req.schoolId, eventType: req.eventType, eventId: req.eventId, principalType, principalId },
+        data: { channel },
+      }),
+    );
+    return channel;
+  }
+
+  /** Tokens currently believed reachable for any principal. */
+  private async liveTokensFor(schoolId: string, principal: NotificationPrincipal): Promise<string[]> {
+    const where =
+      principal.type === "GUARDIAN"
+        ? { guardianId: principal.guardianId }
+        : principal.type === "STUDENT"
+          ? { studentId: principal.studentId }
+          : { userId: principal.userId };
+    return withTenant(schoolId, async (db) => {
+      const rows = await db.deviceToken.findMany({ where, select: { expoPushToken: true } });
+      return rows.map((r) => r.expoPushToken);
+    });
   }
 }

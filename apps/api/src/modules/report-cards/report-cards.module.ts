@@ -2,6 +2,7 @@ import { BullModule } from "@nestjs/bullmq";
 import { Module } from "@nestjs/common";
 
 import { REPORT_CARDS_QUEUE } from "../../common/queue";
+import { NotificationsModule } from "../notifications/notifications.module";
 import { AssessmentModule } from "../assessment/assessment.module";
 import { AuthModule } from "../auth/auth.module";
 import { ReportCardsController } from "./report-card.controller";
@@ -29,6 +30,7 @@ import { ReportCardWorkflowService } from "./workflow/report-card-workflow.servi
   imports: [
     AuthModule,
     AssessmentModule,
+    NotificationsModule,
     BullModule.registerQueue({
       name: REPORT_CARDS_QUEUE,
       defaultJobOptions: {

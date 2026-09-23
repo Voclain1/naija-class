@@ -7,6 +7,9 @@ import { CurrentGuardian } from "../../common/auth/current-guardian.decorator";
 import { GuardianAuthGuard } from "../../common/auth/guardian-auth.guard";
 import type { GuardianAuthContext } from "../../common/auth/guardian-auth-context";
 import { CurrentStudent } from "../../common/auth/current-student.decorator";
+import { AuthGuard } from "../../common/auth/auth.guard.js";
+import { CurrentUser } from "../../common/auth/current-user.decorator.js";
+import type { AuthContext } from "../../common/auth/auth-context.js";
 import { StudentAuthGuard } from "../../common/auth/student-auth.guard";
 import type { StudentAuthContext } from "../../common/auth/student-auth-context";
 import { DevicesService } from "./devices.service";
@@ -72,5 +75,28 @@ export class StudentDevicesController {
     @Param("token") token: string,
   ): Promise<void> {
     await this.service.unregisterForStudent(studentCtx, token);
+  }
+}
+
+// Staff devices (notifications v1, N2). The third principal, mirroring the
+// two above — same service, same token table, its own guard.
+@Controller("devices")
+@UseGuards(AuthGuard)
+export class StaffDevicesController {
+  constructor(private readonly service: DevicesService) {}
+
+  @Post()
+  @HttpCode(200)
+  async register(
+    @CurrentUser() authCtx: AuthContext,
+    @Body(new ZodValidationPipe(registerDeviceSchema)) dto: RegisterDeviceInput,
+  ): Promise<RegisterDeviceResponse> {
+    return this.service.registerForStaff(authCtx, dto);
+  }
+
+  @Delete(":token")
+  @HttpCode(204)
+  async unregister(@CurrentUser() authCtx: AuthContext, @Param("token") token: string): Promise<void> {
+    await this.service.unregisterForStaff(authCtx, token);
   }
 }

@@ -28,6 +28,7 @@ import { StorageService } from "../../common/storage/storage.service.js";
 import { PaymentLinkInvalidationService } from "../invoices/payment-link-invalidation.service.js";
 import { PaymentPlanService } from "./payment-plan.service.js";
 import { issueReceipt, loadReceiptLogo } from "./receipt.js";
+import { EventNotifierService } from "../notifications/event-notifier.service.js";
 
 const RECEIPT_URL_TTL_SECONDS = 15 * 60; // 15 minutes
 
@@ -172,6 +173,10 @@ export class PaymentsService {
     private readonly paystack: PaystackService,
     private readonly paymentPlan: PaymentPlanService,
     @Optional() private readonly paymentLinkInvalidation?: PaymentLinkInvalidationService,
+    // Optional so the many specs that construct this service directly keep
+    // working: a missing notifier means no notification, never a failed
+    // payment — the same contract as the rest of this path (N7).
+    @Optional() private readonly events?: EventNotifierService,
   ) {}
 
   // ─── Record manual payment ────────────────────────────────────────────────
@@ -209,6 +214,8 @@ export class PaymentsService {
     }
     await this.paymentLinkInvalidation?.archivePending(authCtx.schoolId, dto.invoiceId);
     const receipt = await this.tryIssueReceipt(authCtx.schoolId, result.id);
+    // The family hears about money received (N1), after the payment stands.
+    await this.events?.paymentRecorded({ schoolId: authCtx.schoolId, paymentId: result.id });
     return { ...result, ...(receipt ?? {}), replayed: false };
   }
 

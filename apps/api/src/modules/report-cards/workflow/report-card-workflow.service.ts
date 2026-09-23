@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, Optional } from "@nestjs/common";
 
 import { Prisma, withTenant } from "@school-kit/db";
 import {
@@ -19,6 +19,7 @@ import { wakeRenderWorker } from "../render/wake-render-worker";
 import { REPORT_CARD_SELECT, ReportCardService, toReportCardDto } from "../report-card.service";
 import { assertOwnerAdminOrFormTeacher } from "./form-teacher-guard";
 import { assertNoReleasedCards } from "./released-guard";
+import { EventNotifierService } from "../../notifications/event-notifier.service.js";
 import { isArmFullySignedOff } from "./subject-reviewed-cascade";
 import { assertAllInState, distinctStatuses } from "./transitions";
 
@@ -55,7 +56,13 @@ export class ReportCardWorkflowService {
   // ReportCardService injected for enqueueArmRenderInTx (release composes the
   // render enqueue in its own tx). No cycle: ReportCardService has no dependency
   // back on the workflow service.
-  constructor(private readonly reportCards: ReportCardService) {}
+  constructor(
+    private readonly reportCards: ReportCardService,
+    // Optional so the specs that construct this service directly keep
+    // working, and because a missing notifier must never fail a release:
+    // the release is the decision, the notification is about it (N7).
+    @Optional() private readonly events?: EventNotifierService,
+  ) {}
 
   // POST /report-cards/arm/form-review — owner/admin OR the arm's FORM teacher.
   // DRAFT/SUBJECT_REVIEWED → FORM_REVIEWED. Re-verifies all subjects signed off
@@ -170,6 +177,14 @@ export class ReportCardWorkflowService {
         enqueuedCount,
       });
       return { status: "RELEASED", cardCount: cards.length };
+    });
+
+    // Tell the families, after the tx commits and never inside it (N7): the
+    // release is the academic decision, the notification is about it.
+    await this.events?.resultsReleased({
+      schoolId: authCtx.schoolId,
+      termId: input.termId,
+      classArmId: input.classArmId,
     });
 
     // Wake the render worker machine after the tx commits (Fly scale-to-zero).

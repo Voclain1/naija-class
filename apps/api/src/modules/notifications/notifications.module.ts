@@ -4,6 +4,7 @@ import { Module } from "@nestjs/common";
 import { PushModule } from "../../common/push/push.module";
 import { PUSH_QUEUE } from "../../common/queue";
 import { AuthModule } from "../auth/auth.module";
+import { EventNotifierService } from "./event-notifier.service";
 import { NotificationDispatchService } from "./notification-dispatch.service";
 import { NotificationPreferencesController } from "./notification-preferences.controller";
 import { NotificationPreferencesService } from "./notification-preferences.service";
@@ -20,7 +21,7 @@ import { PushProcessor } from "./push.processor";
 @Module({
   imports: [AuthModule, PushModule, BullModule.registerQueue({ name: PUSH_QUEUE })],
   controllers: [NotificationPreferencesController],
-  providers: [NotificationPreferencesService, NotificationDispatchService, PushProcessor],
-  exports: [NotificationPreferencesService, NotificationDispatchService],
+  providers: [NotificationPreferencesService, NotificationDispatchService, EventNotifierService, PushProcessor],
+  exports: [NotificationPreferencesService, NotificationDispatchService, EventNotifierService],
 })
 export class NotificationsModule {}
