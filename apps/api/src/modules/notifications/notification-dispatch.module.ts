@@ -3,9 +3,11 @@ import { Module } from "@nestjs/common";
 
 import { PUSH_QUEUE } from "../../common/queue";
 import { AuthModule } from "../auth/auth.module";
+import { CalendarModule } from "../calendar/calendar.module";
 import { EventNotifierService } from "./event-notifier.service";
 import { NotificationDispatchService } from "./notification-dispatch.service";
 import { NotificationPreferencesService } from "./notification-preferences.service";
+import { TeacherRemindersService } from "./teacher-reminders.service";
 
 // The SENDING half of notifications, without the worker.
 //
@@ -19,8 +21,13 @@ import { NotificationPreferencesService } from "./notification-preferences.servi
 // import THIS, and the worker stays in NotificationsModule, which the app
 // boots once.
 @Module({
-  imports: [AuthModule, BullModule.registerQueue({ name: PUSH_QUEUE })],
-  providers: [NotificationPreferencesService, NotificationDispatchService, EventNotifierService],
+  imports: [AuthModule, CalendarModule, BullModule.registerQueue({ name: PUSH_QUEUE })],
+  providers: [
+    NotificationPreferencesService,
+    NotificationDispatchService,
+    EventNotifierService,
+    TeacherRemindersService,
+  ],
   exports: [NotificationPreferencesService, NotificationDispatchService, EventNotifierService],
 })
 export class NotificationDispatchModule {}

@@ -203,6 +203,13 @@ export const baseConfig = [
       // write, goes through withTenant per school. No tenant data is accessed
       // via basePrisma.
       "**/modules/parent-summaries/parent-summaries.service.ts",
+      // teacher-reminders.service.ts — notifications v1, part 2. Same
+      // category as the three sweeps above: two daily crons iterate every
+      // ACTIVE school. basePrisma fetches ONLY the school id list (schools
+      // has no RLS); every read of terms, class arms, attendance,
+      // assignments and assessments, and every delivery row, goes through
+      // withTenant per school. No tenant data is accessed via basePrisma.
+      "**/modules/notifications/teacher-reminders.service.ts",
       // Phase 4 / Slice 2 — guardian portal auth. Same category as the
       // staff auth.guard.ts / auth.service.ts / invitations.service.ts
       // entries above: guardian_sessions/guardian_invitations are FORCE

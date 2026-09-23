@@ -20,11 +20,26 @@
 - Wired: **results released** (a class's guardians once each, plus each
   student) and **payment recorded** (the child's guardians).
 
-**Part 2, still to build:** the two teacher reminders (marks due, register not
-taken). Both are time-of-day sweeps — `@Cron` and `ScheduleModule` are already
-in use for the overdue-invoice and onboarding-nudge jobs — but "marks are due"
-needs a deadline the schema does not obviously carry yet, so it gets its own
-research rather than an invented rule.
+**Part 2 built (2026-09-23): the two teacher reminders.**
+
+- **Register not taken** — 10:00 Lagos on weekdays. Only on a real school day:
+  weekends, holidays and breaks are excluded by the same `computeSchoolDays`
+  the completeness report uses, reading the school's own merged calendar, so a
+  teacher is never chased on a day the school was shut. One notification per
+  TEACHER (a teacher who forms two classes hears once), keyed on the date so
+  the sweep is safe to re-run.
+- **Marks not entered** — the honest version. **The schema carries no
+  per-assessment deadline**, so "your marks are due today" would have been an
+  invented rule about someone's work. What it does carry is the TERM'S END
+  DATE, and marks are what a term ends with. So the reminder fires exactly
+  seven days before the term ends, to teachers with an assigned subject that
+  has no marks at all, and says precisely that. Keyed on the term, so it is a
+  deadline reminder rather than a daily nag.
+- Both sweeps copy the shape `FinanceService.transitionOverdueInvoices` and
+  `OnboardingNudgeService` already use — walk ACTIVE schools, each inside its
+  own tenant transaction, never let one school's failure stop the next — and
+  `teacher-reminders.service.ts` was added to the `basePrisma` allowlist with
+  that justification, as the allowlist requires.
 
 **Part 3, mobile:** staff device registration at sign-in, removal at sign-out
 and at the background lock, and tapping a notification opening the right
