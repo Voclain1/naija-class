@@ -41,6 +41,19 @@
   `teacher-reminders.service.ts` was added to the `basePrisma` allowlist with
   that justification, as the allowlist requires.
 
-**Part 3, mobile:** staff device registration at sign-in, removal at sign-out
-and at the background lock, and tapping a notification opening the right
-screen.
+**Part 3 built (2026-09-23): the mobile half.**
+
+- Staff register a device at sign-in and release it at sign-out, on the same
+  fire-and-forget path families use — a permission prompt must never stand
+  between a teacher and their register.
+- **Correction to N2 as written:** this plan said a staff device should also
+  be released at the 2-minute background lock. That is wrong, and it is not
+  built. The lock hides the screen; it does not end the session, and a
+  notification carries nothing private (N3). Releasing it there would stop a
+  teacher being told their register is missing precisely while the app is in
+  their pocket, which is when the telling is worth anything.
+- Tapping a notification opens what it was about, by principal: the same
+  "results" hint is a parent's children list, a student's results screen and
+  a head's approvals. An unknown hint goes home rather than nowhere, because
+  a tap that appears to do nothing reads as a broken app. The cold-start tap
+  (app not running, notification tapped hours later) is handled too.

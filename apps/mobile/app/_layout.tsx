@@ -14,6 +14,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { ThemeProvider, useTheme } from "../src/theme/theme-provider";
 import { SessionProvider } from "../src/lib/auth/session";
+import { NotificationRouter } from "../src/components/notification-router";
 import { createQueryClient } from "../src/lib/query/client";
 import { persistOptions } from "../src/lib/query/persist";
 import { installOnlineManager } from "../src/lib/query/online-manager";
@@ -99,6 +100,9 @@ export default function RootLayout() {
       <SessionProvider>
         <SafeAreaProvider>
           <ThemeProvider>
+            {/* Renders nothing; routes a tapped notification once there is
+                a signed-in surface to route to. */}
+            <NotificationRouter />
             <RootNavigator />
           </ThemeProvider>
         </SafeAreaProvider>
