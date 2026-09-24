@@ -648,6 +648,13 @@ export const CALENDAR_PERMISSIONS = [
 // academic, roster or financial data.
 export const CALENDAR_READ_PERMISSIONS = ["calendar-event.read"] as const;
 
+// Announcements (docs/modules/announcements.md A1). Sending is owner/admin —
+// a teacher messaging the whole school is a different feature (a class
+// message) and is not in v1. Reading is every staff role, like the calendar:
+// an announcement to "everyone" that staff cannot see would be absurd.
+export const ANNOUNCEMENT_MANAGE_PERMISSIONS = ["announcement.read", "announcement.create"] as const;
+export const ANNOUNCEMENT_READ_PERMISSIONS = ["announcement.read"] as const;
+
 // Phase 8 / CP2 — Recording Completeness (docs/modules/phase-8.md §16 D39).
 // Owner/admin only. Named `reports.*`, deliberately not `report-card.*`.
 //
@@ -702,6 +709,7 @@ export const ALL_PERMISSIONS = [
   ...SMART_IMPORT_PERMISSIONS,
   ...PHASE_7_PERMISSIONS,
   ...CALENDAR_PERMISSIONS,
+  ...ANNOUNCEMENT_MANAGE_PERMISSIONS,
   ...REPORTS_PERMISSIONS,
   ...TIMETABLE_PERMISSIONS,
   ...TIMETABLE_OWN_READ_PERMISSIONS,

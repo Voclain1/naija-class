@@ -2,6 +2,7 @@ import { PATH_METADATA } from "@nestjs/common/constants";
 import { SYSTEM_ROLE_SEEDS } from "@school-kit/db";
 import {
   CALENDAR_PERMISSIONS,
+  ANNOUNCEMENT_READ_PERMISSIONS,
   CALENDAR_READ_PERMISSIONS,
   REPORTS_PERMISSIONS,
   TIMETABLE_PERMISSIONS,
@@ -742,7 +743,17 @@ describe("Phase 3 RBAC close-out: seeded role grants", () => {
     // visible to all users (docs/modules/phase-8.md D4/D28) — bursar's one
     // deliberate non-finance grant. Asserted by name in the Phase 8 block below,
     // so this count still catches anything else.
-    expect(bursarPerms.size).toBe(PHASE_3_BURSAR_PERMISSIONS.length + CALENDAR_READ_PERMISSIONS.length);
+    //
+    // + ANNOUNCEMENT_READ_PERMISSIONS (2026-09-23): same reasoning as the
+    // calendar. An announcement to "everyone" that the bursar cannot see
+    // would be absurd, and reading one carries no academic or student data.
+    // Sending stays owner/admin (announcements.md A1), and the negative case
+    // is asserted just below.
+    expect(bursarPerms.size).toBe(
+      PHASE_3_BURSAR_PERMISSIONS.length + CALENDAR_READ_PERMISSIONS.length + ANNOUNCEMENT_READ_PERMISSIONS.length,
+    );
+    expect(bursarPerms.has("announcement.read")).toBe(true);
+    expect(bursarPerms.has("announcement.create")).toBe(false);
   });
 
   it("bursar is excluded from payment.refund and all three staff-bvn.* permissions", () => {
