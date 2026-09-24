@@ -21,6 +21,7 @@ import {
   parsePersistedMapping,
 } from "../validate.engine";
 import { runCommitHandler } from "./commit.handler";
+import { WORKER_TUNING } from "../../../common/queue/worker-tuning.js";
 
 // ImportsProcessor — sole BullMQ entry for IMPORTS_QUEUE.
 //
@@ -40,7 +41,7 @@ import { runCommitHandler } from "./commit.handler";
 // and the FailedJobEvent listener. The handlers are pure (or near-pure)
 // functions so they can be tested without a Job/Worker harness.
 
-@Processor(IMPORTS_QUEUE)
+@Processor(IMPORTS_QUEUE, { ...WORKER_TUNING.imports })
 export class ImportsProcessor extends WorkerHost {
   private readonly logger = new Logger(ImportsProcessor.name);
 

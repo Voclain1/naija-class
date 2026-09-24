@@ -6,6 +6,7 @@ import { withTenant } from "@school-kit/db";
 
 import { REPORT_CARDS_JOB_RENDER, REPORT_CARDS_QUEUE } from "../../../common/queue";
 import { RenderService, type RenderJobData } from "./render.service";
+import { WORKER_TUNING } from "../../../common/queue/worker-tuning.js";
 
 // ---------------------------------------------------------------------------
 // ReportCardRenderProcessor — the sole @Processor on REPORT_CARDS_QUEUE.
@@ -20,7 +21,7 @@ import { RenderService, type RenderJobData } from "./render.service";
 // spawns one BullMQ Worker per @Processor class. A second class on this queue
 // would load-balance render jobs across competing workers.
 // ---------------------------------------------------------------------------
-@Processor(REPORT_CARDS_QUEUE, { concurrency: 1 })
+@Processor(REPORT_CARDS_QUEUE, { concurrency: 1, ...WORKER_TUNING.reportCards })
 export class ReportCardRenderProcessor extends WorkerHost {
   private readonly logger = new Logger(ReportCardRenderProcessor.name);
 

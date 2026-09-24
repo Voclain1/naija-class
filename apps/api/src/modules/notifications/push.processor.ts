@@ -11,6 +11,7 @@ import {
 } from "../../common/push/expo-push.service";
 import { PUSH_JOB_RECEIPTS, PUSH_JOB_SEND, PUSH_QUEUE } from "../../common/queue";
 import type { PushReceiptsJobData, PushSendJobData } from "./push.jobs";
+import { WORKER_TUNING } from "../../common/queue/worker-tuning.js";
 
 // PushProcessor — the sole BullMQ entry for PUSH_QUEUE.
 //
@@ -27,7 +28,7 @@ import type { PushReceiptsJobData, PushSendJobData } from "./push.jobs";
 // short of the ~24h Expo keeps them, so a re-poll has room.
 const RECEIPT_DELAY_MS = 5 * 60 * 1000;
 
-@Processor(PUSH_QUEUE)
+@Processor(PUSH_QUEUE, { ...WORKER_TUNING.push })
 export class PushProcessor extends WorkerHost {
   private readonly logger = new Logger(PushProcessor.name);
 
