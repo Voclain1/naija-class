@@ -3135,3 +3135,30 @@ model AnnouncementRead {
   @@id([announcementId, principalType, principalId])
   @@map("announcement_reads")
 }
+
+// Opening the website from the app, already signed in
+// (docs/modules/web-handoff-signin.md).
+//
+// A separate table from password_reset_tokens on purpose (H-data): separate
+// tables make cross-purpose token confusion structurally impossible, which is
+// the same rule CLAUDE.md's SECURITY DEFINER review applied to the session
+// resolvers and guardian password reset already followed. A reset token
+// presented to the handoff exchange resolves to nothing, because this
+// resolver reads only this table.
+model WebHandoffToken {
+  id        String    @id @default(uuid())
+  schoolId  String    @map("school_id")
+  userId    String    @map("user_id")
+  // The session that asked for it (H1): if that session is gone by the time
+  // the browser exchanges, so is this token.
+  sessionId String    @map("session_id")
+  tokenHash String    @unique @map("token_hash")
+  expiresAt DateTime  @map("expires_at")
+  usedAt    DateTime? @map("used_at")
+  createdIp String?   @map("created_ip")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  @@index([schoolId])
+  @@index([userId])
+  @@map("web_handoff_tokens")
+}

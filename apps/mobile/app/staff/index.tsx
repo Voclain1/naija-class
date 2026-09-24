@@ -16,7 +16,8 @@ import { isSchoolAdmin, isTeacher } from "../../src/lib/auth/roles";
 import { serverToday } from "../../src/lib/staff/server-date";
 import { formatLongDate as formatToday, greeting, isoWeekdayOf } from "../../src/lib/when";
 import { useTermContext } from "../../src/lib/staff/use-term-context";
-import { WEB_NOT_CONFIGURED_MESSAGE, webUrl } from "../../src/lib/web-handoff";
+import { WEB_NOT_CONFIGURED_MESSAGE, signedInWebUrl, webUrl } from "../../src/lib/web-handoff";
+import { staffWebHandoff } from "../../src/lib/api/staff-auth";
 import { staffDestinations, type Destination } from "../../src/lib/navigation/destinations";
 import { AppMenu, MenuButton, useAppMenu } from "../../src/components/app-menu";
 import { spacing } from "../../src/theme/tokens";
@@ -150,10 +151,12 @@ export default function StaffDashboardScreen() {
     (data?.formTeacherArmIds ?? []).includes(arm.id),
   );
 
+  // Signed in automatically where possible, and the plain link otherwise —
+  // a handoff is never worse than the link it replaced.
   function openOnWeb(path: string): void {
-    const url = webUrl(path);
-    if (url === null) return;
-    void Linking.openURL(url);
+    void signedInWebUrl(path, (next) => staffWebHandoff(next)).then((url) => {
+      if (url) void Linking.openURL(url);
+    });
   }
   const webConfigured = webUrl("/") !== null;
 

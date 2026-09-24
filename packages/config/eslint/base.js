@@ -175,6 +175,14 @@ export const baseConfig = [
       "**/modules/schools/schools.service.ts",
       "**/modules/users/users.service.ts",
       "**/modules/invitations/invitations.service.ts",
+      // web-handoff.service.ts mints and exchanges the single-use, 60-second
+      // token that opens the website already signed in. The EXCHANGE is
+      // pre-tenant by construction — a browser arrives holding a token and
+      // nothing else, so the school is one of the things being resolved, via
+      // the auth_resolve_web_handoff_token SECURITY DEFINER function. Same
+      // category as the invitation-accept and password-reset call sites
+      // above.
+      "**/modules/auth/web-handoff.service.ts",
       // health.controller.ts runs GET /health/db PRE-tenant (no auth token,
       // no schoolId). It issues a single SELECT current_user to verify the
       // runtime DB role is app_user (not school_kit). No tenant data touched.

@@ -1,4 +1,5 @@
 import type {
+  WebHandoffResponse,
   MeResponse,
   StaffMobileChallengeInput,
   StaffMobileLoginInput,
@@ -29,4 +30,12 @@ export function staffSessions(): Promise<StaffSessionListResponse> {
 
 export function revokeStaffSession(sessionId: string): Promise<void> {
   return apiFetch(`/auth/sessions/${encodeURIComponent(sessionId)}`, { method: "DELETE" });
+}
+
+/**
+ * Mint a single-use handoff token so the website can open already signed in
+ * (docs/modules/web-handoff-signin.md). 60-second life, one use.
+ */
+export function staffWebHandoff(next: string): Promise<WebHandoffResponse> {
+  return apiFetch<WebHandoffResponse>("/auth/web-handoff", { method: "POST", body: { next } });
 }

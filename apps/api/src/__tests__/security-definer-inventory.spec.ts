@@ -69,6 +69,9 @@ const SECURITY_DEFINER_FUNCTIONS = [
   // Next cadence review remains due at 23.
   "auth_lookup_guardians_for_password_reset",
   "auth_resolve_guardian_password_reset_token",
+  // Opening the website from the app, already signed in (2026-09-23).
+  // Pre-tenant by definition: the browser arrives with a token and no school.
+  "auth_resolve_web_handoff_token",
 ] as const;
 
 interface SecurityDefinerRow {

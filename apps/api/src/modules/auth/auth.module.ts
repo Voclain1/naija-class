@@ -6,6 +6,7 @@ import { EmailModule } from "../../common/email/email.module.js";
 import { RateLimitByEmailGuard } from "../../common/guards/rate-limit-by-email.guard";
 import { AuthController } from "./auth.controller";
 import { AuthService } from "./auth.service";
+import { WebHandoffService } from "./web-handoff.service";
 import { TotpService } from "./totp.service";
 
 @Module({
@@ -17,7 +18,7 @@ import { TotpService } from "./totp.service";
   // modules opt in explicitly via @UseGuards(AuthGuard). Phase 0 routes
   // outside /auth (signup is public; /health is public) intentionally have
   // no auth requirement yet.
-  providers: [AuthService, TotpService, AuthGuard, PermissionsGuard, RateLimitByEmailGuard],
+  providers: [AuthService, WebHandoffService, TotpService, AuthGuard, PermissionsGuard, RateLimitByEmailGuard],
   exports: [AuthService, AuthGuard],
 })
 export class AuthModule {}
