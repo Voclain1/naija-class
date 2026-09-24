@@ -142,8 +142,19 @@ test("publish is what families see; an unpublished edit stays invisible until re
     const tPage = teacherSession.page;
     await expect(tPage.getByRole("heading", { name: "My timetable", level: 1 })).toBeVisible({ timeout: 60_000 });
     const mine = tPage.getByRole("region", { name: "My lessons" });
-    await expect(mine).toContainText(`${subjectName} — ${classA}`);
-    await expect(mine).toContainText(`${subjectName} — ${classB}`);
+    // The week grid pairs a subject with its class by POSITION — the class
+    // sits under the subject in the same cell — so there is no longer a
+    // "Subject — Class" string to match. The day view still writes that line,
+    // and both views are checked here: the week for both classes appearing at
+    // all, the day for the pairing itself.
+    await expect(mine).toContainText(subjectName);
+    await expect(mine).toContainText(classA);
+    await expect(mine).toContainText(classB);
+    await mine.getByRole("button", { name: "Day", exact: true }).click();
+    // The day view opens on today, which is whatever day CI runs on; the
+    // lesson under test is on Wednesday (see the guardian assertion above).
+    await mine.getByRole("button", { name: "Wed", exact: true }).click();
+    await expect(mine).toContainText(`${subjectName} — `);
     await expect(tPage.getByRole("heading", { name: `${classA} — your form class` })).toBeVisible();
     await expect(tPage.getByRole("heading", { name: `${classB} — your form class` })).toHaveCount(0);
     await tPage.screenshot({ path: `${SHOTS}/5-teacher-my-timetable.png`, fullPage: true });
