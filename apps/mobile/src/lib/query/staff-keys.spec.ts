@@ -57,6 +57,10 @@ const STAFF_KEYS: Record<string, readonly unknown[]> = {
   staffClassArms: queryKeys.staffClassArms(SCHOOL, USER),
   // CP4d — named colleagues' activity; an audited read.
   staffTeacherActivity: queryKeys.staffTeacherActivity(SCHOOL, USER),
+  // Announcements — the sent list names its sender, and a STAFF-audience
+  // message is internal.
+  staffAnnouncements: queryKeys.staffAnnouncements(SCHOOL, USER),
+  staffAnnouncementFeed: queryKeys.staffAnnouncementFeed(SCHOOL, USER),
 };
 
 describe("staff query keys", () => {

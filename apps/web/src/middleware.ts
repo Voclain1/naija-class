@@ -95,6 +95,10 @@ export const config = {
     "/timetable/:path*",
     // Owner/admin gradebook, added 2026-09-15 in the same PR as the page.
     "/gradebook/:path*",
+    // Announcements, added 2026-09-24 in the same PR as the page — this time
+    // because middleware.spec.ts refused the PR without it, which is the
+    // whole point of that spec existing.
+    "/announcements/:path*",
     "/teacher/:path*",
     "/super-admin/dashboard/:path*",
   ],

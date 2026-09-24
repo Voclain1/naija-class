@@ -18,6 +18,7 @@ import { LATER_PHASE_ITEMS, NAV_ITEMS } from "./nav-items";
 //      exactly when it happens.
 
 const SHIPPED_HREFS = [
+  "/announcements",
   "/guardians",
   "/gradebook",
   "/timetable",
@@ -89,6 +90,17 @@ describe("admin nav items", () => {
     // added, not where a school sees who can get into the portal.
     expect(item!.href).toBe("/guardians");
     expect(item!.requiredPermission).toBe("guardian.read");
+  });
+
+  it("lists Announcements as live, gated on the SEND permission rather than read", () => {
+    const item = NAV_ITEMS.find((i) => i.label === "Announcements");
+    expect(item).toBeDefined();
+    expect(item!.enabled).toBe(true);
+    expect(item!.href).toBe("/announcements");
+    // Every staff role reads announcements; only owner/admin send them, and
+    // this page is the sending desk. Gating on announcement.read would show a
+    // teacher and a bursar a compose form the API refuses.
+    expect(item!.requiredPermission).toBe("announcement.create");
   });
 
   it("has no reference left to the /lesson-notes route that never existed", () => {

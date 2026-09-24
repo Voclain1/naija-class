@@ -13,6 +13,8 @@ import type {
   CalendarResponse,
 } from "@school-kit/types";
 
+import type { AnnouncementFeedResponse } from "@school-kit/types";
+
 import { apiFetch } from "./client";
 
 // Phase 6 — the student principal's API surface.
@@ -127,4 +129,16 @@ export function getStudentCalendar(window: { from: string; to: string }): Promis
 /** Phase 8 / CP4 — the student's own PUBLISHED class timetable for the current term (§18 D39, D45). */
 export function getMyTimetable(): Promise<FamilyTimetableDto> {
   return apiFetch<FamilyTimetableDto>("/student-portal/me/timetable");
+}
+
+// Announcements (docs/modules/announcements.md). A student sees what was sent
+// to EVERYONE and to their own class — never the PARENTS or STAFF audiences,
+// which the server decides; this client just asks.
+
+export function studentAnnouncements(): Promise<AnnouncementFeedResponse> {
+  return apiFetch<AnnouncementFeedResponse>("/student-portal/announcements");
+}
+
+export function markStudentAnnouncementRead(id: string): Promise<void> {
+  return apiFetch<void>(`/student-portal/announcements/${encodeURIComponent(id)}/read`, { method: "POST" });
 }

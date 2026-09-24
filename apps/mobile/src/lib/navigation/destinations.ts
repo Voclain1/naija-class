@@ -107,6 +107,15 @@ export function staffDestinations(ctx: StaffContext): Destination[] {
     out.push({ key: "expense", label: "Log an expense", hint: "With a receipt photo", icon: "receipt-outline", group: "Money", route: "/staff/expenses" });
   }
 
+  // Announcements. Gated on announcement.read, which EVERY staff role holds —
+  // a teacher and a bursar read the school's messages on the same screen an
+  // owner sends them from; the compose form inside it checks the owner/admin
+  // role the service checks. Sitting in "School" rather than "Account"
+  // because it is the school talking, not a personal setting.
+  if (can("announcement.read")) {
+    out.push({ key: "announcements", label: "Announcements", hint: "From the school", icon: "megaphone-outline", group: "School", route: "/staff/announcements" });
+  }
+
   // --- Calendar ---
   if (teacher) {
     out.push({ key: "timetable", label: "Timetable", icon: "calendar-outline", group: "Calendar", route: "/staff/timetable" });
@@ -128,6 +137,7 @@ export function staffDestinations(ctx: StaffContext): Destination[] {
 export function guardianDestinations(): Destination[] {
   return [
     { key: "children", label: "My children", icon: "people-outline", group: "Your child", route: "/students" },
+    { key: "announcements", label: "From the school", hint: "Announcements", icon: "megaphone-outline", group: "Your child", route: "/announcements" },
     { key: "calendar", label: "School calendar", icon: "today-outline", group: "Calendar", route: "/calendar" },
   ];
 }
@@ -138,6 +148,7 @@ export function studentDestinations(): Destination[] {
     { key: "results", label: "My results", icon: "ribbon-outline", group: "Your school work", route: "/me/results" },
     { key: "attendance", label: "My attendance", icon: "checkbox-outline", group: "Your school work", route: "/me/attendance" },
     { key: "fees", label: "My fees", icon: "cash-outline", group: "Your school work", route: "/me/fees" },
+    { key: "announcements", label: "From the school", hint: "Announcements", icon: "megaphone-outline", group: "Your school work", route: "/me/announcements" },
     { key: "timetable", label: "My timetable", icon: "calendar-outline", group: "Calendar", route: "/me/timetable" },
     { key: "calendar", label: "School calendar", icon: "today-outline", group: "Calendar", route: "/me/calendar" },
     // Phase 7's tutor, honestly labelled until it exists (C2).
