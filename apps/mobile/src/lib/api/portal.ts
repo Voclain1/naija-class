@@ -17,6 +17,8 @@ import type {
   DeactivateStudentPortalResponse,
   CalendarResponse,
 } from "@school-kit/types";
+import type { AnnouncementFeedResponse } from "@school-kit/types";
+
 import { apiFetch } from "./client";
 
 // Typed bindings for the guardian portal API.
@@ -193,4 +195,17 @@ export function getGuardianCalendar(window: { from: string; to: string }): Promi
 /** Phase 8 / CP4 — a linked child's PUBLISHED class timetable for the current term (§18 D39, D45). */
 export function getChildTimetable(studentId: string): Promise<FamilyTimetableDto> {
   return apiFetch<FamilyTimetableDto>(`/portal/students/${encodeURIComponent(studentId)}/timetable`);
+}
+
+// Announcements the school has sent this family
+// (docs/modules/announcements.md). Reading the feed does not mark anything —
+// the screen marks each item once it is on screen, one call per item, so a
+// parent who opens the list and scrolls past three messages has read three.
+
+export function guardianAnnouncements(): Promise<AnnouncementFeedResponse> {
+  return apiFetch<AnnouncementFeedResponse>("/portal/announcements");
+}
+
+export function markGuardianAnnouncementRead(id: string): Promise<void> {
+  return apiFetch<void>(`/portal/announcements/${encodeURIComponent(id)}/read`, { method: "POST" });
 }
