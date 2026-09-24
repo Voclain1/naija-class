@@ -1,5 +1,6 @@
 import {
   BarChart3,
+  Megaphone,
   CalendarClock,
   CalendarDays,
   ClipboardList,
@@ -115,6 +116,13 @@ export const NAV_ITEMS: NavItem[] = [
   // Gated on timetable.read — owner/admin only in CP3; teacher, student and
   // guardian timetable views are CP4's.
   { label: "Timetable", href: "/timetable", icon: CalendarClock, enabled: true, requiredPermission: "timetable.read" },
+  // Announcements (docs/modules/announcements.md). Gated on
+  // announcement.create, not announcement.read: every staff role can READ the
+  // school's announcements in their own feed, but this page is the sending
+  // desk, and owner/admin are the only roles allowed to send (A1). Gating on
+  // read would put it in a teacher's and a bursar's sidebar pointing at a
+  // compose form the API refuses.
+  { label: "Announcements", href: "/announcements", icon: Megaphone, enabled: true, requiredPermission: "announcement.create" },
   { label: "Settings", href: "/settings", icon: Settings, enabled: true, requiredPermission: "school.read" },
 ];
 

@@ -31,7 +31,9 @@ const OWNER: StaffContext = { ...base, roles: [{ key: "owner" }], permissions: [
 const BURSAR: StaffContext = {
   ...base,
   roles: [{ key: "bursar" }],
-  permissions: ["finance.dashboard.read", "finance.debtors.read", "calendar-event.read"],
+  // A bursar holds announcement.read (they read what the school sends; they
+  // cannot send it) — see PHASE_3_BURSAR_PERMISSIONS.
+  permissions: ["finance.dashboard.read", "finance.debtors.read", "calendar-event.read", "announcement.read"],
 };
 
 const keys = (ctx: StaffContext) => staffDestinations(ctx).map((d) => d.key);
@@ -85,13 +87,13 @@ describe("an owner", () => {
 
 describe("a bursar", () => {
   it("gets money and the calendar only", () => {
-    expect(keys(BURSAR).sort()).toEqual(["calendar", "collections", "debtors"]);
+    expect(keys(BURSAR).sort()).toEqual(["announcements", "calendar", "collections", "debtors"]);
   });
 });
 
 describe("families", () => {
   it("gives a parent their children and the calendar", () => {
-    expect(guardianDestinations().map((d) => d.route)).toEqual(["/students", "/calendar"]);
+    expect(guardianDestinations().map((d) => d.route)).toEqual(["/students", "/announcements", "/calendar"]);
   });
 
   it("gives a student every part of their own school work", () => {
@@ -100,6 +102,7 @@ describe("families", () => {
       "/me/results",
       "/me/attendance",
       "/me/fees",
+      "/me/announcements",
       "/me/timetable",
       "/me/calendar",
       // Phase 7's tutor, present as an honest "coming soon" route so the

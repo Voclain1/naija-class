@@ -1,7 +1,7 @@
 "use client";
 
 import { Loader2 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { ISO_WEEKDAY_LABELS, formatMinuteOfDay, type TeacherTimetableDto } from "@school-kit/types";
 
@@ -9,11 +9,13 @@ import { InlineAlert } from "@/components/shared/inline-alert";
 import { ApiError } from "@/lib/api-client";
 import { getMyTimetable } from "@/lib/timetable/timetable-api";
 import { buildGrid } from "@/lib/timetable/timetable-grid";
+import { MyLessons } from "@/components/timetable/my-lessons";
 
 // /teacher/timetable — Phase 8 / CP4 (docs/modules/phase-8.md §18 D37, Q38).
 //
-// Read-only. Two sections: "My lessons" (every lesson this teacher teaches, in
-// the timetable in force for the chosen term, day by day) and, for a form
+// Read-only. Two sections: "My lessons" (every lesson this teacher teaches in
+// the timetable in force for the chosen term, as a week grid or a single day —
+// the app's two views, see `my-lessons.tsx`) and, for a form
 // teacher, the full grid of their form class(es). No other class's grid.
 // Teachers see the LIVE timetable — the one the school is actually following —
 // not the published snapshot families see (D45).
@@ -39,12 +41,6 @@ export default function TeacherTimetablePage() {
   useEffect(() => {
     void load();
   }, [load]);
-
-  const byDay = useMemo(() => {
-    const m = new Map<number, TeacherTimetableDto["ownLessons"]>();
-    for (const l of data?.ownLessons ?? []) m.set(l.dayOfWeek, [...(m.get(l.dayOfWeek) ?? []), l]);
-    return m;
-  }, [data]);
 
   return (
     <div className="flex w-full max-w-5xl flex-col gap-6">
@@ -96,30 +92,7 @@ export default function TeacherTimetablePage() {
                 You have no lessons on the timetable for {data.term.name}.
               </div>
             ) : (
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                {data.schoolWeekDays
-                  .filter((d) => byDay.has(d))
-                  .map((d) => (
-                    <div key={d} className="rounded-md border bg-card p-3">
-                      <h3 className="mb-2 text-sm font-medium">{ISO_WEEKDAY_LABELS[d]}</h3>
-                      <ol className="flex flex-col gap-2">
-                        {byDay.get(d)!.map((l) => (
-                          <li key={`${d}-${l.slot.position}`} className="flex flex-col rounded bg-primary/10 p-2 text-sm">
-                            <span className="text-xs text-muted-foreground">
-                              {l.slot.label} · {formatMinuteOfDay(l.slot.startMinute)}–{formatMinuteOfDay(l.slot.endMinute)}
-                            </span>
-                            <span className="font-medium">
-                              {l.subjectName} — {l.className}
-                            </span>
-                            {l.coTeacherNames.length > 0 && (
-                              <span className="text-xs text-muted-foreground">With {l.coTeacherNames.join(", ")}</span>
-                            )}
-                          </li>
-                        ))}
-                      </ol>
-                    </div>
-                  ))}
-              </div>
+              <MyLessons data={data} />
             )}
           </section>
 
