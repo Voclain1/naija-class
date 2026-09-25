@@ -8,7 +8,7 @@ import { staffTeacherScope } from "../../src/lib/api/staff-attendance";
 import { staffMyTimetable } from "../../src/lib/api/staff-schedule";
 import { staffAdminDashboard } from "../../src/lib/api/staff-admin";
 import { staffFinanceDashboard } from "../../src/lib/api/staff-finance";
-import { moneyBand, quickActions, showsMoneyBand } from "../../src/lib/staff/bursar";
+import { dedupeByRoute, moneyBand, quickActions, showsMoneyBand } from "../../src/lib/staff/bursar";
 import { queryKeys } from "../../src/lib/query/keys";
 import { useSession } from "../../src/lib/auth/session";
 import { hasPermission } from "../../src/lib/auth/permissions";
@@ -128,6 +128,10 @@ export default function StaffDashboardScreen() {
     staleTime: 60_000,
   });
 
+  // Hoisted out of the JSX because the grid below has to know which routes
+  // these already cover.
+  const moneyStats = finance.data ? moneyBand(finance.data) : [];
+
   const today = serverToday();
   const weekday = isoWeekdayOf(today);
 
@@ -175,7 +179,15 @@ export default function StaffDashboardScreen() {
     else if (destination.web) openOnWeb(destination.web);
   }
 
-  const visible = destinations;
+  // Anything the money band already offers is dropped from the full grid, so
+  // one screen is never two tiles. Without this a bursar saw "Who owes",
+  // "Receipts" and "Log an expense" twice each (found on a device,
+  // 2026-09-25) — the band and the grid are built from different lists and
+  // neither knew about the other.
+  const moneyRoutes = canSeeMoney
+    ? [...moneyStats.map((stat) => stat.route), ...actions.map((action) => action.route)]
+    : [];
+  const visible = dedupeByRoute(destinations, moneyRoutes);
   const roleName = staff?.roles?.[0]?.name ?? "Staff";
   const hasToday = teacher && (nextLesson !== null || formArms.length > 0);
   const school = overview.data;
@@ -220,7 +232,7 @@ export default function StaffDashboardScreen() {
         ) : null}
         {finance.data ? (
           <Card style={styles.band}>
-            {moneyBand(finance.data).map((stat) => (
+            {moneyStats.map((stat) => (
               <StatRow
                 key={stat.key}
                 icon={stat.icon}

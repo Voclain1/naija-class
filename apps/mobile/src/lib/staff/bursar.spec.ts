@@ -1,7 +1,7 @@
 import type { DebtorDto, FinanceDashboardDto } from "@school-kit/types";
 import { describe, expect, it } from "vitest";
 
-import { filterDebtors, moneyBand, quickActions, showsMoneyBand } from "./bursar";
+import { dedupeByRoute, filterDebtors, moneyBand, quickActions, showsMoneyBand } from "./bursar";
 import { visibleStaffTabs } from "./tabs";
 
 // The bursar's home (docs/modules/phone-for-every-role.md D1).
@@ -94,7 +94,6 @@ describe("quick actions — the four things a bursar does all day", () => {
   it("are in the order they are done", () => {
     expect(quickActions(BURSAR_PERMISSIONS).map((a) => a.key)).toEqual([
       "record",
-      "debtors",
       "receipts",
       "expense",
     ]);
@@ -125,5 +124,49 @@ describe("finding the family at the counter", () => {
     expect(filterDebtors(rows, "jss")).toHaveLength(2);
     expect(filterDebtors(rows, "  ")).toHaveLength(2);
     expect(filterDebtors(rows, "nobody")).toHaveLength(0);
+  });
+});
+
+describe("one screen, one tile (found on a device 2026-09-25)", () => {
+  // A bursar saw "Who owes", "Receipts" and "Log an expense" TWICE each: the
+  // money band and the "Everything you do" grid are built from two different
+  // lists (bursar.ts and destinations.ts) and neither knew about the other.
+
+  it("never offers the same route twice within the money band", () => {
+    const routes = quickActions(BURSAR_PERMISSIONS).map((a) => a.route);
+    expect(new Set(routes).size).toBe(routes.length);
+  });
+
+  it("drops a grid tile the band already offers, and keeps the rest in order", () => {
+    const grid = [
+      { key: "collections", route: "/staff/collections" },
+      { key: "debtors", route: "/staff/collections/debtors" },
+      { key: "receipts", route: "/staff/receipts" },
+      { key: "expense", route: "/staff/expenses" },
+      { key: "calendar", route: "/staff/calendar" },
+    ];
+    const band = ["/staff/collections/debtors", "/staff/receipts", "/staff/expenses"];
+    expect(dedupeByRoute(grid, band).map((i) => i.key)).toEqual(["collections", "calendar"]);
+  });
+
+  it("keeps a website destination, which has no route of its own", () => {
+    const grid = [{ key: "website", web: "/finance/dashboard" }, { key: "receipts", route: "/staff/receipts" }];
+    expect(dedupeByRoute(grid, ["/staff/receipts"]).map((i) => i.key)).toEqual(["website"]);
+  });
+
+  it("de-duplicates within the list itself, not just against the band", () => {
+    const grid = [
+      { key: "a", route: "/staff/receipts" },
+      { key: "b", route: "/staff/receipts" },
+    ];
+    expect(dedupeByRoute(grid, []).map((i) => i.key)).toEqual(["a"]);
+  });
+
+  it("leaves a teacher's grid untouched — there is no money band to collide with", () => {
+    const grid = [
+      { key: "marks", route: "/staff/gradebook" },
+      { key: "classes", route: "/staff/classes" },
+    ];
+    expect(dedupeByRoute(grid, []).map((i) => i.key)).toEqual(["marks", "classes"]);
   });
 });
