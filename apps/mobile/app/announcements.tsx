@@ -12,6 +12,7 @@ import { spacing } from "../src/theme/tokens";
 import { Body, Button, CenteredMessage, Notice, Screen } from "../src/components/ui";
 import { EmptyState } from "../src/components/layout";
 import { FreshnessLabel } from "../src/components/freshness-label";
+import { CallSchool } from "../src/components/call-school";
 
 // What the school has sent this parent (docs/modules/announcements.md).
 //
@@ -24,7 +25,7 @@ import { FreshnessLabel } from "../src/components/freshness-label";
 const ONE_HOUR_MS = 1000 * 60 * 60;
 
 export default function AnnouncementsScreen() {
-  const { status, principal } = useSession();
+  const { status, principal, school } = useSession();
   const { colors } = useTheme();
   const queryClient = useQueryClient();
 
@@ -91,6 +92,12 @@ export default function AnnouncementsScreen() {
             )}
           </>
         )}
+            {/* D12 — where the question actually arises: someone has just read
+                "the gate is closed tomorrow" and wants to ask about it.
+                ONE button for the screen rather than one under every message,
+                which would repeat the same action a dozen times and read as
+                clutter. */}
+        <CallSchool phone={school?.phone} />
       </ScrollView>
     </Screen>
   );

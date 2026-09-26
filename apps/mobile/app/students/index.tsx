@@ -10,6 +10,7 @@ import { useTheme } from "../../src/theme/theme-provider";
 import { AppMenu, MenuButton, useAppMenu } from "../../src/components/app-menu";
 import { guardianDestinations } from "../../src/lib/navigation/destinations";
 import { childHighlight, initials } from "../../src/lib/family/today";
+import { CallSchool } from "../../src/components/call-school";
 import { greeting } from "../../src/lib/when";
 import { fontSizes, fonts, radii, spacing } from "../../src/theme/tokens";
 import { Body, Button, Card, CenteredMessage, Label, Notice, Screen } from "../../src/components/ui";
@@ -166,6 +167,11 @@ export default function StudentsScreen() {
           subtitle="Holidays, exams and events"
           onPress={() => router.push("/calendar")}
         />
+        {/* D12 — the reply path. A parent who has just read something about
+            their child rings the school; the app's job is to save them looking
+            up the number. Below the children, because it answers a question
+            the cards above raised. */}
+        {school?.phone ? <CallSchool phone={school.phone} /> : null}
       </ScrollView>
 
       <AppMenu

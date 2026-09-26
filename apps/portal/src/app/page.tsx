@@ -12,7 +12,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
-import type { AnnouncementFeedResponse, PortalStudentDto } from "@school-kit/types";
+import { callSchoolHref, type AnnouncementFeedResponse, type PortalStudentDto, type SchoolContactResponse } from "@school-kit/types";
 
 import {
   buildLoginUrl,
@@ -35,6 +35,9 @@ export default function DashboardPage() {
   // for, and a school message nobody can count is still readable one tap
   // away. A failure shows no badge rather than a zero, which would be a lie.
   const [unread, setUnread] = useState(0);
+  // Same treatment as the unread count: fetched on its own, silent on failure,
+  // and no button at all when the school has set no number (D12).
+  const [callHref, setCallHref] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -92,8 +95,20 @@ export default function DashboardPage() {
       }
     }
 
+    async function loadSchool() {
+      try {
+        const res = await fetch("/api/portal/school");
+        if (!res.ok) return;
+        const body = (await res.json()) as SchoolContactResponse;
+        if (!cancelled) setCallHref(callSchoolHref(body.phone));
+      } catch {
+        // Silent by design — see the note on callHref above.
+      }
+    }
+
     void load();
     void loadUnread();
+    void loadSchool();
     return () => {
       cancelled = true;
     };
@@ -167,6 +182,16 @@ export default function DashboardPage() {
           ))}
         </ul>
       )}
+      {/* D12 — the one contact path this product offers a family, and it is
+          the school itself rather than any member of staff (D11). */}
+      {callHref ? (
+        <a
+          href={callHref}
+          className="self-start rounded-md border border-input px-4 py-2 text-sm font-medium hover:bg-muted"
+        >
+          Call the school
+        </a>
+      ) : null}
     </main>
   );
 }

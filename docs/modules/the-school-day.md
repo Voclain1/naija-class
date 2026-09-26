@@ -1,7 +1,7 @@
 # The school day — absence alerts, homework, behaviour, and the reply path
 
-**Status:** approved 2026-09-26. **Parts A and B built** — see the status
-sections at the end. D and C not started, in that order.
+**Status:** approved 2026-09-26. **Parts A, B and D built** — see the status
+sections at the end. C not started.
 **Asked for:** after the device pass, "plan for the number 3 above" — the four
 things nobody has ever decided against, as opposed to the work deliberately
 kept on the web (bulk/high-trust) or waiting on Phase 7's vendor choice (AI).
@@ -316,3 +316,35 @@ of the new grants — silently green rather than loudly broken. Rebuilding
 surfaced the real failure (`expected 39 to be 38`). That is the stale-`dist`
 trap CLAUDE.md's ESM section describes, and it is worse than the missing-`dist`
 case it warns about, because nothing fails.
+
+## Part D status (2026-09-26) — built
+
+"Call the school", on every family surface: the app's parent and student homes,
+both announcement screens, and the portal's home and announcements page.
+
+- **No messaging was built, and that is the deliverable.** D11 stands: a
+  two-way channel in a product used by minors brings a safeguarding duty,
+  moderation and retention this project cannot carry. What shipped is the thing
+  parents already do, with the friction removed.
+- **One button per SCREEN, not one per announcement**, which is the one place
+  this departs from D12's wording. A button repeated under every message is the
+  same action a dozen times and reads as clutter; the screen-level button
+  answers the same question. Recorded rather than quietly changed.
+- **`callSchoolHref` is the whole of the logic**, in `@school-kit/types` so all
+  three apps share one rule. It strips whatever a human typed into a phone
+  field, KEEPS a leading `+` (dropping it turns +234… into a local number that
+  dials somewhere else), and returns null below seven digits.
+- **Null hides the button; it never disables it.** A greyed-out "Call the
+  school" tells a worried parent the feature exists and has been taken away
+  from them. Absent, it simply leaves them where they were.
+- **The portal needed a server addition and the app did not.** The app already
+  had the school in its session; the browser knew the child, the invoices and
+  the calendar and had no idea what school it was showing them for. `GET
+  /portal/school` and `GET /student-portal/me/school` return two fields —
+  name and phone — with the school id coming from the session, never the
+  request.
+- The app's tablet case is handled rather than ignored: where there is no
+  dialler, the number is shown so it can be read out or typed elsewhere.
+
+**Still not built: Part C (behaviour records).** Last by design — it carries
+the most social risk and the least daily value.
