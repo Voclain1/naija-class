@@ -92,11 +92,10 @@ export default function AnnouncementsScreen() {
             )}
           </>
         )}
-            {/* D12 — where the question actually arises: someone has just read
-                "the gate is closed tomorrow" and wants to ask about it.
-                ONE button for the screen rather than one under every message,
-                which would repeat the same action a dozen times and read as
-                clutter. */}
+        {/* D12 — where the question actually arises: someone has just read
+            "the gate is closed tomorrow" and wants to ask about it. ONE button
+            for the screen rather than one under every message, which would
+            repeat the same action a dozen times and read as clutter. */}
         <CallSchool phone={school?.phone} />
       </ScrollView>
     </Screen>
