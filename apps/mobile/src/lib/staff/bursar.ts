@@ -94,22 +94,28 @@ export interface QuickAction {
 }
 
 /**
- * The four things a bursar does all day, in the order they do them — first
- * on the screen, above the full tile grid.
+ * The things a bursar does all day, in the order they do them — first on the
+ * screen, above the full tile grid.
  *
  * "Record a payment" goes to the debtor list rather than a separate search:
  * the people who pay are the people who owe, that list already carries their
  * names, and it is the one list a bursar's permissions can read (the staff
  * student directory is owner/admin only).
+ *
+ * There is deliberately NO "Who owes" tile here, though a bursar asks that
+ * question constantly. It would be the SAME ROUTE as "Record a payment", and
+ * a band of four tiles where two open one screen reads as a mistake — which
+ * is exactly how it read on a device (2026-09-25). The question is still
+ * answered twice on this screen: the figures band above says "Outstanding · N
+ * families owing" and taps through to that list, and the tile grid below
+ * carries it under its own name. `dedupeByRoute` keeps those three from ever
+ * becoming three copies again.
  */
 export function quickActions(permissions: readonly string[]): QuickAction[] {
   const can = (permission: string) => hasPermission(permissions, permission);
   const actions: QuickAction[] = [];
   if (can("payment.record") && can("finance.debtors.read")) {
     actions.push({ key: "record", label: "Record a payment", icon: "add-circle-outline", route: "/staff/collections/debtors" });
-  }
-  if (can("finance.debtors.read")) {
-    actions.push({ key: "debtors", label: "Who owes", icon: "alert-circle-outline", route: "/staff/collections/debtors" });
   }
   if (can("payment.read")) {
     actions.push({ key: "receipts", label: "Receipts", icon: "document-text-outline", route: "/staff/receipts" });
@@ -130,4 +136,31 @@ export function filterDebtors<T extends { studentName: string; admissionNumber: 
   return rows.filter((row) =>
     [row.studentName, row.admissionNumber, row.classArm].some((field) => field.toLowerCase().includes(needle)),
   );
+}
+
+/**
+ * Drops anything whose route is already offered above it on the same screen.
+ *
+ * The staff home renders three things that can name one screen: the money
+ * figures (each stat may link), the quick actions, and the full "Everything
+ * you do" grid built from `staffDestinations`. For a bursar those overlap
+ * almost completely — on a device, "Who owes", "Log an expense" and
+ * "Receipts" each appeared TWICE (2026-09-25).
+ *
+ * Earlier wins: a tile in the band is there because it is what this person
+ * does most, and the grid is the exhaustive list, so the grid is what gives
+ * way. Anything with no route (a website handoff) is always kept — it is not
+ * the same destination as an in-app screen even when it looks related.
+ */
+export function dedupeByRoute<T extends { route?: string }>(
+  items: readonly T[],
+  alreadyShown: readonly (string | undefined)[],
+): T[] {
+  const taken = new Set(alreadyShown.filter((route): route is string => typeof route === "string"));
+  return items.filter((item) => {
+    if (item.route === undefined) return true;
+    if (taken.has(item.route)) return false;
+    taken.add(item.route);
+    return true;
+  });
 }

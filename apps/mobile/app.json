@@ -27,6 +27,13 @@
     "plugins": [
       "expo-router",
       [
+        "expo-notifications",
+        {
+          "color": "#0E5C43",
+          "defaultChannel": "school-kit"
+        }
+      ],
+      [
         "expo-local-authentication",
         {
           "faceIDPermission": "Allow School Kit to unlock your staff session."

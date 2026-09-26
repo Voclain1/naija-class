@@ -19,6 +19,7 @@ import { createQueryClient } from "../src/lib/query/client";
 import { persistOptions } from "../src/lib/query/persist";
 import { installOnlineManager } from "../src/lib/query/online-manager";
 import { initTokenStore } from "../src/lib/auth/token-store";
+import { initNotificationDisplay } from "../src/lib/push/display";
 
 // Keep the native splash up until fonts and the session token are ready, so
 // the first frame is the real UI rather than an unstyled flash.
@@ -87,6 +88,14 @@ export default function RootLayout() {
   useEffect(() => {
     if (ready) void SplashScreen.hideAsync();
   }, [ready]);
+
+  // How an arriving notification is shown: the foreground handler and the
+  // Android channel. Set before anything can arrive, and independent of who
+  // is signed in — a notification can land for a principal who signed in on
+  // a previous launch. See src/lib/push/display.ts.
+  useEffect(() => {
+    void initNotificationDisplay();
+  }, []);
 
   if (!ready) return null;
 

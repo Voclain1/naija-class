@@ -71,7 +71,9 @@ function projectId(): string | undefined {
 async function resolvePermission(): Promise<PermissionStatus> {
   const existing = await Notifications.getPermissionsAsync();
   const current = existing.status as PermissionStatus;
-  if (!shouldRequestPermission(current)) return current;
+  // canAskAgain, not the status, decides — on Android 13+ a never-asked
+  // permission reports "denied". See shouldRequestPermission.
+  if (!shouldRequestPermission({ status: current, canAskAgain: existing.canAskAgain })) return current;
 
   const requested = await Notifications.requestPermissionsAsync();
   return requested.status as PermissionStatus;
