@@ -1,0 +1,502 @@
+[
+  {
+    "ID": "REDACTED",
+    "Version": 279,
+    "Stable": false,
+    "InProgress": false,
+    "Reason": "",
+    "Description": "Release",
+    "Status": "complete",
+    "DeploymentStrategy": "",
+    "Metadata": null,
+    "User": {
+      "ID": "REDACTED",
+      "Name": "Deploy User",
+      "Email": "deploy@example.invalid",
+      "EnablePaidHobby": false
+    },
+    "EvaluationID": "",
+    "CreatedAt": "2026-09-26T16:57:08Z",
+    "ImageRef": "registry.fly.io/school-kit-api:deployment-01M3FA8KCD86AY5DM9XNH0XYBY"
+  },
+  {
+    "ID": "REDACTED",
+    "Version": 278,
+    "Stable": false,
+    "InProgress": false,
+    "Reason": "",
+    "Description": "Release",
+    "Status": "complete",
+    "DeploymentStrategy": "",
+    "Metadata": null,
+    "User": {
+      "ID": "REDACTED",
+      "Name": "Deploy User",
+      "Email": "deploy@example.invalid",
+      "EnablePaidHobby": false
+    },
+    "EvaluationID": "",
+    "CreatedAt": "2026-09-26T15:38:04Z",
+    "ImageRef": "registry.fly.io/school-kit-api:deployment-01M3EAFMJXN37R73F0FWFGYVCW"
+  },
+  {
+    "ID": "REDACTED",
+    "Version": 277,
+    "Stable": false,
+    "InProgress": false,
+    "Reason": "",
+    "Description": "Release",
+    "Status": "complete",
+    "DeploymentStrategy": "",
+    "Metadata": null,
+    "User": {
+      "ID": "REDACTED",
+      "Name": "Deploy User",
+      "Email": "deploy@example.invalid",
+      "EnablePaidHobby": false
+    },
+    "EvaluationID": "",
+    "CreatedAt": "2026-09-26T09:08:22Z",
+    "ImageRef": "registry.fly.io/school-kit-api:deployment-01M3EFE1P2XXYJQJTPWPB6BSG4"
+  },
+  {
+    "ID": "REDACTED",
+    "Version": 276,
+    "Stable": false,
+    "InProgress": false,
+    "Reason": "",
+    "Description": "Release",
+    "Status": "complete",
+    "DeploymentStrategy": "",
+    "Metadata": null,
+    "User": {
+      "ID": "REDACTED",
+      "Name": "Deploy User",
+      "Email": "deploy@example.invalid",
+      "EnablePaidHobby": false
+    },
+    "EvaluationID": "",
+    "CreatedAt": "2026-09-26T07:41:18Z",
+    "ImageRef": "registry.fly.io/school-kit-api:deployment-01M3EAFMJXN37R73F0FWFGYVCW"
+  },
+  {
+    "ID": "REDACTED",
+    "Version": 275,
+    "Stable": false,
+    "InProgress": false,
+    "Reason": "",
+    "Description": "Release",
+    "Status": "complete",
+    "DeploymentStrategy": "",
+    "Metadata": null,
+    "User": {
+      "ID": "REDACTED",
+      "Name": "Deploy User",
+      "Email": "deploy@example.invalid",
+      "EnablePaidHobby": false
+    },
+    "EvaluationID": "",
+    "CreatedAt": "2026-09-24T21:09:19Z",
+    "ImageRef": "registry.fly.io/school-kit-api:deployment-01M3AKWAE2P0TNK2NG4QPVFP6H"
+  },
+  {
+    "ID": "REDACTED",
+    "Version": 274,
+    "Stable": false,
+    "InProgress": false,
+    "Reason": "",
+    "Description": "Release",
+    "Status": "complete",
+    "DeploymentStrategy": "",
+    "Metadata": null,
+    "User": {
+      "ID": "REDACTED",
+      "Name": "Deploy User",
+      "Email": "deploy@example.invalid",
+      "EnablePaidHobby": false
+    },
+    "EvaluationID": "",
+    "CreatedAt": "2026-09-24T19:23:14Z",
+    "ImageRef": "registry.fly.io/school-kit-api:deployment-01M3ADT59MEGB00NYR9RN3GXKE"
+  },
+  {
+    "ID": "REDACTED",
+    "Version": 273,
+    "Stable": false,
+    "InProgress": false,
+    "Reason": "",
+    "Description": "Release",
+    "Status": "complete",
+    "DeploymentStrategy": "",
+    "Metadata": null,
+    "User": {
+      "ID": "REDACTED",
+      "Name": "Deploy User",
+      "Email": "deploy@example.invalid",
+      "EnablePaidHobby": false
+    },
+    "EvaluationID": "",
+    "CreatedAt": "2026-09-24T18:24:23Z",
+    "ImageRef": "registry.fly.io/school-kit-api:deployment-01M3AAFKJ922SH8GBJ6D9988QW"
+  },
+  {
+    "ID": "REDACTED",
+    "Version": 272,
+    "Stable": false,
+    "InProgress": false,
+    "Reason": "",
+    "Description": "Release",
+    "Status": "complete",
+    "DeploymentStrategy": "",
+    "Metadata": null,
+    "User": {
+      "ID": "REDACTED",
+      "Name": "Deploy User",
+      "Email": "deploy@example.invalid",
+      "EnablePaidHobby": false
+    },
+    "EvaluationID": "",
+    "CreatedAt": "2026-09-24T18:05:52Z",
+    "ImageRef": "registry.fly.io/school-kit-api:deployment-01M3A9BCYCV8B9DRRVF4G3K9CK"
+  },
+  {
+    "ID": "REDACTED",
+    "Version": 271,
+    "Stable": false,
+    "InProgress": false,
+    "Reason": "",
+    "Description": "Release",
+    "Status": "complete",
+    "DeploymentStrategy": "",
+    "Metadata": null,
+    "User": {
+      "ID": "REDACTED",
+      "Name": "Deploy User",
+      "Email": "deploy@example.invalid",
+      "EnablePaidHobby": false
+    },
+    "EvaluationID": "",
+    "CreatedAt": "2026-09-22T14:35:05Z",
+    "ImageRef": "registry.fly.io/school-kit-api:deployment-01M34RHGXPVTDNRHBJZXQFSAR6"
+  },
+  {
+    "ID": "REDACTED",
+    "Version": 270,
+    "Stable": false,
+    "InProgress": false,
+    "Reason": "",
+    "Description": "Release",
+    "Status": "complete",
+    "DeploymentStrategy": "",
+    "Metadata": null,
+    "User": {
+      "ID": "REDACTED",
+      "Name": "Deploy User",
+      "Email": "deploy@example.invalid",
+      "EnablePaidHobby": false
+    },
+    "EvaluationID": "",
+    "CreatedAt": "2026-09-22T13:19:21Z",
+    "ImageRef": "registry.fly.io/school-kit-api:deployment-01M34M6FQ7P75CDRY1FA04DHCJ"
+  },
+  {
+    "ID": "REDACTED",
+    "Version": 269,
+    "Stable": false,
+    "InProgress": false,
+    "Reason": "",
+    "Description": "Release",
+    "Status": "complete",
+    "DeploymentStrategy": "",
+    "Metadata": null,
+    "User": {
+      "ID": "REDACTED",
+      "Name": "Deploy User",
+      "Email": "deploy@example.invalid",
+      "EnablePaidHobby": false
+    },
+    "EvaluationID": "",
+    "CreatedAt": "2026-09-22T12:37:38Z",
+    "ImageRef": "registry.fly.io/school-kit-api:deployment-01M34HT24X3N5TFNJEMA62VDSD"
+  },
+  {
+    "ID": "REDACTED",
+    "Version": 268,
+    "Stable": false,
+    "InProgress": false,
+    "Reason": "",
+    "Description": "Release",
+    "Status": "complete",
+    "DeploymentStrategy": "",
+    "Metadata": null,
+    "User": {
+      "ID": "REDACTED",
+      "Name": "Deploy User",
+      "Email": "deploy@example.invalid",
+      "EnablePaidHobby": false
+    },
+    "EvaluationID": "",
+    "CreatedAt": "2026-09-22T00:49:13Z",
+    "ImageRef": "registry.fly.io/school-kit-api:deployment-01M3398NA97HWRGEAEFTTQFB8W"
+  },
+  {
+    "ID": "REDACTED",
+    "Version": 267,
+    "Stable": false,
+    "InProgress": false,
+    "Reason": "",
+    "Description": "Release",
+    "Status": "complete",
+    "DeploymentStrategy": "",
+    "Metadata": null,
+    "User": {
+      "ID": "REDACTED",
+      "Name": "Deploy User",
+      "Email": "deploy@example.invalid",
+      "EnablePaidHobby": false
+    },
+    "EvaluationID": "",
+    "CreatedAt": "2026-09-22T00:25:47Z",
+    "ImageRef": "registry.fly.io/school-kit-api:deployment-01M337Y7B7JYY4KY2VREN4QKT4"
+  },
+  {
+    "ID": "REDACTED",
+    "Version": 266,
+    "Stable": false,
+    "InProgress": false,
+    "Reason": "",
+    "Description": "Release",
+    "Status": "complete",
+    "DeploymentStrategy": "",
+    "Metadata": null,
+    "User": {
+      "ID": "REDACTED",
+      "Name": "Deploy User",
+      "Email": "deploy@example.invalid",
+      "EnablePaidHobby": false
+    },
+    "EvaluationID": "",
+    "CreatedAt": "2026-09-22T00:04:20Z",
+    "ImageRef": "registry.fly.io/school-kit-api:deployment-01M336Q8VWH1E9H23CN7N23QQR"
+  },
+  {
+    "ID": "REDACTED",
+    "Version": 265,
+    "Stable": false,
+    "InProgress": false,
+    "Reason": "",
+    "Description": "Release",
+    "Status": "complete",
+    "DeploymentStrategy": "",
+    "Metadata": null,
+    "User": {
+      "ID": "REDACTED",
+      "Name": "Deploy User",
+      "Email": "deploy@example.invalid",
+      "EnablePaidHobby": false
+    },
+    "EvaluationID": "",
+    "CreatedAt": "2026-09-21T23:20:45Z",
+    "ImageRef": "registry.fly.io/school-kit-api:deployment-01M334AGC08BS7ZD3H38574V7G"
+  },
+  {
+    "ID": "REDACTED",
+    "Version": 264,
+    "Stable": false,
+    "InProgress": false,
+    "Reason": "",
+    "Description": "Release",
+    "Status": "complete",
+    "DeploymentStrategy": "",
+    "Metadata": null,
+    "User": {
+      "ID": "REDACTED",
+      "Name": "Deploy User",
+      "Email": "deploy@example.invalid",
+      "EnablePaidHobby": false
+    },
+    "EvaluationID": "",
+    "CreatedAt": "2026-09-21T21:45:21Z",
+    "ImageRef": "registry.fly.io/school-kit-api:deployment-01M32YVV6K4R28MYKFN98G6NFC"
+  },
+  {
+    "ID": "REDACTED",
+    "Version": 263,
+    "Stable": false,
+    "InProgress": false,
+    "Reason": "",
+    "Description": "Release",
+    "Status": "complete",
+    "DeploymentStrategy": "",
+    "Metadata": null,
+    "User": {
+      "ID": "REDACTED",
+      "Name": "Deploy User",
+      "Email": "deploy@example.invalid",
+      "EnablePaidHobby": false
+    },
+    "EvaluationID": "",
+    "CreatedAt": "2026-09-21T21:20:54Z",
+    "ImageRef": "registry.fly.io/school-kit-api:deployment-01M32XB1B8GGGRG8QVHBVGCJ1T"
+  },
+  {
+    "ID": "REDACTED",
+    "Version": 262,
+    "Stable": false,
+    "InProgress": false,
+    "Reason": "",
+    "Description": "Release",
+    "Status": "complete",
+    "DeploymentStrategy": "",
+    "Metadata": null,
+    "User": {
+      "ID": "REDACTED",
+      "Name": "Deploy User",
+      "Email": "deploy@example.invalid",
+      "EnablePaidHobby": false
+    },
+    "EvaluationID": "",
+    "CreatedAt": "2026-09-20T23:10:24Z",
+    "ImageRef": "registry.fly.io/school-kit-api:deployment-01M30H6TAMZE5BNY338CJBTMVC"
+  },
+  {
+    "ID": "REDACTED",
+    "Version": 261,
+    "Stable": false,
+    "InProgress": false,
+    "Reason": "",
+    "Description": "Release",
+    "Status": "complete",
+    "DeploymentStrategy": "",
+    "Metadata": null,
+    "User": {
+      "ID": "REDACTED",
+      "Name": "Deploy User",
+      "Email": "deploy@example.invalid",
+      "EnablePaidHobby": false
+    },
+    "EvaluationID": "",
+    "CreatedAt": "2026-09-20T22:26:44Z",
+    "ImageRef": "registry.fly.io/school-kit-api:deployment-01M30EPY6QH3SGYMA56TVE3GWZ"
+  },
+  {
+    "ID": "REDACTED",
+    "Version": 260,
+    "Stable": false,
+    "InProgress": false,
+    "Reason": "",
+    "Description": "Release",
+    "Status": "complete",
+    "DeploymentStrategy": "",
+    "Metadata": null,
+    "User": {
+      "ID": "REDACTED",
+      "Name": "Deploy User",
+      "Email": "deploy@example.invalid",
+      "EnablePaidHobby": false
+    },
+    "EvaluationID": "",
+    "CreatedAt": "2026-09-20T21:47:38Z",
+    "ImageRef": "registry.fly.io/school-kit-api:deployment-01M30CKDDG360YC8VAEDAJXK2B"
+  },
+  {
+    "ID": "REDACTED",
+    "Version": 259,
+    "Stable": false,
+    "InProgress": false,
+    "Reason": "",
+    "Description": "Release",
+    "Status": "complete",
+    "DeploymentStrategy": "",
+    "Metadata": null,
+    "User": {
+      "ID": "REDACTED",
+      "Name": "Deploy User",
+      "Email": "deploy@example.invalid",
+      "EnablePaidHobby": false
+    },
+    "EvaluationID": "",
+    "CreatedAt": "2026-09-20T19:01:26Z",
+    "ImageRef": "registry.fly.io/school-kit-api:deployment-01M302YX86JSXZV54KDXPXKM5G"
+  },
+  {
+    "ID": "REDACTED",
+    "Version": 258,
+    "Stable": false,
+    "InProgress": false,
+    "Reason": "",
+    "Description": "Release",
+    "Status": "complete",
+    "DeploymentStrategy": "",
+    "Metadata": null,
+    "User": {
+      "ID": "REDACTED",
+      "Name": "Deploy User",
+      "Email": "deploy@example.invalid",
+      "EnablePaidHobby": false
+    },
+    "EvaluationID": "",
+    "CreatedAt": "2026-09-20T17:43:09Z",
+    "ImageRef": "registry.fly.io/school-kit-api:deployment-01M2ZYKQ4NS7CH0TSNBVXDQP6Z"
+  },
+  {
+    "ID": "REDACTED",
+    "Version": 257,
+    "Stable": false,
+    "InProgress": false,
+    "Reason": "",
+    "Description": "Release",
+    "Status": "complete",
+    "DeploymentStrategy": "",
+    "Metadata": null,
+    "User": {
+      "ID": "REDACTED",
+      "Name": "Deploy User",
+      "Email": "deploy@example.invalid",
+      "EnablePaidHobby": false
+    },
+    "EvaluationID": "",
+    "CreatedAt": "2026-09-19T21:00:20Z",
+    "ImageRef": "registry.fly.io/school-kit-api:deployment-01M2XQG20PTS6DAK1N4FBE00K2"
+  },
+  {
+    "ID": "REDACTED",
+    "Version": 256,
+    "Stable": false,
+    "InProgress": false,
+    "Reason": "",
+    "Description": "Release",
+    "Status": "complete",
+    "DeploymentStrategy": "",
+    "Metadata": null,
+    "User": {
+      "ID": "REDACTED",
+      "Name": "Deploy User",
+      "Email": "deploy@example.invalid",
+      "EnablePaidHobby": false
+    },
+    "EvaluationID": "",
+    "CreatedAt": "2026-09-19T20:35:42Z",
+    "ImageRef": "registry.fly.io/school-kit-api:deployment-01M2XNY3Z1D6S9WEXHTDF73J1B"
+  },
+  {
+    "ID": "REDACTED",
+    "Version": 255,
+    "Stable": false,
+    "InProgress": false,
+    "Reason": "",
+    "Description": "Release",
+    "Status": "complete",
+    "DeploymentStrategy": "",
+    "Metadata": null,
+    "User": {
+      "ID": "REDACTED",
+      "Name": "Deploy User",
+      "Email": "deploy@example.invalid",
+      "EnablePaidHobby": false
+    },
+    "EvaluationID": "",
+    "CreatedAt": "2026-09-18T23:47:20Z",
+    "ImageRef": "registry.fly.io/school-kit-api:deployment-01M2VEJ353FVHBZMT9K5WMGH4J"
+  }
+]
