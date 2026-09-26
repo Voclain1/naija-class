@@ -3098,6 +3098,46 @@ enum AnnouncementAudience {
   @@map("announcement_audience")
 }
 
+// ---------- Homework (docs/modules/the-school-day.md Part B) ----------
+//
+// B7: INFORMATION, not workflow. What to do and by when. Nothing is submitted,
+// uploaded or marked here — submissions need per-student storage, a marking
+// queue, late/resubmit states and an offline story for a child on one bar of
+// signal, and each is a real design. Posting alone is what makes a student
+// open the app on a Tuesday, which results (three times a year) never will.
+//
+// If submissions are ever built they are their own plan-first and their own
+// table. This model must not quietly grow a `submittedAt`.
+model Assignment {
+  id         String @id @default(uuid())
+  schoolId   String @map("school_id")
+  classArmId String @map("class_arm_id")
+  subjectId  String @map("subject_id")
+  // The authoring teacher. Plain scoping column, not a declared relation —
+  // same convention as LessonPlan.createdBy: homework outlives a staff
+  // member's account as a record of what a class was set.
+  createdBy  String @map("created_by")
+
+  title        String
+  instructions String?
+  // @db.Date, not DateTime: "due Friday" is a calendar date with no
+  // time-of-day, and a timestamp would reintroduce the "midnight in which
+  // zone?" trap the DATE convention exists to avoid.
+  dueDate      DateTime @db.Date @map("due_date")
+
+  postedAt DateTime @default(now()) @map("posted_at")
+  // B10: withdrawn, not deleted — a child who wrote it down deserves a record
+  // that it existed and was cancelled. Same treatment as an announcement.
+  withdrawnAt DateTime? @map("withdrawn_at")
+  withdrawnBy String?   @map("withdrawn_by")
+
+  // The family read is "this class, due on or after today", and the staff read
+  // is "what I set, newest first".
+  @@index([schoolId, classArmId, dueDate])
+  @@index([schoolId, createdBy, postedAt])
+  @@map("assignments")
+}
+
 model Announcement {
   id          String               @id @default(uuid())
   schoolId    String               @map("school_id")
