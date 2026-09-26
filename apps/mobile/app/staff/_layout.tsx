@@ -94,6 +94,7 @@ export default function StaffTabsLayout() {
       <Tabs.Screen name="expenses" options={{ href: null }} />
       <Tabs.Screen name="receipts" options={{ href: null }} />
       <Tabs.Screen name="announcements" options={{ href: null }} />
+      <Tabs.Screen name="homework" options={{ href: null }} />
       <Tabs.Screen name="timetable" options={{ href: null }} />
       <Tabs.Screen name="calendar" options={{ href: null }} />
       <Tabs.Screen name="profile" options={{ href: null }} />

@@ -15,6 +15,7 @@ import { useSession } from "../../src/lib/auth/session";
 import { AppMenu, MenuButton, useAppMenu } from "../../src/components/app-menu";
 import { studentDestinations } from "../../src/lib/navigation/destinations";
 import { serverToday } from "../../src/lib/staff/server-date";
+import { studentHomework } from "../../src/lib/api/student-portal";
 import { isoWeekdayOf, greeting, nowMinutesOfDay } from "../../src/lib/when";
 import {
   describeLesson,
@@ -61,12 +62,37 @@ export default function MyHomeScreen() {
     enabled,
     staleTime: 30 * 60_000,
   });
+  // Homework has the shortest staleTime on this screen, and deliberately so:
+  // every other figure here keeps for the day, and "due tomorrow" does not.
+  const homework = useQuery({
+    queryKey: queryKeys.myHomework,
+    queryFn: studentHomework,
+    enabled,
+    staleTime: 60_000,
+  });
   const fees = useQuery({
     queryKey: queryKeys.myFees,
     queryFn: listStudentFees,
     enabled,
     staleTime: 30 * 60_000,
   });
+
+  // B9 again, on the student's side: nothing is pushed when homework is set,
+  // so this line on the screen they already open is the whole notification.
+  // Overdue outranks due-soon, and silence when there is neither.
+  const homeworkItems = homework.data?.data ?? [];
+  const overdueCount = homeworkItems.filter((item) => item.overdue).length;
+  const dueSoonCount = homework.data?.dueSoonCount ?? 0;
+  const homeworkLine =
+    overdueCount > 0
+      ? {
+          value: `${overdueCount} overdue`,
+          label: overdueCount === 1 ? "1 piece of homework is late" : "Homework past its due date",
+          overdue: true,
+        }
+      : dueSoonCount > 0
+        ? { value: `${dueSoonCount} due soon`, label: "Homework due today or tomorrow", overdue: false }
+        : null;
 
   if (status === "locked") return <Redirect href="/unlock" />;
   if (status === "guest") return <Redirect href="/login" />;
@@ -120,6 +146,15 @@ export default function MyHomeScreen() {
                   onPress={() => router.push("/me/timetable")}
                 />
               )}
+              {homeworkLine ? (
+                <StatRow
+                  icon="book-outline"
+                  value={homeworkLine.value}
+                  label={homeworkLine.label}
+                  onPress={() => router.push("/me/homework")}
+                  {...(homeworkLine.overdue ? { tone: "warning" as const } : {})}
+                />
+              ) : null}
               {term ? (
                 <StatRow
                   icon="checkbox-outline"

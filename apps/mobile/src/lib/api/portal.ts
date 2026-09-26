@@ -17,7 +17,7 @@ import type {
   DeactivateStudentPortalResponse,
   CalendarResponse,
 } from "@school-kit/types";
-import type { AnnouncementFeedResponse } from "@school-kit/types";
+import type { AnnouncementFeedResponse, HomeworkFeedResponse } from "@school-kit/types";
 
 import { apiFetch } from "./client";
 
@@ -208,4 +208,10 @@ export function guardianAnnouncements(): Promise<AnnouncementFeedResponse> {
 
 export function markGuardianAnnouncementRead(id: string): Promise<void> {
   return apiFetch<void>(`/portal/announcements/${encodeURIComponent(id)}/read`, { method: "POST" });
+}
+
+// One child's homework (the-school-day.md Part B). Read-only: a parent sees
+// what is due, and there is nothing to submit.
+export function guardianHomework(studentId: string): Promise<HomeworkFeedResponse> {
+  return apiFetch<HomeworkFeedResponse>(`/portal/students/${encodeURIComponent(studentId)}/homework`);
 }

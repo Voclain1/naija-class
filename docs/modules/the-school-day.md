@@ -1,7 +1,7 @@
 # The school day — absence alerts, homework, behaviour, and the reply path
 
-**Status:** approved 2026-09-26. **Part A built** — see "Part A status" below.
-B, D and C not started, in that order.
+**Status:** approved 2026-09-26. **Parts A and B built** — see the status
+sections at the end. D and C not started, in that order.
 **Asked for:** after the device pass, "plan for the number 3 above" — the four
 things nobody has ever decided against, as opposed to the work deliberately
 kept on the web (bulk/high-trust) or waiting on Phase 7's vendor choice (AI).
@@ -269,3 +269,50 @@ worth recording is where the work actually went, which was not the notifying:
 (nothing sent after a correction; the claim released so a later absence still
 alerts), plus one asserting no other push pays for this: a job with no
 `verify` performs no extra read.
+
+## Part B status (2026-09-26) — built
+
+Homework ships as planned: information, not workflow. Server, mobile (teacher,
+student, parent) and web (teacher). What is worth recording:
+
+- **B8's gate lives in the service, not the picker.** Both phone and web build
+  their class/subject pickers from the teacher's own scope, so neither can
+  offer something the server refuses — but the server re-checks the pair
+  anyway, which is what makes the picker a convenience rather than the
+  boundary. `?all=true` is REFUSED for a teacher rather than narrowed: quietly
+  returning their own would look like the school had set nothing.
+- **`homework.create` went to TEACHER**, unlike `announcement.create`. Setting
+  homework is teaching work; an announcement is the school speaking. Bursar got
+  read only, so they can answer "what homework does my child have?" at the
+  counter.
+- **The family read is one private method with two callers.** The guardian read
+  goes through `withGuardian` nested in `withTenant` — RLS knows `school_id`
+  and nothing about who may see whom — and the student's own needs no such
+  check because the id comes from their session. Sharing the read means the two
+  cannot diverge about what a family sees.
+- **Yesterday's work still shows, marked overdue by the SERVER.** A child who
+  forgot it needs to see it, and hiding it at midnight is how a parent finds
+  out a week later. `overdue` is the server's judgement against the school's
+  day; the phone's own date only picks group HEADINGS, so a wrong clock can
+  mislabel a heading but can never accuse a child of being late.
+- **B9 held, and the home screens are what replaced the push.** Nothing is
+  pushed when homework is set. Instead: the student's Today band carries an
+  overdue-or-due-soon line directly under their next lesson, and the parent's
+  child card carries the same through `childHighlight`, ranked below money and
+  above results — a child sent home over fees has a bigger problem than an
+  unfinished exercise, and a released result keeps for weeks.
+- Grouped by WHEN, not subject, with every overdue day collapsed into one
+  heading: a child at a kitchen table is answering "what must I do tonight?".
+  The ordering is a pure module (`lib/family/homework.ts`) because Vitest here
+  runs node-env with no React Native transform — a helper inside a `.tsx` is
+  unreachable from a spec.
+
+19 server integration tests against real Postgres, 6 for the grouping, and the
+`childHighlight` ranking pinned including the "1 piece" singular.
+
+**Found while building, worth keeping:** `permissions-coverage.spec.ts` passed
+at first against a `packages/db/dist` built three days earlier, which had none
+of the new grants — silently green rather than loudly broken. Rebuilding
+surfaced the real failure (`expected 39 to be 38`). That is the stale-`dist`
+trap CLAUDE.md's ESM section describes, and it is worse than the missing-`dist`
+case it warns about, because nothing fails.
