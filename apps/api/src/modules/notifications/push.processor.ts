@@ -77,6 +77,14 @@ export class PushProcessor extends WorkerHost {
    * is an acceptance, not a delivery.
    */
   private async handleSend(data: PushSendJobData): Promise<void> {
+    if (data.verify && !(await this.stillTrue(data.schoolId, data.verify))) {
+      this.logger.log(
+        `Skipped a held push for school ${data.schoolId}: ${data.verify.kind} no longer holds ` +
+          `(the record changed inside the grace period).`,
+      );
+      return;
+    }
+
     const messages: ExpoPushMessage[] = data.tokens.map((to) => ({
       to,
       title: data.title,
@@ -180,6 +188,52 @@ export class PushProcessor extends WorkerHost {
         { delay: RECEIPT_DELAY_MS, attempts: 2, removeOnComplete: true },
       );
     }
+  }
+
+  /**
+   * Is the held news still true? (`docs/modules/the-school-day.md` A4.)
+   *
+   * Absence alerts wait out a grace period precisely so a corrected register
+   * never reaches a parent. The claim row proves this guardian has not been
+   * told yet; it says nothing about whether there is still anything to tell.
+   *
+   * On a false answer the CLAIM IS RELEASED as well as the send skipped. That
+   * matters: a child marked absent at 08:00, corrected at 08:05, then
+   * genuinely marked absent at 11:00 after failing to arrive must still
+   * produce an alert. Leaving the claim in place would make the morning's
+   * typo silence the rest of the day.
+   */
+  private async stillTrue(
+    schoolId: string,
+    verify: NonNullable<PushSendJobData["verify"]>,
+  ): Promise<boolean> {
+    return withTenant(schoolId, async (db) => {
+      const links = await db.studentGuardian.findMany({
+        where: { guardianId: verify.guardianId },
+        select: { studentId: true },
+      });
+      if (links.length === 0) return false;
+
+      const stillAbsent = await db.attendanceRecord.count({
+        where: {
+          studentId: { in: links.map((link) => link.studentId) },
+          date: new Date(`${verify.date}T00:00:00.000Z`),
+          status: "ABSENT",
+        },
+      });
+      if (stillAbsent > 0) return true;
+
+      // Release the claim, so a later absence on the same day can be told.
+      await db.notificationDelivery.deleteMany({
+        where: {
+          eventType: "attendance.absent",
+          eventId: verify.date,
+          principalType: "GUARDIAN",
+          principalId: verify.guardianId,
+        },
+      });
+      return false;
+    });
   }
 
   /**

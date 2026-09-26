@@ -28,7 +28,20 @@ export const EVENT = {
   registerNotTaken: "register.not-taken",
   marksNotEntered: "marks.not-entered",
   announcementPosted: "announcement.posted",
+  attendanceAbsent: "attendance.absent",
 } as const;
+
+/**
+ * How long an absence alert is held before it is sent
+ * (`docs/modules/the-school-day.md` A4).
+ *
+ * A teacher mistypes a register, notices, and fixes it within the minute. An
+ * absence told instantly cannot be recalled — the parent has already read
+ * that their child is not in school and is already ringing the school. Almost
+ * every correction happens inside this window, and the send re-reads the
+ * record when it expires, so a correction costs nothing at all.
+ */
+export const ABSENCE_GRACE_MS = 15 * 60 * 1000;
 
 @Injectable()
 export class EventNotifierService {
@@ -247,6 +260,69 @@ export class EventNotifierService {
   }
 
   /** Today's term, and whether the school actually meets today. */
+  /**
+   * A child was marked absent today: tell their guardians
+   * (`docs/modules/the-school-day.md` Part A).
+   *
+   * Four decisions are visible in the shape of this method:
+   *
+   *  - **ABSENT only** (A1). LATE and EXCUSED tell a parent what they told
+   *    the school.
+   *  - **One alert per GUARDIAN per DAY** (A2), so `eventId` is the date
+   *    alone, not the child. A parent with three children off sick is told
+   *    once, and the app shows which — the same collapse `resultsReleased`
+   *    makes.
+   *  - **No name in the body** (A3). N3, and the lockscreen is the reason: a
+   *    phone face-up on a desk must not announce which child is missing. The
+   *    cost is that a parent of three opens the app to find out, and that is
+   *    the right side of the trade.
+   *  - **Held, then re-checked** (A4). See ABSENCE_GRACE_MS and the
+   *    processor's stillTrue().
+   *
+   * The student is deliberately NOT notified. They know.
+   */
+  async attendanceAbsent(args: {
+    schoolId: string;
+    date: string;
+    absentStudentIds: readonly string[];
+    /** The school's today, so a back-filled register stays silent. */
+    today: string;
+  }): Promise<void> {
+    if (args.absentStudentIds.length === 0) return;
+    // A register filled in for last Tuesday is record-keeping, not news. An
+    // alert saying "today" about a week-old absence would be worse than
+    // silence, and the parent has long since known.
+    if (args.date !== args.today) return;
+
+    await this.safely("attendanceAbsent", async () => {
+      const { schoolName, guardianIds } = await withTenant(args.schoolId, async (db) => {
+        const school = await db.school.findUniqueOrThrow({
+          where: { id: args.schoolId },
+          select: { name: true },
+        });
+        const links = await db.studentGuardian.findMany({
+          where: { studentId: { in: [...args.absentStudentIds] } },
+          select: { guardianId: true },
+        });
+        return { schoolName: school.name, guardianIds: [...new Set(links.map((l) => l.guardianId))] };
+      });
+
+      for (const guardianId of guardianIds) {
+        await this.dispatch.notifyOfEvent({
+          schoolId: args.schoolId,
+          principal: { type: "GUARDIAN", guardianId },
+          eventType: EVENT.attendanceAbsent,
+          eventId: args.date,
+          title: schoolName,
+          body: "A child was marked absent today. Open the app to see.",
+          data: { screen: "attendance" },
+          delayMs: ABSENCE_GRACE_MS,
+          verify: { kind: "guardian-child-absent", guardianId, date: args.date },
+        });
+      }
+    });
+  }
+
   private async schoolDay(
     schoolId: string,
     today: string,

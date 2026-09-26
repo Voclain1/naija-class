@@ -13,9 +13,11 @@ import {
   type AttendanceSummaryQuery,
   type AttendanceSummaryResponse,
   type AttendanceSummaryRowDto,
+  lagosTodayIso,
 } from "@school-kit/types";
 
 import type { AuthContext } from "../../common/auth/auth-context";
+import { EventNotifierService } from "../notifications/event-notifier.service";
 import { assertUserActiveAndHasOneOf } from "../../common/auth/role-check";
 import { getTeacherScope } from "../teacher-scope/teacher-scope.helper";
 import {
@@ -40,6 +42,8 @@ const AUDIT = {
 
 @Injectable()
 export class AttendanceService {
+  constructor(private readonly events: EventNotifierService) {}
+
   // =========================================================================
   // GET /attendance/register?classArmId=&date= — the day's register for one arm:
   // every student enrolled in the arm by `date`, merged with whatever marks
@@ -94,7 +98,7 @@ export class AttendanceService {
   ): Promise<AttendanceMarkResultDto> {
     await assertUserActiveAndHasOneOf(authCtx, ["owner", "admin", "teacher"]);
 
-    return withTenant(authCtx.schoolId, async (db) => {
+    const marked = await withTenant(authCtx.schoolId, async (db) => {
       await this.assertCanAccessArmAttendance(db, authCtx, input.classArmId);
 
       const dateObj = parseIsoDate(input.date);
@@ -164,8 +168,24 @@ export class AttendanceService {
         byStatus,
       });
 
-      return { count: input.records.length };
+      return {
+        result: { count: input.records.length },
+        absentStudentIds: input.records.filter((r) => r.status === "ABSENT").map((r) => r.studentId),
+      };
     });
+
+    // Told AFTER the register is committed, and outside its transaction: a
+    // notification must never be the reason a teacher's marking fails, and a
+    // parent must never be told about a row that was rolled back. The
+    // notifier swallows its own errors for the same reason (safely()).
+    await this.events.attendanceAbsent({
+      schoolId: authCtx.schoolId,
+      date: input.date,
+      absentStudentIds: marked.absentStudentIds,
+      today: lagosTodayIso(),
+    });
+
+    return marked.result;
   }
 
   // =========================================================================
