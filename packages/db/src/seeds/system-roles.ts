@@ -9,6 +9,8 @@ import {
   ADMIN_DASHBOARD_PERMISSIONS,
   ANNOUNCEMENT_MANAGE_PERMISSIONS,
   ANNOUNCEMENT_READ_PERMISSIONS,
+  HOMEWORK_MANAGE_PERMISSIONS,
+  HOMEWORK_READ_PERMISSIONS,
   CALENDAR_PERMISSIONS,
   CALENDAR_READ_PERMISSIONS,
   REPORTS_PERMISSIONS,
@@ -90,6 +92,10 @@ const ADMIN_PERMISSIONS: readonly string[] = [
   ...CALENDAR_PERMISSIONS,
   // Announcements (A1): owner and admin send; every staff role reads.
   ...ANNOUNCEMENT_MANAGE_PERMISSIONS,
+  // Homework (B8): owner/admin may post for any class, as they may enter
+  // marks for any. Kept IN SYNC with the idempotent append in
+  // prisma/migrations/20260926120000_homework.
+  ...HOMEWORK_MANAGE_PERMISSIONS,
   // Phase 8 / CP2 — Recording Completeness: the school-wide report and the
   // per-teacher recording-activity view (audited per read). Owner/admin only;
   // never teacher or bursar (§16 D39, pinned in permissions-coverage.spec.ts).
@@ -175,6 +181,10 @@ export const SYSTEM_ROLE_SEEDS: SystemRoleSeed[] = [
       // read it and never manage it (D28).
       ...CALENDAR_READ_PERMISSIONS,
       ...ANNOUNCEMENT_READ_PERMISSIONS,
+      // Homework (B8): a teacher SETS work, unlike announcements, which are
+      // the school speaking. Scoped in the service to their own classes and
+      // subjects, exactly as the gradebook is.
+      ...HOMEWORK_MANAGE_PERMISSIONS,
       // Phase 8 / CP4 — the teacher's own timetable (§18 D38). NOT
       // timetable.read: the whole-school builder stays owner/admin. Kept IN SYNC
       // with prisma/migrations/20260915120100_phase_8_cp4_timetable_own_read_permission.
@@ -206,6 +216,9 @@ export const SYSTEM_ROLE_SEEDS: SystemRoleSeed[] = [
       ...PHASE_3_BURSAR_PERMISSIONS,
       ...CALENDAR_READ_PERMISSIONS,
       ...ANNOUNCEMENT_READ_PERMISSIONS,
+      // Read only: a bursar at the counter can answer "what homework does my
+      // child have?" and can set none.
+      ...HOMEWORK_READ_PERMISSIONS,
     ],
   },
 ];

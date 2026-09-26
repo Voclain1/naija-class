@@ -26,11 +26,22 @@ const ROUTES: Record<Principal, Record<string, string>> = {
     results: "/students",
     fees: "/students",
     announcements: "/announcements",
+    // An absence alert names no child (the-school-day.md A3), so the tap has
+    // to land where the parent can see WHICH — the children list, not a
+    // single child's page.
+    attendance: "/students",
   },
   student: {
     results: "/me/results",
     fees: "/me/fees",
     announcements: "/me/announcements",
+    // A student is not told they were absent — they know (A1). The mapping
+    // exists because the hint is per-principal and a future event may use it.
+    attendance: "/me/attendance",
+    // Nothing sends this today: posting homework deliberately pushes nothing
+    // (B9). The mapping exists so the evening digest, if it is ever built, has
+    // somewhere to land rather than dropping a tap on HOME.
+    homework: "/me/homework",
   },
   staff: {
     attendance: "/staff",
@@ -38,6 +49,7 @@ const ROUTES: Record<Principal, Record<string, string>> = {
     results: "/staff/approvals",
     fees: "/staff/collections",
     announcements: "/staff/announcements",
+    homework: "/staff/homework",
   },
 };
 

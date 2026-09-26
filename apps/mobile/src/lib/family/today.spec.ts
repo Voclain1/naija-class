@@ -109,7 +109,7 @@ describe("the one line worth a parent's attention", () => {
     });
   });
 
-  it("is fresh results when nothing is owed", () => {
+  it("is fresh results when nothing is owed and no homework is pending", () => {
     expect(childHighlight({ invoices: [], results })).toEqual({
       kind: "results",
       text: "Second Term results are ready",
@@ -117,8 +117,32 @@ describe("the one line worth a parent's attention", () => {
     });
   });
 
+  it("is overdue homework before homework merely due, and both before results", () => {
+    // This ranking IS B9: posting homework sends no push, so this line is what
+    // a parent sees instead, on a screen they already open.
+    expect(childHighlight({ invoices: [], results, homeworkOverdue: 2, homeworkDueSoon: 1 })).toEqual({
+      kind: "homework",
+      text: "2 pieces of homework overdue",
+      tone: "warning",
+    });
+    expect(childHighlight({ invoices: [], results, homeworkDueSoon: 3 })).toEqual({
+      kind: "homework",
+      text: "3 homework due soon",
+      tone: "info",
+    });
+  });
+
+  it("still puts money first — a child sent home over fees has a bigger problem", () => {
+    expect(childHighlight({ invoices: owing, results, homeworkOverdue: 5 })?.kind).toBe("fees");
+  });
+
+  it("says one PIECE, not one pieces", () => {
+    expect(childHighlight({ homeworkOverdue: 1 })?.text).toBe("1 piece of homework overdue");
+  });
+
   it("is NOTHING when there is nothing to say — a home that always shouts is ignored", () => {
     expect(childHighlight({ invoices: [], results: [] })).toBeNull();
+    expect(childHighlight({ homeworkDueSoon: 0, homeworkOverdue: 0 })).toBeNull();
     expect(childHighlight({})).toBeNull();
   });
 });

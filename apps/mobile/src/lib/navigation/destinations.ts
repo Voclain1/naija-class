@@ -116,6 +116,22 @@ export function staffDestinations(ctx: StaffContext): Destination[] {
     out.push({ key: "announcements", label: "Announcements", hint: "From the school", icon: "megaphone-outline", group: "School", route: "/staff/announcements" });
   }
 
+  // Homework (the-school-day.md B8). Gated on homework.create, not .read: this
+  // screen's job is SETTING work, and a bursar holds read so they can answer a
+  // parent at the counter — a compose form in their menu would be a form the
+  // server refuses. Sits in Teaching for a teacher and School for an admin,
+  // because for one it is their own classes and for the other it is oversight.
+  if (can("homework.create")) {
+    out.push({
+      key: "homework",
+      label: "Homework",
+      hint: teacher ? "Set work for your classes" : "What the school has set",
+      icon: "book-outline",
+      group: teacher ? "Teaching" : "School",
+      route: "/staff/homework",
+    });
+  }
+
   // --- Calendar ---
   if (teacher) {
     out.push({ key: "timetable", label: "Timetable", icon: "calendar-outline", group: "Calendar", route: "/staff/timetable" });
@@ -148,6 +164,7 @@ export function studentDestinations(): Destination[] {
     { key: "results", label: "My results", icon: "ribbon-outline", group: "Your school work", route: "/me/results" },
     { key: "attendance", label: "My attendance", icon: "checkbox-outline", group: "Your school work", route: "/me/attendance" },
     { key: "fees", label: "My fees", icon: "cash-outline", group: "Your school work", route: "/me/fees" },
+    { key: "homework", label: "My homework", hint: "What is due", icon: "book-outline", group: "Your school work", route: "/me/homework" },
     { key: "announcements", label: "From the school", hint: "Announcements", icon: "megaphone-outline", group: "Your school work", route: "/me/announcements" },
     { key: "timetable", label: "My timetable", icon: "calendar-outline", group: "Calendar", route: "/me/timetable" },
     { key: "calendar", label: "School calendar", icon: "today-outline", group: "Calendar", route: "/me/calendar" },

@@ -65,6 +65,14 @@ export const queryKeys = {
   guardianAnnouncements: ["announcements"] as const,
   myAnnouncements: ["me", "announcements"] as const,
 
+  // Homework (the-school-day.md Part B). Persisted like the calendar and
+  // announcements: "questions 1 to 10 by Friday" is exactly what a child needs
+  // at a kitchen table with no signal, and it is the whole point of the
+  // feature. Keyed per child on the guardian side, because a parent switches
+  // between them.
+  guardianHomework: (studentId: string) => ["students", studentId, "homework"] as const,
+  myHomework: ["me", "homework"] as const,
+
   // --- staff (CP2) --------------------------------------------------------
   //
   // EVERY staff key begins with the literal "staff". That prefix is not
@@ -204,4 +212,9 @@ export const queryKeys = {
     ["staff", schoolId, userId, "announcements"] as const,
   staffAnnouncementFeed: (schoolId: string, userId: string) =>
     ["staff", schoolId, userId, "announcement-feed"] as const,
+
+  // Homework a teacher set. Staff-prefixed like everything else on that side:
+  // the list names classes and the work set for them.
+  staffHomework: (schoolId: string, userId: string, classArmId: string) =>
+    ["staff", schoolId, userId, "homework", classArmId] as const,
 } as const;

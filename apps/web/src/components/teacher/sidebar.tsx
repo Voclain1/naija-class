@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  BookMarked,
   BookOpen,
   CalendarCheck,
   CalendarClock,
@@ -37,6 +38,10 @@ const BASE_ITEMS: NavItem[] = [
   { label: "Gradebook", href: "/teacher/gradebook", icon: ClipboardList, enabled: true },
   { label: "Report Cards", href: "/teacher/report-cards", icon: FileText, enabled: true },
   { label: "Attendance", href: "/teacher/attendance", icon: CalendarCheck, enabled: true },
+  // Homework (docs/modules/the-school-day.md Part B). Directly under
+  // Attendance: both are daily, both are about the class in front of you, and
+  // this is the one a student's family sees the same day.
+  { label: "Homework", href: "/teacher/homework", icon: BookMarked, enabled: true },
   // Phase 5 / Slice 2 — lesson plan generator. Unconditional: unlike subject
   // attendance it needs no per-school opt-in, and unlike gradebook/report
   // cards it needs no prior data, so it is usable by every school from day one.

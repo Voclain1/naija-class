@@ -13,7 +13,7 @@ import type {
   CalendarResponse,
 } from "@school-kit/types";
 
-import type { AnnouncementFeedResponse } from "@school-kit/types";
+import type { AnnouncementFeedResponse, HomeworkFeedResponse } from "@school-kit/types";
 
 import { apiFetch } from "./client";
 
@@ -141,4 +141,10 @@ export function studentAnnouncements(): Promise<AnnouncementFeedResponse> {
 
 export function markStudentAnnouncementRead(id: string): Promise<void> {
   return apiFetch<void>(`/student-portal/announcements/${encodeURIComponent(id)}/read`, { method: "POST" });
+}
+
+// The student's own homework. No student id on the wire — the session is the
+// identity, as everywhere on this surface.
+export function studentHomework(): Promise<HomeworkFeedResponse> {
+  return apiFetch<HomeworkFeedResponse>("/student-portal/me/homework");
 }
