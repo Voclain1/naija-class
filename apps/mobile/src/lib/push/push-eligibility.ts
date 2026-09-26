@@ -10,14 +10,31 @@ export type PermissionStatus = "granted" | "denied" | "undetermined";
 /**
  * Whether to ask the OS for permission.
  *
- * NEVER re-ask after a denial. On both platforms a second request after
- * "denied" does not show a prompt — it returns denied immediately — so
- * re-asking is not merely rude, it is a no-op that costs a native round trip
- * on every launch and can never change the answer. The user has to go to
- * Settings, which is the OS's decision, not ours to route around.
+ * **`canAskAgain` is the signal, not the status.** This function used to test
+ * `status === "undetermined"`, which meant no Android 13+ device was EVER
+ * prompted — every one of them silently ended up with push off. Found by
+ * installing the APK on Android 16 and getting no prompt (2026-09-25).
+ *
+ * The reason is in expo-notifications' own Android source
+ * (`NotificationPermissionsModule.kt`): on API 33+ it resolves the status as
+ * DENIED whenever `areNotificationsEnabled()` is false — which is the case on
+ * a fresh install where the user has never been asked. It returns
+ * "undetermined" only in a mixed state that a single-permission app like ours
+ * never reaches. So "denied" on Android means BOTH "never asked" and
+ * "refused", and `canAskAgain` is the only thing that tells them apart.
+ *
+ * The original intent still holds and is now expressed correctly: never
+ * re-ask after a real denial. A second request then shows no prompt and
+ * returns denied immediately, so re-asking is a no-op that cannot change the
+ * answer — the user has to go to Settings, which is the OS's decision and not
+ * ours to route around. `canAskAgain: false` is exactly that state.
  */
-export function shouldRequestPermission(current: PermissionStatus): boolean {
-  return current === "undetermined";
+export function shouldRequestPermission(input: {
+  status: PermissionStatus;
+  canAskAgain: boolean;
+}): boolean {
+  if (input.status === "granted") return false;
+  return input.canAskAgain;
 }
 
 /**

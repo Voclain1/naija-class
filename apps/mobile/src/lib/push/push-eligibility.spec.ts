@@ -7,19 +7,30 @@ import {
 } from "./push-eligibility";
 
 describe("shouldRequestPermission", () => {
-  it("asks when the user has never been asked", () => {
-    expect(shouldRequestPermission("undetermined")).toBe(true);
+  it("asks when the user has never been asked (iOS shape)", () => {
+    expect(shouldRequestPermission({ status: "undetermined", canAskAgain: true })).toBe(true);
   });
 
-  it("does NOT re-ask after a denial", () => {
-    // The important one. On both platforms a second request after "denied"
-    // returns denied without showing a prompt, so re-asking cannot change
-    // the answer — it just costs a native round trip on every launch.
-    expect(shouldRequestPermission("denied")).toBe(false);
+  it("asks on a fresh Android 13+ install, which reports DENIED before ever asking", () => {
+    // The regression this function shipped with, found on Android 16: the old
+    // test was `status === "undetermined"`, and expo-notifications' Android
+    // implementation resolves DENIED whenever areNotificationsEnabled() is
+    // false — true on every fresh install. No Android 13+ device was ever
+    // prompted, so push was silently off for all of them.
+    expect(shouldRequestPermission({ status: "denied", canAskAgain: true })).toBe(true);
   });
 
-  it("does not ask again once granted", () => {
-    expect(shouldRequestPermission("granted")).toBe(false);
+  it("does NOT re-ask after a real denial", () => {
+    // The original intent, now expressed by the field that actually means it.
+    // A second request after a refusal shows no prompt and returns denied, so
+    // re-asking cannot change the answer — Settings is the only route, and
+    // that is the OS's decision.
+    expect(shouldRequestPermission({ status: "denied", canAskAgain: false })).toBe(false);
+  });
+
+  it("does not ask again once granted, whatever canAskAgain says", () => {
+    expect(shouldRequestPermission({ status: "granted", canAskAgain: true })).toBe(false);
+    expect(shouldRequestPermission({ status: "granted", canAskAgain: false })).toBe(false);
   });
 });
 
