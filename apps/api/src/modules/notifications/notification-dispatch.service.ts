@@ -83,6 +83,14 @@ export interface EventNotification {
   body: string;
   data?: Record<string, string>;
   urgent?: boolean;
+  /**
+   * Held this long before sending, on top of any quiet-hours wait — the
+   * larger of the two wins. For absence alerts this is the grace period a
+   * correction fits inside (A4).
+   */
+  delayMs?: number;
+  /** Re-checked at send time; see PushSendJobData.verify. */
+  verify?: PushSendJobData["verify"];
 }
 
 function principalColumns(principal: NotificationPrincipal): {
@@ -170,7 +178,13 @@ export class NotificationDispatchService {
    * at 400 recipients is a limit discovered in production.
    */
   private async enqueuePush(
-    req: { schoolId: string; title: string; body: string; data?: Record<string, string> },
+    req: {
+      schoolId: string;
+      title: string;
+      body: string;
+      data?: Record<string, string>;
+      verify?: PushSendJobData["verify"];
+    },
     tokens: string[],
     delayMs = 0,
   ): Promise<void> {
@@ -181,6 +195,7 @@ export class NotificationDispatchService {
         title: req.title,
         body: req.body,
         ...(req.data ? { payload: req.data } : {}),
+        ...(req.verify ? { verify: req.verify } : {}),
       };
       await this.pushQueue.add(PUSH_JOB_SEND, data, {
         // Quiet hours (N5): held, not dropped — the news still arrives, at an
@@ -239,9 +254,18 @@ export class NotificationDispatchService {
 
     if (channel === "PUSH") {
       await this.enqueuePush(
-        { schoolId: req.schoolId, title: req.title, body: req.body, ...(req.data ? { data: req.data } : {}) },
+        {
+          schoolId: req.schoolId,
+          title: req.title,
+          body: req.body,
+          ...(req.data ? { data: req.data } : {}),
+          ...(req.verify ? { verify: req.verify } : {}),
+        },
         tokens,
-        quietHoursDelayMs(new Date(), req.urgent ?? false),
+        // The LARGER of the two waits, not their sum: a 21:30 absence is held
+        // until 06:00, by which time the grace period has long passed, and
+        // adding them would push it to 06:15 for no reason.
+        Math.max(quietHoursDelayMs(new Date(), req.urgent ?? false), req.delayMs ?? 0),
       );
     } else {
       this.logger.warn(
