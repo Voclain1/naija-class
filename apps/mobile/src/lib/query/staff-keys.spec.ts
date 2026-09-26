@@ -61,6 +61,7 @@ const STAFF_KEYS: Record<string, readonly unknown[]> = {
   // message is internal.
   staffAnnouncements: queryKeys.staffAnnouncements(SCHOOL, USER),
   staffAnnouncementFeed: queryKeys.staffAnnouncementFeed(SCHOOL, USER),
+  staffHomework: queryKeys.staffHomework(SCHOOL, USER, ""),
 };
 
 describe("staff query keys", () => {

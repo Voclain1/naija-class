@@ -3,7 +3,7 @@ import { Redirect, useRouter } from "expo-router";
 import { useQueries, useQuery } from "@tanstack/react-query";
 import type { PortalStudentDto } from "@school-kit/types";
 
-import { listInvoices, listResults, listStudents } from "../../src/lib/api/portal";
+import { guardianHomework, listInvoices, listResults, listStudents } from "../../src/lib/api/portal";
 import { queryKeys } from "../../src/lib/query/keys";
 import { useSession } from "../../src/lib/auth/session";
 import { useTheme } from "../../src/theme/theme-provider";
@@ -52,6 +52,13 @@ export default function StudentsScreen() {
         queryKey: queryKeys.results(student.id),
         queryFn: () => listResults(student.id),
         staleTime: 5 * 60_000,
+      },
+      // Homework is the third read per child, and the one with a short life:
+      // fees and results keep for the day, "due tomorrow" does not.
+      {
+        queryKey: queryKeys.guardianHomework(student.id),
+        queryFn: () => guardianHomework(student.id),
+        staleTime: 60_000,
       },
     ]),
   });
@@ -109,9 +116,18 @@ export default function StudentsScreen() {
         {students.length > 0 ? <SectionHeader title={students.length === 1 ? "Your child" : "Your children"} /> : null}
 
         {students.map((student, index) => {
-          const invoices = extras[index * 2]?.data as { data: never[] } | undefined;
-          const results = extras[index * 2 + 1]?.data as { data: never[] } | undefined;
-          const highlight = childHighlight({ invoices: invoices?.data, results: results?.data });
+          // Three queries per child, in the order they were declared above.
+          const invoices = extras[index * 3]?.data as { data: never[] } | undefined;
+          const results = extras[index * 3 + 1]?.data as { data: never[] } | undefined;
+          const homework = extras[index * 3 + 2]?.data as
+            | { data: { overdue: boolean }[]; dueSoonCount: number }
+            | undefined;
+          const highlight = childHighlight({
+            invoices: invoices?.data,
+            results: results?.data,
+            homeworkDueSoon: homework?.dueSoonCount ?? 0,
+            homeworkOverdue: homework?.data.filter((item) => item.overdue).length ?? 0,
+          });
           return (
             <Card key={student.id} style={styles.child}>
               <View style={styles.childHead}>

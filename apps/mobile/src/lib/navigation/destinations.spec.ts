@@ -21,7 +21,7 @@ const base: StaffContext = {
 const TEACHER: StaffContext = {
   ...base,
   roles: [{ key: "teacher" }],
-  permissions: ["assessment-score.create", "lesson-plan.create", "calendar-event.read"],
+  permissions: ["assessment-score.create", "lesson-plan.create", "calendar-event.read", "homework.create"],
   formArms: [{ id: "arm-1", name: "JSS 2A" }],
   teachesSubjects: true,
 };
@@ -41,7 +41,7 @@ const keys = (ctx: StaffContext) => staffDestinations(ctx).map((d) => d.key);
 describe("a teacher", () => {
   it("gets the teaching jobs, their class and their profile", () => {
     expect(keys(TEACHER)).toEqual(
-      expect.arrayContaining(["marks", "attendance-arm-1", "lesson-notes", "curriculum", "comments-arm-1", "classes", "timetable", "calendar", "profile"]),
+      expect.arrayContaining(["marks", "attendance-arm-1", "lesson-notes", "curriculum", "comments-arm-1", "classes", "homework", "timetable", "calendar", "profile"]),
     );
   });
 
@@ -102,6 +102,7 @@ describe("families", () => {
       "/me/results",
       "/me/attendance",
       "/me/fees",
+      "/me/homework",
       "/me/announcements",
       "/me/timetable",
       "/me/calendar",

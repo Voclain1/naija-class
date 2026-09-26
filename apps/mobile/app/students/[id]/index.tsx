@@ -157,6 +157,18 @@ export default function StudentDetailScreen() {
           </Pressable>
         </Link>
 
+        {/* Homework (the-school-day.md Part B). Above the timetable, because it
+            is the thing that changes daily and the timetable changes once a
+            term. */}
+        <Link href={`/students/${studentId}/homework`} asChild>
+          <Pressable accessibilityRole="button" accessibilityLabel="View homework">
+            <Card>
+              <Heading>Homework</Heading>
+              <Body muted>What has been set, and when it is due.</Body>
+            </Card>
+          </Pressable>
+        </Link>
+
         {/* Phase 8 / CP4 — the class timetable the school PUBLISHED (§18 D39). */}
         <Link href={`/students/${studentId}/timetable`} asChild>
           <Pressable accessibilityRole="button" accessibilityLabel="View class timetable">

@@ -38,6 +38,10 @@ const ROUTES: Record<Principal, Record<string, string>> = {
     // A student is not told they were absent — they know (A1). The mapping
     // exists because the hint is per-principal and a future event may use it.
     attendance: "/me/attendance",
+    // Nothing sends this today: posting homework deliberately pushes nothing
+    // (B9). The mapping exists so the evening digest, if it is ever built, has
+    // somewhere to land rather than dropping a tap on HOME.
+    homework: "/me/homework",
   },
   staff: {
     attendance: "/staff",
@@ -45,6 +49,7 @@ const ROUTES: Record<Principal, Record<string, string>> = {
     results: "/staff/approvals",
     fees: "/staff/collections",
     announcements: "/staff/announcements",
+    homework: "/staff/homework",
   },
 };
 
