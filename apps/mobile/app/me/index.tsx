@@ -16,6 +16,7 @@ import { AppMenu, MenuButton, useAppMenu } from "../../src/components/app-menu";
 import { studentDestinations } from "../../src/lib/navigation/destinations";
 import { serverToday } from "../../src/lib/staff/server-date";
 import { studentHomework } from "../../src/lib/api/student-portal";
+import { CallSchool } from "../../src/components/call-school";
 import { isoWeekdayOf, greeting, nowMinutesOfDay } from "../../src/lib/when";
 import {
   describeLesson,
@@ -211,6 +212,10 @@ export default function MyHomeScreen() {
             <Label>Keep these somewhere safe.</Label>
           </>
         ) : null}
+        {/* D12. A student with a problem should not have to find the number
+            either — and the only contact this app offers anyone is the school
+            itself, never a member of staff directly (D11). */}
+        {school?.phone ? <CallSchool phone={school.phone} /> : null}
       </ScrollView>
 
       <AppMenu
