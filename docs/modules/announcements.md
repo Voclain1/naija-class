@@ -18,5 +18,31 @@ Two things worth recording because they were decided while building:
   the FK cascades. FORCE RLS with no policy would make it unreadable to the
   runtime role; it is deliberately governed by its parent.
 
-**Still to build:** the web admin list and compose, and the mobile surfaces
-(staff compose/list, family read screens, the unread card).
+**Screens built (2026-09-24).** Five surfaces, on the server shipped above:
+
+| Surface | What it is |
+|---|---|
+| `apps/web` `/announcements` | Compose and the outbox on one page, owner/admin. Nav entry gated on `announcement.create`, not `.read` — every staff role reads announcements, only owner/admin send, and gating on read would show a teacher a compose form the API refuses. |
+| `apps/portal` `/announcements` | The parent's read view, linked from the home page with an unread count. |
+| `apps/mobile` `/staff/announcements` | One screen, two jobs: the feed everybody reads, and compose + outbox for owner/admin. A head checking whether a message went out should not have to leave the screen they sent it from. |
+| `apps/mobile` `/announcements`, `/me/announcements` | Parent and student read views, sharing one `AnnouncementFeed` renderer so the two cannot drift about what "unread" looks like. |
+
+Decisions made while building the screens:
+
+- **Reading marks it read.** There is no "mark as read" button anywhere. A
+  reader with the message on screen HAS read it, and a button is one more
+  thing to forget — which would leave a school looking at an unread count
+  that means nothing. Every mark is fire-and-forget: a failed one leaves the
+  item unread, the safe direction.
+- **Every confirmation names the audience, not the action.** "Send to every
+  parent?" rather than "Are you sure?", plus the plain sentence that an
+  announcement cannot be unsent. Withdrawing removes it from the feeds; the
+  phones have already buzzed.
+- **Family feeds are persisted and readable offline; the staff ones are not.**
+  "The gate is closed tomorrow" is exactly the message a parent needs on a bus
+  with no signal. On the staff side a STAFF-audience announcement is internal
+  and the outbox names its sender, so both keys carry the `staff` prefix that
+  `mayPersistQuery` refuses.
+- **The push hint finally lands somewhere.** The server has sent
+  `data.screen = "announcements"` since the rail shipped; it fell through to
+  HOME because no screen existed. `routes.ts` now maps it per principal.

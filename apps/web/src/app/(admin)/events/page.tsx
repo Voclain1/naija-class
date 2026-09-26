@@ -13,7 +13,7 @@ import {
   type SchoolEventDto,
 } from "@school-kit/types";
 
-import { CalendarAgenda } from "@/components/calendar/calendar-agenda";
+import { CalendarView } from "@/components/calendar/calendar-view";
 import { SchoolEventFormModal, type SchoolEventFormValues } from "@/components/calendar/school-event-form-modal";
 import { InlineAlert } from "@/components/shared/inline-alert";
 import { Badge } from "@/components/ui/badge";
@@ -175,7 +175,7 @@ export default function EventsPage() {
         </div>
       ) : error ? null : (
         <>
-          <CalendarAgenda entries={entries} />
+          <CalendarView entries={entries} />
 
           {canManage && (
             <section className="flex flex-col gap-3" aria-labelledby="school-events-heading">

@@ -56,6 +56,15 @@ export const queryKeys = {
   studentTimetable: (studentId: string) => ["students", studentId, "timetable"] as const,
   myTimetable: ["me", "timetable"] as const,
 
+  // Announcements the school has sent to this family
+  // (docs/modules/announcements.md). Persistable, like the calendar and
+  // released results: "the gate is closed tomorrow" is exactly the message a
+  // parent needs to reread on a bus with no signal, and the cache is wiped on
+  // sign-out (D12). Unlike the calendar it carries no window in the key — the
+  // feed is short and the server decides what is still current.
+  guardianAnnouncements: ["announcements"] as const,
+  myAnnouncements: ["me", "announcements"] as const,
+
   // --- staff (CP2) --------------------------------------------------------
   //
   // EVERY staff key begins with the literal "staff". That prefix is not
@@ -187,4 +196,12 @@ export const queryKeys = {
   // (D35), so the query using this key never refetches in the background.
   staffTeacherActivity: (schoolId: string, userId: string) =>
     ["staff", schoolId, userId, "teacher-activity"] as const,
+
+  // Announcements on the staff side. NOT persisted, like every staff key: a
+  // STAFF-audience announcement is internal ("the head is away, do not admit
+  // the contractor"), and the sent list names who sent what.
+  staffAnnouncements: (schoolId: string, userId: string) =>
+    ["staff", schoolId, userId, "announcements"] as const,
+  staffAnnouncementFeed: (schoolId: string, userId: string) =>
+    ["staff", schoolId, userId, "announcement-feed"] as const,
 } as const;

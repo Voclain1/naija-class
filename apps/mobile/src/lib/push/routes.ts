@@ -25,16 +25,19 @@ const ROUTES: Record<Principal, Record<string, string>> = {
   guardian: {
     results: "/students",
     fees: "/students",
+    announcements: "/announcements",
   },
   student: {
     results: "/me/results",
     fees: "/me/fees",
+    announcements: "/me/announcements",
   },
   staff: {
     attendance: "/staff",
     gradebook: "/staff/gradebook",
     results: "/staff/approvals",
     fees: "/staff/collections",
+    announcements: "/staff/announcements",
   },
 };
 

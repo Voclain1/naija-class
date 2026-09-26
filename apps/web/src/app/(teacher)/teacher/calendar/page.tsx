@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { defaultCalendarWindow, formatCalendarRange, type CalendarEntryDto } from "@school-kit/types";
 
-import { CalendarAgenda } from "@/components/calendar/calendar-agenda";
+import { CalendarView } from "@/components/calendar/calendar-view";
 import { InlineAlert } from "@/components/shared/inline-alert";
 import { ApiError } from "@/lib/api-client";
 import { getCalendar } from "@/lib/calendar/calendar-api";
@@ -49,7 +49,7 @@ export default function TeacherCalendarPage() {
           <Loader2 className="h-4 w-4 animate-spin" /> Loading calendar…
         </div>
       ) : (
-        !error && <CalendarAgenda entries={entries} />
+        !error && <CalendarView entries={entries} />
       )}
     </div>
   );

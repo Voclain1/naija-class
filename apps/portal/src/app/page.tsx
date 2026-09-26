@@ -12,7 +12,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
-import type { PortalStudentDto } from "@school-kit/types";
+import type { AnnouncementFeedResponse, PortalStudentDto } from "@school-kit/types";
 
 import {
   buildLoginUrl,
@@ -30,6 +30,11 @@ type LoadState =
 export default function DashboardPage() {
   const router = useRouter();
   const [state, setState] = useState<LoadState>({ kind: "loading" });
+  // The unread count next to the announcements link. Fetched separately and
+  // deliberately silent on failure: the children list is what this page is
+  // for, and a school message nobody can count is still readable one tap
+  // away. A failure shows no badge rather than a zero, which would be a lie.
+  const [unread, setUnread] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -76,7 +81,19 @@ export default function DashboardPage() {
       }
     }
 
+    async function loadUnread() {
+      try {
+        const res = await fetch("/api/portal/announcements");
+        if (!res.ok) return;
+        const body = (await res.json()) as AnnouncementFeedResponse;
+        if (!cancelled) setUnread(body.unreadCount);
+      } catch {
+        // Silent by design — see the note on `unread` above.
+      }
+    }
+
     void load();
+    void loadUnread();
     return () => {
       cancelled = true;
     };
@@ -96,6 +113,12 @@ export default function DashboardPage() {
           {/* Phase 8 / CP1 — the school calendar is school-wide, not per child. */}
           <Link href="/calendar" className="text-sm font-medium text-primary hover:underline">
             School calendar →
+          </Link>
+          {/* Announcements are school-wide too, and carry the one number on
+              this page that decays: an unread count a parent has not seen. */}
+          <Link href="/announcements" className="text-sm font-medium text-primary hover:underline">
+            From the school
+            {unread > 0 ? ` (${unread} new)` : ""} →
           </Link>
         </div>
         <SignOutButton />
