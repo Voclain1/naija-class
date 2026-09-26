@@ -15,6 +15,7 @@ import { StorageService } from "../../../common/storage";
 import type { EmbedJobData, IngestJobData } from "../curriculum.service";
 import { runEmbedHandler } from "./embed.handler";
 import { runIngestHandler } from "./ingest.handler";
+import { WORKER_TUNING } from "../../../common/queue/worker-tuning.js";
 
 // CurriculumProcessor — sole BullMQ entry for CURRICULUM_QUEUE.
 //
@@ -28,7 +29,7 @@ import { runIngestHandler } from "./ingest.handler";
 // here is spending money against a shared vendor rate limit, and the batching
 // inside a job already extracts most of the available parallelism. The inner
 // backoff handles contention between the two.
-@Processor(CURRICULUM_QUEUE, { concurrency: 2 })
+@Processor(CURRICULUM_QUEUE, { concurrency: 2, ...WORKER_TUNING.curriculum })
 export class CurriculumProcessor extends WorkerHost {
   private readonly logger = new Logger(CurriculumProcessor.name);
 

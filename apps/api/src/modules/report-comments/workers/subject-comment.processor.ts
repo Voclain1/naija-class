@@ -14,6 +14,7 @@ import {
 } from "../../parent-summaries/parent-summaries.service.js";
 import { FormCommentsService, type FormCommentJobData } from "../form-comments.service.js";
 import { ReportCommentsService, type SubjectCommentJobData } from "../report-comments.service.js";
+import { WORKER_TUNING } from "../../../common/queue/worker-tuning.js";
 
 // ---------------------------------------------------------------------------
 // SubjectCommentProcessor — the sole @Processor on AI_QUEUE.
@@ -40,7 +41,7 @@ import { ReportCommentsService, type SubjectCommentJobData } from "../report-com
 // put a Chromium render between two short transactions. schoolId is still
 // asserted here, exactly as that processor does.
 // ---------------------------------------------------------------------------
-@Processor(AI_QUEUE, { concurrency: 3 })
+@Processor(AI_QUEUE, { concurrency: 3, ...WORKER_TUNING.ai })
 export class SubjectCommentProcessor extends WorkerHost {
   private readonly logger = new Logger(SubjectCommentProcessor.name);
 
