@@ -270,7 +270,36 @@ export class NotificationDispatchService {
     } else {
       this.logger.warn(
         `No push for ${principalType} ${principalId} in school ${req.schoolId} ` +
-          `(push=${channels.push}, tokens=${tokens.length}) — event ${req.eventType}`,
+          `(push=${channels.push}, tokens=${tokens.length}) — event ${req.eventType}; ` +
+          `releasing the claim so a later attempt can still tell them`,
+      );
+      // RELEASE THE CLAIM. Nothing was sent, so nothing was "notified".
+      //
+      // The claim is deliberately written BEFORE the send, so that a crash
+      // between the two produces a missed notification rather than a duplicate
+      // one. But this branch is not a crash: it is a KNOWN non-delivery — no
+      // device registered, or the school has push switched off — and leaving
+      // the row behind means the person can never be told about this event,
+      // even once a device registers a minute later.
+      //
+      // That is not hypothetical. On 2026-09-27 every guardian was claimed
+      // while the app could not obtain a push token at all (an Android build
+      // with no Firebase config). When the token problem was fixed the same
+      // afternoon, re-marking the register produced "Already notified" and
+      // silence: the morning's failures had burned the day's event for every
+      // parent in the school.
+      //
+      // Releasing cannot produce a duplicate, because a duplicate requires a
+      // SEND, and this branch is the one where nothing was sent.
+      await withTenant(req.schoolId, (db) =>
+        db.notificationDelivery.deleteMany({
+          where: {
+            eventType: req.eventType,
+            eventId: req.eventId,
+            principalType,
+            principalId,
+          },
+        }),
       );
     }
 

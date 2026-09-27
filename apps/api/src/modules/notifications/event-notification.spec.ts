@@ -31,6 +31,12 @@ const notificationDelivery = {
     return { id: `d-${claimed.length}` };
   }),
   updateMany: vi.fn(async () => ({ count: 1 })),
+  deleteMany: vi.fn(async ({ where }: { where: Record<string, string> }) => {
+    const key = [where.eventType, where.eventId, where.principalType, where.principalId].join("|");
+    const before = claimed.length;
+    claimed = claimed.filter((entry) => entry !== key);
+    return { count: before - claimed.length };
+  }),
 };
 
 vi.mock("@school-kit/db", () => ({
@@ -149,5 +155,54 @@ describe("N2/N3 — every principal, and nothing private on a lock screen", () =
     expect(data.body).toBe("Results have been released. Open the app to see them.");
     // No name, no grade, no amount — a lock screen is public.
     expect(`${data.title} ${data.body}`).not.toMatch(/₦|\d{2,}%|guardian-1/);
+  });
+});
+
+describe("a claim is released when nothing was sent (found in production 2026-09-27)", () => {
+  // The claim is written BEFORE the send so a crash between them misses a
+  // notification rather than duplicating one. But "no device registered" is
+  // not a crash — and leaving the row behind meant the person could never be
+  // told about that event, even once a device registered minutes later.
+  //
+  // In production every guardian was claimed while the Android build could not
+  // obtain a push token at all. When that was fixed the same afternoon,
+  // re-marking the register produced "Already notified" and silence: the
+  // morning's failures had burned the whole day for every parent.
+
+  it("does not mark someone as told when they have no device", async () => {
+    tokens = [];
+    const { service, add } = make();
+    await expect(service.notifyOfEvent(event())).resolves.toBe("NONE");
+    expect(add).not.toHaveBeenCalled();
+    expect(claimed).toEqual([]);
+  });
+
+  it("tells them on the next attempt, once a device exists", async () => {
+    tokens = [];
+    const { service } = make();
+    await service.notifyOfEvent(event());
+
+    // The device registers, the event fires again — and this time it lands.
+    tokens = [{ expoPushToken: "ExponentPushToken[abc]" }];
+    const second = make();
+    await expect(second.service.notifyOfEvent(event())).resolves.toBe("PUSH");
+    expect(second.add).toHaveBeenCalledTimes(1);
+  });
+
+  it("releases nothing when the school simply has push switched off, but still does not claim", async () => {
+    // Same reasoning: a school that enables push tomorrow should not find
+    // every one of today's events already marked as delivered.
+    const { service, add } = make({ email: true, sms: true, push: false });
+    await expect(service.notifyOfEvent(event())).resolves.toBe("NONE");
+    expect(add).not.toHaveBeenCalled();
+    expect(claimed).toEqual([]);
+  });
+
+  it("KEEPS the claim when a send did happen — releasing then would duplicate", async () => {
+    const { service, add } = make();
+    await expect(service.notifyOfEvent(event())).resolves.toBe("PUSH");
+    expect(claimed).toHaveLength(1);
+    await expect(service.notifyOfEvent(event())).resolves.toBe("NONE");
+    expect(add).toHaveBeenCalledTimes(1);
   });
 });
