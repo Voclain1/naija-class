@@ -31,6 +31,16 @@ describe("routing a tapped notification", () => {
     expect(routeForNotification({ screen: "announcements" }, "staff")).toBe("/staff/announcements");
   });
 
+  it("takes a parent to their children when a child was marked absent", () => {
+    // The alert deliberately names no child, so the destination must be the
+    // list where a parent of three can see which one (the-school-day.md A3).
+    expect(routeForNotification({ screen: "attendance" }, "guardian")).toBe("/students");
+    expect(routeForNotification({ screen: "attendance" }, "student")).toBe("/me/attendance");
+    // Unchanged: for staff this hint is the register reminder, not an alert
+    // about their own child.
+    expect(routeForNotification({ screen: "attendance" }, "staff")).toBe("/staff");
+  });
+
   it("goes HOME for an unknown or missing hint — a tap that does nothing reads as broken", () => {
     expect(routeForNotification({ screen: "something-new" }, "student")).toBe(HOME.student);
     expect(routeForNotification({}, "guardian")).toBe(HOME.guardian);

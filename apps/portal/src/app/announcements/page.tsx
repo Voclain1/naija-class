@@ -13,7 +13,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
-import type { AnnouncementFeedItemDto, AnnouncementFeedResponse } from "@school-kit/types";
+import { callSchoolHref, type AnnouncementFeedItemDto, type AnnouncementFeedResponse, type SchoolContactResponse } from "@school-kit/types";
 
 import { SignOutButton } from "@/components/sign-out-button";
 import { buildLoginUrl, errorCodeFromBody, reasonFromErrorCode } from "@/lib/session-end";
@@ -35,6 +35,9 @@ function when(value: string | Date): string {
 export default function AnnouncementsPage() {
   const router = useRouter();
   const [state, setState] = useState<LoadState>({ kind: "loading" });
+  // Fetched separately and silent on failure: the messages are what this page
+  // is for, and a missing number means no button rather than an error.
+  const [callHref, setCallHref] = useState<string | null>(null);
   // Marks already attempted this visit, so a re-render does not re-post them.
   const marked = useRef<Set<string>>(new Set());
 
@@ -78,7 +81,19 @@ export default function AnnouncementsPage() {
       }
     }
 
+    async function loadSchool() {
+      try {
+        const res = await fetch("/api/portal/school");
+        if (!res.ok) return;
+        const body = (await res.json()) as SchoolContactResponse;
+        if (!cancelled) setCallHref(callSchoolHref(body.phone));
+      } catch {
+        // Silent by design — see the note on callHref above.
+      }
+    }
+
     void load();
+    void loadSchool();
     return () => {
       cancelled = true;
     };
@@ -140,6 +155,19 @@ export default function AnnouncementsPage() {
           ))}
         </ul>
       )}
+      {/* D12 — the reply path, and the only one (D11 refuses general
+          messaging). A parent who has just read something about their child
+          rings the school; this saves them looking up the number. Hidden
+          entirely when the school has set none — a dead button would tell them
+          the feature exists and has been taken away. */}
+      {callHref ? (
+        <a
+          href={callHref}
+          className="self-start rounded-md border border-input px-4 py-2 text-sm font-medium hover:bg-muted"
+        >
+          Call the school
+        </a>
+      ) : null}
     </main>
   );
 }

@@ -76,7 +76,13 @@ describe("Phase 2 E2E rollup (slice 9 cp3)", () => {
   const grading = new GradingService();
   const assessment = new AssessmentService();
   const aggregation = new AggregationService();
-  const attendance = new AttendanceService();
+  const attendance = new AttendanceService(
+    // Marking a register now tells a child's guardians (the-school-day.md A).
+    // A stub here, not a mock with expectations: what this spec is about is
+    // the register, and the notifier's own behaviour is proven in
+    // event-notification.spec.ts and attendance-absence.spec.ts.
+    { attendanceAbsent: async () => undefined } as never,
+  );
   const subjectAttendance = new SubjectAttendanceService();
 
   let storageRoot: string;

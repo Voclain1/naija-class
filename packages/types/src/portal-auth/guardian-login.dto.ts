@@ -24,6 +24,16 @@ export interface GuardianLoginSchoolDto {
   id: string;
   name: string;
   slug: string;
+  /**
+   * The school's own switchboard number, for "Call the school"
+   * (docs/modules/the-school-day.md D12).
+   *
+   * The school's, never a person's: this is the number already printed on
+   * their gate and their letterhead, not a teacher's mobile. Nullable because
+   * a school can finish onboarding without one, and the button is HIDDEN
+   * rather than dead when it is absent.
+   */
+  phone: string | null;
 }
 
 // No 2FA branch (unlike staff LoginResponse) — guardians have no TOTP

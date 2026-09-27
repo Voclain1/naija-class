@@ -655,6 +655,22 @@ export const CALENDAR_READ_PERMISSIONS = ["calendar-event.read"] as const;
 export const ANNOUNCEMENT_MANAGE_PERMISSIONS = ["announcement.read", "announcement.create"] as const;
 export const ANNOUNCEMENT_READ_PERMISSIONS = ["announcement.read"] as const;
 
+// Homework (docs/modules/the-school-day.md Part B). Two permissions, and the
+// split is who may SET work versus who may merely see it.
+//
+// `homework.create` goes to TEACHER as well as owner/admin — unlike
+// announcements, where a teacher addressing the whole school is the school
+// speaking in their voice. Setting homework IS teaching work. The service
+// still holds a teacher to the classes and subjects their own teacher scope
+// lists (B8), exactly as the gradebook does; the permission opens the feature,
+// the scope decides the class.
+//
+// bursar gets read only, on the same reasoning as the calendar: it carries no
+// financial data, and a bursar fielding "what homework does my child have?"
+// at the counter should be able to answer.
+export const HOMEWORK_MANAGE_PERMISSIONS = ["homework.read", "homework.create"] as const;
+export const HOMEWORK_READ_PERMISSIONS = ["homework.read"] as const;
+
 // Phase 8 / CP2 — Recording Completeness (docs/modules/phase-8.md §16 D39).
 // Owner/admin only. Named `reports.*`, deliberately not `report-card.*`.
 //
@@ -710,6 +726,7 @@ export const ALL_PERMISSIONS = [
   ...PHASE_7_PERMISSIONS,
   ...CALENDAR_PERMISSIONS,
   ...ANNOUNCEMENT_MANAGE_PERMISSIONS,
+  ...HOMEWORK_MANAGE_PERMISSIONS,
   ...REPORTS_PERMISSIONS,
   ...TIMETABLE_PERMISSIONS,
   ...TIMETABLE_OWN_READ_PERMISSIONS,
