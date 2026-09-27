@@ -14,6 +14,7 @@ import { CallSchool } from "../../src/components/call-school";
 import { greeting } from "../../src/lib/when";
 import { fontSizes, fonts, radii, spacing } from "../../src/theme/tokens";
 import { Body, Button, Card, CenteredMessage, Label, Notice, Screen } from "../../src/components/ui";
+import { PushStatusNotice } from "../../src/components/push-status-notice";
 import { EmptyState, ListRow, ScreenHeader, SectionHeader, Skeleton } from "../../src/components/layout";
 import { FreshnessLabel, useIsOnline } from "../../src/components/freshness-label";
 
@@ -172,6 +173,7 @@ export default function StudentsScreen() {
             up the number. Below the children, because it answers a question
             the cards above raised. */}
         {school?.phone ? <CallSchool phone={school.phone} /> : null}
+        <PushStatusNotice />
       </ScrollView>
 
       <AppMenu

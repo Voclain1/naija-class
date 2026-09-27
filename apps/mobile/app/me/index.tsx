@@ -30,6 +30,7 @@ import { spacing } from "../../src/theme/tokens";
 import { Card, CenteredMessage, Label, Notice, Screen } from "../../src/components/ui";
 import { ListRow, ScreenHeader, SectionHeader, Skeleton, StatRow } from "../../src/components/layout";
 import { FreshnessLabel } from "../../src/components/freshness-label";
+import { PushStatusNotice } from "../../src/components/push-status-notice";
 
 // A student's home, redesigned (D6): "what do I have today" first — the next
 // lesson, how their attendance stands, their newest result and anything owed
@@ -216,6 +217,7 @@ export default function MyHomeScreen() {
             either — and the only contact this app offers anyone is the school
             itself, never a member of staff directly (D11). */}
         {school?.phone ? <CallSchool phone={school.phone} /> : null}
+        <PushStatusNotice />
       </ScrollView>
 
       <AppMenu

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   canRequestToken,
   needsRegistration,
+  describePushStatus,
   shouldRegisterOnLaunch,
   shouldRequestPermission,
 } from "./push-eligibility";
@@ -112,5 +113,35 @@ describe("shouldRegisterOnLaunch", () => {
     // reason.
     expect(shouldRegisterOnLaunch({ status: "loading", principal: "guardian" })).toBe(false);
     expect(shouldRegisterOnLaunch({ status: "authenticated", principal: null })).toBe(false);
+  });
+});
+
+describe("describePushStatus", () => {
+  // Three faults presented to a person as one symptom — silence — and each
+  // took a round of guessing and a new build to tell apart. These strings are
+  // what make the fourth one a report instead of a mystery.
+
+  it("says nothing at all when registration worked", () => {
+    // A working feature is silent. Only broken states earn a line on a screen.
+    expect(describePushStatus("registered")).toBeNull();
+    expect(describePushStatus(null)).toBeNull();
+    expect(describePushStatus("unknown")).toBeNull();
+  });
+
+  it("tells someone who refused permission where to change it", () => {
+    expect(describePushStatus("permission-denied")).toContain("settings");
+  });
+
+  it("tells someone whose phone could not get a token to report it", () => {
+    // They cannot fix this one — it is a build/credentials fault — but their
+    // report is what makes it findable.
+    const message = describePushStatus("no-token");
+    expect(message).toContain("tell the school");
+    // And it must not imply the rest of the app is broken.
+    expect(message).toContain("still use the app");
+  });
+
+  it("says a failed hand-off will retry, because it will", () => {
+    expect(describePushStatus("server-refused")).toContain("next time");
   });
 });
