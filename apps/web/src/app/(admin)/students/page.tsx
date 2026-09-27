@@ -16,6 +16,7 @@ import { PrintButton } from "@/components/shared/print-button";
 import { StudentsListControls } from "@/components/students/students-list-controls";
 import { StudentsRosterTable } from "@/components/students/students-roster-table";
 import { Button } from "@/components/ui/button";
+import { EmptyState, PageHeader, PageSkeleton } from "@/components/layout/page-primitives";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -154,26 +155,26 @@ export default function StudentsRosterPage() {
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-6">
-      <header className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="font-serif text-2xl font-medium tracking-tight text-foreground">Students</h1>
-          <p className="text-sm text-muted-foreground print:hidden">
-            Your school&apos;s roster. Add students one at a time, in a grid, or
-            by importing a CSV.
-          </p>
-        </div>
-        {/* Toolbar (rearranged 2026-08-18). Five same-weight buttons wrapped
-            onto two ragged rows and gave the page two competing primaries.
-            Now: the roster's own utilities (Export, Print) sit together on the
-            left as small outline buttons, and every way of ADDING a student
-            collapses into one primary split button — click it for the common
-            case (one student), open the caret for the grid and the CSV import.
-            One primary action, one row, at any width. */}
-        <div className="flex flex-wrap items-center gap-2 print:hidden">
-          <div className="flex items-center gap-2">
-            <ExportCsvButton onExport={onExport} disabled={students.length === 0} />
-            <PrintButton />
-          </div>
+      <PageHeader
+        title="Students"
+        subtitle={
+          <span className="print:hidden">
+            Your school&apos;s roster. Add students one at a time, in a grid, or by importing a CSV.
+          </span>
+        }
+        actions={
+          /* Toolbar (rearranged 2026-08-18). Five same-weight buttons wrapped
+             onto two ragged rows and gave the page two competing primaries.
+             Now: the roster's own utilities (Export, Print) sit together on the
+             left as small outline buttons, and every way of ADDING a student
+             collapses into one primary split button — click it for the common
+             case (one student), open the caret for the grid and the CSV import.
+             One primary action, one row, at any width. */
+          <div className="flex flex-wrap items-center gap-2 print:hidden">
+            <div className="flex items-center gap-2">
+              <ExportCsvButton onExport={onExport} disabled={students.length === 0} />
+              <PrintButton />
+            </div>
 
           <div className="flex items-center">
             <Button asChild size="sm" className="rounded-r-none">
@@ -230,7 +231,8 @@ export default function StudentsRosterPage() {
             </DropdownMenu>
           </div>
         </div>
-      </header>
+        }
+      />
 
       {/* The handover this product was missing. Building a roster feels like
           the finish line, but a student on this page is in no class, on no
@@ -259,59 +261,54 @@ export default function StudentsRosterPage() {
       </div>
 
       {loading ? (
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Loader2 className="h-4 w-4 animate-spin" />
-          Loading…
-        </div>
+        <PageSkeleton rows={6} />
       ) : error ? (
         <div className="rounded-md border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive">
           {error}
         </div>
       ) : students.length === 0 ? (
-        <div className="flex flex-col items-center gap-2 rounded-md border border-dashed bg-muted/30 p-8 text-center">
-          <p className="text-sm font-medium">
-            {search || status || classArmId
-              ? "No students match those filters."
-              : "No students yet."}
-          </p>
-          <p className="text-sm text-muted-foreground">
-            {search || status || classArmId
+        <EmptyState
+          title={search || status || classArmId ? "No students match those filters." : "No students yet."}
+          body={
+            search || status || classArmId
               ? "Try clearing the search, status, or class filter."
-              : "Add your first student — or import a roster from CSV."}
-          </p>
-          {/* The empty state is the one place all three routes stay visible
-              side by side — a school with no students yet is choosing an
-              intake method, not repeating a habit, so hiding two of them
-              behind a caret here would be the wrong trade. */}
-          {!search && !status && !classArmId && (
-            <div className="mt-2 flex flex-wrap justify-center gap-2">
-              <Button asChild>
-                <Link href="/students/new">
-                  <UserPlus className="mr-1 h-4 w-4" />
-                  Add student
-                </Link>
-              </Button>
-              <Button asChild variant="outline">
-                <Link href="/students/new/bulk">
-                  <Rows3 className="mr-1 h-4 w-4" />
-                  Add several in a grid
-                </Link>
-              </Button>
-              <Button asChild variant="outline">
-                <Link href="/students/import">
-                  <FileUp className="mr-1 h-4 w-4" />
-                  Import from CSV
-                </Link>
-              </Button>
-              <Button asChild variant="outline">
-                <Link href="/students/scan">
-                  <Camera className="mr-1 h-4 w-4" />
-                  Scan a student list
-                </Link>
-              </Button>
-            </div>
-          )}
-        </div>
+              : "Add your first student — or import a roster from CSV."
+          }
+          action={
+            /* The empty state is the one place all three routes stay visible
+               side by side — a school with no students yet is choosing an
+               intake method, not repeating a habit, so hiding two of them
+               behind a caret here would be the wrong trade. */
+            !search && !status && !classArmId ? (
+              <div className="flex flex-wrap justify-center gap-2">
+                <Button asChild>
+                  <Link href="/students/new">
+                    <UserPlus className="mr-1 h-4 w-4" />
+                    Add student
+                  </Link>
+                </Button>
+                <Button asChild variant="outline">
+                  <Link href="/students/new/bulk">
+                    <Rows3 className="mr-1 h-4 w-4" />
+                    Add several in a grid
+                  </Link>
+                </Button>
+                <Button asChild variant="outline">
+                  <Link href="/students/import">
+                    <FileUp className="mr-1 h-4 w-4" />
+                    Import from CSV
+                  </Link>
+                </Button>
+                <Button asChild variant="outline">
+                  <Link href="/students/scan">
+                    <Camera className="mr-1 h-4 w-4" />
+                    Scan a student list
+                  </Link>
+                </Button>
+              </div>
+            ) : null
+          }
+        />
       ) : (
         <>
           <StudentsRosterTable students={students} />
