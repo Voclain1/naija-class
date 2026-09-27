@@ -381,3 +381,38 @@ status Android never emits, the second was wiring with no assertion at all.
 `shouldRegisterOnLaunch` exists so the rule has something to test against, but
 the honest lesson is that this seam needs a device, and the honest count is that
 the notification rail has now been "finished" three times.
+
+## Part A, third device pass (2026-09-27) — still no delivery, and now it says why
+
+With registration fixed and the build installed, two announcements and a fourth
+absence mark produced nothing on either phone. Production, again:
+
+```
+No push for STUDENT 866de843… (push=true, tokens=0) — event announcement.posted
+No push for STAFF   81fa7e99… (push=true, tokens=0) — event announcement.posted
+```
+
+Still **zero tokens**, now on a build that registers on launch. So the token
+REQUEST is failing on the device, before any POST.
+
+**The likely cause is Android FCM credentials, which this project has never
+had.** `apps/mobile/app.json` declares no `googleServicesFile`, there is no
+`google-services.json` in the repo, and Expo's push service delivers to Android
+through FCM: in a standalone build `getExpoPushTokenAsync()` throws without
+those credentials. That throw went straight into `registerForPush`'s catch and
+nowhere else.
+
+**What this pass actually changed: the silence.** Swallowing the error is still
+right — a sign-in must never fail because push did not set up — but swallowing
+it invisibly is what made three unrelated faults (permission never asked,
+registration never called, token request throwing) look like one symptom and
+cost a build each to tell apart. Registration now records where it got to
+(`registered`, `permission-denied`, `no-token`, `server-refused`,
+`unsupported-device`), logs anything that is not success, and the three home
+screens carry one line when this phone will not receive notifications.
+
+**Still not fixed, and not fixable from here:** the FCM credentials themselves
+need a Firebase project and a service account key uploaded to EAS, which
+requires the account owner. Until then no Android build can obtain a token, and
+every other part of the rail — events, quiet hours, the grace period, dedupe,
+tap routing — remains untested in delivery for the same reason.
