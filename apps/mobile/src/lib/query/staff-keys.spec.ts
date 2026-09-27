@@ -62,6 +62,9 @@ const STAFF_KEYS: Record<string, readonly unknown[]> = {
   staffAnnouncements: queryKeys.staffAnnouncements(SCHOOL, USER),
   staffAnnouncementFeed: queryKeys.staffAnnouncementFeed(SCHOOL, USER),
   staffHomework: queryKeys.staffHomework(SCHOOL, USER, ""),
+  // A named child and a written judgement — the single most sensitive thing
+  // the staff app caches.
+  staffBehaviour: queryKeys.staffBehaviour(SCHOOL, USER, "student_1"),
 };
 
 describe("staff query keys", () => {
