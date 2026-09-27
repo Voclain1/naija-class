@@ -411,8 +411,23 @@ cost a build each to tell apart. Registration now records where it got to
 `unsupported-device`), logs anything that is not success, and the three home
 screens carry one line when this phone will not receive notifications.
 
-**Still not fixed, and not fixable from here:** the FCM credentials themselves
-need a Firebase project and a service account key uploaded to EAS, which
-requires the account owner. Until then no Android build can obtain a token, and
-every other part of the rail — events, quiet hours, the grace period, dedupe,
-tap routing — remains untested in delivery for the same reason.
+**Resolved the same day.** The diagnosis was half right and half wrong, and the
+wrong half is the useful part to record: Android push needs credentials in TWO
+places, and only one was missing.
+
+| Half | Where | State |
+|---|---|---|
+| FCM V1 service account key | EAS servers — lets Expo SEND | **already configured**, uploaded 19 Aug 2026 for project `schoolkit-push` |
+| `google-services.json` | inside the app — lets the phone GET a token | **missing**, and this was the fault |
+
+So the sending half had been in place for over a month while no device could
+obtain a token to send to. `apps/mobile/app.json` now declares
+`android.googleServicesFile`, and the file's `project_id` (`schoolkit-push`)
+and `package_name` (`ng.schoolkit.app`) were both checked against the EAS
+credential before building — a mismatch there produces tokens that fail at
+send time, which would have looked like a fourth unrelated fault.
+
+`google-services.json` is committed deliberately. It ships inside every APK and
+identifies the Firebase project rather than authorising anything; the service
+account key, which DOES authorise sending, stays out of the repo and lives only
+on EAS.
