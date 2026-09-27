@@ -348,3 +348,36 @@ both announcement screens, and the portal's home and announcements page.
 
 **Still not built: Part C (behaviour records).** Last by design — it carries
 the most social risk and the least daily value.
+
+## Part A, second device pass (2026-09-27) — the alert fired, nothing arrived
+
+Installed the merged build, marked a child absent on a real phone with a real
+parent signed in on another, permission granted on both. **No notification.**
+
+Production's own logs named the cause in one line:
+
+```
+No push for GUARDIAN 7e66805d… in school 6beff17c… (push=true, tokens=0)
+  — event attendance.absent
+```
+
+Everything Part A built worked: the register wrote, the event fired, the school's
+push setting was ON, the grace period elapsed, the dedupe held ("Already
+notified …" on the re-submit). There were simply **no device tokens**, because
+`registerForPush` was called only inside the three sign-in functions. A person
+already signed in when they install a new build never signs in again, so never
+registers.
+
+`registerForPush`'s own docstring has always said it is safe to call on every
+cold start — it POSTs only when the token or principal changed. Nothing called
+it that way. Fixed by an effect in `SessionProvider` keyed on
+`(status, principal)`, gated by `shouldRegisterOnLaunch`, which also makes
+registration self-healing: a POST that failed offline retries next launch,
+because the local record is written only after the server accepts.
+
+**This is the SECOND production bug in this one seam**, after the Android 13+
+permission gate, and neither was reachable from a test — the first asserted a
+status Android never emits, the second was wiring with no assertion at all.
+`shouldRegisterOnLaunch` exists so the rule has something to test against, but
+the honest lesson is that this seam needs a device, and the honest count is that
+the notification rail has now been "finished" three times.
