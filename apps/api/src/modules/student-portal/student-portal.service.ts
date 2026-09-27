@@ -187,7 +187,7 @@ export class StudentPortalService {
 
     const school = await basePrisma.school.findUniqueOrThrow({
       where: { id: row.school_id },
-      select: { id: true, name: true, slug: true },
+      select: { id: true, name: true, slug: true, phone: true },
     });
 
     return {
@@ -251,7 +251,7 @@ export class StudentPortalService {
     }));
     const school = await basePrisma.school.findUniqueOrThrow({
       where: { id: ctx.schoolId },
-      select: { id: true, name: true, slug: true },
+      select: { id: true, name: true, slug: true, phone: true },
     });
     return { student: toStudentDto(student.row, student.enrollment), school };
   }
@@ -488,7 +488,7 @@ export class StudentPortalService {
     );
     const school = await basePrisma.school.findUniqueOrThrow({
       where: { id: row.school_id },
-      select: { id: true, name: true, slug: true },
+      select: { id: true, name: true, slug: true, phone: true },
     });
 
     return {

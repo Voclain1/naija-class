@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import {
   canRequestToken,
   needsRegistration,
+  describePushStatus,
+  shouldRegisterOnLaunch,
   shouldRequestPermission,
 } from "./push-eligibility";
 
@@ -82,5 +84,64 @@ describe("needsRegistration", () => {
     // same phone, and the server must reassign the row — otherwise the
     // child's notifications keep going to the parent's account.
     expect(needsRegistration({ ...base, principal: "student" })).toBe(true);
+  });
+});
+
+describe("shouldRegisterOnLaunch", () => {
+  // The second bug this seam produced, found on a device: registration ran only
+  // inside the three sign-in functions, so anyone already signed in when they
+  // installed the build never registered. Production logged
+  // `push=true, tokens=0` — school setting on, event fired, nobody had a token.
+
+  it("registers when there is a session, however it came to exist", () => {
+    expect(shouldRegisterOnLaunch({ status: "authenticated", principal: "guardian" })).toBe(true);
+    expect(shouldRegisterOnLaunch({ status: "authenticated", principal: "student" })).toBe(true);
+    expect(shouldRegisterOnLaunch({ status: "authenticated", principal: "staff" })).toBe(true);
+  });
+
+  it("does not register for a locked staff session", () => {
+    // Behind the lock screen there is no usable bearer token, so the POST would
+    // 401 and the silent catch would swallow it. Unlocking flips the status
+    // back and the effect runs again.
+    expect(shouldRegisterOnLaunch({ status: "locked", principal: "staff" })).toBe(false);
+  });
+
+  it("does not register for a guest, a loading session, or a status with no principal", () => {
+    expect(shouldRegisterOnLaunch({ status: "guest", principal: null })).toBe(false);
+    // "loading" is the session before it has resolved — there may be no token
+    // yet, and a status added later defaults to not registering for the same
+    // reason.
+    expect(shouldRegisterOnLaunch({ status: "loading", principal: "guardian" })).toBe(false);
+    expect(shouldRegisterOnLaunch({ status: "authenticated", principal: null })).toBe(false);
+  });
+});
+
+describe("describePushStatus", () => {
+  // Three faults presented to a person as one symptom — silence — and each
+  // took a round of guessing and a new build to tell apart. These strings are
+  // what make the fourth one a report instead of a mystery.
+
+  it("says nothing at all when registration worked", () => {
+    // A working feature is silent. Only broken states earn a line on a screen.
+    expect(describePushStatus("registered")).toBeNull();
+    expect(describePushStatus(null)).toBeNull();
+    expect(describePushStatus("unknown")).toBeNull();
+  });
+
+  it("tells someone who refused permission where to change it", () => {
+    expect(describePushStatus("permission-denied")).toContain("settings");
+  });
+
+  it("tells someone whose phone could not get a token to report it", () => {
+    // They cannot fix this one — it is a build/credentials fault — but their
+    // report is what makes it findable.
+    const message = describePushStatus("no-token");
+    expect(message).toContain("tell the school");
+    // And it must not imply the rest of the app is broken.
+    expect(message).toContain("still use the app");
+  });
+
+  it("says a failed hand-off will retry, because it will", () => {
+    expect(describePushStatus("server-refused")).toContain("next time");
   });
 });

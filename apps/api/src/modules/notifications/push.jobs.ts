@@ -12,6 +12,21 @@ export interface PushSendJobData {
   /** Lockscreen-safe (D36). */
   body: string;
   payload?: Record<string, string>;
+  /**
+   * A last check, at send time, that the news is still true
+   * (`docs/modules/the-school-day.md` A4).
+   *
+   * Absence alerts are held for a grace period so a mistyped register can be
+   * corrected before a parent is told their child is missing. That only works
+   * if something re-reads the record when the delay expires: a claim written
+   * fifteen minutes ago is evidence of what a teacher tapped, not of what is
+   * true now. The processor skips the send when this no longer holds.
+   *
+   * Deliberately a narrow, named union rather than a generic predicate — a
+   * queued job cannot carry a function, and "re-run this query" is exactly
+   * the kind of thing that must be readable in a payload.
+   */
+  verify?: { kind: "guardian-child-absent"; guardianId: string; date: string };
 }
 
 /**

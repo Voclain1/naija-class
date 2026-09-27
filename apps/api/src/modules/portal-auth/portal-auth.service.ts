@@ -589,6 +589,10 @@ const GUARDIAN_LOGIN_SCHOOL_SELECT = {
   id: true,
   name: true,
   slug: true,
+  // D12 — the school's switchboard, for "Call the school". The school's own
+  // number, never a person's, and nullable: the button is hidden when a school
+  // has not set one.
+  phone: true,
 } satisfies Prisma.SchoolSelect;
 
 

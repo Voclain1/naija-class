@@ -83,8 +83,12 @@ export function latestResult(results: readonly ReleasedResultSummaryDto[]): Rele
 }
 
 export interface Highlight {
-  /** "fees" outranks "results": one is a debt with a deadline, the other is news. */
-  kind: "fees" | "results";
+  /**
+   * Ranked, most urgent first: "fees" is a debt with a deadline, "homework" is
+   * due tomorrow, "results" are news that keep. See childHighlight for why
+   * homework sits between them.
+   */
+  kind: "fees" | "homework" | "results";
   text: string;
   tone: "warning" | "info";
 }
@@ -99,9 +103,35 @@ export interface Highlight {
 export function childHighlight(args: {
   invoices?: readonly PortalInvoiceDto[];
   results?: readonly ReleasedResultSummaryDto[];
+  /** Homework due today or tomorrow, from the server's own count. */
+  homeworkDueSoon?: number;
+  /** Homework already past its due date. */
+  homeworkOverdue?: number;
 }): Highlight | null {
   const owed = totalOwed(args.invoices ?? []);
   if (owed > 0) return { kind: "fees", text: `${formatKobo(owed)} outstanding`, tone: "warning" };
+  // Homework comes BEFORE results and after money, and overdue before due.
+  //
+  // Its place in this order is the whole of B9: posting homework sends no
+  // push, because five subjects a day would be five buzzes and a silenced app.
+  // This line is what replaces the notification — the one thing a parent sees
+  // without opening anything, on the screen they already open.
+  //
+  // Money still outranks it: a child sent home over fees has a bigger problem
+  // than an unfinished exercise. Results rank below because a released result
+  // keeps for weeks and homework is due tomorrow.
+  const overdue = args.homeworkOverdue ?? 0;
+  if (overdue > 0) {
+    return {
+      kind: "homework",
+      text: `${overdue} piece${overdue === 1 ? "" : "s"} of homework overdue`,
+      tone: "warning",
+    };
+  }
+  const dueSoon = args.homeworkDueSoon ?? 0;
+  if (dueSoon > 0) {
+    return { kind: "homework", text: `${dueSoon} homework due soon`, tone: "info" };
+  }
   const result = latestResult(args.results ?? []);
   if (result) return { kind: "results", text: `${result.termName} results are ready`, tone: "info" };
   return null;

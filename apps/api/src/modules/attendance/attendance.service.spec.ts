@@ -40,7 +40,13 @@ function ctx(schoolId: string, userId: string) {
 describe("AttendanceService (cp1 — register, mark, summary)", () => {
   const runId = Math.random().toString(36).slice(2, 8);
   const auth = new AuthService();
-  const service = new AttendanceService();
+  const service = new AttendanceService(
+    // Marking a register now tells a child's guardians (the-school-day.md A).
+    // A stub here, not a mock with expectations: what this spec is about is
+    // the register, and the notifier's own behaviour is proven in
+    // event-notification.spec.ts and attendance-absence.spec.ts.
+    { attendanceAbsent: async () => undefined } as never,
+  );
   const schoolIds = new Set<string>();
 
   afterAll(async () => {

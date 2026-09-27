@@ -22,6 +22,7 @@ import { staffDestinations, type Destination } from "../../src/lib/navigation/de
 import { AppMenu, MenuButton, useAppMenu } from "../../src/components/app-menu";
 import { spacing } from "../../src/theme/tokens";
 import { Body, Card, Notice, Screen } from "../../src/components/ui";
+import { PushStatusNotice } from "../../src/components/push-status-notice";
 import {
   ActionTile,
   EmptyState,
@@ -401,6 +402,7 @@ export default function StaffDashboardScreen() {
         {canSeeSchool && !webConfigured ? (
           <Body muted>{WEB_NOT_CONFIGURED_MESSAGE}</Body>
         ) : null}
+        <PushStatusNotice />
       </ScrollView>
 
       <AppMenu

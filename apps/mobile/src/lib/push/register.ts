@@ -17,6 +17,7 @@ import {
   needsRegistration,
   shouldRequestPermission,
   type PermissionStatus,
+  type PushStatus,
 } from "./push-eligibility";
 
 // Phase 6 / Slice 5 — obtaining an Expo push token and handing it to the API.
@@ -32,6 +33,43 @@ import {
 
 const LAST_TOKEN_KEY = "sk_push_last_token";
 const LAST_PRINCIPAL_KEY = "sk_push_last_principal";
+const STATUS_KEY = "sk_push_status";
+const STATUS_DETAIL_KEY = "sk_push_status_detail";
+
+/**
+ * Record where registration got to, for the screens that show it and for
+ * anyone reading a device's logs.
+ *
+ * Swallowing the error is still right — a sign-in must never fail over push —
+ * but swallowing it SILENTLY is what made three different faults look like one
+ * symptom. This writes the outcome down and says it out loud.
+ */
+async function record(status: PushStatus, detail?: string): Promise<void> {
+  if (status !== "registered") {
+    console.warn(`[push] registration ended as "${status}"${detail ? `: ${detail}` : ""}`);
+  }
+  try {
+    await AsyncStorage.multiSet([
+      [STATUS_KEY, status],
+      [STATUS_DETAIL_KEY, detail ?? ""],
+    ]);
+  } catch {
+    // A status we cannot store is not worth failing over either.
+  }
+}
+
+/** The last recorded outcome, for a screen that wants to say something. */
+export async function getPushStatus(): Promise<{ status: PushStatus | null; detail: string }> {
+  try {
+    const [status, detail] = await Promise.all([
+      AsyncStorage.getItem(STATUS_KEY),
+      AsyncStorage.getItem(STATUS_DETAIL_KEY),
+    ]);
+    return { status: (status as PushStatus | null) ?? null, detail: detail ?? "" };
+  } catch {
+    return { status: null, detail: "" };
+  }
+}
 
 /** Where each surface accepts a device. */
 function endpointFor(principal: PushPrincipal): string {
@@ -92,11 +130,26 @@ export async function registerForPush(principal: PushPrincipal): Promise<void> {
     if (platform === null) return;
 
     const permission = await resolvePermission();
-    if (!canRequestToken({ permission, isDevice: Device.isDevice })) return;
+    if (!canRequestToken({ permission, isDevice: Device.isDevice })) {
+      await record(
+        permission === "granted" ? "unsupported-device" : "permission-denied",
+        `permission=${permission}, isDevice=${String(Device.isDevice)}`,
+      );
+      return;
+    }
 
-    const { data: token } = await Notifications.getExpoPushTokenAsync({
-      projectId: projectId(),
-    });
+    // The step that silently failed for three rounds. On Android a standalone
+    // build can only obtain an Expo token if the project has FCM credentials —
+    // without them this THROWS, and before this change the throw went into the
+    // catch below and nowhere else.
+    let token: string;
+    try {
+      const result = await Notifications.getExpoPushTokenAsync({ projectId: projectId() });
+      token = result.data;
+    } catch (err) {
+      await record("no-token", err instanceof Error ? err.message : String(err));
+      return;
+    }
 
     const [lastToken, lastPrincipal] = await Promise.all([
       AsyncStorage.getItem(LAST_TOKEN_KEY),
@@ -111,6 +164,7 @@ export async function registerForPush(principal: PushPrincipal): Promise<void> {
         lastRegisteredPrincipal: lastPrincipal,
       })
     ) {
+      await record("registered");
       return;
     }
 
@@ -125,7 +179,11 @@ export async function registerForPush(principal: PushPrincipal): Promise<void> {
       [LAST_TOKEN_KEY, token],
       [LAST_PRINCIPAL_KEY, principal],
     ]);
-  } catch {
+    await record("registered");
+  } catch (err) {
+    // Reached only by the POST and the storage writes now — the token request
+    // and the permission check record their own outcomes above.
+    await record("server-refused", err instanceof Error ? err.message : String(err));
     // Intentionally silent to the user. Push is an enhancement; a parent
     // whose registration failed still gets SMS, which is exactly the
     // fallback D37 describes. For staff there is no fallback at all — a

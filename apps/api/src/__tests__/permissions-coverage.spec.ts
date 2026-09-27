@@ -3,6 +3,7 @@ import { SYSTEM_ROLE_SEEDS } from "@school-kit/db";
 import {
   CALENDAR_PERMISSIONS,
   ANNOUNCEMENT_READ_PERMISSIONS,
+  HOMEWORK_READ_PERMISSIONS,
   CALENDAR_READ_PERMISSIONS,
   REPORTS_PERMISSIONS,
   TIMETABLE_PERMISSIONS,
@@ -749,11 +750,21 @@ describe("Phase 3 RBAC close-out: seeded role grants", () => {
     // would be absurd, and reading one carries no academic or student data.
     // Sending stays owner/admin (announcements.md A1), and the negative case
     // is asserted just below.
+    //
+    // + HOMEWORK_READ_PERMISSIONS (2026-09-26): the third and last of the same
+    // kind. A bursar fielding "what homework does my child have?" at the
+    // counter should be able to answer; homework carries no financial data and
+    // setting it stays with teachers and admins (the-school-day.md B8).
     expect(bursarPerms.size).toBe(
-      PHASE_3_BURSAR_PERMISSIONS.length + CALENDAR_READ_PERMISSIONS.length + ANNOUNCEMENT_READ_PERMISSIONS.length,
+      PHASE_3_BURSAR_PERMISSIONS.length +
+        CALENDAR_READ_PERMISSIONS.length +
+        ANNOUNCEMENT_READ_PERMISSIONS.length +
+        HOMEWORK_READ_PERMISSIONS.length,
     );
     expect(bursarPerms.has("announcement.read")).toBe(true);
     expect(bursarPerms.has("announcement.create")).toBe(false);
+    expect(bursarPerms.has("homework.read")).toBe(true);
+    expect(bursarPerms.has("homework.create")).toBe(false);
   });
 
   it("bursar is excluded from payment.refund and all three staff-bvn.* permissions", () => {

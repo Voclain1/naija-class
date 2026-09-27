@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "91736377945",
+    "project_id": "schoolkit-push",
+    "storage_bucket": "schoolkit-push.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:91736377945:android:f2fa1509ca7dc6a38e7f48",
+        "android_client_info": {
+          "package_name": "ng.schoolkit.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCESWTQHRpNM53XuN8fpMy7tDaiGf_viYE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

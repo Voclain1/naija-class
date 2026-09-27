@@ -79,3 +79,88 @@ export function needsRegistration(input: {
     input.principal !== input.lastRegisteredPrincipal
   );
 }
+
+/**
+ * Whether to attempt registration for the session as it stands.
+ *
+ * This exists because the seam it guards has now produced TWO production bugs,
+ * and neither was reachable from a test:
+ *
+ *  1. `shouldRequestPermission` never asked on Android 13+, so no device ever
+ *     had permission (fixed 2026-09-25).
+ *  2. `registerForPush` was called only inside the three sign-in functions, so
+ *     a RESTORED session never registered at all. Everyone already signed in
+ *     when they installed the fixed build still had no token, and production
+ *     logged `push=true, tokens=0` while the school's push setting was on and
+ *     the event itself fired correctly (found on a device 2026-09-27).
+ *
+ * `registerForPush` has always documented itself as safe to call on every cold
+ * start — it POSTs only when the token or principal changed. Nothing called it
+ * that way. This function is the rule, so the wiring has something to assert
+ * against.
+ *
+ * "locked" deliberately returns false: a staff session behind the lock screen
+ * has no usable bearer token, so the POST would 401 and the silent catch would
+ * swallow it. Registration happens again when they unlock, which flips status
+ * back to "authenticated".
+ */
+export function shouldRegisterOnLaunch(session: {
+  /** The full SessionStatus union, "loading" included — see below. */
+  status: "loading" | "guest" | "authenticated" | "locked";
+  principal: string | null;
+}): boolean {
+  // Written as an explicit test for "authenticated" rather than as a list of
+  // statuses to skip: a status added later (a future "expired", say) then
+  // defaults to NOT registering, which is the safe direction. "loading" is one
+  // of these — the session has not resolved, and there may be no token yet.
+  return session.status === "authenticated" && session.principal !== null;
+}
+
+/**
+ * How far registration got, last time it ran.
+ *
+ * This exists because "no notification arrived" looked IDENTICAL from the
+ * outside three times running, for three different reasons: permission never
+ * asked (Android 13+), registration never called on a restored session, and —
+ * the current suspect — the token request itself throwing because the Android
+ * build has no FCM credentials. Every one of them was swallowed by
+ * registerForPush's catch, which is correct behaviour (a sign-in must never
+ * fail over push) and terrible diagnosis.
+ *
+ * Recording the outcome costs one AsyncStorage write and turns "it doesn't
+ * work" into a sentence naming the step that failed.
+ */
+export type PushStatus =
+  | "registered"
+  | "permission-denied"
+  | "no-token"
+  | "server-refused"
+  | "unsupported-device"
+  | "unknown";
+
+/**
+ * What to tell a human about that status, or null when there is nothing worth
+ * saying.
+ *
+ * "registered" returns null deliberately: a working feature should be silent.
+ * Only the broken states earn a line on someone's screen.
+ */
+export function describePushStatus(status: PushStatus | null): string | null {
+  switch (status) {
+    case "permission-denied":
+      return "Notifications are switched off for this app. Turn them on in your phone's settings to be told about absences and announcements.";
+    case "no-token":
+      // The case that cost three rounds. Worded for the person holding the
+      // phone, who cannot fix it — it is a build/credentials problem — but
+      // whose report of it is what makes it findable.
+      return "This phone could not register for notifications. You can still use the app; please tell the school.";
+    case "server-refused":
+      return "We could not finish setting up notifications on this phone. It will try again next time you open the app.";
+    case "unsupported-device":
+      return "This device cannot receive notifications.";
+    case "registered":
+    case null:
+    case "unknown":
+      return null;
+  }
+}
