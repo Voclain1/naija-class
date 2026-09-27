@@ -431,3 +431,37 @@ send time, which would have looked like a fourth unrelated fault.
 identifies the Firebase project rather than authorising anything; the service
 account key, which DOES authorise sending, stays out of the repo and lives only
 on EAS.
+
+## Part A, fourth device pass (2026-09-27) — announcements land, and a claim burns a day
+
+With Firebase config in the build, **announcement notifications arrived almost
+immediately**. The rail works: registration, tokens, FCM, the channel, the
+heads-up banner.
+
+The absence alert stayed silent, and for a reason worth keeping:
+
+```
+16:22  Already notified GUARDIAN … of attendance.absent 2026-09-27
+```
+
+`notifyOfEvent` writes the delivery claim BEFORE it knows whether it can
+deliver. That ordering is deliberate — a crash between claim and send should
+miss a notification rather than duplicate one — but the `channel === "NONE"`
+branch is not a crash. It is a KNOWN non-delivery, and leaving the row behind
+means that person can never be told about that event again.
+
+So every guardian claimed during the morning's `tokens=0` attempts had their
+day burned. When the token fault was fixed hours later, re-marking the register
+produced "Already notified" and silence — for every parent in the school, for
+the rest of that day, because `attendance.absent`'s `eventId` is the date.
+
+**Fixed:** the claim is released when nothing was sent. A release cannot
+duplicate anything, because a duplicate requires a send and this is precisely
+the branch where none happened. The same applies to a school that has push
+switched off today and enables it tomorrow: it should not find every one of
+yesterday's events already marked as delivered.
+
+**Worth noticing about the shape of this bug:** it was invisible until the
+thing it protects against stopped happening. Three token faults in a row meant
+every claim was a false one, and the dedupe — working exactly as designed —
+turned the recovery into another silence.
