@@ -671,6 +671,18 @@ export const ANNOUNCEMENT_READ_PERMISSIONS = ["announcement.read"] as const;
 export const HOMEWORK_MANAGE_PERMISSIONS = ["homework.read", "homework.create"] as const;
 export const HOMEWORK_READ_PERMISSIONS = ["homework.read"] as const;
 
+// Behaviour records (docs/modules/the-school-day.md Part C). Owner, admin and
+// TEACHER — a conduct note is the judgement of whoever was in the room.
+//
+// BURSAR gets neither, unlike homework and the calendar, and the difference is
+// the point: those carry no academic or personal judgement and a bursar has an
+// everyday reason to see them. This is the most sensitive thing a school writes
+// about a child, and "no reason to read it" is the whole test.
+//
+// There is no parent-facing permission at all, because there is no
+// parent-facing endpoint (C14).
+export const BEHAVIOUR_PERMISSIONS_LIST = ["behaviour.read", "behaviour.create"] as const;
+
 // Phase 8 / CP2 — Recording Completeness (docs/modules/phase-8.md §16 D39).
 // Owner/admin only. Named `reports.*`, deliberately not `report-card.*`.
 //
@@ -727,6 +739,7 @@ export const ALL_PERMISSIONS = [
   ...CALENDAR_PERMISSIONS,
   ...ANNOUNCEMENT_MANAGE_PERMISSIONS,
   ...HOMEWORK_MANAGE_PERMISSIONS,
+  ...BEHAVIOUR_PERMISSIONS_LIST,
   ...REPORTS_PERMISSIONS,
   ...TIMETABLE_PERMISSIONS,
   ...TIMETABLE_OWN_READ_PERMISSIONS,

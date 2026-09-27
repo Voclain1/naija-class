@@ -9,6 +9,7 @@ import {
   ADMIN_DASHBOARD_PERMISSIONS,
   ANNOUNCEMENT_MANAGE_PERMISSIONS,
   ANNOUNCEMENT_READ_PERMISSIONS,
+  BEHAVIOUR_PERMISSIONS_LIST,
   HOMEWORK_MANAGE_PERMISSIONS,
   HOMEWORK_READ_PERMISSIONS,
   CALENDAR_PERMISSIONS,
@@ -96,6 +97,9 @@ const ADMIN_PERMISSIONS: readonly string[] = [
   // marks for any. Kept IN SYNC with the idempotent append in
   // prisma/migrations/20260926120000_homework.
   ...HOMEWORK_MANAGE_PERMISSIONS,
+  // Behaviour records (C14/C16). Kept IN SYNC with the idempotent append in
+  // prisma/migrations/20260927120000_behaviour_records.
+  ...BEHAVIOUR_PERMISSIONS_LIST,
   // Phase 8 / CP2 — Recording Completeness: the school-wide report and the
   // per-teacher recording-activity view (audited per read). Owner/admin only;
   // never teacher or bursar (§16 D39, pinned in permissions-coverage.spec.ts).
@@ -185,6 +189,8 @@ export const SYSTEM_ROLE_SEEDS: SystemRoleSeed[] = [
       // the school speaking. Scoped in the service to their own classes and
       // subjects, exactly as the gradebook is.
       ...HOMEWORK_MANAGE_PERMISSIONS,
+      // A conduct note is the judgement of the person who was in the room.
+      ...BEHAVIOUR_PERMISSIONS_LIST,
       // Phase 8 / CP4 — the teacher's own timetable (§18 D38). NOT
       // timetable.read: the whole-school builder stays owner/admin. Kept IN SYNC
       // with prisma/migrations/20260915120100_phase_8_cp4_timetable_own_read_permission.
