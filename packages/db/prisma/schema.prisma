@@ -3138,6 +3138,51 @@ model Assignment {
   @@map("assignments")
 }
 
+// ---------- Behaviour records (docs/modules/the-school-day.md Part C) ----------
+//
+// C14: INTERNAL in v1. A form teacher and an admin write and read these; a
+// parent does not see them. A behaviour note a parent can read changes what a
+// teacher is willing to write, and "my child did not do that" needs a right of
+// reply, a retention rule and an amendment path — none of which exist. Making
+// it parent-visible later is a decision with a design; making it parent-visible
+// by default now is how a school ends up in an argument it cannot win.
+//
+// C15: no AI anywhere near this. The hard rule bars auto-finalising; this goes
+// further and keeps the model out entirely, because a machine-written judgement
+// about a child's conduct is not something a teacher can meaningfully approve.
+//
+// C16: COMMENDATION as well as CONCERN. A system that records only what a child
+// did wrong is one teachers stop using and parents rightly resent.
+enum BehaviourKind {
+  COMMENDATION
+  CONCERN
+
+  @@map("behaviour_kind")
+}
+
+model BehaviourRecord {
+  id        String        @id @default(uuid())
+  schoolId  String        @map("school_id")
+  studentId String        @map("student_id")
+  kind      BehaviourKind
+  note      String
+  // The day it happened, which is not always the day it was written up: a
+  // teacher records Friday's incident on Monday. @db.Date for the usual
+  // reason — a calendar day has no time of day and no timezone.
+  occurredOn DateTime @db.Date @map("occurred_on")
+
+  recordedBy String   @map("recorded_by")
+  createdAt  DateTime @default(now()) @map("created_at")
+  // Withdrawn, never deleted: a record that was wrong should read as withdrawn
+  // rather than vanish, because "it was removed" is itself part of the history
+  // when a parent meeting turns on what was written.
+  withdrawnAt DateTime? @map("withdrawn_at")
+  withdrawnBy String?   @map("withdrawn_by")
+
+  @@index([schoolId, studentId, occurredOn])
+  @@map("behaviour_records")
+}
+
 model Announcement {
   id          String               @id @default(uuid())
   schoolId    String               @map("school_id")

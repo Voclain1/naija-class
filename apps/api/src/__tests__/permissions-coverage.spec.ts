@@ -765,6 +765,13 @@ describe("Phase 3 RBAC close-out: seeded role grants", () => {
     expect(bursarPerms.has("announcement.create")).toBe(false);
     expect(bursarPerms.has("homework.read")).toBe(true);
     expect(bursarPerms.has("homework.create")).toBe(false);
+    // Behaviour records are the ONE of these a bursar gets nothing of, and the
+    // difference is the point: the calendar, announcements and homework carry
+    // no personal judgement and a bursar has an everyday reason to see them.
+    // This is the most sensitive thing a school writes about a child, and "no
+    // reason to read it" is the whole test (the-school-day.md Part C).
+    expect(bursarPerms.has("behaviour.read")).toBe(false);
+    expect(bursarPerms.has("behaviour.create")).toBe(false);
   });
 
   it("bursar is excluded from payment.refund and all three staff-bvn.* permissions", () => {

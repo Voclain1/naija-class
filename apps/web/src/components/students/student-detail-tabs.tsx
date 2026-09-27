@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import type { StudentDetailDto, StudentGuardianRefDto } from "@school-kit/types";
 
+import { BehaviourTab } from "@/components/students/behaviour-tab";
 import { EnrollmentsTab } from "@/components/students/enrollments-tab";
 import { GuardiansTab } from "@/components/students/guardians-tab";
 import { cn } from "@/lib/utils";
@@ -13,12 +14,15 @@ interface Props {
   onGuardiansChanged: (next: StudentGuardianRefDto[]) => void;
 }
 
-type TabKey = "bio" | "guardians" | "enrollments";
+type TabKey = "bio" | "guardians" | "enrollments" | "behaviour";
 
 const TABS: { key: TabKey; label: string }[] = [
   { key: "bio", label: "Bio" },
   { key: "guardians", label: "Guardians" },
   { key: "enrollments", label: "Enrollments" },
+  // Last, after the practical business of who this child is and where they
+  // sit: behaviour is the tab you open deliberately (the-school-day.md Part C).
+  { key: "behaviour", label: "Behaviour" },
 ];
 
 function formatDate(value: string | Date | null): string {
@@ -79,6 +83,7 @@ export function StudentDetailTabs({ student, onGuardiansChanged }: Props) {
         />
       )}
       {tab === "enrollments" && <EnrollmentsTab studentId={student.id} />}
+      {tab === "behaviour" && <BehaviourTab studentId={student.id} />}
     </div>
   );
 }

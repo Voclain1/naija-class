@@ -217,4 +217,11 @@ export const queryKeys = {
   // the list names classes and the work set for them.
   staffHomework: (schoolId: string, userId: string, classArmId: string) =>
     ["staff", schoolId, userId, "homework", classArmId] as const,
+
+  // Behaviour records. Staff-prefixed like everything else on that side, and
+  // here the prefix earns its keep more than anywhere: this is a named child
+  // and a written judgement about their conduct, and mayPersistQuery refuses
+  // to write it to a shared staffroom handset's storage.
+  staffBehaviour: (schoolId: string, userId: string, studentId: string) =>
+    ["staff", schoolId, userId, "behaviour", studentId] as const,
 } as const;

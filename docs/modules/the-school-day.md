@@ -1,7 +1,7 @@
 # The school day — absence alerts, homework, behaviour, and the reply path
 
-**Status:** approved 2026-09-26. **Parts A, B and D built** — see the status
-sections at the end. C not started.
+**Status:** approved 2026-09-26. **All four parts built** — see the status
+sections at the end.
 **Asked for:** after the device pass, "plan for the number 3 above" — the four
 things nobody has ever decided against, as opposed to the work deliberately
 kept on the web (bulk/high-trust) or waiting on Phase 7's vendor choice (AI).
@@ -465,3 +465,46 @@ yesterday's events already marked as delivered.
 thing it protects against stopped happening. Three token faults in a row meant
 every claim was a false one, and the dedupe — working exactly as designed —
 turned the recovery into another silence.
+
+## Part C status (2026-09-27) — built
+
+Behaviour records, staff-only, on the mobile staff student page and a new
+Behaviour tab in the web admin student view.
+
+- **C14 holds structurally, not by convention.** There is no guardian or
+  student method on the service, no portal controller, no family DTO and no
+  permission that would grant one. A future decision to show parents these
+  records is a design (right of reply, retention, who may amend), not a UI
+  change somebody can make by accident. Both surfaces say "Staff only. Parents
+  do not see these" on screen, because a teacher deciding how frankly to write
+  needs to know who can read it.
+- **C15 holds by absence.** Nothing summarises, drafts or classifies. The hard
+  rule bars auto-finalising; this goes further and keeps the model out
+  entirely, because a machine-written judgement about a child's conduct is not
+  something a teacher can meaningfully approve.
+- **C16 is in the chip order.** Commendation before Concern on both surfaces:
+  a system that records only what a child did wrong is one teachers stop using,
+  and the order of two buttons is a quiet argument about what the feature is
+  for. Withdrawn records stay visible but leave the counts — a withdrawn
+  concern is a record that something was written and taken back, not a concern.
+- **A teacher is confined to children they teach**, which is wider than "form
+  teacher" and far narrower than "any student". The teacher who saw what
+  happened is often a subject teacher, and making the form tutor write it
+  second-hand is how conduct records stop being written at all.
+- **A teacher may withdraw only their OWN.** An admin may withdraw anyone's. A
+  teacher quietly removing a colleague's concern about a shared pupil is a
+  different act from correcting their own.
+- **Reads are audited, not just writes** — the treatment the per-teacher
+  activity report gets. "Who has been looking at this child's record" is a
+  question a school may one day have to answer. The NOTE is deliberately kept
+  out of the audit metadata: the log records who wrote what kind about whom,
+  and copying the text there would put the most sensitive sentence in the
+  system in a second place with a different retention.
+- **Bursar gets nothing here**, unlike the calendar, announcements and
+  homework. Those carry no personal judgement and a bursar has an everyday
+  reason to see them; this is the most sensitive thing a school writes about a
+  child, and "no reason to read it" is the whole test. Pinned in
+  `permissions-coverage.spec.ts` so it cannot drift.
+
+13 integration tests against real Postgres, weighted towards who may touch it
+rather than the happy path.
