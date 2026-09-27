@@ -25,6 +25,15 @@ on:
     branches: [main]
     types: [completed]
   workflow_dispatch:
+    inputs:
+      allow_missing_rollback_target:
+        description: >-
+          Deploy even if no prior image can be captured. Only for a first-ever
+          deploy of a brand-new Fly app. Leaving this false means the deploy is
+          ABORTED when a rollback target cannot be read, rather than shipping
+          with no way back.
+        type: boolean
+        default: false
 
 concurrency:
   group: deploy-staging
@@ -161,6 +170,34 @@ jobs:
       - name: Install flyctl
         uses: superfly/flyctl-actions/setup-flyctl@master
 
+      # Record the image each Fly app is serving BEFORE this run changes
+      # anything. The rollback step below redeploys exactly these refs.
+      #
+      # Why capture up-front instead of indexing release history after a
+      # failure: after a failed run the history has already advanced, and the
+      # two apps advance independently (a render-worker deploy can succeed
+      # while the API's fails, or vice versa). Indexing "the one before last"
+      # per app after the fact is guesswork; a pre-deploy snapshot is exact.
+      #
+      # FAIL-CLOSED. `capture` aborts on a flyctl error, an unparseable
+      # response, or an empty history, so a transient auth/network blip stops
+      # the deploy instead of shipping something with no rollback target. Only
+      # the deliberate `allow_missing_rollback_target` dispatch input downgrades
+      # that to a warning — see scripts/fly-rollback.sh's cmd_capture comment.
+      - name: Capture pre-deploy images
+        id: preimages
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          ALLOW_MISSING_ROLLBACK_TARGET: ${{ inputs.allow_missing_rollback_target || false }}
+        run: |
+          set -euo pipefail
+          api_img="$(bash scripts/fly-rollback.sh capture school-kit-api)"
+          worker_img="$(bash scripts/fly-rollback.sh capture school-kit-render-worker)"
+          echo "api_image=${api_img}"       >> "$GITHUB_OUTPUT"
+          echo "worker_image=${worker_img}" >> "$GITHUB_OUTPUT"
+          echo "pre-deploy school-kit-api           = ${api_img:-<none>}"
+          echo "pre-deploy school-kit-render-worker = ${worker_img:-<none>}"
+
       # Build and deploy the API image. Uses apps/api/Dockerfile (no Chrome).
       # The Fly app's runtime secrets (REDIS_URL, BETTER_AUTH_SECRET, etc.)
       # are already set via `flyctl secrets set` — not managed here.
@@ -211,18 +248,64 @@ jobs:
         env:
           SMOKE_API_URL: ${{ env.STAGING_API_URL }}
 
-      # Auto-rollback: restore the previous API release if smoke fails.
-      # The render worker is not rolled back automatically — it has no state
-      # and smoke tests don't exercise it directly (render jobs need a report
-      # card, which requires a seeded school). Roll back manually if needed.
-      - name: Rollback API on smoke failure
+      # Auto-rollback on smoke failure: redeploy the exact image each app was
+      # serving before this run (captured above).
+      #
+      # This replaces `flyctl releases rollback`, which DOES NOT EXIST — it is
+      # not a subcommand in flyctl v0.4.83, so this step could never have
+      # worked. It would have errored out and left the bad image serving while
+      # reporting only a generic step failure. Verified 2026-09-26; the
+      # replacement mechanism (`flyctl deploy --image`) was exercised against
+      # production the same day.
+      #
+      # BOTH apps are now rolled back, where previously only the API was. The
+      # old comment argued the render worker is stateless and untouched by the
+      # smoke test — true, but both apps are built from the SAME commit, so
+      # rolling back only the API leaves the worker running the rejected code
+      # and consuming jobs with it. Each app is handled independently and the
+      # helper no-ops for an app whose image did not change, so an app that
+      # never advanced is not needlessly redeployed.
+      - name: Roll back on smoke failure
         if: steps.smoke.outcome == 'failure'
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          API_PRE_IMAGE: ${{ steps.preimages.outputs.api_image }}
+          WORKER_PRE_IMAGE: ${{ steps.preimages.outputs.worker_image }}
         run: |
-          echo "Smoke test failed — rolling back school-kit-api to previous release"
-          flyctl releases rollback --app school-kit-api
-          echo "See docs/runbooks/deploy-rollback.md for next steps"
+          set -uo pipefail
+          echo "Smoke test failed — rolling back to the pre-deploy images"
+          rc=0
+
+          roll() {
+            app="$1"; cfg="$2"; img="$3"
+            if [ -z "$img" ]; then
+              echo "::error::no pre-deploy image recorded for $app — refusing to guess a rollback target; roll back by hand (docs/runbooks/deploy-rollback.md)"
+              return 1
+            fi
+            bash scripts/fly-rollback.sh to-image "$app" "$cfg" "$img"
+          }
+
+          roll school-kit-api           apps/api/fly.toml        "$API_PRE_IMAGE"    || rc=1
+          roll school-kit-render-worker apps/api/fly-render.toml "$WORKER_PRE_IMAGE" || rc=1
+
+          # Post-rollback health gate on the API (the worker is scale-to-zero,
+          # so a stopped machine is its correct idle state and not a signal).
+          if [ "$rc" -eq 0 ]; then
+            if curl -fsS --max-time 30 "${STAGING_API_URL}/api/v1/health" >/dev/null; then
+              echo "post-rollback /api/v1/health: OK"
+            else
+              echo "::error::post-rollback health check FAILED against ${STAGING_API_URL}"
+              rc=1
+            fi
+          fi
+
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::ROLLBACK DID NOT COMPLETE CLEANLY — production may still be on the rejected image. Escalate: docs/runbooks/deploy-rollback.md"
+          else
+            echo "Rollback complete. See docs/runbooks/deploy-rollback.md for next steps."
+          fi
+
+          # Always fail the workflow: the deploy was rejected either way.
           exit 1
 
       # Tear down the school this run's smoke test created (op 3 signs up a
