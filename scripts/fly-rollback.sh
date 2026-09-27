@@ -101,6 +101,48 @@ cmd_current_image() {
     die "could not determine the current image for '$app'"
 }
 
+# capture <app> -> "<imageRef>" (bare, no version) for use as a rollback target.
+#
+# FAIL-CLOSED BY DEFAULT. This is the pre-deploy snapshot the deploy workflow
+# takes before it changes anything, and "we could not read it" must not be
+# treated the same as "there is nothing to read":
+#
+#   * flyctl exits non-zero (auth expired, network down, Fly API 5xx, unknown
+#     app)                                    -> FAIL. Deploying now would mean
+#                                                deploying with no deterministic
+#                                                rollback target.
+#   * response is unparseable / not an array   -> FAIL (same reasoning).
+#   * response is a valid but EMPTY array, or
+#     holds no complete release with an image  -> FAIL for these apps too.
+#
+# The last case is the only one that could legitimately mean "first-ever deploy
+# of a brand-new app". school-kit-api and school-kit-render-worker are long-
+# established (v279 and v263 respectively as of 2026-09-26), so for them an
+# empty history is an anomaly, not a first deploy — and treating it as benign
+# would reintroduce exactly the silent gap this whole change exists to close.
+#
+# A genuine first deploy is handled by opting in EXPLICITLY:
+#   ALLOW_MISSING_ROLLBACK_TARGET=true
+# which downgrades the failure to a warning and returns an empty ref. The
+# workflow surfaces this as a dispatch input so it can never be the default.
+cmd_capture() {
+  local app="${1:-}"
+  [ -n "$app" ] || die "capture needs <app>"
+  local out
+  if out="$(cmd_current_image "$app" 2>/dev/null)"; then
+    printf '%s
+' "${out#*$'	'}"
+    return 0
+  fi
+  if [ "${ALLOW_MISSING_ROLLBACK_TARGET:-false}" = "true" ]; then
+    echo "::warning::fly-rollback: no rollback target for '$app'; continuing because ALLOW_MISSING_ROLLBACK_TARGET=true" >&2
+    printf '
+'
+    return 0
+  fi
+  die "could not capture a rollback target for '$app'. Refusing to deploy without one. If this really is a first-ever deploy of a new app, re-run with ALLOW_MISSING_ROLLBACK_TARGET=true."
+}
+
 # previous-image <app> -> "<version>\t<imageRef>" of the release before the live
 # one. For interactive/runbook use; the workflow prefers a pre-deploy capture.
 # Fails closed when there is no distinct earlier image to go back to.
@@ -164,12 +206,14 @@ main() {
   local cmd="${1:-}"
   shift || true
   case "$cmd" in
+    capture) cmd_capture "$@" ;;
     current-image) cmd_current_image "$@" ;;
     previous-image) cmd_previous_image "$@" ;;
     to-image) cmd_to_image "$@" ;;
     *)
       cat >&2 <<'USAGE'
 usage:
+  fly-rollback.sh capture        <app>   # rollback target; fail-closed
   fly-rollback.sh current-image  <app>
   fly-rollback.sh previous-image <app>
   fly-rollback.sh to-image       <app> <fly-config> <imageRef>

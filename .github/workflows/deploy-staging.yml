@@ -25,6 +25,15 @@ on:
     branches: [main]
     types: [completed]
   workflow_dispatch:
+    inputs:
+      allow_missing_rollback_target:
+        description: >-
+          Deploy even if no prior image can be captured. Only for a first-ever
+          deploy of a brand-new Fly app. Leaving this false means the deploy is
+          ABORTED when a rollback target cannot be read, rather than shipping
+          with no way back.
+        type: boolean
+        default: false
 
 concurrency:
   group: deploy-staging
@@ -170,27 +179,20 @@ jobs:
       # while the API's fails, or vice versa). Indexing "the one before last"
       # per app after the fact is guesswork; a pre-deploy snapshot is exact.
       #
-      # Deliberately BEST-EFFORT (|| true): an app with no prior release — a
-      # first-ever deploy — has nothing to capture, and that must not block the
-      # deploy. The rollback step is the fail-closed half: it refuses to act on
-      # an empty ref rather than guessing a target.
+      # FAIL-CLOSED. `capture` aborts on a flyctl error, an unparseable
+      # response, or an empty history, so a transient auth/network blip stops
+      # the deploy instead of shipping something with no rollback target. Only
+      # the deliberate `allow_missing_rollback_target` dispatch input downgrades
+      # that to a warning — see scripts/fly-rollback.sh's cmd_capture comment.
       - name: Capture pre-deploy images
         id: preimages
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          ALLOW_MISSING_ROLLBACK_TARGET: ${{ inputs.allow_missing_rollback_target || false }}
         run: |
-          set -uo pipefail
-          capture() {
-            app="$1"
-            out="$(bash scripts/fly-rollback.sh current-image "$app" 2>/dev/null)" || {
-              echo "no prior release captured for $app (first deploy, or lookup failed)"
-              return 0
-            }
-            # helper prints "<version><TAB><imageRef>"; cut -f2 defaults to TAB
-            printf '%s' "$(printf '%s' "$out" | cut -f2)"
-          }
-          api_img="$(capture school-kit-api)"
-          worker_img="$(capture school-kit-render-worker)"
+          set -euo pipefail
+          api_img="$(bash scripts/fly-rollback.sh capture school-kit-api)"
+          worker_img="$(bash scripts/fly-rollback.sh capture school-kit-render-worker)"
           echo "api_image=${api_img}"       >> "$GITHUB_OUTPUT"
           echo "worker_image=${worker_img}" >> "$GITHUB_OUTPUT"
           echo "pre-deploy school-kit-api           = ${api_img:-<none>}"

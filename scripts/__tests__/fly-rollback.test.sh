@@ -107,6 +107,51 @@ else
   no "no-op path exited non-zero" "$(cat "$TMP/err")"
 fi
 
+# ── 4b. capture: fail-closed vs explicit opt-in ─────────────────────────────
+# This is the behaviour that decides whether a deploy proceeds at all, so each
+# failure mode is asserted separately rather than lumped together.
+
+make_stub "$REAL"
+if out="$(run capture school-kit-api)"; then
+  case "$out" in registry.fly.io/*) ok "capture returns a bare image ref on success" ;; *) no "capture success output" "$out" ;; esac
+else
+  no "capture on healthy payload" "$(cat "$TMP/err")"
+fi
+
+# flyctl itself failing (auth / network / unknown app): stub exits non-zero
+mkdir -p "$TMP/bin"
+printf '#!/usr/bin/env bash
+exit 1
+' > "$TMP/bin/flyctl"; chmod +x "$TMP/bin/flyctl"
+run capture school-kit-api >/dev/null && no "flyctl failure should abort capture" || ok "fail-closed: capture aborts when flyctl exits non-zero"
+
+# unparseable response
+printf 'Error: something went wrong' > "$TMP/bad2.json"; make_stub "$TMP/bad2.json"
+run capture school-kit-api >/dev/null && no "unparseable response should abort capture" || ok "fail-closed: capture aborts on unparseable response"
+
+# valid but EMPTY history — still aborts for these established apps
+printf '[]' > "$TMP/empty2.json"; make_stub "$TMP/empty2.json"
+run capture school-kit-api >/dev/null && no "empty history should abort capture" || ok "fail-closed: capture aborts on empty release history"
+
+# explicit opt-in downgrades it to a warning and yields an empty ref
+make_stub "$TMP/empty2.json"
+if out="$(ALLOW_MISSING_ROLLBACK_TARGET=true PATH="$TMP/bin:$PATH" bash "$SCRIPT" capture school-kit-api 2>"$TMP/err")"; then
+  [ -z "$(printf '%s' "$out" | tr -d '[:space:]')" ] && ok "opt-in: ALLOW_MISSING_ROLLBACK_TARGET=true yields an empty ref, exit 0" || no "opt-in output should be empty" "$out"
+  grep -q "ALLOW_MISSING_ROLLBACK_TARGET=true" "$TMP/err" && ok "opt-in warns on stderr" || no "opt-in warning missing" "$(cat "$TMP/err")"
+else
+  no "opt-in should exit 0" "$(cat "$TMP/err")"
+fi
+
+# opt-in must NOT mask a real flyctl failure into a silent success without warning
+printf '#!/usr/bin/env bash
+exit 1
+' > "$TMP/bin/flyctl"; chmod +x "$TMP/bin/flyctl"
+if out="$(ALLOW_MISSING_ROLLBACK_TARGET=true PATH="$TMP/bin:$PATH" bash "$SCRIPT" capture school-kit-api 2>"$TMP/err")"; then
+  grep -q "::warning::" "$TMP/err" && ok "opt-in still warns loudly when flyctl itself failed" || no "opt-in silent on flyctl failure" "$(cat "$TMP/err")"
+else
+  ok "opt-in + flyctl failure: aborts (also acceptable)"
+fi
+
 # ── 5. the invalid commands must not reappear ───────────────────────────────
 # Matches INVOCATIONS (line begins with the command) rather than prose, so the
 # comments explaining why the command was removed do not trip this.

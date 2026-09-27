@@ -218,6 +218,31 @@ flyctl status --app school-kit-api
 If the workflow logged `ROLLBACK DID NOT COMPLETE CLEANLY`, treat it as a live
 incident and roll back by hand using **Fast image rollback** above.
 
+### If the deploy aborted at `Capture pre-deploy images`
+
+That step is **fail-closed on purpose**: it refuses to deploy when it cannot read
+a rollback target. It aborts on a flyctl error (expired `FLY_API_TOKEN`, network
+failure, Fly API outage, unknown app), an unparseable response, or an empty
+release history — because "we could not read the current image" must not be
+treated the same as "there is nothing to read". Deploying anyway would mean
+shipping with no deterministic way back.
+
+Nothing was deployed when this fires, so there is nothing to roll back. Fix the
+cause and re-run:
+
+```bash
+flyctl auth whoami                                   # token still valid?
+flyctl releases --app school-kit-api --image | head  # can you read releases?
+bash scripts/fly-rollback.sh capture school-kit-api  # what the workflow runs
+```
+
+The only way past it is the deliberate `allow_missing_rollback_target` input on
+a manual `workflow_dispatch` run, which downgrades the abort to a warning. That
+exists for a **first-ever deploy of a brand-new Fly app**, where there genuinely
+is no prior image. `school-kit-api` and `school-kit-render-worker` are long
+established, so for them an empty history is an anomaly to investigate — do not
+reach for this input to push a deploy through.
+
 **Why migrations can leave things in a broken state:** see Caveats.
 
 **Diagnose:**
