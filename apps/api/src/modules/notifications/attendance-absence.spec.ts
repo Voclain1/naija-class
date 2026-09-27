@@ -140,14 +140,45 @@ describe("A2 — one alert per guardian per day", () => {
 
 describe("A4 — held for the grace period, then re-checked", () => {
   it("holds the send for the grace period rather than sending at once", async () => {
-    const { events, add } = notifier();
-    await events.attendanceAbsent({
-      schoolId: SCHOOL,
-      date: TODAY,
-      absentStudentIds: ["student-1"],
-      today: TODAY,
-    });
-    expect(optsOf(add).delay).toBe(ABSENCE_GRACE_MS);
+    // The clock is FIXED to a school-hours instant, and it has to be: the
+    // delay is max(quiet hours, grace), so this assertion passed all day and
+    // failed at night. CI ran it at 22:00 Lagos and got the 8-hour quiet-hours
+    // wait instead — the code was right and the test was a time bomb.
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-28T09:00:00.000Z")); // 10:00 in Lagos
+    try {
+      const { events, add } = notifier();
+      await events.attendanceAbsent({
+        schoolId: SCHOOL,
+        date: TODAY,
+        absentStudentIds: ["student-1"],
+        today: TODAY,
+      });
+      expect(optsOf(add).delay).toBe(ABSENCE_GRACE_MS);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("waits out quiet hours instead when they are longer — the MAX, never the sum", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-28T22:00:00.000Z")); // 23:00 in Lagos
+    try {
+      const { events, add } = notifier();
+      await events.attendanceAbsent({
+        schoolId: SCHOOL,
+        date: TODAY,
+        absentStudentIds: ["student-1"],
+        today: TODAY,
+      });
+      // 23:00 → 06:00 is seven hours. Adding the grace on top would push it to
+      // 06:15 for no reason, so the two compose as a maximum.
+      const sevenHours = 7 * 60 * 60 * 1000;
+      expect(optsOf(add).delay).toBe(sevenHours);
+      expect(optsOf(add).delay).toBeGreaterThan(ABSENCE_GRACE_MS);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("carries what to re-read, so the job can check rather than trust the claim", async () => {
