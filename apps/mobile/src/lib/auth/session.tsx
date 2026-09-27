@@ -36,6 +36,7 @@ import {
 } from "./token-store";
 import { saveSchoolHint } from "./school-hint-store";
 import { registerForPush, unregisterForPush } from "../push/register";
+import { shouldRegisterOnLaunch } from "../push/push-eligibility";
 import { wipeOfflineCache } from "../query/persist";
 import { canProtectStaffSession, unlockStaffSession } from "./local-lock";
 import { getStaffDevice } from "./staff-device";
@@ -275,6 +276,26 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (principal === "staff" && getCachedToken() && staff === null) setStatus("locked");
   }, [principal, staff]);
+
+  // Register this device for push whenever there IS a session — not only when
+  // one is created.
+  //
+  // The three sign-in functions above each call registerForPush, and for a
+  // while that was the ONLY path. A person already signed in when they
+  // installed a new build never signed in again, so never registered: on
+  // 2026-09-27 production logged `push=true, tokens=0` for every guardian on
+  // an absence alert, with the school's setting on and the event firing
+  // correctly. Nothing was wrong except that nobody had asked for a token.
+  //
+  // Calling it here as well is safe by registerForPush's own design: it POSTs
+  // only when the token or the principal has changed, so the steady-state cost
+  // on launch is two AsyncStorage reads. It also makes registration
+  // SELF-HEALING — a POST that failed offline is retried next launch, because
+  // the local record is only written after the server accepts.
+  useEffect(() => {
+    if (!shouldRegisterOnLaunch({ status, principal })) return;
+    void registerForPush(principal as NonNullable<typeof principal>);
+  }, [status, principal]);
 
   useEffect(() => {
     if (principal !== "staff" || status !== "authenticated") return;

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   canRequestToken,
   needsRegistration,
+  shouldRegisterOnLaunch,
   shouldRequestPermission,
 } from "./push-eligibility";
 
@@ -82,5 +83,34 @@ describe("needsRegistration", () => {
     // same phone, and the server must reassign the row — otherwise the
     // child's notifications keep going to the parent's account.
     expect(needsRegistration({ ...base, principal: "student" })).toBe(true);
+  });
+});
+
+describe("shouldRegisterOnLaunch", () => {
+  // The second bug this seam produced, found on a device: registration ran only
+  // inside the three sign-in functions, so anyone already signed in when they
+  // installed the build never registered. Production logged
+  // `push=true, tokens=0` — school setting on, event fired, nobody had a token.
+
+  it("registers when there is a session, however it came to exist", () => {
+    expect(shouldRegisterOnLaunch({ status: "authenticated", principal: "guardian" })).toBe(true);
+    expect(shouldRegisterOnLaunch({ status: "authenticated", principal: "student" })).toBe(true);
+    expect(shouldRegisterOnLaunch({ status: "authenticated", principal: "staff" })).toBe(true);
+  });
+
+  it("does not register for a locked staff session", () => {
+    // Behind the lock screen there is no usable bearer token, so the POST would
+    // 401 and the silent catch would swallow it. Unlocking flips the status
+    // back and the effect runs again.
+    expect(shouldRegisterOnLaunch({ status: "locked", principal: "staff" })).toBe(false);
+  });
+
+  it("does not register for a guest, a loading session, or a status with no principal", () => {
+    expect(shouldRegisterOnLaunch({ status: "guest", principal: null })).toBe(false);
+    // "loading" is the session before it has resolved — there may be no token
+    // yet, and a status added later defaults to not registering for the same
+    // reason.
+    expect(shouldRegisterOnLaunch({ status: "loading", principal: "guardian" })).toBe(false);
+    expect(shouldRegisterOnLaunch({ status: "authenticated", principal: null })).toBe(false);
   });
 });
