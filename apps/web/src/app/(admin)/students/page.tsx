@@ -153,8 +153,12 @@ export default function StudentsRosterPage() {
     exportRowsAsCsv("students.csv", rows, STUDENT_EXPORT_COLUMNS);
   }, [search, status, classArmId]);
 
+  // max-w-7xl, wider than the 5xl reading pages use: this one is a TABLE, and
+  // at a real roster size the old cap left a third of a 1440px screen empty
+  // while the names and classes were squeezed. Data pages get the width they
+  // need; prose pages keep the narrower measure.
   return (
-    <div className="mx-auto flex w-full max-w-5xl flex-col gap-6">
+    <div className="mx-auto flex w-full max-w-7xl flex-col gap-6">
       <PageHeader
         title="Students"
         subtitle={
