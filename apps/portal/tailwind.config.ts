@@ -16,6 +16,14 @@ const config: Config = {
       screens: { "2xl": "1400px" },
     },
     extend: {
+      // Was absent entirely, so every portal page rendered in whatever the
+      // browser offered. The in-var fallbacks matter: a bare var() that
+      // resolves to empty makes the whole declaration a parse error and lands
+      // on Times New Roman rather than on the list beside it.
+      fontFamily: {
+        sans: ["var(--font-sans, ui-sans-serif)", "ui-sans-serif", "system-ui", "sans-serif"],
+        serif: ["var(--font-serif, ui-serif)", "ui-serif", "Georgia", "serif"],
+      },
       colors: {
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
