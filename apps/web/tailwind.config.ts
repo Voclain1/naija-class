@@ -26,12 +26,20 @@ const config: Config = {
     },
     extend: {
       fontFamily: {
-        // Hanken Grotesk (sans) + Fraunces (editorial serif for headings and
-        // KPI numerals) — loaded via next/font/google in app/layout.tsx,
+        // DM Sans (body) + DM Serif Display (headings and KPI numerals) —
+        // loaded via next/font/google in app/layout.tsx,
         // exposed as CSS vars there and re-mapped to token names in
         // globals.css. See CLAUDE.md's "Design system" section.
-        sans: ["var(--font-sans)", "ui-sans-serif", "system-ui", "sans-serif"],
-        serif: ["var(--font-serif)", "ui-serif", "Georgia", "serif"],
+        //
+        // The in-var fallbacks are load-bearing, not belt-and-braces. A bare
+        // `var(--font-sans)` that resolves to EMPTY makes the whole
+        // declaration a parse error — `font-family: , ui-sans-serif, …` — so
+        // the browser throws away the fallback list too and uses its default
+        // serif. That is exactly how this site shipped in Times New Roman.
+        // With a fallback inside var(), a missing token degrades to a system
+        // sans instead of to Times.
+        sans: ["var(--font-sans, ui-sans-serif)", "ui-sans-serif", "system-ui", "sans-serif"],
+        serif: ["var(--font-serif, ui-serif)", "ui-serif", "Georgia", "serif"],
       },
       colors: {
         border: "hsl(var(--border))",

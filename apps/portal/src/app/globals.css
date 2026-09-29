@@ -31,7 +31,15 @@
   * {
     @apply border-border;
   }
+  /* On BODY, not :root — next/font defines --font-dm-* through a class it puts
+   * on <body>, and a token declared at :root resolves to empty there, which
+   * makes the whole font-family declaration a parse error and falls back to
+   * Times New Roman. That is what apps/web shipped with for months; see its
+   * globals.css for the full account. The portal had no typeface at all until
+   * 2026-09-29. */
   body {
+    --font-sans: var(--font-dm-sans);
+    --font-serif: var(--font-dm-serif-display);
     @apply bg-background text-foreground;
   }
 }
