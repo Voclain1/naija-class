@@ -48,9 +48,6 @@
     --ring: 161 74% 21%;
     --radius: 0.75rem;
 
-    --font-sans: var(--font-hanken-grotesk);
-    --font-serif: var(--font-fraunces);
-
     /* Bright Emerald #3FB68B — the SchoolKit wordmark's "kit" accent, per the
        brand sheet (apps/web/public/brand/schoolkit-brand-sheet.png, 2026-08-01).
        Deliberately NOT `--primary`: primary flips Deep/Bright Emerald by theme,
@@ -89,7 +86,26 @@
   * {
     @apply border-border;
   }
+  /* Typeface tokens live on BODY, not :root.
+   *
+   * next/font defines --font-dm-sans and --font-dm-serif-display through a
+   * class it puts on <body>. Declaring `--font-sans: var(--font-dm-sans)` at
+   * :root therefore referenced a variable that does not exist THERE, so it
+   * resolved to empty — and `font-family: , ui-sans-serif, ...` is a parse
+   * error, so the browser discarded the whole declaration and fell back to its
+   * default serif.
+   *
+   * The result: app.schoolkit.ng rendered in TIMES NEW ROMAN, in production,
+   * for as long as this project has had a brand typeface. The fonts were
+   * downloaded and shipped on every page; nothing could reach them. Found
+   * 2026-09-29 by reading getComputedStyle on the live site rather than
+   * trusting a screenshot — the bug is invisible unless you ask the browser
+   * what it actually used.
+   *
+   * Keep these in the same scope as the next/font class. */
   body {
+    --font-sans: var(--font-dm-sans);
+    --font-serif: var(--font-dm-serif-display);
     @apply bg-background text-foreground;
   }
 }
