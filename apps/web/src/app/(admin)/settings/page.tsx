@@ -1,6 +1,8 @@
 import { BarChart3, Bell, Building2, CalendarCheck, CalendarClock, CreditCard, Gauge, Percent, ShieldCheck, SlidersHorizontal, Sparkles, User, Users, Wallet, type LucideIcon } from "lucide-react";
 import Link from "next/link";
 
+import { PageHeader } from "@/components/layout/page-primitives";
+
 // /settings — a small hub linking the settings areas. (Previously a bare
 // redirect to /settings/users; grew a card per area as they landed —
 // Attendance is the Phase 2 / Slice 8 opt-in toggle.)
@@ -88,11 +90,12 @@ const LINKS: SettingsLink[] = [
 
 export default function SettingsIndex() {
   return (
-    <div className="flex w-full flex-col gap-6">
-      <header className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
-        <p className="text-sm text-muted-foreground">Manage your school&apos;s configuration.</p>
-      </header>
+    <div className="mx-auto flex w-full max-w-5xl flex-col gap-6">
+      {/* This page had NO page header at all — a bare `text-2xl font-semibold`
+          in the browser's default sans, on a page a head teacher visits to
+          change the things that matter most. It is where the Students
+          screenshot run stopped, because there was no <h1> to wait for. */}
+      <PageHeader title="Settings" subtitle="Manage your school's configuration." />
 
       <ul className="grid gap-4 sm:grid-cols-2">
         {LINKS.map((link) => {

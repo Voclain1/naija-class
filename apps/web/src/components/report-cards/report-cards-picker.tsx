@@ -1,11 +1,12 @@
 "use client";
 
-import { FileText, Loader2 } from "lucide-react";
+import { FileText } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type { ClassArmDto, TermDto } from "@school-kit/types";
 
+import { PageHeader, PageSkeleton } from "@/components/layout/page-primitives";
 import { PrerequisiteNotice } from "@/components/setup/prerequisite-notice";
 import { listAcademicYears, listTerms } from "@/lib/academic-years/academic-years-api";
 import { ApiError } from "@/lib/api-client";
@@ -100,12 +101,10 @@ export function ReportCardsPicker({ basePath }: { basePath: string }) {
 
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
-      <header className="flex flex-col gap-1">
-        <h1 className="font-serif text-2xl font-medium tracking-tight text-foreground">Report cards</h1>
-        <p className="text-sm text-muted-foreground">
-          Pick a term and class to build, review, and generate report-card PDFs.
-        </p>
-      </header>
+      <PageHeader
+        title="Report cards"
+        subtitle="Pick a term and class to build, review, and generate report-card PDFs."
+      />
 
       {/* Every class arm below is listed and openable whether or not anybody
           is in it — and a board for an empty class builds zero cards and says
@@ -118,10 +117,7 @@ export function ReportCardsPicker({ basePath }: { basePath: string }) {
       />
 
       {loading ? (
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Loader2 className="h-4 w-4 animate-spin" />
-          Loading…
-        </div>
+        <PageSkeleton rows={4} />
       ) : error ? (
         <div className="rounded-md border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive">
           {error}
