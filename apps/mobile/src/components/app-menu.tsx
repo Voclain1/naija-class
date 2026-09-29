@@ -17,6 +17,7 @@ import { groupDestinations, type Destination } from "../lib/navigation/destinati
 import { signedInWebUrl } from "../lib/web-handoff";
 import { staffWebHandoff } from "../lib/api/staff-auth";
 import { useTheme } from "../theme/theme-provider";
+import { THEME_LABELS, THEME_PREFERENCES } from "../theme/preference";
 import { fontSizes, fonts, radii, spacing } from "../theme/tokens";
 
 // The app menu: every place this person can go, and signing out.
@@ -79,7 +80,7 @@ export function AppMenu({
   person: { name: string; detail: string };
   onSignOut: () => void;
 }) {
-  const { colors } = useTheme();
+  const { colors, preference, setPreference } = useTheme();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const sections = groupDestinations(destinations);
@@ -185,6 +186,55 @@ export function AppMenu({
               </View>
             ))}
 
+            {/* Theme (look-and-feel.md D9). It lives here rather than in a
+                Settings screen of its own: building a whole screen for one
+                preference is how apps grow a junk drawer, and this menu is
+                already where the other per-person things are. */}
+            <View style={styles.section}>
+              <Text style={[styles.sectionTitle, { color: colors.mutedForeground }]}>APPEARANCE</Text>
+              <View style={styles.themeRow}>
+                {THEME_PREFERENCES.map((option) => {
+                  const active = preference === option;
+                  return (
+                    <Pressable
+                      key={option}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected: active }}
+                      accessibilityLabel={
+                        option === "system"
+                          ? "Appearance: follow my phone"
+                          : `Appearance: always ${option}`
+                      }
+                      onPress={() => setPreference(option)}
+                      style={[
+                        styles.themeChip,
+                        {
+                          borderColor: colors.primary,
+                          backgroundColor: active ? colors.primary : "transparent",
+                        },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.themeChipText,
+                          { color: active ? colors.primaryForeground : colors.primary },
+                        ]}
+                      >
+                        {THEME_LABELS[option]}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+              {/* Said plainly, because "System" is the default and a person
+                  who has never thought about it should know what it means. */}
+              <Text style={[styles.rowHint, { color: colors.mutedForeground }]}>
+                {preference === "system"
+                  ? "Following your phone's setting."
+                  : `Always ${preference}, whatever your phone is set to.`}
+              </Text>
+            </View>
+
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="Sign out"
@@ -288,5 +338,14 @@ const styles = StyleSheet.create({
     minHeight: 48,
     marginTop: spacing.sm,
   },
+  themeRow: { flexDirection: "row", gap: spacing.sm, marginTop: spacing.xs },
+  themeChip: {
+    flex: 1,
+    borderWidth: 1,
+    borderRadius: radii.sm,
+    paddingVertical: spacing.sm,
+    alignItems: "center",
+  },
+  themeChipText: { fontFamily: fonts.sansSemibold, fontSize: fontSizes.caption },
   signOutText: { fontFamily: fonts.sansSemibold, fontSize: fontSizes.body },
 });
