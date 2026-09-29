@@ -1,13 +1,12 @@
 "use client";
 
-import { Eye } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 
 import type { StudentDto } from "@school-kit/types";
 
 import { StudentAvatar } from "@/components/students/student-avatar";
 import { StudentStatusBadge } from "@/components/students/student-status-badge";
-import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 interface Props {
@@ -19,7 +18,18 @@ interface Props {
 // the slice-9 cp1 "no N+1" spec). Renders the level name + arm name
 // when present, or "—" when the student has no current-term enrollment
 // (admitted-not-yet-enrolled is a normal state).
+// The row IS the link (look-and-feel.md). A "View" button repeated on every
+// row put fifty identical controls down a column that carried no information,
+// and at a real roster size that column is the loudest thing on the page.
+//
+// Accessibility is why the NAME is the anchor rather than the row: a clickable
+// <tr> is not focusable and cannot be reached by keyboard, so the row click is
+// a mouse convenience layered on top of a real link, never the only way in.
+// The link text is the student's name, which also fixes what the old button's
+// comment worked around — a screen reader listing links used to hear "View"
+// fifty times with nothing to tell the children apart.
 export function StudentsRosterTable({ students }: Props) {
+  const router = useRouter();
   return (
     <div className="overflow-hidden rounded-md border">
       <Table>
@@ -29,12 +39,15 @@ export function StudentsRosterTable({ students }: Props) {
             <TableHead>Admission #</TableHead>
             <TableHead>Class</TableHead>
             <TableHead>Status</TableHead>
-            <TableHead aria-label="Actions" className="print:hidden" />
           </TableRow>
         </TableHeader>
         <TableBody>
           {students.map((s) => (
-            <TableRow key={s.id}>
+            <TableRow
+              key={s.id}
+              onClick={() => router.push(`/students/${s.id}`)}
+              className="cursor-pointer"
+            >
               <TableCell>
                 <div className="flex items-center gap-3">
                   <StudentAvatar
@@ -43,10 +56,16 @@ export function StudentsRosterTable({ students }: Props) {
                     photoUrl={s.photoUrl}
                     size="sm"
                   />
-                  <span className="font-medium">
+                  <Link
+                    href={`/students/${s.id}`}
+                    className="font-medium hover:underline"
+                    // The row's onClick would fire too and push the same route
+                    // twice; let the anchor do its own job.
+                    onClick={(event) => event.stopPropagation()}
+                  >
                     {s.lastName}, {s.firstName}
                     {s.middleName ? ` ${s.middleName.charAt(0)}.` : ""}
-                  </span>
+                  </Link>
                 </div>
               </TableCell>
               <TableCell className="font-mono text-xs text-muted-foreground">
@@ -67,29 +86,17 @@ export function StudentsRosterTable({ students }: Props) {
                 )}
               </TableCell>
               <TableCell>
-                <StudentStatusBadge status={s.status} />
-              </TableCell>
-              <TableCell className="text-right print:hidden">
-                <Button
-                  asChild
-                  variant="outline"
-                  size="sm"
-                  className="h-7"
-                >
-                  <Link href={`/students/${s.id}`}>
-                    <Eye className="mr-1 h-3 w-3" aria-hidden />
-                    {/* One of these renders per row, so the bare visible
-                        "View" gave every row an identical accessible name —
-                        a screen-reader user listing links hears "View" N
-                        times with nothing to tell the students apart. The
-                        sr-only suffix names the row's student while leaving
-                        the column visually unchanged. */}
-                    View
-                    <span className="sr-only">
-                      {` ${s.firstName} ${s.lastName}`}
-                    </span>
-                  </Link>
-                </Button>
+                {/* Only the EXCEPTIONS are drawn. On a normal roster every
+                    student is active, so a badge on every row is a column of
+                    identical green pills competing with the names beside them.
+                    Silence for the norm makes a withdrawal or a transfer
+                    impossible to miss — which is the only reason to look at
+                    this column at all. */}
+                {s.status === "ACTIVE" ? (
+                  <span className="sr-only">Active</span>
+                ) : (
+                  <StudentStatusBadge status={s.status} />
+                )}
               </TableCell>
             </TableRow>
           ))}
