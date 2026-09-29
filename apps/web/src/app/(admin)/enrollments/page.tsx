@@ -19,6 +19,7 @@ import type {
   TermDto,
 } from "@school-kit/types";
 
+import { PageHeader, PageSkeleton } from "@/components/layout/page-primitives";
 import { PrerequisiteNotice } from "@/components/setup/prerequisite-notice";
 import { Button } from "@/components/ui/button";
 import { ApiError } from "@/lib/api-client";
@@ -285,9 +286,8 @@ export default function EnrollmentsPage() {
 
   if (loadingShell) {
     return (
-      <div className="mx-auto flex w-full max-w-5xl items-center gap-2 text-sm text-muted-foreground">
-        <Loader2 className="h-4 w-4 animate-spin" />
-        Loading…
+      <div className="mx-auto flex w-full max-w-6xl flex-col gap-6">
+        <PageSkeleton rows={5} />
       </div>
     );
   }
@@ -323,21 +323,23 @@ export default function EnrollmentsPage() {
 
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-6">
-      <header className="flex flex-col gap-2">
-        <h1 className="text-2xl font-semibold tracking-tight">Enrollments</h1>
-        <p className="text-sm text-muted-foreground">
-          Per-term roster by class arm. Pick a year + term to view. At the
-          start of a new term or session, use{" "}
-          <strong>Promote students</strong> to bring every class forward at
-          once.
-        </p>
-        <Button asChild size="sm" variant="outline" className="mt-2 w-fit">
-          <Link href="/enrollments/promote">
-            Promote students
-            <ArrowRight className="ml-1 h-4 w-4" />
-          </Link>
-        </Button>
-      </header>
+      <PageHeader
+        title="Enrollments"
+        subtitle={
+          <>
+            Per-term roster by class arm. Pick a year + term to view. At the start of a new term or
+            session, use <strong>Promote students</strong> to bring every class forward at once.
+          </>
+        }
+        actions={
+          <Button asChild size="sm" variant="outline">
+            <Link href="/enrollments/promote">
+              Promote students
+              <ArrowRight className="ml-1 h-4 w-4" />
+            </Link>
+          </Button>
+        }
+      />
 
       {/* Fourteen classes, all reading "No enrollments yet", is what a school
           with an empty roster sees here — accurate, and no help at all. The
