@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, Loader2, Pencil } from "lucide-react";
+import { ArrowLeft, Pencil } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
@@ -16,6 +16,7 @@ import { StudentDetailTabs } from "@/components/students/student-detail-tabs";
 import { StudentStatusActions } from "@/components/students/student-status-actions";
 import { StudentStatusBadge } from "@/components/students/student-status-badge";
 import { Button } from "@/components/ui/button";
+import { PageSkeleton } from "@/components/layout/page-primitives";
 import { ApiError } from "@/lib/api-client";
 import { getStudent } from "@/lib/students/students-api";
 
@@ -65,14 +66,9 @@ export default function StudentDetailPage() {
     [],
   );
 
-  if (loading) {
-    return (
-      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-        <Loader2 className="h-4 w-4 animate-spin" />
-        Loading…
-      </div>
-    );
-  }
+  // A skeleton rather than the word "Loading…": this page has a header, a
+  // photo and four tabs, and a bare line makes all of it arrive at once.
+  if (loading) return <PageSkeleton rows={5} />;
 
   if (error || !student) {
     return (
