@@ -33,16 +33,30 @@ test.describe("typography actually applies", () => {
     expect(body).not.toMatch(/Times New Roman/i);
   });
 
-  test("a serif heading uses the display face, not the body face", async ({ page }) => {
+  test("the display face resolves too, and is not the body face", async ({ page }) => {
     await page.goto("/login");
-    // The sign-in card's title is the one serif element on a public page.
-    const heading = page.locator("h1, h2").first();
-    await expect(heading).toBeVisible();
-    const font = await heading.evaluate((el) => getComputedStyle(el).fontFamily);
+
+    // Every element carrying `font-serif` today sits behind authentication —
+    // /login has no serif heading of its own (its card title is a plain div in
+    // the body face). Rather than sign in just to read one computed value,
+    // this mounts an element with the real Tailwind class on the real page and
+    // asks the browser what it resolved to. That exercises the whole chain the
+    // bug lived in — next/font's class on <body>, the token read, Tailwind's
+    // fontFamily config — which is the part that was silently empty.
+    const font = await page.evaluate(() => {
+      const probe = document.createElement("span");
+      probe.className = "font-serif";
+      probe.textContent = "probe";
+      document.body.appendChild(probe);
+      const resolved = getComputedStyle(probe).fontFamily;
+      probe.remove();
+      return resolved;
+    });
 
     // A page where BOTH resolve to the same family is the other way this
     // breaks: the serif token empty while the sans one works.
     expect(font).toMatch(EXPECTED_SERIF);
+    expect(font).not.toMatch(EXPECTED_SANS);
   });
 
   test("the token is readable where the font class lives", async ({ page }) => {
