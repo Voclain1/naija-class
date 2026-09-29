@@ -8,6 +8,7 @@ import { toast } from "sonner";
 
 import type { ReportCardDetailDto } from "@school-kit/types";
 
+import { EmptyState, PageHeader, PageSkeleton } from "@/components/layout/page-primitives";
 import { PdfStatusBadge, WorkflowStatusBadge } from "@/components/report-cards/status-badges";
 import { StatCard } from "@/components/shared/stat-card";
 import { Button } from "@/components/ui/button";
@@ -153,19 +154,21 @@ export function ReportCardDetailPage({ basePath }: { basePath: string }) {
       </Link>
 
       {status.kind === "loading" ? (
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Loader2 className="h-4 w-4 animate-spin" />
-          Loading…
-        </div>
+        <PageSkeleton rows={6} />
       ) : status.kind === "error" ? (
         <div className="rounded-md border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive">
           {status.message}
         </div>
       ) : status.kind === "not-found" ? (
-        <div className="rounded-md border border-dashed bg-muted/20 p-8 text-sm text-muted-foreground">
-          <p className="font-medium text-foreground">Report card not found.</p>
-          <p className="mt-1">It may have been removed, or it isn&apos;t one of your classes.</p>
-        </div>
+        <EmptyState
+          title="Report card not found."
+          body="It may have been removed, or it isn't one of your classes."
+          action={
+            <Button asChild variant="outline">
+              <Link href={`${basePath}/${armId}`}>Back to the board</Link>
+            </Button>
+          }
+        />
       ) : (
         <ReportCardDetail
           data={status.data}
@@ -207,44 +210,42 @@ function ReportCardDetail({
 
   return (
     <>
-      <header className="flex flex-col gap-3">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="flex flex-col gap-1">
-            <h1 className="font-serif text-2xl font-medium tracking-tight text-foreground">{fullStudentName(student)}</h1>
-            <p className="text-sm text-muted-foreground">{student.admissionNumber}</p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
+      {/* One card, one student: the two status badges belong beside the
+          actions rather than opposite the name, because "where is this card in
+          the workflow" and "what can I do about it" are the same question. */}
+      <PageHeader
+        title={fullStudentName(student)}
+        subtitle={student.admissionNumber}
+        actions={
+          <>
             <WorkflowStatusBadge status={reportCard.status} />
             <PdfStatusBadge status={reportCard.pdfStatus} />
-          </div>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-3">
-          {reportCard.pdfStatus === "GENERATED" && (
-            <Button
-              type="button"
-              variant="outline"
-              onClick={onDownload}
-              className="text-emerald-700 hover:bg-emerald-50 hover:text-emerald-700"
-            >
-              <Download className="h-4 w-4" />
-              Download PDF
-            </Button>
-          )}
-          {canManage && (reportCard.pdfStatus === "GENERATED" || reportCard.pdfStatus === "FAILED") && (
-            <Button type="button" variant="outline" onClick={onRegenerate}>
-              <RefreshCw className="h-4 w-4" />
-              Regenerate
-            </Button>
-          )}
-        </div>
-      </header>
+            {reportCard.pdfStatus === "GENERATED" && (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={onDownload}
+                className="text-emerald-700 hover:bg-emerald-50 hover:text-emerald-700"
+              >
+                <Download className="h-4 w-4" />
+                Download PDF
+              </Button>
+            )}
+            {canManage && (reportCard.pdfStatus === "GENERATED" || reportCard.pdfStatus === "FAILED") && (
+              <Button type="button" variant="outline" onClick={onRegenerate}>
+                <RefreshCw className="h-4 w-4" />
+                Regenerate
+              </Button>
+            )}
+          </>
+        }
+      />
 
       {subjects.length === 0 ? (
-        <div className="rounded-md border border-dashed bg-muted/20 p-8 text-sm text-muted-foreground">
-          <p className="font-medium text-foreground">No scores entered for this student.</p>
-          <p className="mt-1">The card has no content yet — enter and sign off scores first.</p>
-        </div>
+        <EmptyState
+          title="No scores entered for this student."
+          body="The card has no content yet — enter and sign off scores in the gradebook first."
+        />
       ) : (
         <>
           {/* Per-subject breakdown */}

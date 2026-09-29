@@ -21,6 +21,7 @@ import type {
   TermDto,
 } from "@school-kit/types";
 
+import { PageHeader, PageSkeleton } from "@/components/layout/page-primitives";
 import { Button } from "@/components/ui/button";
 import { ApiError } from "@/lib/api-client";
 import { listTerms } from "@/lib/academic-years/academic-years-api";
@@ -397,9 +398,9 @@ export default function BulkEnrollmentWizardPage() {
 
   if (loading) {
     return (
-      <div className="mx-auto flex w-full max-w-3xl items-center gap-2 text-sm text-muted-foreground">
-        <Loader2 className="h-4 w-4 animate-spin" />
-        Loading carry-over wizard…
+      <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
+        <PageHeader title="Carry over" subtitle="Working out who is eligible…" />
+        <PageSkeleton rows={5} />
       </div>
     );
   }
@@ -448,14 +449,10 @@ export default function BulkEnrollmentWizardPage() {
   if (summary) {
     return (
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
-        <header className="flex flex-col gap-1">
-          <p className="text-xs uppercase tracking-wide text-muted-foreground">
-            Carry over · result
-          </p>
-          <h1 className="text-2xl font-semibold tracking-tight">
-            Enrollment carry-over complete
-          </h1>
-        </header>
+        <PageHeader
+          title="Enrollment carry-over complete"
+          subtitle={`${arm?.name ?? "This class"} · ${targetTerm?.name ?? "the new term"}`}
+        />
         <div className="flex items-start gap-3 rounded-md border border-emerald-300 bg-emerald-50 p-6 text-emerald-900">
           <CheckCircle2 className="mt-0.5 h-6 w-6" />
           <div className="flex flex-col gap-1">
@@ -507,10 +504,7 @@ export default function BulkEnrollmentWizardPage() {
   if (!CARRY_OVER_ENABLED) {
     return (
       <div className="mx-auto flex w-full max-w-2xl flex-col gap-4">
-        <h1 className="text-2xl font-semibold tracking-tight">
-          {CARRY_OVER_DISABLED_TITLE}
-        </h1>
-        <p className="text-sm text-muted-foreground">{CARRY_OVER_DISABLED_BODY}</p>
+        <PageHeader title={CARRY_OVER_DISABLED_TITLE} subtitle={CARRY_OVER_DISABLED_BODY} />
         <Button asChild variant="outline" className="w-fit">
           <Link href="/enrollments">
             <ArrowLeft className="mr-1 h-4 w-4" />
@@ -523,22 +517,20 @@ export default function BulkEnrollmentWizardPage() {
 
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-6">
-      <header className="flex flex-col gap-1">
-        <p className="text-xs uppercase tracking-wide text-muted-foreground">
-          Carry over
-        </p>
-        <h1 className="text-2xl font-semibold tracking-tight">
-          {arm?.name}{" "}
-          <span className="font-normal text-muted-foreground">
-            ({level?.name})
-          </span>
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          From <strong>{sourceTerm?.name}</strong> →{" "}
-          <strong>{targetTerm?.name}</strong>. Review the three groups
-          below, then commit.
-        </p>
-      </header>
+      {/* The class is the title and the two terms are the subtitle: on a page
+          whose whole job is moving one arm from one term to the next, the
+          terms are the fact to get wrong, so they read as a sentence rather
+          than as an eyebrow label above the name. */}
+      <PageHeader
+        title={`${arm?.name ?? ""}${level?.name ? ` (${level.name})` : ""}`}
+        subtitle={
+          <>
+            Carry over from <strong className="font-medium text-foreground">{sourceTerm?.name}</strong> to{" "}
+            <strong className="font-medium text-foreground">{targetTerm?.name}</strong>. Review the three
+            groups below, then commit.
+          </>
+        }
+      />
 
       <CandidateGroup
         title="Carried over"
