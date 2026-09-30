@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { AssessmentFeedRowDto, SubjectCommentRowDto } from "@school-kit/types";
 
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { ApiError } from "@/lib/api-client";
 import {
   acceptSubjectComment,
@@ -212,7 +213,18 @@ export function SubjectComments({ termId, classArmId, subjectId, rows }: Props) 
             const unaccepted = !accepted && suggestion !== null;
 
             return (
-              <li key={row.student.id} className="flex flex-col gap-2 py-3">
+              <li
+                key={row.student.id}
+                // The row the teacher just accepted washes emerald and
+                // recedes (D5). `savedId` already existed and drove nothing
+                // visible on the row itself — the only feedback was a word
+                // elsewhere on the screen, which is easy to miss on a class
+                // of forty when your eye is on the text you just typed.
+                className={cn(
+                  "flex flex-col gap-2 rounded-md px-2 py-3 motion-reduce:animate-none",
+                  savedId === row.student.id && "animate-settle",
+                )}
+              >
                 <div className="flex items-baseline justify-between gap-3">
                   <span className="font-medium text-foreground">{displayName(row.student)}</span>
                   <span className="flex items-center gap-2 text-xs text-muted-foreground">

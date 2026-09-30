@@ -128,6 +128,38 @@ export function PageSkeleton({ rows = 4 }: { rows?: number }) {
   );
 }
 
+/**
+ * Content arriving where a skeleton was (Part 2, D5 — the first of the three
+ * motion uses the plan allows).
+ *
+ * 180ms, a fade plus a 2px rise, and that is the whole effect. It exists so a
+ * page RESOLVES instead of snapping: the skeleton has been holding roughly
+ * this shape, and without the fade the swap reads as a flicker even when it is
+ * fast. Anything longer starts to feel like an animation the reader is waiting
+ * through rather than a response.
+ *
+ * `motion-reduce:animate-none` is not decoration on this component — D6 says
+ * every transition here is disabled by that query and means it. A school of
+ * 400 has several people for whom movement is nausea, and this is one media
+ * query.
+ *
+ * Deliberately NOT applied to list ITEMS. A staggered list entrance is the
+ * exact thing D5 rules out: an admin who opens this roster forty times a day
+ * would watch the same 300ms of choreography forty times.
+ */
+export function Appear({ children, className }: { children: ReactNode; className?: string }) {
+  return (
+    <div
+      className={cn(
+        "animate-in fade-in slide-in-from-bottom-1 duration-200 motion-reduce:animate-none",
+        className,
+      )}
+    >
+      {children}
+    </div>
+  );
+}
+
 /** An inline "working…" for buttons and toolbars, so each page stops writing its own. */
 export function Working({ label = "Loading…" }: { label?: string }) {
   return (

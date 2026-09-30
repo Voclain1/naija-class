@@ -91,10 +91,20 @@ const config: Config = {
           from: { height: "var(--radix-accordion-content-height)" },
           to: { height: "0" },
         },
+        // look-and-feel Part 2, D5's second motion use: a saved row SETTLES.
+        // An emerald wash that recedes, rather than a badge that pops in and
+        // out — the row was already the thing the teacher was looking at, so
+        // the feedback belongs on the row and should leave on its own.
+        // Paired with `motion-reduce:animate-none` at every call site (D6).
+        settle: {
+          "0%": { backgroundColor: "hsl(var(--primary) / 0.16)" },
+          "100%": { backgroundColor: "transparent" },
+        },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
         "accordion-up": "accordion-up 0.2s ease-out",
+        settle: "settle 900ms ease-out 1",
       },
     },
   },

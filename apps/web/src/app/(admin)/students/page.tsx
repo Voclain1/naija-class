@@ -16,7 +16,7 @@ import { PrintButton } from "@/components/shared/print-button";
 import { StudentsListControls } from "@/components/students/students-list-controls";
 import { StudentsRosterTable } from "@/components/students/students-roster-table";
 import { Button } from "@/components/ui/button";
-import { EmptyState, PageHeader, PageSkeleton } from "@/components/layout/page-primitives";
+import { Appear, EmptyState, PageHeader, PageSkeleton } from "@/components/layout/page-primitives";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -315,7 +315,12 @@ export default function StudentsRosterPage() {
         />
       ) : (
         <>
-          <StudentsRosterTable students={students} />
+          {/* The table fades in where the skeleton was — not each row in turn.
+              See Appear's own comment on why a staggered list is the thing D5
+              rules out. */}
+          <Appear>
+            <StudentsRosterTable students={students} />
+          </Appear>
           {cursor && (
             <div className="flex justify-center print:hidden">
               <Button

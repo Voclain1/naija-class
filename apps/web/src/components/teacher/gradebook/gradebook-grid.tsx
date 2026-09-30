@@ -267,7 +267,7 @@ export function GradebookGrid({
             <span className="text-xs text-amber-700">Sign-off will clear on save.</span>
           )}
           {savedFlash && (
-            <span className="inline-flex items-center gap-1.5 text-emerald-700">
+            <span className="inline-flex animate-in items-center gap-1.5 fade-in text-emerald-700 duration-200 motion-reduce:animate-none">
               <Check className="h-4 w-4" />
               Saved
             </span>
