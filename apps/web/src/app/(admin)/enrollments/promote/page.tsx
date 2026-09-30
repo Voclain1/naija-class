@@ -24,6 +24,7 @@ import type {
   TermDto,
 } from "@school-kit/types";
 
+import { EmptyState, PageHeader, PageSkeleton } from "@/components/layout/page-primitives";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -285,8 +286,9 @@ export default function PromotePage() {
   // ---------- render ----------
   if (loadingShell) {
     return (
-      <div className="flex items-center gap-2 p-6 text-sm text-muted-foreground">
-        <Loader2 className="h-4 w-4 animate-spin" /> Loading your school year…
+      <div className="flex flex-col gap-6 p-6">
+        <PageHeader title="Promote students" subtitle="Reading your school year…" />
+        <PageSkeleton rows={5} />
       </div>
     );
   }
@@ -304,22 +306,18 @@ export default function PromotePage() {
 
   return (
     <div className="flex flex-col gap-6 p-6">
-      <header className="flex flex-col gap-1">
+      <div className="flex flex-col gap-3">
         <Link
           href="/enrollments"
           className="inline-flex w-fit items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
         >
           <ArrowLeft className="h-4 w-4" /> Back to enrollments
         </Link>
-        <h1 className="text-2xl font-semibold tracking-tight">
-          Promote students
-        </h1>
-        <p className="max-w-3xl text-sm text-muted-foreground">
-          Move every class up at once at the start of a new year — Primary 1
-          into Primary 2, and so on, keeping each arm in order. Check the list,
-          change anyone who is repeating or leaving, then approve it once.
-        </p>
-      </header>
+        <PageHeader
+          title="Promote students"
+          subtitle="Move every class up at once at the start of a new year — Primary 1 into Primary 2, and so on, keeping each arm in order. Check the list, change anyone who is repeating or leaving, then approve it once."
+        />
+      </div>
 
       {/* ---------- term pickers ---------- */}
       <section className="flex flex-col gap-3 rounded-md border bg-card p-4 sm:flex-row sm:items-end">
@@ -466,11 +464,15 @@ export default function PromotePage() {
           ) : null}
 
           {candidates.length === 0 ? (
-            <p className="rounded-md border border-dashed p-6 text-center text-sm text-muted-foreground">
-              Nobody was enrolled in {preview.sourceTerm.name}, so there is
-              nobody to move. Enrol students in that term first, or pick a
-              different term to move from.
-            </p>
+            <EmptyState
+              title={`Nobody was enrolled in ${preview.sourceTerm.name}.`}
+              body="There is nobody to move. Enrol students in that term first, or pick a different term to move from."
+              action={
+                <Button asChild variant="outline">
+                  <Link href="/enrollments">Go to enrollments</Link>
+                </Button>
+              }
+            />
           ) : (
             <div className="flex flex-col gap-6">
               {groups.map(([armId, rows]) => {

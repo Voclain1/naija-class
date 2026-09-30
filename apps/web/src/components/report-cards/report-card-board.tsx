@@ -8,6 +8,7 @@ import { toast } from "sonner";
 
 import type { ReportCardBoardRowDto, ReportCardStatusDto } from "@school-kit/types";
 
+import { EmptyState, PageHeader } from "@/components/layout/page-primitives";
 import { FormComments } from "@/components/report-cards/form-comments";
 import { ReleaseReportCardsDialog } from "@/components/report-cards/release-report-cards-dialog";
 import { PdfStatusBadge, WorkflowStatusBadge } from "@/components/report-cards/status-badges";
@@ -313,7 +314,7 @@ export function ReportCardBoard({ basePath }: { basePath: string }) {
   }, [rows]);
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-6">
+    <div className="mx-auto flex w-full max-w-7xl flex-col gap-6">
       <Link
         href={basePath}
         className="inline-flex w-fit items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
@@ -329,10 +330,15 @@ export function ReportCardBoard({ basePath }: { basePath: string }) {
           {status.message}
         </div>
       ) : status.kind === "out-of-scope" ? (
-        <div className="rounded-md border border-dashed bg-muted/20 p-8 text-sm text-muted-foreground">
-          <p className="font-medium text-foreground">This isn&apos;t one of your classes.</p>
-          <p className="mt-1">You can only open report cards for a class you are the form teacher of.</p>
-        </div>
+        <EmptyState
+          title="This isn't one of your classes."
+          body="You can only open report cards for a class you are the form teacher of."
+          action={
+            <Button asChild variant="outline">
+              <Link href={basePath}>Back to your classes</Link>
+            </Button>
+          }
+        />
       ) : status.kind === "no-term" ? (
         <div className="rounded-md border border-amber-300/60 bg-amber-50 p-8 text-sm text-amber-800">
           <p className="font-medium">No active term.</p>
@@ -340,107 +346,120 @@ export function ReportCardBoard({ basePath }: { basePath: string }) {
         </div>
       ) : (
         <>
-          <header className="flex flex-col gap-3">
-            <div className="flex flex-col gap-1">
-              <h1 className="font-serif text-2xl font-medium tracking-tight text-foreground">{status.armName}</h1>
-              <p className="text-sm text-muted-foreground">
-                {status.termName} · {rows.length} report card{rows.length === 1 ? "" : "s"}
-                {lastBuilt ? ` · last built ${formatStamp(new Date(lastBuilt))}` : ""}
-              </p>
+          <PageHeader
+            title={status.armName}
+            subtitle={`${status.termName} · ${rows.length} report card${rows.length === 1 ? "" : "s"}${
+              lastBuilt ? ` · last built ${formatStamp(new Date(lastBuilt))}` : ""
+            }`}
+            /* Build is deliberately NOT in this slot. It only ever rendered
+               when the board was empty, beside a header that said nothing,
+               while the empty state below told the reader to "click Build
+               report cards" — the button and the sentence asking for it in two
+               different places. It now lives in the empty state's action slot. */
+            actions={
+              <>
+                {/* Form-review — DRAFT / SUBJECT_REVIEWED. owner/admin OR form
+                    teacher (anyone who can open this board), gated server-side. */}
+                {(armStatus === "DRAFT" || armStatus === "SUBJECT_REVIEWED") && (
+                  <Button type="button" onClick={onFormReview} disabled={workflowBusy || shouldPoll}>
+                    {workflowBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                    Form-review arm
+                  </Button>
+                )}
+
+                {/* Approve — FORM_REVIEWED (owner/admin). */}
+                {armStatus === "FORM_REVIEWED" && canManage && (
+                  <Button type="button" onClick={onApprove} disabled={workflowBusy || shouldPoll}>
+                    {workflowBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                    Approve arm
+                  </Button>
+                )}
+
+                {/* Release — PRINCIPAL_APPROVED (owner/admin). */}
+                {armStatus === "PRINCIPAL_APPROVED" && canManage && (
+                  <Button type="button" onClick={() => setReleaseOpen(true)} disabled={workflowBusy || shouldPoll}>
+                    {workflowBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                    Release arm
+                  </Button>
+                )}
+
+                {/* Render all PDFs — RELEASED, re-render existing artifacts (owner/admin). */}
+                {armStatus === "RELEASED" && canManage && (
+                  <Button type="button" variant="outline" onClick={onRenderAll} disabled={rendering || shouldPoll}>
+                    {rendering ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                    {rendering ? "Enqueueing…" : "Render all PDFs"}
+                  </Button>
+                )}
+
+                {/* Reopen — OWNER only (admin excluded), from any finalised state. */}
+                {isOwner &&
+                  (armStatus === "FORM_REVIEWED" ||
+                    armStatus === "PRINCIPAL_APPROVED" ||
+                    armStatus === "RELEASED") && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setReopenOpen(true)}
+                      disabled={workflowBusy || shouldPoll}
+                      className="border-amber-300 text-amber-800 hover:bg-amber-50"
+                    >
+                      <RotateCcw className="h-4 w-4" />
+                      Reopen arm
+                    </Button>
+                  )}
+              </>
+            }
+          />
+
+          {/* MIXED is a warning about the arm, not something to act on, so it
+              reads as a banner under the title rather than as an item in a row
+              of buttons — which is where it used to sit. */}
+          {armStatus === "MIXED" && (
+            <p className="inline-flex items-center gap-2 rounded-md border border-amber-300/60 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+              <TriangleAlert className="h-4 w-4" />
+              Arm cards are in inconsistent states — contact administrator.
+            </p>
+          )}
+
+          {/* Persistent render-progress feedback — survives fast batches that
+              finish before the first poll tick, and slow 40-card batches. */}
+          {armStatus && <WorkflowGuidance status={armStatus} canManage={canManage} isOwner={isOwner} />}
+
+          {renderingCount > 0 ? (
+            <div className="flex items-center gap-2 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800">
+              <Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" />
+              Rendering {renderingCount} report card{renderingCount === 1 ? "" : "s"}…
+              {failedCount > 0 ? ` · ${failedCount} failed` : ""}
             </div>
-
-            <div className="flex flex-wrap items-center gap-3">
-              {/* Build — only when the board is empty (owner/admin). */}
-              {canManage && rows.length === 0 && (
-                <Button type="button" onClick={onBuild} disabled={building}>
-                  {building ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
-                  {building ? "Building…" : "Build report cards"}
-                </Button>
-              )}
-
-              {armStatus === "MIXED" && (
-                <p className="inline-flex items-center gap-2 rounded-md border border-amber-300/60 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-                  <TriangleAlert className="h-4 w-4" />
-                  Arm cards are in inconsistent states — contact administrator.
-                </p>
-              )}
-
-              {/* Form-review — DRAFT / SUBJECT_REVIEWED. owner/admin OR form teacher
-                  (anyone who can open this board), gated server-side. */}
-              {(armStatus === "DRAFT" || armStatus === "SUBJECT_REVIEWED") && (
-                <Button type="button" onClick={onFormReview} disabled={workflowBusy || shouldPoll}>
-                  {workflowBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                  Form-review arm
-                </Button>
-              )}
-
-              {/* Approve — FORM_REVIEWED (owner/admin). */}
-              {armStatus === "FORM_REVIEWED" && canManage && (
-                <Button type="button" onClick={onApprove} disabled={workflowBusy || shouldPoll}>
-                  {workflowBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-                  Approve arm
-                </Button>
-              )}
-
-              {/* Release — PRINCIPAL_APPROVED (owner/admin). */}
-              {armStatus === "PRINCIPAL_APPROVED" && canManage && (
-                <Button type="button" onClick={() => setReleaseOpen(true)} disabled={workflowBusy || shouldPoll}>
-                  {workflowBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                  Release arm
-                </Button>
-              )}
-
-              {/* Render all PDFs — RELEASED, re-render existing artifacts (owner/admin). */}
-              {armStatus === "RELEASED" && canManage && (
-                <Button type="button" variant="outline" onClick={onRenderAll} disabled={rendering || shouldPoll}>
-                  {rendering ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-                  {rendering ? "Enqueueing…" : "Render all PDFs"}
-                </Button>
-              )}
-
-              {/* Reopen — OWNER only (admin excluded), from any finalised state. */}
-              {isOwner && (armStatus === "FORM_REVIEWED" || armStatus === "PRINCIPAL_APPROVED" || armStatus === "RELEASED") && (
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setReopenOpen(true)}
-                  disabled={workflowBusy || shouldPoll}
-                  className="border-amber-300 text-amber-800 hover:bg-amber-50"
-                >
-                  <RotateCcw className="h-4 w-4" />
-                  Reopen arm
-                </Button>
-              )}
+          ) : failedCount > 0 && armStatus === "RELEASED" ? (
+            <div className="flex items-center gap-2 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+              <TriangleAlert className="h-4 w-4" />
+              {failedCount} report card{failedCount === 1 ? "" : "s"} failed to render — use Regenerate on the
+              affected rows below.
             </div>
-
-            {/* Persistent render-progress feedback — survives fast batches that
-                finish before the first poll tick, and slow 40-card batches. */}
-            {armStatus && <WorkflowGuidance status={armStatus} canManage={canManage} isOwner={isOwner} />}
-
-            {renderingCount > 0 ? (
-              <div className="flex items-center gap-2 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Rendering {renderingCount} report card{renderingCount === 1 ? "" : "s"}…
-                {failedCount > 0 ? ` · ${failedCount} failed` : ""}
-              </div>
-            ) : failedCount > 0 && armStatus === "RELEASED" ? (
-              <div className="flex items-center gap-2 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">
-                <TriangleAlert className="h-4 w-4" />
-                {failedCount} report card{failedCount === 1 ? "" : "s"} failed to render — use Regenerate on the affected
-                rows below.
-              </div>
-            ) : null}
-          </header>
+          ) : null}
 
           {rows.length === 0 ? (
-            <div className="rounded-md border border-dashed bg-muted/20 p-8 text-sm text-muted-foreground">
-              <p className="font-medium text-foreground">No report cards yet.</p>
-              <p className="mt-1">
-                {canManage
-                  ? "Click “Build report cards” to generate them from the scores already entered."
-                  : "No report cards have been built for this class yet."}
-              </p>
-            </div>
+            <EmptyState
+              title="No report cards yet."
+              body={
+                canManage
+                  ? "Build them from the scores already entered for this class."
+                  : "No report cards have been built for this class yet."
+              }
+              action={
+                canManage ? (
+                  <Button type="button" onClick={onBuild} disabled={building}>
+                    {building ? (
+                      <Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" />
+                    ) : (
+                      <FileText className="h-4 w-4" />
+                    )}
+                    {building ? "Building…" : "Build report cards"}
+                  </Button>
+                ) : undefined
+              }
+            />
           ) : (
             <div className="overflow-hidden rounded-md border">
               <Table>
@@ -550,12 +569,12 @@ export function ReportCardBoard({ basePath }: { basePath: string }) {
 function BoardSkeleton() {
   return (
     <div className="flex flex-col gap-4">
-      <div className="h-8 w-48 animate-pulse rounded bg-muted" />
+      <div className="h-8 w-48 animate-pulse rounded bg-muted motion-reduce:animate-none" />
       <div className="overflow-hidden rounded-md border">
         {Array.from({ length: 5 }).map((_, i) => (
           <div key={i} className="flex items-center gap-4 border-b px-3 py-3 last:border-b-0">
-            <div className="h-4 w-40 animate-pulse rounded bg-muted" />
-            <div className="ml-auto h-4 w-24 animate-pulse rounded bg-muted" />
+            <div className="h-4 w-40 animate-pulse rounded bg-muted motion-reduce:animate-none" />
+            <div className="ml-auto h-4 w-24 animate-pulse rounded bg-muted motion-reduce:animate-none" />
           </div>
         ))}
       </div>

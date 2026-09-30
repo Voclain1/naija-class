@@ -3,6 +3,7 @@
 import { Loader2 } from "lucide-react";
 import { type ReactNode } from "react";
 
+import { IMPORT_WIZARD_STEPS, WizardStepper } from "@/components/shared/wizard-stepper";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 // Shared wizard chrome — extracted slice 8 cp2 from the slice 6/7 student
@@ -30,15 +31,23 @@ export interface WizardHeaderProps {
   title: string;
 }
 
+// This now renders WizardStepper rather than its own "Step 3 of 4" line —
+// the swap the stepper's own header comment said was owed "until the Guardian
+// wizard's restyle pass". Doing it here rather than at each call site means
+// the four guardian steps pick up the visual progress bar and the brand
+// typeface without four near-identical edits, and any future caller of
+// Wizard.Header cannot accidentally reintroduce the text-only version.
+//
+// `totalSteps` is kept in the prop shape because it is part of the published
+// API, but every caller uses the default 4; a wizard of another length falls
+// back to plain numbered labels rather than borrowing the CSV wizard's step
+// names, which would be wrong for it.
 export function WizardHeader({ step, totalSteps = 4, title }: WizardHeaderProps) {
-  return (
-    <header className="flex flex-col gap-1">
-      <p className="text-xs uppercase tracking-wide text-muted-foreground">
-        Step {step} of {totalSteps}
-      </p>
-      <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
-    </header>
-  );
+  const steps =
+    totalSteps === IMPORT_WIZARD_STEPS.length
+      ? IMPORT_WIZARD_STEPS
+      : Array.from({ length: totalSteps }, (_, i) => `Step ${i + 1}`);
+  return <WizardStepper steps={steps} currentStep={step} title={title} />;
 }
 
 // =========================================================================
