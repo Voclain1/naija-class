@@ -1,8 +1,22 @@
 # Look and feel — the website catching up with the app, and a theme people choose
 
-**Status:** approved 2026-09-28. Part 1's vocabulary and the Students pages
-built; typography replaced and, more to the point, FIXED — see the last
-section. Parts 2 and 3 not started.
+**Status:** approved 2026-09-28. Part 1's **visible** goal is met
+(2026-09-30): no admin or teacher page is still in the stock shadcn draft
+style, the three dead-end wizard states have a way out, and the import
+wizards were done last as D3 said. Typography replaced and, more to the
+point, FIXED — see the last section. **Part 3 (the theme switcher) shipped**
+2026-09-29. Part 2 (motion) not started; `apps/portal` still waiting on D4.
+
+**What Part 1 has NOT finished, stated plainly:** 57 pages still inline
+`<h1 className="font-serif text-2xl font-medium tracking-tight
+text-foreground">` rather than calling `PageHeader`. They render identically
+— those are the exact classes the primitive emits — so this is invisible to a
+reader and real to a maintainer: the next change to the page-title treatment
+would have to be made 58 times. It is deliberately not being done as a blind
+sed, because those 57 headers differ in what surrounds the `h1` (a subtitle,
+a back link, a toolbar, sometimes all three), and a mechanical swap across
+that variety is how a cosmetic pass introduces a layout bug. It converts a
+page at a time, as each page is next touched for another reason.
 **Asked for:** "the app looks 95% good, I'll still want more beautification and
 dynamism, but the website still looks pale/stale, like a draft; it has to
 match/outmatch the app in UI" — plus a light/dark switcher in the app.
@@ -71,6 +85,15 @@ screen.
 3. **The import wizards, last.** Four of them, one-off flows a school touches
    during onboarding and rarely again. They are the ugliest and the least
    valuable to fix, and doing them first is how this kind of work stalls.
+
+**Done 2026-09-30, and the order paid off in an unexpected way.** Reaching the
+wizards last meant reaching them after `WizardStepper` already existed — so
+most of the twelve steps needed no edit at all. Two thirds of them were
+already on the stepper; the Guardian wizard was the holdout, and making the
+older `Wizard.Header` render the stepper internally covered its last two steps
+without touching either file. Had the wizards gone first, twelve pages would
+have been restyled by hand and then restyled again when the shared component
+arrived — which is the concrete version of the stall D1 is about.
 
 ### D4 — The portal gets the same vocabulary, on a delay
 
