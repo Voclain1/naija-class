@@ -8,6 +8,7 @@ import { toast } from "sonner";
 
 import type { ImportJobDto } from "@school-kit/types";
 
+import { PageSkeleton } from "@/components/layout/page-primitives";
 import { IMPORT_WIZARD_STEPS, WizardStepper } from "@/components/shared/wizard-stepper";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -160,10 +161,12 @@ export default function ImportTeachersPreviewPage() {
   }
 
   if (!job) {
+    // The shape of what is coming, rather than the word "Loading…" (D5). The
+    // stepper cannot render yet — which step's title to show is one of the
+    // things this fetch is still deciding.
     return (
-      <div className="mx-auto flex w-full max-w-5xl items-center gap-2 text-sm text-muted-foreground">
-        <Loader2 className="h-4 w-4 animate-spin" />
-        Loading…
+      <div className="mx-auto flex w-full max-w-5xl flex-col gap-6">
+        <PageSkeleton rows={5} />
       </div>
     );
   }

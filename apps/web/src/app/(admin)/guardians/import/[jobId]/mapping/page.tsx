@@ -15,6 +15,8 @@ import {
   type ImportDateFormat,
 } from "@school-kit/types";
 
+import { PageSkeleton } from "@/components/layout/page-primitives";
+import { IMPORT_WIZARD_STEPS, WizardStepper } from "@/components/shared/wizard-stepper";
 import { Button } from "@/components/ui/button";
 import { ApiError } from "@/lib/api-client";
 import { importMappingErrorMessage } from "@/lib/imports/mapping-error-copy";
@@ -238,10 +240,12 @@ export default function ImportGuardiansMappingPage() {
   }, [jobId, router]);
 
   if (loading) {
+    // The shape of what is coming, rather than the word "Loading…" (D5). The
+    // stepper cannot render yet — which step's title to show is one of the
+    // things this fetch is still deciding.
     return (
-      <div className="mx-auto flex w-full max-w-5xl items-center gap-2 text-sm text-muted-foreground">
-        <Loader2 className="h-4 w-4 animate-spin" />
-        Loading mapping…
+      <div className="mx-auto flex w-full max-w-5xl flex-col gap-6">
+        <PageSkeleton rows={5} />
       </div>
     );
   }
@@ -261,19 +265,12 @@ export default function ImportGuardiansMappingPage() {
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-6">
-      <header className="flex flex-col gap-2">
-        <p className="text-xs uppercase tracking-wide text-muted-foreground">
-          Step 2 of 4
-        </p>
-        <h1 className="text-2xl font-semibold tracking-tight">
-          Map your columns
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          We&apos;ve guessed where we can — review each row, then validate.
-          Your file has <strong>{session.totalRows}</strong>{" "}
-          {session.totalRows === 1 ? "row" : "rows"}.
-        </p>
-      </header>
+      <WizardStepper steps={IMPORT_WIZARD_STEPS} currentStep={2} title="Map your columns" />
+      <p className="text-sm text-muted-foreground">
+        We&apos;ve guessed where we can — review each row, then validate. Your
+        file has <strong>{session.totalRows}</strong>{" "}
+        {session.totalRows === 1 ? "row" : "rows"}.
+      </p>
 
       <section className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <div className="flex flex-col gap-1">

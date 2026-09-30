@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useRef, useState } from "react";
 
+import { IMPORT_WIZARD_STEPS, WizardStepper } from "@/components/shared/wizard-stepper";
 import { Button } from "@/components/ui/button";
 import { ApiError } from "@/lib/api-client";
 import { uploadGuardiansCsv } from "@/lib/imports/api";
@@ -79,19 +80,12 @@ export default function ImportGuardiansUploadPage() {
 
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
-      <header className="flex flex-col gap-2">
-        <p className="text-xs uppercase tracking-wide text-muted-foreground">
-          Step 1 of 4
-        </p>
-        <h1 className="text-2xl font-semibold tracking-tight">
-          Import guardians from CSV
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          Upload a CSV that lists each parent or guardian and the student
-          they&apos;re responsible for. We&apos;ll dedup parents who appear
-          on multiple rows (one row per child is fine).
-        </p>
-      </header>
+      <WizardStepper steps={IMPORT_WIZARD_STEPS} currentStep={1} title="Import guardians from CSV" />
+      <p className="text-sm text-muted-foreground">
+        Upload a CSV that lists each parent or guardian and the student
+        they&apos;re responsible for. We&apos;ll dedup parents who appear on
+        multiple rows (one row per child is fine).
+      </p>
 
       <div className="flex items-center justify-between rounded-md border bg-muted/30 px-4 py-3">
         <div className="flex items-center gap-3">
