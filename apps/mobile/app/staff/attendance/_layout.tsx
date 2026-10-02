@@ -1,4 +1,4 @@
-import { Stack } from "expo-router";
+import { SectionStack } from "../../../src/components/section-stack";
 
 // CP8 — a stack INSIDE the "attendance" tab.
 //
@@ -7,5 +7,5 @@ import { Stack } from "expo-router";
 // pushed detail screen would replace the bar instead of sitting under it.
 // One stack per section also restores each screen's own header title.
 export default function AttendanceLayout() {
-  return <Stack screenOptions={{ headerShown: false }} />;
+  return <SectionStack />;
 }

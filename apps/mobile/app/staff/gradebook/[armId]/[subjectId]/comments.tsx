@@ -33,6 +33,7 @@ import {
 import { useTheme } from "../../../../../src/theme/theme-provider";
 import { fontSizes, fonts, radii, spacing } from "../../../../../src/theme/tokens";
 import { ScreenHeader, Skeleton } from "../../../../../src/components/layout";
+import { Appear, Settle } from "../../../../../src/components/motion";
 import {
   Body,
   Button,
@@ -131,6 +132,9 @@ export default function SubjectCommentsScreen() {
   const [notice, setNotice] = useState<string | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
   const [savingId, setSavingId] = useState<string | null>(null);
+  // Which row was last saved, and when — drives the row's settle wash. The
+  // timestamp, not just the id, so saving the same row twice settles twice.
+  const [saved, setSaved] = useState<{ studentId: string; at: number } | null>(null);
 
   // Polling stops when the screen is not on top: no background traffic from a
   // screen a teacher left open in another tab of their day.
@@ -257,6 +261,7 @@ export default function SubjectCommentsScreen() {
         ),
       );
       if (draftsKey) clearDraftCells(draftsKey, [input.studentId]);
+      setSaved({ studentId: input.studentId, at: Date.now() });
       setNotice("Saved to the report card.");
     },
     onError: (error: unknown) => {
@@ -335,142 +340,148 @@ export default function SubjectCommentsScreen() {
   return (
     <Screen>
       {header}
-      <KeyboardAvoidingView
-        style={styles.fill}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-      >
-        <ScreenHeader
-          title="Subject comments"
-          subtitle={`${
-            subject && arm ? subject.name + " · " + arm.name + " · " : ""
-          }Nothing reaches a report card until you accept it.`}
-        />
-
-        {allFrozen ? (
-          <Notice tone="warning">
-            This subject is signed off, so its comments are frozen. Write comments before you
-            sign off — to change one now, edit a mark on the previous screen, which undoes the
-            sign-off.
-          </Notice>
-        ) : frozen > 0 ? (
-          <Notice tone="info">
-            {frozen} student{frozen === 1 ? " is" : "s are"} signed off and will be skipped.
-            Their comments are frozen.
-          </Notice>
-        ) : null}
-
-        <View style={styles.actions}>
-          <Button
-            title={drafting ? "Drafting…" : "Draft comments with AI"}
-            loading={generate.isPending || drafting}
-            disabled={generate.isPending || drafting || rows.length === 0 || allFrozen}
-            onPress={() => generate.mutate()}
-          />
-        </View>
-
-        {notice ? <Notice tone="info">{notice}</Notice> : null}
-        {failure ? <Notice tone="danger">{failure}</Notice> : null}
-
-        <ScrollView
+      {/* The whole block replaces the skeleton above, so it arrives as one
+          (D5) — never row by row. */}
+      <Appear style={styles.fill}>
+        <KeyboardAvoidingView
           style={styles.fill}
-          contentContainerStyle={styles.list}
-          keyboardShouldPersistTaps="handled"
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
         >
-          {rows.length === 0 && (
-            <Notice tone="info">No students are enrolled in this class this term.</Notice>
-          )}
+          <ScreenHeader
+            title="Subject comments"
+            subtitle={`${
+              subject && arm ? subject.name + " · " + arm.name + " · " : ""
+            }Nothing reaches a report card until you accept it.`}
+          />
 
-          {rows.map((row) => {
-            const studentId = row.student.id;
-            const comment = byStudent.get(studentId);
-            const signedOff = Boolean(comment?.signedOffAt);
-            const accepted = comment?.comment ?? null;
-            const suggestion = comment?.suggestion ?? null;
-            const draft = drafts[studentId];
-            const value = draft ?? accepted ?? suggestion ?? "";
-            const edited = draft !== undefined && draft !== (accepted ?? "");
-            const unaccepted = accepted === null && suggestion !== null;
-            const saving = savingId === studentId;
+          {allFrozen ? (
+            <Notice tone="warning">
+              This subject is signed off, so its comments are frozen. Write comments before you
+              sign off — to change one now, edit a mark on the previous screen, which undoes the
+              sign-off.
+            </Notice>
+          ) : frozen > 0 ? (
+            <Notice tone="info">
+              {frozen} student{frozen === 1 ? " is" : "s are"} signed off and will be skipped.
+              Their comments are frozen.
+            </Notice>
+          ) : null}
 
-            return (
-              <Card key={studentId} style={styles.row}>
-                <View style={styles.rowHead}>
-                  <Body>{studentName(row.student)}</Body>
-                  <Label>
-                    {comment?.letterGrade ? comment.letterGrade + " · " : ""}
-                    {comment?.totalScore === null || comment?.totalScore === undefined
-                      ? "no total yet"
-                      : String(comment.totalScore)}
-                  </Label>
-                </View>
+          <View style={styles.actions}>
+            <Button
+              title={drafting ? "Drafting…" : "Draft comments with AI"}
+              loading={generate.isPending || drafting}
+              disabled={generate.isPending || drafting || rows.length === 0 || allFrozen}
+              onPress={() => generate.mutate()}
+            />
+          </View>
 
-                {signedOff ? (
-                  <>
-                    <Body muted>{accepted ?? "No comment was recorded before sign-off."}</Body>
-                    <Label>Signed off — the comment is frozen.</Label>
-                  </>
-                ) : (
-                  <>
-                    <TextInput
-                      value={value}
-                      onChangeText={(text) => {
-                        if (!draftsKey) return;
-                        setFailure(null);
-                        if (text === (accepted ?? "")) {
-                          clearDraftCells(draftsKey, [studentId]);
-                          return;
-                        }
-                        setDraftCell(draftsKey, studentId, text);
-                      }}
-                      multiline
-                      maxLength={1000}
-                      editable={!saving}
-                      placeholder={
-                        drafting
-                          ? "Drafting…"
-                          : "No draft yet — write one, or press Draft comments with AI."
-                      }
-                      placeholderTextColor={colors.mutedForeground}
-                      accessibilityLabel={`Report card comment for ${studentName(row.student)}`}
-                      style={[
-                        styles.input,
-                        {
-                          color: colors.foreground,
-                          backgroundColor: colors.card,
-                          borderColor: edited || unaccepted ? colors.warning : colors.border,
-                        },
-                      ]}
-                    />
-                    <View style={styles.rowFoot}>
+          {notice ? <Notice tone="info">{notice}</Notice> : null}
+          {failure ? <Notice tone="danger">{failure}</Notice> : null}
+
+          <ScrollView
+            style={styles.fill}
+            contentContainerStyle={styles.list}
+            keyboardShouldPersistTaps="handled"
+          >
+            {rows.length === 0 && (
+              <Notice tone="info">No students are enrolled in this class this term.</Notice>
+            )}
+
+            {rows.map((row) => {
+              const studentId = row.student.id;
+              const comment = byStudent.get(studentId);
+              const signedOff = Boolean(comment?.signedOffAt);
+              const accepted = comment?.comment ?? null;
+              const suggestion = comment?.suggestion ?? null;
+              const draft = drafts[studentId];
+              const value = draft ?? accepted ?? suggestion ?? "";
+              const edited = draft !== undefined && draft !== (accepted ?? "");
+              const unaccepted = accepted === null && suggestion !== null;
+              const saving = savingId === studentId;
+
+              return (
+                <Settle key={studentId} trigger={saved?.studentId === studentId ? saved.at : null}>
+                  <Card style={styles.row}>
+                    <View style={styles.rowHead}>
+                      <Body>{studentName(row.student)}</Body>
                       <Label>
-                        {unaccepted || edited
-                          ? "Draft — not on the report card"
-                          : accepted
-                            ? "On the report card"
-                            : "Nothing saved yet"}
+                        {comment?.letterGrade ? comment.letterGrade + " · " : ""}
+                        {comment?.totalScore === null || comment?.totalScore === undefined
+                          ? "no total yet"
+                          : String(comment.totalScore)}
                       </Label>
-                      <Button
-                        title={saving ? "Saving" : "Accept"}
-                        loading={saving}
-                        disabled={
-                          saving || value.trim().length === 0 || (!edited && !unaccepted)
-                        }
-                        onPress={() => accept.mutate({ studentId, comment: value.trim() })}
-                      />
                     </View>
-                  </>
-                )}
-              </Card>
-            );
-          })}
-        </ScrollView>
 
-        {Object.keys(drafts).length > 0 ? (
-          <Body muted>
-            Unaccepted comments stay if the app locks, but are lost if you close the app.
-          </Body>
-        ) : null}
-      </KeyboardAvoidingView>
+                    {signedOff ? (
+                      <>
+                        <Body muted>{accepted ?? "No comment was recorded before sign-off."}</Body>
+                        <Label>Signed off — the comment is frozen.</Label>
+                      </>
+                    ) : (
+                      <>
+                        <TextInput
+                          value={value}
+                          onChangeText={(text) => {
+                            if (!draftsKey) return;
+                            setFailure(null);
+                            if (text === (accepted ?? "")) {
+                              clearDraftCells(draftsKey, [studentId]);
+                              return;
+                            }
+                            setDraftCell(draftsKey, studentId, text);
+                          }}
+                          multiline
+                          maxLength={1000}
+                          editable={!saving}
+                          placeholder={
+                            drafting
+                              ? "Drafting…"
+                              : "No draft yet — write one, or press Draft comments with AI."
+                          }
+                          placeholderTextColor={colors.mutedForeground}
+                          accessibilityLabel={`Report card comment for ${studentName(row.student)}`}
+                          style={[
+                            styles.input,
+                            {
+                              color: colors.foreground,
+                              backgroundColor: colors.card,
+                              borderColor: edited || unaccepted ? colors.warning : colors.border,
+                            },
+                          ]}
+                        />
+                        <View style={styles.rowFoot}>
+                          <Label>
+                            {unaccepted || edited
+                              ? "Draft — not on the report card"
+                              : accepted
+                                ? "On the report card"
+                                : "Nothing saved yet"}
+                          </Label>
+                          <Button
+                            title={saving ? "Saving" : "Accept"}
+                            loading={saving}
+                            disabled={
+                              saving || value.trim().length === 0 || (!edited && !unaccepted)
+                            }
+                            onPress={() => accept.mutate({ studentId, comment: value.trim() })}
+                          />
+                        </View>
+                      </>
+                    )}
+                  </Card>
+                </Settle>
+              );
+            })}
+          </ScrollView>
+
+          {Object.keys(drafts).length > 0 ? (
+            <Body muted>
+              Unaccepted comments stay if the app locks, but are lost if you close the app.
+            </Body>
+          ) : null}
+        </KeyboardAvoidingView>
+      </Appear>
     </Screen>
   );
 }

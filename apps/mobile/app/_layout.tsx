@@ -13,6 +13,7 @@ import { PersistQueryClientProvider } from "@tanstack/react-query-persist-client
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { ThemeProvider, useTheme } from "../src/theme/theme-provider";
+import { useMotion } from "../src/theme/reduced-motion";
 import { SessionProvider } from "../src/lib/auth/session";
 import { NotificationRouter } from "../src/components/notification-router";
 import { createQueryClient } from "../src/lib/query/client";
@@ -32,6 +33,7 @@ installOnlineManager();
 
 function RootNavigator() {
   const { colors, scheme } = useTheme();
+  const motion = useMotion();
 
   return (
     <>
@@ -53,6 +55,16 @@ function RootNavigator() {
           headerStyle: { backgroundColor: colors.background },
           headerTintColor: colors.foreground,
           headerShadowVisible: false,
+          // D5's third use: a 150ms fade between screens, and none at all
+          // under reduce motion (D6). A fade rather than the platform push
+          // because the push is ~350ms on iOS and longer on Android — long
+          // enough to wait through — and a slide moves text under the eye.
+          // iOS should keep its edge swipe-back: per react-native-screens'
+          // docs, `gestureEnabled` is independent of `animation`, and with
+          // `customAnimationOnSwipe` off the swipe runs the system transition.
+          // Not yet seen on a device — there is no iOS build — so check it on
+          // the first simulator build.
+          ...motion.stack,
         }}
       />
     </>

@@ -4,6 +4,7 @@ import { Tabs } from "expo-router";
 import { useSession } from "../../src/lib/auth/session";
 import { visibleStaffTabs } from "../../src/lib/staff/tabs";
 import { useTheme } from "../../src/theme/theme-provider";
+import { useMotion } from "../../src/theme/reduced-motion";
 import { fontSizes, fonts } from "../../src/theme/tokens";
 
 // CP8 — the staff tab bar.
@@ -22,6 +23,7 @@ import { fontSizes, fonts } from "../../src/theme/tokens";
 
 export default function StaffTabsLayout() {
   const { colors } = useTheme();
+  const motion = useMotion();
   const { staff } = useSession();
   // CP4 D32: Marks, Classes and Notes read /teacher-scope/*, which the server
   // refuses without the teacher role. An owner is shown only what works.
@@ -36,6 +38,9 @@ export default function StaffTabsLayout() {
         tabBarInactiveTintColor: colors.mutedForeground,
         tabBarStyle: { backgroundColor: colors.card, borderTopColor: colors.border },
         tabBarLabelStyle: { fontFamily: fonts.sansMedium, fontSize: fontSizes.caption },
+        // A cross-fade between tabs (D5), off under reduce motion (D6). Not
+        // `shift`: a sideways move is a slide by another name.
+        ...motion.tabs,
       }}
     >
       <Tabs.Screen
