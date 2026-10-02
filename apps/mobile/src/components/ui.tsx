@@ -41,7 +41,7 @@ import { fontSizes, fonts, radii, spacing } from "../theme/tokens";
  * Text-rendering components (Body, Heading, Label, Notice) keep ReactNode on
  * purpose: a string is precisely what they exist to take.
  */
-type ViewChildren =
+export type ViewChildren =
   | ReactElement
   | boolean
   | null

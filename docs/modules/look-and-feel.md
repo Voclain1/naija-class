@@ -5,8 +5,8 @@
 style, the three dead-end wizard states have a way out, and the import
 wizards were done last as D3 said. Typography replaced and, more to the
 point, FIXED — see the last section. **Part 3 (the theme switcher) shipped**
-2026-09-29. **Part 2's web half shipped** 2026-09-30 (the app's motion is still
-owed); `apps/portal` still waiting on D4.
+2026-09-29. **Part 2 shipped** — the web half 2026-09-30, the app half
+2026-10-02; `apps/portal` still waiting on D4.
 
 **What Part 1 has NOT finished, stated plainly:** 57 pages still inline
 `<h1 className="font-serif text-2xl font-medium tracking-tight
@@ -156,8 +156,58 @@ Two notes for whoever extends this:
   that only checks the "off" state passes just as happily when the motion was
   never implemented.
 
-**Still owed: the app's own motion.** Part 2 opens by saying the app lacks it
-too, and that remains true — nothing in this pass touched `apps/mobile`.
+**Built in the app, 2026-10-02.** The same three uses at the same speeds, so
+the product does not move at two tempos depending on which screen it is opened
+on. The numbers live once, in `apps/mobile/src/theme/motion.ts`.
+
+- **`Appear`** (`src/components/motion.tsx`) — 180ms fade and 2px rise, on the
+  block that replaces a skeleton: the staff roster's results, and the subject
+  and form-teacher comment screens. Same rule as the web: never on list items.
+- **`Settle`** — the comment a teacher just accepted washes emerald (16% primary)
+  and recedes over 900ms. Both comment screens, the twins of the web's
+  `subject-comments.tsx`. The wash is an overlay rather than a background,
+  because a `Card` paints its own opaque one. It is keyed by save TIME rather
+  than row id, so a row saved twice settles twice.
+- **Transitions** — a 150ms `fade` on every stack (root, and all seventeen
+  staff section stacks, now one `SectionStack` component instead of seventeen
+  copies of the same line) and a cross-fade between staff tabs. 150ms is also
+  what react-native-screens' Android `fade` is hard-coded to, so iOS's
+  `animationDuration` is set to match it.
+
+Built on React Native's own `Animated`, not Reanimated: a fade and a wash do
+not justify a native dependency and a Babel plugin, and both run on the native
+driver as they are (opacity and transform only).
+
+D6 in the app: `AccessibilityInfo` reads iOS's Reduce Motion, Android's
+"Remove animations" and, on the web target, `prefers-reduced-motion`, through
+one API. It is held in one module-level store (`src/theme/reduced-motion.ts`)
+that subscribes to changes, so switching the setting mid-session takes effect
+without a restart. Two decisions worth knowing:
+
+- **An unanswered query means no motion.** The read is async, and until it
+  lands `motionPlan(null)` behaves as if reduce motion were on. The other way
+  round, the person who most needs motion off gets the first animation of
+  every launch.
+- **The menu sheet's slide is now off under reduce motion too.** It predates
+  Part 2 and is not one of D5's three, so it stays otherwise. But D6 says
+  every transition, and that sheet is one.
+
+`src/theme/motion.spec.ts` asserts both directions, for the same reason the
+web spec does: a test that only checks "off" passes just as happily when the
+motion was never built.
+
+**Not yet seen on a device.** Typecheck, lint, the unit specs and a Metro web
+export pass; none of that shows a fade on a phone. Worth a look on the next
+preview APK, with "Remove animations" both on and off. iOS should keep its
+edge swipe-back under the `fade` animation (react-native-screens documents
+`gestureEnabled` as independent of `animation`), but there is no iOS build to
+confirm it on yet.
+
+**Not done, deliberately:** D5's "a withdrawn one fades before it leaves".
+No row leaves a screen in the app today. A withdrawn student stays on their
+detail screen with a new status, and withdrawn homework stays on the teacher's
+list marked "withdrawn", so there is no departure to fade. If a screen ever
+removes a row in place, that is where it belongs.
 
 ---
 

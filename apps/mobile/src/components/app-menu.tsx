@@ -17,6 +17,7 @@ import { groupDestinations, type Destination } from "../lib/navigation/destinati
 import { signedInWebUrl } from "../lib/web-handoff";
 import { staffWebHandoff } from "../lib/api/staff-auth";
 import { useTheme } from "../theme/theme-provider";
+import { useReducedMotion } from "../theme/reduced-motion";
 import { THEME_LABELS, THEME_PREFERENCES } from "../theme/preference";
 import { fontSizes, fonts, radii, spacing } from "../theme/tokens";
 
@@ -81,6 +82,10 @@ export function AppMenu({
   onSignOut: () => void;
 }) {
   const { colors, preference, setPreference } = useTheme();
+  // The sheet's slide predates Part 2 and stays — it is what tells you the
+  // menu came from the bottom and goes back there. But D6 says every
+  // transition is off under reduce motion, and this is one.
+  const reduced = useReducedMotion();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const sections = groupDestinations(destinations);
@@ -115,7 +120,7 @@ export function AppMenu({
   }
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose} statusBarTranslucent>
+    <Modal visible={visible} transparent animationType={reduced === false ? "slide" : "none"} onRequestClose={onClose} statusBarTranslucent>
       <View style={styles.overlay}>
         <Pressable
           style={styles.backdrop}

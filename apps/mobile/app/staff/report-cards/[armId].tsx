@@ -31,6 +31,7 @@ import {
 import { useTheme } from "../../../src/theme/theme-provider";
 import { fontSizes, fonts, radii, spacing } from "../../../src/theme/tokens";
 import { EmptyState, ScreenHeader, Skeleton } from "../../../src/components/layout";
+import { Appear, Settle } from "../../../src/components/motion";
 import {
   Body,
   Button,
@@ -125,6 +126,9 @@ export default function FormCommentsScreen() {
   const [notice, setNotice] = useState<string | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
   const [savingId, setSavingId] = useState<string | null>(null);
+  // Which row was last saved, and when — drives the row's settle wash. The
+  // timestamp, not just the id, so saving the same row twice settles twice.
+  const [saved, setSaved] = useState<{ studentId: string; at: number } | null>(null);
 
   useFocusEffect(
     useCallback(() => {
@@ -227,6 +231,7 @@ export default function FormCommentsScreen() {
         ),
       );
       if (draftsKey) clearDraftCells(draftsKey, [input.studentId]);
+      setSaved({ studentId: input.studentId, at: Date.now() });
       setNotice("Saved to the report card.");
     },
     onError: (error: unknown) => {
@@ -292,139 +297,145 @@ export default function FormCommentsScreen() {
   return (
     <Screen>
       {header}
-      <KeyboardAvoidingView
-        style={styles.fill}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-      >
-        <ScreenHeader
-          title="Report card comments"
-          subtitle={`${
-            arm ? arm.name + " · " : ""
-          }Nothing reaches a report card until you save it.`}
-        />
-
-        {rows.length === 0 ? (
-          <EmptyState
-            icon="document-outline"
-            title="No report cards yet"
-            body="An administrator builds them once subject marks are in. Your comments can be written after that."
-          />
-        ) : locked ? (
-          <Notice tone="warning">
-            These report cards have moved past the form teacher stage, so the comments are frozen.
-          </Notice>
-        ) : null}
-
-        {rows.length > 0 && !locked && (
-          <View style={styles.actions}>
-            <Button
-              title={drafting ? "Drafting…" : "Draft comments with AI"}
-              loading={generate.isPending || drafting}
-              disabled={generate.isPending || drafting}
-              onPress={() => generate.mutate()}
-            />
-          </View>
-        )}
-
-        {notice ? <Notice tone="info">{notice}</Notice> : null}
-        {failure ? <Notice tone="danger">{failure}</Notice> : null}
-
-        <ScrollView
+      {/* The whole block replaces the skeleton above, so it arrives as one
+          (D5) — never row by row. */}
+      <Appear style={styles.fill}>
+        <KeyboardAvoidingView
           style={styles.fill}
-          contentContainerStyle={styles.list}
-          keyboardShouldPersistTaps="handled"
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
         >
-          {rows.map((row) => {
-            const student = byStudent.get(row.studentId);
-            const accepted = row.comment ?? null;
-            const suggestion = row.suggestion ?? null;
-            const draft = drafts[row.studentId];
-            const value = draft ?? accepted ?? suggestion ?? "";
-            const edited = draft !== undefined && draft !== (accepted ?? "");
-            const unsaved = accepted === null && suggestion !== null;
-            const saving = savingId === row.studentId;
+          <ScreenHeader
+            title="Report card comments"
+            subtitle={`${
+              arm ? arm.name + " · " : ""
+            }Nothing reaches a report card until you save it.`}
+          />
 
-            return (
-              <Card key={row.studentId} style={styles.row}>
-                <View style={styles.rowHead}>
-                  <Body>{fullName(student)}</Body>
-                  <Label>
-                    {row.overallAverage === null ? "no average yet" : `${row.overallAverage}%`}
-                    {row.overallPosition === null ? "" : ` · position ${row.overallPosition}`}
-                  </Label>
-                </View>
+          {rows.length === 0 ? (
+            <EmptyState
+              icon="document-outline"
+              title="No report cards yet"
+              body="An administrator builds them once subject marks are in. Your comments can be written after that."
+            />
+          ) : locked ? (
+            <Notice tone="warning">
+              These report cards have moved past the form teacher stage, so the comments are frozen.
+            </Notice>
+          ) : null}
 
-                {row.editable ? (
-                  <>
-                    <TextInput
-                      value={value}
-                      onChangeText={(text) => {
-                        if (!draftsKey) return;
-                        setFailure(null);
-                        if (text === (accepted ?? "")) {
-                          clearDraftCells(draftsKey, [row.studentId]);
-                          return;
-                        }
-                        setDraftCell(draftsKey, row.studentId, text);
-                      }}
-                      multiline
-                      maxLength={2000}
-                      editable={!saving}
-                      placeholder={
-                        drafting
-                          ? "Drafting…"
-                          : "No draft yet — write one, or press Draft comments with AI."
-                      }
-                      placeholderTextColor={colors.mutedForeground}
-                      accessibilityLabel={`Overall comment for ${fullName(student)}`}
-                      style={[
-                        styles.input,
-                        {
-                          color: colors.foreground,
-                          backgroundColor: colors.card,
-                          borderColor: edited || unsaved ? colors.warning : colors.border,
-                        },
-                      ]}
-                    />
-                    <View style={styles.rowFoot}>
+          {rows.length > 0 && !locked && (
+            <View style={styles.actions}>
+              <Button
+                title={drafting ? "Drafting…" : "Draft comments with AI"}
+                loading={generate.isPending || drafting}
+                disabled={generate.isPending || drafting}
+                onPress={() => generate.mutate()}
+              />
+            </View>
+          )}
+
+          {notice ? <Notice tone="info">{notice}</Notice> : null}
+          {failure ? <Notice tone="danger">{failure}</Notice> : null}
+
+          <ScrollView
+            style={styles.fill}
+            contentContainerStyle={styles.list}
+            keyboardShouldPersistTaps="handled"
+          >
+            {rows.map((row) => {
+              const student = byStudent.get(row.studentId);
+              const accepted = row.comment ?? null;
+              const suggestion = row.suggestion ?? null;
+              const draft = drafts[row.studentId];
+              const value = draft ?? accepted ?? suggestion ?? "";
+              const edited = draft !== undefined && draft !== (accepted ?? "");
+              const unsaved = accepted === null && suggestion !== null;
+              const saving = savingId === row.studentId;
+
+              return (
+                <Settle key={row.studentId} trigger={saved?.studentId === row.studentId ? saved.at : null}>
+                  <Card style={styles.row}>
+                    <View style={styles.rowHead}>
+                      <Body>{fullName(student)}</Body>
                       <Label>
-                        {unsaved || edited
-                          ? "Draft — not on the report card"
-                          : accepted
-                            ? "On the report card"
-                            : "Nothing saved yet"}
+                        {row.overallAverage === null ? "no average yet" : `${row.overallAverage}%`}
+                        {row.overallPosition === null ? "" : ` · position ${row.overallPosition}`}
                       </Label>
-                      <Button
-                        title={saving ? "Saving" : "Save"}
-                        loading={saving}
-                        disabled={saving || value.trim().length === 0 || (!edited && !unsaved)}
-                        onPress={() =>
-                          save.mutate({
-                            studentId: row.studentId,
-                            reportCardId: row.reportCardId,
-                            comment: value.trim(),
-                          })
-                        }
-                      />
                     </View>
-                  </>
-                ) : (
-                  <>
-                    <Body muted>{accepted ?? "No comment was written before this card locked."}</Body>
-                    <Label>Locked — this card has moved past the form teacher stage.</Label>
-                  </>
-                )}
-              </Card>
-            );
-          })}
-        </ScrollView>
 
-        {Object.keys(drafts).length > 0 ? (
-          <Body muted>
-            Unsaved comments stay if the app locks, but are lost if you close the app.
-          </Body>
-        ) : null}
-      </KeyboardAvoidingView>
+                    {row.editable ? (
+                      <>
+                        <TextInput
+                          value={value}
+                          onChangeText={(text) => {
+                            if (!draftsKey) return;
+                            setFailure(null);
+                            if (text === (accepted ?? "")) {
+                              clearDraftCells(draftsKey, [row.studentId]);
+                              return;
+                            }
+                            setDraftCell(draftsKey, row.studentId, text);
+                          }}
+                          multiline
+                          maxLength={2000}
+                          editable={!saving}
+                          placeholder={
+                            drafting
+                              ? "Drafting…"
+                              : "No draft yet — write one, or press Draft comments with AI."
+                          }
+                          placeholderTextColor={colors.mutedForeground}
+                          accessibilityLabel={`Overall comment for ${fullName(student)}`}
+                          style={[
+                            styles.input,
+                            {
+                              color: colors.foreground,
+                              backgroundColor: colors.card,
+                              borderColor: edited || unsaved ? colors.warning : colors.border,
+                            },
+                          ]}
+                        />
+                        <View style={styles.rowFoot}>
+                          <Label>
+                            {unsaved || edited
+                              ? "Draft — not on the report card"
+                              : accepted
+                                ? "On the report card"
+                                : "Nothing saved yet"}
+                          </Label>
+                          <Button
+                            title={saving ? "Saving" : "Save"}
+                            loading={saving}
+                            disabled={saving || value.trim().length === 0 || (!edited && !unsaved)}
+                            onPress={() =>
+                              save.mutate({
+                                studentId: row.studentId,
+                                reportCardId: row.reportCardId,
+                                comment: value.trim(),
+                              })
+                            }
+                          />
+                        </View>
+                      </>
+                    ) : (
+                      <>
+                        <Body muted>{accepted ?? "No comment was written before this card locked."}</Body>
+                        <Label>Locked — this card has moved past the form teacher stage.</Label>
+                      </>
+                    )}
+                  </Card>
+                </Settle>
+              );
+            })}
+          </ScrollView>
+
+          {Object.keys(drafts).length > 0 ? (
+            <Body muted>
+              Unsaved comments stay if the app locks, but are lost if you close the app.
+            </Body>
+          ) : null}
+        </KeyboardAvoidingView>
+      </Appear>
     </Screen>
   );
 }

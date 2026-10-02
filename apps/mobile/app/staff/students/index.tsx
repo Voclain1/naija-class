@@ -16,6 +16,7 @@ import {
   ScreenHeader,
   Skeleton,
 } from "../../../src/components/layout";
+import { Appear } from "../../../src/components/motion";
 
 // CP4c — the school's students: search, open one, or add one.
 //
@@ -103,44 +104,52 @@ export default function StudentsScreen() {
               </CenteredMessage>
             ) : null}
 
-            {students.data && rows.length === 0 ? (
-              term ? (
-                <EmptyState
-                  icon="search-outline"
-                  title="No match"
-                  body={`No student matches "${term}". Check the spelling or the admission number.`}
-                />
-              ) : (
-                <EmptyState
-                  icon="people-outline"
-                  title="No students yet"
-                  body="Add your first student with the Add button above."
-                />
-              )
-            ) : null}
+            {/* The results arrive as ONE block where the skeleton was (D5). Not
+                per row: a roster opened forty times a day must not replay a
+                staggered entrance forty times. "Show more" appends to the
+                mounted block, so later pages do not fade again. */}
+            {students.data ? (
+              <Appear style={styles.results}>
+                {rows.length === 0 ? (
+                  term ? (
+                    <EmptyState
+                      icon="search-outline"
+                      title="No match"
+                      body={`No student matches "${term}". Check the spelling or the admission number.`}
+                    />
+                  ) : (
+                    <EmptyState
+                      icon="people-outline"
+                      title="No students yet"
+                      body="Add your first student with the Add button above."
+                    />
+                  )
+                ) : null}
 
-            {rows.map((student) => (
-              <ListRow
-                key={student.id}
-                icon="person-outline"
-                title={[student.firstName, student.lastName].filter(Boolean).join(" ")}
-                subtitle={`${student.admissionNumber}${
-                  student.currentEnrollment?.classArm.name
-                    ? ` · ${student.currentEnrollment.classArm.name}`
-                    : " · not placed"
-                }${student.status === "ACTIVE" ? "" : ` · ${student.status.toLowerCase()}`}`}
-                onPress={() => router.push(`/staff/students/${student.id}`)}
-              />
-            ))}
+                {rows.map((student) => (
+                  <ListRow
+                    key={student.id}
+                    icon="person-outline"
+                    title={[student.firstName, student.lastName].filter(Boolean).join(" ")}
+                    subtitle={`${student.admissionNumber}${
+                      student.currentEnrollment?.classArm.name
+                        ? ` · ${student.currentEnrollment.classArm.name}`
+                        : " · not placed"
+                    }${student.status === "ACTIVE" ? "" : ` · ${student.status.toLowerCase()}`}`}
+                    onPress={() => router.push(`/staff/students/${student.id}`)}
+                  />
+                ))}
 
-            {students.hasNextPage ? (
-              <Button
-                title="Show more"
-                variant="secondary"
-                loading={students.isFetchingNextPage}
-                disabled={students.isFetchingNextPage}
-                onPress={() => void students.fetchNextPage()}
-              />
+                {students.hasNextPage ? (
+                  <Button
+                    title="Show more"
+                    variant="secondary"
+                    loading={students.isFetchingNextPage}
+                    disabled={students.isFetchingNextPage}
+                    onPress={() => void students.fetchNextPage()}
+                  />
+                ) : null}
+              </Appear>
             ) : null}
           </>
         )}
@@ -151,6 +160,7 @@ export default function StudentsScreen() {
 
 const styles = StyleSheet.create({
   content: { gap: spacing.sm, paddingBottom: spacing.xl },
+  results: { gap: spacing.sm },
   search: {
     minHeight: 48,
     borderWidth: 1,
