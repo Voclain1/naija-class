@@ -135,9 +135,13 @@ export default function AnnouncementsPage() {
             {state.items.map((item) => (
               <li
                 key={item.id}
-                // Unread is the "New" badge alone. No coloured edge — the project
-                // does not use accent borders (2026-10-02).
-                className="flex flex-col gap-1 rounded-lg border bg-card p-4 shadow-sm"
+                // Unread is a tinted background plus the "New" badge — never a
+                // coloured edge; the project does not use accent borders
+                // (2026-10-02, CLAUDE.md "Design system").
+                className={[
+                  "flex flex-col gap-1 rounded-lg border p-4 shadow-sm",
+                  item.readAt === null ? "bg-primary/5" : "bg-card",
+                ].join(" ")}
               >
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="font-medium">{item.title}</span>

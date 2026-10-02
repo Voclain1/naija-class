@@ -217,18 +217,20 @@ export function StatRow({
   const body = (
     <div
       className={cn(
-        "flex flex-col gap-0.5 rounded-lg border bg-card p-4 transition-colors motion-reduce:transition-none",
+        "flex flex-col gap-0.5 rounded-lg border p-4 transition-colors motion-reduce:transition-none",
+        // Warning is a tinted background and an amber figure, never an accent
+        // edge (CLAUDE.md "Design system", 2026-10-02).
+        tone === "warning" ? "bg-amber-500/10" : "bg-card",
         href ? "hover:border-primary/60" : "",
       )}
     >
-      {/* Warning is carried by the figure's colour, not an accent edge — the
-          project does not use them (2026-10-02). amber-700 rather than the
-          brand's Gold Spark: on Paper, gold text is 2.0:1 and amber-700 is
-          4.6:1 (AA). */}
+      {/* amber-700 rather than the brand's Gold Spark: on Paper, gold text is
+          2.0:1 and amber-700 is 4.6:1 (AA). amber-400 in dark mode, where 700
+          would sink into the background. */}
       <span
         className={cn(
           "font-serif text-2xl font-medium",
-          tone === "warning" ? "text-amber-700" : "text-foreground",
+          tone === "warning" ? "text-amber-700 dark:text-amber-400" : "text-foreground",
         )}
       >
         {value}

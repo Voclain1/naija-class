@@ -675,9 +675,11 @@ config) is genuinely new — it did not exist before this initiative.
 **No accent borders — anywhere (owner's decision, 2026-10-02).** No thick or
 coloured edge on one side of a box: no emerald stripe for "unread", no red edge
 for a concern, no gold rule beside a quote — on web, portal, mobile, or in HTML
-the API renders (receipts). When a box needs to say something, it says it in
-words: a "New" badge, a coloured "Concern" label, amber text on a warning
-figure. Enforced by `apps/web/src/no-accent-borders.spec.ts`, which scans every
+the API renders (receipts). When a box needs to say something, **tint its
+background** instead — unread announcements, a concern versus a commendation, a
+warning figure — and say it in words too: a "New" badge, a coloured "Concern"
+label, amber text on the figure. The tint is for the eye, the word is for
+anyone who cannot tell two backgrounds apart. Enforced by `apps/web/src/no-accent-borders.spec.ts`, which scans every
 UI workspace for the Tailwind, React Native and CSS forms; a plain 1px
 `border-l`/`border-r` (table gridlines, split-button dividers) is allowed.
 

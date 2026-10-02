@@ -50,7 +50,11 @@ export function AnnouncementFeed({
       {items.map((item) => {
         const unread = item.readAt === null;
         return (
-          <Card key={item.id}>
+          // Unread is a tinted card plus the "New" badge below — never a
+          // coloured edge (CLAUDE.md "Design system", 2026-10-02). "0F" is ~6%
+          // alpha on the 7-digit hex, the mobile spelling of the portal's
+          // bg-primary/5.
+          <Card key={item.id} style={unread ? { backgroundColor: colors.primary + "0F" } : null}>
             <View style={styles.row}>
               <View style={styles.titleRow}>
                 <Heading>{item.title}</Heading>
@@ -59,10 +63,9 @@ export function AnnouncementFeed({
                     <Text style={[styles.badgeText, { color: colors.background }]}>Urgent</Text>
                   </View>
                 ) : null}
-                {/* Unread is a word, the same "New" the portal shows. It
-                    replaces a coloured left edge — the project does not use
-                    accent borders (2026-10-02) — and a word also does not
-                    depend on telling one colour from another. */}
+                {/* The same "New" the portal shows: the tint says it to the
+                    eye, the word says it to anyone who cannot tell the two
+                    backgrounds apart. */}
                 {unread ? (
                   <View style={[styles.badge, { backgroundColor: colors.primary + "1A" }]}>
                     <Text style={[styles.badgeText, { color: colors.primary }]}>New</Text>
