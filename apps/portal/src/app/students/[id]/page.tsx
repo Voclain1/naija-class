@@ -25,6 +25,8 @@ import type {
 } from "@school-kit/types";
 import { invoiceStatusLabel } from "@school-kit/types";
 
+import { Appear, EmptyState, PageHeader, PageSkeleton, SectionHeader } from "@school-kit/ui";
+
 import { SignOutButton } from "@/components/sign-out-button";
 import {
   buildLoginUrl,
@@ -239,9 +241,7 @@ export default function StudentDetailPage() {
         <SignOutButton />
       </div>
 
-      {state.kind === "loading" && (
-        <p className="text-sm text-muted-foreground">Loading…</p>
-      )}
+      {state.kind === "loading" && <PageSkeleton rows={4} />}
 
       {state.kind === "not-found" && (
         <p role="alert" className="text-sm text-destructive">
@@ -256,18 +256,16 @@ export default function StudentDetailPage() {
       )}
 
       {state.kind === "loaded" && (
-        <>
-          <header className="flex flex-col gap-1">
-            <h1 className="text-2xl font-semibold tracking-tight">
-              {state.student.firstName} {state.student.lastName}
-            </h1>
-            <p className="text-sm text-muted-foreground">
-              {state.student.admissionNumber}
-              {state.student.currentEnrollment
+        // The whole page arrives as one, where the skeleton was (D5).
+        <Appear className="flex flex-col gap-6">
+          <PageHeader
+            title={`${state.student.firstName} ${state.student.lastName}`}
+            subtitle={`${state.student.admissionNumber}${
+              state.student.currentEnrollment
                 ? ` · ${state.student.currentEnrollment.classArm.classLevel.name} ${state.student.currentEnrollment.classArm.name}`
-                : " · Not enrolled this term"}
-            </p>
-          </header>
+                : " · Not enrolled this term"
+            }`}
+          />
 
           {/* Account access sits directly under the header, above both
               weekly updates and invoices. It is the only control on this page
@@ -312,7 +310,7 @@ export default function StudentDetailPage() {
               doesn't do this" is not something a parent needs told. */}
           {state.summaries.length > 0 && (
             <section className="flex flex-col gap-3">
-              <h2 className="text-lg font-semibold tracking-tight">Weekly updates</h2>
+              <SectionHeader title="Weekly updates" />
               {state.summaries.map((s) => (
                 <article key={s.id} className="rounded-lg border bg-card p-4">
                   <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
@@ -325,12 +323,13 @@ export default function StudentDetailPage() {
           )}
 
           <section className="flex flex-col gap-3">
-            <h2 className="text-lg font-semibold tracking-tight">Invoices</h2>
+            <SectionHeader title="Invoices" />
 
             {state.invoices.length === 0 && (
-              <div className="rounded-lg border border-dashed bg-card p-6 text-center text-sm text-muted-foreground">
-                No invoices yet for this child.
-              </div>
+              <EmptyState
+                title="No invoices yet for this child."
+                body="When the school issues one, it appears here with a way to pay."
+              />
             )}
 
             {state.invoices.map((invoice) => (
@@ -349,7 +348,7 @@ export default function StudentDetailPage() {
                 />
               )}
           </section>
-        </>
+        </Appear>
       )}
     </main>
   );

@@ -20,6 +20,8 @@ import {
   reasonFromErrorCode,
 } from "@/lib/session-end";
 
+import { Appear, EmptyState, PageHeader, PageSkeleton } from "@school-kit/ui";
+
 import { SignOutButton } from "@/components/sign-out-button";
 
 type LoadState =
@@ -116,32 +118,28 @@ export default function DashboardPage() {
 
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-2xl flex-col gap-6 px-4 py-10">
-      {/* Sign out lives in the header of every authenticated surface (F-06).
-          flex-wrap + gap so a narrow phone stacks the control under the
-          heading rather than crushing both onto one line. */}
-      <header className="flex flex-wrap items-start justify-between gap-4">
-        <div className="flex flex-col gap-1">
-          <h1 className="text-2xl font-semibold tracking-tight">Your children</h1>
-          <p className="text-sm text-muted-foreground">
-            Select a child to see their fees and invoices.
-          </p>
-          {/* Phase 8 / CP1 — the school calendar is school-wide, not per child. */}
-          <Link href="/calendar" className="text-sm font-medium text-primary hover:underline">
-            School calendar →
-          </Link>
-          {/* Announcements are school-wide too, and carry the one number on
-              this page that decays: an unread count a parent has not seen. */}
-          <Link href="/announcements" className="text-sm font-medium text-primary hover:underline">
-            From the school
-            {unread > 0 ? ` (${unread} new)` : ""} →
-          </Link>
-        </div>
-        <SignOutButton />
-      </header>
+      {/* Sign out lives in the header of every authenticated surface (F-06) —
+          PageHeader's actions slot, which wraps below the title on a narrow
+          phone rather than crushing both onto one line. */}
+      <PageHeader
+        title="Your children"
+        subtitle="Select a child to see their fees and invoices."
+        actions={<SignOutButton />}
+      />
+      {/* School-wide, not per child, so they sit above the list rather than
+          inside any one child's page. Announcements carry the one number on
+          this page that decays: an unread count a parent has not seen. */}
+      <nav className="-mt-3 flex flex-wrap gap-x-4 gap-y-1" aria-label="School">
+        <Link href="/calendar" className="text-sm font-medium text-primary hover:underline">
+          School calendar →
+        </Link>
+        <Link href="/announcements" className="text-sm font-medium text-primary hover:underline">
+          From the school
+          {unread > 0 ? ` (${unread} new)` : ""} →
+        </Link>
+      </nav>
 
-      {state.kind === "loading" && (
-        <p className="text-sm text-muted-foreground">Loading…</p>
-      )}
+      {state.kind === "loading" && <PageSkeleton rows={2} />}
 
       {state.kind === "error" && (
         <p role="alert" className="text-sm text-destructive">
@@ -150,37 +148,41 @@ export default function DashboardPage() {
       )}
 
       {state.kind === "loaded" && state.students.length === 0 && (
-        <div className="rounded-lg border border-dashed bg-card p-6 text-center text-sm text-muted-foreground">
-          No children are linked to your account yet. Contact the school if
-          this doesn&apos;t look right.
-        </div>
+        <EmptyState
+          title="No children are linked to your account yet."
+          body="Contact the school if this doesn't look right."
+        />
       )}
 
       {state.kind === "loaded" && state.students.length > 0 && (
-        <ul className="flex flex-col gap-3">
-          {state.students.map((student) => (
-            <li key={student.id}>
-              <Link
-                href={`/students/${student.id}`}
-                className="flex items-center justify-between gap-3 rounded-lg border bg-card p-4 shadow-sm transition-colors hover:bg-accent"
-              >
-                <div className="flex flex-col gap-0.5">
-                  <span className="font-medium">
-                    {student.firstName} {student.lastName}
+        // Appear wraps the LIST, not each child — D5 rules out staggered
+        // entrances.
+        <Appear>
+          <ul className="flex flex-col gap-3">
+            {state.students.map((student) => (
+              <li key={student.id}>
+                <Link
+                  href={`/students/${student.id}`}
+                  className="flex items-center justify-between gap-3 rounded-lg border bg-card p-4 shadow-sm transition-colors hover:bg-accent"
+                >
+                  <div className="flex flex-col gap-0.5">
+                    <span className="font-medium">
+                      {student.firstName} {student.lastName}
+                    </span>
+                    <span className="text-sm text-muted-foreground">
+                      {student.currentEnrollment
+                        ? `${student.currentEnrollment.classArm.classLevel.name} ${student.currentEnrollment.classArm.name}`
+                        : "Not enrolled this term"}
+                    </span>
+                  </div>
+                  <span aria-hidden className="text-muted-foreground">
+                    →
                   </span>
-                  <span className="text-sm text-muted-foreground">
-                    {student.currentEnrollment
-                      ? `${student.currentEnrollment.classArm.classLevel.name} ${student.currentEnrollment.classArm.name}`
-                      : "Not enrolled this term"}
-                  </span>
-                </div>
-                <span aria-hidden className="text-muted-foreground">
-                  →
-                </span>
-              </Link>
-            </li>
-          ))}
-        </ul>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </Appear>
       )}
       {/* D12 — the one contact path this product offers a family, and it is
           the school itself rather than any member of staff (D11). */}

@@ -15,6 +15,8 @@ import { useEffect, useRef, useState } from "react";
 
 import { callSchoolHref, type AnnouncementFeedItemDto, type AnnouncementFeedResponse, type SchoolContactResponse } from "@school-kit/types";
 
+import { Appear, EmptyState, PageHeader, PageSkeleton } from "@school-kit/ui";
+
 import { SignOutButton } from "@/components/sign-out-button";
 import { buildLoginUrl, errorCodeFromBody, reasonFromErrorCode } from "@/lib/session-end";
 
@@ -101,18 +103,18 @@ export default function AnnouncementsPage() {
 
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-2xl flex-col gap-6 px-4 py-10">
-      <header className="flex flex-wrap items-start justify-between gap-4">
-        <div className="flex flex-col gap-1">
-          <Link href="/" className="text-sm text-muted-foreground hover:underline">
-            ← Your children
-          </Link>
-          <h1 className="text-2xl font-semibold tracking-tight">From the school</h1>
-          <p className="text-sm text-muted-foreground">Announcements sent to you and to your children&apos;s classes.</p>
-        </div>
-        <SignOutButton />
-      </header>
+      <div className="flex flex-col gap-2">
+        <Link href="/" className="self-start text-sm text-muted-foreground hover:underline">
+          ← Your children
+        </Link>
+        <PageHeader
+          title="From the school"
+          subtitle="Announcements sent to you and to your children's classes."
+          actions={<SignOutButton />}
+        />
+      </div>
 
-      {state.kind === "loading" && <p className="text-sm text-muted-foreground">Loading…</p>}
+      {state.kind === "loading" && <PageSkeleton rows={3} />}
 
       {state.kind === "error" && (
         <p role="alert" className="text-sm text-destructive">
@@ -121,39 +123,42 @@ export default function AnnouncementsPage() {
       )}
 
       {state.kind === "loaded" && state.items.length === 0 && (
-        <div className="rounded-lg border border-dashed bg-card p-6 text-center text-sm text-muted-foreground">
-          The school hasn&apos;t sent anything yet.
-        </div>
+        <EmptyState
+          title="The school hasn't sent anything yet."
+          body="Messages from the school to you or your children's classes will appear here."
+        />
       )}
 
       {state.kind === "loaded" && state.items.length > 0 && (
-        <ul className="flex flex-col gap-3">
-          {state.items.map((item) => (
-            <li
-              key={item.id}
-              className={[
-                "flex flex-col gap-1 rounded-lg border bg-card p-4 shadow-sm",
-                // The unread mark is a left edge rather than a dot: it survives
-                // a small screen and does not compete with the urgent badge.
-                item.readAt === null ? "border-l-4 border-l-primary" : "",
-              ].join(" ")}
-            >
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="font-medium">{item.title}</span>
-                {item.urgent && (
-                  <span className="rounded-full bg-destructive/10 px-2 py-0.5 text-xs font-medium text-destructive">
-                    Urgent
-                  </span>
-                )}
-                {item.readAt === null && (
-                  <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">New</span>
-                )}
-              </div>
-              <span className="text-xs text-muted-foreground">{when(item.createdAt)}</span>
-              <p className="whitespace-pre-wrap text-sm">{item.body}</p>
-            </li>
-          ))}
-        </ul>
+        <Appear>
+          <ul className="flex flex-col gap-3">
+            {state.items.map((item) => (
+              <li
+                key={item.id}
+                className={[
+                  "flex flex-col gap-1 rounded-lg border bg-card p-4 shadow-sm",
+                  // The unread mark is a left edge rather than a dot: it survives
+                  // a small screen and does not compete with the urgent badge.
+                  item.readAt === null ? "border-l-4 border-l-primary" : "",
+                ].join(" ")}
+              >
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="font-medium">{item.title}</span>
+                  {item.urgent && (
+                    <span className="rounded-full bg-destructive/10 px-2 py-0.5 text-xs font-medium text-destructive">
+                      Urgent
+                    </span>
+                  )}
+                  {item.readAt === null && (
+                    <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">New</span>
+                  )}
+                </div>
+                <span className="text-xs text-muted-foreground">{when(item.createdAt)}</span>
+                <p className="whitespace-pre-wrap text-sm">{item.body}</p>
+              </li>
+            ))}
+          </ul>
+        </Appear>
       )}
       {/* D12 — the reply path, and the only one (D11 refuses general
           messaging). A parent who has just read something about their child
