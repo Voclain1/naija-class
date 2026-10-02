@@ -18,13 +18,14 @@ import type { GuardianAuthContext } from "./guardian-auth-context";
 // What we DELIBERATELY DON'T: email, name. Handlers that need guardian
 // contact info re-fetch via withTenant.
 //
-// Unlike AuthGuard, there is no user_is_active-equivalent check here —
-// Guardian has no is_active column (flagged as a follow-up gap in the
-// 20260716000000_phase_4_slice_2_guardian_auth migration header; the only
-// way to revoke portal access today is clearing passwordHash, which this
-// guard doesn't need to check since a cleared passwordHash cannot have
-// produced a valid session in the first place — sessions are minted only
-// on successful login/accept, both of which require a passwordHash to exist).
+// portal_enabled is this guard's user_is_active (2026-10-02, migration
+// 20261002120000_guardian_portal_deactivation). It is re-read on every
+// request — there is no cache here — so a school switching a parent's access
+// off takes effect on that parent's next request, whatever sessions they
+// hold. Deactivation also deletes those sessions; this check is what makes
+// the switch authoritative even if that delete had not happened. Before it,
+// the only lever was clearing passwordHash, which stopped future sign-ins but
+// left a live session running for up to 30 days.
 const BEARER_PREFIX = "Bearer ";
 
 interface ResolveGuardianSessionRow {
@@ -32,6 +33,7 @@ interface ResolveGuardianSessionRow {
   guardian_id: string;
   school_id: string;
   expires_at: Date;
+  portal_enabled: boolean;
 }
 
 @Injectable()
@@ -64,6 +66,14 @@ export class GuardianAuthGuard implements CanActivate {
     if (row.expires_at.getTime() <= Date.now()) {
       // Read-only hot path, same as AuthGuard — no delete here.
       throw new UnauthorizedError("SESSION_EXPIRED", "Session has expired. Please sign in again.");
+    }
+
+    if (!row.portal_enabled) {
+      // The same code AuthGuard uses for a deactivated staff account, on
+      // purpose: the app already maps USER_INACTIVE to "Your account is no
+      // longer active. Contact your school administrator.", which is exactly
+      // what a parent needs to hear, and the portal maps it the same way.
+      throw new UnauthorizedError("USER_INACTIVE", "Your school has switched off portal access for this account.");
     }
 
     req.guardian = {

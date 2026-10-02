@@ -64,6 +64,12 @@ export function portalActions(status: GuardianPortalStatusDto): PortalAction[] {
       return ["resend", "revoke"];
     case "ACTIVE":
       return [];
+    // The school switched access off (2026-10-02). Invite and resend are
+    // refused until it is turned back on, and that switch lives on the web
+    // Guardians roster — a decision that ends someone's access, made where
+    // the full roster and its confirmation are.
+    case "DEACTIVATED":
+      return [];
   }
 }
 
@@ -79,6 +85,8 @@ export function describePortalStatus(status: GuardianPortalStatusDto): string {
       return "Their invitation ran out before they used it";
     case "ACTIVE":
       return "Using the parent app";
+    case "DEACTIVATED":
+      return "The school has switched off their access to the parent app";
   }
 }
 

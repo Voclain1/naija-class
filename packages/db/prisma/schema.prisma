@@ -864,10 +864,17 @@ model Guardian {
   // User already blends profile + auth in one row. All four nullable except
   // emailVerified — every pre-Phase-4 guardian was never invited, never
   // logged in, which NULL/false both represent correctly with no backfill.
-  passwordHash    String?   @map("password_hash")
-  emailVerified   Boolean   @default(false) @map("email_verified")
-  lastLoginAt     DateTime? @map("last_login_at")
-  portalInvitedAt DateTime? @map("portal_invited_at")
+  passwordHash     String?   @map("password_hash")
+  emailVerified    Boolean   @default(false) @map("email_verified")
+  lastLoginAt      DateTime? @map("last_login_at")
+  portalInvitedAt  DateTime? @map("portal_invited_at")
+  // 2026-10-02 — the school's lever to switch a parent's portal access off.
+  // NULL = enabled. A timestamp scoped to PORTAL access, not an is_active on
+  // the guardian: the guardian stays a contact (absence SMS still goes to
+  // them). passwordHash is left alone, so reactivating needs no re-invite.
+  // Read by auth_resolve_guardian_session (portal_enabled) and excluded by the
+  // login and password-reset lookups — see the migration header.
+  portalDisabledAt DateTime? @map("portal_disabled_at")
 
   occupation String?
   employer   String?

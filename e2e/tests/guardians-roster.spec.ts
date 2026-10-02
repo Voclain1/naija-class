@@ -19,7 +19,9 @@ import { createApiContext, loginAsAdmin, loginAsTeacher, uniqueSuffix } from "..
 //      reload, and is applied by the server.
 //   3. Invite, Resend and Cancel work from the roster — and a replaced link
 //      really stops working on the portal.
-//   4. An active parent and a parent with no email are offered NO actions.
+//   4. A parent with no email is offered NO actions; an active parent is
+//      offered exactly one — Switch off access (2026-10-02) — which works
+//      end to end, behind a confirmation, and can be turned back on.
 //   5. An expired invitation can be sent again.
 //   6. A bursar does not see Guardians, and the API refuses them.
 
@@ -103,11 +105,36 @@ test("the guardian roster shows every parent's portal access and lets an owner a
     await expect(rowOf(page, "Adaeze")).toContainText("Portal active");
     await expect(rowOf(page, "Chioma")).toContainText("No email");
 
-    // ---- 4. No actions for an active parent or a parent without email -------
-    await expect(rowOf(page, "Adaeze").getByRole("button")).toHaveCount(0);
+    // ---- 4. Actions for an active parent and a parent without email --------
+    // An active parent is never offered an invite (staff must never be handed
+    // a set-password link for them) — only the school's switch, since
+    // 2026-10-02. A parent with no email has nothing to act on.
+    await expect(rowOf(page, "Adaeze").getByRole("button")).toHaveCount(1);
+    await expect(rowOf(page, "Adaeze").getByRole("button", { name: "Switch off access" })).toBeVisible();
     await expect(rowOf(page, "Chioma").getByRole("button")).toHaveCount(0);
     await expect(rowOf(page, "Chioma")).toContainText("Add an email from their child's page");
     await page.screenshot({ path: `${SHOTS}/1-roster.png`, fullPage: true });
+
+    // ---- 4b. Switch an active parent's access off, then back on -------------
+    await rowOf(page, "Adaeze").getByRole("button", { name: "Switch off access" }).click();
+    const confirm = page.getByRole("dialog");
+    await expect(confirm).toContainText("signed out of the portal and the app straight away");
+    await page.screenshot({ path: `${SHOTS}/1b-switch-off-confirm.png`, fullPage: true });
+    await confirm.getByRole("button", { name: "Switch off access" }).click();
+    await expect(confirm).toBeHidden();
+    await expect(rowOf(page, "Adaeze")).toContainText("Access switched off");
+    // Switched off: the ONLY action is turning it back on — no invite.
+    await expect(rowOf(page, "Adaeze").getByRole("button")).toHaveCount(1);
+    await expect(rowOf(page, "Adaeze").getByRole("button", { name: "Turn access back on" })).toBeVisible();
+    // And it is a real server state, not a client flag.
+    const off = await withTenant(admin.schoolId, (db) =>
+      db.guardian.findUniqueOrThrow({ where: { id: ids.active }, select: { portalDisabledAt: true } }),
+    );
+    expect(off.portalDisabledAt).not.toBeNull();
+
+    await rowOf(page, "Adaeze").getByRole("button", { name: "Turn access back on" }).click();
+    await expect(rowOf(page, "Adaeze")).toContainText("Portal active");
+    await expect(rowOf(page, "Adaeze").getByRole("button", { name: "Switch off access" })).toBeVisible();
 
     // ---- 2. Server-side filter, kept in the URL -----------------------------
     const listRequests: string[] = [];

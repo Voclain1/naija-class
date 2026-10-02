@@ -31,3 +31,12 @@ export interface RevokeGuardianInviteResponse {
   guardianId: string;
   revokedAt: string | Date;
 }
+
+// POST /guardians/:id/portal/deactivate and /portal/reactivate (2026-10-02).
+// The school's lever over a parent's portal access, separate from the
+// invitation: deactivating keeps the password, so reactivating needs no new
+// invitation. `portalDisabledAt` is null after a reactivation.
+export interface GuardianPortalAccessResponse {
+  guardianId: string;
+  portalDisabledAt: string | Date | null;
+}

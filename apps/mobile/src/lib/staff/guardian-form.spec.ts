@@ -73,11 +73,14 @@ describe("portal actions — exactly what the server accepts", () => {
     expect(portalActions("EXPIRED")).toEqual(["invite"]);
     expect(portalActions("INVITED")).toEqual(["resend", "revoke"]);
     expect(portalActions("ACTIVE")).toEqual([]);
+    // Switched off by the school: nothing to send until it is turned back on.
+    expect(portalActions("DEACTIVATED")).toEqual([]);
   });
 
   it("never offers Invite while an invitation is live (INVITATION_ALREADY_PENDING)", () => {
     const status: GuardianPortalStatusDto = deriveGuardianPortalStatus(
       {
+        portalDisabled: false,
         hasEmail: true,
         hasPassword: false,
         invitations: [{ acceptedAt: null, revokedAt: null, expiresAt: "2099-01-01T00:00:00.000Z" }],

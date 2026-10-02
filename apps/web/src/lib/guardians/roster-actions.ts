@@ -10,10 +10,16 @@ import type { GuardianPortalStatusDto } from "@school-kit/types";
 //   EXPIRED     — Invite. An expired invitation does not block a fresh one,
 //                 and Resend would do the same thing under a second name.
 //   INVITED     — Resend and Cancel. A plain invite is refused while one is live.
-//   ACTIVE      — nothing; invite and resend both refuse GUARDIAN_ALREADY_ACTIVE.
-//                 An active parent changes a password through the portal's own
-//                 Forgot password, never through a link staff can see.
-export type RosterAction = "invite" | "resend" | "revoke";
+//   ACTIVE      — Switch off only; invite and resend both refuse
+//                 GUARDIAN_ALREADY_ACTIVE. An active parent changes a password
+//                 through the portal's own Forgot password, never through a
+//                 link staff can see.
+//   DEACTIVATED — Turn back on, and nothing else: invite and resend refuse
+//                 GUARDIAN_PORTAL_DISABLED until access is restored.
+//
+// Switch off (2026-10-02) is offered where a parent HAS access or a live way
+// to get it — ACTIVE and INVITED. For the rest there is nothing to cut off.
+export type RosterAction = "invite" | "resend" | "revoke" | "deactivate" | "reactivate";
 
 export function rosterActions(status: GuardianPortalStatusDto): RosterAction[] {
   switch (status) {
@@ -21,9 +27,12 @@ export function rosterActions(status: GuardianPortalStatusDto): RosterAction[] {
     case "EXPIRED":
       return ["invite"];
     case "INVITED":
-      return ["resend", "revoke"];
-    case "NO_EMAIL":
+      return ["resend", "revoke", "deactivate"];
     case "ACTIVE":
+      return ["deactivate"];
+    case "DEACTIVATED":
+      return ["reactivate"];
+    case "NO_EMAIL":
       return [];
   }
 }
@@ -34,6 +43,7 @@ export const PORTAL_STATUS_LABEL: Record<GuardianPortalStatusDto, string> = {
   EXPIRED: "Invitation expired",
   NOT_INVITED: "Not invited",
   NO_EMAIL: "No email",
+  DEACTIVATED: "Access switched off",
 };
 
 // The filter options, in the order an admin works through them: the people
@@ -45,4 +55,5 @@ export const PORTAL_STATUS_FILTERS: Array<{ value: GuardianPortalStatusDto | "AL
   { value: "INVITED", label: "Invitation pending" },
   { value: "ACTIVE", label: "Portal active" },
   { value: "NO_EMAIL", label: "No email" },
+  { value: "DEACTIVATED", label: "Access switched off" },
 ];

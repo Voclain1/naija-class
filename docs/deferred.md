@@ -194,7 +194,13 @@ Format:
   (b) an e2e RBAC walk that exercises each role's real landing page over HTTP,
   which is what a human did to find all three of these.
 
-- [ ] **Two of the four session resolvers have no revocation signal at all**
+- [x] **DONE 2026-10-02** (migration `20261002120000_guardian_portal_deactivation`;
+  CLAUDE.md "Guardian portal deactivation"). Guardians: `portal_disabled_at`,
+  returned as `portal_enabled` by the session resolver and excluded by the login
+  and reset lookups; schools switch it from the Guardians roster. Platform
+  admin: the resolver returns `user_is_active` and the guard refuses on it.
+  Original entry kept below for the reasoning.
+- ~~**Two of the four session resolvers have no revocation signal at all**~~
   (found by the SECURITY DEFINER cadence review, 2026-08-16). `auth_resolve_
   student_session` returns `student_status` + `portal_enabled` and
   `auth_resolve_session` returns `user_is_active`, so both staff and students
@@ -2482,6 +2488,16 @@ and the response never varies — so this is about operators noticing, not
 about exposure.
 
 ### Guardian `is_active` / central revocation
+
+**RESOLVED 2026-10-02.** Schools now switch a parent's portal access off and on
+from the Guardians roster (`POST /guardians/:id/portal/deactivate` and
+`/reactivate`, `guardian.invite` permission, owner/admin). Off ends every
+session at once, revokes live invitations, voids unused reset links and removes
+push devices, in one transaction with one audit row naming the counts; the
+password, contact details and child links are kept, so on needs no
+re-invitation. `GuardianAuthGuard` re-reads `portal_enabled` on every request
+and answers `USER_INACTIVE`, which the portal and the app both turn into
+"contact the school". The entry below is kept for the reasoning.
 
 Still open, and now the sharpest asymmetry in the auth model. Recorded in
 CLAUDE.md's 2026-08-16 SECURITY DEFINER review: `auth_resolve_guardian_session`

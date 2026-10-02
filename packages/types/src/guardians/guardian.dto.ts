@@ -33,8 +33,12 @@ export type RelationshipDto =
  *   INVITED      — an invitation is live: not accepted, not revoked, not expired.
  *   EXPIRED      — the most recent live-ish invitation ran out unaccepted.
  *   ACTIVE       — the guardian has a password and can sign in.
+ *   DEACTIVATED  — the school switched portal access off (2026-10-02). Wins
+ *                  over every other state; reactivating returns the guardian
+ *                  to whichever of the above their facts describe.
  */
 export type GuardianPortalStatusDto =
+  | "DEACTIVATED"
   | "NO_EMAIL"
   | "NOT_INVITED"
   | "INVITED"
@@ -58,6 +62,8 @@ export interface GuardianDto {
   portalStatus: GuardianPortalStatusDto;
   /** When the live invitation expires; set only when portalStatus is INVITED. */
   portalInvitationExpiresAt: string | Date | null;
+  /** When the school switched portal access off; set only when portalStatus is DEACTIVATED. */
+  portalDisabledAt: string | Date | null;
 }
 
 // Detail view — Guardian plus the list of students currently linked. Mirrors

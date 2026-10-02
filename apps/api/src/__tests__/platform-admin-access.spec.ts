@@ -195,6 +195,33 @@ describe("Platform admin access (2026-08-02)", () => {
     },
   );
 
+  // 2026-10-02 — platform_admin_resolve_session now returns user_is_active.
+  // Before it, a staff account switched off with is_active = false kept its
+  // cross-tenant platform access, because this guard never read the column.
+  // Restored in `finally` so no later test depends on the order this runs in.
+  it("a platform admin whose account is switched off is refused at once, and restored when it is switched back on", async () => {
+    const setActive = (isActive: boolean) =>
+      withTenant(schoolA, (db) => db.user.update({ where: { id: platformAdminUserId }, data: { isActive } }));
+    const call = () =>
+      request(app.getHttpServer())
+        .get("/api/v1/platform-admin/schools")
+        .set("Authorization", `Bearer ${platformAdminToken}`);
+
+    // Control: the same token works first, so the refusal below is the switch.
+    expect((await call()).status).toBe(200);
+    try {
+      await setActive(false);
+      const refused = await call();
+      // 401, like AuthGuard — a switched-off account is not a usable
+      // identity, which is different from a live non-admin session's 403.
+      expect(refused.status).toBe(401);
+      expect(refused.body.error.code).toBe("USER_INACTIVE");
+    } finally {
+      await setActive(true);
+    }
+    expect((await call()).status).toBe(200);
+  });
+
   it("a user with isPlatformAdmin=false is rejected even with the correct request shape", async () => {
     const res = await request(app.getHttpServer())
       .get("/api/v1/platform-admin/schools")

@@ -28,6 +28,7 @@ import {
   type InviteGuardianResponse,
   type ResendGuardianInviteResponse,
   type RevokeGuardianInviteResponse,
+  type GuardianPortalAccessResponse,
   type LinkExistingGuardianInput,
   type ListGuardiansQuery,
   type UpdateGuardianInput,
@@ -143,6 +144,34 @@ export class GuardiansController {
     @Req() req: Request,
   ): Promise<RevokeGuardianInviteResponse> {
     return this.service.revokeInvite(authCtx, id, requestContext(ip, req));
+  }
+
+  // 2026-10-02 — switch a parent's portal access off and on. Same
+  // `guardian.invite` permission as resend/revoke, for the same reason: this
+  // is "may issue or withdraw portal access for a parent", and a school that
+  // can grant access must be able to take it back.
+  @Post("guardians/:id/portal/deactivate")
+  @HttpCode(200)
+  @Permissions("guardian.invite")
+  async deactivatePortal(
+    @Param("id") id: string,
+    @CurrentUser() authCtx: AuthContext,
+    @Ip() ip: string,
+    @Req() req: Request,
+  ): Promise<GuardianPortalAccessResponse> {
+    return this.service.deactivatePortal(authCtx, id, requestContext(ip, req));
+  }
+
+  @Post("guardians/:id/portal/reactivate")
+  @HttpCode(200)
+  @Permissions("guardian.invite")
+  async reactivatePortal(
+    @Param("id") id: string,
+    @CurrentUser() authCtx: AuthContext,
+    @Ip() ip: string,
+    @Req() req: Request,
+  ): Promise<GuardianPortalAccessResponse> {
+    return this.service.reactivatePortal(authCtx, id, requestContext(ip, req));
   }
 
   @Delete("guardians/:id")

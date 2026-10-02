@@ -1417,7 +1417,7 @@ describe("GuardiansService", () => {
       schoolId: string,
       ownerId: string,
       label: string,
-      opts: { email: boolean; password: boolean; invitations: Inv[] },
+      opts: { email: boolean; password: boolean; invitations: Inv[]; disabled?: boolean },
     ): Promise<string> {
       return withTenant(schoolId, async (db) => {
         const g = await db.guardian.create({
@@ -1429,6 +1429,7 @@ describe("GuardiansService", () => {
             phone: `+2348${Math.floor(10_000_000 + Math.random() * 89_999_999)}`,
             email: opts.email ? `${label.toLowerCase()}-${runId}-${Math.random().toString(36).slice(2, 6)}@example.test` : null,
             passwordHash: opts.password ? "argon2-not-a-real-hash" : null,
+            portalDisabledAt: opts.disabled ? new Date() : null,
           },
           select: { id: true },
         });
@@ -1449,12 +1450,12 @@ describe("GuardiansService", () => {
       });
     }
 
-    it("the database filter matches the derived status for every guardian, and the five filters partition the roster", async () => {
+    it("the database filter matches the derived status for every guardian, and the six filters partition the roster", async () => {
       const { authCtx } = await createActiveSchool("roster-parity");
       const now = Date.now();
       const future = new Date(now + 5 * DAY);
       const past = new Date(now - 5 * DAY);
-      const cases: Record<string, { email: boolean; password: boolean; invitations: Inv[] }> = {
+      const cases: Record<string, { email: boolean; password: boolean; invitations: Inv[]; disabled?: boolean }> = {
         NoEmail: { email: false, password: false, invitations: [] },
         NoEmailButPassword: { email: false, password: true, invitations: [] },
         Active: { email: true, password: true, invitations: [] },
@@ -1475,6 +1476,10 @@ describe("GuardiansService", () => {
           invitations: [{ expiresAt: past, revokedAt: new Date(now - 6 * DAY) }],
         },
         AcceptedNoPassword: { email: true, password: false, invitations: [{ expiresAt: future, acceptedAt: new Date(now) }] },
+        // 2026-10-02 — the school's switch outranks every other fact.
+        DisabledActive: { email: true, password: true, invitations: [], disabled: true },
+        DisabledWithLiveInvite: { email: true, password: false, invitations: [{ expiresAt: future }], disabled: true },
+        DisabledNoEmail: { email: false, password: false, invitations: [], disabled: true },
       };
       const ids: Record<string, string> = {};
       for (const [label, opts] of Object.entries(cases)) {
@@ -1498,10 +1503,13 @@ describe("GuardiansService", () => {
         OnlyRevoked: "NOT_INVITED",
         RevokedAndLapsed: "NOT_INVITED",
         AcceptedNoPassword: "NOT_INVITED",
+        DisabledActive: "DEACTIVATED",
+        DisabledWithLiveInvite: "DEACTIVATED",
+        DisabledNoEmail: "DEACTIVATED",
       });
 
       const seen = new Map<string, number>();
-      for (const status of ["NO_EMAIL", "NOT_INVITED", "INVITED", "EXPIRED", "ACTIVE"] as const) {
+      for (const status of ["DEACTIVATED", "NO_EMAIL", "NOT_INVITED", "INVITED", "EXPIRED", "ACTIVE"] as const) {
         const filtered = (await service.list(authCtx, { limit: 200, portalStatus: status })).data;
         for (const row of filtered) {
           // Every row the filter returns has exactly that derived status...
@@ -1570,6 +1578,203 @@ describe("GuardiansService", () => {
         const rows = (await service.list(a.authCtx, { limit: 200, ...(portalStatus ? { portalStatus } : {}) })).data;
         expect(rows.some((r) => r.id === inB)).toBe(false);
       }
+    });
+  });
+  // -----------------------------------------------------------------------
+  // Portal access switch (2026-10-02): the school's lever to cut a parent off
+  // centrally. Each test states one door deactivation must close (or one
+  // thing it must leave alone), against the real database and the real SQL
+  // lookups — the same functions sign-in and recovery call before a tenant
+  // exists.
+  // -----------------------------------------------------------------------
+  describe("deactivatePortal / reactivatePortal", () => {
+    const DAY = 24 * 3600 * 1000;
+
+    // A parent with every kind of access a deactivation must end: a live
+    // session, a live invitation (as after a resend), an unused reset link,
+    // and a registered phone — and linked to a child as a contact.
+    async function fullyConnectedParent(slug: string, suffix: string) {
+      const { authCtx } = await createActiveSchool(slug);
+      const email = `${slug}-${runId}@example.test`;
+      const g = await service.create(authCtx, { ...guardianFields(suffix), email }, reqCtx);
+      const student = await createStudent(authCtx, suffix);
+      await service.linkExisting(authCtx, student.id, { guardianId: g.id, isPrimary: true }, reqCtx);
+      await withTenant(authCtx.schoolId, async (db) => {
+        await db.guardian.update({ where: { id: g.id }, data: { passwordHash: "argon2-not-a-real-hash" } });
+        await db.guardianSession.create({
+          data: { guardianId: g.id, tokenHash: `sess-${suffix}-${runId}`, expiresAt: new Date(Date.now() + DAY) },
+        });
+        await db.guardianInvitation.create({
+          data: {
+            schoolId: authCtx.schoolId,
+            guardianId: g.id,
+            invitedBy: authCtx.userId,
+            tokenHash: `inv-${suffix}-${runId}`,
+            expiresAt: new Date(Date.now() + DAY),
+          },
+        });
+        await db.guardianPasswordResetToken.create({
+          data: {
+            schoolId: authCtx.schoolId,
+            guardianId: g.id,
+            tokenHash: `reset-${suffix}-${runId}`,
+            expiresAt: new Date(Date.now() + DAY),
+          },
+        });
+        await db.deviceToken.create({
+          data: {
+            schoolId: authCtx.schoolId,
+            principalType: "GUARDIAN",
+            guardianId: g.id,
+            expoPushToken: `ExponentPushToken[${suffix}-${runId}]`,
+            platform: "ANDROID",
+          },
+        });
+      });
+      return { authCtx, g, email, studentId: student.id };
+    }
+
+    const loginCandidates = (email: string) =>
+      basePrisma.$queryRawUnsafe<Array<{ guardian_id: string }>>(
+        `SELECT guardian_id FROM auth_lookup_guardians_for_login($1)`,
+        email,
+      );
+    const resetCandidates = (email: string) =>
+      basePrisma.$queryRawUnsafe<Array<{ guardian_id: string }>>(
+        `SELECT guardian_id FROM auth_lookup_guardians_for_password_reset($1)`,
+        email,
+      );
+
+    it("shuts every door at once: sessions, live invitations, reset links and push devices", async () => {
+      const { authCtx, g } = await fullyConnectedParent("off-doors", "g3000001");
+
+      const res = await service.deactivatePortal(authCtx, g.id, reqCtx);
+      expect(res.guardianId).toBe(g.id);
+      expect(res.portalDisabledAt).toBeInstanceOf(Date);
+
+      const after = await withTenant(authCtx.schoolId, async (db) => ({
+        sessions: await db.guardianSession.count({ where: { guardianId: g.id } }),
+        liveInvitations: await db.guardianInvitation.count({
+          where: { guardianId: g.id, acceptedAt: null, revokedAt: null, expiresAt: { gt: new Date() } },
+        }),
+        unusedResets: await db.guardianPasswordResetToken.count({ where: { guardianId: g.id, usedAt: null } }),
+        devices: await db.deviceToken.count({ where: { guardianId: g.id } }),
+      }));
+      expect(after).toEqual({ sessions: 0, liveInvitations: 0, unusedResets: 0, devices: 0 });
+    });
+
+    it("keeps what is not access: the password, the contact details and the link to the child", async () => {
+      const { authCtx, g, email, studentId } = await fullyConnectedParent("off-keeps", "g3000002");
+
+      await service.deactivatePortal(authCtx, g.id, reqCtx);
+
+      const row = await withTenant(authCtx.schoolId, (db) =>
+        db.guardian.findUniqueOrThrow({
+          where: { id: g.id },
+          select: { passwordHash: true, email: true, students: { select: { studentId: true } } },
+        }),
+      );
+      expect(row.passwordHash).not.toBeNull();
+      expect(row.email).toBe(email);
+      expect(row.students.map((s) => s.studentId)).toEqual([studentId]);
+    });
+
+    it("sign-in and password recovery stop finding the account IN SQL, and find it again after reactivation", async () => {
+      const { authCtx, g, email } = await fullyConnectedParent("off-sql", "g3000003");
+      // Control: both lookups find the parent first.
+      expect((await loginCandidates(email)).map((r) => r.guardian_id)).toEqual([g.id]);
+      expect((await resetCandidates(email)).map((r) => r.guardian_id)).toEqual([g.id]);
+
+      await service.deactivatePortal(authCtx, g.id, reqCtx);
+      expect(await loginCandidates(email)).toHaveLength(0);
+      expect(await resetCandidates(email)).toHaveLength(0);
+
+      await service.reactivatePortal(authCtx, g.id, reqCtx);
+      expect((await loginCandidates(email)).map((r) => r.guardian_id)).toEqual([g.id]);
+      expect((await resetCandidates(email)).map((r) => r.guardian_id)).toEqual([g.id]);
+    });
+
+    it("reads as DEACTIVATED with its date while off, and ACTIVE again after — no invitation needed", async () => {
+      const { authCtx, g } = await fullyConnectedParent("off-status", "g3000004");
+
+      await service.deactivatePortal(authCtx, g.id, reqCtx);
+      const off = await service.findById(authCtx, g.id);
+      expect(off.portalStatus).toBe("DEACTIVATED");
+      expect(off.portalDisabledAt).not.toBeNull();
+      expect(JSON.stringify(off)).not.toContain("passwordHash");
+
+      await service.reactivatePortal(authCtx, g.id, reqCtx);
+      const on = await service.findById(authCtx, g.id);
+      expect(on.portalStatus).toBe("ACTIVE");
+      expect(on.portalDisabledAt).toBeNull();
+    });
+
+    it("refuses invite and resend while off — the link would set a password the guard then refuses", async () => {
+      const { authCtx } = await createActiveSchool("off-invite");
+      const g = await service.create(
+        authCtx,
+        { ...guardianFields("g3000005"), email: `off-invite-${runId}@example.test` },
+        reqCtx,
+      );
+      await service.deactivatePortal(authCtx, g.id, reqCtx);
+
+      await expect(service.invite(authCtx, g.id, reqCtx)).rejects.toMatchObject({
+        code: "GUARDIAN_PORTAL_DISABLED",
+      });
+      await expect(service.resendInvite(authCtx, g.id, reqCtx)).rejects.toMatchObject({
+        code: "GUARDIAN_PORTAL_DISABLED",
+      });
+
+      // Back on, a never-invited parent can be invited as normal.
+      await service.reactivatePortal(authCtx, g.id, reqCtx);
+      const invited = await service.invite(authCtx, g.id, reqCtx);
+      expect(invited.acceptUrl).toContain("/invitations/");
+    });
+
+    it("is not repeatable in either direction, and says so", async () => {
+      const { authCtx, g } = await fullyConnectedParent("off-twice", "g3000006");
+
+      await expect(service.reactivatePortal(authCtx, g.id, reqCtx)).rejects.toMatchObject({
+        code: "GUARDIAN_PORTAL_NOT_DISABLED",
+      });
+      await service.deactivatePortal(authCtx, g.id, reqCtx);
+      await expect(service.deactivatePortal(authCtx, g.id, reqCtx)).rejects.toMatchObject({
+        code: "GUARDIAN_PORTAL_ALREADY_DISABLED",
+      });
+    });
+
+    it("only an owner or admin may switch it, and an unknown guardian is a NotFoundError", async () => {
+      const { authCtx, g } = await fullyConnectedParent("off-roles", "g3000007");
+      const { authCtx: noRole } = await createUserWithoutRole(authCtx.schoolId, "off-roles");
+
+      await expect(service.deactivatePortal(noRole, g.id, reqCtx)).rejects.toBeInstanceOf(ForbiddenError);
+      await expect(
+        service.deactivatePortal(authCtx, "00000000-0000-4000-8000-000000000000", reqCtx),
+      ).rejects.toBeInstanceOf(NotFoundError);
+    });
+
+    it("audits both directions with what was shut, and never an unredacted address", async () => {
+      const { authCtx, g, email } = await fullyConnectedParent("off-audit", "g3000008");
+
+      await service.deactivatePortal(authCtx, g.id, reqCtx);
+      await service.reactivatePortal(authCtx, g.id, reqCtx);
+
+      const rows = await withTenant(authCtx.schoolId, (db) =>
+        db.auditLog.findMany({
+          where: { entityId: g.id, action: { startsWith: "guardian.portal-" } },
+          orderBy: { createdAt: "asc" },
+          select: { action: true, userId: true, metadata: true },
+        }),
+      );
+      expect(rows.map((r) => r.action)).toEqual(["guardian.portal-deactivate", "guardian.portal-reactivate"]);
+      expect(rows.every((r) => r.userId === authCtx.userId)).toBe(true);
+      expect(rows[0]!.metadata).toMatchObject({
+        sessionsEnded: 1,
+        invitationsRevoked: 1,
+        resetLinksVoided: 1,
+        devicesRemoved: 1,
+      });
+      expect(JSON.stringify(rows)).not.toContain(email);
     });
   });
 });

@@ -1,6 +1,6 @@
 "use client";
 
-import { Ban, Check, Copy, FileUp, Loader2, RefreshCw, Search, Send } from "lucide-react";
+import { Ban, Check, Copy, FileUp, Loader2, Power, PowerOff, RefreshCw, Search, Send } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
@@ -10,12 +10,15 @@ import type { GuardianPortalStatusDto, GuardianRosterRowDto } from "@school-kit/
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ApiError } from "@/lib/api-client";
 import {
+  deactivateGuardianPortal,
   inviteGuardian,
   listGuardians,
+  reactivateGuardianPortal,
   resendGuardianInvite,
   revokeGuardianInvite,
 } from "@/lib/guardians/guardians-api";
@@ -50,6 +53,7 @@ const STATUS_TONE: Record<GuardianPortalStatusDto, "success" | "secondary" | "ou
   EXPIRED: "warning",
   NOT_INVITED: "outline",
   NO_EMAIL: "muted",
+  DEACTIVATED: "warning",
 };
 
 const RELATIONSHIP: Record<string, string> = {
@@ -84,6 +88,9 @@ export default function GuardiansRosterPage() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  // Switching access off ends a parent's sessions at once, so it asks first.
+  // Turning it back on does not — it only restores what was there.
+  const [confirmOff, setConfirmOff] = useState<GuardianRosterRowDto | null>(null);
   // The one accept link shown after an invite/resend. The raw token is never
   // stored, so this is the only chance to copy it — same as the student tab.
   const [link, setLink] = useState<{ guardianId: string; name: string; url: string } | null>(null);
@@ -150,10 +157,18 @@ export default function GuardiansRosterPage() {
         const res = await resendGuardianInvite(row.id);
         setLink({ guardianId: row.id, name, url: res.acceptUrl });
         toast.success(`New invitation sent to ${name}. The previous link no longer works.`);
-      } else {
+      } else if (action === "revoke") {
         await revokeGuardianInvite(row.id);
         if (link?.guardianId === row.id) setLink(null);
         toast.success(`Invitation cancelled. The link sent to ${name} no longer works.`);
+      } else if (action === "deactivate") {
+        await deactivateGuardianPortal(row.id);
+        if (link?.guardianId === row.id) setLink(null);
+        setConfirmOff(null);
+        toast.success(`Portal access switched off for ${name}. They have been signed out everywhere.`);
+      } else {
+        await reactivateGuardianPortal(row.id);
+        toast.success(`Portal access turned back on for ${name}.`);
       }
       setCopied(false);
       // Re-read rather than patch locally: the status is derived on the
@@ -333,6 +348,11 @@ export default function GuardiansRosterPage() {
                         {row.portalStatus === "NO_EMAIL" && (
                           <div className="mt-1 text-xs text-muted-foreground">Add an email from their child&apos;s page</div>
                         )}
+                        {row.portalStatus === "DEACTIVATED" && row.portalDisabledAt && (
+                          <div className="mt-1 text-xs text-muted-foreground">
+                            Since {formatDate(row.portalDisabledAt)}
+                          </div>
+                        )}
                       </TableCell>
                       <TableCell className="align-top">
                         <div className="flex flex-wrap justify-end gap-2">
@@ -360,6 +380,24 @@ export default function GuardiansRosterPage() {
                               Cancel invite
                             </Button>
                           )}
+                          {actions.includes("deactivate") && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={busy}
+                              onClick={() => setConfirmOff(row)}
+                              className="text-rose-700 hover:bg-rose-50"
+                            >
+                              <PowerOff className="h-4 w-4" />
+                              Switch off access
+                            </Button>
+                          )}
+                          {actions.includes("reactivate") && (
+                            <Button size="sm" variant="outline" disabled={busy} onClick={() => act(row, "reactivate")}>
+                              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Power className="h-4 w-4" />}
+                              Turn access back on
+                            </Button>
+                          )}
                         </div>
                       </TableCell>
                     </TableRow>
@@ -377,6 +415,52 @@ export default function GuardiansRosterPage() {
             </div>
           )}
         </>
+      )}
+
+      {confirmOff && (
+        <Dialog
+          open
+          onOpenChange={(next) => {
+            if (!next && busyId !== confirmOff.id) setConfirmOff(null);
+          }}
+        >
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>
+                Switch off portal access for {confirmOff.firstName} {confirmOff.lastName}?
+              </DialogTitle>
+              <p className="text-sm text-muted-foreground">
+                They are signed out of the portal and the app straight away, and cannot sign in
+                again. Any invitation or password-reset link already sent stops working.
+              </p>
+              <p className="text-sm text-muted-foreground">
+                They stay linked to their children as a contact, and still receive the
+                school&apos;s SMS. You can turn access back on at any time — their password is
+                kept, so no new invitation is needed.
+              </p>
+            </DialogHeader>
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                className="flex-1"
+                disabled={busyId === confirmOff.id}
+                onClick={() => setConfirmOff(null)}
+              >
+                Keep access
+              </Button>
+              <Button
+                type="button"
+                className="flex-1"
+                disabled={busyId === confirmOff.id}
+                onClick={() => void act(confirmOff, "deactivate")}
+              >
+                {busyId === confirmOff.id && <Loader2 className="h-4 w-4 animate-spin" />}
+                Switch off access
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       )}
     </div>
   );
