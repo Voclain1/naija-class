@@ -6,8 +6,7 @@ style, the three dead-end wizard states have a way out, and the import
 wizards were done last as D3 said. Typography replaced and, more to the
 point, FIXED — see the last section. **Part 3 (the theme switcher) shipped**
 2026-09-29. **Part 2 shipped** — the web half 2026-09-30, the app half
-2026-10-02. **D4 (the portal) shipped** 2026-10-02 for its six signed-in
-pages; its auth forms are still to do.
+2026-10-02. **D4 (the portal) shipped** 2026-10-02.
 
 **What Part 1 has NOT finished, stated plainly:** 57 pages still inline
 `<h1 className="font-serif text-2xl font-medium tracking-tight
@@ -143,10 +142,22 @@ Two constraints worth knowing, both from the e2e suite:
   `EmptyState` renders its title as a paragraph. It takes the same classes
   instead.
 
-**Still to do:** login, forgot/reset password, the two invitation-accept pages
-and the payment callback. They are single-card forms, already on the brand
-tokens now that those are fixed, but still with their own headers. They are
-seen once per parent, which is why they come after the pages a parent returns to.
+**The sign-in pages had no logo, and the portal had no favicon.** Login and
+forgot/reset password said "SchoolKit" in plain bold sans, the one place a
+parent meets the product before anything else. The web's auth layout has
+shown the icon and the "school·kit" wordmark since the brand assets landed. The
+portal had no `public/` directory at all, so its tab showed Next's default
+icon. Both are fixed. `BrandHeading` (`apps/portal/src/components/
+brand-mark.tsx`) is a deliberate COPY of the web's lockup rather than a share:
+the web's is built on `next/image`, which belongs to each app, and
+`packages/ui` has no Next dependency. The visible lockup is `aria-hidden` and
+the `h1` carries a screen-reader "SchoolKit", so assistive tech does not read
+two spans as one lower-case word, and `terminology-presentation.spec.ts`
+still finds the heading by name.
+
+**Left as they are:** the two invitation-accept pages and the payment callback.
+They are single-card status pages ("You're all set", "Confirming your
+payment…"), now on the brand tokens, and each is seen once.
 
 ---
 

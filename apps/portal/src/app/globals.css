@@ -45,6 +45,10 @@
     --input: 45 15% 85%;
     --ring: 161 74% 21%;
     --radius: 0.75rem;
+
+    /* Bright Emerald #3FB68B — the wordmark's "kit". Its own token, as on the
+       web: fixed in every theme rather than following --primary. */
+    --brand-accent: 158 49% 48%;
   }
 }
 
