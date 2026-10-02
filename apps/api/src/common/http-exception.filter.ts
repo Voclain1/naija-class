@@ -23,6 +23,13 @@ export class HttpExceptionFilter implements ExceptionFilter {
     const req = ctx.getRequest<Request>();
 
     if (exception instanceof BaseError) {
+      // A 429 that knows when it ends says so in the standard header too
+      // (login lockout, 2026-10-02), so clients and proxies need not parse
+      // the body to back off.
+      const retryAfter = (exception.details as { retryAfterSeconds?: unknown } | undefined)?.retryAfterSeconds;
+      if (exception.httpStatus === 429 && typeof retryAfter === "number") {
+        res.setHeader("Retry-After", String(retryAfter));
+      }
       res.status(exception.httpStatus).json({ error: exception.toBody() });
       return;
     }

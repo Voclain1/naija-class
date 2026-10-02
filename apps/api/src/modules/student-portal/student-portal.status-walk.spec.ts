@@ -39,6 +39,12 @@ const mockRedis = {
   get: vi.fn().mockResolvedValue(null),
   set: vi.fn().mockResolvedValue("OK"),
   del: vi.fn().mockResolvedValue(1),
+  // Login lockout (2026-10-02) — inert here: no lock is ever found and every
+  // failure is the first, so this suite tests what it always tested. The
+  // lockout has its own real-Redis spec (login-lockout.http.spec.ts).
+  pttl: vi.fn().mockResolvedValue(-2),
+  incr: vi.fn().mockResolvedValue(1),
+  expire: vi.fn().mockResolvedValue(1),
 };
 @Global()
 @Module({

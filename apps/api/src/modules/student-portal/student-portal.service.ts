@@ -22,6 +22,7 @@ import {
 import * as password from "../../common/auth/password";
 import { createStudentSession, hashStudentToken } from "../../common/auth/student-sessions";
 import { mayActivate, mayHoldSession } from "../../common/auth/student-portal-status";
+import { LoginLockoutService, lockoutIdentity } from "../../common/auth/login-lockout";
 import type { StudentAuthContext } from "../../common/auth/student-auth-context";
 import { loadCurrentEnrollmentForStudent } from "../enrollments/enrollments.service";
 import { ReleasedResultsService } from "../report-cards/released-results.service";
@@ -94,6 +95,7 @@ export class StudentPortalService {
   constructor(
     private readonly releasedResults: ReleasedResultsService,
     private readonly invoices: PortalInvoicesService,
+    private readonly lockout: LoginLockoutService,
   ) {}
 
   // POST /student-portal/login — PUBLIC.
@@ -112,6 +114,15 @@ export class StudentPortalService {
   // The dummy verify keeps the zero-candidate path's timing comparable to the
   // wrong-password path, so timing does not leak what the message refuses to.
   async login(input: StudentLoginInput, ctx: RequestContext): Promise<StudentLoginResponse> {
+    // Lockout (2026-10-02, the design approved at the slice-3 review — see
+    // common/auth/login-lockout.ts). Keyed on the slug and admission number AS
+    // TYPED, and checked before the lookup: admission numbers are sequential
+    // and slugs public, so a counter that only ran for real students would
+    // tell an attacker which admission numbers exist. Every failure branch
+    // below records, the unknown-student one included.
+    const identity = lockoutIdentity("student", input.schoolSlug, input.admissionNumber);
+    await this.lockout.check(identity);
+
     const rows = await basePrisma.$queryRaw<LookupStudentForLoginRow[]>`
       SELECT * FROM auth_lookup_student_for_login(${input.schoolSlug}, ${input.admissionNumber})
     `;
@@ -141,12 +152,14 @@ export class StudentPortalService {
         row?.school_id,
         row?.student_id,
       );
+      await this.lockout.recordFailure(identity);
       throw new UnauthorizedError("INVALID_CREDENTIALS", "Invalid sign-in details.");
     }
 
     const ok = await password.verifyPassword(row.password_hash, input.password).catch(() => false);
     if (!ok) {
       await this.recordFailedLogin(input, ctx, "BAD_PASSWORD", row.school_id, row.student_id);
+      await this.lockout.recordFailure(identity);
       throw new UnauthorizedError("INVALID_CREDENTIALS", "Invalid sign-in details.");
     }
 
@@ -155,8 +168,13 @@ export class StudentPortalService {
     // "enrolled" from "withdrawn" without knowing any password, by timing.
     if (!mayHoldSession(row.student_status)) {
       await this.recordFailedLogin(input, ctx, "NOT_ACTIVE", row.school_id, row.student_id);
+      // Counted like any other failure: it answers INVALID_CREDENTIALS, and a
+      // counter that skipped it would itself distinguish this case.
+      await this.lockout.recordFailure(identity);
       throw new UnauthorizedError("INVALID_CREDENTIALS", "Invalid sign-in details.");
     }
+
+    await this.lockout.clear(identity);
 
     const { rawToken } = await createStudentSession(row.school_id, row.student_id, ctx);
 
@@ -490,6 +508,14 @@ export class StudentPortalService {
       where: { id: row.school_id },
       select: { id: true, name: true, slug: true, phone: true },
     });
+
+    // The recovery path the lockout design depends on: a locked-out child's
+    // parent issues a fresh invitation, the child accepts it, and the lock is
+    // gone — bounding a scripted cohort-wide lock at "15 minutes, or less if
+    // the parent acts". Cleared by the identity a sign-in would type.
+    await this.lockout.clear(
+      lockoutIdentity("student", school.slug, student.updated.admissionNumber),
+    );
 
     return {
       student: toStudentDto(student.updated, student.enrollment),

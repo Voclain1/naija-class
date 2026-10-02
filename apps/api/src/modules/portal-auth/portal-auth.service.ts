@@ -21,6 +21,7 @@ import {
 import * as password from "../../common/auth/password";
 import { EmailService } from "../../common/email/email.service";
 import { createGuardianSession } from "../../common/auth/guardian-sessions";
+import { LoginLockoutService, lockoutIdentity } from "../../common/auth/login-lockout";
 import { portalBaseUrl } from "../../common/portal-url";
 import { redactEmail } from "../../common/redact";
 import type { GuardianAuthContext } from "../../common/auth/guardian-auth-context";
@@ -90,7 +91,10 @@ async function getDummyVerifyHash(): Promise<string> {
 export class PortalAuthService {
   private readonly logger = new Logger(PortalAuthService.name);
 
-  constructor(private readonly email: EmailService) {}
+  constructor(
+    private readonly email: EmailService,
+    private readonly lockout: LoginLockoutService,
+  ) {}
 
   // POST /portal/login — PUBLIC.
   //
@@ -113,6 +117,12 @@ export class PortalAuthService {
   // INVALID_CREDENTIALS so the portal can show a real explanation rather
   // than "wrong password" for a guardian who typed everything correctly.
   async login(input: GuardianLoginInput, ctx: RequestContext): Promise<GuardianLoginResponse> {
+    // Lockout (2026-10-02, common/auth/login-lockout.ts). Keyed on the email
+    // AS TYPED and checked before the lookup, so a locked attempt costs
+    // nothing and an unknown email locks exactly like a known one.
+    const identity = lockoutIdentity("guardian", input.email);
+    await this.lockout.check(identity);
+
     const rows = await basePrisma.$queryRaw<LookupGuardianForLoginRow[]>`
       SELECT * FROM auth_lookup_guardians_for_login(${input.email})
     `;
@@ -120,6 +130,7 @@ export class PortalAuthService {
     if (rows.length === 0) {
       const dummy = await getDummyVerifyHash();
       await password.verifyPassword(dummy, input.password).catch(() => false);
+      await this.lockout.recordFailure(identity);
       throw new UnauthorizedError("INVALID_CREDENTIALS", "Invalid email or password.");
     }
 
@@ -130,6 +141,7 @@ export class PortalAuthService {
     }
 
     if (matches.length === 0) {
+      await this.lockout.recordFailure(identity);
       throw new UnauthorizedError("INVALID_CREDENTIALS", "Invalid email or password.");
     }
 
@@ -142,6 +154,11 @@ export class PortalAuthService {
     }
 
     const [match] = matches;
+
+    // A correct password clears the count. (AMBIGUOUS above is also a
+    // correct password, so it records nothing — but it is not a sign-in, so
+    // it does not clear either.)
+    await this.lockout.clear(identity);
 
     const { rawToken } = await createGuardianSession(match.school_id, match.guardian_id, ctx);
 
@@ -306,6 +323,11 @@ export class PortalAuthService {
       row.guardian_id,
       ctx,
     );
+
+    // A parent who has just set a password through a fresh invitation has
+    // proved who they are; any lockout on their email no longer protects
+    // anything.
+    if (row.email) await this.lockout.clear(lockoutIdentity("guardian", row.email));
 
     const school = await basePrisma.school.findUniqueOrThrow({
       where: { id: row.school_id },
@@ -496,6 +518,7 @@ export class PortalAuthService {
 
     const passwordHash = await password.hashPassword(input.password);
 
+    let resetEmail: string | null = null;
     await withTenant(row.school_id, async (db) => {
       // ATOMIC single-use claim, same race-safe pattern as acceptInvitation
       // and staff resetPassword: usedAt: null is in the WHERE, so a
@@ -513,10 +536,12 @@ export class PortalAuthService {
         );
       }
 
-      await db.guardian.update({
+      const updated = await db.guardian.update({
         where: { id: row.guardian_id },
         data: { passwordHash },
+        select: { email: true },
       });
+      resetEmail = updated.email;
 
       // Kill EVERY session for this guardian. Unlike logout (current session
       // only), a reset is what someone does when they believe their account
@@ -545,6 +570,10 @@ export class PortalAuthService {
         },
       });
     });
+
+    // A completed reset proves control of the mailbox — the recovery path
+    // that keeps a lockout from outlasting the parent acting.
+    if (resetEmail) await this.lockout.clear(lockoutIdentity("guardian", resetEmail));
 
     return { message: "Your password has been reset. You can now sign in." };
   }

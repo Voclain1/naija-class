@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 
 import { EmailModule } from "../../common/email/email.module.js";
 import { PortalAuthController } from "./portal-auth.controller";
+import { LoginLockoutService } from "../../common/auth/login-lockout";
 import { PortalAuthService } from "./portal-auth.service";
 
 @Module({
@@ -11,6 +12,6 @@ import { PortalAuthService } from "./portal-auth.service";
   // @Global() so it needs no import here.
   imports: [EmailModule],
   controllers: [PortalAuthController],
-  providers: [PortalAuthService],
+  providers: [PortalAuthService, LoginLockoutService],
 })
 export class PortalAuthModule {}
