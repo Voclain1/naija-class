@@ -5,7 +5,8 @@
 style, the three dead-end wizard states have a way out, and the import
 wizards were done last as D3 said. Typography replaced and, more to the
 point, FIXED — see the last section. **Part 3 (the theme switcher) shipped**
-2026-09-29. Part 2 (motion) not started; `apps/portal` still waiting on D4.
+2026-09-29. **Part 2's web half shipped** 2026-09-30 (the app's motion is still
+owed); `apps/portal` still waiting on D4.
 
 **What Part 1 has NOT finished, stated plainly:** 57 pages still inline
 `<h1 className="font-serif text-2xl font-medium tracking-tight
@@ -130,6 +131,33 @@ becomes irritating by the third day.
 Every transition above is disabled by that query. This is not box-ticking: it is
 one media query, and vestibular disorders are common enough that a school of
 400 has several.
+
+**Built on the web, 2026-09-30.** All three of D5's uses and nothing else:
+`Appear` (skeleton → content, 180ms fade + 2px rise), the `settle` keyframe (a
+saved row washes emerald and recedes), and a `template.tsx` per route group
+(150ms fade on navigation — a template rather than a layout change, because
+Next remounts the former on every navigation and keeps the latter mounted, so
+the chrome holds still while the panel changes).
+
+Two notes for whoever extends this:
+
+- **`Appear` is deliberately never applied to list items.** A staggered list
+  entrance is the specific thing D5 rules out — an admin opening the roster
+  forty times a day would watch the same choreography forty times.
+- **D6 is covered by a real assertion, not by the class list.**
+  `e2e/tests/reduced-motion.spec.ts` asks the browser for the computed
+  `animationName` with and without the preference emulated. That check earns
+  its keep: `motion-reduce:animate-none` only wins if it is emitted later in
+  the stylesheet than the animation it cancels, and `animate-settle` is a
+  custom theme keyframe rather than one of tailwindcss-animate's, so the
+  ordering is not something to assume. (Verified in the built CSS too: the
+  reduced-motion block lands at ~67k, after both.) The spec asserts the
+  animation IS present without the preference for the same reason — a test
+  that only checks the "off" state passes just as happily when the motion was
+  never implemented.
+
+**Still owed: the app's own motion.** Part 2 opens by saying the app lacks it
+too, and that remains true — nothing in this pass touched `apps/mobile`.
 
 ---
 

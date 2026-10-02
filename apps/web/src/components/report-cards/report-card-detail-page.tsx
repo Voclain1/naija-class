@@ -8,7 +8,7 @@ import { toast } from "sonner";
 
 import type { ReportCardDetailDto } from "@school-kit/types";
 
-import { EmptyState, PageHeader, PageSkeleton } from "@/components/layout/page-primitives";
+import { Appear, EmptyState, PageHeader, PageSkeleton } from "@/components/layout/page-primitives";
 import { PdfStatusBadge, WorkflowStatusBadge } from "@/components/report-cards/status-badges";
 import { StatCard } from "@/components/shared/stat-card";
 import { Button } from "@/components/ui/button";
@@ -170,15 +170,17 @@ export function ReportCardDetailPage({ basePath }: { basePath: string }) {
           }
         />
       ) : (
-        <ReportCardDetail
-          data={status.data}
-          componentLabels={componentLabels}
-          canManage={canManage}
-          onDownload={onDownload}
-          onRegenerate={onRegenerate}
-          onSaveFormComment={onSaveFormComment}
-          onSavePrincipalNote={onSavePrincipalNote}
-        />
+        <Appear className="flex flex-col gap-6">
+          <ReportCardDetail
+            data={status.data}
+            componentLabels={componentLabels}
+            canManage={canManage}
+            onDownload={onDownload}
+            onRegenerate={onRegenerate}
+            onSaveFormComment={onSaveFormComment}
+            onSavePrincipalNote={onSavePrincipalNote}
+          />
+        </Appear>
       )}
     </div>
   );
