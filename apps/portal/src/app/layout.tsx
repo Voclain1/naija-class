@@ -28,6 +28,18 @@ const dmSerifDisplay = DM_Serif_Display({
 export const metadata: Metadata = {
   title: "SchoolKit — Parent Portal",
   description: "View your child's fees and payments, and stay in touch with the school.",
+  // The same favicons as apps/web. Until 2026-10-02 the portal had no public/
+  // directory at all, so its tab showed Next's default icon.
+  icons: {
+    icon: [
+      { url: "/brand/schoolkit-favicon-32.png", sizes: "32x32", type: "image/png" },
+      { url: "/brand/schoolkit-favicon-64.png", sizes: "64x64", type: "image/png" },
+      { url: "/brand/schoolkit-favicon-128.png", sizes: "128x128", type: "image/png" },
+      { url: "/brand/schoolkit-favicon-256.png", sizes: "256x256", type: "image/png" },
+    ],
+    shortcut: "/brand/schoolkit-favicon-32.png",
+    apple: "/brand/schoolkit-favicon-256.png",
+  },
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

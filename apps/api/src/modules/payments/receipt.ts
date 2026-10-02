@@ -213,7 +213,7 @@ export function buildBrandedReceiptHtml(r: ReceiptData): string {
     background: ${settled ? "rgba(14, 92, 67, .10)" : "rgba(224, 165, 46, .16)"};
     color: ${settled ? "#0E5C43" : "#8A6410"};
   }
-  .words { margin-top: 14px; padding: 12px 16px; background: var(--tint); border-left: 3px solid var(--brand); font-family: Georgia, serif; font-style: italic; font-size: 14px; }
+  .words { margin-top: 14px; padding: 12px 16px; background: var(--tint); font-family: Georgia, serif; font-style: italic; font-size: 14px; }
 
   .ledger { display: flex; gap: 14px; margin-top: 22px; }
   .ledger div { flex: 1; padding: 13px 16px; background: var(--tint); }

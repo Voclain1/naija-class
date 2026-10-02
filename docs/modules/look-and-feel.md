@@ -6,7 +6,7 @@ style, the three dead-end wizard states have a way out, and the import
 wizards were done last as D3 said. Typography replaced and, more to the
 point, FIXED — see the last section. **Part 3 (the theme switcher) shipped**
 2026-09-29. **Part 2 shipped** — the web half 2026-09-30, the app half
-2026-10-02; `apps/portal` still waiting on D4.
+2026-10-02. **D4 (the portal) shipped** 2026-10-02.
 
 **What Part 1 has NOT finished, stated plainly:** 57 pages still inline
 `<h1 className="font-serif text-2xl font-medium tracking-tight
@@ -103,6 +103,61 @@ tokens but not the components. It follows the same vocabulary once the admin
 pages are done — not in parallel, because a parent who wants a good experience
 has the app, and the admin surface is where a school's judgement of the product
 is formed.
+
+**Done 2026-10-02 — and the premise was wrong in one respect.** "It shares the
+tokens" was not true. `apps/portal/src/app/globals.css` was still stock
+shadcn: a white page, a slate primary, the bright `#ef4444` red at 3.23:1.
+The typeface fix of 2026-09-29 had given the portal DM Sans and DM Serif
+Display, so it *read* as nearly on-brand, but no colour had ever crossed over.
+A parent who opened the portal before the app met a white-and-slate product.
+The tokens now match the web's light scheme value for value. There is no
+`.dark` block, because nothing in the portal sets the class.
+
+**The vocabulary is SHARED, not copied.** `page-primitives.tsx` moved from
+`apps/web` into `packages/ui`, and the web's old path is a one-line re-export,
+so its eighteen importers did not change. A copy is how two surfaces drift,
+which is D1's problem one level up. This cost almost nothing, because both
+apps already listed `@school-kit/ui` in `transpilePackages` and in their
+Tailwind `content`. They had been set up for this since Phase 0 and were never
+used. Two substitutions came with the move: `cn` is inlined (the package now
+depends on `clsx` and `tailwind-merge` itself), and `Working`'s spinner is
+lucide's `Loader2` path inlined as an SVG, since the portal has no icon library
+and one spinner is not a reason to give it one.
+
+Applied to the six signed-in pages: home, the child page, results,
+timetable, announcements and calendar. Each gets `PageHeader` (serif title,
+Sign out in the actions slot, F-06), `PageSkeleton` in place of the word
+"Loading…", `EmptyState` with a next step in place of the dashed boxes, and
+`Appear` around the block that replaces the skeleton. Never per item.
+
+Two constraints worth knowing, both from the e2e suite:
+
+- **No copy and no heading levels changed.** The guardian specs find headings by
+  role and name ("Your children", "Invoices", "Released results") and match some
+  sentences exactly ("The school hasn't published a timetable for … yet.").
+  Empty states that gained a next step kept their original sentence as the
+  title.
+- **Results' "Nothing released yet" is not an `EmptyState`.** It has to stay an
+  `h2` (`guardian-released-results.spec.ts` finds it by role), and
+  `EmptyState` renders its title as a paragraph. It takes the same classes
+  instead.
+
+**The sign-in pages had no logo, and the portal had no favicon.** Login and
+forgot/reset password said "SchoolKit" in plain bold sans, the one place a
+parent meets the product before anything else. The web's auth layout has
+shown the icon and the "school·kit" wordmark since the brand assets landed. The
+portal had no `public/` directory at all, so its tab showed Next's default
+icon. Both are fixed. `BrandHeading` (`apps/portal/src/components/
+brand-mark.tsx`) is a deliberate COPY of the web's lockup rather than a share:
+the web's is built on `next/image`, which belongs to each app, and
+`packages/ui` has no Next dependency. The visible lockup is `aria-hidden` and
+the `h1` carries a screen-reader "SchoolKit", so assistive tech does not read
+two spans as one lower-case word, and `terminology-presentation.spec.ts`
+still finds the heading by name.
+
+**Left as they are:** the two invitation-accept pages and the payment callback.
+They are single-card status pages ("You're all set", "Confirming your
+payment…"), now on the brand tokens, and each is seen once.
 
 ---
 

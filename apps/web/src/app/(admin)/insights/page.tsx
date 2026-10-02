@@ -153,7 +153,7 @@ export default function InsightsPage() {
               </p>
 
               {result.answer && (
-                <p className="rounded-md border-l-2 border-primary bg-muted/30 p-4 text-sm leading-relaxed">
+                <p className="rounded-md border bg-muted/30 p-4 text-sm leading-relaxed">
                   {result.answer}
                 </p>
               )}

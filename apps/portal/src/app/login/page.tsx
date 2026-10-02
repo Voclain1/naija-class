@@ -31,6 +31,7 @@ import {
   resolveNextPath,
   sessionEndNotice,
 } from "@/lib/session-end";
+import { BrandHeading } from "@/components/brand-mark";
 
 type SubmitState =
   | { kind: "idle" }
@@ -93,10 +94,7 @@ function LoginForm() {
 
   return (
     <main className="flex min-h-screen flex-col items-center justify-center gap-8 px-4 py-10">
-      <div className="flex flex-col items-center gap-1 text-center">
-        <h1 className="text-2xl font-semibold tracking-tight">SchoolKit</h1>
-        <p className="text-sm text-muted-foreground">Parent Portal</p>
-      </div>
+      <BrandHeading />
 
       {/* Shown only when the redirect actually carried a reason. A parent who
           pressed Sign out, or who is simply signing in, sees nothing —

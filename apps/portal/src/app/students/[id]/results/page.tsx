@@ -6,6 +6,8 @@ import { useEffect, useState } from "react";
 
 import type { PortalStudentDto, ReleasedResultSummaryDto } from "@school-kit/types";
 
+import { Appear, PageHeader, PageSkeleton } from "@school-kit/ui";
+
 import { SignOutButton } from "@/components/sign-out-button";
 import { buildLoginUrl, errorCodeFromBody, reasonFromErrorCode } from "@/lib/session-end";
 
@@ -67,26 +69,21 @@ export default function ResultsPage() {
 
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-2xl flex-col gap-6 px-4 py-10">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <Link href={`/students/${params.id}`} className="text-sm text-muted-foreground hover:underline">
+      <div className="flex flex-col gap-2">
+        <Link href={`/students/${params.id}`} className="self-start text-sm text-muted-foreground hover:underline">
           ← Back to child
         </Link>
-        <SignOutButton />
+        <PageHeader
+          title="Released results"
+          subtitle={
+            state.kind === "loaded"
+              ? `${state.student.firstName} ${state.student.lastName} · only report cards the school has published appear here.`
+              : "Only report cards the school has published appear here."
+          }
+          actions={<SignOutButton />}
+        />
       </div>
-      <header>
-        <h1 className="text-2xl font-semibold tracking-tight">Released results</h1>
-        {state.kind === "loaded" ? (
-          <p className="mt-1 text-sm text-muted-foreground">
-            {state.student.firstName} {state.student.lastName} · only report cards the school has
-            published appear here.
-          </p>
-        ) : (
-          <p className="mt-1 text-sm text-muted-foreground">
-            Only report cards the school has published appear here.
-          </p>
-        )}
-      </header>
-      {state.kind === "loading" && <p className="text-sm text-muted-foreground">Loading results…</p>}
+      {state.kind === "loading" && <PageSkeleton rows={2} />}
       {state.kind === "error" && (
         <p role="alert" className="text-sm text-destructive">
           We couldn&apos;t load results. Try again shortly.
@@ -94,26 +91,31 @@ export default function ResultsPage() {
       )}
       {state.kind === "loaded" &&
         (state.results.length === 0 ? (
-          <section className="rounded-lg border border-dashed bg-card p-6 text-center">
-            <h2 className="font-semibold">Nothing released yet</h2>
-            <p className="mt-1 text-sm text-muted-foreground">
+          // EmptyState's look, but not EmptyState itself: this title is an h2
+          // that guardian-released-results.spec.ts finds by role, and
+          // EmptyState renders its title as a paragraph.
+          <section className="flex flex-col items-center gap-2 rounded-lg border border-dashed bg-muted/30 p-8 text-center">
+            <h2 className="font-medium text-foreground">Nothing released yet</h2>
+            <p className="max-w-prose text-sm text-muted-foreground">
               When the school publishes a term&apos;s report card, it will appear here.
             </p>
           </section>
         ) : (
-          <section className="flex flex-col gap-3" aria-label="Released report cards">
-            {state.results.map((result) => (
-              <article key={result.reportCardId} className="rounded-lg border bg-card p-4 shadow-sm">
-                <h2 className="font-semibold">{result.termName}</h2>
-                <p className="text-sm text-muted-foreground">{result.academicYearLabel}</p>
-                <dl className="mt-3 grid grid-cols-3 gap-3 text-sm">
-                  <div><dt className="text-muted-foreground">Average</dt><dd>{formatAverage(result.overallAverage)}</dd></div>
-                  <div><dt className="text-muted-foreground">Subjects</dt><dd>{result.subjectsCount ?? "—"}</dd></div>
-                  <div><dt className="text-muted-foreground">Class</dt><dd>{result.classArmName}</dd></div>
-                </dl>
-              </article>
-            ))}
-          </section>
+          <Appear>
+            <section className="flex flex-col gap-3" aria-label="Released report cards">
+              {state.results.map((result) => (
+                <article key={result.reportCardId} className="rounded-lg border bg-card p-4 shadow-sm">
+                  <h2 className="font-semibold">{result.termName}</h2>
+                  <p className="text-sm text-muted-foreground">{result.academicYearLabel}</p>
+                  <dl className="mt-3 grid grid-cols-3 gap-3 text-sm">
+                    <div><dt className="text-muted-foreground">Average</dt><dd>{formatAverage(result.overallAverage)}</dd></div>
+                    <div><dt className="text-muted-foreground">Subjects</dt><dd>{result.subjectsCount ?? "—"}</dd></div>
+                    <div><dt className="text-muted-foreground">Class</dt><dd>{result.classArmName}</dd></div>
+                  </dl>
+                </article>
+              ))}
+            </section>
+          </Appear>
         ))}
     </main>
   );

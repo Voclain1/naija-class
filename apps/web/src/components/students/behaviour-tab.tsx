@@ -188,8 +188,11 @@ export function BehaviourTab({ studentId }: { studentId: string }) {
                 <li
                   key={item.id}
                   className={[
-                    "rounded-lg border-l-4 bg-card p-4",
-                    item.kind === "CONCERN" ? "border-l-destructive" : "border-l-primary",
+                    "rounded-lg border p-4",
+                    // The kind is a tinted background, never a coloured edge
+                    // (CLAUDE.md "Design system", 2026-10-02). A withdrawn
+                    // record no longer stands, so it carries no colour.
+                    withdrawn ? "bg-card" : item.kind === "CONCERN" ? "bg-destructive/5" : "bg-primary/5",
                     withdrawn ? "opacity-60" : "",
                   ].join(" ")}
                 >

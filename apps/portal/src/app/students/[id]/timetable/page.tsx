@@ -17,6 +17,8 @@ import {
   type FamilyTimetableDto,
 } from "@school-kit/types";
 
+import { Appear, EmptyState, PageHeader, PageSkeleton, SectionHeader } from "@school-kit/ui";
+
 import { SignOutButton } from "@/components/sign-out-button";
 import { buildLoginUrl, errorCodeFromBody, reasonFromErrorCode } from "@/lib/session-end";
 
@@ -26,6 +28,14 @@ const EMPTY: Record<Exclude<FamilyTimetableDto["state"], "PUBLISHED">, (d: Famil
   NO_CURRENT_TERM: () => "The school hasn't set the current term yet.",
   NOT_ENROLLED: (d) => `Your child isn't in a class for ${d.termName ?? "this term"}, so there is no class timetable to show.`,
   NOT_PUBLISHED: (d) => `The school hasn't published a timetable for ${d.className ?? "this class"} yet.`,
+};
+
+// What to do about each of the above — an empty state names the next step,
+// not only the absence (look-and-feel.md D1).
+const EMPTY_NEXT: Record<keyof typeof EMPTY, string> = {
+  NO_CURRENT_TERM: "The timetable appears here once the school starts the term.",
+  NOT_ENROLLED: "Contact the school if your child should be in a class this term.",
+  NOT_PUBLISHED: "It appears here as soon as the school publishes it.",
 };
 
 export default function ChildTimetablePage() {
@@ -71,22 +81,22 @@ export default function ChildTimetablePage() {
 
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-2xl flex-col gap-6 px-4 py-10">
-      <header className="flex flex-wrap items-start justify-between gap-4">
-        <div className="flex flex-col gap-1">
-          <Link href={`/students/${params.id}`} className="text-sm text-muted-foreground hover:underline">
-            ← Back to your child
-          </Link>
-          <h1 className="text-2xl font-semibold tracking-tight">Class timetable</h1>
-          {data?.state === "PUBLISHED" && (
-            <p className="text-sm text-muted-foreground">
-              {data.className} · {data.termName} · published by the school on {formatCalendarDate(data.publishedAt!.slice(0, 10))}
-            </p>
-          )}
-        </div>
-        <SignOutButton />
-      </header>
+      <div className="flex flex-col gap-2">
+        <Link href={`/students/${params.id}`} className="self-start text-sm text-muted-foreground hover:underline">
+          ← Back to your child
+        </Link>
+        <PageHeader
+          title="Class timetable"
+          subtitle={
+            data?.state === "PUBLISHED"
+              ? `${data.className} · ${data.termName} · published by the school on ${formatCalendarDate(data.publishedAt!.slice(0, 10))}`
+              : undefined
+          }
+          actions={<SignOutButton />}
+        />
+      </div>
 
-      {state.kind === "loading" && <p className="text-sm text-muted-foreground">Loading…</p>}
+      {state.kind === "loading" && <PageSkeleton rows={5} />}
       {state.kind === "error" && (
         <p role="alert" className="text-sm text-destructive">
           {state.message}
@@ -94,36 +104,40 @@ export default function ChildTimetablePage() {
       )}
 
       {data && data.state !== "PUBLISHED" && (
-        <div className="rounded-lg border border-dashed bg-card p-6 text-center text-sm text-muted-foreground">{EMPTY[data.state](data)}</div>
+        <EmptyState title={EMPTY[data.state](data)} body={EMPTY_NEXT[data.state]} />
       )}
 
-      {data?.state === "PUBLISHED" &&
-        data.grid!.days.map((day) => (
-          <section key={day} aria-label={ISO_WEEKDAY_LABELS[day]} className="flex flex-col gap-2">
-            <h2 className="text-lg font-semibold">{ISO_WEEKDAY_LABELS[day]}</h2>
-            <ol className="flex flex-col divide-y rounded-lg border bg-card shadow-sm">
-              {publishedDay(data.grid!, day).map((row) => (
-                <li key={`${day}-${row.slot.position}`} className={`flex gap-3 p-3 ${row.slot.kind !== "LESSON" ? "bg-muted/50" : ""}`}>
-                  <span className="w-28 shrink-0 text-sm text-muted-foreground">
-                    {formatMinuteOfDay(row.slot.startMinute)}–{formatMinuteOfDay(row.endMinute)}
-                  </span>
-                  {row.slot.kind !== "LESSON" ? (
-                    <span className="text-sm text-muted-foreground">{row.slot.label}</span>
-                  ) : row.lesson ? (
-                    <span className="flex flex-col">
-                      <span className="font-medium">{row.lesson.subjectName}</span>
-                      {row.lesson.teacherNames.length > 0 && (
-                        <span className="text-sm text-muted-foreground">{row.lesson.teacherNames.join(", ")}</span>
-                      )}
+      {data?.state === "PUBLISHED" && (
+        // The week arrives as one block, never day by day (D5).
+        <Appear className="flex flex-col gap-6">
+          {data.grid!.days.map((day) => (
+            <section key={day} aria-label={ISO_WEEKDAY_LABELS[day]} className="flex flex-col gap-2">
+              <SectionHeader title={ISO_WEEKDAY_LABELS[day] ?? ""} />
+              <ol className="flex flex-col divide-y rounded-lg border bg-card shadow-sm">
+                {publishedDay(data.grid!, day).map((row) => (
+                  <li key={`${day}-${row.slot.position}`} className={`flex gap-3 p-3 ${row.slot.kind !== "LESSON" ? "bg-muted/50" : ""}`}>
+                    <span className="w-28 shrink-0 text-sm text-muted-foreground">
+                      {formatMinuteOfDay(row.slot.startMinute)}–{formatMinuteOfDay(row.endMinute)}
                     </span>
-                  ) : (
-                    <span className="text-sm text-muted-foreground">{row.slot.label} — free</span>
-                  )}
-                </li>
-              ))}
-            </ol>
-          </section>
-        ))}
+                    {row.slot.kind !== "LESSON" ? (
+                      <span className="text-sm text-muted-foreground">{row.slot.label}</span>
+                    ) : row.lesson ? (
+                      <span className="flex flex-col">
+                        <span className="font-medium">{row.lesson.subjectName}</span>
+                        {row.lesson.teacherNames.length > 0 && (
+                          <span className="text-sm text-muted-foreground">{row.lesson.teacherNames.join(", ")}</span>
+                        )}
+                      </span>
+                    ) : (
+                      <span className="text-sm text-muted-foreground">{row.slot.label} — free</span>
+                    )}
+                  </li>
+                ))}
+              </ol>
+            </section>
+          ))}
+        </Appear>
+      )}
     </main>
   );
 }

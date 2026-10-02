@@ -672,6 +672,17 @@ CDN), exposed as `--font-hanken-grotesk`/`--font-fraunces` and re-mapped to
 `attribute="class"`, matching the existing `darkMode: ["class"]` Tailwind
 config) is genuinely new — it did not exist before this initiative.
 
+**No accent borders — anywhere (owner's decision, 2026-10-02).** No thick or
+coloured edge on one side of a box: no emerald stripe for "unread", no red edge
+for a concern, no gold rule beside a quote — on web, portal, mobile, or in HTML
+the API renders (receipts). When a box needs to say something, **tint its
+background** instead — unread announcements, a concern versus a commendation, a
+warning figure — and say it in words too: a "New" badge, a coloured "Concern"
+label, amber text on the figure. The tint is for the eye, the word is for
+anyone who cannot tell two backgrounds apart. Enforced by `apps/web/src/no-accent-borders.spec.ts`, which scans every
+UI workspace for the Tailwind, React Native and CSS forms; a plain 1px
+`border-l`/`border-r` (table gridlines, split-button dividers) is allowed.
+
 **"Groups" API shape — the single-school-now/multi-campus-later pattern.**
 `Branch` has existed in the schema since Phase 0 (full CRUD, RLS, permissions)
 but no operational table (`Student`, `Enrollment`, `Invoice`, `AttendanceRecord`,

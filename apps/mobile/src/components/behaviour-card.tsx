@@ -125,7 +125,16 @@ export function BehaviourCard({
         data!.data.map((item) => {
           const withdrawn = item.withdrawnAt !== null;
           return (
-            <View key={item.id} style={[styles.row, { borderLeftColor: item.kind === "CONCERN" ? colors.danger : colors.primary }]}>
+            <View
+              key={item.id}
+              style={[
+                styles.row,
+                // The kind is a tinted background, never a coloured edge
+                // (CLAUDE.md "Design system", 2026-10-02). A withdrawn record
+                // no longer stands, so it carries no colour at all.
+                withdrawn ? null : { backgroundColor: (item.kind === "CONCERN" ? colors.danger : colors.primary) + "0F" },
+              ]}
+            >
               <View style={styles.rowHead}>
                 <Text
                   style={[
@@ -182,7 +191,7 @@ export function BehaviourCard({
 
 const styles = StyleSheet.create({
   head: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: spacing.sm },
-  row: { borderLeftWidth: 3, paddingLeft: spacing.sm, gap: spacing.xs, marginTop: spacing.sm },
+  row: { gap: spacing.xs, marginTop: spacing.sm, padding: spacing.sm, borderRadius: radii.md },
   rowHead: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: spacing.sm },
   kind: { fontFamily: fonts.sansSemibold, fontSize: fontSizes.caption },
   form: { gap: spacing.sm, marginTop: spacing.sm, borderRadius: radii.sm },
