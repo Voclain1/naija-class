@@ -55,6 +55,11 @@ function describeFailure(error: unknown): string {
     if (error.code === "COMMENT_NOT_EDITABLE") {
       return "The principal's note can only be written once every card has been reviewed by the form teacher, and before approval.";
     }
+    if (error.code === "PROMOTION_STATUS_MISSING") {
+      // Phase 8 / CP6a — the final term needs every student's end-of-year
+      // decision first. The app has no editor for it; the web approval screen does.
+      return `${error.message} Promotion statuses are set on the web, on this class's report cards.`;
+    }
     if (error.code === "ARM_RENDER_IN_FLIGHT") {
       return "These report cards are still being prepared as PDFs. Try again in a minute.";
     }

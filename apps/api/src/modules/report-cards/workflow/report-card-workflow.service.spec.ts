@@ -116,6 +116,9 @@ describe("ReportCardWorkflowService (cp1 — state machine + gates)", () => {
         data: { schoolId, academicYearId: year.id, sequence: 1, name: "First Term", startDate: new Date("2025-09-01"), endDate: new Date("2025-12-15"), isCurrent: true },
         select: { id: true },
       });
+      // A later term in the same year, so the term above is a FIRST term, not the
+      // final one — the final term needs a promotion status to approve (CP6a, D53).
+      await db.term.create({ data: { schoolId, academicYearId: year.id, sequence: 2, name: "Second Term", startDate: new Date("2026-01-05"), endDate: new Date("2026-04-10") } });
       return { yearId: year.id, termId: term.id };
     });
   }
@@ -321,5 +324,108 @@ describe("ReportCardWorkflowService (cp1 — state machine + gates)", () => {
     await expect(
       workflow.formReview(ctx(schoolId, ownerId), { termId, classArmId: armId }, reqCtx),
     ).rejects.toMatchObject({ code: "NO_REPORT_CARDS" });
+  }, 60_000);
+  // ---- Phase 8 / CP6a — promotion status (§20.3, D52/D53) -----------------
+
+  // The seeded year has a first and a second term. Removing the (empty) second
+  // term makes the first the FINAL term — "final" is derived from the year's
+  // terms, never stored, so this is exactly what a school would see.
+  async function seedFinalTermArm(suffix: string) {
+    const f = await seedReviewedArm(suffix);
+    await withTenant(f.schoolId, (db) => db.term.deleteMany({ where: { academicYearId: f.yearId, sequence: { gt: 1 } } }));
+    await workflow.formReview(ctx(f.schoolId, f.ownerId), { termId: f.termId, classArmId: f.armId }, reqCtx);
+    const cards = await withTenant(f.schoolId, (db) =>
+      db.reportCard.findMany({ where: { termId: f.termId, classArmId: f.armId }, select: { id: true }, orderBy: { id: "asc" } }),
+    );
+    return { ...f, cardIds: cards.map((c) => c.id) };
+  }
+
+  it("final term: approve refuses until EVERY card has a promotion status, naming how many are missing", async () => {
+    const f = await seedFinalTermArm("promo-gate");
+    const arm = { termId: f.termId, classArmId: f.armId };
+    const owner = ctx(f.schoolId, f.ownerId);
+
+    await expect(workflow.approve(owner, arm, reqCtx)).rejects.toMatchObject({
+      code: "PROMOTION_STATUS_MISSING",
+      details: { missing: 2 },
+    });
+
+    const set = await workflow.setPromotionStatus(owner, f.cardIds[0]!, { promotionStatus: "PROMOTED" }, reqCtx);
+    expect(set.promotionStatus).toBe("PROMOTED");
+    await expect(workflow.approve(owner, arm, reqCtx)).rejects.toMatchObject({
+      code: "PROMOTION_STATUS_MISSING",
+      details: { missing: 1 },
+    });
+
+    await workflow.setPromotionStatus(owner, f.cardIds[1]!, { promotionStatus: "REPEAT" }, reqCtx);
+    expect(await workflow.approve(owner, arm, reqCtx)).toEqual({ status: "PRINCIPAL_APPROVED", cardCount: 2 });
+
+    // Every set is audited, with what it changed from and to.
+    const audits = await withTenant(f.schoolId, (db) =>
+      db.auditLog.findMany({ where: { action: "report-card.promotion-status" }, select: { entityId: true, metadata: true } }),
+    );
+    expect(audits).toHaveLength(2);
+    expect(audits.find((a) => a.entityId === f.cardIds[0])?.metadata).toMatchObject({ from: null, to: "PROMOTED" });
+  }, 60_000);
+
+  it("a cleared status counts as missing again", async () => {
+    const f = await seedFinalTermArm("promo-clear");
+    const owner = ctx(f.schoolId, f.ownerId);
+    for (const id of f.cardIds) await workflow.setPromotionStatus(owner, id, { promotionStatus: "PROMOTED" }, reqCtx);
+    await workflow.setPromotionStatus(owner, f.cardIds[0]!, { promotionStatus: null }, reqCtx);
+    await expect(workflow.approve(owner, { termId: f.termId, classArmId: f.armId }, reqCtx)).rejects.toMatchObject({
+      code: "PROMOTION_STATUS_MISSING",
+      details: { missing: 1 },
+    });
+  }, 60_000);
+
+  it("setting it is refused outside its place: not the final term, not FORM_REVIEWED, not a teacher, not another school", async () => {
+    // Not the final term: the ordinary fixture's first term has a second after it.
+    const first = await seedReviewedArm("promo-first");
+    const firstOwner = ctx(first.schoolId, first.ownerId);
+    await workflow.formReview(firstOwner, { termId: first.termId, classArmId: first.armId }, reqCtx);
+    const firstCard = await withTenant(first.schoolId, (db) =>
+      db.reportCard.findFirstOrThrow({ where: { termId: first.termId }, select: { id: true } }),
+    );
+    await expect(
+      workflow.setPromotionStatus(firstOwner, firstCard.id, { promotionStatus: "PROMOTED" }, reqCtx),
+    ).rejects.toMatchObject({ code: "PROMOTION_NOT_FINAL_TERM" });
+
+    // Final term, but approved already — past the principal's step.
+    const f = await seedFinalTermArm("promo-place");
+    const owner = ctx(f.schoolId, f.ownerId);
+    for (const id of f.cardIds) await workflow.setPromotionStatus(owner, id, { promotionStatus: "PROMOTED" }, reqCtx);
+    await workflow.approve(owner, { termId: f.termId, classArmId: f.armId }, reqCtx);
+    await expect(
+      workflow.setPromotionStatus(owner, f.cardIds[0]!, { promotionStatus: "REPEAT" }, reqCtx),
+    ).rejects.toMatchObject({ code: "PROMOTION_STATUS_NOT_EDITABLE" });
+
+    // The form teacher may review the arm, but the decision is the principal's.
+    await expect(
+      workflow.setPromotionStatus(ctx(f.schoolId, f.teacherId), f.cardIds[0]!, { promotionStatus: "REPEAT" }, reqCtx),
+    ).rejects.toBeInstanceOf(ForbiddenError);
+
+    // Another school's owner cannot even find the card.
+    const other = await makeSchool("promo-other");
+    await expect(
+      workflow.setPromotionStatus(ctx(other.schoolId, other.ownerId), f.cardIds[0]!, { promotionStatus: "REPEAT" }, reqCtx),
+    ).rejects.toBeInstanceOf(NotFoundError);
+  }, 90_000);
+
+  it("a reopen keeps the decision — it is about the student, not the marks", async () => {
+    const f = await seedFinalTermArm("promo-reopen");
+    const owner = ctx(f.schoolId, f.ownerId);
+    await workflow.setPromotionStatus(owner, f.cardIds[0]!, { promotionStatus: "PROMOTED_ON_TRIAL" }, reqCtx);
+    await workflow.setPromotionStatus(owner, f.cardIds[1]!, { promotionStatus: "GRADUATED" }, reqCtx);
+    await workflow.approve(owner, { termId: f.termId, classArmId: f.armId }, reqCtx);
+    await workflow.reopen(owner, { termId: f.termId, classArmId: f.armId, reason: "Wrong exam score" }, reqCtx);
+
+    const after = await withTenant(f.schoolId, (db) =>
+      db.reportCard.findMany({ where: { id: { in: f.cardIds } }, select: { status: true, promotionStatus: true }, orderBy: { id: "asc" } }),
+    );
+    expect(after).toEqual([
+      { status: "DRAFT", promotionStatus: "PROMOTED_ON_TRIAL" },
+      { status: "DRAFT", promotionStatus: "GRADUATED" },
+    ]);
   }, 60_000);
 });

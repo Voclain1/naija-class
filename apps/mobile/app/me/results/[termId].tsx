@@ -16,6 +16,8 @@ import {
   Screen,
 } from "../../../src/components/ui";
 import { FreshnessLabel } from "../../../src/components/freshness-label";
+import { PrincipalRemark, ResultStanding } from "../../../src/components/result-extras";
+import { positionLabel } from "../../../src/lib/results/result-extras";
 
 // A student's own report card for one term. Mirrors the guardian screen at
 // app/students/[id]/results/[termId], minus the student id — the term id is
@@ -99,8 +101,18 @@ export default function MyResultDetailScreen() {
                   <Label>Subjects</Label>
                   <Body>{result.subjectsCount ?? "—"}</Body>
                 </View>
+                {/* Only when the school shows position to families (CP6a);
+                    otherwise no metric at all, never a dash. */}
+                {positionLabel(result.overallPosition) ? (
+                  <View style={styles.metric}>
+                    <Label>Position</Label>
+                    <Body>{positionLabel(result.overallPosition)}</Body>
+                  </View>
+                ) : null}
               </View>
             </Card>
+
+            <ResultStanding result={result} />
 
             <Card>
               <Heading>Subjects</Heading>
@@ -116,6 +128,7 @@ export default function MyResultDetailScreen() {
                     <View style={styles.subjectScore}>
                       <Body>{s.totalScore}</Body>
                       {s.letterGrade ? <Label>{s.letterGrade}</Label> : null}
+                      {positionLabel(s.subjectPosition) ? <Label>{positionLabel(s.subjectPosition)}</Label> : null}
                     </View>
                   </View>
                 ))
@@ -128,6 +141,8 @@ export default function MyResultDetailScreen() {
                 <Body>{result.formTeacherComment}</Body>
               </Card>
             ) : null}
+
+            <PrincipalRemark result={result} />
           </>
         )}
       </ScrollView>

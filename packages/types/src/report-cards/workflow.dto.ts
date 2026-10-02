@@ -57,3 +57,13 @@ export type PrincipalNoteUpdateInput = z.infer<typeof principalNoteUpdateSchema>
 export interface PrincipalNoteResultDto {
   cardCount: number;
 }
+
+// PATCH /report-cards/:id/promotion-status (Phase 8 / CP6a, §20.3) — the
+// per-student end-of-year decision. Final term only, owner/admin, while the arm
+// is FORM_REVIEWED. null clears it (the arm then cannot be approved).
+export const promotionStatusUpdateSchema = z
+  .object({
+    promotionStatus: z.enum(["PROMOTED", "PROMOTED_ON_TRIAL", "REPEAT", "GRADUATED"]).nullable(),
+  })
+  .strict();
+export type PromotionStatusUpdateInput = z.infer<typeof promotionStatusUpdateSchema>;

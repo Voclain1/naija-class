@@ -1067,6 +1067,8 @@ const SCHOOL_RESPONSE_SELECT = {
   ndprConsent: true,
   ndprConsentAt: true,
   subjectAttendanceEnabled: true,
+  positionVisibleToFamilies: true,
+  positionOnReportCardPdf: true,
   paystackSubaccountCode: true,
   paystackSplitCode: true,
   paystackPaymentsEnabled: true,

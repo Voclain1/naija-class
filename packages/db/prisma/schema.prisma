@@ -44,6 +44,12 @@ model School {
   // Opt-in to subject-period attendance (Phase 2 / Slice 8). Default false:
   // the subject-attendance surface 404s until a school turns it on.
   subjectAttendanceEnabled Boolean      @default(false) @map("subject_attendance_enabled")
+  // Phase 8c / CP6a (phase-8.md §20.1, D47 + D51) — class and subject position
+  // on released results, as TWO settings because the surfaces disagreed before
+  // either existed: the portals hid position, the PDF printed it. Defaults
+  // reproduce exactly that, so nothing changes until a school chooses.
+  positionVisibleToFamilies Boolean @default(false) @map("position_visible_to_families")
+  positionOnReportCardPdf   Boolean @default(true) @map("position_on_report_card_pdf")
   // Phase 8 / CP3 (docs/modules/phase-8.md §17 D34). ISO weekdays the school
   // teaches (1 = Monday … 7 = Sunday). Default Monday–Friday; some Nigerian
   // private schools also teach Saturday. The timetable grid shows these days,
@@ -2080,6 +2086,16 @@ model ReportCard {
   subjectsCount       Int?                @map("subjects_count")
   formTeacherComment  String?             @map("form_teacher_comment") // per student-term; AI-hook-ready (Phase 5)
   principalNote       String?             @map("principal_note") // per arm-term; AI-hook-ready (Phase 5)
+  // Phase 8c / CP6a (phase-8.md §20.2) — term attendance, SNAPSHOTTED at build
+  // like the rest of the rollup, with the /attendance/summary rule: PRESENT +
+  // LATE attended; ABSENT + EXCUSED not. NULL on cards built before CP6a, and
+  // NULL renders as no attendance line — never as zero.
+  attendanceDaysOpened Int?             @map("attendance_days_opened") // arm's distinct marked dates
+  attendancePresent    Int?             @map("attendance_present")
+  attendanceAbsent     Int?             @map("attendance_absent")
+  // Phase 8c / CP6a (§20.3, D12/D52/D53) — display only, final term of the
+  // year only, set at principal approval. Never reads or writes Enrollment.
+  promotionStatus      PromotionStatus? @map("promotion_status")
   formReviewedAt      DateTime?           @map("form_reviewed_at")
   formReviewedBy      String?             @map("form_reviewed_by") // users.id
   principalApprovedAt DateTime?           @map("principal_approved_at")
@@ -2103,6 +2119,17 @@ enum ReportCardStatus {
   FORM_REVIEWED // form teacher reviewed the arm + wrote form comments
   PRINCIPAL_APPROVED // principal approved the arm
   RELEASED // parent-visible; PDF materialized
+}
+
+// Phase 8c / CP6a (D52). GRADUATED is for a school's final class, where
+// "promoted" names no next class.
+enum PromotionStatus {
+  PROMOTED
+  PROMOTED_ON_TRIAL
+  REPEAT
+  GRADUATED
+
+  @@map("promotion_status")
 }
 
 enum ReportCardPdfStatus {

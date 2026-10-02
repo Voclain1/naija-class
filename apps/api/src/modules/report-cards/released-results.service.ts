@@ -38,25 +38,17 @@ import {
 // the requester may see this student: the student guard pins studentId to the
 // session, and the guardian path goes through assertLinked().
 
-/**
- * Whether a family sees class/subject positions.
- *
- * Currently FALSE. Not because rank is private — it is the student's own
- * datum and discloses no other child's score — but because whether to show it
- * belongs to the SCHOOL, and there is no school-level setting yet. Some
- * schools rank deliberately and publish it; others have moved away from it.
- * Until that switch exists, hiding is the reversible direction: showing a
- * position later is additive, withdrawing one a family has already seen is a
- * retraction.
- *
- * Note the released PDF template DOES render "Position in Class" as one of
- * its four headline boxes. That is not a contradiction to be fixed by
- * flipping this flag — it is the same missing school-level setting showing up
- * on a second surface, and both should move together when it lands.
- *
- * Flipping this to `true` is the entire change; no call site branches on it.
- */
-export const FAMILY_VISIBLE_POSITION = false;
+// Whether a family sees class/subject positions is the SCHOOL's call
+// (School.positionVisibleToFamilies, Phase 8 / CP6a, D47/D51). Not because rank is
+// private — it is the student's own datum and discloses no other child's score
+// — but because some schools rank deliberately and publish it while others
+// have moved away from it. It defaults OFF: showing a position later is
+// additive, withdrawing one a family has already seen is a retraction.
+//
+// Read per request, in the same place for both principals, so the student and
+// the guardian can never be shown different answers. The printed PDF has its
+// own switch (positionOnReportCardPdf) — a school may print rank on the paper
+// it hands out and still keep it off the screens.
 
 // Same local alias the rest of this module uses — `withTenant`'s callback
 // parameter. Not exported by @school-kit/db.
@@ -86,6 +78,11 @@ const DETAIL_SELECT = {
   overallPosition: true,
   subjectsCount: true,
   formTeacherComment: true,
+  principalNote: true,
+  attendanceDaysOpened: true,
+  attendancePresent: true,
+  attendanceAbsent: true,
+  promotionStatus: true,
   releasedAt: true,
 } satisfies Prisma.ReportCardSelect;
 
@@ -166,7 +163,10 @@ export class ReleasedResultsService {
       // `schools` is the tenant table and carries no RLS policy of its own —
       // it must be filtered by the card's school_id explicitly. Same note as
       // ReportCardService.getRenderData.
-      db.school.findUnique({ where: { id: card.schoolId }, select: { name: true } }),
+      db.school.findUnique({
+        where: { id: card.schoolId },
+        select: { name: true, positionVisibleToFamilies: true },
+      }),
       db.term.findUnique({ where: { id: card.termId }, select: { name: true } }),
       db.academicYear.findUnique({ where: { id: card.academicYearId }, select: { label: true } }),
       db.classArm.findUnique({ where: { id: card.classArmId }, select: { name: true } }),
@@ -196,6 +196,7 @@ export class ReleasedResultsService {
       select: { id: true, name: true },
     });
     const subjectName = new Map(subjectRows.map((s) => [s.id, s.name]));
+    const showPosition = school.positionVisibleToFamilies;
 
     const subjects: FamilySubjectRowDto[] = assessments
       .map((a) => ({
@@ -204,7 +205,7 @@ export class ReleasedResultsService {
         totalScore: a.totalScore,
         letterGrade: a.letterGrade,
         remark: a.remark,
-        subjectPosition: FAMILY_VISIBLE_POSITION ? a.subjectPosition : null,
+        subjectPosition: showPosition ? a.subjectPosition : null,
       }))
       .sort((x, y) => x.subjectName.localeCompare(y.subjectName));
 
@@ -223,9 +224,20 @@ export class ReleasedResultsService {
       },
       overallTotal: card.overallTotal,
       overallAverage: card.overallAverage,
-      overallPosition: FAMILY_VISIBLE_POSITION ? card.overallPosition : null,
+      overallPosition: showPosition ? card.overallPosition : null,
       subjectsCount: card.subjectsCount,
       formTeacherComment: card.formTeacherComment,
+      principalNote: card.principalNote,
+      // The three columns are written together at build — all set or all null.
+      attendance:
+        card.attendanceDaysOpened === null || card.attendancePresent === null || card.attendanceAbsent === null
+          ? null
+          : {
+              daysOpened: card.attendanceDaysOpened,
+              present: card.attendancePresent,
+              absent: card.attendanceAbsent,
+            },
+      promotionStatus: card.promotionStatus,
       subjects,
       releasedAt: card.releasedAt as Date,
     };

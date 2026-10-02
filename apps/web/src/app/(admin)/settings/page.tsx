@@ -1,4 +1,4 @@
-import { BarChart3, Bell, Building2, CalendarCheck, CalendarClock, CreditCard, Gauge, Percent, ShieldCheck, SlidersHorizontal, Sparkles, User, Users, Wallet, type LucideIcon } from "lucide-react";
+import { BarChart3, Bell, Building2, CalendarCheck, CalendarClock, CreditCard, FileText, Gauge, Percent, ShieldCheck, SlidersHorizontal, Sparkles, User, Users, Wallet, type LucideIcon } from "lucide-react";
 import Link from "next/link";
 
 import { PageHeader } from "@/components/layout/page-primitives";
@@ -55,6 +55,12 @@ const LINKS: SettingsLink[] = [
     href: "/settings/attendance",
     description: "Enable subject-period attendance for teachers.",
     icon: CalendarCheck,
+  },
+  {
+    label: "Report cards",
+    href: "/settings/report-cards",
+    description: "Whether class position appears on printed cards and to families.",
+    icon: FileText,
   },
   {
     label: "Notifications",

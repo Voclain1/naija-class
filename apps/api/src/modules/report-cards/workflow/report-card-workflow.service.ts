@@ -6,6 +6,7 @@ import {
   NotFoundError,
   type PrincipalNoteResultDto,
   type PrincipalNoteUpdateInput,
+  type PromotionStatusUpdateInput,
   type ReportCardArmActionInput,
   type ReportCardArmReopenInput,
   type ReportCardCommentUpdateInput,
@@ -18,6 +19,7 @@ import { assertUserActiveAndHasOneOf } from "../../../common/auth/role-check";
 import { wakeRenderWorker } from "../render/wake-render-worker";
 import { REPORT_CARD_SELECT, ReportCardService, toReportCardDto } from "../report-card.service";
 import { assertOwnerAdminOrFormTeacher } from "./form-teacher-guard";
+import { isFinalTerm } from "./final-term";
 import { assertNoReleasedCards } from "./released-guard";
 import { EventNotifierService } from "../../notifications/event-notifier.service.js";
 import { isArmFullySignedOff } from "./subject-reviewed-cascade";
@@ -40,6 +42,7 @@ const AUDIT = {
   release: "report-card.release",
   reopen: "report-card.reopen",
   comment: "report-card.comment",
+  promotionStatus: "report-card.promotion-status",
 } as const;
 
 // ReportCardWorkflowService (Phase 2 / Slice 6) — the arm-batch approval state
@@ -116,6 +119,22 @@ export class ReportCardWorkflowService {
 
       const cards = await this.loadArmCards(db, input);
       assertAllInState(cards, ["FORM_REVIEWED"], "approve");
+
+      // D53: a final-term arm cannot be approved until every card carries the
+      // end-of-year decision. Blocking here, at the principal's step, is what
+      // keeps a released final-term card from ever reaching a family with the
+      // one line they open it for left blank.
+      if (await isFinalTerm(db, input.termId)) {
+        const missing = cards.filter((card) => card.promotionStatus === null).length;
+        if (missing > 0) {
+          throw new ConflictError(
+            "PROMOTION_STATUS_MISSING",
+            `${missing} ${missing === 1 ? "student has" : "students have"} no promotion status yet. ` +
+              "Set one for every student before approving the final term.",
+            { missing },
+          );
+        }
+      }
 
       const fromStatus = distinctStatuses(cards).join(",");
       await db.reportCard.updateMany({
@@ -346,6 +365,60 @@ export class ReportCardWorkflowService {
     });
   }
 
+  // PATCH /report-cards/:id/promotion-status — owner/admin only (Phase 8 /
+  // CP6a, §20.3). The end-of-year decision for one student, set at the
+  // principal's step: FORM_REVIEWED only, final term only. A reopen keeps it
+  // (it is a decision about the student, not about the marks), and RELEASED
+  // freezes it like everything else on the card.
+  async setPromotionStatus(
+    authCtx: AuthContext,
+    reportCardId: string,
+    input: PromotionStatusUpdateInput,
+    reqCtx: RequestContext,
+  ): Promise<ReportCardDto> {
+    await assertUserActiveAndHasOneOf(authCtx, ["owner", "admin"]);
+
+    return withTenant(authCtx.schoolId, async (db) => {
+      const card = await db.reportCard.findUnique({
+        where: { id: reportCardId },
+        select: { id: true, studentId: true, termId: true, classArmId: true, status: true, promotionStatus: true },
+      });
+      if (!card) throw new NotFoundError("Report card not found.");
+
+      if (!(await isFinalTerm(db, card.termId))) {
+        throw new ConflictError(
+          "PROMOTION_NOT_FINAL_TERM",
+          "A promotion status can only be set on the last term of the academic year.",
+        );
+      }
+      if (card.status !== "FORM_REVIEWED") {
+        throw new ConflictError(
+          "PROMOTION_STATUS_NOT_EDITABLE",
+          "The promotion status can only be set while the arm is in FORM_REVIEWED.",
+        );
+      }
+      // Defence-in-depth, as for the comments: the state gate already excludes
+      // RELEASED.
+      await assertNoReleasedCards(db, card.termId, [card.studentId]);
+
+      const updated = await db.reportCard.update({
+        where: { id: reportCardId },
+        data: { promotionStatus: input.promotionStatus },
+        select: REPORT_CARD_SELECT,
+      });
+
+      await this.writeAuditMeta(db, authCtx, reqCtx, AUDIT.promotionStatus, reportCardId, {
+        reportCardId,
+        studentId: card.studentId,
+        termId: card.termId,
+        classArmId: card.classArmId,
+        from: card.promotionStatus,
+        to: input.promotionStatus,
+      });
+      return toReportCardDto(updated);
+    });
+  }
+
   // =========================================================================
   // Internals
   // =========================================================================
@@ -353,7 +426,7 @@ export class ReportCardWorkflowService {
   private loadArmCards(db: TenantDb, input: { termId: string; classArmId: string }) {
     return db.reportCard.findMany({
       where: { termId: input.termId, classArmId: input.classArmId },
-      select: { id: true, status: true },
+      select: { id: true, status: true, promotionStatus: true },
     });
   }
 

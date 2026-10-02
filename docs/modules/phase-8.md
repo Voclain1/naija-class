@@ -277,6 +277,52 @@ thing first. §17.2 confirms it simplifies clash checking, and by how much.
 tutor) and Q10 (the PII hard rule). **They do not block CP0 or any Phase 8
 checkpoint;** they must be resolved before Phase 8b's CP7 begins.
 
+### 3.6 Seventh round — Phase 8c result decisions, Arinzechukwu, 2026-10-02
+
+The four questions that blocked Phase 8c's results work (CP6a, CP6b), each
+answered with the recommendation already recorded in §11.2. Question numbers
+kept for traceability.
+
+**D47 (Q24) — The school-level position-visibility setting defaults to
+HIDDEN.** Today's behaviour (`FAMILY_VISIBLE_POSITION = false`) stays until a
+school turns position on, so no school starts showing class rankings to
+families because a release happened to cross this change. The setting
+governs the PDF and both portals together, as the constant's own comment
+always intended.
+
+**D48 (Q20) — Free-or-PIN access is chosen per class arm × term,** the same
+granularity results are already released at. One choice, made at the moment
+an arm's results go out; fixed at release (D18).
+
+**D49 (Q22) — The public checker requires the admission number AND the
+PIN.** Admission numbers alone are sequential and guessable; a PIN alone
+would be the only secret. Both together, plus the enumeration defence in
+§10.3.
+
+**D50 (Q28) — No lighter "unpublish" in v1.** Withdrawing released results
+stays the existing owner-only reopen to DRAFT (`report-card-workflow.service.ts`),
+which already keeps the PDF at its deterministic path. Checker PDF URLs use a
+short TTL (§10.2 item 4) so a reopened card's link dies quickly.
+
+With these, **Phase 8c's CP6a and CP6b are unblocked.** CP5 (Exams) still
+waits on Q15.
+
+**D51 — Position is TWO school settings, not one, so nothing changes until a
+school chooses.** The constant's comment said the PDF and the portals "should
+move together", but today they disagree: the released PDF prints class and
+subject positions, the portals hide them. One switch defaulting to hidden
+(D47) would silently strip position from every school's next printed cards.
+So: **position in the portals** (default OFF, D47) and **position on the PDF**
+(default ON, today's PDF). A school can turn the first on or the second off.
+
+**D52 — Promotion status takes four values:** Promoted, Promoted on trial,
+Repeat, and Graduated — the last for a school's final class (SS3, Primary 6),
+where "promoted" has no next class to name.
+
+**D53 — Approval of a final-term arm is blocked until every card has a
+promotion status.** A final-term card does not go out without the line
+families look for; the approve action names how many are missing.
+
 ---
 
 ## 4. Reports
@@ -1046,6 +1092,10 @@ already costed in: the portal lock was §10.2's first finding.
 | Q27 | Audit-log teacher-performance views? | Yes, every view (§3.4 D23) |
 | Q29 | PIN batch scope | One academic year + term, chosen at generation (D15) |
 | Q30 | Re-export PINs after generation? | No: export once, hashed storage, void and regenerate if lost (D16) |
+| Q20 | Checker access granularity | Per class arm × term, matching release (D48) |
+| Q22 | Checker identifiers | Admission number AND PIN (D49) |
+| Q24 | Position-visibility default | Hidden until a school turns it on (D47) |
+| Q28 | Lighter unpublish? | Not in v1; the owner-only reopen stands (D50) |
 
 ### 11.2 Still open
 
@@ -1055,10 +1105,6 @@ already costed in: the portal lock was §10.2's first finding.
 | **Q10** | PII hard rule vs a child's free text | CP7 | — (policy call) |
 | **Q12** | Tutor behaviour with no approved curriculum document | CP8 | Refuse politely, naming the subject |
 | **Q15** | Assessments & Exams: which of (i)–(iii)? | CP5 | (i) + (ii) |
-| **Q20** | "Per result" access mode: per school × term, per arm × term, or per student? | CP6b | Per arm × term, matching release |
-| **Q22** | Checker identifiers: admission number **and** PIN, or either? | CP6b | Both required |
-| **Q24** | Default of the new school-level position-visibility setting? | CP6a | Hidden (today's behaviour) until a school turns it on |
-| **Q28** | Is a lighter "unpublish" needed, beyond the existing owner-only reopen to DRAFT? | CP6b | Not in v1 |
 
 Q9 and Q10 are **not engineering decisions** and must not be closed by one.
 Neither is the safeguarding workstream (§6.4).
@@ -4128,3 +4174,112 @@ unused. Whether the next best step is more features (8c) or getting a pilot
 school to actually use the calendar, reports and timetable — which would also
 answer §19.3 items 3 and 4 — is a product call, recorded here so it is made
 deliberately.
+
+---
+
+## 20. CP6a plan-first — Report card completeness
+
+**Status:** approved through D47 and D51–D53 (2026-10-02). Implementation
+follows this section; anything it changes is recorded back here.
+
+What the Result Checker (CP6b) must show and today's card lacks (§10.2 item 2),
+built so the portals and the PDF benefit first.
+
+### 20.1 Position — two school settings (D47, D51)
+
+- `schools.position_visible_to_families` (BOOLEAN, default **false**) — the
+  guardian portal and student mobile. Replaces `FAMILY_VISIBLE_POSITION`;
+  `released-results.service.ts` reads the school's value instead of the
+  constant. Both overall and subject positions follow it.
+- `schools.position_on_report_card_pdf` (BOOLEAN, default **true**) — the
+  released PDF. The template omits the "Position in Class" box and the subject
+  position column when it is off.
+- Both editable by owner/admin in Settings, audited like any school setting.
+  Defaults reproduce today exactly; no backfill.
+
+### 20.2 Attendance — snapshotted at build
+
+Counted with the **same rule as `GET /attendance/summary`** (Phase 2 Q7
+policy i), so a report card never disagrees with the attendance screen:
+PRESENT and LATE are attended; ABSENT and EXCUSED are not.
+
+Snapshotted onto `report_cards` by `build`, in the same transaction as the
+rest of the rollup, never recomputed live:
+
+| Column | Meaning |
+|---|---|
+| `attendance_days_opened` | distinct dates the card's arm was marked in the term — "times school opened" |
+| `attendance_present` | the student's PRESENT + LATE days in the term |
+| `attendance_absent` | the student's ABSENT + EXCUSED days in the term |
+
+The student's own counts are taken by `(student, term)`, not by arm, so a
+child who moved arm mid-term keeps their whole term. All three are NULL on
+cards built before CP6a, and a NULL renders as no attendance line — never as
+zero, which would be a false statement about a child.
+
+### 20.3 Promotion status (D12, D52, D53)
+
+- `report_cards.promotion_status` — enum `PROMOTED | PROMOTED_ON_TRIAL |
+  REPEAT | GRADUATED`, nullable. Display only: never reads or writes
+  `Enrollment` (D12).
+- Only on cards for the **final term of the academic year** (highest
+  `Term.sequence` in that year). Setting it on any other term is refused.
+- Set per student by owner/admin while the arm is `FORM_REVIEWED` (the
+  principal-approval step), through `PATCH /report-cards/:id/promotion-status`,
+  audited.
+- `approve` refuses a final-term arm with any card lacking a status
+  (`PROMOTION_STATUS_MISSING`, naming the count) — D53.
+- Frozen once `RELEASED` by the existing `released-guard.ts`; kept across a
+  reopen, like the comments.
+
+### 20.4 Family DTO and surfaces
+
+`ReleasedResultDetailDto` gains `principalNote`, `attendance` (or null) and
+`promotionStatus` (or null). The PDF renders an attendance line and the
+promotion status; the portal and the app show the same. Position appears in
+the portals only when the school's setting allows it.
+
+### 20.5 Not in CP6a
+
+Anything about access mode or PINs (CP6b). Changing how positions are
+calculated. Back-filling attendance onto already-built cards (a rebuild of a
+DRAFT arm picks it up; released cards stay as they were released).
+
+### 20.6 As built (2026-10-02)
+
+Built as planned, with these details settled in the code:
+
+- **"Final term" is derived, never stored** (`workflow/final-term.ts`): no
+  term in the same academic year has a higher `sequence`. A school that adds a
+  term later moves "final" with it. The board response carries `isFinalTerm`
+  so the web shows the Promotion column only where it applies.
+- **Refusal codes.** `PROMOTION_STATUS_MISSING` (409, `details.missing` is the
+  count) from approve; `PROMOTION_NOT_FINAL_TERM` and
+  `PROMOTION_STATUS_NOT_EDITABLE` from the PATCH. Audit action
+  `report-card.promotion-status`, metadata `{ from, to }` per card.
+- **Test fixtures that model a FIRST term now give the year a second term.**
+  Four API specs built a year with a single term, which made that term the
+  final one and tripped D53 on every approve. The fixtures were wrong about
+  the shape of a school year, not the gate.
+- **`principalNote` joined the family DTO**, closing the review the DTO's
+  header comment had flagged: the released PDF every family downloads already
+  printed it. `released-results.negative-walk.spec.ts` no longer bans it.
+- **`FAMILY_VISIBLE_POSITION` is gone.** Both principals read
+  `School.positionVisibleToFamilies` in the one shared service, and the
+  negative walk proves they agree in both states.
+- **The PDF removes position, not dashes it.** With
+  `positionOnReportCardPdf` off, the summary box, the `Pos.` column header
+  and its cells are all absent. Attendance is a summary box plus a one-line
+  "School opened N days…" note; no record renders nothing.
+- **Surfaces.**
+  - Web: Settings → Report cards, with both switches. The board has an
+    Attendance column and, on a final term, a Promotion selector (owner/admin,
+    FORM_REVIEWED). Approve is disabled with a tinted count notice until
+    every student is set.
+  - Portal: a new single-term page, `/students/[id]/results/[termId]`. Until
+    now the portal had only the list.
+  - App: both result screens share `components/result-extras.tsx`. Its reads
+    tolerate missing keys, because released cards persisted before CP6a (D32)
+    lack them. The staff approvals screen explains `PROMOTION_STATUS_MISSING`
+    and points to the web, which is the only promotion editor in v1.
+

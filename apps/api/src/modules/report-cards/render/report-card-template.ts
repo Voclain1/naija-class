@@ -1,4 +1,4 @@
-import type { ReportCardRenderData } from "@school-kit/types";
+import { PROMOTION_STATUS_LABELS, type ReportCardRenderData } from "@school-kit/types";
 
 // ---------------------------------------------------------------------------
 // Report-card HTML template (Phase 2 / Slice 5 cp2).
@@ -77,6 +77,9 @@ function fullName(student: ReportCardRenderData["student"]): string {
 // Assemble the complete HTML document. Pure function of the input data.
 export function renderReportCardHtml(data: ReportCardRenderData): string {
   const { school, academicYear, term, classArm, student, rollup, subjects } = data;
+  // Phase 8 / CP6a (D51): the school decides whether paper carries rank. Off
+  // means the box and the column are GONE — a dash would read as "missing".
+  const showPosition = school.positionOnReportCardPdf;
 
   const subjectRows = subjects
     .map((s) => {
@@ -89,7 +92,7 @@ export function renderReportCardHtml(data: ReportCardRenderData): string {
           ${components}
           <td class="num total">${esc(formatInt(s.totalScore))}</td>
           <td class="grade">${esc(s.letterGrade)}</td>
-          <td class="pos">${esc(formatOrdinal(s.subjectPosition))}</td>
+          ${showPosition ? `<td class="pos">${esc(formatOrdinal(s.subjectPosition))}</td>` : ""}
           <td class="remark">${esc(s.remark)}</td>
           <td class="remark">${esc(s.subjectComment)}</td>
         </tr>`;
@@ -98,6 +101,35 @@ export function renderReportCardHtml(data: ReportCardRenderData): string {
 
   // Component column headers are taken from the first subject's components so
   // the grid header matches the data (CA1/CA2/Exam labels vary per school).
+  const summaryBoxes = [
+    ["Subjects", formatInt(rollup.subjectsCount)],
+    ["Total Score", formatInt(rollup.overallTotal)],
+    ["Average", `${formatHundredths(rollup.overallAverage)}%`],
+    ...(showPosition ? [["Position in Class", formatOrdinal(rollup.overallPosition)]] : []),
+    // CP6a (§20.2): present out of the days the arm was marked. No record → no
+    // box at all; "0 of 0" would read as a child who never came.
+    ...(rollup.attendance
+      ? [["Attendance", `${rollup.attendance.present} of ${rollup.attendance.daysOpened} days`]]
+      : []),
+  ]
+    .map(([label, value]) => `<div class="box"><div class="label">${esc(label)}</div><div class="value">${esc(value)}</div></div>`)
+    .join("");
+  const summaryColumns = 3 + (showPosition ? 1 : 0) + (rollup.attendance ? 1 : 0);
+
+  const attendanceNote = rollup.attendance
+    ? `<div class="attendance-note">School opened ${esc(rollup.attendance.daysOpened)} days this term. Present ${esc(
+        rollup.attendance.present,
+      )}, absent ${esc(rollup.attendance.absent)}.</div>`
+    : "";
+
+  // CP6a (§20.3): the end-of-year decision, final term only. A tinted block,
+  // never an accent border (CLAUDE.md), and the decision said in words.
+  const promotion = rollup.promotionStatus
+    ? `<div class="promotion"><span class="label">Promotion status</span> <span class="value">${esc(
+        PROMOTION_STATUS_LABELS[rollup.promotionStatus],
+      )}</span></div>`
+    : "";
+
   const componentHeaders = (subjects[0]?.components ?? [])
     .map((c) => `<th class="num">${esc(c.label)}</th>`)
     .join("");
@@ -125,10 +157,14 @@ export function renderReportCardHtml(data: ReportCardRenderData): string {
   table.grades td.num, table.grades th.num { text-align: center; }
   table.grades td.total { font-weight: 700; }
   table.grades td.grade, table.grades td.pos { text-align: center; }
-  .summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 18px; }
+  .summary { display: grid; gap: 12px; margin-bottom: 8px; }
   .summary .box { border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px 10px; }
   .summary .box .label { color: #666; font-size: 10px; text-transform: uppercase; }
   .summary .box .value { font-size: 18px; font-weight: 700; color: #14532d; }
+  .attendance-note { font-size: 10px; color: #555; margin-bottom: 14px; }
+  .promotion { background: #ecfdf5; border-radius: 6px; padding: 8px 10px; margin-bottom: 14px; }
+  .promotion .label { font-size: 10px; text-transform: uppercase; color: #555; margin-right: 8px; }
+  .promotion .value { font-size: 14px; font-weight: 700; color: #14532d; }
   .comments { margin-bottom: 8px; }
   .comments .block { margin-bottom: 10px; }
   .comments .block .label { font-weight: 700; font-size: 11px; text-transform: uppercase; color: #14532d; }
@@ -163,7 +199,7 @@ export function renderReportCardHtml(data: ReportCardRenderData): string {
         ${componentHeaders}
         <th class="num">Total</th>
         <th>Grade</th>
-        <th>Pos.</th>
+        ${showPosition ? "<th>Pos.</th>" : ""}
         <th>Remark</th>
         <th>Teacher's Comment</th>
       </tr>
@@ -173,12 +209,11 @@ export function renderReportCardHtml(data: ReportCardRenderData): string {
     </tbody>
   </table>
 
-  <div class="summary">
-    <div class="box"><div class="label">Subjects</div><div class="value">${esc(formatInt(rollup.subjectsCount))}</div></div>
-    <div class="box"><div class="label">Total Score</div><div class="value">${esc(formatInt(rollup.overallTotal))}</div></div>
-    <div class="box"><div class="label">Average</div><div class="value">${esc(formatHundredths(rollup.overallAverage))}%</div></div>
-    <div class="box"><div class="label">Position in Class</div><div class="value">${esc(formatOrdinal(rollup.overallPosition))}</div></div>
+  <div class="summary" style="grid-template-columns: repeat(${summaryColumns}, 1fr);">
+    ${summaryBoxes}
   </div>
+  ${attendanceNote}
+  ${promotion}
 
   <div class="comments">
     <div class="block">

@@ -30,6 +30,10 @@ export interface SchoolMeDto {
   // Opt-in to subject-period attendance (Phase 2 / Slice 8). The admin settings
   // page reads + toggles this; the teacher portal learns it via /teacher-scope/me.
   subjectAttendanceEnabled: boolean;
+  // Class position (Phase 8 / CP6a, §20.1): shown to families in the portal and
+  // app (default false), and printed on the report-card PDF (default true).
+  positionVisibleToFamilies: boolean;
+  positionOnReportCardPdf: boolean;
   // Direct bank transfer (2026-09-11) — the school's own COLLECTION account,
   // shown to parents who would rather transfer than use Paystack. NOT the
   // guarded Paystack payout account on PaystackSetupRequest; see

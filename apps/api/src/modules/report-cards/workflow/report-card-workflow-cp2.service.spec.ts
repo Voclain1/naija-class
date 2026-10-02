@@ -152,6 +152,9 @@ describe("ReportCardWorkflowService (cp2 — release / reopen / comments)", () =
         data: { schoolId, academicYearId: year.id, sequence: 1, name: "First Term", startDate: new Date("2025-09-01"), endDate: new Date("2025-12-15"), isCurrent: true },
         select: { id: true },
       });
+      // A later term in the same year, so the term above is a FIRST term, not the
+      // final one — the final term needs a promotion status to approve (CP6a, D53).
+      await db.term.create({ data: { schoolId, academicYearId: year.id, sequence: 2, name: "Second Term", startDate: new Date("2026-01-05"), endDate: new Date("2026-04-10") } });
       return { yearId: year.id, termId: term.id };
     });
   }

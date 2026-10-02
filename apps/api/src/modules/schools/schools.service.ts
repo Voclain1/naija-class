@@ -118,6 +118,13 @@ export class SchoolsService {
     if (input.subjectAttendanceEnabled !== undefined) {
       data.subjectAttendanceEnabled = input.subjectAttendanceEnabled;
     }
+    // Phase 8 / CP6a — the two class-position switches ride the same PATCH.
+    if (input.positionVisibleToFamilies !== undefined) {
+      data.positionVisibleToFamilies = input.positionVisibleToFamilies;
+    }
+    if (input.positionOnReportCardPdf !== undefined) {
+      data.positionOnReportCardPdf = input.positionOnReportCardPdf;
+    }
 
     // Paystack subaccount routing (compressed plan-first, 2026-07-31).
     // "Enabling requires a valid code" is a cross-field rule the Zod schema
@@ -631,6 +638,8 @@ const SCHOOL_RESPONSE_SELECT = {
   ndprConsent: true,
   ndprConsentAt: true,
   subjectAttendanceEnabled: true,
+  positionVisibleToFamilies: true,
+  positionOnReportCardPdf: true,
   paystackSubaccountCode: true,
   paystackSplitCode: true,
   paystackPaymentsEnabled: true,
@@ -660,6 +669,8 @@ function toSchoolMeDto(school: SchoolRow): SchoolMeDto {
     ndprConsent: school.ndprConsent,
     ndprConsentAt: school.ndprConsentAt,
     subjectAttendanceEnabled: school.subjectAttendanceEnabled,
+    positionVisibleToFamilies: school.positionVisibleToFamilies,
+    positionOnReportCardPdf: school.positionOnReportCardPdf,
     bankName: school.bankName,
     bankAccountName: school.bankAccountName,
     bankAccountNumber: school.bankAccountNumber,

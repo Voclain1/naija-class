@@ -151,6 +151,9 @@ describe("Phase 2 E2E rollup (slice 9 cp3)", () => {
       const level = await db.classLevel.findFirstOrThrow({ where: { schoolId }, orderBy: { orderIndex: "asc" }, select: { id: true } });
       const year = await db.academicYear.create({ data: { schoolId, label: `Y-${suffix}-${runId}`, startDate: TERM_START, endDate: TERM_END }, select: { id: true } });
       const term = await db.term.create({ data: { schoolId, academicYearId: year.id, sequence: 1, name: "First Term", startDate: TERM_START, endDate: TERM_END, isCurrent: true }, select: { id: true } });
+      // A later term in the same year, so the term above is a FIRST term, not the
+      // final one — the final term needs a promotion status to approve (CP6a, D53).
+      await db.term.create({ data: { schoolId, academicYearId: year.id, sequence: 2, name: "Second Term", startDate: new Date("2026-01-05"), endDate: new Date("2026-04-10") } });
       const jss1a = await db.classArm.create({ data: { schoolId, classLevelId: level.id, name: "JSS 1 A", code: `jss1a-${runId}`, classTeacherId: teacherId }, select: { id: true } });
       const jss2a = await db.classArm.create({ data: { schoolId, classLevelId: level.id, name: "JSS 2 A", code: `jss2a-${runId}`, classTeacherId: ownerId }, select: { id: true } });
       const subject = await db.subject.create({ data: { schoolId, name: "Maths", code: `maths-${runId}` }, select: { id: true } });
