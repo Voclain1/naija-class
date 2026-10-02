@@ -615,7 +615,7 @@ export default function InvoiceDetailPage() {
           <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
             Discount breakdown
           </summary>
-          <div className="mt-2 space-y-1 border-l-2 pl-4">
+          <div className="mt-2 space-y-1 pl-4">
             {invoice.items.flatMap((item) =>
               item.discountsApplied.map((d) => (
                 <div key={`${item.feeItemId}-${d.ruleId}`} className="flex justify-between gap-4 text-muted-foreground">

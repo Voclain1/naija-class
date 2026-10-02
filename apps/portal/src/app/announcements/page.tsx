@@ -135,12 +135,9 @@ export default function AnnouncementsPage() {
             {state.items.map((item) => (
               <li
                 key={item.id}
-                className={[
-                  "flex flex-col gap-1 rounded-lg border bg-card p-4 shadow-sm",
-                  // The unread mark is a left edge rather than a dot: it survives
-                  // a small screen and does not compete with the urgent badge.
-                  item.readAt === null ? "border-l-4 border-l-primary" : "",
-                ].join(" ")}
+                // Unread is the "New" badge alone. No coloured edge — the project
+                // does not use accent borders (2026-10-02).
+                className="flex flex-col gap-1 rounded-lg border bg-card p-4 shadow-sm"
               >
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="font-medium">{item.title}</span>

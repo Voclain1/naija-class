@@ -51,19 +51,21 @@ export function AnnouncementFeed({
         const unread = item.readAt === null;
         return (
           <Card key={item.id}>
-            <View
-              style={[
-                styles.row,
-                // The unread mark is a left edge, not a dot: it survives a
-                // narrow screen and does not compete with the urgent badge.
-                unread ? { borderLeftWidth: 3, borderLeftColor: colors.primary, paddingLeft: spacing.sm } : null,
-              ]}
-            >
+            <View style={styles.row}>
               <View style={styles.titleRow}>
                 <Heading>{item.title}</Heading>
                 {item.urgent ? (
                   <View style={[styles.badge, { backgroundColor: colors.danger }]}>
                     <Text style={[styles.badgeText, { color: colors.background }]}>Urgent</Text>
+                  </View>
+                ) : null}
+                {/* Unread is a word, the same "New" the portal shows. It
+                    replaces a coloured left edge — the project does not use
+                    accent borders (2026-10-02) — and a word also does not
+                    depend on telling one colour from another. */}
+                {unread ? (
+                  <View style={[styles.badge, { backgroundColor: colors.primary + "1A" }]}>
+                    <Text style={[styles.badgeText, { color: colors.primary }]}>New</Text>
                   </View>
                 ) : null}
               </View>

@@ -219,10 +219,20 @@ export function StatRow({
       className={cn(
         "flex flex-col gap-0.5 rounded-lg border bg-card p-4 transition-colors motion-reduce:transition-none",
         href ? "hover:border-primary/60" : "",
-        tone === "warning" ? "border-l-4 border-l-amber-500" : "",
       )}
     >
-      <span className="font-serif text-2xl font-medium text-foreground">{value}</span>
+      {/* Warning is carried by the figure's colour, not an accent edge — the
+          project does not use them (2026-10-02). amber-700 rather than the
+          brand's Gold Spark: on Paper, gold text is 2.0:1 and amber-700 is
+          4.6:1 (AA). */}
+      <span
+        className={cn(
+          "font-serif text-2xl font-medium",
+          tone === "warning" ? "text-amber-700" : "text-foreground",
+        )}
+      >
+        {value}
+      </span>
       <span className="text-sm text-muted-foreground">{label}</span>
     </div>
   );

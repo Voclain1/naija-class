@@ -188,8 +188,7 @@ export function BehaviourTab({ studentId }: { studentId: string }) {
                 <li
                   key={item.id}
                   className={[
-                    "rounded-lg border-l-4 bg-card p-4",
-                    item.kind === "CONCERN" ? "border-l-destructive" : "border-l-primary",
+                    "rounded-lg border bg-card p-4",
                     withdrawn ? "opacity-60" : "",
                   ].join(" ")}
                 >
