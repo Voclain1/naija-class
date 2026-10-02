@@ -17,7 +17,9 @@ export const listGuardiansQuerySchema = z
     // parents awaiting an invite" on page one while page three had forty.
     // The where-clauses in GuardiansService mirror deriveGuardianPortalStatus
     // rule for rule, and a parity spec holds them together.
-    portalStatus: z.enum(["NO_EMAIL", "NOT_INVITED", "INVITED", "EXPIRED", "ACTIVE"]).optional(),
+    portalStatus: z
+      .enum(["DEACTIVATED", "NO_EMAIL", "NOT_INVITED", "INVITED", "EXPIRED", "ACTIVE"])
+      .optional(),
     cursor: z.string().uuid().optional(),
     limit: z.coerce.number().int().min(1).max(200).optional(),
   })

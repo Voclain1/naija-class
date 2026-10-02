@@ -18,18 +18,18 @@
 // things this rejects.
 //
 // The server already distinguishes the reasons. GuardianAuthGuard emits
-// SESSION_EXPIRED, INVALID_SESSION and MISSING_BEARER_TOKEN as distinct
-// codes; nothing here is invented.
+// SESSION_EXPIRED, INVALID_SESSION, MISSING_BEARER_TOKEN and (since
+// 2026-10-02) USER_INACTIVE as distinct codes; nothing here is invented.
 
-export type SessionEndReason = "expired" | "revoked" | "signed-out";
+export type SessionEndReason = "expired" | "revoked" | "deactivated" | "signed-out";
 
 /**
  * Map a guardian 401 code to a reason.
  *
- * Note what is absent: there is no "deactivated" case, because `Guardian`
- * has no `is_active` column and `auth_resolve_guardian_session` therefore
- * returns no such signal (logged in docs/deferred.md). Inventing the reason
- * on the client would be asserting something the server never said.
+ * "deactivated" exists since 2026-10-02, when schools gained a switch for a
+ * parent's portal access and GuardianAuthGuard began returning USER_INACTIVE
+ * — the same code a deactivated staff account gets. Before that the case was
+ * deliberately absent: the server could not say it, so the client must not.
  */
 export function reasonFromErrorCode(code: string | undefined): SessionEndReason | null {
   switch (code) {
@@ -38,6 +38,8 @@ export function reasonFromErrorCode(code: string | undefined): SessionEndReason 
     case "INVALID_SESSION":
     case "MISSING_BEARER_TOKEN":
       return "revoked";
+    case "USER_INACTIVE":
+      return "deactivated";
     default:
       return null;
   }
@@ -47,6 +49,7 @@ export function parseSessionEndReason(raw: string | null): SessionEndReason | nu
   switch (raw) {
     case "expired":
     case "revoked":
+    case "deactivated":
     case "signed-out":
       return raw;
     default:
@@ -77,6 +80,13 @@ export function sessionEndNotice(reason: SessionEndReason | null): SessionEndNot
       return {
         title: "You were signed out",
         body: "Sign in again to see your children's information.",
+      };
+    // The one reason where "sign in again" would be wrong advice: it will not
+    // work until the school turns access back on. Say who can fix it.
+    case "deactivated":
+      return {
+        title: "Your portal access is switched off",
+        body: "Your school has turned off portal access for this account. Contact the school if you think this is a mistake.",
       };
     case "signed-out":
     case null:

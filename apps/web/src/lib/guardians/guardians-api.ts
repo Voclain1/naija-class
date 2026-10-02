@@ -16,6 +16,7 @@ import type {
   InviteGuardianResponse,
   ResendGuardianInviteResponse,
   RevokeGuardianInviteResponse,
+  GuardianPortalAccessResponse,
   LinkExistingGuardianInput,
   ListGuardiansQuery,
   UpdateGuardianInput,
@@ -91,6 +92,21 @@ export function revokeGuardianInvite(
   id: string,
 ): Promise<RevokeGuardianInviteResponse> {
   return apiFetch<RevokeGuardianInviteResponse>(`/guardians/${id}/invite/revoke`, {
+    method: "POST",
+  });
+}
+
+// Switch a parent's portal access off and on (2026-10-02). Off ends their
+// sessions at once and voids any invitation or reset link; the password is
+// kept, so on needs no new invitation.
+export function deactivateGuardianPortal(id: string): Promise<GuardianPortalAccessResponse> {
+  return apiFetch<GuardianPortalAccessResponse>(`/guardians/${id}/portal/deactivate`, {
+    method: "POST",
+  });
+}
+
+export function reactivateGuardianPortal(id: string): Promise<GuardianPortalAccessResponse> {
+  return apiFetch<GuardianPortalAccessResponse>(`/guardians/${id}/portal/reactivate`, {
     method: "POST",
   });
 }

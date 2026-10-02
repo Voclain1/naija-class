@@ -8,6 +8,14 @@ import type { GuardianPortalStatusDto } from "./guardian.dto.js";
 // roster, the student page and any future caller cannot disagree about it.
 //
 // ORDER MATTERS, and each step is a real-world case:
+//   0. DEACTIVATED before everything (2026-10-02). The school switched portal
+//      access off, and that decision is the fact an admin needs to see —
+//      whatever the email, password or invitations say. Every sign-in path
+//      refuses a deactivated guardian (the session guard, and the login and
+//      password-reset lookups in SQL), so any other label would describe
+//      access that does not exist. Reactivating leaves the other facts as they
+//      were, so the guardian falls back to whichever status below they match —
+//      typically ACTIVE, since deactivation keeps the password.
 //   1. NO_EMAIL first — even ahead of ACTIVE. Portal sign-in looks a guardian
 //      up BY EMAIL (auth_lookup_guardians_for_login), so a parent whose email
 //      was removed cannot sign in, password or not. Calling them ACTIVE would
@@ -24,6 +32,8 @@ import type { GuardianPortalStatusDto } from "./guardian.dto.js";
 //      revoked, since a revoked invitation is one that was deliberately taken
 //      back, leaving the guardian exactly where they started.
 export interface GuardianPortalFacts {
+  /** The school has switched portal access off (portal_disabled_at is set). */
+  portalDisabled: boolean;
   hasEmail: boolean;
   /** The guardian has a password_hash — they can sign in. Never the hash itself. */
   hasPassword: boolean;
@@ -40,6 +50,7 @@ export function deriveGuardianPortalStatus(
   facts: GuardianPortalFacts,
   now: Date = new Date(),
 ): { status: GuardianPortalStatusDto; liveInvitationExpiresAt: Date | null } {
+  if (facts.portalDisabled) return { status: "DEACTIVATED", liveInvitationExpiresAt: null };
   if (!facts.hasEmail) return { status: "NO_EMAIL", liveInvitationExpiresAt: null };
   if (facts.hasPassword) return { status: "ACTIVE", liveInvitationExpiresAt: null };
 

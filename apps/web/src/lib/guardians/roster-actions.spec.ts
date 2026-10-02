@@ -11,12 +11,16 @@ describe("rosterActions", () => {
     expect(rosterActions("EXPIRED")).toEqual(["invite"]);
   });
 
-  it("offers Resend and Cancel while an invitation is live, and never a plain Invite", () => {
-    expect(rosterActions("INVITED")).toEqual(["resend", "revoke"]);
+  it("offers Resend and Cancel while an invitation is live, never a plain Invite — and Switch off", () => {
+    expect(rosterActions("INVITED")).toEqual(["resend", "revoke", "deactivate"]);
   });
 
-  it("offers nothing to an active parent — staff must never be handed a set-password link for them", () => {
-    expect(rosterActions("ACTIVE")).toEqual([]);
+  it("offers an active parent no link — staff must never be handed a set-password link for them — only Switch off", () => {
+    expect(rosterActions("ACTIVE")).toEqual(["deactivate"]);
+  });
+
+  it("offers a switched-off parent only Turn back on — the API refuses invitations until then", () => {
+    expect(rosterActions("DEACTIVATED")).toEqual(["reactivate"]);
   });
 
   it("offers nothing without an email", () => {
@@ -26,7 +30,7 @@ describe("rosterActions", () => {
 
 describe("portal status labels and filters", () => {
   it("labels every status, and offers every status as a filter plus All", () => {
-    const statuses = ["NO_EMAIL", "NOT_INVITED", "INVITED", "EXPIRED", "ACTIVE"] as const;
+    const statuses = ["NO_EMAIL", "NOT_INVITED", "INVITED", "EXPIRED", "ACTIVE", "DEACTIVATED"] as const;
     for (const s of statuses) expect(PORTAL_STATUS_LABEL[s]).toBeTruthy();
     expect(PORTAL_STATUS_FILTERS.map((f) => f.value).sort()).toEqual(["ALL", ...statuses].sort());
   });

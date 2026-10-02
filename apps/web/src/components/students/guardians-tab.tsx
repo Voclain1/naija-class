@@ -414,7 +414,11 @@ function GuardianRow({
             )}
           </label>
 
+          {/* No invite while the school has switched access off — the API
+              refuses it (GUARDIAN_PORTAL_DISABLED), so the button could only
+              fail. The switch itself lives on the Guardians roster. */}
           {canInvite &&
+            guardian.portalStatus !== "DEACTIVATED" &&
             (() => {
               const noEmail = !guardian.email;
               const disabled =
@@ -503,6 +507,11 @@ function GuardianRow({
               the thing an admin needs to know before sending another. */}
           {canInvite && guardian.portalStatus === "EXPIRED" && inviteStatus === "idle" && (
             <span className="text-xs text-amber-700">Last invitation expired unused</span>
+          )}
+          {guardian.portalStatus === "DEACTIVATED" && (
+            <span className="text-xs text-amber-700">
+              Portal access switched off — turn it back on from Guardians
+            </span>
           )}
           {guardian.portalStatus === "ACTIVE" && (
             <span className="inline-flex items-center gap-1 text-xs text-emerald-700">

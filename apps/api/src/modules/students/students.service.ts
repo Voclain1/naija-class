@@ -157,6 +157,7 @@ export class StudentsService {
                   // Portal facts — passwordHash is read only to derive the
                   // hasPassword boolean below and never reaches the DTO.
                   passwordHash: true,
+                  portalDisabledAt: true,
                   invitations: {
                     select: { acceptedAt: true, revokedAt: true, expiresAt: true },
                   },
@@ -184,6 +185,7 @@ export class StudentsService {
           phone: link.guardian.phone,
           email: link.guardian.email,
           portalStatus: deriveGuardianPortalStatus({
+            portalDisabled: link.guardian.portalDisabledAt !== null,
             hasEmail: link.guardian.email !== null,
             hasPassword: link.guardian.passwordHash !== null,
             invitations: link.guardian.invitations,

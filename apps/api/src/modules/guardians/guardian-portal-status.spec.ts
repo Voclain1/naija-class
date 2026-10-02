@@ -16,40 +16,64 @@ const inv = (over: Partial<{ acceptedAt: Date | null; revokedAt: Date | null; ex
 });
 
 describe("deriveGuardianPortalStatus", () => {
+  // 2026-10-02 — the school's switch outranks every other fact.
+  it("a guardian whose portal access the school switched off is DEACTIVATED, whatever else is true", () => {
+    const cases = [
+      { hasEmail: true, hasPassword: true, invitations: [] },
+      { hasEmail: false, hasPassword: true, invitations: [] },
+      { hasEmail: true, hasPassword: false, invitations: [inv()] },
+      { hasEmail: true, hasPassword: false, invitations: [inv({ expiresAt: past })] },
+      { hasEmail: true, hasPassword: false, invitations: [] },
+    ];
+    for (const facts of cases) {
+      const out = deriveGuardianPortalStatus({ portalDisabled: true, ...facts }, NOW);
+      expect(out.status).toBe("DEACTIVATED");
+      // A live invitation must not be reported as if it were usable.
+      expect(out.liveInvitationExpiresAt).toBeNull();
+    }
+  });
+
+  it("switching access back on returns the guardian to what their facts say — ACTIVE, since the password was kept", () => {
+    expect(
+      deriveGuardianPortalStatus({ portalDisabled: false, hasEmail: true, hasPassword: true, invitations: [] }, NOW)
+        .status,
+    ).toBe("ACTIVE");
+  });
+
   it("a guardian with a password is ACTIVE", () => {
-    expect(deriveGuardianPortalStatus({ hasEmail: true, hasPassword: true, invitations: [] }, NOW).status).toBe("ACTIVE");
+    expect(deriveGuardianPortalStatus({ portalDisabled: false, hasEmail: true, hasPassword: true, invitations: [] }, NOW).status).toBe("ACTIVE");
   });
 
   it("stays ACTIVE even when an old invitation expired unaccepted", () => {
     const out = deriveGuardianPortalStatus(
-      { hasEmail: true, hasPassword: true, invitations: [inv({ expiresAt: past })] },
+      { portalDisabled: false, hasEmail: true, hasPassword: true, invitations: [inv({ expiresAt: past })] },
       NOW,
     );
     expect(out.status).toBe("ACTIVE");
   });
 
   it("a guardian with a password but NO email is NO_EMAIL — sign-in is by email, so they cannot get in", () => {
-    expect(deriveGuardianPortalStatus({ hasEmail: false, hasPassword: true, invitations: [] }, NOW).status).toBe(
+    expect(deriveGuardianPortalStatus({ portalDisabled: false, hasEmail: false, hasPassword: true, invitations: [] }, NOW).status).toBe(
       "NO_EMAIL",
     );
   });
 
   it("no email is NO_EMAIL, and outranks any invitation state", () => {
-    expect(deriveGuardianPortalStatus({ hasEmail: false, hasPassword: false, invitations: [] }, NOW).status).toBe("NO_EMAIL");
+    expect(deriveGuardianPortalStatus({ portalDisabled: false, hasEmail: false, hasPassword: false, invitations: [] }, NOW).status).toBe("NO_EMAIL");
     expect(
-      deriveGuardianPortalStatus({ hasEmail: false, hasPassword: false, invitations: [inv()] }, NOW).status,
+      deriveGuardianPortalStatus({ portalDisabled: false, hasEmail: false, hasPassword: false, invitations: [inv()] }, NOW).status,
     ).toBe("NO_EMAIL");
   });
 
   it("a live invitation is INVITED, and reports its expiry", () => {
-    const out = deriveGuardianPortalStatus({ hasEmail: true, hasPassword: false, invitations: [inv()] }, NOW);
+    const out = deriveGuardianPortalStatus({ portalDisabled: false, hasEmail: true, hasPassword: false, invitations: [inv()] }, NOW);
     expect(out.status).toBe("INVITED");
     expect(out.liveInvitationExpiresAt?.toISOString()).toBe(future.toISOString());
   });
 
   it("an expired unaccepted invitation is EXPIRED, not NOT_INVITED", () => {
     const out = deriveGuardianPortalStatus(
-      { hasEmail: true, hasPassword: false, invitations: [inv({ expiresAt: past })] },
+      { portalDisabled: false, hasEmail: true, hasPassword: false, invitations: [inv({ expiresAt: past })] },
       NOW,
     );
     expect(out.status).toBe("EXPIRED");
@@ -59,13 +83,13 @@ describe("deriveGuardianPortalStatus", () => {
   it("a revoked invitation leaves the guardian NOT_INVITED — never INVITED or EXPIRED", () => {
     expect(
       deriveGuardianPortalStatus(
-        { hasEmail: true, hasPassword: false, invitations: [inv({ revokedAt: NOW })] },
+        { portalDisabled: false, hasEmail: true, hasPassword: false, invitations: [inv({ revokedAt: NOW })] },
         NOW,
       ).status,
     ).toBe("NOT_INVITED");
     expect(
       deriveGuardianPortalStatus(
-        { hasEmail: true, hasPassword: false, invitations: [inv({ revokedAt: NOW, expiresAt: past })] },
+        { portalDisabled: false, hasEmail: true, hasPassword: false, invitations: [inv({ revokedAt: NOW, expiresAt: past })] },
         NOW,
       ).status,
     ).toBe("NOT_INVITED");
@@ -74,7 +98,7 @@ describe("deriveGuardianPortalStatus", () => {
   it("an accepted-but-passwordless invitation does not read as INVITED", () => {
     expect(
       deriveGuardianPortalStatus(
-        { hasEmail: true, hasPassword: false, invitations: [inv({ acceptedAt: NOW })] },
+        { portalDisabled: false, hasEmail: true, hasPassword: false, invitations: [inv({ acceptedAt: NOW })] },
         NOW,
       ).status,
     ).toBe("NOT_INVITED");
@@ -82,7 +106,7 @@ describe("deriveGuardianPortalStatus", () => {
 
   it("one live invitation wins over older expired ones, and reports the LIVE expiry", () => {
     const out = deriveGuardianPortalStatus(
-      { hasEmail: true, hasPassword: false, invitations: [inv({ expiresAt: past }), inv()] },
+      { portalDisabled: false, hasEmail: true, hasPassword: false, invitations: [inv({ expiresAt: past }), inv()] },
       NOW,
     );
     expect(out.status).toBe("INVITED");
@@ -91,20 +115,20 @@ describe("deriveGuardianPortalStatus", () => {
 
   it("expiry is exclusive at the boundary — expiring exactly now is EXPIRED", () => {
     expect(
-      deriveGuardianPortalStatus({ hasEmail: true, hasPassword: false, invitations: [inv({ expiresAt: NOW })] }, NOW)
+      deriveGuardianPortalStatus({ portalDisabled: false, hasEmail: true, hasPassword: false, invitations: [inv({ expiresAt: NOW })] }, NOW)
         .status,
     ).toBe("EXPIRED");
   });
 
   it("no invitations at all is NOT_INVITED", () => {
-    expect(deriveGuardianPortalStatus({ hasEmail: true, hasPassword: false, invitations: [] }, NOW).status).toBe(
+    expect(deriveGuardianPortalStatus({ portalDisabled: false, hasEmail: true, hasPassword: false, invitations: [] }, NOW).status).toBe(
       "NOT_INVITED",
     );
   });
 
   it("accepts ISO strings as well as Dates", () => {
     const out = deriveGuardianPortalStatus(
-      { hasEmail: true, hasPassword: false, invitations: [{ acceptedAt: null, revokedAt: null, expiresAt: future.toISOString() }] },
+      { portalDisabled: false, hasEmail: true, hasPassword: false, invitations: [{ acceptedAt: null, revokedAt: null, expiresAt: future.toISOString() }] },
       NOW,
     );
     expect(out.status).toBe("INVITED");

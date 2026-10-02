@@ -17,6 +17,7 @@ import {
   type InviteGuardianResponse,
   type ResendGuardianInviteResponse,
   type RevokeGuardianInviteResponse,
+  type GuardianPortalAccessResponse,
   type LinkExistingGuardianInput,
   type ListGuardiansQuery,
   type UpdateGuardianInput,
@@ -47,6 +48,8 @@ const AUDIT = {
   guardianInvite: "guardian.invite",
   guardianInviteResend: "guardian.invite-resend",
   guardianInviteRevoke: "guardian.invite-revoke",
+  guardianPortalDeactivate: "guardian.portal-deactivate",
+  guardianPortalReactivate: "guardian.portal-reactivate",
   linkCreate: "student-guardian.create",
   linkUpdate: "student-guardian.update",
   linkDelete: "student-guardian.delete",
@@ -293,9 +296,27 @@ export class GuardiansService {
     const result = await withTenant(authCtx.schoolId, async (db) => {
       const existing = await db.guardian.findUnique({
         where: { id },
-        select: { id: true, email: true, phone: true, firstName: true, passwordHash: true },
+        select: {
+          id: true,
+          email: true,
+          phone: true,
+          firstName: true,
+          passwordHash: true,
+          portalDisabledAt: true,
+        },
       });
       if (!existing) throw new NotFoundError("Guardian not found.");
+      // 2026-10-02 — no invitation while the school has switched access off.
+      // An accepted link would set a password the guard then refuses, so the
+      // parent would be handed something that looks like access and is not.
+      // Reactivate first; deactivation keeps the password, so a parent who
+      // already had access usually needs no invitation at all.
+      if (existing.portalDisabledAt !== null) {
+        throw new ConflictError(
+          "GUARDIAN_PORTAL_DISABLED",
+          "Portal access is switched off for this guardian. Turn it back on before sending an invitation.",
+        );
+      }
       if (!existing.email) {
         throw new ValidationError(
           "GUARDIAN_HAS_NO_EMAIL",
@@ -428,9 +449,27 @@ export class GuardiansService {
     const result = await withTenant(authCtx.schoolId, async (db) => {
       const existing = await db.guardian.findUnique({
         where: { id },
-        select: { id: true, email: true, phone: true, firstName: true, passwordHash: true },
+        select: {
+          id: true,
+          email: true,
+          phone: true,
+          firstName: true,
+          passwordHash: true,
+          portalDisabledAt: true,
+        },
       });
       if (!existing) throw new NotFoundError("Guardian not found.");
+      // 2026-10-02 — no invitation while the school has switched access off.
+      // An accepted link would set a password the guard then refuses, so the
+      // parent would be handed something that looks like access and is not.
+      // Reactivate first; deactivation keeps the password, so a parent who
+      // already had access usually needs no invitation at all.
+      if (existing.portalDisabledAt !== null) {
+        throw new ConflictError(
+          "GUARDIAN_PORTAL_DISABLED",
+          "Portal access is switched off for this guardian. Turn it back on before sending an invitation.",
+        );
+      }
       if (!existing.email) {
         throw new ValidationError(
           "GUARDIAN_HAS_NO_EMAIL",
@@ -570,6 +609,134 @@ export class GuardiansService {
       });
 
       return { guardianId: id, revokedAt: now };
+    });
+  }
+
+  // 2026-10-02 — the school's lever to switch a parent's portal access off.
+  //
+  // Before this, a school had no way to cut off a parent centrally: clearing
+  // the password stopped future sign-ins but left a live session running for
+  // up to 30 days (docs/deferred.md, "Guardian is_active / central
+  // revocation"). Deactivation shuts every door a parent has, in one
+  // transaction:
+  //
+  //   - portal_disabled_at — the authoritative switch. GuardianAuthGuard
+  //     re-reads it on every request, and the login and password-reset
+  //     lookups exclude the account in SQL.
+  //   - live sessions deleted — so web and app sessions end at once, not on
+  //     their next request (the guard would refuse that anyway).
+  //   - live invitations revoked — a link already in an inbox goes dead.
+  //   - unused password-reset tokens burned — a reset email sent BEFORE this
+  //     must not set a password after it.
+  //   - push device tokens deleted — a cut-off parent stops receiving pushes.
+  //
+  // Deliberately NOT touched: the password (so reactivating needs no new
+  // invitation), the guardian's contact details and student links (they are
+  // still the child's contact, and SMS alerts are about the child, not the
+  // account), and the CHILD's own portal account, which the school governs
+  // through the student's status.
+  //
+  // Same permission and role gate as revokeInvite: what is being authorised
+  // is "may issue or withdraw portal access for a parent".
+  async deactivatePortal(
+    authCtx: AuthContext,
+    id: string,
+    reqCtx: RequestContext,
+  ): Promise<GuardianPortalAccessResponse> {
+    await assertUserActiveAndHasOneOf(authCtx, ["owner", "admin"]);
+
+    return withTenant(authCtx.schoolId, async (db) => {
+      const existing = await db.guardian.findUnique({
+        where: { id },
+        select: { id: true, email: true, portalDisabledAt: true },
+      });
+      if (!existing) throw new NotFoundError("Guardian not found.");
+      if (existing.portalDisabledAt !== null) {
+        throw new ConflictError(
+          "GUARDIAN_PORTAL_ALREADY_DISABLED",
+          "Portal access is already switched off for this guardian.",
+        );
+      }
+
+      const now = new Date();
+      await db.guardian.update({ where: { id }, data: { portalDisabledAt: now } });
+      const sessions = await db.guardianSession.deleteMany({ where: { guardianId: id } });
+      const invitations = await db.guardianInvitation.updateMany({
+        where: { guardianId: id, acceptedAt: null, revokedAt: null, expiresAt: { gt: now } },
+        data: { revokedAt: now },
+      });
+      const resets = await db.guardianPasswordResetToken.updateMany({
+        where: { guardianId: id, usedAt: null },
+        data: { usedAt: now },
+      });
+      const devices = await db.deviceToken.deleteMany({ where: { guardianId: id } });
+
+      await db.auditLog.create({
+        data: {
+          schoolId: authCtx.schoolId,
+          userId: authCtx.userId,
+          action: AUDIT.guardianPortalDeactivate,
+          entityType: "guardian",
+          entityId: id,
+          ipAddress: reqCtx.ipAddress,
+          // Counts, so the record shows what was actually shut — and never a
+          // token, a session id or an unredacted address.
+          metadata: {
+            email: redactEmail(existing.email),
+            sessionsEnded: sessions.count,
+            invitationsRevoked: invitations.count,
+            resetLinksVoided: resets.count,
+            devicesRemoved: devices.count,
+          },
+        },
+      });
+
+      return { guardianId: id, portalDisabledAt: now };
+    });
+  }
+
+  // Turns portal access back on. Nothing else is restored, because nothing
+  // else needs to be: the password was kept, so a parent who had access signs
+  // in again with it, and one who was never invited is back to NOT_INVITED.
+  // Sessions, invitations and reset links that deactivation ended stay ended.
+  async reactivatePortal(
+    authCtx: AuthContext,
+    id: string,
+    reqCtx: RequestContext,
+  ): Promise<GuardianPortalAccessResponse> {
+    await assertUserActiveAndHasOneOf(authCtx, ["owner", "admin"]);
+
+    return withTenant(authCtx.schoolId, async (db) => {
+      const existing = await db.guardian.findUnique({
+        where: { id },
+        select: { id: true, email: true, portalDisabledAt: true },
+      });
+      if (!existing) throw new NotFoundError("Guardian not found.");
+      if (existing.portalDisabledAt === null) {
+        throw new ConflictError(
+          "GUARDIAN_PORTAL_NOT_DISABLED",
+          "Portal access is not switched off for this guardian.",
+        );
+      }
+
+      await db.guardian.update({ where: { id }, data: { portalDisabledAt: null } });
+
+      await db.auditLog.create({
+        data: {
+          schoolId: authCtx.schoolId,
+          userId: authCtx.userId,
+          action: AUDIT.guardianPortalReactivate,
+          entityType: "guardian",
+          entityId: id,
+          ipAddress: reqCtx.ipAddress,
+          metadata: {
+            email: redactEmail(existing.email),
+            disabledSince: existing.portalDisabledAt.toISOString(),
+          },
+        },
+      });
+
+      return { guardianId: id, portalDisabledAt: null };
     });
   }
 
@@ -924,7 +1091,8 @@ export class GuardiansService {
 // one. Each branch is deriveGuardianPortalStatus's rule restated in Prisma,
 // in the same precedence order — see its header for why the order matters.
 // guardians.service.spec.ts ("portalStatus filter matches the derived status
-// for every guardian") fails if the two ever disagree.
+// for every guardian") fails if the two ever disagree. DEACTIVATED comes first
+// there, so every other branch here requires portalDisabledAt: null.
 export function portalStatusWhere(
   status: GuardianPortalStatusDto,
   now: Date,
@@ -940,20 +1108,29 @@ export function portalStatusWhere(
     expiresAt: { lte: now },
   };
   switch (status) {
+    case "DEACTIVATED":
+      return { portalDisabledAt: { not: null } };
     case "NO_EMAIL":
-      return { email: null };
+      return { portalDisabledAt: null, email: null };
     case "ACTIVE":
-      return { email: { not: null }, passwordHash: { not: null } };
+      return { portalDisabledAt: null, email: { not: null }, passwordHash: { not: null } };
     case "INVITED":
-      return { email: { not: null }, passwordHash: null, invitations: { some: live } };
+      return {
+        portalDisabledAt: null,
+        email: { not: null },
+        passwordHash: null,
+        invitations: { some: live },
+      };
     case "EXPIRED":
       return {
+        portalDisabledAt: null,
         email: { not: null },
         passwordHash: null,
         invitations: { none: live, some: lapsed },
       };
     case "NOT_INVITED":
       return {
+        portalDisabledAt: null,
         email: { not: null },
         passwordHash: null,
         AND: [{ invitations: { none: live } }, { invitations: { none: lapsed } }],
@@ -969,6 +1146,7 @@ export const GUARDIAN_SELECT = {
   // portal's status. The invitation rows carry no token, only the three
   // timestamps the status rules read.
   passwordHash: true,
+  portalDisabledAt: true,
   invitations: { select: { acceptedAt: true, revokedAt: true, expiresAt: true } },
   firstName: true,
   lastName: true,
@@ -987,6 +1165,7 @@ type GuardianRow = Prisma.GuardianGetPayload<{ select: typeof GUARDIAN_SELECT }>
 
 export function toGuardianDto(row: GuardianRow): GuardianDto {
   const portal = deriveGuardianPortalStatus({
+    portalDisabled: row.portalDisabledAt !== null,
     hasEmail: row.email !== null,
     hasPassword: row.passwordHash !== null,
     invitations: row.invitations,
@@ -1006,6 +1185,7 @@ export function toGuardianDto(row: GuardianRow): GuardianDto {
     updatedAt: row.updatedAt,
     portalStatus: portal.status,
     portalInvitationExpiresAt: portal.liveInvitationExpiresAt,
+    portalDisabledAt: row.portalDisabledAt,
   };
 }
 

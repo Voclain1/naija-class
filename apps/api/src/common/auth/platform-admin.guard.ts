@@ -32,6 +32,7 @@ interface ResolvePlatformAdminSessionRow {
   user_id: string;
   is_platform_admin: boolean;
   expires_at: Date;
+  user_is_active: boolean;
 }
 
 @Injectable()
@@ -66,6 +67,15 @@ export class PlatformAdminGuard implements CanActivate {
     if (row.expires_at.getTime() <= Date.now()) {
       // Read-only hot path, same as AuthGuard/GuardianAuthGuard — no delete here.
       throw new UnauthorizedError("SESSION_EXPIRED", "Session has expired. Please sign in again.");
+    }
+
+    // Before the platform-admin flag, and as a 401 like AuthGuard's: a
+    // switched-off account is not "recognised but forbidden", it is not a
+    // usable identity at all. Until 2026-10-02 this guard never read
+    // is_active, so deactivating a staff account that also held platform
+    // admin left its cross-tenant access running.
+    if (!row.user_is_active) {
+      throw new UnauthorizedError("USER_INACTIVE", "Your account has been deactivated.");
     }
 
     if (!row.is_platform_admin) {
