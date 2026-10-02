@@ -5,6 +5,8 @@ import { join } from "node:path";
 import type { ConfigService } from "@nestjs/config";
 import { Queue } from "bullmq";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import Redis from "ioredis";
+import { LoginLockoutService } from "../common/auth/login-lockout";
 
 import { basePrisma, withTenant } from "@school-kit/db";
 
@@ -1327,7 +1329,13 @@ describe("Phase 4 / Slice 2 audit coverage — guardian.invite, guardian-invitat
   // EmailService stub — PortalAuthService gained an EmailService
   // dependency with guardian forgot-password (2026-08-27). Same
   // no-op-send shape GuardiansService already uses just above.
-  const portalAuth = new PortalAuthService({ send: async () => undefined } as never);
+  // A real lockout on the test Redis (2026-10-02): PortalAuthService now
+  // counts failed sign-ins. Closed in afterAll below.
+  const lockoutRedis = new Redis(process.env.REDIS_URL ?? "redis://localhost:6379");
+  afterAll(async () => {
+    await lockoutRedis.quit();
+  });
+  const portalAuth = new PortalAuthService({ send: async () => undefined } as never, new LoginLockoutService(lockoutRedis));
 
   let schoolId: string;
   let ownerId: string;

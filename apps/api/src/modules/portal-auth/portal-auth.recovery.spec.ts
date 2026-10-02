@@ -1,4 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import Redis from "ioredis";
+import { LoginLockoutService } from "../../common/auth/login-lockout";
 
 import { basePrisma, withTenant } from "@school-kit/db";
 import {
@@ -38,7 +40,13 @@ describe("PortalAuthService — logout and password recovery", () => {
   };
 
   const auth = new AuthService();
-  const portalAuth = new PortalAuthService(emailStub as never);
+  // A real lockout on the test Redis (2026-10-02): PortalAuthService now
+  // counts failed sign-ins. Closed in afterAll below.
+  const lockoutRedis = new Redis(process.env.REDIS_URL ?? "redis://localhost:6379");
+  afterAll(async () => {
+    await lockoutRedis.quit();
+  });
+  const portalAuth = new PortalAuthService(emailStub as never, new LoginLockoutService(lockoutRedis));
 
   const schoolIds = new Set<string>();
 
@@ -679,6 +687,87 @@ describe("PortalAuthService — logout and password recovery", () => {
 
       expect(seenFromA).toBe(1);
       expect(seenFromB).toBe(0); // RLS, not a WHERE clause in the query above
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // Login lockout (2026-10-02, common/auth/login-lockout.ts) — the guardian
+  // half of the decision logged as "the same decision" as the student's.
+  // A real lockout on the test Redis; identities carry runId, so runs never
+  // share a counter.
+  // -----------------------------------------------------------------------
+  describe("login lockout", () => {
+    const lockout = new LoginLockoutService(lockoutRedis);
+    const fail = (email: string) =>
+      portalAuth.login(guardianLoginSchema.parse({ email, password: "Not-The-Password-1" }), reqCtx);
+    const attempt = (email: string, pw = "Correct-Horse-9") =>
+      portalAuth.login(guardianLoginSchema.parse({ email, password: pw }), reqCtx);
+
+    async function failTimes(email: string, n: number) {
+      for (let i = 0; i < n; i++) {
+        await expect(fail(email)).rejects.toMatchObject({ code: "INVALID_CREDENTIALS" });
+      }
+    }
+
+    it("an unknown email locks exactly like a real one — the lock is not an account oracle", async () => {
+      const real = `lock-real-${runId}@example.test`;
+      const unknown = `lock-nobody-${runId}@example.test`;
+      await makeGuardian("lock-real", real);
+
+      // Five are free; the sixth failure locks the NEXT attempt.
+      await failTimes(real, 6);
+      await failTimes(unknown, 6);
+
+      const refusals = await Promise.all(
+        [real, unknown].map((email) => fail(email).then(() => null, (e: unknown) => e)),
+      );
+      for (const err of refusals) {
+        expect(err).toMatchObject({ code: "LOGIN_LOCKED", httpStatus: 429, details: { retryAfterSeconds: 5 } });
+      }
+      // Identical message too — nothing distinguishes the two.
+      expect((refusals[0] as Error).message).toBe((refusals[1] as Error).message);
+    });
+
+    it("a locked account refuses even the correct password", async () => {
+      const email = `lock-correct-${runId}@example.test`;
+      await makeGuardian("lock-correct", email);
+      await failTimes(email, 6);
+
+      await expect(attempt(email)).rejects.toMatchObject({ code: "LOGIN_LOCKED" });
+    });
+
+    it("a successful sign-in clears the count", async () => {
+      const email = `lock-clear-${runId}@example.test`;
+      await makeGuardian("lock-clear", email);
+      await failTimes(email, 5);
+
+      await attempt(email); // correct, and not yet locked
+      // The count started again: five more failures are free, so the sixth
+      // attempt is still answered as a wrong password, not as a lock.
+      await failTimes(email, 5);
+      await expect(fail(email)).rejects.toMatchObject({ code: "INVALID_CREDENTIALS" });
+    });
+
+    it("completing a password reset lifts even a hard lock — recovery is never locked out", async () => {
+      const email = `lock-reset-${runId}@example.test`;
+      await makeGuardian("lock-reset", email);
+      const before = sent.length;
+      await portalAuth.forgotPassword(guardianForgotPasswordSchema.parse({ email }), reqCtx);
+      const rawToken = tokenFromEmail(sent[before]!);
+      // Drive the count straight to a hard lock: eleven failures.
+      for (let i = 0; i < 11; i++) await lockout.recordFailure(`guardian:${email.toLowerCase()}`);
+      await expect(attempt(email)).rejects.toMatchObject({
+        code: "LOGIN_LOCKED",
+        details: { retryAfterSeconds: 15 * 60 },
+      });
+
+      await portalAuth.resetPassword(
+        guardianResetPasswordSchema.parse({ token: rawToken, password: "Brand-New-Pass-1!" }),
+        reqCtx,
+      );
+
+      const login = await attempt(email, "Brand-New-Pass-1!");
+      expect(login.token).toBeTruthy();
     });
   });
 });

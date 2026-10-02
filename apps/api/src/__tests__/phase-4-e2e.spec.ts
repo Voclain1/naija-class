@@ -3,6 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import Redis from "ioredis";
+import { LoginLockoutService } from "../common/auth/login-lockout";
 
 import { basePrisma, withTenant } from "@school-kit/db";
 import { ForbiddenError, NotFoundError } from "@school-kit/types";
@@ -73,7 +75,13 @@ describe("Phase 4 E2E rollup (slice 8)", () => {
   // EmailService stub — PortalAuthService gained an EmailService
   // dependency with guardian forgot-password (2026-08-27). Same
   // no-op-send shape GuardiansService already uses just above.
-  const portalAuth = new PortalAuthService({ send: async () => undefined } as never);
+  // A real lockout on the test Redis (2026-10-02): PortalAuthService now
+  // counts failed sign-ins. Closed in afterAll below.
+  const lockoutRedis = new Redis(process.env.REDIS_URL ?? "redis://localhost:6379");
+  afterAll(async () => {
+    await lockoutRedis.quit();
+  });
+  const portalAuth = new PortalAuthService({ send: async () => undefined } as never, new LoginLockoutService(lockoutRedis));
   const portalStudents = new PortalStudentsService();
   const portalInvoices = new PortalInvoicesService();
 

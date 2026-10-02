@@ -1,6 +1,8 @@
 import { createHash, randomBytes } from "node:crypto";
 
 import { afterAll, describe, expect, it } from "vitest";
+import Redis from "ioredis";
+import { LoginLockoutService } from "../../common/auth/login-lockout";
 
 import { basePrisma, withTenant } from "@school-kit/db";
 import { ConflictError } from "@school-kit/types";
@@ -28,7 +30,13 @@ describe("guardian invitation accept — never overwrites an existing password",
   const runId = Math.random().toString(36).slice(2, 8);
   const reqCtx = { ipAddress: "127.0.0.1", userAgent: "vitest" };
   const auth = new AuthService();
-  const portalAuth = new PortalAuthService({ send: async () => undefined } as never);
+  // A real lockout on the test Redis (2026-10-02): PortalAuthService now
+  // counts failed sign-ins. Closed in afterAll below.
+  const lockoutRedis = new Redis(process.env.REDIS_URL ?? "redis://localhost:6379");
+  afterAll(async () => {
+    await lockoutRedis.quit();
+  });
+  const portalAuth = new PortalAuthService({ send: async () => undefined } as never, new LoginLockoutService(lockoutRedis));
   const schoolIds = new Set<string>();
 
   afterAll(async () => {

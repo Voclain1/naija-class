@@ -2005,7 +2005,25 @@ Both of these were raised, argued and decided during the slice-3 review;
 neither blocked the merge. They are recorded here rather than in the PR
 body so they survive the merge being squashed.
 
-### Login lockout for the student portal — approved, NOT yet built
+### Login lockout for the student portal — approved, **BUILT 2026-10-02**
+
+**Built as approved**, in `apps/api/src/common/auth/login-lockout.ts`, with
+both constraints below proven over real HTTP against real Redis
+(`student-portal/login-lockout.http.spec.ts`): a made-up admission number
+locks with the same status, `Retry-After` and body as a real one, and
+invitation-accept stays open and lifts even a hard lock. Each was checked by
+removing it and watching its test fail.
+
+**One deliberate deviation:** the key is `login-lockout:{fail|lock}:student:
+{slug}:{admissionNumber}`, the school SLUG as typed rather than the
+`schoolId` named below. Constraint 1 requires keying on what was typed,
+BEFORE any lookup, and before a lookup only the slug exists. Resolving the
+slug to an id first would make an unknown slug behave differently from a
+known one, which is the oracle the constraint forbids.
+
+Guardians share the same schedule and service (keyed on the email as typed),
+per the guardian entry's "the same decision" — see "Guardian account
+lockout" below. The original approval follows unchanged.
 
 `POST /student-portal/login` currently ships behind the ordinary per-IP
 throttle (5/min) and nothing else. Approved shape, per-`(school_id,
@@ -2528,6 +2546,12 @@ pattern first: the recovery email already tells a parent which schools they
 have accounts at, which is most of the information a selector needs.
 
 ### Guardian account lockout
+
+**BUILT 2026-10-02**, with the student schedule (one decision, as this entry
+asked). Keyed on the email as typed, so an unknown address locks exactly like
+a known one; a completed password reset or an accepted invitation lifts the
+lock. The existing per-email rate limit stays alongside it. Proven in
+`portal-auth.recovery.spec.ts` ("login lockout").
 
 Guardian login now carries both a per-IP throttle (10/min) and
 `RateLimitByEmailGuard` (20 attempts / 15 min), the latter added by PR #222
