@@ -29,6 +29,8 @@ const GUARDED_SURFACES: { label: string; path: string }[] = [
   { label: "teacher attendance", path: "../../app/(teacher)/teacher/attendance/page.tsx" },
   // Phase 8c / CP6b — a freshly generated PIN batch exists only on this page.
   { label: "result PIN batch", path: "../../app/(admin)/report-cards/pins/page.tsx" },
+  // Phase 8c / CP5c — a draft exam paper is edited locally and saved whole.
+  { label: "exam paper editor", path: "../../app/(teacher)/teacher/exam-papers/[id]/page.tsx" },
 ];
 
 describe("every beforeunload guard stands down for a forced sign-out", () => {

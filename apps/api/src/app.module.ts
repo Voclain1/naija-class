@@ -64,6 +64,7 @@ import { DevicesModule } from "./modules/devices/devices.module";
 import { ReportCardsModule } from "./modules/report-cards/report-cards.module";
 import { ResultCheckerModule } from "./modules/result-checker/result-checker.module";
 import { QuestionBankModule } from "./modules/question-bank/question-bank.module";
+import { ExamPapersModule } from "./modules/exam-papers/exam-papers.module";
 import { SchoolsModule } from "./modules/schools/schools.module";
 import { SetupStateModule } from "./modules/setup-state/setup-state.module";
 import { StaffBankAccountModule } from "./modules/staff-bank-accounts/staff-bank-account.module";
@@ -162,6 +163,7 @@ const isProd = process.env.NODE_ENV === "production";
     ReportCardsModule,
     ResultCheckerModule,
     QuestionBankModule,
+    ExamPapersModule,
     FeeCatalogModule,
     DiscountsModule,
     InvoicesModule,

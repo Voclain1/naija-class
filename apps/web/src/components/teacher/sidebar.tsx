@@ -13,6 +13,7 @@ import {
   FileQuestion,
   FileText,
   LayoutDashboard,
+  ScrollText,
   UserCircle,
 } from "lucide-react";
 import Link from "next/link";
@@ -55,6 +56,8 @@ const BASE_ITEMS: NavItem[] = [
   // Phase 8c / CP5b (docs/modules/phase-8.md §22.2) — exam questions for the
   // subjects this teacher teaches. Grounded in the same curriculum as above.
   { label: "Question bank", href: "/teacher/question-bank", icon: FileQuestion, enabled: true },
+  // Phase 8c / CP5c (§22.3) — papers set from the approved questions above.
+  { label: "Exam papers", href: "/teacher/exam-papers", icon: ScrollText, enabled: true },
   // Phase 8 / CP1 — read-only school calendar (docs/modules/phase-8.md §15).
   { label: "Calendar", href: "/teacher/calendar", icon: CalendarDays, enabled: true },
   // Phase 8 / CP4 (docs/modules/phase-8.md §18 D37): own lessons + form-class grids.

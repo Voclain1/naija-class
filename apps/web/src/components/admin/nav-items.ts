@@ -12,6 +12,7 @@ import {
   GraduationCap,
   LayoutDashboard,
   NotebookText,
+  ScrollText,
   Settings,
   Sparkles,
   SlidersHorizontal,
@@ -98,9 +99,11 @@ export const NAV_ITEMS: NavItem[] = [
   { label: "Lesson plans", href: "/teacher/lesson-plans", icon: NotebookText, enabled: true, requiredPermission: "lesson-plan.read" },
   // Phase 8c / CP5b (docs/modules/phase-8.md §22.2). Links across shells into
   // the teacher shell, exactly as Lesson plans above does and for the same
-  // reasons. Owner/admin see every subject there; "Assessments & Exams" under
-  // Coming soon stays until exam papers (CP5c) ship.
+  // reasons. Owner/admin see every subject there.
   { label: "Question bank", href: "/teacher/question-bank", icon: FileQuestion, enabled: true, requiredPermission: "question.read" },
+  // Phase 8c / CP5c (§22.3). Promoted from "Coming soon" as "Assessments &
+  // Exams": papers set from the bank, printed or exported. Cross-shell, as above.
+  { label: "Exam papers", href: "/teacher/exam-papers", icon: ScrollText, enabled: true, requiredPermission: "exam-paper.read" },
   // Phase 5 / Slice 8. Gated on insight.read, which admin/owner hold and
   // bursar and teacher do not — these reports rank classes and subjects
   // against each other across the school, which is management information
@@ -134,6 +137,5 @@ export const NAV_ITEMS: NavItem[] = [
 
 export const LATER_PHASE_ITEMS: NavItem[] = [
   { label: "AI Tutor", href: "/ai-tutor", icon: Sparkles, enabled: false },
-  { label: "Assessments & Exams", href: "/exams", icon: ClipboardList, enabled: false },
   { label: "Result Checker", href: "/result-checker", icon: FileSearch, enabled: false },
 ];

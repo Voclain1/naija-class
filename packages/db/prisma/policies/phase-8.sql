@@ -112,3 +112,33 @@ ALTER TABLE "question_options" FORCE  ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation ON question_options
   USING      (school_id::text = current_setting('app.current_school_id', true))
   WITH CHECK (school_id::text = current_setting('app.current_school_id', true));
+
+-- ---------------------------------------------------------------------
+-- CP5c — exam papers (docs/modules/phase-8.md §22.3).
+-- Migration: 20261005120000_cp5c_exam_papers
+--
+-- All three tables carry their own school_id. exam-paper-rls.spec.ts proves
+-- the boundary as app_user. (The FINAL-is-frozen trigger lives in the
+-- migration; it is not a policy.)
+-- ---------------------------------------------------------------------
+
+ALTER TABLE "exam_papers" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "exam_papers" FORCE  ROW LEVEL SECURITY;
+
+CREATE POLICY tenant_isolation ON exam_papers
+  USING      (school_id::text = current_setting('app.current_school_id', true))
+  WITH CHECK (school_id::text = current_setting('app.current_school_id', true));
+
+ALTER TABLE "exam_paper_sections" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "exam_paper_sections" FORCE  ROW LEVEL SECURITY;
+
+CREATE POLICY tenant_isolation ON exam_paper_sections
+  USING      (school_id::text = current_setting('app.current_school_id', true))
+  WITH CHECK (school_id::text = current_setting('app.current_school_id', true));
+
+ALTER TABLE "exam_paper_items" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "exam_paper_items" FORCE  ROW LEVEL SECURITY;
+
+CREATE POLICY tenant_isolation ON exam_paper_items
+  USING      (school_id::text = current_setting('app.current_school_id', true))
+  WITH CHECK (school_id::text = current_setting('app.current_school_id', true));

@@ -748,6 +748,17 @@ export const QUESTION_BANK_PERMISSIONS = [
   "question.generate",
 ] as const;
 
+// Phase 8c / CP5c — exam papers (docs/modules/phase-8.md §22.3). `read` also
+// covers EXPORTING a final paper (each export is audited); `finalise` freezes a
+// paper for printing and is held apart from `write` because it is the moment
+// the paper stops being a draft. admin and teacher hold all three; the service
+// holds a teacher to the subjects they teach at each level, as for the bank.
+export const EXAM_PAPER_PERMISSIONS = [
+  "exam-paper.read",
+  "exam-paper.write",
+  "exam-paper.finalise",
+] as const;
+
 export const ALL_PERMISSIONS = [
   ...PHASE_0_PERMISSIONS,
   ...PHASE_1_PERMISSIONS,
@@ -769,6 +780,7 @@ export const ALL_PERMISSIONS = [
   ...PROMOTION_PERMISSIONS,
   ...RESULT_PIN_PERMISSIONS,
   ...QUESTION_BANK_PERMISSIONS,
+  ...EXAM_PAPER_PERMISSIONS,
   /* extend per phase */
 ] as const;
 

@@ -64,6 +64,7 @@ import { PortalAuthController } from "../modules/portal-auth/portal-auth.control
 import { NotificationPreferencesController } from "../modules/notifications/notification-preferences.controller";
 import { LessonPlansController } from "../modules/lesson-plans/lesson-plans.controller";
 import { QuestionBankController } from "../modules/question-bank/question-bank.controller";
+import { ExamPapersController } from "../modules/exam-papers/exam-papers.controller";
 
 // Static RBAC safety net (slice 13). Every route handler on a Phase 1
 // controller MUST declare @Permissions — the PermissionsGuard fails closed,
@@ -1215,6 +1216,44 @@ describe("Phase 8c CP5b RBAC coverage: question bank", () => {
 
   it("admin and teacher hold all four; bursar holds none", () => {
     const all = ["question.read", "question.write", "question.approve", "question.generate"];
+    for (const key of ["admin", "teacher"]) {
+      const perms = new Set(roleSeed(key).permissions);
+      for (const p of all) expect(perms.has(p), `${key} should have ${p}`).toBe(true);
+    }
+    const bursar = new Set(roleSeed("bursar").permissions);
+    for (const p of all) expect(bursar.has(p), `bursar should NOT have ${p}`).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 8c / CP5c RBAC coverage — exam papers (docs/modules/phase-8.md §22.3).
+//
+// Exporting is a READ (every export is audited in the service); finalising is
+// its own permission, held apart from editing. admin and teacher hold all
+// three (the service holds a teacher to their own subjects, D62); bursar none.
+// ---------------------------------------------------------------------------
+describe("Phase 8c CP5c RBAC coverage: exam papers", () => {
+  it("ExamPapersController: each handler carries the right exam-paper.* permission", () => {
+    const proto = ExamPapersController.prototype as unknown as Record<string, object>;
+    const byHandler = Object.fromEntries(
+      routeHandlers(ExamPapersController).map((h) => [h, Reflect.getMetadata(PERMISSIONS_METADATA_KEY, proto[h]!)]),
+    );
+    expect(byHandler).toEqual({
+      list: ["exam-paper.read"],
+      outOf: ["exam-paper.read"],
+      get: ["exam-paper.read"],
+      exportData: ["exam-paper.read"],
+      draw: ["exam-paper.write"],
+      create: ["exam-paper.write"],
+      save: ["exam-paper.write"],
+      duplicate: ["exam-paper.write"],
+      remove: ["exam-paper.write"],
+      finalise: ["exam-paper.finalise"],
+    });
+  });
+
+  it("admin and teacher hold all three; bursar holds none", () => {
+    const all = ["exam-paper.read", "exam-paper.write", "exam-paper.finalise"];
     for (const key of ["admin", "teacher"]) {
       const perms = new Set(roleSeed(key).permissions);
       for (const p of all) expect(perms.has(p), `${key} should have ${p}`).toBe(true);

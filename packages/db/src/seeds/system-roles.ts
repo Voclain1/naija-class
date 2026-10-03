@@ -20,6 +20,7 @@ import {
   PROMOTION_PERMISSIONS,
   RESULT_PIN_PERMISSIONS,
   QUESTION_BANK_PERMISSIONS,
+  EXAM_PAPER_PERMISSIONS,
   OWNER_ONLY_PERMISSIONS,
   PHASE_0_PERMISSIONS,
   PHASE_1_PERMISSIONS,
@@ -124,6 +125,9 @@ const ADMIN_PERMISSIONS: readonly string[] = [
   // Phase 8c / CP5b — the question bank. Kept IN SYNC with the idempotent
   // append in prisma/migrations/20261004120000_cp5b_question_bank.
   ...QUESTION_BANK_PERMISSIONS,
+  // Phase 8c / CP5c — exam papers. Kept IN SYNC with
+  // prisma/migrations/20261005120000_cp5c_exam_papers.
+  ...EXAM_PAPER_PERMISSIONS,
 ];
 
 // System roles are global (school_id = NULL, is_system = true) and referenced
@@ -209,6 +213,9 @@ export const SYSTEM_ROLE_SEEDS: SystemRoleSeed[] = [
       // teacher approves). Kept IN SYNC with
       // prisma/migrations/20261004120000_cp5b_question_bank.
       ...QUESTION_BANK_PERMISSIONS,
+      // Phase 8c / CP5c — exam papers, held to the same subjects by the service.
+      // Kept IN SYNC with prisma/migrations/20261005120000_cp5c_exam_papers.
+      ...EXAM_PAPER_PERMISSIONS,
     ],
   },
   // Phase 3 / Slice 15 — `bursar` role wire-up + RBAC close-out. Finance-only

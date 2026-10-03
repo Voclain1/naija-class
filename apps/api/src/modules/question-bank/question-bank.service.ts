@@ -544,6 +544,18 @@ export class QuestionBankService {
     });
   }
 
+  /**
+   * Questions by id, as the bank shows them, in the order given. No scope
+   * check: for callers that have already authorised the reference (an exam
+   * paper the caller may see). Missing ids are skipped.
+   */
+  async decorateByIds(db: Db, ids: readonly string[]): Promise<QuestionDto[]> {
+    if (ids.length === 0) return [];
+    const rows = await db.question.findMany({ where: { id: { in: [...ids] } }, include: QUESTION_INCLUDE });
+    const byId = new Map((await this.decorate(db, rows)).map((q) => [q.id, q]));
+    return ids.map((id) => byId.get(id)).filter((q): q is QuestionDto => Boolean(q));
+  }
+
   private async decorate(db: Db, rows: QuestionRow[]): Promise<QuestionDto[]> {
     if (rows.length === 0) return [];
     const userIds = [...new Set(rows.flatMap((r) => [r.createdBy, r.approvedBy]).filter((v): v is string => Boolean(v)))];
