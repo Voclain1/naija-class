@@ -844,6 +844,7 @@ NEXT_PUBLIC_POSTHOG_HOST
 WEB_BASE_URL
 PORTAL_BASE_URL
 RESULT_PIN_HMAC_KEY
+PORTAL_PROXY_SECRET
 ```
 
 Never commit. Never log. Test keys and live keys are different env files.
@@ -867,6 +868,17 @@ first deploy that carries it — the lesson of the `PORTAL_BASE_URL` miss below,
 turned from a silent failure into a loud one. Only the API app needs it; the
 render worker never loads the PIN module. Dev and test use a fixed
 non-production key. Rotating it voids every unredeemed PIN.
+
+`PORTAL_PROXY_SECRET` — shared by `school-kit-portal` (Vercel) and
+`school-kit-api` (Fly), the **same value on both**. The portal's server routes
+use it to sign the family's address (`apps/portal/src/lib/client-ip-signature.ts`)
+so the API's per-address rate limits key on each family, not on Vercel; the API
+honours the forwarded address only when the signature verifies and is under
+five minutes old (`apps/api/src/common/auth/forwarded-client-ip.ts`). Unset or
+shorter than 32 characters on EITHER side means every portal request is keyed
+on the proxy, as before — never an error — so the two deploys need not be
+simultaneous. After setting it on Vercel, run `vercel env ls` (see the
+recreated-project note below): a secret on only one side silently does nothing.
 
 `TERMII_BASE_URL` — unlike Paystack's fixed `api.paystack.co`, Termii's API
 base URL is **per-account** (dashboard-assigned), not a global constant.

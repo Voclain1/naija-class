@@ -1,6 +1,8 @@
 import { Injectable } from "@nestjs/common";
 import { ThrottlerGuard } from "@nestjs/throttler";
 
+import { verifiedForwardedIp } from "./forwarded-client-ip.js";
+
 // Per-CLIENT throttling on Fly (2026-10-03, found while building the public
 // Result Checker, docs/modules/phase-8.md §21.8).
 //
@@ -22,11 +24,19 @@ import { ThrottlerGuard } from "@nestjs/throttler";
 // lockouts (login-lockout.ts) key on what was typed, not on any address.
 export const FLY_CLIENT_IP_HEADER = "fly-client-ip";
 
-export function clientIp(req: {
-  headers?: Record<string, string | string[] | undefined>;
-  ip?: string;
-  socket?: { remoteAddress?: string };
-}): string {
+export function clientIp(
+  req: {
+    headers?: Record<string, string | string[] | undefined>;
+    ip?: string;
+    socket?: { remoteAddress?: string };
+  },
+  // The guardian portal's server forwards the family's address, signed
+  // (forwarded-client-ip.ts). Honoured only when it verifies; otherwise the
+  // request is keyed as below, exactly as before.
+  portal: { secret?: string; nowSeconds?: number } = {},
+): string {
+  const forwarded = verifiedForwardedIp(req.headers, portal.secret, portal.nowSeconds ?? Math.floor(Date.now() / 1000));
+  if (forwarded) return forwarded;
   const raw = req.headers?.[FLY_CLIENT_IP_HEADER];
   const fly = Array.isArray(raw) ? raw[0] : raw;
   if (typeof fly === "string" && fly.trim()) return fly.trim();
@@ -36,6 +46,6 @@ export function clientIp(req: {
 @Injectable()
 export class ClientIpThrottlerGuard extends ThrottlerGuard {
   protected override async getTracker(req: Record<string, unknown>): Promise<string> {
-    return clientIp(req as Parameters<typeof clientIp>[0]);
+    return clientIp(req as Parameters<typeof clientIp>[0], { secret: process.env.PORTAL_PROXY_SECRET });
   }
 }
