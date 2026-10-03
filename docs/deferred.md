@@ -1859,6 +1859,17 @@ seen those.
 (`docs/modules/phase-8.md` §9 and §10). **CBT itself is not.** It is its own
 separate future phase (D5), so this assessment remains its starting point.
 
+**Update 2026-10-03:** the shape CBT will take when it is built is now
+decided (`docs/modules/phase-8.md` D59): a separate delivery service on its own
+subdomain, sharing the main platform's accounts and data; offline exam packs
+unlocked by an invigilator's code, with answers synced in batches; and a load
+test, plus the paid database and machines it needs, as gates before any
+school's first live exam. Blocker 1 above (student identity) was solved by
+Phase 6. Blocker 9 (infrastructure) is unchanged and is the reason for that
+shape. Meanwhile CP5 ships the question bank, AI-drafted papers and
+PDF/Word/CSV export (D58, D63), so schools can print, or load papers into a
+CBT tool they already use.
+
 ### Bulk student add — ranked follow-ups
 
 The highest-leverage fix (**a class-arm column on the student CSV import,

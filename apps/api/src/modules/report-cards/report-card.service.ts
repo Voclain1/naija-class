@@ -6,6 +6,11 @@ import { Prisma, withTenant } from "@school-kit/db";
 import {
   ConflictError,
   NotFoundError,
+  cumulativeAverage,
+  cumulativeSubjects,
+  rankSparse,
+  readCumulativeSubjects,
+  type CumulativeSubject,
   type BuildReportCardsInput,
   type BuildReportCardsResultDto,
   type RenderArmInput,
@@ -26,6 +31,13 @@ import { StorageService } from "../../common/storage";
 import { AggregationService } from "../assessment/aggregation.service";
 import { wakeRenderWorker } from "./render/wake-render-worker";
 import { isFinalTerm } from "./workflow/final-term";
+
+interface CumulativeSnapshot {
+  average: number;
+  terms: number;
+  position: number | null;
+  subjects: CumulativeSubject[];
+}
 
 interface RequestContext {
   ipAddress: string | null;
@@ -132,6 +144,14 @@ export class ReportCardService {
       });
       const daysOpened = armDays.length;
 
+      // 3c. Cumulative results (Phase 8c / CP5a, phase-8.md §22.1, D61) —
+      //     the FINAL term only, snapshotted with the rest of the rollup. Every
+      //     other term stores NULL, so a term that stops being final (a school
+      //     adds a later one) loses its cumulative block on the next rebuild.
+      const cumulativeByStudent = (await isFinalTerm(db, input.termId))
+        ? await this.computeCumulative(db, input.termId, enrollments, byStudent)
+        : new Map<string, CumulativeSnapshot>();
+
       let cardCount = 0;
       for (const enrollment of enrollments) {
         const rollup = byStudent.get(enrollment.studentId) ?? { totals: [], classPosition: null };
@@ -149,6 +169,20 @@ export class ReportCardService {
           daysOpened > 0
             ? { attendanceDaysOpened: daysOpened, attendancePresent: days.present, attendanceAbsent: days.absent }
             : { attendanceDaysOpened: null, attendancePresent: null, attendanceAbsent: null };
+        const snapshot = cumulativeByStudent.get(enrollment.studentId);
+        const cumulative = snapshot
+          ? {
+              cumulativeAverage: snapshot.average,
+              cumulativeTerms: snapshot.terms,
+              cumulativePosition: snapshot.position,
+              cumulativeSubjects: snapshot.subjects as unknown as Prisma.InputJsonValue,
+            }
+          : {
+              cumulativeAverage: null,
+              cumulativeTerms: null,
+              cumulativePosition: null,
+              cumulativeSubjects: Prisma.DbNull,
+            };
 
         await db.reportCard.upsert({
           where: {
@@ -169,6 +203,7 @@ export class ReportCardService {
             overallPosition: rollup.classPosition,
             subjectsCount,
             ...attendance,
+            ...cumulative,
           },
           // Re-build refreshes the ROLLUP only — it must not clobber the workflow
           // state (slice 6), the comments, or the PDF pointer.
@@ -180,6 +215,7 @@ export class ReportCardService {
             overallPosition: rollup.classPosition,
             subjectsCount,
             ...attendance,
+            ...cumulative,
           },
           select: { id: true },
         });
@@ -195,6 +231,69 @@ export class ReportCardService {
 
       return { cardCount, studentCount: studentIds.length };
     });
+  }
+
+  // Phase 8c / CP5a (§22.1, D61) — the year so far for every student in the
+  // arm being built, on its final term. Term averages come from the student's
+  // OTHER terms' report cards (frozen when they were built) plus this term's
+  // figure computed above; subject averages from the year's Assessment term
+  // totals. Missing terms are absent, never zero. Position ranks the arm's
+  // students by cumulative average with the term positions' sparse rule.
+  private async computeCumulative(
+    db: TenantDb,
+    termId: string,
+    enrollments: { studentId: string; academicYearId: string }[],
+    byStudent: Map<string, { totals: number[]; classPosition: number | null }>,
+  ): Promise<Map<string, CumulativeSnapshot>> {
+    const out = new Map<string, CumulativeSnapshot>();
+    if (enrollments.length === 0) return out;
+    const studentIds = enrollments.map((e) => e.studentId);
+    const term = await db.term.findUniqueOrThrow({ where: { id: termId }, select: { academicYearId: true } });
+    const yearTerms = await db.term.findMany({ where: { academicYearId: term.academicYearId }, select: { id: true } });
+    const otherTermIds = yearTerms.map((t) => t.id).filter((id) => id !== termId);
+
+    const [priorCards, yearAssessments] = await Promise.all([
+      db.reportCard.findMany({
+        where: { studentId: { in: studentIds }, termId: { in: otherTermIds } },
+        select: { studentId: true, overallAverage: true },
+      }),
+      db.assessment.findMany({
+        where: { studentId: { in: studentIds }, termId: { in: yearTerms.map((t) => t.id) } },
+        select: { studentId: true, subjectId: true, totalScore: true },
+        orderBy: { subjectId: "asc" },
+      }),
+    ]);
+
+    const termAverages = new Map<string, (number | null)[]>();
+    for (const card of priorCards) {
+      termAverages.set(card.studentId, [...(termAverages.get(card.studentId) ?? []), card.overallAverage]);
+    }
+    const subjectTotals = new Map<string, Map<string, number[]>>();
+    for (const a of yearAssessments) {
+      const bySubject = subjectTotals.get(a.studentId) ?? new Map<string, number[]>();
+      bySubject.set(a.subjectId, [...(bySubject.get(a.subjectId) ?? []), a.totalScore]);
+      subjectTotals.set(a.studentId, bySubject);
+    }
+
+    const averages: { id: string; value: number }[] = [];
+    const pending = new Map<string, Omit<CumulativeSnapshot, "position">>();
+    for (const { studentId } of enrollments) {
+      const totals = byStudent.get(studentId)?.totals ?? [];
+      const thisTerm = totals.length > 0 ? Math.round((totals.reduce((s, t) => s + t, 0) * 100) / totals.length) : null;
+      const overall = cumulativeAverage([...(termAverages.get(studentId) ?? []), thisTerm]);
+      if (!overall) continue;
+      pending.set(studentId, {
+        average: overall.average,
+        terms: overall.terms,
+        subjects: cumulativeSubjects(subjectTotals.get(studentId) ?? new Map()),
+      });
+      averages.push({ id: studentId, value: overall.average });
+    }
+    const positions = rankSparse(averages);
+    for (const [studentId, snapshot] of pending) {
+      out.set(studentId, { ...snapshot, position: positions.get(studentId) ?? null });
+    }
+    return out;
   }
 
   // GET /report-cards?termId=&classArmId=&status= — the workflow board.
@@ -246,7 +345,12 @@ export class ReportCardService {
       });
       if (!student) throw new NotFoundError("Report card not found.");
 
-      const subjects = await this.buildSubjectBreakdown(db, card.studentId, card.termId);
+      const subjects = await this.buildSubjectBreakdown(
+        db,
+        card.studentId,
+        card.termId,
+        readCumulativeSubjects(card.cumulativeSubjects),
+      );
       return { reportCard: toReportCardDto(card), student: toStudentDto(student), subjects };
     });
   }
@@ -392,6 +496,10 @@ export class ReportCardService {
         attendancePresent: true,
         attendanceAbsent: true,
         promotionStatus: true,
+        cumulativeAverage: true,
+        cumulativeTerms: true,
+        cumulativePosition: true,
+        cumulativeSubjects: true,
       },
     });
     if (!card) return null;
@@ -409,7 +517,12 @@ export class ReportCardService {
     ]);
     if (!school || !term || !year || !arm || !student) return null;
 
-    const subjects = await this.buildSubjectBreakdown(db, card.studentId, card.termId);
+    const subjects = await this.buildSubjectBreakdown(
+      db,
+      card.studentId,
+      card.termId,
+      readCumulativeSubjects(card.cumulativeSubjects),
+    );
 
     return {
       school: {
@@ -443,6 +556,10 @@ export class ReportCardService {
             ? null
             : { daysOpened: card.attendanceDaysOpened, present: card.attendancePresent, absent: card.attendanceAbsent },
         promotionStatus: card.promotionStatus,
+        cumulative:
+          card.cumulativeAverage === null || card.cumulativeTerms === null
+            ? null
+            : { average: card.cumulativeAverage, terms: card.cumulativeTerms, position: card.cumulativePosition },
       },
       subjects,
     };
@@ -479,7 +596,9 @@ export class ReportCardService {
     db: TenantDb,
     studentId: string,
     termId: string,
+    cumulative: CumulativeSubject[] = [],
   ): Promise<ReportCardDetailDto["subjects"]> {
+    const cumulativeBySubject = new Map(cumulative.map((c) => [c.subjectId, c]));
     const assessments = await db.assessment.findMany({
       where: { studentId, termId },
       select: {
@@ -528,6 +647,8 @@ export class ReportCardService {
         components: (scoresBySubject.get(a.subjectId) ?? []).sort(
           (x, y) => (componentOrder.get(x.componentId) ?? 0) - (componentOrder.get(y.componentId) ?? 0),
         ),
+        cumulativeAverage: cumulativeBySubject.get(a.subjectId)?.average ?? null,
+        cumulativeTerms: cumulativeBySubject.get(a.subjectId)?.terms ?? null,
       }));
   }
 
@@ -576,6 +697,10 @@ export const REPORT_CARD_SELECT = {
   attendanceAbsent: true,
   promotionStatus: true,
   accessMode: true,
+  cumulativeAverage: true,
+  cumulativeTerms: true,
+  cumulativePosition: true,
+  cumulativeSubjects: true,
   pdfStatus: true,
   artifactUrl: true,
   generatedAt: true,
@@ -617,6 +742,9 @@ export function toReportCardDto(row: ReportCardRow): ReportCardDto {
     attendanceAbsent: row.attendanceAbsent,
     promotionStatus: row.promotionStatus,
     accessMode: row.accessMode,
+    cumulativeAverage: row.cumulativeAverage,
+    cumulativeTerms: row.cumulativeTerms,
+    cumulativePosition: row.cumulativePosition,
     pdfStatus: row.pdfStatus,
     artifactUrl: row.artifactUrl,
     generatedAt: row.generatedAt,

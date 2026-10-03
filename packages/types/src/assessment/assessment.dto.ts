@@ -10,6 +10,9 @@ export interface AssessmentScoreDto {
   termId: string;
   componentId: string;
   score: number;
+  /** Phase 8c / CP5a — the mark as typed and its total, when entered "out of". */
+  rawScore: number | null;
+  rawOutOf: number | null;
   enteredBy: string;
   enteredAt: string | Date;
   updatedAt: string | Date;

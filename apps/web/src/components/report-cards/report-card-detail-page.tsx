@@ -292,6 +292,16 @@ function ReportCardDetail({
             <StatCard label="Total score" value={formatInt(reportCard.overallTotal)} />
             <StatCard label="Average" value={formatAverage(reportCard.overallAverage)} />
             <StatCard label="Position in class" value={formatOrdinal(reportCard.overallPosition)} />
+            {/* Phase 8c / CP5a — the year so far, final term only. */}
+            {reportCard.cumulativeAverage !== null ? (
+              <StatCard
+                label={`Year average (${reportCard.cumulativeTerms ?? 0} term${reportCard.cumulativeTerms === 1 ? "" : "s"})`}
+                value={formatAverage(reportCard.cumulativeAverage)}
+              />
+            ) : null}
+            {reportCard.cumulativePosition !== null ? (
+              <StatCard label="Year position" value={formatOrdinal(reportCard.cumulativePosition)} />
+            ) : null}
           </section>
         </>
       )}

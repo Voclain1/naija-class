@@ -571,6 +571,16 @@ export function ReportCardBoard({ basePath }: { basePath: string }) {
                       </TableCell>
                       {isFinalTerm ? (
                         <TableCell>
+                          {/* Phase 8c / CP5a — the year average the decision is
+                              usually made on, beside the choice. */}
+                          {reportCard.cumulativeAverage !== null ? (
+                            <div className="mb-1 text-xs text-muted-foreground">
+                              Year avg {formatAverage(reportCard.cumulativeAverage)}
+                              {reportCard.cumulativeTerms !== null
+                                ? ` over ${reportCard.cumulativeTerms} term${reportCard.cumulativeTerms === 1 ? "" : "s"}`
+                                : ""}
+                            </div>
+                          ) : null}
                           {promotionEditable ? (
                             <select
                               aria-label={`Promotion status for ${fullStudentName(student)}`}

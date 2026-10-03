@@ -1,7 +1,7 @@
 import { StyleSheet, Text, View } from "react-native";
 import type { ReleasedResultDetailDto } from "@school-kit/types";
 
-import { attendanceLine, promotionLabel } from "../lib/results/result-extras";
+import { attendanceLine, cumulativeLine, promotionLabel } from "../lib/results/result-extras";
 import { useTheme } from "../theme/theme-provider";
 import { fontSizes, fonts, radii, spacing } from "../theme/tokens";
 import { Body, Card, Heading, Label } from "./ui";
@@ -15,7 +15,8 @@ export function ResultStanding({ result }: { result: Partial<ReleasedResultDetai
   const { colors } = useTheme();
   const promotion = promotionLabel(result);
   const attendance = attendanceLine(result);
-  if (!promotion && !attendance) return null;
+  const cumulative = cumulativeLine(result);
+  if (!promotion && !attendance && !cumulative) return null;
 
   return (
     <>
@@ -26,6 +27,12 @@ export function ResultStanding({ result }: { result: Partial<ReleasedResultDetai
           <Label>Promotion status</Label>
           <Text style={[styles.promotionValue, { color: colors.foreground }]}>{promotion}</Text>
         </View>
+      ) : null}
+      {cumulative ? (
+        <Card>
+          <Heading>The year so far</Heading>
+          <Body>{cumulative}</Body>
+        </Card>
       ) : null}
       {attendance ? (
         <Card>
