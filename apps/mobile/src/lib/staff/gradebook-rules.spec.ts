@@ -39,6 +39,8 @@ function row(
       termId: "t",
       componentId,
       score,
+      rawScore: null,
+      rawOutOf: null,
       enteredBy: "u",
       enteredAt: "2026-09-17T00:00:00Z",
       updatedAt: "2026-09-17T00:00:00Z",

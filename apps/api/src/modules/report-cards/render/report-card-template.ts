@@ -80,6 +80,8 @@ export function renderReportCardHtml(data: ReportCardRenderData): string {
   // Phase 8 / CP6a (D51): the school decides whether paper carries rank. Off
   // means the box and the column are GONE — a dash would read as "missing".
   const showPosition = school.positionOnReportCardPdf;
+  // Phase 8c / CP5a (§22.1): the year so far, on the final term's card only.
+  const cumulative = rollup.cumulative;
 
   const subjectRows = subjects
     .map((s) => {
@@ -93,6 +95,7 @@ export function renderReportCardHtml(data: ReportCardRenderData): string {
           <td class="num total">${esc(formatInt(s.totalScore))}</td>
           <td class="grade">${esc(s.letterGrade)}</td>
           ${showPosition ? `<td class="pos">${esc(formatOrdinal(s.subjectPosition))}</td>` : ""}
+          ${cumulative ? `<td class="num">${esc(formatHundredths(s.cumulativeAverage))}</td>` : ""}
           <td class="remark">${esc(s.remark)}</td>
           <td class="remark">${esc(s.subjectComment)}</td>
         </tr>`;
@@ -111,10 +114,23 @@ export function renderReportCardHtml(data: ReportCardRenderData): string {
     ...(rollup.attendance
       ? [["Attendance", `${rollup.attendance.present} of ${rollup.attendance.daysOpened} days`]]
       : []),
+    // CP5a (D61): averaged over the terms the student HAS — the label says how
+    // many, so a mid-year admission's figure is never misread.
+    ...(cumulative
+      ? [[`Cumulative Average (${cumulative.terms} term${cumulative.terms === 1 ? "" : "s"})`, `${formatHundredths(cumulative.average)}%`]]
+      : []),
+    ...(cumulative && showPosition && cumulative.position !== null
+      ? [["Cumulative Position", formatOrdinal(cumulative.position)]]
+      : []),
   ]
     .map(([label, value]) => `<div class="box"><div class="label">${esc(label)}</div><div class="value">${esc(value)}</div></div>`)
     .join("");
-  const summaryColumns = 3 + (showPosition ? 1 : 0) + (rollup.attendance ? 1 : 0);
+  const summaryColumns =
+    3 +
+    (showPosition ? 1 : 0) +
+    (rollup.attendance ? 1 : 0) +
+    (cumulative ? 1 : 0) +
+    (cumulative && showPosition && cumulative.position !== null ? 1 : 0);
 
   const attendanceNote = rollup.attendance
     ? `<div class="attendance-note">School opened ${esc(rollup.attendance.daysOpened)} days this term. Present ${esc(
@@ -200,6 +216,7 @@ export function renderReportCardHtml(data: ReportCardRenderData): string {
         <th class="num">Total</th>
         <th>Grade</th>
         ${showPosition ? "<th>Pos.</th>" : ""}
+        ${cumulative ? '<th class="num">Cum. Avg</th>' : ""}
         <th>Remark</th>
         <th>Teacher's Comment</th>
       </tr>

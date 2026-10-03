@@ -16,6 +16,9 @@ import {
   aggregateStatusQuerySchema,
   assessmentFeedQuerySchema,
   bulkAssessmentScoreSchema,
+  previewAssessmentScoreSchema,
+  type PreviewAssessmentScoreInput,
+  type ScorePreviewResponse,
   createAssessmentScoreSchema,
   signOffBulkSchema,
   updateAssessmentScoreSchema,
@@ -81,6 +84,18 @@ export class AssessmentScoresController {
     @Req() req: Request,
   ): Promise<AssessmentFeedResponse> {
     return this.service.bulkUpsertScores(authCtx, dto, reqContext(ip, req));
+  }
+
+  // Phase 8c / CP5a (D60) — "37/60 → 12" before a column is saved. Same
+  // permission as saving, since it answers the same question without writing.
+  @Post("preview")
+  @HttpCode(200)
+  @Permissions("assessment-score.create")
+  async preview(
+    @Body(new ZodValidationPipe(previewAssessmentScoreSchema)) dto: PreviewAssessmentScoreInput,
+    @CurrentUser() authCtx: AuthContext,
+  ): Promise<ScorePreviewResponse> {
+    return this.service.previewScores(authCtx, dto);
   }
 
   @Patch(":id")

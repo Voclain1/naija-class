@@ -37,6 +37,9 @@ export interface FamilySubjectRowDto {
    * key so the mobile client never branches on field existence.
    */
   subjectPosition: number | null;
+  /** Phase 8c / CP5a — this subject's year average in hundredths, final term only. */
+  cumulativeAverage: number | null;
+  cumulativeTerms: number | null;
 }
 
 /**
@@ -93,6 +96,9 @@ export interface ReleasedResultDetailDto {
   attendance: FamilyAttendanceDto | null;
   // Final term only; null on every other term (§20.3).
   promotionStatus: PromotionStatusDto | null;
+  // Phase 8c / CP5a (§22.1) — the year so far, final term only. position is
+  // null unless the school shows positions to families (D47/D51).
+  cumulative: { average: number; terms: number; position: number | null } | null;
   subjects: FamilySubjectRowDto[];
   releasedAt: string | Date;
 }

@@ -2,15 +2,28 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Check, Loader2, RefreshCw, RotateCcw } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useFieldArray, useForm } from "react-hook-form";
 import { toast } from "sonner";
 
-import type { AssessmentFeedResponse, AssessmentFeedRowDto, GradingSchemeDto } from "@school-kit/types";
+import type {
+  AssessmentFeedResponse,
+  AssessmentFeedRowDto,
+  GradingSchemeDto,
+  ScorePreviewRowDto,
+} from "@school-kit/types";
 
 import { ExportCsvButton } from "@/components/shared/export-csv-button";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ApiError } from "@/lib/api-client";
@@ -20,6 +33,7 @@ import {
   bulkSaveScores,
   getAggregateStatus,
   getGradebookFeed,
+  previewScores,
   signOffColumn,
 } from "@/lib/assessment/assessment-api";
 import { exportRowsAsCsv, type CsvColumn } from "@/lib/csv-export";
@@ -30,8 +44,13 @@ import {
   collectDirtyRows,
   columnSignedOffAt,
   isColumnFullyScored,
+  inferColumnOutOf,
   makeGradebookSchema,
+  parseOutOfInput,
+  toSaveRows,
+  type ColumnOutOf,
   type GradebookFormValues,
+  type SaveRow,
 } from "./gradebook-form";
 import { PrintButton } from "@/components/shared/print-button";
 
@@ -52,6 +71,8 @@ function buildExportColumns(components: GradingSchemeDto["components"]): CsvColu
     { header: "Position", accessor: (r) => r.assessment?.subjectPosition ?? "" },
   ];
 }
+
+type DirtyCellRef = { studentId: string; componentId: string };
 
 interface Props {
   scheme: GradingSchemeDto;
@@ -106,9 +127,29 @@ export function GradebookGrid({
   const [savedFlash, setSavedFlash] = useState(false);
   const [reopened, setReopened] = useState(false);
 
+  // CP5a (D60): columns entered "out of" some total. Seeded from the feed so a
+  // column saved that way reopens with the marks as typed. The resolver reads
+  // it through a ref, so validation follows the CURRENT totals.
+  const [outOf, setOutOf] = useState<ColumnOutOf>(() =>
+    Object.fromEntries(components.map((c) => [c.id, inferColumnOutOf(initialFeed.data, c.id)])),
+  );
+  const outOfRef = useRef(outOf);
+  outOfRef.current = outOf;
+  const [outOfDraft, setOutOfDraft] = useState<Record<string, string>>(() =>
+    Object.fromEntries(components.map((c) => [c.id, outOf[c.id] === undefined ? "" : String(outOf[c.id])])),
+  );
+  const [outOfError, setOutOfError] = useState<Record<string, string | undefined>>({});
+  // The confirmation step: what the SERVER will store for each converted cell.
+  const [pending, setPending] = useState<{
+    rows: SaveRow[];
+    preview: ScorePreviewRowDto[];
+    cellByIndex: DirtyCellRef[];
+  } | null>(null);
+
   const form = useForm<GradebookFormValues>({
-    resolver: zodResolver(makeGradebookSchema(components)),
-    defaultValues: buildDefaultValues(feed.data, components),
+    resolver: (values, context, options) =>
+      zodResolver(makeGradebookSchema(components, outOfRef.current))(values, context, options),
+    defaultValues: buildDefaultValues(feed.data, components, outOf),
     mode: "onChange",
   });
   const { fields } = useFieldArray({ control: form.control, name: "rows" });
@@ -127,7 +168,23 @@ export function GradebookGrid({
   // data (after a save or sign-off). form.reset clears dirty + errors.
   function applyFeed(next: AssessmentFeedResponse): void {
     setFeed(next);
-    form.reset(buildDefaultValues(next.data, components));
+    form.reset(buildDefaultValues(next.data, components, outOfRef.current));
+  }
+
+  // Changing a column's "Out of" changes what its cells MEAN, so it is only
+  // offered with nothing unsaved — the cells then reload in the new units.
+  function commitOutOf(componentId: string, weight: number): void {
+    const parsed = parseOutOfInput(outOfDraft[componentId] ?? "", weight);
+    if ("error" in parsed) {
+      setOutOfError((e) => ({ ...e, [componentId]: parsed.error }));
+      return;
+    }
+    setOutOfError((e) => ({ ...e, [componentId]: undefined }));
+    if (parsed.outOf === outOf[componentId]) return;
+    const next = { ...outOf, [componentId]: parsed.outOf };
+    outOfRef.current = next;
+    setOutOf(next);
+    form.reset(buildDefaultValues(feed.data, components, next));
   }
 
   // beforeunload guard — warn before leaving with unsaved edits.
@@ -177,51 +234,84 @@ export function GradebookGrid({
     }
   }
 
+  // Save. Cells in an "out of" column go to the server as raw marks, and the
+  // server's own conversion is shown for confirmation first — the browser
+  // never scales a mark (the same rule as Total/Grade/Position).
   const onSave = form.handleSubmit(async (values) => {
-    const { rows, cellByIndex } = collectDirtyRows(values, dirtyFields);
-    if (rows.length === 0) return;
+    const { rows: dirty, cellByIndex } = collectDirtyRows(values, dirtyFields);
+    if (dirty.length === 0) return;
+    const rows = toSaveRows(dirty, outOfRef.current);
 
+    if (!rows.some((r) => "raw" in r)) {
+      await commitSave(rows, cellByIndex);
+      return;
+    }
+    setSaving(true);
+    setBanner(null);
+    try {
+      const { rows: preview } = await previewScores({ termId, subjectId, rows });
+      setPending({ rows, preview, cellByIndex });
+    } catch (e) {
+      handleSaveError(e, cellByIndex);
+    } finally {
+      setSaving(false);
+    }
+  });
+
+  async function commitSave(rows: SaveRow[], cellByIndex: DirtyCellRef[]): Promise<void> {
     setSaving(true);
     setBanner(null);
     try {
       const refreshed = await bulkSaveScores({ termId, subjectId, rows });
+      setPending(null);
       applyFeed(refreshed);
       setReopened(false);
       setSavedFlash(true);
       window.setTimeout(() => setSavedFlash(false), 2500);
     } catch (e) {
-      if (e instanceof ApiError && e.status === 400) {
-        const issues =
-          (e.details as { issues?: { path?: unknown[]; message?: string }[] } | undefined)?.issues ??
-          [];
-        let bound = 0;
-        for (const issue of issues) {
-          const path = issue.path;
-          if (Array.isArray(path) && path[0] === "rows" && typeof path[1] === "number") {
-            const cell = cellByIndex[path[1]];
-            if (!cell) continue;
-            const formRowIndex = feed.data.findIndex((r) => r.student.id === cell.studentId);
-            if (formRowIndex >= 0) {
-              form.setError(`rows.${formRowIndex}.scores.${cell.componentId}`, {
-                type: "server",
-                message: issue.message ?? "Invalid",
-              });
-              bound += 1;
-            }
-          }
-        }
-        setBanner(
-          bound > 0
-            ? `Couldn't save — ${bound} cell${bound === 1 ? "" : "s"} need fixing.`
-            : e.message || "Couldn't save.",
-        );
-      } else {
-        setBanner("Couldn't save — try again.");
-      }
+      setPending(null);
+      handleSaveError(e, cellByIndex);
     } finally {
       setSaving(false);
     }
-  });
+  }
+
+  function handleSaveError(e: unknown, cellByIndex: DirtyCellRef[]): void {
+    if (e instanceof ApiError && e.status === 400) {
+      const issues =
+        (e.details as { issues?: { path?: unknown[]; message?: string }[] } | undefined)?.issues ??
+        [];
+      let bound = 0;
+      for (const issue of issues) {
+        const path = issue.path;
+        if (Array.isArray(path) && path[0] === "rows" && typeof path[1] === "number") {
+          const cell = cellByIndex[path[1]];
+          if (!cell) continue;
+          const formRowIndex = feed.data.findIndex((r) => r.student.id === cell.studentId);
+          if (formRowIndex >= 0) {
+            form.setError(`rows.${formRowIndex}.scores.${cell.componentId}`, {
+              type: "server",
+              message: issue.message ?? "Invalid",
+            });
+            bound += 1;
+          }
+        }
+      }
+      setBanner(
+        bound > 0
+          ? `Couldn't save — ${bound} cell${bound === 1 ? "" : "s"} need fixing.`
+          : e.message || "Couldn't save.",
+      );
+    } else {
+      setBanner("Couldn't save — try again.");
+    }
+  }
+
+  const studentName = (id: string) => {
+    const s = feed.data.find((r) => r.student.id === id)?.student;
+    return s ? `${s.lastName}, ${s.firstName}` : "Student";
+  };
+  const componentById = new Map(components.map((c) => [c.id, c]));
 
   async function onSignOff(): Promise<void> {
     setSigningOff(true);
@@ -380,9 +470,27 @@ export function GradebookGrid({
             <TableRow>
               <TableHead className="sticky left-0 z-10 bg-muted/40">Student</TableHead>
               {components.map((c) => (
-                <TableHead key={c.id}>
+                <TableHead key={c.id} className="align-top">
                   {c.label}
                   <span className="ml-1 font-normal normal-case text-muted-foreground/70">/{c.weight}</span>
+                  <label className="mt-1 flex items-center gap-1 text-xs font-normal normal-case text-muted-foreground">
+                    Out of
+                    <Input
+                      aria-label={`${c.label} out of`}
+                      inputMode="numeric"
+                      placeholder={String(c.weight)}
+                      disabled={locked || busy || isDirty}
+                      title={isDirty ? "Save your changes first" : `Type marks out of another total; they are converted to /${c.weight}`}
+                      className="h-7 w-14 px-1.5 text-xs"
+                      value={outOfDraft[c.id] ?? ""}
+                      onChange={(e) => setOutOfDraft((d) => ({ ...d, [c.id]: e.target.value }))}
+                      onBlur={() => commitOutOf(c.id, c.weight)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") commitOutOf(c.id, c.weight);
+                      }}
+                    />
+                  </label>
+                  {outOfError[c.id] && <p className="mt-1 text-xs font-normal normal-case text-destructive">{outOfError[c.id]}</p>}
                 </TableHead>
               ))}
               <TableHead>Total</TableHead>
@@ -421,6 +529,11 @@ export function GradebookGrid({
                           {...form.register(`rows.${i}.scores.${c.id}`)}
                         />
                         {cellErr && <p className="mt-1 text-xs text-destructive">{cellErr.message}</p>}
+                        {!cellErr && outOf[c.id] !== undefined && savedScore(row, c.id) !== undefined && (
+                          <p className="mt-1 text-xs text-muted-foreground tabular-nums">
+                            Saved {savedScore(row, c.id)}/{c.weight}
+                          </p>
+                        )}
                       </TableCell>
                     );
                   })}
@@ -437,6 +550,66 @@ export function GradebookGrid({
           </TableBody>
         </Table>
       </div>
+
+      <Dialog open={pending !== null} onOpenChange={(open) => !open && !saving && setPending(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Check the converted marks</DialogTitle>
+            <DialogDescription>
+              Marks typed out of another total are converted to each component&apos;s weight, rounding half
+              up. This is what will be saved.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="max-h-80 overflow-y-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Student</TableHead>
+                  <TableHead>Component</TableHead>
+                  <TableHead>Typed</TableHead>
+                  <TableHead>Saved as</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {(pending?.preview ?? [])
+                  .filter((p) => p.raw !== null)
+                  .map((p) => {
+                    const component = componentById.get(p.componentId);
+                    return (
+                      <TableRow key={`${p.studentId}:${p.componentId}`}>
+                        <TableCell>{studentName(p.studentId)}</TableCell>
+                        <TableCell>{component?.label}</TableCell>
+                        <TableCell className="tabular-nums">
+                          {p.raw!.mark}/{p.raw!.outOf}
+                        </TableCell>
+                        <TableCell className="font-medium tabular-nums">
+                          {p.score}/{component?.weight}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+              </TableBody>
+            </Table>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" disabled={saving} onClick={() => setPending(null)}>
+              Back to editing
+            </Button>
+            <Button
+              type="button"
+              disabled={saving}
+              onClick={() => pending && void commitSave(pending.rows, pending.cellByIndex)}
+            >
+              {saving && <Loader2 className="mr-1 h-4 w-4 animate-spin" />}
+              {saving ? "Saving…" : "Save these marks"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
+}
+
+function savedScore(row: AssessmentFeedRowDto, componentId: string): number | undefined {
+  return row.scores.find((s) => s.componentId === componentId)?.score;
 }

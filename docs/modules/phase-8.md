@@ -1096,6 +1096,7 @@ already costed in: the portal lock was §10.2's first finding.
 | Q22 | Checker identifiers | Admission number AND PIN (D49) |
 | Q24 | Position-visibility default | Hidden until a school turns it on (D47) |
 | Q28 | Lighter unpublish? | Not in v1; the owner-only reopen stands (D50) |
+| Q15 | Assessments & Exams scope | All of (i)–(iii) in CP5; online exam delivery a separate later phase (D58, D59) |
 
 ### 11.2 Still open
 
@@ -1104,7 +1105,6 @@ already costed in: the portal lock was §10.2's first finding.
 | **Q9** | NDPR: recorded proceed-anyway decision **for the tutor specifically**? | CP7 | — (legal/business call) |
 | **Q10** | PII hard rule vs a child's free text | CP7 | — (policy call) |
 | **Q12** | Tutor behaviour with no approved curriculum document | CP8 | Refuse politely, naming the subject |
-| **Q15** | Assessments & Exams: which of (i)–(iii)? | CP5 | (i) + (ii) |
 
 Q9 and Q10 are **not engineering decisions** and must not be closed by one.
 Neither is the safeguarding workstream (§6.4).
@@ -4489,3 +4489,212 @@ Built as planned in 21.7, with these details settled:
   until a PIN, a wrong PIN refused in words, the unlock, and the public
   checker's uniform failure followed by success. It also covers staff
   generating a batch and seeing the once-only warning.
+
+---
+
+## 22. CP5 plan-first — Assessments & Exams
+
+**Status:** approved through D58–D64 (Arinzechukwu, 2026-10-03). Q15 is
+resolved. Built in three PRs, in this order: CP5a (marks and cumulative
+results), CP5b (question bank and AI drafting), CP5c (exam papers and
+exports).
+
+### 22.0 Decisions
+
+**D58 (Q15) — CP5 builds all three options:** (i) marks out of any total,
+(ii) cumulative results across terms, and (iii) a question bank with
+AI-drafted, teacher-approved papers that schools print or export. Nothing is
+deferred.
+
+**D59 — Online exam delivery (CBT) stays out of CP5, and its shape is now
+recorded.** Asked directly whether the platform could take exam season, with
+20–100 schools sitting at once, the honest answer was no. Production is one
+512 MB API machine in Johannesburg and a free-tier, auto-suspending Neon
+database in Frankfurt, at about 2 seconds per signed-in request. A design
+that saves every answer would put thousands of requests a second on it.
+When CBT is built, as its own phase:
+- it is a **separate delivery service** (`cbt.schoolkit.ng`) with its own
+  scaling, so an exam-day spike cannot take down fees, attendance or report
+  cards;
+- it uses the **same accounts and data**, not a second system schools copy
+  students into, and sends scores back through the gradebook's approval step;
+- it is built around **offline exam packs**: the paper downloads ahead of
+  time locked, an invigilator's code unlocks it, answers are kept on the
+  device and synced in batches. That keeps the server nearly idle and
+  survives power and network loss;
+- a **load test is a gate** before any school's first live exam, and the
+  paid database and machines it needs are budgeted first.
+
+Until then, CP5's exports (D63) let a school feed approved papers into any
+CBT tool it already uses.
+
+**D60 — Scaled marks round half up**, to a whole number in the component's
+weight: `round(raw × weight / outOf)`, with .5 going up. A teacher sees the
+scaled figures in a preview before anything is saved.
+
+**D61 — Cumulative results average the terms a student has.** Joined in the
+second term with 70 and 80: cumulative 75, and the card says "based on 2
+terms". A missing term never counts as zero.
+
+**D62 — Subject teachers and admins approve.** A teacher assigned to a
+subject drafts questions, approves them into the bank and builds papers for
+that subject, the same rule as who enters that subject's marks. Owners and
+admins can do this for any subject. Every AI-drafted question is a draft
+until a person approves it (the AI hard rule).
+
+**D63 — Approved papers export as PDF, Word (.docx) and CSV.** PDF gives the
+print-ready question paper plus a separate marking scheme. Word is editable.
+CSV has one row per question with its options and answer, for CBT tools and
+spreadsheets.
+
+**D64 — Exam periods appear on the Event Calendar** as an ordinary school
+event category, not a new surface (§9.3).
+
+### 22.1 CP5a — marks out of any total, and cumulative results
+
+**(i) Marks out of any total.**
+- A teacher entering a column (subject × term × component) may set "out of"
+  (any whole number from 1 to 1000). Raw marks are entered against it.
+- `assessment_scores` gains `raw_score` and `raw_out_of`, both nullable and
+  NULL for marks entered directly in weight units, as today. `score` is
+  still the scaled whole number the rest of the system reads, so grading,
+  positions, report cards and the PDF are unchanged.
+- **Preview first:** `POST /assessment-scores/preview` returns each student's scaled
+  score without saving. The save sends the same raw marks and the server
+  recomputes; it never trusts a client-scaled figure.
+- A raw mark outside 0..outOf is refused, naming the student.
+- The gradebook shows "37/60 → 37" where a raw mark exists.
+
+**(ii) Cumulative results.**
+- Computed when the **final term's** report cards are built (CP6a's "final
+  term", derived from `Term.sequence`), from the year's `Assessment` term
+  totals, and snapshotted onto the card like the rest of the rollup:
+  - per subject, the cumulative average (hundredths) and how many terms it
+    covers;
+  - overall, the cumulative average, the number of terms, and the
+    cumulative position in the class arm, ranked by cumulative average with
+    the same tie rule the term positions use.
+- Shown on the final-term PDF, the portal, the app and the checker. Position
+  follows the existing two position settings (D51).
+- The promotion-status editor (CP6a) shows each student's cumulative average
+  beside the choice, since that is what the decision is usually made on.
+
+### 22.1a As built — CP5a (2026-10-03)
+
+Migration `20261003180000_cp5a_any_total_and_cumulative`. No new SECURITY
+DEFINER function (count stays 23), no new permission: the preview sits
+behind `assessment-score.create`, like the save.
+
+**(i) Marks out of any total.**
+- `assessment_scores.raw_score` / `raw_out_of`, with
+  `assessment_scores_raw_pair_check`: both NULL, or `raw_out_of` in 1..1000
+  and `raw_score` in 0..`raw_out_of`. The rule is in the database, not only
+  the DTO.
+- A bulk-save row carries **exactly one** of `score` (weight units, as
+  before) or `raw: { mark, outOf }`. The schema refuses both and neither.
+- Scaling is `scaleRawMark` in `@school-kit/types`, all integers:
+  `floor((2·mark·weight + outOf) / (2·outOf))`, which is round half up (D60)
+  with no floating point. The SERVER scales on both preview and save
+  (`resolveRowScores` in `assessment.service.ts`); the browser only shows
+  the server's answer.
+- Typing a weight-units score over a cell that had a raw mark clears the
+  raw pair (bulk and single update). A stale "37/60" can never sit beside a
+  score it no longer explains.
+- **Gradebook (web).** Each column header has an "Out of" box. It is
+  disabled while anything is unsaved, because changing it changes what the
+  typed cells mean. Cells validate against that total. Save calls the
+  preview, and a dialog lists "37/100 → 22/60" for every converted cell;
+  "Back to editing" writes nothing. A column whose saved marks all share one
+  total reopens in that total with the marks as typed, and each cell shows
+  "Saved 22/60" beneath it. This replaces the planned inline
+  "37/60 → 37": a confirmation step before saving says the same thing at the
+  moment it matters.
+- **Not in the staff app yet.** The mobile gradebook still enters marks in
+  weight units, which the API still accepts. A score typed there over a
+  converted cell clears its raw pair, the same rule as on the web. The app
+  gets "Out of" when the staff gradebook is next touched.
+- Proven by `raw-mark-scaling.spec.ts`, five any-total tests in
+  `assessment.service.spec.ts` (scaled and raw kept; preview writes nothing;
+  an over-total mark rejects the batch, naming the row; a direct score
+  clears the raw pair; score xor raw), `gradebook-form.spec.ts`, and the
+  browser test `e2e/tests/gradebook-out-of.spec.ts` (75/100 → 45/60 saved
+  with the raw mark kept, and reopens as typed). Mutation check: saving the
+  raw mark unscaled fails 3 tests.
+
+**(ii) Cumulative results.**
+- `report_cards.cumulative_average` / `_terms` / `_position` /
+  `_subjects` (JSON of `{ subjectId, average, terms }`), with
+  `report_cards_cumulative_check`. They are written only when the build is
+  for the year's final term (`isFinalTerm`) and are NULL otherwise.
+- Built from the earlier terms' `report_cards.overall_average`, plus this
+  term's average computed in the same build. Per subject, they come from
+  the year's `assessments.total_score`. Only the terms a student has are
+  averaged (D61), and `cumulative_terms` says how many, so "over 2 terms" is
+  visible rather than hidden. The rounding is `roundHalfUpDiv`; the ranking
+  is `rankSparse`, the tie rule the term positions use.
+- Shown on the PDF (a "Cum. Avg" column, a "Cumulative Average (N terms)"
+  box, and the position box), on the portal and in the checker (the shared
+  `ResultCard`: "Year average … over N terms, Nth in class" plus a
+  "Year avg" column), in the app ("The year so far"), and on the web board
+  and card detail. The board shows "Year avg" in the Promotion cell, where
+  the promotion decision is made. Cumulative position follows the school's
+  position settings (D51) for both family principals (negative-walk test 10).
+- Mutation check: ignoring prior terms fails the final-term cumulative test.
+
+### 22.2 CP5b — question bank and AI drafting
+
+- **Model:** `questions` (school, subject, class level, topic, type, text,
+  marks, status DRAFT / APPROVED / RETIRED, created by, approved by and at,
+  source MANUAL / AI) and `question_options` for objective items.
+  - Types in v1: **multiple choice** (one correct option), **short
+    answer** and **theory** (with an expected answer / marking guide).
+  - **An approved question is never edited in place.** Editing makes a new
+    draft and retires the old one, so a paper that used it keeps the exact
+    wording it was set with.
+- **AI drafting:** a new prompt, `exam-questions`, grounded in the school's
+  approved curriculum through the Phase 7 retrieval the lesson plan uses.
+  Inputs are subject, class level, topic, question type, count and
+  difficulty, with **no student data** (the eval suite pins this).
+  - Every call is logged to `ai_generations` and checked against the
+    school's monthly budget before it runs, and respects the school's AI
+    switch.
+  - Output lands as **DRAFT** questions only (D62, the AI hard rule).
+- **Teachers** review drafts, editing, approving or discarding each, and can
+  also write questions by hand. The bank is searchable by subject, level,
+  topic and type.
+
+### 22.3 CP5c — exam papers and exports
+
+- **A paper:** title, subject, class level, term, duration, instructions,
+  and sections (conventionally "Section A — Objectives", "Section B —
+  Theory"), each an ordered list of **approved** questions with marks.
+  - Questions are picked by hand, or drawn at random from the approved bank
+    by topic and type counts.
+  - Total marks are computed, never typed.
+- **States:** DRAFT, then FINAL, which freezes the paper. A FINAL paper can
+  be duplicated into a new draft but never changed, so what was printed and
+  what is stored never disagree.
+- **Exports (D63)**, FINAL papers only:
+  - **PDF:** the question paper, plus a separate marking scheme, rendered by
+    the existing report-card PDF worker. Option order can be shuffled per
+    copy for up to four versions (A–D), each with its own marking scheme.
+  - **Word (.docx):** the question paper and marking scheme, editable.
+  - **CSV:** one row per question with section, type, text, options,
+    correct answer and marks.
+- **Closing the loop:** a FINAL paper's total pre-fills the "out of" when
+  marks for that subject's exam column are entered (CP5a).
+
+### 22.4 Not in CP5
+
+Online exam delivery (D59). Question images and diagrams (text only in v1,
+with math written plainly). Importing question banks from other systems. A
+shared cross-school bank — every bank is the school's own, under RLS.
+
+### 22.5 Size
+
+| | Estimate |
+|---|---|
+| CP5a — any-total marks, cumulative results | 5–8 days |
+| CP5b — question bank, AI drafting, review | 6–9 days |
+| CP5c — papers, versions, PDF / Word / CSV export | 5–8 days |
+| **CP5 total** | **16–25 days** |

@@ -5,6 +5,7 @@ import type {
   AssessmentFeedRowDto,
   GradingComponentDto,
 } from "@school-kit/types";
+import { MAX_RAW_OUT_OF } from "@school-kit/types";
 
 // FORM-CLASS DISCIPLINE at grid scale (fix/empty-optional-forms + slice-1 cp2):
 //   - FormValues hold STRINGS per cell (empty = unentered), coerced to int only
@@ -29,8 +30,33 @@ export function cellError(value: string, weight: number): string | null {
   return null;
 }
 
-export function makeGradebookSchema(components: { id: string; weight: number }[]) {
-  const weightById = new Map(components.map((c) => [c.id, c.weight]));
+/**
+ * Phase 8c / CP5a (phase-8.md §22.1, D60) — a column entered "out of" some
+ * total instead of in the component's weight. componentId → that total, or
+ * absent for a column entered in weight units, as always.
+ */
+export type ColumnOutOf = Record<string, number | undefined>;
+
+/**
+ * The "out of" a column was last saved with, so reopening it shows the marks
+ * as they were typed: the total EVERY saved raw mark in the column shares, or
+ * undefined if any score was typed in weight units or the totals differ.
+ */
+export function inferColumnOutOf(rows: AssessmentFeedRowDto[], componentId: string): number | undefined {
+  let outOf: number | undefined;
+  for (const row of rows) {
+    const score = row.scores.find((s) => s.componentId === componentId);
+    if (!score) continue;
+    if (score.rawOutOf === null || score.rawOutOf === undefined) return undefined;
+    if (outOf !== undefined && outOf !== score.rawOutOf) return undefined;
+    outOf = score.rawOutOf;
+  }
+  return outOf;
+}
+
+export function makeGradebookSchema(components: { id: string; weight: number }[], outOf: ColumnOutOf = {}) {
+  // A column entered out of N accepts marks up to N; the server scales them.
+  const weightById = new Map(components.map((c) => [c.id, outOf[c.id] ?? c.weight]));
   return z
     .object({
       rows: z.array(
@@ -64,14 +90,25 @@ export function makeGradebookSchema(components: { id: string; weight: number }[]
 export function buildDefaultValues(
   rows: AssessmentFeedRowDto[],
   components: GradingComponentDto[],
+  outOf: ColumnOutOf = {},
 ): GradebookFormValues {
   return {
     rows: rows.map((row) => {
-      const scoreByComponent = new Map(row.scores.map((s) => [s.componentId, s.score]));
+      const scoreByComponent = new Map(row.scores.map((s) => [s.componentId, s]));
       const scores: Record<string, string> = {};
       for (const component of components) {
-        const value = scoreByComponent.get(component.id);
-        scores[component.id] = value === undefined ? "" : String(value);
+        const saved = scoreByComponent.get(component.id);
+        const total = outOf[component.id];
+        if (!saved) {
+          scores[component.id] = "";
+        } else if (total === undefined) {
+          scores[component.id] = String(saved.score);
+        } else {
+          // In "out of" mode a cell shows the mark as typed — but only when it
+          // was typed against THIS total. Anything else would be a figure in
+          // the wrong units, so the cell starts empty and shows what is saved.
+          scores[component.id] = saved.rawOutOf === total && saved.rawScore !== null ? String(saved.rawScore) : "";
+        }
       }
       return { studentId: row.student.id, scores };
     }),
@@ -117,6 +154,39 @@ export function collectDirtyRows(
     rows: collected,
     cellByIndex: collected.map((r) => ({ studentId: r.studentId, componentId: r.componentId })),
   };
+}
+
+/**
+ * The header's "Out of" box: empty (or the weight itself) means the column is
+ * entered in weight units as before; otherwise a whole number 1..1000.
+ */
+export function parseOutOfInput(text: string, weight: number): { outOf: number | undefined } | { error: string } {
+  const v = text.trim();
+  if (v === "") return { outOf: undefined };
+  if (!/^\d+$/.test(v) || Number(v) < 1 || Number(v) > MAX_RAW_OUT_OF) {
+    return { error: `Out of must be a whole number from 1 to ${MAX_RAW_OUT_OF}.` };
+  }
+  return { outOf: Number(v) === weight ? undefined : Number(v) };
+}
+
+export type SaveRow =
+  | { studentId: string; componentId: string; score: number }
+  | { studentId: string; componentId: string; raw: { mark: number; outOf: number } };
+
+/**
+ * The dirty cells as the bulk save takes them: a weight-units score, or — for
+ * a column entered out of N — a raw mark the SERVER scales (D60).
+ */
+export function toSaveRows(
+  rows: { studentId: string; componentId: string; score: number }[],
+  outOf: ColumnOutOf,
+): SaveRow[] {
+  return rows.map((r) => {
+    const total = outOf[r.componentId];
+    return total === undefined
+      ? r
+      : { studentId: r.studentId, componentId: r.componentId, raw: { mark: r.score, outOf: total } };
+  });
 }
 
 // Whether every enrolled student has a score for every scheme component — the

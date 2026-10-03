@@ -40,6 +40,15 @@ export function ResultCard({ result }: { result: ReleasedResultDetailDto }) {
             <div><dt className="text-muted-foreground">Position</dt><dd>{ordinal(result.overallPosition)}</dd></div>
           ) : null}
         </dl>
+        {result.cumulative ? (
+          // Phase 8c / CP5a (D61): the year so far, final term only, averaged
+          // over the terms the student has — and it says how many.
+          <p className="mt-3 text-sm text-muted-foreground">
+            Year average: {formatAverage(result.cumulative.average)} over {result.cumulative.terms} term
+            {result.cumulative.terms === 1 ? "" : "s"}
+            {result.cumulative.position !== null ? `, ${ordinal(result.cumulative.position)} in class` : ""}.
+          </p>
+        ) : null}
         {result.attendance ? (
           <p className="mt-3 text-sm text-muted-foreground">
             Attendance: present {result.attendance.present} of {result.attendance.daysOpened} days, absent{" "}
@@ -62,6 +71,7 @@ export function ResultCard({ result }: { result: ReleasedResultDetailDto }) {
                 {result.subjects.some((s) => s.subjectPosition !== null) ? (
                   <th className="py-1 text-right font-normal">Position</th>
                 ) : null}
+                {result.cumulative ? <th className="py-1 text-right font-normal">Year avg</th> : null}
               </tr>
             </thead>
             <tbody>
@@ -76,6 +86,11 @@ export function ResultCard({ result }: { result: ReleasedResultDetailDto }) {
                   {result.subjects.some((x) => x.subjectPosition !== null) ? (
                     <td className="py-1.5 text-right">
                       {s.subjectPosition !== null ? ordinal(s.subjectPosition) : "—"}
+                    </td>
+                  ) : null}
+                  {result.cumulative ? (
+                    <td className="py-1.5 text-right">
+                      {typeof s.cumulativeAverage === "number" ? formatAverage(s.cumulativeAverage) : "—"}
                     </td>
                   ) : null}
                 </tr>

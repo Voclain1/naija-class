@@ -43,3 +43,35 @@ export function findScoreError(score: number, weight: number): string | null {
   }
   return null;
 }
+
+// ---------------------------------------------------------------------------
+// Phase 8c / CP5a — marks out of any total (docs/modules/phase-8.md §22.1).
+// ---------------------------------------------------------------------------
+
+/** The largest "out of" a teacher may enter a mark against. */
+export const MAX_RAW_OUT_OF = 1000;
+
+/**
+ * Scale a mark entered "out of" some total into a component's weight, rounding
+ * half up to a whole number (D60): 37/60 into a weight of 20 is 12.33 → 12,
+ * 15/40 into 20 is 7.5 → 8.
+ *
+ * Integer arithmetic only — round(m·w/o) half up is floor((2·m·w + o) / (2·o))
+ * — so no floating-point product can land a hair under .5 and round the wrong
+ * way. Assumes a valid mark (0 ≤ mark ≤ outOf, outOf ≥ 1); check with
+ * findRawMarkError first.
+ */
+export function scaleRawMark(mark: number, outOf: number, weight: number): number {
+  return Math.floor((2 * mark * weight + outOf) / (2 * outOf));
+}
+
+/** null when the raw mark and its total are usable; otherwise why not. */
+export function findRawMarkError(mark: number, outOf: number): string | null {
+  if (!Number.isInteger(outOf) || outOf < 1 || outOf > MAX_RAW_OUT_OF) {
+    return `"Out of" must be a whole number from 1 to ${MAX_RAW_OUT_OF}.`;
+  }
+  if (!Number.isInteger(mark)) return "Mark must be a whole number.";
+  if (mark < 0) return "Mark cannot be negative.";
+  if (mark > outOf) return `Mark cannot be more than ${outOf}.`;
+  return null;
+}

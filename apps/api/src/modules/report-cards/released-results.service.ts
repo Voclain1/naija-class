@@ -3,6 +3,7 @@ import { Injectable } from "@nestjs/common";
 import { Prisma, withTenant } from "@school-kit/db";
 import {
   ForbiddenError,
+  readCumulativeSubjects,
   NotFoundError,
   type FamilySubjectRowDto,
   type ReleasedResultDetailDto,
@@ -100,6 +101,10 @@ const DETAIL_SELECT = {
   promotionStatus: true,
   releasedAt: true,
   accessMode: true,
+  cumulativeAverage: true,
+  cumulativeTerms: true,
+  cumulativePosition: true,
+  cumulativeSubjects: true,
 } satisfies Prisma.ReportCardSelect;
 
 @Injectable()
@@ -227,6 +232,7 @@ export class ReleasedResultsService {
     });
     const subjectName = new Map(subjectRows.map((s) => [s.id, s.name]));
     const showPosition = school.positionVisibleToFamilies;
+    const cumulativeBySubject = new Map(readCumulativeSubjects(card.cumulativeSubjects).map((c) => [c.subjectId, c]));
 
     const subjects: FamilySubjectRowDto[] = assessments
       .map((a) => ({
@@ -236,6 +242,8 @@ export class ReleasedResultsService {
         letterGrade: a.letterGrade,
         remark: a.remark,
         subjectPosition: showPosition ? a.subjectPosition : null,
+        cumulativeAverage: cumulativeBySubject.get(a.subjectId)?.average ?? null,
+        cumulativeTerms: cumulativeBySubject.get(a.subjectId)?.terms ?? null,
       }))
       .sort((x, y) => x.subjectName.localeCompare(y.subjectName));
 
@@ -268,6 +276,16 @@ export class ReleasedResultsService {
               absent: card.attendanceAbsent,
             },
       promotionStatus: card.promotionStatus,
+      cumulative:
+        card.cumulativeAverage === null || card.cumulativeTerms === null
+          ? null
+          : {
+              average: card.cumulativeAverage,
+              terms: card.cumulativeTerms,
+              // The same school switch as the term position: never shown to
+              // one principal and hidden from the other.
+              position: showPosition ? card.cumulativePosition : null,
+            },
       subjects,
       releasedAt: card.releasedAt as Date,
     };

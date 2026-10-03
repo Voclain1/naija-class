@@ -5,7 +5,9 @@ import { Prisma, withTenant } from "@school-kit/db";
 import {
   NotFoundError,
   ValidationError,
+  findRawMarkError,
   findScoreError,
+  scaleRawMark,
   resolveLetterGrade,
   sumComponentScores,
   type AssessmentDto,
@@ -14,6 +16,9 @@ import {
   type AssessmentScoreDto,
   type AssessmentWithScoresDto,
   type BulkAssessmentScoreInput,
+  type PreviewAssessmentScoreInput,
+  type ScorePreviewResponse,
+  type ScorePreviewRowDto,
   type CreateAssessmentScoreInput,
   type SignOffBulkInput,
   type UpdateAssessmentScoreInput,
@@ -116,7 +121,9 @@ export class AssessmentService {
           score: input.score,
           enteredBy: authCtx.userId,
         },
-        update: { score: input.score, enteredBy: authCtx.userId, enteredAt: new Date() },
+        // A score typed directly replaces any raw "out of" mark it came from
+        // (CP5a): leaving 37/60 beside a hand-edited 15 would contradict it.
+        update: { score: input.score, rawScore: null, rawOutOf: null, enteredBy: authCtx.userId, enteredAt: new Date() },
         select: SCORE_SELECT,
       });
 
@@ -180,7 +187,7 @@ export class AssessmentService {
 
       const saved = await db.assessmentScore.update({
         where: { id },
-        data: { score: input.score, enteredBy: authCtx.userId, enteredAt: new Date() },
+        data: { score: input.score, rawScore: null, rawOutOf: null, enteredBy: authCtx.userId, enteredAt: new Date() },
         select: SCORE_SELECT,
       });
 
@@ -292,25 +299,7 @@ export class AssessmentService {
 
       // d) strict 0..weight across ALL rows up front — collect every issue, bind
       // to the offending row. No writes attempted until all rows are valid.
-      const scoreIssues: Array<{ path: (string | number)[]; code: string; message: string }> = [];
-      input.rows.forEach((r, i) => {
-        const weight = weightById.get(r.componentId);
-        if (weight === undefined) {
-          scoreIssues.push({
-            path: ["rows", i, "componentId"],
-            code: "unknown_component",
-            message: "Unknown grading component.",
-          });
-          return;
-        }
-        const error = findScoreError(r.score, weight);
-        if (error) {
-          scoreIssues.push({ path: ["rows", i, "score"], code: "score_range", message: error });
-        }
-      });
-      if (scoreIssues.length > 0) {
-        throw new ValidationError("One or more scores are invalid.", { issues: scoreIssues });
-      }
+      const resolved = resolveRowScores(input.rows, weightById);
 
       // e) enrollments for ALL students in one query → classArmId + academicYearId.
       const studentIds = [...new Set(input.rows.map((r) => r.studentId))];
@@ -369,16 +358,21 @@ export class AssessmentService {
       // assessment.service.spec.ts.
       const now = new Date();
       const scoreRows = input.rows.map(
-        (r) =>
-          Prisma.sql`(${crypto.randomUUID()}, ${authCtx.schoolId}, ${r.studentId}, ${input.subjectId}, ${input.termId}, ${r.componentId}, ${r.score}, ${authCtx.userId}, ${now}, ${now})`,
+        (r, i) =>
+          Prisma.sql`(${crypto.randomUUID()}, ${authCtx.schoolId}, ${r.studentId}, ${input.subjectId}, ${input.termId}, ${r.componentId}, ${resolved[i]!.score}, ${resolved[i]!.raw?.mark ?? null}::int, ${resolved[i]!.raw?.outOf ?? null}::int, ${authCtx.userId}, ${now}, ${now})`,
       );
+      // raw_score / raw_out_of are written on EVERY row, NULL for a score
+      // typed in weight units, so re-entering a column directly clears the
+      // "out of" record it replaced (CP5a).
       await db.$executeRaw`
         INSERT INTO assessment_scores
-          (id, school_id, student_id, subject_id, term_id, component_id, score, entered_by, entered_at, updated_at)
+          (id, school_id, student_id, subject_id, term_id, component_id, score, raw_score, raw_out_of, entered_by, entered_at, updated_at)
         VALUES ${Prisma.join(scoreRows)}
         ON CONFLICT (school_id, student_id, subject_id, term_id, component_id)
         DO UPDATE SET
           score = EXCLUDED.score,
+          raw_score = EXCLUDED.raw_score,
+          raw_out_of = EXCLUDED.raw_out_of,
           entered_by = EXCLUDED.entered_by,
           entered_at = EXCLUDED.entered_at,
           updated_at = EXCLUDED.updated_at
@@ -420,6 +414,25 @@ export class AssessmentService {
         subjectId: input.subjectId,
       });
     }, { timeoutMs: BULK_SAVE_TRANSACTION_TIMEOUT_MS });
+  }
+
+  // =========================================================================
+  // POST /assessment-scores/preview — Phase 8c / CP5a (D60). What a bulk
+  // save of these rows WOULD store, raw marks scaled on the server, without
+  // writing anything. Same role gate and the same per-row validation as the
+  // save, so a preview that succeeds is a save that will.
+  // =========================================================================
+  async previewScores(authCtx: AuthContext, input: PreviewAssessmentScoreInput): Promise<ScorePreviewResponse> {
+    await assertUserActiveAndHasOneOf(authCtx, ["owner", "admin", "teacher"]);
+
+    return withTenant(authCtx.schoolId, async (db) => {
+      const componentIds = [...new Set(input.rows.map((r) => r.componentId))];
+      const components = await db.gradingComponent.findMany({
+        where: { id: { in: componentIds } },
+        select: { id: true, weight: true },
+      });
+      return { rows: resolveRowScores(input.rows, new Map(components.map((c) => [c.id, c.weight]))) };
+    });
   }
 
   // =========================================================================
@@ -973,6 +986,8 @@ const SCORE_SELECT = {
   termId: true,
   componentId: true,
   score: true,
+  rawScore: true,
+  rawOutOf: true,
   enteredBy: true,
   enteredAt: true,
   updatedAt: true,
@@ -1032,6 +1047,8 @@ function toScoreDto(row: ScoreRow): AssessmentScoreDto {
     termId: row.termId,
     componentId: row.componentId,
     score: row.score,
+    rawScore: row.rawScore,
+    rawOutOf: row.rawOutOf,
     enteredBy: row.enteredBy,
     enteredAt: row.enteredAt,
     updatedAt: row.updatedAt,
@@ -1058,4 +1075,50 @@ function toAssessmentDto(row: AssessmentRow): AssessmentDto {
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
+}
+
+// Phase 8c / CP5a (phase-8.md §22.1, D60) — every row of a bulk save or a
+// preview, resolved to the score that would be stored. A row carries EITHER a
+// score already in weight units (checked against the weight, as always) OR a
+// raw mark out of some total, which is scaled HERE, on the server, half up.
+// Every problem in the batch is collected and bound to its row before
+// anything is written, the bulk convention.
+function resolveRowScores(
+  rows: BulkAssessmentScoreInput["rows"],
+  weightById: ReadonlyMap<string, number>,
+): ScorePreviewRowDto[] {
+  const issues: Array<{ path: (string | number)[]; code: string; message: string }> = [];
+  const out: ScorePreviewRowDto[] = [];
+  rows.forEach((r, i) => {
+    const weight = weightById.get(r.componentId);
+    if (weight === undefined) {
+      issues.push({ path: ["rows", i, "componentId"], code: "unknown_component", message: "Unknown grading component." });
+      return;
+    }
+    if (r.raw) {
+      const error = findRawMarkError(r.raw.mark, r.raw.outOf);
+      if (error) {
+        issues.push({ path: ["rows", i, "raw"], code: "raw_mark_range", message: error });
+        return;
+      }
+      out.push({
+        studentId: r.studentId,
+        componentId: r.componentId,
+        score: scaleRawMark(r.raw.mark, r.raw.outOf, weight),
+        raw: { mark: r.raw.mark, outOf: r.raw.outOf },
+      });
+      return;
+    }
+    const score = r.score as number; // the schema guarantees exactly one of score/raw
+    const error = findScoreError(score, weight);
+    if (error) {
+      issues.push({ path: ["rows", i, "score"], code: "score_range", message: error });
+      return;
+    }
+    out.push({ studentId: r.studentId, componentId: r.componentId, score, raw: null });
+  });
+  if (issues.length > 0) {
+    throw new ValidationError("One or more scores are invalid.", { issues });
+  }
+  return out;
 }

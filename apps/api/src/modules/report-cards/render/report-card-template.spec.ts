@@ -79,6 +79,7 @@ function fixture(overrides: Partial<ReportCardRenderData> = {}): ReportCardRende
       principalNote: PAYLOAD,
       attendance: { daysOpened: 60, present: 57, absent: 3 },
       promotionStatus: null,
+      cumulative: null,
     },
     subjects: [
       {
@@ -93,6 +94,8 @@ function fixture(overrides: Partial<ReportCardRenderData> = {}): ReportCardRende
           { componentId: "c1", label: "CA1", score: 18 },
           { componentId: "c2", label: "Exam", score: 69 },
         ],
+        cumulativeAverage: 8233,
+        cumulativeTerms: 3,
       },
     ],
     ...overrides,
@@ -142,6 +145,7 @@ describe("renderReportCardHtml", () => {
           principalNote: null,
           attendance: null,
           promotionStatus: null,
+          cumulative: null,
         },
       }),
     );
@@ -196,5 +200,34 @@ describe("renderReportCardHtml", () => {
     const html = renderReportCardHtml(fixture({ rollup: { ...base.rollup, promotionStatus: "PROMOTED_ON_TRIAL" } }));
     expect(html).toContain("Promotion status");
     expect(html).toContain("Promoted on trial");
+  });
+
+  // ---- Phase 8c / CP5a — cumulative results --------------------------------
+
+  it("a final-term card shows the year's average per subject, the cumulative average with its term count, and the position", () => {
+    const base = fixture();
+    const html = renderReportCardHtml(
+      fixture({ rollup: { ...base.rollup, cumulative: { average: 7850, terms: 2, position: 4 } } }),
+    );
+    expect(html).toContain("Cum. Avg");
+    expect(html).toContain(">82.33<"); // the subject's year average
+    expect(html).toContain("Cumulative Average (2 terms)");
+    expect(html).toContain("78.50%");
+    expect(html).toContain("Cumulative Position");
+    expect(html).toContain("4th");
+  });
+
+  it("no cumulative block on any other term, and no cumulative position when the school keeps position off paper", () => {
+    expect(renderReportCardHtml(fixture())).not.toContain("Cum");
+
+    const base = fixture();
+    const html = renderReportCardHtml(
+      fixture({
+        school: { ...base.school, positionOnReportCardPdf: false },
+        rollup: { ...base.rollup, cumulative: { average: 7850, terms: 3, position: 4 } },
+      }),
+    );
+    expect(html).toContain("Cumulative Average (3 terms)");
+    expect(html).not.toContain("Cumulative Position");
   });
 });

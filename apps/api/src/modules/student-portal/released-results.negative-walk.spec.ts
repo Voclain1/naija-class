@@ -511,6 +511,36 @@ describe("Released results — negative walk (Phase 6 / Slice 4)", () => {
     }
   });
 
+  it("10. cumulative results (CP5a): both principals see the year's average; its position follows the same school switch", async () => {
+    const setCumulative = (value: { cumulativeAverage: number | null; cumulativeTerms: number | null; cumulativePosition: number | null }) =>
+      withTenant(schoolA, (db) =>
+        db.reportCard.updateMany({ where: { studentId: adaId, termId: releasedTermId }, data: value }),
+      );
+    const both = async () => [
+      (await asStudent(adaToken, `/me/results/${releasedTermId}`)).body.cumulative,
+      (await asGuardian(adaGuardianToken, `/students/${adaId}/results/${releasedTermId}`)).body.cumulative,
+    ];
+
+    expect(await both()).toEqual([null, null]); // not a final term: no block
+
+    await setCumulative({ cumulativeAverage: 7850, cumulativeTerms: 2, cumulativePosition: 3 });
+    try {
+      // Position hidden by default (D47), shown when the school turns it on.
+      expect(await both()).toEqual([
+        { average: 7850, terms: 2, position: null },
+        { average: 7850, terms: 2, position: null },
+      ]);
+      await basePrisma.school.update({ where: { id: schoolA }, data: { positionVisibleToFamilies: true } });
+      expect(await both()).toEqual([
+        { average: 7850, terms: 2, position: 3 },
+        { average: 7850, terms: 2, position: 3 },
+      ]);
+    } finally {
+      await basePrisma.school.update({ where: { id: schoolA }, data: { positionVisibleToFamilies: false } });
+      await setCumulative({ cumulativeAverage: null, cumulativeTerms: null, cumulativePosition: null });
+    }
+  });
+
   it("8. the family payload omits the staff-only and PII fields", async () => {
     const res = await asStudent(adaToken, `/me/results/${releasedTermId}`);
     const body = JSON.stringify(res.body);

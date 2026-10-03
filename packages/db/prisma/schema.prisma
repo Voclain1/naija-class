@@ -1996,6 +1996,12 @@ model AssessmentScore {
   termId      String   @map("term_id")
   componentId String   @map("component_id")
   score       Int // 0..component.weight (strict; already-weighted units)
+  // Phase 8c / CP5a (phase-8.md §22.1, D60) — a mark entered "out of" some
+  // other total, kept beside the scaled `score` it produced. Both NULL for a
+  // score entered directly in weight units. `score` stays what everything
+  // else reads; these are the record of what the teacher actually typed.
+  rawScore    Int?     @map("raw_score")
+  rawOutOf    Int?     @map("raw_out_of")
   enteredBy   String   @map("entered_by") // users.id (plain FK; mirrors ImportJob.createdBy — captures admin overrides)
   enteredAt   DateTime @default(now()) @map("entered_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
@@ -2099,6 +2105,14 @@ model ReportCard {
   // Phase 8c / CP6b (§21.1, D48/D18) — FREE or PIN, chosen at release for the
   // whole arm × term, cleared by reopen. NULL before release.
   accessMode           ResultAccessMode? @map("access_mode")
+  // Phase 8c / CP5a (§22.1, D61) — the year so far, snapshotted on the FINAL
+  // term's card only, averaging the terms the student has. NULL on every
+  // other term. cumulativeSubjects is [{ subjectId, average, terms }], with
+  // average in hundredths like overallAverage.
+  cumulativeAverage    Int?             @map("cumulative_average")
+  cumulativeTerms      Int?             @map("cumulative_terms")
+  cumulativePosition   Int?             @map("cumulative_position")
+  cumulativeSubjects   Json?            @map("cumulative_subjects")
   formReviewedAt      DateTime?           @map("form_reviewed_at")
   formReviewedBy      String?             @map("form_reviewed_by") // users.id
   principalApprovedAt DateTime?           @map("principal_approved_at")

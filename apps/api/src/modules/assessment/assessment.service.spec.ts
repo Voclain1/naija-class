@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, it, vi } from "vitest";
 
 import { basePrisma, withTenant } from "@school-kit/db";
-import { NotFoundError, ValidationError } from "@school-kit/types";
+import { NotFoundError, ValidationError, bulkAssessmentScoreSchema } from "@school-kit/types";
 
 import { AuthService } from "../auth/auth.service";
 import { AssessmentService } from "./assessment.service";
@@ -535,6 +535,110 @@ describe("AssessmentService (cp2 — score entry + materialization)", () => {
     );
     expect((audit?.metadata as { count?: number; bulk?: boolean })?.count).toBe(6);
     expect((audit?.metadata as { bulk?: boolean })?.bulk).toBe(true);
+  });
+
+  // -----------------------------------------------------------------------
+  // Phase 8c / CP5a — marks out of any total (phase-8.md §22.1, D60). Default
+  // weights: CA1 20, CA2 20, Exam 60.
+  // -----------------------------------------------------------------------
+
+  it("any-total: raw marks are scaled on the server, half up, and the raw mark is kept beside the score", async () => {
+    const f = await fullFixture("raw-scale");
+    const feed = await service.bulkUpsertScores(
+      ctx(f.schoolId, f.teacherId),
+      {
+        termId: f.termId,
+        subjectId: f.subjectId,
+        rows: [
+          { studentId: f.studentId, componentId: f.ca1.id, raw: { mark: 15, outOf: 40 } }, // 7.5 → 8
+          { studentId: f.studentId, componentId: f.ca2.id, score: 15 }, // typed directly, as before
+          { studentId: f.studentId, componentId: f.exam.id, raw: { mark: 45, outOf: 50 } }, // 54
+        ],
+      },
+      reqCtx,
+    );
+    const row = feed.data.find((r) => r.student.id === f.studentId)!;
+    expect(row.assessment?.totalScore).toBe(8 + 15 + 54);
+    const byComponent = new Map(row.scores.map((s) => [s.componentId, s]));
+    expect(byComponent.get(f.ca1.id)).toMatchObject({ score: 8, rawScore: 15, rawOutOf: 40 });
+    expect(byComponent.get(f.ca2.id)).toMatchObject({ score: 15, rawScore: null, rawOutOf: null });
+    expect(byComponent.get(f.exam.id)).toMatchObject({ score: 54, rawScore: 45, rawOutOf: 50 });
+  });
+
+  it("any-total: preview answers what a save would store, and writes nothing", async () => {
+    const f = await fullFixture("raw-preview");
+    const preview = await service.previewScores(ctx(f.schoolId, f.teacherId), {
+      termId: f.termId,
+      subjectId: f.subjectId,
+      rows: [
+        { studentId: f.studentId, componentId: f.ca1.id, raw: { mark: 37, outOf: 60 } }, // 12.33 → 12
+        { studentId: f.studentId, componentId: f.exam.id, score: 41 },
+      ],
+    });
+    expect(preview.rows).toEqual([
+      { studentId: f.studentId, componentId: f.ca1.id, score: 12, raw: { mark: 37, outOf: 60 } },
+      { studentId: f.studentId, componentId: f.exam.id, score: 41, raw: null },
+    ]);
+    const written = await withTenant(f.schoolId, (db) => db.assessmentScore.count({ where: { studentId: f.studentId } }));
+    expect(written).toBe(0);
+  });
+
+  it("any-total: a mark above its total rejects the whole batch, naming the row", async () => {
+    const f = await fullFixture("raw-over");
+    const attempt = service.bulkUpsertScores(
+      ctx(f.schoolId, f.teacherId),
+      {
+        termId: f.termId,
+        subjectId: f.subjectId,
+        rows: [
+          { studentId: f.studentId, componentId: f.ca1.id, raw: { mark: 10, outOf: 20 } },
+          { studentId: f.studentId, componentId: f.exam.id, raw: { mark: 61, outOf: 60 } },
+        ],
+      },
+      reqCtx,
+    );
+    await expect(attempt).rejects.toMatchObject({
+      details: { issues: [expect.objectContaining({ path: ["rows", 1, "raw"], code: "raw_mark_range" })] },
+    });
+    expect(await withTenant(f.schoolId, (db) => db.assessmentScore.count({ where: { studentId: f.studentId } }))).toBe(0);
+  });
+
+  it("any-total: a score typed directly — in bulk or singly — clears the raw mark it replaces", async () => {
+    const f = await fullFixture("raw-clear");
+    const save = (row: Record<string, unknown>) =>
+      service.bulkUpsertScores(
+        ctx(f.schoolId, f.teacherId),
+        { termId: f.termId, subjectId: f.subjectId, rows: [{ studentId: f.studentId, componentId: f.exam.id, ...row }] },
+        reqCtx,
+      );
+    const exam = () =>
+      withTenant(f.schoolId, (db) =>
+        db.assessmentScore.findFirstOrThrow({
+          where: { studentId: f.studentId, componentId: f.exam.id },
+          select: { id: true, score: true, rawScore: true, rawOutOf: true },
+        }),
+      );
+
+    await save({ raw: { mark: 45, outOf: 50 } });
+    expect(await exam()).toMatchObject({ score: 54, rawScore: 45, rawOutOf: 50 });
+
+    await save({ score: 40 });
+    expect(await exam()).toMatchObject({ score: 40, rawScore: null, rawOutOf: null });
+
+    await save({ raw: { mark: 30, outOf: 50 } });
+    const again = await exam();
+    expect(again).toMatchObject({ score: 36, rawScore: 30, rawOutOf: 50 });
+    await service.updateScore(ctx(f.schoolId, f.teacherId), again.id, { score: 50 }, reqCtx);
+    expect(await exam()).toMatchObject({ score: 50, rawScore: null, rawOutOf: null });
+  });
+
+  it("any-total: a row may carry a score OR a raw mark, never both", () => {
+    const base = { termId: "t", subjectId: "s" };
+    expect(
+      bulkAssessmentScoreSchema.safeParse({ ...base, rows: [{ studentId: "a", componentId: "c", score: 5, raw: { mark: 5, outOf: 10 } }] }).success,
+    ).toBe(false);
+    expect(bulkAssessmentScoreSchema.safeParse({ ...base, rows: [{ studentId: "a", componentId: "c" }] }).success).toBe(false);
+    expect(bulkAssessmentScoreSchema.safeParse({ ...base, rows: [{ studentId: "a", componentId: "c", raw: { mark: 5, outOf: 10 } }] }).success).toBe(true);
   });
 
   it("bulk: one invalid score rejects the whole batch (no writes, no audit)", async () => {

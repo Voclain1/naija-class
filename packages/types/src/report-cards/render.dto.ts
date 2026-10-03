@@ -63,6 +63,8 @@ export interface ReportCardRenderData {
     attendance: { daysOpened: number; present: number; absent: number } | null;
     // CP6a (§20.3) — final term only.
     promotionStatus: PromotionStatusDto | null;
+    // CP5a (§22.1) — the year so far, final term only.
+    cumulative: { average: number; terms: number; position: number | null } | null;
   };
   subjects: ReportCardSubjectRowDto[];
 }

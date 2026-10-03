@@ -35,3 +35,22 @@ export function promotionLabel(result: Pick<Partial<ReleasedResultDetailDto>, "p
 export function positionLabel(position: number | null | undefined): string | null {
   return typeof position === "number" ? ordinal(position) : null;
 }
+
+/** 7850 → "78.50%". Hundredths never become floats. */
+function hundredths(value: number): string {
+  return `${Math.trunc(value / 100)}.${String(Math.abs(value % 100)).padStart(2, "0")}%`;
+}
+
+/**
+ * Phase 8c / CP5a (D61) — "Year average 78.50% over 2 terms · 3rd in class",
+ * on the final term only; null on every other term and on cards cached before
+ * it existed. The term count is always said, so a mid-year admission's figure
+ * is never misread.
+ */
+export function cumulativeLine(result: Pick<Partial<ReleasedResultDetailDto>, "cumulative">): string | null {
+  const c = result.cumulative;
+  if (!c) return null;
+  const terms = `${c.terms} term${c.terms === 1 ? "" : "s"}`;
+  const position = typeof c.position === "number" ? ` · ${ordinal(c.position)} in class` : "";
+  return `Year average ${hundredths(c.average)} over ${terms}${position}`;
+}

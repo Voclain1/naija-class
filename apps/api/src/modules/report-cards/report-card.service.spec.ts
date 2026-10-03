@@ -477,6 +477,97 @@ describe("ReportCardService (cp1 — build + reads)", () => {
     });
   });
 
+  // ---- Phase 8c / CP5a — cumulative results (phase-8.md §22.1, D61) -------
+
+  it("final-term build: cumulative averages over the terms each student HAS, per subject, with a position", async () => {
+    const { schoolId, ownerId } = await makeSchool("cum");
+    const armId = await makeArm(schoolId, "cum");
+    const s1 = await makeSubject(schoolId, "cum1");
+    const s2 = await makeSubject(schoolId, "cum2");
+    const { yearId, termId: term1 } = await makeYearTerm(schoolId, "cum");
+    const [term2, term3] = await withTenant(schoolId, async (db) => {
+      const mk = (sequence: number, name: string, start: string, end: string) =>
+        db.term.create({
+          data: { schoolId, academicYearId: yearId, sequence, name, startDate: new Date(start), endDate: new Date(end) },
+          select: { id: true },
+        });
+      return [
+        (await mk(2, "Second Term", "2026-01-05", "2026-04-10")).id,
+        (await mk(3, "Third Term", "2026-04-27", "2026-07-24")).id,
+      ];
+    });
+
+    // Ada sat all three terms; Bola joined in the second term.
+    const ada = await enrollStudent(schoolId, { armId, termId: term3, yearId, suffix: "cum-ada" });
+    const bola = await enrollStudent(schoolId, { armId, termId: term3, yearId, suffix: "cum-bola" });
+    const pastTerm = async (studentId: string, termId: string, mark: number) => {
+      for (const subjectId of [s1, s2]) await scoreAssessment(schoolId, { studentId, subjectId, termId, yearId, armId, totalScore: mark });
+      await withTenant(schoolId, (db) =>
+        db.reportCard.create({
+          data: {
+            schoolId, studentId, termId, academicYearId: yearId, classArmId: armId, status: "RELEASED",
+            releasedAt: new Date(), overallTotal: mark * 2, overallAverage: mark * 100, subjectsCount: 2,
+          },
+        }),
+      );
+    };
+    await pastTerm(ada, term1, 70);
+    await pastTerm(ada, term2, 80);
+    await pastTerm(bola, term2, 90);
+    for (const subjectId of [s1, s2]) {
+      await scoreAssessment(schoolId, { studentId: ada, subjectId, termId: term3, yearId, armId, totalScore: 90 });
+      await scoreAssessment(schoolId, { studentId: bola, subjectId, termId: term3, yearId, armId, totalScore: 60 });
+    }
+
+    await service.build(ctx(schoolId, ownerId), { termId: term3, classArmId: armId }, reqCtx);
+
+    const cards = await withTenant(schoolId, (db) =>
+      db.reportCard.findMany({
+        where: { termId: term3 },
+        select: { studentId: true, cumulativeAverage: true, cumulativeTerms: true, cumulativePosition: true, cumulativeSubjects: true },
+      }),
+    );
+    const byStudent = new Map(cards.map((c) => [c.studentId, c]));
+    // Ada: (70 + 80 + 90) / 3 = 80.00 over 3 terms. Bola: (90 + 60) / 2 = 75.00
+    // over 2 — the missing first term is absent, not a zero (D61).
+    expect(byStudent.get(ada)).toMatchObject({ cumulativeAverage: 8000, cumulativeTerms: 3, cumulativePosition: 1 });
+    expect(byStudent.get(bola)).toMatchObject({ cumulativeAverage: 7500, cumulativeTerms: 2, cumulativePosition: 2 });
+    expect(byStudent.get(bola)!.cumulativeSubjects).toEqual(
+      expect.arrayContaining([
+        { subjectId: s1, average: 7500, terms: 2 },
+        { subjectId: s2, average: 7500, terms: 2 },
+      ]),
+    );
+
+    // And the staff read carries it per subject.
+    const card = await withTenant(schoolId, (db) =>
+      db.reportCard.findFirstOrThrow({ where: { studentId: ada, termId: term3 }, select: { id: true } }),
+    );
+    const detail = await service.getById(ctx(schoolId, ownerId), card.id);
+    expect(detail.reportCard).toMatchObject({ cumulativeAverage: 8000, cumulativeTerms: 3, cumulativePosition: 1 });
+    expect(detail.subjects.every((s) => s.cumulativeAverage === 8000 && s.cumulativeTerms === 3)).toBe(true);
+  });
+
+  it("a term that is not the year's last stores no cumulative block", async () => {
+    const { schoolId, ownerId } = await makeSchool("cum-not-final");
+    const armId = await makeArm(schoolId, "cum-not-final");
+    const { yearId, termId } = await makeYearTerm(schoolId, "cum-not-final");
+    await withTenant(schoolId, (db) =>
+      db.term.create({
+        data: { schoolId, academicYearId: yearId, sequence: 2, name: "Second Term", startDate: new Date("2026-01-05"), endDate: new Date("2026-04-10") },
+      }),
+    );
+    const s = await enrollStudent(schoolId, { armId, termId, yearId, suffix: "cum-not-final" });
+    await service.build(ctx(schoolId, ownerId), { termId, classArmId: armId }, reqCtx);
+    const card = await withTenant(schoolId, (db) =>
+      db.reportCard.findFirstOrThrow({
+        where: { studentId: s, termId },
+        select: { cumulativeAverage: true, cumulativeTerms: true, cumulativePosition: true, cumulativeSubjects: true },
+      }),
+    );
+    expect(card).toEqual({ cumulativeAverage: null, cumulativeTerms: null, cumulativePosition: null, cumulativeSubjects: null });
+  });
+
   it("cross-tenant: School A cannot read School B's report card (404)", async () => {
     const a = await makeSchool("xtenant-a");
     const b = await makeSchool("xtenant-b");

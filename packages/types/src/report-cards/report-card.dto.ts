@@ -46,6 +46,10 @@ export interface ReportCardDto {
   promotionStatus: PromotionStatusDto | null;
   // Set at release for the whole arm, cleared by reopen; null before release.
   accessMode: ResultAccessModeDto | null;
+  // Phase 8c / CP5a (§22.1, D61) — final term only; null on every other term.
+  cumulativeAverage: number | null; // Int hundredths, over cumulativeTerms terms
+  cumulativeTerms: number | null;
+  cumulativePosition: number | null;
   pdfStatus: ReportCardPdfStatusDto;
   artifactUrl: string | null;
   generatedAt: string | Date | null;
@@ -78,6 +82,9 @@ export interface ReportCardSubjectRowDto {
   subjectPosition: number | null;
   subjectComment: string | null;
   components: { componentId: string; label: string; score: number }[];
+  /** Phase 8c / CP5a — this subject's year average in hundredths, final term only. */
+  cumulativeAverage: number | null;
+  cumulativeTerms: number | null;
 }
 
 // GET /report-cards/:id — the full single-card view (card + bio + per-subject

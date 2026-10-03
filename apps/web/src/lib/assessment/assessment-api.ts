@@ -14,6 +14,8 @@ import type {
   AssessmentDto,
   AssessmentFeedResponse,
   BulkAssessmentScoreInput,
+  PreviewAssessmentScoreInput,
+  ScorePreviewResponse,
   SignOffBulkInput,
 } from "@school-kit/types";
 
@@ -39,6 +41,17 @@ export function bulkSaveScores(
   input: BulkAssessmentScoreInput,
 ): Promise<AssessmentFeedResponse> {
   return apiFetch<AssessmentFeedResponse>("/assessment-scores/bulk", {
+    method: "POST",
+    body: input,
+  });
+}
+
+// POST /assessment-scores/preview — Phase 8c / CP5a (D60). The same body as a
+// bulk save; returns what each cell WOULD store (marks "out of" N scaled to the
+// component's weight) and writes nothing, so the teacher confirms the
+// conversion before it is saved.
+export function previewScores(input: PreviewAssessmentScoreInput): Promise<ScorePreviewResponse> {
+  return apiFetch<ScorePreviewResponse>("/assessment-scores/preview", {
     method: "POST",
     body: input,
   });
