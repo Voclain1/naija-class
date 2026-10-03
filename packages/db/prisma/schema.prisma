@@ -28,33 +28,33 @@ datasource db {
 // ---------- Tenancy ----------
 
 model School {
-  id                       String       @id @default(uuid())
-  name                     String
-  slug                     String       @unique // for subdomains: <slug>.schoolkit.ng
-  motto                    String?
-  logoUrl                  String?      @map("logo_url")
-  address                  String?
-  phone                    String?
-  email                    String?
-  primaryColor             String?      @map("primary_color")
-  status                   SchoolStatus @default(ONBOARDING)
-  onboardingStep           Int          @default(0) @map("onboarding_step")
-  ndprConsent              Boolean      @default(false) @map("ndpr_consent")
-  ndprConsentAt            DateTime?    @map("ndpr_consent_at")
+  id                        String       @id @default(uuid())
+  name                      String
+  slug                      String       @unique // for subdomains: <slug>.schoolkit.ng
+  motto                     String?
+  logoUrl                   String?      @map("logo_url")
+  address                   String?
+  phone                     String?
+  email                     String?
+  primaryColor              String?      @map("primary_color")
+  status                    SchoolStatus @default(ONBOARDING)
+  onboardingStep            Int          @default(0) @map("onboarding_step")
+  ndprConsent               Boolean      @default(false) @map("ndpr_consent")
+  ndprConsentAt             DateTime?    @map("ndpr_consent_at")
   // Opt-in to subject-period attendance (Phase 2 / Slice 8). Default false:
   // the subject-attendance surface 404s until a school turns it on.
-  subjectAttendanceEnabled Boolean      @default(false) @map("subject_attendance_enabled")
+  subjectAttendanceEnabled  Boolean      @default(false) @map("subject_attendance_enabled")
   // Phase 8c / CP6a (phase-8.md §20.1, D47 + D51) — class and subject position
   // on released results, as TWO settings because the surfaces disagreed before
   // either existed: the portals hid position, the PDF printed it. Defaults
   // reproduce exactly that, so nothing changes until a school chooses.
-  positionVisibleToFamilies Boolean @default(false) @map("position_visible_to_families")
-  positionOnReportCardPdf   Boolean @default(true) @map("position_on_report_card_pdf")
+  positionVisibleToFamilies Boolean      @default(false) @map("position_visible_to_families")
+  positionOnReportCardPdf   Boolean      @default(true) @map("position_on_report_card_pdf")
   // Phase 8 / CP3 (docs/modules/phase-8.md §17 D34). ISO weekdays the school
   // teaches (1 = Monday … 7 = Sunday). Default Monday–Friday; some Nigerian
   // private schools also teach Saturday. The timetable grid shows these days,
   // and CP2's expected school days count only these weekdays.
-  schoolWeekDays           Int[]        @default([1, 2, 3, 4, 5]) @map("school_week_days") @db.SmallInt
+  schoolWeekDays            Int[]        @default([1, 2, 3, 4, 5]) @map("school_week_days") @db.SmallInt
   // Paystack subaccount routing (compressed plan-first, 2026-07-31).
   //
   // CORRECTED 2026-08-15: this comment used to say the school "creates its
@@ -74,12 +74,12 @@ model School {
   // subaccount; SchoolKit's revenue is subscription-only. See
   // apps/api/src/common/paystack/paystack.service.ts for why no
   // transaction_charge/bearer split math is needed given that decision.
-  paystackSubaccountCode   String?      @map("paystack_subaccount_code")
+  paystackSubaccountCode    String?      @map("paystack_subaccount_code")
   // Payment Requests ignore transaction-style subaccount routing. Assisted
   // setup therefore creates one verified percentage:100 Transaction Split
   // per school and stores its code here for every durable invoice link.
-  paystackSplitCode        String?      @map("paystack_split_code")
-  paystackPaymentsEnabled  Boolean      @default(false) @map("paystack_payments_enabled")
+  paystackSplitCode         String?      @map("paystack_split_code")
+  paystackPaymentsEnabled   Boolean      @default(false) @map("paystack_payments_enabled")
 
   // ── Direct bank transfer (2026-09-11) ────────────────────────────────────
   //
@@ -514,6 +514,7 @@ model ClassLevel {
   arms          ClassArm[]
   classSubjects ClassSubject[]
   lessonPlans   LessonPlan[] // Phase 5 / Slice 2 back-relation.
+  questions     Question[] // Phase 8c / CP5b back-relation.
 
   @@unique([schoolId, code])
   @@index([schoolId])
@@ -581,6 +582,7 @@ model Subject {
   classSubjects      ClassSubject[]
   teacherAssignments TeacherAssignment[] // Phase 1 / Slice 11 back-relation.
   lessonPlans        LessonPlan[] // Phase 5 / Slice 2 back-relation.
+  questions          Question[] // Phase 8c / CP5b back-relation.
   timetableEntries   TimetableEntry[] // Phase 8 / CP3 — composite (school_id, id) FK target.
 
   @@unique([schoolId, id]) // Phase 8 / CP3 — composite FK target (§17 D29)
@@ -2079,50 +2081,50 @@ model Assessment {
 // every card in the arm (slice 6). Carries its own school_id → flat
 // direct-column RLS, like every Phase 1/2 table.
 model ReportCard {
-  id                  String              @id @default(uuid())
-  schoolId            String              @map("school_id")
-  studentId           String              @map("student_id")
-  termId              String              @map("term_id")
-  academicYearId      String              @map("academic_year_id")
-  classArmId          String              @map("class_arm_id")
-  status              ReportCardStatus    @default(DRAFT)
-  overallTotal        Int?                @map("overall_total") // Σ subject totals
-  overallAverage      Int?                @map("overall_average") // avg × 100 (hundredths), no Float
-  overallPosition     Int?                @map("overall_position") // = student's Assessment.classPosition
-  subjectsCount       Int?                @map("subjects_count")
-  formTeacherComment  String?             @map("form_teacher_comment") // per student-term; AI-hook-ready (Phase 5)
-  principalNote       String?             @map("principal_note") // per arm-term; AI-hook-ready (Phase 5)
+  id                   String              @id @default(uuid())
+  schoolId             String              @map("school_id")
+  studentId            String              @map("student_id")
+  termId               String              @map("term_id")
+  academicYearId       String              @map("academic_year_id")
+  classArmId           String              @map("class_arm_id")
+  status               ReportCardStatus    @default(DRAFT)
+  overallTotal         Int?                @map("overall_total") // Σ subject totals
+  overallAverage       Int?                @map("overall_average") // avg × 100 (hundredths), no Float
+  overallPosition      Int?                @map("overall_position") // = student's Assessment.classPosition
+  subjectsCount        Int?                @map("subjects_count")
+  formTeacherComment   String?             @map("form_teacher_comment") // per student-term; AI-hook-ready (Phase 5)
+  principalNote        String?             @map("principal_note") // per arm-term; AI-hook-ready (Phase 5)
   // Phase 8c / CP6a (phase-8.md §20.2) — term attendance, SNAPSHOTTED at build
   // like the rest of the rollup, with the /attendance/summary rule: PRESENT +
   // LATE attended; ABSENT + EXCUSED not. NULL on cards built before CP6a, and
   // NULL renders as no attendance line — never as zero.
-  attendanceDaysOpened Int?             @map("attendance_days_opened") // arm's distinct marked dates
-  attendancePresent    Int?             @map("attendance_present")
-  attendanceAbsent     Int?             @map("attendance_absent")
+  attendanceDaysOpened Int?                @map("attendance_days_opened") // arm's distinct marked dates
+  attendancePresent    Int?                @map("attendance_present")
+  attendanceAbsent     Int?                @map("attendance_absent")
   // Phase 8c / CP6a (§20.3, D12/D52/D53) — display only, final term of the
   // year only, set at principal approval. Never reads or writes Enrollment.
-  promotionStatus      PromotionStatus? @map("promotion_status")
+  promotionStatus      PromotionStatus?    @map("promotion_status")
   // Phase 8c / CP6b (§21.1, D48/D18) — FREE or PIN, chosen at release for the
   // whole arm × term, cleared by reopen. NULL before release.
-  accessMode           ResultAccessMode? @map("access_mode")
+  accessMode           ResultAccessMode?   @map("access_mode")
   // Phase 8c / CP5a (§22.1, D61) — the year so far, snapshotted on the FINAL
   // term's card only, averaging the terms the student has. NULL on every
   // other term. cumulativeSubjects is [{ subjectId, average, terms }], with
   // average in hundredths like overallAverage.
-  cumulativeAverage    Int?             @map("cumulative_average")
-  cumulativeTerms      Int?             @map("cumulative_terms")
-  cumulativePosition   Int?             @map("cumulative_position")
-  cumulativeSubjects   Json?            @map("cumulative_subjects")
-  formReviewedAt      DateTime?           @map("form_reviewed_at")
-  formReviewedBy      String?             @map("form_reviewed_by") // users.id
-  principalApprovedAt DateTime?           @map("principal_approved_at")
-  principalApprovedBy String?             @map("principal_approved_by") // users.id
-  releasedAt          DateTime?           @map("released_at")
-  pdfStatus           ReportCardPdfStatus @default(PENDING) @map("pdf_status")
-  artifactUrl         String?             @map("artifact_url") // R2: schools/<id>/report-cards/<termId>/<studentId>.pdf
-  generatedAt         DateTime?           @map("generated_at")
-  createdAt           DateTime            @default(now()) @map("created_at")
-  updatedAt           DateTime            @updatedAt @map("updated_at")
+  cumulativeAverage    Int?                @map("cumulative_average")
+  cumulativeTerms      Int?                @map("cumulative_terms")
+  cumulativePosition   Int?                @map("cumulative_position")
+  cumulativeSubjects   Json?               @map("cumulative_subjects")
+  formReviewedAt       DateTime?           @map("form_reviewed_at")
+  formReviewedBy       String?             @map("form_reviewed_by") // users.id
+  principalApprovedAt  DateTime?           @map("principal_approved_at")
+  principalApprovedBy  String?             @map("principal_approved_by") // users.id
+  releasedAt           DateTime?           @map("released_at")
+  pdfStatus            ReportCardPdfStatus @default(PENDING) @map("pdf_status")
+  artifactUrl          String?             @map("artifact_url") // R2: schools/<id>/report-cards/<termId>/<studentId>.pdf
+  generatedAt          DateTime?           @map("generated_at")
+  createdAt            DateTime            @default(now()) @map("created_at")
+  updatedAt            DateTime            @updatedAt @map("updated_at")
 
   @@unique([schoolId, studentId, termId])
   @@index([schoolId])
@@ -3127,10 +3129,10 @@ model NotificationDelivery {
   id            String        @id @default(uuid())
   schoolId      String        @map("school_id")
   eventType     String        @map("event_type") // "results.released", "payment.recorded", …
-  eventId       String        @map("event_id")   // the term/payment/arm this was about
+  eventId       String        @map("event_id") // the term/payment/arm this was about
   principalType PrincipalType @map("principal_type")
   principalId   String        @map("principal_id") // guardian, student or user id
-  channel       String        // PUSH | SMS | EMAIL | NONE — what the rail chose
+  channel       String // PUSH | SMS | EMAIL | NONE — what the rail chose
   sentAt        DateTime      @default(now()) @map("sent_at")
 
   @@unique([schoolId, eventType, eventId, principalType, principalId])
@@ -3174,9 +3176,9 @@ model Assignment {
   // @db.Date, not DateTime: "due Friday" is a calendar date with no
   // time-of-day, and a timestamp would reintroduce the "midnight in which
   // zone?" trap the DATE convention exists to avoid.
-  dueDate      DateTime @db.Date @map("due_date")
+  dueDate      DateTime @map("due_date") @db.Date
 
-  postedAt DateTime @default(now()) @map("posted_at")
+  postedAt    DateTime  @default(now()) @map("posted_at")
   // B10: withdrawn, not deleted — a child who wrote it down deserves a record
   // that it existed and was cancelled. Same treatment as an announcement.
   withdrawnAt DateTime? @map("withdrawn_at")
@@ -3212,18 +3214,18 @@ enum BehaviourKind {
 }
 
 model BehaviourRecord {
-  id        String        @id @default(uuid())
-  schoolId  String        @map("school_id")
-  studentId String        @map("student_id")
-  kind      BehaviourKind
-  note      String
+  id         String        @id @default(uuid())
+  schoolId   String        @map("school_id")
+  studentId  String        @map("student_id")
+  kind       BehaviourKind
+  note       String
   // The day it happened, which is not always the day it was written up: a
   // teacher records Friday's incident on Monday. @db.Date for the usual
   // reason — a calendar day has no time of day and no timezone.
-  occurredOn DateTime @db.Date @map("occurred_on")
+  occurredOn DateTime      @map("occurred_on") @db.Date
 
-  recordedBy String   @map("recorded_by")
-  createdAt  DateTime @default(now()) @map("created_at")
+  recordedBy  String    @map("recorded_by")
+  createdAt   DateTime  @default(now()) @map("created_at")
   // Withdrawn, never deleted: a record that was wrong should read as withdrawn
   // rather than vanish, because "it was removed" is itself part of the history
   // when a parent meeting turns on what was written.
@@ -3375,4 +3377,102 @@ model ResultUnlock {
 
   @@unique([schoolId, studentId, termId])
   @@map("result_unlocks")
+}
+
+// ---------------------------------------------------------------------------
+// Phase 8c / CP5b — the question bank (docs/modules/phase-8.md §22.2).
+//
+// A school's own exam questions, per subject and class level, written by hand
+// or drafted by AI. CP5c composes exam papers from APPROVED questions.
+//
+// THE LIFECYCLE IS THE POINT:
+//   DRAFT    — editable in place, discardable (hard delete). Every AI-drafted
+//              question starts here (D62 + the AI hard rule: no AI output is
+//              final without a person approving it).
+//   APPROVED — the subject teacher or an admin signed it off. NEVER edited in
+//              place: an edit makes a new DRAFT that `supersedes` it, and the
+//              old one is retired only when that revision is approved. So a
+//              paper set from a question keeps the exact wording it was set
+//              with, and the bank never has a gap while a revision is pending.
+//   RETIRED  — terminal. Kept, never deleted, because a paper may cite it.
+//
+// `topic` is free text, as lesson plans' is (phase-5.md D13): no syllabus tree.
+// ---------------------------------------------------------------------------
+enum QuestionType {
+  MULTIPLE_CHOICE
+  SHORT_ANSWER
+  THEORY
+}
+
+enum QuestionStatus {
+  DRAFT
+  APPROVED
+  RETIRED
+}
+
+enum QuestionSource {
+  MANUAL
+  AI
+}
+
+enum QuestionDifficulty {
+  EASY
+  MEDIUM
+  HARD
+}
+
+model Question {
+  id           String             @id @default(uuid())
+  schoolId     String             @map("school_id")
+  subjectId    String             @map("subject_id")
+  classLevelId String             @map("class_level_id")
+  topic        String
+  type         QuestionType
+  difficulty   QuestionDifficulty @default(MEDIUM)
+  text         String
+  marks        Int
+  // The expected answer / marking guide. Required for short-answer and theory
+  // (enforced in the service, where the message can say why); for multiple
+  // choice it is an optional note on why the key is right.
+  answerGuide  String?            @map("answer_guide")
+  status       QuestionStatus     @default(DRAFT)
+  source       QuestionSource     @default(MANUAL)
+  // Plain scoping columns, not relations — the LessonPlan.createdBy convention:
+  // a question outlives a staff member's account.
+  createdBy    String             @map("created_by")
+  approvedBy   String?            @map("approved_by")
+  approvedAt   DateTime?          @map("approved_at")
+  retiredAt    DateTime?          @map("retired_at")
+  // The approved question this draft revises. Retired when this is approved.
+  supersedesId String?            @map("supersedes_id")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  subject    Subject          @relation(fields: [subjectId], references: [id], onDelete: Restrict)
+  classLevel ClassLevel       @relation(fields: [classLevelId], references: [id], onDelete: Restrict)
+  supersedes Question?        @relation("QuestionRevision", fields: [supersedesId], references: [id], onDelete: SetNull)
+  revisions  Question[]       @relation("QuestionRevision")
+  options    QuestionOption[]
+
+  @@index([schoolId])
+  @@index([schoolId, subjectId, classLevelId, status])
+  @@map("questions")
+}
+
+// The choices of a multiple-choice question, in display order (A, B, C, D).
+// Carries school_id so its RLS policy is the cheap direct-column check.
+model QuestionOption {
+  id         String  @id @default(uuid())
+  schoolId   String  @map("school_id")
+  questionId String  @map("question_id")
+  orderIndex Int     @map("order_index")
+  text       String
+  isCorrect  Boolean @default(false) @map("is_correct")
+
+  question Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@unique([questionId, orderIndex])
+  @@index([schoolId])
+  @@map("question_options")
 }

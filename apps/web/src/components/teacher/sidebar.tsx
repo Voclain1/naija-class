@@ -10,6 +10,7 @@ import {
   Library,
   Sparkles,
   ClipboardList,
+  FileQuestion,
   FileText,
   LayoutDashboard,
   UserCircle,
@@ -51,6 +52,9 @@ const BASE_ITEMS: NavItem[] = [
   // its whole purpose is to make the item above it produce better output, and
   // separating them would leave a teacher wondering what it is for.
   { label: "Curriculum", href: "/teacher/curriculum", icon: Library, enabled: true },
+  // Phase 8c / CP5b (docs/modules/phase-8.md §22.2) — exam questions for the
+  // subjects this teacher teaches. Grounded in the same curriculum as above.
+  { label: "Question bank", href: "/teacher/question-bank", icon: FileQuestion, enabled: true },
   // Phase 8 / CP1 — read-only school calendar (docs/modules/phase-8.md §15).
   { label: "Calendar", href: "/teacher/calendar", icon: CalendarDays, enabled: true },
   // Phase 8 / CP4 (docs/modules/phase-8.md §18 D37): own lessons + form-class grids.

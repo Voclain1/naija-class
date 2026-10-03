@@ -63,6 +63,7 @@ import { UsersController } from "../modules/users/users.controller";
 import { PortalAuthController } from "../modules/portal-auth/portal-auth.controller";
 import { NotificationPreferencesController } from "../modules/notifications/notification-preferences.controller";
 import { LessonPlansController } from "../modules/lesson-plans/lesson-plans.controller";
+import { QuestionBankController } from "../modules/question-bank/question-bank.controller";
 
 // Static RBAC safety net (slice 13). Every route handler on a Phase 1
 // controller MUST declare @Permissions — the PermissionsGuard fails closed,
@@ -1182,5 +1183,43 @@ describe("Phase 8 CP4 RBAC coverage: teacher timetable", () => {
     }
     expect([...TIMETABLE_OWN_READ_PERMISSIONS]).toEqual(["timetable.own.read"]);
     expect((TIMETABLE_PERMISSIONS as readonly string[]).includes("timetable.own.read")).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 8c / CP5b RBAC coverage — the question bank (docs/modules/phase-8.md §22.2).
+//
+// Every handler carries exactly one question.* permission, the AI one is
+// separate (it spends budget), and approve/retire share `question.approve` —
+// the human gate. admin and teacher hold all four (the SERVICE holds a teacher
+// to their own subjects, D62); bursar holds none.
+// ---------------------------------------------------------------------------
+describe("Phase 8c CP5b RBAC coverage: question bank", () => {
+  it("QuestionBankController: each handler carries the right question.* permission", () => {
+    const proto = QuestionBankController.prototype as unknown as Record<string, object>;
+    const byHandler = Object.fromEntries(
+      routeHandlers(QuestionBankController).map((h) => [h, Reflect.getMetadata(PERMISSIONS_METADATA_KEY, proto[h]!)]),
+    );
+    expect(byHandler).toEqual({
+      scope: ["question.read"],
+      list: ["question.read"],
+      get: ["question.read"],
+      create: ["question.write"],
+      update: ["question.write"],
+      discard: ["question.write"],
+      approve: ["question.approve"],
+      retire: ["question.approve"],
+      generate: ["question.generate"],
+    });
+  });
+
+  it("admin and teacher hold all four; bursar holds none", () => {
+    const all = ["question.read", "question.write", "question.approve", "question.generate"];
+    for (const key of ["admin", "teacher"]) {
+      const perms = new Set(roleSeed(key).permissions);
+      for (const p of all) expect(perms.has(p), `${key} should have ${p}`).toBe(true);
+    }
+    const bursar = new Set(roleSeed("bursar").permissions);
+    for (const p of all) expect(bursar.has(p), `bursar should NOT have ${p}`).toBe(false);
   });
 });

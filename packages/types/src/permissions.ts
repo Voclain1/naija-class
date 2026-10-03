@@ -731,6 +731,23 @@ export const PROMOTION_PERMISSIONS = [
 // a teacher or bursar act.
 export const RESULT_PIN_PERMISSIONS = ["result-pin.read", "result-pin.manage"] as const;
 
+// Phase 8c / CP5b — the question bank (docs/modules/phase-8.md §22.2).
+// Four permissions because the four acts have different stakes: `read` sees
+// exam content before it is sat; `write` drafts, edits and discards; `approve`
+// is the human gate every question passes before a paper can use it (D62, and
+// the AI hard rule for AI drafts); `generate` spends the school's AI budget.
+//
+// admin and teacher hold all four. A teacher is held by QuestionBankService to
+// the (class level, subject) pairs they teach — D62's "the subject teacher
+// approves" — so the guard authorises the role and the service scopes the row,
+// the gradebook's two-layer gate. Bursar holds none.
+export const QUESTION_BANK_PERMISSIONS = [
+  "question.read",
+  "question.write",
+  "question.approve",
+  "question.generate",
+] as const;
+
 export const ALL_PERMISSIONS = [
   ...PHASE_0_PERMISSIONS,
   ...PHASE_1_PERMISSIONS,
@@ -751,6 +768,7 @@ export const ALL_PERMISSIONS = [
   ...TIMETABLE_OWN_READ_PERMISSIONS,
   ...PROMOTION_PERMISSIONS,
   ...RESULT_PIN_PERMISSIONS,
+  ...QUESTION_BANK_PERMISSIONS,
   /* extend per phase */
 ] as const;
 

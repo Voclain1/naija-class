@@ -20,6 +20,7 @@ import {
   renderInsightsNarrationPrompt,
   renderInsightsRouterPrompt,
 } from "../../src/prompts/insights.js";
+import { renderExamQuestionsPrompt } from "../../src/prompts/exam-questions.js";
 import { renderParentWeeklySummaryPrompt } from "../../src/prompts/parent-weekly-summary.js";
 import { renderReportCardCommentPrompt } from "../../src/prompts/report-card-comment.js";
 import { renderReportCardFormCommentPrompt } from "../../src/prompts/report-card-form-comment.js";
@@ -446,6 +447,60 @@ export const piiSafetyCase: EvalCase = {
           routerRendered.includes(s),
         ),
         "a declared input was silently dropped from the template",
+      ),
+    );
+
+    // ---- exam-questions renderer (Phase 8c / CP5b) -----------------------
+    // A question bank is about a syllabus, not a child: no student is in
+    // scope anywhere in this feature. The input type has no field that could
+    // carry one, and this pins that — a later "tailor questions to the weak
+    // pupils in JSS2B" edit would have to widen the input and fail here.
+    const examInput = {
+      classLevel: "SENTINEL_LEVEL_SS1",
+      subject: "SENTINEL_SUBJECT_PHYSICS",
+      topic: "SENTINEL_TOPIC_MOTION",
+      type: "THEORY" as const,
+      difficulty: "HARD" as const,
+      count: 3,
+      groundingChunks: [
+        { heading: "SENTINEL_HEADING_WEEK3", content: "SENTINEL_CHUNK_CONTENT", documentTitle: "SENTINEL_DOC_TITLE" },
+      ],
+    };
+    const examRendered = renderExamQuestionsPrompt(examInput);
+    results.push(...assertNoForbidden("exam-questions", examRendered));
+    results.push(
+      check(
+        "exam-questions: renders all declared inputs",
+        [
+          "SENTINEL_LEVEL_SS1",
+          "SENTINEL_SUBJECT_PHYSICS",
+          "SENTINEL_TOPIC_MOTION",
+          "SENTINEL_HEADING_WEEK3",
+          "SENTINEL_CHUNK_CONTENT",
+          "SENTINEL_DOC_TITLE",
+        ].every((s) => examRendered.includes(s)) && examRendered.includes("Write 3 theory questions."),
+        "a declared input was silently dropped from the template",
+      ),
+      check(
+        "exam-questions: renderer is deterministic",
+        examRendered === renderExamQuestionsPrompt(examInput),
+        "same input produced different output — a clock or env read has crept in",
+      ),
+      check(
+        "exam-questions: the ungrounded path renders cleanly and says why",
+        (() => {
+          const bare = renderExamQuestionsPrompt({
+            classLevel: "JSS1",
+            subject: "Basic Science",
+            topic: "Living things",
+            type: "MULTIPLE_CHOICE",
+            difficulty: "EASY",
+            count: 1,
+            groundingAbsenceReason: "no-match",
+          });
+          return !/\b(undefined|null|NaN)\b/.test(bare) && /no section of it matched/.test(bare) && /Write 1 multiple-choice question\./.test(bare);
+        })(),
+        "the no-extract branch must state the true reason and read as a sentence",
       ),
     );
 

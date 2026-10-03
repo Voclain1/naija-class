@@ -6,6 +6,7 @@
 // bump, or a cost profile nobody looked at.
 
 import { MODEL_PRICING, estimateCostMicroUsd } from "../../src/models.js";
+import { EXAM_QUESTIONS_SCHEMA } from "../../src/prompts/exam-questions.js";
 import { LESSON_PLAN_SCHEMA } from "../../src/prompts/lesson-plan.js";
 import { PROMPTS, promptRef } from "../../src/prompts/registry.js";
 import { check, warn, type EvalCase } from "../harness.js";
@@ -104,6 +105,37 @@ export const registryIntegrityCase: EvalCase = {
         "two registry entries share a name@version — the ledger could not tell them apart",
       ),
     );
+
+    // ---- exam-questions: a schema structured outputs will accept ----------
+    // Every object closed and fully required, and no keyword the API rejects.
+    // `minItems`/`maximum` would be the natural way to say "four options" or
+    // "1 to 100 marks", and both are refused at call time — so the per-type
+    // rules live in the service (findQuestionContentError), not here.
+    {
+      const objects: Record<string, unknown>[] = [];
+      const unsupported: string[] = [];
+      walkSchema(EXAM_QUESTIONS_SCHEMA, (obj) => {
+        if (obj.type === "object") objects.push(obj);
+        for (const k of UNSUPPORTED_SCHEMA_KEYWORDS) if (k in obj) unsupported.push(k);
+      });
+      results.push(
+        check(
+          "exam-questions: schema uses no keyword structured outputs rejects",
+          unsupported.length === 0,
+          `found: ${unsupported.join(", ")}`,
+        ),
+        check(
+          "exam-questions: every object is closed and requires all its properties",
+          objects.length === 3 &&
+            objects.every((o) => {
+              const props = Object.keys((o.properties ?? {}) as Record<string, unknown>);
+              const required = (o.required ?? []) as string[];
+              return o.additionalProperties === false && props.length === required.length && props.every((p) => required.includes(p));
+            }),
+          "an open object or an optional property is a 400 on the first real call",
+        ),
+      );
+    }
 
     // ---- worst-case cost is sane ----------------------------------------
     // Not a correctness check — a tripwire. If a prompt's worst-case call is
