@@ -59,7 +59,14 @@ export class EventNotifierService {
    * `eventId` is the (term, arm) pair, so a re-release of the same class
    * notifies nobody twice, while next term's release is a different event.
    */
-  async resultsReleased(args: { schoolId: string; termId: string; classArmId: string }): Promise<void> {
+  async resultsReleased(args: {
+    schoolId: string;
+    termId: string;
+    classArmId: string;
+    /** Phase 8c / CP6b — PIN mode says so, rather than promising a card the app will show locked. */
+    accessMode?: "FREE" | "PIN";
+  }): Promise<void> {
+    const pinMode = args.accessMode === "PIN";
     await this.safely("resultsReleased", async () => {
       const { schoolName, studentIds, guardianIds } = await withTenant(args.schoolId, async (db) => {
         const school = await db.school.findUniqueOrThrow({
@@ -92,7 +99,9 @@ export class EventNotifierService {
           eventType: EVENT.resultsReleased,
           eventId,
           title: schoolName,
-          body: "Results have been released. Open the app to see them.",
+          body: pinMode
+            ? "Results have been released. You'll need a result PIN from the school to open them."
+            : "Results have been released. Open the app to see them.",
           data: { screen: "results" },
         });
       }
@@ -103,7 +112,9 @@ export class EventNotifierService {
           eventType: EVENT.resultsReleased,
           eventId,
           title: schoolName,
-          body: "Your results have been released.",
+          body: pinMode
+            ? "Your results have been released. You'll need a result PIN to open them."
+            : "Your results have been released.",
           data: { screen: "results" },
         });
       }

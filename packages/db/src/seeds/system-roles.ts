@@ -18,6 +18,7 @@ import {
   TIMETABLE_PERMISSIONS,
   TIMETABLE_OWN_READ_PERMISSIONS,
   PROMOTION_PERMISSIONS,
+  RESULT_PIN_PERMISSIONS,
   OWNER_ONLY_PERMISSIONS,
   PHASE_0_PERMISSIONS,
   PHASE_1_PERMISSIONS,
@@ -115,6 +116,10 @@ const ADMIN_PERMISSIONS: readonly string[] = [
   // with the idempotent append in
   // prisma/migrations/20260917120000_promotion_permissions.
   ...PROMOTION_PERMISSIONS,
+  // Phase 8c / CP6b — Result Checker PINs: generate, list, void. Owner/admin
+  // only. Kept IN SYNC with the idempotent append in
+  // prisma/migrations/20261003120000_result_checker.
+  ...RESULT_PIN_PERMISSIONS,
 ];
 
 // System roles are global (school_id = NULL, is_system = true) and referenced

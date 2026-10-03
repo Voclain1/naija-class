@@ -28,6 +28,8 @@ import { loadCurrentEnrollmentForStudent } from "../enrollments/enrollments.serv
 import { ReleasedResultsService } from "../report-cards/released-results.service";
 import { PortalInvoicesService } from "../portal-finance/portal-invoices.service";
 import { rateHundredths } from "../attendance/shared/attendance-shared.util";
+import { unlockForPortal } from "../result-checker/portal-unlock";
+import { ResultPinService } from "../result-checker/result-pin.service";
 
 const LOGIN_AUDIT_ACTION = "student.login";
 const LOGIN_FAILED_AUDIT_ACTION = "student.login-failed";
@@ -96,6 +98,7 @@ export class StudentPortalService {
     private readonly releasedResults: ReleasedResultsService,
     private readonly invoices: PortalInvoicesService,
     private readonly lockout: LoginLockoutService,
+    private readonly pins: ResultPinService,
   ) {}
 
   // POST /student-portal/login — PUBLIC.
@@ -289,6 +292,29 @@ export class StudentPortalService {
   async getResult(ctx: StudentAuthContext, termId: string): Promise<ReleasedResultDetailDto> {
     return withTenant(ctx.schoolId, (db) =>
       this.releasedResults.getForStudent(db, ctx.studentId, termId),
+    );
+  }
+
+  // POST /student-portal/me/results/:termId/unlock — a student redeeming a
+  // result PIN on a locked term (Phase 8c / CP6b, D54). The student id comes
+  // from the session, as for every /me route.
+  async unlockResult(
+    ctx: StudentAuthContext,
+    termId: string,
+    pin: string,
+    reqCtx: { ipAddress: string | null },
+  ): Promise<ReleasedResultDetailDto> {
+    return unlockForPortal(
+      { pins: this.pins, releasedResults: this.releasedResults, lockout: this.lockout },
+      {
+        schoolId: ctx.schoolId,
+        studentId: ctx.studentId,
+        termId,
+        pin,
+        via: "STUDENT",
+        actorId: ctx.studentId,
+        ipAddress: reqCtx.ipAddress,
+      },
     );
   }
 

@@ -12,7 +12,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Test } from "@nestjs/testing";
 import { APP_FILTER } from "@nestjs/core";
-import { INestApplication } from "@nestjs/common";
+import { INestApplication, Global, Module } from "@nestjs/common";
 import request from "supertest";
 
 import { basePrisma, withTenant } from "@school-kit/db";
@@ -20,6 +20,30 @@ import { basePrisma, withTenant } from "@school-kit/db";
 import { HttpExceptionFilter } from "../common/http-exception.filter";
 import { createGuardianSession } from "../common/auth/guardian-sessions";
 import { PortalStudentsModule } from "../modules/portal-students/portal-students.module";
+import { REDIS_AUTH_CLIENT } from "../common/auth/redis-auth.provider";
+
+// PortalStudentsModule now carries the result-PIN lockout (Phase 8c / CP6b),
+// which needs the Redis client the app provides globally. This spec never
+// redeems a PIN, so an inert stand-in is enough.
+@Global()
+@Module({
+  providers: [
+    {
+      provide: REDIS_AUTH_CLIENT,
+      useValue: {
+        get: async () => null,
+        set: async () => "OK",
+        del: async () => 1,
+        pttl: async () => -2,
+        incr: async () => 1,
+        expire: async () => 1,
+      },
+    },
+  ],
+  exports: [REDIS_AUTH_CLIENT],
+})
+class InertRedisAuthModule {}
+
 
 describe("GuardianAuthGuard — portal access switched off by the school", () => {
   const runId = Math.random().toString(36).slice(2, 8);
@@ -30,7 +54,7 @@ describe("GuardianAuthGuard — portal access switched off by the school", () =>
 
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
-      imports: [PortalStudentsModule],
+      imports: [InertRedisAuthModule, PortalStudentsModule],
       providers: [{ provide: APP_FILTER, useClass: HttpExceptionFilter }],
     }).compile();
     app = moduleRef.createNestApplication();

@@ -18,6 +18,9 @@ export const PROMOTION_STATUS_LABELS: Record<PromotionStatusDto, string> = {
   GRADUATED: "Graduated",
 };
 
+// Phase 8c / CP6b (§21.2, D48/D18) — how families reach a released card.
+export type ResultAccessModeDto = "FREE" | "PIN";
+
 export type ReportCardPdfStatusDto = "PENDING" | "GENERATING" | "GENERATED" | "FAILED";
 
 // The materialized report-card row (rollup + workflow state + PDF pointer).
@@ -41,6 +44,8 @@ export interface ReportCardDto {
   attendanceAbsent: number | null;
   // Final term only (§20.3); null on every other term, and until it is set.
   promotionStatus: PromotionStatusDto | null;
+  // Set at release for the whole arm, cleared by reopen; null before release.
+  accessMode: ResultAccessModeDto | null;
   pdfStatus: ReportCardPdfStatusDto;
   artifactUrl: string | null;
   generatedAt: string | Date | null;

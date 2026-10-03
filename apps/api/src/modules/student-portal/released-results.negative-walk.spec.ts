@@ -465,6 +465,52 @@ describe("Released results — negative walk (Phase 6 / Slice 4)", () => {
     expect(await both()).toEqual([null, null]);
   });
 
+  it("9. PIN mode (CP6b): locked for BOTH principals until an unlock exists, then open for both", async () => {
+    const setMode = (mode: "FREE" | "PIN") =>
+      withTenant(schoolA, (db) =>
+        db.reportCard.updateMany({ where: { studentId: adaId, termId: releasedTermId }, data: { accessMode: mode } }),
+      );
+    const both = async () => ({
+      childList: await asStudent(adaToken, "/me/results"),
+      parentList: await asGuardian(adaGuardianToken, `/students/${adaId}/results`),
+      child: await asStudent(adaToken, `/me/results/${releasedTermId}`),
+      parent: await asGuardian(adaGuardianToken, `/students/${adaId}/results/${releasedTermId}`),
+    });
+
+    await setMode("PIN");
+    try {
+      const locked = await both();
+      for (const res of [locked.child, locked.parent]) {
+        expect(res.status).toBe(403);
+        expect(res.body.error.code).toBe("RESULT_LOCKED");
+        // Nothing of the card rides along with the refusal.
+        expect(JSON.stringify(res.body)).not.toContain("8400");
+        expect(JSON.stringify(res.body)).not.toContain("A good term.");
+      }
+      for (const list of [locked.childList, locked.parentList]) {
+        expect(list.status).toBe(200);
+        expect(list.body.data).toEqual([
+          expect.objectContaining({ termId: releasedTermId, locked: true, overallAverage: null, subjectsCount: null }),
+        ]);
+      }
+      expect(locked.parentList.body).toEqual(locked.childList.body);
+
+      // An unlock — however it was made (D17) — opens it on both surfaces.
+      await withTenant(schoolA, (db) =>
+        db.resultUnlock.create({
+          data: { schoolId: schoolA, studentId: adaId, termId: releasedTermId, pinId: "spec-pin", via: "CHECKER" },
+        }),
+      );
+      const open = await both();
+      expect(open.child.status).toBe(200);
+      expect(open.parent.body).toEqual(open.child.body);
+      expect(open.childList.body.data[0]).toMatchObject({ locked: false, overallAverage: 8400 });
+    } finally {
+      await withTenant(schoolA, (db) => db.resultUnlock.deleteMany({ where: { studentId: adaId } }));
+      await setMode("FREE");
+    }
+  });
+
   it("8. the family payload omits the staff-only and PII fields", async () => {
     const res = await asStudent(adaToken, `/me/results/${releasedTermId}`);
     const body = JSON.stringify(res.body);

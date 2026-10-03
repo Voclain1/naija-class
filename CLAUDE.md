@@ -843,6 +843,7 @@ NEXT_PUBLIC_POSTHOG_KEY
 NEXT_PUBLIC_POSTHOG_HOST
 WEB_BASE_URL
 PORTAL_BASE_URL
+RESULT_PIN_HMAC_KEY
 ```
 
 Never commit. Never log. Test keys and live keys are different env files.
@@ -856,6 +857,16 @@ must set this explicitly; dev defaults to `http://localhost:3001`.
 invitation accept links (`POST /guardians/:id/invite`). Production must set
 this explicitly to `https://portal.schoolkit.ng`; dev defaults to
 `http://localhost:3002` (apps/portal's dev port, D9 in phase-4.md §7).
+
+`RESULT_PIN_HMAC_KEY` — the server secret result-checker PINs are hashed
+under (`docs/modules/phase-8.md` D56). **The API refuses to start in
+production without it** (`apps/api/src/modules/result-checker/result-pin-key.ts`),
+so it must be set on the `school-kit-api` Fly app (`flyctl secrets set
+RESULT_PIN_HMAC_KEY=$(openssl rand -hex 32) -a school-kit-api`) before the
+first deploy that carries it — the lesson of the `PORTAL_BASE_URL` miss below,
+turned from a silent failure into a loud one. Only the API app needs it; the
+render worker never loads the PIN module. Dev and test use a fixed
+non-production key. Rotating it voids every unredeemed PIN.
 
 `TERMII_BASE_URL` — unlike Paystack's fixed `api.paystack.co`, Termii's API
 base URL is **per-account** (dashboard-assigned), not a global constant.

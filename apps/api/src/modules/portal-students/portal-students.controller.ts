@@ -1,4 +1,5 @@
-import { Controller, Get, HttpCode, Ip, Param, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, HttpCode, Ip, Param, Post, UseGuards } from "@nestjs/common";
+import { resultPinUnlockSchema, type ResultPinUnlockInput } from "@school-kit/types";
 import type {
   DeactivateStudentPortalResponse,
   IssueStudentInvitationResponse,
@@ -13,6 +14,7 @@ import type { GuardianAuthContext } from "../../common/auth/guardian-auth-contex
 import { CurrentGuardian } from "../../common/auth/current-guardian.decorator";
 import { GuardianAuthGuard } from "../../common/auth/guardian-auth.guard";
 import { PortalStudentsService } from "./portal-students.service";
+import { ZodValidationPipe } from "../../common/zod-validation.pipe";
 import { StudentAccessService } from "./student-access.service";
 
 // Phase 4 / Slice 3 — the first real parent-facing data endpoints, guarded
@@ -103,5 +105,18 @@ export class PortalStudentsController {
     @Param("termId") termId: string,
   ): Promise<ReleasedResultDetailDto> {
     return this.access.getResult(guardianCtx, id, termId);
+  }
+
+  // Phase 8c / CP6b (D54) — redeem a result PIN on a locked term.
+  @Post("students/:id/results/:termId/unlock")
+  @HttpCode(200)
+  async unlockResult(
+    @CurrentGuardian() guardianCtx: GuardianAuthContext,
+    @Param("id") id: string,
+    @Param("termId") termId: string,
+    @Body(new ZodValidationPipe(resultPinUnlockSchema)) dto: ResultPinUnlockInput,
+    @Ip() ip: string,
+  ): Promise<ReleasedResultDetailDto> {
+    return this.access.unlockResult(guardianCtx, id, termId, dto.pin, { ipAddress: ip });
   }
 }
