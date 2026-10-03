@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  DEACTIVATE_DISCOUNT_PERMISSION,
+  canDeactivateDiscount,
   buildDeactivateConfirmation,
   deactivateReducer,
   initialDeactivateState,
@@ -140,5 +142,28 @@ describe("buildDeactivateConfirmation", () => {
     expect(copy.dismissLabel).toBe("Keep discount");
     expect(copy.dismissLabel.toLowerCase()).not.toBe("cancel");
     expect(copy.confirmLabel).not.toBe(copy.dismissLabel);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Who may see "Deactivate" (closed 2026-10-05, docs/deferred.md)
+// ---------------------------------------------------------------------------
+describe("canDeactivateDiscount", () => {
+  it("offers it to an active rule for a user holding the endpoint's permission", () => {
+    expect(DEACTIVATE_DISCOUNT_PERMISSION).toBe("discount-rule.deactivate");
+    expect(canDeactivateDiscount(true, ["discount-rule.read", "discount-rule.deactivate"])).toBe(true);
+  });
+
+  it("admits the owner's wildcard", () => {
+    expect(canDeactivateDiscount(true, ["*"])).toBe(true);
+  });
+
+  it("never for an inactive rule, whatever the grant", () => {
+    expect(canDeactivateDiscount(false, ["*"])).toBe(false);
+  });
+
+  it("not for a near-miss grant, and not while the grant is still loading (empty)", () => {
+    expect(canDeactivateDiscount(true, ["discount-rule.read", "discount-rule.update"])).toBe(false);
+    expect(canDeactivateDiscount(true, [])).toBe(false);
   });
 });

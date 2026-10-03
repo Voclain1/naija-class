@@ -27,11 +27,13 @@ import {
 } from "@/lib/finance/discount-rules-api";
 import {
   buildDeactivateConfirmation,
+  canDeactivateDiscount,
   deactivateReducer,
   initialDeactivateState,
   shouldSendDeactivateRequest,
   toDeactivateTarget,
 } from "@/lib/finance/discount-deactivate";
+import { useAuth } from "@/lib/auth/use-auth";
 import { listStudents } from "@/lib/students/students-api";
 
 type TargetType = "feeItem" | "feeCategory";
@@ -84,6 +86,9 @@ export default function DiscountsPage() {
   const [rulesError, setRulesError] = useState<string | null>(null);
 
   // Deactivation confirmation (F-01-style gate — see lib/finance/discount-deactivate.ts)
+  // Gate the row action on the grant the endpoint requires (closed the
+  // deferred.md entry on 2026-10-05) — not on a 403 after the click.
+  const { permissions } = useAuth();
   const [deactivate, dispatchDeactivate] = useReducer(
     deactivateReducer,
     initialDeactivateState,
@@ -354,7 +359,7 @@ export default function DiscountsPage() {
                     </Badge>
                   </TableCell>
                   <TableCell>
-                    {rule.active && (
+                    {canDeactivateDiscount(rule.active, permissions) && (
                       <button
                         type="button"
                         // Named for the rule it belongs to: several rules list

@@ -32,6 +32,27 @@
 
 import type { DiscountRuleDto } from "@school-kit/types";
 
+import { hasPermission } from "../auth/has-permission";
+
+// ---------------------------------------------------------------------------
+// Who may see the action (closed 2026-10-05, docs/deferred.md)
+// ---------------------------------------------------------------------------
+
+/** What `DELETE /discount-rules/:id` is declared with on the server. */
+export const DEACTIVATE_DISCOUNT_PERMISSION = "discount-rule.deactivate";
+
+/**
+ * Whether to offer "Deactivate" on a rule: it is active, AND the signed-in
+ * user holds the permission the endpoint requires. `permissions` is required
+ * so a call site that forgets it fails typecheck instead of quietly offering
+ * the action to everyone. Fails closed on an empty grant, which is also the
+ * auth provider's loading state: a money-adjacent action is not offered before
+ * the app knows it is allowed. The owner's `"*"` admits it.
+ */
+export function canDeactivateDiscount(active: boolean, permissions: readonly string[]): boolean {
+  return active && hasPermission([...permissions], DEACTIVATE_DISCOUNT_PERMISSION);
+}
+
 // ---------------------------------------------------------------------------
 // Confirmation copy
 // ---------------------------------------------------------------------------
