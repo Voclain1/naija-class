@@ -1,8 +1,8 @@
 import { ScrollView, StyleSheet, View } from "react-native";
 import { Redirect, Stack, useLocalSearchParams } from "expo-router";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { getResult } from "../../../../src/lib/api/portal";
+import { getResult, unlockResult } from "../../../../src/lib/api/portal";
 import { queryKeys } from "../../../../src/lib/query/keys";
 import { useSession } from "../../../../src/lib/auth/session";
 import { spacing } from "../../../../src/theme/tokens";
@@ -17,6 +17,7 @@ import {
 } from "../../../../src/components/ui";
 import { FreshnessLabel } from "../../../../src/components/freshness-label";
 import { PrincipalRemark, ResultStanding } from "../../../../src/components/result-extras";
+import { ResultPinUnlock, isResultLocked } from "../../../../src/components/result-pin-unlock";
 import { positionLabel } from "../../../../src/lib/results/result-extras";
 
 // Phase 6 / Slice 4 — one released term, in full.
@@ -58,6 +59,7 @@ export default function ResultDetailScreen() {
   const studentId = typeof id === "string" ? id : "";
   const term = typeof termId === "string" ? termId : "";
 
+  const queryClient = useQueryClient();
   const resultQuery = useQuery({
     queryKey: queryKeys.result(studentId, term),
     queryFn: () => getResult(studentId, term),
@@ -81,7 +83,20 @@ export default function ResultDetailScreen() {
           </CenteredMessage>
         )}
 
-        {resultQuery.isError && !result && (
+        {/* Phase 8c / CP6b: released behind result PINs and not yet
+            unlocked. Unlocking puts the card straight into the cache and
+            refreshes the list, whose row still says "PIN required". */}
+        {resultQuery.isError && !result && isResultLocked(resultQuery.error) && (
+          <ResultPinUnlock
+            unlock={(pin) => unlockResult(studentId, term, pin)}
+            onUnlocked={(unlocked) => {
+              queryClient.setQueryData(queryKeys.result(studentId, term), unlocked);
+              void queryClient.invalidateQueries({ queryKey: queryKeys.results(studentId), exact: true });
+            }}
+          />
+        )}
+
+        {resultQuery.isError && !result && !isResultLocked(resultQuery.error) && (
           <CenteredMessage>
             <Notice tone="danger">
               We couldn&apos;t load this report card. Try again shortly.

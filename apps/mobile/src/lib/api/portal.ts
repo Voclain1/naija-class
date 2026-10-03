@@ -136,6 +136,19 @@ export function getResult(
   );
 }
 
+// Phase 8c / CP6b (D54) — redeem a result PIN on a locked term. One use of the
+// card, once; the term then stays open here, in the portal and on the checker.
+export function unlockResult(
+  studentId: string,
+  termId: string,
+  pin: string,
+): Promise<ReleasedResultDetailDto> {
+  return apiFetch<ReleasedResultDetailDto>(
+    `/portal/students/${encodeURIComponent(studentId)}/results/${encodeURIComponent(termId)}/unlock`,
+    { method: "POST", body: { pin } },
+  );
+}
+
 // Phase 6 — the guardian's control over their child's portal access.
 //
 // All three are guardian-authenticated and take the child's id in the path,

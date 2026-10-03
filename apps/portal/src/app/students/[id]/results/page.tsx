@@ -111,11 +111,22 @@ export default function ResultsPage() {
                     </Link>
                   </h2>
                   <p className="text-sm text-muted-foreground">{result.academicYearLabel}</p>
-                  <dl className="mt-3 grid grid-cols-3 gap-3 text-sm">
-                    <div><dt className="text-muted-foreground">Average</dt><dd>{formatAverage(result.overallAverage)}</dd></div>
-                    <div><dt className="text-muted-foreground">Subjects</dt><dd>{result.subjectsCount ?? "—"}</dd></div>
-                    <div><dt className="text-muted-foreground">Class</dt><dd>{result.classArmName}</dd></div>
-                  </dl>
+                  {result.locked ? (
+                    // Phase 8c / CP6b: released behind result PINs. The list
+                    // says so in words; the term page has the PIN box.
+                    <p className="mt-3 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-950">
+                      Result PIN required.{" "}
+                      <Link href={`/students/${params.id}/results/${result.termId}`} className="font-medium underline">
+                        Enter your PIN
+                      </Link>
+                    </p>
+                  ) : (
+                    <dl className="mt-3 grid grid-cols-3 gap-3 text-sm">
+                      <div><dt className="text-muted-foreground">Average</dt><dd>{formatAverage(result.overallAverage)}</dd></div>
+                      <div><dt className="text-muted-foreground">Subjects</dt><dd>{result.subjectsCount ?? "—"}</dd></div>
+                      <div><dt className="text-muted-foreground">Class</dt><dd>{result.classArmName}</dd></div>
+                    </dl>
+                  )}
                 </article>
               ))}
             </section>

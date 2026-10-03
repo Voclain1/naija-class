@@ -27,6 +27,8 @@ const GUARDED_SURFACES: { label: string; path: string }[] = [
   { label: "class-subject matrix", path: "../../components/settings/academic/class-subject-matrix.tsx" },
   { label: "lesson plan editor", path: "../../app/(teacher)/teacher/lesson-plans/[id]/page.tsx" },
   { label: "teacher attendance", path: "../../app/(teacher)/teacher/attendance/page.tsx" },
+  // Phase 8c / CP6b — a freshly generated PIN batch exists only on this page.
+  { label: "result PIN batch", path: "../../app/(admin)/report-cards/pins/page.tsx" },
 ];
 
 describe("every beforeunload guard stands down for a forced sign-out", () => {
@@ -40,9 +42,9 @@ describe("every beforeunload guard stands down for a forced sign-out", () => {
 
   it("the list is complete — no beforeunload guard exists outside it", () => {
     // Guards against the quiet failure mode this whole file exists to prevent:
-    // someone adds a fifth dirty surface with its own hand-rolled guard, and
-    // the four assertions above keep passing while the new one offers a "Stay"
-    // that cannot stay. So walk the tree rather than trusting the list.
+    // someone adds another dirty surface with its own hand-rolled guard, and
+    // the per-surface assertions above keep passing while the new one offers a
+    // "Stay" that cannot stay. So walk the tree rather than trusting the list.
     const root = fileURLToPath(new URL("../..", import.meta.url));
     const found: string[] = [];
 

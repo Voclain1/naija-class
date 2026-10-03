@@ -100,20 +100,26 @@ export default function ResultsListScreen() {
                     <Card>
                       <Heading>{r.termName}</Heading>
                       <Body muted>{r.academicYearLabel}</Body>
-                      <View style={styles.row}>
-                        <View>
-                          <Label>Average</Label>
-                          <Body>{formatAverage(r.overallAverage)}</Body>
+                      {r.locked ? (
+                        // Phase 8c / CP6b: released behind result PINs. Say so in
+                        // words; the term screen has the PIN box.
+                        <Notice tone="warning">Result PIN required. Tap to enter it.</Notice>
+                      ) : (
+                        <View style={styles.row}>
+                          <View>
+                            <Label>Average</Label>
+                            <Body>{formatAverage(r.overallAverage)}</Body>
+                          </View>
+                          <View>
+                            <Label>Subjects</Label>
+                            <Body>{r.subjectsCount ?? "—"}</Body>
+                          </View>
+                          <View>
+                            <Label>Class</Label>
+                            <Body>{r.classArmName}</Body>
+                          </View>
                         </View>
-                        <View>
-                          <Label>Subjects</Label>
-                          <Body>{r.subjectsCount ?? "—"}</Body>
-                        </View>
-                        <View>
-                          <Label>Class</Label>
-                          <Body>{r.classArmName}</Body>
-                        </View>
-                      </View>
+                      )}
                     </Card>
                   </Pressable>
                 </Link>

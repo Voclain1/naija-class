@@ -9,6 +9,8 @@ Format:
 
 ## Captured so far
 
+- [ ] **Portal server-proxied API calls reach the API from Vercel's address, not the family's** (logged 2026-10-03, Phase 8c / CP6b). The API now throttles per client on `Fly-Client-IP` (`apps/api/src/common/auth/client-ip-throttler.guard.ts`), which fixed every per-IP limit for requests that come straight from a browser or the app. But the guardian portal's own pages call the API through `apps/portal`'s `/api/portal/*` and `/api/student-portal/*` server routes, so for those the API sees Vercel's egress address, and every signed-in parent shares those limits (the global 200/min; guardian sign-in's limits). Not a regression: before the fix they shared Fly's proxy address instead. The public Result Checker sidesteps it by calling the API directly from the browser. Fix options: (a) have the portal proxy forward the client address in a header the API trusts ONLY from the portal, e.g. signed with a shared secret, since a plain header is client-forgeable; (b) move the portal's authenticated calls to direct browser→API with a bearer token, which undoes the httpOnly-cookie design and is the larger change. — Trigger: before a school large enough that a results morning puts 200 portal requests a minute through Vercel, or whenever guardian sign-in shows unexplained 429s.
+
 - [x] **RESOLVED 2026-08-21 (PR #201, merged f674e4a, deployed and verified).**
   Every newly provisioned school lands with NO academic year and NO
   current term, through BOTH onboarding paths — and nothing tells the owner.**

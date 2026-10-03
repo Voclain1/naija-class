@@ -6,6 +6,7 @@
 
 import type {
   PromotionStatusDto,
+  ResultAccessModeDto,
   BuildReportCardsResultDto,
   PrincipalNoteResultDto,
   RenderArmResultDto,
@@ -92,10 +93,14 @@ export function approveArm(termId: string, classArmId: string): Promise<ReportCa
 
 // POST /report-cards/arm/release — PRINCIPAL_APPROVED → RELEASED + enqueue render
 // jobs (owner/admin). Cards go pdfStatus PENDING; the board polls them to GENERATED.
-export function releaseArm(termId: string, classArmId: string): Promise<ReportCardTransitionResultDto> {
+export function releaseArm(
+  termId: string,
+  classArmId: string,
+  accessMode: ResultAccessModeDto = "FREE",
+): Promise<ReportCardTransitionResultDto> {
   return apiFetch<ReportCardTransitionResultDto>("/report-cards/arm/release", {
     method: "POST",
-    body: { termId, classArmId },
+    body: { termId, classArmId, accessMode },
   });
 }
 
