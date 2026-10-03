@@ -25,6 +25,7 @@ import { REPORT_CARDS_JOB_RENDER, REPORT_CARDS_QUEUE } from "../../common/queue"
 import { StorageService } from "../../common/storage";
 import { AggregationService } from "../assessment/aggregation.service";
 import { wakeRenderWorker } from "./render/wake-render-worker";
+import { isFinalTerm } from "./workflow/final-term";
 
 interface RequestContext {
   ipAddress: string | null;
@@ -105,6 +106,32 @@ export class ReportCardService {
         byStudent.set(a.studentId, entry);
       }
 
+      // 3b. Attendance snapshot (Phase 8c / CP6a, phase-8.md §20.2), frozen
+      //     with the rest of the rollup. The SAME rule as GET
+      //     /attendance/summary (Phase 2 Q7 policy i): PRESENT + LATE attended,
+      //     ABSENT + EXCUSED not — a report card must never disagree with the
+      //     attendance screen. A student's own days are counted by (student,
+      //     term), not by arm, so a mid-term move keeps their whole term; "days
+      //     opened" is the card's arm's distinct marked dates.
+      const studentDays = await db.attendanceRecord.groupBy({
+        by: ["studentId", "status"],
+        where: { termId: input.termId, studentId: { in: studentIds } },
+        _count: { _all: true },
+      });
+      const attendanceByStudent = new Map<string, { present: number; absent: number }>();
+      for (const row of studentDays) {
+        const entry = attendanceByStudent.get(row.studentId) ?? { present: 0, absent: 0 };
+        if (row.status === "PRESENT" || row.status === "LATE") entry.present += row._count._all;
+        else entry.absent += row._count._all;
+        attendanceByStudent.set(row.studentId, entry);
+      }
+      const armDays = await db.attendanceRecord.findMany({
+        where: { termId: input.termId, classArmId: input.classArmId },
+        distinct: ["date"],
+        select: { date: true },
+      });
+      const daysOpened = armDays.length;
+
       let cardCount = 0;
       for (const enrollment of enrollments) {
         const rollup = byStudent.get(enrollment.studentId) ?? { totals: [], classPosition: null };
@@ -114,6 +141,14 @@ export class ReportCardService {
           overallTotal !== null && subjectsCount > 0
             ? Math.round((overallTotal * 100) / subjectsCount) // Int hundredths (kobo rule)
             : null;
+        // A school that has never marked this arm has no attendance to report:
+        // NULL, which renders as no line — not "0 of 0", which would read as a
+        // statement about the child.
+        const days = attendanceByStudent.get(enrollment.studentId) ?? { present: 0, absent: 0 };
+        const attendance =
+          daysOpened > 0
+            ? { attendanceDaysOpened: daysOpened, attendancePresent: days.present, attendanceAbsent: days.absent }
+            : { attendanceDaysOpened: null, attendancePresent: null, attendanceAbsent: null };
 
         await db.reportCard.upsert({
           where: {
@@ -133,6 +168,7 @@ export class ReportCardService {
             overallAverage,
             overallPosition: rollup.classPosition,
             subjectsCount,
+            ...attendance,
           },
           // Re-build refreshes the ROLLUP only — it must not clobber the workflow
           // state (slice 6), the comments, or the PDF pointer.
@@ -143,6 +179,7 @@ export class ReportCardService {
             overallAverage,
             overallPosition: rollup.classPosition,
             subjectsCount,
+            ...attendance,
           },
           select: { id: true },
         });
@@ -190,7 +227,7 @@ export class ReportCardService {
         )
         .map((r) => ({ student: toStudentDto(r.student), reportCard: toReportCardDto(r.card) }));
 
-      return { data: rows };
+      return { data: rows, isFinalTerm: await isFinalTerm(db, query.termId) };
     });
   }
 
@@ -351,13 +388,20 @@ export class ReportCardService {
         subjectsCount: true,
         formTeacherComment: true,
         principalNote: true,
+        attendanceDaysOpened: true,
+        attendancePresent: true,
+        attendanceAbsent: true,
+        promotionStatus: true,
       },
     });
     if (!card) return null;
 
     const [school, term, year, arm, student] = await Promise.all([
       // schools has no RLS → MUST filter by the card's school_id explicitly.
-      db.school.findUnique({ where: { id: card.schoolId }, select: { name: true, motto: true, logoUrl: true } }),
+      db.school.findUnique({
+        where: { id: card.schoolId },
+        select: { name: true, motto: true, logoUrl: true, positionOnReportCardPdf: true },
+      }),
       db.term.findUnique({ where: { id: card.termId }, select: { name: true, startDate: true, endDate: true } }),
       db.academicYear.findUnique({ where: { id: card.academicYearId }, select: { label: true } }),
       db.classArm.findUnique({ where: { id: card.classArmId }, select: { name: true } }),
@@ -368,7 +412,12 @@ export class ReportCardService {
     const subjects = await this.buildSubjectBreakdown(db, card.studentId, card.termId);
 
     return {
-      school: { name: school.name, motto: school.motto, logoUrl: school.logoUrl },
+      school: {
+        name: school.name,
+        motto: school.motto,
+        logoUrl: school.logoUrl,
+        positionOnReportCardPdf: school.positionOnReportCardPdf,
+      },
       academicYear: { label: year.label },
       term: { name: term.name, startDate: term.startDate, endDate: term.endDate },
       classArm: { name: arm.name },
@@ -388,6 +437,12 @@ export class ReportCardService {
         subjectsCount: card.subjectsCount,
         formTeacherComment: card.formTeacherComment,
         principalNote: card.principalNote,
+        // Written together at build: all three set, or all three null.
+        attendance:
+          card.attendanceDaysOpened === null || card.attendancePresent === null || card.attendanceAbsent === null
+            ? null
+            : { daysOpened: card.attendanceDaysOpened, present: card.attendancePresent, absent: card.attendanceAbsent },
+        promotionStatus: card.promotionStatus,
       },
       subjects,
     };
@@ -516,6 +571,10 @@ export const REPORT_CARD_SELECT = {
   subjectsCount: true,
   formTeacherComment: true,
   principalNote: true,
+  attendanceDaysOpened: true,
+  attendancePresent: true,
+  attendanceAbsent: true,
+  promotionStatus: true,
   pdfStatus: true,
   artifactUrl: true,
   generatedAt: true,
@@ -552,6 +611,10 @@ export function toReportCardDto(row: ReportCardRow): ReportCardDto {
     subjectsCount: row.subjectsCount,
     formTeacherComment: row.formTeacherComment,
     principalNote: row.principalNote,
+    attendanceDaysOpened: row.attendanceDaysOpened,
+    attendancePresent: row.attendancePresent,
+    attendanceAbsent: row.attendanceAbsent,
+    promotionStatus: row.promotionStatus,
     pdfStatus: row.pdfStatus,
     artifactUrl: row.artifactUrl,
     generatedAt: row.generatedAt,

@@ -16,6 +16,8 @@ import {
   Screen,
 } from "../../../../src/components/ui";
 import { FreshnessLabel } from "../../../../src/components/freshness-label";
+import { PrincipalRemark, ResultStanding } from "../../../../src/components/result-extras";
+import { positionLabel } from "../../../../src/lib/results/result-extras";
 
 // Phase 6 / Slice 4 — one released term, in full.
 //
@@ -30,10 +32,16 @@ import { FreshnessLabel } from "../../../../src/components/freshness-label";
 // it survives navigation, and the persister writes it to disk so it survives
 // a restart on a phone with no signal.
 //
-// Position is deliberately absent from this screen. The API returns null for
-// it while FAMILY_VISIBLE_POSITION is false, so rendering a "Position" row
-// would show a permanent em-dash and imply the school failed to fill it in.
-// When that flag flips, the row is added here in the same change.
+// Position appears only when the school shows it to families
+// (School.positionVisibleToFamilies, Phase 8 / CP6a); the API returns null
+// otherwise, and a null renders as no row at all — a permanent em-dash would
+// imply the school failed to fill it in.
+//
+// Note on D32 after CP6a: the CARD is frozen, but whether position is shown
+// is a school setting that can change later. A card already cached keeps the
+// answer it was fetched with until the cache is cleared; that is acceptable
+// for a display preference, and is why the setting's page says changes apply
+// "the next time they open their results" rather than instantly.
 
 /** 7350 → "73.50%". */
 function formatAverage(hundredths: number | null): string {
@@ -109,8 +117,18 @@ export default function ResultDetailScreen() {
                   <Label>Subjects</Label>
                   <Body>{result.subjectsCount ?? "—"}</Body>
                 </View>
+                {/* Only when the school shows position to families (CP6a);
+                    otherwise no metric at all, never a dash. */}
+                {positionLabel(result.overallPosition) ? (
+                  <View style={styles.metric}>
+                    <Label>Position</Label>
+                    <Body>{positionLabel(result.overallPosition)}</Body>
+                  </View>
+                ) : null}
               </View>
             </Card>
+
+            <ResultStanding result={result} />
 
             <Card>
               <Heading>Subjects</Heading>
@@ -126,6 +144,7 @@ export default function ResultDetailScreen() {
                     <View style={styles.subjectScore}>
                       <Body>{s.totalScore}</Body>
                       {s.letterGrade ? <Label>{s.letterGrade}</Label> : null}
+                      {positionLabel(s.subjectPosition) ? <Label>{positionLabel(s.subjectPosition)}</Label> : null}
                     </View>
                   </View>
                 ))
@@ -138,6 +157,8 @@ export default function ResultDetailScreen() {
                 <Body>{result.formTeacherComment}</Body>
               </Card>
             ) : null}
+
+            <PrincipalRemark result={result} />
           </>
         )}
       </ScrollView>

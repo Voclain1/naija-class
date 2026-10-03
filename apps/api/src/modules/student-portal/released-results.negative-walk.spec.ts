@@ -11,7 +11,6 @@ import { HttpExceptionFilter } from "../../common/http-exception.filter";
 import { createGuardianSession } from "../../common/auth/guardian-sessions";
 import { createStudentSession } from "../../common/auth/student-sessions";
 import { REDIS_AUTH_CLIENT } from "../../common/auth/redis-auth.provider";
-import { FAMILY_VISIBLE_POSITION } from "../report-cards/released-results.service";
 import * as password from "../../common/auth/password";
 import { PortalStudentsModule } from "../portal-students/portal-students.module";
 import { StudentPortalModule } from "./student-portal.module";
@@ -222,6 +221,10 @@ describe("Released results — negative walk (Phase 6 / Slice 4)", () => {
             subjectsCount: 5,
             formTeacherComment: "A good term.",
             principalNote: "Well done to the whole class.",
+            attendanceDaysOpened: 60,
+            attendancePresent: 58,
+            attendanceAbsent: 2,
+            promotionStatus: "PROMOTED",
             ...(status === "RELEASED" ? { releasedAt: new Date() } : {}),
           },
         });
@@ -336,6 +339,14 @@ describe("Released results — negative walk (Phase 6 / Slice 4)", () => {
     expect(res.body.data[0].termId).toBe(releasedTermId);
   });
 
+  it("1f. the card says what the paper says: principal's remark, attendance, promotion status (CP6a)", async () => {
+    const res = await asStudent(adaToken, `/me/results/${releasedTermId}`);
+    expect(res.body.principalNote).toBe("Well done to the whole class.");
+    expect(res.body.attendance).toEqual({ daysOpened: 60, present: 58, absent: 2 });
+    expect(res.body.promotionStatus).toBe("PROMOTED");
+    // Test 4 pins the guardian to the identical body.
+  });
+
   // ----------------------------------------------------------------- 2 --
   it("2. a student's list never contains another family's child, same school", async () => {
     const res = await asStudent(adaToken, "/me/results");
@@ -431,22 +442,33 @@ describe("Released results — negative walk (Phase 6 / Slice 4)", () => {
   });
 
   // ----------------------------------------------------------------- 7 --
-  it("7. positions are withheld from both principals while the school switch is missing", async () => {
-    // The card carries overallPosition = 2. Both surfaces must return null
-    // while FAMILY_VISIBLE_POSITION is false — and, critically, must return
-    // the SAME thing, so the flag cannot be flipped for one principal only.
-    expect(FAMILY_VISIBLE_POSITION).toBe(false);
-    const child = await asStudent(adaToken, `/me/results/${releasedTermId}`);
-    const parent = await asGuardian(adaGuardianToken, `/students/${adaId}/results/${releasedTermId}`);
-    expect(child.body.overallPosition).toBeNull();
-    expect(parent.body.overallPosition).toBeNull();
+  it("7. positions follow the SCHOOL's switch — off by default, and always the same for both principals", async () => {
+    // The card carries overallPosition = 2. Phase 8 / CP6a replaced the
+    // hard-coded constant with School.positionVisibleToFamilies; what must not
+    // change is that the child and the parent always get the SAME answer, so
+    // the switch can never be on for one principal only.
+    const both = async () => {
+      const child = await asStudent(adaToken, `/me/results/${releasedTermId}`);
+      const parent = await asGuardian(adaGuardianToken, `/students/${adaId}/results/${releasedTermId}`);
+      return [child.body.overallPosition, parent.body.overallPosition];
+    };
+
+    // Default: hidden (D47) — a school that never touched the setting.
+    expect(await both()).toEqual([null, null]);
+
+    await basePrisma.school.update({ where: { id: schoolA }, data: { positionVisibleToFamilies: true } });
+    try {
+      expect(await both()).toEqual([2, 2]);
+    } finally {
+      await basePrisma.school.update({ where: { id: schoolA }, data: { positionVisibleToFamilies: false } });
+    }
+    expect(await both()).toEqual([null, null]);
   });
 
   it("8. the family payload omits the staff-only and PII fields", async () => {
     const res = await asStudent(adaToken, `/me/results/${releasedTermId}`);
     const body = JSON.stringify(res.body);
     for (const banned of [
-      "principalNote", // per-arm remark, not about this child
       "pdfStatus",
       "artifactUrl",
       "dateOfBirth",

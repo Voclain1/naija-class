@@ -57,7 +57,7 @@ const PAYLOAD = "<script>alert('xss')</script>";
 
 function fixture(overrides: Partial<ReportCardRenderData> = {}): ReportCardRenderData {
   return {
-    school: { name: PAYLOAD, motto: PAYLOAD, logoUrl: "https://cdn.example.com/logo.png" },
+    school: { name: PAYLOAD, motto: PAYLOAD, logoUrl: "https://cdn.example.com/logo.png", positionOnReportCardPdf: true },
     academicYear: { label: "2025/2026" },
     term: { name: "First Term", startDate: "2025-09-08", endDate: "2025-12-12" },
     classArm: { name: "JSS2 A" },
@@ -77,6 +77,8 @@ function fixture(overrides: Partial<ReportCardRenderData> = {}): ReportCardRende
       subjectsCount: 8,
       formTeacherComment: PAYLOAD,
       principalNote: PAYLOAD,
+      attendance: { daysOpened: 60, present: 57, absent: 3 },
+      promotionStatus: null,
     },
     subjects: [
       {
@@ -138,6 +140,8 @@ describe("renderReportCardHtml", () => {
           subjectsCount: null,
           formTeacherComment: null,
           principalNote: null,
+          attendance: null,
+          promotionStatus: null,
         },
       }),
     );
@@ -148,9 +152,49 @@ describe("renderReportCardHtml", () => {
 
   it("omits the logo img tag when logoUrl is null", () => {
     const html = renderReportCardHtml(
-      fixture({ school: { name: "Greenfield", motto: null, logoUrl: null } }),
+      fixture({ school: { name: "Greenfield", motto: null, logoUrl: null, positionOnReportCardPdf: true } }),
     );
     expect(html).not.toContain("<img");
     expect(html).not.toContain("class=\"motto\"");
+  });
+
+  // ---- Phase 8 / CP6a -----------------------------------------------------
+
+  it("drops position ENTIRELY when the school keeps it off paper — box, column header and cells", () => {
+    const on = renderReportCardHtml(fixture());
+    expect(on).toContain("Position in Class");
+    expect(on).toContain("<th>Pos.</th>");
+
+    const off = renderReportCardHtml(
+      fixture({ school: { name: "Greenfield", motto: null, logoUrl: null, positionOnReportCardPdf: false } }),
+    );
+    expect(off).not.toContain("Position in Class");
+    expect(off).not.toContain("Pos.");
+    expect(off).not.toContain('class="pos"');
+    expect(off).not.toContain("3rd"); // overall position
+    expect(off).not.toContain("1st"); // subject position
+  });
+
+  it("prints attendance as days present out of days opened, with the absences", () => {
+    const html = renderReportCardHtml(fixture());
+    expect(html).toContain("57 of 60 days");
+    expect(html).toContain("School opened 60 days this term. Present 57, absent 3.");
+  });
+
+  it("prints NO attendance at all when the arm was never marked — never '0 of 0'", () => {
+    const base = fixture();
+    const html = renderReportCardHtml(fixture({ rollup: { ...base.rollup, attendance: null } }));
+    expect(html).not.toContain("Attendance");
+    expect(html).not.toContain("School opened");
+    expect(html).not.toContain("0 of 0");
+  });
+
+  it("prints the promotion status in words on a final-term card, and nothing on any other", () => {
+    const base = fixture();
+    expect(renderReportCardHtml(base)).not.toContain("Promotion status");
+
+    const html = renderReportCardHtml(fixture({ rollup: { ...base.rollup, promotionStatus: "PROMOTED_ON_TRIAL" } }));
+    expect(html).toContain("Promotion status");
+    expect(html).toContain("Promoted on trial");
   });
 });

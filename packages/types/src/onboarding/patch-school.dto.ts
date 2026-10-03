@@ -26,6 +26,11 @@ import { onboardingStep2Schema } from "./step2-branding.dto.js";
 // it lives in SchoolsService.patchMe instead.
 const schoolSettingsSchema = z.object({
   subjectAttendanceEnabled: z.boolean(),
+  // Class position (Phase 8 / CP6a, §20.1, D47/D51). Two switches, deliberately:
+  // what families see in the portal and app, and what the printed report card
+  // carries. The first defaults OFF, the second ON.
+  positionVisibleToFamilies: z.boolean(),
+  positionOnReportCardPdf: z.boolean(),
   paystackSubaccountCode: z.string().trim().min(1, "subaccount code cannot be blank").nullable(),
   paystackPaymentsEnabled: z.boolean(),
   // Direct bank transfer (2026-09-11). All nullable so a school can clear what

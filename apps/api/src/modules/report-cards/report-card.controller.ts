@@ -2,6 +2,8 @@ import { Body, Controller, Get, HttpCode, Ip, Param, Patch, Post, Put, Query, Re
 import {
   buildReportCardsSchema,
   principalNoteUpdateSchema,
+  promotionStatusUpdateSchema,
+  type PromotionStatusUpdateInput,
   renderArmSchema,
   reportCardArmActionSchema,
   reportCardArmReopenSchema,
@@ -177,6 +179,21 @@ export class ReportCardsController {
     @CurrentUser() authCtx: AuthContext,
   ): Promise<ReportCardDetailDto> {
     return this.service.getById(authCtx, id);
+  }
+
+  // Per-card end-of-year decision (Phase 8 / CP6a, §20.3). owner/admin, final
+  // term, FORM_REVIEWED only — the principal's step, so it shares that
+  // permission. Declared before @Patch(":id").
+  @Patch(":id/promotion-status")
+  @Permissions("report-card.principal-approve")
+  async setPromotionStatus(
+    @Param("id") id: string,
+    @Body(new ZodValidationPipe(promotionStatusUpdateSchema)) dto: PromotionStatusUpdateInput,
+    @CurrentUser() authCtx: AuthContext,
+    @Ip() ip: string,
+    @Req() req: Request,
+  ): Promise<ReportCardDto> {
+    return this.workflow.setPromotionStatus(authCtx, id, dto, reqContext(ip, req));
   }
 
   // Per-card form-teacher comment. owner/admin OR the arm's form teacher;

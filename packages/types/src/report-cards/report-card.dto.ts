@@ -8,6 +8,16 @@ export type ReportCardStatusDto =
   | "PRINCIPAL_APPROVED"
   | "RELEASED";
 
+// Phase 8 / CP6a (§20.3, D52) — the end-of-year decision, final term only.
+export type PromotionStatusDto = "PROMOTED" | "PROMOTED_ON_TRIAL" | "REPEAT" | "GRADUATED";
+
+export const PROMOTION_STATUS_LABELS: Record<PromotionStatusDto, string> = {
+  PROMOTED: "Promoted",
+  PROMOTED_ON_TRIAL: "Promoted on trial",
+  REPEAT: "To repeat",
+  GRADUATED: "Graduated",
+};
+
 export type ReportCardPdfStatusDto = "PENDING" | "GENERATING" | "GENERATED" | "FAILED";
 
 // The materialized report-card row (rollup + workflow state + PDF pointer).
@@ -24,6 +34,13 @@ export interface ReportCardDto {
   subjectsCount: number | null;
   formTeacherComment: string | null;
   principalNote: string | null;
+  // Attendance snapshot taken at build (§20.2). All three null when the arm was
+  // never marked this term — "no record", which must not render as 0 days.
+  attendanceDaysOpened: number | null;
+  attendancePresent: number | null;
+  attendanceAbsent: number | null;
+  // Final term only (§20.3); null on every other term, and until it is set.
+  promotionStatus: PromotionStatusDto | null;
   pdfStatus: ReportCardPdfStatusDto;
   artifactUrl: string | null;
   generatedAt: string | Date | null;
@@ -75,6 +92,9 @@ export interface ReportCardBoardRowDto {
 
 export interface ReportCardBoardResponse {
   data: ReportCardBoardRowDto[];
+  // True when the term is the last of its academic year — the only term whose
+  // cards take a promotion status, and whose approval requires one (§20.3).
+  isFinalTerm: boolean;
 }
 
 // POST /report-cards/arm/build — result summary.

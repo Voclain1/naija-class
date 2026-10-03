@@ -6,7 +6,12 @@ import { useParams, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
-import type { ReportCardBoardRowDto, ReportCardStatusDto } from "@school-kit/types";
+import {
+  PROMOTION_STATUS_LABELS,
+  type PromotionStatusDto,
+  type ReportCardBoardRowDto,
+  type ReportCardStatusDto,
+} from "@school-kit/types";
 
 import { EmptyState, PageHeader } from "@/components/layout/page-primitives";
 import { FormComments } from "@/components/report-cards/form-comments";
@@ -29,6 +34,7 @@ import {
   releaseArm,
   renderReportCards,
   reopenArm,
+  updatePromotionStatus,
 } from "@/lib/report-cards/report-card-api";
 import { formatAverage, formatInt, formatOrdinal, formatStamp, fullStudentName } from "@/lib/report-cards/format";
 import { openInNewTab } from "@/lib/report-cards/open-in-new-tab";
@@ -42,6 +48,8 @@ type Status =
   | { kind: "ready"; armName: string; termId: string; termName: string };
 
 const POLL_MS = 4000;
+
+const PROMOTION_OPTIONS = Object.entries(PROMOTION_STATUS_LABELS) as [PromotionStatusDto, string][];
 
 // The workflow board for one class arm's report cards, shared between the
 // admin route (/report-cards/[armId]) and the teacher route (/teacher/
@@ -64,6 +72,10 @@ export function ReportCardBoard({ basePath }: { basePath: string }) {
   const [workflowBusy, setWorkflowBusy] = useState(false);
   const [reopenOpen, setReopenOpen] = useState(false);
   const [releaseOpen, setReleaseOpen] = useState(false);
+  // Phase 8 / CP6a — the final term of the year takes a promotion status per
+  // student, and its approval waits for all of them (D53).
+  const [isFinalTerm, setIsFinalTerm] = useState(false);
+  const [savingPromotion, setSavingPromotion] = useState<string | null>(null);
 
   // Resolve the arm name + term (manager: arms/terms APIs; form teacher: scope),
   // then load the board feed.
@@ -108,6 +120,7 @@ export function ReportCardBoard({ basePath }: { basePath: string }) {
 
       const board = await getReportCardBoard(termId, armId);
       setRows(board.data);
+      setIsFinalTerm(board.isFinalTerm);
       setStatus({ kind: "ready", armName, termId, termName });
     } catch (e) {
       if (e instanceof ApiError && e.status === 404) {
@@ -132,6 +145,7 @@ export function ReportCardBoard({ basePath }: { basePath: string }) {
       try {
         const board = await getReportCardBoard(termId, armId);
         setRows(board.data);
+        setIsFinalTerm(board.isFinalTerm);
       } catch {
         // Transient; the next poll tick (or a manual reload) recovers.
       }
@@ -163,6 +177,8 @@ export function ReportCardBoard({ basePath }: { basePath: string }) {
     return p === "GENERATING" || (p === "PENDING" && r.reportCard.status === "RELEASED");
   }).length;
   const failedCount = rows.filter((r) => r.reportCard.pdfStatus === "FAILED").length;
+  const promotionMissing = isFinalTerm ? rows.filter((r) => r.reportCard.promotionStatus === null).length : 0;
+  const promotionEditable = isFinalTerm && canManage && armStatus === "FORM_REVIEWED";
   // Drives the polling loop, the "Rendering…" banner, and the workflow-button
   // disable. True the instant release flips cards to GENERATING (optimistic).
   const shouldPoll = renderingCount > 0;
@@ -280,6 +296,20 @@ export function ReportCardBoard({ basePath }: { basePath: string }) {
     });
   }, [ready, armId, runWorkflow]);
 
+  // One student's promotion status. Updates the row in place from the server's
+  // reply rather than refetching the whole board on every choice.
+  const onPromotionChange = useCallback(async (reportCardId: string, value: PromotionStatusDto | null) => {
+    setSavingPromotion(reportCardId);
+    try {
+      const updated = await updatePromotionStatus(reportCardId, value);
+      setRows((prev) => prev.map((r) => (r.reportCard.id === reportCardId ? { ...r, reportCard: updated } : r)));
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : "Couldn't save the promotion status — try again.");
+    } finally {
+      setSavingPromotion(null);
+    }
+  }, []);
+
   const onRelease = useCallback(() => {
     if (!ready) return;
     const termId = ready.termId;
@@ -369,7 +399,12 @@ export function ReportCardBoard({ basePath }: { basePath: string }) {
 
                 {/* Approve — FORM_REVIEWED (owner/admin). */}
                 {armStatus === "FORM_REVIEWED" && canManage && (
-                  <Button type="button" onClick={onApprove} disabled={workflowBusy || shouldPoll}>
+                  <Button
+                    type="button"
+                    onClick={onApprove}
+                    disabled={workflowBusy || shouldPoll || promotionMissing > 0}
+                    title={promotionMissing > 0 ? "Set a promotion status for every student first." : undefined}
+                  >
                     {workflowBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
                     Approve arm
                   </Button>
@@ -425,6 +460,22 @@ export function ReportCardBoard({ basePath }: { basePath: string }) {
               finish before the first poll tick, and slow 40-card batches. */}
           {armStatus && <WorkflowGuidance status={armStatus} canManage={canManage} isOwner={isOwner} />}
 
+          {/* Phase 8 / CP6a — the end-of-year decision. A tinted notice that
+              says the count in words; never an accent border (CLAUDE.md). */}
+          {promotionEditable && rows.length > 0 ? (
+            <p
+              className={
+                promotionMissing > 0
+                  ? "rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800"
+                  : "rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-800"
+              }
+            >
+              {promotionMissing > 0
+                ? `This is the last term of the year. Set a promotion status for every student before approving — ${promotionMissing} still to set.`
+                : "Every student has a promotion status. The arm can be approved."}
+            </p>
+          ) : null}
+
           {renderingCount > 0 ? (
             <div className="flex items-center gap-2 rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-800">
               <Loader2 className="h-4 w-4 animate-spin motion-reduce:animate-none" />
@@ -470,6 +521,8 @@ export function ReportCardBoard({ basePath }: { basePath: string }) {
                     <TableHead className="text-center">Total</TableHead>
                     <TableHead className="text-center">Average</TableHead>
                     <TableHead className="text-center">Position</TableHead>
+                    <TableHead className="text-center">Attendance</TableHead>
+                    {isFinalTerm ? <TableHead>Promotion</TableHead> : null}
                     <TableHead>Status</TableHead>
                     <TableHead>PDF</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
@@ -486,6 +539,40 @@ export function ReportCardBoard({ basePath }: { basePath: string }) {
                       <TableCell className="text-center tabular-nums">{formatInt(reportCard.overallTotal)}</TableCell>
                       <TableCell className="text-center tabular-nums">{formatAverage(reportCard.overallAverage)}</TableCell>
                       <TableCell className="text-center tabular-nums">{formatOrdinal(reportCard.overallPosition)}</TableCell>
+                      <TableCell className="text-center tabular-nums">
+                        {reportCard.attendanceDaysOpened === null
+                          ? "—"
+                          : `${reportCard.attendancePresent}/${reportCard.attendanceDaysOpened}`}
+                      </TableCell>
+                      {isFinalTerm ? (
+                        <TableCell>
+                          {promotionEditable ? (
+                            <select
+                              aria-label={`Promotion status for ${fullStudentName(student)}`}
+                              className="h-8 rounded-md border bg-background px-2 text-sm"
+                              value={reportCard.promotionStatus ?? ""}
+                              disabled={savingPromotion === reportCard.id}
+                              onChange={(e) =>
+                                void onPromotionChange(
+                                  reportCard.id,
+                                  e.target.value === "" ? null : (e.target.value as PromotionStatusDto),
+                                )
+                              }
+                            >
+                              <option value="">Choose…</option>
+                              {PROMOTION_OPTIONS.map(([value, label]) => (
+                                <option key={value} value={value}>
+                                  {label}
+                                </option>
+                              ))}
+                            </select>
+                          ) : reportCard.promotionStatus ? (
+                            PROMOTION_STATUS_LABELS[reportCard.promotionStatus]
+                          ) : (
+                            <span className="text-muted-foreground">Not set</span>
+                          )}
+                        </TableCell>
+                      ) : null}
                       <TableCell>
                         <WorkflowStatusBadge status={reportCard.status} />
                       </TableCell>

@@ -395,6 +395,88 @@ describe("ReportCardService (cp1 — build + reads)", () => {
     expect(detail.subjects[0]!.components.map((c) => c.score)).toEqual([15, 15, 50]);
   });
 
+  // =======================================================================
+  // Attendance snapshot (Phase 8c / CP6a, phase-8.md §20.2)
+  // =======================================================================
+
+  async function mark(
+    schoolId: string,
+    markedBy: string,
+    args: { studentId: string; armId: string; termId: string; date: string; status: "PRESENT" | "ABSENT" | "LATE" | "EXCUSED" },
+  ): Promise<void> {
+    await withTenant(schoolId, (db) =>
+      db.attendanceRecord.create({
+        data: {
+          schoolId,
+          studentId: args.studentId,
+          classArmId: args.armId,
+          termId: args.termId,
+          date: new Date(`${args.date}T00:00:00.000Z`),
+          status: args.status,
+          markedBy,
+        },
+      }),
+    );
+  }
+
+  async function attendanceOf(schoolId: string, studentId: string, termId: string) {
+    return withTenant(schoolId, (db) =>
+      db.reportCard.findUniqueOrThrow({
+        where: { schoolId_studentId_termId: { schoolId, studentId, termId } },
+        select: { attendanceDaysOpened: true, attendancePresent: true, attendanceAbsent: true },
+      }),
+    );
+  }
+
+  it("build snapshots attendance with the /attendance/summary rule, by student-term, days opened by arm", async () => {
+    const { schoolId, ownerId } = await makeSchool("att");
+    const armId = await makeArm(schoolId, "att");
+    const otherArm = await makeArm(schoolId, "att-other");
+    const { yearId, termId } = await makeYearTerm(schoolId, "att");
+    const a = await enrollStudent(schoolId, { armId, termId, yearId, suffix: "att-a" });
+    const b = await enrollStudent(schoolId, { armId, termId, yearId, suffix: "att-b" });
+
+    // Four days the arm was marked.
+    const days = ["2025-09-15", "2025-09-16", "2025-09-17", "2025-09-18"];
+    const statusesA = ["PRESENT", "LATE", "ABSENT", "EXCUSED"] as const;
+    for (const [i, date] of days.entries()) {
+      await mark(schoolId, ownerId, { studentId: a, armId, termId, date, status: statusesA[i]! });
+      await mark(schoolId, ownerId, { studentId: b, armId, termId, date, status: "PRESENT" });
+    }
+    // b was in another arm earlier in the same term: those days are still b's
+    // term, but they are not days THIS arm opened.
+    await mark(schoolId, ownerId, { studentId: b, armId: otherArm, termId, date: "2025-09-08", status: "PRESENT" });
+
+    await service.build(ctx(schoolId, ownerId), { termId, classArmId: armId }, reqCtx);
+
+    // PRESENT + LATE attended; ABSENT + EXCUSED not (Phase 2 Q7 policy i).
+    expect(await attendanceOf(schoolId, a, termId)).toEqual({
+      attendanceDaysOpened: 4,
+      attendancePresent: 2,
+      attendanceAbsent: 2,
+    });
+    expect(await attendanceOf(schoolId, b, termId)).toEqual({
+      attendanceDaysOpened: 4,
+      attendancePresent: 5,
+      attendanceAbsent: 0,
+    });
+  });
+
+  it("an arm never marked has NO attendance snapshot — null, not zero", async () => {
+    const { schoolId, ownerId } = await makeSchool("att-none");
+    const armId = await makeArm(schoolId, "att-none");
+    const { yearId, termId } = await makeYearTerm(schoolId, "att-none");
+    const s = await enrollStudent(schoolId, { armId, termId, yearId, suffix: "att-none" });
+
+    await service.build(ctx(schoolId, ownerId), { termId, classArmId: armId }, reqCtx);
+
+    expect(await attendanceOf(schoolId, s, termId)).toEqual({
+      attendanceDaysOpened: null,
+      attendancePresent: null,
+      attendanceAbsent: null,
+    });
+  });
+
   it("cross-tenant: School A cannot read School B's report card (404)", async () => {
     const a = await makeSchool("xtenant-a");
     const b = await makeSchool("xtenant-b");

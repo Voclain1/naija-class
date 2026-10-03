@@ -5,6 +5,7 @@
 // endpoints. cp3 (this) wires the admin/form-teacher UI to all of them.
 
 import type {
+  PromotionStatusDto,
   BuildReportCardsResultDto,
   PrincipalNoteResultDto,
   RenderArmResultDto,
@@ -122,5 +123,17 @@ export function updatePrincipalNote(termId: string, classArmId: string, principa
   return apiFetch<PrincipalNoteResultDto>("/report-cards/arm/principal-note", {
     method: "PUT",
     body: { termId, classArmId, principalNote },
+  });
+}
+
+// PATCH /report-cards/:id/promotion-status (Phase 8 / CP6a) — the end-of-year
+// decision for one student. owner/admin, final term, FORM_REVIEWED only. null clears.
+export function updatePromotionStatus(
+  reportCardId: string,
+  promotionStatus: PromotionStatusDto | null,
+): Promise<ReportCardDto> {
+  return apiFetch<ReportCardDto>(`/report-cards/${reportCardId}/promotion-status`, {
+    method: "PATCH",
+    body: { promotionStatus },
   });
 }

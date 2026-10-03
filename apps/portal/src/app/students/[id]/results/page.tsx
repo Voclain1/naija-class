@@ -105,7 +105,11 @@ export default function ResultsPage() {
             <section className="flex flex-col gap-3" aria-label="Released report cards">
               {state.results.map((result) => (
                 <article key={result.reportCardId} className="rounded-lg border bg-card p-4 shadow-sm">
-                  <h2 className="font-semibold">{result.termName}</h2>
+                  <h2 className="font-semibold">
+                    <Link href={`/students/${params.id}/results/${result.termId}`} className="hover:underline">
+                      {result.termName}
+                    </Link>
+                  </h2>
                   <p className="text-sm text-muted-foreground">{result.academicYearLabel}</p>
                   <dl className="mt-3 grid grid-cols-3 gap-3 text-sm">
                     <div><dt className="text-muted-foreground">Average</dt><dd>{formatAverage(result.overallAverage)}</dd></div>

@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import type { ReportCardSubjectRowDto } from "./report-card.dto.js";
+import type { PromotionStatusDto, ReportCardSubjectRowDto } from "./report-card.dto.js";
 
 // POST /report-cards/arm/render — enqueue a per-card PDF render job. By default
 // renders EVERY card in (term, arm); the optional `reportCardId` narrows the
@@ -31,7 +31,15 @@ export interface ReportCardPdfUrlDto {
 // per-subject breakdown + school/term/student metadata. EVERY user-controlled
 // field is escaped via esc() in the template.
 export interface ReportCardRenderData {
-  school: { name: string; motto: string | null; logoUrl: string | null };
+  school: {
+    name: string;
+    motto: string | null;
+    logoUrl: string | null;
+    // School.positionOnReportCardPdf (Phase 8 / CP6a, D51). When false the PDF
+    // drops the "Position in Class" box AND the per-subject position column —
+    // removed, not printed as a dash, so the card does not look incomplete.
+    positionOnReportCardPdf: boolean;
+  };
   academicYear: { label: string };
   term: { name: string; startDate: string | Date; endDate: string | Date };
   classArm: { name: string };
@@ -51,6 +59,10 @@ export interface ReportCardRenderData {
     subjectsCount: number | null;
     formTeacherComment: string | null;
     principalNote: string | null;
+    // CP6a (§20.2) — null when the arm was never marked: no line, never "0".
+    attendance: { daysOpened: number; present: number; absent: number } | null;
+    // CP6a (§20.3) — final term only.
+    promotionStatus: PromotionStatusDto | null;
   };
   subjects: ReportCardSubjectRowDto[];
 }

@@ -284,6 +284,30 @@ describe("SchoolsService (Slice 6)", () => {
       });
     });
 
+    it("patchMe — the two class-position switches: hidden from families and printed on paper by default, each set independently, audited", async () => {
+      const { authCtx, schoolId } = await createOwnedSchool("patch-position");
+
+      // Defaults (Phase 8 / CP6a, D47/D51): a school that never touches them
+      // keeps printing position on its PDFs and keeps it off the screens.
+      const before = await schoolsService.findMe(authCtx);
+      expect(before.positionVisibleToFamilies).toBe(false);
+      expect(before.positionOnReportCardPdf).toBe(true);
+
+      const shown = await schoolsService.patchMe(authCtx, { positionVisibleToFamilies: true }, ctx);
+      expect(shown.positionVisibleToFamilies).toBe(true);
+      expect(shown.positionOnReportCardPdf).toBe(true); // untouched
+
+      const offPaper = await schoolsService.patchMe(authCtx, { positionOnReportCardPdf: false }, ctx);
+      expect(offPaper.positionVisibleToFamilies).toBe(true); // untouched
+      expect(offPaper.positionOnReportCardPdf).toBe(false);
+
+      await withTenant(schoolId, async (db) => {
+        const audits = await db.auditLog.findMany({ where: { schoolId, action: "school.update" } });
+        const changed = audits.flatMap((a) => (a.metadata as { changed?: string[] }).changed ?? []);
+        expect(changed).toEqual(expect.arrayContaining(["positionVisibleToFamilies", "positionOnReportCardPdf"]));
+      });
+    });
+
     it("patchMe as admin — succeeds (owner+admin policy)", async () => {
       const { schoolId } = await createOwnedSchool("patch-admin");
       const { authCtx: adminCtx } = await createAdminUser(schoolId, "patch-admin");
