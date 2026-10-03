@@ -83,6 +83,12 @@ export const NAV_ITEMS: NavItem[] = [
   // shell's own Gradebook and never see this sidebar.
   { label: "Gradebook", href: "/gradebook", icon: ClipboardList, enabled: true, requiredPermission: "assessment-score.create" },
   { label: "Report Cards", href: "/report-cards", icon: FileText, enabled: true, requiredPermission: "report-card.read" },
+  // Phase 8c / CP6b (docs/modules/phase-8.md §21). Promoted from "Coming soon"
+  // on 2026-10-05: the feature shipped in #365/#366, but this entry kept saying
+  // "Coming soon" for a feature schools already had. It lands on the PIN cards
+  // page — the school's side of the checker; the checker itself is the public
+  // portal page families use. Gated on result-pin.read: owner/admin only.
+  { label: "Result Checker", href: "/report-cards/pins", icon: FileSearch, enabled: true, requiredPermission: "result-pin.read" },
   // Lesson plans (Phase 5 / slice 2, shipped). The admin sidebar previously
   // listed this under "Coming soon" pointing at /lesson-notes — a route that
   // NEVER EXISTED. The feature shipped in the TEACHER shell as
@@ -137,5 +143,4 @@ export const NAV_ITEMS: NavItem[] = [
 
 export const LATER_PHASE_ITEMS: NavItem[] = [
   { label: "AI Tutor", href: "/ai-tutor", icon: Sparkles, enabled: false },
-  { label: "Result Checker", href: "/result-checker", icon: FileSearch, enabled: false },
 ];

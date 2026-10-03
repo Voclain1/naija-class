@@ -488,22 +488,26 @@ Three of the admin sidebar's "Coming soon" features, each live in production:
 
 Split after CP4 on 2026-09-15 (phase-8.md D46). The close-out (phase-8.md §19) records what shipped, what is verified in production, and that no school has used the new features yet.
 
-**Phase 8c — assessments & exams, report card completeness, result checker (not started)**
-The remaining Phase 8 checkpoints, split out on 2026-09-15 (phase-8.md D46):
-- **Assessments & Exams v1** (CP5);
-- **report card completeness** (CP6a): position setting, attendance snapshot, promotion status;
-- **the Result Checker** (CP6b): free via the portals or offline batch PINs, the school's choice per release.
+**Phase 8c — assessments & exams, report card completeness, result checker — SHIPPED (closed 2026-10-05)**
+The remaining Phase 8 checkpoints, split out on 2026-09-15 (phase-8.md D46), all merged:
+- **Report card completeness** (CP6a, #364): position settings, an attendance snapshot, promotion status with an approval gate.
+- **Result Checker** (CP6b, #365–#366): free through the portals, or offline with batch PINs, the school's choice per release; a public checker page; per-client rate limits.
+- **Assessments & Exams v1** (CP5, #367–#369):
+  - marks typed out of any total, which the server scales;
+  - cumulative year results;
+  - a question bank with AI drafting (DRAFT only, approved by the subject teacher or an admin);
+  - exam papers with versions A–D, exported as PDF (browser print), Word and CSV.
 
-Estimated at 20–32 working days in the original units; phase-8.md §19.4 records why those units overstated elapsed time for Phase 8. Before each plan-first it needs Q15 (CP5), Q24 (CP6a), and Q20/Q22/Q28 (CP6b). Its investigation and decisions stay in `docs/modules/phase-8.md` (§9, §10). It is lettered after 8b but does not wait for it: 8c is unblocked and 8b is not.
+As-built notes are in phase-8.md §20.6, §21.8–21.9 and §22.1a–22.3a. Online exam delivery (CBT) is not part of it; see below.
 
 **Phase 8b — AI Tutor**
 The curriculum-grounded student tutor, carried from Phase 7 (`docs/modules/phase-8.md` §6). Its engineering is estimated at 25–40 working days. It cannot begin until the tutor's NDPR position and the PII hard rule (phase-8.md Q9, Q10) are resolved. It cannot reach any student until the dedicated safeguarding workstream (phase-8.md §6.4) completes; that workstream is unestimated and not engineering-led.
 
 **CBT / online exams — its own future phase (not yet numbered)**
-Deliberately deferred beyond Phase 8 (phase-8.md D5), not dropped. The engineering reality is in `docs/deferred.md`, "CBT / online exams — capability assessment".
+Deliberately deferred beyond Phase 8 (phase-8.md D5), not dropped. Since 2026-10-03 (phase-8.md D59), it is planned as a separate delivery service with offline exam packs and a load-test gate, because exam season puts every school online at once. CP5's question bank and CSV export are its inputs. The engineering reality is in `docs/deferred.md`, "CBT / online exams — capability assessment".
 
 **Phase 9 — auxiliary modules (rolling)**
-Assignments (creation, submission, AI-assisted grading — moved here from Phase 8 on 2026-09-13, phase-8.md D14; originally Phase 6, whose student-portal half built the student principal it depends on), library, transport, hostel, behaviour, health, full analytics. Ship as schools ask for them.
+Assignments (submission and AI-assisted grading — the information-only homework board shipped 2026-09-26, `docs/modules/the-school-day.md` Part B; the rest moved here from Phase 8 on 2026-09-13, phase-8.md D14; originally Phase 6, whose student-portal half built the student principal it depends on), library, transport, hostel, behaviour, health, full analytics. Ship as schools ask for them.
 
 Estimated solo timeline with Claude Code: **3-4 months** to end of Phase 3 (first paying customer). **6 months** to end of Phase 5. The rest is iteration based on customer feedback. Note the Phase 5 figure held for what shipped, not for the original §7 component list — see phase-5.md §1 for the recalibration.
 

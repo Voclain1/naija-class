@@ -256,7 +256,7 @@ Format:
 
 - [x] ~~Per-school AI enablement has no UI and no endpoint~~ — **built before this script ran, which was the point.** `PATCH /platform-admin/schools/:schoolId/ai` plus a toggle on the super-admin school row shipped 2026-08-14 (PR #173): same guard, throttle and audit-row shape as `PATCH …/early-access`, with `ai_enabled` added to `platform_admin_list_schools()` so the toggle isn't a blind write. Kept here rather than deleted because the sequencing is the lesson: `packages/db/scripts/disable-ai-per-school.ts` closes the per-school gate on every existing school, and closing a gate with no sanctioned way to reopen it would have forced the first pilot enablement to be a hand-written `UPDATE` with no audit row. Build the re-open path first.
 
-- [ ] `School.aiEnabled` still `@default(true)` for newly created schools — the backfill above is a point-in-time fix on the existing population. Every school created after it (signup or `POST /platform-admin/schools`) arrives with AI on, so the population drifts back open one school at a time and the backfill has to be re-run. Deliberately NOT changed by that script: the default-true is a considered decision documented in `schema.prisma` beside `parentSummaryEnabled`'s deliberately-opposite default-false, and reversing it is a product call, not a backfill's business. The argument for flipping it got stronger once the item above shipped: enabling a school is now a one-click, audited platform-admin action, so defaulting new schools to `false` costs an operator one click on a school they were already looking at — rather than the hand-written SQL it would have cost before.
+- [x] **RESOLVED (verified 2026-10-05): `schema.prisma` now has `aiEnabled @default(false)`, so new schools start with AI off.** Original entry: `School.aiEnabled` still `@default(true)` for newly created schools — the backfill above is a point-in-time fix on the existing population. Every school created after it (signup or `POST /platform-admin/schools`) arrives with AI on, so the population drifts back open one school at a time and the backfill has to be re-run. Deliberately NOT changed by that script: the default-true is a considered decision documented in `schema.prisma` beside `parentSummaryEnabled`'s deliberately-opposite default-false, and reversing it is a product call, not a backfill's business. The argument for flipping it got stronger once the item above shipped: enabling a school is now a one-click, audited platform-admin action, so defaulting new schools to `false` costs an operator one click on a school they were already looking at — rather than the hand-written SQL it would have cost before.
 
 - [ ] Finance e2e (Playwright) coverage gap — the Finance restyle pass (Phase 1 of the design-system rollout, 2026-07-26: dashboard, invoices, debtors, expenses, payroll, settings/finance/discounts, settings/finance/fees) was verified via manual browser check and typecheck/lint only. No Playwright spec exercises the Finance module's golden paths (create invoice → record payment → collection rate updates; log expense → category totals; run payroll → payslip generation) the way `signup → onboard → first student → first payment` is covered for onboarding. This is money-movement UI, the highest-consequence surface in the app per CLAUDE.md's "Hard rules — Money" section, and a pure-CSS/markup restyle can still silently break a click target, a form submit, or a conditional render that a human eyeballing the page misses. Distinct from the restyle work itself (no functional changes were made) — tracked separately so it isn't lost once the visual diff is merged. Trigger: before Phase 5 (AI layer) work touches Finance data, or the first time a real payment-flow bug ships to production undetected — whichever comes first. Candidate first spec: the existing e2e harness's invitation-accept pattern, extended to log in as admin → create one invoice → record one payment → assert the dashboard's collection-rate figure updates.
 
@@ -728,7 +728,7 @@ Format:
   satisfied by the one-at-a-time rollout rather than by this item.
 
 ## Roadmap / strategy — REVISIT with live market research (not decided)
-- [ ] CBT / online exams (JAMB/WAEC/UTME prep) — competitors lead with
+- [ ] **Decided 2026-10-03 (phase-8.md D59): CBT is a separate future delivery service, with offline packs and a load-test gate. CP5 (#367–#369) built its inputs: the question bank and the CSV export.** CBT / online exams (JAMB/WAEC/UTME prep) — competitors lead with
   this. Decide in/defer based on pilot-school demand + current market.
   **A full capability assessment (what exists, what's missing, the
   two-question clarification to put to any lead who asks, and time
@@ -1085,7 +1085,7 @@ Format:
   enrollment-history/movement table (one row per arm placement with an
   effective-date range), not a column on Enrollment.
 
-- [ ] Receipt branding — HTML receipts (Phase 3 / Slice 7) contain no school
+- [x] **DONE — see `docs/modules/branded-receipts.md`: receipts now carry the school name and logo (embedded in the file, `apps/api/src/modules/payments/receipt.ts`). Closed 2026-10-05.** Original entry: Receipt branding — HTML receipts (Phase 3 / Slice 7) contain no school
   name, logo, student name, or term; they carry only the payment amount,
   receipt number, method, and date. Add these fields to the receipt template
   as a fast-follow once pilot feedback confirms the minimal receipt is
@@ -1347,7 +1347,7 @@ alone. Cross-references to `docs/ARCHITECTURE.md` are given where a phase
 already sketches the feature, so a future plan-first has a starting point,
 not a commitment to that phase's exact shape or timing.
 
-- [ ] Lesson notes and lesson plans — ARCHITECTURE.md §6.5 (Academic
+- [x] **DONE — shipped as the Phase 5 lesson plan generator (`/teacher/lesson-plans`), grounded in the school's scheme of work since Phase 7. Closed 2026-10-05.** Original entry: Lesson notes and lesson plans — ARCHITECTURE.md §6.5 (Academic
   management, Phase 2 per §9) already names both explicitly ("Weekly lesson
   plans with learning objectives," "Lesson notes (delivered content)"), plus
   an AI hook in §7 ("generate lesson plan from a topic").
@@ -1369,7 +1369,7 @@ not a commitment to that phase's exact shape or timing.
   is a distinct product idea from either, not a documented feature. Needs
   its own decision on scope before it maps to a phase.
 
-- [ ] Timetable generator — ARCHITECTURE.md §6.5 lists a "Visual timetable
+- [x] **DONE — shipped as Phase 8 CP3/CP4 (`docs/modules/phase-8.md` §17–18): a builder with teacher-clash detection, published snapshots for families, and "My timetable" for teachers. Closed 2026-10-05.** Original entry: Timetable generator — ARCHITECTURE.md §6.5 lists a "Visual timetable
   builder with conflict detection" under Academic management, but this
   file's own "Roadmap / strategy" section (above) separately lists
   "Timetable, transport, library, hostel — Phase 9." The two docs disagree
@@ -1398,7 +1398,7 @@ not a commitment to that phase's exact shape or timing.
   per §9. Reminder per CLAUDE.md's AI hard rules: any such feature needs a
   teacher-approval gate before finalizing — never auto-final on grades.
 
-- [ ] Homework and assignments — ARCHITECTURE.md §6.8 (Assignments and
+- [x] **PARTLY DONE — the information-only homework board shipped 2026-09-26 (`docs/modules/the-school-day.md` Part B). Submission, marking and AI-assisted grading stay in Phase 9 (ARCHITECTURE §9). Closed here 2026-10-05; the open half is tracked there.** Original entry: Homework and assignments — ARCHITECTURE.md §6.8 (Assignments and
   homework) is fully specified (creation, submission incl. file/photo
   upload, auto-grading for MCQ, AI-assisted essay grading with teacher
   approval, plagiarism flag). §9's original "Phase 6 — assignments and
@@ -1408,7 +1408,7 @@ not a commitment to that phase's exact shape or timing.
   2026-09-13** (`docs/modules/phase-8.md` D14), when Phase 8 was taken by the
   sidebar's "Coming soon" features. Nothing built yet.
 
-- [ ] Exam management, including AI-generated exam questions — overlaps two
+- [x] **DONE — shipped as Phase 8c CP5 (#367–#369, `docs/modules/phase-8.md` §22): marks out of any total, cumulative results, a question bank with AI drafting, and exam papers with versions A–D and PDF/Word/CSV export. Online delivery (CBT) is D59. Closed 2026-10-05.** Original entry: Exam management, including AI-generated exam questions — overlaps two
   existing docs: ARCHITECTURE.md §6.7 (Assessment and grading, Phase 2) for
   the exam-recording side, and §7's "Quiz mode: generates MCQ + short-answer
   questions with mark scheme" (Phase 5 AI layer) for the generation side.
@@ -1428,7 +1428,7 @@ not a commitment to that phase's exact shape or timing.
   idea; would likely need a print-layout/PDF-render capability similar to
   report cards' (`RenderService`) but no existing module claims it.
 
-- [ ] Result checker (likely a public/parent-facing lookup, no login) —
+- [x] **DONE — shipped as Phase 8c CP6b (#365–#366, `docs/modules/phase-8.md` §21): portal access or batch PINs per release, a public checker page, and HMAC-hashed PINs. Closed 2026-10-05.** Original entry: Result checker (likely a public/parent-facing lookup, no login) —
   adjacent to but distinct from ARCHITECTURE.md §6.18 Parent portal's
   "Child dashboard" (which is authenticated). A public lookup-by-reference-
   number flow (WAEC-checker-style) isn't specified anywhere and raises its
@@ -1473,7 +1473,7 @@ not a commitment to that phase's exact shape or timing.
   SMS primacy"). Revisit trigger already documented there: once/if WhatsApp
   Business API approval lands. This entry is a pointer, not a new item.
 
-- [ ] Event calendar — ARCHITECTURE.md §6.16 (Events and calendar) is
+- [x] **DONE — shipped as Phase 8 CP1 (`docs/modules/phase-8.md` §15) on staff web, the parent portal and mobile. Parent RSVP and push reminders were not part of it. Closed 2026-10-05.** Original entry: Event calendar — ARCHITECTURE.md §6.16 (Events and calendar) is
   specified (term calendar with holidays/breaks, events, parent RSVP, push
   reminders) and fell under Phase 9 ("auxiliary modules — rolling"; renumbered from
   Phase 7 on 2026-08-15) per
@@ -1920,7 +1920,7 @@ complaint about the grid.
 
 ### Known debt, acknowledged not actioned (2026-08-09)
 
-- [ ] **SECURITY DEFINER table-shape review is overdue by 8 functions.** The
+- [x] **DONE — the review was carried out on 2026-08-16 (at 20) and again on 2026-09-23 (at 23); CLAUDE.md records both. The next is due at 26. Closed 2026-10-05.** Original entry: **SECURITY DEFINER table-shape review is overdue by 8 functions.** The
   "+3" cadence trigger set at the Phase 3 / Slice 12 audit came due at 8; the
   count is now **16**, and CLAUDE.md's own inventory notes it as due-not-done
   at 12, 15 and 16. Nothing is broken — `security-definer-inventory.spec.ts`
@@ -1933,7 +1933,7 @@ complaint about the grid.
   function, so the count stays at 16. Trigger: schedule it as its own session;
   it will not happen as a rider on a feature PR, which is precisely why it has
   slipped four times.
-- [ ] **`docs/journal/` stops at 2026-07-24.** Unjournaled since: the platform
+- [ ] **`docs/journal/` stops at 2026-09-06** (refreshed 2026-10-05; it originally read 2026-07-24). Unjournaled since then: Phase 8 CP2–CP4, the school day, Phase 8c (CP5, CP6a, CP6b). Original note: **`docs/journal/` stops at 2026-07-24.** Unjournaled since: the platform
   super-admin surface (2026-08-02), school provisioning (2026-08-07), the
   onboarding-nudge email (2026-08-08), the admin dashboard restyle, and this
   sweep. Given how much of this project's real decision history lives in the
@@ -2859,7 +2859,7 @@ blocker. No change proposed.
 
 ## Discount-rule Deactivate is not permission-gated (captured 2026-09-01)
 
-- [ ] Gate the discounts page's **Deactivate** row action on the
+- [x] **DONE 2026-10-05 — `canDeactivateDiscount` in `lib/finance/discount-deactivate.ts`. It uses the shared `lib/auth/has-permission.ts` rather than an eleventh copy, requires the permissions argument, fails closed on an empty grant and admits `"*"`; the spec covers all five cases.** Original entry: Gate the discounts page's **Deactivate** row action on the
   `discount-rule.deactivate` permission, using PR #241's exact pattern.
 
   **Found while** verifying the discount-rule deactivation path in a real

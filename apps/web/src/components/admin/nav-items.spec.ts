@@ -72,6 +72,35 @@ describe("admin nav items", () => {
     expect(LATER_PHASE_ITEMS.some((i) => i.label === "Timetable")).toBe(false);
   });
 
+  it("lists Result Checker as live, on the PIN cards page, owner/admin only (Phase 8c CP6b)", () => {
+    // It shipped while this entry still said "Coming soon" — the gap this
+    // spec exists to close for every promoted item.
+    const item = NAV_ITEMS.find((i) => i.label === "Result Checker");
+    expect(item).toBeDefined();
+    expect(item!.enabled).toBe(true);
+    expect(item!.href).toBe("/report-cards/pins");
+    expect(item!.requiredPermission).toBe("result-pin.read");
+    expect(LATER_PHASE_ITEMS.some((i) => i.label === "Result Checker")).toBe(false);
+  });
+
+  it("lists the question bank and exam papers as live, replacing \"Assessments & Exams\" (Phase 8c CP5)", () => {
+    expect(NAV_ITEMS.find((i) => i.label === "Question bank")).toMatchObject({
+      enabled: true,
+      href: "/teacher/question-bank",
+      requiredPermission: "question.read",
+    });
+    expect(NAV_ITEMS.find((i) => i.label === "Exam papers")).toMatchObject({
+      enabled: true,
+      href: "/teacher/exam-papers",
+      requiredPermission: "exam-paper.read",
+    });
+    expect(LATER_PHASE_ITEMS.some((i) => /exam/i.test(i.label))).toBe(false);
+  });
+
+  it("leaves only genuinely unbuilt features under Coming soon", () => {
+    expect(LATER_PHASE_ITEMS.map((i) => i.label)).toEqual(["AI Tutor"]);
+  });
+
   it("lists Gradebook as live, gated on score entry, which owner and admin hold and bursar does not", () => {
     const item = NAV_ITEMS.find((i) => i.label === "Gradebook");
     expect(item).toBeDefined();
