@@ -146,10 +146,14 @@ test("questions are drafted, approved and revised without changing approved word
     await aiDraft.getByRole("button", { name: "Discard" }).click();
     await expect(page.getByRole("tab", { name: "Drafts to review (1)" })).toBeVisible();
 
-    // The school's AI is off (the default): drafting says so, and saves nothing.
+    // AI is unavailable here — switched off for the school (the default) or,
+    // on a deployment with no model key such as CI, not configured at all.
+    // Either way drafting says so, and saves nothing.
     await page.getByLabel("Topic", { exact: true }).fill("Equations of motion");
     await page.getByRole("button", { name: "Draft questions" }).click();
-    await expect(page.getByText("AI features are disabled for this school.")).toBeVisible();
+    await expect(
+      page.getByText(/^(AI features are disabled for this school|AI is not configured on this deployment)\.$/),
+    ).toBeVisible();
     expect(await withTenant(admin.schoolId, (db) => db.question.count({ where: { topic: "Equations of motion" } }))).toBe(0);
 
     // ---- 4. The subject teacher, and scope -------------------------------------
