@@ -150,6 +150,17 @@ export {
 } from "./prompts/report-card-form-comment.js";
 
 export {
+  EXAM_QUESTIONS_PROMPT,
+  EXAM_QUESTIONS_SCHEMA,
+  EXAM_QUESTIONS_SYSTEM,
+  renderExamQuestionsPrompt,
+  type ExamQuestionDifficulty,
+  type ExamQuestionType,
+  type ExamQuestionsGroundingChunk,
+  type ExamQuestionsInput,
+} from "./prompts/exam-questions.js";
+
+export {
   STUDENT_LIST_EXTRACTION_PROMPT,
   STUDENT_LIST_EXTRACTION_SCHEMA,
   STUDENT_LIST_EXTRACTION_SYSTEM,

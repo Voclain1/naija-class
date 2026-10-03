@@ -6,6 +6,7 @@ import {
   ClipboardList,
   Contact,
   FileBarChart,
+  FileQuestion,
   FileSearch,
   FileText,
   GraduationCap,
@@ -95,6 +96,11 @@ export const NAV_ITEMS: NavItem[] = [
   // (teacher)/layout.tsx has NO role gate — a bare RequireAuth — so an
   // admin can open it; that is what makes this viable at all.
   { label: "Lesson plans", href: "/teacher/lesson-plans", icon: NotebookText, enabled: true, requiredPermission: "lesson-plan.read" },
+  // Phase 8c / CP5b (docs/modules/phase-8.md §22.2). Links across shells into
+  // the teacher shell, exactly as Lesson plans above does and for the same
+  // reasons. Owner/admin see every subject there; "Assessments & Exams" under
+  // Coming soon stays until exam papers (CP5c) ship.
+  { label: "Question bank", href: "/teacher/question-bank", icon: FileQuestion, enabled: true, requiredPermission: "question.read" },
   // Phase 5 / Slice 8. Gated on insight.read, which admin/owner hold and
   // bursar and teacher do not — these reports rank classes and subjects
   // against each other across the school, which is management information

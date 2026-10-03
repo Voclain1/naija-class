@@ -26,6 +26,7 @@ import {
   INSIGHTS_ROUTER_SYSTEM,
   buildInsightsRouterSchema,
 } from "../../src/prompts/insights.js";
+import { EXAM_QUESTIONS_SYSTEM } from "../../src/prompts/exam-questions.js";
 import { PARENT_WEEKLY_SUMMARY_SYSTEM } from "../../src/prompts/parent-weekly-summary.js";
 import { REPORT_CARD_COMMENT_SYSTEM } from "../../src/prompts/report-card-comment.js";
 import { REPORT_CARD_FORM_COMMENT_SYSTEM } from "../../src/prompts/report-card-form-comment.js";
@@ -104,6 +105,7 @@ export const promptQualityCase: EvalCase = {
     const results = [
       ...auditSystemPrompt("lesson-plan", LESSON_PLAN_SYSTEM),
       ...auditSystemPrompt("lesson-quiz", LESSON_QUIZ_SYSTEM),
+      ...auditSystemPrompt("exam-questions", EXAM_QUESTIONS_SYSTEM),
       ...auditSystemPrompt("report-card-comment", REPORT_CARD_COMMENT_SYSTEM),
       ...auditSystemPrompt("report-card-form-comment", REPORT_CARD_FORM_COMMENT_SYSTEM),
       ...auditSystemPrompt("parent-weekly-summary", PARENT_WEEKLY_SUMMARY_SYSTEM),

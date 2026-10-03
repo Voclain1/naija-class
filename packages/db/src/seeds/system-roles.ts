@@ -19,6 +19,7 @@ import {
   TIMETABLE_OWN_READ_PERMISSIONS,
   PROMOTION_PERMISSIONS,
   RESULT_PIN_PERMISSIONS,
+  QUESTION_BANK_PERMISSIONS,
   OWNER_ONLY_PERMISSIONS,
   PHASE_0_PERMISSIONS,
   PHASE_1_PERMISSIONS,
@@ -120,6 +121,9 @@ const ADMIN_PERMISSIONS: readonly string[] = [
   // only. Kept IN SYNC with the idempotent append in
   // prisma/migrations/20261003120000_result_checker.
   ...RESULT_PIN_PERMISSIONS,
+  // Phase 8c / CP5b — the question bank. Kept IN SYNC with the idempotent
+  // append in prisma/migrations/20261004120000_cp5b_question_bank.
+  ...QUESTION_BANK_PERMISSIONS,
 ];
 
 // System roles are global (school_id = NULL, is_system = true) and referenced
@@ -200,6 +204,11 @@ export const SYSTEM_ROLE_SEEDS: SystemRoleSeed[] = [
       // timetable.read: the whole-school builder stays owner/admin. Kept IN SYNC
       // with prisma/migrations/20260915120100_phase_8_cp4_timetable_own_read_permission.
       ...TIMETABLE_OWN_READ_PERMISSIONS,
+      // Phase 8c / CP5b — the question bank. All four, held by the service to
+      // the subjects the teacher teaches at each level (D62: the subject
+      // teacher approves). Kept IN SYNC with
+      // prisma/migrations/20261004120000_cp5b_question_bank.
+      ...QUESTION_BANK_PERMISSIONS,
     ],
   },
   // Phase 3 / Slice 15 — `bursar` role wire-up + RBAC close-out. Finance-only

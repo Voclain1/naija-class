@@ -26,6 +26,7 @@
 import { MODELS, type ModelId } from "../models.js";
 // Runtime import; lesson-plan.ts imports only the TYPE back from here, and
 // type-only imports are erased at compile time, so there is no runtime cycle.
+import { EXAM_QUESTIONS_PROMPT } from "./exam-questions.js";
 import { INSIGHTS_NARRATION_PROMPT, INSIGHTS_ROUTER_PROMPT } from "./insights.js";
 import { LESSON_PLAN_PROMPT, LESSON_QUIZ_PROMPT } from "./lesson-plan.js";
 import { PARENT_WEEKLY_SUMMARY_PROMPT } from "./parent-weekly-summary.js";
@@ -64,6 +65,8 @@ export const PROMPTS = {
   PARENT_WEEKLY_SUMMARY: PARENT_WEEKLY_SUMMARY_PROMPT,
   INSIGHTS_ROUTER: INSIGHTS_ROUTER_PROMPT,
   INSIGHTS_NARRATION: INSIGHTS_NARRATION_PROMPT,
+  // Phase 8c / CP5b — question bank drafting. Output is DRAFT questions only.
+  EXAM_QUESTIONS: EXAM_QUESTIONS_PROMPT,
   // The ONLY prompt permitted to send student PII to the model. See
   // CLAUDE.md's PII-bearing prompt allowlist and this prompt's own header
   // before touching it, and note the allowlist is one row long by design.

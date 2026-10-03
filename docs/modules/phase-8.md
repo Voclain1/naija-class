@@ -4663,6 +4663,93 @@ behind `assessment-score.create`, like the save.
   also write questions by hand. The bank is searchable by subject, level,
   topic and type.
 
+### 22.2a As built — CP5b (2026-10-04)
+
+Migration `20261004120000_cp5b_question_bank`. Two tables, `questions` and
+`question_options`, both with FORCE RLS on their own `school_id`
+(`question-bank-rls.spec.ts`). Four permissions in `QUESTION_BANK_PERMISSIONS`:
+`question.read`, `.write`, `.approve` and `.generate`. Admin and teacher hold
+all four and bursar none (pinned in `permissions-coverage.spec.ts`). No new
+SECURITY DEFINER function, so the count stays 23.
+
+**Lifecycle, in the database as well as the service.**
+- `questions_approval_check`: a DRAFT has no approver; anything else must
+  have `approved_by` and `approved_at`. `questions_retired_check` ties
+  RETIRED to `retired_at`.
+- `question_options_one_correct_idx`, a partial unique index, makes a
+  second correct option impossible however a row is written. "At least one"
+  needs the whole set, so the service checks it (`findQuestionContentError`
+  in `@school-kit/types`, which the editor form uses too).
+- **Editing an approved question makes a new DRAFT with `supersedes_id`.**
+  The original stays APPROVED and in use until that draft is approved, and
+  only then is it RETIRED. This refines the plan's "retires the old one" on
+  edit: retiring at edit time would leave a gap in the bank while the
+  revision waited. `questions_one_open_revision_idx` allows one open
+  revision per question; a second edit gets `409 REVISION_OPEN`, naming the
+  draft to edit.
+- Drafts are discarded (deleted). Approved questions are retired, never
+  deleted, because a CP5c paper may cite them. `subject_id` and
+  `class_level_id` are `ON DELETE RESTRICT`, unlike lesson plans' CASCADE.
+
+**Scope (D62).** A teacher works on the (class level, subject) pairs from
+their active assignments, so a teacher of JSS 2 Gold Physics has JSS 2
+Physics. The same check guards reads, writes, approval and AI drafting.
+Outside their pairs, reads and writes on an existing question return 404:
+the existence of exam content is itself exam content. Creating or drafting
+outside them returns 403. Owner/admin may use any active level with any
+active subject, the admin gradebook's rule. It is not the `class_subjects`
+matrix, which most schools never fill in. Every write re-reads `is_active`
+and writes an audit row (`question.create/update/revise/approve/retire/
+discard/generate`).
+
+**AI drafting.** The `exam-questions@1` prompt (Sonnet 5, 6,000 output
+tokens, worst case about $0.10 a call) goes through `AiGenerationService`
+like every other prompt: budget reserved first, the school's AI switch
+checked, and an `ai_generations` row written. It is grounded through the
+Phase 7 retrieval with the lesson plan's truthful "why there is no extract"
+wording.
+- Its inputs are a level, a subject, a topic, a type, a difficulty and a
+  count. The PII eval pins that with sentinels, and the service spec asserts
+  that no person's name is in what was sent.
+- Structured outputs fixes the shape. The rules it cannot express (exactly
+  one correct option, 1–100 marks, a marking guide for short-answer and
+  theory) are applied by `parseDrafts`. A draft that breaks them is
+  **dropped and counted** (`dropped` in the response, said on screen), never
+  saved. A response with no usable draft is an error, not an empty success.
+- Every result is a DRAFT with `source = AI`, shown with a violet tint and
+  the words "AI draft — check before approving".
+- The registry-integrity eval checks that the schema is closed, fully
+  required and free of keywords the API rejects.
+
+**Screens.** `/teacher/question-bank`: choose a class and a subject; draft
+with AI (topic, type, difficulty, 1–10 questions); write a question; tabs
+for drafts, approved and retired; search. Owner/admin reach it through a
+cross-shell "Question bank" sidebar link, as for lesson plans. "Assessments
+& Exams" stays under Coming soon until papers (CP5c) ship. The staff mobile
+app has no question bank.
+
+**Proven by:**
+- `question-bank.service.spec.ts`, 11 tests covering:
+  - scope and D62;
+  - revision without changing approved wording;
+  - discard vs retire;
+  - the DB constraints;
+  - an inactive user;
+  - AI drafts saved, ledgered and filtered;
+  - out-of-scope drafting never reaching the model;
+  - AI off saving nothing;
+  - `parseDrafts`.
+- Mutation checks:
+  - dropping the scope check fails a test;
+  - editing approved questions in place fails a test;
+  - skipping draft validation fails 2 tests.
+- `question-form.spec.ts`.
+- The browser test `e2e/tests/question-bank.spec.ts`, which covers:
+  - write, approve and revise, with the wording unchanged until approval;
+  - AI drafts labelled and discarded;
+  - AI off saying so;
+  - a teacher's view, and a 404 outside it.
+
 ### 22.3 CP5c — exam papers and exports
 
 - **A paper:** title, subject, class level, term, duration, instructions,

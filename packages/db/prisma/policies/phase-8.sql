@@ -90,3 +90,25 @@ ALTER TABLE "timetable_publications" FORCE  ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation ON timetable_publications
   USING      (school_id::text = current_setting('app.current_school_id', true))
   WITH CHECK (school_id::text = current_setting('app.current_school_id', true));
+
+-- ---------------------------------------------------------------------
+-- CP5b — the question bank (docs/modules/phase-8.md §22.2).
+-- Migration: 20261004120000_cp5b_question_bank
+--
+-- Both tables carry their own school_id. question-bank.rls.spec.ts proves the
+-- boundary as app_user.
+-- ---------------------------------------------------------------------
+
+ALTER TABLE "questions" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "questions" FORCE  ROW LEVEL SECURITY;
+
+CREATE POLICY tenant_isolation ON questions
+  USING      (school_id::text = current_setting('app.current_school_id', true))
+  WITH CHECK (school_id::text = current_setting('app.current_school_id', true));
+
+ALTER TABLE "question_options" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "question_options" FORCE  ROW LEVEL SECURITY;
+
+CREATE POLICY tenant_isolation ON question_options
+  USING      (school_id::text = current_setting('app.current_school_id', true))
+  WITH CHECK (school_id::text = current_setting('app.current_school_id', true));
