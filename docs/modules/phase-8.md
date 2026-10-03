@@ -4446,3 +4446,46 @@ Built as planned in 21.1–21.5, with these details settled in the code:
 - **Deploy prerequisite:** set `RESULT_PIN_HMAC_KEY` on the `school-kit-api`
   Fly app before the first deploy that carries this; without it the API
   refuses to start (D56) and the staging smoke test rolls the deploy back.
+
+### 21.9 As built — screens (2026-10-03)
+
+Built as planned in 21.7, with these details settled:
+
+- **Web.**
+  - The release dialog asks Free or "Result PIN required", defaulting to Free.
+  - The board says how a released class is reached, in words on a tinted
+    line: "Released behind result PINs" or "Released free".
+  - The new `/report-cards/pins` page, linked from the report-cards picker for
+    owners and admins, generates a batch and shows the once-only warning.
+    It offers the CSV and a printable sheet of cut-out cards (school name,
+    term, PIN, serial, uses, and the checker address). The page lists batches
+    with counts, voids a batch, and voids one card by serial. It warns before
+    leaving with unsaved PINs; that guard stands down on a forced sign-out
+    like the other four.
+- **Portal.**
+  - Locked terms in the list say "Result PIN required".
+  - The term page shows a PIN box on `403 RESULT_LOCKED`.
+  - The public checker lives at `/result-checker/[slug]`, outside the session
+    middleware.
+  - The checker and the term page render the card through one shared
+    `ResultCard` component.
+- **App.**
+  - Both result screens show the PIN box only for `RESULT_LOCKED`, not for
+    any other 403; a guardian refused another family's child still gets an
+    error.
+  - Unlocking writes the card into the cache and refreshes the list.
+  - The staff approvals screen releases free and says PIN releases are made
+    on the website.
+- **Per-client throttling (found here, fixed here).**
+  - The API keyed every rate limit on `req.ip`, which behind Fly's proxy is
+    the proxy rather than the family. That made the global 200/min, the 5/min
+    student sign-in and the 5/min checker limits shared across all users.
+  - `ClientIpThrottlerGuard` keys on `Fly-Client-IP`, falling back to the
+    socket address in dev and CI.
+  - The checker page calls the API straight from the browser so this applies
+    to it. Portal-proxied calls still arrive from Vercel; that is logged in
+    `docs/deferred.md`, and it is not a regression.
+- **E2E:** `e2e/tests/result-checker.spec.ts` covers a guardian locked out
+  until a PIN, a wrong PIN refused in words, the unlock, and the public
+  checker's uniform failure followed by success. It also covers staff
+  generating a batch and seeing the once-only warning.

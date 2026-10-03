@@ -87,6 +87,14 @@ export function getStudentResult(
   );
 }
 
+/** Phase 8c / CP6b (D54) — a student redeeming a result PIN on a locked term. */
+export function unlockMyResult(termId: string, pin: string): Promise<ReleasedResultDetailDto> {
+  return apiFetch<ReleasedResultDetailDto>(`/student-portal/me/results/${encodeURIComponent(termId)}/unlock`, {
+    method: "POST",
+    body: { pin },
+  });
+}
+
 /**
  * Best-effort server-side session revocation.
  *

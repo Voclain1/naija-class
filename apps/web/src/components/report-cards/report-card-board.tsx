@@ -11,6 +11,7 @@ import {
   type PromotionStatusDto,
   type ReportCardBoardRowDto,
   type ReportCardStatusDto,
+  type ResultAccessModeDto,
 } from "@school-kit/types";
 
 import { EmptyState, PageHeader } from "@/components/layout/page-primitives";
@@ -310,14 +311,21 @@ export function ReportCardBoard({ basePath }: { basePath: string }) {
     }
   }, []);
 
-  const onRelease = useCallback(() => {
-    if (!ready) return;
-    const termId = ready.termId;
-    return runWorkflow(async () => {
-      const r = await releaseArm(termId, armId);
-      toast.success(`Released ${r.cardCount} report card${r.cardCount === 1 ? "" : "s"} — generating PDFs…`);
-    }, true);
-  }, [ready, armId, runWorkflow]);
+  const onRelease = useCallback(
+    (accessMode: ResultAccessModeDto) => {
+      if (!ready) return;
+      const termId = ready.termId;
+      return runWorkflow(async () => {
+        const r = await releaseArm(termId, armId, accessMode);
+        toast.success(
+          `Released ${r.cardCount} report card${r.cardCount === 1 ? "" : "s"}${
+            accessMode === "PIN" ? " behind result PINs" : ""
+          } — generating PDFs…`,
+        );
+      }, true);
+    },
+    [ready, armId, runWorkflow],
+  );
 
   // Reopen is its own handler (modal-driven, reason required). Kept open on error
   // so the user can retry (e.g. the ARM_RENDER_IN_FLIGHT race guard).
@@ -459,6 +467,23 @@ export function ReportCardBoard({ basePath }: { basePath: string }) {
           {/* Persistent render-progress feedback — survives fast batches that
               finish before the first poll tick, and slow 40-card batches. */}
           {armStatus && <WorkflowGuidance status={armStatus} canManage={canManage} isOwner={isOwner} />}
+
+          {/* Phase 8c / CP6b — how families reach a released class. Tinted and
+              said in words, never an accent border (CLAUDE.md). */}
+          {armStatus === "RELEASED" && rows[0]?.reportCard.accessMode === "PIN" ? (
+            <p className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-900">
+              Released behind result PINs: families need a PIN card to open these results.{" "}
+              {canManage ? (
+                <Link href="/report-cards/pins" className="font-medium underline">
+                  Manage result PINs
+                </Link>
+              ) : null}
+            </p>
+          ) : armStatus === "RELEASED" ? (
+            <p className="rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
+              Released free: families see these results in the parent portal and the app.
+            </p>
+          ) : null}
 
           {/* Phase 8 / CP6a — the end-of-year decision. A tinted notice that
               says the count in words; never an accent border (CLAUDE.md). */}

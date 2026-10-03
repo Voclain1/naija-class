@@ -4,10 +4,12 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
-import { PROMOTION_STATUS_LABELS, type ReleasedResultDetailDto } from "@school-kit/types";
+import type { ReleasedResultDetailDto } from "@school-kit/types";
 
 import { Appear, PageHeader, PageSkeleton } from "@school-kit/ui";
 
+import { PinUnlockForm } from "@/components/pin-unlock-form";
+import { ResultCard } from "@/components/result-card";
 import { SignOutButton } from "@/components/sign-out-button";
 import { buildLoginUrl, errorCodeFromBody, reasonFromErrorCode } from "@/lib/session-end";
 
@@ -24,22 +26,9 @@ type State =
   | { kind: "loading" }
   | { kind: "error" }
   | { kind: "missing" }
+  // Phase 8c / CP6b: released behind result PINs and not yet unlocked.
+  | { kind: "locked" }
   | { kind: "loaded"; result: ReleasedResultDetailDto };
-
-function formatAverage(hundredths: number | null): string {
-  if (hundredths === null) return "—";
-  return `${Math.trunc(hundredths / 100)}.${Math.abs(hundredths % 100)
-    .toString()
-    .padStart(2, "0")}%`;
-}
-
-function ordinal(value: number): string {
-  const mod100 = value % 100;
-  const mod10 = value % 10;
-  const suffix =
-    mod100 >= 11 && mod100 <= 13 ? "th" : mod10 === 1 ? "st" : mod10 === 2 ? "nd" : mod10 === 3 ? "rd" : "th";
-  return `${value}${suffix}`;
-}
 
 export default function ResultDetailPage() {
   const params = useParams<{ id: string; termId: string }>();
@@ -64,6 +53,13 @@ export default function ResultDetailPage() {
         if (response.status === 404) {
           if (!cancelled) setState({ kind: "missing" });
           return;
+        }
+        if (response.status === 403) {
+          const body: unknown = await response.json().catch(() => null);
+          if (errorCodeFromBody(body) === "RESULT_LOCKED") {
+            if (!cancelled) setState({ kind: "locked" });
+            return;
+          }
         }
         if (!response.ok) {
           if (!cancelled) setState({ kind: "error" });
@@ -115,85 +111,16 @@ export default function ResultDetailPage() {
         </p>
       )}
 
+      {state.kind === "locked" && (
+        <PinUnlockForm
+          unlockPath={`/api/portal/students/${params.id}/results/${params.termId}/unlock`}
+          onUnlocked={(unlocked) => setState({ kind: "loaded", result: unlocked })}
+        />
+      )}
+
       {result && (
         <Appear>
-          <div className="flex flex-col gap-4">
-            {result.promotionStatus ? (
-              // Tinted, never an accent border (CLAUDE.md); the decision in words.
-              <section className="rounded-lg bg-primary/10 p-4" aria-label="Promotion status">
-                <p className="text-xs uppercase tracking-wide text-muted-foreground">Promotion status</p>
-                <p className="font-serif text-xl text-foreground">{PROMOTION_STATUS_LABELS[result.promotionStatus]}</p>
-              </section>
-            ) : null}
-
-            <section className="rounded-lg border bg-card p-4 shadow-sm">
-              <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
-                <div><dt className="text-muted-foreground">Average</dt><dd>{formatAverage(result.overallAverage)}</dd></div>
-                <div><dt className="text-muted-foreground">Total</dt><dd>{result.overallTotal ?? "—"}</dd></div>
-                <div><dt className="text-muted-foreground">Subjects</dt><dd>{result.subjectsCount ?? "—"}</dd></div>
-                {/* Only when the school shows position to families; never a dash. */}
-                {result.overallPosition !== null ? (
-                  <div><dt className="text-muted-foreground">Position</dt><dd>{ordinal(result.overallPosition)}</dd></div>
-                ) : null}
-              </dl>
-              {result.attendance ? (
-                <p className="mt-3 text-sm text-muted-foreground">
-                  Attendance: present {result.attendance.present} of {result.attendance.daysOpened} days, absent{" "}
-                  {result.attendance.absent}.
-                </p>
-              ) : null}
-            </section>
-
-            <section className="rounded-lg border bg-card p-4 shadow-sm">
-              <h2 className="mb-2 font-semibold">Subjects</h2>
-              {result.subjects.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No subject scores were recorded for this term.</p>
-              ) : (
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-left text-muted-foreground">
-                      <th className="py-1 font-normal">Subject</th>
-                      <th className="py-1 text-right font-normal">Score</th>
-                      <th className="py-1 text-right font-normal">Grade</th>
-                      {result.subjects.some((s) => s.subjectPosition !== null) ? (
-                        <th className="py-1 text-right font-normal">Position</th>
-                      ) : null}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {result.subjects.map((s) => (
-                      <tr key={s.subjectId} className="border-t">
-                        <td className="py-1.5">
-                          {s.subjectName}
-                          {s.remark ? <span className="block text-xs text-muted-foreground">{s.remark}</span> : null}
-                        </td>
-                        <td className="py-1.5 text-right">{s.totalScore}</td>
-                        <td className="py-1.5 text-right">{s.letterGrade ?? "—"}</td>
-                        {result.subjects.some((x) => x.subjectPosition !== null) ? (
-                          <td className="py-1.5 text-right">
-                            {s.subjectPosition !== null ? ordinal(s.subjectPosition) : "—"}
-                          </td>
-                        ) : null}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </section>
-
-            {result.formTeacherComment ? (
-              <section className="rounded-lg border bg-card p-4 shadow-sm">
-                <h2 className="mb-1 font-semibold">Form teacher&apos;s comment</h2>
-                <p className="whitespace-pre-wrap text-sm">{result.formTeacherComment}</p>
-              </section>
-            ) : null}
-            {result.principalNote ? (
-              <section className="rounded-lg border bg-card p-4 shadow-sm">
-                <h2 className="mb-1 font-semibold">Principal&apos;s remark</h2>
-                <p className="whitespace-pre-wrap text-sm">{result.principalNote}</p>
-              </section>
-            ) : null}
-          </div>
+          <ResultCard result={result} />
         </Appear>
       )}
     </main>

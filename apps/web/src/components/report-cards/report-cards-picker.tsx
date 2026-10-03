@@ -1,6 +1,6 @@
 "use client";
 
-import { FileText } from "lucide-react";
+import { FileText, KeyRound } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
@@ -104,6 +104,18 @@ export function ReportCardsPicker({ basePath }: { basePath: string }) {
       <PageHeader
         title="Report cards"
         subtitle="Pick a term and class to build, review, and generate report-card PDFs."
+        actions={
+          // Phase 8c / CP6b — result PIN cards, for classes released in PIN mode.
+          isManager ? (
+            <Link
+              href="/report-cards/pins"
+              className="inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm hover:bg-accent/40"
+            >
+              <KeyRound className="h-4 w-4" />
+              Result PINs
+            </Link>
+          ) : undefined
+        }
       />
 
       {/* Every class arm below is listed and openable whether or not anybody

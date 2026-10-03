@@ -268,11 +268,13 @@ export default function ApprovalArmScreen() {
 
   function confirmRelease(): void {
     // D33: release is the one that reaches families, and freezes the cards.
+    // Phase 8c / CP6b: the app releases FREE (the API's default). Choosing
+    // result PIN cards is a website decision, and the copy says so.
     Alert.alert(
       "Release to families?",
       `Parents and students in ${pipeline!.label} will be able to read ${total} report card${
         total === 1 ? "" : "s"
-      } as soon as you do this. The cards are then locked; changing one means reopening the whole class.`,
+      } as soon as you do this, free in the portal and the app. The cards are then locked; changing one means reopening the whole class.\n\nTo release behind result PIN cards instead, use the website.`,
       [
         { text: "Cancel", style: "cancel" },
         { text: "Release", style: "destructive", onPress: () => transition.mutate("release") },

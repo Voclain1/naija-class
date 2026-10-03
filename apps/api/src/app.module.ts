@@ -2,7 +2,7 @@ import { Module } from "@nestjs/common";
 import { APP_FILTER, APP_GUARD } from "@nestjs/core";
 import { ConfigModule } from "@nestjs/config";
 import { ScheduleModule } from "@nestjs/schedule";
-import { ThrottlerGuard, ThrottlerModule } from "@nestjs/throttler";
+import { ThrottlerModule } from "@nestjs/throttler";
 
 import { EmailModule } from "./common/email/email.module.js";
 import { EmbeddingsModule } from "./common/embeddings/embeddings.module.js";
@@ -10,6 +10,7 @@ import { PaystackModule } from "./common/paystack/paystack.module.js";
 import { TermiiModule } from "./common/termii/termii.module.js";
 import { RedisAuthModule } from "./common/auth/redis-auth.module";
 import { RedisThrottlerStorage } from "./common/auth/redis-throttler-storage";
+import { ClientIpThrottlerGuard } from "./common/auth/client-ip-throttler.guard";
 import { HealthController } from "./health/health.controller";
 import { HttpExceptionFilter } from "./common/http-exception.filter";
 import { QueueModule } from "./common/queue";
@@ -185,11 +186,13 @@ const isProd = process.env.NODE_ENV === "production";
       provide: APP_FILTER,
       useClass: HttpExceptionFilter,
     },
-    // Global IP-based rate limit: 200 req/min across all routes.
-    // Per-endpoint overrides use @Throttle({ default: { ttl, limit } }).
+    // Global per-CLIENT rate limit: 200 req/min across all routes, keyed on
+    // the address Fly's proxy reports (Fly-Client-IP) rather than the proxy's
+    // own — see client-ip-throttler.guard.ts. Per-endpoint overrides use
+    // @Throttle({ default: { ttl, limit } }).
     {
       provide: APP_GUARD,
-      useClass: ThrottlerGuard,
+      useClass: ClientIpThrottlerGuard,
     },
   ],
 })
