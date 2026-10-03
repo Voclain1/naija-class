@@ -242,6 +242,13 @@ export const baseConfig = [
       // through withTenant.
       "**/common/auth/student-auth.guard.ts",
       "**/modules/student-portal/student-portal.service.ts",
+      // result-checker.service.ts — the PUBLIC Result Checker (Phase 8c /
+      // CP6b, docs/modules/phase-8.md §21.0). Its only basePrisma read is
+      // `schools` by slug, a non-RLS table, to learn which tenant a public
+      // request is for; every read and write after that goes through
+      // withTenant. Same category as schools.service.ts above — and the
+      // reason the checker needed no SECURITY DEFINER function.
+      "**/modules/result-checker/result-checker.service.ts",
       "**/common/auth/platform-admin.guard.ts",
       "**/modules/platform-admin/platform-admin.service.ts",
       // School slug derivation (2026-08-12). Runs PRE-tenant by definition:

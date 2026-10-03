@@ -65,8 +65,13 @@ export function isHardLock(failures: number): boolean {
   return failures > FREE_FAILURES + ESCALATION_SECONDS.length;
 }
 
-/** Which sign-in a key belongs to. Separate namespaces, never shared. */
-export type LockoutPrincipal = "student" | "guardian";
+/**
+ * Which surface a key belongs to. Separate namespaces, never shared: a lock on
+ * the result checker must not lock a student out of signing in, or the reverse.
+ * `checker` and `result-pin` (Phase 8c / CP6b, §21.4–21.5) count wrong result
+ * PINs on the public checker and inside the portals.
+ */
+export type LockoutPrincipal = "student" | "guardian" | "checker" | "result-pin";
 
 /**
  * The key for an identity AS TYPED. Normalised only enough that trivial

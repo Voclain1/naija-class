@@ -725,6 +725,12 @@ export const PROMOTION_PERMISSIONS = [
   "promotion.commit",
 ] as const;
 
+// Phase 8c / CP6b — Result Checker PINs (docs/modules/phase-8.md §21.3).
+// Owner/admin only. `manage` generates and voids batches; generating returns
+// the only copy of the plaintext PINs that will ever exist (D16), so it is not
+// a teacher or bursar act.
+export const RESULT_PIN_PERMISSIONS = ["result-pin.read", "result-pin.manage"] as const;
+
 export const ALL_PERMISSIONS = [
   ...PHASE_0_PERMISSIONS,
   ...PHASE_1_PERMISSIONS,
@@ -744,6 +750,7 @@ export const ALL_PERMISSIONS = [
   ...TIMETABLE_PERMISSIONS,
   ...TIMETABLE_OWN_READ_PERMISSIONS,
   ...PROMOTION_PERMISSIONS,
+  ...RESULT_PIN_PERMISSIONS,
   /* extend per phase */
 ] as const;
 

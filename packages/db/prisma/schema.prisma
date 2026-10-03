@@ -2096,6 +2096,9 @@ model ReportCard {
   // Phase 8c / CP6a (§20.3, D12/D52/D53) — display only, final term of the
   // year only, set at principal approval. Never reads or writes Enrollment.
   promotionStatus      PromotionStatus? @map("promotion_status")
+  // Phase 8c / CP6b (§21.1, D48/D18) — FREE or PIN, chosen at release for the
+  // whole arm × term, cleared by reopen. NULL before release.
+  accessMode           ResultAccessMode? @map("access_mode")
   formReviewedAt      DateTime?           @map("form_reviewed_at")
   formReviewedBy      String?             @map("form_reviewed_by") // users.id
   principalApprovedAt DateTime?           @map("principal_approved_at")
@@ -3280,4 +3283,82 @@ model WebHandoffToken {
   @@index([schoolId])
   @@index([userId])
   @@map("web_handoff_tokens")
+}
+
+// Phase 8c / CP6b — Result Checker (docs/modules/phase-8.md §21).
+
+enum ResultAccessMode {
+  FREE // families read the released card in the portal and app
+  PIN // the card opens only after a result PIN is redeemed (D11, D17)
+
+  @@map("result_access_mode")
+}
+
+enum ResultUnlockVia {
+  CHECKER
+  GUARDIAN
+  STUDENT
+
+  @@map("result_unlock_via")
+}
+
+// A batch of PINs, generated together for one term (D15) and sold offline by
+// the school (D9, D10). The plaintext PINs leave the server once, in the
+// response that creates them (D16).
+model ResultPinBatch {
+  id             String    @id @default(uuid())
+  schoolId       String    @map("school_id")
+  academicYearId String    @map("academic_year_id")
+  termId         String    @map("term_id")
+  // Per-school running number; serials are "B<number>-<index>".
+  number         Int
+  size           Int
+  maxUses        Int       @map("max_uses")
+  createdBy      String    @map("created_by")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  voidedAt       DateTime? @map("voided_at")
+  voidedBy       String?   @map("voided_by")
+
+  pins ResultPin[]
+
+  @@unique([schoolId, number])
+  @@index([schoolId, termId])
+  @@map("result_pin_batches")
+}
+
+// One card. Stored only as an HMAC (D56); unbound until its first successful
+// redemption (D10), after which it opens only that student's result.
+model ResultPin {
+  id             String    @id @default(uuid())
+  schoolId       String    @map("school_id")
+  batchId        String    @map("batch_id")
+  serial         String
+  pinHash        String    @map("pin_hash")
+  uses           Int       @default(0)
+  boundStudentId String?   @map("bound_student_id")
+  boundAt        DateTime? @map("bound_at")
+  voidedAt       DateTime? @map("voided_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  batch ResultPinBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+
+  @@unique([schoolId, pinHash])
+  @@unique([schoolId, serial])
+  @@index([batchId])
+  @@map("result_pins")
+}
+
+// The record D17's "everywhere" reads: once a student's term is unlocked by
+// any route, every surface shows it.
+model ResultUnlock {
+  id        String          @id @default(uuid())
+  schoolId  String          @map("school_id")
+  studentId String          @map("student_id")
+  termId    String          @map("term_id")
+  pinId     String          @map("pin_id")
+  via       ResultUnlockVia
+  createdAt DateTime        @default(now()) @map("created_at")
+
+  @@unique([schoolId, studentId, termId])
+  @@map("result_unlocks")
 }

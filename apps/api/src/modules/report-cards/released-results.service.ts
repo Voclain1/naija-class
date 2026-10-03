@@ -2,6 +2,7 @@ import { Injectable } from "@nestjs/common";
 
 import { Prisma, withTenant } from "@school-kit/db";
 import {
+  ForbiddenError,
   NotFoundError,
   type FamilySubjectRowDto,
   type ReleasedResultDetailDto,
@@ -56,6 +57,19 @@ type TenantDb = Parameters<Parameters<typeof withTenant>[1]>[0];
 
 const RELEASED = "RELEASED" satisfies Prisma.ReportCardWhereInput["status"];
 
+// Phase 8c / CP6b (§21.2, D11, D17) — THE access-mode gate, for both portals
+// and the public checker, because all three read through this service.
+//
+// A card released in PIN mode is visible only once that student's term has an
+// unlock (result_unlocks), made by redeeming a PIN on any of the three
+// surfaces. The checker redeems and then reads through getForStudent in the
+// same transaction, so it passes this gate the same way a portal does — there
+// is no second path that skips it.
+async function isUnlocked(db: TenantDb, studentId: string, termId: string): Promise<boolean> {
+  const unlock = await db.resultUnlock.findFirst({ where: { studentId, termId }, select: { id: true } });
+  return unlock !== null;
+}
+
 const SUMMARY_SELECT = {
   id: true,
   termId: true,
@@ -64,6 +78,7 @@ const SUMMARY_SELECT = {
   overallAverage: true,
   subjectsCount: true,
   releasedAt: true,
+  accessMode: true,
 } satisfies Prisma.ReportCardSelect;
 
 const DETAIL_SELECT = {
@@ -84,6 +99,7 @@ const DETAIL_SELECT = {
   attendanceAbsent: true,
   promotionStatus: true,
   releasedAt: true,
+  accessMode: true,
 } satisfies Prisma.ReportCardSelect;
 
 @Injectable()
@@ -101,7 +117,7 @@ export class ReleasedResultsService {
     });
     if (cards.length === 0) return [];
 
-    const [terms, years, arms] = await Promise.all([
+    const [terms, years, arms, unlocks] = await Promise.all([
       db.term.findMany({
         where: { id: { in: [...new Set(cards.map((c) => c.termId))] } },
         select: { id: true, name: true },
@@ -114,23 +130,30 @@ export class ReleasedResultsService {
         where: { id: { in: [...new Set(cards.map((c) => c.classArmId))] } },
         select: { id: true, name: true },
       }),
+      db.resultUnlock.findMany({ where: { studentId }, select: { termId: true } }),
     ]);
+    const unlockedTerms = new Set(unlocks.map((u) => u.termId));
     const termName = new Map(terms.map((t) => [t.id, t.name]));
     const yearLabel = new Map(years.map((y) => [y.id, y.label]));
     const armName = new Map(arms.map((a) => [a.id, a.name]));
 
-    return cards.map((c) => ({
-      reportCardId: c.id,
-      termId: c.termId,
-      termName: termName.get(c.termId) ?? "",
-      academicYearLabel: yearLabel.get(c.academicYearId) ?? "",
-      classArmName: armName.get(c.classArmId) ?? "",
-      overallAverage: c.overallAverage,
-      subjectsCount: c.subjectsCount,
-      // Non-null by the RELEASED filter: the transition that sets the status
-      // stamps the timestamp in the same write.
-      releasedAt: c.releasedAt as Date,
-    }));
+    return cards.map((c) => {
+      const locked = c.accessMode === "PIN" && !unlockedTerms.has(c.termId);
+      return {
+        reportCardId: c.id,
+        termId: c.termId,
+        termName: termName.get(c.termId) ?? "",
+        academicYearLabel: yearLabel.get(c.academicYearId) ?? "",
+        classArmName: armName.get(c.classArmId) ?? "",
+        // A locked term shows that it exists and needs a PIN — never its figures.
+        overallAverage: locked ? null : c.overallAverage,
+        subjectsCount: locked ? null : c.subjectsCount,
+        // Non-null by the RELEASED filter: the transition that sets the status
+        // stamps the timestamp in the same write.
+        releasedAt: c.releasedAt as Date,
+        locked,
+      };
+    });
   }
 
   /**
@@ -158,6 +181,13 @@ export class ReleasedResultsService {
       select: DETAIL_SELECT,
     });
     if (!card) throw new NotFoundError("No released results for this term.");
+
+    // The access-mode gate (above). 403, not 404: the family already sees the
+    // term in their list as needing a PIN, so there is nothing to hide about
+    // its existence — only its contents.
+    if (card.accessMode === "PIN" && !(await isUnlocked(db, studentId, termId))) {
+      throw new ForbiddenError("RESULT_LOCKED", "These results need a result PIN.");
+    }
 
     const [school, term, year, arm, student, assessments] = await Promise.all([
       // `schools` is the tenant table and carries no RLS policy of its own —

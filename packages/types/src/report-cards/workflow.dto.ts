@@ -13,6 +13,19 @@ export const reportCardArmActionSchema = z
   .strict();
 export type ReportCardArmActionInput = z.infer<typeof reportCardArmActionSchema>;
 
+// POST /report-cards/arm/release — Phase 8c / CP6b (§21.2) adds the access
+// mode, chosen once for the whole arm and fixed until a reopen (D18). Optional
+// and FREE by default, so a caller that predates PIN mode keeps today's
+// behaviour rather than failing.
+export const reportCardReleaseSchema = z
+  .object({
+    termId: z.string().trim().min(1),
+    classArmId: z.string().trim().min(1),
+    accessMode: z.enum(["FREE", "PIN"]).default("FREE"),
+  })
+  .strict();
+export type ReportCardReleaseInput = z.infer<typeof reportCardReleaseSchema>;
+
 // Result of a batch transition: the new state + how many cards moved.
 export interface ReportCardTransitionResultDto {
   status: ReportCardStatusDto;

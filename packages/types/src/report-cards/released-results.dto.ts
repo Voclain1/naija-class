@@ -60,6 +60,12 @@ export interface ReleasedResultSummaryDto {
   overallAverage: number | null; // Int hundredths (7350 = 73.50%)
   subjectsCount: number | null;
   releasedAt: string | Date;
+  /**
+   * Phase 8c / CP6b (§21.2): released in PIN mode and not yet unlocked for
+   * this student. When true the figures above are null — the list says the
+   * term exists and needs a PIN, never what is in it.
+   */
+  locked: boolean;
 }
 
 /** One released term, in full. */

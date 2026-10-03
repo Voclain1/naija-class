@@ -4283,3 +4283,166 @@ Built as planned, with these details settled in the code:
     lack them. The staff approvals screen explains `PROMOTION_STATUS_MISSING`
     and points to the web, which is the only promotion editor in v1.
 
+
+---
+
+## 21. CP6b plan-first — Result Checker
+
+**Status:** approved through D54–D57 (Arinzechukwu, 2026-10-03), on top of
+D6, D9–D11, D15–D18 and D48–D50. Built in two PRs: the API (21.1–21.6), then
+the screens (21.7). The API alone changes nothing a family sees: access mode
+defaults to FREE, today's behaviour, until a school releases an arm in PIN
+mode, which needs the second PR's screens.
+
+### 21.0 Decisions taken here
+
+**D54 — A PIN can be entered in three places:** the public checker, and an
+"Enter result PIN" box on the locked result screen in the parent portal and
+the student app. Whichever is used, one redemption unlocks that student's
+result for that term everywhere (D17).
+
+**D55 — A PIN is 12 digits, printed with a separate serial** (e.g.
+`4821 0937 5512`, serial `B7-0142`). Digits because that is the card families
+already know from WAEC/NECO and any phone keypad types it; the serial lets a
+school void one lost card without anyone knowing its PIN.
+
+**D56 — PINs are stored as an HMAC-SHA256 under a new server secret,
+`RESULT_PIN_HMAC_KEY`.** A 12-digit space (10^12) is brute-forceable from a
+plain SHA-256 in hours; keyed, a stolen database alone reveals nothing (D16's
+intent). The API refuses to start in production without the key, because a
+config key added to the repo but never set on Fly is this project's known
+failure mode (CLAUDE.md, the `PORTAL_BASE_URL` incident). Rotating the key
+voids every unredeemed PIN; recorded, not engineered around.
+
+**D57 — Each successful public-checker view uses one of the card's uses**
+(default 5, set per batch). Redeeming inside a portal uses one, after which
+that portal stays unlocked for the term with no further uses — a family never
+runs a card dry by opening the app.
+
+**No new SECURITY DEFINER function (corrects §10.3 and §19).** The plan
+assumed the checker's pre-login lookup needs one. It does not: the only read
+before a tenant is known is `schools` by slug, and `schools` carries no RLS
+policy (it is the tenant table every policy keys off — the same reason
+`PATCH …/ai` needed none). Once the slug resolves, every other read runs under
+`withTenant` and RLS like any other. Writing an SD function anyway would add
+an RLS escape hatch with nothing to escape. The count stays at **23** and the
+next review stays due at **26**.
+
+### 21.1 Schema
+
+- `report_cards.access_mode` — enum `result_access_mode` (`FREE`, `PIN`),
+  nullable. Set on every card of the arm by `release`, cleared by `reopen`
+  (D18: fixed at release, changed only through reopen).
+- `result_pin_batches` — school, academic year, term (D15), batch number
+  (per school, for serials), size, max uses, created by/at, voided by/at.
+- `result_pins` — school, batch, serial, `pin_hash` (UNIQUE per school), uses,
+  bound student + bound at (D10: unbound until first redemption), voided at.
+- `result_unlocks` — school, student, term, pin, via (`CHECKER`, `GUARDIAN`,
+  `STUDENT`), created at. UNIQUE (student, term): the record D17's
+  "everywhere" reads.
+- All four under FORCE RLS with the standard `tenant_isolation` policy.
+
+### 21.2 Release and the reader gate
+
+- `POST /report-cards/arm/release` takes `accessMode` (`FREE` | `PIN`),
+  optional and defaulting to `FREE`, so existing callers (the staff app) keep
+  today's behaviour.
+- The shared reader (`released-results.service.ts`, Phase 6 D28) is the one
+  gate, for both portals and the checker:
+  - the list marks a PIN-mode term with no unlock as `locked: true` and
+    withholds its figures;
+  - the detail of a locked term refuses with `403 RESULT_LOCKED`, carrying no
+    result data.
+
+### 21.3 PIN batches (owner/admin)
+
+- **Generate:** term, quantity (1–2000), max uses (1–20, default 5). Returns
+  the plaintext PINs with their serials **once**, in the response that
+  creates them (D16); only hashes are stored.
+- **List** batches with counts (issued, redeemed, voided). Never a PIN.
+- **Void** a batch, or one PIN by serial. A voided PIN stops working for new
+  checks; unlocks it already made stand (the family paid for them).
+- Every generate and void is audited; the audit row never holds a PIN.
+
+### 21.4 Redemption — one function, three callers
+
+`ResultPinService.redeem(db, { studentId, termId, pin, via })`, in one
+transaction:
+1. HMAC the PIN and find it by hash under RLS.
+2. Refuse if unknown or voided (or its batch is), if the batch is for another
+   term (D15), if bound to another student (D10), or if its uses are spent.
+3. Refuse unless the student's card for that term is RELEASED in PIN mode
+   (FREE terms never consume a use).
+4. Bind if unbound, count a use with a conditional update (so two concurrent
+   checks cannot both take the last use), and upsert the unlock.
+5. Audit `result-pin.redeem`.
+
+Portal callers: `POST /portal/students/:id/results/:termId/unlock` (guardian,
+after `assertLinked`) and `POST /student-portal/me/results/:termId/unlock`.
+Once the term is unlocked these are never needed again (D57).
+
+### 21.5 The public checker
+
+- `GET /result-checker/:slug` — the school's name and its academic years and
+  terms to choose from. School-level only: nothing about any student.
+- `POST /result-checker/:slug/check` — `{ admissionNumber, pin, termId }`.
+  Success returns the family result (the same DTO the portals read) and, when
+  the PDF is generated, a presigned URL with a **5-minute TTL** (D50).
+- **Every failure answers the same 4xx with the same message:** unknown
+  school, unknown admission number, wrong PIN, PIN for another student or
+  term, unreleased card. The one exception: a PIN that is valid and already
+  bound to this same student, but used up, says so — its holder has already
+  proved possession.
+- **Enumeration defence:** the login lockout (`login-lockout.ts`) keyed on
+  slug and admission number as typed, a new `checker` principal so it shares
+  no keys with sign-in, plus the per-IP throttle the student login uses.
+- Audited: every success, and every failure where a school is resolved.
+
+### 21.6 Not in CP6b
+
+Online PIN sales (D9). Re-exporting a batch (D16). Changing access mode
+without a reopen (D18). Per-student PIN issuance (D10).
+
+### 21.7 Screens (second PR)
+
+- **Web:** the release dialog asks Free or PIN. The board shows the arm's
+  access mode once released. A new Results → PINs page generates batches
+  (download CSV, print sheet, with the once-only warning), lists them and
+  voids batches or single PINs.
+- **Portal:** locked terms in the list say "PIN required"; the term page
+  shows the PIN box. The public checker page lives at
+  `/result-checker/[slug]`.
+- **App:** both result screens show the locked state with the PIN box. The
+  staff approvals screen releases FREE and says PIN releases are done on the
+  web.
+
+### 21.8 As built — API (2026-10-03)
+
+Built as planned in 21.1–21.5, with these details settled in the code:
+
+- **Module boundary.** The PIN key and `ResultPinService` live in
+  `ResultPinModule`, imported by the checker, the guardian portal and the
+  student portal. `ReportCardsModule` does not import it, so the render
+  worker, which boots that module, never needs `RESULT_PIN_HMAC_KEY`.
+- **Existing released cards are backfilled to `FREE`** by the migration,
+  saying explicitly what they always were rather than leaving a NULL every
+  reader must interpret.
+- **The checker shows nothing for a FREE card.** Without a PIN to check, an
+  admission number alone would open it; the uniform failure message points
+  families to the portal instead.
+- **Failures are returned, not thrown, inside the checker's transaction**, so
+  the `result-checker.check-failed` audit row survives the rollback and a
+  refused redemption writes nothing.
+- **Lockout namespaces** `checker` (slug + admission number, as typed) and
+  `result-pin` (school + student, for portal unlocks) are new; neither shares
+  keys with sign-in.
+- **The release notification** says a PIN is needed in PIN mode, rather than
+  promising a card the app will show locked.
+- **Lint allowlist.** `result-checker.service.ts` joins the `basePrisma`
+  allowlist for its single `schools`-by-slug read, the same category as
+  `schools.service.ts`.
+- **Two existing specs** that build `PortalStudentsModule` alone now supply
+  an inert Redis client, because the module carries the PIN lockout.
+- **Deploy prerequisite:** set `RESULT_PIN_HMAC_KEY` on the `school-kit-api`
+  Fly app before the first deploy that carries this; without it the API
+  refuses to start (D56) and the staging smoke test rolls the deploy back.

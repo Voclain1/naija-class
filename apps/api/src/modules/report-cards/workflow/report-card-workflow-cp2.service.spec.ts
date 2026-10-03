@@ -248,6 +248,35 @@ describe("ReportCardWorkflowService (cp2 — release / reopen / comments)", () =
     await queue.obliterate({ force: true });
   }, 90_000);
 
+  it("release records the access mode for the whole arm — FREE unless PIN is chosen — and reopen clears it (CP6b, D18)", async () => {
+    const modes = (schoolId: string, termId: string, armId: string) =>
+      withTenant(schoolId, (db) =>
+        db.reportCard.findMany({ where: { termId, classArmId: armId }, select: { accessMode: true } }),
+      ).then((cs) => cs.map((c) => c.accessMode));
+
+    // Default: a caller that predates PIN mode (the staff app) releases FREE.
+    const free = await seedApprovedArm("rel-free");
+    await workflow.release(ctx(free.schoolId, free.ownerId), { termId: free.termId, classArmId: free.armId }, reqCtx);
+    expect(await modes(free.schoolId, free.termId, free.armId)).toEqual(["FREE", "FREE"]);
+
+    const pin = await seedApprovedArm("rel-pin");
+    await workflow.release(
+      ctx(pin.schoolId, pin.ownerId),
+      { termId: pin.termId, classArmId: pin.armId, accessMode: "PIN" },
+      reqCtx,
+    );
+    expect(await modes(pin.schoolId, pin.termId, pin.armId)).toEqual(["PIN", "PIN"]);
+    const audit = await withTenant(pin.schoolId, (db) =>
+      db.auditLog.findFirstOrThrow({ where: { action: "report-card.release", entityId: pin.armId }, select: { metadata: true } }),
+    );
+    expect(audit.metadata).toMatchObject({ accessMode: "PIN" });
+
+    // Fixed at release; the only way to change it is a reopen, which clears it.
+    await workflow.reopen(ctx(pin.schoolId, pin.ownerId), { termId: pin.termId, classArmId: pin.armId, reason: "Wrong mode" }, reqCtx);
+    expect(await modes(pin.schoolId, pin.termId, pin.armId)).toEqual([null, null]);
+    await queue.obliterate({ force: true });
+  }, 120_000);
+
   it("release out-of-order: release on a FORM_REVIEWED arm → 409", async () => {
     const f = await seedReviewedArm("rel-oo");
     await workflow.formReview(ctx(f.schoolId, f.ownerId), { termId: f.termId, classArmId: f.armId }, reqCtx);

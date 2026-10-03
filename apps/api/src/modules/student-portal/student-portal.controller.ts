@@ -1,6 +1,8 @@
 import { Body, Controller, Get, HttpCode, Ip, Param, Post, Req, UseGuards } from "@nestjs/common";
 import { Throttle } from "@nestjs/throttler";
 import {
+  resultPinUnlockSchema,
+  type ResultPinUnlockInput,
   acceptStudentInvitationSchema,
   studentLoginSchema,
   type AcceptStudentInvitationInput,
@@ -104,6 +106,21 @@ export class StudentPortalController {
     @Param("termId") termId: string,
   ): Promise<ReleasedResultDetailDto> {
     return this.service.getResult(ctx, termId);
+  }
+
+  // Phase 8c / CP6b (D54) — redeem a result PIN on a locked term. Throttled
+  // per IP on top of the per-student lockout in the service.
+  @Post("me/results/:termId/unlock")
+  @HttpCode(200)
+  @UseGuards(StudentAuthGuard)
+  @Throttle({ default: { ttl: 60000, limit: 10 } })
+  async unlockResult(
+    @CurrentStudent() ctx: StudentAuthContext,
+    @Param("termId") termId: string,
+    @Body(new ZodValidationPipe(resultPinUnlockSchema)) dto: ResultPinUnlockInput,
+    @Ip() ip: string,
+  ): Promise<ReleasedResultDetailDto> {
+    return this.service.unlockResult(ctx, termId, dto.pin, { ipAddress: ip });
   }
 
   // GET /student-portal/me/attendance — own attendance, by term.

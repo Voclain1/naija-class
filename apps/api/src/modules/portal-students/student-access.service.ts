@@ -14,7 +14,10 @@ import {
 } from "@school-kit/types";
 
 import type { GuardianAuthContext } from "../../common/auth/guardian-auth-context";
+import { LoginLockoutService } from "../../common/auth/login-lockout";
 import { ReleasedResultsService } from "../report-cards/released-results.service";
+import { unlockForPortal } from "../result-checker/portal-unlock";
+import { ResultPinService } from "../result-checker/result-pin.service";
 
 // Phase 6 / Slice 3 — the guardian's controls over their child's portal
 // access: issue an invitation, read the state, and turn it off.
@@ -35,7 +38,11 @@ export const STUDENT_INVITATION_TTL_MS = 1000 * 60 * 60 * 24 * 7;
 
 @Injectable()
 export class StudentAccessService {
-  constructor(private readonly releasedResults: ReleasedResultsService) {}
+  constructor(
+    private readonly releasedResults: ReleasedResultsService,
+    private readonly pins: ResultPinService,
+    private readonly lockout: LoginLockoutService,
+  ) {}
 
   // ---------------------------------------------------------------------
   // D27 — authorization is an EXPLICIT check that RAISES, performed BEFORE
@@ -348,6 +355,31 @@ export class StudentAccessService {
       await this.assertLinked(db, ctx.guardianId, studentId);
       return this.releasedResults.getForStudent(db, studentId, termId);
     });
+  }
+
+  // POST /portal/students/:id/results/:termId/unlock — a parent redeeming a
+  // result PIN on a locked term (Phase 8c / CP6b, D54). assertLinked runs
+  // first, inside the same transaction, exactly as for the reads above.
+  async unlockResult(
+    ctx: GuardianAuthContext,
+    studentId: string,
+    termId: string,
+    pin: string,
+    reqCtx: { ipAddress: string | null },
+  ): Promise<ReleasedResultDetailDto> {
+    return unlockForPortal(
+      { pins: this.pins, releasedResults: this.releasedResults, lockout: this.lockout },
+      {
+        schoolId: ctx.schoolId,
+        studentId,
+        termId,
+        pin,
+        via: "GUARDIAN",
+        actorId: ctx.guardianId,
+        ipAddress: reqCtx.ipAddress,
+        authorise: (db) => this.assertLinked(db, ctx.guardianId, studentId),
+      },
+    );
   }
 }
 

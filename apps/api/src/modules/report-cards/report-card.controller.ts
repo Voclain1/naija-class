@@ -9,6 +9,8 @@ import {
   reportCardArmReopenSchema,
   reportCardBoardQuerySchema,
   reportCardCommentUpdateSchema,
+  reportCardReleaseSchema,
+  type ReportCardReleaseInput,
   type BuildReportCardsInput,
   type BuildReportCardsResultDto,
   type PrincipalNoteResultDto,
@@ -115,7 +117,7 @@ export class ReportCardsController {
   @HttpCode(200)
   @Permissions("report-card.release")
   async release(
-    @Body(new ZodValidationPipe(reportCardArmActionSchema)) dto: ReportCardArmActionInput,
+    @Body(new ZodValidationPipe(reportCardReleaseSchema)) dto: ReportCardReleaseInput,
     @CurrentUser() authCtx: AuthContext,
     @Ip() ip: string,
     @Req() req: Request,

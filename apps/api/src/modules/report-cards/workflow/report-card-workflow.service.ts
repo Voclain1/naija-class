@@ -10,6 +10,7 @@ import {
   type ReportCardArmActionInput,
   type ReportCardArmReopenInput,
   type ReportCardCommentUpdateInput,
+  type ResultAccessModeDto,
   type ReportCardDto,
   type ReportCardTransitionResultDto,
 } from "@school-kit/types";
@@ -159,10 +160,12 @@ export class ReportCardWorkflowService {
   // pdfStatus → FAILED individually and the UI offers Regenerate).
   async release(
     authCtx: AuthContext,
-    input: ReportCardArmActionInput,
+    // accessMode optional here too, defaulting to FREE like the HTTP schema.
+    input: ReportCardArmActionInput & { accessMode?: ResultAccessModeDto },
     reqCtx: RequestContext,
   ): Promise<ReportCardTransitionResultDto> {
     await assertUserActiveAndHasOneOf(authCtx, ["owner", "admin"]);
+    const accessMode: ResultAccessModeDto = input.accessMode ?? "FREE";
 
     const result: ReportCardTransitionResultDto = await withTenant(authCtx.schoolId, async (db) => {
       const term = await db.term.findUnique({ where: { id: input.termId }, select: { id: true } });
@@ -175,7 +178,9 @@ export class ReportCardWorkflowService {
 
       await db.reportCard.updateMany({
         where: { termId: input.termId, classArmId: input.classArmId },
-        data: { status: "RELEASED", releasedAt: new Date(), pdfStatus: "PENDING" },
+        // accessMode (CP6b, D48): one choice for the whole arm, fixed until a
+        // reopen (D18).
+        data: { status: "RELEASED", releasedAt: new Date(), pdfStatus: "PENDING", accessMode },
       });
 
       // Compose the slice-5 enqueue in THIS tx. Throws here roll the release back.
@@ -194,6 +199,7 @@ export class ReportCardWorkflowService {
         toStatus: "RELEASED",
         cardCount: cards.length,
         enqueuedCount,
+        accessMode,
       });
       return { status: "RELEASED", cardCount: cards.length };
     });
@@ -204,6 +210,7 @@ export class ReportCardWorkflowService {
       schoolId: authCtx.schoolId,
       termId: input.termId,
       classArmId: input.classArmId,
+      accessMode,
     });
 
     // Wake the render worker machine after the tx commits (Fly scale-to-zero).
@@ -259,6 +266,9 @@ export class ReportCardWorkflowService {
           principalApprovedAt: null,
           principalApprovedBy: null,
           releasedAt: null,
+          // CP6b (D18): the access mode is chosen again at the next release.
+          // Unlocks families already paid for are kept (result_unlocks).
+          accessMode: null,
           // PRESERVE: generatedAt, artifactUrl, pdfStatus — not touched.
         },
       });
