@@ -477,6 +477,7 @@ model Term {
   teacherAssignments    TeacherAssignment[] // Phase 1 / Slice 11 back-relation (term-specific assignments).
   timetables            Timetable[] // Phase 8 / CP3 — composite (school_id, id) FK target.
   timetablePublications TimetablePublication[] // Phase 8 / CP4 — published snapshots (D45).
+  examPapers            ExamPaper[] // Phase 8c / CP5c back-relation.
 
   @@unique([schoolId, id]) // Phase 8 / CP3 — composite FK target (§17 D29)
   @@unique([academicYearId, sequence])
@@ -515,6 +516,7 @@ model ClassLevel {
   classSubjects ClassSubject[]
   lessonPlans   LessonPlan[] // Phase 5 / Slice 2 back-relation.
   questions     Question[] // Phase 8c / CP5b back-relation.
+  examPapers    ExamPaper[] // Phase 8c / CP5c back-relation.
 
   @@unique([schoolId, code])
   @@index([schoolId])
@@ -583,6 +585,7 @@ model Subject {
   teacherAssignments TeacherAssignment[] // Phase 1 / Slice 11 back-relation.
   lessonPlans        LessonPlan[] // Phase 5 / Slice 2 back-relation.
   questions          Question[] // Phase 8c / CP5b back-relation.
+  examPapers         ExamPaper[] // Phase 8c / CP5c back-relation.
   timetableEntries   TimetableEntry[] // Phase 8 / CP3 — composite (school_id, id) FK target.
 
   @@unique([schoolId, id]) // Phase 8 / CP3 — composite FK target (§17 D29)
@@ -1946,8 +1949,9 @@ model GradingComponent {
   createdAt  DateTime @default(now()) @map("created_at")
   updatedAt  DateTime @updatedAt @map("updated_at")
 
-  scheme GradingScheme     @relation(fields: [schemeId], references: [id], onDelete: Cascade)
-  scores AssessmentScore[]
+  scheme     GradingScheme     @relation(fields: [schemeId], references: [id], onDelete: Cascade)
+  scores     AssessmentScore[]
+  examPapers ExamPaper[] // Phase 8c / CP5c — the gradebook column a paper is for.
 
   @@unique([schoolId, schemeId, key])
   @@index([schoolId])
@@ -3453,6 +3457,7 @@ model Question {
   classLevel ClassLevel       @relation(fields: [classLevelId], references: [id], onDelete: Restrict)
   supersedes Question?        @relation("QuestionRevision", fields: [supersedesId], references: [id], onDelete: SetNull)
   revisions  Question[]       @relation("QuestionRevision")
+  paperItems ExamPaperItem[] // Phase 8c / CP5c — papers that set this question.
   options    QuestionOption[]
 
   @@index([schoolId])
@@ -3475,4 +3480,93 @@ model QuestionOption {
   @@unique([questionId, orderIndex])
   @@index([schoolId])
   @@map("question_options")
+}
+
+// ---------------------------------------------------------------------------
+// Phase 8c / CP5c — exam papers (docs/modules/phase-8.md §22.3).
+//
+// A paper is sections of APPROVED questions from the bank. A DRAFT is edited
+// freely; FINAL is frozen for good, so what was printed and what is stored
+// never disagree. A FINAL paper is changed only by duplicating it.
+//
+// Items POINT at questions rather than copying them, and that is safe because
+// of CP5b's rule: an approved question is never edited in place (an edit makes
+// a new row) and is retired, never deleted. The wording a FINAL paper
+// references is the wording it was set with, for as long as the paper exists.
+//
+// Total marks are not stored: they are the sum of the questions' marks.
+// ---------------------------------------------------------------------------
+enum ExamPaperStatus {
+  DRAFT
+  FINAL
+}
+
+model ExamPaper {
+  id               String          @id @default(uuid())
+  schoolId         String          @map("school_id")
+  subjectId        String          @map("subject_id")
+  classLevelId     String          @map("class_level_id")
+  termId           String          @map("term_id")
+  // Optional: the gradebook column this paper's marks go into (usually
+  // "Exam"). A FINAL paper's total then pre-fills that column's "Out of".
+  componentId      String?         @map("component_id")
+  title            String
+  durationMinutes  Int             @map("duration_minutes")
+  instructions     String?
+  // Versions A–D to print, each with its own option order and marking scheme.
+  versionCount     Int             @default(1) @map("version_count")
+  status           ExamPaperStatus @default(DRAFT)
+  createdBy        String          @map("created_by")
+  finalisedBy      String?         @map("finalised_by")
+  finalisedAt      DateTime?       @map("finalised_at")
+  duplicatedFromId String?         @map("duplicated_from_id")
+  createdAt        DateTime        @default(now()) @map("created_at")
+  updatedAt        DateTime        @updatedAt @map("updated_at")
+
+  subject    Subject            @relation(fields: [subjectId], references: [id], onDelete: Restrict)
+  classLevel ClassLevel         @relation(fields: [classLevelId], references: [id], onDelete: Restrict)
+  term       Term               @relation(fields: [termId], references: [id], onDelete: Restrict)
+  component  GradingComponent?  @relation(fields: [componentId], references: [id], onDelete: SetNull)
+  sections   ExamPaperSection[]
+  items      ExamPaperItem[]
+
+  @@index([schoolId])
+  @@index([schoolId, subjectId, classLevelId, termId])
+  @@map("exam_papers")
+}
+
+model ExamPaperSection {
+  id           String  @id @default(uuid())
+  schoolId     String  @map("school_id")
+  paperId      String  @map("paper_id")
+  orderIndex   Int     @map("order_index")
+  title        String
+  instructions String?
+
+  paper ExamPaper       @relation(fields: [paperId], references: [id], onDelete: Cascade)
+  items ExamPaperItem[]
+
+  @@unique([paperId, orderIndex])
+  @@index([schoolId])
+  @@map("exam_paper_sections")
+}
+
+model ExamPaperItem {
+  id         String @id @default(uuid())
+  schoolId   String @map("school_id")
+  paperId    String @map("paper_id")
+  sectionId  String @map("section_id")
+  questionId String @map("question_id")
+  orderIndex Int    @map("order_index")
+
+  paper    ExamPaper        @relation(fields: [paperId], references: [id], onDelete: Cascade)
+  section  ExamPaperSection @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  question Question         @relation(fields: [questionId], references: [id], onDelete: Restrict)
+
+  // A question appears once per paper.
+  @@unique([paperId, questionId])
+  @@unique([sectionId, orderIndex])
+  @@index([schoolId])
+  @@index([questionId])
+  @@map("exam_paper_items")
 }

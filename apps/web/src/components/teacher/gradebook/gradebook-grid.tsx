@@ -37,6 +37,7 @@ import {
   signOffColumn,
 } from "@/lib/assessment/assessment-api";
 import { exportRowsAsCsv, type CsvColumn } from "@/lib/csv-export";
+import { getExamPaperOutOf } from "@/lib/exam-papers/exam-papers-api";
 import { cn } from "@/lib/utils";
 
 import {
@@ -139,6 +140,8 @@ export function GradebookGrid({
     Object.fromEntries(components.map((c) => [c.id, outOf[c.id] === undefined ? "" : String(outOf[c.id])])),
   );
   const [outOfError, setOutOfError] = useState<Record<string, string | undefined>>({});
+  // CP5c — the FINAL exam paper (if any) that set each column's "Out of".
+  const [outOfSource, setOutOfSource] = useState<Record<string, string>>({});
   // The confirmation step: what the SERVER will store for each converted cell.
   const [pending, setPending] = useState<{
     rows: SaveRow[];
@@ -214,6 +217,40 @@ export function GradebookGrid({
   useEffect(() => {
     void loadPositionsStatus();
   }, [loadPositionsStatus]);
+
+  // CP5c (§22.3) — a FINAL paper set for a column gives it its "Out of", so a
+  // teacher types the marks off the scripts. Only for a column with nothing
+  // saved yet: a column already marked keeps the units its marks are in.
+  useEffect(() => {
+    let cancelled = false;
+    getExamPaperOutOf(termId, classArmId, subjectId)
+      .then(({ papers }) => {
+        if (cancelled || papers.length === 0) return;
+        const next = { ...outOfRef.current };
+        const source: Record<string, string> = {};
+        for (const p of papers) {
+          const hasScores = initialFeed.data.some((row) => row.scores.some((sc) => sc.componentId === p.componentId));
+          if (hasScores || next[p.componentId] !== undefined) continue;
+          if (!components.some((c) => c.id === p.componentId)) continue;
+          next[p.componentId] = p.totalMarks;
+          source[p.componentId] = p.title;
+        }
+        if (Object.keys(source).length === 0) return;
+        outOfRef.current = next;
+        setOutOf(next);
+        setOutOfDraft((d) => ({ ...d, ...Object.fromEntries(Object.keys(source).map((k) => [k, String(next[k])])) }));
+        setOutOfSource(source);
+        form.reset(buildDefaultValues(initialFeed.data, components, next));
+      })
+      .catch(() => {
+        // Non-fatal: the column simply starts in its own units.
+      });
+    return () => {
+      cancelled = true;
+    };
+    // Once per column load; later edits are the teacher's own.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [termId, classArmId, subjectId]);
 
   // Form-teacher "Recompute positions" — a SUBJECT-NARROWED pass (this column).
   async function onRecompute(): Promise<void> {
@@ -491,6 +528,9 @@ export function GradebookGrid({
                     />
                   </label>
                   {outOfError[c.id] && <p className="mt-1 text-xs font-normal normal-case text-destructive">{outOfError[c.id]}</p>}
+                  {outOfSource[c.id] && outOf[c.id] !== undefined ? (
+                    <p className="mt-1 max-w-36 text-xs font-normal normal-case text-muted-foreground">From the paper &ldquo;{outOfSource[c.id]}&rdquo;</p>
+                  ) : null}
                 </TableHead>
               ))}
               <TableHead>Total</TableHead>

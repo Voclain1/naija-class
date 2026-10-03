@@ -4771,6 +4771,104 @@ app has no question bank.
 - **Closing the loop:** a FINAL paper's total pre-fills the "out of" when
   marks for that subject's exam column are entered (CP5a).
 
+### 22.3a As built — CP5c (2026-10-05)
+
+Migration `20261005120000_cp5c_exam_papers`: `exam_papers`,
+`exam_paper_sections` and `exam_paper_items`, all with FORCE RLS on their own
+`school_id` (`exam-paper-rls.spec.ts`). Three permissions in
+`EXAM_PAPER_PERMISSIONS` (`exam-paper.read`, `.write`, `.finalise`). Admin and
+teacher hold all three and bursar none (pinned). No SECURITY DEFINER function,
+so the count stays 23. The freeze trigger below runs with the caller's own
+rights, so it is not one.
+
+**FINAL is frozen in the database, not only in the service.**
+- `exam_paper_frozen_guard()`, on all three tables, refuses any update or
+  delete of a FINAL paper's row and any insert, update or delete of its
+  sections or items, however the write arrives. The DRAFT → FINAL step is an
+  update of a DRAFT row, so it passes.
+- `exam_papers_final_check` ties FINAL to `finalised_by` and `finalised_at`.
+- A FINAL paper changes only by **Duplicate to edit**, which makes a new
+  DRAFT with `duplicated_from_id`.
+
+**Items point at questions; they do not copy them.** This is safe because of
+CP5b's rule: an approved question is never edited in place and is retired,
+never deleted. The FK is `RESTRICT` as a backstop. A question retired after
+being added to a draft is shown in amber and blocks finalising, with the
+reason given in words (`problems`). A FINAL paper still prints a since-retired
+question's wording unchanged (tested).
+
+**Structure.**
+- A new paper gets "Section A — Objectives" and "Section B — Theory".
+- Saving a draft is one `PUT` of the header plus the whole structure. Only
+  approved questions of the paper's own subject and level are accepted, and
+  each question appears once per paper.
+- Total marks are computed from the questions, never stored.
+- **Draw at random** takes unused approved questions of a type (and topic).
+- A paper is set for the current term, as the gradebook is.
+
+**Versions A–D.**
+- `optionOrderFor` in `@school-kit/types` is a pure, seeded shuffle (FNV-1a
+  plus mulberry32, keyed `${paperId}:${itemId}:${version}`).
+- Version A is always the order as set. B–D are never that order.
+- Reprinting a version gives the same paper, and its marking scheme names
+  the letter where the right answer now sits (tested at the service and in
+  the browser).
+
+**Exports (D63)**, FINAL only, each fetched fresh from
+`GET /exam-papers/:id/export?version=` and **audited with its version**
+(`exam-paper.export`). Two departures from the §22.3 plan:
+- **PDF is the browser's own "Print / save as PDF"** from a print-ready page,
+  the route receipts and PIN cards already take. It does not go through the
+  report-card render worker. The worker would have needed a job, a storage
+  object, status polling and a deploy of the separate worker app, all for a
+  document the browser renders identically. A server-made PDF file can be
+  added later if schools want one.
+- **Word** is built in the browser with the `docx` library (MIT), loaded only
+  when someone clicks Export.
+
+CSV has one row per question in that version's option order, with the key.
+The paper never carries the answers; the marking scheme does (tested).
+
+**Closing the loop with CP5a.** A paper may name its gradebook column, with
+Exam chosen by default. `GET /exam-papers/out-of` returns the most recently
+finalised paper's total per column. The gradebook pre-fills that column's
+"Out of" and says which paper it came from, but only for a column with
+nothing saved yet: a column already marked keeps its own units.
+
+**Screens.** `/teacher/exam-papers` (list and "Start paper") and
+`/teacher/exam-papers/[id]`:
+- the editor: sections, a bank picker with draw, move up and down, remove,
+  save, finalise, delete draft, with an unsaved-changes guard registered in
+  the session-end spec;
+- for a FINAL paper, the export panel and Duplicate.
+
+Owner/admin reach the pages through the sidebar's "Exam papers", promoted from
+"Coming soon" ("Assessments & Exams"). Owner/admin read the current term from
+the academic-years API, since `/teacher-scope/me` is teacher-only.
+
+**Proven by:**
+- `exam-papers.service.spec.ts` (7 tests):
+  - the shuffle;
+  - DRAFT defaults and scope;
+  - approved-only, same-subject questions with computed marks;
+  - frozen by the service and by the database;
+  - per-version exports whose keys follow the answer, audited;
+  - duplicate with a retired question;
+  - draw;
+  - out-of.
+- Mutation checks:
+  - a key that ignores the shuffle fails a test;
+  - accepting draft questions fails a test.
+- `paper-export.spec.ts`: paper vs scheme, escaping, CSV, and a real `.docx`.
+- `paper-editor.spec.ts`.
+- The browser test `e2e/tests/exam-papers.spec.ts`, which covers:
+  - build, draw, save and finalise;
+  - version B options moved, with the scheme letter matching;
+  - Word and CSV downloads;
+  - four audit rows;
+  - the gradebook "Out of" 12, from the paper;
+  - duplicate.
+
 ### 22.4 Not in CP5
 
 Online exam delivery (D59). Question images and diagrams (text only in v1,
