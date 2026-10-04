@@ -29,6 +29,8 @@
 import { cookies, headers } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
 
+import { clientIpHeaders } from "@/lib/client-ip-signature";
+
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api/v1";
 const COOKIE_NAME = "sk_portal_session";
 const COOKIE_MAX_AGE = 2_592_000; // 30 days — matches GUARDIAN_SESSION_TTL_MS server-side
@@ -50,6 +52,7 @@ async function forward(
   body: string | undefined,
   sessionToken: string | undefined,
   host: string,
+  forwardedFor: Record<string, string>,
 ): Promise<NextResponse> {
   // Logout is the ONLY sub-path that clears rather than (possibly) sets.
   // Matched here rather than in a separate route handler so every cookie
@@ -65,6 +68,9 @@ async function forward(
       headers: {
         "Content-Type": "application/json",
         ...(sessionToken ? { Authorization: `Bearer ${sessionToken}` } : {}),
+        // The parent's own address, signed, so the API's per-address limits
+        // key on them rather than on this server (lib/client-ip-signature.ts).
+        ...forwardedFor,
       },
       ...(body !== undefined ? { body } : {}),
     });
@@ -180,7 +186,7 @@ export async function GET(req: NextRequest, ctx: Context): Promise<NextResponse>
   const sessionToken = cookieStore.get(COOKIE_NAME)?.value;
   const headerList = await headers();
   const host = headerList.get("host") ?? "";
-  return forward("GET", subPath, undefined, sessionToken, host);
+  return forward("GET", subPath, undefined, sessionToken, host, clientIpHeaders((name) => headerList.get(name)));
 }
 
 export async function POST(req: NextRequest, ctx: Context): Promise<NextResponse> {
@@ -191,5 +197,5 @@ export async function POST(req: NextRequest, ctx: Context): Promise<NextResponse
   const headerList = await headers();
   const host = headerList.get("host") ?? "";
   const body = await req.text();
-  return forward("POST", subPath, body, sessionToken, host);
+  return forward("POST", subPath, body, sessionToken, host, clientIpHeaders((name) => headerList.get(name)));
 }

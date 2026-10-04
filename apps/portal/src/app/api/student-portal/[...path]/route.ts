@@ -18,6 +18,8 @@
 
 import { NextRequest, NextResponse } from "next/server";
 
+import { clientIpHeaders } from "@/lib/client-ip-signature";
+
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api/v1";
 
 /** Exactly the two public invitation endpoints. Nothing else. */
@@ -46,7 +48,9 @@ async function forward(req: NextRequest, segments: string[]): Promise<NextRespon
     // — see the guardian proxy's header.
     const resp = await fetch(`${API_BASE}/student-portal/${segments.join("/")}`, {
       method: req.method,
-      headers: { "Content-Type": "application/json" },
+      // The child's own address, signed, so the API's per-address limits key
+      // on them and not on this server (lib/client-ip-signature.ts).
+      headers: { "Content-Type": "application/json", ...clientIpHeaders((name) => req.headers.get(name)) },
       ...(body !== undefined ? { body } : {}),
     });
     const text = await resp.text();
