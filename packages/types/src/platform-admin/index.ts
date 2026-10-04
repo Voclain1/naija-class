@@ -6,3 +6,5 @@ export * from "./platform-admin-set-ai-enabled.dto.js";
 export * from "./platform-admin-set-early-access.dto.js";
 export * from "./platform-admin-set-staff-mobile.dto.js";
 export * from "./platform-admin-user.dto.js";
+export * from "./platform-admin-owner-invitation.dto.js";
+export * from "./platform-admin-set-ai-budget.dto.js";

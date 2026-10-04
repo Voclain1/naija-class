@@ -16,10 +16,13 @@ import {
   platformAdminCreateSchoolSchema,
   platformAdminListUsersQuerySchema,
   platformAdminLoginSchema,
+  platformAdminResendOwnerInvitationSchema,
   platformAdminResolvePaystackSetupSchema,
+  platformAdminSetAiBudgetSchema,
   platformAdminSetAiEnabledSchema,
   platformAdminSetEarlyAccessSchema,
   platformAdminSetStaffMobileSchema,
+  type PlatformAdminCancelOwnerInvitationResponse,
   type PlatformAdminCreateSchoolInput,
   type PlatformAdminCreateSchoolResponse,
   type PlatformAdminListUsersQuery,
@@ -27,9 +30,13 @@ import {
   type PlatformAdminLoginResponse,
   type PlatformAdminPaystackSetupRequestDto,
   type PlatformAdminPaystackSetupRevealDto,
+  type PlatformAdminResendOwnerInvitationInput,
+  type PlatformAdminResendOwnerInvitationResponse,
   type PlatformAdminResolvePaystackSetupInput,
   type PlatformAdminResolvePaystackSetupResponse,
   type PlatformAdminSchoolDto,
+  type PlatformAdminSetAiBudgetInput,
+  type PlatformAdminSetAiBudgetResponse,
   type PlatformAdminSetAiEnabledInput,
   type PlatformAdminSetAiEnabledResponse,
   type PlatformAdminSetEarlyAccessInput,
@@ -228,6 +235,64 @@ export class PlatformAdminController {
   ): Promise<PlatformAdminSetStaffMobileResponse> {
     return this.platformAdminService.setStaffMobileEnabled(schoolId, dto, adminCtx, {
       ipAddress: ip, userAgent: req.header("user-agent") ?? null,
+    });
+  }
+
+  // PATCH /platform-admin/schools/:schoolId/ai-budget — the per-school
+  // monthly AI cap in tokens (null = platform default). Same throttle as the
+  // other writes.
+  @Patch("schools/:schoolId/ai-budget")
+  @UseGuards(PlatformAdminGuard)
+  @Throttle({ default: { ttl: 60000, limit: 20 } })
+  async setAiBudget(
+    @Param("schoolId") schoolId: string,
+    @Body(new ZodValidationPipe(platformAdminSetAiBudgetSchema)) dto: PlatformAdminSetAiBudgetInput,
+    @CurrentPlatformAdmin() adminCtx: PlatformAdminContext,
+    @Ip() ip: string,
+    @Req() req: Request,
+  ): Promise<PlatformAdminSetAiBudgetResponse> {
+    return this.platformAdminService.setAiBudget(schoolId, dto, adminCtx, {
+      ipAddress: ip,
+      userAgent: req.header("user-agent") ?? null,
+    });
+  }
+
+  // POST /platform-admin/schools/:schoolId/owner-invitation/resend — a fresh
+  // owner invitation (optionally to a corrected address) for a school that
+  // has no owner yet. Sends a real email, so throttled like createSchool.
+  @Post("schools/:schoolId/owner-invitation/resend")
+  @HttpCode(200)
+  @UseGuards(PlatformAdminGuard)
+  @Throttle({ default: { ttl: 60000, limit: 20 } })
+  async resendOwnerInvitation(
+    @Param("schoolId") schoolId: string,
+    @Body(new ZodValidationPipe(platformAdminResendOwnerInvitationSchema))
+    dto: PlatformAdminResendOwnerInvitationInput,
+    @CurrentPlatformAdmin() adminCtx: PlatformAdminContext,
+    @Ip() ip: string,
+    @Req() req: Request,
+  ): Promise<PlatformAdminResendOwnerInvitationResponse> {
+    return this.platformAdminService.resendOwnerInvitation(schoolId, dto, adminCtx, {
+      ipAddress: ip,
+      userAgent: req.header("user-agent") ?? null,
+    });
+  }
+
+  // POST /platform-admin/schools/:schoolId/owner-invitation/cancel — ends
+  // the school's open owner invitations without sending another.
+  @Post("schools/:schoolId/owner-invitation/cancel")
+  @HttpCode(200)
+  @UseGuards(PlatformAdminGuard)
+  @Throttle({ default: { ttl: 60000, limit: 20 } })
+  async cancelOwnerInvitation(
+    @Param("schoolId") schoolId: string,
+    @CurrentPlatformAdmin() adminCtx: PlatformAdminContext,
+    @Ip() ip: string,
+    @Req() req: Request,
+  ): Promise<PlatformAdminCancelOwnerInvitationResponse> {
+    return this.platformAdminService.cancelOwnerInvitation(schoolId, adminCtx, {
+      ipAddress: ip,
+      userAgent: req.header("user-agent") ?? null,
     });
   }
 }

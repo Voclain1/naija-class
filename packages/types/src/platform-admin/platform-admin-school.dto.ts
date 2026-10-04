@@ -5,6 +5,9 @@
 export interface PlatformAdminSchoolDto {
   schoolId: string;
   name: string;
+  // The school's public URL key. On the roster because two schools can share
+  // a name, and the slug is what tells them apart before an operator acts.
+  slug: string;
   createdAt: string;
   isActive: boolean;
   studentCount: number;
@@ -12,6 +15,11 @@ export interface PlatformAdminSchoolDto {
   // True iff an unaccepted, unexpired `owner`-role Invitation exists for
   // this school — i.e. it was provisioned via POST /platform-admin/schools
   // and the owner hasn't accepted yet. Always false for self-serve schools.
+  // True when a staff account at the school holds the `owner` role. False
+  // means nobody has accepted an owner invitation yet — the case the
+  // dashboard offers "resend owner invite" for, whether or not the last
+  // invitation has expired.
+  hasOwner: boolean;
   ownerInvitePending: boolean;
   ownerInviteExpiresAt: string | null;
   // When this school was marked early-access, or null (the default, and the
@@ -28,6 +36,14 @@ export interface PlatformAdminSchoolDto {
   // a separate gate this field says nothing about. Toggled via
   // PATCH /platform-admin/schools/:schoolId/ai.
   aiEnabled: boolean;
+  // The per-school monthly AI cap in tokens as set by an operator, or null
+  // for "the platform default". Set via
+  // PATCH /platform-admin/schools/:schoolId/ai-budget.
+  aiMonthlyTokenBudget: number | null;
+  // What the budget check actually enforces: the value above, or the
+  // platform default when it is null. Returned so the dashboard never has to
+  // carry its own copy of the default.
+  aiEffectiveMonthlyTokenBudget: number;
   // The per-school staff mobile rollout gate (School.staffMobileEnabled,
   // DEFAULT false). Toggled via PATCH /platform-admin/schools/:schoolId/
   // staff-mobile. Present here so that endpoint is not a blind write — and

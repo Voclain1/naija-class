@@ -36,12 +36,17 @@ import {
 } from "@/components/ui/table";
 import { ApiError, proxyFetch } from "@/lib/api-client";
 
+import { compactTokens, ownerStatusOf } from "./school-manage";
+import { SchoolManageDialog } from "./school-manage-dialog";
+
 // Cross-tenant view — schools + users, basic metadata only (see CLAUDE.md's
 // "Platform super-admin" note for the exact allow-listed shape), PLUS three
 // writes: provisioning a new school (2026-08-07, the surface's first),
 // the early-access marker (2026-08-09), and the per-school AI kill switch
 // (2026-08-14 — the only one of the three that changes runtime behaviour
-// rather than recording a fact).
+// rather than recording a fact). Since 2026-10-06 each school row also opens
+// a "Manage" dialog (school-manage-dialog.tsx) for the AI spend cap and the
+// owner invitation.
 // No "act as this school" affordance exists here, and none should ever be
 // added without also growing the underlying SECURITY DEFINER functions,
 // which is the actual enforcement point, not this UI.
@@ -83,6 +88,7 @@ export function PlatformAdminDashboard() {
   // tab response. The ID is already on screen in this component's state; it
   // was simply never rendered.
   const [copiedSchoolId, setCopiedSchoolId] = useState<string | null>(null);
+  const [managingSchoolId, setManagingSchoolId] = useState<string | null>(null);
 
   async function onCopySchoolId(schoolId: string) {
     try {
@@ -517,6 +523,8 @@ export function PlatformAdminDashboard() {
                     <TableCell>
                       <div className="flex flex-col items-start gap-1">
                         <span>{school.name}</span>
+                        {/* The slug tells apart schools that share a name. */}
+                        <span className="font-mono text-xs text-muted-foreground">{school.slug}</span>
                         <button
                           type="button"
                           onClick={() => void onCopySchoolId(school.schoolId)}
@@ -540,13 +548,18 @@ export function PlatformAdminDashboard() {
                       </div>
                     </TableCell>
                     <TableCell>
-                      {school.ownerInvitePending ? (
-                        <Badge variant="warning">Pending owner</Badge>
-                      ) : (
-                        <Badge variant={school.isActive ? "success" : "muted"}>
-                          {school.isActive ? "Active" : "Inactive"}
-                        </Badge>
-                      )}
+                      {(() => {
+                        const owner = ownerStatusOf(school);
+                        if (owner.kind === "INVITE_PENDING") return <Badge variant="warning">Pending owner</Badge>;
+                        // Expired or cancelled, and nobody took the school over —
+                        // the case that used to fall through to "Active".
+                        if (owner.kind === "NO_OWNER") return <Badge variant="muted">No owner</Badge>;
+                        return (
+                          <Badge variant={school.isActive ? "success" : "muted"}>
+                            {school.isActive ? "Active" : "Inactive"}
+                          </Badge>
+                        );
+                      })()}
                     </TableCell>
                     <TableCell>{school.studentCount}</TableCell>
                     <TableCell>{school.staffCount}</TableCell>
@@ -598,6 +611,13 @@ export function PlatformAdminDashboard() {
                               : "Enable"}
                         </Button>
                       </div>
+                      <span
+                        className="mt-1 block whitespace-nowrap text-xs text-muted-foreground"
+                        title={`${school.aiEffectiveMonthlyTokenBudget.toLocaleString("en-NG")} tokens a month`}
+                      >
+                        {compactTokens(school.aiEffectiveMonthlyTokenBudget)}/mo
+                        {school.aiMonthlyTokenBudget == null ? " (default)" : ""}
+                      </span>
                     </TableCell>
                     {/*
                       Staff mobile is READ-ONLY here, deliberately unlike the AI
@@ -619,18 +639,29 @@ export function PlatformAdminDashboard() {
                       )}
                     </TableCell>
                     <TableCell>
-                      <Button
-                        type="button"
-                        variant="link"
-                        className="h-auto p-0"
-                        onClick={() =>
-                          setSelectedSchoolId((current) =>
-                            current === school.schoolId ? null : school.schoolId,
-                          )
-                        }
-                      >
-                        {selectedSchoolId === school.schoolId ? "Show all users" : "View users"}
-                      </Button>
+                      <div className="flex flex-col items-start gap-1">
+                        <Button
+                          type="button"
+                          variant="link"
+                          className="h-auto p-0"
+                          onClick={() => setManagingSchoolId(school.schoolId)}
+                          aria-label={`Manage ${school.name}`}
+                        >
+                          Manage
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="link"
+                          className="h-auto p-0"
+                          onClick={() =>
+                            setSelectedSchoolId((current) =>
+                              current === school.schoolId ? null : school.schoolId,
+                            )
+                          }
+                        >
+                          {selectedSchoolId === school.schoolId ? "Show all users" : "View users"}
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -639,6 +670,18 @@ export function PlatformAdminDashboard() {
           )}
         </CardContent>
       </Card>
+
+      <SchoolManageDialog
+        school={schools?.find((s) => s.schoolId === managingSchoolId) ?? null}
+        onClose={() => setManagingSchoolId(null)}
+        onChanged={(patch) =>
+          setSchools((current) =>
+            current === null
+              ? current
+              : current.map((s) => (s.schoolId === managingSchoolId ? { ...s, ...patch } : s)),
+          )
+        }
+      />
 
       <Card>
         <CardHeader>
