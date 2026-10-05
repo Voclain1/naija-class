@@ -185,8 +185,8 @@ model School {
   //                          commits — never persists. exam_paper_frozen_guard
   //                          reads it to let the school's own deletion remove
   //                          FINAL papers.
-  suspendedAt           DateTime? @map("suspended_at")
-  deletionStartedAt     DateTime? @map("deletion_started_at")
+  suspendedAt       DateTime? @map("suspended_at")
+  deletionStartedAt DateTime? @map("deletion_started_at")
 
   //   parentSummaryEnabled   Phase 5 / Slice 5. Weekly AI progress summaries
   //                          sent to guardians. Defaults FALSE, and — since
@@ -579,6 +579,9 @@ model ClassArm {
   timetables            Timetable[] // Phase 8 / CP3 — composite (school_id, id) FK target.
   timetablePublications TimetablePublication[] // Phase 8 / CP4 — published snapshots (D45).
 
+  cbtSittingArms CbtSittingArm[] // Online exams (CBT1)
+  cbtCandidates  CbtCandidate[]
+
   @@unique([schoolId, id]) // Phase 8 / CP3 — composite FK target (§17 D29)
   @@unique([schoolId, classLevelId, code])
   @@index([schoolId])
@@ -748,6 +751,8 @@ model Student {
   sessions          StudentSession[] // Phase 6 / Slice 3.
   portalInvitations StudentPortalInvitation[] // Phase 6 / Slice 3.
   deviceTokens      DeviceToken[] // Phase 6 / Slice 5.
+
+  cbtCandidates CbtCandidate[] // Online exams (CBT1)
 
   @@unique([schoolId, admissionNumber])
   @@index([schoolId])
@@ -3538,12 +3543,13 @@ model ExamPaper {
   createdAt        DateTime        @default(now()) @map("created_at")
   updatedAt        DateTime        @updatedAt @map("updated_at")
 
-  subject    Subject            @relation(fields: [subjectId], references: [id], onDelete: Restrict)
-  classLevel ClassLevel         @relation(fields: [classLevelId], references: [id], onDelete: Restrict)
-  term       Term               @relation(fields: [termId], references: [id], onDelete: Restrict)
-  component  GradingComponent?  @relation(fields: [componentId], references: [id], onDelete: SetNull)
-  sections   ExamPaperSection[]
-  items      ExamPaperItem[]
+  subject     Subject            @relation(fields: [subjectId], references: [id], onDelete: Restrict)
+  classLevel  ClassLevel         @relation(fields: [classLevelId], references: [id], onDelete: Restrict)
+  term        Term               @relation(fields: [termId], references: [id], onDelete: Restrict)
+  component   GradingComponent?  @relation(fields: [componentId], references: [id], onDelete: SetNull)
+  sections    ExamPaperSection[]
+  items       ExamPaperItem[]
+  cbtSittings CbtSitting[] // Online exams (CBT1) — sittings of this paper.
 
   @@index([schoolId])
   @@index([schoolId, subjectId, classLevelId, termId])
@@ -3584,4 +3590,90 @@ model ExamPaperItem {
   @@index([schoolId])
   @@index([questionId])
   @@map("exam_paper_items")
+}
+
+// ---------------------------------------------------------------------------
+// Online exams (CBT) — docs/modules/cbt.md. CBT1: sittings, their arms, and
+// the candidate list frozen at publish.
+//
+// A SITTING schedules one FINAL exam paper for one or more class arms (D1).
+// Publishing snapshots the candidates and builds the encrypted exam pack
+// (D2, D3). Two codes: `accessCode` lets a lab machine download the pack;
+// `unlockCode` decrypts it at the start. Neither the pack nor any code ever
+// carries the answer key (D4) — marking happens on the server.
+// ---------------------------------------------------------------------------
+
+enum CbtSittingStatus {
+  DRAFT
+  PUBLISHED
+  CLOSED
+}
+
+model CbtSitting {
+  id              String           @id @default(uuid())
+  schoolId        String           @map("school_id")
+  paperId         String           @map("paper_id")
+  title           String
+  // The moment the exam may start, and the latest moment a student may begin.
+  startsAt        DateTime         @map("starts_at")
+  windowEndsAt    DateTime         @map("window_ends_at")
+  durationMinutes Int              @map("duration_minutes")
+  status          CbtSittingStatus @default(DRAFT)
+  // 6 characters, unique within the school; with the school's slug it
+  // downloads the pack. Reveals nothing on its own — the pack is encrypted.
+  accessCode      String           @map("access_code")
+  // 12 characters. The pack's key is derived from it (PBKDF2). Shown only to
+  // cbt.manage holders, on the invigilator sheet; every view is audited.
+  unlockCode      String           @map("unlock_code")
+  // The encrypted pack envelope (JSON: KDF params, IV, ciphertext), built at
+  // publish; NULL while DRAFT.
+  pack            Json?
+  packBuiltAt     DateTime?        @map("pack_built_at")
+  createdBy       String           @map("created_by")
+  publishedBy     String?          @map("published_by")
+  publishedAt     DateTime?        @map("published_at")
+  closedBy        String?          @map("closed_by")
+  closedAt        DateTime?        @map("closed_at")
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime         @updatedAt @map("updated_at")
+
+  paper      ExamPaper       @relation(fields: [paperId], references: [id], onDelete: Restrict)
+  arms       CbtSittingArm[]
+  candidates CbtCandidate[]
+
+  @@unique([schoolId, accessCode])
+  @@index([schoolId])
+  @@index([paperId])
+  @@map("cbt_sittings")
+}
+
+model CbtSittingArm {
+  sittingId  String @map("sitting_id")
+  classArmId String @map("class_arm_id")
+  schoolId   String @map("school_id")
+
+  sitting  CbtSitting @relation(fields: [sittingId], references: [id], onDelete: Cascade)
+  classArm ClassArm   @relation(fields: [classArmId], references: [id], onDelete: Cascade)
+
+  @@id([sittingId, classArmId])
+  @@index([schoolId])
+  @@map("cbt_sitting_arms")
+}
+
+// Frozen at publish (D2): who may sit, in which arm, and which version.
+model CbtCandidate {
+  id         String @id @default(uuid())
+  schoolId   String @map("school_id")
+  sittingId  String @map("sitting_id")
+  studentId  String @map("student_id")
+  classArmId String @map("class_arm_id")
+  version    String // "A" | "B" | "C" | "D"
+
+  sitting  CbtSitting @relation(fields: [sittingId], references: [id], onDelete: Cascade)
+  student  Student    @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  classArm ClassArm   @relation(fields: [classArmId], references: [id], onDelete: Cascade)
+
+  @@unique([sittingId, studentId])
+  @@index([schoolId])
+  @@map("cbt_candidates")
 }

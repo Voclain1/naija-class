@@ -60,3 +60,14 @@ export function optionOrderFor(version: PaperVersion, seedKey: string, count: nu
 export function versionsOf(versionCount: number): PaperVersion[] {
   return VERSION_LETTERS.slice(0, Math.min(Math.max(versionCount, 1), VERSION_LETTERS.length));
 }
+
+/**
+ * Online exams (CBT, docs/modules/cbt.md D2): which version a candidate sits.
+ * A hash of the sitting and the student — deterministic, so a re-published
+ * sitting gives every student the same version again, and spread so
+ * neighbours rarely share one.
+ */
+export function versionForCandidate(sittingId: string, studentId: string, versionCount: number): PaperVersion {
+  const versions = versionsOf(versionCount);
+  return versions[hash32(`${sittingId}:${studentId}`) % versions.length]!;
+}

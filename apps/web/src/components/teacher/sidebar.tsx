@@ -14,6 +14,7 @@ import {
   FileText,
   LayoutDashboard,
   ScrollText,
+  MonitorCheck,
   UserCircle,
 } from "lucide-react";
 import Link from "next/link";
@@ -58,6 +59,8 @@ const BASE_ITEMS: NavItem[] = [
   { label: "Question bank", href: "/teacher/question-bank", icon: FileQuestion, enabled: true },
   // Phase 8c / CP5c (§22.3) — papers set from the approved questions above.
   { label: "Exam papers", href: "/teacher/exam-papers", icon: ScrollText, enabled: true },
+  // Online exams (CBT, docs/modules/cbt.md) — a final paper sat in the lab.
+  { label: "Online exams", href: "/teacher/cbt", icon: MonitorCheck, enabled: true },
   // Phase 8 / CP1 — read-only school calendar (docs/modules/phase-8.md §15).
   { label: "Calendar", href: "/teacher/calendar", icon: CalendarDays, enabled: true },
   // Phase 8 / CP4 (docs/modules/phase-8.md §18 D37): own lessons + form-class grids.
