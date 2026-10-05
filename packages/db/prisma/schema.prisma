@@ -173,6 +173,21 @@ model School {
   aiEnabled             Boolean   @default(false) @map("ai_enabled")
   aiMonthlyTokenBudget  Int?      @map("ai_monthly_token_budget")
 
+  //   suspendedAt            platform-admin suspension (2026-10-07,
+  //                          docs/modules/platform-admin.md slice 2). Non-null
+  //                          = every sign-in to this school is refused and live
+  //                          sessions end at their next request; data is kept
+  //                          and payment links still work. A timestamp beside
+  //                          `status`, not status = SUSPENDED, so suspension
+  //                          never erases where onboarding had got to.
+  //   deletionStartedAt      set only inside the platform-admin delete
+  //                          transaction, and gone with the row when it
+  //                          commits — never persists. exam_paper_frozen_guard
+  //                          reads it to let the school's own deletion remove
+  //                          FINAL papers.
+  suspendedAt           DateTime? @map("suspended_at")
+  deletionStartedAt     DateTime? @map("deletion_started_at")
+
   //   parentSummaryEnabled   Phase 5 / Slice 5. Weekly AI progress summaries
   //                          sent to guardians. Defaults FALSE, and — since
   //                          2026-08-14 — so does aiEnabled above. They are

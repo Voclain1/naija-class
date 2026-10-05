@@ -6,6 +6,7 @@ import { basePrisma } from "@school-kit/db";
 import { UnauthorizedError } from "@school-kit/types";
 
 import type { GuardianAuthContext } from "./guardian-auth-context";
+import { schoolSuspendedError } from "./school-suspension";
 
 // Bearer-token guard for the guardian portal, reading the token the portal's
 // Next.js proxy route forwards from its httpOnly sk_portal_session cookie
@@ -34,6 +35,7 @@ interface ResolveGuardianSessionRow {
   school_id: string;
   expires_at: Date;
   portal_enabled: boolean;
+  school_suspended: boolean;
 }
 
 @Injectable()
@@ -74,6 +76,11 @@ export class GuardianAuthGuard implements CanActivate {
       // longer active. Contact your school administrator.", which is exactly
       // what a parent needs to hear, and the portal maps it the same way.
       throw new UnauthorizedError("USER_INACTIVE", "Your school has switched off portal access for this account.");
+    }
+
+    // The whole school suspended from the platform-admin surface (2026-10-07).
+    if (row.school_suspended) {
+      throw schoolSuspendedError();
     }
 
     req.guardian = {

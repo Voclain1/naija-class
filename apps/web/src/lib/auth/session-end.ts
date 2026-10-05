@@ -29,6 +29,8 @@ export type SessionEndReason =
   | "revoked"
   /** The account itself was deactivated. */
   | "deactivated"
+  /** The whole school was suspended by School Kit (2026-10-07). */
+  | "suspended"
   /** The user pressed Sign out. Deliberately NOT an alarming state. */
   | "signed-out";
 
@@ -58,6 +60,8 @@ export function reasonFromErrorCode(code: string | undefined): SessionEndReason 
       return "revoked";
     case "USER_INACTIVE":
       return "deactivated";
+    case "SCHOOL_SUSPENDED":
+      return "suspended";
     default:
       return null;
   }
@@ -69,6 +73,7 @@ export function parseSessionEndReason(raw: string | null): SessionEndReason | nu
     case "expired":
     case "revoked":
     case "deactivated":
+    case "suspended":
     case "signed-out":
       return raw;
     default:
@@ -110,6 +115,14 @@ export function sessionEndNotice(reason: SessionEndReason | null): SessionEndNot
         // suggest that it is.
         title: "Your account is no longer active",
         body: "Contact your school administrator if you think this is a mistake.",
+        tone: "warning",
+      };
+    case "suspended":
+      return {
+        // Like "deactivated", signing in again will not help, so it must not
+        // suggest that it will. This one is about the school, not the person.
+        title: "Your school's account is suspended",
+        body: "Nobody at your school can sign in until School Kit reactivates it. Your school owner can contact School Kit.",
         tone: "warning",
       };
     case "signed-out":

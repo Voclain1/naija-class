@@ -4,6 +4,7 @@ import type { Request } from "express";
 import { basePrisma } from "@school-kit/db";
 import { UnauthorizedError } from "@school-kit/types";
 
+import { schoolSuspendedError } from "./school-suspension";
 import { hashStudentToken } from "./student-sessions";
 import { mayHoldSession } from "./student-portal-status";
 import type { StudentAuthContext } from "./student-auth-context";
@@ -49,6 +50,7 @@ interface ResolveStudentSessionRow {
   expires_at: Date;
   student_status: string;
   portal_enabled: boolean;
+  school_suspended: boolean;
 }
 
 @Injectable()
@@ -88,6 +90,13 @@ export class StudentAuthGuard implements CanActivate {
     // keeps the guard from becoming an oracle for account state.
     if (!row.portal_enabled || !mayHoldSession(row.student_status)) {
       throw new UnauthorizedError("INVALID_SESSION", "Session is invalid or has been revoked.");
+    }
+
+    // The whole school suspended (2026-10-07). Unlike the two checks above this
+    // says what it is: it is about the school, not about the child, so there is
+    // nothing personal to keep from them.
+    if (row.school_suspended) {
+      throw schoolSuspendedError();
     }
 
     req.student = {

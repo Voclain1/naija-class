@@ -251,6 +251,16 @@ export const baseConfig = [
       "**/modules/result-checker/result-checker.service.ts",
       "**/common/auth/platform-admin.guard.ts",
       "**/modules/platform-admin/platform-admin.service.ts",
+      // school-deletion.ts (platform-admin tools slice 2, 2026-10-07) only
+      // ever receives a transaction client from platform-admin.service.ts —
+      // every statement runs inside a tx that has already SET the school's
+      // GUC, so RLS bounds it to that one school. It imports basePrisma for
+      // the transaction client's TYPE alone.
+      "**/modules/platform-admin/school-deletion.ts",
+      // school-suspension.ts reads schools.suspended_at — the `schools` table
+      // has no RLS (the users.service.ts category above). Called from the three
+      // session-creation helpers, after a credential is verified.
+      "**/common/auth/school-suspension.ts",
       // School slug derivation (2026-08-12). Runs PRE-tenant by definition:
       // it picks the slug for a school row that does not exist yet, so there
       // is no schoolId to scope a withTenant call to. It reads exactly one

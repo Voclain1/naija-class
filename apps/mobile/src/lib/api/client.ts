@@ -91,6 +91,7 @@ export type SessionEndReason =
   | "SESSION_EXPIRED"
   | "INVALID_SESSION"
   | "USER_INACTIVE"
+  | "SCHOOL_SUSPENDED"
   | "MISSING_BEARER_TOKEN";
 
 type UnauthorizedListener = (reason: SessionEndReason) => void;
@@ -109,6 +110,7 @@ function normalizeSessionEndReason(code: string): SessionEndReason {
   switch (code) {
     case "SESSION_EXPIRED":
     case "USER_INACTIVE":
+    case "SCHOOL_SUSPENDED":
     case "MISSING_BEARER_TOKEN":
       return code;
     default:

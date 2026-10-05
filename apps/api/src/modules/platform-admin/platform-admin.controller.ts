@@ -16,7 +16,9 @@ import {
   platformAdminCreateSchoolSchema,
   platformAdminListUsersQuerySchema,
   platformAdminLoginSchema,
+  platformAdminDeleteSchoolSchema,
   platformAdminResendOwnerInvitationSchema,
+  platformAdminSuspendSchoolSchema,
   platformAdminResolvePaystackSetupSchema,
   platformAdminSetAiBudgetSchema,
   platformAdminSetAiEnabledSchema,
@@ -24,6 +26,11 @@ import {
   platformAdminSetStaffMobileSchema,
   type PlatformAdminCancelOwnerInvitationResponse,
   type PlatformAdminCreateSchoolInput,
+  type PlatformAdminDeleteSchoolInput,
+  type PlatformAdminDeleteSchoolResponse,
+  type PlatformAdminSchoolDeletionCheckDto,
+  type PlatformAdminSchoolSuspensionResponse,
+  type PlatformAdminSuspendSchoolInput,
   type PlatformAdminCreateSchoolResponse,
   type PlatformAdminListUsersQuery,
   type PlatformAdminLoginInput,
@@ -291,6 +298,79 @@ export class PlatformAdminController {
     @Req() req: Request,
   ): Promise<PlatformAdminCancelOwnerInvitationResponse> {
     return this.platformAdminService.cancelOwnerInvitation(schoolId, adminCtx, {
+      ipAddress: ip,
+      userAgent: req.header("user-agent") ?? null,
+    });
+  }
+
+  // ─── School lifecycle (slice 2, 2026-10-07) ─────────────────────────────
+
+  // POST /platform-admin/schools/:schoolId/suspend — blocks every sign-in to
+  // the school; live sessions end at their next request.
+  @Post("schools/:schoolId/suspend")
+  @HttpCode(200)
+  @UseGuards(PlatformAdminGuard)
+  @Throttle({ default: { ttl: 60000, limit: 20 } })
+  async suspendSchool(
+    @Param("schoolId") schoolId: string,
+    @Body(new ZodValidationPipe(platformAdminSuspendSchoolSchema)) dto: PlatformAdminSuspendSchoolInput,
+    @CurrentPlatformAdmin() adminCtx: PlatformAdminContext,
+    @Ip() ip: string,
+    @Req() req: Request,
+  ): Promise<PlatformAdminSchoolSuspensionResponse> {
+    return this.platformAdminService.suspendSchool(schoolId, dto, adminCtx, {
+      ipAddress: ip,
+      userAgent: req.header("user-agent") ?? null,
+    });
+  }
+
+  @Post("schools/:schoolId/reactivate")
+  @HttpCode(200)
+  @UseGuards(PlatformAdminGuard)
+  @Throttle({ default: { ttl: 60000, limit: 20 } })
+  async reactivateSchool(
+    @Param("schoolId") schoolId: string,
+    @CurrentPlatformAdmin() adminCtx: PlatformAdminContext,
+    @Ip() ip: string,
+    @Req() req: Request,
+  ): Promise<PlatformAdminSchoolSuspensionResponse> {
+    return this.platformAdminService.reactivateSchool(schoolId, adminCtx, {
+      ipAddress: ip,
+      userAgent: req.header("user-agent") ?? null,
+    });
+  }
+
+  // GET /platform-admin/schools/:schoolId/deletion-check — counts, and
+  // whether a delete is allowed. Read-only.
+  @Get("schools/:schoolId/deletion-check")
+  @UseGuards(PlatformAdminGuard)
+  async deletionCheck(
+    @Param("schoolId") schoolId: string,
+    @CurrentPlatformAdmin() adminCtx: PlatformAdminContext,
+    @Ip() ip: string,
+    @Req() req: Request,
+  ): Promise<PlatformAdminSchoolDeletionCheckDto> {
+    return this.platformAdminService.deletionCheck(schoolId, adminCtx, {
+      ipAddress: ip,
+      userAgent: req.header("user-agent") ?? null,
+    });
+  }
+
+  // POST /platform-admin/schools/:schoolId/delete — permanent. Only a school
+  // that never recorded a payment, after the operator types its slug. Tighter
+  // throttle than the other writes: nothing else here is irreversible.
+  @Post("schools/:schoolId/delete")
+  @HttpCode(200)
+  @UseGuards(PlatformAdminGuard)
+  @Throttle({ default: { ttl: 60000, limit: 5 } })
+  async deleteSchool(
+    @Param("schoolId") schoolId: string,
+    @Body(new ZodValidationPipe(platformAdminDeleteSchoolSchema)) dto: PlatformAdminDeleteSchoolInput,
+    @CurrentPlatformAdmin() adminCtx: PlatformAdminContext,
+    @Ip() ip: string,
+    @Req() req: Request,
+  ): Promise<PlatformAdminDeleteSchoolResponse> {
+    return this.platformAdminService.deleteSchool(schoolId, dto, adminCtx, {
       ipAddress: ip,
       userAgent: req.header("user-agent") ?? null,
     });

@@ -22,6 +22,7 @@ describe("reasonFromErrorCode — the server already distinguishes these", () =>
     expect(reasonFromErrorCode("SESSION_EXPIRED")).toBe("expired");
     expect(reasonFromErrorCode("INVALID_SESSION")).toBe("revoked");
     expect(reasonFromErrorCode("USER_INACTIVE")).toBe("deactivated");
+    expect(reasonFromErrorCode("SCHOOL_SUSPENDED")).toBe("suspended");
     expect(reasonFromErrorCode("MISSING_BEARER_TOKEN")).toBe("revoked");
   });
 
@@ -61,6 +62,13 @@ describe("sessionEndNotice — copy", () => {
     expect(notice.tone).toBe("warning");
   });
 
+  it("tells someone at a suspended school that signing in again will not help", () => {
+    const notice = sessionEndNotice("suspended")!;
+    expect(notice.title).toMatch(/suspended/i);
+    expect(notice.body).not.toMatch(/sign in again/i);
+    expect(notice.tone).toBe("warning");
+  });
+
   it("shows NOTHING after a deliberate sign out", () => {
     // Pressing Sign out and then being told something happened to your
     // session is alarming for no reason.
@@ -69,10 +77,10 @@ describe("sessionEndNotice — copy", () => {
   });
 
   it("never leaks an error code or technical vocabulary to the user", () => {
-    for (const reason of ["expired", "revoked", "deactivated"] as const) {
+    for (const reason of ["expired", "revoked", "deactivated", "suspended"] as const) {
       const notice = sessionEndNotice(reason)!;
       const text = `${notice.title} ${notice.body}`;
-      for (const leak of ["401", "token", "SESSION_EXPIRED", "INVALID_SESSION", "USER_INACTIVE", "bearer"]) {
+      for (const leak of ["401", "token", "SESSION_EXPIRED", "INVALID_SESSION", "USER_INACTIVE", "SCHOOL_SUSPENDED", "bearer"]) {
         expect(text.toLowerCase()).not.toContain(leak.toLowerCase());
       }
     }
@@ -80,10 +88,11 @@ describe("sessionEndNotice — copy", () => {
 });
 
 describe("parseSessionEndReason — untrusted query input", () => {
-  it("accepts only the four known reasons", () => {
+  it("accepts only the five known reasons", () => {
     expect(parseSessionEndReason("expired")).toBe("expired");
     expect(parseSessionEndReason("revoked")).toBe("revoked");
     expect(parseSessionEndReason("deactivated")).toBe("deactivated");
+    expect(parseSessionEndReason("suspended")).toBe("suspended");
     expect(parseSessionEndReason("signed-out")).toBe("signed-out");
   });
 

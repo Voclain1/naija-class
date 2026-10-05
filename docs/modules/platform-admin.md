@@ -21,8 +21,8 @@ This doc turns the "Platform super-admin — expansion scope" list in
 | Slice | What | Status |
 |---|---|---|
 | 1 | Slug on the roster, AI budget control, owner-invitation resend/cancel | **Built 2026-10-06** |
-| 2 | School lifecycle: suspend / reactivate, and removing test schools | Needs decisions (below) |
-| 3 | Reading the audit trail | Needs decisions (below) |
+| 2 | School lifecycle: suspend / reactivate, and delete | **Built 2026-10-07** |
+| 3 | Reading the audit trail | Decided 2026-10-05: platform admins only, first — next |
 | 4 | Platform analytics (signups, activation, adoption) | Needs an anonymisation design |
 | — | Billing management | Blocked on pricing |
 | — | Impersonation ("act as this school") | A decision, not a feature — not started |
@@ -110,30 +110,94 @@ phone, email, colours, logo, onboarding step, NDPR consent, Paystack fields,
   provision, cap, reset, resend to a corrected address (old link 410, new link
   200), cancel, and the audit trail.
 
-## Slice 2 — school lifecycle (needs decisions)
+## Slice 2 — school lifecycle (built 2026-10-07)
 
-`SchoolStatus` has `SUSPENDED` and `ARCHIVED`, but nothing moves a school into
-either, and nothing reads them. Production also carries test schools
-(`smoke-*` rows from every deploy, and the near-empty duplicate Virgo Fidelis)
-that need SQL to remove, because there is no `DELETE /schools/:id`.
+**Owner's decisions (2026-10-05):**
+- Suspending blocks every sign-in — staff, parents, students — but parents can
+  still pay fees through payment links.
+- A school may be deleted only if it has never recorded a payment, after
+  typing its slug; everything else can only be suspended.
+- The `virgo` duplicate is test data, to be deleted.
+- The audit trail is readable by platform admins only, to start (slice 3).
 
-Questions for the owner:
+**D6. Suspension is a timestamp, `schools.suspended_at`, not `status = SUSPENDED`.**
+`status` also carries ONBOARDING vs ACTIVE, and overwriting it would lose where
+a suspended school had got to. It is the same choice as
+`guardians.portal_disabled_at`. `SchoolStatus.SUSPENDED` stays unused.
 
-1. **What does "suspended" stop?**
-   - Proposed: every sign-in (staff, parents, students) is refused with a
-     "contact School Kit" message, and existing sessions stop at their next
-     request.
-   - Data is untouched, and parents can still pay outstanding invoices (or
-     not — decide).
-2. **Hard delete: for whom?**
-   - Proposed: only schools with no payments ever recorded, after typing the
-     school's slug to confirm. That covers smoke-test rows and empty sign-ups,
-     never a school with money history.
-   - Everything else is archived, not deleted.
-3. **The `virgo` duplicate** (1 student, 1 staff, 1 enrolment): is that student
-   real, so it should be moved, or a test record to discard?
+**D7. Where suspension is enforced.**
+- **Sign-in.** `createSession`, `createGuardianSession` and
+  `createStudentSession` refuse a suspended school
+  (`common/auth/school-suspension.ts`). Every sign-in path goes through one of
+  the three: password, staff mobile, web handoff, invitation accept and
+  password reset. The check runs *after* a credential has been verified, so it
+  never tells a stranger which schools are suspended.
+- **Live sessions.** The three session resolvers return `school_suspended`,
+  and the three guards refuse with `401 SCHOOL_SUSPENDED`. The message is "This
+  school's School Kit account is suspended. Please contact the school."
+- **Timing.** Staff sessions are cached for 30 seconds, so a staff session ends
+  within 30 seconds. Parent and student sessions end at their next request.
+- **Payments still work.** Payment links and the Paystack webhook are not
+  sessions, so fees can still be paid.
+- **Background jobs** (reminders, announcements) are not paused in this slice.
+- **Platform admins are untouched.** `platform_admin_resolve_session` is not
+  changed. The API instead refuses to suspend or delete a school that holds a
+  platform admin (`409 SCHOOL_HAS_PLATFORM_ADMIN`), so the operator can never
+  lock out the school they work from.
 
-## Slice 3 — reading the audit trail (needs decisions)
+**D8. Delete.**
+
+| Route | What it does |
+|---|---|
+| `GET …/deletion-check` | Counts what a delete would remove (students, staff, parents, payments) and lists any blockers. Audited, like every read on this surface. |
+| `POST …/delete` with `{ confirmSlug }` | Deletes the school. It is a POST because the web proxy does not forward a DELETE body. Throttled to 5 a minute. |
+
+- The payment and platform-admin checks run again inside the deleting
+  transaction, so a payment recorded after the check still stops the delete.
+- **Order.** Rows are deleted child-before-parent over the foreign-key graph,
+  computed from the catalog. This is the same approach as
+  `scripts/prune-smoke-schools.sql`: several foreign keys are RESTRICT, so a
+  plain cascade from `schools` fails.
+- **Every delete is an ordinary `app_user` DELETE** under the school's own
+  GUC. RLS bounds it to that school, so a bug here cannot reach another
+  tenant's rows. Proven by a spec that checks the neighbouring school's row
+  count is unchanged.
+- **Where the code lives.** The logic is in `school-deletion.ts`, not
+  `platform-admin.service.ts`, whose import-boundary spec keeps it away from
+  financial tables. This file reads one thing about payments: a count, under
+  RLS.
+- **The audit row** (`platform_admin.schools.delete`) has `school_id = NULL`
+  and names the slug, name and counts, so it outlives the school.
+- **Files in storage** (a logo, expense receipts) are not removed. A school
+  that never took a payment has few, so this is left as a follow-up.
+
+**D9. Exam-paper freeze vs deleting a school.** CP5c's
+`exam_paper_frozen_guard` refused to delete a FINAL paper under any
+circumstances. That made a school holding one undeletable, both here and by
+the smoke prune. It now steps aside only when
+`schools.deletion_started_at` is set. That column is set inside the delete
+transaction and disappears with the row. It is a property of the data, set by
+the two paths that delete schools, not a session setting any caller could
+flip. The prune script sets it too.
+
+**Unchanged:** SECURITY DEFINER count stays 23. Four functions change shape:
+the three principal session resolvers and `platform_admin_list_schools`, which
+gains `suspended_at`. None is added.
+
+**Tests:**
+- `platform-admin-school-lifecycle.spec.ts` (12 tests):
+  - suspension through all three guards and all three session helpers;
+  - reactivation, the audit trail, and the operator's own school refused;
+  - delete of a school holding a FINAL exam paper and RESTRICT chains, with no
+    rows left behind and the neighbour untouched;
+  - a wrong slug, a paid school and a platform admin's school refused;
+  - staff refused.
+- **Mutation checks:** dropping `deletion_started_at`, or the guardian guard's
+  check, each fails the spec.
+- **E2E (`platform-admin-tools.spec.ts`, second test):** suspend a real school,
+  its owner's sign-in is refused, reactivate, then delete by typing the slug.
+
+## Slice 3 — reading the audit trail (decided: platform admins only, first)
 
 See `docs/deferred.md` "No audit trail is inspectable through the product".
 The open questions are recorded there:

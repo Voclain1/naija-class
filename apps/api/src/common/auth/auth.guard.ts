@@ -8,6 +8,7 @@ import { UnauthorizedError } from "@school-kit/types";
 
 import type { AuthContext } from "./auth-context";
 import { REDIS_AUTH_CLIENT } from "./redis-auth.provider.js";
+import { schoolSuspendedError } from "./school-suspension";
 import { getCachedSession, setCachedSession } from "./session-cache.js";
 
 // Bearer-token AuthGuard. Strictly case-sensitive `Bearer ` prefix.
@@ -45,6 +46,7 @@ interface ResolveSessionRow {
   school_id: string;
   expires_at: Date;
   user_is_active: boolean;
+  school_suspended: boolean;
 }
 
 @Injectable()
@@ -76,6 +78,7 @@ export class AuthGuard implements CanActivate {
         school_id: cached.school_id,
         expires_at: new Date(cached.expires_at),
         user_is_active: cached.user_is_active,
+        school_suspended: cached.school_suspended ?? false,
       };
     } else {
       // SECURITY DEFINER function — bypasses RLS for this lookup ONLY.
@@ -94,6 +97,7 @@ export class AuthGuard implements CanActivate {
           school_id: row.school_id,
           expires_at: row.expires_at.toISOString(),
           user_is_active: row.user_is_active,
+          school_suspended: row.school_suspended,
         });
       }
     }
@@ -110,6 +114,12 @@ export class AuthGuard implements CanActivate {
 
     if (!row.user_is_active) {
       throw new UnauthorizedError("USER_INACTIVE", "Your account has been deactivated.");
+    }
+
+    // Platform-admin suspension of the whole school (2026-10-07). Within the
+    // 30-second session cache, like user_is_active above.
+    if (row.school_suspended) {
+      throw schoolSuspendedError();
     }
 
     req.user = {

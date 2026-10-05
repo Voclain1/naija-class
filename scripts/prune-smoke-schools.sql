@@ -110,6 +110,12 @@ BEGIN
 
   RAISE NOTICE 'Pruning % smoke school(s)...', array_length(smoke_ids, 1);
 
+  -- Mark the schools as being deleted (2026-10-07). exam_paper_frozen_guard
+  -- refuses to delete a FINAL exam paper unless its school's deletion has
+  -- started; smoke schools never hold one, but the prune must not depend on
+  -- that. The column disappears with the rows below.
+  UPDATE schools SET deletion_started_at = now() WHERE id = ANY(smoke_ids);
+
   -- Collect user IDs before deleting users so we can clean up sessions
   -- (sessions store user_id, not school_id).
   SELECT ARRAY_AGG(id) INTO smoke_uids

@@ -549,6 +549,7 @@ export function PlatformAdminDashboard() {
                     </TableCell>
                     <TableCell>
                       {(() => {
+                        if (school.suspendedAt) return <Badge variant="destructive">Suspended</Badge>;
                         const owner = ownerStatusOf(school);
                         if (owner.kind === "INVITE_PENDING") return <Badge variant="warning">Pending owner</Badge>;
                         // Expired or cancelled, and nobody took the school over —
@@ -674,6 +675,11 @@ export function PlatformAdminDashboard() {
       <SchoolManageDialog
         school={schools?.find((s) => s.schoolId === managingSchoolId) ?? null}
         onClose={() => setManagingSchoolId(null)}
+        onDeleted={(schoolId) => {
+          setManagingSchoolId(null);
+          setSelectedSchoolId((current) => (current === schoolId ? null : current));
+          setSchools((current) => (current === null ? current : current.filter((s) => s.schoolId !== schoolId)));
+        }}
         onChanged={(patch) =>
           setSchools((current) =>
             current === null
