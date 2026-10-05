@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 import { basePrisma, withTenant } from "@school-kit/db";
+import { PLATFORM_AUDIT_VIEW_ACTIONS } from "@school-kit/types";
 
 import { createApiContext, loginAsAdmin, uniqueSuffix } from "../fixtures/index.js";
 
@@ -103,7 +104,8 @@ test("a platform admin caps a school's AI budget and resends, then cancels, its 
     await page.screenshot({ path: "test-results/platform-admin-tools/3-no-owner.png", fullPage: true });
 
     const actions = await basePrisma.auditLog.findMany({
-      where: { entityId: school.id, action: { startsWith: "platform_admin." } },
+      // Changes only: opening the dialog's History records a page view too.
+      where: { entityId: school.id, action: { startsWith: "platform_admin.", notIn: [...PLATFORM_AUDIT_VIEW_ACTIONS] } },
       select: { action: true },
     });
     expect(actions.map((a) => a.action).sort()).toEqual(
@@ -162,6 +164,9 @@ test("a platform admin suspends a school, reactivates it, then deletes it", asyn
     await dialog.getByLabel(/^Reason/).fill("E2E: subscription unpaid");
     await dialog.getByRole("button", { name: "Suspend school" }).click();
     await expect(dialog.getByText("Nobody at this school can sign in.", { exact: false })).toBeVisible();
+    // Slice 3: the dialog's History shows it straight away, with who did it.
+    const history = dialog.getByRole("list", { name: "School history" });
+    await expect(history.getByText("Suspended the school — “E2E: subscription unpaid”")).toBeVisible();
     await page.screenshot({ path: "test-results/platform-admin-tools/4-suspended.png" });
     await closeManage();
     await expect(row.getByText("Suspended")).toBeVisible();
@@ -190,6 +195,16 @@ test("a platform admin suspends a school, reactivates it, then deletes it", asyn
     await expect(page.getByRole("row").filter({ hasText: school.slug })).toHaveCount(0);
     expect(await basePrisma.school.findUnique({ where: { id: target.schoolId } })).toBeNull();
     expect((await ownerLogin()).status()).toBe(401);
+
+    // ---- Slice 3: the platform activity log keeps the whole story ------------
+    await page.reload();
+    const activity = page.getByRole("list", { name: "Platform activity" });
+    await expect(activity.getByText("Deleted the school and its 0 students").first()).toBeVisible({ timeout: 30_000 });
+    await expect(activity.getByText("Reactivated the school").first()).toBeVisible();
+    await expect(activity.getByText("Suspended the school — “E2E: subscription unpaid”").first()).toBeVisible();
+    await expect(activity.getByText(school.name).first()).toBeVisible(); // named even after deletion
+    await activity.scrollIntoViewIfNeeded();
+    await page.screenshot({ path: "test-results/platform-admin-tools/6-activity.png" });
   } finally {
     await anon.dispose();
     await operator.context.close();

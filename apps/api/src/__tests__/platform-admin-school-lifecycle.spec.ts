@@ -378,4 +378,85 @@ describe("Platform admin — school lifecycle (2026-10-07)", () => {
       expect(await basePrisma.school.findUnique({ where: { id: school.id } })).not.toBeNull();
     });
   });
+
+  describe("audit log (slice 3)", () => {
+    const log = (qs = "") => pa("get", `audit-log${qs}`);
+
+    it("an ordinary staff session cannot read it", async () => {
+      const school = await makeSchool("audit-forbidden");
+      const people = await makePeople(school.id, "audit-forbidden");
+      const token = (await createSession(school.id, people.userId, reqCtx)).rawToken;
+      const res = await request(app.getHttpServer()).get("/api/v1/platform-admin/audit-log").set("Authorization", `Bearer ${token}`);
+      expect(res.status).toBe(403);
+    });
+
+    it("lists a school's platform changes newest first, with who and which school, and no IP address", async () => {
+      const school = await makeSchool("audit");
+      await makePeople(school.id, "audit");
+      expect((await pa("post", `schools/${school.id}/suspend`).send({ reason: "Audit spec" })).status).toBe(200);
+      expect((await pa("post", `schools/${school.id}/reactivate`)).status).toBe(200);
+
+      const res = await log(`?schoolId=${school.id}`);
+      expect(res.status).toBe(200);
+      expect(res.body.entries.map((e: { action: string }) => e.action)).toEqual([
+        "platform_admin.schools.reactivate",
+        "platform_admin.schools.suspend",
+      ]);
+      const suspend = res.body.entries[1];
+      expect(suspend).toMatchObject({
+        actorUserId: platformAdminUserId,
+        actorName: "Owner host",
+        schoolId: school.id,
+        schoolName: `Lifecycle audit ${runId}`,
+        metadata: { reason: "Audit spec" },
+      });
+      expect(Object.keys(suspend).sort()).toEqual(
+        ["action", "actorName", "actorUserId", "at", "id", "metadata", "schoolId", "schoolName"].sort(),
+      );
+      expect(JSON.stringify(res.body)).not.toContain("ipAddress");
+    });
+
+    it("never shows a school's own audit rows — only the platform's", async () => {
+      const school = await makeSchool("audit-own");
+      await withTenant(school.id, (db) =>
+        db.auditLog.create({
+          data: { schoolId: school.id, userId: null, action: "student.create", entityType: "school", entityId: school.id },
+        }),
+      );
+      const res = await log(`?schoolId=${school.id}&includeViews=true`);
+      expect(res.status).toBe(200);
+      expect(res.body.entries.map((e: { action: string }) => e.action)).not.toContain("student.create");
+    });
+
+    it("hides page views unless asked", async () => {
+      expect((await pa("get", "schools")).status).toBe(200);
+      const changes = await log("?limit=100");
+      expect(changes.body.entries.some((e: { action: string }) => e.action.endsWith(".list"))).toBe(false);
+      const all = await log("?includeViews=true&limit=100");
+      expect(all.body.entries.some((e: { action: string }) => e.action === "platform_admin.schools.list")).toBe(true);
+    });
+
+    it("pages with a cursor, without repeating or skipping", async () => {
+      const first = await log("?limit=2");
+      expect(first.body.entries).toHaveLength(2);
+      expect(typeof first.body.nextBefore).toBe("string");
+      const second = await log(`?limit=2&before=${encodeURIComponent(first.body.nextBefore)}`);
+      const both = await log("?limit=4");
+      expect([...first.body.entries, ...second.body.entries].map((e: { id: string }) => e.id)).toEqual(
+        both.body.entries.map((e: { id: string }) => e.id),
+      );
+    });
+
+    it("keeps naming a school after it is deleted", async () => {
+      const school = await makeSchool("audit-gone");
+      expect((await pa("post", `schools/${school.id}/suspend`).send({ reason: "Before delete" })).status).toBe(200);
+      expect((await pa("post", `schools/${school.id}/delete`).send({ confirmSlug: school.slug })).status).toBe(200);
+      const res = await log(`?schoolId=${school.id}`);
+      expect(res.body.entries.map((e: { action: string; schoolName: string }) => [e.action, e.schoolName])).toEqual([
+        ["platform_admin.schools.delete", `Lifecycle audit-gone ${runId}`],
+        // The suspend entry recorded no name of its own; it is still named.
+        ["platform_admin.schools.suspend", `Lifecycle audit-gone ${runId}`],
+      ]);
+    });
+  });
 });

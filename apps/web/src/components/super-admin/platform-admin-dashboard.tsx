@@ -36,6 +36,7 @@ import {
 } from "@/components/ui/table";
 import { ApiError, proxyFetch } from "@/lib/api-client";
 
+import { PlatformActivity } from "./platform-activity";
 import { compactTokens, ownerStatusOf } from "./school-manage";
 import { SchoolManageDialog } from "./school-manage-dialog";
 
@@ -728,6 +729,16 @@ export function PlatformAdminDashboard() {
               </TableBody>
             </Table>
           )}
+        </CardContent>
+      </Card>
+
+      {/* Platform-admin tools, slice 3: the platform's own audit trail. */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Platform activity</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <PlatformActivity allowViews />
         </CardContent>
       </Card>
     </div>

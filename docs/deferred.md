@@ -2249,6 +2249,13 @@ false → true → false. Platform-admin suite 33/33, SD inventory + RBAC gates
 
 ## No audit trail is inspectable through the product — SQL is the only way to read one (captured 2026-08-25)
 
+**Partly addressed 2026-10-07 (platform-admin tools slice 3,
+`docs/modules/platform-admin.md` D10–D13):** platform admins can now read the
+PLATFORM's own audit rows (`school_id IS NULL`) on the super-admin dashboard.
+A school's own trail is still SQL-only; questions 1–3 below remain open for it.
+Question 4 is settled by the same design: a school's view must never include
+`school_id IS NULL` rows, just as the platform view never includes a school's.
+
 **Platform-wide, not specific to any module.** Every mutating path in this
 system writes to `audit_logs` — it is a hard rule in CLAUDE.md for money, it is
 enforced for platform-admin actions, and `audit-coverage.spec.ts` gates it. But
