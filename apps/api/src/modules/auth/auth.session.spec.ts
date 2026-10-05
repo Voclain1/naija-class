@@ -287,4 +287,68 @@ describe("Auth session endpoints (Phase 0 Prompt 4)", () => {
     expect(second.status).toBe(401);
     expect(second.body.error?.code).toBe("INVALID_SESSION");
   });
+
+  // -------------------------------------------------------------------------
+  // The sk_session cookie (docs/deferred.md item 1). The staff web app sends
+  // the session as an HttpOnly cookie to the API's own schoolkit.ng address;
+  // the guard honours it ONLY with the web app's Origin.
+  // -------------------------------------------------------------------------
+  const WEB_ORIGIN = process.env.CORS_ORIGIN ?? "http://localhost:3001";
+
+  it("AuthGuard — sk_session cookie from the web app's Origin is accepted", async () => {
+    const token = await loginAndGetToken();
+    const res = await request(app.getHttpServer())
+      .get("/api/v1/auth/me")
+      .set("Origin", WEB_ORIGIN)
+      .set("Cookie", `other=1; sk_session=${token}`);
+    expect(res.status).toBe(200);
+    expect(res.body.user.id).toBe(userId);
+  });
+
+  it("AuthGuard — the same cookie from any other Origin is refused (a sibling schoolkit.ng app)", async () => {
+    const token = await loginAndGetToken();
+    for (const origin of ["https://portal.schoolkit.ng", "http://localhost:3002", "https://evil.example"]) {
+      const res = await request(app.getHttpServer())
+        .get("/api/v1/auth/me")
+        .set("Origin", origin)
+        .set("Cookie", `sk_session=${token}`);
+      expect(res.status, origin).toBe(401);
+      expect(res.body.error?.code).toBe("MISSING_BEARER_TOKEN");
+    }
+  });
+
+  it("AuthGuard — the cookie with no Origin at all is refused", async () => {
+    const token = await loginAndGetToken();
+    const res = await request(app.getHttpServer())
+      .get("/api/v1/auth/me")
+      .set("Cookie", `sk_session=${token}`);
+    expect(res.status).toBe(401);
+    expect(res.body.error?.code).toBe("MISSING_BEARER_TOKEN");
+  });
+
+  it("AuthGuard — a malformed Authorization header is not rescued by a valid cookie", async () => {
+    const token = await loginAndGetToken();
+    const res = await request(app.getHttpServer())
+      .get("/api/v1/auth/me")
+      .set("Origin", WEB_ORIGIN)
+      .set("Authorization", `bearer ${token}`)
+      .set("Cookie", `sk_session=${token}`);
+    expect(res.status).toBe(401);
+    expect(res.body.error?.code).toBe("MISSING_BEARER_TOKEN");
+  });
+
+  it("AuthGuard — a logged-out session's cookie stops working, exactly like its bearer token", async () => {
+    const token = await loginAndGetToken();
+    const out = await request(app.getHttpServer())
+      .post("/api/v1/auth/logout")
+      .set("Origin", WEB_ORIGIN)
+      .set("Cookie", `sk_session=${token}`);
+    expect(out.status).toBe(204);
+    const res = await request(app.getHttpServer())
+      .get("/api/v1/auth/me")
+      .set("Origin", WEB_ORIGIN)
+      .set("Cookie", `sk_session=${token}`);
+    expect(res.status).toBe(401);
+    expect(res.body.error?.code).toBe("INVALID_SESSION");
+  });
 });

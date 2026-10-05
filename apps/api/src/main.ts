@@ -7,6 +7,7 @@ initSentry();
 
 import { NestFactory } from "@nestjs/core";
 import { Logger } from "@nestjs/common";
+import type { CorsOptions } from "@nestjs/common/interfaces/external/cors-options.interface";
 import { rootModuleFor } from "./root-module";
 
 async function bootstrap() {
@@ -37,11 +38,18 @@ async function bootstrap() {
   // X-CBT-Signature header (docs/modules/cbt.md D9).
   const corsOriginCbt = process.env.CORS_ORIGIN_CBT ?? "http://localhost:3003";
   const corsOrigins = [corsOrigin, corsOriginPortal, corsOriginCbt].filter(Boolean);
-  app.enableCors({
-    origin: corsOrigins,
-    methods: ["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization", "X-CBT-Signature"],
-    credentials: false,
+  // Credentials (the sk_session cookie) are allowed for the staff web app's
+  // origin ONLY. The portal and the exam app never send it and must not be
+  // able to read a response made with it; the guard enforces the same rule
+  // from its side (common/auth/staff-session-token.ts).
+  app.enableCors((req: { headers: { origin?: string } }, callback: (err: Error | null, options: CorsOptions) => void) => {
+    const origin = req.headers.origin;
+    callback(null, {
+      origin: corsOrigins,
+      methods: ["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
+      allowedHeaders: ["Content-Type", "Authorization", "X-CBT-Signature"],
+      credentials: origin !== undefined && origin === corsOrigin,
+    });
   });
 
   const port = Number(process.env.API_PORT ?? 4000);

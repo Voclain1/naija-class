@@ -1,10 +1,10 @@
 // Typed wrappers around the Phase 1 / Slice 6 CSV-import endpoints.
 //
 // Two endpoints break the apiFetch JSON convention:
-//   - upload uses multipart/form-data, so we fetch() directly with FormData
-//     and let the browser set the Content-Type boundary
-//   - bad-rows.csv returns a binary text/csv blob, which we trigger as a
-//     browser download via an in-memory <a> click
+//   - upload is multipart/form-data (apiFetch passes FormData through and
+//     lets the browser set the Content-Type boundary)
+//   - bad-rows.csv returns a text/csv blob, fetched with apiFetchResponse and
+//     triggered as a browser download via an in-memory <a> click
 //
 // Everything else is a plain JSON call through apiFetch.
 
@@ -18,10 +18,7 @@ import type {
   ImportUploadResponse,
 } from "@school-kit/types";
 
-import { ApiError, apiFetch, getStoredToken } from "../api-client";
-
-const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api/v1";
+import { apiFetch, apiFetchResponse } from "../api-client";
 
 // POST /imports/students/upload — multipart upload.
 //
@@ -61,33 +58,7 @@ async function uploadImportCsv(
 ): Promise<ImportUploadResponse> {
   const form = new FormData();
   form.append("file", file);
-
-  const headers = new Headers();
-  const token = getStoredToken();
-  if (token) headers.set("Authorization", `Bearer ${token}`);
-
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    method: "POST",
-    headers,
-    body: form,
-  });
-
-  const text = await response.text();
-  const parsed: unknown = text ? JSON.parse(text) : null;
-
-  if (!response.ok) {
-    const errorBody =
-      parsed &&
-      typeof parsed === "object" &&
-      "error" in parsed &&
-      parsed.error &&
-      typeof parsed.error === "object"
-        ? (parsed.error as { code: string; message: string; details?: unknown })
-        : { code: "UNKNOWN_ERROR", message: response.statusText };
-    throw new ApiError(response.status, errorBody);
-  }
-
-  return parsed as ImportUploadResponse;
+  return apiFetch<ImportUploadResponse>(path, { method: "POST", body: form });
 }
 
 export function applyStudentsImportMapping(
@@ -185,28 +156,7 @@ async function downloadCsvByPath(
   path: string,
   fallbackFilename: string,
 ): Promise<void> {
-  const headers = new Headers();
-  const token = getStoredToken();
-  if (token) headers.set("Authorization", `Bearer ${token}`);
-
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    method: "GET",
-    headers,
-  });
-
-  if (!response.ok) {
-    const text = await response.text();
-    const parsed: unknown = text ? JSON.parse(text) : null;
-    const errorBody =
-      parsed &&
-      typeof parsed === "object" &&
-      "error" in parsed &&
-      parsed.error &&
-      typeof parsed.error === "object"
-        ? (parsed.error as { code: string; message: string; details?: unknown })
-        : { code: "UNKNOWN_ERROR", message: response.statusText };
-    throw new ApiError(response.status, errorBody);
-  }
+  const response = await apiFetchResponse(path, { method: "GET" });
 
   const blob = await response.blob();
   // Parse the filename from Content-Disposition; fall back to the

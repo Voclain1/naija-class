@@ -1,6 +1,6 @@
 import * as Sentry from "@sentry/nextjs";
 
-import { ApiError } from "@/lib/api-client";
+import { ApiError, ApiNetworkError } from "@/lib/api-client";
 
 /**
  * A dashboard load is read-only. Never display an exception's text here:
@@ -37,18 +37,20 @@ function captureDashboardLoadFailure(error: unknown): void {
   let apiCode: string | undefined;
   let status: number | undefined;
 
-  if (error instanceof ApiError) {
+  if (error instanceof ApiNetworkError) {
+    // No answer from the API: offline, DNS, CORS, a reset connection, or a
+    // proxy's own error page. Checked before ApiError, which it extends.
+    failureKind = "network";
+  } else if (error instanceof ApiError) {
     // The API answered. Its own envelope says what went wrong.
     failureKind = error.status >= 500 ? "api-5xx" : "api-4xx";
     apiCode = error.code;
     status = error.status;
   } else if (error instanceof TypeError) {
-    // fetch() rejects with TypeError for a genuine transport failure —
-    // offline, DNS, CORS, connection reset. No response was received at all,
-    // which is a different problem from any status code.
+    // A bare fetch() rejection from code that did not go through apiFetch.
     failureKind = "network";
   } else {
-    // A non-Error throw, or JSON.parse failing on a malformed body.
+    // A non-Error throw — nothing apiFetch itself produces.
     failureKind = "unknown";
   }
 
