@@ -4,8 +4,11 @@
 //   proxyFetch — calls the Next.js route handler at /api/auth/*, which
 //     manages the sk_session HttpOnly cookie.  Used for the four
 //     session-mutating operations (login, signup, logout, 2fa/challenge).
-//   apiFetch   — calls NestJS directly with the in-memory bearer token.
-//     Used for everything else (me, 2fa management endpoints).
+//   apiFetch   — calls NestJS directly; the browser sends the sk_session
+//     cookie. Used for everything else (me, 2fa management endpoints).
+//
+// No response here carries the session token: the proxy routes strip it, and
+// the page never needs it (docs/deferred.md item 1).
 
 import type {
   ForgotPasswordInput,
@@ -27,17 +30,23 @@ import type {
 
 import { apiFetch, proxyFetch } from "../api-client";
 
+/** A session-issuing response as the browser receives it: the proxy keeps the token. */
+export type WebLoginResponse =
+  | Omit<Extract<LoginResponse, { requiresTwoFactor: false }>, "token">
+  | Extract<LoginResponse, { requiresTwoFactor: true }>;
+export type WebSignupOwnerResponse = Omit<SignupOwnerResponse, "token">;
+
 // ---- Session-mutating calls (via Next.js proxy — cookie managed server-side) ----
 
-export function loginRequest(input: LoginInput): Promise<LoginResponse> {
-  return proxyFetch<LoginResponse>("/api/auth/login", {
+export function loginRequest(input: LoginInput): Promise<WebLoginResponse> {
+  return proxyFetch<WebLoginResponse>("/api/auth/login", {
     method: "POST",
     body: JSON.stringify(input),
   });
 }
 
-export function signupOwnerRequest(input: SignupOwnerInput): Promise<SignupOwnerResponse> {
-  return proxyFetch<SignupOwnerResponse>("/api/auth/signup-owner", {
+export function signupOwnerRequest(input: SignupOwnerInput): Promise<WebSignupOwnerResponse> {
+  return proxyFetch<WebSignupOwnerResponse>("/api/auth/signup-owner", {
     method: "POST",
     body: JSON.stringify(input),
   });
@@ -48,23 +57,22 @@ export function logoutRequest(): Promise<void> {
   return proxyFetch<void>("/api/auth/logout", { method: "POST" });
 }
 
-export function twoFactorChallengeRequest(input: TotpChallengeInput): Promise<LoginResponse> {
-  return proxyFetch<LoginResponse>("/api/auth/2fa/challenge", {
+export function twoFactorChallengeRequest(input: TotpChallengeInput): Promise<WebLoginResponse> {
+  return proxyFetch<WebLoginResponse>("/api/auth/2fa/challenge", {
     method: "POST",
     body: JSON.stringify(input),
   });
 }
 
-// Cold-boot hydration: read the sk_session cookie server-side and return the
-// token for in-memory storage. Returns null if no valid session cookie exists.
-export async function sessionRequest(): Promise<string | null> {
-  const res = await fetch("/api/auth/session");
-  if (!res.ok) return null;
-  const data = (await res.json()) as { token: string | null };
-  return data.token;
+// Cold-boot hydration: does a session cookie exist? (Validity is the API's
+// call, via /auth/me.) The route also moves a pre-switch-over cookie onto the
+// shared domain the API reads, so it must run before the first API call.
+export async function sessionRequest(): Promise<boolean> {
+  const data = await proxyFetch<{ authenticated: boolean }>("/api/auth/session", { method: "GET" });
+  return data.authenticated;
 }
 
-// ---- Direct NestJS calls (bearer token via in-memory activeToken) ----
+// ---- Direct NestJS calls (the browser sends the sk_session cookie) ----
 
 // notifyOnUnauthorized=false: a 401 on cold boot means "no session", not
 // a mid-use expiry — the provider handles it by transitioning to `guest`

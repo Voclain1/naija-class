@@ -1,6 +1,8 @@
 // Thin fetch wrapper for the NestJS API. Responsibilities:
 //   1. Prepend the base URL from NEXT_PUBLIC_API_URL (e.g. http://localhost:4000/api/v1)
-//   2. Attach `Authorization: Bearer <token>` when a token is present
+//   2. Send the sk_session HttpOnly cookie (credentials: "include"). The page
+//      never holds the session token: the API reads the cookie itself, from
+//      this app's Origin only (docs/deferred.md item 1, 2026-10-05)
 //   3. Parse the API's { error: { code, message, details? } } envelope into
 //      a typed ApiError on non-2xx responses
 //   4. Notify the auth layer on 401 so it can clear state and redirect
@@ -101,28 +103,9 @@ if (typeof window !== "undefined") {
   window.localStorage.removeItem("sk_auth_token");
 }
 
-// Module-level in-memory token. Set by the auth provider on login/signup/
-// cold-boot hydration; cleared on logout. NOT persisted — a hard reload
-// drops it and the provider re-seeds from the sk_session HttpOnly cookie
-// via GET /api/auth/session.
-let activeToken: string | null = null;
-
-export function getStoredToken(): string | null {
-  return activeToken;
-}
-
-export function setStoredToken(token: string): void {
-  activeToken = token;
-}
-
-export function clearStoredToken(): void {
-  activeToken = null;
-}
-
 interface ApiFetchOptions extends Omit<RequestInit, "body"> {
   body?: unknown;
-  // When true (default), a 401 response clears the stored token and fires
-  // AUTH_UNAUTHORIZED_EVENT. Set false for the /auth/me hydration call so
+  // When true (default), a 401 response fires AUTH_UNAUTHORIZED_EVENT. Set false for the /auth/me hydration call so
   // a missing/expired token on cold boot doesn't redirect — the provider
   // handles that path by transitioning to `guest` quietly.
   notifyOnUnauthorized?: boolean;
@@ -160,16 +143,13 @@ export async function apiFetchResponse(
   if (body !== undefined && !isFormData && !finalHeaders.has("Content-Type")) {
     finalHeaders.set("Content-Type", "application/json");
   }
-  const token = getStoredToken();
-  if (token && !finalHeaders.has("Authorization")) {
-    finalHeaders.set("Authorization", `Bearer ${token}`);
-  }
-
   const response = await fetchOrNetworkError(`${API_BASE_URL}${path}`, {
     // Prevent the browser from sending If-None-Match / If-Modified-Since.
     // NestJS adds ETag headers by default; a cached 304 has no body, which
     // causes apiFetch to throw an ApiError and silently blank state setters.
     cache: "no-store",
+    // The session cookie. The API allows credentials for this origin only.
+    credentials: "include",
     ...rest,
     headers: finalHeaders,
     body: body === undefined ? undefined : isFormData ? body : JSON.stringify(body),
@@ -188,7 +168,6 @@ export async function apiFetchResponse(
       : { code: "UNKNOWN_ERROR", message: response.statusText };
 
   if (response.status === 401 && notifyOnUnauthorized) {
-    clearStoredToken();
     if (typeof window !== "undefined") {
       // Carry the API's own error code to the listener. AuthGuard has
       // always distinguished SESSION_EXPIRED / INVALID_SESSION /
@@ -207,9 +186,8 @@ export async function apiFetchResponse(
   throw new ApiError(response.status, errorBody);
 }
 
-// Thin wrapper for Next.js proxy routes under /api/* (relative paths, no
-// auth header — the route handler reads/writes the sk_session cookie
-// server-side). Used for every session-mutating call: login, signup,
+// Thin wrapper for Next.js proxy routes under /api/* (relative paths — the
+// route handler reads/writes the sk_session cookie server-side). Used for every session-mutating call: login, signup,
 // logout, 2fa/challenge (all under /api/auth/*), and invitation-accept
 // (/api/invitations/:token/accept) — anything that mints or clears a
 // session must go through one of these proxy routes, never plain apiFetch,

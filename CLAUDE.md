@@ -871,6 +871,7 @@ WEB_BASE_URL
 PORTAL_BASE_URL
 RESULT_PIN_HMAC_KEY
 PORTAL_PROXY_SECRET
+SESSION_COOKIE_DOMAIN
 ```
 
 Never commit. Never log. Test keys and live keys are different env files.
@@ -905,6 +906,24 @@ shorter than 32 characters on EITHER side means every portal request is keyed
 on the proxy, as before — never an error — so the two deploys need not be
 simultaneous. After setting it on Vercel, run `vercel env ls` (see the
 recreated-project note below): a secret on only one side silently does nothing.
+
+`SESSION_COOKIE_DOMAIN` — the Domain of the staff web app's HttpOnly
+`sk_session` cookie, set on `school-kit-web` (Vercel) only, to `schoolkit.ng`.
+**The page never holds the staff session token** (2026-10-05): the browser
+sends the cookie straight to the API at `api.schoolkit.ng`, and `AuthGuard`
+accepts it only when the request's Origin is `CORS_ORIGIN`
+(`apps/api/src/common/auth/staff-session-token.ts`). That Origin rule is the
+CSRF defence, since sibling `*.schoolkit.ng` apps are same-site to the
+browser. Bearer tokens keep working for every other client. Empty in
+development: a host-only cookie on `localhost` already reaches `localhost:4000`.
+A Vercel production build **refuses to start** unless both are true
+(`apps/web/session-cookie-config.mjs`):
+- this variable is set;
+- `NEXT_PUBLIC_API_URL` is an https address under it.
+
+Otherwise every member of staff would be signed out on the next click. The
+switch-over steps are in `docs/runbooks/web-session-cookie.md`. Never put the
+token back in a response body or in page state.
 
 `CORS_ORIGIN_CBT` / `NEXT_PUBLIC_CBT_URL` — online exams (`docs/modules/cbt.md`).
 The first is the exam app's origin (`https://cbt.schoolkit.ng`), allowed by
