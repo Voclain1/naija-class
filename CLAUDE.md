@@ -906,6 +906,15 @@ on the proxy, as before — never an error — so the two deploys need not be
 simultaneous. After setting it on Vercel, run `vercel env ls` (see the
 recreated-project note below): a secret on only one side silently does nothing.
 
+`CORS_ORIGIN_CBT` / `NEXT_PUBLIC_CBT_URL` — online exams (`docs/modules/cbt.md`).
+The first is the exam app's origin (`https://cbt.schoolkit.ng`), allowed by
+the API alongside the web and portal origins. It is set on whichever Fly app
+the exam app calls: `school-kit-cbt` in production, or `school-kit-api` as the
+fallback. The second is set on `school-kit-web` and is the address printed on
+the invigilator sheet; unset, it prints `localhost:3003`. Neither is set in
+production yet. `docs/runbooks/cbt-go-live.md` says when, with the rest of
+the exam service (`API_MODE=cbt-delivery`, `apps/api/fly-cbt.toml`).
+
 `TERMII_BASE_URL` — unlike Paystack's fixed `api.paystack.co`, Termii's API
 base URL is **per-account** (dashboard-assigned), not a global constant.
 `.env.example` defaults to `https://api.ng.termii.com` (the commonly-

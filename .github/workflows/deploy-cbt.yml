@@ -1,0 +1,89 @@
+# Online exams — the exam delivery service (docs/modules/cbt.md D9, D10;
+# docs/runbooks/cbt-go-live.md).
+#
+# MANUAL ONLY (workflow_dispatch), on purpose: the school-kit-cbt Fly app is
+# not created until a few weeks before the first exam period (owner's decision
+# Q3), and until then nothing should deploy to it. Runnable from the GitHub
+# app on a phone or tablet: Actions → "Deploy exam service" → Run workflow.
+#
+# It deploys whatever `main` carries. Migrations are NOT run here: the exam
+# service shares school-kit-api's database, and deploy-staging.yml migrates it
+# on every merge to main. Run this after that deploy has finished.
+#
+# Actions:
+#   deploy    build and deploy apps/api/fly-cbt.toml (API_MODE=cbt-delivery)
+#   exam-day  keep N machines running for an exam (no cold start for the lab)
+#   quiet     back to one machine, stopping when idle — between exam periods
+#
+# Secrets used: FLY_API_TOKEN (the same token deploy-staging.yml uses).
+
+name: Deploy exam service
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "deploy, exam-day or quiet"
+        required: true
+        default: deploy
+        type: choice
+        options: [deploy, exam-day, quiet]
+      machines:
+        description: "exam-day only: how many machines to keep running"
+        required: false
+        default: "2"
+
+concurrency:
+  group: deploy-cbt
+  cancel-in-progress: false
+
+jobs:
+  cbt:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install flyctl
+        uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Deploy
+        if: inputs.action == 'deploy'
+        run: >-
+          flyctl deploy
+          --config apps/api/fly-cbt.toml
+          --build-arg SENTRY_RELEASE=${{ github.sha }}
+          --remote-only
+          --wait-timeout 180
+
+      - name: Exam day — keep machines running
+        if: inputs.action == 'exam-day'
+        run: |
+          set -euo pipefail
+          n="${{ inputs.machines }}"
+          case "$n" in ''|*[!0-9]*) echo "machines must be a whole number"; exit 1;; esac
+          flyctl scale count "$n" --app school-kit-cbt --yes
+          # Wake every machine now, not when the first lab arrives.
+          flyctl machine list --app school-kit-cbt --json | jq -r '.[].id' | xargs -r -n1 flyctl machine start --app school-kit-cbt
+
+      - name: Quiet — back to one machine
+        if: inputs.action == 'quiet'
+        run: flyctl scale count 1 --app school-kit-cbt --yes
+
+      # The same check every action ends with: the service answers its health
+      # route and, from the outside, a delivery route answers with the API's
+      # own 404 rather than a proxy error.
+      - name: Check the service answers
+        run: |
+          set -euo pipefail
+          base="https://school-kit-cbt.fly.dev/api/v1"
+          for i in 1 2 3 4 5 6; do
+            if curl -fsS "$base/health" >/dev/null; then break; fi
+            echo "waiting for the service ($i)…"; sleep 10
+          done
+          curl -fsS "$base/health"
+          code="$(curl -s -o /tmp/body -w '%{http_code}' "$base/cbt-delivery/no-such-school/packs/ABCDEF")"
+          cat /tmp/body; echo
+          test "$code" = "404"

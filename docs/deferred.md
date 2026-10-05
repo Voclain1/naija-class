@@ -728,7 +728,8 @@ Format:
   satisfied by the one-at-a-time rollout rather than by this item.
 
 ## Roadmap / strategy — REVISIT with live market research (not decided)
-- [ ] **Decided 2026-10-03 (phase-8.md D59): CBT is a separate future delivery service, with offline packs and a load-test gate. CP5 (#367–#369) built its inputs: the question bank and the CSV export.** CBT / online exams (JAMB/WAEC/UTME prep) — competitors lead with
+- [x] **BUILT 2026-10-05 → 10-10 (#375–#377 and CBT4), `docs/modules/cbt.md`: school computer lab, in a browser; multiple choice online, theory on paper.** What remains is the paid go-live, owner-triggered a few weeks before the first exam period: `docs/runbooks/cbt-go-live.md` (paid Neon, the `school-kit-cbt` Fly app, the `apps/cbt` Vercel project, then the load test and a dry run in one lab).
+- [x] **Decided 2026-10-03 (phase-8.md D59): CBT is a separate future delivery service, with offline packs and a load-test gate. CP5 (#367–#369) built its inputs: the question bank and the CSV export.** CBT / online exams (JAMB/WAEC/UTME prep) — competitors lead with
   this. Decide in/defer based on pilot-school demand + current market.
   **A full capability assessment (what exists, what's missing, the
   two-question clarification to put to any lead who asks, and time
