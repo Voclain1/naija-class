@@ -1,0 +1,12 @@
+{
+  "name": "SchoolKit Exams",
+  "short_name": "Exams",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#F7F5EF",
+  "theme_color": "#0E5C43",
+  "icons": [
+    { "src": "/brand/schoolkit-favicon-128.png", "sizes": "128x128", "type": "image/png" },
+    { "src": "/brand/schoolkit-favicon-256.png", "sizes": "256x256", "type": "image/png" }
+  ]
+}

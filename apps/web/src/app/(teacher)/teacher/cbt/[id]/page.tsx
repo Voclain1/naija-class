@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, Loader2, Printer } from "lucide-react";
+import { ArrowLeft, Loader2, Printer, RefreshCw } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
@@ -19,7 +19,7 @@ import {
   publishCbtSitting,
   unpublishCbtSitting,
 } from "@/lib/cbt/cbt-api";
-import { cbtStatusLabel, describeSittingTime } from "@/lib/cbt/cbt-format";
+import { cbtProgressLabel, cbtStatusLabel, describeSittingTime } from "@/lib/cbt/cbt-format";
 
 // /teacher/cbt/[id] — one online exam (docs/modules/cbt.md). Publishing freezes
 // the student list and builds the encrypted exam pack (D2, D3); the codes are
@@ -185,9 +185,22 @@ export default function CbtSittingPage() {
       ) : null}
 
       <section className="flex flex-col gap-3" aria-labelledby="candidates-heading">
-        <h2 id="candidates-heading" className="font-serif text-lg font-medium">
-          Students
-        </h2>
+        <div className="flex items-center justify-between gap-2">
+          <h2 id="candidates-heading" className="font-serif text-lg font-medium">
+            Students
+          </h2>
+          {sitting && sitting.status !== "DRAFT" ? (
+            <Button variant="outline" size="sm" onClick={load}>
+              <RefreshCw className="mr-1 h-4 w-4" /> Refresh
+            </Button>
+          ) : null}
+        </div>
+        {sitting && sitting.status !== "DRAFT" ? (
+          <p className="text-xs text-muted-foreground">
+            Progress is what the lab computers have sent so far. A computer without internet sends its answers when it
+            reconnects.
+          </p>
+        ) : null}
         {candidates === null ? null : candidates.length === 0 ? (
           <p className="rounded-md bg-muted/30 p-4 text-sm text-muted-foreground">No students.</p>
         ) : (
@@ -199,6 +212,7 @@ export default function CbtSittingPage() {
                   <th className="p-2 font-medium">Name</th>
                   <th className="p-2 font-medium">Class</th>
                   <th className="p-2 font-medium">Version</th>
+                  {sitting?.status === "DRAFT" ? null : <th className="p-2 font-medium">Progress</th>}
                 </tr>
               </thead>
               <tbody className="divide-y">
@@ -210,6 +224,11 @@ export default function CbtSittingPage() {
                     </td>
                     <td className="p-2">{c.armName}</td>
                     <td className="p-2">{c.version}</td>
+                    {sitting?.status === "DRAFT" ? null : (
+                      <td className={`p-2 ${c.progress?.submitted ? "text-emerald-700 dark:text-emerald-400" : ""}`}>
+                        {cbtProgressLabel(c.progress, sitting?.objectiveQuestionCount ?? 0)}
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>

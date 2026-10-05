@@ -89,6 +89,17 @@ export interface CbtCandidateRowDto {
   lastName: string;
   armName: string;
   version: string;
+  // What the lab machines have sent so far (CBT2). Null while draft, or before
+  // anything has arrived for this student.
+  progress: CbtCandidateProgressDto | null;
+}
+
+export interface CbtCandidateProgressDto {
+  // More than one when the student moved computers (D5).
+  machines: number;
+  answeredCount: number;
+  submitted: boolean;
+  lastReceivedAt: string;
 }
 
 // Papers a sitting may be made from: FINAL, with at least one deliverable

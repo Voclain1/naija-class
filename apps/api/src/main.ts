@@ -32,11 +32,15 @@ async function bootstrap() {
   // doesn't break the existing web origin.
   const corsOrigin = process.env.CORS_ORIGIN ?? "http://localhost:3001";
   const corsOriginPortal = process.env.CORS_ORIGIN_PORTAL ?? "http://localhost:3002";
-  const corsOrigins = [corsOrigin, corsOriginPortal].filter(Boolean);
+  // Online exams (CBT2): the lab app at cbt.schoolkit.ng calls the public
+  // delivery routes straight from the browser, signing answers in the
+  // X-CBT-Signature header (docs/modules/cbt.md D9).
+  const corsOriginCbt = process.env.CORS_ORIGIN_CBT ?? "http://localhost:3003";
+  const corsOrigins = [corsOrigin, corsOriginPortal, corsOriginCbt].filter(Boolean);
   app.enableCors({
     origin: corsOrigins,
     methods: ["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
+    allowedHeaders: ["Content-Type", "Authorization", "X-CBT-Signature"],
     credentials: false,
   });
 

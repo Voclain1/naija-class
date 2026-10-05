@@ -261,6 +261,12 @@ export const baseConfig = [
       // has no RLS (the users.service.ts category above). Called from the three
       // session-creation helpers, after a credential is verified.
       "**/common/auth/school-suspension.ts",
+      // cbt-delivery.service.ts — the PUBLIC exam delivery endpoints (online
+      // exams CBT2, docs/modules/cbt.md D9). Same category as the Result
+      // Checker above: its only basePrisma read is `schools` by slug (no RLS)
+      // to learn the tenant; every exam read and write after it runs under
+      // withTenant. No SECURITY DEFINER function needed.
+      "**/modules/cbt-delivery/cbt-delivery.service.ts",
       // School slug derivation (2026-08-12). Runs PRE-tenant by definition:
       // it picks the slug for a school row that does not exist yet, so there
       // is no schoolId to scope a withTenant call to. It reads exactly one

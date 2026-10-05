@@ -95,5 +95,16 @@ export default defineConfig({
       stderr: "pipe",
       cwd: "..",
         },
+    // apps/cbt (:3003), the lab computers' exam app (docs/modules/cbt.md
+    // D9), added with CBT2. Its specs use absolute URLs, like the portal's.
+    {
+      command: "pnpm --filter @school-kit/cbt dev",
+      url: "http://localhost:3003",
+      reuseExistingServer: !process.env.CI,
+      timeout: 180_000,
+      stdout: "pipe",
+      stderr: "pipe",
+      cwd: "..",
+        },
       ],
 });
