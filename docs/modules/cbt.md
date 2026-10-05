@@ -119,7 +119,7 @@ name.**
 
 **D10 — Go-live gate (decision Q3).** Before any school's first live exam:
 - the paid database plan and the separate Fly app are set up;
-- the load test (`scripts/cbt-load-test`) passes at the target concurrency;
+- the load test (`pnpm cbt:load-test`, `apps/cbt/scripts/load-test.mjs`) passes at the target concurrency;
 - a dry run happens in one school's lab.
 
 The runbook is `docs/runbooks/cbt-go-live.md`. Nothing here is paid for
@@ -334,3 +334,64 @@ gradebook rule applies unchanged: teacher scope, enrolment, sign-off.
 - E2E `cbt-results.spec.ts`: two computers → "Use this one" → theory mark 7
   → total 12 → preview "12/15 → 48" → saved. The gradebook row is checked in
   the database, with `rawScore` 12 and `rawOutOf` 15.
+
+## As built — CBT4 (2026-10-10)
+
+Everything the go-live gate (D10) needs is written. **None of it is created,
+paid for or deployed yet** (decision Q3). `docs/runbooks/cbt-go-live.md` is
+the order of work, starting about four weeks before the first exam period.
+
+**The exam service:** `API_MODE=cbt-delivery`.
+- `apps/api/src/root-module.ts` picks `CbtDeliveryAppModule` for that mode,
+  and the full `AppModule` for anything else (unset included).
+- `CbtDeliveryAppModule` loads only:
+  - config;
+  - Redis and the per-client throttle;
+  - the error filter;
+  - the health check;
+  - `CbtDeliveryModule`.
+- **Same image, its own app.**
+  - The service is the same image as `school-kit-api`.
+  - `apps/api/fly-cbt.toml` describes the Fly app `school-kit-cbt`: 512 MB,
+    `jnb`, a request soft limit of 200 per machine, and it stops when idle.
+  - Proven by `cbt-delivery-app.module.spec.ts`: the delivery route answers;
+    `/cbt/sittings` and `/auth/login` are 404 there.
+  - Also checked by starting the compiled `dist/main.js` in that mode. That is
+    the CommonJS path, which Vitest does not exercise (CLAUDE.md "ESM module
+    resolution").
+
+**Deploying:** `.github/workflows/deploy-cbt.yml`, manual only.
+- Actions: `deploy`; `exam-day` (keep N machines running and wake them);
+  `quiet` (back to one).
+- Every run ends by checking the service answers.
+- It can be run from the GitHub app, since `flyctl` is not available on the
+  maintainer's machine.
+- **No migrations:** the service shares the main database, and the main
+  deploy migrates it.
+
+**Load test:** `pnpm cbt:load-test` (`apps/cbt/scripts/load-test.mjs`).
+- **What it plays:** a whole lab from one address, with the browser's own
+  crypto:
+  - every computer downloads at once;
+  - each sends a growing, signed answer snapshot every `--interval` seconds;
+  - each finishes with a submitted snapshot.
+- **Pass:** no non-200 responses, and p95 ≤ `--p95-ms` (1,500 by default).
+- **Measured locally:**
+  - 100 computers × 4 syncs against the compiled service: p95 305 ms for
+    downloads, 15 ms for syncs, no failures;
+  - all 100 attempts were stored as submitted;
+  - the throwaway school was then deleted.
+
+**Runbook:** `docs/runbooks/cbt-go-live.md`.
+- **Setup:**
+  - paid Neon;
+  - the Fly app and its four secrets;
+  - the Vercel project (`apps/cbt`, `NEXT_PUBLIC_API_URL`, `cbt.schoolkit.ng`,
+    then `vercel env ls`);
+  - `NEXT_PUBLIC_CBT_URL` on the staff web app.
+- **The three gates:** deployed and answering; the load test at the target
+  size; a dry run in one lab, with a cable pulled and a computer switched off
+  on purpose.
+- **Exam-day steps**, and what to do if the service is down: computers that
+  already unlocked carry on offline, and the exam app can be pointed at
+  `school-kit-api`, which serves the same two routes.

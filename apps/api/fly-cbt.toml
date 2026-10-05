@@ -1,0 +1,66 @@
+# School Kit exam delivery service — Fly.io configuration (online exams CBT4,
+# docs/modules/cbt.md D9, D10; runbook docs/runbooks/cbt-go-live.md).
+#
+# NOT CREATED YET, deliberately (owner's decision Q3, 2026-10-05): nothing for
+# online exams is paid for until a few weeks before the first exam period.
+# Until then the full API (school-kit-api) serves the same two delivery
+# routes, so the exam app works end to end without this app. The runbook says
+# when and how to create it.
+#
+# The same image as school-kit-api (Dockerfile), started with
+# API_MODE=cbt-delivery: only GET /cbt-delivery/:slug/packs/:accessCode,
+# POST /cbt-delivery/:slug/sittings/:id/answers and GET /health are served
+# (src/cbt-delivery-app.module.ts). An exam-morning spike lands here, not on
+# fees, attendance or report cards.
+#
+# Deploy command (from repo root, after `flyctl auth login`):
+#   flyctl deploy --config apps/api/fly-cbt.toml --remote-only
+#
+# Secrets (`flyctl secrets set … -a school-kit-cbt`), never in this file:
+#   DATABASE_URL     the SAME database as school-kit-api, as app_user
+#   REDIS_URL        the SAME Redis (the per-client throttle counts there)
+#   SENTRY_DSN_API   optional
+#   CORS_ORIGIN_CBT  https://cbt.schoolkit.ng
+# Nothing else: this service holds no auth secret, no storage, no email.
+
+app            = "school-kit-cbt"
+primary_region = "jnb"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  NODE_ENV = "production"
+  API_PORT = "4000"
+  API_MODE = "cbt-delivery"
+  # The full API's own origins are irrelevant here; only the exam app calls
+  # this service. main.ts adds CORS_ORIGIN_CBT to the list.
+  CORS_ORIGIN = "https://cbt.schoolkit.ng"
+
+[http_service]
+  internal_port        = 4000
+  force_https          = true
+  # Between exam periods this can stop to zero; the runbook raises
+  # min_machines_running for exam days so the first lab is not a cold start.
+  auto_stop_machines   = "stop"
+  auto_start_machines  = true
+  min_machines_running = 0
+
+  # Exam mornings are bursts: each machine downloads once and syncs every
+  # 30 seconds. Fly spreads requests across machines past this soft limit.
+  [http_service.concurrency]
+    type       = "requests"
+    soft_limit = 200
+    hard_limit = 400
+
+  [[http_service.checks]]
+    grace_period = "10s"
+    interval     = "15s"
+    method       = "GET"
+    path         = "/api/v1/health"
+    timeout      = "3s"
+
+[[vm]]
+  memory   = "512mb"
+  cpu_kind = "shared"
+  cpus     = 1

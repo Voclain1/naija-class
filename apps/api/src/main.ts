@@ -7,7 +7,7 @@ initSentry();
 
 import { NestFactory } from "@nestjs/core";
 import { Logger } from "@nestjs/common";
-import { AppModule } from "./app.module";
+import { rootModuleFor } from "./root-module";
 
 async function bootstrap() {
   // rawBody: true makes req.rawBody (Buffer) available alongside the parsed
@@ -15,7 +15,7 @@ async function bootstrap() {
   // computes HMAC-SHA512 over the raw bytes before JSON parsing occurs.
   // NestJS 10 populates both; existing ZodValidationPipe / body-reading
   // middleware is unaffected.
-  const app = await NestFactory.create(AppModule, { rawBody: true });
+  const app = await NestFactory.create(rootModuleFor(process.env.API_MODE), { rawBody: true });
   app.setGlobalPrefix("api/v1");
 
   // CORS: the web app at :3001 and (Phase 4) the portal app at :3002 both
@@ -47,7 +47,10 @@ async function bootstrap() {
   const port = Number(process.env.API_PORT ?? 4000);
   await app.listen(port);
 
-  Logger.log(`School Kit API listening on http://localhost:${port}`, "Bootstrap");
+  Logger.log(
+    `School Kit ${process.env.API_MODE === "cbt-delivery" ? "exam delivery service" : "API"} listening on http://localhost:${port}`,
+    "Bootstrap",
+  );
   Logger.log(`CORS enabled for origins: ${corsOrigins.join(", ")}`, "Bootstrap");
 }
 
