@@ -22,16 +22,27 @@ the module doc or the PR, then link it here.
 - [ ] **Web session token still reaches JavaScript.** PR #70 already moved web
   auth to the `sk_session` HttpOnly cookie, and the token is no longer in
   `localStorage`. But it still crosses into page JavaScript in two places:
-  - `login`, `signup-owner` and `2fa/challenge` return it in the JSON body
-    (`apps/web/src/app/api/auth/[...auth]/route.ts`);
+  - `login`, `signup-owner` and `2fa/challenge` return it in the JSON body;
   - cold-boot hydration reads it back from `GET /api/auth/session`.
 
-  `apiFetch` keeps it in memory and sends it as a bearer token, so an XSS can
-  still read it and use it from elsewhere. The portal already strips the
-  token from its proxy responses. The fix is to make every browser call go
-  through a same-origin proxy, so the token never leaves the server, then
-  remove it from both responses.
-  **Trigger:** before public launch or any third-party script on the web app.
+  `apiFetch` keeps it in memory and sends it as a bearer token, so an
+  injected script could copy it.
+
+  **Decided 2026-10-05 (owner):** the API gets its own schoolkit.ng address
+  (`api.schoolkit.ng`). The sign-in cookie is shared across `schoolkit.ng`,
+  and the browser calls the API with that cookie. Routing through Vercel was
+  rejected because its 4 MB middleware body limit breaks curriculum, register
+  photo, receipt and CSV uploads.
+  - [x] **API side, done 2026-10-05.** `AuthGuard` accepts `sk_session` as
+    well as a bearer token, only when the Origin is the web app's
+    (`common/auth/staff-session-token.ts`). CORS allows credentials for that
+    origin only. Backward compatible: bearer clients are unchanged.
+  - [ ] **Owner:** add a DNS CNAME `api` → `school-kit-api.fly.dev`, and an
+    `api.schoolkit.ng` certificate on the Fly app (Certificates in the
+    dashboard).
+  - [ ] **Web switch-over** (next PR, merged only once the address answers).
+    `apiFetch` sends `credentials: "include"` with no token. The token is
+    removed from every response. The cookie gets `Domain=schoolkit.ng`.
 - [ ] **Paystack mobile checkout has never been round-tripped**, and does not
   return the parent to the app. `PortalPaymentsService.initiate` hard-codes
   the callback to `${PORTAL_BASE_URL}/payments/callback`, so a parent

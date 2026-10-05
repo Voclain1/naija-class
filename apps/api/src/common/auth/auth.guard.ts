@@ -10,8 +10,12 @@ import type { AuthContext } from "./auth-context";
 import { REDIS_AUTH_CLIENT } from "./redis-auth.provider.js";
 import { schoolSuspendedError } from "./school-suspension";
 import { getCachedSession, setCachedSession } from "./session-cache.js";
+import { staffSessionToken } from "./staff-session-token.js";
 
-// Bearer-token AuthGuard. Strictly case-sensitive `Bearer ` prefix.
+// Staff AuthGuard. The token comes from `Authorization: Bearer` or, for the
+// staff web app only, the sk_session HttpOnly cookie — see
+// staff-session-token.ts for why the cookie is tied to the web app's Origin.
+// Strictly case-sensitive `Bearer ` prefix.
 //
 // Why strict casing: HTTP says auth schemes are case-insensitive, but every
 // production HTTP client we control sends "Bearer". Accepting `bearer` or
@@ -38,8 +42,6 @@ import { getCachedSession, setCachedSession } from "./session-cache.js";
 // revocation mechanism — logout, password-reset, and user deactivation all
 // call invalidateSessionCache() directly so a revoked session stops working
 // immediately. See session-cache.ts for the full reasoning.
-const BEARER_PREFIX = "Bearer ";
-
 interface ResolveSessionRow {
   session_id: string;
   user_id: string;
@@ -56,15 +58,13 @@ export class AuthGuard implements CanActivate {
   async canActivate(ctx: ExecutionContext): Promise<boolean> {
     const req = ctx.switchToHttp().getRequest<Request & { user?: AuthContext }>();
 
-    const header = req.header("authorization");
-    if (!header || !header.startsWith(BEARER_PREFIX)) {
+    // The code stays MISSING_BEARER_TOKEN for a missing cookie too: clients
+    // already map it to "sign in", and it names no token kind they must learn.
+    const found = staffSessionToken(req);
+    if (found.kind === "missing") {
       throw new UnauthorizedError("MISSING_BEARER_TOKEN", "Authentication required.");
     }
-
-    const rawToken = header.slice(BEARER_PREFIX.length).trim();
-    if (rawToken.length === 0) {
-      throw new UnauthorizedError("MISSING_BEARER_TOKEN", "Authentication required.");
-    }
+    const rawToken = found.token;
 
     const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
 
