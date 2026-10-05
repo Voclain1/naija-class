@@ -13,6 +13,7 @@ import {
   LayoutDashboard,
   NotebookText,
   ScrollText,
+  MonitorCheck,
   Settings,
   Sparkles,
   SlidersHorizontal,
@@ -110,6 +111,9 @@ export const NAV_ITEMS: NavItem[] = [
   // Phase 8c / CP5c (§22.3). Promoted from "Coming soon" as "Assessments &
   // Exams": papers set from the bank, printed or exported. Cross-shell, as above.
   { label: "Exam papers", href: "/teacher/exam-papers", icon: ScrollText, enabled: true, requiredPermission: "exam-paper.read" },
+  // Online exams (CBT, docs/modules/cbt.md): a FINAL paper sat on the school's
+  // lab computers. Cross-shell, as above.
+  { label: "Online exams", href: "/teacher/cbt", icon: MonitorCheck, enabled: true, requiredPermission: "cbt.read" },
   // Phase 5 / Slice 8. Gated on insight.read, which admin/owner hold and
   // bursar and teacher do not — these reports rank classes and subjects
   // against each other across the school, which is management information

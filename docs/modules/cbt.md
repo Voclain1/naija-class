@@ -1,0 +1,187 @@
+# Online exams (CBT)
+
+Students sit a school's own exam papers (CP5c) on the school's lab computers,
+in a browser. Built on the shape fixed in `docs/modules/phase-8.md` D59:
+- a separate delivery service, on its own address;
+- the same accounts and data;
+- offline exam packs unlocked by an invigilator's code, with answers synced
+  in batches;
+- a load test as a gate before any school's first live exam.
+
+Starting point: the assessment in `docs/deferred.md` ("CBT / online exams —
+capability assessment").
+
+## Owner's decisions (2026-10-05)
+
+| # | Decision |
+|---|---|
+| Q1 | **School computer lab, in a browser.** Not phones, not the app, in v1. |
+| Q2 | **Objective questions only.** Multiple choice (true/false is a two-option multiple choice) is delivered and marked automatically. Short-answer and theory sections stay on paper; the teacher types those marks in when the scores go to the gradebook. |
+| Q3 | **Build it to completion now; pay for nothing yet.** The paid database plan, the separate exam machine and the load test happen a few weeks before an exam period, then a proper test before the first live exam. |
+
+## Decisions
+
+**D1 — A sitting is a FINAL paper, scheduled for one or more class arms.**
+- A teacher, for their subject (the D62 scope), or an owner or admin, creates a
+  **sitting**. It names:
+  - the paper;
+  - the arms (all at the paper's class level);
+  - the start time;
+  - the latest time a student may begin;
+  - the exam length.
+- Only a FINAL paper can be scheduled. FINAL papers are frozen, so what
+  students see can never drift from what was approved.
+- A paper with no deliverable question is refused. A deliverable question is
+  multiple choice with at least two options and exactly one correct.
+
+**D2 — Publishing freezes the candidate list and builds the exam pack.**
+- **Candidates.** Publish snapshots every student enrolled in the chosen
+  arms for the paper's term.
+- **Versions.** Each candidate gets one of the paper's versions (A–D) from a
+  hash of the sitting and student, so neighbours rarely share one. The
+  version decides the option order, exactly as on the printed paper.
+- **The pack.** Publish builds one **exam pack** for the sitting:
+  - every version's objective questions, with no answer key;
+  - the candidate list (admission number, first name and surname initial,
+    arm, version);
+  - the timing.
+- **Unpublishing** is allowed until the start time, and only while no answers
+  have arrived. The pack must then be downloaded again.
+
+**D3 — Two codes per sitting.**
+- **Access code**: 6 characters, unique within the school. A lab machine uses
+  it, with the school's web address name (slug), to download the pack ahead
+  of time. Knowing it reveals nothing, because the pack is encrypted.
+- **Unlock code**: 12 characters, shown as `XXXX-XXXX-XXXX`. The invigilator
+  types it on each machine when the exam starts. The pack is decrypted with a
+  key derived from it, so nobody can read the questions early from a
+  downloaded pack.
+  - Crypto: AES-256-GCM, with a PBKDF2-SHA256 key at 210,000 iterations.
+    These are standard primitives (Node `crypto` and the browser's WebCrypto),
+    not home-made crypto.
+  - Strength: 60 bits of code behind 210,000 iterations is far beyond a
+    brute force in the hours between download and start.
+- Both codes are shown only to staff with `cbt.manage`, on the printable
+  invigilator sheet. Every view of that sheet is audited.
+
+**D4 — The answer key never leaves the server.** Marking happens when answers
+reach the API, against the frozen paper. A copied pack gives away the
+questions after the start, never the answers.
+
+**D5 — Students identify themselves by admission number, and confirm their
+name.**
+- The machine shows "Is this you? Adaeze O., JSS 2 Gold". Invigilators watch
+  the room, as they do for a paper exam.
+- No per-student password: lab students often have no portal account, and a
+  slip-code system would add printing for little gain in an invigilated room.
+- If two machines send answers for the same student, both are kept, and the
+  results page asks the teacher which one counts.
+
+**D6 — Offline first.**
+- Answers are saved on the machine after every choice, in IndexedDB.
+- Answers sync to the API in batches (about every 30 seconds when online, and
+  at submit). A machine that loses power or network keeps its answers and
+  sends them later.
+- **The clock** is wall time from the student's start, like a paper exam.
+  After a power cut the invigilator re-enters the unlock code to resume, and
+  can add extra time on that machine.
+- **Server checks.** The server records device and arrival times. It flags,
+  rather than rejects, an attempt that ran over, so a teacher decides.
+
+**D7 — Deterrents, not proctoring.**
+- Each version moves the options.
+- Copy and paste are off.
+- Every time the student leaves the exam window is counted and reported.
+- No webcam, lockdown browser or screen recording. Those are a different
+  product, and for children they are an NDPR and consent question.
+
+**D8 — Scores reach the gradebook only through a teacher.**
+- **The results page shows:**
+  - each candidate's objective score, out of the objective total;
+  - a box for the theory or short-answer mark from the paper scripts;
+  - the total, out of the paper's total.
+- **"Send to gradebook"** writes the totals into the paper's gradebook
+  column (CP5a raw marks, out of the paper's total). It uses the same
+  preview-then-save path, and the scaling happens on the server.
+- **Nothing is written automatically.**
+
+**D9 — A separate delivery service.**
+- **The student app.** The delivery app is its own Next.js app,
+  `apps/cbt`, served at `cbt.schoolkit.ng`. It is a static, installable page
+  with a service worker, so a lab machine can load it with no network once
+  it has been opened.
+- **The API side** is two public endpoints: download a pack, and send
+  answers. They live in a `cbt-delivery` NestJS module that can run alone
+  (`API_MODE=cbt-delivery`) as its own Fly app, so an exam-day spike cannot
+  touch fees, attendance or report cards.
+- **Load.** A whole exam costs the server about one request per machine to
+  download, plus a few small syncs.
+
+**D10 — Go-live gate (decision Q3).** Before any school's first live exam:
+- the paid database plan and the separate Fly app are set up;
+- the load test (`scripts/cbt-load-test`) passes at the target concurrency;
+- a dry run happens in one school's lab.
+
+The runbook is `docs/runbooks/cbt-go-live.md`. Nothing here is paid for
+until then.
+
+## Slices
+
+| Slice | Contents |
+|---|---|
+| **CBT1** | Schema + RLS, permissions; staff API to create, publish, unpublish and close a sitting; pack builder and encryption; staff screens (schedule a sitting, invigilator sheet, candidate list). |
+| **CBT2** | Public delivery API (pack download, answer sync); attempts table; `apps/cbt` (download, unlock, sign in, timed exam, autosave, offline sync, submit). |
+| **CBT3** | Marking; results page with theory marks; multiple-device choice; send to gradebook via the CP5a preview; flags (over time, left the window). |
+| **CBT4** | Standalone deployment config (Fly app in `cbt-delivery` mode, Vercel project), load-test script, go-live runbook. |
+
+## As built — CBT1 (2026-10-08)
+
+Migration `20261008120000_cbt1_sittings`:
+- `cbt_sittings`, `cbt_sitting_arms` and `cbt_candidates`, each with a flat
+  `school_id` policy under FORCE RLS.
+- Checks hold the code formats, the window (`window_ends_at > starts_at`) and
+  "a draft has no pack, a published sitting always has one".
+- No new SECURITY DEFINER function (count stays 23).
+- Permissions `cbt.read` and `cbt.manage` go to admin and teacher, appended
+  idempotently to the system roles.
+
+**API** (`apps/api/src/modules/cbt/`):
+
+| Route | Purpose |
+|---|---|
+| `GET /cbt/papers` | Papers that can be scheduled: FINAL, in scope, with at least one deliverable question. |
+| `GET / POST /cbt/sittings`, `GET / PUT / DELETE /cbt/sittings/:id` | List, create, read, edit and delete sittings. Editing and deleting are draft only. |
+| `POST …/publish`, `…/unpublish`, `…/close` | Lifecycle. Unpublish is refused once the start time has passed. |
+| `GET …/candidates` | The student list. Live while draft, frozen once published. |
+| `GET …/invigilator-sheet` | The codes. `cbt.manage` only, and every read writes `cbt-sitting.view-codes`. |
+
+**Pack:**
+- Built in `cbt-pack-crypto.ts`: PBKDF2-SHA256 at 210,000 iterations, then
+  AES-256-GCM. The ciphertext uses WebCrypto's layout, with the tag appended,
+  so the browser opens it unchanged in CBT2.
+- **Version assignment:** `versionForCandidate` (in `@school-kit/types`,
+  beside `optionOrderFor`) hashes the sitting and student ids.
+- **Spec-proven:**
+  - the pack opens only with the unlock code, typed in any case or with
+    dashes;
+  - each version's option order matches its printed paper;
+  - there is no answer key anywhere in the payload. Mutation-checked: adding
+    `isCorrect` to the pack fails the spec;
+  - theory text is never in it;
+  - the public envelope carries no question text and no names.
+
+**Screens:**
+- `/teacher/cbt`: the list, and a "Schedule an online exam" form.
+- `/teacher/cbt/[id]`: online and on-paper totals, students with versions,
+  and the lifecycle buttons.
+- `/teacher/cbt/[id]/invigilator`: the printable sheet with both codes, the
+  steps for the day and the register.
+- "Online exams" is in both the admin and teacher sidebars.
+- `NEXT_PUBLIC_CBT_URL`, in `apps/web`, is the address printed on the sheet.
+
+**Tests:**
+- `cbt-sittings.service.spec.ts` (8 tests);
+- `cbt-format.spec.ts`;
+- RBAC coverage;
+- E2E `cbt-sittings.spec.ts`: schedule, publish, then the invigilator sheet
+  shows the codes, the register and the audited view.

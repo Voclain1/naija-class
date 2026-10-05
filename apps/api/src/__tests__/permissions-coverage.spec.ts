@@ -65,6 +65,7 @@ import { NotificationPreferencesController } from "../modules/notifications/noti
 import { LessonPlansController } from "../modules/lesson-plans/lesson-plans.controller";
 import { QuestionBankController } from "../modules/question-bank/question-bank.controller";
 import { ExamPapersController } from "../modules/exam-papers/exam-papers.controller";
+import { CbtSittingsController } from "../modules/cbt/cbt-sittings.controller";
 
 // Static RBAC safety net (slice 13). Every route handler on a Phase 1
 // controller MUST declare @Permissions — the PermissionsGuard fails closed,
@@ -1260,5 +1261,42 @@ describe("Phase 8c CP5c RBAC coverage: exam papers", () => {
     }
     const bursar = new Set(roleSeed("bursar").permissions);
     for (const p of all) expect(bursar.has(p), `bursar should NOT have ${p}`).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Online exams (CBT1) RBAC coverage (docs/modules/cbt.md). `read` sees sittings
+// and candidates; `manage` schedules, publishes, closes and reveals the codes.
+// admin and teacher hold both (the service holds a teacher to their subjects);
+// bursar neither.
+// ---------------------------------------------------------------------------
+describe("CBT1 RBAC coverage: online exam sittings", () => {
+  it("CbtSittingsController: each handler carries the right cbt.* permission", () => {
+    const proto = CbtSittingsController.prototype as unknown as Record<string, object>;
+    const byHandler = Object.fromEntries(
+      routeHandlers(CbtSittingsController).map((h) => [h, Reflect.getMetadata(PERMISSIONS_METADATA_KEY, proto[h]!)]),
+    );
+    expect(byHandler).toEqual({
+      schedulablePapers: ["cbt.manage"],
+      list: ["cbt.read"],
+      get: ["cbt.read"],
+      candidates: ["cbt.read"],
+      invigilatorSheet: ["cbt.manage"],
+      create: ["cbt.manage"],
+      update: ["cbt.manage"],
+      remove: ["cbt.manage"],
+      publish: ["cbt.manage"],
+      unpublish: ["cbt.manage"],
+      close: ["cbt.manage"],
+    });
+  });
+
+  it("admin and teacher hold both; bursar holds neither", () => {
+    for (const key of ["admin", "teacher"]) {
+      const perms = new Set(roleSeed(key).permissions);
+      for (const p of ["cbt.read", "cbt.manage"]) expect(perms.has(p), `${key} should have ${p}`).toBe(true);
+    }
+    const bursar = new Set(roleSeed("bursar").permissions);
+    for (const p of ["cbt.read", "cbt.manage"]) expect(bursar.has(p), `bursar should NOT have ${p}`).toBe(false);
   });
 });

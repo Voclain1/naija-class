@@ -97,6 +97,14 @@ describe("admin nav items", () => {
     expect(LATER_PHASE_ITEMS.some((i) => /exam/i.test(i.label))).toBe(false);
   });
 
+  it("lists online exams (CBT) as live, gated on cbt.read", () => {
+    expect(NAV_ITEMS.find((i) => i.label === "Online exams")).toMatchObject({
+      enabled: true,
+      href: "/teacher/cbt",
+      requiredPermission: "cbt.read",
+    });
+  });
+
   it("leaves only genuinely unbuilt features under Coming soon", () => {
     expect(LATER_PHASE_ITEMS.map((i) => i.label)).toEqual(["AI Tutor"]);
   });

@@ -759,6 +759,13 @@ export const EXAM_PAPER_PERMISSIONS = [
   "exam-paper.finalise",
 ] as const;
 
+// Online exams (CBT, docs/modules/cbt.md). `read` sees sittings and results;
+// `manage` schedules, publishes and closes a sitting, reveals its invigilator
+// codes (audited) and sends scores to the gradebook. admin and teacher hold
+// both; the service holds a teacher to the subjects they teach at each level,
+// as for exam papers (D62). Bursar holds none.
+export const CBT_PERMISSIONS = ["cbt.read", "cbt.manage"] as const;
+
 export const ALL_PERMISSIONS = [
   ...PHASE_0_PERMISSIONS,
   ...PHASE_1_PERMISSIONS,
@@ -781,6 +788,7 @@ export const ALL_PERMISSIONS = [
   ...RESULT_PIN_PERMISSIONS,
   ...QUESTION_BANK_PERMISSIONS,
   ...EXAM_PAPER_PERMISSIONS,
+  ...CBT_PERMISSIONS,
   /* extend per phase */
 ] as const;
 
