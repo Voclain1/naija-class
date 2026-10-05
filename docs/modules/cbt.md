@@ -185,3 +185,82 @@ Migration `20261008120000_cbt1_sittings`:
 - RBAC coverage;
 - E2E `cbt-sittings.spec.ts`: schedule, publish, then the invigilator sheet
   shows the codes, the register and the audited view.
+
+## As built — CBT2 (2026-10-09)
+
+Migration `20261009120000_cbt2_attempts`:
+- `cbt_attempts`: one row per (candidate, lab machine), flat `school_id`
+  policy under FORCE RLS. A student who moved computers has two rows (D5).
+- The machine sends a **snapshot** of the whole attempt every time (all
+  answers so far, plus a `seq` that only goes up), never a diff. One
+  `INSERT … ON CONFLICT … WHERE seq < EXCLUDED.seq AND submitted_at IS NULL`
+  keeps the highest copy, so repeats, late batches and two batches racing
+  each other change nothing, and a submitted attempt is final.
+- Two clocks: `started_at`/`submitted_at` are the machine's, and
+  `first_received_at`/`last_received_at` the server's (D6).
+- The candidate FK is RESTRICT, and unpublish is refused once any answers
+  exist (`SITTING_HAS_ANSWERS`): the same rule in the service and the database.
+- No new SECURITY DEFINER function (count stays 23).
+
+**Public API** (`apps/api/src/modules/cbt-delivery/`, its own module so it can
+run alone in CBT4):
+
+| Route | Protection |
+|---|---|
+| `GET /cbt-delivery/:slug/packs/:accessCode` | The encrypted envelope only. Published sittings only; closed → `SITTING_CLOSED`; suspended school → `SCHOOL_SUSPENDED`. |
+| `POST /cbt-delivery/:slug/sittings/:sittingId/answers` | `X-CBT-Signature`: HMAC-SHA256 of the exact body, under a **sync key** derived from the unlock code (PBKDF2, the pack's 210,000 iterations, salt `school-kit-cbt-sync:<sittingId>`). Only an unlocked machine holds it. Per attempt: `STORED`, `ALREADY_STORED`, or `REJECTED` (`NOT_ON_REGISTER`, `UNKNOWN_ANSWER` — every answer must be an option of a multiple-choice item on the frozen paper). |
+
+- The school comes from its slug (`schools` has no RLS), as in the Result
+  Checker; everything after runs under `withTenant`.
+- **Throttles** are sized for a whole lab behind one router address: 600
+  downloads and 1,200 syncs a minute per address.
+- **Closed sittings still accept answers.** A machine offline at the close
+  keeps its answers; `last_received_at` against `closed_at` shows they were
+  late (D6: flag, don't reject). CBT3 shows it.
+- **CORS**: `CORS_ORIGIN_CBT` (default `http://localhost:3003`), and
+  `X-CBT-Signature` is an allowed header.
+
+**Browser crypto** (`packages/types/src/cbt/cbt-web-crypto.ts`):
+- `openPackInBrowser`, `deriveSyncKey` and `signSyncBody`, using WebCrypto only.
+- The API's HTTP spec runs this exact code on Node's WebCrypto against packs
+  the server built.
+
+**`apps/cbt`** (port 3003):
+- **Screens:** home (downloaded exams, download with the access code) → unlock
+  (invigilator) → admission number → "Is this you?" → exam → finished →
+  next student.
+- **On the machine** (IndexedDB):
+  - the encrypted packs;
+  - every attempt, saved after each choice;
+  - what the server has confirmed, kept in a separate store so a sync cannot
+    overwrite a newer answer;
+  - the machine's id;
+  - each sitting's sync key.
+- The sync key is a **non-extractable** WebCrypto key. Answers saved before a
+  restart can be sent without the code, but the key cannot open the questions.
+  The opened questions are only ever in memory.
+- **Sync** runs every 30 seconds, on reconnect, and at finish.
+- **Resume after a power cut:** the unlock code again, then sign in again.
+  The clock kept running from the student's start (D6).
+- **Invigilator actions:** a late start after the latest start time, and
+  extra time. Both need the unlock code typed again, checked by comparing
+  signatures, so the code is never stored.
+- **Deterrents (D7):** copy, paste and the context menu are blocked; each time
+  the student leaves the window is counted once.
+- **Offline:** a service worker (`public/sw.js`, production only) keeps the
+  app's own files, so a machine that opened the page online can open it
+  again offline.
+
+**Staff screen:** the sitting page's student list gains a Progress column
+("Sitting — 12 of 40 answered", "Submitted … (2 computers)") and a Refresh
+button.
+
+**Tests:**
+- `cbt-delivery.http.spec.ts` (8, real HTTP and Postgres). Mutation-checked:
+  dropping the `seq` guard, or the signature check, fails it.
+- apps/cbt specs (14), on fake-indexeddb, including the one-device-id race:
+  two concurrent first syncs once minted two ids, so one student looked like
+  two computers. Caught by the E2E and fixed.
+- E2E `cbt-delivery.spec.ts`: download, wrong and right unlock code, sign in,
+  answer, reload, resume with answers kept, finish, "All answers sent", the
+  attempt in the database, and the teacher's Progress column.

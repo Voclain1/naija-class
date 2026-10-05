@@ -1,0 +1,68 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ---------------------------------------------------------------------------
+ * The portal's brand tokens (themselves the web's light scheme — CLAUDE.md
+ * "Design system"). A lab exam has no dark mode: one look, set by the school's
+ * screens, not by a child's machine preference.
+ * ------------------------------------------------------------------------- */
+
+@layer base {
+  html {
+    font-size: 17px; /* the web's base bump — cascades via rem to every text utility */
+  }
+
+  :root {
+    --background: 45 33% 95%; /* Paper #F7F5EF */
+    --foreground: 198 42% 13%; /* Ink #13262E */
+    --card: 45 33% 95%;
+    --card-foreground: 198 42% 13%;
+    --popover: 45 33% 97%;
+    --popover-foreground: 198 42% 13%;
+    --primary: 161 74% 21%; /* Deep Emerald #0E5C43 */
+    --primary-foreground: 45 33% 97%;
+    --secondary: 40 74% 53%; /* Gold Spark #E0A52E */
+    --secondary-foreground: 198 42% 13%;
+    --muted: 45 15% 90%;
+    --muted-foreground: 198 15% 40%;
+    --accent: 45 20% 88%;
+    --accent-foreground: 198 42% 13%;
+    /* The web's darkened red: 6.98:1 for text-destructive on a destructive/5
+       banner, where the stock #ef4444 managed 3.23:1. */
+    --destructive: 0 72% 35%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 45 15% 85%;
+    --input: 45 15% 85%;
+    --ring: 161 74% 21%;
+    --radius: 0.75rem;
+
+    /* Bright Emerald #3FB68B — the wordmark's "kit". Its own token, as on the
+       web: fixed in every theme rather than following --primary. */
+    --brand-accent: 158 49% 48%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  /* On BODY, not :root — next/font defines --font-dm-* through a class it puts
+   * on <body>, and a token declared at :root resolves to empty there, which
+   * makes the whole font-family declaration a parse error and falls back to
+   * Times New Roman. That is what apps/web shipped with for months; see its
+   * globals.css for the full account. The portal had no typeface at all until
+   * 2026-09-29. */
+  body {
+    --font-sans: var(--font-dm-sans);
+    --font-serif: var(--font-dm-serif-display);
+    @apply bg-background text-foreground;
+  }
+}
+
+/* The exam itself: no selecting text to copy (D7). Inputs stay selectable so
+ * an admission number can be corrected. */
+.exam-no-select {
+  -webkit-user-select: none;
+  user-select: none;
+}

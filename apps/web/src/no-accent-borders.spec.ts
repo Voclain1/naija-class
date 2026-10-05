@@ -27,6 +27,7 @@ const REPO_ROOT = join(__dirname, "..", "..", "..");
 const SCANNED = [
   "apps/web/src",
   "apps/portal/src",
+  "apps/cbt/src",
   "apps/mobile/app",
   "apps/mobile/src",
   "packages/ui/src",

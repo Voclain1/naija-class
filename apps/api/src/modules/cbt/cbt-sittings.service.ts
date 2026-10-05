@@ -9,6 +9,7 @@ import {
   optionOrderFor,
   versionForCandidate,
   versionsOf,
+  type CbtCandidateProgressDto,
   type CbtCandidateRowDto,
   type CbtInvigilatorSheetDto,
   type CbtPackCandidate,
@@ -94,6 +95,19 @@ type SittingRow = Prisma.CbtSittingGetPayload<{ include: typeof SITTING_INCLUDE 
 export function isDeliverable(item: ItemRow): boolean {
   const q = item.question;
   return q.type === "MULTIPLE_CHOICE" && q.options.length >= 2 && q.options.filter((o) => o.isCorrect).length === 1;
+}
+
+/** One student's attempts across machines, summed up for staff on the day. */
+function progressOf(
+  attempts: { answeredCount: number; submittedAt: Date | null; lastReceivedAt: Date }[],
+): CbtCandidateProgressDto | null {
+  if (attempts.length === 0) return null;
+  return {
+    machines: attempts.length,
+    answeredCount: Math.max(...attempts.map((a) => a.answeredCount)),
+    submitted: attempts.some((a) => a.submittedAt !== null),
+    lastReceivedAt: new Date(Math.max(...attempts.map((a) => a.lastReceivedAt.getTime()))).toISOString(),
+  };
 }
 
 function paperFigures(paper: PaperRow) {
@@ -213,12 +227,14 @@ export class CbtSittingsService {
         lastName: student.lastName,
         armName,
         version: versionForCandidate(row.id, student.id, row.paper.versionCount),
+        progress: null,
       }));
       const candidates = await db.cbtCandidate.findMany({
         where: { sittingId: id },
         include: {
           student: { select: { admissionNumber: true, firstName: true, lastName: true } },
           classArm: { select: { name: true } },
+          attempts: { select: { answeredCount: true, submittedAt: true, lastReceivedAt: true } },
         },
       });
       return candidates
@@ -229,6 +245,7 @@ export class CbtSittingsService {
           lastName: c.student.lastName,
           armName: c.classArm.name,
           version: c.version,
+          progress: progressOf(c.attempts),
         }))
         .sort((a, b) => a.armName.localeCompare(b.armName) || a.lastName.localeCompare(b.lastName) || a.firstName.localeCompare(b.firstName));
     });
@@ -411,7 +428,8 @@ export class CbtSittingsService {
   /**
    * PUBLISHED → DRAFT, until the start time (D2). The candidates and the pack
    * go; a machine that already downloaded the pack must download it again.
-   * CBT2 adds: refused once any answers have arrived.
+   * Refused once any answers have arrived (the candidate FK on cbt_attempts
+   * is RESTRICT too, so the database holds the same rule).
    */
   async unpublish(authCtx: AuthContext, id: string, meta: RequestMeta): Promise<CbtSittingDto> {
     const scope = await this.resolveScope(authCtx);
@@ -422,6 +440,9 @@ export class CbtSittingsService {
       }
       if (row.startsAt.getTime() <= Date.now()) {
         throw new ConflictError("SITTING_STARTED", "This online exam has already started, so it can't go back to draft.");
+      }
+      if ((await db.cbtAttempt.count({ where: { sittingId: id } })) > 0) {
+        throw new ConflictError("SITTING_HAS_ANSWERS", "Students have already sent answers for this exam, so it can't go back to draft.");
       }
       await db.cbtCandidate.deleteMany({ where: { sittingId: id } });
       await db.cbtSitting.update({
@@ -434,7 +455,11 @@ export class CbtSittingsService {
     });
   }
 
-  /** PUBLISHED → CLOSED: no more answers are accepted (CBT2). */
+  /**
+   * PUBLISHED → CLOSED: no more downloads. Answers from a machine that was
+   * offline at the close are still kept, and show as arriving after it (D6 —
+   * flag, don't reject).
+   */
   async close(authCtx: AuthContext, id: string, meta: RequestMeta): Promise<CbtSittingDto> {
     const scope = await this.resolveScope(authCtx);
     return withTenant(authCtx.schoolId, async (db) => {

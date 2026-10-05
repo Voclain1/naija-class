@@ -66,6 +66,7 @@ import { ResultCheckerModule } from "./modules/result-checker/result-checker.mod
 import { QuestionBankModule } from "./modules/question-bank/question-bank.module";
 import { ExamPapersModule } from "./modules/exam-papers/exam-papers.module";
 import { CbtModule } from "./modules/cbt/cbt.module";
+import { CbtDeliveryModule } from "./modules/cbt-delivery/cbt-delivery.module";
 import { SchoolsModule } from "./modules/schools/schools.module";
 import { SetupStateModule } from "./modules/setup-state/setup-state.module";
 import { StaffBankAccountModule } from "./modules/staff-bank-accounts/staff-bank-account.module";
@@ -166,6 +167,7 @@ const isProd = process.env.NODE_ENV === "production";
     QuestionBankModule,
     ExamPapersModule,
     CbtModule,
+    CbtDeliveryModule,
     FeeCatalogModule,
     DiscountsModule,
     InvoicesModule,

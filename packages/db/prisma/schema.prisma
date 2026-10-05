@@ -3640,6 +3640,7 @@ model CbtSitting {
   paper      ExamPaper       @relation(fields: [paperId], references: [id], onDelete: Restrict)
   arms       CbtSittingArm[]
   candidates CbtCandidate[]
+  attempts   CbtAttempt[]
 
   @@unique([schoolId, accessCode])
   @@index([schoolId])
@@ -3672,8 +3673,41 @@ model CbtCandidate {
   sitting  CbtSitting @relation(fields: [sittingId], references: [id], onDelete: Cascade)
   student  Student    @relation(fields: [studentId], references: [id], onDelete: Cascade)
   classArm ClassArm   @relation(fields: [classArmId], references: [id], onDelete: Cascade)
+  attempts CbtAttempt[]
 
   @@unique([sittingId, studentId])
   @@index([schoolId])
   @@map("cbt_candidates")
+}
+
+// Online exams (CBT2) — one row per (candidate, lab machine). The machine sends
+// a snapshot of the whole attempt each time; the highest `seq` wins, so repeats
+// and late batches change nothing (docs/modules/cbt.md D5, D6).
+model CbtAttempt {
+  id              String    @id @default(uuid())
+  schoolId        String    @map("school_id")
+  sittingId       String    @map("sitting_id")
+  candidateId     String    @map("candidate_id")
+  // A random id the machine makes for itself the first time it opens the app.
+  deviceId        String    @map("device_id")
+  seq             Int
+  // { examPaperItemId: questionOptionId } — checked against the frozen paper.
+  answers         Json      @default("{}")
+  answeredCount   Int       @default(0) @map("answered_count")
+  // The MACHINE's clock: what the student lived.
+  startedAt       DateTime  @map("started_at")
+  submittedAt     DateTime? @map("submitted_at")
+  extraMinutes    Int       @default(0) @map("extra_minutes")
+  focusLosses     Int       @default(0) @map("focus_losses")
+  // The SERVER's clock: when it reached us.
+  firstReceivedAt DateTime  @default(now()) @map("first_received_at")
+  lastReceivedAt  DateTime  @default(now()) @map("last_received_at")
+
+  sitting   CbtSitting   @relation(fields: [sittingId], references: [id], onDelete: Cascade)
+  candidate CbtCandidate @relation(fields: [candidateId], references: [id], onDelete: Restrict)
+
+  @@unique([candidateId, deviceId])
+  @@index([sittingId])
+  @@index([schoolId])
+  @@map("cbt_attempts")
 }

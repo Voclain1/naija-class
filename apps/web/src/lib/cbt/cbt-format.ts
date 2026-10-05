@@ -1,4 +1,4 @@
-import type { CbtSittingStatus, CbtSittingSummaryDto } from "@school-kit/types";
+import type { CbtCandidateProgressDto, CbtSittingStatus, CbtSittingSummaryDto } from "@school-kit/types";
 
 // Pure display helpers for online exams (docs/modules/cbt.md). Unit-tested.
 
@@ -23,4 +23,12 @@ export function describeSittingTime(s: Pick<CbtSittingSummaryDto, "startsAt" | "
   const sameDay = start.toDateString() === latest.toDateString();
   const by = sameDay ? timeOf(latest) : `${latest.toLocaleDateString("en-NG", { day: "numeric", month: "short" })} ${timeOf(latest)}`;
   return `${day}, ${timeOf(start)} (start by ${by}) · ${s.durationMinutes} min`;
+}
+
+/** "Not started" · "Sitting — 12 of 40 answered" · "Submitted — 38 of 40 answered (2 computers)" */
+export function cbtProgressLabel(progress: CbtCandidateProgressDto | null, questionCount: number): string {
+  if (!progress) return "Not started";
+  const state = progress.submitted ? "Submitted" : "Sitting";
+  const machines = progress.machines > 1 ? ` (${progress.machines} computers)` : "";
+  return `${state} — ${progress.answeredCount} of ${questionCount} answered${machines}`;
 }

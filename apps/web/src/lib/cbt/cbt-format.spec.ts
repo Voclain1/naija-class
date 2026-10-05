@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { cbtStatusLabel, describeSittingTime, localMoment } from "./cbt-format";
+import { cbtProgressLabel, cbtStatusLabel, describeSittingTime, localMoment } from "./cbt-format";
 
 describe("cbt-format", () => {
   it("labels statuses in words", () => {
@@ -25,5 +25,14 @@ describe("cbt-format", () => {
     expect(text).toMatch(/20 Nov 2026/);
     expect(text).toMatch(/start by/);
     expect(text).toMatch(/40 min$/);
+  });
+
+  it("says how far a student has got, and when they moved computers", () => {
+    const at = "2026-11-20T09:10:00.000Z";
+    expect(cbtProgressLabel(null, 40)).toBe("Not started");
+    expect(cbtProgressLabel({ machines: 1, answeredCount: 12, submitted: false, lastReceivedAt: at }, 40)).toBe("Sitting — 12 of 40 answered");
+    expect(cbtProgressLabel({ machines: 2, answeredCount: 38, submitted: true, lastReceivedAt: at }, 40)).toBe(
+      "Submitted — 38 of 40 answered (2 computers)",
+    );
   });
 });

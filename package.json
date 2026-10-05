@@ -11,6 +11,7 @@
     "dev:api": "turbo run dev --filter=@school-kit/api",
     "dev:web": "turbo run dev --filter=@school-kit/web",
     "dev:portal": "turbo run dev --filter=@school-kit/portal",
+    "dev:cbt": "turbo run dev --filter=@school-kit/cbt",
     "dev:mobile": "turbo run dev --filter=@school-kit/mobile",
     "build": "turbo run build",
     "lint": "turbo run lint",

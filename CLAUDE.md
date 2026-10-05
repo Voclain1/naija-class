@@ -42,6 +42,8 @@ When upgrading any of these, update this file in the same PR.
 apps/
   web/      Next.js — admin + teacher
   portal/   Next.js — parent portal (Phase 4), own Vercel project + deploy
+  cbt/      Next.js — online exams on school lab computers (docs/modules/cbt.md),
+            offline-first, calls the API's public cbt-delivery routes directly
   mobile/   Expo — parent + student
   api/      NestJS — backend
 packages/
