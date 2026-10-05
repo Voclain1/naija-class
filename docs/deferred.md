@@ -43,13 +43,15 @@ the module doc or the PR, then link it here.
   a payment, see the collection rate move. Also log an expense and run payroll
   through to a payslip. Today the only money e2e is onboarding's first
   payment.
-- [ ] **`apiFetch` network failures look like server errors.** A raw `fetch()`
-  rejection (offline, CORS, reset) escapes as a `TypeError`. Callers then show
-  their generic "Could not …" text, and support cannot tell "never reached the
-  server" from "the server said no". **Fix:** wrap it as `ApiNetworkError`
-  with "Couldn't reach the server — check your connection." Mobile already
-  makes this distinction and must keep it. **Where:**
-  `apps/web/src/lib/api-client.ts` (and the portal's equivalent).
+- [x] **DONE 2026-10-05 — `apiFetch` network failures.** A rejected
+  `fetch()` or a non-JSON body (a gateway's error page) now throws
+  `ApiNetworkError`: status 0, code `NETWORK_ERROR`, "Couldn't reach the
+  server. Check your internet connection and try again."
+  - It extends `ApiError`, so the ~300 `err instanceof ApiError ? err.message : …`
+    call sites show that sentence with no edit.
+  - A caller's own abort is rethrown untouched.
+  - The portal already said this on every page, so it needed nothing.
+  - Covered by `apps/web/src/lib/api-client.spec.ts`.
 - [ ] **Smart Student Import has no content evals.** `student-list-extraction`
   is the only PII-bearing prompt, and it has never read a real register. Its
   checks are all structural. **Needs:** about 10 photographed pages with

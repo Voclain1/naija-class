@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { ApiError } from "@/lib/api-client";
+import { ApiError, ApiNetworkError } from "@/lib/api-client";
 
 import { dashboardErrorMessage } from "./dashboard-error-copy";
 
@@ -55,6 +55,13 @@ describe("dashboardErrorMessage", () => {
       surface: "admin-dashboard",
       failureKind: "network",
     });
+  });
+
+  it("classifies apiFetch's network failure as network, not as a 4xx", () => {
+    // ApiNetworkError extends ApiError with status 0; without its own branch
+    // it would be filed under api-4xx.
+    dashboardErrorMessage(new ApiNetworkError(new TypeError("Failed to fetch")));
+    expect(firstCaptureContext().tags.failureKind).toBe("network");
   });
 
   it("classifies a 4xx separately from a 5xx", () => {
