@@ -4,10 +4,12 @@
 import type {
   CbtCandidateRowDto,
   CbtInvigilatorSheetDto,
+  CbtResultsDto,
   CbtSchedulablePaperDto,
   CbtSittingDto,
   CbtSittingSummaryDto,
   CreateCbtSittingInput,
+  SaveCbtTheoryMarksInput,
   UpdateCbtSittingInput,
 } from "@school-kit/types";
 
@@ -38,6 +40,18 @@ export const publishCbtSitting = (id: string) => apiFetch<CbtSittingDto>(`/cbt/s
 export const unpublishCbtSitting = (id: string) => apiFetch<CbtSittingDto>(`/cbt/sittings/${id}/unpublish`, { method: "POST" });
 
 export const closeCbtSitting = (id: string) => apiFetch<CbtSittingDto>(`/cbt/sittings/${id}/close`, { method: "POST" });
+
+// ---- Results (CBT3) -------------------------------------------------------
+
+/** Marked on the server against the frozen key, every time. */
+export const getCbtResults = (id: string) => apiFetch<CbtResultsDto>(`/cbt/sittings/${id}/results`, { method: "GET" });
+
+export const saveCbtTheoryMarks = (id: string, input: SaveCbtTheoryMarksInput) =>
+  apiFetch<CbtResultsDto>(`/cbt/sittings/${id}/theory-marks`, { method: "PUT", body: input });
+
+/** The attempt that counts, for a student who used more than one computer. */
+export const chooseCbtAttempt = (id: string, attemptId: string) =>
+  apiFetch<CbtResultsDto>(`/cbt/sittings/${id}/attempts/${attemptId}/choose`, { method: "POST" });
 
 /** Where lab machines open the exam (D9). Set per deployment; dev default is the local CBT app. */
 export const CBT_DELIVERY_BASE_URL = process.env.NEXT_PUBLIC_CBT_URL ?? "http://localhost:3003";

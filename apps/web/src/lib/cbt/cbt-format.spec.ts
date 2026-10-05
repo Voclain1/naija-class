@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { cbtProgressLabel, cbtStatusLabel, describeSittingTime, localMoment } from "./cbt-format";
+import { cbtFlagLabel, cbtNotReadyReason, cbtProgressLabel, cbtStatusLabel, describeSittingTime, localMoment, parseTheoryMark } from "./cbt-format";
 
 describe("cbt-format", () => {
   it("labels statuses in words", () => {
@@ -34,5 +34,26 @@ describe("cbt-format", () => {
     expect(cbtProgressLabel({ machines: 2, answeredCount: 38, submitted: true, lastReceivedAt: at }, 40)).toBe(
       "Submitted — 38 of 40 answered (2 computers)",
     );
+  });
+
+  it("labels flags in words", () => {
+    expect(cbtFlagLabel("LEFT_WINDOW", 1)).toBe("Left the exam window once");
+    expect(cbtFlagLabel("LEFT_WINDOW", 3)).toBe("Left the exam window 3 times");
+    expect(cbtFlagLabel("NOT_SUBMITTED", 0)).toBe("Did not finish");
+  });
+
+  it("says why a row cannot go to the gradebook yet", () => {
+    const base = { attempts: [], needsChoice: false, total: null, objectiveScore: null };
+    expect(cbtNotReadyReason(base)).toBe("No answers received");
+    expect(cbtNotReadyReason({ ...base, attempts: [{}, {}] as never, needsChoice: true })).toBe("Choose which computer counts");
+    expect(cbtNotReadyReason({ ...base, attempts: [{}] as never, objectiveScore: 4 })).toBe("Theory mark needed");
+    expect(cbtNotReadyReason({ ...base, attempts: [{}] as never, objectiveScore: 4, total: 9 })).toBeNull();
+  });
+
+  it("reads a typed theory mark", () => {
+    expect(parseTheoryMark("", 10)).toBeNull();
+    expect(parseTheoryMark(" 7 ", 10)).toBe(7);
+    expect(parseTheoryMark("11", 10)).toBe("invalid");
+    expect(parseTheoryMark("3.5", 10)).toBe("invalid");
   });
 });

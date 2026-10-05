@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
 
 import { QuestionBankModule } from "../question-bank/question-bank.module.js";
+import { CbtResultsService } from "./cbt-results.service.js";
 import { CbtSittingsController } from "./cbt-sittings.controller.js";
 import { CbtSittingsService } from "./cbt-sittings.service.js";
 
@@ -10,7 +11,7 @@ import { CbtSittingsService } from "./cbt-sittings.service.js";
 @Module({
   imports: [QuestionBankModule],
   controllers: [CbtSittingsController],
-  providers: [CbtSittingsService],
+  providers: [CbtSittingsService, CbtResultsService],
   exports: [CbtSittingsService],
 })
 export class CbtModule {}
