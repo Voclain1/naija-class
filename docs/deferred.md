@@ -39,10 +39,15 @@ the module doc or the PR, then link it here.
   unaffected: `runCheckout` polls `GET /portal/payments/:reference`, and the
   webhook is the authority. **Needs:** a Paystack test-mode subaccount on a
   dev school to prove the round trip, and a scheme-aware callback.
-- [ ] **No Playwright coverage of the money path:** create an invoice, record
-  a payment, see the collection rate move. Also log an expense and run payroll
-  through to a payslip. Today the only money e2e is onboarding's first
-  payment.
+- [x] **DONE 2026-10-05 — Playwright coverage of the money path**
+  (`e2e/tests/finance-money-path.spec.ts`):
+  - **A recorded payment** moves the invoice's Paid and Balance. It also moves
+    the term's collected, outstanding and collection rate (0% → 15%). The
+    test checks the payment row in kobo and its `payment.record` audit row.
+  - **An expense** logged through the form shows in the list and in the
+    term's total expenses.
+  - **Payroll** goes through run, approve and payslip. Net pay is the
+    server's figure, and the stored payslip carries it.
 - [x] **DONE 2026-10-05 — `apiFetch` network failures.** A rejected
   `fetch()` or a non-JSON body (a gateway's error page) now throws
   `ApiNetworkError`: status 0, code `NETWORK_ERROR`, "Couldn't reach the
