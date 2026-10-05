@@ -6,7 +6,9 @@ import {
   ConflictError,
   NotFoundError,
   UnauthorizedError,
+  ValidationError,
   type PaystackSetupStatus,
+  type PlatformAdminCancelOwnerInvitationResponse,
   type PlatformAdminCreateSchoolInput,
   type PlatformAdminCreateSchoolResponse,
   type PlatformAdminLoginInput,
@@ -14,8 +16,12 @@ import {
   type PlatformAdminPaystackSetupRequestDto,
   type PlatformAdminPaystackSetupRevealDto,
   type PlatformAdminResolvePaystackSetupInput,
+  type PlatformAdminResendOwnerInvitationInput,
+  type PlatformAdminResendOwnerInvitationResponse,
   type PlatformAdminResolvePaystackSetupResponse,
   type PlatformAdminSchoolDto,
+  type PlatformAdminSetAiBudgetInput,
+  type PlatformAdminSetAiBudgetResponse,
   type PlatformAdminSetAiEnabledInput,
   type PlatformAdminSetAiEnabledResponse,
   type PlatformAdminSetEarlyAccessInput,
@@ -23,6 +29,7 @@ import {
   type PlatformAdminUserDto,
 } from "@school-kit/types";
 
+import { DEFAULT_MONTHLY_TOKEN_BUDGET } from "../../common/ai/ai.constants.js";
 import type { PlatformAdminContext } from "../../common/auth/platform-admin-context";
 import * as password from "../../common/auth/password";
 import { createSession } from "../../common/auth/sessions";
@@ -97,14 +104,17 @@ interface LookupUserForLoginRow {
 interface ListSchoolsRow {
   school_id: string;
   name: string;
+  slug: string;
   created_at: Date;
   is_active: boolean;
   student_count: bigint;
   staff_count: bigint;
+  has_owner: boolean;
   owner_invite_pending: boolean;
   owner_invite_expires_at: Date | null;
   early_access_granted_at: Date | null;
   ai_enabled: boolean;
+  ai_monthly_token_budget: number | null;
   staff_mobile_enabled: boolean;
 }
 
@@ -133,6 +143,59 @@ interface ListUsersRow {
   created_at: Date;
   last_login_at: Date | null;
   is_active: boolean;
+}
+
+type TxClient = Parameters<Parameters<typeof basePrisma.$transaction>[0]>[0];
+
+function newOwnerInvitationToken(): { rawToken: string; tokenHash: string; expiresAt: Date } {
+  const rawToken = crypto.randomBytes(32).toString("base64url");
+  const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
+  return { rawToken, tokenHash, expiresAt: new Date(Date.now() + OWNER_INVITATION_TTL_MS) };
+}
+
+// Pre-write availability check for an owner email, via the SECURITY DEFINER
+// function (users and invitations are FORCE RLS, and the check is
+// cross-tenant). Takes a client so the resend path can run it inside its
+// transaction, where it sees that transaction's own just-ended invitations.
+async function assertOwnerEmailAvailable(
+  db: Pick<TxClient, "$queryRaw">,
+  email: string,
+): Promise<void> {
+  const rows = await db.$queryRaw<CheckOwnerEmailAvailableRow[]>`
+    SELECT * FROM platform_admin_check_owner_email_available(${email})
+  `;
+  const availability = rows[0];
+  if (availability?.is_available) return;
+  if (availability?.reason === "INVITE_PENDING") {
+    throw new ConflictError(
+      "INVITE_PENDING",
+      "This email already has a pending owner invitation at another school.",
+    );
+  }
+  throw new ConflictError("EMAIL_TAKEN", "A user with that email already exists on the platform.");
+}
+
+// Ends every unaccepted, unexpired owner invitation for the school by setting
+// expires_at to the TRANSACTION's start time. The caller must already have set
+// the school's GUC in `tx`.
+//
+// Raw SQL rather than updateMany({ expiresAt: new Date() }) on purpose: inside
+// a transaction Postgres' now() is the transaction start, so a JavaScript
+// "now" lands a few milliseconds AFTER it — and the availability check that
+// follows (`expires_at > now()`) would still see the invitation as live and
+// refuse to resend to the same address. Same reference clock on both sides —
+// TRUNCATED to milliseconds, because expires_at is timestamp(3) and storing
+// now()'s microseconds would ROUND, half the time to a value just after now(),
+// leaving the invitation live for the check. (Found as a 50% flaky spec.)
+async function endOpenOwnerInvitations(tx: TxClient, schoolId: string): Promise<number> {
+  return tx.$executeRaw`
+    UPDATE invitations
+    SET expires_at = date_trunc('milliseconds', now() AT TIME ZONE 'UTC')
+    WHERE school_id = ${schoolId}
+      AND role_key = 'owner'
+      AND accepted_at IS NULL
+      AND expires_at > (now() AT TIME ZONE 'UTC')
+  `;
 }
 
 // Same account-enumeration defense as AuthService.login / PortalAuthService
@@ -179,6 +242,11 @@ const SCHOOLS_CREATE_AUDIT_ACTION = "platform_admin.schools.create";
 const SCHOOLS_SET_EARLY_ACCESS_AUDIT_ACTION = "platform_admin.schools.set-early-access";
 const SCHOOLS_SET_AI_ENABLED_AUDIT_ACTION = "platform_admin.schools.set-ai-enabled";
 const SCHOOLS_SET_STAFF_MOBILE_AUDIT_ACTION = "platform_admin.schools.set-staff-mobile";
+// Same action name the hand-written production row used on 2026-08-16, so
+// that row and every later one read as one history.
+const SCHOOLS_SET_AI_BUDGET_AUDIT_ACTION = "platform_admin.schools.set-ai-budget";
+const OWNER_INVITATION_RESEND_AUDIT_ACTION = "platform_admin.owner-invitation.resend";
+const OWNER_INVITATION_CANCEL_AUDIT_ACTION = "platform_admin.owner-invitation.cancel";
 // Paystack assisted setup (2026-08-15). The reveal action is the important
 // one: it is the only path in the product that returns a school's bank
 // account number, and every single call writes one of these rows.
@@ -270,16 +338,20 @@ export class PlatformAdminService {
     return rows.map((r) => ({
       schoolId: r.school_id,
       name: r.name,
+      slug: r.slug,
       createdAt: r.created_at.toISOString(),
       isActive: r.is_active,
       studentCount: Number(r.student_count),
       staffCount: Number(r.staff_count),
+      hasOwner: r.has_owner,
       ownerInvitePending: r.owner_invite_pending,
       ownerInviteExpiresAt: r.owner_invite_expires_at ? r.owner_invite_expires_at.toISOString() : null,
       earlyAccessGrantedAt: r.early_access_granted_at
         ? r.early_access_granted_at.toISOString()
         : null,
       aiEnabled: r.ai_enabled,
+      aiMonthlyTokenBudget: r.ai_monthly_token_budget,
+      aiEffectiveMonthlyTokenBudget: r.ai_monthly_token_budget ?? DEFAULT_MONTHLY_TOKEN_BUDGET,
       staffMobileEnabled: r.staff_mobile_enabled,
     }));
   }
@@ -653,28 +725,11 @@ export class PlatformAdminService {
     adminCtx: PlatformAdminContext,
     reqCtx: RequestContext,
   ): Promise<PlatformAdminCreateSchoolResponse> {
-    const availabilityRows = await basePrisma.$queryRaw<CheckOwnerEmailAvailableRow[]>`
-      SELECT * FROM platform_admin_check_owner_email_available(${input.ownerEmail})
-    `;
-    const availability = availabilityRows[0];
-    if (!availability || !availability.is_available) {
-      if (availability?.reason === "INVITE_PENDING") {
-        throw new ConflictError(
-          "INVITE_PENDING",
-          "This email already has a pending owner invitation at another school.",
-        );
-      }
-      throw new ConflictError(
-        "EMAIL_TAKEN",
-        "A user with that email already exists on the platform.",
-      );
-    }
+    await assertOwnerEmailAvailable(basePrisma, input.ownerEmail);
 
     const slug = await generateUniqueSchoolSlug(input.schoolName);
 
-    const rawToken = crypto.randomBytes(32).toString("base64url");
-    const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
-    const expiresAt = new Date(Date.now() + OWNER_INVITATION_TTL_MS);
+    const { rawToken, tokenHash, expiresAt } = newOwnerInvitationToken();
 
     const created = await basePrisma.$transaction(async (tx) => {
       const school = await tx.school.create({
@@ -767,17 +822,7 @@ export class PlatformAdminService {
     // NotificationPreference row to gate on yet (the school was just
     // created in this call). Best-effort: never blocks or rolls back the
     // already-committed invitation.
-    try {
-      await this.email.send({
-        to: input.ownerEmail,
-        subject: `You've been invited to set up ${created.school.name} on School Kit`,
-        html: `<p>Hi,</p><p>You've been invited to create and manage <strong>${created.school.name}</strong> on School Kit. Use the link below to set your password and get started — it expires in 14 days.</p><p><a href="${acceptUrl}">${acceptUrl}</a></p>`,
-      });
-    } catch (err) {
-      this.logger.warn(
-        `Owner invite email failed for ${redactEmail(input.ownerEmail)}: ${String(err)}`,
-      );
-    }
+    await this.sendOwnerInvitation(input.ownerEmail, created.school.name, acceptUrl);
 
     return {
       schoolId: created.school.id,
@@ -787,6 +832,187 @@ export class PlatformAdminService {
       invitationExpiresAt: expiresAt.toISOString(),
       acceptUrl,
     };
+  }
+
+  // PATCH /platform-admin/schools/:schoolId/ai-budget — the per-school
+  // monthly AI cap, in tokens; null falls back to DEFAULT_MONTHLY_TOKEN_BUDGET.
+  // Same shape as setAiEnabled: `schools` has no RLS policy, so this is one
+  // column update plus an audit row, no SECURITY DEFINER function.
+  // AiGenerationService.reserve() reads the column on every call, so a new
+  // cap applies from the next AI request.
+  async setAiBudget(
+    schoolId: string,
+    input: PlatformAdminSetAiBudgetInput,
+    adminCtx: PlatformAdminContext,
+    reqCtx: RequestContext,
+  ): Promise<PlatformAdminSetAiBudgetResponse> {
+    const existing = await basePrisma.school.findUnique({
+      where: { id: schoolId },
+      select: { id: true, aiMonthlyTokenBudget: true },
+    });
+    if (!existing) throw new NotFoundError("School not found.");
+
+    const updated = await basePrisma.school.update({
+      where: { id: schoolId },
+      data: { aiMonthlyTokenBudget: input.aiMonthlyTokenBudget },
+      select: { id: true, aiMonthlyTokenBudget: true },
+    });
+
+    await basePrisma.auditLog.create({
+      data: {
+        schoolId: null,
+        userId: adminCtx.userId,
+        action: SCHOOLS_SET_AI_BUDGET_AUDIT_ACTION,
+        entityType: "school",
+        entityId: schoolId,
+        ipAddress: reqCtx.ipAddress,
+        metadata: {
+          field: "aiMonthlyTokenBudget",
+          from: existing.aiMonthlyTokenBudget,
+          to: updated.aiMonthlyTokenBudget,
+        },
+      },
+    });
+
+    return {
+      schoolId: updated.id,
+      aiMonthlyTokenBudget: updated.aiMonthlyTokenBudget,
+      aiEffectiveMonthlyTokenBudget: updated.aiMonthlyTokenBudget ?? DEFAULT_MONTHLY_TOKEN_BUDGET,
+    };
+  }
+
+  // POST /platform-admin/schools/:schoolId/owner-invitation/resend — ends
+  // every open owner invitation for the school and sends a fresh one, to the
+  // last address or a corrected one. Refused once the school has an owner:
+  // from then on, inviting people is the owner's job, through the school's
+  // own staff screens.
+  //
+  // One transaction under the school's GUC (invitations and users are FORCE
+  // RLS — the same pattern createSchool uses). The availability check runs
+  // INSIDE it, after the old invitations are ended, so resending to the same
+  // address is not refused as "already has a pending invitation".
+  async resendOwnerInvitation(
+    schoolId: string,
+    input: PlatformAdminResendOwnerInvitationInput,
+    adminCtx: PlatformAdminContext,
+    reqCtx: RequestContext,
+  ): Promise<PlatformAdminResendOwnerInvitationResponse> {
+    const school = await basePrisma.school.findUnique({
+      where: { id: schoolId },
+      select: { id: true, name: true },
+    });
+    if (!school) throw new NotFoundError("School not found.");
+
+    const { rawToken, tokenHash, expiresAt } = newOwnerInvitationToken();
+
+    const ownerEmail = await basePrisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT set_config('app.current_school_id', ${schoolId}, true)`;
+
+      const owners = await tx.user.count({
+        where: { schoolId, roles: { some: { role: { key: "owner" } } } },
+      });
+      if (owners > 0) {
+        throw new ConflictError(
+          "SCHOOL_HAS_OWNER",
+          "This school already has an owner. They can invite staff from the school's own settings.",
+        );
+      }
+
+      const last = await tx.invitation.findFirst({
+        where: { schoolId, roleKey: "owner" },
+        orderBy: { createdAt: "desc" },
+        select: { email: true },
+      });
+      const email = input.ownerEmail ?? last?.email ?? null;
+      if (!email) {
+        throw new ValidationError(
+          "OWNER_EMAIL_REQUIRED",
+          "This school has no earlier owner invitation to resend. Enter the owner's email address.",
+        );
+      }
+
+      const ended = await endOpenOwnerInvitations(tx, schoolId);
+      await assertOwnerEmailAvailable(tx, email);
+
+      const invitation = await tx.invitation.create({
+        data: { schoolId, email, roleKey: "owner", tokenHash, invitedBy: adminCtx.userId, expiresAt },
+        select: { id: true },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          schoolId: null,
+          userId: adminCtx.userId,
+          action: OWNER_INVITATION_RESEND_AUDIT_ACTION,
+          entityType: "school",
+          entityId: schoolId,
+          ipAddress: reqCtx.ipAddress,
+          metadata: {
+            ownerEmail: redactEmail(email),
+            emailChanged: Boolean(last?.email && last.email !== email),
+            invitationId: invitation.id,
+            endedCount: ended,
+          },
+        },
+      });
+
+      return email;
+    });
+
+    const acceptUrl = `${webBaseUrl()}/invitations/${rawToken}`;
+    await this.sendOwnerInvitation(ownerEmail, school.name, acceptUrl);
+
+    return {
+      schoolId,
+      ownerEmail,
+      invitationExpiresAt: expiresAt.toISOString(),
+      acceptUrl,
+    };
+  }
+
+  // POST /platform-admin/schools/:schoolId/owner-invitation/cancel — ends
+  // every open owner invitation without sending another (e.g. it went to the
+  // wrong person). The rows stay; a link already sent now reads as expired.
+  async cancelOwnerInvitation(
+    schoolId: string,
+    adminCtx: PlatformAdminContext,
+    reqCtx: RequestContext,
+  ): Promise<PlatformAdminCancelOwnerInvitationResponse> {
+    const school = await basePrisma.school.findUnique({ where: { id: schoolId }, select: { id: true } });
+    if (!school) throw new NotFoundError("School not found.");
+
+    const cancelledCount = await basePrisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT set_config('app.current_school_id', ${schoolId}, true)`;
+      const ended = await endOpenOwnerInvitations(tx, schoolId);
+      await tx.auditLog.create({
+        data: {
+          schoolId: null,
+          userId: adminCtx.userId,
+          action: OWNER_INVITATION_CANCEL_AUDIT_ACTION,
+          entityType: "school",
+          entityId: schoolId,
+          ipAddress: reqCtx.ipAddress,
+          metadata: { endedCount: ended },
+        },
+      });
+      return ended;
+    });
+
+    return { schoolId, cancelledCount };
+  }
+
+  // Best-effort: a failed send is logged, never thrown, and never undoes the
+  // committed invitation — the response carries acceptUrl for exactly this.
+  private async sendOwnerInvitation(to: string, schoolName: string, acceptUrl: string): Promise<void> {
+    try {
+      await this.email.send({
+        to,
+        subject: `You've been invited to set up ${schoolName} on School Kit`,
+        html: `<p>Hi,</p><p>You've been invited to create and manage <strong>${schoolName}</strong> on School Kit. Use the link below to set your password and get started — it expires in 14 days.</p><p><a href="${acceptUrl}">${acceptUrl}</a></p>`,
+      });
+    } catch (err) {
+      this.logger.warn(`Owner invite email failed for ${redactEmail(to)}: ${String(err)}`);
+    }
   }
 
   async listUsers(

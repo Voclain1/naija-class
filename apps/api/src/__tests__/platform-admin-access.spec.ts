@@ -332,9 +332,21 @@ describe("Platform admin access (2026-08-02)", () => {
     //     The enable direction had an accidental proof (a successful staff
     //     mobile login is impossible while the flag is false); the DISABLE
     //     direction had none, which is the wrong way round for a kill switch)
+    //   - slug, hasOwner, aiMonthlyTokenBudget,
+    //     aiEffectiveMonthlyTokenBudget   2026-10-06 (platform-admin tools,
+    //     slice 1). The omissions decision for slug and the budget is revisited
+    //     EXPLICITLY in migration 20261006120000: slug because two schools can
+    //     share a name and this is the list an operator picks from before a
+    //     write; the budget because PATCH .../ai-budget now writes it, and a
+    //     write with no read is the blind-write gap. hasOwner is a boolean
+    //     about the tenancy that drives "resend owner invite".
     expect(Object.keys(row).sort()).toEqual(
       [
         "aiEnabled",
+        "aiEffectiveMonthlyTokenBudget",
+        "aiMonthlyTokenBudget",
+        "hasOwner",
+        "slug",
         "staffMobileEnabled",
         "createdAt",
         "earlyAccessGrantedAt",
@@ -350,6 +362,8 @@ describe("Platform admin access (2026-08-02)", () => {
     // Basic count sanity: schoolA has 1 student and >= 5 staff users seeded above.
     expect(row.studentCount).toBe(1);
     expect(row.staffCount).toBeGreaterThanOrEqual(5);
+    expect(row.slug).toBe(`platform-admin-a-${runId}`);
+    expect(row.hasOwner).toBe(true);
   });
 
   it("GET /platform-admin/users with no filter returns users across BOTH schools; with schoolId filters to one", async () => {
@@ -886,6 +900,205 @@ describe("Platform admin access (2026-08-02)", () => {
     });
   });
 
+  describe("PATCH /platform-admin/schools/:schoolId/ai-budget (2026-10-06)", () => {
+    const listRow = async (schoolId: string) => {
+      const res = await request(app.getHttpServer())
+        .get("/api/v1/platform-admin/schools")
+        .set("Authorization", `Bearer ${platformAdminToken}`);
+      return res.body.find((r: { schoolId: string }) => r.schoolId === schoolId);
+    };
+
+    it("an ordinary staff session gets a 403, no token a 401, and neither moves the row", async () => {
+      const forbidden = await request(app.getHttpServer())
+        .patch(`/api/v1/platform-admin/schools/${schoolA}/ai-budget`)
+        .set("Authorization", `Bearer ${ownerAToken}`)
+        .send({ aiMonthlyTokenBudget: 5 });
+      expect(forbidden.status).toBe(403);
+      const unauthorized = await request(app.getHttpServer())
+        .patch(`/api/v1/platform-admin/schools/${schoolA}/ai-budget`)
+        .send({ aiMonthlyTokenBudget: 5 });
+      expect(unauthorized.status).toBe(401);
+      const school = await basePrisma.school.findUnique({ where: { id: schoolA }, select: { aiMonthlyTokenBudget: true } });
+      expect(school?.aiMonthlyTokenBudget).toBeNull();
+    });
+
+    it("sets a cap, then clears it back to the default, round-tripping through the row, the list and the audit trail", async () => {
+      const before = await listRow(schoolA);
+      expect(before.aiMonthlyTokenBudget).toBeNull();
+      const platformDefault = before.aiEffectiveMonthlyTokenBudget;
+      expect(platformDefault).toBeGreaterThan(0);
+
+      const set = await request(app.getHttpServer())
+        .patch(`/api/v1/platform-admin/schools/${schoolA}/ai-budget`)
+        .set("Authorization", `Bearer ${platformAdminToken}`)
+        .send({ aiMonthlyTokenBudget: 750_000 });
+      expect(set.status).toBe(200);
+      expect(set.body).toEqual({ schoolId: schoolA, aiMonthlyTokenBudget: 750_000, aiEffectiveMonthlyTokenBudget: 750_000 });
+      expect((await basePrisma.school.findUnique({ where: { id: schoolA } }))?.aiMonthlyTokenBudget).toBe(750_000);
+      const capped = await listRow(schoolA);
+      expect(capped.aiMonthlyTokenBudget).toBe(750_000);
+      expect(capped.aiEffectiveMonthlyTokenBudget).toBe(750_000);
+
+      const cleared = await request(app.getHttpServer())
+        .patch(`/api/v1/platform-admin/schools/${schoolA}/ai-budget`)
+        .set("Authorization", `Bearer ${platformAdminToken}`)
+        .send({ aiMonthlyTokenBudget: null });
+      expect(cleared.status).toBe(200);
+      expect(cleared.body.aiMonthlyTokenBudget).toBeNull();
+      expect(cleared.body.aiEffectiveMonthlyTokenBudget).toBe(platformDefault);
+      expect((await listRow(schoolA)).aiMonthlyTokenBudget).toBeNull();
+
+      const audit = await basePrisma.auditLog.findMany({
+        where: { userId: platformAdminUserId, action: "platform_admin.schools.set-ai-budget", entityId: schoolA },
+        orderBy: { createdAt: "asc" },
+        select: { metadata: true, schoolId: true },
+      });
+      expect(audit.map((a) => a.metadata)).toEqual([
+        { field: "aiMonthlyTokenBudget", from: null, to: 750_000 },
+        { field: "aiMonthlyTokenBudget", from: 750_000, to: null },
+      ]);
+      expect(audit.every((a) => a.schoolId === null)).toBe(true);
+    });
+
+    it("rejects a non-integer, a negative, an over-large or a string budget, and an unknown school", async () => {
+      for (const bad of [1.5, -1, 1_000_000_001, "500000"]) {
+        const res = await request(app.getHttpServer())
+          .patch(`/api/v1/platform-admin/schools/${schoolA}/ai-budget`)
+          .set("Authorization", `Bearer ${platformAdminToken}`)
+          .send({ aiMonthlyTokenBudget: bad });
+        expect(res.status, String(bad)).toBe(400);
+      }
+      const missing = await request(app.getHttpServer())
+        .patch(`/api/v1/platform-admin/schools/00000000-0000-0000-0000-000000000000/ai-budget`)
+        .set("Authorization", `Bearer ${platformAdminToken}`)
+        .send({ aiMonthlyTokenBudget: 1000 });
+      expect(missing.status).toBe(404);
+    });
+  });
+
+  describe("owner invitations: resend and cancel (2026-10-06)", () => {
+    const provision = async (label: string) => {
+      const ownerEmail = `resend-${label}-${runId}@example.test`;
+      const res = await request(app.getHttpServer())
+        .post("/api/v1/platform-admin/schools")
+        .set("Authorization", `Bearer ${platformAdminToken}`)
+        .send({ schoolName: `Resend ${label} ${runId}`, ownerEmail });
+      expect(res.status).toBe(201);
+      schoolIdsToCleanup.add(res.body.schoolId);
+      return { schoolId: res.body.schoolId as string, ownerEmail, token: res.body.acceptUrl.split("/invitations/")[1] as string };
+    };
+    const invitationStatus = async (token: string) =>
+      (await request(app.getHttpServer()).get(`/api/v1/invitations/${token}`)).status;
+    const resend = (schoolId: string, body: object = {}, token = platformAdminToken) =>
+      request(app.getHttpServer())
+        .post(`/api/v1/platform-admin/schools/${schoolId}/owner-invitation/resend`)
+        .set("Authorization", `Bearer ${token}`)
+        .send(body);
+
+    it("an ordinary staff session gets a 403 on both routes, and nothing changes", async () => {
+      const p = await provision("forbidden");
+      expect((await resend(p.schoolId, {}, ownerAToken)).status).toBe(403);
+      const cancel = await request(app.getHttpServer())
+        .post(`/api/v1/platform-admin/schools/${p.schoolId}/owner-invitation/cancel`)
+        .set("Authorization", `Bearer ${ownerAToken}`);
+      expect(cancel.status).toBe(403);
+      expect(await invitationStatus(p.token)).toBe(200);
+    });
+
+    it("resend to the same address kills the old link and the new one works end to end", async () => {
+      const p = await provision("same");
+      const res = await resend(p.schoolId);
+      expect(res.status).toBe(200);
+      expect(res.body.ownerEmail).toBe(p.ownerEmail);
+      const newToken = res.body.acceptUrl.split("/invitations/")[1];
+      expect(newToken).not.toBe(p.token);
+
+      expect(await invitationStatus(p.token)).toBe(410); // the old link now reads as expired
+      expect(await invitationStatus(newToken)).toBe(200);
+
+      const accept = await request(app.getHttpServer())
+        .post(`/api/v1/invitations/${newToken}/accept`)
+        .send({ firstName: "Re", lastName: "Sent", password: "Correct-Horse-Resent-9", ndprConsent: true });
+      expect(accept.status).toBe(200);
+      expect(accept.body.school.id).toBe(p.schoolId);
+      userIdsForAuditCleanup.add(accept.body.user.id);
+
+      // Now the school has an owner: the roster says so, and resend is refused.
+      const list = await request(app.getHttpServer())
+        .get("/api/v1/platform-admin/schools")
+        .set("Authorization", `Bearer ${platformAdminToken}`);
+      const row = list.body.find((r: { schoolId: string }) => r.schoolId === p.schoolId);
+      expect(row.hasOwner).toBe(true);
+      const refused = await resend(p.schoolId);
+      expect(refused.status).toBe(409);
+      expect(refused.body.error.code).toBe("SCHOOL_HAS_OWNER");
+    });
+
+    it("resend to a corrected address goes to the new address, and the old address is free again", async () => {
+      const p = await provision("typo");
+      const corrected = `Corrected-${runId}@Example.test`;
+      const res = await resend(p.schoolId, { ownerEmail: corrected });
+      expect(res.status).toBe(200);
+      expect(res.body.ownerEmail).toBe(corrected.toLowerCase());
+      expect(await invitationStatus(p.token)).toBe(410);
+
+      const audit = await basePrisma.auditLog.findFirst({
+        where: { action: "platform_admin.owner-invitation.resend", entityId: p.schoolId },
+        select: { metadata: true, schoolId: true },
+      });
+      expect(audit?.schoolId).toBeNull();
+      expect(audit?.metadata).toMatchObject({ emailChanged: true, endedCount: 1 });
+      expect(JSON.stringify(audit?.metadata)).not.toContain(corrected.toLowerCase()); // redacted, not the raw address
+    });
+
+    it("resend works after the invitation has expired — the case the roster's pending flag cannot show", async () => {
+      const p = await provision("lapsed");
+      await basePrisma.$transaction(async (tx) => {
+        await tx.$executeRaw`SELECT set_config('app.current_school_id', ${p.schoolId}, true)`;
+        await tx.invitation.updateMany({ where: { schoolId: p.schoolId }, data: { expiresAt: new Date(Date.now() - 1000) } });
+      });
+      const list = await request(app.getHttpServer())
+        .get("/api/v1/platform-admin/schools")
+        .set("Authorization", `Bearer ${platformAdminToken}`);
+      const row = list.body.find((r: { schoolId: string }) => r.schoolId === p.schoolId);
+      expect(row).toMatchObject({ hasOwner: false, ownerInvitePending: false });
+
+      const res = await resend(p.schoolId);
+      expect(res.status).toBe(200);
+      expect(await invitationStatus(res.body.acceptUrl.split("/invitations/")[1])).toBe(200);
+    });
+
+    it("resend to an address that already has an account is refused, and the open invitation is left alone", async () => {
+      const p = await provision("taken");
+      const res = await resend(p.schoolId, { ownerEmail: `owner-a-${runId}@example.test` });
+      expect(res.status).toBe(409);
+      expect(res.body.error.code).toBe("EMAIL_TAKEN");
+      expect(await invitationStatus(p.token)).toBe(200); // the transaction rolled back
+    });
+
+    it("cancel ends the open invitation without sending another; a second cancel ends nothing", async () => {
+      const p = await provision("cancel");
+      const cancel = () =>
+        request(app.getHttpServer())
+          .post(`/api/v1/platform-admin/schools/${p.schoolId}/owner-invitation/cancel`)
+          .set("Authorization", `Bearer ${platformAdminToken}`);
+      const first = await cancel();
+      expect(first.status).toBe(200);
+      expect(first.body).toEqual({ schoolId: p.schoolId, cancelledCount: 1 });
+      expect(await invitationStatus(p.token)).toBe(410);
+      expect((await cancel()).body.cancelledCount).toBe(0);
+    });
+
+    it("an unknown school is a 404 on both routes", async () => {
+      const unknown = "00000000-0000-0000-0000-000000000000";
+      expect((await resend(unknown, { ownerEmail: `x-${runId}@example.test` })).status).toBe(404);
+      const cancel = await request(app.getHttpServer())
+        .post(`/api/v1/platform-admin/schools/${unknown}/owner-invitation/cancel`)
+        .set("Authorization", `Bearer ${platformAdminToken}`);
+      expect(cancel.status).toBe(404);
+    });
+  });
+
   it("every platform-admin read/write writes an audit_logs row namespaced platform_admin.*", async () => {
     const rows = await basePrisma.auditLog.findMany({
       where: { userId: platformAdminUserId, action: { startsWith: "platform_admin." } },
@@ -899,6 +1112,9 @@ describe("Platform admin access (2026-08-02)", () => {
     expect(actions.has("platform_admin.schools.set-early-access")).toBe(true);
     expect(actions.has("platform_admin.schools.set-ai-enabled")).toBe(true);
     expect(actions.has("platform_admin.schools.set-staff-mobile")).toBe(true);
+    expect(actions.has("platform_admin.schools.set-ai-budget")).toBe(true);
+    expect(actions.has("platform_admin.owner-invitation.resend")).toBe(true);
+    expect(actions.has("platform_admin.owner-invitation.cancel")).toBe(true);
   });
 
   it("import-boundary: the platform-admin service never imports withTenant or references Invoice/Payment/Student Prisma delegates", () => {
