@@ -53,8 +53,8 @@ const AUDIT = {
 const STAFF_ROLES = ["owner", "admin", "teacher"] as const;
 const ACCESS_CODE_ATTEMPTS = 8;
 
-type Db = Parameters<Parameters<typeof withTenant>[1]>[0];
-type Scope = { all: true } | { all: false; pairs: Set<string> };
+export type Db = Parameters<Parameters<typeof withTenant>[1]>[0];
+export type Scope = { all: true } | { all: false; pairs: Set<string> };
 const pairKey = (classLevelId: string, subjectId: string) => `${classLevelId}:${subjectId}`;
 
 const PAPER_INCLUDE = {
@@ -89,7 +89,7 @@ const SITTING_INCLUDE = {
   arms: { include: { classArm: { select: { name: true } } } },
   _count: { select: { candidates: true } },
 } satisfies Prisma.CbtSittingInclude;
-type SittingRow = Prisma.CbtSittingGetPayload<{ include: typeof SITTING_INCLUDE }>;
+export type SittingRow = Prisma.CbtSittingGetPayload<{ include: typeof SITTING_INCLUDE }>;
 
 /** Multiple choice with at least two options and exactly one correct (D1). */
 export function isDeliverable(item: ItemRow): boolean {
@@ -110,7 +110,7 @@ function progressOf(
   };
 }
 
-function paperFigures(paper: PaperRow) {
+export function paperFigures(paper: PaperRow) {
   const items = paper.sections.flatMap((s) => s.items);
   const objective = items.filter(isDeliverable);
   const onPaper = items.filter((i) => !isDeliverable(i));
@@ -132,7 +132,8 @@ export class CbtSittingsService {
   // Scope — the question bank's pairs, as for exam papers
   // -------------------------------------------------------------------------
 
-  private async resolveScope(authCtx: AuthContext): Promise<Scope> {
+  /** Also used by CbtResultsService: the same scope and 404 rule. */
+  async resolveScope(authCtx: AuthContext): Promise<Scope> {
     await assertUserActiveAndHasOneOf(authCtx, STAFF_ROLES);
     const roles = await getActiveUserRoleKeys(authCtx);
     if (roles.includes("owner") || roles.includes("admin")) return { all: true };
@@ -144,7 +145,7 @@ export class CbtSittingsService {
     return scope.all || scope.pairs.has(pairKey(classLevelId, subjectId));
   }
 
-  private async load(db: Db, scope: Scope, id: string): Promise<SittingRow> {
+  async load(db: Db, scope: Scope, id: string): Promise<SittingRow> {
     const row = await db.cbtSitting.findUnique({ where: { id }, include: SITTING_INCLUDE });
     if (!row || !this.inScope(scope, row.paper.classLevelId, row.paper.subjectId)) {
       throw new NotFoundError("That online exam could not be found.");

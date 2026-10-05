@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, Loader2, Printer, RefreshCw } from "lucide-react";
+import { ArrowLeft, ClipboardCheck, Loader2, Printer, RefreshCw } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
@@ -143,6 +143,14 @@ export default function CbtSittingPage() {
           </>
         ) : null}
         {sitting.status !== "DRAFT" ? (
+          <Button asChild>
+            <Link href={`/teacher/cbt/${id}/results`}>
+              <ClipboardCheck className="mr-1 h-4 w-4" />
+              Results
+            </Link>
+          </Button>
+        ) : null}
+        {sitting.status !== "DRAFT" ? (
           <Button asChild variant="outline">
             <Link href={`/teacher/cbt/${id}/invigilator`}>
               <Printer className="mr-1 h-4 w-4" />
@@ -171,7 +179,12 @@ export default function CbtSittingPage() {
             variant="outline"
             disabled={busy !== null}
             onClick={() =>
-              void act("close", "Close this exam? No more answers will be accepted.", () => closeCbtSitting(id), "Closed.")
+              void act(
+                "close",
+                "Close this exam? Lab computers can no longer download it. Answers still waiting on a computer are kept, and show as arriving after the close.",
+                () => closeCbtSitting(id),
+                "Closed.",
+              )
             }
           >
             {spin("close")}Close exam

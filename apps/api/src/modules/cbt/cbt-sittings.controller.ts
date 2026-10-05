@@ -2,15 +2,18 @@ import { Body, Controller, Delete, Get, HttpCode, Ip, Param, Post, Put, Query, U
 
 import {
   createCbtSittingSchema,
+  saveCbtTheoryMarksSchema,
   listCbtSittingsQuerySchema,
   updateCbtSittingSchema,
   type CbtCandidateRowDto,
   type CbtInvigilatorSheetDto,
+  type CbtResultsDto,
   type CbtSchedulablePaperDto,
   type CbtSittingDto,
   type CbtSittingSummaryDto,
   type CreateCbtSittingInput,
   type ListCbtSittingsQuery,
+  type SaveCbtTheoryMarksInput,
   type UpdateCbtSittingInput,
 } from "@school-kit/types";
 
@@ -20,6 +23,7 @@ import { CurrentUser } from "../../common/auth/current-user.decorator.js";
 import { Permissions } from "../../common/auth/permissions.decorator.js";
 import { PermissionsGuard } from "../../common/auth/permissions.guard.js";
 import { ZodValidationPipe } from "../../common/zod-validation.pipe.js";
+import { CbtResultsService } from "./cbt-results.service.js";
 import { CbtSittingsService } from "./cbt-sittings.service.js";
 
 // Online exams (CBT1) — scheduling sittings (docs/modules/cbt.md D1–D3). Staff
@@ -29,7 +33,10 @@ import { CbtSittingsService } from "./cbt-sittings.service.js";
 @Controller("cbt")
 @UseGuards(AuthGuard, PermissionsGuard)
 export class CbtSittingsController {
-  constructor(private readonly service: CbtSittingsService) {}
+  constructor(
+    private readonly service: CbtSittingsService,
+    private readonly results: CbtResultsService,
+  ) {}
 
   /** FINAL papers that can be sat online. */
   @Get("papers")
@@ -114,5 +121,38 @@ export class CbtSittingsController {
   @Permissions("cbt.manage")
   close(@CurrentUser() authCtx: AuthContext, @Param("id") id: string, @Ip() ip: string): Promise<CbtSittingDto> {
     return this.service.close(authCtx, id, { ipAddress: ip });
+  }
+
+  // ---- Results (CBT3) -------------------------------------------------------
+
+  /** Marked on read, against the frozen paper's key (D4). */
+  @Get("sittings/:id/results")
+  @Permissions("cbt.read")
+  getResults(@CurrentUser() authCtx: AuthContext, @Param("id") id: string): Promise<CbtResultsDto> {
+    return this.results.results(authCtx, id);
+  }
+
+  @Put("sittings/:id/theory-marks")
+  @Permissions("cbt.manage")
+  saveTheoryMarks(
+    @CurrentUser() authCtx: AuthContext,
+    @Param("id") id: string,
+    @Body(new ZodValidationPipe(saveCbtTheoryMarksSchema)) input: SaveCbtTheoryMarksInput,
+    @Ip() ip: string,
+  ): Promise<CbtResultsDto> {
+    return this.results.saveTheoryMarks(authCtx, id, input, { ipAddress: ip });
+  }
+
+  /** The attempt that counts, for a student who used more than one computer (D5). */
+  @Post("sittings/:id/attempts/:attemptId/choose")
+  @HttpCode(200)
+  @Permissions("cbt.manage")
+  chooseAttempt(
+    @CurrentUser() authCtx: AuthContext,
+    @Param("id") id: string,
+    @Param("attemptId") attemptId: string,
+    @Ip() ip: string,
+  ): Promise<CbtResultsDto> {
+    return this.results.chooseAttempt(authCtx, id, attemptId, { ipAddress: ip });
   }
 }

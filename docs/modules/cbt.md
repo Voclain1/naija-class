@@ -264,3 +264,73 @@ button.
 - E2E `cbt-delivery.spec.ts`: download, wrong and right unlock code, sign in,
   answer, reload, resume with answers kept, finish, "All answers sent", the
   attempt in the database, and the teacher's Progress column.
+
+## As built — CBT3 (2026-10-10)
+
+Migration `20261010120000_cbt3_results`:
+- `cbt_attempts.chosen` — the attempt that counts, for a student who used
+  more than one computer (D5). At most one per student: a partial unique
+  index enforces it. It sits on the attempt, not as a `chosen_attempt_id` on
+  the candidate, so the two tables do not reference each other.
+- `cbt_candidates.theory_mark` — whole marks, 0..1000 in the database. The
+  service caps it at the paper's on-paper total.
+- No new table, policy, permission or SECURITY DEFINER function (count stays
+  23).
+
+**Marking** (`apps/api/src/modules/cbt/cbt-marking.ts`, pure):
+- **Scores are not stored.** Every read marks each attempt against the frozen
+  paper's key. The key never leaves the server (D4), and a FINAL paper cannot
+  change, so the score cannot drift.
+- **Flags.** These inform; they never decide anything (D6):
+  - started after the latest start;
+  - ran over time (the exam's length, plus any extra time, plus 2 minutes'
+    grace for machine clocks);
+  - did not finish;
+  - arrived after the close;
+  - left the exam window (with the count).
+- **The attempt that counts:** the one the teacher chose, otherwise the only
+  one. Two attempts with none chosen need the teacher.
+- **The total** is the multiple-choice score plus the theory mark, out of the
+  paper's total. It exists only when it can honestly go to the gradebook: an
+  attempt counts and, if the paper has theory, its mark is in.
+
+**API** (in `CbtSittingsController`, the same D62 scope):
+
+| Route | Permission | Purpose |
+|---|---|---|
+| `GET /cbt/sittings/:id/results` | `cbt.read` | Each student with their attempts (score, answered, minutes, flags), the attempt that counts, theory mark and total. Also returns the paper's term, subject and gradebook column. |
+| `PUT /cbt/sittings/:id/theory-marks` | `cbt.manage` | All or nothing. Students must be on the register; marks run 0..on-paper total. Audited as `cbt-result.theory-marks`. |
+| `POST /cbt/sittings/:id/attempts/:attemptId/choose` | `cbt.manage` | The attempt that counts. Clears the student's other choice first. Audited as `cbt-result.choose-attempt`. |
+
+**Gradebook (D8).** The results page sends ready totals through the existing
+CP5a calls, `POST /assessment-scores/preview` and then `/bulk`. Each row is
+`raw: { mark: total, outOf: paperTotal }`. The server scales them, and every
+gradebook rule applies unchanged: teacher scope, enrolment, sign-off.
+- **Column:** the paper's own column by default; the teacher can pick another.
+- **Nothing is written without "Save to gradebook"**, after the teacher has
+  seen every "12/15 → 48".
+
+**Screens:**
+- `/teacher/cbt/[id]/results`:
+  - each student's attempt or attempts, with flags in words;
+  - "Use this one" for a student who used two computers;
+  - a theory mark box, with a bulk save;
+  - the total, or the reason there isn't one yet;
+  - the "Send to the gradebook" panel.
+- The sitting page gains a "Results" button.
+- Its "Close exam" text now says late answers are kept.
+
+**Tests:**
+- `cbt-marking.spec.ts` (5 tests).
+- `cbt-results.service.spec.ts` (4 tests, Postgres):
+  - marks against the key, and the results never carry the key;
+  - the theory-mark cap, the register check, and that a refused batch
+    writes nothing;
+  - choosing, and moving the choice;
+  - the database's one-chosen rule.
+  - Mutation check: dropping the "clear the old choice" step fails it.
+- RBAC coverage for the three routes.
+- `cbt-format.spec.ts`.
+- E2E `cbt-results.spec.ts`: two computers → "Use this one" → theory mark 7
+  → total 12 → preview "12/15 → 48" → saved. The gradebook row is checked in
+  the database, with `rawScore` 12 and `rawOutOf` 15.

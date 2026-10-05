@@ -1288,6 +1288,11 @@ describe("CBT1 RBAC coverage: online exam sittings", () => {
       publish: ["cbt.manage"],
       unpublish: ["cbt.manage"],
       close: ["cbt.manage"],
+      // CBT3 — results: reading them is cbt.read; the teacher's decisions
+      // (theory marks, which computer counts) are cbt.manage.
+      getResults: ["cbt.read"],
+      saveTheoryMarks: ["cbt.manage"],
+      chooseAttempt: ["cbt.manage"],
     });
   });
 

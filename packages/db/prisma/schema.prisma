@@ -3669,6 +3669,8 @@ model CbtCandidate {
   studentId  String @map("student_id")
   classArmId String @map("class_arm_id")
   version    String // "A" | "B" | "C" | "D"
+  // CBT3: the mark for the questions sat on paper, typed in by the teacher.
+  theoryMark Int?   @map("theory_mark")
 
   sitting  CbtSitting @relation(fields: [sittingId], references: [id], onDelete: Cascade)
   student  Student    @relation(fields: [studentId], references: [id], onDelete: Cascade)
@@ -3699,6 +3701,9 @@ model CbtAttempt {
   submittedAt     DateTime? @map("submitted_at")
   extraMinutes    Int       @default(0) @map("extra_minutes")
   focusLosses     Int       @default(0) @map("focus_losses")
+  // CBT3: the attempt that counts, when a student sat on more than one
+  // computer (D5). At most one per candidate (partial unique index).
+  chosen          Boolean   @default(false)
   // The SERVER's clock: when it reached us.
   firstReceivedAt DateTime  @default(now()) @map("first_received_at")
   lastReceivedAt  DateTime  @default(now()) @map("last_received_at")
