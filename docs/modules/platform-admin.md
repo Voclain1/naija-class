@@ -22,7 +22,7 @@ This doc turns the "Platform super-admin — expansion scope" list in
 |---|---|---|
 | 1 | Slug on the roster, AI budget control, owner-invitation resend/cancel | **Built 2026-10-06** |
 | 2 | School lifecycle: suspend / reactivate, and delete | **Built 2026-10-07** |
-| 3 | Reading the audit trail | Decided 2026-10-05: platform admins only, first — next |
+| 3 | Reading the audit trail (platform admins, the platform's own rows) | **Built 2026-10-07** |
 | 4 | Platform analytics (signups, activation, adoption) | Needs an anonymisation design |
 | — | Billing management | Blocked on pricing |
 | — | Impersonation ("act as this school") | A decision, not a feature — not started |
@@ -197,14 +197,56 @@ gains `suspended_at`. None is added.
 - **E2E (`platform-admin-tools.spec.ts`, second test):** suspend a real school,
   its owner's sign-in is refused, reactivate, then delete by typing the slug.
 
-## Slice 3 — reading the audit trail (decided: platform admins only, first)
+## Slice 3 — the platform's audit trail (built 2026-10-07)
 
-See `docs/deferred.md` "No audit trail is inspectable through the product".
-The open questions are recorded there:
-- who may read it;
-- how it is scoped across monthly partitions;
-- how `ip_address` and `metadata` are redacted;
-- keeping platform-admin rows (`school_id IS NULL`) out of a school's view.
+**Owner's decision (2026-10-05): platform admins only, to start.**
 
-A platform-admin-only view of the operator's own `platform_admin.*` actions is
-the smallest safe first step.
+**D10. What it shows: the platform's own rows, and nothing else.**
+`GET /platform-admin/audit-log` reads `audit_logs` rows with
+`school_id IS NULL`. That is exactly what this surface writes for provisioning,
+the AI switch and budget, owner invitations, suspension, deletion and sign-ins.
+It is also exactly what `audit_logs`' RLS policy lets a read without a GUC see.
+- No GUC is set, and no SECURITY DEFINER function is used.
+- A school's own audit rows (grades, payments, staff changes) are hidden by
+  the policy itself, not by a filter someone could forget. The spec writes one
+  and checks it never appears.
+- Reading a school's own trail is the separate, still-open question in
+  `docs/deferred.md`: who at a school may read it, and redacted how.
+
+**D11. What each entry carries.**
+- **Kept:** the action, when, who (the name from the staff roster, via
+  `platform_admin_list_users`), the school (named live from `schools`) and the
+  metadata as written. Emails are already redacted at write time.
+- **Never returned:** `ip_address`.
+- **A deleted school stays named.** Its name comes from the delete entry's
+  metadata, for its earlier entries too.
+
+**D12. Changes only, by default.** Page views (the schools list, the staff
+list, the Paystack queue, deletion checks, reading this log) are each audited,
+but they would bury the changes. They are hidden unless the operator asks for
+them with `includeViews=true`. Reading the log is itself audited
+(`platform_admin.audit-log.read`).
+
+**D13. Paging.** Newest first, 50 to a page by default. A
+`before = "<time>|<id>"` cursor gives stable paging, with no repeats or gaps
+when two entries share a millisecond.
+
+**UI:**
+- **"Platform activity" card** at the foot of the dashboard: every school,
+  each entry written as a sentence (`audit-entry.ts`), with a "Show page views
+  too" switch and "Load more".
+- **"History" section** in each school's Manage dialog. It reloads after any
+  change made in the dialog.
+
+**Tests:**
+- 6 new cases in `platform-admin-school-lifecycle.spec.ts`:
+  - staff are refused;
+  - entries come newest first, with who and which school, and no IP address;
+  - a school's own row never appears;
+  - views are hidden unless asked for;
+  - the cursor neither repeats nor skips;
+  - a deleted school stays named.
+- `audit-entry.spec.ts` covers the sentence formatter.
+- E2E: the dialog's History shows the suspension straight away, and the
+  dashboard's activity card shows the suspend, reactivate and delete of a
+  school that no longer exists.

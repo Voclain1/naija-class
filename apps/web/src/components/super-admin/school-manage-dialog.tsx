@@ -27,6 +27,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ApiError, proxyFetch } from "@/lib/api-client";
 
+import { PlatformActivity } from "./platform-activity";
 import { DeleteSchoolSection, SchoolAccessSection } from "./school-lifecycle-sections";
 import { ownerStatusOf, parseTokenCount } from "./school-manage";
 
@@ -352,6 +353,15 @@ export function SchoolManageDialog({ school, onClose, onChanged, onDeleted }: Pr
 
         <SchoolAccessSection school={school} onChanged={onChanged} />
         <DeleteSchoolSection school={school} onDeleted={onDeleted} />
+
+        {/* Slice 3: what platform admins have done to this school. Keyed on
+            the row, so it reloads after any change made in this dialog. */}
+        <section className="flex flex-col gap-3 border-t pt-4" aria-labelledby="manage-history">
+          <h3 id="manage-history" className="font-medium">
+            History
+          </h3>
+          <PlatformActivity key={JSON.stringify(school)} schoolId={school.schoolId} pageSize={10} />
+        </section>
       </DialogContent>
     </Dialog>
   );

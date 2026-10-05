@@ -13,6 +13,7 @@ import {
 } from "@nestjs/common";
 import { Throttle } from "@nestjs/throttler";
 import {
+  platformAdminAuditLogQuerySchema,
   platformAdminCreateSchoolSchema,
   platformAdminListUsersQuerySchema,
   platformAdminLoginSchema,
@@ -24,6 +25,8 @@ import {
   platformAdminSetAiEnabledSchema,
   platformAdminSetEarlyAccessSchema,
   platformAdminSetStaffMobileSchema,
+  type PlatformAdminAuditLogQuery,
+  type PlatformAdminAuditLogResponse,
   type PlatformAdminCancelOwnerInvitationResponse,
   type PlatformAdminCreateSchoolInput,
   type PlatformAdminDeleteSchoolInput,
@@ -371,6 +374,22 @@ export class PlatformAdminController {
     @Req() req: Request,
   ): Promise<PlatformAdminDeleteSchoolResponse> {
     return this.platformAdminService.deleteSchool(schoolId, dto, adminCtx, {
+      ipAddress: ip,
+      userAgent: req.header("user-agent") ?? null,
+    });
+  }
+
+  // GET /platform-admin/audit-log — the platform's own audit rows (slice 3).
+  // Read-only, and itself audited.
+  @Get("audit-log")
+  @UseGuards(PlatformAdminGuard)
+  async auditLog(
+    @Query(new ZodValidationPipe(platformAdminAuditLogQuerySchema)) query: PlatformAdminAuditLogQuery,
+    @CurrentPlatformAdmin() adminCtx: PlatformAdminContext,
+    @Ip() ip: string,
+    @Req() req: Request,
+  ): Promise<PlatformAdminAuditLogResponse> {
+    return this.platformAdminService.listAuditLog(query, adminCtx, {
       ipAddress: ip,
       userAgent: req.header("user-agent") ?? null,
     });

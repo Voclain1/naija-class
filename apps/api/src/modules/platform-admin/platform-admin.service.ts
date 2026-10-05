@@ -8,6 +8,11 @@ import {
   UnauthorizedError,
   ValidationError,
   type PaystackSetupStatus,
+  PLATFORM_AUDIT_PAGE_SIZE,
+  PLATFORM_AUDIT_VIEW_ACTIONS,
+  type PlatformAdminAuditEntryDto,
+  type PlatformAdminAuditLogQuery,
+  type PlatformAdminAuditLogResponse,
   type PlatformAdminCancelOwnerInvitationResponse,
   type PlatformAdminDeleteSchoolInput,
   type PlatformAdminDeleteSchoolResponse,
@@ -206,6 +211,17 @@ async function endOpenOwnerInvitations(tx: TxClient, schoolId: string): Promise<
   `;
 }
 
+// `before` cursor: "<ISO time>|<id>" of the last entry on the previous page.
+// Anything unparseable is treated as "from the top" rather than an error — it
+// is our own opaque string round-tripping through the browser.
+function parseAuditCursor(raw: string | undefined): { at: Date; id: string } | null {
+  if (!raw) return null;
+  const [iso, id] = raw.split("|");
+  const at = iso ? new Date(iso) : null;
+  if (!at || Number.isNaN(at.getTime()) || !id) return null;
+  return { at, id };
+}
+
 // Same account-enumeration defense as AuthService.login / PortalAuthService
 // — argon2.verify against a fixed dummy hash on a miss, so total response
 // time is on the same order as a real verification. Lazily generated,
@@ -259,6 +275,7 @@ const SCHOOLS_SUSPEND_AUDIT_ACTION = "platform_admin.schools.suspend";
 const SCHOOLS_REACTIVATE_AUDIT_ACTION = "platform_admin.schools.reactivate";
 const SCHOOLS_DELETE_AUDIT_ACTION = "platform_admin.schools.delete";
 const SCHOOLS_DELETION_CHECK_AUDIT_ACTION = "platform_admin.schools.deletion-check";
+const AUDIT_LOG_READ_AUDIT_ACTION = "platform_admin.audit-log.read";
 
 // A delete touches every tenant table; give it room on real Neon latency.
 const DELETE_SCHOOL_TRANSACTION_TIMEOUT_MS = 60_000;
@@ -1175,6 +1192,106 @@ export class PlatformAdminService {
 
     this.logger.log(`Deleted school ${school.slug} (${deletedRowCount} rows) by platform admin ${adminCtx.userId}`);
     return { schoolId, slug: school.slug, deletedRowCount };
+  }
+
+  // ─── Audit log (slice 3, 2026-10-07) ──────────────────────────────────────
+  //
+  // GET /platform-admin/audit-log — the platform's OWN audit rows, newest
+  // first: every row this surface writes has school_id = NULL, which is also
+  // exactly what audit_logs' RLS policy lets a GUC-less read see. So this is a
+  // plain read with no GUC and no SECURITY DEFINER function, and it cannot
+  // reach a school's own rows by construction — the policy hides them.
+  //
+  // `ip_address` is never returned. Actor names come from
+  // platform_admin_list_users(NULL), the same roster the dashboard already
+  // shows; school names from `schools` (no RLS), falling back to the name a
+  // delete entry recorded for a school that no longer exists.
+  async listAuditLog(
+    query: PlatformAdminAuditLogQuery,
+    adminCtx: PlatformAdminContext,
+    reqCtx: RequestContext,
+  ): Promise<PlatformAdminAuditLogResponse> {
+    const limit = query.limit ?? PLATFORM_AUDIT_PAGE_SIZE;
+    const includeViews = query.includeViews === "true";
+    const cursor = parseAuditCursor(query.before);
+
+    const rows = await basePrisma.auditLog.findMany({
+      where: {
+        schoolId: null,
+        ...(includeViews ? {} : { action: { notIn: [...PLATFORM_AUDIT_VIEW_ACTIONS] } }),
+        ...(query.schoolId ? { entityType: "school", entityId: query.schoolId } : {}),
+        ...(cursor
+          ? { OR: [{ createdAt: { lt: cursor.at } }, { createdAt: cursor.at, id: { lt: cursor.id } }] }
+          : {}),
+      },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      take: limit + 1,
+      select: { id: true, createdAt: true, action: true, userId: true, entityType: true, entityId: true, metadata: true },
+    });
+    const page = rows.slice(0, limit);
+    const last = page[page.length - 1];
+
+    const actorIds = new Set(page.map((r) => r.userId).filter((id): id is string => Boolean(id)));
+    const actors = new Map<string, string>();
+    if (actorIds.size > 0) {
+      const users = await basePrisma.$queryRaw<ListUsersRow[]>`SELECT * FROM platform_admin_list_users(${null})`;
+      for (const u of users) if (actorIds.has(u.user_id)) actors.set(u.user_id, `${u.first_name} ${u.last_name}`);
+    }
+
+    const schoolIds = [...new Set(page.filter((r) => r.entityType === "school" && r.entityId).map((r) => r.entityId!))];
+    const schools = new Map(
+      (await basePrisma.school.findMany({ where: { id: { in: schoolIds } }, select: { id: true, name: true } })).map((s) => [
+        s.id,
+        s.name,
+      ]),
+    );
+    // A deleted school's earlier entries (suspend, budget…) carry no name of
+    // their own; its delete entry recorded one. Look those up once.
+    const gone = schoolIds.filter((id) => !schools.has(id));
+    if (gone.length > 0) {
+      const deletes = await basePrisma.auditLog.findMany({
+        where: { schoolId: null, action: SCHOOLS_DELETE_AUDIT_ACTION, entityId: { in: gone } },
+        select: { entityId: true, metadata: true },
+      });
+      for (const d of deletes) {
+        const name = (d.metadata as { name?: unknown } | null)?.name;
+        if (d.entityId && typeof name === "string") schools.set(d.entityId, name);
+      }
+    }
+
+    await basePrisma.auditLog.create({
+      data: {
+        schoolId: null,
+        userId: adminCtx.userId,
+        action: AUDIT_LOG_READ_AUDIT_ACTION,
+        entityType: query.schoolId ? "school" : null,
+        entityId: query.schoolId ?? null,
+        ipAddress: reqCtx.ipAddress,
+        metadata: { resultCount: page.length, includeViews },
+      },
+    });
+
+    const entries: PlatformAdminAuditEntryDto[] = page.map((r) => {
+      const metadata = (r.metadata && typeof r.metadata === "object" && !Array.isArray(r.metadata) ? r.metadata : null) as
+        | Record<string, unknown>
+        | null;
+      const schoolId = r.entityType === "school" ? r.entityId : null;
+      return {
+        id: r.id,
+        at: r.createdAt.toISOString(),
+        action: r.action,
+        actorUserId: r.userId,
+        actorName: r.userId ? (actors.get(r.userId) ?? null) : null,
+        schoolId,
+        schoolName: schoolId ? (schools.get(schoolId) ?? null) : null,
+        metadata,
+      };
+    });
+
+    return {
+      entries,
+      nextBefore: rows.length > limit && last ? `${last.createdAt.toISOString()}|${last.id}` : null,
+    };
   }
 
   // Best-effort: a failed send is logged, never thrown, and never undoes the

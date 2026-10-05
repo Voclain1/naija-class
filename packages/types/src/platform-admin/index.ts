@@ -9,3 +9,4 @@ export * from "./platform-admin-user.dto.js";
 export * from "./platform-admin-owner-invitation.dto.js";
 export * from "./platform-admin-set-ai-budget.dto.js";
 export * from "./platform-admin-school-lifecycle.dto.js";
+export * from "./platform-admin-audit-log.dto.js";
