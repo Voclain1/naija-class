@@ -53,5 +53,10 @@ export const saveCbtTheoryMarks = (id: string, input: SaveCbtTheoryMarksInput) =
 export const chooseCbtAttempt = (id: string, attemptId: string) =>
   apiFetch<CbtResultsDto>(`/cbt/sittings/${id}/attempts/${attemptId}/choose`, { method: "POST" });
 
-/** Where lab machines open the exam (D9). Set per deployment; dev default is the local CBT app. */
-export const CBT_DELIVERY_BASE_URL = process.env.NEXT_PUBLIC_CBT_URL ?? "http://localhost:3003";
+/**
+ * Where lab machines open the exam (D9), printed on the invigilator sheet.
+ * NEXT_PUBLIC_CBT_URL overrides it; otherwise a production build prints the
+ * real address and development the local exam app.
+ */
+export const CBT_DELIVERY_BASE_URL =
+  process.env.NEXT_PUBLIC_CBT_URL ?? (process.env.NODE_ENV === "production" ? "https://cbt.schoolkit.ng" : "http://localhost:3003");

@@ -68,9 +68,9 @@ load test (§4) checks exactly that pattern.
    - Then run `vercel env ls`, or check the project's Settings →
      Environment Variables. CLAUDE.md records why: a recreated project once
      started with no variables, and nothing caught it for five days.
-5. **Staff web app.** On `school-kit-web`, set `NEXT_PUBLIC_CBT_URL` =
-   `https://cbt.schoolkit.ng` and redeploy. The invigilator sheet prints this
-   address. Without it, the sheet points at `localhost:3003`.
+5. **Staff web app.** Nothing to set. The invigilator sheet already prints
+   `https://cbt.schoolkit.ng` in production. Set `NEXT_PUBLIC_CBT_URL` on
+   `school-kit-web` only if the exam app ever moves to another address.
 6. **Check from a phone.**
    - `https://cbt.schoolkit.ng` shows "SchoolKit Exams".
    - `https://cbt.schoolkit.ng/<any-slug>` shows "Exams on this computer".

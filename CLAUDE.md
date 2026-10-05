@@ -911,8 +911,9 @@ The first is the exam app's origin (`https://cbt.schoolkit.ng`), allowed by
 the API alongside the web and portal origins. It is set on whichever Fly app
 the exam app calls: `school-kit-cbt` in production, or `school-kit-api` as the
 fallback. The second is set on `school-kit-web` and is the address printed on
-the invigilator sheet; unset, it prints `localhost:3003`. Neither is set in
-production yet. `docs/runbooks/cbt-go-live.md` says when, with the rest of
+the invigilator sheet. Unset, a production build prints `https://cbt.schoolkit.ng`
+and development `localhost:3003`, so it only needs setting if the address ever
+changes. `CORS_ORIGIN_CBT` is not set in production yet. `docs/runbooks/cbt-go-live.md` says when, with the rest of
 the exam service (`API_MODE=cbt-delivery`, `apps/api/fly-cbt.toml`).
 
 `TERMII_BASE_URL` — unlike Paystack's fixed `api.paystack.co`, Termii's API

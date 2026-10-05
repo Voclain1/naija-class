@@ -177,7 +177,10 @@ Migration `20261008120000_cbt1_sittings`:
 - `/teacher/cbt/[id]/invigilator`: the printable sheet with both codes, the
   steps for the day and the register.
 - "Online exams" is in both the admin and teacher sidebars.
-- `NEXT_PUBLIC_CBT_URL`, in `apps/web`, is the address printed on the sheet.
+- The sheet prints the exam app's address: `https://cbt.schoolkit.ng` in a
+  production build, `localhost:3003` in development, or `NEXT_PUBLIC_CBT_URL`
+  when set (2026-10-05: the production default was added so the sheet reads
+  correctly before go-live).
 
 **Tests:**
 - `cbt-sittings.service.spec.ts` (8 tests);
@@ -388,7 +391,6 @@ the order of work, starting about four weeks before the first exam period.
   - the Fly app and its four secrets;
   - the Vercel project (`apps/cbt`, `NEXT_PUBLIC_API_URL`, `cbt.schoolkit.ng`,
     then `vercel env ls`);
-  - `NEXT_PUBLIC_CBT_URL` on the staff web app.
 - **The three gates:** deployed and answering; the load test at the target
   size; a dry run in one lab, with a cable pulled and a computer switched off
   on purpose.
