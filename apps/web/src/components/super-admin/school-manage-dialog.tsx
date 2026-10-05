@@ -27,23 +27,28 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ApiError, proxyFetch } from "@/lib/api-client";
 
+import { DeleteSchoolSection, SchoolAccessSection } from "./school-lifecycle-sections";
 import { ownerStatusOf, parseTokenCount } from "./school-manage";
 
 // Platform-admin tools, slice 1 (2026-10-06): one school's settings that are
 // too wordy for a table cell — the AI spend cap, and the owner invitation for
 // a school nobody has taken over yet. A dialog rather than more columns: the
 // table is already wide, and the operator often works from a tablet.
+// Slice 2 (2026-10-07) adds suspend/reactivate and delete
+// (school-lifecycle-sections.tsx).
 
 interface Props {
   school: PlatformAdminSchoolDto | null;
   onClose: () => void;
   /** Patch the roster row in place — the response is authoritative for what changed. */
   onChanged: (patch: Partial<PlatformAdminSchoolDto>) => void;
+  /** The school no longer exists: drop its row and close. */
+  onDeleted: (schoolId: string) => void;
 }
 
 const fmt = (n: number) => n.toLocaleString("en-NG");
 
-export function SchoolManageDialog({ school, onClose, onChanged }: Props) {
+export function SchoolManageDialog({ school, onClose, onChanged, onDeleted }: Props) {
   const [budgetDraft, setBudgetDraft] = useState("");
   const [savingBudget, setSavingBudget] = useState(false);
   const [emailDraft, setEmailDraft] = useState("");
@@ -344,6 +349,9 @@ export function SchoolManageDialog({ school, onClose, onChanged }: Props) {
             </>
           )}
         </section>
+
+        <SchoolAccessSection school={school} onChanged={onChanged} />
+        <DeleteSchoolSection school={school} onDeleted={onDeleted} />
       </DialogContent>
     </Dialog>
   );

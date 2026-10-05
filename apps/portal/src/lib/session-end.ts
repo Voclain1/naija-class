@@ -21,7 +21,7 @@
 // SESSION_EXPIRED, INVALID_SESSION, MISSING_BEARER_TOKEN and (since
 // 2026-10-02) USER_INACTIVE as distinct codes; nothing here is invented.
 
-export type SessionEndReason = "expired" | "revoked" | "deactivated" | "signed-out";
+export type SessionEndReason = "expired" | "revoked" | "deactivated" | "suspended" | "signed-out";
 
 /**
  * Map a guardian 401 code to a reason.
@@ -40,6 +40,9 @@ export function reasonFromErrorCode(code: string | undefined): SessionEndReason 
       return "revoked";
     case "USER_INACTIVE":
       return "deactivated";
+    // The whole school suspended by School Kit (2026-10-07).
+    case "SCHOOL_SUSPENDED":
+      return "suspended";
     default:
       return null;
   }
@@ -50,6 +53,7 @@ export function parseSessionEndReason(raw: string | null): SessionEndReason | nu
     case "expired":
     case "revoked":
     case "deactivated":
+    case "suspended":
     case "signed-out":
       return raw;
     default:
@@ -87,6 +91,13 @@ export function sessionEndNotice(reason: SessionEndReason | null): SessionEndNot
       return {
         title: "Your portal access is switched off",
         body: "Your school has turned off portal access for this account. Contact the school if you think this is a mistake.",
+      };
+    // Also not fixed by signing in again. Fees can still be paid through the
+    // payment link the school sends — that is not a portal sign-in.
+    case "suspended":
+      return {
+        title: "The portal is unavailable for your school",
+        body: "You can't sign in at the moment. You can still pay fees from a payment link the school sends you. Contact the school for more.",
       };
     case "signed-out":
     case null:

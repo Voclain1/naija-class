@@ -20,6 +20,8 @@ export function sessionEndMessage(reason: SessionEndReason): string {
       return "Your session expired. Sign in again to continue.";
     case "USER_INACTIVE":
       return "Your account is no longer active. Contact your school administrator.";
+    case "SCHOOL_SUSPENDED":
+      return "Your school's School Kit account is suspended, so nobody can sign in for now. Contact the school.";
     case "INVALID_SESSION":
     case "MISSING_BEARER_TOKEN":
       return "Your session ended. Sign in again.";

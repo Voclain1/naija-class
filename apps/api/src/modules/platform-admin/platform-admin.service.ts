@@ -9,6 +9,11 @@ import {
   ValidationError,
   type PaystackSetupStatus,
   type PlatformAdminCancelOwnerInvitationResponse,
+  type PlatformAdminDeleteSchoolInput,
+  type PlatformAdminDeleteSchoolResponse,
+  type PlatformAdminSchoolDeletionCheckDto,
+  type PlatformAdminSchoolSuspensionResponse,
+  type PlatformAdminSuspendSchoolInput,
   type PlatformAdminCreateSchoolInput,
   type PlatformAdminCreateSchoolResponse,
   type PlatformAdminLoginInput,
@@ -37,6 +42,8 @@ import { EmailService } from "../../common/email/email.service";
 import { PaystackService } from "../../common/paystack/paystack.service";
 import { redactEmail } from "../../common/redact";
 import { generateUniqueSchoolSlug } from "../../common/slug/school-slug.js";
+
+import { deleteSchoolRows, holdsPlatformAdmin, readDeletionFacts } from "./school-deletion";
 
 // Cross-tenant service. Reads go through the platform_admin_* SECURITY
 // DEFINER functions (see CLAUDE.md's inventory) via basePrisma directly —
@@ -116,6 +123,7 @@ interface ListSchoolsRow {
   ai_enabled: boolean;
   ai_monthly_token_budget: number | null;
   staff_mobile_enabled: boolean;
+  suspended_at: Date | null;
 }
 
 // Mirrors platform_admin_list_paystack_setup_requests()'s columns.
@@ -247,6 +255,13 @@ const SCHOOLS_SET_STAFF_MOBILE_AUDIT_ACTION = "platform_admin.schools.set-staff-
 const SCHOOLS_SET_AI_BUDGET_AUDIT_ACTION = "platform_admin.schools.set-ai-budget";
 const OWNER_INVITATION_RESEND_AUDIT_ACTION = "platform_admin.owner-invitation.resend";
 const OWNER_INVITATION_CANCEL_AUDIT_ACTION = "platform_admin.owner-invitation.cancel";
+const SCHOOLS_SUSPEND_AUDIT_ACTION = "platform_admin.schools.suspend";
+const SCHOOLS_REACTIVATE_AUDIT_ACTION = "platform_admin.schools.reactivate";
+const SCHOOLS_DELETE_AUDIT_ACTION = "platform_admin.schools.delete";
+const SCHOOLS_DELETION_CHECK_AUDIT_ACTION = "platform_admin.schools.deletion-check";
+
+// A delete touches every tenant table; give it room on real Neon latency.
+const DELETE_SCHOOL_TRANSACTION_TIMEOUT_MS = 60_000;
 // Paystack assisted setup (2026-08-15). The reveal action is the important
 // one: it is the only path in the product that returns a school's bank
 // account number, and every single call writes one of these rows.
@@ -353,6 +368,7 @@ export class PlatformAdminService {
       aiMonthlyTokenBudget: r.ai_monthly_token_budget,
       aiEffectiveMonthlyTokenBudget: r.ai_monthly_token_budget ?? DEFAULT_MONTHLY_TOKEN_BUDGET,
       staffMobileEnabled: r.staff_mobile_enabled,
+      suspendedAt: r.suspended_at ? r.suspended_at.toISOString() : null,
     }));
   }
 
@@ -999,6 +1015,166 @@ export class PlatformAdminService {
     });
 
     return { schoolId, cancelledCount };
+  }
+
+  // ─── School lifecycle (slice 2, 2026-10-07) ───────────────────────────────
+  //
+  // Suspend / reactivate write schools.suspended_at — `schools` has no RLS, so
+  // a column update plus an audit row, like the AI switch. Enforcement lives
+  // in the session helpers and the three session guards
+  // (common/auth/school-suspension.ts). A school holding a platform admin is
+  // refused, so the operator can never suspend the school they work from.
+
+  async suspendSchool(
+    schoolId: string,
+    input: PlatformAdminSuspendSchoolInput,
+    adminCtx: PlatformAdminContext,
+    reqCtx: RequestContext,
+  ): Promise<PlatformAdminSchoolSuspensionResponse> {
+    const school = await basePrisma.school.findUnique({ where: { id: schoolId }, select: { id: true, suspendedAt: true } });
+    if (!school) throw new NotFoundError("School not found.");
+
+    const suspendedAt = await basePrisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT set_config('app.current_school_id', ${schoolId}, true)`;
+      if (await holdsPlatformAdmin(tx, schoolId)) {
+        throw new ConflictError(
+          "SCHOOL_HAS_PLATFORM_ADMIN",
+          "This school holds a platform admin account, so it can't be suspended from here.",
+        );
+      }
+      // Re-suspending keeps the original date: it answers "since when".
+      const at = school.suspendedAt ?? new Date();
+      await tx.school.update({ where: { id: schoolId }, data: { suspendedAt: at } });
+      await tx.auditLog.create({
+        data: {
+          schoolId: null,
+          userId: adminCtx.userId,
+          action: SCHOOLS_SUSPEND_AUDIT_ACTION,
+          entityType: "school",
+          entityId: schoolId,
+          ipAddress: reqCtx.ipAddress,
+          metadata: { reason: input.reason, alreadySuspended: Boolean(school.suspendedAt) },
+        },
+      });
+      return at;
+    });
+
+    return { schoolId, suspendedAt: suspendedAt.toISOString() };
+  }
+
+  async reactivateSchool(
+    schoolId: string,
+    adminCtx: PlatformAdminContext,
+    reqCtx: RequestContext,
+  ): Promise<PlatformAdminSchoolSuspensionResponse> {
+    const school = await basePrisma.school.findUnique({ where: { id: schoolId }, select: { id: true, suspendedAt: true } });
+    if (!school) throw new NotFoundError("School not found.");
+
+    await basePrisma.school.update({ where: { id: schoolId }, data: { suspendedAt: null } });
+    await basePrisma.auditLog.create({
+      data: {
+        schoolId: null,
+        userId: adminCtx.userId,
+        action: SCHOOLS_REACTIVATE_AUDIT_ACTION,
+        entityType: "school",
+        entityId: schoolId,
+        ipAddress: reqCtx.ipAddress,
+        metadata: { suspendedSince: school.suspendedAt ? school.suspendedAt.toISOString() : null },
+      },
+    });
+    return { schoolId, suspendedAt: null };
+  }
+
+  // GET /platform-admin/schools/:schoolId/deletion-check — counts only, so the
+  // dialog can say what a delete would remove before anyone types the slug.
+  // Audited like every other read on this surface.
+  async deletionCheck(
+    schoolId: string,
+    adminCtx: PlatformAdminContext,
+    reqCtx: RequestContext,
+  ): Promise<PlatformAdminSchoolDeletionCheckDto> {
+    const school = await basePrisma.school.findUnique({ where: { id: schoolId }, select: { id: true, slug: true } });
+    if (!school) throw new NotFoundError("School not found.");
+    const facts = await basePrisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT set_config('app.current_school_id', ${schoolId}, true)`;
+      return readDeletionFacts(tx, schoolId);
+    });
+    await basePrisma.auditLog.create({
+      data: {
+        schoolId: null,
+        userId: adminCtx.userId,
+        action: SCHOOLS_DELETION_CHECK_AUDIT_ACTION,
+        entityType: "school",
+        entityId: schoolId,
+        ipAddress: reqCtx.ipAddress,
+        metadata: { deletable: facts.blockers.length === 0, blockers: facts.blockers },
+      },
+    });
+    return { schoolId, slug: school.slug, deletable: facts.blockers.length === 0, ...facts };
+  }
+
+  // POST /platform-admin/schools/:schoolId/delete — permanent. The checks run
+  // again INSIDE the deleting transaction, so a payment recorded between the
+  // dialog's check and the click still stops it.
+  async deleteSchool(
+    schoolId: string,
+    input: PlatformAdminDeleteSchoolInput,
+    adminCtx: PlatformAdminContext,
+    reqCtx: RequestContext,
+  ): Promise<PlatformAdminDeleteSchoolResponse> {
+    const school = await basePrisma.school.findUnique({
+      where: { id: schoolId },
+      select: { id: true, slug: true, name: true },
+    });
+    if (!school) throw new NotFoundError("School not found.");
+    if (input.confirmSlug !== school.slug) {
+      throw new ValidationError("CONFIRM_SLUG_MISMATCH", `Type the school's slug, ${school.slug}, to confirm.`);
+    }
+
+    const deletedRowCount = await basePrisma.$transaction(
+      async (tx) => {
+        await tx.$executeRaw`SELECT set_config('app.current_school_id', ${schoolId}, true)`;
+        const facts = await readDeletionFacts(tx, schoolId);
+        if (facts.blockers.includes("HAS_PAYMENTS")) {
+          throw new ConflictError(
+            "SCHOOL_HAS_PAYMENTS",
+            `This school has recorded ${facts.paymentCount} payment${facts.paymentCount === 1 ? "" : "s"}, so it can't be deleted. Suspend it instead.`,
+          );
+        }
+        if (facts.blockers.includes("HAS_PLATFORM_ADMIN")) {
+          throw new ConflictError(
+            "SCHOOL_HAS_PLATFORM_ADMIN",
+            "This school holds a platform admin account, so it can't be deleted from here.",
+          );
+        }
+        const n = await deleteSchoolRows(tx, schoolId);
+        // schoolId null and the school named in metadata: the school row is
+        // gone, and this row must outlive it.
+        await tx.auditLog.create({
+          data: {
+            schoolId: null,
+            userId: adminCtx.userId,
+            action: SCHOOLS_DELETE_AUDIT_ACTION,
+            entityType: "school",
+            entityId: schoolId,
+            ipAddress: reqCtx.ipAddress,
+            metadata: {
+              slug: school.slug,
+              name: school.name,
+              deletedRowCount: n,
+              studentCount: facts.studentCount,
+              staffCount: facts.staffCount,
+              guardianCount: facts.guardianCount,
+            },
+          },
+        });
+        return n;
+      },
+      { timeout: DELETE_SCHOOL_TRANSACTION_TIMEOUT_MS },
+    );
+
+    this.logger.log(`Deleted school ${school.slug} (${deletedRowCount} rows) by platform admin ${adminCtx.userId}`);
+    return { schoolId, slug: school.slug, deletedRowCount };
   }
 
   // Best-effort: a failed send is logged, never thrown, and never undoes the

@@ -54,4 +54,7 @@ export interface PlatformAdminSchoolDto {
   // an observation. Says nothing about WHICH staff: role grants and the
   // per-principal guards are separate gates.
   staffMobileEnabled: boolean;
+  // When a platform admin suspended the school, or null. While set, every
+  // sign-in is refused and live sessions end at their next request.
+  suspendedAt: string | null;
 }

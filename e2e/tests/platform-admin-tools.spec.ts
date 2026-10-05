@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 
 import { basePrisma, withTenant } from "@school-kit/db";
 
-import { loginAsAdmin, uniqueSuffix } from "../fixtures/index.js";
+import { createApiContext, loginAsAdmin, uniqueSuffix } from "../fixtures/index.js";
 
 // Platform-admin tools, slice 1 (docs/modules/platform-admin.md).
 //
@@ -118,5 +118,82 @@ test("a platform admin caps a school's AI budget and resends, then cancels, its 
   } finally {
     await operator.context.close();
     await operator.api.dispose();
+  }
+});
+
+// Slice 2 (2026-10-07): suspend a real school, see its owner refused at
+// sign-in, reactivate, then delete it by typing its slug.
+test("a platform admin suspends a school, reactivates it, then deletes it", async ({ browser }) => {
+  const operator = await loginAsAdmin(browser);
+  await withTenant(operator.schoolId, (db) =>
+    db.user.update({ where: { id: operator.ownerUserId }, data: { isPlatformAdmin: true } }),
+  );
+  // A separate, ordinary school with a real owner who can sign in.
+  const target = await loginAsAdmin(browser);
+  const school = await basePrisma.school.findUniqueOrThrow({ where: { id: target.schoolId }, select: { name: true, slug: true } });
+  await target.context.close();
+
+  const page = operator.page;
+  page.on("dialog", (d) => void d.accept());
+  const anon = await createApiContext();
+  const ownerLogin = () => anon.post("auth/login", { data: { email: target.email, password: target.password } });
+
+  try {
+    await page.goto("/super-admin/login");
+    await page.getByLabel("Email").fill(operator.email);
+    await page.getByLabel("Password").fill(operator.password);
+    await page.getByRole("button", { name: /sign in/i }).click();
+    await expect(page).toHaveURL(/\/super-admin\/dashboard/, { timeout: 60_000 });
+
+    const row = page.getByRole("row").filter({ hasText: school.slug });
+    await expect(row).toBeVisible({ timeout: 30_000 });
+    const dialog = page.getByRole("dialog");
+    const openManage = async () => {
+      await row.getByRole("button", { name: `Manage ${school.name}` }).click();
+      await expect(dialog).toBeVisible();
+    };
+    const closeManage = async () => {
+      await page.keyboard.press("Escape");
+      await expect(dialog).toBeHidden();
+    };
+
+    // ---- Suspend ------------------------------------------------------------
+    await openManage();
+    await dialog.getByLabel(/^Reason/).fill("E2E: subscription unpaid");
+    await dialog.getByRole("button", { name: "Suspend school" }).click();
+    await expect(dialog.getByText("Nobody at this school can sign in.", { exact: false })).toBeVisible();
+    await page.screenshot({ path: "test-results/platform-admin-tools/4-suspended.png" });
+    await closeManage();
+    await expect(row.getByText("Suspended")).toBeVisible();
+
+    const refused = await ownerLogin();
+    expect(refused.status()).toBe(401);
+    expect((await refused.json()).error.code).toBe("SCHOOL_SUSPENDED");
+
+    // ---- Reactivate -----------------------------------------------------------
+    await openManage();
+    await dialog.getByRole("button", { name: "Reactivate school" }).click();
+    await expect(dialog.getByRole("button", { name: "Suspend school" })).toBeVisible();
+    await closeManage();
+    expect((await ownerLogin()).status()).toBe(200);
+
+    // ---- Delete ---------------------------------------------------------------
+    await openManage();
+    await dialog.getByRole("button", { name: "Check whether it can be deleted" }).click();
+    await expect(dialog.getByText("It cannot be undone.")).toBeVisible();
+    const del = dialog.getByRole("button", { name: "Delete school permanently" });
+    await expect(del).toBeDisabled();
+    await dialog.getByLabel(/to confirm/).fill(school.slug);
+    await page.screenshot({ path: "test-results/platform-admin-tools/5-delete.png" });
+    await del.click();
+    await expect(dialog).toBeHidden();
+    await expect(page.getByRole("row").filter({ hasText: school.slug })).toHaveCount(0);
+    expect(await basePrisma.school.findUnique({ where: { id: target.schoolId } })).toBeNull();
+    expect((await ownerLogin()).status()).toBe(401);
+  } finally {
+    await anon.dispose();
+    await operator.context.close();
+    await operator.api.dispose();
+    await target.api.dispose();
   }
 });

@@ -340,6 +340,10 @@ describe("Platform admin access (2026-08-02)", () => {
     //     write; the budget because PATCH .../ai-budget now writes it, and a
     //     write with no read is the blind-write gap. hasOwner is a boolean
     //     about the tenancy that drives "resend owner invite".
+    //   - suspendedAt                     2026-10-07 (slice 2, school
+    //     lifecycle). Operator-set platform status about the tenancy, like
+    //     isActive — and the read for POST .../suspend, so it is not a blind
+    //     write.
     expect(Object.keys(row).sort()).toEqual(
       [
         "aiEnabled",
@@ -347,6 +351,7 @@ describe("Platform admin access (2026-08-02)", () => {
         "aiMonthlyTokenBudget",
         "hasOwner",
         "slug",
+        "suspendedAt",
         "staffMobileEnabled",
         "createdAt",
         "earlyAccessGrantedAt",

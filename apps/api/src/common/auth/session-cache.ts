@@ -31,6 +31,9 @@ export interface CachedSessionRow {
   school_id: string;
   expires_at: string; // ISO string over the wire; guard revives to Date
   user_is_active: boolean;
+  // Added 2026-10-07. Optional so an entry cached by the previous release
+  // (no field) reads as not suspended for its remaining seconds.
+  school_suspended?: boolean;
 }
 
 export async function getCachedSession(

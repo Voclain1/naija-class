@@ -2,6 +2,8 @@ import * as crypto from "node:crypto";
 
 import { withTenant } from "@school-kit/db";
 
+import { assertSchoolNotSuspended } from "./school-suspension";
+
 // 30 days. Matches the value AuthService originally held inline; lifted
 // here so login, signup, and invitation accept all use the same number
 // without one being able to drift from the others. If this ever becomes
@@ -37,6 +39,7 @@ export async function createSession(
   ctx: CreateSessionContext,
   options: CreateSessionOptions = {},
 ): Promise<{ rawToken: string }> {
+  await assertSchoolNotSuspended(schoolId);
   const rawToken = crypto.randomBytes(32).toString("base64url");
   const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
 

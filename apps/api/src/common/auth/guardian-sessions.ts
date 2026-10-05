@@ -2,6 +2,8 @@ import * as crypto from "node:crypto";
 
 import { withTenant } from "@school-kit/db";
 
+import { assertSchoolNotSuspended } from "./school-suspension";
+
 // Same TTL as staff sessions (sessions.ts) — no product reason for these to
 // differ, and a single shared constant would be premature abstraction across
 // two genuinely separate session mechanisms (see GuardianSession's schema
@@ -24,6 +26,7 @@ export async function createGuardianSession(
   guardianId: string,
   ctx: CreateGuardianSessionContext,
 ): Promise<{ rawToken: string }> {
+  await assertSchoolNotSuspended(schoolId);
   const rawToken = crypto.randomBytes(32).toString("base64url");
   const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
 

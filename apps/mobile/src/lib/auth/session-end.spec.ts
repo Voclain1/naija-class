@@ -8,6 +8,8 @@ describe("session-end copy and isolation", () => {
     expect(sessionEndMessage("USER_INACTIVE")).toBe(
       "Your account is no longer active. Contact your school administrator.",
     );
+    expect(sessionEndMessage("SCHOOL_SUSPENDED")).toMatch(/suspended/);
+    expect(sessionEndMessage("SCHOOL_SUSPENDED")).not.toMatch(/SCHOOL_SUSPENDED|sign in again/i);
   });
 
   it("shows a reason only to the principal whose session ended", () => {
