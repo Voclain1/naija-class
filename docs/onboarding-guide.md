@@ -6,6 +6,8 @@ You do not need to read it all at once. **On your first day, follow Part 1 from 
 
 Every button name in **bold** in this guide is exactly what you will see on your screen.
 
+**Need help at any point?** WhatsApp us on [+234 704 967 7393](https://wa.me/2347049677393) or email [hello@schoolkit.ng](mailto:hello@schoolkit.ng).
+
 **Prefer to watch first?** The [demo video](https://www.schoolkit.ng/demo) shows the first steps in a few minutes. It opens in a new tab, so this guide stays open.
 
 ---
@@ -59,6 +61,7 @@ Every button name in **bold** in this guide is exactly what you will see on your
 - [Who does what in your school](#who-does-what-in-your-school)
 - [More things SchoolKit can do](#more-things-schoolkit-can-do)
 - [Problems and questions](#problems-and-questions)
+- [Getting help](#getting-help)
 
 ---
 
@@ -170,7 +173,7 @@ Students added this way are not yet in a class — do [Step 5](#step-5-put-your-
 3. SchoolKit reads the page and shows you a table. **Nothing is saved yet.** Check every name, date and class against the paper and correct anything that is wrong.
 4. Press **Add students**.
 
-**Note:** Scanning uses SchoolKit's AI reading feature, which is switched off for a new school. If it tells you AI is off, contact the SchoolKit team to have it switched on — or use one of the other three ways.
+**Note:** Scanning uses SchoolKit's AI reading feature, which is switched off for a new school. If it tells you AI is off, contact the SchoolKit team (see [Getting help](#getting-help)) to have it switched on — or use one of the other three ways.
 
 ## Step 5. Put your students in their classes
 
@@ -497,10 +500,10 @@ You do not need any of these to get started. Use them when you are ready.
 - **Insights** — answers questions such as "Which students are at risk of failing?" and "Where is attendance worst?".
 - **Weekly parent updates** — in **Settings → Weekly parent updates**, SchoolKit can send each parent a short note every Monday about their child's week (new results, absences, lateness). It is off until you switch it on, and needs AI to be switched on.
 - **Lesson plans, curriculum, question bank and exam papers** — teachers can upload your schemes of work, get lesson plans drafted, keep a bank of exam questions, and print exam papers (with up to four versions).
-- **Online exams (CBT)** — children sit exams on your computer lab. This is **not yet switched on**. If you would like to use it, contact the SchoolKit team **at least four weeks** before your exams.
+- **Online exams (CBT)** — children sit exams on your computer lab. This is **not yet switched on**. If you would like to use it, contact the SchoolKit team (see [Getting help](#getting-help)) **at least four weeks** before your exams.
 - **Extra security** — in **Settings → Security** you can turn on two‑factor sign‑in, so a code from your phone is needed as well as your password.
 
-**About the AI features** (scanning registers, drafting comments, lesson plans, question drafting, weekly updates): they are switched off for a new school. Ask the SchoolKit team to switch them on. Nothing written by AI ever goes on a report card without a teacher accepting it. **Settings → AI usage** shows how much you have used this month.
+**About the AI features** (scanning registers, drafting comments, lesson plans, question drafting, weekly updates): they are switched off for a new school. Ask the SchoolKit team to switch them on (see [Getting help](#getting-help)). Nothing written by AI ever goes on a report card without a teacher accepting it. **Settings → AI usage** shows how much you have used this month.
 
 ---
 
@@ -540,4 +543,17 @@ If nobody has used SchoolKit for a little while, the first page can take several
 Check your internet connection, then try again in a moment.
 
 **Something else is not working.**
-Refresh the page first. If it still does not work, write down which page you were on and which button you pressed, and contact the SchoolKit team.
+Refresh the page first. If it still does not work, write down which page you were on and which button you pressed, and contact us — see [Getting help](#getting-help) below.
+
+---
+
+# Getting help
+
+We are happy to help — no question is too small.
+
+- **WhatsApp:** [+234 704 967 7393](https://wa.me/2347049677393) — the quickest way to reach us. You can send a photo of your screen.
+- **Email:** [hello@schoolkit.ng](mailto:hello@schoolkit.ng)
+
+It helps us a lot if you tell us your **school's name**, **which page** you were on, and **which button** you pressed.
+
+**Never send us passwords, PINs or bank card details** — we will never ask for them.
