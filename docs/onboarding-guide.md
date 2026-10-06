@@ -1,399 +1,543 @@
-# Getting started with schoolkit
+# Getting started with SchoolKit
 
-This guide walks a school owner through setting up schoolkit for the first time, in the order that actually works — each stage depends on the one before it. Follow it top to bottom on your first visit; after that, you can jump to whichever section you need.
+Welcome. This guide shows you, step by step, how to set up your school on SchoolKit and how to do the everyday jobs once it is running.
 
-**Prefer to watch first?** The [demo video](https://www.schoolkit.ng/demo) walks through the same sequence — signup, adding students, inviting staff — in a few minutes. It opens in a new tab, so you can leave this guide where it is.
+You do not need to read it all at once. **On your first day, follow Part 1 from top to bottom.** After that, use the list below to jump to whatever you need.
 
-Every screen name, button label, and field name below is taken directly from the live app, not from memory — if something on your screen doesn't match this guide exactly, check the [Troubleshooting & FAQ](#troubleshooting--faq) section first, then ask for help.
+Every button name in **bold** in this guide is exactly what you will see on your screen.
 
-**Bursar or teacher? Most of this guide is the owner/admin setup sequence — here's what's actually yours:**
-
-- **Bursar** — start at [Fee catalog](#9-fee-catalog) and [Generate invoices](#10-generate-invoices) (payments, installment plans, and cancel/reverse all live on an individual invoice page there too). [Accepting online payments](#accepting-online-payments-connecting-paystack) is the one-time setup that has to happen before parents can pay by card at all. The [Troubleshooting & FAQ](#troubleshooting--faq) entries on online payments and recording payments are yours as well.
-- **Teacher** — start at [Report cards: build → score entry → sign-off → approval → release](#13-report-cards-build--score-entry--sign-off--approval--release) for the Gradebook and Report Cards workflow. The FAQ entry "A teacher can't see their class in the gradebook" is yours too.
-
-Everything else below (signup, the setup wizard, academic structure, staff invites, students, fee catalog *setup*, guardian invites) is owner/admin work — useful background if you're curious how the school got configured, but not something you'll do day to day.
-
-**Where you are in this process at a glance:**
-
-1. [Create your account](#1-create-your-account)
-2. [Set up your school](#2-set-up-your-school-the-5-step-wizard)
-3. [Academic structure: years, terms, class levels, class arms](#3-academic-structure-years-terms-class-levels-class-arms)
-4. [Grading scheme](#4-grading-scheme)
-5. [Subjects](#5-subjects)
-6. [Class-subject matrix](#6-class-subject-matrix)
-7. [Staff and teacher assignment](#7-staff-and-teacher-assignment)
-8. [Students: add or import](#8-students-add-or-import)
-9. [Fee catalog](#9-fee-catalog)
-10. [Generate invoices](#10-generate-invoices) — including [accepting online payments](#accepting-online-payments-connecting-paystack)
-11. [Invite guardians to the parent portal](#11-invite-guardians-to-the-parent-portal)
-12. [The guardian (parent) portal](#12-the-guardian-parent-portal)
-13. [Report cards: build → score entry → sign-off → approval → release](#13-report-cards-build--score-entry--sign-off--approval--release)
-14. [Troubleshooting & FAQ](#troubleshooting--faq)
+**Prefer to watch first?** The [demo video](https://www.schoolkit.ng/demo) shows the first steps in a few minutes. It opens in a new tab, so this guide stays open.
 
 ---
 
-## 1. Create your account
+## What is in this guide
 
-Go to **/signup**.
+**Start here**
 
-Fill in:
+- [How to find your way around](#how-to-find-your-way-around)
+- [Words you will see](#words-you-will-see)
 
-- **School name**
-- **First name** / **Last name** (yours, as the school owner)
-- **Email**
-- **Phone** — e.g. `08012345678` or `+2348012345678`
-- **Password** — at least 8 characters, with an uppercase letter, a lowercase letter, a digit, and a symbol
-- Tick the NDPR consent checkbox: *"I accept the data handling terms and confirm I'm authorised to create an account for this school under NDPR."*
+**Part 1 — Setting up your school (do these in order)**
 
-You are **not** asked for a subdomain slug. It's derived automatically from
-your school name — "Bright Star Academy" becomes
-`bright-star-academy.schoolkit.ng` — and if another school already took that,
-a number is appended for you. Nothing to type, nothing to get wrong.
+- [Step 1. Create your account](#step-1-create-your-account)
+- [Step 2. Answer the welcome questions](#step-2-answer-the-welcome-questions)
+- [Step 3. Use the checklist on your dashboard](#step-3-use-the-checklist-on-your-dashboard)
+- [Step 4. Add your students](#step-4-add-your-students)
+- [Step 5. Put your students in their classes](#step-5-put-your-students-in-their-classes)
+- [Step 6. Set your school fees](#step-6-set-your-school-fees)
+- [Step 7. Invite your teachers and office staff](#step-7-invite-your-teachers-and-office-staff)
+- [Step 8. Choose a form teacher for each class](#step-8-choose-a-form-teacher-for-each-class)
+- [Step 9. Say who teaches what](#step-9-say-who-teaches-what)
+- [Step 10. Add parents](#step-10-add-parents)
+- [Already done for you](#already-done-for-you)
 
-Click **Create school**.
+**Part 2 — Everyday jobs**
 
-This creates your account and immediately starts the 5-step setup wizard.
+- [Taking the daily register](#taking-the-daily-register)
+- [Billing parents for school fees](#billing-parents-for-school-fees)
+- [When a parent pays at the school](#when-a-parent-pays-at-the-school)
+- [Following up unpaid fees](#following-up-unpaid-fees)
+- [Letting parents pay online](#letting-parents-pay-online)
+- [Sending a message to parents or staff](#sending-a-message-to-parents-or-staff)
+- [The school calendar](#the-school-calendar)
 
----
+**Part 3 — Exams, results and report cards**
 
-## 2. Set up your school (the 5-step wizard)
+- [Entering scores](#entering-scores)
+- [Making the report cards](#making-the-report-cards)
+- [Releasing results to parents](#releasing-results-to-parents)
+- [Result PIN cards](#result-pin-cards)
 
-Right after signup you land on **/onboarding/1**, a 5-step wizard. A progress indicator at the top shows which step you're on. You can always go back to a previous step to change something.
+**Part 4 — Starting a new term or a new session**
 
-### Step 1 — School basics (`/onboarding/1`)
+- [A new term](#a-new-term)
+- [A new session](#a-new-session)
 
-- **School name**
-- **Motto** (optional)
-- **Address** (optional)
-- **Phone** — pre-filled with your own number
-- **Email** — pre-filled with your own email
+**The rest**
 
-Phone and email here are the *school's* contact details, shown to parents on
-invoices and report cards. They're pre-filled with the ones you just signed
-up with, since for most schools they're the same. If your school has a
-separate front-desk line or office address, just type over them.
-
-Click **Continue**.
-
-### Step 2 — Your school logo (`/onboarding/2`)
-
-- **Logo (optional)** — the logo uploader. Click it to choose an image file; it uploads immediately when you pick the file, separately from the rest of this form.
-
-That's the whole step — click **Continue** to skip it entirely if you don't
-have a logo file to hand. (The primary-colour hex field that used to live
-here moved to **Settings → School**; it didn't change how anything looked
-yet, and hand-typing a hex code was the most confusing part of the wizard.)
-
-Both fields are optional — you can leave this step blank and add a logo later from **Settings → School**. Click **Continue**.
-
-### Step 3 — Invite admins (`/onboarding/3`)
-
-Optional. If you want other administrators or bursars in the school from day one, click **Add invite**, fill in **Email** (required), **First name** and **Last name** (optional), and repeat for as many people as you like. Click **Send N invite(s)** when done, or **Skip for now** to move on and invite people later from Settings.
-
-### Step 4 — Data protection consent (`/onboarding/4`)
-
-Reads a plain-language summary of what schoolkit does with your data. Tick *"I have read and accept the data handling terms above on behalf of my school"* and click **Confirm and continue**.
-
-### Step 5 — You're all set (`/onboarding/5`)
-
-Click **Go to dashboard** to finish setup and land on your admin dashboard.
-
-> **Logo/colour later:** if you skipped branding, or want to change it, go to **Settings → School** at any time — it has the same logo upload widget.
+- [What parents see](#what-parents-see)
+- [Who does what in your school](#who-does-what-in-your-school)
+- [More things SchoolKit can do](#more-things-schoolkit-can-do)
+- [Problems and questions](#problems-and-questions)
 
 ---
 
-## 3. Academic structure: years, terms, class levels, class arms
+## How to find your way around
 
-All of this lives under **Settings → Academic**, which has five tabs in the order you should use them: **Years → Class Levels → Class Arms → Subjects → Matrix**.
+- **The menu down the left side** takes you to every part of SchoolKit: Dashboard, Students, Guardians, Staff, Finance, Report Cards, Settings and so on. On a phone, tap the **three lines** at the top to open the same menu.
+- **The Dashboard** is your home page. Until your school is fully set up, it shows a **checklist** of what is left to do, with a button beside each item that takes you straight to the right page.
+- **The question mark (?)** at the top of the screen opens **Getting started guide** (this page), **Watch the demo**, and **Replay tour** (a one‑minute tour of the menu).
+- **The search box** at the top ("Search or run a command") lets you type the name of a page — for example "invoices" — and go straight there.
+- **Settings** (at the bottom of the menu) is where you change your school's details, logo, school year, fees, grading and so on.
 
-### Academic years (`/settings/academic/years`)
-
-Click **Add academic year**. Fill in:
-- **Label** — e.g. `2025/2026`
-- **Start date**
-- **End date**
-
-Click **Create year**.
-
-### Terms (from a year's row, click **View terms**)
-
-Each year holds up to 3 terms. On a year's terms page, click **Add term** (this button disappears once all 3 terms exist) and fill in:
-- **Sequence** (1–3)
-- **Name** — auto-fills to "First Term" / "Second Term" / "Third Term"
-- **Start date** / **End date** (must fall inside the academic year's own dates)
-
-Click **Create term**.
-
-**Marking the current term:** on either the years list or a year's terms list, click **Set current** next to the term (or year) you want active. Setting a term current automatically also marks its parent year as the current year — you only need to do this once per term change, not twice.
-
-### Class levels (`/settings/academic/class-levels`)
-
-The 14 standard Nigerian levels (KG 1 through SSS 3) are already there — seeded automatically when your school was created. You only need this page if you want to add a custom level or rename a default one. Click **Add class level** and fill in **Name**, **Code**, **Stage** (Nursery / Primary / JSS / SSS), and **Order**.
-
-**Every level — seeded or custom — already has one arm.** A default arm (e.g. "JSS 1" gets "JSS 1A") is created automatically the moment a level exists, so if your school runs one stream per level, you can go straight to enrolling students without visiting Class Arms at all. It's an ordinary arm like any other — rename it, deactivate it, or add more arms alongside it any time.
-
-### Class arms (`/settings/academic/class-arms`)
-
-An arm is a specific class, e.g. "JSS 1A". You only need this page if you want to **rename the auto-created default arm** or **add a second (or third) arm** under a level — e.g. "JSS 1A" and "JSS 1B" for a two-stream school. Click **Add class arm** and fill in:
-- **Class level** — pick from your existing levels (you need at least one level before this button is enabled)
-- **Name** — e.g. `JSS 1A`
-- **Code**
-- **Capacity** (optional)
-- **Class teacher** (optional) — pick the arm's homeroom/form teacher from the dropdown, or leave it as **— None —**. Only staff invited with the Teacher role appear here; if you haven't invited any teachers yet, this shows a prompt to invite one first (see [§7](#7-staff-and-teacher-assignment)).
-
-Click **Create arm**. You can change the class teacher later from **Edit** on the same row.
+**Tip:** You cannot break anything by looking around. Every page that changes something has a clear button, such as **Save** or **Create**, and nothing changes until you press it.
 
 ---
 
-## 4. Grading scheme
+## Words you will see
 
-Go to **Settings → Grading** (separate from the Academic tabs — it has its own two-tab sub-nav: **Scheme** and **Boundaries**).
-
-### Scheme (`/settings/grading`)
-
-Defines how a subject's term score splits across continuous assessment and exams — one scheme applies to every subject in your school. A default is seeded already. To change it: click **Add component** to add a row (**Key**, e.g. `ca1`; **Label**, e.g. `First CA`; **Weight**), use the up/down arrows to reorder, and the trash icon to remove a row. A badge shows **"Weights total: N / 100"** — you can't save until it reads 100. Click **Save scheme**.
-
-### Boundaries (`/settings/grading/boundaries`)
-
-Maps total scores to letter grades. Defaults to the WAEC nine-point scale. Click **Add band** to add a row (**Grade**, e.g. `A1`; **Min**; **Max**; **Remark**, e.g. `Excellent`). A badge confirms **"Ranges tile 0–100"** — bands must cover 0–100 with no gaps or overlaps before you can save. Click **Save boundaries**.
-
----
-
-## 5. Subjects
-
-Go to **Settings → Academic → Subjects** (`/settings/academic/subjects`).
-
-Click **Add subject** and fill in:
-- **Name** — e.g. `Mathematics`
-- **Code** — e.g. `maths`
-- **Category** — Core / Elective / Vocational
-
-Click **Create subject**. Repeat for every subject your school teaches.
+- **Session / academic year** — the school year, for example `2026/2027`.
+- **Term** — First Term, Second Term or Third Term. Almost everything in SchoolKit (registers, fees, results) belongs to a term.
+- **Class level** — JSS 1, Primary 4, SSS 2 and so on.
+- **Class arm** (or just **class**) — one actual class of children, for example **JSS 1A**. A school with two streams has JSS 1A and JSS 1B.
+- **Enrol / enrolment** — putting a student into a class for a term.
+- **Form teacher** — the class teacher in charge of one class. They take its register and write its report card comments.
+- **Bursar** — the person who handles the school's money.
+- **Guardian** — a parent or anyone else responsible for a child.
+- **Parent portal** — the website where parents sign in to see their children's fees and results.
+- **Invoice** — the school fees bill for one child for one term.
+- **CSV file** — a spreadsheet saved in a simple format. In Excel or Google Sheets, choose **Save as** (or **Download**) and pick **CSV**.
 
 ---
 
-## 6. Class-subject matrix
+# Part 1 — Setting up your school
 
-Go to **Settings → Academic → Matrix** (`/settings/academic/class-subjects`) — do this after you have at least one subject and one class level, or the page will prompt you to go create them first.
+Do these steps in order the first time. Each one builds on the one before.
 
-This is a grid: rows are your class levels, columns are your subjects. **Click a cell** to link a subject to a level. On a linked cell, click the small **C**/**E** pill to toggle Core vs. Elective for that pairing.
+## Step 1. Create your account
 
-Changes aren't saved automatically — a bar appears at the bottom reading **"N row(s) have unsaved changes"** with **Discard** and **Save changes** buttons. Save is per class-level row, so if something fails partway through you'll see how many rows saved successfully.
+1. Go to **app.schoolkit.ng/signup**.
+2. Fill in your **School name**, your **First name** and **Last name**, your **Email** and your **Phone** number (for example `08012345678`).
+3. Choose a **Password**. It must be at least 8 characters and include a capital letter, a small letter, a number and a symbol such as `!`.
+4. Tick the box to accept the data handling terms.
+5. Press **Create school**.
+
+The welcome questions start straight away.
+
+**Next time you come back,** go to **app.schoolkit.ng/login** and sign in with the same email and password. If you forget your password, press **Forgot password?** on that page.
+
+## Step 2. Answer the welcome questions
+
+There are five short screens. A bar at the top shows which one you are on.
+
+1. **School basics** — your school's name, motto and address, and the school's phone and email. The phone and email are filled in with yours; change them if the school has its own. Press **Continue**.
+2. **Your school logo** — press the box to choose your logo picture. It appears on report cards and invoices. If you do not have it to hand, just press **Continue**; you can add it later in **Settings → School details**.
+3. **Invite admins** — if someone else will help you run the school on SchoolKit, press **Add invite** and type their email. Otherwise press **Skip for now**. (You can invite people any time later.)
+4. **Data protection consent** — read the short summary, tick the box, and press **Confirm and continue**.
+5. **Set up your school year** — this one matters. SchoolKit has already filled in a normal Nigerian school year. Check:
+   - **Academic year** (for example `2026/2027`) and the dates it **Starts** and **Ends**;
+   - **Which term are you in now?** — press the term you are in today (or the one you are about to start, if you are on holiday);
+   - press **Check or edit term dates** to see each term's start and end dates, and correct any that are wrong.
+
+   Press **Finish setup**. You will land on your Dashboard.
+
+**Why the dates matter:** registers, fees and results are all recorded against a term. If the dates are wrong, they will be filed under the wrong term. You can correct them later in **Settings → Academics**.
+
+## Step 3. Use the checklist on your dashboard
+
+Your Dashboard now shows **Finish setting up your school** — a checklist made up of three groups:
+
+- **Do these first** — the school cannot run day to day until these are done: your school year, your students, and putting students in their classes.
+- **Do these when you can** — each one switches on a part of SchoolKit: fees, teachers, form teachers, and who teaches what.
+- **These can wait** — optional extras, such as adding parents.
+
+Each item has a button that takes you to the right page, and it ticks itself off as soon as the job is done. The rest of Part 1 explains each item in plain words.
+
+## Step 4. Add your students
+
+Go to **Students** in the menu. There are four ways to add students. Choose whichever suits you.
+
+**One student at a time**
+
+1. Press the green **Add student** button.
+2. Fill in **Admission number**, **First name**, **Last name**, **Date of birth** and **Gender**.
+3. Under **Class**, choose the child's class (for example JSS 1 — JSS 1A). If you do not know yet, choose **Not yet — I'll place them later**.
+4. Everything else (address, blood group, medical notes and so on) is optional and can be filled in later.
+5. Press **Create student**.
+
+**Several students by typing them in**
+
+1. Press the small arrow beside **Add student**, then **Add several in a grid**.
+2. You get a table like a spreadsheet: admission number, first name, middle name, last name, date of birth, gender and email.
+3. Type straight across. **Tab** moves to the next box; **Enter** moves down. New rows appear as you need them.
+4. You can also **copy rows from Excel or Google Sheets and paste them in**. Dates like `25/03/2014` and genders typed as `M` or `F` are understood.
+5. Press **Create students**.
+
+Students added this way are not yet in a class — do [Step 5](#step-5-put-your-students-in-their-classes) next.
+
+**Your whole register from a spreadsheet (fastest for a big school)**
+
+1. Press the small arrow beside **Add student**, then **Import from CSV**.
+2. Press **Template CSV** to download an empty template. Fill it in — one row per child — and save it as CSV.
+3. In the **Class Arm** column, type each child's class exactly as SchoolKit spells it, for example `JSS 1A`. (Capital letters do not matter; spaces do — `JSS1A` will not match `JSS 1A`.) Leave it blank if you do not know.
+4. Upload the file. SchoolKit asks you to match your columns to its fields, and which **term** to put the children in.
+5. You will see which rows are ready and which need fixing. Press **Commit** to add them.
+
+**From a photo of your class register**
+
+1. Press the small arrow beside **Add student**, then **Scan a student list**.
+2. Take a clear photo of **one page** of your register — handwritten or printed. Lay it flat, fill the frame, avoid shadows.
+3. SchoolKit reads the page and shows you a table. **Nothing is saved yet.** Check every name, date and class against the paper and correct anything that is wrong.
+4. Press **Add students**.
+
+**Note:** Scanning uses SchoolKit's AI reading feature, which is switched off for a new school. If it tells you AI is off, contact the SchoolKit team to have it switched on — or use one of the other three ways.
+
+## Step 5. Put your students in their classes
+
+A child on your student list is **not yet in a class**. Registers, invoices and report cards only include children who are in a class for the current term. If you chose a class when adding students, this is already done.
+
+**To place children who are not in a class yet:**
+
+1. Open the student (click their name on the **Students** page).
+2. Press the **Enrollments** tab.
+3. Under **Enroll in current term**, choose their **Class arm** and confirm.
+
+To see who is in each class, go to **Enrollments** in the menu, pick the year and term, and click a class.
+
+**Tip:** The Students page shows a message when some students are on the roster but not yet in any class. If a teacher says their class is empty, this is almost always why.
+
+## Step 6. Set your school fees
+
+Go to **Finance**, then **Fee Catalog**.
+
+The screen has two halves: **fee categories** on the left (for example *Tuition*, *PTA Levy*, *Uniform*) and the **fee items** in each category on the right.
+
+1. On the left, press **New** to make a category. Give it a name and press save.
+2. Click the category, then press **Add item** on the right.
+3. Give the item a name (for example *First Term Tuition, JSS 1*) and type the **amount in naira**.
+4. If the fee only applies to some children, use the boxes under **Scope** — choose a **Class level**, a **Class arm**, an **Academic year** or a **Term**. Leave them all blank if every child pays it.
+5. Save. Repeat for each fee.
+
+**Scholarships and discounts:** to give one child a discount (a percentage, a fixed amount or a full waiver), go to **Finance → Discounts**, choose the student, and press **Assign discount**.
+
+Once your fees are set, you can [bill parents](#billing-parents-for-school-fees).
+
+## Step 7. Invite your teachers and office staff
+
+You can run SchoolKit on your own, but teachers need their own accounts before they can mark registers or enter scores.
+
+**Inviting one person**
+
+1. Go to **Staff** and press **Invite staff**.
+2. Type their **Email**, and choose their **Role**:
+   - **Admin** — can do almost everything you can;
+   - **Bursar** — handles fees and money;
+   - **Teacher** — takes registers and enters scores for their own classes.
+3. Press **Send invitation**.
+
+**Important — SchoolKit does not email staff invitations for you.** After you press **Send invitation**, the screen shows an **Accept link** with a **Copy** button. Copy it and send it to the person yourself — by WhatsApp, text message or email. When they open it, they choose their own password.
+
+- The link works **once** and lasts **7 days**.
+- The link is shown **only once**. If you leave the page without copying it, you will need to send a new invitation later.
+- Until they accept, the person shows on the Staff page as **Invited (pending)**.
+
+**Inviting many teachers at once**
+
+1. On the **Staff** page, press **Import teachers (CSV)**.
+2. Download the **Template CSV**, fill in each teacher's email, first name and surname, and upload it.
+3. Check the list and press **Invite**. You will get one accept link per teacher to send yourself.
+
+## Step 8. Choose a form teacher for each class
+
+Each class can have a **form teacher**. That teacher can then take the class's daily register and write its report card comments. (You and your admins can always do both for any class yourselves.)
+
+1. Go to **Academics** in the menu, then the **Class Arms** tab.
+2. Press **Edit** beside a class.
+3. Under **Class teacher**, choose the teacher. Only staff invited as **Teacher** appear in this list.
+4. Save.
+
+## Step 9. Say who teaches what
+
+A teacher only sees the classes and subjects they have been given. **A teacher with nothing assigned logs in to an empty screen.**
+
+1. Go to **Staff** and click the teacher's name.
+2. Under **Teaching assignments**, press **Add assignment**.
+3. Choose the **Class arm**, the **Subject** and the **Academic year**. Leave the term as **Whole year** unless they are only covering for one term.
+4. Press **Add assignment**. Repeat for every class and subject they teach.
+
+## Step 10. Add parents
+
+Parents can see their children's fees, results, timetable and school messages on the **parent portal** (portal.schoolkit.ng). This step is optional — do it when you are ready.
+
+**Adding a parent to a child**
+
+1. Open the student and press the **Guardians** tab.
+2. Press **Add guardian**.
+   - If the parent is already on SchoolKit (for example for a brother or sister), choose **Link existing** and search their name or phone.
+   - Otherwise choose **Create new** and fill in name, **Relationship**, **Phone**, and their **Email** if they have one.
+3. Tick **Set as primary guardian** for the main contact, and **Allowed to pick up** if they may collect the child.
+4. Press **Create and link** (or **Link guardian**).
+
+**Adding many parents at once:** go to **Guardians** in the menu and press **Import guardians**. Fill in the template — each parent is matched to their child by **admission number**.
+
+**Giving a parent access to the parent portal**
+
+1. The parent must have an **email address** saved.
+2. On the child's **Guardians** tab, press **Invite to portal**.
+3. **SchoolKit emails the invitation to the parent for you.** The link is also shown on your screen once, with a **Copy** button, in case the parent cannot find the email (ask them to check their spam folder first).
+4. The parent opens the link, chooses a password, and can then sign in at **portal.schoolkit.ng**.
+
+The **Guardians** page in the menu lists every parent and whether they can sign in. From there you can **Invite again**, **Cancel invite**, or **Switch off access** for a parent who should no longer see anything. Switching off access signs them out straight away.
+
+## Already done for you
+
+When you signed up, SchoolKit set these up with sensible Nigerian defaults. Look them over, but you only need to change them if your school does things differently.
+
+- **Classes** — KG 1 through SSS 3, with one class each (for example JSS 1A). To add a second stream, rename a class, or set a class size, go to **Academics → Class Arms** and press **Add class arm** or **Edit**. To hide a level you do not run, deactivate its class.
+- **Grading** — First CA 20, Second CA 20 and Exam 60, with WAEC‑style grades A1 to F9. To change it, go to **Grading** in the menu. The **Scheme** tab sets the parts and their weights (they must add up to 100); the **Boundaries** tab sets the score range for each grade. Press **Save scheme** or **Save boundaries**.
+- **Subjects** — English Language, Mathematics and Civic Education. Add the rest of your subjects in **Academics → Subjects** with **Add subject**.
+
+The **Matrix** tab under Academics (which classes take which subjects) is a reference list only. Nothing stops working if you leave it empty.
 
 ---
 
-## 7. Staff and teacher assignment
+# Part 2 — Everyday jobs
 
-Go to **Staff** (`/staff`).
+## Taking the daily register
 
-### Inviting one person
+The **form teacher** normally takes the register each morning, from **Attendance** in their own menu (or the **Roll Call** button on their dashboard).
 
-Click **Invite staff**. Fill in **Email**, **Role** (Admin / Bursar / Teacher), and optionally **First name** / **Last name**. Click **Send invitation**.
+1. Pick the class and the date.
+2. Press **Mark all present**, then change the few who are **Absent**, **Late** or **Excused**.
+3. Press **Save**.
 
-**Staff invitations are not emailed automatically** — after sending, you'll see an **Accept link** with a **Copy** button. Copy it and send it to the person yourself (WhatsApp, email, however you'd normally reach them). The link expires in 7 days and works once.
+**If you need to take a register yourself** (for example when a teacher is away), go to **app.schoolkit.ng/teacher/attendance**. Owners and admins can mark any class there.
 
-> This is the opposite of guardian invitations, which *are* emailed for you — see [§11](#11-invite-guardians-to-the-parent-portal). Don't assume a teacher received anything until you've sent them the link.
+Only the class's form teacher, you and your admins can mark a class register. If a teacher cannot see their class, check [Step 8](#step-8-choose-a-form-teacher-for-each-class).
 
-### Inviting many teachers at once
+## Billing parents for school fees
 
-Click **Import teachers (CSV)** from the Staff page (or from the invite form, which cross-links to it). It's a 4-step wizard: **Upload → Map columns → Review → Import**. Download the **Template CSV** first if you're not sure of the column format (just email, first name, surname). After you upload, you'll map your CSV's columns to Email/First name/Last name, review which rows are ready, then click **Invite N teacher(s)**. Like single invites, there's no automated email — accept links are generated per person; you copy and send them.
+At the start of each term, create the term's invoices one class at a time.
 
-### Assigning a teacher to teach a subject in a class
+1. Go to **Finance → Invoices**. You will be on the **Generate** tab.
+2. Choose the **Academic year**, the **Term** and the class.
+3. If you like, set a **Due date**.
+4. Press **Preview** to see what each child will be charged. Nothing is created yet.
+5. If it looks right, press **Generate invoices**.
 
-Open a staff member's page (**Staff → [name]**). Under **"Teaching assignments"**, click **Add assignment** and choose **Class arm**, **Subject**, **Academic year**, and **Term** (leave Term as "Whole year" unless it's a short-term cover). Click **Add assignment**. This is what lets a teacher see and grade that subject/class in their gradebook — a teacher with no assignments here won't see any classes to grade.
+Children who already have an invoice for that term are skipped, so **pressing it twice will not bill anyone twice**.
 
-### Assigning a homeroom/form teacher
+To see all invoices, press the **Invoice list** tab. Click any invoice to open it.
 
-Separately from the above, a class arm can also have a **form teacher** — the person responsible for that class's report-card sign-off. Set this from the **Class teacher** dropdown on the class arm itself (**Settings → Academic → Class Arms → Edit**, see [§3](#3-academic-structure-years-terms-class-levels-class-arms)), not from the staff page. Only staff with the Teacher role can be picked. Once set, that teacher gets a **Report Cards** item in their own portal nav and can open, sign off, and submit their arm's report cards for review — you're no longer the only one who can do it.
+**If nothing is charged:** either no fees have been set for that class (see [Step 6](#step-6-set-your-school-fees)), or no children are in that class this term (see [Step 5](#step-5-put-your-students-in-their-classes)). The page tells you which.
 
----
+## When a parent pays at the school
 
-## 8. Students: add or import
+For cash, POS or bank transfer paid to the school:
 
-Go to **Students** (`/students`). Three ways to get students in, all behind the green **Add student** button in the top right — click it for one student, or open the caret beside it for the other two.
+1. Go to **Finance → Invoices** (or press **Record Fee** at the top of the Dashboard).
+2. Find the child's invoice and open it.
+3. Under **Record payment**, type the **Amount (₦)**, choose how they paid (cash, POS or bank transfer), the **Date paid**, and a **Reference** if you have one (for example the teller or POS number).
+4. Press **Record payment**.
 
-### One at a time
+The balance updates straight away, and the parent sees it too.
 
-Click **Add student**. Required: **Admission number**, **Date of birth**, **First name**, **Last name**, **Gender**; **Email** sits with them and is optional (it's what a portal invitation is later sent to). Everything else — phone, address, state of origin, nationality, religion, blood group, photo URL, medical notes — is tucked under **More details (optional)** and can be filled in later, either by you or by the student and guardian from their own portal. Click **Create student**.
+**Receipts:** every payment gets a numbered receipt with your school's logo. On the invoice, press **View receipt** or **View / print receipt** to print it or save it.
 
-### Several at once, by hand
+**Paying in parts:** on the invoice, use **Installment plan** to split the balance into several payments with their own dates.
 
-Open the caret and pick **Add several in a grid**. This opens a spreadsheet-style grid of 5 blank rows with just seven columns — admission number, first/middle/last name, date of birth, gender, and an optional email. It's built to be typed straight through:
+**A mistake?** On the invoice you can **Reverse** a payment that was recorded wrongly, or **Cancel invoice**. Both ask you for a reason, which is kept on record.
 
-- **Paste from Excel or Google Sheets.** Copy a block of cells, click the cell you want it to land in, and paste — it spreads across the columns and down the rows, adding rows as needed. Dates written `dd/mm/yyyy` and genders typed `M`/`F` are converted for you.
-- **Enter** drops to the next row in the same column; **Tab** moves across.
-- New rows appear as you type in the last one, and blank rows are ignored — so you never have to count rows or tidy up.
+## Following up unpaid fees
 
-Click **Create students** when done. Rows submit one at a time — if one fails, the ones that already succeeded stay created, and re-submitting only retries the rest.
+Go to **Finance → Debtors**. Choose the year and term to see every child who still owes money.
 
-### From a CSV
+- Tick the families you want to remind and press **Send reminder**. SchoolKit sends each family a reminder of what they owe.
+- Or press **WhatsApp** beside a family to send them a ready‑written reminder from your own WhatsApp. (WhatsApp opens without a contact chosen — pick the right parent before you send.)
 
-Open the caret and pick **Import from CSV**. Same 4-step wizard shape as the staff import: **Upload → Map columns → Review → Import**. Download the **Template CSV** if needed. On the mapping step, also set the **Date format** your CSV uses (defaults to `DD/MM/YYYY`, the Nigerian convention). Review the "Ready to import" vs. "Needs fixing" rows, then click **Commit N student(s)**.
+**Payment link on WhatsApp:** on any invoice, under **Share payment link**, you can create a link for the balance and press **Share on WhatsApp**. The parent can pay by card or transfer through it. This needs online payment to be switched on — see the next section.
 
-**Putting students straight into their classes.** The template has a **Class Arm** column — fill it in with the class name exactly as it appears under **Settings → Academic → Class Arms** (e.g. `JSS 1A`), map it on the mapping step, and each student is enrolled into that class as they import. You'll be asked which **term** to enrol them into; there's no default, so pick it deliberately — every student in the file goes into the term you choose.
+**Showing your bank account to parents:** in **Settings → Payments**, fill in **Bank transfer details** and switch on **Show these details to parents**. Parents will then see your account number in the parent portal and in reminders.
 
-This is by far the fastest way to set up a school with a lot of students: one file, and everyone lands in the right class.
+## Letting parents pay online
 
-A few things worth knowing:
-- **The column is optional.** Leave it out (or leave a cell blank) and that student is imported without a class, exactly as before. The final screen tells you how many are unplaced and links you to where you can place them.
-- **Class names must be unique.** If two classes share a name, the import can't tell which one you meant and will flag those rows rather than guess. Rename one under **Settings → Academic → Class Arms**.
-- **Spelling must match**, but capitals don't — `jss 1a` and `JSS 1A` both work; `JSS1A` doesn't.
+Cash, POS and bank transfer work from day one. **Online payment by card is optional and switched off until we connect your school.** Until then, any online **Pay** button tells the parent to pay at the school instead — nobody can be charged by mistake.
 
-> Importing a student doesn't link a guardian — that's a separate step, from each student's own page (see [§11](#11-invite-guardians-to-the-parent-portal)). The **Add student** and **Add several in a grid** paths above also don't enrol into a class; for those, use bulk enrollment at **/enrollments/bulk** afterwards.
+We connect it for you through Paystack, a Nigerian payment company:
 
----
+1. Go to **Settings → Payments**.
+2. Fill in **Request Paystack setup**:
+   - **Business name** — the name parents will see when they pay;
+   - your school's **Bank** and **Account number** (10 digits);
+   - **Name on the account** — copy it exactly from a bank statement, because the bank checks it;
+   - a **Finance contact** with their email and phone.
+3. Press **Send request**.
 
-## 9. Fee catalog
+We set it up and tell you when it is done. **There is nothing to copy or paste** — when it is ready, the same page says **Your Paystack subaccount is ready** and online payment is switched on.
 
-Go to **Finance → Fee Catalog** (`/finance/fees`). It's also linked from the
-Settings hub, and the old `/settings/finance/fees` URL redirects here.
+- **All the money goes straight to your school's bank account.** SchoolKit takes nothing. Paystack charges its normal fee.
+- If we cannot finish the setup (usually because the account name does not match the bank's records), the page tells you why so you can correct it and send it again.
+- You can switch online payment off at any time with **Accept Paystack payments** on the same page, then press **Save**.
+- When a parent pays online, the invoice updates by itself. You do not need to record it.
 
-This is a two-panel screen: **Categories** on the left, that category's **items** on the right.
+## Sending a message to parents or staff
 
-1. Click **New** to create a category — e.g. `Tuition`, `PTA Levy`. Fill in **Name** and an optional **Description**.
-2. Select the category, then click **Add item**. Fill in:
-   - **Name** — e.g. `First Term Tuition`
-   - **Amount (₦ naira)** — type the amount in naira; schoolkit stores it as kobo internally, the page shows you the conversion
-   - **Scope (all optional)** — restrict the item to a specific **Class level**, **Class arm**, **Academic year**, and/or **Term**. Leave all four blank for a school-wide fee.
+Go to **Announcements** in the menu and press **New announcement**.
 
-You need at least one category and one item before invoice generation has anything to charge.
+1. Choose **Who sees it**: everyone, parents only, staff only, or one class's parents and students.
+2. Write your title and message.
+3. Only tick **Urgent** for real emergencies — urgent messages go out even at night and will wake phones.
+4. Press **Send announcement**.
 
-*(Optional, and can be set up any time: **Settings → Finance → Discounts** lets you manually assign a percentage, fixed amount, or full waiver to an individual student against a specific fee item or category, for a term, a full session, or indefinitely.)*
+**Announcements cannot be unsent**, so read it through first. Parents see them in the parent portal under **From the school**.
 
----
+## The school calendar
 
-## 10. Generate invoices
-
-Go to **Finance → Invoices** (`/finance/invoices`), **Generate** tab (the default tab).
-
-1. Pick **Academic year**, then **Term**, then **Class arm**.
-2. Optionally set a **Due date**.
-3. Click **Preview** to see, per student, what would be charged — this doesn't create anything yet.
-4. Click **Generate invoices**. You'll see a result like *"Done — N invoice(s) created, N skipped (already issued)."* (Skipped means that student already has an invoice for this term/scope — generating again won't double-charge.)
-
-Switch to the **Invoice list** tab to see everything generated, filterable by status (Draft, Issued, Partially paid, Paid, Overdue, Cancelled, Refunded). Click an invoice to open it.
-
-**On an individual invoice page** you can:
-- **Record payment** — for cash, POS, or bank transfer received at the school. Enter **Amount (₦)**, **Method**, **Date paid**, and an optional **Reference**, then click **Record payment**. Use this for money that came in outside the app; payments made online through Paystack record themselves.
-- **Pay via Paystack** — click **Pay outstanding balance** to send the parent-facing link, or use it yourself. This charges real money and the invoice updates on its own once payment goes through (see the [FAQ](#troubleshooting--faq)). *This button only works once your school is connected to Paystack — see [Accepting online payments](#accepting-online-payments-connecting-paystack) directly below.*
-- Set up an **installment plan** if the family wants to pay in parts.
-- **Cancel invoice** or **Reverse** an individual payment (with a required reason), if needed.
-
-### Accepting online payments: connecting Paystack
-
-**Online payment is off by default for every school, including yours.** Until it's connected, **Pay via Paystack** on an invoice and the **Pay** button on the parent portal will both refuse, with a message telling you to use a manual method instead. Cash, POS, and bank transfer work from day one and never depend on any of this — connecting Paystack is optional, and you can run the whole term without it.
-
-Connecting is an **assisted setup**: we do the Paystack side for you, and you paste one code back in. It is not something you can complete on your own, and a subaccount you create in your own Paystack dashboard will **not** work here — the code has to be one we issue.
-
-1. **Send us the request from inside schoolkit.** Go to **Settings → Payments** (`/settings/finance/payments`) and fill in the **Request Paystack setup** form:
-   - **Business name** — exactly as it should appear to parents on the Paystack checkout page and on your settlement statements. We prefill your school's name; change it if your registered banking name differs.
-   - **Bank** and **account number** — the school's own account, in the school's name. Ten digits.
-   - **Name on the account** — Paystack checks this against the bank, and if it doesn't match exactly setup fails. Copy it from a bank statement rather than from memory.
-   - **A contact name, email, and phone** for whoever handles school finances.
-
-   Submitting through the app rather than by email is deliberate: your account details go straight into schoolkit over a secure connection instead of sitting in an inbox. If you'd rather talk it through first, email **payments@schoolkit.ng** — but don't put your account number in that email; we'll point you back to the form.
-2. **We create the subaccount** and point it at your bank account, with a **0% platform cut** — 100% of every payment settles to you. Paystack's own transaction fee still applies, exactly as it would if you used Paystack directly; schoolkit takes nothing on top.
-3. **We send you back a subaccount code.** It looks like `ACCT_xxxxxxxxxx`. It also appears on the same **Settings → Payments** page once we've set it up, so losing the email isn't a problem — there's a **Fill it in for me** button that drops it straight into the field.
-4. **Paste it in and save.** Put the code in **Paystack subaccount code**, switch **Accept Paystack payments** on, and click **Save**. The toggle stays disabled until a code is entered — that's deliberate.
-5. **Read the confirmation message.** On save, schoolkit checks the code with Paystack there and then, and shows *"Connected to "[your business name]" on Paystack."* **Check that it's your school's name.** This is your one chance to catch a valid code that belongs to somebody else — if the name isn't yours, clear the field, save again, and tell us. The name is shown only at that moment; it won't be there when you come back to the page.
-
-A few things worth knowing:
-
-- **The money never passes through schoolkit.** Paystack settles it from the parent straight to your school's bank account, on Paystack's normal settlement schedule.
-- **You can turn it off at any time** — switch **Accept Paystack payments** off and save. Recording manual payments is unaffected.
-- **If you see *"Could not find a Paystack subaccount with code …"***, the code was either mistyped or isn't one we issued. Check it against the email we sent you, or use **Fill it in for me** on the same page. Don't create a subaccount in your own Paystack dashboard to work around it — a code from a different Paystack account can't work here, and that error is exactly what it looks like.
-- **If we can't complete your request** (usually the account name not matching the bank's records), the page shows the reason and the form comes back so you can correct the details and send it again.
+Go to **Event Calendar** in the menu and press **Add event** to add a PTA meeting, open day, mid‑term break and so on. Everyone at your school can see the calendar, including parents. Nigerian public holidays are already on it; you can hide any your school does not observe.
 
 ---
 
-## 11. Invite guardians to the parent portal
+# Part 3 — Exams, results and report cards
 
-Open the student's page and go to the **Guardians** tab.
+Results move through these stages, one class at a time:
 
-### Adding a guardian to a student
+**Teachers enter scores → teachers sign off each subject → report cards are built → form teacher reviews → you approve → you release to parents.**
 
-Click **Add guardian**. You get two modes:
-- **Link existing** — search an already-recorded guardian by name or phone and link them to this student too (useful for siblings).
-- **Create new** — fill in **First name**, **Last name**, **Relationship** (Father, Mother, Guardian, Uncle, Aunt, Grandparent, Sibling, Other), **Phone**, and optionally **Email**, **Occupation**, **Employer**, **Address**, **Notes**.
+## Entering scores
 
-Tick **Set as primary guardian** and/or **Allowed to pick up** as appropriate, then click **Link guardian** or **Create and link**.
+Subject teachers enter scores from **Gradebook** in their own menu. They only see the classes and subjects assigned to them ([Step 9](#step-9-say-who-teaches-what)).
 
-### Inviting them to the portal
+1. Pick the class and subject.
+2. Type each child's scores (First CA, Second CA, Exam — or whatever your grading scheme uses). If a test was marked out of a different total, use **Out of** and SchoolKit converts it.
+3. Press **Save**.
+4. When every child has every score, press **Sign off column**. This locks the scores. If a correction is needed later, press **Re-open to edit**.
 
-Once a guardian has an email on file, click **Invite to portal** on their row. **schoolkit emails the invitation to the guardian automatically** — you don't need to send it yourself.
+**You can enter scores yourself** from **Gradebook** in your menu: choose a class, then press **Open gradebook →** beside a subject.
 
-The accept link is also shown to you on screen with a **Copy** button, as a backup for when a guardian says they never got the email (check their spam folder first). **That on-screen link is shown only once** — if you navigate away before copying it, just send a fresh invitation.
+## Making the report cards
 
-> **Text-message invites aren't available yet.** There's an SMS toggle under **Settings → Notifications**, but our SMS provider account is still being set up, so switching it on won't send anything for now. Email invitations work and are unaffected. We'll let you know when SMS is live.
+Go to **Report Cards** in the menu, choose the term and class, and press **Open board →**.
 
-> **Staff invitations are different** — those are *not* emailed automatically, and you do have to copy the link and send it yourself. See [§7](#7-staff-and-teacher-assignment).
+1. Press **Build report cards**. SchoolKit gathers every subject's scores into one report card per child.
+2. **Form teacher's comment** — the form teacher opens each card and writes a comment. They can also press **Draft comments** to have SchoolKit suggest a comment for each child; every suggestion must be read, edited if needed, and **Accept**ed by the teacher before it goes on the card. (This uses AI, which must be switched on for your school.)
+3. The form teacher presses **Form-review arm** to send the class to you.
+4. You open a card and write the **Principal's remark**. One remark is used for the whole class.
+5. In the **last term of the year**, set each child's **promotion status** (promoted, repeat and so on) on the board.
+6. Press **Approve arm**.
 
-### Bulk guardian import
+**Each of these buttons acts on the whole class at once**, not one child at a time.
 
-If you have many guardians to add at once, click **Bulk import guardians from CSV** on the Guardians tab. Same 4-step wizard pattern (**Upload → Map columns → Review → Import**), matching guardians to students by **admission number**.
+**Showing class position:** in **Settings → Report cards** you can choose whether position in class appears on printed report cards, and whether parents see it on screen.
 
----
+## Releasing results to parents
 
-## 12. The guardian (parent) portal
+When a class is approved, press **Release arm**. You will be asked **How families reach these results**:
 
-This is a separate app from the admin/teacher side, at the portal's own address (ask if you don't know your school's portal URL).
+- **Free** — parents see the results in the parent portal straight away.
+- **Result PIN required** — parents need a result PIN card from the school to open them (see below).
 
-1. The guardian opens the accept link you sent, sets a password, ticks the NDPR consent checkbox, and clicks **Set password and continue**.
-2. From then on, they log in at the portal's **Log in** page with **Email** / **Password**.
-3. They land on **Your children** — a list of the students linked to them. Selecting a child shows that child's **Invoices**, each with a **Total due**, **Paid so far**, and **Balance**.
-4. If a balance is owed, a **Pay ₦[amount]** button appears — it always charges the full outstanding balance (there's no partial-amount entry) and redirects to Paystack checkout. This only works if your school is [connected to Paystack](#accepting-online-payments-connecting-paystack); if it isn't, the button turns the parent away with a message asking them to pay at the school instead, so connect it before you tell parents the portal can take payments.
+Press **Release** to confirm. The printable report cards (PDF) are then prepared. A **Download PDF** button appears on each card when it is ready; print them from there.
 
----
+**Found a mistake after release?** The owner can press **Reopen arm**. It asks for a reason and sends the whole class back to the start. Parents may already have seen the first version.
 
-## 13. Report cards: build → score entry → sign-off → approval → release
+## Result PIN cards
 
-This spans two roles and two screens.
+If you release results with **Result PIN required**, go to **Result Checker** in the menu.
 
-### Score entry (teacher side, `/teacher/gradebook`)
+1. Under **Generate a batch**, choose the term, **How many PINs**, and **Uses per PIN**. Press **Generate PINs**.
+2. **The PINs are shown only once.** Press **Download CSV** or **Print cards** straight away. SchoolKit cannot show them again.
+3. Sell or hand out the cards. Parents enter the child's **admission number** and the 12‑digit PIN on your school's result checker page (the address is printed with the cards), or in the parent portal.
 
-A teacher with a subject assignment (see [§7](#7-staff-and-teacher-assignment)) picks a class and subject from their **Gradebook**, enters scores per component (CA1, CA2, Exam, etc. — as defined by your grading scheme), and clicks **Save**. Once every student has every score filled in, **Sign off column** becomes clickable — this locks the column against further edits (a **Re-open to edit** button appears if a correction is needed later, which clears the sign-off). The form teacher (or you) can then click **Recompute positions** to rank the class.
-
-### Building and progressing the report cards
-
-Owner/admin work from **Report Cards** in the admin sidebar (`/report-cards`); a class's form teacher works from the same **Report Cards** item in their own portal nav (`/teacher/report-cards`) — same picker and workflow board either way, just scoped to the arms you're allowed to touch. Pick a term and class arm from the picker to open that class's workflow board.
-
-1. **Build report cards** — pulls together every subject's signed-off (or in-progress) scores into one report card per student. Status starts at **Draft**.
-2. Open an individual card to write the **Form teacher's comment** (editable while the card is Draft or "Subjects reviewed").
-3. Click **Form-review arm** — moves the whole arm's cards to **Form reviewed**.
-4. As owner/admin, open a card and write the **Principal's remark** (this one field applies to every card in the arm at once), then click **Approve arm** — moves to **Principal approved**.
-5. Click **Release arm** — moves to **Released** and starts generating PDFs in the background. Once ready, **Download PDF** appears per card (and **Regenerate** if one fails).
-6. If something needs correcting after the fact, **Reopen arm** (owner only) rolls the whole arm back to Draft — it asks for a reason, which is logged.
-
-> Every one of these stage-transition buttons (Build, Form-review, Approve, Release, Reopen) acts on the *whole class arm at once*, not one student at a time.
-
-> AI-assisted comment drafting is not in the app yet — per schoolkit's own rule, when it ships it will always require this same manual sign-off before anything is final. For now, every comment is typed by a person.
+If a card is lost or stolen, use **Void one PIN** with the serial number printed on the card. If you forget to download a batch, use **Void batch** and make a new one.
 
 ---
 
-## Troubleshooting & FAQ
+# Part 4 — Starting a new term or a new session
 
-**The app is unusually slow the first time I open it after a while.**
-This is a known, current limitation: the database goes to sleep after about 5 minutes of no activity to save cost, and the very first request after that has to wake it back up, which can take longer than normal. It only affects the first load — everything after that is normal speed until it goes idle again. If a page seems stuck, wait a few extra seconds before assuming something's broken.
+## A new term
 
-**Can parents actually pay online — is it real money?**
-Yes, once your school is connected. Online payment through Paystack is live: a parent clicking **Pay** on the portal is charged for real, the money settles to your school's own bank account, and the invoice balance updates by itself — nobody has to record it by hand.
+1. **Set the new term as current.** Go to **Academics → Years**, press **View terms** beside the year, and press **Set current** beside the new term. Check its dates while you are there.
+2. **Move the children into the new term.** Go to **Enrollments** and press **Promote students**. Choose to move students **from** last term **Into** the new term, and press **Show me the list**. Within the same session, everyone stays in their class. Check the list and press **Review and approve**, then **Apply**.
+3. **Bill for the new term** — see [Billing parents for school fees](#billing-parents-for-school-fees).
 
-**It doesn't work until you connect your school, though, and that's a one-time step we do with you** — see [Accepting online payments](#accepting-online-payments-connecting-paystack). Until then the **Pay** buttons refuse rather than charge anyone, so nothing can go wrong by leaving it unconnected.
+## A new session
 
-Paying online is optional, not the only way. Parents who'd rather pay at the school office by cash, POS, or bank transfer can carry on doing exactly that, and plenty will:
-- On any invoice's page (**Finance → Invoices → [invoice]**), use the **Record payment** section to log cash, POS, or bank transfer payments as they come in. This immediately updates that invoice's balance and the guardian's view — it doesn't depend on Paystack at all.
-- Both routes land in the same place. An invoice doesn't care how it got paid, and you can mix the two — a parent can pay part at the office and the rest online.
+1. **Create the new academic year.** Go to **Academics → Years** and press **Add academic year**. Fill in the **Label** (for example `2027/2028`), **Start date** and **End date**, then press **Create year**.
+2. **Add its three terms.** Press **View terms**, then **Add term** for each of First, Second and Third Term, with their dates. Press **Set current** on First Term.
+3. **Move everyone up a class.** Go to **Enrollments → Promote students**. Move students **from** last session's Third Term **Into** the new First Term, and press **Show me the list**. Each class moves up — Primary 1 into Primary 2, JSS 1A into JSS 2A and so on.
+   - For a child who is repeating, choose **Repeat**. For a child who is leaving, choose **Leave out**. You can also do a whole class at once.
+   - If a class does not exist yet in the level above, SchoolKit offers to create it.
+   - Press **Review and approve**, then **Apply**.
+4. **Children who have left or finished:** open the student and use **Withdraw student** or **Graduate student**. They leave the active list but their records are kept.
+5. **Bill for the new term** as usual.
 
-**A teacher can't see their class in the gradebook.**
-Check **Staff → [teacher] → Teaching assignments** — they need at least one assignment there (class arm + subject) for the current term/year. No assignment, no visible class.
+---
 
-**Invitation links (staff or guardian) — where do they go, and can I get one back?**
-The two work differently:
+# What parents see
 
-- **Guardian invitations are emailed automatically.** The guardian gets the accept link in their inbox as soon as you click **Invite to portal**. (There's an SMS toggle under **Settings → Notifications**, but text messages aren't live yet — see [§11](#11-invite-guardians-to-the-parent-portal).)
-- **Staff invitations are not emailed.** When you invite an admin, bursar, or teacher, the accept link is shown to you on-screen with a **Copy** button — copy it and send it to them yourself, however you'd normally reach them.
+Parents sign in at **portal.schoolkit.ng** with the email and password they chose from your invitation. They see:
 
-In both cases the on-screen link is shown **only once**. If you navigate away before copying it, you can't retrieve that exact link again — send a fresh invite instead (you'll get an "invitation already pending" notice if one is still outstanding). For guardians that's rarely a problem, since they were emailed the link anyway.
+- **Your children** — each child linked to them, with their class.
+- **Fees** — every invoice with **Total due**, **Paid so far** and the balance. If online payment is on, a **Pay** button pays the full balance by card. If you have shared your bank details, they see your account number too.
+- **Results** — report cards you have released (with a result PIN, if you chose that).
+- **Class timetable**, **School calendar**, and messages **From the school**.
+- **Weekly updates**, if you have switched them on (see below).
 
-**Something looks broken or won't save.**
-Refresh the page first — some screens (like the class-subject Matrix) warn you before you navigate away if you have unsaved changes, so check for that. If it persists, note the exact page and what you clicked, and reach out for support.
+Parents can reset their own password from **Forgot password?** on the portal sign‑in page.
+
+**Your school's result checker page** works without signing in — parents only need the admission number and a PIN card.
+
+**The SchoolKit phone app:** there is also a SchoolKit app for phones. We will let you know when it is ready for your parents; until then, the parent portal website is the way in.
+
+---
+
+# Who does what in your school
+
+- **You (the owner)** — everything, including settings, approving and releasing results, and reopening a class's report cards.
+- **Admin** — almost everything the owner can do. Good for a principal, vice‑principal or school secretary.
+- **Bursar** — Finance only: fees, invoices, recording payments, receipts, debtors, discounts, expenses and preparing payroll. Bursars do not see student records, staff records, results or settings. Reversing a payment and sending salary transfers are kept for you and your admins.
+- **Teacher** — their own classes only: registers (form teachers), scores for the subjects they teach, report card comments (form teachers), homework, lesson plans and their timetable.
+- **Parents** — only their own children, on the parent portal.
+
+**For your teachers, in short:** sign in at **app.schoolkit.ng/login**, then use the menu on the left — **Attendance** for the morning register, **Gradebook** for scores, **Report Cards** for form teachers' comments, **Homework** to set homework that parents can see.
+
+---
+
+# More things SchoolKit can do
+
+You do not need any of these to get started. Use them when you are ready.
+
+- **Timetable** — first set your periods in **Settings → Bell schedule**, then build each class's timetable under **Timetable**. Teachers see their own lessons, and parents see their child's class timetable.
+- **Homework** — teachers set homework from **Homework** in their menu. The class and their parents can see it the same day.
+- **Behaviour records** — on a student's **Behaviour** tab, staff can record a **Commendation** or a **Concern**. These are for staff only; parents do not see them.
+- **Expenses** — record the school's spending under **Finance → Expenses**, with receipts.
+- **Payroll** — run monthly salaries under **Finance → Payroll**.
+- **Finance dashboard** — **Finance** in the menu shows how much has been billed and collected this term, class by class.
+- **Reports** — shows which classes are behind on registers and score entry, so you know who to follow up.
+- **Insights** — answers questions such as "Which students are at risk of failing?" and "Where is attendance worst?".
+- **Weekly parent updates** — in **Settings → Weekly parent updates**, SchoolKit can send each parent a short note every Monday about their child's week (new results, absences, lateness). It is off until you switch it on, and needs AI to be switched on.
+- **Lesson plans, curriculum, question bank and exam papers** — teachers can upload your schemes of work, get lesson plans drafted, keep a bank of exam questions, and print exam papers (with up to four versions).
+- **Online exams (CBT)** — children sit exams on your computer lab. This is **not yet switched on**. If you would like to use it, contact the SchoolKit team **at least four weeks** before your exams.
+- **Extra security** — in **Settings → Security** you can turn on two‑factor sign‑in, so a code from your phone is needed as well as your password.
+
+**About the AI features** (scanning registers, drafting comments, lesson plans, question drafting, weekly updates): they are switched off for a new school. Ask the SchoolKit team to switch them on. Nothing written by AI ever goes on a report card without a teacher accepting it. **Settings → AI usage** shows how much you have used this month.
+
+---
+
+# Problems and questions
+
+**A teacher logs in and sees no classes.**
+They have not been given any classes yet. Go to **Staff**, click their name, and add their **Teaching assignments** ([Step 9](#step-9-say-who-teaches-what)). For the daily register, they must also be the class's form teacher ([Step 8](#step-8-choose-a-form-teacher-for-each-class)).
+
+**A class shows no children, or a register / invoice run / report card is empty.**
+The children are on your student list but not in that class **for this term**. See [Step 5](#step-5-put-your-students-in-their-classes). At the start of a term, use **Promote students** ([Part 4](#a-new-term)).
+
+**I lost a staff invitation link.**
+Staff links are shown only once and are not emailed. Send a new invitation from **Staff → Invite staff**. If it says an invitation is already waiting, the old one is still valid for up to 7 days — or ask the teacher to look for the link you sent before.
+
+**A parent did not get their invitation.**
+Ask them to check their spam or junk folder first. Then, on the **Guardians** page, press **Invite again** — this sends a new email, and the old link stops working.
+
+**A parent forgot their password.**
+They can press **Forgot password?** on the parent portal sign‑in page.
+
+**Can parents really pay online? Is it real money?**
+Yes — once we have connected your school ([Letting parents pay online](#letting-parents-pay-online)). The money goes to your school's bank account and the invoice updates by itself. Until then, parents pay at the school as usual and you record it.
+
+**Can I mix cash and online payments?**
+Yes. A parent can pay part at the office and the rest online. The invoice adds them up.
+
+**Can I send text messages (SMS) to parents?**
+Not yet. There is an SMS switch in **Settings → Notifications**, but text messages are still being set up on our side, so switching it on does not send anything yet. Email works.
+
+**I entered something wrong.**
+Most things have an **Edit** button beside them. Payments are reversed (not deleted) from the invoice page, so your records stay honest. Report cards are corrected by reopening the class.
+
+**The first page is slow to open in the morning.**
+If nobody has used SchoolKit for a little while, the first page can take several seconds to open while it wakes up. After that it is normal speed. Please wait a moment before pressing again.
+
+**It says "Could not reach the server".**
+Check your internet connection, then try again in a moment.
+
+**Something else is not working.**
+Refresh the page first. If it still does not work, write down which page you were on and which button you pressed, and contact the SchoolKit team.

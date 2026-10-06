@@ -35,14 +35,21 @@ const markdownComponents = {
 
 // Server component, no data fetching: this is genuinely just "render this
 // static file," so there's nothing here that needs "use client".
+//
+// Body text is deliberately large (prose-base, prose-lg from md up): the
+// guide's reader is a school owner who may not be comfortable on a computer,
+// and was prose-sm until 2026-10-06. The guide itself uses no blockquotes —
+// typography's blockquote is a thick left border, which the no-accent-borders
+// rule forbids — and no tables, which react-markdown cannot render without
+// remark-gfm.
 export default function HelpGuidePage() {
   return (
     <div className="mx-auto w-full max-w-3xl">
       <article
         className="
-          prose prose-sm max-w-none dark:prose-invert
+          prose prose-base max-w-none md:prose-lg dark:prose-invert
           prose-headings:font-serif prose-headings:font-medium
-          prose-a:text-primary
+          prose-a:text-primary prose-li:my-1
         "
       >
         <ReactMarkdown rehypePlugins={[rehypeSlug]} components={markdownComponents}>

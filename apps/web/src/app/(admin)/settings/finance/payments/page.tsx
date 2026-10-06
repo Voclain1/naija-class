@@ -127,7 +127,7 @@ export default function PaymentsSettingsPage() {
         contactPhone: contactPhone.trim(),
       });
       setRequest(created);
-      toast.success("Request sent. We'll email you the subaccount code shortly.");
+      toast.success("Request sent. We'll let you know when your school is connected.");
     } catch (e) {
       toast.error(
         e instanceof ApiError ? e.message : "Couldn't send the request — try again.",
