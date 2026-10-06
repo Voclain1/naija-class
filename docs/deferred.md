@@ -163,9 +163,10 @@ the module doc or the PR, then link it here.
   - Needs a teacher-safe read, probably built from
     `TeacherScopeService.getMyScope`.
   - Do not widen `setup-state`.
-- [ ] **The onboarding guide implies a class-subject matrix dependency that
-  does not exist.** No workflow reads `ClassSubject`. Rewrite
-  `docs/onboarding-guide.md`.
+- [x] **The onboarding guide implies a class-subject matrix dependency that
+  does not exist.** Done 2026-10-06: `docs/onboarding-guide.md` was rewritten
+  for a non-technical owner, ordered by the dashboard setup checklist, and the
+  Matrix is now described as an optional reference list.
 - [ ] **Report cards built after every subject is signed off stay DRAFT.**
   They say "subject teachers need to sign off" because the cascade ran before
   the cards existed. Form review recovers it.
