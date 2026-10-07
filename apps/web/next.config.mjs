@@ -1,3 +1,12 @@
+import { sessionCookieConfigProblem } from "./session-cookie-config.mjs";
+
+// Refuse a production build that would sign every member of staff out — see
+// session-cookie-config.mjs.
+const sessionCookieProblem = sessionCookieConfigProblem(process.env);
+if (sessionCookieProblem) {
+  throw new Error(`Staff session cookie misconfigured: ${sessionCookieProblem}`);
+}
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,

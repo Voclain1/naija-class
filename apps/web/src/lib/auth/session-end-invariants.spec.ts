@@ -91,8 +91,13 @@ describe("the forced navigation marks itself before it starts", () => {
     expect(mark).toBeLessThan(replace);
   });
 
-  it("still clears the stored token — suppression must not resurrect the credential", () => {
-    expect(provider).toContain("clearStoredToken()");
+  it("holds no credential to resurrect — the session lives only in the HttpOnly cookie", () => {
+    // Until 2026-10-05 this asserted clearStoredToken() ran here. The page no
+    // longer holds the token at all (docs/deferred.md item 1), which is the
+    // stronger form of the same guarantee: suppression cannot keep a
+    // credential alive in memory because there is none.
+    expect(provider).not.toMatch(/StoredToken|activeToken/);
+    expect(provider).not.toMatch(/\btoken:\s/);
   });
 });
 

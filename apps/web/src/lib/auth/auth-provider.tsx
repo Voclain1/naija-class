@@ -13,13 +13,7 @@ import type {
   TotpChallengeInput,
 } from "@school-kit/types";
 
-import {
-  AUTH_UNAUTHORIZED_EVENT,
-  ApiError,
-  type UnauthorizedEventDetail,
-  clearStoredToken,
-  setStoredToken,
-} from "../api-client";
+import { AUTH_UNAUTHORIZED_EVENT, ApiError, type UnauthorizedEventDetail } from "../api-client";
 import { identify, resetIdentity, track } from "../observability/events";
 import {
   loginRequest,
@@ -41,7 +35,6 @@ export interface AuthState {
   school: SchoolMeDto | null;
   roles: AuthMeRoleDto[];
   permissions: string[];
-  token: string | null;
 }
 
 export interface AuthContextValue extends AuthState {
@@ -76,19 +69,17 @@ const initialState: AuthState = {
   school: null,
   roles: [],
   permissions: [],
-  token: null,
 };
 
 export const AuthContext = createContext<AuthContextValue | null>(null);
 
-function applyMeToState(me: MeResponse, token: string): AuthState {
+function applyMeToState(me: MeResponse): AuthState {
   return {
     status: "authed",
     user: me.user,
     school: me.school,
     roles: me.roles,
     permissions: me.permissions,
-    token,
   };
 }
 
@@ -99,11 +90,10 @@ function guestState(): AuthState {
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AuthState>(initialState);
 
-  // Cold-boot hydration. GET /api/auth/session reads the sk_session HttpOnly
-  // cookie server-side and returns the raw token. We store it in the
-  // module-level activeToken (via setStoredToken) so subsequent apiFetch
-  // calls can attach it as a bearer header. Then we call /auth/me to confirm
-  // the token is still valid and load user/school/roles.
+  // Cold-boot hydration. GET /api/auth/session says whether a session cookie
+  // exists (and moves a pre-switch-over cookie onto the shared domain); then
+  // /auth/me, which the browser sends with that cookie, confirms it is still
+  // valid and loads user/school/roles. The page never sees the token.
   //
   // If the session cookie is absent or /auth/me rejects, we drop to `guest`
   // quietly — no redirect event, no toast. The auth guard will redirect.
@@ -111,21 +101,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     let cancelled = false;
 
     async function hydrate() {
-      let token: string | null = null;
+      let hasSession = false;
       try {
-        token = await sessionRequest();
+        hasSession = await sessionRequest();
       } catch {
         // /api/auth/session unavailable — treat as no session.
       }
-      if (!token) {
+      if (!hasSession) {
         if (!cancelled) setState(guestState());
         return;
       }
-      setStoredToken(token);
       try {
         const me = await meRequest();
         if (cancelled) return;
-        setState(applyMeToState(me, token));
+        setState(applyMeToState(me));
         identify(me.user.id, {
           schoolId: me.school.id,
           schoolStatus: me.school.status,
@@ -133,7 +122,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         });
       } catch (error) {
         if (cancelled) return;
-        clearStoredToken();
         // Keep the reason the API just gave us. This call runs with
         // notifyOnUnauthorized:false, so it never fires the eviction event and
         // never redirects — RequireAuth does that, and it cannot know why on
@@ -158,14 +146,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   // Mid-session 401 handling. When apiFetch sees a 401 on any authed call it
-  // clears the in-memory token and dispatches AUTH_UNAUTHORIZED_EVENT with
+  // dispatches AUTH_UNAUTHORIZED_EVENT with
   // the API's error code. We listen here, drop to guest, and redirect to a
   // login screen that can SAY WHY and REMEMBER WHERE (F-10) — previously
   // this was a bare router.replace("/login"), which is why an expiry and a
   // deliberate sign-out were indistinguishable.
   useEffect(() => {
     const handler = (event: Event) => {
-      clearStoredToken();
       setState(guestState());
 
       const code = (event as CustomEvent<UnauthorizedEventDetail | undefined>).detail?.code;
@@ -219,12 +206,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return response;
       }
 
-      // Full session: the proxy set the sk_session cookie. Also store the
-      // token in-memory for immediate apiFetch use (e.g. the /auth/me call
-      // that follows, which goes directly to NestJS with the bearer header).
-      setStoredToken(response.token);
+      // Full session: the proxy set the sk_session cookie, which the /auth/me
+      // call below carries to the API.
       const me = await meRequest();
-      setState(applyMeToState(me, response.token));
+      setState(applyMeToState(me));
       identify(me.user.id, {
         schoolId: me.school.id,
         schoolStatus: me.school.status,
@@ -245,9 +230,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (response.requiresTwoFactor) {
       throw new Error("Unexpected 2FA response from challenge endpoint.");
     }
-    setStoredToken(response.token);
     const me = await meRequest();
-    setState(applyMeToState(me, response.token));
+    setState(applyMeToState(me));
     identify(me.user.id, {
       schoolId: me.school.id,
       schoolStatus: me.school.status,
@@ -269,11 +253,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const signup = useCallback(async (input: SignupOwnerInput) => {
-    const response = await signupOwnerRequest(input);
-    // Proxy set the sk_session cookie. Also seed in-memory for immediate use.
-    setStoredToken(response.token);
+    await signupOwnerRequest(input);
+    // The proxy set the sk_session cookie; /auth/me carries it.
     const me = await meRequest();
-    setState(applyMeToState(me, response.token));
+    setState(applyMeToState(me));
     identify(me.user.id, {
       schoolId: me.school.id,
       schoolStatus: me.school.status,
@@ -292,7 +275,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch {
       // Server-side logout failure is non-fatal — clear local state regardless.
     }
-    clearStoredToken();
     resetIdentity();
     setState(guestState());
     // FULL-DOCUMENT navigation, not router.replace.

@@ -40,9 +40,16 @@ the module doc or the PR, then link it here.
   - [ ] **Owner:** add a DNS CNAME `api` → `school-kit-api.fly.dev`, and an
     `api.schoolkit.ng` certificate on the Fly app (Certificates in the
     dashboard).
-  - [ ] **Web switch-over** (next PR, merged only once the address answers).
-    `apiFetch` sends `credentials: "include"` with no token. The token is
-    removed from every response. The cookie gets `Domain=schoolkit.ng`.
+  - [ ] **Web switch-over: built, merge only after the owner's steps**
+    (`docs/runbooks/web-session-cookie.md`).
+    - `apiFetch` sends `credentials: "include"` and no token.
+    - The token is stripped from login, signup and 2FA responses.
+      `/api/auth/session` answers `{ authenticated }` and moves a
+      pre-switch-over cookie onto `Domain=schoolkit.ng`.
+    - A production build refuses to start without `SESSION_COOKIE_DOMAIN`
+      and an `NEXT_PUBLIC_API_URL` under it.
+    - `e2e/tests/web-session-cookie.spec.ts` proves no API request carries
+      `Authorization` and no readable response carries the token.
 - [ ] **Paystack mobile checkout has never been round-tripped**, and does not
   return the parent to the app. `PortalPaymentsService.initiate` hard-codes
   the callback to `${PORTAL_BASE_URL}/payments/callback`, so a parent
