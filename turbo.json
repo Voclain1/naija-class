@@ -9,6 +9,7 @@
     },
     "build": {
       "dependsOn": ["^build"],
+      "env": ["SESSION_COOKIE_DOMAIN", "VERCEL_ENV", "VERCEL_PROJECT_PRODUCTION_URL"],
       "outputs": ["dist/**", ".next/**", "!.next/cache/**"]
     },
     "lint": {
