@@ -94,7 +94,9 @@ export function initiatePayment(
 ): Promise<PaystackInitResponseDto> {
   return apiFetch<PaystackInitResponseDto>(
     `/portal/students/${encodeURIComponent(studentId)}/invoices/${encodeURIComponent(invoiceId)}/pay`,
-    { method: "POST" },
+    // "app": Paystack returns the browser to a portal page that hands straight
+    // back to schoolkit://payments/callback (see lib/payments/checkout.ts).
+    { method: "POST", body: { returnTo: "app" } },
   );
 }
 
