@@ -19,37 +19,20 @@ the module doc or the PR, then link it here.
 
 ## 1. Up next (owner's order, 2026-10-05)
 
-- [ ] **Web session token still reaches JavaScript.** PR #70 already moved web
-  auth to the `sk_session` HttpOnly cookie, and the token is no longer in
-  `localStorage`. But it still crosses into page JavaScript in two places:
-  - `login`, `signup-owner` and `2fa/challenge` return it in the JSON body;
-  - cold-boot hydration reads it back from `GET /api/auth/session`.
-
-  `apiFetch` keeps it in memory and sends it as a bearer token, so an
-  injected script could copy it.
-
-  **Decided 2026-10-05 (owner):** the API gets its own schoolkit.ng address
-  (`api.schoolkit.ng`). The sign-in cookie is shared across `schoolkit.ng`,
-  and the browser calls the API with that cookie. Routing through Vercel was
-  rejected because its 4 MB middleware body limit breaks curriculum, register
-  photo, receipt and CSV uploads.
-  - [x] **API side, done 2026-10-05.** `AuthGuard` accepts `sk_session` as
-    well as a bearer token, only when the Origin is the web app's
-    (`common/auth/staff-session-token.ts`). CORS allows credentials for that
-    origin only. Backward compatible: bearer clients are unchanged.
-  - [ ] **Owner:** add a DNS CNAME `api` → `school-kit-api.fly.dev`, and an
-    `api.schoolkit.ng` certificate on the Fly app (Certificates in the
-    dashboard).
-  - [ ] **Web switch-over: built, merge only after the owner's steps**
-    (`docs/runbooks/web-session-cookie.md`).
-    - `apiFetch` sends `credentials: "include"` and no token.
-    - The token is stripped from login, signup and 2FA responses.
-      `/api/auth/session` answers `{ authenticated }` and moves a
-      pre-switch-over cookie onto `Domain=schoolkit.ng`.
-    - A production build refuses to start without `SESSION_COOKIE_DOMAIN`
-      and an `NEXT_PUBLIC_API_URL` under it.
-    - `e2e/tests/web-session-cookie.spec.ts` proves no API request carries
-      `Authorization` and no readable response carries the token.
+- [x] **DONE 2026-10-07 — the web session token no longer reaches
+  JavaScript.** The staff web app calls the API at `api.schoolkit.ng` with the
+  HttpOnly `sk_session` cookie, shared across `schoolkit.ng`. No response
+  carries the token, and no request carries `Authorization`.
+  - API side: #380. `AuthGuard` accepts the cookie only from the web app's
+    Origin. CORS allows credentials for that origin only.
+  - Owner steps done: the `api` CNAME, the Fly certificate, and the Vercel
+    `NEXT_PUBLIC_API_URL` and `SESSION_COOKIE_DOMAIN`.
+  - Web side: #381. The first production deploy was refused by its own guard,
+    because Turbo's strict env mode hid `SESSION_COOKIE_DOMAIN` from the
+    build. Fixed in #383, which declares it in `turbo.json`.
+  - Steps and rollback: `docs/runbooks/web-session-cookie.md`.
+  - Routing through Vercel was rejected: its 4 MB middleware body limit
+    breaks curriculum, register photo, receipt and CSV uploads.
 - [ ] **Paystack mobile checkout has never been round-tripped**, and does not
   return the parent to the app. `PortalPaymentsService.initiate` hard-codes
   the callback to `${PORTAL_BASE_URL}/payments/callback`, so a parent
@@ -94,6 +77,11 @@ the module doc or the PR, then link it here.
     permission disagree.
   - **Scope:** about 20 call sites. Plan first.
   - Full history: archive, "RECURRING PATTERN".
+- [ ] **Staff sign-in does not work on Vercel preview deployments** (since
+  #381). Previews run on `*.vercel.app`, which is outside `schoolkit.ng`, so
+  the browser never sends the `sk_session` cookie to the API. Production and
+  local development are unaffected. **Trigger:** wanting to sign in on a
+  preview. A fix could keep bearer auth for preview builds only.
 - [ ] **Staff invitations cannot be resent or revoked** (guardian and owner
   invitations can). To share an older link, an admin re-invites.
 - [ ] **`usePermissions` hook.** The shared `lib/auth/has-permission.ts` now
