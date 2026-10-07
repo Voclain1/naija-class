@@ -559,4 +559,72 @@ happens this feature should not be switched on for a school, on exactly the
 rule phase-5.md §9 already sets for slice 5: do not enable until someone has
 read real output.
 
+### Running the accuracy pass (tool added 2026-10-07)
+
+`pnpm ai:eval:registers` sends each page through this prompt with exactly the
+request the API makes, scores it against hand-checked ground truth, times it,
+and answers yes or no against a switch-on bar. The scorer is gated offline by
+`pnpm ai:eval` (`packages/ai/evals/cases/register-scan-scoring.ts`).
+
+**The photos and the ground truth are children's personal data and never go in
+the repository.** Put them in `packages/ai/evals/register-scans/data/`, which
+is git-ignored, or anywhere else via `REGISTER_EVAL_DIR`. One pair per page:
+
+```
+jss1a-page1.jpg               the photo, as an admin would take it (.jpg/.png/.webp)
+jss1a-page1.expected.json     what is actually written on that page
+```
+
+```json
+{
+  "knownClassArms": ["JSS 1A", "JSS 1B"],
+  "rows": [
+    {
+      "admissionNumber": "SKA/2024/017",
+      "firstName": "Chiamaka",
+      "middleName": null,
+      "lastName": "Okonkwo-Eze",
+      "dateOfBirth": "2013-02-11",
+      "gender": "FEMALE",
+      "classArm": "JSS 1A",
+      "guardianName": "Mrs Ifeoma Okonkwo",
+      "guardianPhone": "08031234567",
+      "illegible": []
+    }
+  ]
+}
+```
+
+Writing the ground truth:
+- Copy exactly what the page says: spelling, capitals, hyphens, leading zeros.
+- `null` means the page has nothing there.
+- If something is written but you cannot read it either, put the field name in
+  `illegible`. The only right answer there is the model leaving it blank and
+  flagging it.
+- `classArm`: when the class is a heading at the top of the page, put it on
+  every row, as the prompt asks the model to.
+- Rows in page order, top to bottom.
+
+What it counts: a cell is **correct**, **flagged** (left blank and flagged:
+safe, the admin sees it), **missed** (blank, not flagged), **wrong** or
+**invented**. Wrong and invented are the silent errors, which look right in the
+review grid; the bar is built on those. Rows are matched by name, so one
+skipped row shows as one dropped row rather than every row after it reading
+wrong.
+
+The switch-on bar (a proposal; move it if you disagree):
+- no admission number wrong or invented;
+- silent errors on names at most 1% of name cells;
+- no silent errors on guardian phone numbers;
+- no row dropped or made up;
+- at least 90% of all cells right without the admin typing;
+- every scan inside 60 seconds (D3: the request is synchronous);
+- every call returns a usable answer.
+
+The report prints counts only. `--show-values` prints each mismatch with the
+real text, for whoever is fixing the prompt, on their own screen: never paste
+that output into a PR, issue or chat. The tool calls the model directly on the
+operator's key, like the other live evals, so it writes no `ai_generations`
+row and spends no school's budget.
+
 ---

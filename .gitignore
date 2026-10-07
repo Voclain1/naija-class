@@ -75,3 +75,7 @@ apps/mobile/*.orig.*
 .storage/
 
 .vercel
+
+# Register photos and their ground truth for the Smart Student Import
+# accuracy pass: children's personal data, never committed.
+packages/ai/evals/register-scans/data/
