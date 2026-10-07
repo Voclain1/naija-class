@@ -1,26 +1,27 @@
 import * as WebBrowser from "expo-web-browser";
+import { APP_PAYMENT_RETURN_URL } from "@school-kit/types";
+
 import { initiatePayment, verifyPayment } from "../api/portal";
 import { pollPaymentOutcome, type CheckoutOutcome } from "./poll";
 
 // Guardian checkout, mobile edition.
 //
-// THE ONE PLACE MOBILE DIVERGES FROM THE PORTAL, AND WHY
+// HOW THE PARENT GETS BACK TO THE APP (2026-10-07, docs/deferred.md item 2)
 //
-// PortalPaymentsService hardcodes Paystack's callback to
-// `${PORTAL_BASE_URL}/payments/callback` — a WEB url. On mobile we open the
-// hosted checkout in an in-app browser, so after paying the user lands on the
-// portal's web callback page inside that browser rather than being returned
-// to the app automatically, and closes it themselves.
+// initiatePayment asks the API for returnTo "app". Paystack's callback is then
+// the portal page /payments/callback/app, which immediately redirects to
+// APP_PAYMENT_RETURN_URL (schoolkit://payments/callback). openAuthSessionAsync
+// watches for exactly that address and closes the in-app browser when it
+// appears, so the parent lands back in the app instead of on a web page they
+// have to close by hand. (The portal's own checkout keeps its web callback.)
 //
-// That is a real UX wrinkle, and it is accepted for this slice rather than
-// papered over, because the alternative is an API change (letting the client
-// supply a callback URL, or adding a deep-link-aware one) and slice 2's whole
-// premise is that guardian mobile needs no server change. It is logged in
-// docs/deferred.md so it is a known trade rather than an accident.
+// The callback is a fixed choice made on the server, never a URL the app
+// supplies: a client-chosen redirect on a money endpoint would let anyone aim
+// a paying parent at a page of their choosing.
 //
-// Crucially, the wrinkle is cosmetic, not correctness: the outcome is
-// determined by polling the API after the browser closes, never by the
-// redirect. See poll.ts.
+// Crucially, the return is still not proof of payment. Whatever the browser
+// does (redirects back, is closed early, or the parent abandons checkout),
+// the outcome comes from polling the API afterwards. See poll.ts.
 
 export async function runCheckout(
   studentId: string,
@@ -28,14 +29,10 @@ export async function runCheckout(
 ): Promise<CheckoutOutcome> {
   const init = await initiatePayment(studentId, invoiceId);
 
-  // openBrowserAsync (not openAuthSessionAsync): the latter auto-dismisses
-  // when the browser reaches a redirect URL we nominate, and Paystack redirects
-  // to the PORTAL's callback URL, which we cannot claim as a scheme. Using it
-  // here would just never fire, so the plain browser is the honest call.
-  //
-  // It resolves when the user dismisses the browser — which tells us the
-  // checkout is over, but nothing whatsoever about whether it succeeded.
-  await WebBrowser.openBrowserAsync(init.authorizationUrl, {
+  // Resolves when the browser reaches APP_PAYMENT_RETURN_URL ("success" in
+  // expo's terms, which only means the redirect happened) or when the parent
+  // dismisses it. Both mean "checkout is over, ask the server".
+  await WebBrowser.openAuthSessionAsync(init.authorizationUrl, APP_PAYMENT_RETURN_URL, {
     // Match the app chrome so the handoff does not look like leaving for a
     // different product.
     toolbarColor: "#0E5C43",

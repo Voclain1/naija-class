@@ -33,13 +33,20 @@ the module doc or the PR, then link it here.
   - Steps and rollback: `docs/runbooks/web-session-cookie.md`.
   - Routing through Vercel was rejected: its 4 MB middleware body limit
     breaks curriculum, register photo, receipt and CSV uploads.
-- [ ] **Paystack mobile checkout has never been round-tripped**, and does not
-  return the parent to the app. `PortalPaymentsService.initiate` hard-codes
-  the callback to `${PORTAL_BASE_URL}/payments/callback`, so a parent
-  finishes in the in-app browser and closes it by hand. Payment correctness is
-  unaffected: `runCheckout` polls `GET /portal/payments/:reference`, and the
-  webhook is the authority. **Needs:** a Paystack test-mode subaccount on a
-  dev school to prove the round trip, and a scheme-aware callback.
+- [ ] **Paystack mobile checkout has never been round-tripped.** Returning
+  the parent to the app is built (2026-10-07):
+  - The app asks for `returnTo: "app"` when it starts a payment. That is a
+    fixed choice the API turns into an address, never a URL the client sends.
+  - The API then hands Paystack `${PORTAL_BASE_URL}/payments/callback/app`.
+  - That portal page sends the browser on to `schoolkit://payments/callback`.
+  - The app opened checkout with `openAuthSessionAsync`, which closes the
+    in-app browser when it reaches that address. `app/payments/callback.tsx`
+    catches the same address on Android, where it also arrives as a deep link.
+  - Payment correctness never depends on the redirect: `runCheckout` polls
+    `GET /portal/payments/:reference`, and the webhook is the authority.
+
+  **Still needs:** a Paystack test-mode subaccount on a dev school, to pay
+  once from a phone and see checkout close and the invoice update.
 - [x] **DONE 2026-10-05 — Playwright coverage of the money path**
   (`e2e/tests/finance-money-path.spec.ts`):
   - **A recorded payment** moves the invoice's Paid and Balance. It also moves

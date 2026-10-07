@@ -4,6 +4,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import sharp from "sharp";
 
+import { APP_PAYMENT_RETURN_URL } from "@school-kit/types";
+
 // apps/mobile — app configuration and asset integrity.
 //
 // WHY THIS SPEC EXISTS
@@ -209,6 +211,14 @@ describe("app.json — identity and linking", () => {
     // It is also the value store listings register, so changing it after
     // release breaks existing links.
     expect(expo.scheme).toBe("schoolkit");
+  });
+
+  it("owns the address Paystack checkout hands back to", () => {
+    // lib/payments/checkout.ts waits for APP_PAYMENT_RETURN_URL, and the
+    // portal's /payments/callback/app page sends the browser there. If the
+    // scheme changed without it, checkout would never close by itself.
+    expect(APP_PAYMENT_RETURN_URL.startsWith(`${expo.scheme}://`)).toBe(true);
+    expect(existsSync(path.join(MOBILE_ROOT, "app", "payments", "callback.tsx"))).toBe(true);
   });
 
   it("uses the Paper brand colour for launch surfaces, not stark white", () => {

@@ -299,6 +299,40 @@ describe("PortalPaymentsController (Phase 4 / Slice 5)", () => {
     expect(initCall.callbackUrl).toBe("https://portal.prod.example.test/payments/callback");
   });
 
+  it("returnTo \"app\" sends Paystack to the portal page that hands back to the app", async () => {
+    const { studentId, invoiceId, token } = await seedFreshInvoice("app-return");
+    const original = process.env.PORTAL_BASE_URL;
+    process.env.PORTAL_BASE_URL = "https://portal.prod.example.test";
+    let res: request.Response;
+    try {
+      res = await request(app.getHttpServer())
+        .post(`/api/v1/portal/students/${studentId}/invoices/${invoiceId}/pay`)
+        .set("Authorization", `Bearer ${token}`)
+        .send({ returnTo: "app" });
+    } finally {
+      if (original === undefined) delete process.env.PORTAL_BASE_URL;
+      else process.env.PORTAL_BASE_URL = original;
+    }
+    expect(res.status).toBe(200);
+    expect(paystackStub.initializeTransaction.mock.calls.at(-1)?.[0].callbackUrl).toBe(
+      "https://portal.prod.example.test/payments/callback/app",
+    );
+  });
+
+  it("returnTo accepts only the fixed choices: a URL or an unknown field is a 400 and starts no payment", async () => {
+    const { studentId, invoiceId, token } = await seedFreshInvoice("bad-return");
+    const callsBefore = paystackStub.initializeTransaction.mock.calls.length;
+    for (const body of [{ returnTo: "https://evil.example/steal" }, { returnTo: "app", callbackUrl: "https://evil.example" }]) {
+      const res = await request(app.getHttpServer())
+        .post(`/api/v1/portal/students/${studentId}/invoices/${invoiceId}/pay`)
+        .set("Authorization", `Bearer ${token}`)
+        .send(body);
+      expect(res.status, JSON.stringify(body)).toBe(400);
+      expect(res.body.error.code).toBe("VALIDATION_ERROR");
+    }
+    expect(paystackStub.initializeTransaction.mock.calls.length).toBe(callsBefore);
+  });
+
   it("cannot pay an already-fully-paid invoice → INVOICE_ALREADY_PAID", async () => {
     const res = await request(app.getHttpServer())
       .post(`/api/v1/portal/students/${studentA2}/invoices/${invoiceA2Paid}/pay`)

@@ -7,6 +7,7 @@ import {
   type PaymentDto,
   type PaystackInitResponseDto,
   type PortalPaymentDto,
+  type PortalPayReturnTo,
 } from "@school-kit/types";
 
 import type { GuardianAuthContext } from "../../common/auth/guardian-auth-context";
@@ -75,6 +76,7 @@ export class PortalPaymentsService {
     studentId: string,
     invoiceId: string,
     reqCtx: RequestContext,
+    returnTo: PortalPayReturnTo = "portal",
   ): Promise<PaystackInitResponseDto> {
     const { paymentId, customerEmail, amount, subaccountCode } = await withTenant(
       guardianCtx.schoolId,
@@ -200,7 +202,7 @@ export class PortalPaymentsService {
         // no callbackUrl and relies on Paystack's dashboard-configured
         // default (apps/web) — that default would land a guardian on the
         // wrong app entirely.
-        callbackUrl: `${portalBaseUrl()}/payments/callback`,
+        callbackUrl: paymentCallbackUrl(returnTo),
       });
     } catch (err) {
       this.logger.error(`Paystack init failed for guardian-initiated payment ${paymentId}: ${String(err)}`);
@@ -263,4 +265,16 @@ export class PortalPaymentsService {
     const dto = await this.paymentsService.verifyAndApply(guardianCtx.schoolId, reference);
     return toPortalPaymentDto(dto);
   }
+}
+
+/**
+ * Where Paystack sends the browser after checkout. Chosen from a fixed list,
+ * never from a client-supplied URL (see portal-pay.dto.ts). Both are portal
+ * pages: an https callback is what Paystack expects, and the "app" page is the
+ * one that hands over to schoolkit://payments/callback.
+ */
+export function paymentCallbackUrl(returnTo: PortalPayReturnTo): string {
+  return returnTo === "app"
+    ? `${portalBaseUrl()}/payments/callback/app`
+    : `${portalBaseUrl()}/payments/callback`;
 }
