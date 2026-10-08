@@ -13,7 +13,7 @@ import {
 import type { GuardianAuthContext } from "../../common/auth/guardian-auth-context";
 import { PaystackService } from "../../common/paystack/paystack.service.js";
 import { portalBaseUrl } from "../../common/portal-url";
-import { parsePaystackReference, PaymentsService } from "../payments/payments.service.js";
+import { assertNoPaystackInFlight, parsePaystackReference, PaymentsService } from "../payments/payments.service.js";
 
 interface RequestContext {
   ipAddress: string | null;
@@ -21,16 +21,6 @@ interface RequestContext {
 
 const AUDIT_INIT = "payment.guardian-init";
 
-// A checkout page Paystack considers "live" is time-bounded on their end
-// too — this window is deliberately generous relative to that, not an
-// attempt to match it exactly. Without SOME bound, a guardian who starts a
-// checkout and abandons it (closes the tab, changes their mind) would
-// permanently block every future payment attempt on that invoice, since
-// nothing ever transitions an abandoned PENDING row to FAILED — Paystack
-// only sends charge.failed for an attempted-and-declined payment, not for
-// a checkout that was simply never completed. Found while implementing the
-// in-flight-payment guard itself, not in the original plan-first.
-const IN_FLIGHT_WINDOW_MS = 30 * 60 * 1000; // 30 minutes
 
 
 // PaymentDto is a structural superset of PortalPaymentDto (schoolId,
@@ -119,24 +109,9 @@ export class PortalPaymentsService {
             throw new ConflictError("INVOICE_ALREADY_PAID", "This invoice is already fully paid.");
           }
 
-          // In-flight guard — see IN_FLIGHT_WINDOW_MS's own comment. Scoped
-          // to this guardian-facing endpoint only, not a fix to the
-          // shared webhook/apply path (see docs/deferred.md).
-          const existingPending = await db2.payment.findFirst({
-            where: {
-              invoiceId,
-              method: "PAYSTACK",
-              status: "PENDING",
-              createdAt: { gt: new Date(Date.now() - IN_FLIGHT_WINDOW_MS) },
-            },
-            select: { id: true },
-          });
-          if (existingPending) {
-            throw new ConflictError(
-              "PAYMENT_ALREADY_IN_PROGRESS",
-              "A payment for this invoice is already in progress. Wait for it to complete, or try again in a few minutes.",
-            );
-          }
+          // One live checkout per invoice, shared with the staff path
+          // (assertNoPaystackInFlight's own comment).
+          await assertNoPaystackInFlight(db2, invoiceId);
 
           // Customer email: the CALLING guardian's own, not the invoice's
           // primary guardian (unlike the staff flow's fallback lookup) —

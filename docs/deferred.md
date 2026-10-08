@@ -121,13 +121,21 @@ the module doc or the PR, then link it here.
   so this is about operators noticing.
 
 ### Money
-- [ ] **Double-PENDING overpayment.** Two Paystack payments started for the
-  same invoice by different people (a guardian and staff, or two guardians)
-  can both complete. `applyPaystackSuccess` then applies both.
-  - The portal blocks a second attempt within 30 minutes for the same
-    guardian only.
-  - **Fix:** re-check `remaining >= amount` when the webhook applies.
-  - **Trigger:** before payment volume grows past the pilot.
+- [x] **DONE 2026-10-08 — Double-PENDING overpayment.** Two Paystack
+  checkouts on one invoice could both be paid, and both were applied with
+  nothing to say so.
+  - **Prevention:** both ways a checkout starts (staff `initPaystack` and the
+    parent's `PortalPaymentsService.initiate`) now share
+    `assertNoPaystackInFlight`: one live checkout per invoice, whoever opened
+    it, inside a 30-minute window.
+  - **Backstop:** when Paystack confirms a payment that takes the invoice past
+    what it owes, the payment still stands, because the money really left the
+    parent's account. The excess gets a `payment.paystack-overpayment` audit
+    row and a Sentry warning. The invoice page shows "Overpaid" with a note to
+    refund the extra payment.
+  - Still possible, by design: a checkout older than the window, or cash
+    recorded while a parent is mid-checkout. Both now land on the backstop
+    rather than going unnoticed.
 - [ ] **Finance UX follow-ups from PR #220**, including the F-34 bulk-invoice
   confirmation (archive, "Finance / bursar invoice UX").
 - [ ] **`notIn: ["DRAFT", "CANCELLED"]` literals.** Five remain in

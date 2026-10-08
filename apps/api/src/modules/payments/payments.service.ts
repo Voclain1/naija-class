@@ -29,6 +29,7 @@ import { PaymentLinkInvalidationService } from "../invoices/payment-link-invalid
 import { PaymentPlanService } from "./payment-plan.service.js";
 import { issueReceipt, loadReceiptLogo } from "./receipt.js";
 import { EventNotifierService } from "../notifications/event-notifier.service.js";
+import { Sentry } from "../../observability/sentry";
 
 const RECEIPT_URL_TTL_SECONDS = 15 * 60; // 15 minutes
 
@@ -41,6 +42,7 @@ const AUDIT_RECEIPT_REISSUE = "payment.receipt-reissue";
 // at each call: rbac-two-gate-conformance.spec.ts reads them from source.
 const AUDIT_PAYSTACK_CONFIRM = "payment.paystack-confirm";
 const AUDIT_PAYSTACK_FAILED = "payment.paystack-failed";
+const AUDIT_PAYSTACK_OVERPAYMENT = "payment.paystack-overpayment";
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -51,6 +53,49 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 
 function asUuid(value: unknown): string | null {
   return typeof value === "string" && UUID_RE.test(value) ? value : null;
+}
+
+// ---------------------------------------------------------------------------
+// One Paystack checkout per invoice at a time (docs/deferred.md, "Double-
+// PENDING overpayment").
+//
+// Each init checks the balance as it stands, but money only lands at the
+// webhook. Two checkouts opened on the same invoice (a parent and the bursar,
+// or two parents) can both be paid, and the second pushes the invoice past
+// what it owes. So BOTH init paths, staff (initPaystack) and guardian
+// (PortalPaymentsService.initiate), refuse a new checkout while one is live.
+//
+// The window bounds "live": nothing ever moves an abandoned checkout off
+// PENDING (Paystack sends charge.failed only for a declined attempt, not for
+// a closed tab), so without it one abandoned checkout would block the invoice
+// for good. It is deliberately generous relative to Paystack's own page life.
+//
+// This narrows the race; it cannot close it (a checkout older than the
+// window can still be paid, and the bursar can record cash while a parent is
+// mid-checkout). applyPaystackSuccess is the backstop: see its step 5.
+// ---------------------------------------------------------------------------
+export const PAYSTACK_IN_FLIGHT_WINDOW_MS = 30 * 60 * 1000; // 30 minutes
+
+export async function assertNoPaystackInFlight(
+  db: Pick<PrismaClient, "payment">,
+  invoiceId: string,
+  now: Date = new Date(),
+): Promise<void> {
+  const live = await db.payment.findFirst({
+    where: {
+      invoiceId,
+      method: "PAYSTACK",
+      status: "PENDING",
+      createdAt: { gt: new Date(now.getTime() - PAYSTACK_IN_FLIGHT_WINDOW_MS) },
+    },
+    select: { id: true },
+  });
+  if (live) {
+    throw new ConflictError(
+      "PAYMENT_ALREADY_IN_PROGRESS",
+      "A payment for this invoice is already in progress. Wait for it to complete, or try again in a few minutes.",
+    );
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -389,6 +434,9 @@ export class PaymentsService {
           `Payment of ${formatKoboForMessage(dto.amount)} would exceed the outstanding balance of ${formatKoboForMessage(remaining)}.`,
         );
       }
+
+      // A parent may already be paying this invoice from the portal or app.
+      await assertNoPaystackInFlight(db, dto.invoiceId);
 
       // Resolve customer email: primary guardian's email or synthetic fallback.
       // We do NOT send any student PII to Paystack — just a routing email.
@@ -1039,11 +1087,50 @@ export class PaymentsService {
     });
     const newStatus = computeInvoiceStatus(newTotalPaid, invoice.totalDue);
 
-    // 5. Update invoice.
+    // 4. Update invoice.
     await db.invoice.update({
       where: { id: payment.invoiceId },
       data: { totalPaid: newTotalPaid, status: newStatus },
     });
+
+    // 5. Overpayment backstop. By the time Paystack confirms, the parent's
+    //    money has LEFT their account: refusing to record it would leave
+    //    real money in the school's subaccount that the books say never
+    //    arrived, which is worse than an overpaid invoice. So the payment
+    //    stands, and the excess is made loud instead of silent: its own audit
+    //    row and a Sentry warning (ids and amounts only, never names). The
+    //    invoice page then shows it as overpaid, and the bursar refunds the
+    //    duplicate payment (refunds are full-payment, which is exactly the
+    //    shape of a duplicate). Excess is capped at this payment's amount: an
+    //    invoice that was ALREADY over (e.g. a fee later reduced) is not this
+    //    payment's doing.
+    const excess = Math.min(payment.amount, newTotalPaid - invoice.totalDue);
+    if (excess > 0) {
+      await db.auditLog.create({
+        data: {
+          schoolId: payment.schoolId,
+          userId: null,
+          action: AUDIT_PAYSTACK_OVERPAYMENT,
+          entityType: "payment",
+          entityId: payment.id,
+          metadata: {
+            invoiceId: payment.invoiceId,
+            amount: payment.amount,
+            excess,
+            totalDue: invoice.totalDue,
+            newTotalPaid,
+          },
+        },
+      });
+      this.logger.warn(
+        `Paystack payment ${payment.id} overpaid invoice ${payment.invoiceId} by ${excess} kobo (school ${payment.schoolId}); refund the duplicate.`,
+      );
+      Sentry.captureMessage("Paystack payment overpaid an invoice", {
+        level: "warning",
+        tags: { schoolId: payment.schoolId },
+        extra: { paymentId: payment.id, invoiceId: payment.invoiceId, excessKobo: excess },
+      });
+    }
 
     // 6. Audit log (userId null — webhook has no authenticated user).
     await db.auditLog.create({
