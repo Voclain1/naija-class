@@ -10,6 +10,12 @@ if (sessionCookieProblem) {
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  // Preview builds send the browser's API calls through /api/preview-api (see
+  // that route). Decided here, at build time, from Vercel's own VERCEL_ENV, so
+  // no one has to remember to set it per environment.
+  env: {
+    NEXT_PUBLIC_API_VIA_PREVIEW_PROXY: process.env.VERCEL_ENV === "preview" ? "1" : "",
+  },
   // Workspace packages are TS-source — let Next transpile them.
   //
   // Divergence note: apps/api consumes @school-kit/* from each package's

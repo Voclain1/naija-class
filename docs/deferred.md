@@ -106,11 +106,18 @@ the module doc or the PR, then link it here.
     would widen access on those routes for no fix. Revisit if custom roles are
     ever added: then role-key checks would reject them everywhere.
   - Full history: archive, "RECURRING PATTERN".
-- [ ] **Staff sign-in does not work on Vercel preview deployments** (since
-  #381). Previews run on `*.vercel.app`, which is outside `schoolkit.ng`, so
-  the browser never sends the `sk_session` cookie to the API. Production and
-  local development are unaffected. **Trigger:** wanting to sign in on a
-  preview. A fix could keep bearer auth for preview builds only.
+- [x] **DONE 2026-10-08 — Staff sign-in works on Vercel preview deployments
+  again** (broken since #381). A preview (`*.vercel.app`) could not send the
+  `schoolkit.ng` cookie to the API, and its origin is not one the API allows.
+  Preview builds now send the browser's API calls to their own
+  `/api/preview-api/*`, which reads the HttpOnly cookie on the server and
+  forwards with a bearer token, so the token still never reaches page
+  JavaScript. The route answers 404 outside a preview, refuses cross-site
+  writes, and the preview's cookie is host-only. Production is unchanged and
+  keeps calling the API directly (Vercel's 4.5 MB body cap would break uploads
+  through a proxy; acceptable on a preview). The Preview environment on
+  `school-kit-web` needs `NEXT_PUBLIC_API_URL` set, or a preview calls
+  `localhost`.
 - [x] **DONE 2026-10-08 — Staff invitations can be resent and revoked.**
   `POST /users/invitations/:id/resend` ends the old link and issues a new one
   for the same person and role; `POST /users/invitations/:id/revoke` ends a
@@ -130,14 +137,17 @@ the module doc or the PR, then link it here.
   - Forced expiry still destroys unsaved gradebook work. No mechanism has
     been chosen; measure how often it happens first (archive: "Session
     expiry", "Session-end work loss").
-- [ ] **Mobile signs out silently on a 401.** `UnauthorizedListener` in
-  `apps/mobile/src/lib/api/client.ts` is `() => void`, so the server's code
-  (`SESSION_EXPIRED`, `USER_INACTIVE`, …) never reaches the login screen.
-  Needs device verification. It must keep not signing out on
-  `ApiNetworkError`.
-- [ ] **Resend failures reach only the logs**, not Sentry. This affects staff
-  reset, guardian reset and guardian invitations. The response must not vary,
-  so this is about operators noticing.
+- [x] **Mobile no longer signs out silently on a 401** (found already built,
+  2026-10-08). The API client passes the server's code to `onUnauthorized`,
+  `session.tsx` turns it into a message (`session-end.ts`), and the sign-in
+  screen shows it. Network failures still never sign anyone out. Seeing it on
+  a device is part of "Device checks" below.
+- [x] **DONE 2026-10-08 — Email failures reach Sentry.** `EmailService.send`
+  reports every failed send (API-level error or network throw) as a Sentry
+  error tagged with its `purpose` (`staff-password-reset`,
+  `guardian-password-reset`, `guardian-invitation`, …) and the address
+  redacted; the subject is left out because it can carry a child's name.
+  Callers' responses are unchanged, so forgot-password still reveals nothing.
 
 ### Money
 - [x] **DONE 2026-10-08 — Double-PENDING overpayment.** Two Paystack

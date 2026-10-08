@@ -4,6 +4,7 @@ import { Resend } from "resend";
 
 import { InternalError } from "@school-kit/types";
 
+import { Sentry } from "../../observability/sentry";
 import { redactEmail } from "../redact.js";
 
 // ---------------------------------------------------------------------------
@@ -36,7 +37,11 @@ export class EmailService {
     return this.client !== null;
   }
 
-  async send(params: { to: string; subject: string; html: string }): Promise<void> {
+  /**
+   * `purpose` names the email for operators (e.g. "staff-password-reset"); it
+   * travels to Sentry as a tag, since the subject can carry a child's name.
+   */
+  async send(params: { to: string; subject: string; html: string; purpose?: string }): Promise<void> {
     if (!this.client) {
       throw new InternalError("RESEND_API_KEY is not configured on this server");
     }
@@ -46,16 +51,32 @@ export class EmailService {
     // a network-level failure. Both must be checked; FinanceService's
     // pre-extraction code only had the try/catch, which meant an API-level
     // `error` was silently swallowed as a "successful" send.
-    const { error } = await this.client.emails.send({
-      from: "no-reply@schoolkit.ng",
-      to: params.to,
-      subject: params.subject,
-      html: params.html,
-    });
+    //
+    // Every failure also goes to Sentry (2026-10-08). Several callers must
+    // answer the same whatever happens (forgot-password cannot reveal whether
+    // an address exists), so they catch this and only log; before this, a
+    // dead mail provider showed up nowhere an operator looks.
+    let failure: string | null = null;
+    try {
+      const { error } = await this.client.emails.send({
+        from: "no-reply@schoolkit.ng",
+        to: params.to,
+        subject: params.subject,
+        html: params.html,
+      });
+      if (error) failure = error.message;
+    } catch (err) {
+      failure = err instanceof Error ? err.message : String(err);
+    }
 
-    if (error) {
-      this.logger.error(`Resend send to ${redactEmail(params.to)} failed: ${error.message}`);
-      throw new InternalError(`Email send failed: ${error.message}`);
+    if (failure !== null) {
+      this.logger.error(`Resend send to ${redactEmail(params.to)} failed: ${failure}`);
+      Sentry.captureMessage("Email send failed", {
+        level: "error",
+        tags: { component: "email", purpose: params.purpose ?? "unspecified" },
+        extra: { to: redactEmail(params.to), reason: failure },
+      });
+      throw new InternalError(`Email send failed: ${failure}`);
     }
   }
 }

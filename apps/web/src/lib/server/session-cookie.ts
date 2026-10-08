@@ -24,6 +24,10 @@ const SESSION_COOKIE_MAX_AGE = 2_592_000; // 30 days
 
 /** The Domain attribute, or undefined for a host-only cookie. Read per call: server env. */
 export function sessionCookieDomain(): string | undefined {
+  // A preview runs on *.vercel.app: a cookie for schoolkit.ng would be
+  // refused by the browser there, and sign-in would silently not stick. A
+  // preview keeps a host-only cookie, read by its own /api/preview-api route.
+  if (process.env.VERCEL_ENV === "preview") return undefined;
   const raw = process.env.SESSION_COOKIE_DOMAIN?.trim().replace(/^\./, "");
   return raw ? raw : undefined;
 }
