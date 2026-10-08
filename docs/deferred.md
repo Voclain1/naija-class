@@ -167,8 +167,8 @@ the module doc or the PR, then link it here.
     rather than going unnoticed.
 - [ ] **Finance UX follow-ups from PR #220**, including the F-34 bulk-invoice
   confirmation (archive, "Finance / bursar invoice UX").
-- [ ] **`notIn: ["DRAFT", "CANCELLED"]` literals.** Five remain in
-  `finance.service.ts`. Move them to the `finance-totals.ts` status sets.
+- [x] **DONE 2026-10-08 — `notIn: ["DRAFT", "CANCELLED"]` literals.** All
+  five in `finance.service.ts` now use `BILLED_EXCLUDED_STATUSES`.
 
 ### Data and infrastructure
 - [ ] **`schema.prisma` vs migration drift.** Four names are involved:
