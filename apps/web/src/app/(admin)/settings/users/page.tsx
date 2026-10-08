@@ -22,6 +22,8 @@ import { track } from "@/lib/observability/events";
 import {
   listPendingInvitations,
   listUsers,
+  resendInvitation,
+  revokeInvitation,
 } from "@/lib/users/users-api";
 
 // /settings/users — wrapped by the (admin) layout so RequireAuth has already
@@ -29,7 +31,8 @@ import {
 // an "Invite admin" button that opens a modal. On successful invite we
 // optimistically add the new pending row and remember its raw URL for the
 // "Copy link" affordance (raw tokens aren't persisted, so the URL is only
-// recoverable until page reload — by design, since re-issue is deferred).
+// recoverable until page reload). Older invitations get "New link" and
+// "Cancel" instead.
 export default function SettingsUsersPage() {
   const { school } = useAuth();
   const [users, setUsers] = useState<UserListItemDto[]>([]);
@@ -37,6 +40,7 @@ export default function SettingsUsersPage() {
   const [copyableUrls, setCopyableUrls] = useState<CopyableUrlMap>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
 
   const load = useCallback(async () => {
@@ -90,6 +94,34 @@ export default function SettingsUsersPage() {
     }
   }, [school]);
 
+  // A fresh link replaces the old row, with its URL ready to copy.
+  const onResend = useCallback(async (id: string) => {
+    setActionError(null);
+    try {
+      const res = await resendInvitation(id);
+      setPending((prev) =>
+        prev.map((p) =>
+          p.id === id
+            ? { ...p, id: res.invitation.id, expiresAt: res.invitation.expiresAt, createdAt: res.invitation.createdAt }
+            : p,
+        ),
+      );
+      setCopyableUrls((prev) => ({ ...prev, [res.invitation.id]: res.acceptUrl }));
+    } catch (e) {
+      setActionError(e instanceof ApiError ? e.message : "Could not make a new link. Try again.");
+    }
+  }, []);
+
+  const onRevoke = useCallback(async (id: string) => {
+    setActionError(null);
+    try {
+      await revokeInvitation(id);
+      setPending((prev) => prev.filter((p) => p.id !== id));
+    } catch (e) {
+      setActionError(e instanceof ApiError ? e.message : "Could not cancel the invitation. Try again.");
+    }
+  }, []);
+
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-8">
       <header className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -127,7 +159,17 @@ export default function SettingsUsersPage() {
             <h2 className="text-sm font-medium uppercase tracking-wide text-muted-foreground">
               Pending invitations
             </h2>
-            <InvitationsTable invitations={pending} copyableUrls={copyableUrls} />
+            {actionError && (
+              <p role="alert" className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                {actionError}
+              </p>
+            )}
+            <InvitationsTable
+              invitations={pending}
+              copyableUrls={copyableUrls}
+              onResend={onResend}
+              onRevoke={onRevoke}
+            />
           </section>
         </>
       )}

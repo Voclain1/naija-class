@@ -5,6 +5,8 @@ import type {
   InviteAdminInput,
   InviteAdminResponse,
   PendingInvitationDto,
+  ResendStaffInvitationResponse,
+  RevokeStaffInvitationResponse,
   UserListItemDto,
 } from "@school-kit/types";
 
@@ -22,5 +24,19 @@ export function inviteAdmin(input: InviteAdminInput): Promise<InviteAdminRespons
   return apiFetch<InviteAdminResponse>("/users/invite", {
     method: "POST",
     body: input,
+  });
+}
+
+// Ends the invitation and issues a fresh link for the same person and role.
+export function resendInvitation(id: string): Promise<ResendStaffInvitationResponse> {
+  return apiFetch<ResendStaffInvitationResponse>(`/users/invitations/${encodeURIComponent(id)}/resend`, {
+    method: "POST",
+  });
+}
+
+// Ends a pending invitation: the link already sent stops working.
+export function revokeInvitation(id: string): Promise<RevokeStaffInvitationResponse> {
+  return apiFetch<RevokeStaffInvitationResponse>(`/users/invitations/${encodeURIComponent(id)}/revoke`, {
+    method: "POST",
   });
 }

@@ -344,7 +344,7 @@ function StaffTable({ rows }: { rows: StaffRow[] }) {
                   <Badge
                     variant="outline"
                     className="border-transparent bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-300"
-                    title="Invitation sent — awaiting acceptance. The accept link was shown when the invite was created."
+                    title="Invitation sent — awaiting acceptance. Manage it to make a new link or cancel it."
                   >
                     Invited
                   </Badge>
@@ -363,9 +363,13 @@ function StaffTable({ rows }: { rows: StaffRow[] }) {
                     View
                   </Link>
                 ) : (
-                  <span className="text-xs text-muted-foreground">
-                    Pending
-                  </span>
+                  <Link
+                    href="/settings/users"
+                    className="text-xs font-medium text-primary underline-offset-2 hover:underline"
+                    title="Make a new link or cancel this invitation"
+                  >
+                    Manage
+                  </Link>
                 )}
               </TableCell>
             </TableRow>

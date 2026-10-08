@@ -111,8 +111,13 @@ the module doc or the PR, then link it here.
   the browser never sends the `sk_session` cookie to the API. Production and
   local development are unaffected. **Trigger:** wanting to sign in on a
   preview. A fix could keep bearer auth for preview builds only.
-- [ ] **Staff invitations cannot be resent or revoked** (guardian and owner
-  invitations can). To share an older link, an admin re-invites.
+- [x] **DONE 2026-10-08 — Staff invitations can be resent and revoked.**
+  `POST /users/invitations/:id/resend` ends the old link and issues a new one
+  for the same person and role; `POST /users/invitations/:id/revoke` ends a
+  pending one. Both need `user.invite`, are audited, and leave owner
+  invitations to the platform admin. On `/settings/users` an invitation whose
+  link is no longer on screen offers "New link", and every row has "Cancel";
+  the staff roster's invitation rows link there.
 - [ ] **`usePermissions` hook.** The shared `lib/auth/has-permission.ts` now
   exists, but 11 pages still carry their own copy of `hasPermission`. Move
   them over.

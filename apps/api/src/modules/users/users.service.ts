@@ -1,7 +1,7 @@
 import * as crypto from "node:crypto";
 import { Injectable, Logger } from "@nestjs/common";
 
-import { Prisma, basePrisma, withTenant } from "@school-kit/db";
+import { Prisma, basePrisma, withTenant, type PrismaClient } from "@school-kit/db";
 import {
   ConflictError,
   NotFoundError,
@@ -10,6 +10,8 @@ import {
   type InviteAdminResponse,
   type InvitationCreatedDto,
   type PendingInvitationDto,
+  type ResendStaffInvitationResponse,
+  type RevokeStaffInvitationResponse,
   type SignupOwnerUserDto,
   type UserListItemDto,
   type UserRoleDto,
@@ -27,6 +29,8 @@ import { USER_RESPONSE_SELECT } from "../auth/auth.service";
 const INVITATION_TTL_MS = 1000 * 60 * 60 * 24 * 7;
 
 const INVITE_AUDIT_ACTION = "user.invite";
+const INVITE_RESEND_AUDIT_ACTION = "user.invite-resend";
+const INVITE_REVOKE_AUDIT_ACTION = "user.invite-revoke";
 
 // Where the accept URL points. Dev default matches the web dev port noted in
 // .env.example. Production deploys MUST set WEB_BASE_URL explicitly; we don't
@@ -36,6 +40,8 @@ const INVITE_AUDIT_ACTION = "user.invite";
 function webBaseUrl(): string {
   return process.env.WEB_BASE_URL ?? "http://localhost:3001";
 }
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 interface RequestContext {
   ipAddress: string | null;
@@ -245,6 +251,130 @@ export class UsersService {
       token: rawToken,
       acceptUrl,
     };
+  }
+
+  // POST /users/invitations/:id/resend and /revoke (2026-10-08). Before these,
+  // a staff invitation's link was shown once, at creation, and an admin who
+  // lost it or sent it to the wrong person could only wait out the 7 days.
+  //
+  // An invitation is "ended" by moving its expiry to now, the way the
+  // platform admin cancels an owner invitation: the accept page then reads it
+  // as expired, and the row stays as a record. Owner invitations are out of
+  // scope here: before a school has an owner they belong to the platform
+  // admin, and after it they no longer exist to resend.
+
+  /** Ends the invitation and issues a fresh link to the same person, same role. */
+  async resendInvitation(
+    authCtx: AuthContext,
+    invitationId: string,
+    reqCtx: RequestContext,
+  ): Promise<ResendStaffInvitationResponse> {
+    await assertUserActiveAndHasOneOf(authCtx, ["owner", "admin"]);
+
+    const rawToken = crypto.randomBytes(32).toString("base64url");
+    const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
+    const expiresAt = new Date(Date.now() + INVITATION_TTL_MS);
+
+    const created = await withTenant(authCtx.schoolId, async (db) => {
+      const old = await this.findStaffInvitation(db, invitationId);
+      if (old.acceptedAt) {
+        throw new ConflictError("INVITATION_ALREADY_ACCEPTED", "This invitation has already been accepted.");
+      }
+      if (old.email) {
+        const existingUser = await db.user.findFirst({ where: { email: old.email }, select: { id: true } });
+        if (existingUser) {
+          throw new ConflictError("EMAIL_TAKEN", "A user with that email already belongs to this school.");
+        }
+      }
+
+      const now = new Date();
+      if (old.expiresAt > now) {
+        await db.invitation.update({ where: { id: old.id }, data: { expiresAt: now } });
+      }
+      const invitation = await db.invitation.create({
+        data: {
+          schoolId: authCtx.schoolId,
+          email: old.email,
+          firstName: old.firstName,
+          lastName: old.lastName,
+          roleKey: old.roleKey,
+          tokenHash,
+          invitedBy: authCtx.userId,
+          expiresAt,
+        },
+        select: INVITATION_CREATED_SELECT,
+      });
+
+      await db.auditLog.create({
+        data: {
+          schoolId: authCtx.schoolId,
+          userId: authCtx.userId,
+          action: INVITE_RESEND_AUDIT_ACTION,
+          entityType: "invitation",
+          entityId: invitation.id,
+          ipAddress: reqCtx.ipAddress,
+          metadata: { replaces: old.id, email: redactEmail(old.email), roleKey: old.roleKey },
+        },
+      });
+
+      return invitation;
+    });
+
+    const acceptUrl = `${webBaseUrl()}/invitations/${rawToken}`;
+    this.logger.log(`[INVITATION] ${acceptUrl}`);
+    return { invitation: toInvitationCreatedDto(created), token: rawToken, acceptUrl };
+  }
+
+  /** Ends a pending invitation; the link already sent stops working. */
+  async revokeInvitation(
+    authCtx: AuthContext,
+    invitationId: string,
+    reqCtx: RequestContext,
+  ): Promise<RevokeStaffInvitationResponse> {
+    await assertUserActiveAndHasOneOf(authCtx, ["owner", "admin"]);
+
+    return withTenant(authCtx.schoolId, async (db) => {
+      const invitation = await this.findStaffInvitation(db, invitationId);
+      const now = new Date();
+      if (invitation.acceptedAt || invitation.expiresAt <= now) {
+        throw new ConflictError("NO_PENDING_INVITATION", "This invitation is no longer pending.");
+      }
+      await db.invitation.update({ where: { id: invitation.id }, data: { expiresAt: now } });
+
+      await db.auditLog.create({
+        data: {
+          schoolId: authCtx.schoolId,
+          userId: authCtx.userId,
+          action: INVITE_REVOKE_AUDIT_ACTION,
+          entityType: "invitation",
+          entityId: invitation.id,
+          ipAddress: reqCtx.ipAddress,
+          metadata: { email: redactEmail(invitation.email), roleKey: invitation.roleKey },
+        },
+      });
+
+      return { invitationId: invitation.id, revokedAt: now };
+    });
+  }
+
+  private async findStaffInvitation(db: PrismaClient, invitationId: string) {
+    // RLS keeps this to the caller's school; a malformed id is simply not found.
+    const invitation = UUID_RE.test(invitationId)
+      ? await db.invitation.findUnique({
+          where: { id: invitationId },
+          select: {
+            id: true,
+            email: true,
+            firstName: true,
+            lastName: true,
+            roleKey: true,
+            expiresAt: true,
+            acceptedAt: true,
+          },
+        })
+      : null;
+    if (!invitation || invitation.roleKey === "owner") throw new NotFoundError("Invitation not found.");
+    return invitation;
   }
 
   // POST /users/me/complete-tour — no role gate: every authenticated user
