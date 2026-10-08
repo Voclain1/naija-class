@@ -171,14 +171,20 @@ the module doc or the PR, then link it here.
   five in `finance.service.ts` now use `BILLED_EXCLUDED_STATUSES`.
 
 ### Data and infrastructure
-- [ ] **`schema.prisma` vs migration drift.** Four names are involved:
-  - `audit_logs_new_pkey`;
-  - `audit_logs_school_id_created_at_idx`;
-  - a `fee_items` index name;
-  - `payments_school_id_paystack_reference_key`.
-
-  A naive `prisma migrate diff` pulls them in. **Trigger:** before the next
-  migration touching `audit_logs`, `payments` or `fee_items`.
+- [x] **DONE 2026-10-08 — `schema.prisma` vs migration drift.** Diffing a
+  fully migrated database against the schema found a real bug behind it:
+  `audit_logs` had **no `(school_id, created_at)` index** since the June
+  partitioning migration, whose `CREATE INDEX IF NOT EXISTS` was skipped
+  because the table being replaced still held an index of that name. Every
+  per-school audit read scanned every partition. Migration
+  `20261011120000_audit_logs_school_created_index` creates it on the parent
+  (and so on every partition). The primary key and the `fee_items` index now
+  carry their real names via `map:`.
+  - Three differences remain and are expected, because Prisma 5 cannot
+    express them: the pgvector HNSW index on `curriculum_chunks`, the partial
+    unique index `payments_school_id_paystack_reference_key`
+    (`WHERE paystack_reference IS NOT NULL`), and the `school_week_days` array
+    default. A naive `prisma migrate diff` proposes all three; ignore them.
 - [ ] **`withTenant` retries body timeouts.** `P2028` re-runs the whole
   transaction under pool exhaustion, which adds load at the worst moment.
   Stop retrying body timeouts (`describeAttemptFailure` has `elapsedMs`).

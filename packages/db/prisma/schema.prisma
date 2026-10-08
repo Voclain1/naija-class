@@ -439,7 +439,8 @@ model AuditLog {
   // partitioned table must include every partition key column.
   // audit_logs is partitioned by created_at, so the PK is (id, created_at).
   // Nothing FK-references audit_logs.id, so this change is safe.
-  @@id([id, createdAt])
+  // The PK keeps the name the partitioning migration gave it.
+  @@id([id, createdAt], map: "audit_logs_new_pkey")
   @@index([schoolId, createdAt])
   @@map("audit_logs")
 }
@@ -2268,7 +2269,7 @@ model FeeItem {
   // Non-unique scan index for invoice generation (slice 6): matches student's
   // (level, term, year) against fee items. Non-unique because a school can have
   // many items with the same scope combination (e.g. two hostel fees for JSS1 T1).
-  @@index([schoolId, classLevelId, termId, academicYearId])
+  @@index([schoolId, classLevelId, termId, academicYearId], map: "fee_items_school_id_level_term_year_idx")
   @@map("fee_items")
 }
 
