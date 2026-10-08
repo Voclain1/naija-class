@@ -60,3 +60,13 @@ export interface InviteAdminResponse {
   token: string;
   acceptUrl: string;
 }
+
+// POST /users/invitations/:id/resend returns the same shape as a fresh invite:
+// the old link is ended and a new one issued, so the admin can copy it.
+export type ResendStaffInvitationResponse = InviteAdminResponse;
+
+// POST /users/invitations/:id/revoke. The link already sent stops working.
+export interface RevokeStaffInvitationResponse {
+  invitationId: string;
+  revokedAt: string | Date;
+}

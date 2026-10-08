@@ -692,6 +692,7 @@ export class AuthService {
     try {
       await this.email.send({
         to: input.email,
+        purpose: "staff-password-reset",
         subject: "Reset your School Kit password",
         html: `<p>We received a request to reset your School Kit password. This link expires in 1 hour and can only be used once.</p><p><a href="${resetUrl}">${resetUrl}</a></p><p>If you didn't request this, you can safely ignore this email.</p>`,
       });

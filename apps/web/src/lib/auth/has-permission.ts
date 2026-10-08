@@ -12,6 +12,6 @@
  * on a bursar bugfix; if a third caller appears, extract it then." The
  * dashboard header's quick actions are that third caller.
  */
-export function hasPermission(permissions: string[], perm: string): boolean {
+export function hasPermission(permissions: readonly string[], perm: string): boolean {
   return permissions.includes("*") || permissions.includes(perm);
 }

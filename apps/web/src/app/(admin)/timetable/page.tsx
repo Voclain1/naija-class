@@ -36,12 +36,7 @@ import {
   getYearClashes,
 } from "@/lib/timetable/timetable-api";
 import { buildGrid } from "@/lib/timetable/timetable-grid";
-
-// Duplicated per-file rather than a shared hook — same pattern as the settings
-// screens. See docs/deferred.md ("Shared usePermissions hook").
-function hasPermission(permissions: string[], perm: string): boolean {
-  return permissions.includes("*") || permissions.includes(perm);
-}
+import { hasPermission } from "@/lib/auth/has-permission";
 
 // /timetable — Phase 8 / CP3 timetable builder (docs/modules/phase-8.md §17 D36).
 //

@@ -20,12 +20,7 @@ import { Button } from "@/components/ui/button";
 import { ApiError } from "@/lib/api-client";
 import { useAuth } from "@/lib/auth/use-auth";
 import { getBellSchedule, saveBellSchedule } from "@/lib/timetable/timetable-api";
-
-// Duplicated per-file rather than a shared hook — same pattern as the settings
-// screens. See docs/deferred.md ("Shared usePermissions hook").
-function hasPermission(permissions: string[], perm: string): boolean {
-  return permissions.includes("*") || permissions.includes(perm);
-}
+import { hasPermission } from "@/lib/auth/has-permission";
 
 // /settings/bell-schedule — Phase 8 / CP3 (docs/modules/phase-8.md §17 D26, D34, D36).
 //

@@ -16,13 +16,7 @@ import {
   updateParentSummarySettings,
 } from "@/lib/parent-summaries/parent-summaries-api";
 import { cn } from "@/lib/utils";
-
-// Duplicated per-file rather than a shared hook — same pattern as
-// settings/notifications/page.tsx and the others. See docs/deferred.md
-// ("Shared usePermissions hook").
-function hasPermission(permissions: string[], perm: string): boolean {
-  return permissions.includes("*") || permissions.includes(perm);
-}
+import { hasPermission } from "@/lib/auth/has-permission";
 
 // /settings/parent-summaries — Phase 5 / Slice 5.
 //

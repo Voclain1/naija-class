@@ -4,6 +4,7 @@ import { basePrisma, withTenant } from "@school-kit/db";
 import { ForbiddenError } from "@school-kit/types";
 
 import { AuthService } from "../auth/auth.service";
+import { InvitationsService } from "../invitations/invitations.service";
 import { UsersService } from "./users.service";
 
 // Integration spec — talks to real Postgres. Same rationale as
@@ -330,6 +331,135 @@ describe("UsersService (Slice 7)", () => {
   // -----------------------------------------------------------------------
   // listUsers / listPendingInvitations
   // -----------------------------------------------------------------------
+
+  // -----------------------------------------------------------------------
+  // resendInvitation / revokeInvitation (2026-10-08)
+  // -----------------------------------------------------------------------
+
+  describe("resend and revoke", () => {
+    const invitations = new InvitationsService();
+
+    it("resend issues a fresh link for the same person and role, and the old link stops working", async () => {
+      const { authCtx, schoolId } = await createActiveSchool("inv-resend");
+      const first = await usersService.invite(
+        authCtx,
+        { email: `resend-${runId}@example.test`, firstName: "Rex", lastName: "Resent", roleKey: "bursar" },
+        ctx,
+      );
+
+      const second = await usersService.resendInvitation(authCtx, first.invitation.id, ctx);
+
+      expect(second.invitation.id).not.toBe(first.invitation.id);
+      expect(second.invitation).toMatchObject({
+        email: `resend-${runId}@example.test`,
+        firstName: "Rex",
+        lastName: "Resent",
+        roleKey: "bursar",
+      });
+      await expect(invitations.getByToken(first.token)).rejects.toMatchObject({ code: "INVITATION_EXPIRED" });
+      await expect(invitations.getByToken(second.token)).resolves.toMatchObject({ email: `resend-${runId}@example.test` });
+
+      const pending = await usersService.listPendingInvitations(authCtx);
+      expect(pending.map((p) => p.id)).toEqual([second.invitation.id]);
+      const audit = await withTenant(schoolId, (db) =>
+        db.auditLog.findFirst({ where: { action: "user.invite-resend", entityId: second.invitation.id } }),
+      );
+      expect(audit?.metadata).toMatchObject({ replaces: first.invitation.id, roleKey: "bursar" });
+      expect(JSON.stringify(audit?.metadata)).not.toContain(`resend-${runId}@example.test`);
+    });
+
+    it("resend also revives an invitation that already expired", async () => {
+      const { authCtx, schoolId } = await createActiveSchool("inv-resend-exp");
+      const first = await usersService.invite(authCtx, { email: `late-${runId}@example.test` }, ctx);
+      await withTenant(schoolId, (db) =>
+        db.invitation.update({ where: { id: first.invitation.id }, data: { expiresAt: new Date(Date.now() - 1000) } }),
+      );
+
+      const second = await usersService.resendInvitation(authCtx, first.invitation.id, ctx);
+      await expect(invitations.getByToken(second.token)).resolves.toBeTruthy();
+    });
+
+    it("revoke kills the link and drops it from the pending list; a second revoke is refused", async () => {
+      const { authCtx, schoolId } = await createActiveSchool("inv-revoke");
+      const first = await usersService.invite(authCtx, { email: `wrong-${runId}@example.test` }, ctx);
+
+      const revoked = await usersService.revokeInvitation(authCtx, first.invitation.id, ctx);
+      expect(revoked.invitationId).toBe(first.invitation.id);
+      await expect(invitations.getByToken(first.token)).rejects.toMatchObject({ code: "INVITATION_EXPIRED" });
+      expect(await usersService.listPendingInvitations(authCtx)).toEqual([]);
+      await expect(usersService.revokeInvitation(authCtx, first.invitation.id, ctx)).rejects.toMatchObject({
+        code: "NO_PENDING_INVITATION",
+      });
+
+      const audit = await withTenant(schoolId, (db) =>
+        db.auditLog.count({ where: { action: "user.invite-revoke", entityId: first.invitation.id } }),
+      );
+      expect(audit).toBe(1);
+    });
+
+    it("another school's invitation, an owner invitation, or a malformed id is not found", async () => {
+      const a = await createActiveSchool("inv-x-a");
+      const b = await createActiveSchool("inv-x-b");
+      const theirs = await usersService.invite(b.authCtx, { email: `theirs-${runId}@example.test` }, ctx);
+      const owner = await withTenant(a.schoolId, (db) =>
+        db.invitation.create({
+          data: {
+            schoolId: a.schoolId,
+            email: `owner-inv-${runId}@example.test`,
+            roleKey: "owner",
+            tokenHash: `hash-owner-${runId}`,
+            invitedBy: a.userId,
+            expiresAt: new Date(Date.now() + 60_000),
+          },
+          select: { id: true },
+        }),
+      );
+
+      for (const id of [theirs.invitation.id, owner.id, "not-a-uuid"]) {
+        await expect(usersService.resendInvitation(a.authCtx, id, ctx)).rejects.toMatchObject({ code: "NOT_FOUND" });
+        await expect(usersService.revokeInvitation(a.authCtx, id, ctx)).rejects.toMatchObject({ code: "NOT_FOUND" });
+      }
+      // The other school's link still works.
+      await expect(invitations.getByToken(theirs.token)).resolves.toBeTruthy();
+    });
+
+    it("resend is refused once the person has already joined", async () => {
+      const { authCtx, schoolId } = await createActiveSchool("inv-joined");
+      const first = await usersService.invite(authCtx, { email: `joined-${runId}@example.test` }, ctx);
+      await withTenant(schoolId, (db) =>
+        db.invitation.update({ where: { id: first.invitation.id }, data: { acceptedAt: new Date() } }),
+      );
+      await expect(usersService.resendInvitation(authCtx, first.invitation.id, ctx)).rejects.toMatchObject({
+        code: "INVITATION_ALREADY_ACCEPTED",
+      });
+    });
+
+    it("a teacher cannot resend or revoke", async () => {
+      const { authCtx, schoolId } = await createActiveSchool("inv-rr-teacher");
+      const first = await usersService.invite(authCtx, { email: `t-target-${runId}@example.test` }, ctx);
+      const teacherRole = await basePrisma.role.findFirstOrThrow({
+        where: { schoolId: null, key: "teacher", isSystem: true },
+        select: { id: true },
+      });
+      const teacher = await withTenant(schoolId, async (db) => {
+        const user = await db.user.create({
+          data: {
+            schoolId,
+            firstName: "Tess",
+            lastName: "Teacher",
+            email: `teacher-inv-${runId}@example.test`,
+            phone: randomPhone(),
+            passwordHash: "argon2id$placeholder",
+          },
+          select: { id: true },
+        });
+        await db.userRole.create({ data: { userId: user.id, roleId: teacherRole.id } });
+        return { sessionId: "sess-placeholder", userId: user.id, schoolId };
+      });
+      await expect(usersService.resendInvitation(teacher, first.invitation.id, ctx)).rejects.toBeInstanceOf(ForbiddenError);
+      await expect(usersService.revokeInvitation(teacher, first.invitation.id, ctx)).rejects.toBeInstanceOf(ForbiddenError);
+    });
+  });
 
   describe("listUsers", () => {
     it("excludes the requester from the returned list", async () => {

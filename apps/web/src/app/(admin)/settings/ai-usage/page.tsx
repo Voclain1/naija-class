@@ -9,12 +9,7 @@ import { ApiError } from "@/lib/api-client";
 import { getAiUsage } from "@/lib/ai-usage/ai-usage-api";
 import { useAuth } from "@/lib/auth/use-auth";
 import { cn } from "@/lib/utils";
-
-// Duplicated per-file rather than a shared hook — same pattern as the other
-// settings screens. See docs/deferred.md ("Shared usePermissions hook").
-function hasPermission(permissions: string[], perm: string): boolean {
-  return permissions.includes("*") || permissions.includes(perm);
-}
+import { hasPermission } from "@/lib/auth/has-permission";
 
 // /settings/ai-usage — closes the `ai-usage.read` gap: the permission has
 // existed since Phase 5 / Slice 1 and had no screen behind it, so a school

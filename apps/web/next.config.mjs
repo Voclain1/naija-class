@@ -1,3 +1,5 @@
+import { withSentryConfig } from "@sentry/nextjs";
+
 import { sessionCookieConfigProblem } from "./session-cookie-config.mjs";
 
 // Refuse a production build that would sign every member of staff out — see
@@ -10,6 +12,12 @@ if (sessionCookieProblem) {
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  // Preview builds send the browser's API calls through /api/preview-api (see
+  // that route). Decided here, at build time, from Vercel's own VERCEL_ENV, so
+  // no one has to remember to set it per environment.
+  env: {
+    NEXT_PUBLIC_API_VIA_PREVIEW_PROXY: process.env.VERCEL_ENV === "preview" ? "1" : "",
+  },
   // Workspace packages are TS-source — let Next transpile them.
   //
   // Divergence note: apps/api consumes @school-kit/* from each package's
@@ -44,4 +52,27 @@ const nextConfig = {
   },
 };
 
-export default nextConfig;
+// Source maps to Sentry, so a production stack trace names our files and lines
+// instead of minified chunks (docs/deferred.md, "Web builds upload no Sentry
+// source maps"). Upload happens only when SENTRY_AUTH_TOKEN is present (set it
+// on school-kit-web in Vercel, with SENTRY_ORG); without it the build is
+// exactly as before. Maps are deleted after upload so the site never serves
+// them. The SDK's build-time auto-instrumentation stays off: runtime
+// behaviour is unchanged, instrumentation.ts already initialises Sentry.
+const sentryAuthToken = process.env.SENTRY_AUTH_TOKEN || undefined;
+
+export default withSentryConfig(nextConfig, {
+  org: process.env.SENTRY_ORG,
+  project: process.env.SENTRY_PROJECT_WEB || "school-kit-web",
+  authToken: sentryAuthToken,
+  silent: !process.env.CI,
+  telemetry: false,
+  widenClientFileUpload: true,
+  sourcemaps: {
+    disable: !sentryAuthToken,
+    deleteSourcemapsAfterUpload: true,
+  },
+  autoInstrumentServerFunctions: false,
+  autoInstrumentMiddleware: false,
+  autoInstrumentAppDirectory: false,
+});

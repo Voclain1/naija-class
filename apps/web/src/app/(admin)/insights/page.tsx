@@ -10,12 +10,7 @@ import { Button } from "@/components/ui/button";
 import { ApiError } from "@/lib/api-client";
 import { useAuth } from "@/lib/auth/use-auth";
 import { askInsight } from "@/lib/insights/insights-api";
-
-// Duplicated per-file rather than a shared hook — same pattern as the settings
-// screens. See docs/deferred.md ("Shared usePermissions hook").
-function hasPermission(permissions: string[], perm: string): boolean {
-  return permissions.includes("*") || permissions.includes(perm);
-}
+import { hasPermission } from "@/lib/auth/has-permission";
 
 // /insights — Phase 5 / Slice 8. An admin asks in their own words.
 //

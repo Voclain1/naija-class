@@ -83,25 +83,51 @@ the module doc or the PR, then link it here.
 ## 2. Open engineering work
 
 ### Auth and permissions
-- [ ] **Two authorization systems that do not consult each other.**
-  `assertUserActiveAndHasOneOf` checks role keys in services that controllers
-  already gate with `@Permissions`. Three bursar bugs and one admin bug came
-  from this.
-  - **Fix:** keep the `isActive` re-check, drop the redundant role check on
-    read paths, and add a spec that fails when a handler's role list and its
-    permission disagree.
-  - **Scope:** about 20 call sites. Plan first.
+- [x] **DONE 2026-10-08 — Two authorization systems that do not consult each
+  other.** `assertUserActiveAndHasOneOf` checks role keys in services that
+  controllers already gate with `@Permissions`. Three bursar bugs and one admin
+  bug came from a role list rejecting a role that held the permission.
+  - **The spec already existed:** `rbac-two-gate-conformance.spec.ts` fails
+    when a route's role list rejects a role that holds its permission, unless
+    the disagreement is a documented design exception.
+  - **Its blind spot is closed (2026-10-08).** It only saw a role check
+    written directly in the service method the controller calls. A check in a
+    private helper, a same-file function or another injected service (for
+    example `CbtResultsService` → `CbtSittingsService.resolveScope`) made the
+    route look ungated, so its role list was never compared. It now follows
+    those calls. Verified by removing `teacher` from the CBT role list: the old
+    spec passed, the new one names the 14 CBT routes that would lock teachers
+    out.
+  - **The ~200 role checks stay.** No school can create a role (only the four
+    seeded ones exist), so role keys and permissions come from the same seed
+    and the spec keeps them in step. Many role lists are also deliberately
+    narrower than the permission (the documented exceptions, such as teachers
+    reading rosters only through their scoped endpoint). Removing them in bulk
+    would widen access on those routes for no fix. Revisit if custom roles are
+    ever added: then role-key checks would reject them everywhere.
   - Full history: archive, "RECURRING PATTERN".
-- [ ] **Staff sign-in does not work on Vercel preview deployments** (since
-  #381). Previews run on `*.vercel.app`, which is outside `schoolkit.ng`, so
-  the browser never sends the `sk_session` cookie to the API. Production and
-  local development are unaffected. **Trigger:** wanting to sign in on a
-  preview. A fix could keep bearer auth for preview builds only.
-- [ ] **Staff invitations cannot be resent or revoked** (guardian and owner
-  invitations can). To share an older link, an admin re-invites.
-- [ ] **`usePermissions` hook.** The shared `lib/auth/has-permission.ts` now
-  exists, but 11 pages still carry their own copy of `hasPermission`. Move
-  them over.
+- [x] **DONE 2026-10-08 — Staff sign-in works on Vercel preview deployments
+  again** (broken since #381). A preview (`*.vercel.app`) could not send the
+  `schoolkit.ng` cookie to the API, and its origin is not one the API allows.
+  Preview builds now send the browser's API calls to their own
+  `/api/preview-api/*`, which reads the HttpOnly cookie on the server and
+  forwards with a bearer token, so the token still never reaches page
+  JavaScript. The route answers 404 outside a preview, refuses cross-site
+  writes, and the preview's cookie is host-only. Production is unchanged and
+  keeps calling the API directly (Vercel's 4.5 MB body cap would break uploads
+  through a proxy; acceptable on a preview). The Preview environment on
+  `school-kit-web` needs `NEXT_PUBLIC_API_URL` set, or a preview calls
+  `localhost`.
+- [x] **DONE 2026-10-08 — Staff invitations can be resent and revoked.**
+  `POST /users/invitations/:id/resend` ends the old link and issues a new one
+  for the same person and role; `POST /users/invitations/:id/revoke` ends a
+  pending one. Both need `user.invite`, are audited, and leave owner
+  invitations to the platform admin. On `/settings/users` an invitation whose
+  link is no longer on screen offers "New link", and every row has "Cancel";
+  the staff roster's invitation rows link there.
+- [x] **DONE 2026-10-08 — One `hasPermission`.** The 11 local copies now
+  import `lib/auth/has-permission.ts` (`invoice-cancel.ts` re-exports it for
+  its own callers and spec).
 - [ ] **Deliberate sign-out loses a dirty form.** `logout()` destroys the
   server session before the browser's "leave site?" prompt fires.
   - **Fix:** check for dirty state before the server logout. That needs a
@@ -111,37 +137,54 @@ the module doc or the PR, then link it here.
   - Forced expiry still destroys unsaved gradebook work. No mechanism has
     been chosen; measure how often it happens first (archive: "Session
     expiry", "Session-end work loss").
-- [ ] **Mobile signs out silently on a 401.** `UnauthorizedListener` in
-  `apps/mobile/src/lib/api/client.ts` is `() => void`, so the server's code
-  (`SESSION_EXPIRED`, `USER_INACTIVE`, …) never reaches the login screen.
-  Needs device verification. It must keep not signing out on
-  `ApiNetworkError`.
-- [ ] **Resend failures reach only the logs**, not Sentry. This affects staff
-  reset, guardian reset and guardian invitations. The response must not vary,
-  so this is about operators noticing.
+- [x] **Mobile no longer signs out silently on a 401** (found already built,
+  2026-10-08). The API client passes the server's code to `onUnauthorized`,
+  `session.tsx` turns it into a message (`session-end.ts`), and the sign-in
+  screen shows it. Network failures still never sign anyone out. Seeing it on
+  a device is part of "Device checks" below.
+- [x] **DONE 2026-10-08 — Email failures reach Sentry.** `EmailService.send`
+  reports every failed send (API-level error or network throw) as a Sentry
+  error tagged with its `purpose` (`staff-password-reset`,
+  `guardian-password-reset`, `guardian-invitation`, …) and the address
+  redacted; the subject is left out because it can carry a child's name.
+  Callers' responses are unchanged, so forgot-password still reveals nothing.
 
 ### Money
-- [ ] **Double-PENDING overpayment.** Two Paystack payments started for the
-  same invoice by different people (a guardian and staff, or two guardians)
-  can both complete. `applyPaystackSuccess` then applies both.
-  - The portal blocks a second attempt within 30 minutes for the same
-    guardian only.
-  - **Fix:** re-check `remaining >= amount` when the webhook applies.
-  - **Trigger:** before payment volume grows past the pilot.
+- [x] **DONE 2026-10-08 — Double-PENDING overpayment.** Two Paystack
+  checkouts on one invoice could both be paid, and both were applied with
+  nothing to say so.
+  - **Prevention:** both ways a checkout starts (staff `initPaystack` and the
+    parent's `PortalPaymentsService.initiate`) now share
+    `assertNoPaystackInFlight`: one live checkout per invoice, whoever opened
+    it, inside a 30-minute window.
+  - **Backstop:** when Paystack confirms a payment that takes the invoice past
+    what it owes, the payment still stands, because the money really left the
+    parent's account. The excess gets a `payment.paystack-overpayment` audit
+    row and a Sentry warning. The invoice page shows "Overpaid" with a note to
+    refund the extra payment.
+  - Still possible, by design: a checkout older than the window, or cash
+    recorded while a parent is mid-checkout. Both now land on the backstop
+    rather than going unnoticed.
 - [ ] **Finance UX follow-ups from PR #220**, including the F-34 bulk-invoice
   confirmation (archive, "Finance / bursar invoice UX").
-- [ ] **`notIn: ["DRAFT", "CANCELLED"]` literals.** Five remain in
-  `finance.service.ts`. Move them to the `finance-totals.ts` status sets.
+- [x] **DONE 2026-10-08 — `notIn: ["DRAFT", "CANCELLED"]` literals.** All
+  five in `finance.service.ts` now use `BILLED_EXCLUDED_STATUSES`.
 
 ### Data and infrastructure
-- [ ] **`schema.prisma` vs migration drift.** Four names are involved:
-  - `audit_logs_new_pkey`;
-  - `audit_logs_school_id_created_at_idx`;
-  - a `fee_items` index name;
-  - `payments_school_id_paystack_reference_key`.
-
-  A naive `prisma migrate diff` pulls them in. **Trigger:** before the next
-  migration touching `audit_logs`, `payments` or `fee_items`.
+- [x] **DONE 2026-10-08 — `schema.prisma` vs migration drift.** Diffing a
+  fully migrated database against the schema found a real bug behind it:
+  `audit_logs` had **no `(school_id, created_at)` index** since the June
+  partitioning migration, whose `CREATE INDEX IF NOT EXISTS` was skipped
+  because the table being replaced still held an index of that name. Every
+  per-school audit read scanned every partition. Migration
+  `20261011120000_audit_logs_school_created_index` creates it on the parent
+  (and so on every partition). The primary key and the `fee_items` index now
+  carry their real names via `map:`.
+  - Three differences remain and are expected, because Prisma 5 cannot
+    express them: the pgvector HNSW index on `curriculum_chunks`, the partial
+    unique index `payments_school_id_paystack_reference_key`
+    (`WHERE paystack_reference IS NOT NULL`), and the `school_week_days` array
+    default. A naive `prisma migrate diff` proposes all three; ignore them.
 - [ ] **`withTenant` retries body timeouts.** `P2028` re-runs the whole
   transaction under pool exhaustion, which adds load at the worst moment.
   Stop retrying body timeouts (`describeAttemptFailure` has `elapsedMs`).
@@ -149,9 +192,10 @@ the module doc or the PR, then link it here.
   (dashboard today and the 8-week trend). **Trigger:** slow dashboard queries.
 - [ ] **Production `connection_limit` is unverified** (assumed 3). Check
   `app_user` connections in the Neon dashboard.
-- [ ] **No expired-session sweeper** for `sessions`, `guardian_sessions` and
-  `student_sessions`. This is housekeeping only: guards already reject expired
-  rows.
+- [x] **DONE 2026-10-08 — Expired-session sweeper.**
+  `SessionSweeperService` (daily, 03:40 UTC) deletes staff, guardian and
+  student sessions more than a day past expiry, school by school under
+  `withTenant` (no new SECURITY DEFINER function).
 - [ ] **Audit writes are synchronous** rather than queued, as ARCHITECTURE.md
   describes. Revisit only if a write path's latency shows it.
 
@@ -162,8 +206,14 @@ the module doc or the PR, then link it here.
   - **Fix:** count repeated `(endpoint, issue.path)` failures on flows that
     should succeed (PostHog or a metric), not "capture all 4xx".
   - Never log request bodies.
-- [ ] **Web builds upload no Sentry source maps** (`withSentryConfig`), and
-  there is no server-side PostHog.
+- [x] **DONE 2026-10-08 — Web source maps to Sentry.** `next.config.mjs` is
+  wrapped in `withSentryConfig`, which uploads the maps (then deletes them from
+  the build) only when `SENTRY_AUTH_TOKEN` is set; build-time
+  auto-instrumentation is off, so runtime is unchanged. **To switch on:** set
+  `SENTRY_AUTH_TOKEN` and `SENTRY_ORG` (and `SENTRY_PROJECT_WEB` if the
+  project slug is not `school-kit-web`) on `school-kit-web` in Vercel; all
+  three are declared in `turbo.json`.
+- [ ] **No server-side PostHog.** Browser capture only.
 - [ ] **The redaction regexes exist twice** (`apps/api/src/observability/redact.ts`,
   `apps/web/src/lib/observability/redact.ts`). Move them to one package.
 
@@ -192,12 +242,8 @@ the module doc or the PR, then link it here.
   can be undone by the term selector's `router.replace`.
 
 ### Docs and tooling
-- [ ] **`docs/journal/` stops at 2026-09-06.** Not yet recorded:
-  - Phase 8 CP2–CP4;
-  - the school day;
-  - Phase 8c;
-  - platform-admin tools;
-  - online exams.
+- [x] **DONE 2026-10-08 — `docs/journal/` caught up** with a single catch-up
+  entry, `docs/journal/2026-10-08.md`, covering 2026-09-06 to today by theme.
 - [ ] **`RESERVED_SLUGS` is exact-match only.** **Trigger:** before adding any
   reserved slug pattern.
 - [ ] **Tooling:**

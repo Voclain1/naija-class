@@ -280,14 +280,14 @@ export class FinanceService implements OnModuleInit {
           },
         }),
         db.invoice.findMany({
-          where: { termId, status: { notIn: ["DRAFT", "CANCELLED"] } },
+          where: { termId, status: { notIn: [...BILLED_EXCLUDED_STATUSES] } },
           select: { studentId: true, totalDue: true, totalPaid: true },
         }),
         // Returned alongside the rows so the caller can show the breakdown
         // against the same totals the KPI tiles use, and so the spec has
         // something to assert the rows SUM to.
         db.invoice.aggregate({
-          where: { termId, status: { notIn: ["DRAFT", "CANCELLED"] } },
+          where: { termId, status: { notIn: [...BILLED_EXCLUDED_STATUSES] } },
           _sum: { totalDue: true, totalPaid: true },
         }),
       ]);
@@ -331,7 +331,7 @@ export class FinanceService implements OnModuleInit {
 
       const [invoices, payments, totalsAgg] = await Promise.all([
         db.invoice.findMany({
-          where: { termId, status: { notIn: ["DRAFT", "CANCELLED"] } },
+          where: { termId, status: { notIn: [...BILLED_EXCLUDED_STATUSES] } },
           select: { totalDue: true, issuedAt: true, createdAt: true },
         }),
         // SUCCESS only — a refund sets the payment REVERSED and recomputes
@@ -342,7 +342,7 @@ export class FinanceService implements OnModuleInit {
         db.payment.findMany({
           where: {
             status: "SUCCESS",
-            invoice: { termId, status: { notIn: ["DRAFT", "CANCELLED"] } },
+            invoice: { termId, status: { notIn: [...BILLED_EXCLUDED_STATUSES] } },
           },
           select: { amount: true, paidAt: true, createdAt: true },
         }),
@@ -351,7 +351,7 @@ export class FinanceService implements OnModuleInit {
         // drifts from the invoice-level totals, the spec's reconciliation
         // assertion must FAIL rather than compare a number against itself.
         db.invoice.aggregate({
-          where: { termId, status: { notIn: ["DRAFT", "CANCELLED"] } },
+          where: { termId, status: { notIn: [...BILLED_EXCLUDED_STATUSES] } },
           _sum: { totalDue: true, totalPaid: true },
         }),
       ]);

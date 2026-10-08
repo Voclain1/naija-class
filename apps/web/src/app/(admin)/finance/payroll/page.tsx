@@ -23,6 +23,7 @@ import {
   transferPayrollItem,
 } from "@/lib/finance/payroll-api";
 import { listStaff } from "@/lib/staff/staff-api";
+import { hasPermission } from "@/lib/auth/has-permission";
 
 // /finance/payroll — Phase 3 / Payroll CP3 (run without money movement) +
 // CP4b (Paystack staff salary transfers). No prior payroll UI existed
@@ -35,10 +36,6 @@ import { listStaff } from "@/lib/staff/staff-api";
 // staff bank accounts have their own settings screen (CP4a); this page only
 // needs a staff member's NAME, resolved client-side from listStaff() against
 // PayrollItemDto.userId (a plain FK, no server-side include).
-function hasPermission(permissions: string[], perm: string): boolean {
-  return permissions.includes("*") || permissions.includes(perm);
-}
-
 function currentPeriod(): string {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;

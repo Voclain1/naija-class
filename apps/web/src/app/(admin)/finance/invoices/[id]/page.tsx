@@ -601,13 +601,32 @@ export default function InvoiceDetailPage() {
             {formatKobo(invoice.totalPaid)}
           </dd>
         </div>
-        <div>
-          <dt className="text-muted-foreground">Balance</dt>
-          <dd className="font-mono text-lg font-semibold tabular-nums">
-            {formatKobo(invoice.totalDue - invoice.totalPaid)}
-          </dd>
-        </div>
+        {invoice.totalPaid > invoice.totalDue ? (
+          <div>
+            <dt className="text-muted-foreground">Overpaid</dt>
+            <dd className="font-mono text-lg font-semibold tabular-nums text-amber-700 dark:text-amber-400">
+              {formatKobo(invoice.totalPaid - invoice.totalDue)}
+            </dd>
+          </div>
+        ) : (
+          <div>
+            <dt className="text-muted-foreground">Balance</dt>
+            <dd className="font-mono text-lg font-semibold tabular-nums">
+              {formatKobo(invoice.totalDue - invoice.totalPaid)}
+            </dd>
+          </div>
+        )}
       </dl>
+
+      {/* Two online payments can both land on one invoice (docs/deferred.md,
+          "Double-PENDING overpayment"); the API records both, because the
+          money really arrived, and the bursar returns the extra. */}
+      {invoice.totalPaid > invoice.totalDue && (
+        <p className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+          This invoice has received more than it owes, usually because two online payments were made for it. Refund the
+          extra payment from the list below.
+        </p>
+      )}
 
       {/* Discount rule breakdown (if any discounts) */}
       {invoice.items.some((item) => item.discountsApplied.length > 0) && (

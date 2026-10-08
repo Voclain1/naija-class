@@ -45,13 +45,7 @@ import {
   updateStudentGuardianLink,
 } from "@/lib/guardians/guardians-api";
 import { cn } from "@/lib/utils";
-
-// Duplicated per-file rather than a shared hook — same pattern already used
-// in finance/payroll/page.tsx and staff/bvn-section.tsx. See docs/deferred.md
-// ("Shared usePermissions hook") for the case to extract it.
-function hasPermission(permissions: string[], perm: string): boolean {
-  return permissions.includes("*") || permissions.includes(perm);
-}
+import { hasPermission } from "@/lib/auth/has-permission";
 
 interface Props {
   studentId: string;

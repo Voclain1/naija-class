@@ -778,6 +778,7 @@ export class GuardiansService {
       try {
         await this.email.send({
           to: params.email,
+          purpose: "guardian-invitation",
           subject: `You're invited to ${params.schoolName}'s parent portal`,
           html: `<p>Hi ${params.firstName},</p><p>${params.schoolName} has invited you to the School Kit parent portal. Use the link below to set your password and log in — it expires in 7 days.</p><p><a href="${params.acceptUrl}">${params.acceptUrl}</a></p>`,
         });

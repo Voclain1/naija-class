@@ -4,6 +4,7 @@ import {
   Get,
   HttpCode,
   Ip,
+  Param,
   Post,
   Req,
   UseGuards,
@@ -13,6 +14,8 @@ import {
   type InviteAdminInput,
   type InviteAdminResponse,
   type PendingInvitationDto,
+  type ResendStaffInvitationResponse,
+  type RevokeStaffInvitationResponse,
   type SignupOwnerUserDto,
   type UserListItemDto,
 } from "@school-kit/types";
@@ -65,6 +68,42 @@ export class UsersController {
     @CurrentUser() authCtx: AuthContext,
   ): Promise<PendingInvitationDto[]> {
     return this.usersService.listPendingInvitations(authCtx);
+  }
+
+  // POST /users/invitations/:id/resend — end a pending (or expired) staff
+  // invitation and issue a fresh link for the same person and role.
+  @Post("invitations/:id/resend")
+  @HttpCode(200)
+  @UseGuards(PermissionsGuard)
+  @Permissions("user.invite")
+  async resendInvitation(
+    @Param("id") id: string,
+    @CurrentUser() authCtx: AuthContext,
+    @Ip() ip: string,
+    @Req() req: Request,
+  ): Promise<ResendStaffInvitationResponse> {
+    return this.usersService.resendInvitation(authCtx, id, {
+      ipAddress: ip,
+      userAgent: req.header("user-agent") ?? null,
+    });
+  }
+
+  // POST /users/invitations/:id/revoke — end a pending staff invitation; the
+  // link already sent stops working.
+  @Post("invitations/:id/revoke")
+  @HttpCode(200)
+  @UseGuards(PermissionsGuard)
+  @Permissions("user.invite")
+  async revokeInvitation(
+    @Param("id") id: string,
+    @CurrentUser() authCtx: AuthContext,
+    @Ip() ip: string,
+    @Req() req: Request,
+  ): Promise<RevokeStaffInvitationResponse> {
+    return this.usersService.revokeInvitation(authCtx, id, {
+      ipAddress: ip,
+      userAgent: req.header("user-agent") ?? null,
+    });
   }
 
   // POST /users/invite — owner|admin invites a new admin. 201 because the

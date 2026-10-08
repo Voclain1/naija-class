@@ -30,12 +30,7 @@ import {
   unhideNationalEvent,
   updateSchoolEvent,
 } from "@/lib/calendar/calendar-api";
-
-// Duplicated per-file rather than a shared hook — same pattern as the settings
-// screens. See docs/deferred.md ("Shared usePermissions hook").
-function hasPermission(permissions: string[], perm: string): boolean {
-  return permissions.includes("*") || permissions.includes(perm);
-}
+import { hasPermission } from "@/lib/auth/has-permission";
 
 // /events — Phase 8 / CP1 Event Calendar (docs/modules/phase-8.md §15).
 //

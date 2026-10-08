@@ -24,8 +24,14 @@ export interface UnauthorizedEventDetail {
   code: string;
 }
 
+// A Vercel preview cannot reach the API directly (wrong cookie domain, and
+// an origin the API does not allow), so its calls go through its own
+// /api/preview-api route instead. next.config.mjs sets the flag for preview
+// builds only; production and development call the API directly.
 const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api/v1";
+  process.env.NEXT_PUBLIC_API_VIA_PREVIEW_PROXY === "1"
+    ? "/api/preview-api"
+    : (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api/v1");
 
 export class ApiError extends Error {
   readonly code: string;

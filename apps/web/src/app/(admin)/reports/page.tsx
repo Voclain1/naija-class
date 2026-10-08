@@ -21,12 +21,7 @@ import { ApiError } from "@/lib/api-client";
 import { useAuth } from "@/lib/auth/use-auth";
 import { exportRowsAsCsv } from "@/lib/csv-export";
 import { getCompletenessReport, getTeacherActivityReport, ofCount } from "@/lib/reports/reports-api";
-
-// Duplicated per-file rather than a shared hook — same pattern as the settings
-// screens. See docs/deferred.md ("Shared usePermissions hook").
-function hasPermission(permissions: string[], perm: string): boolean {
-  return permissions.includes("*") || permissions.includes(perm);
-}
+import { hasPermission } from "@/lib/auth/has-permission";
 
 const STATUS_LABELS: Record<(typeof REPORT_CARD_STATUS_KEYS)[number], string> = {
   DRAFT: "Draft",

@@ -1048,6 +1048,64 @@ describe("PaymentsService — Paystack methods (integration)", () => {
     ).rejects.toMatchObject({ code: "PAYMENT_WOULD_EXCEED_BALANCE" });
   });
 
+  // A PENDING Paystack row, as the other actor's checkout would leave it.
+  async function makePendingPaystack(
+    schoolId: string,
+    ownerId: string,
+    invoiceId: string,
+    amount: number,
+    createdAt?: Date,
+  ): Promise<{ paymentId: string; paystackReference: string }> {
+    return withTenant(schoolId, async (db) => {
+      const { studentId } = await db.invoice.findUniqueOrThrow({ where: { id: invoiceId }, select: { studentId: true } });
+      const p = await db.payment.create({
+        data: {
+          schoolId,
+          invoiceId,
+          studentId,
+          amount,
+          method: "PAYSTACK",
+          status: "PENDING",
+          recordedBy: ownerId,
+          ...(createdAt ? { createdAt } : {}),
+        },
+        select: { id: true },
+      });
+      const ref = `PSK-${schoolId}-${p.id}`;
+      await db.payment.update({ where: { id: p.id }, data: { paystackReference: ref } });
+      return { paymentId: p.id, paystackReference: ref };
+    });
+  }
+
+  it("initPaystack: refuses a second checkout while one is live on the invoice (e.g. a parent's)", async () => {
+    const { PaymentsService, storage } = await makeSvcWithStorage("init-inflight");
+    const initSpy = vi.fn();
+    const svc = new PaymentsService(storage, makePaystackStub({ initializeTransaction: initSpy }) as never, new PaymentPlanService());
+
+    const { schoolId, ownerId } = await makeSchool2("init-inflight");
+    const { invoiceId } = await makeIssuedInvoice2(schoolId, ownerId, 50_000_00, "iif");
+    await makePendingPaystack(schoolId, ownerId, invoiceId, 50_000_00);
+
+    await expect(
+      svc.initPaystack(ctx(schoolId, ownerId), { invoiceId, amount: 50_000_00 }),
+    ).rejects.toMatchObject({ code: "PAYMENT_ALREADY_IN_PROGRESS" });
+    expect(initSpy).not.toHaveBeenCalled();
+    const rows = await withTenant(schoolId, (db) => db.payment.count({ where: { invoiceId } }));
+    expect(rows).toBe(1);
+  });
+
+  it("initPaystack: an abandoned checkout older than the window does not block the invoice", async () => {
+    const { PaymentsService, storage } = await makeSvcWithStorage("init-stale");
+    const svc = new PaymentsService(storage, makePaystackStub() as never, new PaymentPlanService());
+
+    const { schoolId, ownerId } = await makeSchool2("init-stale");
+    const { invoiceId } = await makeIssuedInvoice2(schoolId, ownerId, 50_000_00, "ist");
+    await makePendingPaystack(schoolId, ownerId, invoiceId, 50_000_00, new Date(Date.now() - 31 * 60 * 1000));
+
+    const result = await svc.initPaystack(ctx(schoolId, ownerId), { invoiceId, amount: 50_000_00 });
+    expect(result.paymentId).toBeTruthy();
+  });
+
   it("initPaystack: marks payment FAILED if Paystack API throws, then re-throws", async () => {
     const { PaymentsService, storage } = await makeSvcWithStorage("init-apifail");
     const stub = makePaystackStub({
@@ -1209,6 +1267,59 @@ describe("PaymentsService — Paystack methods (integration)", () => {
       db.invoice.findUniqueOrThrow({ where: { id: invoiceId }, select: { totalPaid: true } }),
     );
     expect(invoice.totalPaid).toBe(50_000_00);
+  });
+
+  it("handleWebhook charge.success: two paid checkouts on one invoice — both stand, the excess is flagged", async () => {
+    const { PaymentsService, storage } = await makeSvcWithStorage("webhook-overpay");
+    const svc = new PaymentsService(storage, makePaystackStub() as never, new PaymentPlanService());
+
+    const { schoolId, ownerId } = await makeSchool2("webhook-overpay");
+    const { invoiceId } = await makeIssuedInvoice2(schoolId, ownerId, 50_000_00, "wo");
+    // Two checkouts for the full balance, opened before either was paid: the
+    // second is old enough to have slipped past the in-flight guard.
+    const first = await makePendingPaystack(schoolId, ownerId, invoiceId, 50_000_00);
+    const second = await makePendingPaystack(schoolId, ownerId, invoiceId, 50_000_00);
+
+    for (const p of [first, second]) {
+      await svc.handleWebhook({
+        event: "charge.success",
+        data: { reference: p.paystackReference, status: "success", amount: 50_000_00, paid_at: new Date().toISOString() },
+      });
+    }
+
+    const { payments, invoice, overpayments } = await withTenant(schoolId, async (db) => ({
+      payments: await db.payment.findMany({ where: { invoiceId }, select: { status: true } }),
+      invoice: await db.invoice.findUniqueOrThrow({ where: { id: invoiceId }, select: { status: true, totalPaid: true } }),
+      overpayments: await db.auditLog.findMany({
+        where: { action: "payment.paystack-overpayment" },
+        select: { entityId: true, metadata: true },
+      }),
+    }));
+    // The parent's money really left their account, so both payments stand.
+    expect(payments.map((p) => p.status)).toEqual(["SUCCESS", "SUCCESS"]);
+    expect(invoice).toEqual({ status: "PAID", totalPaid: 100_000_00 });
+    // Only the payment that tipped the invoice over is flagged, by its excess.
+    expect(overpayments).toHaveLength(1);
+    expect(overpayments[0]!.entityId).toBe(second.paymentId);
+    expect(overpayments[0]!.metadata).toMatchObject({ excess: 50_000_00, totalDue: 50_000_00, newTotalPaid: 100_000_00 });
+  });
+
+  it("handleWebhook charge.success: an exact payment raises no overpayment flag", async () => {
+    const { PaymentsService, storage } = await makeSvcWithStorage("webhook-exact");
+    const svc = new PaymentsService(storage, makePaystackStub() as never, new PaymentPlanService());
+
+    const { schoolId, ownerId } = await makeSchool2("webhook-exact");
+    const { invoiceId } = await makeIssuedInvoice2(schoolId, ownerId, 50_000_00, "we");
+    const p = await makePendingPaystack(schoolId, ownerId, invoiceId, 50_000_00);
+    await svc.handleWebhook({
+      event: "charge.success",
+      data: { reference: p.paystackReference, status: "success", amount: 50_000_00, paid_at: new Date().toISOString() },
+    });
+
+    const flags = await withTenant(schoolId, (db) =>
+      db.auditLog.count({ where: { action: "payment.paystack-overpayment" } }),
+    );
+    expect(flags).toBe(0);
   });
 
   it("handleWebhook: unknown event type → no-op (no DB writes)", async () => {
