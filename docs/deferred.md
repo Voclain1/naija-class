@@ -242,12 +242,8 @@ the module doc or the PR, then link it here.
   can be undone by the term selector's `router.replace`.
 
 ### Docs and tooling
-- [ ] **`docs/journal/` stops at 2026-09-06.** Not yet recorded:
-  - Phase 8 CP2–CP4;
-  - the school day;
-  - Phase 8c;
-  - platform-admin tools;
-  - online exams.
+- [x] **DONE 2026-10-08 — `docs/journal/` caught up** with a single catch-up
+  entry, `docs/journal/2026-10-08.md`, covering 2026-09-06 to today by theme.
 - [ ] **`RESERVED_SLUGS` is exact-match only.** **Trigger:** before adding any
   reserved slug pattern.
 - [ ] **Tooling:**
