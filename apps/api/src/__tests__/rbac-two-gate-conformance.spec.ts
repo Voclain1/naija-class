@@ -125,12 +125,6 @@ function indexSourceFiles(directory: string): void {
   }
 }
 
-function sourceFileFor(ctor: NamedFunction): ts.SourceFile {
-  const source = sourceFiles.get(ctor.name);
-  if (!source) throw new Error(`Could not locate source for ${ctor.name}`);
-  return source;
-}
-
 function stringArray(node: ts.Expression, source: ts.SourceFile): string[] | null {
   let value = node;
   if (ts.isIdentifier(value)) {
@@ -152,33 +146,100 @@ function stringArray(node: ts.Expression, source: ts.SourceFile): string[] | nul
   return values.every((item): item is string => item !== null) ? values : null;
 }
 
-function assertedRoles(ctor: NamedFunction, methodName: string): RoleKey[] | null {
-  const source = sourceFileFor(ctor);
-  const result: { found: boolean; roles: string[] | null } = { found: false, roles: null };
-  const visit = (node: ts.Node) => {
-    if (
-      ts.isMethodDeclaration(node) &&
-      ts.isIdentifier(node.name) &&
-      node.name.text === methodName &&
-      node.body
-    ) {
-      const inspect = (child: ts.Node) => {
-        if (
-          ts.isCallExpression(child) &&
-          ts.isIdentifier(child.expression) &&
-          child.expression.text === "assertUserActiveAndHasOneOf" &&
-          child.arguments[1]
-        ) {
-          result.found = true;
-          result.roles = stringArray(child.arguments[1], source);
+// The role gate a service method asserts, following the calls it makes into
+// its own class's methods, into functions declared in its file, and into the
+// services injected through its constructor (`this.sittings.resolveScope`).
+// Many services gate in a private helper or a sibling service rather than at
+// the top of the public method; without following those calls, such routes
+// looked ungated and their role lists were never cross-checked. That is how a
+// role list could lock a role out of a permission it holds without this spec
+// noticing, the shape of the three bursar bugs (deferred-archive.md,
+// "RECURRING PATTERN").
+type ClassInfo = {
+  source: ts.SourceFile;
+  methods: Map<string, ts.Block>;
+  functions: Map<string, ts.Block>;
+  injected: Map<string, string>;
+};
+
+const classInfoCache = new Map<string, ClassInfo | null>();
+
+function classInfo(className: string): ClassInfo | null {
+  if (classInfoCache.has(className)) return classInfoCache.get(className)!;
+  const source = sourceFiles.get(className);
+  let info: ClassInfo | null = null;
+  if (source) {
+    info = { source, methods: new Map(), functions: new Map(), injected: new Map() };
+    for (const statement of source.statements) {
+      if (ts.isFunctionDeclaration(statement) && statement.name && statement.body) {
+        info.functions.set(statement.name.text, statement.body);
+      }
+      if (ts.isClassDeclaration(statement) && statement.name?.text === className) {
+        for (const member of statement.members) {
+          if (ts.isMethodDeclaration(member) && ts.isIdentifier(member.name) && member.body) {
+            info.methods.set(member.name.text, member.body);
+          }
+          if (ts.isConstructorDeclaration(member)) {
+            for (const param of member.parameters) {
+              if (ts.isIdentifier(param.name) && param.type && ts.isTypeReferenceNode(param.type)) {
+                info.injected.set(param.name.text, param.type.typeName.getText(source));
+              }
+            }
+          }
         }
-        ts.forEachChild(child, inspect);
-      };
-      inspect(node.body);
+      }
     }
-    ts.forEachChild(node, visit);
+  }
+  classInfoCache.set(className, info);
+  return info;
+}
+
+function assertedRoles(ctor: NamedFunction, methodName: string): RoleKey[] | null {
+  if (!sourceFiles.has(ctor.name)) throw new Error(`Could not locate source for ${ctor.name}`);
+  const result: { found: boolean; roles: string[] | null } = { found: false, roles: null };
+  const seen = new Set<ts.Block>();
+
+  const inspectBody = (info: ClassInfo, body: ts.Block) => {
+    if (seen.has(body) || result.found) return;
+    seen.add(body);
+    const inspect = (child: ts.Node) => {
+      if (result.found) return;
+      if (ts.isCallExpression(child)) {
+        const callee = child.expression;
+        if (ts.isIdentifier(callee) && callee.text === "assertUserActiveAndHasOneOf" && child.arguments[1]) {
+          result.found = true;
+          result.roles = stringArray(child.arguments[1], info.source);
+          return;
+        }
+        if (ts.isIdentifier(callee) && info.functions.has(callee.text)) {
+          inspectBody(info, info.functions.get(callee.text)!);
+        }
+        if (ts.isPropertyAccessExpression(callee)) {
+          const target = callee.expression;
+          // this.helper(...)
+          if (target.kind === ts.SyntaxKind.ThisKeyword && info.methods.has(callee.name.text)) {
+            inspectBody(info, info.methods.get(callee.name.text)!);
+          }
+          // this.injectedService.method(...)
+          if (
+            ts.isPropertyAccessExpression(target) &&
+            target.expression.kind === ts.SyntaxKind.ThisKeyword &&
+            info.injected.has(target.name.text)
+          ) {
+            const other = classInfo(info.injected.get(target.name.text)!);
+            const body = other?.methods.get(callee.name.text);
+            if (other && body) inspectBody(other, body);
+          }
+        }
+      }
+      ts.forEachChild(child, inspect);
+    };
+    inspect(body);
   };
-  visit(source);
+
+  const info = classInfo(ctor.name)!;
+  const start = info.methods.get(methodName);
+  if (start) inspectBody(info, start);
   if (result.found && !result.roles) {
     throw new Error(`${ctor.name}.${methodName} has a role gate whose allowed roles could not be resolved`);
   }

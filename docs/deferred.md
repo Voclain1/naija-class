@@ -83,14 +83,28 @@ the module doc or the PR, then link it here.
 ## 2. Open engineering work
 
 ### Auth and permissions
-- [ ] **Two authorization systems that do not consult each other.**
-  `assertUserActiveAndHasOneOf` checks role keys in services that controllers
-  already gate with `@Permissions`. Three bursar bugs and one admin bug came
-  from this.
-  - **Fix:** keep the `isActive` re-check, drop the redundant role check on
-    read paths, and add a spec that fails when a handler's role list and its
-    permission disagree.
-  - **Scope:** about 20 call sites. Plan first.
+- [x] **DONE 2026-10-08 — Two authorization systems that do not consult each
+  other.** `assertUserActiveAndHasOneOf` checks role keys in services that
+  controllers already gate with `@Permissions`. Three bursar bugs and one admin
+  bug came from a role list rejecting a role that held the permission.
+  - **The spec already existed:** `rbac-two-gate-conformance.spec.ts` fails
+    when a route's role list rejects a role that holds its permission, unless
+    the disagreement is a documented design exception.
+  - **Its blind spot is closed (2026-10-08).** It only saw a role check
+    written directly in the service method the controller calls. A check in a
+    private helper, a same-file function or another injected service (for
+    example `CbtResultsService` → `CbtSittingsService.resolveScope`) made the
+    route look ungated, so its role list was never compared. It now follows
+    those calls. Verified by removing `teacher` from the CBT role list: the old
+    spec passed, the new one names the 14 CBT routes that would lock teachers
+    out.
+  - **The ~200 role checks stay.** No school can create a role (only the four
+    seeded ones exist), so role keys and permissions come from the same seed
+    and the spec keeps them in step. Many role lists are also deliberately
+    narrower than the permission (the documented exceptions, such as teachers
+    reading rosters only through their scoped endpoint). Removing them in bulk
+    would widen access on those routes for no fix. Revisit if custom roles are
+    ever added: then role-key checks would reject them everywhere.
   - Full history: archive, "RECURRING PATTERN".
 - [ ] **Staff sign-in does not work on Vercel preview deployments** (since
   #381). Previews run on `*.vercel.app`, which is outside `schoolkit.ng`, so
