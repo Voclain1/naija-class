@@ -23,6 +23,7 @@
 // Nothing here re-implements or second-guesses any of that.
 
 import type { InvoiceStatus } from "@school-kit/types";
+import { hasPermission } from "../auth/has-permission";
 
 // ---------------------------------------------------------------------------
 // Eligibility
@@ -56,18 +57,9 @@ const CANCELLABLE: ReadonlySet<InvoiceStatus> = new Set<InvoiceStatus>([
 /** The permission `POST /invoices/:id/cancel` is declared with. */
 export const CANCEL_INVOICE_PERMISSION = "invoice.cancel";
 
-/**
- * Wildcard-aware permission test, matching the `permissions.includes("*")`
- * convention used by the nine other copies of this helper across `apps/web`
- * (sidebar, BVN section, guardians tab, and six pages). Extracting a shared
- * hook is tracked in `docs/deferred.md` and deliberately not done here — but
- * unlike the other nine, this copy is exported and unit-tested, so it is the
- * one to move when that extraction happens rather than the seed of an
- * eleventh.
- */
-export function hasPermission(permissions: readonly string[], permission: string): boolean {
-  return permissions.includes("*") || permissions.includes(permission);
-}
+// The shared wildcard-aware check, re-exported because this module's spec and
+// callers have always imported it from here.
+export { hasPermission };
 
 /**
  * True only when this user may cancel THIS invoice right now.

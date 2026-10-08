@@ -12,14 +12,7 @@ import {
   updateNotificationPreferences,
 } from "@/lib/notifications/notifications-api";
 import { cn } from "@/lib/utils";
-
-// Duplicated per-file rather than a shared hook — same pattern already used
-// in finance/payroll/page.tsx, staff/bvn-section.tsx, and
-// components/students/guardians-tab.tsx. See docs/deferred.md ("Shared
-// usePermissions hook") for the case to extract it.
-function hasPermission(permissions: string[], perm: string): boolean {
-  return permissions.includes("*") || permissions.includes(perm);
-}
+import { hasPermission } from "@/lib/auth/has-permission";
 
 // /settings/notifications — Phase 4 / Slice 6 (D3). Per-school email/SMS
 // toggles. Owner/admin only — hidden (not disabled) for bursar, same

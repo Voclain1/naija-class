@@ -19,6 +19,7 @@ import {
 
 import { BvnCaptureModal } from "./bvn-capture-modal";
 import { BvnRevealModal } from "./bvn-reveal-modal";
+import { hasPermission } from "@/lib/auth/has-permission";
 
 // Phase 3 / Slice 12 — BVN section, reused on both the self-service profile
 // page ("self" mode, /users/me/bvn*) and the admin staff detail page
@@ -26,10 +27,6 @@ import { BvnRevealModal } from "./bvn-reveal-modal";
 // staff-bvn.* permissions (owner/admin only — bursar excluded, mirrors
 // payment.refund); "self" needs no permission — every authenticated user
 // manages their own BVN regardless of role.
-function hasPermission(permissions: string[], perm: string): boolean {
-  return permissions.includes("*") || permissions.includes(perm);
-}
-
 interface Props {
   mode: "self" | "other";
   // Required when mode === "other".

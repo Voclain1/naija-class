@@ -125,9 +125,9 @@ the module doc or the PR, then link it here.
   invitations to the platform admin. On `/settings/users` an invitation whose
   link is no longer on screen offers "New link", and every row has "Cancel";
   the staff roster's invitation rows link there.
-- [ ] **`usePermissions` hook.** The shared `lib/auth/has-permission.ts` now
-  exists, but 11 pages still carry their own copy of `hasPermission`. Move
-  them over.
+- [x] **DONE 2026-10-08 — One `hasPermission`.** The 11 local copies now
+  import `lib/auth/has-permission.ts` (`invoice-cancel.ts` re-exports it for
+  its own callers and spec).
 - [ ] **Deliberate sign-out loses a dirty form.** `logout()` destroys the
   server session before the browser's "leave site?" prompt fires.
   - **Fix:** check for dirty state before the server logout. That needs a
