@@ -20,6 +20,7 @@ import { curriculumGroundingCase } from "./cases/curriculum-grounding.js";
 import { liveGenerationCase } from "./cases/live-generation.js";
 import { piiSafetyCase } from "./cases/pii-safety.js";
 import { promptQualityCase } from "./cases/prompt-quality.js";
+import { registerScanScoringCase } from "./cases/register-scan-scoring.js";
 import { registryIntegrityCase } from "./cases/registry-integrity.js";
 
 // Wrapped in main() rather than using top-level await: packages/ai has no
@@ -32,6 +33,7 @@ async function main(): Promise<void> {
     registryIntegrityCase,
     promptQualityCase,
     curriculumGroundingCase,
+    registerScanScoringCase,
     liveGenerationCase,
   ]);
   process.exit(exitCode);

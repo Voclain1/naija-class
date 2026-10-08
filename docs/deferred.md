@@ -71,6 +71,14 @@ the module doc or the PR, then link it here.
   hand-checked ground truth, a per-field accuracy pass, and probably a prompt
   v2. Its synchronous design (D3) has never been timed against the real API.
   **Trigger:** before the feature is switched on for any school.
+  - The accuracy pass is built (2026-10-07): `pnpm ai:eval:registers` scores
+    each page per field, separates safe blanks from silent errors, times every
+    call against the 60-second synchronous budget, and answers yes or no
+    against a proposed switch-on bar. How to prepare the pages:
+    `docs/modules/smart-student-import.md` §8.
+  - **Still needs:** the ~10 photographed pages and their ground truth (kept
+    out of the repo; the default folder is git-ignored), one run on a real
+    key, and the prompt v2 that run will probably call for.
 
 ## 2. Open engineering work
 

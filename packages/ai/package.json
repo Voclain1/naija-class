@@ -20,6 +20,7 @@
     "lint": "echo 'lint placeholder'",
     "test": "echo 'test placeholder'",
     "eval": "tsx evals/run.ts",
+    "eval:registers": "tsx evals/register-scans/run.ts",
     "clean": "rm -rf dist"
   },
   "devDependencies": {
