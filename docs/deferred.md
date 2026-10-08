@@ -206,8 +206,14 @@ the module doc or the PR, then link it here.
   - **Fix:** count repeated `(endpoint, issue.path)` failures on flows that
     should succeed (PostHog or a metric), not "capture all 4xx".
   - Never log request bodies.
-- [ ] **Web builds upload no Sentry source maps** (`withSentryConfig`), and
-  there is no server-side PostHog.
+- [x] **DONE 2026-10-08 — Web source maps to Sentry.** `next.config.mjs` is
+  wrapped in `withSentryConfig`, which uploads the maps (then deletes them from
+  the build) only when `SENTRY_AUTH_TOKEN` is set; build-time
+  auto-instrumentation is off, so runtime is unchanged. **To switch on:** set
+  `SENTRY_AUTH_TOKEN` and `SENTRY_ORG` (and `SENTRY_PROJECT_WEB` if the
+  project slug is not `school-kit-web`) on `school-kit-web` in Vercel; all
+  three are declared in `turbo.json`.
+- [ ] **No server-side PostHog.** Browser capture only.
 - [ ] **The redaction regexes exist twice** (`apps/api/src/observability/redact.ts`,
   `apps/web/src/lib/observability/redact.ts`). Move them to one package.
 
