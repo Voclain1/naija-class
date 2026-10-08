@@ -192,9 +192,10 @@ the module doc or the PR, then link it here.
   (dashboard today and the 8-week trend). **Trigger:** slow dashboard queries.
 - [ ] **Production `connection_limit` is unverified** (assumed 3). Check
   `app_user` connections in the Neon dashboard.
-- [ ] **No expired-session sweeper** for `sessions`, `guardian_sessions` and
-  `student_sessions`. This is housekeeping only: guards already reject expired
-  rows.
+- [x] **DONE 2026-10-08 — Expired-session sweeper.**
+  `SessionSweeperService` (daily, 03:40 UTC) deletes staff, guardian and
+  student sessions more than a day past expiry, school by school under
+  `withTenant` (no new SECURITY DEFINER function).
 - [ ] **Audit writes are synchronous** rather than queued, as ARCHITECTURE.md
   describes. Revisit only if a write path's latency shows it.
 
