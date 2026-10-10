@@ -1,8 +1,9 @@
 import { ArgumentsHost, Catch, ExceptionFilter, HttpException, Logger } from "@nestjs/common";
-import { BaseError } from "@school-kit/types";
+import { BaseError, ValidationError } from "@school-kit/types";
 import type { Request, Response } from "express";
 
 import { Sentry } from "../observability/sentry";
+import { validationFailureMonitor } from "../observability/validation-failure-monitor";
 
 // Global error filter. Three branches:
 //   1. BaseError subclass → use its httpStatus + code + message + details
@@ -29,6 +30,18 @@ export class HttpExceptionFilter implements ExceptionFilter {
       const retryAfter = (exception.details as { retryAfterSeconds?: unknown } | undefined)?.retryAfterSeconds;
       if (exception.httpStatus === 429 && typeof retryAfter === "number") {
         res.setHeader("Retry-After", String(retryAfter));
+      }
+      // A single validation failure is not an incident, so none is captured
+      // here. Repeats of one failure on one route are: the monitor counts
+      // them and raises one Sentry warning when a form keeps rejecting people
+      // (it reads only the route template and issue paths, never the body).
+      if (exception instanceof ValidationError) {
+        validationFailureMonitor.record({
+          method: req.method,
+          route: routeTemplate(req),
+          errorCode: exception.code,
+          details: exception.details,
+        });
       }
       res.status(exception.httpStatus).json({ error: exception.toBody() });
       return;
@@ -70,6 +83,14 @@ export class HttpExceptionFilter implements ExceptionFilter {
       },
     });
   }
+}
+
+// The matched route's template ("/api/v1/students/:id"), never the URL itself,
+// which carries ids and query strings. A request that matched no route has
+// no template, and a validation failure there is not a form anyone uses.
+function routeTemplate(req: Request): string {
+  const path = (req.route as { path?: unknown } | undefined)?.path;
+  return typeof path === "string" ? `${req.baseUrl ?? ""}${path}` : "(unmatched)";
 }
 
 function defaultCodeForStatus(status: number): string {

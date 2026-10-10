@@ -204,12 +204,16 @@ the module doc or the PR, then link it here.
   describes. Revisit only if a write path's latency shows it.
 
 ### Observability
-- [ ] **Modelled 4xx errors never reach monitoring.** `HttpExceptionFilter`
-  returns before Sentry for every `BaseError`. That is why the onboarding
-  step-5 date error went unseen for three weeks.
-  - **Fix:** count repeated `(endpoint, issue.path)` failures on flows that
-    should succeed (PostHog or a metric), not "capture all 4xx".
-  - Never log request bodies.
+- [x] **DONE 2026-10-10 — Repeated validation failures reach Sentry.** A
+  single 400 is still not captured. `ValidationFailureMonitor`
+  (`apps/api/src/observability/validation-failure-monitor.ts`) counts every
+  `ValidationError` per route template, issue path and issue code, and raises
+  one fingerprinted Sentry warning (plus a log line) when a key reaches 5 in an
+  hour; Sentry's event count on that issue is the trend. It never reads the
+  body, the URL's ids, or any message (Zod's quote the rejected value).
+  Counts are per API machine and reset on deploy. What it cannot see: whether
+  the person then gave up. That funnel view would be a PostHog event on the
+  web side, still not built.
 - [x] **DONE 2026-10-08 — Web source maps to Sentry.** `next.config.mjs` is
   wrapped in `withSentryConfig`, which uploads the maps (then deletes them from
   the build) only when `SENTRY_AUTH_TOKEN` is set; build-time
