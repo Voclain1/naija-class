@@ -1,7 +1,9 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
   beginAuthForcedNavigation,
+  beginConfirmedSignOut,
+  hasUnsavedWork,
   consumeSessionEndReason,
   isAuthForcedNavigation,
   parkSessionEndReason,
@@ -85,5 +87,45 @@ describe("consumeSessionEndReason", () => {
     // this reason downgrades it to a generic screen that implies it would work.
     beginAuthForcedNavigation("deactivated");
     expect(consumeSessionEndReason()).toBe("deactivated");
+  });
+});
+
+// Deliberate sign-out (2026-10-10). The probe reuses the guards' own
+// beforeunload listeners, so it is tested with a guard shaped exactly like
+// theirs: stand down when told to, otherwise preventDefault().
+describe("hasUnsavedWork / beginConfirmedSignOut", () => {
+  const target = new EventTarget();
+  const guard = (event: Event) => {
+    if (isAuthForcedNavigation()) return;
+    event.preventDefault();
+  };
+
+  beforeEach(() => {
+    (globalThis as { window?: unknown }).window = target;
+  });
+  afterEach(() => {
+    target.removeEventListener("beforeunload", guard);
+    delete (globalThis as { window?: unknown }).window;
+  });
+
+  it("is false when no guard is registered (nothing is dirty)", () => {
+    expect(hasUnsavedWork()).toBe(false);
+  });
+
+  it("is true while a guard is registered and objects", () => {
+    target.addEventListener("beforeunload", guard);
+    expect(hasUnsavedWork()).toBe(true);
+  });
+
+  it("after a confirmed sign-out every guard stands down, so the browser does not ask again", () => {
+    target.addEventListener("beforeunload", guard);
+    beginConfirmedSignOut();
+    expect(isAuthForcedNavigation()).toBe(true);
+    expect(hasUnsavedWork()).toBe(false);
+  });
+
+  it("is false outside a browser", () => {
+    delete (globalThis as { window?: unknown }).window;
+    expect(hasUnsavedWork()).toBe(false);
   });
 });

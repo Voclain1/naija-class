@@ -128,15 +128,19 @@ the module doc or the PR, then link it here.
 - [x] **DONE 2026-10-08 — One `hasPermission`.** The 11 local copies now
   import `lib/auth/has-permission.ts` (`invoice-cancel.ts` re-exports it for
   its own callers and spec).
-- [ ] **Deliberate sign-out loses a dirty form.** `logout()` destroys the
-  server session before the browser's "leave site?" prompt fires.
-  - **Fix:** check for dirty state before the server logout. That needs a
-    shared dirty-state registry.
-  - Four hand-written `beforeunload` guards exist, gated by
-    `session-end-invariants.spec.ts`.
-  - Forced expiry still destroys unsaved gradebook work. No mechanism has
-    been chosen; measure how often it happens first (archive: "Session
-    expiry", "Session-end work loss").
+- [x] **DONE 2026-10-10 — Deliberate sign-out no longer loses a dirty form
+  silently.** `logout()` now asks first, before the server session is
+  destroyed. If any unsaved-changes guard objects, it shows "You have unsaved
+  changes on this page…"; Cancel keeps the session and the work, OK signs out
+  with no second "leave site?" prompt. No separate registry was needed:
+  `hasUnsavedWork()` (`lib/auth/session-end-navigation.ts`) dispatches a
+  cancellable probe `beforeunload`, which every guard already answers while it
+  is dirty. Pinned by `session-end-invariants.spec.ts` (ask before
+  `logoutRequest()`) and two cases in `e2e/tests/session-end-work-loss.spec.ts`
+  (both fail on the old code).
+- [ ] **Forced session expiry still destroys unsaved gradebook work.** No
+  mechanism has been chosen; measure how often it happens first (archive:
+  "Session expiry", "Session-end work loss").
 - [x] **Mobile no longer signs out silently on a 401** (found already built,
   2026-10-08). The API client passes the server's code to `onUnauthorized`,
   `session.tsx` turns it into a message (`session-end.ts`), and the sign-in
