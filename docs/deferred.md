@@ -185,9 +185,13 @@ the module doc or the PR, then link it here.
     unique index `payments_school_id_paystack_reference_key`
     (`WHERE paystack_reference IS NOT NULL`), and the `school_week_days` array
     default. A naive `prisma migrate diff` proposes all three; ignore them.
-- [ ] **`withTenant` retries body timeouts.** `P2028` re-runs the whole
-  transaction under pool exhaustion, which adds load at the worst moment.
-  Stop retrying body timeouts (`describeAttemptFailure` has `elapsedMs`).
+- [x] **DONE 2026-10-10 — `withTenant` no longer retries body timeouts.**
+  Only the never-started `P2028` ("Unable to start a transaction") is
+  retried; a body that outlived its budget ("Transaction already closed" /
+  "Transaction not found") is thrown at once with a `not retrying` warning.
+  Told apart by Prisma's message, not by elapsed time: a never-started
+  transaction also waits out `maxWait` first. Pinned in
+  `tenant-timeout.spec.ts` (the body ran twice before).
 - [ ] **No `[schoolId, date]` index for whole-school attendance reads**
   (dashboard today and the 8-week trend). **Trigger:** slow dashboard queries.
 - [ ] **Production `connection_limit` is unverified** (assumed 3). Check

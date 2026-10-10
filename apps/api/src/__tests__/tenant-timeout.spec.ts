@@ -29,6 +29,42 @@ describe("withTenant timeoutMs option", () => {
     ).rejects.toThrow(/transaction/i);
   });
 
+  // 2026-10-10: a body timeout (P2028 "Transaction already closed") used to be
+  // retried, re-running the whole slow transaction on a second connection.
+  // Only the never-started P2028 ("Unable to start a transaction") is retried
+  // now. Both ways a body can outlive its budget are pinned: a query issued
+  // after the deadline, and a body that finishes late and fails at commit.
+  it("a body timeout surfacing at the next query runs the body exactly once", async () => {
+    let runs = 0;
+    await expect(
+      withTenant(
+        crypto.randomUUID(),
+        async (tx) => {
+          runs += 1;
+          await new Promise((resolve) => setTimeout(resolve, 200));
+          await tx.$executeRaw`SELECT 1`;
+        },
+        { timeoutMs: 50 },
+      ),
+    ).rejects.toMatchObject({ code: "P2028" });
+    expect(runs).toBe(1);
+  });
+
+  it("a body timeout surfacing at commit runs the body exactly once", async () => {
+    let runs = 0;
+    await expect(
+      withTenant(
+        crypto.randomUUID(),
+        async () => {
+          runs += 1;
+          await new Promise((resolve) => setTimeout(resolve, 200));
+        },
+        { timeoutMs: 50 },
+      ),
+    ).rejects.toThrow(/transaction/i);
+    expect(runs).toBe(1);
+  });
+
   it("a body well within a generous explicit timeoutMs succeeds normally", async () => {
     const schoolId = crypto.randomUUID();
     const result = await withTenant(schoolId, async () => "ok", { timeoutMs: 15_000 });
