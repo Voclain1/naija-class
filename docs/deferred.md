@@ -192,8 +192,11 @@ the module doc or the PR, then link it here.
   Told apart by Prisma's message, not by elapsed time: a never-started
   transaction also waits out `maxWait` first. Pinned in
   `tenant-timeout.spec.ts` (the body ran twice before).
-- [ ] **No `[schoolId, date]` index for whole-school attendance reads**
-  (dashboard today and the 8-week trend). **Trigger:** slow dashboard queries.
+- [x] **DONE 2026-10-10 — `(school_id, date)` index on `attendance_records`**
+  (migration `20261012120000_attendance_records_school_date_index`), for the
+  dashboard's whole-school 8-week read. `EXPLAIN` as `app_user` under a school
+  GUC shows a bitmap index scan with both the RLS `school_id` and the date
+  range as index conditions.
 - [ ] **Production `connection_limit` is unverified** (assumed 3). Check
   `app_user` connections in the Neon dashboard.
 - [x] **DONE 2026-10-08 — Expired-session sweeper.**
