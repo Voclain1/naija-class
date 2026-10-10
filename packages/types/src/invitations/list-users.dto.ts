@@ -23,4 +23,8 @@ export interface UserListItemDto {
   lastLoginAt: string | Date | null;
   createdAt: string | Date;
   roles: UserRoleDto[];
+  // The user's HR profile (TeacherProfile), or null. Joined server-side
+  // (2026-10-10) so the staff roster no longer pages through
+  // GET /teacher-profiles to learn it, which stopped at 200 profiles.
+  teacherProfileId: string | null;
 }

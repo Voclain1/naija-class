@@ -247,7 +247,14 @@ the module doc or the PR, then link it here.
   build, so the order (sign off then build, or build then sign off) no longer
   matters. Pinned in `report-card-workflow.service.spec.ts` and
   `e2e/tests/admin-gradebook.spec.ts`.
-- [ ] **Staff roster has no server-side pagination** (`/staff`).
+- [x] **DONE 2026-10-10 — Staff roster's 200-profile cap.** `GET /users`
+  now returns each user's `teacherProfileId` (one join), so `/staff` no
+  longer reads one page of `GET /teacher-profiles`, which marked every teacher
+  past the 200th "Pending profile". `GET /users` still returns the full set,
+  deliberately: five screens (payroll, class arms, staff detail and edit, the
+  roster) need every staff member, and the roster's search, filters and CSV
+  export work over all rows. Add a cursor only if a school's staff list itself
+  becomes slow.
 - [ ] **Bulk student grid** — what is left:
   - bounded-parallel submit;
   - a real `POST /students/bulk`;
@@ -260,8 +267,13 @@ the module doc or the PR, then link it here.
   leaves it in both places. The old cells count as free, so a lesson may move
   onto its own old cell (which used to fail with `CELL_OCCUPIED`). A stale
   source answers `MOVE_SOURCE_EMPTY`; the audit row records `movedFrom`.
-- [ ] **Possible `/dashboard` navigation race.** A click right after landing
-  can be undone by the term selector's `router.replace`.
+- [x] **DONE 2026-10-10 — The `/dashboard` navigation race.** The term
+  selector's automatic default-term write is skipped once the browser has left
+  the page that started it, and uses `history.replaceState` (kept in step with
+  `useSearchParams`, but not a navigation), so it can no longer cancel a click
+  made while it was loading. Choosing a term from the select still navigates.
+  Reproduced deterministically in `e2e/tests/dashboard-navigation-race.spec.ts`
+  by holding the terms response until after the click.
 
 ### Docs and tooling
 - [x] **DONE 2026-10-08 — `docs/journal/` caught up** with a single catch-up
