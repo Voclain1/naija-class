@@ -646,10 +646,13 @@ export class TimetableService {
             const fromStart = slots.findIndex((s) => s.id === from.bellSlotId);
             if (fromStart === -1) throw new NotFoundError("Period not found.");
             const fromIds = slots.slice(fromStart, fromStart + from.span).map((s) => s.id);
-            const entries = await db.timetableEntry.findMany({
-              where: { schoolId, timetableId: timetable.id, dayOfWeek: from.dayOfWeek, bellSlotId: { in: fromIds } },
-              select: { id: true, bellSlotId: true, subjectId: true, teachers: { select: { teacherId: true } } },
-            });
+            // In period order, so the audit row's movedFrom reads the block top to bottom.
+            const entries = (
+              await db.timetableEntry.findMany({
+                where: { schoolId, timetableId: timetable.id, dayOfWeek: from.dayOfWeek, bellSlotId: { in: fromIds } },
+                select: { id: true, bellSlotId: true, subjectId: true, teachers: { select: { teacherId: true } } },
+              })
+            ).sort((x, y) => fromIds.indexOf(x.bellSlotId) - fromIds.indexOf(y.bellSlotId));
             if (!entries.some((e) => e.bellSlotId === from.bellSlotId)) {
               throw new ConflictError(
                 C.MOVE_SOURCE_EMPTY,
