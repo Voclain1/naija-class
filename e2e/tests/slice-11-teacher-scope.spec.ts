@@ -81,6 +81,16 @@ test("acceptance #9 — admin assigns teacher; teacher sees exactly that assignm
     await expect(page.getByText("You teach:")).toBeVisible();
     await expect(page.getByText("Mathematics")).toBeVisible();
     await expect(page.getByText(ROSTER_EMPTY_COPY)).toBeVisible();
+
+    // Gradebook (2026-10-10): with nobody enrolled, the picker says so and who
+    // fixes it, instead of offering a column that opens onto an empty grid.
+    await page.goto("/teacher/gradebook");
+    await expect(page.getByTestId("teacher-prerequisite-no-students")).toBeVisible();
+    await expect(page.getByText("No students enrolled yet")).toBeVisible();
+    await page.getByRole("link", { name: /Mathematics/ }).click();
+    await page.waitForURL(/\/teacher\/gradebook\/[^/]+\/[^/]+$/);
+    await expect(page.getByText("No students are enrolled in this class yet.")).toBeVisible();
+    await expect(page.getByText(/Ask your school administrator to enrol the class/)).toBeVisible();
   } finally {
     for (const ctx of toClose) await ctx.close();
     await admin.api.dispose();

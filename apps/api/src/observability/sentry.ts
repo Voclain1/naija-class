@@ -12,7 +12,7 @@
 
 import * as Sentry from "@sentry/nestjs";
 
-import { redactValue, redactString } from "./redact";
+import { redactString, redactValue } from "@school-kit/types";
 
 let initialised = false;
 

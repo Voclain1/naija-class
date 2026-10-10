@@ -1,6 +1,6 @@
 import * as Sentry from "@sentry/nextjs";
 
-import { redactString, redactValue } from "@/lib/observability/redact";
+import { redactString, redactValue } from "@school-kit/types";
 
 // Server-side (Node runtime) Sentry init for Next.js SSR / route handlers.
 // The API has its own Sentry project; this one catches errors that

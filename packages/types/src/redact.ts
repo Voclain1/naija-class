@@ -1,4 +1,9 @@
-// PII redaction for Sentry error reports.
+// PII redaction for Sentry error reports — the ONE copy, shared by the API
+// (apps/api/src/observability/sentry.ts) and the staff web app's client and
+// server Sentry configs (2026-10-10). Until then the web app carried its own
+// copy whose key list had stopped at the Phase 0 credential keys, so a browser
+// event could ship a student's name, date of birth or medical notes that the
+// API's copy masked. One module means a key added here covers every app.
 //
 // CLAUDE.md "never log full user PII in production" applies to error reports
 // too. Sentry's default capture would include exception messages, request

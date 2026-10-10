@@ -473,6 +473,21 @@ describe("UsersService (Slice 7)", () => {
       expect(users.every((u) => u.id !== userId)).toBe(true);
     });
 
+    // 2026-10-10: has-profile rides on each row, so the staff roster no longer
+    // pages GET /teacher-profiles (which stopped at 200) to learn it.
+    it("carries each user's teacher profile id, or null", async () => {
+      const { authCtx, schoolId } = await createActiveSchool("list-profile");
+      const { userId: withId } = await createAdminUser(schoolId, "list-profile-a");
+      const { userId: withoutId } = await createAdminUser(schoolId, "list-profile-b");
+      const profile = await withTenant(schoolId, (db) =>
+        db.teacherProfile.create({ data: { schoolId, userId: withId, staffNumber: `SN-${runId}` }, select: { id: true } }),
+      );
+
+      const users = await usersService.listUsers(authCtx);
+      expect(users.find((u) => u.id === withId)?.teacherProfileId).toBe(profile.id);
+      expect(users.find((u) => u.id === withoutId)?.teacherProfileId).toBeNull();
+    });
+
     it("rejects callers without owner/admin role", async () => {
       const { schoolId } = await createActiveSchool("list-nope");
       const { authCtx: noRoleCtx } = await withTenant(schoolId, async (db) => {

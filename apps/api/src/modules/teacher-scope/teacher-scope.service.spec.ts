@@ -367,6 +367,35 @@ describe("TeacherScope (cp2 security matrix)", () => {
     expect(result.currentTerm?.name).toBeTruthy();
   });
 
+  // 2026-10-10: what an empty gradebook needs to explain itself. Counted only
+  // over the teacher's own arms — another class's size is not theirs to know.
+  it("GET /teacher-scope/me counts this term's students in each in-scope arm, and only those", async () => {
+    const schoolId = await makeSchool("me-counts");
+    const teacher = await grantSystemRole(schoolId, "me-counts", "teacher");
+    const { yearId, termId } = await makeYear(schoolId, "mc", true);
+    const subject = await makeSubject(schoolId, "mc");
+    const full = await makeArm(schoolId, "mcfull");
+    const empty = await makeArm(schoolId, "mcempty");
+    const other = await makeArm(schoolId, "mcother"); // not this teacher's
+    await assign(schoolId, { teacherId: teacher, classArmId: full, subjectId: subject, academicYearId: yearId });
+    await assign(schoolId, { teacherId: teacher, classArmId: empty, subjectId: subject, academicYearId: yearId });
+    await enroll(schoolId, { classArmId: full, termId, academicYearId: yearId, suffix: "mc1" });
+    await enroll(schoolId, { classArmId: full, termId, academicYearId: yearId, suffix: "mc2" });
+    await enroll(schoolId, { classArmId: other, termId, academicYearId: yearId, suffix: "mc3" });
+
+    const result = await scopeService.getMyScope(ctx(schoolId, teacher));
+    expect(result.enrolledCountByArm).toEqual({ [full]: 2, [empty]: 0 });
+    expect(result.enrolledCountByArm).not.toHaveProperty(other);
+  });
+
+  it("GET /teacher-scope/me reports 0 for every arm when no term is current", async () => {
+    const schoolId = await makeSchool("me-noterm");
+    const teacher = await grantSystemRole(schoolId, "me-noterm", "teacher");
+    const arm = await makeArm(schoolId, "nt", teacher);
+    const result = await scopeService.getMyScope(ctx(schoolId, teacher));
+    expect(result.enrolledCountByArm).toEqual({ [arm]: 0 });
+  });
+
   it("GET /teacher-scope/me as an admin → 403 (admins use admin CRUD, not teacher endpoints)", async () => {
     const schoolId = await makeSchool("me-admin");
     const admin = await grantSystemRole(schoolId, "me-admin", "admin");

@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import type { TeacherScopeDto } from "@school-kit/types";
 
+import { TeacherPrerequisiteNotice } from "@/components/teacher/teacher-prerequisite-notice";
 import { ApiError } from "@/lib/api-client";
 import { getMyScope } from "@/lib/teacher/teacher-scope-api";
 
@@ -39,6 +40,9 @@ export default function GradebookPickerPage() {
   const gradeableArms = scope
     ? scope.classArms.filter((arm) => (scope.subjectsByArm[arm.id] ?? []).length > 0)
     : [];
+  const enrolled = (armId: string) => scope?.enrolledCountByArm[armId] ?? 0;
+  const noStudentsAnywhere =
+    !!scope?.currentTerm && gradeableArms.length > 0 && gradeableArms.every((arm) => enrolled(arm.id) === 0);
 
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
@@ -72,18 +76,34 @@ export default function GradebookPickerPage() {
             </div>
           )}
 
+          {noStudentsAnywhere ? (
+            <TeacherPrerequisiteNotice
+              testId="teacher-prerequisite-no-students"
+              title="There are no students to grade yet."
+              detail={`None of your classes has students enrolled for ${scope.currentTerm?.name ?? "this term"}. Ask your school administrator to enrol them; your class lists fill in here once they do.`}
+            />
+          ) : null}
+
           {gradeableArms.length === 0 ? (
-            <div className="rounded-md border border-dashed bg-muted/20 p-8 text-sm text-muted-foreground">
-              <p className="font-medium text-foreground">No subjects to grade yet.</p>
-              <p className="mt-1">
-                Your subject assignments will appear here once an administrator sets them up.
-              </p>
-            </div>
+            <TeacherPrerequisiteNotice
+              testId="teacher-prerequisite-no-subjects"
+              title="You have not been assigned a subject yet."
+              detail="Your school administrator assigns each teacher their subjects and classes. Ask them to assign yours; they appear here as soon as they do."
+            />
           ) : (
             <ul className="flex flex-col gap-4">
               {gradeableArms.map((arm) => (
                 <li key={arm.id} className="rounded-md border">
-                  <div className="border-b bg-muted/30 px-4 py-2 text-sm font-medium">{arm.name}</div>
+                  <div className="flex items-center justify-between gap-3 border-b bg-muted/30 px-4 py-2 text-sm font-medium">
+                    <span>{arm.name}</span>
+                    {scope.currentTerm ? (
+                      <span className="text-xs font-normal text-muted-foreground">
+                        {enrolled(arm.id) === 0
+                          ? "No students enrolled yet"
+                          : `${enrolled(arm.id)} ${enrolled(arm.id) === 1 ? "student" : "students"}`}
+                      </span>
+                    ) : null}
+                  </div>
                   <ul className="flex flex-col divide-y">
                     {(scope.subjectsByArm[arm.id] ?? []).map((subject) => (
                       <li key={subject.id}>

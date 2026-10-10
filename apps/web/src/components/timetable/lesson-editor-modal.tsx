@@ -101,6 +101,9 @@ export function LessonEditorModal({
     setClashes(null);
     try {
       const newSpan = Math.min(span, maxSpan);
+      // A MOVE sends the block it is leaving; the API clears it in the same
+      // transaction as the save, so the lesson is never left in both places.
+      const isMove = !!target?.lesson && (target.dayOfWeek !== day || target.bellSlotId !== slotId);
       const r = await saveLesson({
         timetableId,
         dayOfWeek: day,
@@ -108,21 +111,10 @@ export function LessonEditorModal({
         subjectId,
         teacherIds: teacherIds.filter((id) => teacherChoices.some((t) => t.id === id)),
         span: newSpan,
+        ...(isMove && target
+          ? { moveFrom: { dayOfWeek: target.dayOfWeek, bellSlotId: target.bellSlotId, span: target.span } }
+          : {}),
       });
-      // A MOVE: the new cells saved (and passed the clash check), so clear the
-      // old block's cells that the new block does not cover. Two requests, not
-      // one transaction — if a clear fails the lesson is briefly in both places,
-      // which is visible and fixable, never a hidden clash.
-      if (target?.lesson && (target.dayOfWeek !== day || target.bellSlotId !== slotId)) {
-        const oldStart = view.slots.findIndex((s) => s.id === target.bellSlotId);
-        const newStart = view.slots.findIndex((s) => s.id === slotId);
-        const oldIds = view.slots.slice(oldStart, oldStart + target.span).map((s) => s.id);
-        const newIds = new Set(view.slots.slice(newStart, newStart + newSpan).map((s) => s.id));
-        for (const id of oldIds) {
-          if (target.dayOfWeek === day && newIds.has(id)) continue;
-          await clearLesson({ timetableId, dayOfWeek: target.dayOfWeek, bellSlotId: id });
-        }
-      }
       await onSaved(r.warnings);
     } catch (e) {
       const c = clashesOf(e);

@@ -1,6 +1,6 @@
 import * as Sentry from "@sentry/nextjs";
 
-import { redactString, redactValue } from "@/lib/observability/redact";
+import { redactString, redactValue } from "@school-kit/types";
 
 // Browser-side Sentry init. Loaded by Next's client runtime — see
 // instrumentation.ts. Blank DSN = no init = no SDK in the bundle's hot

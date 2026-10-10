@@ -31,14 +31,16 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 //           throws this exact code too ("Transaction already closed"/
 //           "Transaction not found"), same as the connection-establishment
 //           case ("unable to start a transaction in the given time", the
-//           class-subjects incident this set was built for). Retrying a
-//           body-timeout just re-runs the same slow transaction and reliably
-//           fails again — the retry here is a no-op for that failure mode,
-//           not actively harmful. The real fix for a body-timeout is at the
-//           call site: fewer round-trips inside the transaction, and/or an
-//           explicit `timeoutMs` override (see the `options` param below) —
-//           see bulkUpsertScores in assessment.service.ts for the worked
-//           example (2026-08-04 gradebook-save incident).
+//           class-subjects incident this set was built for). Only that
+//           never-started case is retried (2026-10-10, `isBodyTimeout`): a
+//           body timeout re-runs the whole slow transaction, which usually
+//           fails again and, under pool pressure, holds a second connection
+//           for another full budget at the worst moment. The fix for a body
+//           timeout is at the call site: fewer round-trips inside the
+//           transaction, and/or an explicit `timeoutMs` override (see the
+//           `options` param below) — see bulkUpsertScores in
+//           assessment.service.ts for the worked example (2026-08-04
+//           gradebook-save incident).
 const RETRYABLE_PRISMA_CODES = new Set(["P1001", "P1002", "P1008", "P1017", "P2024", "P2028"]);
 
 // One retry only — this is papering over a connection blip, not a resilience
@@ -49,9 +51,20 @@ const RETRY_DELAY_MS = 500;
 function isRetryableConnectionError(e: unknown): boolean {
   if (e instanceof Prisma.PrismaClientInitializationError) return true;
   if (e instanceof Prisma.PrismaClientKnownRequestError) {
-    return RETRYABLE_PRISMA_CODES.has(e.code);
+    return RETRYABLE_PRISMA_CODES.has(e.code) && !isBodyTimeout(e);
   }
   return false;
+}
+
+// P2028 covers both "the transaction never started" and "the transaction
+// started and its body outlived its timeout". Prisma's message is the only
+// thing that tells them apart: the never-started case says "Unable to start a
+// transaction"; a body timeout says "Transaction already closed" (an expired
+// transaction, at the next query or at commit) or "Transaction not found".
+// Anything that is not the never-started wording counts as a body timeout, so
+// an unfamiliar P2028 message is not retried.
+function isBodyTimeout(e: Prisma.PrismaClientKnownRequestError): boolean {
+  return e.code === "P2028" && !/unable to start a transaction/i.test(e.message);
 }
 
 function sleep(ms: number): Promise<void> {
@@ -122,6 +135,12 @@ export async function withTenant<T>(
   try {
     return await attempt();
   } catch (e) {
+    if (e instanceof Prisma.PrismaClientKnownRequestError && isBodyTimeout(e)) {
+      console.warn(
+        `withTenant${options?.label ? ` [${options.label}]` : ""}: not retrying P2028 after ${Date.now() - startedAt}ms — body ran past its timeout`,
+      );
+      throw e;
+    }
     if (!isRetryableConnectionError(e)) throw e;
     // packages/db has no injected Logger; this is the one chokepoint for
     // every tenant call, worth a visible signal when the retry path fires.

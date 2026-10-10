@@ -185,9 +185,13 @@ the module doc or the PR, then link it here.
     unique index `payments_school_id_paystack_reference_key`
     (`WHERE paystack_reference IS NOT NULL`), and the `school_week_days` array
     default. A naive `prisma migrate diff` proposes all three; ignore them.
-- [ ] **`withTenant` retries body timeouts.** `P2028` re-runs the whole
-  transaction under pool exhaustion, which adds load at the worst moment.
-  Stop retrying body timeouts (`describeAttemptFailure` has `elapsedMs`).
+- [x] **DONE 2026-10-10 — `withTenant` no longer retries body timeouts.**
+  Only the never-started `P2028` ("Unable to start a transaction") is
+  retried; a body that outlived its budget ("Transaction already closed" /
+  "Transaction not found") is thrown at once with a `not retrying` warning.
+  Told apart by Prisma's message, not by elapsed time: a never-started
+  transaction also waits out `maxWait` first. Pinned in
+  `tenant-timeout.spec.ts` (the body ran twice before).
 - [ ] **No `[schoolId, date]` index for whole-school attendance reads**
   (dashboard today and the 8-week trend). **Trigger:** slow dashboard queries.
 - [ ] **Production `connection_limit` is unverified** (assumed 3). Check
@@ -200,12 +204,16 @@ the module doc or the PR, then link it here.
   describes. Revisit only if a write path's latency shows it.
 
 ### Observability
-- [ ] **Modelled 4xx errors never reach monitoring.** `HttpExceptionFilter`
-  returns before Sentry for every `BaseError`. That is why the onboarding
-  step-5 date error went unseen for three weeks.
-  - **Fix:** count repeated `(endpoint, issue.path)` failures on flows that
-    should succeed (PostHog or a metric), not "capture all 4xx".
-  - Never log request bodies.
+- [x] **DONE 2026-10-10 — Repeated validation failures reach Sentry.** A
+  single 400 is still not captured. `ValidationFailureMonitor`
+  (`apps/api/src/observability/validation-failure-monitor.ts`) counts every
+  `ValidationError` per route template, issue path and issue code, and raises
+  one fingerprinted Sentry warning (plus a log line) when a key reaches 5 in an
+  hour; Sentry's event count on that issue is the trend. It never reads the
+  body, the URL's ids, or any message (Zod's quote the rejected value).
+  Counts are per API machine and reset on deploy. What it cannot see: whether
+  the person then gave up. That funnel view would be a PostHog event on the
+  web side, still not built.
 - [x] **DONE 2026-10-08 — Web source maps to Sentry.** `next.config.mjs` is
   wrapped in `withSentryConfig`, which uploads the maps (then deletes them from
   the build) only when `SENTRY_AUTH_TOKEN` is set; build-time
@@ -214,32 +222,90 @@ the module doc or the PR, then link it here.
   project slug is not `school-kit-web`) on `school-kit-web` in Vercel; all
   three are declared in `turbo.json`.
 - [ ] **No server-side PostHog.** Browser capture only.
-- [ ] **The redaction regexes exist twice** (`apps/api/src/observability/redact.ts`,
-  `apps/web/src/lib/observability/redact.ts`). Move them to one package.
+- [x] **DONE 2026-10-10 — One redactor.** `packages/types/src/redact.ts`
+  (exported from `@school-kit/types`) is used by the API's Sentry and both web
+  Sentry configs. The web copy had drifted: it masked only credential keys, so
+  a browser event could carry a student's name, date of birth or medical
+  notes. Pinned by `apps/web/src/sentry-redaction.spec.ts`.
 
 ### Product gaps
-- [ ] **Teachers get no prerequisite messaging.** An empty gradebook does not
-  say the admin has not enrolled anyone or assigned a subject.
-  - Needs a teacher-safe read, probably built from
-    `TeacherScopeService.getMyScope`.
-  - Do not widen `setup-state`.
+- [x] **DONE 2026-10-10 — Teachers' gradebook explains why it is empty.**
+  `GET /teacher-scope/me` now returns `enrolledCountByArm` (this term's
+  students in each of the teacher's OWN arms, nothing outside their scope;
+  `setup-state` untouched). The gradebook picker shows each class's count,
+  says when none of the teacher's classes has students and that the admin
+  enrols them, and says when no subject is assigned; the grid's empty state
+  says the same for its class. `TeacherPrerequisiteNotice` has no action
+  button, since a teacher cannot take the step.
 - [x] **The onboarding guide implies a class-subject matrix dependency that
   does not exist.** Done 2026-10-06: `docs/onboarding-guide.md` was rewritten
   for a non-technical owner, ordered by the dashboard setup checklist, and the
   Matrix is now described as an optional reference list.
-- [ ] **Report cards built after every subject is signed off stay DRAFT.**
-  They say "subject teachers need to sign off" because the cascade ran before
-  the cards existed. Form review recovers it.
-- [ ] **Staff roster has no server-side pagination** (`/staff`).
+- [x] **DONE 2026-10-10 — Report cards built after every subject is signed
+  off are built SUBJECT_REVIEWED.** `ReportCardService.build` runs the same
+  `cascadeSubjectReviewedIfComplete` the sign-off path runs, at the end of the
+  build, so the order (sign off then build, or build then sign off) no longer
+  matters. Pinned in `report-card-workflow.service.spec.ts` and
+  `e2e/tests/admin-gradebook.spec.ts`.
+- [x] **DONE 2026-10-10 — Staff roster's 200-profile cap.** `GET /users`
+  now returns each user's `teacherProfileId` (one join), so `/staff` no
+  longer reads one page of `GET /teacher-profiles`, which marked every teacher
+  past the 200th "Pending profile". `GET /users` still returns the full set,
+  deliberately: five screens (payroll, class arms, staff detail and edit, the
+  roster) need every staff member, and the roster's search, filters and CSV
+  export work over all rows. Add a cursor only if a school's staff list itself
+  becomes slow.
 - [ ] **Bulk student grid** — what is left:
   - bounded-parallel submit;
   - a real `POST /students/bulk`;
   - draft persistence.
 - [ ] **Teacher shell sidebar background stops partway down a short page.**
-- [ ] **Timetable builder: moving a lesson takes two requests.** If the second
-  fails, the lesson shows in both places.
-- [ ] **Possible `/dashboard` navigation race.** A click right after landing
-  can be undone by the term selector's `router.replace`.
+- [x] **DONE 2026-10-10 — Moving a timetable lesson is one request.**
+  `PUT /timetable/lessons` takes an optional `moveFrom` (day, start period,
+  span); the API clears that block in the same transaction as the save, so a
+  failed move leaves the lesson where it was and a successful one never
+  leaves it in both places. The old cells count as free, so a lesson may move
+  onto its own old cell (which used to fail with `CELL_OCCUPIED`). A stale
+  source answers `MOVE_SOURCE_EMPTY`; the audit row records `movedFrom`.
+- [x] **DONE 2026-10-10 — The `/dashboard` navigation race.** The term
+  selector's automatic default-term write (`router.replace`) is skipped once
+  the person has started to leave: a click on a link to another app page, or
+  Back/Forward. Choosing a term from the select still navigates. Reproduced
+  in `e2e/tests/dashboard-navigation-race.spec.ts` by releasing the held terms
+  response while the click is in flight. **Not covered:** a navigation started
+  from code rather than a link (the command palette's `router.push`) while the
+  dashboard is still loading. **Do not** switch the write to
+  `history.replaceState`: with Next's own state it is never synced into
+  `useSearchParams` (the dashboard stays loading), and without it Next's sync
+  cancels the in-flight navigation exactly as `router.replace` does. Both were
+  tried on PR #388.
+- [x] **DONE 2026-10-10 — Staff roster's 200-profile cap.** `GET /users`
+  now returns each user's `teacherProfileId` (one join), so `/staff` no
+  longer reads one page of `GET /teacher-profiles`, which marked every teacher
+  past the 200th "Pending profile". `GET /users` still returns the full set,
+  deliberately: five screens (payroll, class arms, staff detail and edit, the
+  roster) need every staff member, and the roster's search, filters and CSV
+  export work over all rows. Add a cursor only if a school's staff list itself
+  becomes slow.
+- [ ] **Bulk student grid** — what is left:
+  - bounded-parallel submit;
+  - a real `POST /students/bulk`;
+  - draft persistence.
+- [ ] **Teacher shell sidebar background stops partway down a short page.**
+- [x] **DONE 2026-10-10 — Moving a timetable lesson is one request.**
+  `PUT /timetable/lessons` takes an optional `moveFrom` (day, start period,
+  span); the API clears that block in the same transaction as the save, so a
+  failed move leaves the lesson where it was and a successful one never
+  leaves it in both places. The old cells count as free, so a lesson may move
+  onto its own old cell (which used to fail with `CELL_OCCUPIED`). A stale
+  source answers `MOVE_SOURCE_EMPTY`; the audit row records `movedFrom`.
+- [x] **DONE 2026-10-10 — The `/dashboard` navigation race.** The term
+  selector's automatic default-term write is skipped once the browser has left
+  the page that started it, and uses `history.replaceState` (kept in step with
+  `useSearchParams`, but not a navigation), so it can no longer cancel a click
+  made while it was loading. Choosing a term from the select still navigates.
+  Reproduced deterministically in `e2e/tests/dashboard-navigation-race.spec.ts`
+  by holding the terms response until after the click.
 
 ### Docs and tooling
 - [x] **DONE 2026-10-08 — `docs/journal/` caught up** with a single catch-up

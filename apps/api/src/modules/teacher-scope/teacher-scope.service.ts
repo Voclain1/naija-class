@@ -44,6 +44,22 @@ export class TeacherScopeService {
         where: { id: authCtx.schoolId },
         select: { subjectAttendanceEnabled: true },
       });
+      // How many students each of THIS teacher's arms has this term, so an
+      // empty gradebook can say why it is empty (no enrolment yet) and who
+      // fixes it. Counted only over the teacher's own arms, with the same
+      // filter the gradebook feed uses (every enrolment for term + arm): a
+      // teacher learns nothing about classes outside their scope.
+      const enrolledCountByArm: Record<string, number> = Object.fromEntries(
+        scope.classArms.map((arm) => [arm.id, 0]),
+      );
+      if (currentTerm && scope.classArms.length > 0) {
+        const counts = await db.enrollment.groupBy({
+          by: ["classArmId"],
+          where: { termId: currentTerm.id, classArmId: { in: scope.classArms.map((arm) => arm.id) } },
+          _count: { _all: true },
+        });
+        for (const row of counts) enrolledCountByArm[row.classArmId] = row._count._all;
+      }
       return {
         classArms: scope.classArms,
         // Map → plain Record for the JSON wire form.
@@ -51,6 +67,7 @@ export class TeacherScopeService {
         currentTerm,
         formTeacherArmIds: scope.formTeacherArmIds,
         subjectAttendanceEnabled: school?.subjectAttendanceEnabled ?? false,
+        enrolledCountByArm,
       };
     });
   }

@@ -2,6 +2,7 @@
 // as they land. Keep this file flat — no logic, just re-exports.
 
 export * from './errors.js';
+export { redactString, redactValue } from './redact.js';
 export * from './permissions.js';
 export * from './auth/index.js';
 export * from './onboarding/index.js';

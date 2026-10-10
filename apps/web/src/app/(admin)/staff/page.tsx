@@ -4,11 +4,7 @@ import { FileUp, Loader2, UserCog, UserPlus } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import type {
-  PendingInvitationDto,
-  TeacherProfileDto,
-  UserListItemDto,
-} from "@school-kit/types";
+import type { PendingInvitationDto, UserListItemDto } from "@school-kit/types";
 
 import { ExportCsvButton } from "@/components/shared/export-csv-button";
 import { PrintButton } from "@/components/shared/print-button";
@@ -17,27 +13,21 @@ import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ApiError } from "@/lib/api-client";
 import { exportRowsAsCsv, type CsvColumn } from "@/lib/csv-export";
-import {
-  listStaff,
-  listStaffInvitations,
-  listTeacherProfiles,
-} from "@/lib/staff/staff-api";
+import { listStaff, listStaffInvitations } from "@/lib/staff/staff-api";
 
 // /staff — Phase 1 / Slice 10 cp3 staff roster.
 //
 // Staff are Users with a teacher/admin/owner role plus any pending
-// invitations not yet accepted. The roster unifies three server reads:
-//   - GET /users               → accepted staff + their roles + active state
+// invitations not yet accepted. The roster unifies two server reads:
+//   - GET /users               → accepted staff, their roles, active state,
+//                                and their HR profile id (joined server-side)
 //   - GET /users/invitations   → pending invitations (no User row yet)
-//   - GET /teacher-profiles     → which accepted users have an HR profile
 //
-// Cursor pagination note: GET /users and GET /users/invitations return the
-// full set (no server cursor — they're small at pilot scale), so unlike the
-// students roster there's no "Load more". The teacher-profiles list IS
-// cursor-paginated; we pull one generous page (limit 200) purely to learn
-// has-profile state. If a school ever crosses ~200 teachers, paginate that
-// lookup — captured as a future concern, not a silent cap (we surface a note
-// when the lookup hits the page limit).
+// Both return the full set, so search, filters and the CSV export work over
+// every row with no "Load more". Has-profile used to come from one page
+// (limit 200) of GET /teacher-profiles, which mislabelled every teacher past
+// the 200th as "Pending profile"; since 2026-10-10 it rides on each user row,
+// so there is no cap to reach.
 //
 // Single-invite supports admin/bursar/teacher (POST /users/invite, roleKey
 // selectable since 2026-07-31); the CSV import wizard remains the faster path
@@ -90,10 +80,6 @@ const STAFF_EXPORT_COLUMNS: CsvColumn<StaffRow>[] = [
 export default function StaffRosterPage() {
   const [users, setUsers] = useState<UserListItemDto[]>([]);
   const [invitations, setInvitations] = useState<PendingInvitationDto[]>([]);
-  const [profilesByUserId, setProfilesByUserId] = useState<
-    Map<string, TeacherProfileDto>
-  >(new Map());
-  const [profileLookupTruncated, setProfileLookupTruncated] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -105,19 +91,9 @@ export default function StaffRosterPage() {
     setLoading(true);
     setError(null);
     try {
-      const [staff, invites, profiles] = await Promise.all([
-        listStaff(),
-        listStaffInvitations(),
-        listTeacherProfiles({ limit: 200 }),
-      ]);
+      const [staff, invites] = await Promise.all([listStaff(), listStaffInvitations()]);
       setUsers(staff);
       setInvitations(invites);
-      const map = new Map<string, TeacherProfileDto>();
-      for (const p of profiles.data) map.set(p.userId, p);
-      setProfilesByUserId(map);
-      // If the profile lookup filled a full page there may be more — surface
-      // it rather than silently mislabel later teachers as "no profile".
-      setProfileLookupTruncated(Boolean(profiles.meta.cursor));
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Could not load staff.");
     } finally {
@@ -139,8 +115,8 @@ export default function StaffRosterPage() {
       roleLabel:
         u.roles.length > 0 ? u.roles.map((r) => r.name).join(", ") : "—",
       isActive: u.isActive,
-      hasProfile: profilesByUserId.has(u.id),
-      profileId: profilesByUserId.get(u.id)?.id,
+      hasProfile: u.teacherProfileId !== null,
+      profileId: u.teacherProfileId ?? undefined,
     }));
     const inviteRows: StaffRow[] = invitations.map((i) => ({
       kind: "invitation",
@@ -151,7 +127,7 @@ export default function StaffRosterPage() {
       roleLabel: ROLE_NAMES[i.roleKey] ?? i.roleKey,
     }));
     return [...userRows, ...inviteRows];
-  }, [users, invitations, profilesByUserId]);
+  }, [users, invitations]);
 
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -200,14 +176,6 @@ export default function StaffRosterPage() {
           </Button>
         </div>
       </header>
-
-      {profileLookupTruncated && (
-        <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900 print:hidden">
-          Showing teacher-profile status for the first 200 teachers only.
-          Profiles beyond that may show as &ldquo;Pending profile&rdquo; here
-          even when one exists — open the staff member to confirm.
-        </div>
-      )}
 
       <section className="flex flex-col gap-3 sm:flex-row sm:items-end print:hidden">
         <div className="flex flex-1 flex-col gap-1">

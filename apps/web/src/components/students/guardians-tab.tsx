@@ -67,7 +67,7 @@ const RELATIONSHIP_LABELS: Record<RelationshipDto, string> = {
 // Guardians-tab landing — list + add. Slice 5 cp2.
 //
 // Admin UI: phones shown in full (NOT redacted — admins need to call
-// guardians). The redactor (apps/api/src/observability/redact.ts) still
+// guardians). The redactor (packages/types/src/redact.ts) still
 // masks phones in logs/Sentry; this is the only authorised view path.
 export function GuardiansTab({
   studentId,

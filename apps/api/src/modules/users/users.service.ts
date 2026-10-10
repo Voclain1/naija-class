@@ -411,6 +411,7 @@ const USER_LIST_SELECT = {
       role: { select: { key: true, name: true } },
     },
   },
+  teacherProfile: { select: { id: true } },
 } satisfies Prisma.UserSelect;
 
 type UserListRow = Prisma.UserGetPayload<{ select: typeof USER_LIST_SELECT }>;
@@ -432,6 +433,7 @@ function toUserListItem(row: UserListRow): UserListItemDto {
     lastLoginAt: row.lastLoginAt,
     createdAt: row.createdAt,
     roles,
+    teacherProfileId: row.teacherProfile?.id ?? null,
   };
 }
 
