@@ -269,16 +269,18 @@ the module doc or the PR, then link it here.
   source answers `MOVE_SOURCE_EMPTY`; the audit row records `movedFrom`.
 - [x] **DONE 2026-10-10 — The `/dashboard` navigation race.** The term
   selector's automatic default-term write (`router.replace`) is skipped once
-  the person has started to leave: a click on a link to another app page, or
-  Back/Forward. Choosing a term from the select still navigates. Reproduced
-  in `e2e/tests/dashboard-navigation-race.spec.ts` by releasing the held terms
-  response while the click is in flight. **Not covered:** a navigation started
-  from code rather than a link (the command palette's `router.push`) while the
-  dashboard is still loading. **Do not** switch the write to
-  `history.replaceState`: with Next's own state it is never synced into
-  `useSearchParams` (the dashboard stays loading), and without it Next's sync
-  cancels the in-flight navigation exactly as `router.replace` does. Both were
-  tried on PR #388.
+  the person has started to leave: a click on a link to another app page, a
+  navigation announced from code, or Back/Forward. Choosing a term from the
+  select still navigates. Code that calls `router.push()` inside the admin
+  shell must announce it first with `announceNavigation()`
+  (`apps/web/src/lib/navigation-intent.ts`); today only the command palette
+  does, and a new caller that does not reopens the race. Reproduced in
+  `e2e/tests/dashboard-navigation-race.spec.ts` (link and palette) by releasing
+  the held terms response while the navigation is in flight. **Do not** switch
+  the write to `history.replaceState`: with Next's own state it is never
+  synced into `useSearchParams` (the dashboard stays loading), and without it
+  Next's sync cancels the in-flight navigation exactly as `router.replace`
+  does. Both were tried on PR #388.
 - [x] **DONE 2026-10-10 — Staff roster's 200-profile cap.** `GET /users`
   now returns each user's `teacherProfileId` (one join), so `/staff` no
   longer reads one page of `GET /teacher-profiles`, which marked every teacher
@@ -299,13 +301,6 @@ the module doc or the PR, then link it here.
   leaves it in both places. The old cells count as free, so a lesson may move
   onto its own old cell (which used to fail with `CELL_OCCUPIED`). A stale
   source answers `MOVE_SOURCE_EMPTY`; the audit row records `movedFrom`.
-- [x] **DONE 2026-10-10 — The `/dashboard` navigation race.** The term
-  selector's automatic default-term write is skipped once the browser has left
-  the page that started it, and uses `history.replaceState` (kept in step with
-  `useSearchParams`, but not a navigation), so it can no longer cancel a click
-  made while it was loading. Choosing a term from the select still navigates.
-  Reproduced deterministically in `e2e/tests/dashboard-navigation-race.spec.ts`
-  by holding the terms response until after the click.
 
 ### Docs and tooling
 - [x] **DONE 2026-10-08 — `docs/journal/` caught up** with a single catch-up

@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { createPortal } from "react-dom";
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { announceNavigation } from "@/lib/navigation-intent";
+
 import { NAV_ITEMS } from "./nav-items";
 
 // Minimal, dependency-free command palette: filters the real nav (not a
@@ -43,6 +45,7 @@ export function CommandDialog({ open, onOpenChange }: { open: boolean; onOpenCha
   if (!open || typeof document === "undefined") return null;
 
   function go(href: string) {
+    announceNavigation(href);
     router.push(href);
     onOpenChange(false);
   }
