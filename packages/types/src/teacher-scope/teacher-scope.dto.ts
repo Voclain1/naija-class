@@ -82,6 +82,12 @@ export interface TeacherScopeDto {
   // directly; the teacher portal uses it to decide whether to render the
   // subject-attendance surface at all (the endpoints 404 when it's false).
   subjectAttendanceEnabled: boolean;
+  // Students enrolled in each of `classArms` for the current term (every
+  // enrolment for term + arm, the gradebook feed's own filter). One key per
+  // arm in scope, 0 when there is no current term. Added 2026-10-10 so an
+  // empty gradebook can say the admin has not enrolled anyone yet, rather
+  // than just showing nothing. Never covers an arm outside the teacher's scope.
+  enrolledCountByArm: Record<string, number>;
 }
 
 // Trimmed roster row for the per-arm student list. Deliberately a SUBSET of

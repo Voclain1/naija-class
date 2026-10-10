@@ -226,11 +226,14 @@ the module doc or the PR, then link it here.
   `apps/web/src/lib/observability/redact.ts`). Move them to one package.
 
 ### Product gaps
-- [ ] **Teachers get no prerequisite messaging.** An empty gradebook does not
-  say the admin has not enrolled anyone or assigned a subject.
-  - Needs a teacher-safe read, probably built from
-    `TeacherScopeService.getMyScope`.
-  - Do not widen `setup-state`.
+- [x] **DONE 2026-10-10 — Teachers' gradebook explains why it is empty.**
+  `GET /teacher-scope/me` now returns `enrolledCountByArm` (this term's
+  students in each of the teacher's OWN arms, nothing outside their scope;
+  `setup-state` untouched). The gradebook picker shows each class's count,
+  says when none of the teacher's classes has students and that the admin
+  enrols them, and says when no subject is assigned; the grid's empty state
+  says the same for its class. `TeacherPrerequisiteNotice` has no action
+  button, since a teacher cannot take the step.
 - [x] **The onboarding guide implies a class-subject matrix dependency that
   does not exist.** Done 2026-10-06: `docs/onboarding-guide.md` was rewritten
   for a non-technical owner, ordered by the dashboard setup checklist, and the

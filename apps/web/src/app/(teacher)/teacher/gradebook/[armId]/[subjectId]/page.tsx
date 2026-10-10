@@ -13,6 +13,7 @@ import type {
 
 import { GradebookGrid } from "@/components/teacher/gradebook/gradebook-grid";
 import { SubjectComments } from "@/components/teacher/gradebook/subject-comments";
+import { TeacherPrerequisiteNotice } from "@/components/teacher/teacher-prerequisite-notice";
 import { ApiError } from "@/lib/api-client";
 import { getGradebookFeed } from "@/lib/assessment/assessment-api";
 import { getGradingScheme } from "@/lib/grading/grading-api";
@@ -131,12 +132,11 @@ export default function GradebookGridPage() {
           </header>
 
           {status.data.feed.data.length === 0 ? (
-            <div className="rounded-md border border-dashed bg-muted/20 p-8 text-sm text-muted-foreground">
-              <p className="font-medium text-foreground">No students enrolled.</p>
-              <p className="mt-1">
-                No students are enrolled in this class for {status.data.term.name}.
-              </p>
-            </div>
+            <TeacherPrerequisiteNotice
+              testId="teacher-prerequisite-no-students"
+              title="No students are enrolled in this class yet."
+              detail={`Nobody is enrolled in ${status.data.armName} for ${status.data.term.name}, so there is nothing to score. Ask your school administrator to enrol the class; the students appear here once they do.`}
+            />
           ) : status.data.scheme.components.length === 0 ? (
             <div className="rounded-md border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive">
               The grading scheme has no components. Ask an administrator to set it up under Settings →
