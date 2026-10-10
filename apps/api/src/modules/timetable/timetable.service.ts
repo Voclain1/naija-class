@@ -637,18 +637,44 @@ export class TimetableService {
       }
       const spannedIds = spanned.map((s) => s.id);
 
+      // A move: the block being moved away from. Its cells are removed in this
+      // transaction, so they count as free for the new block (a double period
+      // may slide one period up or down onto its own old cell).
+      const moved = input.moveFrom
+        ? await (async () => {
+            const from = input.moveFrom!;
+            const fromStart = slots.findIndex((s) => s.id === from.bellSlotId);
+            if (fromStart === -1) throw new NotFoundError("Period not found.");
+            const fromIds = slots.slice(fromStart, fromStart + from.span).map((s) => s.id);
+            const entries = await db.timetableEntry.findMany({
+              where: { schoolId, timetableId: timetable.id, dayOfWeek: from.dayOfWeek, bellSlotId: { in: fromIds } },
+              select: { id: true, bellSlotId: true, subjectId: true, teachers: { select: { teacherId: true } } },
+            });
+            if (!entries.some((e) => e.bellSlotId === from.bellSlotId)) {
+              throw new ConflictError(
+                C.MOVE_SOURCE_EMPTY,
+                "The lesson you are moving is no longer in that period. Reload the timetable and try again.",
+              );
+            }
+            return { dayOfWeek: from.dayOfWeek, entries };
+          })()
+        : null;
+      const movedIds = new Set(moved?.entries.map((e) => e.id) ?? []);
+
       // Cells: the first may be replaced (editing). The rest must be empty, or
       // hold the SAME lesson as the first — the rest of the block being edited.
-      const occupants = await db.timetableEntry.findMany({
-        where: { schoolId, timetableId: timetable.id, dayOfWeek: input.dayOfWeek, bellSlotId: { in: spannedIds } },
-        select: {
-          id: true,
-          bellSlotId: true,
-          subjectId: true,
-          subject: { select: { name: true } },
-          teachers: { select: { teacherId: true } },
-        },
-      });
+      const occupants = (
+        await db.timetableEntry.findMany({
+          where: { schoolId, timetableId: timetable.id, dayOfWeek: input.dayOfWeek, bellSlotId: { in: spannedIds } },
+          select: {
+            id: true,
+            bellSlotId: true,
+            subjectId: true,
+            subject: { select: { name: true } },
+            teachers: { select: { teacherId: true } },
+          },
+        })
+      ).filter((o) => !movedIds.has(o.id));
       const signature = (o: (typeof occupants)[number]) =>
         `${o.subjectId}|${o.teachers.map((t) => t.teacherId).sort().join(",")}`;
       const first = occupants.find((o) => o.bellSlotId === input.bellSlotId);
@@ -668,8 +694,9 @@ export class TimetableService {
       const warnings = await this.checkAssignments(db, schoolId, timetable, subject.id, teacherIds);
 
       await clashes.begin(timetable.academicYearId);
-      if (occupants.length > 0) {
-        await db.timetableEntry.deleteMany({ where: { schoolId, id: { in: occupants.map((o) => o.id) } } });
+      const replaced = [...occupants.map((o) => o.id), ...movedIds];
+      if (replaced.length > 0) {
+        await db.timetableEntry.deleteMany({ where: { schoolId, id: { in: replaced } } });
       }
       for (const slotId of spannedIds) {
         const entry = await db.timetableEntry.create({
@@ -710,6 +737,18 @@ export class TimetableService {
               teacherIds: o.teachers.map((t) => t.teacherId),
             })),
             after: { subjectId: subject.id, teacherIds },
+            ...(moved
+              ? {
+                  movedFrom: {
+                    dayOfWeek: moved.dayOfWeek,
+                    lessons: moved.entries.map((e) => ({
+                      bellSlotId: e.bellSlotId,
+                      subjectId: e.subjectId,
+                      teacherIds: e.teachers.map((t) => t.teacherId),
+                    })),
+                  },
+                }
+              : {}),
             warnings: warnings.map((w) => ({ teacherId: w.teacherId, uncoveredTermNames: w.uncoveredTermNames })),
           },
         },

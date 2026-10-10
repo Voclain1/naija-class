@@ -61,7 +61,11 @@ export interface TimetableFixture {
     day: number,
     slot: keyof TimetableFixture["slots"],
     teacherIds: string[],
-    opts?: { subject?: keyof TimetableFixture["subjects"]; span?: number },
+    opts?: {
+      subject?: keyof TimetableFixture["subjects"];
+      span?: number;
+      moveFrom?: { day: number; slot: keyof TimetableFixture["slots"]; span: number };
+    },
   ): Promise<SaveLessonResultDto>;
   /** Remove every timetable (entries cascade), keeping the school, slots and assignments. */
   reset(): Promise<void>;
@@ -193,6 +197,9 @@ export async function createTimetableFixture(tag: string): Promise<TimetableFixt
           subjectId: built.subjects[opts?.subject ?? "maths"],
           teacherIds,
           span: opts?.span ?? 1,
+          ...(opts?.moveFrom
+            ? { moveFrom: { dayOfWeek: opts.moveFrom.day, bellSlotId: slots[opts.moveFrom.slot], span: opts.moveFrom.span } }
+            : {}),
         },
         reqCtx,
       ),

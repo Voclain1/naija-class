@@ -241,6 +241,55 @@ describe("TimetableService (Phase 8 CP3) — real database", () => {
       expect(r.lessons.every((l) => l.teachers.length === 2)).toBe(true);
     });
 
+    // 2026-10-10: a move is one request. The old cells are cleared in the same
+    // transaction as the save, so a failed move leaves the lesson where it was
+    // and a successful one never leaves it in both places.
+    it("moving a lesson clears its old cells in the same save, and audits where it came from", async () => {
+      const a = await fx.timetable("a", null);
+      await fx.lesson(a.id, MON, "p1", [fx.teachers.tunde], { span: 2 });
+      const r = await fx.lesson(a.id, TUE, "p3", [fx.teachers.tunde], { span: 2, moveFrom: { day: MON, slot: "p1", span: 2 } });
+      expect(r.lessons.map((l) => [l.dayOfWeek, l.bellSlotId])).toEqual([
+        [TUE, fx.slots.p3],
+        [TUE, fx.slots.p4],
+      ]);
+      const audits = await withTenant(fx.schoolId, (db) =>
+        db.auditLog.findMany({ where: { action: "timetable.lesson.save", entityId: a.id }, select: { metadata: true } }),
+      );
+      const moveAudit = audits.find((x) => (x.metadata as { dayOfWeek?: number }).dayOfWeek === TUE);
+      expect(moveAudit?.metadata).toMatchObject({
+        movedFrom: { dayOfWeek: MON, lessons: [{ bellSlotId: fx.slots.p1 }, { bellSlotId: fx.slots.p2 }] },
+      });
+    });
+
+    it("a move may land on its own old cell (a single period growing upward into a double)", async () => {
+      const a = await fx.timetable("a", null);
+      await fx.lesson(a.id, MON, "p2", [fx.teachers.tunde]);
+      const r = await fx.lesson(a.id, MON, "p1", [fx.teachers.tunde], { span: 2, moveFrom: { day: MON, slot: "p2", span: 1 } });
+      expect(r.lessons.map((l) => l.bellSlotId)).toEqual([fx.slots.p1, fx.slots.p2]);
+    });
+
+    it("a move that clashes is refused and the lesson stays where it was", async () => {
+      const a = await fx.timetable("a", null);
+      const b = await fx.timetable("b", null);
+      await fx.lesson(a.id, MON, "p1", [fx.teachers.tunde]);
+      await fx.lesson(b.id, TUE, "p1", [fx.teachers.tunde]);
+      await expect(
+        fx.lesson(a.id, TUE, "p1", [fx.teachers.tunde], { moveFrom: { day: MON, slot: "p1", span: 1 } }),
+      ).rejects.toMatchObject({ code: "TIMETABLE_CLASH" });
+      const kept = await withTenant(fx.schoolId, (db) =>
+        db.timetableEntry.findMany({ where: { timetableId: a.id }, select: { dayOfWeek: true, bellSlotId: true } }),
+      );
+      expect(kept).toEqual([{ dayOfWeek: MON, bellSlotId: fx.slots.p1 }]);
+    });
+
+    it("moving from a cell that is already empty (a stale screen) → MOVE_SOURCE_EMPTY, nothing saved", async () => {
+      const a = await fx.timetable("a", null);
+      await expect(
+        fx.lesson(a.id, TUE, "p3", [fx.teachers.tunde], { moveFrom: { day: MON, slot: "p1", span: 1 } }),
+      ).rejects.toMatchObject({ code: "MOVE_SOURCE_EMPTY", httpStatus: 409 });
+      expect(await lessonCount(a.id)).toBe(0);
+    });
+
     it("a lesson on a day outside the school week → refused", async () => {
       const a = await fx.timetable("a", null);
       await expect(fx.lesson(a.id, 6, "p1", [fx.teachers.tunde])).rejects.toMatchObject({ code: "NOT_A_SCHOOL_DAY" });

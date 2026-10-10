@@ -114,6 +114,19 @@ export const saveLessonSchema = z.object({
   teacherIds: z.array(z.string().uuid()).max(4),
   /** D24: a double period is consecutive LESSON slots — span 2 writes two lessons. */
   span: z.number().int().min(1).max(4).default(1),
+  /**
+   * A MOVE (2026-10-10): the block the lesson is moving from, in this same
+   * timetable. Its cells are cleared in the same transaction as the save, so
+   * a move is never half-done (the lesson in both places), and the new block
+   * may overlap the old one.
+   */
+  moveFrom: z
+    .object({
+      dayOfWeek: z.number().int().min(1).max(7),
+      bellSlotId: z.string().uuid(),
+      span: z.number().int().min(1).max(4),
+    })
+    .optional(),
 });
 export type SaveLessonInput = z.infer<typeof saveLessonSchema>;
 
@@ -216,6 +229,7 @@ export const TIMETABLE_ERROR_CODES = {
   NOT_A_LESSON_SLOT: "NOT_A_LESSON_SLOT",
   SPAN_OUT_OF_RANGE: "SPAN_OUT_OF_RANGE",
   CELL_OCCUPIED: "CELL_OCCUPIED",
+  MOVE_SOURCE_EMPTY: "MOVE_SOURCE_EMPTY",
   NOT_A_SCHOOL_DAY: "NOT_A_SCHOOL_DAY",
   SLOT_IN_USE: "SLOT_IN_USE",
   TIMETABLE_EXISTS: "TIMETABLE_EXISTS",

@@ -253,8 +253,13 @@ the module doc or the PR, then link it here.
   - a real `POST /students/bulk`;
   - draft persistence.
 - [ ] **Teacher shell sidebar background stops partway down a short page.**
-- [ ] **Timetable builder: moving a lesson takes two requests.** If the second
-  fails, the lesson shows in both places.
+- [x] **DONE 2026-10-10 — Moving a timetable lesson is one request.**
+  `PUT /timetable/lessons` takes an optional `moveFrom` (day, start period,
+  span); the API clears that block in the same transaction as the save, so a
+  failed move leaves the lesson where it was and a successful one never
+  leaves it in both places. The old cells count as free, so a lesson may move
+  onto its own old cell (which used to fail with `CELL_OCCUPIED`). A stale
+  source answers `MOVE_SOURCE_EMPTY`; the audit row records `movedFrom`.
 - [ ] **Possible `/dashboard` navigation race.** A click right after landing
   can be undone by the term selector's `router.replace`.
 
