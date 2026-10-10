@@ -222,8 +222,11 @@ the module doc or the PR, then link it here.
   project slug is not `school-kit-web`) on `school-kit-web` in Vercel; all
   three are declared in `turbo.json`.
 - [ ] **No server-side PostHog.** Browser capture only.
-- [ ] **The redaction regexes exist twice** (`apps/api/src/observability/redact.ts`,
-  `apps/web/src/lib/observability/redact.ts`). Move them to one package.
+- [x] **DONE 2026-10-10 — One redactor.** `packages/types/src/redact.ts`
+  (exported from `@school-kit/types`) is used by the API's Sentry and both web
+  Sentry configs. The web copy had drifted: it masked only credential keys, so
+  a browser event could carry a student's name, date of birth or medical
+  notes. Pinned by `apps/web/src/sentry-redaction.spec.ts`.
 
 ### Product gaps
 - [x] **DONE 2026-10-10 — Teachers' gradebook explains why it is empty.**

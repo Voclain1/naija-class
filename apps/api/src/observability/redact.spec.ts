@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { redactString, redactValue } from "./redact";
+import { redactString, redactValue } from "@school-kit/types";
 
 // The redactor is the only thing standing between user PII and a third-party
 // error-reporting service. Tests cover (a) value-shape regexes, (b)
