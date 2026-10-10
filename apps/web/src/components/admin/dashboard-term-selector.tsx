@@ -22,20 +22,24 @@ const TERM_AWARE_ROUTES = ["/dashboard", "/insights"];
 
 // The DEFAULT term (and the no-academic-year signal) is written into the URL
 // after two fetches resolve, by which time the person may already have clicked
-// away. That write used to be a router.replace() to the pathname captured at
-// mount, which cancelled their in-flight navigation and put them back on
-// /dashboard (docs/deferred-archive.md, "navigation race on /dashboard").
+// away. That write is a router.replace(), and a replace issued while their
+// click is still navigating cancels it and puts them back on /dashboard
+// (docs/deferred-archive.md, "navigation race on /dashboard").
 //
-// So the automatic write (1) is skipped unless the browser is still on the
-// page that started it, and (2) uses history.replaceState, which Next keeps in
-// step with useSearchParams but which is not a navigation, so it cannot cancel
-// one. A term the person CHOOSES from the select still navigates normally.
-function writeDefaultParam(startedOn: string, key: string, value: string) {
-  if (typeof window === "undefined" || window.location.pathname !== startedOn) return;
-  const params = new URLSearchParams(window.location.search);
-  if (params.get(key) === value) return;
-  params.set(key, value);
-  window.history.replaceState(window.history.state, "", `${startedOn}?${params.toString()}`);
+// So the automatic write is skipped once the person has started to leave: a
+// click on a link to another page of the app, or Back/Forward. It is also
+// skipped if the browser is no longer on the page that started the fetches. A
+// term the person CHOOSES from the select still navigates normally.
+//
+// Not history.replaceState: Next syncs a plain replaceState into the router
+// (with the `__NA` state it is ignored and the page never sees the term), and
+// that sync cancels an in-flight navigation exactly as router.replace does.
+function isLeavingClick(event: MouseEvent, currentPath: string): boolean {
+  if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return false;
+  const anchor = (event.target as Element | null)?.closest?.("a[href]") as HTMLAnchorElement | null;
+  if (!anchor || (anchor.target && anchor.target !== "_self")) return false;
+  const url = new URL(anchor.href, window.location.href);
+  return url.origin === window.location.origin && url.pathname !== currentPath;
 }
 
 export function DashboardTermSelector() {
@@ -48,8 +52,37 @@ export function DashboardTermSelector() {
 
   const isTermAware = TERM_AWARE_ROUTES.includes(pathname);
   const termId = searchParams.get("termId") ?? "";
-  // The term-aware page the fetches below started on.
+  // The term-aware page the fetches below started on, and whether the person
+  // has since started to leave it.
   const startedOn = useRef(pathname);
+  const leaving = useRef(false);
+
+  useEffect(() => {
+    if (!isTermAware) return;
+    leaving.current = false;
+    const onClick = (event: MouseEvent) => {
+      if (isLeavingClick(event, pathname)) leaving.current = true;
+    };
+    const onPopState = () => {
+      leaving.current = true;
+    };
+    // Capture phase: runs before next/link's own click handler starts the navigation.
+    document.addEventListener("click", onClick, true);
+    window.addEventListener("popstate", onPopState);
+    return () => {
+      document.removeEventListener("click", onClick, true);
+      window.removeEventListener("popstate", onPopState);
+      leaving.current = true;
+    };
+  }, [isTermAware, pathname]);
+
+  function writeDefaultParam(key: string, value: string) {
+    if (leaving.current || window.location.pathname !== startedOn.current) return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get(key) === value) return;
+    params.set(key, value);
+    router.replace(`${startedOn.current}?${params.toString()}`);
+  }
 
   useEffect(() => {
     if (!isTermAware) return;
@@ -68,7 +101,7 @@ export function DashboardTermSelector() {
           // e2e happy-path run, 2026-07-26 — a fresh signup never has a
           // term, so this is the FIRST thing every new school's dashboard
           // hits, not an edge case).
-          writeDefaultParam(startedOn.current, "noAcademicYear", "1");
+          writeDefaultParam("noAcademicYear", "1");
         }
       })
       .catch(() => undefined);
@@ -82,7 +115,7 @@ export function DashboardTermSelector() {
         setTerms(rows);
         if (!termId) {
           const current = rows.find((t) => t.isCurrent) ?? rows[0];
-          if (current) writeDefaultParam(startedOn.current, "termId", current.id);
+          if (current) writeDefaultParam("termId", current.id);
         }
       })
       .catch(() => setTerms([]));

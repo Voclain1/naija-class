@@ -53,6 +53,9 @@ test("left alone, the dashboard still gets its current term in the URL", async (
     await setupAcademicStructure(admin.api);
     await admin.page.goto("/dashboard");
     await admin.page.waitForURL(/\/dashboard\?termId=/, { timeout: 60_000 });
+    // The page must SEE the term, not just the address bar: a URL write that
+    // Next does not sync into useSearchParams leaves the dashboard loading.
+    await expect(admin.page.getByRole("heading", { name: "Dashboard", level: 1 })).toBeVisible();
   } finally {
     await admin.context.close();
     await admin.api.dispose();
