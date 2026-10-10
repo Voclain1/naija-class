@@ -188,7 +188,27 @@ those; it doesn't replace them.
   (`c:\Users\acer\Desktop\Naija-class\`) and Claude Code's memory directory
   (derived from the folder name). Don't rename either mid-session.
 
-## Latest state as of this handoff (updated 2026-09-01)
+## Latest state (updated 2026-10-10)
+
+This section used to be a running log; the log below it stopped on
+2026-09-01 and several of its "in progress" entries have since merged.
+Treat it as history. The current picture:
+
+- **Live.** Schools sign up and run on the staff web app and the parent
+  portal, on early-access pricing. The mobile app is built but not released
+  to families until the device checks in `docs/deferred.md` are done.
+- **What shipped, by theme, 2026-09-06 to 2026-10-08:**
+  `docs/journal/2026-10-08.md`. Since then: PRs #388 and the one after it
+  (deferred-list fixes; see `git log` on `main` and each PR's description).
+- **What is open:** `docs/deferred.md`, split into "Up next", open
+  engineering work, items waiting on the owner or outside parties, recurring
+  maintenance, and items waiting for a trigger. It was rebuilt from verified
+  items on 2026-10-05 and is the most reliable list in the repo.
+- **Phases:** `docs/ARCHITECTURE.md` section 9.
+- **No staging:** a merge to `main` deploys to production
+  (`WORKFLOW.md`, "Branches and commits").
+
+## State as of 2026-09-01 (historical)
 
 - **Mobile password recovery is MERGED and LIVE — PR #239, squashed to
   `2519add` (2026-09-01).** Guardian mobile reuses the established email reset

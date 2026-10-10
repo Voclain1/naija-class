@@ -503,8 +503,8 @@ As-built notes are in phase-8.md §20.6, §21.8–21.9 and §22.1a–22.3a. Onli
 **Phase 8b — AI Tutor**
 The curriculum-grounded student tutor, carried from Phase 7 (`docs/modules/phase-8.md` §6). Its engineering is estimated at 25–40 working days. It cannot begin until the tutor's NDPR position and the PII hard rule (phase-8.md Q9, Q10) are resolved. It cannot reach any student until the dedicated safeguarding workstream (phase-8.md §6.4) completes; that workstream is unestimated and not engineering-led.
 
-**CBT / online exams — its own future phase (not yet numbered)**
-Deliberately deferred beyond Phase 8 (phase-8.md D5), not dropped. Since 2026-10-03 (phase-8.md D59), it is planned as a separate delivery service with offline exam packs and a load-test gate, because exam season puts every school online at once. CP5's question bank and CSV export are its inputs. The engineering reality is in `docs/deferred.md`, "CBT / online exams — capability assessment".
+**CBT / online exams — BUILT, not yet deployed (not numbered as a phase)**
+Deferred beyond Phase 8 (phase-8.md D5) and then built as its own delivery service (phase-8.md D59): scheduling from FINAL papers with an encrypted exam pack and an invigilator sheet (#375), the delivery API and the offline-first `apps/cbt` exam app for lab computers (#376), marking, theory marks and sending totals to the gradebook (#377), and the exam-day service mode, load test and go-live runbook (#378). Nothing is deployed or paid for yet; `docs/runbooks/cbt-go-live.md` says when (about four weeks before a school's first exam period). Spec: `docs/modules/cbt.md`.
 
 **Phase 9 — auxiliary modules (rolling)**
 Assignments (submission and AI-assisted grading — the information-only homework board shipped 2026-09-26, `docs/modules/the-school-day.md` Part B; the rest moved here from Phase 8 on 2026-09-13, phase-8.md D14; originally Phase 6, whose student-portal half built the student principal it depends on), library, transport, hostel, behaviour, health, full analytics. Ship as schools ask for them.
