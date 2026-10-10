@@ -8,9 +8,9 @@ import { loginAsAdmin, setupAcademicStructure } from "../fixtures/index.js";
 // a router.replace() to /dashboard, so a click made before the fetches came
 // back was cancelled and the person landed back on the dashboard.
 //
-// Made deterministic by holding the terms request until AFTER the click has
-// navigated, then letting it through: the moment the old code would have
-// pulled the page back.
+// Made repeatable by holding the terms request until the click has started its
+// navigation, then letting it through while that navigation is in flight: the
+// moment the old code pulled the page back.
 test("a click made before the dashboard picks its term is not undone", async ({ browser }) => {
   const admin = await loginAsAdmin(browser);
   try {
@@ -18,22 +18,25 @@ test("a click made before the dashboard picks its term is not undone", async ({ 
     const page = admin.page;
 
     const held: Route[] = [];
+    let releasing = false;
     await page.route(/\/academic-years\/[^/]+\/terms(\?.*)?$/, (route) => {
-      held.push(route);
+      if (releasing) void route.continue();
+      else held.push(route);
     });
 
     await page.goto("/dashboard");
     await expect.poll(() => held.length, { timeout: 60_000 }).toBeGreaterThan(0);
 
+    // Click, and let the terms response through while that navigation is
+    // still in flight: the window in which the old router.replace() cancelled
+    // it. Then let everything settle and see where the person ended up.
     await page.getByRole("link", { name: "Students", exact: true }).first().click();
-    await page.waitForURL(/\/students(\?.*)?$/);
-
-    // Release the terms response the selector was waiting on, and let the
-    // page settle: with the race, this is where it navigated back.
-    await page.unroute(/\/academic-years\/[^/]+\/terms(\?.*)?$/);
+    releasing = true;
     const released = page.waitForResponse(/\/academic-years\/[^/]+\/terms/);
     for (const route of held) await route.continue();
     await released;
+    // Bounded, so the race fails as "stayed on /dashboard", not as a test timeout.
+    await page.waitForURL(/\/students(\?.*)?$/, { timeout: 45_000 });
     await page.waitForLoadState("networkidle");
 
     await expect(page).toHaveURL(/\/students(\?.*)?$/);
