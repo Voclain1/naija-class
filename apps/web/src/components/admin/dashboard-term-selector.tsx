@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import type { TermDto } from "@school-kit/types";
 
@@ -20,6 +20,24 @@ import { listAcademicYears, listTerms } from "@/lib/academic-years/academic-year
 // place.
 const TERM_AWARE_ROUTES = ["/dashboard", "/insights"];
 
+// The DEFAULT term (and the no-academic-year signal) is written into the URL
+// after two fetches resolve, by which time the person may already have clicked
+// away. That write used to be a router.replace() to the pathname captured at
+// mount, which cancelled their in-flight navigation and put them back on
+// /dashboard (docs/deferred-archive.md, "navigation race on /dashboard").
+//
+// So the automatic write (1) is skipped unless the browser is still on the
+// page that started it, and (2) uses history.replaceState, which Next keeps in
+// step with useSearchParams but which is not a navigation, so it cannot cancel
+// one. A term the person CHOOSES from the select still navigates normally.
+function writeDefaultParam(startedOn: string, key: string, value: string) {
+  if (typeof window === "undefined" || window.location.pathname !== startedOn) return;
+  const params = new URLSearchParams(window.location.search);
+  if (params.get(key) === value) return;
+  params.set(key, value);
+  window.history.replaceState(window.history.state, "", `${startedOn}?${params.toString()}`);
+}
+
 export function DashboardTermSelector() {
   const pathname = usePathname();
   const router = useRouter();
@@ -30,9 +48,12 @@ export function DashboardTermSelector() {
 
   const isTermAware = TERM_AWARE_ROUTES.includes(pathname);
   const termId = searchParams.get("termId") ?? "";
+  // The term-aware page the fetches below started on.
+  const startedOn = useRef(pathname);
 
   useEffect(() => {
     if (!isTermAware) return;
+    startedOn.current = pathname;
     listAcademicYears()
       .then((rows) => {
         const current = rows.find((y) => y.isCurrent) ?? rows[0];
@@ -47,9 +68,7 @@ export function DashboardTermSelector() {
           // e2e happy-path run, 2026-07-26 — a fresh signup never has a
           // term, so this is the FIRST thing every new school's dashboard
           // hits, not an edge case).
-          const params = new URLSearchParams(searchParams.toString());
-          params.set("noAcademicYear", "1");
-          router.replace(`${pathname}?${params.toString()}`);
+          writeDefaultParam(startedOn.current, "noAcademicYear", "1");
         }
       })
       .catch(() => undefined);
@@ -63,7 +82,7 @@ export function DashboardTermSelector() {
         setTerms(rows);
         if (!termId) {
           const current = rows.find((t) => t.isCurrent) ?? rows[0];
-          if (current) setTermForUrl(current.id);
+          if (current) writeDefaultParam(startedOn.current, "termId", current.id);
         }
       })
       .catch(() => setTerms([]));
