@@ -235,9 +235,12 @@ the module doc or the PR, then link it here.
   does not exist.** Done 2026-10-06: `docs/onboarding-guide.md` was rewritten
   for a non-technical owner, ordered by the dashboard setup checklist, and the
   Matrix is now described as an optional reference list.
-- [ ] **Report cards built after every subject is signed off stay DRAFT.**
-  They say "subject teachers need to sign off" because the cascade ran before
-  the cards existed. Form review recovers it.
+- [x] **DONE 2026-10-10 — Report cards built after every subject is signed
+  off are built SUBJECT_REVIEWED.** `ReportCardService.build` runs the same
+  `cascadeSubjectReviewedIfComplete` the sign-off path runs, at the end of the
+  build, so the order (sign off then build, or build then sign off) no longer
+  matters. Pinned in `report-card-workflow.service.spec.ts` and
+  `e2e/tests/admin-gradebook.spec.ts`.
 - [ ] **Staff roster has no server-side pagination** (`/staff`).
 - [ ] **Bulk student grid** — what is left:
   - bounded-parallel submit;

@@ -153,18 +153,20 @@ test("an owner with no teacher identity enters scores, signs off and builds repo
     const cards = await withTenant(admin.schoolId, async (db) => {
       const rows = await db.reportCard.findMany({
         where: { termId, classArmId },
-        select: { studentId: true, subjectsCount: true, overallTotal: true },
+        select: { studentId: true, subjectsCount: true, overallTotal: true, status: true },
       });
       const names = new Map(
         (await db.student.findMany({ where: { id: { in: rows.map((r) => r.studentId) } }, select: { id: true, lastName: true } })).map(
           (st) => [st.id, st.lastName],
         ),
       );
-      return rows.map((r) => [names.get(r.studentId), r.subjectsCount, r.overallTotal]);
+      return rows.map((r) => [names.get(r.studentId), r.subjectsCount, r.overallTotal, r.status]);
     });
+    // Both subjects were signed off before the build, so the cards are built
+    // SUBJECT_REVIEWED, not DRAFT (2026-10-10).
     expect(cards.sort()).toEqual([
-      ["Okafor", 2, 83 + 100],
-      ["Yusuf", 2, 52 + 30],
+      ["Okafor", 2, 83 + 100, "SUBJECT_REVIEWED"],
+      ["Yusuf", 2, 52 + 30, "SUBJECT_REVIEWED"],
     ]);
 
     // ---- 4. Attribution -----------------------------------------------------

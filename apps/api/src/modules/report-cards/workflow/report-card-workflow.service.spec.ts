@@ -209,6 +209,45 @@ describe("ReportCardWorkflowService (cp1 — state machine + gates)", () => {
     expect(await statuses(schoolId, termId, armId)).toEqual(["SUBJECT_REVIEWED"]);
   }, 60_000);
 
+  // The opposite order (2026-10-10): every subject signed off, THEN cards
+  // built. The cascade had already run with no cards to move, so the cards
+  // were built DRAFT and the board asked for sign-offs that were done.
+  it("build after the last sign-off: cards are built SUBJECT_REVIEWED", async () => {
+    const { schoolId, ownerId } = await makeSchool("signfirst");
+    const armId = await makeArm(schoolId, "signfirst");
+    const comp = await components(schoolId);
+    const s1 = await makeSubject(schoolId, "sf1");
+    const s2 = await makeSubject(schoolId, "sf2");
+    const { yearId, termId } = await makeYearTerm(schoolId, "signfirst");
+    const a = await enroll(schoolId, { armId, termId, yearId, suffix: "sfa" });
+    const b = await enroll(schoolId, { armId, termId, yearId, suffix: "sfb" });
+    await enterColumn(schoolId, ownerId, { termId, subjectId: s1, studentIds: [a, b], comp });
+    await enterColumn(schoolId, ownerId, { termId, subjectId: s2, studentIds: [a, b], comp });
+    await signColumn(schoolId, ownerId, { termId, classArmId: armId, subjectId: s1 });
+    await signColumn(schoolId, ownerId, { termId, classArmId: armId, subjectId: s2 });
+
+    await reportCards.build(ctx(schoolId, ownerId), { termId, classArmId: armId }, reqCtx);
+    expect(await statuses(schoolId, termId, armId)).toEqual(["SUBJECT_REVIEWED", "SUBJECT_REVIEWED"]);
+    const fr = await workflow.formReview(ctx(schoolId, ownerId), { termId, classArmId: armId }, reqCtx);
+    expect(fr.status).toBe("FORM_REVIEWED");
+  }, 60_000);
+
+  it("build with a subject still unsigned: cards stay DRAFT", async () => {
+    const { schoolId, ownerId } = await makeSchool("halfsigned");
+    const armId = await makeArm(schoolId, "halfsigned");
+    const comp = await components(schoolId);
+    const s1 = await makeSubject(schoolId, "hs1");
+    const s2 = await makeSubject(schoolId, "hs2");
+    const { yearId, termId } = await makeYearTerm(schoolId, "halfsigned");
+    const a = await enroll(schoolId, { armId, termId, yearId, suffix: "hsa" });
+    await enterColumn(schoolId, ownerId, { termId, subjectId: s1, studentIds: [a], comp });
+    await enterColumn(schoolId, ownerId, { termId, subjectId: s2, studentIds: [a], comp });
+    await signColumn(schoolId, ownerId, { termId, classArmId: armId, subjectId: s1 });
+
+    await reportCards.build(ctx(schoolId, ownerId), { termId, classArmId: armId }, reqCtx);
+    expect(await statuses(schoolId, termId, armId)).toEqual(["DRAFT"]);
+  }, 60_000);
+
   it("full walk: SUBJECT_REVIEWED → form-review → FORM_REVIEWED → approve → PRINCIPAL_APPROVED (+ audit rows)", async () => {
     const f = await seedReviewedArm("walk");
     expect(new Set(await statuses(f.schoolId, f.termId, f.armId))).toEqual(new Set(["SUBJECT_REVIEWED"]));

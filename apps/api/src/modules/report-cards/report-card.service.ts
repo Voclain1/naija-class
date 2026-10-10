@@ -31,6 +31,7 @@ import { StorageService } from "../../common/storage";
 import { AggregationService } from "../assessment/aggregation.service";
 import { wakeRenderWorker } from "./render/wake-render-worker";
 import { isFinalTerm } from "./workflow/final-term";
+import { cascadeSubjectReviewedIfComplete } from "./workflow/subject-reviewed-cascade";
 
 interface CumulativeSnapshot {
   average: number;
@@ -221,6 +222,14 @@ export class ReportCardService {
         });
         cardCount += 1;
       }
+
+      // 4. The SUBJECT_REVIEWED cascade normally runs at sign-off, so an arm
+      //    whose every subject was signed off BEFORE its cards existed would
+      //    otherwise leave them DRAFT, with the board asking for sign-offs
+      //    that are already done. Running the same predicate here closes that
+      //    order. Every card is DRAFT at this point (guard 0), so it moves the
+      //    whole arm or nothing.
+      await cascadeSubjectReviewedIfComplete(db, input.termId, input.classArmId);
 
       await this.writeAudit(db, authCtx, reqCtx, input.classArmId, {
         termId: input.termId,
