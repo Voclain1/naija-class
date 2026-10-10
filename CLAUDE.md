@@ -867,6 +867,8 @@ NEXT_PUBLIC_SENTRY_DSN
 SENTRY_ENVIRONMENT
 NEXT_PUBLIC_POSTHOG_KEY
 NEXT_PUBLIC_POSTHOG_HOST
+POSTHOG_API_KEY
+POSTHOG_HOST
 WEB_BASE_URL
 PORTAL_BASE_URL
 RESULT_PIN_HMAC_KEY
@@ -934,6 +936,13 @@ the invigilator sheet. Unset, a production build prints `https://cbt.schoolkit.n
 and development `localhost:3003`, so it only needs setting if the address ever
 changes. `CORS_ORIGIN_CBT` is not set in production yet. `docs/runbooks/cbt-go-live.md` says when, with the rest of
 the exam service (`API_MODE=cbt-delivery`, `apps/api/fly-cbt.toml`).
+
+`POSTHOG_API_KEY` / `POSTHOG_HOST` — server-side PostHog from the API
+(2026-10-10, `apps/api/src/observability/posthog.ts`). The same project key
+as the web app's `NEXT_PUBLIC_POSTHOG_KEY`, set as a Fly secret on
+`school-kit-api` only. Unset means no client is built and nothing is sent,
+like Sentry's DSN. Events carry opaque ids and field shapes only (today:
+`validation_rejected`), never a body, a message or a name.
 
 `TERMII_BASE_URL` — unlike Paystack's fixed `api.paystack.co`, Termii's API
 base URL is **per-account** (dashboard-assigned), not a global constant.

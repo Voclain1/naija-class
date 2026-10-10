@@ -17,7 +17,7 @@ import { Label } from "@/components/ui/label";
 import { LogoUpload } from "@/components/school/logo-upload";
 import { ApiError } from "@/lib/api-client";
 import { useAuth } from "@/lib/auth/use-auth";
-import { track } from "@/lib/observability/events";
+import { track, trackOnboardingServerRejection } from "@/lib/observability/events";
 import { advanceStep2 } from "@/lib/onboarding/onboarding-api";
 
 import { OnboardingProgress } from "./progress-indicator";
@@ -41,7 +41,7 @@ import { OnboardingProgress } from "./progress-indicator";
 // no field left to register, validate, or show an error for. A plain submit
 // handler posting `{}` is the whole form now.
 export function Step2BrandingForm() {
-  const { setSchool } = useAuth();
+  const { school, setSchool } = useAuth();
   const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
 
@@ -55,6 +55,7 @@ export function Step2BrandingForm() {
       router.replace("/onboarding/3");
     } catch (error) {
       if (error instanceof ApiError) {
+        trackOnboardingServerRejection(school?.id, 2, error);
         toast.error(error.message);
       } else {
         toast.error("Could not reach the server. Try again in a moment.");

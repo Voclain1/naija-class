@@ -3,7 +3,8 @@ import { BaseError, ValidationError } from "@school-kit/types";
 import type { Request, Response } from "express";
 
 import { Sentry } from "../observability/sentry";
-import { validationFailureMonitor } from "../observability/validation-failure-monitor";
+import { captureServerEvent } from "../observability/posthog";
+import { issueShapes, validationFailureMonitor } from "../observability/validation-failure-monitor";
 
 // Global error filter. Three branches:
 //   1. BaseError subclass → use its httpStatus + code + message + details
@@ -36,11 +37,28 @@ export class HttpExceptionFilter implements ExceptionFilter {
       // them and raises one Sentry warning when a form keeps rejecting people
       // (it reads only the route template and issue paths, never the body).
       if (exception instanceof ValidationError) {
+        const route = routeTemplate(req);
         validationFailureMonitor.record({
           method: req.method,
-          route: routeTemplate(req),
+          route,
           errorCode: exception.code,
           details: exception.details,
+        });
+        // Every rejection, for product analytics (PostHog), keyed to the
+        // signed-in user so a funnel can show who was rejected and whether
+        // they went on. Same shapes as the monitor: no body, ids or messages.
+        const shapes = issueShapes(exception.details);
+        const user = (req as Request & { user?: { userId?: string; schoolId?: string } }).user;
+        captureServerEvent({
+          event: "validation_rejected",
+          distinctId: user?.userId ?? "anonymous",
+          properties: {
+            route: `${req.method} ${route}`,
+            error_code: exception.code,
+            issue_paths: shapes.map((s) => s.path),
+            issue_codes: shapes.map((s) => s.code),
+            school_id: user?.schoolId ?? null,
+          },
         });
       }
       res.status(exception.httpStatus).json({ error: exception.toBody() });

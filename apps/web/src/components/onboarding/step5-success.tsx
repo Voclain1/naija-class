@@ -7,6 +7,7 @@ import { toast } from "sonner";
 
 import {
   CalendarFormFields,
+  calendarErrorPaths,
   hasCalendarErrors,
   initialCalendarState,
   toCalendarInput,
@@ -23,7 +24,7 @@ import {
 import { ApiError } from "@/lib/api-client";
 import { useAuth } from "@/lib/auth/use-auth";
 import { apiErrorLines } from "@/lib/errors/api-error-lines";
-import { track } from "@/lib/observability/events";
+import { track, trackOnboardingServerRejection } from "@/lib/observability/events";
 import { advanceStep5 } from "@/lib/onboarding/onboarding-api";
 
 import { OnboardingProgress } from "./progress-indicator";
@@ -86,6 +87,15 @@ export function Step5Success() {
     // The messages are the server's own, so this cannot disagree with it.
     if (invalid) {
       setErrorLines(fieldErrors.all);
+      if (school) {
+        track("onboarding_step_rejected", {
+          schoolId: school.id,
+          step: 5,
+          source: "client",
+          issuePaths: calendarErrorPaths(fieldErrors),
+          errorCode: "VALIDATION_ERROR",
+        });
+      }
       return;
     }
 
@@ -94,8 +104,10 @@ export function Step5Success() {
     try {
       const res = await advanceStep5({ calendar: toCalendarInput(calendar) });
       setSchool(res.school);
+      track("onboarding_step_completed", { schoolId: res.school.id, step: 5 });
       router.replace("/dashboard");
     } catch (err) {
+      if (err instanceof ApiError) trackOnboardingServerRejection(school?.id, 5, err);
       // Server-side validation (overlapping terms, terms outside the year) is
       // the authority. Read its details.issues[] — `err.message` is the
       // constant "Invalid request payload", which is what left a real school

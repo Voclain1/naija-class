@@ -2,6 +2,7 @@ import "reflect-metadata";
 // Sentry must initialise before NestFactory.create — its OpenTelemetry-based
 // instrumentation patches import hooks, and the patching only catches code
 // loaded after init runs. A blank SENTRY_DSN_API makes init a no-op.
+import { shutdownPostHog } from "./observability/posthog";
 import { initSentry } from "./observability/sentry";
 initSentry();
 
@@ -54,6 +55,14 @@ async function bootstrap() {
 
   const port = Number(process.env.API_PORT ?? 4000);
   await app.listen(port);
+
+  // Flush server-side analytics before a Fly machine stops, so the last few
+  // seconds of events are not dropped. A no-op when POSTHOG_API_KEY is unset.
+  for (const signal of ["SIGTERM", "SIGINT"] as const) {
+    process.once(signal, () => {
+      void shutdownPostHog().finally(() => process.exit(0));
+    });
+  }
 
   Logger.log(
     `School Kit ${process.env.API_MODE === "cbt-delivery" ? "exam delivery service" : "API"} listening on http://localhost:${port}`,

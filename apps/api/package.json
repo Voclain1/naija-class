@@ -37,6 +37,7 @@
     "ioredis": "^5.11.0",
     "otplib": "^13.4.1",
     "pdfjs-dist": "4.10.38",
+    "posthog-node": "5.54.1",
     "puppeteer": "^25.1.0",
     "reflect-metadata": "^0.2.2",
     "resend": "^6.17.1",

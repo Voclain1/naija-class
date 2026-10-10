@@ -218,9 +218,8 @@ the module doc or the PR, then link it here.
   one fingerprinted Sentry warning (plus a log line) when a key reaches 5 in an
   hour; Sentry's event count on that issue is the trend. It never reads the
   body, the URL's ids, or any message (Zod's quote the rejected value).
-  Counts are per API machine and reset on deploy. What it cannot see: whether
-  the person then gave up. That funnel view would be a PostHog event on the
-  web side, still not built.
+  Counts are per API machine and reset on deploy. Whether the person then
+  gave up is the PostHog funnel below (`onboarding_step_rejected`).
 - [x] **DONE 2026-10-08 — Web source maps to Sentry.** `next.config.mjs` is
   wrapped in `withSentryConfig`, which uploads the maps (then deletes them from
   the build) only when `SENTRY_AUTH_TOKEN` is set; build-time
@@ -228,7 +227,15 @@ the module doc or the PR, then link it here.
   `SENTRY_AUTH_TOKEN` and `SENTRY_ORG` (and `SENTRY_PROJECT_WEB` if the
   project slug is not `school-kit-web`) on `school-kit-web` in Vercel; all
   three are declared in `turbo.json`.
-- [ ] **No server-side PostHog.** Browser capture only.
+- [x] **DONE 2026-10-10 — Server-side PostHog.** The API captures
+  `validation_rejected` for every `ValidationError` (route template, field
+  paths, codes, school id; the user's UUID as distinct id), next to the
+  Sentry repeat warning. The web onboarding steps send
+  `onboarding_step_rejected` (step 1–5, `client` or `server`, field paths) and
+  step 5 now sends `onboarding_step_completed`, so a funnel shows who was
+  turned back and whether they got through. **To switch on:** set
+  `POSTHOG_API_KEY` (the web project's key) as a Fly secret on
+  `school-kit-api`; unset, nothing is sent.
 - [x] **DONE 2026-10-10 — One redactor.** `packages/types/src/redact.ts`
   (exported from `@school-kit/types`) is used by the API's Sentry and both web
   Sentry configs. The web copy had drifted: it masked only credential keys, so

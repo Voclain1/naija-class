@@ -5,8 +5,12 @@ import { Body, Controller, INestApplication, Module, Param, Post } from "@nestjs
 import request from "supertest";
 import { z } from "zod";
 
-const { captureMessage } = vi.hoisted(() => ({ captureMessage: vi.fn() }));
+const { captureMessage, captureServerEvent } = vi.hoisted(() => ({
+  captureMessage: vi.fn(),
+  captureServerEvent: vi.fn(),
+}));
 vi.mock("./sentry", () => ({ Sentry: { captureMessage, captureException: vi.fn() } }));
+vi.mock("./posthog", () => ({ captureServerEvent }));
 
 import { HttpExceptionFilter } from "../common/http-exception.filter";
 import { ZodValidationPipe } from "../common/zod-validation.pipe";
@@ -59,5 +63,24 @@ describe("Repeated validation failures over HTTP", () => {
     const sent = JSON.stringify(captureMessage.mock.calls);
     expect(sent).not.toContain("3fa85f64");
     expect(sent).not.toContain("31/13/2026");
+
+    // PostHog gets every rejection (2026-10-10), with the same shapes and no
+    // more: route template, field path, codes. An unauthenticated caller is
+    // "anonymous".
+    expect(captureServerEvent).toHaveBeenCalledTimes(VALIDATION_FAILURE_THRESHOLD);
+    expect(captureServerEvent.mock.calls[0][0]).toEqual({
+      event: "validation_rejected",
+      distinctId: "anonymous",
+      properties: {
+        route: "POST /api/v1/probe-schools/:schoolId/terms",
+        error_code: "VALIDATION_ERROR",
+        issue_paths: ["terms.*.startDate"],
+        issue_codes: ["invalid_string"],
+        school_id: null,
+      },
+    });
+    const analytics = JSON.stringify(captureServerEvent.mock.calls);
+    expect(analytics).not.toContain("3fa85f64");
+    expect(analytics).not.toContain("31/13/2026");
   });
 });
