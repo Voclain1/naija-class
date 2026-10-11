@@ -101,6 +101,29 @@ describe("the forced navigation marks itself before it starts", () => {
   });
 });
 
+describe("a deliberate sign-out asks about unsaved work before ending the session", () => {
+  const provider = read("./auth-provider.tsx");
+  const logout = provider.slice(provider.indexOf("const logout = useCallback("));
+
+  it("checks hasUnsavedWork() and can cancel BEFORE logoutRequest()", () => {
+    // Ordering is the fix: asked after logoutRequest(), a "Stay" keeps a form
+    // whose session is already gone (docs/deferred.md).
+    const ask = logout.indexOf("hasUnsavedWork()");
+    const cancel = logout.indexOf("window.confirm(UNSAVED_SIGN_OUT_MESSAGE)");
+    const server = logout.indexOf("logoutRequest()");
+    expect(ask).toBeGreaterThan(-1);
+    expect(cancel).toBeGreaterThan(ask);
+    expect(server).toBeGreaterThan(cancel);
+  });
+
+  it("marks the sign-out confirmed before the document replace", () => {
+    const confirmed = logout.indexOf("beginConfirmedSignOut()");
+    const replace = logout.indexOf('window.location.replace("/login")');
+    expect(confirmed).toBeGreaterThan(-1);
+    expect(confirmed).toBeLessThan(replace);
+  });
+});
+
 describe("RequireAuth's guest redirect carries the parked reason", () => {
   const requireAuth = read("../../components/auth/require-auth.tsx");
 

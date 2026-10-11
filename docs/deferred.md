@@ -128,15 +128,19 @@ the module doc or the PR, then link it here.
 - [x] **DONE 2026-10-08 — One `hasPermission`.** The 11 local copies now
   import `lib/auth/has-permission.ts` (`invoice-cancel.ts` re-exports it for
   its own callers and spec).
-- [ ] **Deliberate sign-out loses a dirty form.** `logout()` destroys the
-  server session before the browser's "leave site?" prompt fires.
-  - **Fix:** check for dirty state before the server logout. That needs a
-    shared dirty-state registry.
-  - Four hand-written `beforeunload` guards exist, gated by
-    `session-end-invariants.spec.ts`.
-  - Forced expiry still destroys unsaved gradebook work. No mechanism has
-    been chosen; measure how often it happens first (archive: "Session
-    expiry", "Session-end work loss").
+- [x] **DONE 2026-10-10 — Deliberate sign-out no longer loses a dirty form
+  silently.** `logout()` now asks first, before the server session is
+  destroyed. If any unsaved-changes guard objects, it shows "You have unsaved
+  changes on this page…"; Cancel keeps the session and the work, OK signs out
+  with no second "leave site?" prompt. No separate registry was needed:
+  `hasUnsavedWork()` (`lib/auth/session-end-navigation.ts`) dispatches a
+  cancellable probe `beforeunload`, which every guard already answers while it
+  is dirty. Pinned by `session-end-invariants.spec.ts` (ask before
+  `logoutRequest()`) and two cases in `e2e/tests/session-end-work-loss.spec.ts`
+  (both fail on the old code).
+- [ ] **Forced session expiry still destroys unsaved gradebook work.** No
+  mechanism has been chosen; measure how often it happens first (archive:
+  "Session expiry", "Session-end work loss").
 - [x] **Mobile no longer signs out silently on a 401** (found already built,
   2026-10-08). The API client passes the server's code to `onUnauthorized`,
   `session.tsx` turns it into a message (`session-end.ts`), and the sign-in
@@ -192,8 +196,11 @@ the module doc or the PR, then link it here.
   Told apart by Prisma's message, not by elapsed time: a never-started
   transaction also waits out `maxWait` first. Pinned in
   `tenant-timeout.spec.ts` (the body ran twice before).
-- [ ] **No `[schoolId, date]` index for whole-school attendance reads**
-  (dashboard today and the 8-week trend). **Trigger:** slow dashboard queries.
+- [x] **DONE 2026-10-10 — `(school_id, date)` index on `attendance_records`**
+  (migration `20261012120000_attendance_records_school_date_index`), for the
+  dashboard's whole-school 8-week read. `EXPLAIN` as `app_user` under a school
+  GUC shows a bitmap index scan with both the RLS `school_id` and the date
+  range as index conditions.
 - [ ] **Production `connection_limit` is unverified** (assumed 3). Check
   `app_user` connections in the Neon dashboard.
 - [x] **DONE 2026-10-08 — Expired-session sweeper.**
@@ -211,9 +218,8 @@ the module doc or the PR, then link it here.
   one fingerprinted Sentry warning (plus a log line) when a key reaches 5 in an
   hour; Sentry's event count on that issue is the trend. It never reads the
   body, the URL's ids, or any message (Zod's quote the rejected value).
-  Counts are per API machine and reset on deploy. What it cannot see: whether
-  the person then gave up. That funnel view would be a PostHog event on the
-  web side, still not built.
+  Counts are per API machine and reset on deploy. Whether the person then
+  gave up is the PostHog funnel below (`onboarding_step_rejected`).
 - [x] **DONE 2026-10-08 — Web source maps to Sentry.** `next.config.mjs` is
   wrapped in `withSentryConfig`, which uploads the maps (then deletes them from
   the build) only when `SENTRY_AUTH_TOKEN` is set; build-time
@@ -221,7 +227,15 @@ the module doc or the PR, then link it here.
   `SENTRY_AUTH_TOKEN` and `SENTRY_ORG` (and `SENTRY_PROJECT_WEB` if the
   project slug is not `school-kit-web`) on `school-kit-web` in Vercel; all
   three are declared in `turbo.json`.
-- [ ] **No server-side PostHog.** Browser capture only.
+- [x] **DONE 2026-10-10 — Server-side PostHog.** The API captures
+  `validation_rejected` for every `ValidationError` (route template, field
+  paths, codes, school id; the user's UUID as distinct id), next to the
+  Sentry repeat warning. The web onboarding steps send
+  `onboarding_step_rejected` (step 1–5, `client` or `server`, field paths) and
+  step 5 now sends `onboarding_step_completed`, so a funnel shows who was
+  turned back and whether they got through. **To switch on:** set
+  `POSTHOG_API_KEY` (the web project's key) as a Fly secret on
+  `school-kit-api`; unset, nothing is sent.
 - [x] **DONE 2026-10-10 — One redactor.** `packages/types/src/redact.ts`
   (exported from `@school-kit/types`) is used by the API's Sentry and both web
   Sentry configs. The web copy had drifted: it masked only credential keys, so
@@ -269,16 +283,18 @@ the module doc or the PR, then link it here.
   source answers `MOVE_SOURCE_EMPTY`; the audit row records `movedFrom`.
 - [x] **DONE 2026-10-10 — The `/dashboard` navigation race.** The term
   selector's automatic default-term write (`router.replace`) is skipped once
-  the person has started to leave: a click on a link to another app page, or
-  Back/Forward. Choosing a term from the select still navigates. Reproduced
-  in `e2e/tests/dashboard-navigation-race.spec.ts` by releasing the held terms
-  response while the click is in flight. **Not covered:** a navigation started
-  from code rather than a link (the command palette's `router.push`) while the
-  dashboard is still loading. **Do not** switch the write to
-  `history.replaceState`: with Next's own state it is never synced into
-  `useSearchParams` (the dashboard stays loading), and without it Next's sync
-  cancels the in-flight navigation exactly as `router.replace` does. Both were
-  tried on PR #388.
+  the person has started to leave: a click on a link to another app page, a
+  navigation announced from code, or Back/Forward. Choosing a term from the
+  select still navigates. Code that calls `router.push()` inside the admin
+  shell must announce it first with `announceNavigation()`
+  (`apps/web/src/lib/navigation-intent.ts`); today only the command palette
+  does, and a new caller that does not reopens the race. Reproduced in
+  `e2e/tests/dashboard-navigation-race.spec.ts` (link and palette) by releasing
+  the held terms response while the navigation is in flight. **Do not** switch
+  the write to `history.replaceState`: with Next's own state it is never
+  synced into `useSearchParams` (the dashboard stays loading), and without it
+  Next's sync cancels the in-flight navigation exactly as `router.replace`
+  does. Both were tried on PR #388.
 - [x] **DONE 2026-10-10 — Staff roster's 200-profile cap.** `GET /users`
   now returns each user's `teacherProfileId` (one join), so `/staff` no
   longer reads one page of `GET /teacher-profiles`, which marked every teacher
@@ -299,13 +315,6 @@ the module doc or the PR, then link it here.
   leaves it in both places. The old cells count as free, so a lesson may move
   onto its own old cell (which used to fail with `CELL_OCCUPIED`). A stale
   source answers `MOVE_SOURCE_EMPTY`; the audit row records `movedFrom`.
-- [x] **DONE 2026-10-10 — The `/dashboard` navigation race.** The term
-  selector's automatic default-term write is skipped once the browser has left
-  the page that started it, and uses `history.replaceState` (kept in step with
-  `useSearchParams`, but not a navigation), so it can no longer cancel a click
-  made while it was loading. Choosing a term from the select still navigates.
-  Reproduced deterministically in `e2e/tests/dashboard-navigation-race.spec.ts`
-  by holding the terms response until after the click.
 
 ### Docs and tooling
 - [x] **DONE 2026-10-08 — `docs/journal/` caught up** with a single catch-up

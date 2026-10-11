@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/card";
 import { ApiError } from "@/lib/api-client";
 import { useAuth } from "@/lib/auth/use-auth";
-import { track } from "@/lib/observability/events";
+import { track, trackOnboardingServerRejection } from "@/lib/observability/events";
 import { advanceStep4 } from "@/lib/onboarding/onboarding-api";
 
 import { OnboardingProgress } from "./progress-indicator";
@@ -25,7 +25,7 @@ import { OnboardingProgress } from "./progress-indicator";
 // API re-stamps ndprConsentAt to NOW() on this call, so the audit trail's
 // "moment of consent" is the wizard click, not the form click weeks earlier.
 export function Step4NdprForm() {
-  const { setSchool } = useAuth();
+  const { school, setSchool } = useAuth();
   const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
   const [consented, setConsented] = useState(false);
@@ -46,6 +46,7 @@ export function Step4NdprForm() {
       router.replace("/onboarding/5");
     } catch (apiError) {
       if (apiError instanceof ApiError) {
+        trackOnboardingServerRejection(school?.id, 4, apiError);
         toast.error(apiError.message);
       } else {
         toast.error("Could not reach the server. Try again in a moment.");

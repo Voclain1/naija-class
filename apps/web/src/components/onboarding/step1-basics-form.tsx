@@ -24,7 +24,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ApiError } from "@/lib/api-client";
 import { useAuth } from "@/lib/auth/use-auth";
-import { track } from "@/lib/observability/events";
+import { track, trackOnboardingServerRejection } from "@/lib/observability/events";
 import { advanceStep1 } from "@/lib/onboarding/onboarding-api";
 
 import { OnboardingProgress } from "./progress-indicator";
@@ -67,6 +67,7 @@ export function Step1BasicsForm() {
       router.replace("/onboarding/2");
     } catch (error) {
       if (error instanceof ApiError) {
+        trackOnboardingServerRejection(school?.id, 1, error);
         toast.error(error.message);
       } else {
         toast.error("Could not reach the server. Try again in a moment.");

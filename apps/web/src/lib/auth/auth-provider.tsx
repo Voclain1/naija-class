@@ -24,7 +24,13 @@ import {
   twoFactorChallengeRequest,
 } from "./auth-api";
 
-import { beginAuthForcedNavigation, parkSessionEndReason } from "./session-end-navigation";
+import {
+  UNSAVED_SIGN_OUT_MESSAGE,
+  beginAuthForcedNavigation,
+  beginConfirmedSignOut,
+  hasUnsavedWork,
+  parkSessionEndReason,
+} from "./session-end-navigation";
 import { buildLoginUrl, reasonFromErrorCode } from "./session-end";
 
 export type AuthStatus = "loading" | "authed" | "guest";
@@ -270,6 +276,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const logout = useCallback(async () => {
+    // Ask BEFORE the server session is destroyed: once it is gone, the
+    // browser's own "leave site?" prompt offers a "Stay" that cannot save.
+    // Cancelling here keeps both the session and the unsaved work.
+    if (hasUnsavedWork()) {
+      if (!window.confirm(UNSAVED_SIGN_OUT_MESSAGE)) return;
+      beginConfirmedSignOut();
+    }
     try {
       await logoutRequest(); // proxy clears the sk_session cookie
     } catch {

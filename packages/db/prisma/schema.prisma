@@ -2214,6 +2214,7 @@ model AttendanceRecord {
   @@index([schoolId])
   @@index([schoolId, classArmId, date]) // register query
   @@index([schoolId, termId]) // summary query
+  @@index([schoolId, date]) // whole-school date range (dashboard trend + today)
   @@map("attendance_records")
 }
 

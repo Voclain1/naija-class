@@ -24,7 +24,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ApiError } from "@/lib/api-client";
 import { useAuth } from "@/lib/auth/use-auth";
-import { track } from "@/lib/observability/events";
+import { track, trackOnboardingServerRejection } from "@/lib/observability/events";
 import { advanceStep3 } from "@/lib/onboarding/onboarding-api";
 
 import { OnboardingProgress } from "./progress-indicator";
@@ -37,7 +37,7 @@ import { OnboardingProgress } from "./progress-indicator";
 // yet (no columns for them). Slice 7 will pick them up from the audit
 // metadata when wiring email send. Captured in deferred.md.
 export function Step3InvitesForm() {
-  const { setSchool } = useAuth();
+  const { school, setSchool } = useAuth();
   const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
 
@@ -61,6 +61,7 @@ export function Step3InvitesForm() {
       router.replace("/onboarding/4");
     } catch (error) {
       if (error instanceof ApiError) {
+        trackOnboardingServerRejection(school?.id, 3, error);
         toast.error(error.message);
       } else {
         toast.error("Could not reach the server. Try again in a moment.");

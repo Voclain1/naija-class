@@ -2,7 +2,7 @@
 
 A multi-tenant SaaS school management platform for Nigerian private schools, with AI-assisted learning built in from day one.
 
-**Status:** Phase 0 — Foundations. Pre-launch. Not yet accepting customers.
+**Status (2026-10-10):** Live. Schools sign up and run on the staff web app (`app.schoolkit.ng`) and the parent portal, on early-access pricing as pioneer schools. The mobile app is built but not yet released to families (device checks outstanding). What is left, and what waits on whom, is in [`docs/deferred.md`](./docs/deferred.md).
 
 **Stack:** Next.js 15 · NestJS 10 · PostgreSQL 16 (with RLS + pgvector) · Redis · Prisma · Expo · Anthropic Claude API · Paystack · Termii
 
@@ -15,7 +15,7 @@ Before doing anything in this repo, read in order:
 1. [`CLAUDE.md`](./CLAUDE.md) — conventions, rules, and how code is written here
 2. [`WORKFLOW.md`](./WORKFLOW.md) — how work happens day-to-day; module lifecycle; quality gates
 3. [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) — system design, data model, all 17 modules, build phases
-4. [`docs/modules/phase-0.md`](./docs/modules/phase-0.md) — the active phase spec
+4. The `docs/modules/<module>.md` for the work at hand, and [`docs/deferred.md`](./docs/deferred.md) for what is known but not done
 
 Future contributors and future-you should be productive after reading these four documents.
 
@@ -157,8 +157,8 @@ All variables documented in [`.env.example`](./.env.example). The critical ones:
 | `R2_ACCESS_KEY_ID` | File storage | Cloudflare dash |
 | `R2_SECRET_ACCESS_KEY` | File storage | Cloudflare dash |
 | `R2_BUCKET` | File storage bucket name | Cloudflare dash |
-| `SENTRY_DSN` | Error monitoring | sentry.io |
-| `POSTHOG_KEY` | Product analytics | posthog.com |
+| `SENTRY_DSN_API` / `NEXT_PUBLIC_SENTRY_DSN` | Error monitoring (API / web) | sentry.io |
+| `POSTHOG_API_KEY` / `NEXT_PUBLIC_POSTHOG_KEY` | Product analytics (API / web), same project key | posthog.com |
 
 **Never commit `.env`.** It's in `.gitignore`. Keep test keys and live keys in separate `.env` files.
 
@@ -166,28 +166,31 @@ All variables documented in [`.env.example`](./.env.example). The critical ones:
 
 ## Current status
 
-**Active phase:** Phase 0 — Foundations
-**Active branch:** `phase-0/scaffold`
-**This week's outcome:** Bootstrap monorepo; auth working end-to-end; one E2E test passing.
+There is no "active phase" to keep updated here any more. For the state of
+things, read, in this order:
 
-Update this section weekly at the Sunday review.
+- [`docs/deferred.md`](./docs/deferred.md): what is known and not done, what
+  waits on the owner or an outside party, and what waits for a trigger.
+- The latest entry in [`docs/journal/`](./docs/journal/) and `git log` on
+  `main`: what shipped recently, with the PR to read for detail.
+- [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) section 9: which phases
+  have shipped.
 
 ---
 
 ## Build phases
 
-Detail in [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) section 9.
+Detail, and the as-built notes, in [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) section 9.
 
-- **Phase 0 — Foundations** (active) · Monorepo, auth, multi-tenancy, onboarding
-- Phase 1 — SIS & academic structure · Students, teachers, classes, terms
-- Phase 2 — Attendance & grading · Daily marking, CA1/CA2/exam, report cards
-- Phase 3 — Finance · Fees, Paystack, debtors, payroll. **First paying customer.**
-- Phase 4 — Communication & parent portal · Parent app, messaging, SMS
-- Phase 5 — AI layer · Tutor, lesson generator, report comments. **Main differentiator.**
-- Phase 6 — Assignments & student portal
-- Phase 7 — Auxiliary modules · Library, transport, hostel, behaviour, health
-
-Target: end of Phase 3 in ~3–4 months. End of Phase 5 in ~6 months.
+- **Shipped:**
+  - Phases 0–4: foundations, SIS and academic structure, attendance and grading, finance with Paystack, parent portal and communication.
+  - Phase 5: the AI layer (lesson plans, report comments, parent summaries, insights).
+  - Phase 6: mobile app, student portal and guardian mobile (not yet released to families).
+  - Phase 7 v1: curriculum RAG grounding lesson plans in a school's own scheme of work.
+  - Phase 8 and 8c: event calendar, reports, timetable, assessments and exams, report card completeness, result checker.
+- **Built, not deployed:** online exams (CBT) on school lab computers; `docs/runbooks/cbt-go-live.md` says when.
+- **Not started:** Phase 8b, the student AI tutor. It waits on the NDPR review and a safeguarding workstream.
+- **Rolling (Phase 9):** auxiliary modules, as schools ask for them.
 
 ---
 
@@ -215,7 +218,7 @@ These are bypassed under *no* circumstances, regardless of deadline pressure. Br
 
 Currently solo development. When the first contributor joins, this section grows.
 
-For now: every change goes through a branch + PR even though you're solo. PRs against `staging` first; `staging` → `main` after 24h soak. See [`WORKFLOW.md`](./WORKFLOW.md) for the full module lifecycle.
+For now: every change goes through a branch and a PR into `main`, even though you're solo. There is no `staging` branch: a merge to `main` passes CI and then deploys to the one production environment (see CLAUDE.md, "There is no isolated staging environment"). See [`WORKFLOW.md`](./WORKFLOW.md) for the module lifecycle.
 
 ---
 

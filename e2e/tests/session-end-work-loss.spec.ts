@@ -446,3 +446,75 @@ test.describe("gradebook", () => {
     await admin.api.dispose();
   });
 });
+
+// A DELIBERATE sign-out with unsaved work (2026-10-10, docs/deferred.md).
+// Before: logout() ended the server session, then the document replace raised
+// the browser's own "leave site?" prompt, whose "Stay" kept a form that could
+// no longer save. Now the question is asked first, as a confirm, and "Cancel"
+// keeps both the session and the work.
+test.describe("deliberate sign-out with unsaved work", () => {
+  async function dirtyMatrix(page: Page) {
+    await page.goto(`${WEB}/settings/academic/class-subjects`);
+    await page.getByRole("heading", { name: "Class-subject matrix" }).waitFor({ timeout: 60_000 });
+    const cell = page.getByRole("button", { name: /Link subject to level|Unlink subject from level/ });
+    await expect.poll(() => cell.count(), { timeout: 30_000 }).toBeGreaterThan(0);
+    await cell.first().click();
+    await expect(page.getByRole("button", { name: /^save/i }).first()).toBeEnabled({ timeout: 10_000 });
+  }
+
+  async function chooseLogOut(page: Page) {
+    await page.getByRole("button", { name: /account menu|Owner/ }).first().click();
+    await page.getByRole("menuitem", { name: /log out/i }).click();
+  }
+
+  test("cancelling keeps the session and the unsaved changes", async ({ browser }) => {
+    const admin = await loginAsAdmin(browser);
+    const { setupAcademicStructure } = await import("../fixtures/academic.js");
+    await setupAcademicStructure(admin.api);
+    const page = admin.page;
+    await dirtyMatrix(page);
+
+    const seen: string[] = [];
+    page.on("dialog", (d) => {
+      seen.push(`${d.type()}: ${d.message()}`);
+      void d.dismiss().catch(() => {});
+    });
+    await chooseLogOut(page);
+
+    await expect.poll(() => seen.length).toBe(1);
+    expect(seen[0]).toMatch(/^confirm: You have unsaved changes on this page/);
+    // Still here, still dirty, still signed in.
+    await expect(page).toHaveURL(/\/settings\/academic\/class-subjects/);
+    await expect(page.getByRole("button", { name: /^save/i }).first()).toBeEnabled();
+    const api = await createApiContext(admin.token);
+    expect((await api.get("auth/me")).status()).toBe(200);
+    await api.dispose();
+
+    await admin.context.close();
+    await admin.api.dispose();
+  });
+
+  test("confirming signs out once, with no second leave-site prompt", async ({ browser }) => {
+    const admin = await loginAsAdmin(browser);
+    const { setupAcademicStructure } = await import("../fixtures/academic.js");
+    await setupAcademicStructure(admin.api);
+    const page = admin.page;
+    await dirtyMatrix(page);
+
+    const seen: string[] = [];
+    page.on("dialog", (d) => {
+      seen.push(d.type());
+      void d.accept().catch(() => {});
+    });
+    await chooseLogOut(page);
+    await page.waitForURL(/\/login(\?|$)/, { timeout: 30_000 });
+
+    expect(seen, "one confirm, and no beforeunload prompt after it").toEqual(["confirm"]);
+    const api = await createApiContext(admin.token);
+    expect((await api.get("auth/me")).status()).toBe(401);
+    await api.dispose();
+
+    await admin.context.close();
+    await admin.api.dispose();
+  });
+});

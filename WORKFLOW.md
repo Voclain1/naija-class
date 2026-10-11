@@ -45,8 +45,15 @@ school-kit/
 
 ## Branches and commits
 
-- `main` — production. Auto-deploys live. No direct commits.
-- `staging` — pre-production. Auto-deploys to staging. Merge here first.
+- `main` — production. No direct commits. A merge runs CI, and when CI passes
+  `deploy-staging.yml` runs migrations, deploys the API and the render worker
+  to the one production environment, smoke-tests, and rolls the API back if
+  the smoke test fails. Vercel deploys the web apps from `main` the same way.
+- There is **no `staging` branch and no separate staging environment**. The
+  "staging" in `deploy-staging.yml` and the `STAGING_*` secrets is a name only;
+  every deploy reaches real schools' data (CLAUDE.md, "There is no isolated
+  staging environment"). A PR's Vercel preview deployments are the only
+  pre-merge environment, for the web apps only; there is no separate API.
 - Feature branches: `phase-X/<module>` or `fix/<short>`. One per feature. Squash on merge.
 
 Commits use conventional format: `feat(<module>): <what>`, `fix(<module>): <what>`, `refactor(...)`, `test(...)`, `docs(...)`, `chore(...)`. Lets changelogs write themselves.
@@ -187,12 +194,17 @@ Fail any item → fix before merging. No "I'll clean it up later."
 1. PR title: `feat(<module>): <one-line summary>`
 2. PR body: 2–3 sentences on what and how to test. That's it.
 3. CI must pass.
-4. Squash merge to `staging`. Delete the branch.
-5. Verify on staging for 24h (longer if it touches money or auth).
-6. Merge `staging` → `main`. Tag: `v0.X.Y`.
-7. Watch Sentry + PostHog for 48 hours post-prod.
+4. CI must also pass the `e2e (Playwright)` job. Check the PR's Vercel preview
+   for any screen the PR changes.
+5. Squash merge to `main`. Delete the branch. The merge deploys to production
+   (there is no soak period, so a migration must be safe on real data before it
+   merges).
+6. Confirm the `deploy-staging` run on `main` succeeded, then watch Sentry and
+   PostHog for 48 hours.
 
-If anything spikes: roll back. Procedure in `docs/runbooks/rollback.md` (write it before you need it).
+If anything spikes: roll back. Procedure in `docs/runbooks/deploy-rollback.md`.
+Its automatic rollback covers the Fly API release only, not a migration that
+already ran.
 
 ---
 

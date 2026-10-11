@@ -101,6 +101,23 @@ export function hasCalendarErrors(errors: CalendarFieldErrors): boolean {
   return errors.all.length > 0;
 }
 
+/**
+ * The fields that hold an error, as field paths with term rows as `*`
+ * (`terms.*.startDate`), for an analytics event. Names only, never messages.
+ */
+export function calendarErrorPaths(errors: CalendarFieldErrors): string[] {
+  const paths = new Set<string>();
+  for (const key of ["yearLabel", "yearStartDate", "yearEndDate", "currentTermSequence"] as const) {
+    if (errors[key]) paths.add(key);
+  }
+  for (const row of errors.terms) {
+    for (const [field, message] of Object.entries(row)) {
+      if (message) paths.add(`terms.*.${field}`);
+    }
+  }
+  return [...paths].sort();
+}
+
 /** True when any message belongs to a term row — the cue to reveal the rows. */
 export function hasTermErrors(errors: CalendarFieldErrors): boolean {
   return errors.terms.some((t) => t.name || t.startDate || t.endDate || t.row);

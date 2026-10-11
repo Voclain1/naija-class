@@ -32,6 +32,7 @@ export {
   toCalendarInput,
   validateCalendarState,
   hasCalendarErrors,
+  calendarErrorPaths,
   hasTermErrors,
 } from "@/lib/academic-calendar/calendar-form-state";
 export type {

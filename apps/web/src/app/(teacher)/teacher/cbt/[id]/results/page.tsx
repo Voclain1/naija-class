@@ -43,22 +43,40 @@ export default function CbtResultsPage() {
   const [preview, setPreview] = useState<ScorePreviewRowDto[] | null>(null);
   const [sending, setSending] = useState<"preview" | "save" | null>(null);
 
-  const adopt = useCallback((r: CbtResultsDto) => {
+  // `keepTyped`: choosing a computer for one student must not throw away
+  // theory marks typed for the class and not saved yet.
+  const adopt = useCallback((r: CbtResultsDto, { keepTyped = false }: { keepTyped?: boolean } = {}) => {
     setResults(r);
-    setTyped(Object.fromEntries(r.rows.map((row) => [row.studentId, row.theoryMark === null ? "" : String(row.theoryMark)])));
+    const saved = Object.fromEntries(r.rows.map((row) => [row.studentId, row.theoryMark === null ? "" : String(row.theoryMark)]));
+    setTyped((t) => (keepTyped ? { ...saved, ...t } : saved));
     setPreview(null);
   }, []);
 
   useEffect(() => {
+    // A load this effect has been cleaned up from must not land: under React's
+    // strict mode the effect runs twice, and the first response arriving after
+    // a teacher has chosen a computer or typed a mark would put the page back
+    // and clear what they typed.
+    let live = true;
     getCbtResults(id)
       .then((r) => {
+        if (!live) return;
         adopt(r);
         setComponentId((c) => c || r.componentId || "");
       })
-      .catch((e) => setError(errorText(e, "Could not load the results.")));
+      .catch((e) => {
+        if (live) setError(errorText(e, "Could not load the results."));
+      });
     listComponents()
-      .then(setComponents)
-      .catch(() => setComponents([]));
+      .then((c) => {
+        if (live) setComponents(c);
+      })
+      .catch(() => {
+        if (live) setComponents([]);
+      });
+    return () => {
+      live = false;
+    };
   }, [id, adopt]);
 
   const changed = useMemo(() => {
@@ -103,7 +121,7 @@ export default function CbtResultsPage() {
   async function choose(attemptId: string) {
     setChoosing(attemptId);
     try {
-      adopt(await chooseCbtAttempt(id, attemptId));
+      adopt(await chooseCbtAttempt(id, attemptId), { keepTyped: true });
     } catch (e) {
       toast.error(errorText(e, "Could not choose that attempt."));
     } finally {

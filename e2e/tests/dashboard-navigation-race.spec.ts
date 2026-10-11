@@ -47,6 +47,42 @@ test("a click made before the dashboard picks its term is not undone", async ({ 
   }
 });
 
+// The same race through a navigation started from code: the command palette
+// calls router.push(), which the selector cannot see as a link click, so the
+// palette announces it (lib/navigation-intent).
+test("a command-palette jump made before the dashboard picks its term is not undone", async ({ browser }) => {
+  const admin = await loginAsAdmin(browser);
+  try {
+    await setupAcademicStructure(admin.api);
+    const page = admin.page;
+
+    const held: Route[] = [];
+    let releasing = false;
+    await page.route(/\/academic-years\/[^/]+\/terms(\?.*)?$/, (route) => {
+      if (releasing) void route.continue();
+      else held.push(route);
+    });
+
+    await page.goto("/dashboard");
+    await expect.poll(() => held.length, { timeout: 60_000 }).toBeGreaterThan(0);
+
+    await page.getByRole("button", { name: "Search or run a command" }).click();
+    await page.getByPlaceholder("Search or run a command…").fill("Students");
+    await page.getByPlaceholder("Search or run a command…").press("Enter");
+    releasing = true;
+    const released = page.waitForResponse(/\/academic-years\/[^/]+\/terms/);
+    for (const route of held) await route.continue();
+    await released;
+    await page.waitForURL(/\/students(\?.*)?$/, { timeout: 45_000 });
+    await page.waitForLoadState("networkidle");
+
+    await expect(page).toHaveURL(/\/students(\?.*)?$/);
+  } finally {
+    await admin.context.close();
+    await admin.api.dispose();
+  }
+});
+
 test("left alone, the dashboard still gets its current term in the URL", async ({ browser }) => {
   const admin = await loginAsAdmin(browser);
   try {

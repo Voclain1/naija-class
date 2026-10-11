@@ -63,6 +63,7 @@
 import type { SessionEndReason } from "./session-end.js";
 
 let authForced = false;
+let signOutConfirmed = false;
 let pendingReason: SessionEndReason | null = null;
 
 /**
@@ -108,7 +109,8 @@ export function parkSessionEndReason(reason: SessionEndReason | null): void {
 }
 
 /**
- * Should an unsaved-changes guard stand down?
+ * Should an unsaved-changes guard stand down? True during a forced sign-out,
+ * and after the person has confirmed a deliberate one (see below).
  *
  * Every `beforeunload` handler in the app calls this first and returns without
  * calling `preventDefault()` when it is true. See the invariant spec beside
@@ -116,8 +118,43 @@ export function parkSessionEndReason(reason: SessionEndReason | null): void {
  * whose "Stay" cannot stay.
  */
 export function isAuthForcedNavigation(): boolean {
-  return authForced;
+  return authForced || signOutConfirmed;
 }
+
+// ---------------------------------------------------------------------------
+// A DELIBERATE sign-out (2026-10-10, docs/deferred.md "Deliberate sign-out
+// loses a dirty form")
+//
+// `logout()` destroys the server session first and only then replaces the
+// document, so the browser's "leave site?" prompt used to arrive after the
+// session was already gone: "Stay" kept a form that could no longer save.
+//
+// The fix asks BEFORE the server logout. There is no separate registry of
+// dirty forms to keep in step: every unsaved-changes guard in the app already
+// registers a `beforeunload` listener while, and only while, it has unsaved
+// work, and calls `preventDefault()` on it. So `hasUnsavedWork()` dispatches a
+// cancellable probe `beforeunload` and reports whether any guard objected.
+// The guard list itself is pinned by session-end-invariants.spec.ts.
+//
+// Once the person confirms, `beginConfirmedSignOut()` makes every guard stand
+// down (through `isAuthForcedNavigation()`), so the document replace that
+// follows does not ask the same question a second time.
+
+/** Does any unsaved-changes guard on the page currently object to leaving? */
+export function hasUnsavedWork(): boolean {
+  if (typeof window === "undefined") return false;
+  const probe = new Event("beforeunload", { cancelable: true });
+  window.dispatchEvent(probe);
+  return probe.defaultPrevented;
+}
+
+/** The person chose to sign out despite unsaved work; guards stand down. */
+export function beginConfirmedSignOut(): void {
+  signOutConfirmed = true;
+}
+
+export const UNSAVED_SIGN_OUT_MESSAGE =
+  "You have unsaved changes on this page. If you sign out now, they will be lost. Sign out anyway?";
 
 /** The reason a forced sign-out is in flight, for a redirect that lacks one. */
 export function consumeSessionEndReason(): SessionEndReason | null {
@@ -127,5 +164,6 @@ export function consumeSessionEndReason(): SessionEndReason | null {
 /** Test-only. Production never clears these — the document is replaced. */
 export function resetForTests(): void {
   authForced = false;
+  signOutConfirmed = false;
   pendingReason = null;
 }

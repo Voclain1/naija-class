@@ -17,8 +17,9 @@ coding agent is doing the work.
    state of things as of the handoff date.
 3. `docs/deferred.md` tracks known-but-not-yet-fixed issues and follow-ups —
    check it before assuming something broken or missing is news.
-4. `docs/journal/` has dated session logs from past work (most recent at time
-   of handoff: `docs/journal/2026-07-24.md`). Skim recent entries if
+4. `docs/journal/` has dated session logs from past work (the latest entry
+   is the newest file there; `docs/journal/2026-10-08.md` is a catch-up
+   covering 2026-09-06 to 2026-10-08). Skim recent entries if
    `docs/deferred.md` and `docs/CODEX_HANDOFF.md` don't answer a question.
 5. Work the same way this project already works: one module per PR,
    Conventional Commits, never commit directly to `main`, never touch

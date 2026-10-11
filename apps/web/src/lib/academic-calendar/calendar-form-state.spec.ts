@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { proposeAcademicCalendar } from "@school-kit/types";
 
 import {
+  calendarErrorPaths,
   hasCalendarErrors,
   hasTermErrors,
   initialCalendarState,
@@ -178,5 +179,22 @@ describe("apiErrorLines", () => {
         "Something failed.",
       ]);
     }
+  });
+});
+
+// The analytics view of the same errors (2026-10-10): which fields, never what
+// was typed or the message.
+describe("calendarErrorPaths", () => {
+  it("is empty for a valid calendar", () => {
+    expect(calendarErrorPaths(validateCalendarState(defaults()))).toEqual([]);
+  });
+
+  it("names the step-5 incident's fields with term rows as *", () => {
+    const state = { ...defaults(), yearStartDate: "2026-10-01", yearEndDate: "2027-08-31" };
+    const paths = calendarErrorPaths(validateCalendarState(state));
+    expect(paths.length).toBeGreaterThan(0);
+    expect(paths.every((p) => /^(yearLabel|yearStartDate|yearEndDate|currentTermSequence|terms\.\*\.[a-zA-Z]+)$/.test(p))).toBe(true);
+    expect(paths.some((p) => p.startsWith("terms.*."))).toBe(true);
+    expect(JSON.stringify(paths)).not.toContain("2026");
   });
 });

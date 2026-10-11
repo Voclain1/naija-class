@@ -96,8 +96,10 @@ test("a teacher marks an online exam, chooses the computer that counts, adds the
     await expect(page.getByText("Choose which computer counts")).toBeVisible();
     await expect(page.getByText("Did not finish")).toBeVisible();
     await page.getByRole("button", { name: "Use this one" }).nth(1).click();
-    await expect(page.getByText("Counts")).toBeVisible();
-    await expect(page.getByRole("cell", { name: "5/5" })).toBeVisible();
+    // Both exact: loosely, "Counts" matches "Choose which computer counts" and
+    // "5/5" matches Computer 2's line, so neither waited for the choice to land.
+    await expect(page.getByText("Counts", { exact: true })).toBeVisible();
+    await expect(page.getByRole("cell", { name: "5/5", exact: true })).toBeVisible();
 
     // ---- 2. Theory mark ----------------------------------------------------------
     await page.getByLabel("Theory mark for Kemi Bello").fill("11");

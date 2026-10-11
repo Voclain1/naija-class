@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import type { TermDto } from "@school-kit/types";
 
 import { listAcademicYears, listTerms } from "@/lib/academic-years/academic-years-api";
+import { NAVIGATION_INTENT_EVENT, intentPathname } from "@/lib/navigation-intent";
 
 // Lives in the topbar (per the mockup) and means something on the routes in
 // TERM_AWARE_ROUTES below — the selected term is carried in the URL
@@ -27,7 +28,8 @@ const TERM_AWARE_ROUTES = ["/dashboard", "/insights"];
 // (docs/deferred-archive.md, "navigation race on /dashboard").
 //
 // So the automatic write is skipped once the person has started to leave: a
-// click on a link to another page of the app, or Back/Forward. It is also
+// click on a link to another page of the app, a navigation announced from code
+// (the command palette, via lib/navigation-intent), or Back/Forward. It is also
 // skipped if the browser is no longer on the page that started the fetches. A
 // term the person CHOOSES from the select still navigates normally.
 //
@@ -66,12 +68,19 @@ export function DashboardTermSelector() {
     const onPopState = () => {
       leaving.current = true;
     };
+    // A router.push() from code, announced by its caller (the command palette).
+    const onIntent = (event: Event) => {
+      const target = intentPathname(event);
+      if (target !== null && target !== pathname) leaving.current = true;
+    };
     // Capture phase: runs before next/link's own click handler starts the navigation.
     document.addEventListener("click", onClick, true);
     window.addEventListener("popstate", onPopState);
+    window.addEventListener(NAVIGATION_INTENT_EVENT, onIntent);
     return () => {
       document.removeEventListener("click", onClick, true);
       window.removeEventListener("popstate", onPopState);
+      window.removeEventListener(NAVIGATION_INTENT_EVENT, onIntent);
       leaving.current = true;
     };
   }, [isTermAware, pathname]);
