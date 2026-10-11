@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 
 import { basePrisma, withTenant } from "@school-kit/db";
-import { ForbiddenError, NotFoundError, UnauthorizedError, ValidationError } from "@school-kit/types";
+import { ConflictError, ForbiddenError, NotFoundError, UnauthorizedError, ValidationError } from "@school-kit/types";
 
 import { FilesystemStorageDriver } from "../../common/storage/filesystem-storage.driver";
 import { StorageService } from "../../common/storage/storage.service";
@@ -13,6 +13,7 @@ import { AuthService } from "../auth/auth.service";
 import { proposeAcademicCalendar } from "@school-kit/types";
 import { AcademicCalendarService } from "../academic-calendar/academic-calendar.service.js";
 import { SchoolsService, type OnboardingStepPayload } from "./schools.service";
+import { SmsSenderService } from "./sms-sender.service";
 
 // Integration spec — talks to the real dev Postgres. Same rationale as
 // auth.service.spec.ts: the bug classes we care about here (RLS,
@@ -796,6 +797,64 @@ describe("SchoolsService (Slice 6)", () => {
       // file no longer exists on the filesystem driver's disk.
       const { url } = await schoolsService.getLogoUrl(authCtx);
       expect(url).toContain(".jpg");
+    });
+  });
+  // -----------------------------------------------------------------------
+  // The school's own SMS sender name (docs/modules/school-identity.md slice 2)
+  // -----------------------------------------------------------------------
+  describe("SmsSenderService — the school asks for a sender name", () => {
+    const sent: { to: string; subject: string }[] = [];
+    const smsSender = new SmsSenderService(
+      { send: async (m: { to: string; subject: string }) => void sent.push(m) } as never,
+      { get: (k: string) => (k === "PAYSTACK_SETUP_EMAIL" ? "ops@example.test" : undefined) } as never,
+    );
+
+    it("starts at NONE, records a request once, and tells the operator once", async () => {
+      const { authCtx, schoolId } = await createOwnedSchool("sms-sender");
+      await expect(smsSender.get(authCtx)).resolves.toEqual({
+        senderId: null, status: "NONE", requestedAt: null, decidedAt: null,
+      });
+
+      const before = sent.length;
+      const asked = await smsSender.request(authCtx, { senderId: "AcadOne" }, ctx);
+      expect(asked).toMatchObject({ senderId: "AcadOne", status: "REQUESTED", decidedAt: null });
+      expect(asked.requestedAt).not.toBeNull();
+      expect(sent.length).toBe(before + 1);
+      expect(sent.at(-1)).toMatchObject({ to: "ops@example.test" });
+
+      // The same name again is not a second request.
+      await smsSender.request(authCtx, { senderId: "ACADONE" }, ctx);
+      expect(sent.length).toBe(before + 1);
+
+      const audit = await withTenant(schoolId, (db) =>
+        db.auditLog.findMany({ where: { schoolId, action: "sms_sender.requested" } }),
+      );
+      expect(audit).toHaveLength(1);
+      expect(audit[0]!.metadata).toMatchObject({ senderId: "AcadOne", previous: null });
+    });
+
+    it("refuses the approved name again, and a new name replaces it until it is approved", async () => {
+      const { authCtx, schoolId } = await createOwnedSchool("sms-sender-approved");
+      await smsSender.request(authCtx, { senderId: "AcadTwo" }, ctx);
+      await basePrisma.school.update({ where: { id: schoolId }, data: { smsSenderStatus: "APPROVED", smsSenderDecidedAt: new Date() } });
+
+      await expect(smsSender.request(authCtx, { senderId: "acadtwo" }, ctx)).rejects.toBeInstanceOf(ConflictError);
+
+      const renamed = await smsSender.request(authCtx, { senderId: "AcadThree" }, ctx);
+      expect(renamed).toMatchObject({ senderId: "AcadThree", status: "REQUESTED", decidedAt: null });
+      const audit = await withTenant(schoolId, (db) =>
+        db.auditLog.findFirst({ where: { schoolId, action: "sms_sender.requested" }, orderBy: { createdAt: "desc" } }),
+      );
+      expect(audit?.metadata).toMatchObject({ senderId: "AcadThree", previous: { senderId: "AcadTwo", status: "APPROVED" } });
+    });
+
+    it("is owner/admin only", async () => {
+      const { schoolId } = await createOwnedSchool("sms-sender-teacher");
+      const teacher = await createTeacherUser(schoolId, "sms-sender-teacher");
+      await expect(smsSender.get(teacher.authCtx)).rejects.toBeInstanceOf(ForbiddenError);
+      await expect(smsSender.request(teacher.authCtx, { senderId: "Nope1" }, ctx)).rejects.toBeInstanceOf(ForbiddenError);
+      const admin = await createAdminUser(schoolId, "sms-sender-admin");
+      await expect(smsSender.request(admin.authCtx, { senderId: "AdminOk" }, ctx)).resolves.toMatchObject({ status: "REQUESTED" });
     });
   });
 });

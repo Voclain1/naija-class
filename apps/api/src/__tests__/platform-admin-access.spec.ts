@@ -351,9 +351,14 @@ describe("Platform admin access (2026-08-02)", () => {
     //                                     2026-10-11 (docs/modules/plans.md):
     //     the read for PATCH .../plan, and each school against its cap.
     //     Operator-set status and an aggregate count; no price or billing.
+    //   - smsSenderId, smsSenderStatus    2026-10-11 (docs/modules/school-identity.md
+    //     slice 2): the read for PATCH .../sms-sender. Operator-decided status;
+    //     the name itself is printed on every SMS the school sends.
     expect(Object.keys(row).sort()).toEqual(
       [
         "aiEnabled",
+        "smsSenderId",
+        "smsSenderStatus",
         "smartImportEnabled",
         "plan",
         "studentCapOverride",
@@ -914,6 +919,68 @@ describe("Platform admin access (2026-08-02)", () => {
         .patch("/api/v1/platform-admin/schools/does-not-exist/staff-mobile")
         .set("Authorization", `Bearer ${platformAdminToken}`)
         .send({ staffMobileEnabled: true })).status).toBe(404);
+    });
+  });
+
+  describe("PATCH /platform-admin/schools/:schoolId/sms-sender (school-identity slice 2)", () => {
+    // The school's side (POST /schools/me/sms-sender) is covered in
+    // schools.service.spec.ts; here the request is put in place directly.
+    const setRequested = (schoolId: string, senderId: string) =>
+      basePrisma.school.update({
+        where: { id: schoolId },
+        data: { smsSenderId: senderId, smsSenderStatus: "REQUESTED", smsSenderRequestedAt: new Date(), smsSenderDecidedAt: null },
+      });
+    const reset = (schoolId: string) =>
+      basePrisma.school.update({
+        where: { id: schoolId },
+        data: { smsSenderId: null, smsSenderStatus: "NONE", smsSenderRequestedAt: null, smsSenderDecidedAt: null },
+      });
+    const listed = async (schoolId: string) => {
+      const res = await request(app.getHttpServer())
+        .get("/api/v1/platform-admin/schools")
+        .set("Authorization", `Bearer ${platformAdminToken}`);
+      expect(res.status).toBe(200);
+      const row = res.body.find((r: { schoolId: string }) => r.schoolId === schoolId);
+      return { smsSenderId: row.smsSenderId, smsSenderStatus: row.smsSenderStatus };
+    };
+    const decide = (schoolId: string, decision: unknown, token = platformAdminToken) =>
+      request(app.getHttpServer())
+        .patch(`/api/v1/platform-admin/schools/${schoolId}/sms-sender`)
+        .set("Authorization", `Bearer ${token}`)
+        .send({ decision });
+
+    it("records an approval for a REQUESTED name only, audited and read back", async () => {
+      // Nothing asked: nothing to decide.
+      expect((await decide(schoolA, "APPROVED")).status).toBe(409);
+
+      await setRequested(schoolA, "SchoolA1");
+      expect(await listed(schoolA)).toEqual({ smsSenderId: "SchoolA1", smsSenderStatus: "REQUESTED" });
+      expect(await listed(schoolB)).toEqual({ smsSenderId: null, smsSenderStatus: "NONE" });
+
+      // School staff cannot approve their own name.
+      expect((await decide(schoolA, "APPROVED", ownerAToken)).status).toBe(403);
+      expect((await decide(schoolA, "MAYBE")).status).toBe(400);
+      expect((await decide("does-not-exist", "APPROVED")).status).toBe(404);
+
+      const approved = await decide(schoolA, "APPROVED");
+      expect(approved.status).toBe(200);
+      expect(approved.body).toEqual({ schoolId: schoolA, senderId: "SchoolA1", status: "APPROVED" });
+      expect(await listed(schoolA)).toEqual({ smsSenderId: "SchoolA1", smsSenderStatus: "APPROVED" });
+      const audit = await basePrisma.auditLog.findFirst({
+        where: { action: "platform_admin.schools.decide-sms-sender", entityId: schoolA },
+        orderBy: { createdAt: "desc" },
+      });
+      expect(audit).toMatchObject({ schoolId: null, userId: platformAdminUserId, entityType: "school" });
+      expect(audit?.metadata).toMatchObject({ senderId: "SchoolA1", from: "REQUESTED", to: "APPROVED" });
+
+      // Deciding twice is refused: nothing is waiting any more.
+      expect((await decide(schoolA, "REJECTED")).status).toBe(409);
+
+      await setRequested(schoolA, "SchoolA2");
+      expect((await decide(schoolA, "REJECTED")).body).toMatchObject({ senderId: "SchoolA2", status: "REJECTED" });
+      expect(await listed(schoolA)).toEqual({ smsSenderId: "SchoolA2", smsSenderStatus: "REJECTED" });
+
+      await reset(schoolA);
     });
   });
 

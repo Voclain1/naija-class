@@ -1,7 +1,7 @@
 # School identity: the school's name on screens and messages
 
-Plan-first, 2026-10-11. **Approved by the owner 2026-10-11.** Slice 1 built
-2026-10-11; slice 2 next.
+Plan-first, 2026-10-11. **Approved by the owner 2026-10-11.** Slices 1 and 2
+built 2026-10-11.
 
 ## Why
 
@@ -91,6 +91,28 @@ it cannot be self-service.
   the school's name at the start either way, as invites and reminders already do.
 - **Until SchoolKit's CAC lands** there is no approved fallback. Schools without
   their own sender keep email and push, as today.
+
+### As built (2026-10-11)
+
+- **Data:** migration `20261014120000_school_sms_sender`. CHECKs: the name is
+  3 to 11 letters and digits with at least one letter, and any status but
+  `NONE` has a name. `platform_admin_list_schools()` returns the pair (10th
+  revision; SECURITY DEFINER count still 23).
+- **School:** `GET` / `POST /schools/me/sms-sender` (`SmsSenderService`), owner
+  or admin. Asking for the name already waiting changes nothing; asking for the
+  approved name again is a 409; a new name replaces an approved one and goes
+  back to `REQUESTED`. Each request is audited (`sms_sender.requested`, with the
+  name it replaced) and emailed to `SMS_SENDER_REQUEST_EMAIL`, else
+  `PAYSTACK_SETUP_EMAIL`. Screen: Settings → Notifications, "SMS sender name".
+- **Operator:** `PATCH /platform-admin/schools/:id/sms-sender` with
+  `APPROVED` or `REJECTED`, audited
+  (`platform_admin.schools.decide-sms-sender`). One conditional update, so a
+  name the school changed in the meantime, or one already decided, is a 409.
+  The roster flags "SMS name to submit"; the decision is under Manage.
+- **Sending:** `smsSenderFor` (`apps/api/src/common/termii/sms-sender.ts`)
+  returns the name only when `APPROVED`; `TermiiService.sendSms` takes it as
+  `from`, else `TERMII_SENDER_ID`. Both SMS callers (guardian invites, fee
+  reminders) pass it.
 
 ## Later slices (not in this plan)
 

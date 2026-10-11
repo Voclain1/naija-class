@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
+import { smsSenderFor } from "./sms-sender.js";
 import { normalizeNigerianPhone, TermiiService } from "./termii.service.js";
 
 // normalizeNigerianPhone — pure, no network. Guardian.phone has zero format
@@ -63,5 +64,40 @@ describe("TermiiService", () => {
 
   it("sendSms throws when TERMII_API_KEY is the unfilled .env.example placeholder", async () => {
     await expect(makeService("replace-me").sendSms("2348012345678", "hi")).rejects.toThrow();
+  });
+});
+
+// The school's own sender name (docs/modules/school-identity.md slice 2).
+describe("TermiiService.sendSms — whose name the SMS goes out under", () => {
+  function sentFrom(senderId?: string) {
+    const config = {
+      get: (key: string) =>
+        key === "TERMII_API_KEY" ? "tk_test" : key === "TERMII_SENDER_ID" ? "SchoolKit" : undefined,
+    } as never;
+    const svc = new TermiiService(config);
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ code: "ok", message_id: "m1", message: "Successfully Sent" }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    return svc.sendSms("2348012345678", "hello", senderId).then(() => {
+      vi.unstubAllGlobals();
+      const body = JSON.parse((fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1].body as string);
+      return body.from as string;
+    });
+  }
+
+  it("uses the school's approved name when given one", async () => {
+    await expect(sentFrom("DIVYSIXTH")).resolves.toBe("DIVYSIXTH");
+  });
+
+  it("falls back to the platform's TERMII_SENDER_ID", async () => {
+    await expect(sentFrom(undefined)).resolves.toBe("SchoolKit");
+  });
+});
+
+describe("smsSenderFor", () => {
+  it("only an APPROVED name is ever used", () => {
+    expect(smsSenderFor({ smsSenderId: "DIVYSIXTH", smsSenderStatus: "APPROVED" })).toBe("DIVYSIXTH");
+    expect(smsSenderFor({ smsSenderId: "DIVYSIXTH", smsSenderStatus: "REQUESTED" })).toBeUndefined();
+    expect(smsSenderFor({ smsSenderId: "DIVYSIXTH", smsSenderStatus: "REJECTED" })).toBeUndefined();
+    expect(smsSenderFor({ smsSenderId: null, smsSenderStatus: "NONE" })).toBeUndefined();
   });
 });

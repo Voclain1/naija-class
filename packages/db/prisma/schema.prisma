@@ -193,6 +193,17 @@ model School {
   //                          not run.
   plan                  SchoolPlan @default(FREE) @map("plan")
   studentCapOverride    Int?      @map("student_cap_override")
+  //   smsSender*           the school's own SMS sender name (2026-10-11,
+  //                          docs/modules/school-identity.md slice 2). The
+  //                          school asks; the platform operator submits it to
+  //                          the networks (they approve against the school's
+  //                          CAC registration) and records the outcome. Only
+  //                          APPROVED is ever sent; anything else uses the
+  //                          platform's TERMII_SENDER_ID.
+  smsSenderId           String?          @map("sms_sender_id")
+  smsSenderStatus       SmsSenderStatus  @default(NONE) @map("sms_sender_status")
+  smsSenderRequestedAt  DateTime?        @map("sms_sender_requested_at")
+  smsSenderDecidedAt    DateTime?        @map("sms_sender_decided_at")
 
   //   suspendedAt            platform-admin suspension (2026-10-07,
   //                          docs/modules/platform-admin.md slice 2). Non-null
@@ -797,6 +808,14 @@ enum SchoolPlan {
   GROWTH
   PROFESSIONAL
   ENTERPRISE
+}
+
+// The school's own SMS sender name (docs/modules/school-identity.md slice 2).
+enum SmsSenderStatus {
+  NONE
+  REQUESTED
+  APPROVED
+  REJECTED
 }
 
 enum StudentStatus {

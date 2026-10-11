@@ -562,6 +562,14 @@ export function PlatformAdminDashboard() {
                           </Badge>
                         );
                       })()}
+                      {/* A sender name waiting on the operator: submit it to
+                          the networks, then record the outcome under Manage
+                          (docs/modules/school-identity.md slice 2). */}
+                      {school.smsSenderStatus === "REQUESTED" ? (
+                        <Badge variant="warning" className="mt-1 block w-fit">
+                          SMS name to submit
+                        </Badge>
+                      ) : null}
                     </TableCell>
                     <TableCell>
                       <span>{school.studentCount}</span>

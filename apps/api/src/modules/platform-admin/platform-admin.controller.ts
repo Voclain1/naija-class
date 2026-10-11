@@ -27,6 +27,7 @@ import {
   platformAdminSetStaffMobileSchema,
   platformAdminSetPlanSchema,
   platformAdminSetSmartImportSchema,
+  platformAdminDecideSmsSenderSchema,
   type PlatformAdminAuditLogQuery,
   type PlatformAdminAuditLogResponse,
   type PlatformAdminCancelOwnerInvitationResponse,
@@ -55,6 +56,8 @@ import {
   type PlatformAdminSetPlanResponse,
   type PlatformAdminSetSmartImportInput,
   type PlatformAdminSetSmartImportResponse,
+  type PlatformAdminDecideSmsSenderInput,
+  type PlatformAdminDecideSmsSenderResponse,
   type PlatformAdminSetEarlyAccessInput,
   type PlatformAdminSetEarlyAccessResponse,
   type PlatformAdminSetStaffMobileInput,
@@ -253,6 +256,24 @@ export class PlatformAdminController {
     @Req() req: Request,
   ): Promise<PlatformAdminSetSmartImportResponse> {
     return this.platformAdminService.setSmartImportEnabled(schoolId, dto, adminCtx, {
+      ipAddress: ip, userAgent: req.header("user-agent") ?? null,
+    });
+  }
+
+  // PATCH /platform-admin/schools/:schoolId/sms-sender — records the
+  // networks' decision on the sender name the school asked for
+  // (docs/modules/school-identity.md slice 2).
+  @Patch("schools/:schoolId/sms-sender")
+  @UseGuards(PlatformAdminGuard)
+  @Throttle({ default: { ttl: 60000, limit: 20 } })
+  async decideSmsSender(
+    @Param("schoolId") schoolId: string,
+    @Body(new ZodValidationPipe(platformAdminDecideSmsSenderSchema)) dto: PlatformAdminDecideSmsSenderInput,
+    @CurrentPlatformAdmin() adminCtx: PlatformAdminContext,
+    @Ip() ip: string,
+    @Req() req: Request,
+  ): Promise<PlatformAdminDecideSmsSenderResponse> {
+    return this.platformAdminService.decideSmsSender(schoolId, dto, adminCtx, {
       ipAddress: ip, userAgent: req.header("user-agent") ?? null,
     });
   }

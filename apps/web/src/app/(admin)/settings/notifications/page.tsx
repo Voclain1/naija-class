@@ -4,6 +4,7 @@ import { Loader2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 
+import { SmsSenderCard } from "@/components/settings/sms-sender-card";
 import { Button } from "@/components/ui/button";
 import { ApiError } from "@/lib/api-client";
 import { useAuth } from "@/lib/auth/use-auth";
@@ -20,7 +21,10 @@ import { hasPermission } from "@/lib/auth/has-permission";
 // deliberately absent here: dark until the mobile phase, not a knob this
 // screen exposes (see NotificationPreferenceDto's own comment).
 export default function NotificationSettingsPage() {
-  const { permissions } = useAuth();
+  const { permissions, roles } = useAuth();
+  // The sender-name request is owner/admin, like Paystack setup: it commits
+  // the school to sending its CAC documents.
+  const isOwnerOrAdmin = roles.some((r) => r.key === "owner" || r.key === "admin");
   const canRead = hasPermission(permissions, "notification-preferences.read");
   const canUpdate = hasPermission(permissions, "notification-preferences.update");
 
@@ -151,6 +155,8 @@ export default function NotificationSettingsPage() {
               {dirty && <span className="text-xs text-amber-700">Unsaved change.</span>}
             </div>
           )}
+
+          {isOwnerOrAdmin && <SmsSenderCard />}
         </div>
       )}
     </div>

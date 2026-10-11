@@ -9,6 +9,12 @@ describe("describeAuditEntry", () => {
     expect(d("platform_admin.schools.set-ai-enabled", { from: false, to: true })).toBe("Turned AI on");
     expect(d("platform_admin.schools.set-ai-enabled", { from: true, to: true })).toBe("Confirmed AI is on");
     expect(d("platform_admin.schools.set-smart-import", { from: false, to: true })).toBe("Turned Smart Import on");
+    expect(d("platform_admin.schools.decide-sms-sender", { senderId: "DIVYSIXTH", from: "REQUESTED", to: "APPROVED" })).toBe(
+      "Approved the SMS sender name DIVYSIXTH",
+    );
+    expect(d("platform_admin.schools.decide-sms-sender", { senderId: "DIVYSIXTH", from: "REQUESTED", to: "REJECTED" })).toBe(
+      "Recorded that the SMS sender name DIVYSIXTH was not approved",
+    );
     expect(d("platform_admin.schools.set-plan", { to: { plan: "GROWTH", studentCapOverride: null } })).toBe("Moved to the Growth plan");
     expect(d("platform_admin.schools.set-plan", { to: { plan: "ENTERPRISE", studentCapOverride: 3000 } })).toBe(
       "Moved to the Enterprise plan, with its own limit of 3,000 students",

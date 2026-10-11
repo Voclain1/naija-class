@@ -7,6 +7,7 @@ import { AuthModule } from "../auth/auth.module";
 import { PaystackSetupService } from "./paystack-setup.service";
 import { SchoolsController } from "./schools.controller";
 import { SchoolsService } from "./schools.service";
+import { SmsSenderService } from "./sms-sender.service";
 
 @Module({
   // Imports AuthModule so the controller's @UseGuards(AuthGuard) can resolve
@@ -20,7 +21,7 @@ import { SchoolsService } from "./schools.service";
   // activates it — see applyStep5 and #198.
   imports: [AuthModule, PaystackModule, EmailModule, AcademicCalendarModule],
   controllers: [SchoolsController],
-  providers: [SchoolsService, PaystackSetupService],
+  providers: [SchoolsService, PaystackSetupService, SmsSenderService],
   exports: [SchoolsService],
 })
 export class SchoolsModule {}

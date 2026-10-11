@@ -24,6 +24,7 @@ import {
   onboardingStep4Schema,
   onboardingStep5Schema,
   patchSchoolSchema,
+  requestSmsSenderSchema,
   type CreatePaystackSetupRequestInput,
   type OnboardingStepResponse,
   type PatchSchoolInput,
@@ -31,6 +32,8 @@ import {
   type SchoolLogoUrlDto,
   type SchoolMeDto,
   type SchoolPlanDto,
+  type RequestSmsSenderInput,
+  type SmsSenderDto,
 } from "@school-kit/types";
 import type { Request } from "express";
 import type { ZodError, ZodType, ZodTypeDef } from "zod";
@@ -41,6 +44,7 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import { UploadErrorFilter } from "../../common/upload-error.filter";
 import { ZodValidationPipe } from "../../common/zod-validation.pipe";
 import { PaystackSetupService } from "./paystack-setup.service";
+import { SmsSenderService } from "./sms-sender.service";
 import {
   LOGO_MAX_FILE_SIZE_BYTES,
   SchoolsService,
@@ -53,6 +57,7 @@ export class SchoolsController {
   constructor(
     private readonly schoolsService: SchoolsService,
     private readonly paystackSetup: PaystackSetupService,
+    private readonly smsSender: SmsSenderService,
   ) {}
 
   // GET /schools/me — any authed user can read their own school.
@@ -146,6 +151,29 @@ export class SchoolsController {
     @Req() req: Request,
   ): Promise<PaystackSetupRequestDto> {
     return this.paystackSetup.create(authCtx, dto, {
+      ipAddress: ip,
+      userAgent: req.header("user-agent") ?? null,
+    });
+  }
+
+  // GET /schools/me/sms-sender — owner/admin. The school's own SMS sender
+  // name and where its request stands (docs/modules/school-identity.md).
+  @Get("me/sms-sender")
+  async getSmsSender(@CurrentUser() authCtx: AuthContext): Promise<SmsSenderDto> {
+    return this.smsSender.get(authCtx);
+  }
+
+  // POST /schools/me/sms-sender — owner/admin asks for a sender name. The
+  // platform operator submits it to the networks and records the outcome.
+  @Post("me/sms-sender")
+  @HttpCode(200)
+  async requestSmsSender(
+    @Body(new ZodValidationPipe(requestSmsSenderSchema)) dto: RequestSmsSenderInput,
+    @CurrentUser() authCtx: AuthContext,
+    @Ip() ip: string,
+    @Req() req: Request,
+  ): Promise<SmsSenderDto> {
+    return this.smsSender.request(authCtx, dto, {
       ipAddress: ip,
       userAgent: req.header("user-agent") ?? null,
     });
