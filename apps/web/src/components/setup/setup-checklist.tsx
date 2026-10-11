@@ -232,8 +232,8 @@ function SetupChecklistSkeleton() {
   return (
     <Card aria-busy="true">
       <CardHeader>
-        <CardTitle className="text-lg">Finish setting up your school</CardTitle>
-        <CardDescription>Checking what is already done…</CardDescription>
+        <CardTitle className="text-lg">Checking your school&apos;s setup…</CardTitle>
+        <CardDescription>This only takes a moment.</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-3" aria-hidden="true">
         <div className="h-2 w-full animate-pulse rounded-full bg-muted" />
