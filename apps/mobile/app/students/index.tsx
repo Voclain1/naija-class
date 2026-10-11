@@ -16,6 +16,7 @@ import { fontSizes, fonts, radii, spacing } from "../../src/theme/tokens";
 import { Body, Button, Card, CenteredMessage, Label, Notice, Screen } from "../../src/components/ui";
 import { PushStatusNotice } from "../../src/components/push-status-notice";
 import { EmptyState, ListRow, ScreenHeader, SectionHeader, Skeleton } from "../../src/components/layout";
+import { SchoolBadge } from "../../src/components/school-badge";
 import { FreshnessLabel, useIsOnline } from "../../src/components/freshness-label";
 
 // A parent's home, redesigned to match the staff app (D4).
@@ -87,9 +88,9 @@ export default function StudentsScreen() {
           />
         }
       >
+        <SchoolBadge principal="guardian" name={school?.name} />
         <ScreenHeader
           title={`${greeting(new Date().getHours())}${guardian ? `, ${guardian.firstName}` : ""}`}
-          subtitle={school?.name ?? null}
           action={<MenuButton onPress={menu.open} />}
         />
         <FreshnessLabel updatedAt={query.dataUpdatedAt} />

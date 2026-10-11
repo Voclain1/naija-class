@@ -21,6 +21,7 @@ import { Appear, EmptyState, PageHeader, PageSkeleton, SectionHeader } from "@sc
 
 import { SignOutButton } from "@/components/sign-out-button";
 import { buildLoginUrl, errorCodeFromBody, reasonFromErrorCode } from "@/lib/session-end";
+import { SchoolBanner } from "@/components/school-banner";
 
 type LoadState = { kind: "loading" } | { kind: "error"; message: string } | { kind: "loaded"; data: FamilyTimetableDto };
 
@@ -81,6 +82,7 @@ export default function ChildTimetablePage() {
 
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-2xl flex-col gap-6 px-4 py-10">
+      <SchoolBanner />
       <div className="flex flex-col gap-2">
         <Link href={`/students/${params.id}`} className="self-start text-sm text-muted-foreground hover:underline">
           ← Back to your child

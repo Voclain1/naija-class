@@ -623,6 +623,7 @@ export class FinanceService implements OnModuleInit {
             await this.email.send({
               to: guardianEmail,
               subject: `Fee reminder from ${school.name}`,
+              schoolName: school.name,
               html: buildReminderHtml({
                 guardianFirstName,
                 studentName,

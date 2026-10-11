@@ -38,6 +38,17 @@ export const queryKeys = {
     ["students", studentId, "portal-status"] as const,
 
   me: ["me"] as const,
+
+  // The school's logo as a SIGNED URL that expires in an hour
+  // (docs/modules/school-identity.md). Never persisted: the reading hook passes
+  // `meta: { persist: false }`, because a URL restored from disk after the hour
+  // is a broken image. Staff's key starts with "staff" like every staff key.
+  schoolLogo: (principal: "guardian" | "student" | "staff") =>
+    principal === "staff"
+      ? (["staff", "school-logo"] as const)
+      : principal === "student"
+        ? (["me", "school-logo"] as const)
+        : (["school-logo"] as const),
   myResults: ["me", "results"] as const,
   myResult: (termId: string) => ["me", "results", termId] as const,
   myAttendance: ["me", "attendance"] as const,

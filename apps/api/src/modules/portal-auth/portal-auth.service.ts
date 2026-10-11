@@ -455,6 +455,7 @@ export class PortalAuthService {
         await this.email.send({
           to: input.email,
           purpose: "guardian-password-reset",
+          schoolName: row.school_name,
           subject: `Reset your ${row.school_name} parent portal password`,
           html:
             `<p>We received a request to reset the password for your ` +

@@ -11,6 +11,7 @@ import { staffFinanceDashboard } from "../../src/lib/api/staff-finance";
 import { dedupeByRoute, moneyBand, quickActions, showsMoneyBand } from "../../src/lib/staff/bursar";
 import { queryKeys } from "../../src/lib/query/keys";
 import { useSession } from "../../src/lib/auth/session";
+import { SchoolBadge } from "../../src/components/school-badge";
 import { hasPermission } from "../../src/lib/auth/permissions";
 import { isSchoolAdmin, isTeacher } from "../../src/lib/auth/roles";
 import { serverToday } from "../../src/lib/staff/server-date";
@@ -197,9 +198,10 @@ export default function StaffDashboardScreen() {
   return (
     <Screen>
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        <SchoolBadge principal="staff" name={staff?.school.name} />
         <ScreenHeader
           title={`${greeting(new Date().getHours())}${staff ? `, ${staff.user.firstName}` : ""}`}
-          subtitle={[staff?.school.name, formatToday(today)].filter(Boolean).join(" · ")}
+          subtitle={formatToday(today)}
           action={<MenuButton onPress={menu.open} />}
         />
 

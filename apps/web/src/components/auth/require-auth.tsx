@@ -9,6 +9,7 @@ import { consumeSessionEndReason } from "@/lib/auth/session-end-navigation";
 import { useAuth } from "@/lib/auth/use-auth";
 
 import { BrandLoadingScreen } from "../brand-loading-screen";
+import { SchoolDocumentTitle } from "../school/school-document-title";
 
 // Client-side gate wrapping any (admin) page. Three states like before, with
 // an extra branch for ONBOARDING schools so the dashboard becomes structurally
@@ -93,5 +94,10 @@ export function RequireAuth({ children, roles }: { children: ReactNode; roles?: 
     return <BrandLoadingScreen />;
   }
 
-  return <>{children}</>;
+  return (
+    <>
+      <SchoolDocumentTitle />
+      {children}
+    </>
+  );
 }
