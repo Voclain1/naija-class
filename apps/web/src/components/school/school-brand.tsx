@@ -1,6 +1,7 @@
 "use client";
 
 import { SchoolKitIcon } from "@/components/brand/schoolkit-mark";
+import { TOUR_SCHOOL_TARGET } from "@/components/tour/first-login-tour";
 import { useAuth } from "@/lib/auth/use-auth";
 
 import { SchoolLogo } from "./school-logo";
@@ -16,7 +17,7 @@ export function SchoolBrand({ className }: { className?: string }) {
   const { school } = useAuth();
   if (!school) return null;
   return (
-    <span className={`flex min-w-0 items-center gap-2 ${className ?? ""}`}>
+    <span data-tour-target={TOUR_SCHOOL_TARGET} className={`flex min-w-0 items-center gap-2 ${className ?? ""}`}>
       <SchoolLogo
         className="h-7 w-7 shrink-0 rounded object-contain"
         fallback={<SchoolKitIcon size={28} className="shrink-0" />}

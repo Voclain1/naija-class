@@ -128,6 +128,9 @@ it cannot be self-service.
 
 - **No logo:** SchoolKit's icon beside the school's name on web, portal and app;
   `LogoReminder` on the owner and admin dashboard links to Settings → School.
+  It can be closed, and comes back after three more visits until the logo is
+  uploaded (`lib/dashboard/logo-reminder-state.ts`: a per-school record in
+  localStorage, one count per tab session; no storage means it just shows).
 - **Setup progress:** `SetupProgressChip` sits on the greeting's line —
   "School setup · N% done", a ring, and the next thing to do, linking to it.
   `setupProgress` (`apps/web/src/lib/setup-state/setup-progress.ts`) counts the

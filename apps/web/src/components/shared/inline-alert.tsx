@@ -1,4 +1,4 @@
-import { AlertCircle, AlertTriangle } from "lucide-react";
+import { AlertCircle, AlertTriangle, X } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -41,12 +41,15 @@ export function InlineAlert({
   action,
   className,
   tone = "destructive",
+  onDismiss,
 }: {
   title?: string;
   children: ReactNode;
   action?: InlineAlertAction;
   className?: string;
   tone?: InlineAlertTone;
+  /** Shows a close button. For reminders the reader may set aside, never for errors. */
+  onDismiss?: () => void;
 }) {
   // Tone drives the classes rather than being appended by the caller: Tailwind
   // resolves conflicts by stylesheet order, not by position in the class
@@ -73,6 +76,18 @@ export function InlineAlert({
           disabled={action.disabled}
         >
           {action.label}
+        </Button>
+      )}
+      {onDismiss && (
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="-my-1 -mr-1 h-7 w-7 shrink-0"
+          aria-label={title ? `Dismiss: ${title}` : "Dismiss"}
+          onClick={onDismiss}
+        >
+          <X className="h-4 w-4" />
         </Button>
       )}
     </div>
