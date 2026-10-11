@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { createPortal } from "react-dom";
 import { useEffect } from "react";
 
-import { SchoolKitWordmark } from "@/components/brand/schoolkit-mark";
+import { PoweredBySchoolKit, SchoolBrand } from "@/components/school/school-brand";
 import { Button } from "@/components/ui/button";
 
 import type { NavItem } from "./nav-items";
@@ -88,7 +88,7 @@ export function MobileNav({
               onClick={(e) => e.stopPropagation()}
             >
               <div className="flex h-14 items-center justify-between border-b border-border px-5">
-                <SchoolKitWordmark iconSize={26} textClassName="text-base" />
+                <SchoolBrand />
                 <Button variant="ghost" size="icon" aria-label="Close navigation" onClick={() => onOpenChange(false)}>
                   <X className="h-4 w-4" />
                 </Button>
@@ -99,6 +99,7 @@ export function MobileNav({
                 items={items}
                 laterPhaseItems={laterPhaseItems}
               />
+              <PoweredBySchoolKit />
             </div>
           </div>,
           document.body,

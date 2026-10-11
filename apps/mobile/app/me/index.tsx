@@ -29,6 +29,7 @@ import { totalOwed } from "../../src/lib/family/fees";
 import { spacing } from "../../src/theme/tokens";
 import { Card, CenteredMessage, Label, Notice, Screen } from "../../src/components/ui";
 import { ListRow, ScreenHeader, SectionHeader, Skeleton, StatRow } from "../../src/components/layout";
+import { SchoolBadge } from "../../src/components/school-badge";
 import { FreshnessLabel } from "../../src/components/freshness-label";
 import { PushStatusNotice } from "../../src/components/push-status-notice";
 
@@ -115,9 +116,10 @@ export default function MyHomeScreen() {
   return (
     <Screen>
       <ScrollView contentContainerStyle={styles.content}>
+        <SchoolBadge principal="student" name={school?.name} />
         <ScreenHeader
           title={`${greeting(new Date().getHours())}${student ? `, ${student.firstName}` : ""}`}
-          subtitle={[school?.name, enrollment ? enrollment.classArm.name : null].filter(Boolean).join(" · ")}
+          subtitle={enrollment ? enrollment.classArm.name : null}
           action={<MenuButton onPress={menu.open} />}
         />
         <FreshnessLabel updatedAt={meQuery.dataUpdatedAt} />

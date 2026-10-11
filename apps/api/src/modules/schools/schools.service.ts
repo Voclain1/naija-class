@@ -24,6 +24,7 @@ import { PaystackService } from "../../common/paystack/paystack.service";
 import { readSchoolPlan } from "../../common/plans/plan-limits";
 import { redactEmail } from "../../common/redact";
 import { portalBaseUrl } from "../../common/portal-url";
+import { LOGO_URL_TTL_SECONDS, parseLogoExt } from "../../common/storage/school-logo";
 import { StorageService } from "../../common/storage/storage.service";
 import { AcademicCalendarService } from "../academic-calendar/academic-calendar.service.js";
 
@@ -39,10 +40,6 @@ const LOGO_EXT_BY_MIME = {
   "image/webp": "webp",
 } as const satisfies Record<string, "png" | "jpg" | "webp">;
 type LogoExt = (typeof LOGO_EXT_BY_MIME)[keyof typeof LOGO_EXT_BY_MIME];
-// Long relative to receipts' 15 minutes — a logo is displayed persistently
-// in the topbar for the life of a session, not fetched once for a single
-// click-through. See SchoolLogoUrlDto's own comment in school.dto.ts.
-const LOGO_URL_TTL_SECONDS = 60 * 60;
 
 interface RequestContext {
   ipAddress: string | null;
@@ -694,16 +691,6 @@ function toSchoolMeDto(school: SchoolRow): SchoolMeDto {
     createdAt: school.createdAt,
     updatedAt: school.updatedAt,
   };
-}
-
-// Recovers the school-logo StorageObjectKey's `ext` from the canonical path
-// persisted on School.logoUrl (e.g. "schools/<id>/logo.png" -> "png").
-// Defensive on any non-logo value: logoUrl should only ever be written by
-// uploadLogo() above, but a stray/legacy value shouldn't 500 the caller.
-function parseLogoExt(logoUrl: string | null | undefined): LogoExt | null {
-  if (!logoUrl) return null;
-  const ext = logoUrl.split(".").pop();
-  return ext === "png" || ext === "jpg" || ext === "webp" ? ext : null;
 }
 
 async function loadSchoolOrThrow(schoolId: string): Promise<SchoolMeDto> {

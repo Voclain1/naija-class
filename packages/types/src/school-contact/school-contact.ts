@@ -41,10 +41,33 @@ export function callSchoolHref(phone: string | null | undefined): string | null 
  * the calendar, but never the school itself, because nothing had needed it. The
  * app gets the same fields from its session; the browser needs to ask.
  *
- * Deliberately two fields and no more. An address, an email and branding are
- * not needed to place a call, and this response lands in a parent's browser.
+ * The name and logo head every signed-in family screen
+ * (docs/modules/school-identity.md, slice 1); the phone places a call. An
+ * address and an email are not needed for either, and this response lands in
+ * a parent's browser, so they stay out.
  */
 export interface SchoolContactResponse {
   name: string;
   phone: string | null;
+  // A signed, directly displayable image URL valid for an hour, or null when
+  // the school has no logo (show its initials instead). Not the stored path.
+  logoUrl: string | null;
+}
+
+/**
+ * Up to two initials for a school with no logo, shown in its place on every
+ * signed-in surface (docs/modules/school-identity.md). Short joining words are
+ * skipped, so "Virgo Fidelis Montessori School" reads "VF" and "School of the
+ * Nations" reads "SN". Falls back to "S" for a name with no letters at all.
+ */
+export function schoolInitials(name: string): string {
+  const skip = new Set(["of", "the", "and", "&"]);
+  const initials = name
+    .split(/\s+/)
+    .map((w) => w.replace(/[^\p{L}\p{N}]/gu, ""))
+    .filter((w) => w && !skip.has(w.toLowerCase()))
+    .slice(0, 2)
+    .map((w) => w[0]!.toUpperCase())
+    .join("");
+  return initials || "S";
 }

@@ -12,6 +12,7 @@ import { PinUnlockForm } from "@/components/pin-unlock-form";
 import { ResultCard } from "@/components/result-card";
 import { SignOutButton } from "@/components/sign-out-button";
 import { buildLoginUrl, errorCodeFromBody, reasonFromErrorCode } from "@/lib/session-end";
+import { SchoolBanner } from "@/components/school-banner";
 
 // One released term, in full (Phase 8 / CP6a, §20.4). The portal had only the
 // list until now; this is the card a parent opens, carrying what the printed
@@ -81,6 +82,7 @@ export default function ResultDetailPage() {
 
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-2xl flex-col gap-6 px-4 py-10">
+      <SchoolBanner />
       <div className="flex flex-col gap-2">
         <Link
           href={`/students/${params.id}/results`}

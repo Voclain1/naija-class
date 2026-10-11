@@ -9,7 +9,7 @@ import { ApiError } from "@/lib/api-client";
 import { useAuth } from "@/lib/auth/use-auth";
 import { uploadSchoolLogo } from "@/lib/onboarding/schools-api";
 
-import { SchoolLogo } from "./school-logo";
+import { forgetSchoolLogoUrl, SchoolLogo } from "./school-logo";
 
 const ALLOWED_MIME_TYPES = ["image/png", "image/jpeg", "image/webp"];
 const MAX_FILE_SIZE_BYTES = 2 * 1024 * 1024; // 2 MB — mirrors the API's limit
@@ -37,6 +37,7 @@ export function LogoUpload() {
     setUploading(true);
     try {
       const updated = await uploadSchoolLogo(file);
+      forgetSchoolLogoUrl();
       setSchool(updated);
       toast.success("Logo uploaded.");
     } catch (error) {

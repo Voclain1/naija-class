@@ -427,6 +427,7 @@ export class ParentSummariesService {
         await this.email.send({
           to,
           subject: `Weekly update from ${targets.schoolName}`,
+          schoolName: targets.schoolName,
           html: this.renderEmail(targets.schoolName, summary),
         });
       }

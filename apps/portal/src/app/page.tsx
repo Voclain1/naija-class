@@ -23,6 +23,7 @@ import {
 import { Appear, EmptyState, PageHeader, PageSkeleton } from "@school-kit/ui";
 
 import { SignOutButton } from "@/components/sign-out-button";
+import { SchoolBanner } from "@/components/school-banner";
 
 type LoadState =
   | { kind: "loading" }
@@ -118,6 +119,7 @@ export default function DashboardPage() {
 
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-2xl flex-col gap-6 px-4 py-10">
+      <SchoolBanner />
       {/* Sign out lives in the header of every authenticated surface (F-06) —
           PageHeader's actions slot, which wraps below the title on a narrow
           phone rather than crushing both onto one line. */}

@@ -5,7 +5,7 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 const { captureMessage } = vi.hoisted(() => ({ captureMessage: vi.fn() }));
 vi.mock("../../observability/sentry", () => ({ Sentry: { captureMessage } }));
 
-import { EmailService } from "./email.service";
+import { EmailService, emailFrom } from "./email.service";
 
 function serviceWith(send: (...args: unknown[]) => unknown): EmailService {
   const svc = new EmailService({ get: () => "re_test_key" } as never);
@@ -48,5 +48,33 @@ describe("EmailService.send — failures reach Sentry (2026-10-08)", () => {
     const svc = serviceWith(async () => ({ data: { id: "e1" }, error: null }));
     await expect(svc.send(MESSAGE)).resolves.toBeUndefined();
     expect(captureMessage).not.toHaveBeenCalled();
+  });
+});
+
+describe("emailFrom — the school's name in the inbox (school-identity slice 1)", () => {
+  it("speaks for the school when given one", () => {
+    expect(emailFrom("Virgo Fidelis Montessori School")).toBe(
+      '"Virgo Fidelis Montessori School via SchoolKit" <no-reply@schoolkit.ng>',
+    );
+  });
+
+  it("is the bare address for SchoolKit's own mail", () => {
+    expect(emailFrom(undefined)).toBe("no-reply@schoolkit.ng");
+    expect(emailFrom("   ")).toBe("no-reply@schoolkit.ng");
+  });
+
+  it("cannot be used to end the quoted name or start another header", () => {
+    expect(emailFrom('Evil" <x@evil.test>\r\nBcc: all@evil.test')).toBe(
+      '"Evil x@evil.test Bcc: all@evil.test via SchoolKit" <no-reply@schoolkit.ng>',
+    );
+  });
+
+  it("is what send() hands to Resend", async () => {
+    const send = vi.fn(async () => ({ data: { id: "e1" }, error: null }));
+    const svc = serviceWith(send);
+    await svc.send({ ...MESSAGE, schoolName: "Divy Sixth Form College" });
+    expect(send).toHaveBeenCalledWith(
+      expect.objectContaining({ from: '"Divy Sixth Form College via SchoolKit" <no-reply@schoolkit.ng>' }),
+    );
   });
 });

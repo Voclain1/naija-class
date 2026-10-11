@@ -2,7 +2,7 @@
 
 import { usePathname } from "next/navigation";
 
-import { SchoolKitWordmark } from "@/components/brand/schoolkit-mark";
+import { PoweredBySchoolKit, SchoolBrand } from "@/components/school/school-brand";
 import { hasPermission } from "@/lib/auth/has-permission";
 import { useAuth } from "@/lib/auth/use-auth";
 
@@ -40,9 +40,10 @@ export function AdminSidebar() {
   return (
     <aside className="hidden w-64 shrink-0 border-r border-border bg-card md:flex md:flex-col">
       <div className="flex h-14 items-center border-b border-border px-5">
-        <SchoolKitWordmark iconSize={26} textClassName="text-base" />
+        <SchoolBrand />
       </div>
       <NavList pathname={pathname} items={items} laterPhaseItems={laterPhaseItems} />
+      <PoweredBySchoolKit />
     </aside>
   );
 }

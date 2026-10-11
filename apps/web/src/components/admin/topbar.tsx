@@ -92,7 +92,10 @@ export function AdminTopbar({
         onOpenChange={setMobileNavOpen}
       />
 
-      <div className="hidden min-w-0 items-center gap-2 sm:flex">
+      {/* From md up the sidebar carries the school's name and logo
+          (SchoolBrand); the topbar repeats them only where there is no
+          sidebar. */}
+      <div className="hidden min-w-0 items-center gap-2 sm:flex md:hidden">
         <SchoolLogo className="h-7 w-7 shrink-0 rounded object-contain" />
         <span className="truncate text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
           {school?.name ?? ""}

@@ -41,7 +41,16 @@ export class EmailService {
    * `purpose` names the email for operators (e.g. "staff-password-reset"); it
    * travels to Sentry as a tag, since the subject can carry a child's name.
    */
-  async send(params: { to: string; subject: string; html: string; purpose?: string }): Promise<void> {
+  async send(params: {
+    to: string;
+    subject: string;
+    html: string;
+    purpose?: string;
+    // The school this email speaks for, shown as "<school> via SchoolKit" in
+    // the inbox (docs/modules/school-identity.md). Omit for SchoolKit's own
+    // mail to a school (owner invitations, setup nudges).
+    schoolName?: string;
+  }): Promise<void> {
     if (!this.client) {
       throw new InternalError("RESEND_API_KEY is not configured on this server");
     }
@@ -59,7 +68,7 @@ export class EmailService {
     let failure: string | null = null;
     try {
       const { error } = await this.client.emails.send({
-        from: "no-reply@schoolkit.ng",
+        from: emailFrom(params.schoolName),
         to: params.to,
         subject: params.subject,
         html: params.html,
@@ -79,4 +88,18 @@ export class EmailService {
       throw new InternalError(`Email send failed: ${failure}`);
     }
   }
+}
+
+const FROM_ADDRESS = "no-reply@schoolkit.ng";
+
+// A quoted display name in front of the one sending address. The school's name
+// is typed by the school, so anything that could end the quoted string or
+// start a second header line is removed before it reaches the header.
+export function emailFrom(schoolName: string | undefined): string {
+  const name = (schoolName ?? "")
+    .replace(/[\r\n]/g, " ")
+    .replace(/["\\<>]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  return name ? `"${name} via SchoolKit" <${FROM_ADDRESS}>` : FROM_ADDRESS;
 }
