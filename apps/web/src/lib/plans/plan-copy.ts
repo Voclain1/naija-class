@@ -1,4 +1,4 @@
-import type { SchoolPlanDto } from "@school-kit/types";
+import type { SchoolPlanDto, SchoolPlanFeatureDto } from "@school-kit/types";
 
 // The words for a school's plan usage, in one place so Settings → Plan and the
 // Students notice say the same thing. Pure, so it is unit-tested.
@@ -25,4 +25,10 @@ export function planConsequenceSentence(p: SchoolPlanDto): string | null {
   return p.status === "over"
     ? "New students can't be added until your plan changes. Talk to SchoolKit about a bigger plan."
     : `Once you reach ${n(p.studentCap)}, new students can't be added until your plan changes.`;
+}
+
+/** A plan feature's state in words: in the plan, free for now, or not in the plan. */
+export function planFeatureStatus(f: Pick<SchoolPlanFeatureDto, "included" | "available">): string {
+  if (f.included) return "Included";
+  return f.available ? "Free during early access" : "On paid plans";
 }

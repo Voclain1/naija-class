@@ -3,11 +3,17 @@ import {
   ForbiddenError,
   ON_ROLL_STUDENT_STATUSES,
   PLAN_ERROR_CODES,
+  PLAN_FEATURES,
+  PLAN_FEATURE_LABELS,
+  PLAN_FEATURE_MIN_PLAN,
   PLAN_LABELS,
   parsePlanEnforcement,
+  planFeatureAvailable,
+  planIncludesFeature,
   planUsageStatus,
   studentCapFor,
   type PlanEnforcement,
+  type PlanFeature,
   type SchoolPlanDto,
 } from "@school-kit/types";
 
@@ -43,6 +49,12 @@ export async function readSchoolPlan(
     studentsOnRoll,
     enforcement,
     status: planUsageStatus(studentsOnRoll, studentCap),
+    features: PLAN_FEATURES.map((feature) => ({
+      feature,
+      label: PLAN_FEATURE_LABELS[feature],
+      included: planIncludesFeature(school.plan, feature),
+      available: planFeatureAvailable(school.plan, feature, enforcement),
+    })),
   };
 }
 
@@ -68,5 +80,38 @@ export async function assertRoomForStudents(
       (adding > 1 ? `, so there is room for ${room} more, not ${adding}.` : ".") +
       " Contact SchoolKit to move to a bigger plan.",
     { plan: plan.plan, studentCap: plan.studentCap, studentsOnRoll: plan.studentsOnRoll, adding },
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Features by plan (plans.md D5).
+// ---------------------------------------------------------------------------
+
+/** Whether the school has the feature now. Under warn this reads nothing. */
+export async function schoolHasPlanFeature(
+  db: PrismaClient,
+  schoolId: string,
+  feature: PlanFeature,
+  enforcement: PlanEnforcement = currentPlanEnforcement(),
+): Promise<boolean> {
+  if (enforcement === "warn") return true;
+  const school = await db.school.findUniqueOrThrow({ where: { id: schoolId }, select: { plan: true } });
+  return planFeatureAvailable(school.plan, feature, enforcement);
+}
+
+/** Refuses with 403 PLAN_FEATURE_UNAVAILABLE when the school's plan leaves the feature out. */
+export async function assertPlanFeature(
+  db: PrismaClient,
+  schoolId: string,
+  feature: PlanFeature,
+  enforcement: PlanEnforcement = currentPlanEnforcement(),
+): Promise<void> {
+  if (await schoolHasPlanFeature(db, schoolId, feature, enforcement)) return;
+  const school = await db.school.findUniqueOrThrow({ where: { id: schoolId }, select: { plan: true } });
+  throw new ForbiddenError(
+    PLAN_ERROR_CODES.FEATURE_UNAVAILABLE,
+    `${PLAN_FEATURE_LABELS[feature]} aren't on the ${PLAN_LABELS[school.plan]} plan. ` +
+      `They come with the ${PLAN_LABELS[PLAN_FEATURE_MIN_PLAN[feature]]} plan and up; contact SchoolKit to move to it.`,
+    { feature, plan: school.plan },
   );
 }

@@ -541,6 +541,43 @@ describe("Released results — negative walk (Phase 6 / Slice 4)", () => {
     }
   });
 
+  it("11. plans (2026-10-11): under enforce a Free school's families get no positions or cumulative results; a paid plan keeps them", async () => {
+    const both = async () => {
+      const child = (await asStudent(adaToken, `/me/results/${releasedTermId}`)).body;
+      const parent = (await asGuardian(adaGuardianToken, `/students/${adaId}/results/${releasedTermId}`)).body;
+      return [child, parent].map((b) => ({ position: b.overallPosition, cumulative: b.cumulative }));
+    };
+    const saved = process.env.PLAN_ENFORCEMENT;
+    await basePrisma.school.update({ where: { id: schoolA }, data: { positionVisibleToFamilies: true } });
+    await withTenant(schoolA, (db) =>
+      db.reportCard.updateMany({
+        where: { studentId: adaId, termId: releasedTermId },
+        data: { cumulativeAverage: 7850, cumulativeTerms: 2, cumulativePosition: 3 },
+      }),
+    );
+    try {
+      process.env.PLAN_ENFORCEMENT = "enforce";
+      expect(await both()).toEqual([
+        { position: null, cumulative: null },
+        { position: null, cumulative: null },
+      ]);
+
+      await basePrisma.school.update({ where: { id: schoolA }, data: { plan: "STARTER" } });
+      const paid = { position: 2, cumulative: { average: 7850, terms: 2, position: 3 } };
+      expect(await both()).toEqual([paid, paid]);
+    } finally {
+      if (saved === undefined) delete process.env.PLAN_ENFORCEMENT;
+      else process.env.PLAN_ENFORCEMENT = saved;
+      await basePrisma.school.update({ where: { id: schoolA }, data: { plan: "FREE", positionVisibleToFamilies: false } });
+      await withTenant(schoolA, (db) =>
+        db.reportCard.updateMany({
+          where: { studentId: adaId, termId: releasedTermId },
+          data: { cumulativeAverage: null, cumulativeTerms: null, cumulativePosition: null },
+        }),
+      );
+    }
+  });
+
   it("8. the family payload omits the staff-only and PII fields", async () => {
     const res = await asStudent(adaToken, `/me/results/${releasedTermId}`);
     const body = JSON.stringify(res.body);

@@ -296,6 +296,66 @@ describe("RenderService (cp2 — PDF render)", () => {
     expect(after.artifactUrl).toBe(`schools/${f.schoolId}/report-cards/${f.termId}/${f.studentId}.pdf`);
   }, 90_000);
 
+  // ---- Plans (2026-10-11, docs/modules/plans.md D5) -----------------------
+
+  it("a Free school's card under enforce is SchoolKit's: unbranded, no positions, no cumulative; under warn it keeps them", async () => {
+    const f = await seedOneCard("plan-free");
+    await basePrisma.school.update({ where: { id: f.schoolId }, data: { primaryColor: "#7a1f5c" } });
+
+    const enforced = await withTenant(f.schoolId, (db) => reportCards.getRenderData(db, f.cardId, "enforce"));
+    expect(enforced?.school).toMatchObject({ branded: false, primaryColor: null, positionOnReportCardPdf: false });
+    expect(enforced?.rollup.cumulative).toBeNull();
+
+    const warned = await withTenant(f.schoolId, (db) => reportCards.getRenderData(db, f.cardId, "warn"));
+    expect(warned?.school).toMatchObject({ branded: true, primaryColor: "#7a1f5c", positionOnReportCardPdf: true });
+
+    await basePrisma.school.update({ where: { id: f.schoolId }, data: { plan: "STARTER" } });
+    const paid = await withTenant(f.schoolId, (db) => reportCards.getRenderData(db, f.cardId, "enforce"));
+    expect(paid?.school).toMatchObject({ branded: true, positionOnReportCardPdf: true });
+  });
+
+  it("puts the school's logo on a branded card as an image the PDF can load, and leaves it off an unbranded one", async () => {
+    const f = await seedOneCard("plan-logo");
+    const logoUrl = await storage.put(f.schoolId, { kind: "school-logo", ext: "png" }, Buffer.from("not-really-a-png"), "image/png");
+    await basePrisma.school.update({ where: { id: f.schoolId }, data: { logoUrl } });
+
+    let html = "";
+    const capturingPool = {
+      withPage: async <T>(fn: (page: { setContent: (h: string) => Promise<void>; pdf: () => Promise<Uint8Array> }) => Promise<T>) =>
+        fn({
+          setContent: async (h: string) => {
+            html = h;
+          },
+          pdf: async () => Buffer.from("%PDF-1.4"),
+        }),
+    } as unknown as BrowserPool;
+    const capturing = new RenderService(reportCards, storage, capturingPool);
+
+    await capturing.renderCard({ schoolId: f.schoolId, userId: f.ownerId, reportCardId: f.cardId, attempt: 1, planEnforcement: "warn" });
+    expect(html).toContain(`src="data:image/png;base64,${Buffer.from("not-really-a-png").toString("base64")}"`);
+    expect(html).not.toContain(logoUrl);
+
+    await capturing.renderCard({ schoolId: f.schoolId, userId: f.ownerId, reportCardId: f.cardId, attempt: 2, planEnforcement: "enforce" });
+    expect(html).not.toContain("<img");
+    expect(html).toContain("Report card by SchoolKit");
+  });
+
+  it("queues each render with the API's PLAN_ENFORCEMENT, so the render worker needs no copy of it", async () => {
+    const jobs: unknown[] = [];
+    const capturingQueue = { add: async (_name: string, data: unknown) => void jobs.push(data) } as unknown as Queue;
+    const service = new ReportCardService(new AggregationService(), storage, capturingQueue);
+    const f = await seedOneCard("plan-queue");
+    const saved = process.env.PLAN_ENFORCEMENT;
+    process.env.PLAN_ENFORCEMENT = "enforce";
+    try {
+      await service.enqueueArmRender(ctx(f.schoolId, f.ownerId), { termId: f.termId, classArmId: f.armId }, reqCtx);
+    } finally {
+      if (saved === undefined) delete process.env.PLAN_ENFORCEMENT;
+      else process.env.PLAN_ENFORCEMENT = saved;
+    }
+    expect(jobs).toEqual([expect.objectContaining({ reportCardId: f.cardId, planEnforcement: "enforce" })]);
+  });
+
   it("getRenderData under the WRONG tenant sees nothing (RLS isolation)", async () => {
     const a = await seedOneCard("iso-a");
     const b = await seedOneCard("iso-b");

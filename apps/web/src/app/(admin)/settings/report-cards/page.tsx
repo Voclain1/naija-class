@@ -1,12 +1,14 @@
 "use client";
 
 import { Loader2 } from "lucide-react";
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { ApiError } from "@/lib/api-client";
 import { getSchoolMe, patchSchoolMe } from "@/lib/onboarding/schools-api";
+import { getSchoolPlan } from "@/lib/plans/plans-api";
 import { cn } from "@/lib/utils";
 
 // /settings/report-cards — where class position appears (Phase 8 / CP6a,
@@ -41,6 +43,9 @@ export default function ReportCardSettingsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Plans (docs/modules/plans.md D5): positions can be left off by the plan
+  // once enforcement is on, whatever these switches say.
+  const [positionsOffByPlan, setPositionsOffByPlan] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -62,6 +67,9 @@ export default function ReportCardSettingsPage() {
 
   useEffect(() => {
     void load();
+    getSchoolPlan()
+      .then((p) => setPositionsOffByPlan(!p.features.find((f) => f.feature === "reportCardPositions")?.available))
+      .catch(() => undefined);
   }, [load]);
 
   const dirty =
@@ -108,6 +116,16 @@ export default function ReportCardSettingsPage() {
         </div>
       ) : (
         <div className="flex flex-col gap-6">
+          {positionsOffByPlan ? (
+            <p data-testid="positions-off-by-plan" className="rounded-md bg-secondary/10 p-4 text-sm">
+              Your school&apos;s plan doesn&apos;t include class positions or cumulative results, so they
+              are left off report cards and results whatever these switches say.{" "}
+              <Link href="/settings/plan" className="underline">
+                See your plan
+              </Link>
+              .
+            </p>
+          ) : null}
           <div className="flex flex-col gap-3">
             {SWITCHES.map((s) => {
               const value = draft[s.key];

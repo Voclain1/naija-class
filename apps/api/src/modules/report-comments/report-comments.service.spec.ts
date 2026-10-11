@@ -410,6 +410,27 @@ describe("ReportCommentsService", () => {
   // =========================================================================
   // Scope
   // =========================================================================
+  // Plans (2026-10-11, docs/modules/plans.md D5).
+  it("under PLAN_ENFORCEMENT=enforce, refuses a Free school's batch before anything is queued; a paid plan may draft", async () => {
+    const saved = process.env.PLAN_ENFORCEMENT;
+    process.env.PLAN_ENFORCEMENT = "enforce";
+    try {
+      queue.added.length = 0;
+      await expect(service.enqueueBatch(ctx(adminId), { classArmId: armId, subjectId, termId })).rejects.toMatchObject({
+        code: "PLAN_FEATURE_UNAVAILABLE",
+        httpStatus: 403,
+      });
+      expect(queue.added).toHaveLength(0);
+
+      await basePrisma.school.update({ where: { id: schoolId }, data: { plan: "STARTER" } });
+      await expect(service.enqueueBatch(ctx(adminId), { classArmId: armId, subjectId, termId })).resolves.toBeDefined();
+    } finally {
+      if (saved === undefined) delete process.env.PLAN_ENFORCEMENT;
+      else process.env.PLAN_ENFORCEMENT = saved;
+      await basePrisma.school.update({ where: { id: schoolId }, data: { plan: "FREE" } });
+    }
+  });
+
   it("hides another teacher's class behind a 404 rather than a 403", async () => {
     // teacherId teaches nothing: no TeacherAssignment, not the form teacher.
     await expect(

@@ -53,6 +53,7 @@ export class ReportCardRenderProcessor extends WorkerHost {
       userId: job.data.userId,
       reportCardId: job.data.reportCardId,
       attempt: job.attemptsMade + 1,
+      planEnforcement: job.data.planEnforcement,
     });
   };
 

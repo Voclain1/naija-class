@@ -1,8 +1,10 @@
 import { Injectable, Logger } from "@nestjs/common";
 
 import { withTenant } from "@school-kit/db";
+import { parsePlanEnforcement } from "@school-kit/types";
 
 import { StorageService } from "../../../common/storage";
+import { loadReceiptLogo } from "../../payments/receipt";
 import { ReportCardService } from "../report-card.service";
 import { BrowserPool } from "./browser-pool";
 import { renderReportCardHtml } from "./report-card-template";
@@ -14,6 +16,8 @@ export interface RenderJobData {
   schoolId: string;
   userId: string;
   reportCardId: string;
+  /** The API's PLAN_ENFORCEMENT when the job was queued (plans.md D5). Missing (older jobs): warn. */
+  planEnforcement?: string;
   [k: string]: unknown;
 }
 
@@ -22,6 +26,7 @@ export interface RenderParams {
   userId: string;
   reportCardId: string;
   attempt: number;
+  planEnforcement?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -72,7 +77,7 @@ export class RenderService {
         select: { studentId: true, termId: true },
       });
       if (!card) return null;
-      const data = await this.reportCards.getRenderData(db, reportCardId);
+      const data = await this.reportCards.getRenderData(db, reportCardId, parsePlanEnforcement(params.planEnforcement));
       if (!data) return null;
       await db.reportCard.update({ where: { id: reportCardId }, data: { pdfStatus: "GENERATING" } });
       return { card, data };
@@ -82,7 +87,14 @@ export class RenderService {
       return;
     }
 
-    const html = renderReportCardHtml(prep.data);
+    // The logo as a data URI, read outside the transaction (the receipts
+    // lesson). Puppeteer's setContent has no base URL, so the stored path the
+    // template used to be given could never load: before 2026-10-11 no report
+    // card showed its school's logo. Only a branded card gets it.
+    const logoDataUri = prep.data.school.branded
+      ? await loadReceiptLogo(this.storage, schoolId, prep.data.school.logoUrl)
+      : null;
+    const html = renderReportCardHtml({ ...prep.data, school: { ...prep.data.school, logoDataUri } });
 
     // Phase 2 — NO tx: render to PDF in a pooled, recycled, hard-timeout-bounded
     // page, then store. We feed our own HTML via setContent (no remote
