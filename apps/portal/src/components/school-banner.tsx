@@ -2,7 +2,9 @@
 
 import { useEffect, useState } from "react";
 
-import { schoolInitials, type SchoolContactResponse } from "@school-kit/types";
+import Image from "next/image";
+
+import type { SchoolContactResponse } from "@school-kit/types";
 
 // The school's own name and logo at the top of every signed-in portal page
 // (docs/modules/school-identity.md, slice 1). Sign-in pages keep SchoolKit's
@@ -52,12 +54,9 @@ export function SchoolBanner() {
         // eslint-disable-next-line @next/next/no-img-element
         <img src={school.logoUrl} alt={`${school.name} logo`} className="h-10 w-10 shrink-0 rounded object-contain" />
       ) : (
-        <span
-          aria-hidden="true"
-          className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-primary text-sm font-semibold text-primary-foreground"
-        >
-          {schoolInitials(school.name)}
-        </span>
+        // No logo yet: SchoolKit's stands in until the school uploads one
+        // (school-identity, owner's call 2026-10-11).
+        <Image src="/brand/schoolkit-icon.png" alt="" width={40} height={40} className="h-10 w-10 shrink-0" />
       )}
       <span className="truncate text-base font-semibold tracking-tight text-foreground">{school.name}</span>
     </div>

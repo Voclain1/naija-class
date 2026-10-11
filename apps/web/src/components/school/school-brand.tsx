@@ -1,7 +1,5 @@
 "use client";
 
-import { schoolInitials } from "@school-kit/types";
-
 import { SchoolKitIcon } from "@/components/brand/schoolkit-mark";
 import { useAuth } from "@/lib/auth/use-auth";
 
@@ -9,18 +7,10 @@ import { SchoolLogo } from "./school-logo";
 
 // The school's own name and logo at the head of a signed-in shell
 // (docs/modules/school-identity.md, slice 1). SchoolKit stays visible as the
-// platform, smaller, through PoweredBySchoolKit below.
-
-export function SchoolInitials({ name, className }: { name: string; className?: string }) {
-  return (
-    <span
-      aria-hidden="true"
-      className={`inline-flex shrink-0 items-center justify-center rounded-md bg-primary font-semibold text-primary-foreground ${className ?? ""}`}
-    >
-      {schoolInitials(name)}
-    </span>
-  );
-}
+// platform, smaller, through PoweredBySchoolKit below. A school that has not
+// uploaded a logo yet shows SchoolKit's icon beside its name (owner's call,
+// 2026-10-11), and its owner and admins are reminded to add one
+// (LogoReminder on the dashboard).
 
 export function SchoolBrand({ className }: { className?: string }) {
   const { school } = useAuth();
@@ -29,7 +19,7 @@ export function SchoolBrand({ className }: { className?: string }) {
     <span className={`flex min-w-0 items-center gap-2 ${className ?? ""}`}>
       <SchoolLogo
         className="h-7 w-7 shrink-0 rounded object-contain"
-        fallback={<SchoolInitials name={school.name} className="h-7 w-7 text-xs" />}
+        fallback={<SchoolKitIcon size={28} className="shrink-0" />}
       />
       <span className="truncate text-sm font-semibold tracking-tight text-foreground">{school.name}</span>
     </span>

@@ -39,7 +39,9 @@ SchoolKit stays visible, smaller, as the platform ("Powered by SchoolKit").
   stores; a separate build per school is out of scope.
 - The super-admin dashboard.
 
-A school with no logo shows its initials on the primary colour. The school's
+A school with no logo shows SchoolKit's logo beside its name (owner's call,
+2026-10-11, replacing the initials first built), and its owner and admins see a
+reminder on the dashboard to add one. The school's
 own colour is not applied to the interface in this slice: free-form colours
 break contrast and dark mode, and the request was for names and logos.
 
@@ -69,7 +71,7 @@ break contrast and dark mode, and the request was for names and logos.
   guardian password reset, fee reminders and the weekly parent summary.
   SchoolKit's own mail to schools (owner invitations, setup nudges, Paystack
   setup) keeps the bare address.
-- **Shared:** `schoolInitials` and `signSchoolLogoUrl` (`apps/api/src/common/storage/school-logo.ts`).
+- **Shared:** `signSchoolLogoUrl` (`apps/api/src/common/storage/school-logo.ts`).
 
 ## Slice 2: SMS under the school's own name
 
@@ -122,9 +124,20 @@ it cannot be self-service.
   change to the staff cookie's Origin rule, which is the CSRF defence and
   needs its own security review.
 
+## Dashboard: logo reminder and setup progress (2026-10-11)
+
+- **No logo:** SchoolKit's icon beside the school's name on web, portal and app;
+  `LogoReminder` on the owner and admin dashboard links to Settings → School.
+- **Setup progress:** `SetupProgressChip` sits on the greeting's line —
+  "School setup · N% done", a ring, and the next thing to do, linking to it.
+  `setupProgress` (`apps/web/src/lib/setup-state/setup-progress.ts`) counts the
+  setup checklist's required and recommended steps from `GET /setup-state`, plus
+  the profile parents see: logo, address, phone, email. Owner and admin only;
+  hidden at 100%, and it never rounds up to 100 while anything is missing.
+
 ## Tests
 
-- Each surface renders the school's name and logo, and initials with no logo.
+- Each surface renders the school's name and logo, and SchoolKit's logo when it has none.
 - No school's name or logo appears for another school's session.
 - `sendSms` uses the approved sender only when status is `approved`; a
   `requested` or `rejected` name never reaches Termii.

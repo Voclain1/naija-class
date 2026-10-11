@@ -14,6 +14,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useAuth } from "@/lib/auth/use-auth";
+import { SchoolKitIcon } from "@/components/brand/schoolkit-mark";
 import { SchoolLogo } from "@/components/school/school-logo";
 
 import { CommandDialog, useCommandDialogHotkey } from "./command-dialog";
@@ -96,7 +97,7 @@ export function AdminTopbar({
           (SchoolBrand); the topbar repeats them only where there is no
           sidebar. */}
       <div className="hidden min-w-0 items-center gap-2 sm:flex md:hidden">
-        <SchoolLogo className="h-7 w-7 shrink-0 rounded object-contain" />
+        <SchoolLogo className="h-7 w-7 shrink-0 rounded object-contain" fallback={<SchoolKitIcon size={28} />} />
         <span className="truncate text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
           {school?.name ?? ""}
         </span>
