@@ -9,7 +9,7 @@ import { ApiError } from "@/lib/api-client";
 import { hasPermission } from "@/lib/auth/has-permission";
 import { useAuth } from "@/lib/auth/use-auth";
 import { getSchoolPlan } from "@/lib/plans/plans-api";
-import { planConsequenceSentence, planUsageSentence } from "@/lib/plans/plan-copy";
+import { planConsequenceSentence, planFeatureStatus, planUsageSentence } from "@/lib/plans/plan-copy";
 import { cn } from "@/lib/utils";
 
 // /settings/plan — the school's plan, its student limit and where the school
@@ -101,6 +101,27 @@ export default function PlanPage() {
           </p>
         </section>
       )}
+
+      {plan ? (
+        <section className="flex flex-col gap-3" aria-labelledby="plan-features">
+          <h2 id="plan-features" className="font-medium">
+            Report card extras
+          </h2>
+          <ul className="flex flex-col divide-y rounded-lg border bg-card">
+            {plan.features.map((f) => (
+              <li key={f.feature} className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 text-sm">
+                <span>{f.label}</span>
+                <span className={f.available ? "text-muted-foreground" : "font-medium text-amber-900"}>
+                  {planFeatureStatus(f)}
+                </span>
+              </li>
+            ))}
+          </ul>
+          <p className="text-sm text-muted-foreground">
+            Every plan gets printable report cards with scores, grades and comments.
+          </p>
+        </section>
+      ) : null}
     </div>
   );
 }

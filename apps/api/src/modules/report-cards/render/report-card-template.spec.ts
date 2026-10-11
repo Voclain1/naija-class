@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { ReportCardRenderData } from "@school-kit/types";
 
-import { esc, renderReportCardHtml } from "./report-card-template";
+import { SCHOOLKIT_CARD_COLOR, esc, renderReportCardHtml, reportCardBrandColor } from "./report-card-template";
 
 // ---------------------------------------------------------------------------
 // esc() is the XSS boundary for the whole template. These tests pin its
@@ -54,10 +54,27 @@ describe("esc", () => {
 // A realistic data fixture whose user-controlled string fields ALL carry an XSS
 // payload, so the template test can assert none of them survive raw.
 const PAYLOAD = "<script>alert('xss')</script>";
+const UNBRANDED_OFF = {
+  name: "Greenfield",
+  motto: null,
+  logoUrl: null,
+  positionOnReportCardPdf: false,
+  branded: false,
+  primaryColor: null,
+  logoDataUri: null,
+};
 
 function fixture(overrides: Partial<ReportCardRenderData> = {}): ReportCardRenderData {
   return {
-    school: { name: PAYLOAD, motto: PAYLOAD, logoUrl: "https://cdn.example.com/logo.png", positionOnReportCardPdf: true },
+    school: {
+      name: PAYLOAD,
+      motto: PAYLOAD,
+      logoUrl: "schools/s1/logo.png",
+      positionOnReportCardPdf: true,
+      branded: true,
+      primaryColor: null,
+      logoDataUri: "data:image/png;base64,iVBORw0KGgo=",
+    },
     academicYear: { label: "2025/2026" },
     term: { name: "First Term", startDate: "2025-09-08", endDate: "2025-12-12" },
     classArm: { name: "JSS2 A" },
@@ -156,10 +173,41 @@ describe("renderReportCardHtml", () => {
 
   it("omits the logo img tag when logoUrl is null", () => {
     const html = renderReportCardHtml(
-      fixture({ school: { name: "Greenfield", motto: null, logoUrl: null, positionOnReportCardPdf: true } }),
+      fixture({ school: { ...UNBRANDED_OFF, positionOnReportCardPdf: true, branded: true } }),
     );
     expect(html).not.toContain("<img");
     expect(html).not.toContain("class=\"motto\"");
+  });
+
+  // ---- Plans (2026-10-11, plans.md D5) -----------------------------------
+
+  it("a branded card shows the school's logo and colour, and no SchoolKit footer", () => {
+    const html = renderReportCardHtml(
+      fixture({ school: { ...fixture().school, name: "Greenfield", primaryColor: "#7a1f5c" } }),
+    );
+    expect(html).toContain('<img class="logo" src="data:image/png;base64,iVBORw0KGgo="');
+    expect(html).toContain("#7a1f5c");
+    expect(html).not.toContain(SCHOOLKIT_CARD_COLOR);
+    expect(html).not.toContain("Report card by SchoolKit");
+  });
+
+  it("an unbranded card is SchoolKit's: no logo even if one is loaded, SchoolKit colour and footer, the school still named", () => {
+    const html = renderReportCardHtml(
+      fixture({
+        school: { ...UNBRANDED_OFF, positionOnReportCardPdf: true, primaryColor: "#7a1f5c", logoDataUri: "data:image/png;base64,AAAA" },
+      }),
+    );
+    expect(html).not.toContain("<img");
+    expect(html).not.toContain("#7a1f5c");
+    expect(html).toContain(SCHOOLKIT_CARD_COLOR);
+    expect(html).toContain("Report card by SchoolKit · schoolkit.ng");
+    expect(html).toContain("Greenfield");
+  });
+
+  it("uses only a plain #rrggbb colour, so a stored value cannot break out of the CSS", () => {
+    expect(reportCardBrandColor("#0a0B0c")).toBe("#0a0B0c");
+    expect(reportCardBrandColor("red; } body { display:none")).toBe("#14532d");
+    expect(reportCardBrandColor(null)).toBe("#14532d");
   });
 
   // ---- Phase 8 / CP6a -----------------------------------------------------
@@ -170,7 +218,7 @@ describe("renderReportCardHtml", () => {
     expect(on).toContain("<th>Pos.</th>");
 
     const off = renderReportCardHtml(
-      fixture({ school: { name: "Greenfield", motto: null, logoUrl: null, positionOnReportCardPdf: false } }),
+      fixture({ school: { ...UNBRANDED_OFF, branded: true } }),
     );
     expect(off).not.toContain("Position in Class");
     expect(off).not.toContain("Pos.");

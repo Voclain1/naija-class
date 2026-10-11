@@ -81,21 +81,50 @@ published terms move a school up "from the following billing period" anyway.
 
 ### D4. What is not built
 
-- **Feature limits by plan.** The published plans also differ in features
-  (Free has no report cards, parent communication, staff management or
-  finance dashboard; API access is Professional; and so on). None of that is
-  enforced, and it is a much bigger change, touching most modules. It needs
-  its own plan, once the owner confirms the feature list is final.
+- **Other feature limits by plan.** The published plans also differ in
+  parent communication, staff management, the finance dashboard, API access
+  and so on. Only report cards (D5) are limited; the rest needs its own plan,
+  once the owner confirms the feature list is final.
 - **Billing.** No invoices to schools, no Paystack subscription, no free-term
   tracking. The pioneer "one term free" is honoured by the operator.
 - **Automatic plan changes.** A school over its cap is shown the notice; the
   operator moves it up.
 
+### D5. Report cards on Free: a real card, with three extras on paid plans
+
+Owner's decision, 2026-10-11 (options A + B + C). Every plan gets report
+cards: scores, grades, typed comments, attendance, the approval workflow and a
+printable PDF. Three things are for Starter and up:
+
+| Feature key | What Free gets instead | Where it is applied |
+|---|---|---|
+| `reportCardBranding` | SchoolKit's template: SchoolKit's colour, no logo, a "Report card by SchoolKit · schoolkit.ng" footer. The school's name and motto stay. | `ReportCardService.getRenderData` and the template |
+| `aiReportComments` | Teachers type comments. Drafting is refused with 403 `PLAN_FEATURE_UNAVAILABLE` before anything is queued. | the subject and form-teacher `enqueueBatch` |
+| `reportCardPositions` | No class or subject position and no cumulative (year) results, on the PDF or anywhere families see results. | `getRenderData` and `ReleasedResultsService.getForStudent`, the one reader for the portal, the app and the result checker |
+
+Like the caps, they apply only under `PLAN_ENFORCEMENT=enforce`; under warn
+every school has all three, and Settings → Plan lists them as "Free during
+early access". The school's own position switches keep working on paid plans;
+on Free the report-card settings page says the plan leaves positions off.
+
+Staff screens (the report-card board, the gradebook) still show positions on
+every plan: they are computed anyway, and they are the school's own working
+data, not what goes to families.
+
+**PDFs are frozen when rendered**, so a plan change shows on cards rendered
+afterwards. The render worker is a separate app; each render job carries the
+API's `PLAN_ENFORCEMENT`, so the secret is set once, on `school-kit-api`.
+
+**Found while building this:** report-card PDFs had never shown a school's
+logo. The template was given the stored path, which a page loaded with no base
+URL cannot fetch. It now gets the logo as a data URI, as receipts do, and uses
+the school's own colour (`primaryColor`), which it also never read.
+
 ## Surfaces
 
 | Surface | Who | What |
 |---|---|---|
-| `GET /schools/me/plan` | owner, admin | `{ plan, label, studentCap, studentsOnRoll, enforcement, status }`, where status is `ok`, `near` or `over` |
+| `GET /schools/me/plan` | owner, admin | `{ plan, label, studentCap, studentsOnRoll, enforcement, status, features }`, where status is `ok`, `near` or `over`, and each feature says whether the plan includes it and whether the school has it now |
 | Settings → Plan (`/settings/plan`) | owner, admin | the same, in words |
 | Students page notice | owner, admin | at `near` and `over` |
 | `PATCH /platform-admin/schools/:schoolId/plan` | platform admin | `{ plan, studentCapOverride }` |

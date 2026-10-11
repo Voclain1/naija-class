@@ -1,9 +1,15 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { basePrisma, withTenant } from "@school-kit/db";
-import { parsePlanEnforcement, planUsageStatus, studentCapFor } from "@school-kit/types";
+import {
+  parsePlanEnforcement,
+  planFeatureAvailable,
+  planIncludesFeature,
+  planUsageStatus,
+  studentCapFor,
+} from "@school-kit/types";
 
-import { assertRoomForStudents, readSchoolPlan } from "./plan-limits";
+import { assertPlanFeature, assertRoomForStudents, readSchoolPlan } from "./plan-limits";
 
 // Plans and student caps (2026-10-11, docs/modules/plans.md). The rules are
 // pure and in @school-kit/types; the count runs against a real database under
@@ -24,6 +30,14 @@ describe("plan rules", () => {
     expect(planUsageStatus(100, 100)).toBe("near");
     expect(planUsageStatus(101, 100)).toBe("over");
     expect(planUsageStatus(5000, null)).toBe("ok");
+  });
+
+  it("includes each report-card feature from Starter up, and grants them all under warn", () => {
+    expect(planIncludesFeature("FREE", "reportCardBranding")).toBe(false);
+    expect(planIncludesFeature("STARTER", "aiReportComments")).toBe(true);
+    expect(planIncludesFeature("ENTERPRISE", "reportCardPositions")).toBe(true);
+    expect(planFeatureAvailable("FREE", "reportCardPositions", "warn")).toBe(true);
+    expect(planFeatureAvailable("FREE", "reportCardPositions", "enforce")).toBe(false);
   });
 
   it("enforces only when told to, exactly", () => {
@@ -76,7 +90,35 @@ describe("plan limits against the database", () => {
       studentsOnRoll: 3,
       enforcement: "warn",
       status: "near",
+      features: [
+        { feature: "reportCardBranding", label: "Your logo and colours on report cards", included: false, available: true },
+        { feature: "aiReportComments", label: "AI drafts of report card comments", included: false, available: true },
+        {
+          feature: "reportCardPositions",
+          label: "Class positions and cumulative results on report cards",
+          included: false,
+          available: true,
+        },
+      ],
     });
+    // Under enforce, a Free school has none of them.
+    const enforced = await withTenant(schoolId, (db) => readSchoolPlan(db, schoolId, "enforce"));
+    expect(enforced.features.map((f) => f.available)).toEqual([false, false, false]);
+  });
+
+  it("a feature is refused only under enforce, and only below its plan", async () => {
+    await expect(withTenant(schoolId, (db) => assertPlanFeature(db, schoolId, "aiReportComments", "warn"))).resolves.toBeUndefined();
+    await expect(withTenant(schoolId, (db) => assertPlanFeature(db, schoolId, "aiReportComments", "enforce"))).rejects.toMatchObject({
+      code: "PLAN_FEATURE_UNAVAILABLE",
+      httpStatus: 403,
+      details: { feature: "aiReportComments", plan: "FREE" },
+    });
+    await basePrisma.school.update({ where: { id: schoolId }, data: { plan: "STARTER" } });
+    try {
+      await expect(withTenant(schoolId, (db) => assertPlanFeature(db, schoolId, "aiReportComments", "enforce"))).resolves.toBeUndefined();
+    } finally {
+      await basePrisma.school.update({ where: { id: schoolId }, data: { plan: "FREE" } });
+    }
   });
 
   it("under warn, never refuses", async () => {

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { SchoolPlanDto } from "@school-kit/types";
 
-import { planConsequenceSentence, planUsageSentence } from "./plan-copy";
+import { planConsequenceSentence, planFeatureStatus, planUsageSentence } from "./plan-copy";
 
 const plan = (over: Partial<SchoolPlanDto>): SchoolPlanDto => ({
   plan: "FREE",
@@ -11,6 +11,7 @@ const plan = (over: Partial<SchoolPlanDto>): SchoolPlanDto => ({
   studentsOnRoll: 40,
   enforcement: "warn",
   status: "ok",
+  features: [],
   ...over,
 });
 
@@ -39,5 +40,13 @@ describe("plan copy", () => {
       "Once you reach 100, new students can't be added until your plan changes.",
     );
     expect(planConsequenceSentence(plan({ enforcement: "enforce", status: "over" }))).toMatch(/can't be added/);
+  });
+});
+
+describe("plan feature status", () => {
+  it("says whether the school has it, has it for now, or needs a paid plan", () => {
+    expect(planFeatureStatus({ included: true, available: true })).toBe("Included");
+    expect(planFeatureStatus({ included: false, available: true })).toBe("Free during early access");
+    expect(planFeatureStatus({ included: false, available: false })).toBe("On paid plans");
   });
 });

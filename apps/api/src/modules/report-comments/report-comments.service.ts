@@ -25,6 +25,7 @@ import { AiGenerationService } from "../../common/ai/ai-generation.service.js";
 import { AI_ERROR_CODES } from "../../common/ai/ai.constants.js";
 import type { AuthContext } from "../../common/auth/auth-context.js";
 import { assertUserActiveAndHasOneOf } from "../../common/auth/role-check.js";
+import { assertPlanFeature } from "../../common/plans/plan-limits.js";
 import { AI_JOB_SUBJECT_COMMENT, AI_QUEUE, queueJobId } from "../../common/queue/index.js";
 import { assertNoReleasedCards } from "../report-cards/workflow/released-guard.js";
 import { getTeacherScope } from "../teacher-scope/teacher-scope.helper.js";
@@ -133,6 +134,10 @@ export class ReportCommentsService {
 
     const eligible = await withTenant(authCtx.schoolId, async (db) => {
       await this.assertSubjectInScope(db, authCtx, input.classArmId, input.subjectId);
+      // A paid-plan feature once PLAN_ENFORCEMENT=enforce (plans.md D5).
+      // Refused here, before anything is queued, for the same reason as the
+      // isConfigured pre-flight above.
+      await assertPlanFeature(db, authCtx.schoolId, "aiReportComments");
 
       const enrollments = await db.enrollment.findMany({
         where: { termId: input.termId, classArmId: input.classArmId },

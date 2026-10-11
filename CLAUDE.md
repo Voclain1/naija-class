@@ -954,7 +954,10 @@ the exam service (`API_MODE=cbt-delivery`, `apps/api/fly-cbt.toml`).
 (`docs/modules/plans.md` D3). Under `warn`, which early access runs, nothing is
 blocked and schools near their plan's student limit see a notice. Under
 `enforce`, adding students past the limit is refused with 403
-`PLAN_STUDENT_LIMIT`. Any other value reads as `warn`.
+`PLAN_STUDENT_LIMIT`, and Free schools lose the report-card extras (D5:
+branding, AI comment drafts, positions and cumulative results). Any other
+value reads as `warn`. The render worker does not need it: each render job
+carries the API's value.
 
 `POSTHOG_API_KEY` / `POSTHOG_HOST` — server-side PostHog from the API
 (2026-10-10, `apps/api/src/observability/posthog.ts`). The same project key

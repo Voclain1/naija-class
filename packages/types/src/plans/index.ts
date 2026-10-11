@@ -58,7 +58,49 @@ export function parsePlanEnforcement(raw: string | undefined): PlanEnforcement {
 
 export const PLAN_ERROR_CODES = {
   STUDENT_LIMIT: "PLAN_STUDENT_LIMIT",
+  FEATURE_UNAVAILABLE: "PLAN_FEATURE_UNAVAILABLE",
 } as const;
+
+// ---------------------------------------------------------------------------
+// Features by plan (2026-10-11, plans.md D5). The owner's decision for report
+// cards on Free: a real, printable termly card, with three things kept for
+// paid plans. Like the caps, they only take effect under
+// PLAN_ENFORCEMENT=enforce; under warn every school has them.
+// ---------------------------------------------------------------------------
+export const PLAN_FEATURES = ["reportCardBranding", "aiReportComments", "reportCardPositions"] as const;
+export type PlanFeature = (typeof PLAN_FEATURES)[number];
+
+export const PLAN_FEATURE_LABELS: Record<PlanFeature, string> = {
+  reportCardBranding: "Your logo and colours on report cards",
+  aiReportComments: "AI drafts of report card comments",
+  reportCardPositions: "Class positions and cumulative results on report cards",
+};
+
+/** The cheapest plan that includes each feature. */
+export const PLAN_FEATURE_MIN_PLAN: Record<PlanFeature, SchoolPlan> = {
+  reportCardBranding: "STARTER",
+  aiReportComments: "STARTER",
+  reportCardPositions: "STARTER",
+};
+
+/** Whether the plan includes the feature, whatever the enforcement switch says. */
+export function planIncludesFeature(plan: SchoolPlan, feature: PlanFeature): boolean {
+  return SCHOOL_PLANS.indexOf(plan) >= SCHOOL_PLANS.indexOf(PLAN_FEATURE_MIN_PLAN[feature]);
+}
+
+/** Whether the school gets the feature now: always under warn, by plan under enforce. */
+export function planFeatureAvailable(plan: SchoolPlan, feature: PlanFeature, enforcement: PlanEnforcement): boolean {
+  return enforcement === "warn" || planIncludesFeature(plan, feature);
+}
+
+export interface SchoolPlanFeatureDto {
+  feature: PlanFeature;
+  label: string;
+  /** In the school's plan. */
+  included: boolean;
+  /** The school has it now (true for every feature under warn). */
+  available: boolean;
+}
 
 // GET /schools/me/plan
 export interface SchoolPlanDto {
@@ -69,6 +111,7 @@ export interface SchoolPlanDto {
   studentsOnRoll: number;
   enforcement: PlanEnforcement;
   status: PlanUsageStatus;
+  features: SchoolPlanFeatureDto[];
 }
 
 // PATCH /platform-admin/schools/:schoolId/plan

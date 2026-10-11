@@ -3,12 +3,15 @@ import { Injectable } from "@nestjs/common";
 import { Prisma, withTenant } from "@school-kit/db";
 import {
   ForbiddenError,
+  planFeatureAvailable,
   readCumulativeSubjects,
   NotFoundError,
   type FamilySubjectRowDto,
   type ReleasedResultDetailDto,
   type ReleasedResultSummaryDto,
 } from "@school-kit/types";
+
+import { currentPlanEnforcement } from "../../common/plans/plan-limits";
 
 // Phase 6 / Slice 4 — THE family-facing read of a report card. D28.
 //
@@ -200,7 +203,7 @@ export class ReleasedResultsService {
       // ReportCardService.getRenderData.
       db.school.findUnique({
         where: { id: card.schoolId },
-        select: { name: true, positionVisibleToFamilies: true },
+        select: { name: true, positionVisibleToFamilies: true, plan: true },
       }),
       db.term.findUnique({ where: { id: card.termId }, select: { name: true } }),
       db.academicYear.findUnique({ where: { id: card.academicYearId }, select: { label: true } }),
@@ -231,8 +234,14 @@ export class ReleasedResultsService {
       select: { id: true, name: true },
     });
     const subjectName = new Map(subjectRows.map((s) => [s.id, s.name]));
-    const showPosition = school.positionVisibleToFamilies;
-    const cumulativeBySubject = new Map(readCumulativeSubjects(card.cumulativeSubjects).map((c) => [c.subjectId, c]));
+    // Plans (plans.md D5): positions and cumulative results are a paid-plan
+    // feature once PLAN_ENFORCEMENT=enforce. This is the one reader for the
+    // portal, the app and the result checker, so they all follow it.
+    const ranked = planFeatureAvailable(school.plan, "reportCardPositions", currentPlanEnforcement());
+    const showPosition = school.positionVisibleToFamilies && ranked;
+    const cumulativeBySubject = new Map(
+      (ranked ? readCumulativeSubjects(card.cumulativeSubjects) : []).map((c) => [c.subjectId, c]),
+    );
 
     const subjects: FamilySubjectRowDto[] = assessments
       .map((a) => ({
@@ -277,7 +286,7 @@ export class ReleasedResultsService {
             },
       promotionStatus: card.promotionStatus,
       cumulative:
-        card.cumulativeAverage === null || card.cumulativeTerms === null
+        !ranked || card.cumulativeAverage === null || card.cumulativeTerms === null
           ? null
           : {
               average: card.cumulativeAverage,

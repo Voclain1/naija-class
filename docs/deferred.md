@@ -354,8 +354,10 @@ the module doc or the PR, then link it here.
   **Still open:**
   - put every school on its right plan in the platform admin, then switch
     `PLAN_ENFORCEMENT=enforce` when early access ends;
-  - feature limits by plan (Free has no report cards, and so on): needs its
-    own plan once the feature list is final;
+  - report cards on Free are built (plans.md D5): branding, AI comment drafts
+    and positions/cumulative results are for Starter and up, under enforce;
+  - other feature limits by plan (parent communication, staff management,
+    finance dashboard, API access): needs its own plan once the list is final;
   - billing schools, and tracking the free term;
   - backfilling `earlyAccessGrantedAt`.
 - [ ] **Platform admin decisions:**

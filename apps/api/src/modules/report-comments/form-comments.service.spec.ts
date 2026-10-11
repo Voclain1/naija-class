@@ -375,6 +375,23 @@ describe("FormCommentsService", () => {
   // =========================================================================
   // Fail-soft
   // =========================================================================
+  // Plans (2026-10-11, docs/modules/plans.md D5).
+  it("under PLAN_ENFORCEMENT=enforce, refuses a Free school's batch before anything is queued", async () => {
+    const saved = process.env.PLAN_ENFORCEMENT;
+    process.env.PLAN_ENFORCEMENT = "enforce";
+    try {
+      queue.added.length = 0;
+      await expect(service.enqueueBatch(ctx(adminId), { classArmId: armId, termId })).rejects.toMatchObject({
+        code: "PLAN_FEATURE_UNAVAILABLE",
+        httpStatus: 403,
+      });
+      expect(queue.added).toHaveLength(0);
+    } finally {
+      if (saved === undefined) delete process.env.PLAN_ENFORCEMENT;
+      else process.env.PLAN_ENFORCEMENT = saved;
+    }
+  });
+
   it("refuses the whole batch up front when AI is not configured", async () => {
     const unconfigured = new FormCommentsService(
       new AiGenerationService(configStub(), undefined),

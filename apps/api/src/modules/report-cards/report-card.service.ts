@@ -9,8 +9,10 @@ import {
   cumulativeAverage,
   cumulativeSubjects,
   rankSparse,
+  planFeatureAvailable,
   readCumulativeSubjects,
   type CumulativeSubject,
+  type PlanEnforcement,
   type BuildReportCardsInput,
   type BuildReportCardsResultDto,
   type RenderArmInput,
@@ -26,6 +28,7 @@ import {
 
 import type { AuthContext } from "../../common/auth/auth-context";
 import { assertUserActiveAndHasOneOf } from "../../common/auth/role-check";
+import { currentPlanEnforcement } from "../../common/plans/plan-limits";
 import { REPORT_CARDS_JOB_RENDER, REPORT_CARDS_QUEUE } from "../../common/queue";
 import { StorageService } from "../../common/storage";
 import { AggregationService } from "../assessment/aggregation.service";
@@ -452,7 +455,13 @@ export class ReportCardService {
     });
 
     for (const card of cards) {
-      await this.renderQueue.add(REPORT_CARDS_JOB_RENDER, { schoolId, userId, reportCardId: card.id });
+      await this.renderQueue.add(REPORT_CARDS_JOB_RENDER, {
+        schoolId,
+        userId,
+        reportCardId: card.id,
+        // The API's switch, so the render worker needs no copy of the secret.
+        planEnforcement: currentPlanEnforcement(),
+      });
       await db.reportCard.update({ where: { id: card.id }, data: { pdfStatus: "PENDING" } });
     }
 
@@ -486,7 +495,14 @@ export class ReportCardService {
   // Assemble everything the HTML template needs for one card, using the CALLER's
   // tx handle (the render worker's tenantWorker db). No gate — the worker is a
   // system job, already tenant-scoped. Returns null if the card vanished.
-  async getRenderData(db: TenantDb, reportCardId: string): Promise<ReportCardRenderData | null> {
+  // `enforcement` is the API's PLAN_ENFORCEMENT at enqueue time, carried on
+  // the render job: the render worker is a separate app, and reading its own
+  // env would make the secret need setting in two places (plans.md D5).
+  async getRenderData(
+    db: TenantDb,
+    reportCardId: string,
+    enforcement: PlanEnforcement = currentPlanEnforcement(),
+  ): Promise<ReportCardRenderData | null> {
     const card = await db.reportCard.findUnique({
       where: { id: reportCardId },
       select: {
@@ -517,7 +533,7 @@ export class ReportCardService {
       // schools has no RLS → MUST filter by the card's school_id explicitly.
       db.school.findUnique({
         where: { id: card.schoolId },
-        select: { name: true, motto: true, logoUrl: true, positionOnReportCardPdf: true },
+        select: { name: true, motto: true, logoUrl: true, primaryColor: true, plan: true, positionOnReportCardPdf: true },
       }),
       db.term.findUnique({ where: { id: card.termId }, select: { name: true, startDate: true, endDate: true } }),
       db.academicYear.findUnique({ where: { id: card.academicYearId }, select: { label: true } }),
@@ -526,11 +542,16 @@ export class ReportCardService {
     ]);
     if (!school || !term || !year || !arm || !student) return null;
 
+    // Plans (plans.md D5): what the school's plan leaves off the card is
+    // removed here, so every PDF is covered by one decision.
+    const branded = planFeatureAvailable(school.plan, "reportCardBranding", enforcement);
+    const ranked = planFeatureAvailable(school.plan, "reportCardPositions", enforcement);
+
     const subjects = await this.buildSubjectBreakdown(
       db,
       card.studentId,
       card.termId,
-      readCumulativeSubjects(card.cumulativeSubjects),
+      ranked ? readCumulativeSubjects(card.cumulativeSubjects) : [],
     );
 
     return {
@@ -538,7 +559,10 @@ export class ReportCardService {
         name: school.name,
         motto: school.motto,
         logoUrl: school.logoUrl,
-        positionOnReportCardPdf: school.positionOnReportCardPdf,
+        positionOnReportCardPdf: school.positionOnReportCardPdf && ranked,
+        branded,
+        primaryColor: branded ? school.primaryColor : null,
+        logoDataUri: null,
       },
       academicYear: { label: year.label },
       term: { name: term.name, startDate: term.startDate, endDate: term.endDate },
@@ -566,7 +590,7 @@ export class ReportCardService {
             : { daysOpened: card.attendanceDaysOpened, present: card.attendancePresent, absent: card.attendanceAbsent },
         promotionStatus: card.promotionStatus,
         cumulative:
-          card.cumulativeAverage === null || card.cumulativeTerms === null
+          !ranked || card.cumulativeAverage === null || card.cumulativeTerms === null
             ? null
             : { average: card.cumulativeAverage, terms: card.cumulativeTerms, position: card.cumulativePosition },
       },

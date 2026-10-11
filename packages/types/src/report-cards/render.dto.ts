@@ -39,6 +39,17 @@ export interface ReportCardRenderData {
     // drops the "Position in Class" box AND the per-subject position column —
     // removed, not printed as a dash, so the card does not look incomplete.
     positionOnReportCardPdf: boolean;
+    // Plans (2026-10-11, docs/modules/plans.md D5). True: the school's own
+    // logo and colour, and no SchoolKit footer. False (Free, once enforced):
+    // the SchoolKit template. Positions and cumulative results that the plan
+    // leaves out are already removed from this data (positionOnReportCardPdf
+    // false, rollup.cumulative null), so the template needs no plan logic for
+    // them.
+    branded: boolean;
+    /** School.primaryColor, unvalidated; the template only uses a #rrggbb value. */
+    primaryColor: string | null;
+    /** The logo as a data URI, filled in by RenderService outside the transaction. Null: none. */
+    logoDataUri: string | null;
   };
   academicYear: { label: string };
   term: { name: string; startDate: string | Date; endDate: string | Date };

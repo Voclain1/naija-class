@@ -74,9 +74,23 @@ function fullName(student: ReportCardRenderData["student"]): string {
   return [student.firstName, student.middleName, student.lastName].filter(Boolean).join(" ");
 }
 
+/** The colour of an unbranded card: SchoolKit's Deep Emerald. */
+export const SCHOOLKIT_CARD_COLOR = "#0E5C43";
+/** A branded card with no usable colour of its own keeps the card's original green. */
+const DEFAULT_SCHOOL_CARD_COLOR = "#14532d";
+
+/** The school's colour if it is a plain #rrggbb value; anything else could break out of the CSS. */
+export function reportCardBrandColor(value: string | null): string {
+  return value && /^#[0-9a-fA-F]{6}$/.test(value) ? value : DEFAULT_SCHOOL_CARD_COLOR;
+}
+
 // Assemble the complete HTML document. Pure function of the input data.
 export function renderReportCardHtml(data: ReportCardRenderData): string {
   const { school, academicYear, term, classArm, student, rollup, subjects } = data;
+  // Plans (plans.md D5): a branded card carries the school's logo and colour;
+  // otherwise it is SchoolKit's template, in SchoolKit's colour, with a
+  // SchoolKit footer. The school's name is on every card either way.
+  const brand = school.branded ? reportCardBrandColor(school.primaryColor) : SCHOOLKIT_CARD_COLOR;
   // Phase 8 / CP6a (D51): the school decides whether paper carries rank. Off
   // means the box and the column are GONE — a dash would read as "missing".
   const showPosition = school.positionOnReportCardPdf;
@@ -158,9 +172,9 @@ export function renderReportCardHtml(data: ReportCardRenderData): string {
 <style>
   * { box-sizing: border-box; }
   body { font-family: "Helvetica Neue", Arial, sans-serif; color: #1a1a1a; margin: 0; padding: 24px 28px; font-size: 12px; }
-  .header { display: flex; align-items: center; border-bottom: 3px solid #14532d; padding-bottom: 12px; margin-bottom: 16px; }
+  .header { display: flex; align-items: center; border-bottom: 3px solid ${brand}; padding-bottom: 12px; margin-bottom: 16px; }
   .header .logo { width: 64px; height: 64px; object-fit: contain; margin-right: 16px; }
-  .header .school-name { font-size: 20px; font-weight: 700; color: #14532d; margin: 0; }
+  .header .school-name { font-size: 20px; font-weight: 700; color: ${brand}; margin: 0; }
   .header .motto { font-style: italic; color: #555; margin: 2px 0 0; font-size: 11px; }
   .doc-title { text-align: center; font-size: 14px; font-weight: 700; letter-spacing: 1px; margin: 8px 0 16px; text-transform: uppercase; }
   .bio { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4px 16px; margin-bottom: 16px; }
@@ -169,28 +183,28 @@ export function renderReportCardHtml(data: ReportCardRenderData): string {
   .bio .value { font-weight: 600; }
   table.grades { width: 100%; border-collapse: collapse; margin-bottom: 18px; }
   table.grades th, table.grades td { border: 1px solid #cbd5e1; padding: 5px 6px; text-align: left; }
-  table.grades th { background: #14532d; color: #fff; font-size: 10px; text-transform: uppercase; }
+  table.grades th { background: ${brand}; color: #fff; font-size: 10px; text-transform: uppercase; }
   table.grades td.num, table.grades th.num { text-align: center; }
   table.grades td.total { font-weight: 700; }
   table.grades td.grade, table.grades td.pos { text-align: center; }
   .summary { display: grid; gap: 12px; margin-bottom: 8px; }
   .summary .box { border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px 10px; }
   .summary .box .label { color: #666; font-size: 10px; text-transform: uppercase; }
-  .summary .box .value { font-size: 18px; font-weight: 700; color: #14532d; }
+  .summary .box .value { font-size: 18px; font-weight: 700; color: ${brand}; }
   .attendance-note { font-size: 10px; color: #555; margin-bottom: 14px; }
   .promotion { background: #ecfdf5; border-radius: 6px; padding: 8px 10px; margin-bottom: 14px; }
   .promotion .label { font-size: 10px; text-transform: uppercase; color: #555; margin-right: 8px; }
-  .promotion .value { font-size: 14px; font-weight: 700; color: #14532d; }
+  .promotion .value { font-size: 14px; font-weight: 700; color: ${brand}; }
   .comments { margin-bottom: 8px; }
   .comments .block { margin-bottom: 10px; }
-  .comments .block .label { font-weight: 700; font-size: 11px; text-transform: uppercase; color: #14532d; }
+  .comments .block .label { font-weight: 700; font-size: 11px; text-transform: uppercase; color: ${brand}; }
   .comments .block .body { border: 1px solid #e2e8f0; border-radius: 4px; padding: 6px 8px; min-height: 28px; white-space: pre-wrap; }
   .footer { margin-top: 24px; display: flex; justify-content: space-between; font-size: 10px; color: #888; }
 </style>
 </head>
 <body>
   <div class="header">
-    ${school.logoUrl ? `<img class="logo" src="${esc(school.logoUrl)}" alt="" />` : ""}
+    ${school.branded && school.logoDataUri ? `<img class="logo" src="${esc(school.logoDataUri)}" alt="" />` : ""}
     <div>
       <h1 class="school-name">${esc(school.name)}</h1>
       ${school.motto ? `<p class="motto">${esc(school.motto)}</p>` : ""}
@@ -245,7 +259,7 @@ export function renderReportCardHtml(data: ReportCardRenderData): string {
 
   <div class="footer">
     <span>${esc(school.name)}</span>
-    <span>This is a computer-generated report card.</span>
+    <span>${school.branded ? "This is a computer-generated report card." : "Report card by SchoolKit · schoolkit.ng"}</span>
   </div>
 </body>
 </html>`;
