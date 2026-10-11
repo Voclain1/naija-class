@@ -367,11 +367,20 @@ the module doc or the PR, then link it here.
 - [ ] **Duplicate "Virgo Fidelis Montessori School"** in production. It is not
   empty (1 student, 1 staff), so merging or deleting it is the owner's call.
   The platform-admin roster now shows slugs, so the two can be told apart.
-- [ ] **Paystack webhook URL** set in the Paystack dashboard
-  (`https://school-kit-api.fly.dev/api/v1/payments/paystack/webhook`). Do this
-  before any school goes live on Paystack.
+- [x] **DONE 2026-10-11 — Paystack webhook URL** set in the Paystack dashboard
+  (`https://school-kit-api.fly.dev/api/v1/payments/paystack/webhook`), owner
+  confirmed.
 - [ ] **SMS** — Termii sender ID (CAC registration), and the live check that
-  `sendReminders` never calls Termii when `smsEnabled` is false.
+  `sendReminders` never calls Termii when `smsEnabled` is false. **Researched
+  2026-10-11:** no Nigerian SMS provider found offers a branded (alphanumeric)
+  sender ID without a CAC-registered business behind it; MTN, Airtel, Glo and
+  9mobile each approve it, and generic names ("INFO", "SMS") are refused.
+  Switching provider does not remove the CAC step. Options: register SchoolKit
+  with CAC; or register each school's own sender ID under the school's CAC
+  (needs a per-school sender ID in `TermiiService`, today one platform-wide
+  `TERMII_SENDER_ID`); or run without SMS — push and email already cover both
+  callers (`guardians.service.ts` invites, `finance.service.ts` reminders), and
+  neither fails when SMS is off. Owner's call.
 - [ ] **CP4 curriculum eval queries are author-written.** It needs:
   - 5–10 topics a real teacher would type, labelled by them with the week;
   - one or two near-miss negatives.
@@ -412,6 +421,7 @@ the module doc or the PR, then link it here.
 | `pg_trgm` student search | Rosters large enough for `ILIKE` to be slow |
 | `packages/ui` `main` → `dist/` | Anything outside Next importing it |
 | Forced reset for Phase 0-policy passwords | Before public launch |
+| Transport and hostels (`docs/ARCHITECTURE.md` §6.12, §6.13) | Owner confirmed 2026-10-11 they are wanted later; plan-first when the owner schedules them |
 
 ## 6. Ideas
 
