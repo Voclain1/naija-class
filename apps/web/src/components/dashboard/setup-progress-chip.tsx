@@ -5,7 +5,7 @@ import Link from "next/link";
 
 import { useAuth } from "@/lib/auth/use-auth";
 import { setupProgress } from "@/lib/setup-state/setup-progress";
-import { useSetupState } from "@/lib/setup-state/use-setup-state";
+import type { useSetupState } from "@/lib/setup-state/use-setup-state";
 
 // "School setup · 75% done", on the same line as the dashboard greeting
 // (owner's request, 2026-10-11). Owner and admin only — useSetupState makes no
@@ -17,9 +17,9 @@ const STROKE = 4;
 const RADIUS = (SIZE - STROKE) / 2;
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
 
-export function SetupProgressChip() {
+export function SetupProgressChip({ setup }: { setup: ReturnType<typeof useSetupState> }) {
   const { school } = useAuth();
-  const { setupState } = useSetupState();
+  const { setupState } = setup;
   if (!school || !setupState) return null;
 
   const { percent, next } = setupProgress(setupState.steps, school);
