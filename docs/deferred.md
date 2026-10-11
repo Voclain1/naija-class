@@ -79,6 +79,9 @@ the module doc or the PR, then link it here.
   - **Still needs:** the ~10 photographed pages and their ground truth (kept
     out of the repo; the default folder is git-ignored), one run on a real
     key, and the prompt v2 that run will probably call for.
+  - "Switched on" is a real switch since 2026-10-11: `School.smartImportEnabled`,
+    off for every school, turned on per school from the platform admin's
+    Manage dialog. Before that, every AI-enabled school could already scan.
 
 ## 2. Open engineering work
 
@@ -339,13 +342,22 @@ the module doc or the PR, then link it here.
   production since 2026-09). This is a legal question, not an engineering one.
   Phase 7 implementation waits on it, or on a recorded decision to proceed.
   (Archive: "NDPR compliance posture".)
-- [ ] **Pricing.** This covers:
-  - tier shape;
-  - what early access grants;
-  - enforcement points;
+  - Drafted 2026-10-11, **awaiting the owner's signature**:
+    `docs/legal/ndpr-ai-review.md` holds the proceed-while-reviewing decision
+    (Part 1) and the lawyer's brief and questions (Part 2). It also found that
+    the onboarding step-4 consent text lists payment, SMS and email providers
+    but not AI providers.
+- [ ] **Pricing.** Decided 2026-10-11: the published per-term plans, sized by
+  students; pioneer schools get one term free on a paid plan. **Built:** the
+  plan on each school, student caps, the three places they are checked, and
+  `PLAN_ENFORCEMENT` (warn during early access): `docs/modules/plans.md`.
+  **Still open:**
+  - put every school on its right plan in the platform admin, then switch
+    `PLAN_ENFORCEMENT=enforce` when early access ends;
+  - feature limits by plan (Free has no report cards, and so on): needs its
+    own plan once the feature list is final;
+  - billing schools, and tracking the free term;
   - backfilling `earlyAccessGrantedAt`.
-
-  Platform-admin billing waits on it.
 - [ ] **Platform admin decisions:**
   - **Impersonation:** read-only or read-write, notification, audit, consent.
   - **Cross-tenant analytics:** needs an anonymisation design.

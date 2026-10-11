@@ -171,6 +171,29 @@ describe("SchoolsService (Slice 6)", () => {
   // findMe + patchMe
   // -----------------------------------------------------------------------
 
+  // Plans (2026-10-11, docs/modules/plans.md).
+  describe("getPlan", () => {
+    it("tells an owner or admin the school's plan, cap and students on the roll", async () => {
+      const { authCtx, schoolId } = await createOwnedSchool("plan");
+      await basePrisma.school.update({ where: { id: schoolId }, data: { plan: "STARTER" } });
+      await expect(schoolsService.getPlan(authCtx)).resolves.toMatchObject({
+        plan: "STARTER",
+        label: "Starter",
+        studentCap: 200,
+        studentsOnRoll: 0,
+        status: "ok",
+      });
+      const admin = await createAdminUser(schoolId, "plan-admin");
+      await expect(schoolsService.getPlan(admin.authCtx)).resolves.toMatchObject({ plan: "STARTER" });
+    });
+
+    it("is not for teachers", async () => {
+      const { schoolId } = await createOwnedSchool("plan-teacher");
+      const teacher = await createTeacherUser(schoolId, "plan-teacher");
+      await expect(schoolsService.getPlan(teacher.authCtx)).rejects.toBeInstanceOf(ForbiddenError);
+    });
+  });
+
   describe("findMe / patchMe", () => {
     it("findMe — returns the authed user's school with the wider SchoolMeDto fields", async () => {
       const { authCtx, schoolId } = await createOwnedSchool("find");

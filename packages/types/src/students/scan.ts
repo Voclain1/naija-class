@@ -150,3 +150,18 @@ export interface ScanExtractionResponse {
   // resolver will then reject for not matching.
   knownClassArms: string[];
 }
+
+// GET /student-scan/availability (2026-10-11). `reason` says why the camera is
+// not offered, because the two cases need different words: AI itself is off
+// (for the school or the deployment), or Smart Import has not been switched on
+// for this school, which only the SchoolKit team can do.
+export const SCAN_UNAVAILABLE_REASONS = ["AI_UNAVAILABLE", "NOT_ENABLED"] as const;
+export type ScanUnavailableReason = (typeof SCAN_UNAVAILABLE_REASONS)[number];
+
+export interface ScanAvailabilityDto {
+  available: boolean;
+  reason: ScanUnavailableReason | null;
+}
+
+/** 403 code when a school without Smart Import tries to scan. */
+export const SMART_IMPORT_DISABLED = "SMART_IMPORT_DISABLED";

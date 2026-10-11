@@ -17,6 +17,7 @@ import {
   SCAN_MAX_FILE_SIZE_BYTES,
   commitScanSchema,
   type CommitScanInput,
+  type ScanAvailabilityDto,
   type ScanExtractionResponse,
 } from "@school-kit/types";
 import type { Request } from "express";
@@ -59,8 +60,8 @@ export class StudentScanController {
   // describes — someone who cannot scan has no use for its availability.
   @Get("availability")
   @Permissions("student.scan")
-  availability(): { available: boolean } {
-    return { available: this.service.isConfigured() };
+  availability(@CurrentUser() authCtx: AuthContext): Promise<ScanAvailabilityDto> {
+    return this.service.availability(authCtx);
   }
 
   // POST /student-scan — multipart/form-data with an `image` field.

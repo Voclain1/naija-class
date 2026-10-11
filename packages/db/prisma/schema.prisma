@@ -172,6 +172,27 @@ model School {
   // AI budget would be the tail wagging the dog.
   aiEnabled             Boolean   @default(false) @map("ai_enabled")
   aiMonthlyTokenBudget  Int?      @map("ai_monthly_token_budget")
+  //   smartImportEnabled     Smart Student Import (photograph a register,
+  //                          the model transcribes it) for this school
+  //                          (2026-10-11). Off by default, switched on by the
+  //                          platform operator only. It is the one prompt that
+  //                          sends student PII to the model (CLAUDE.md's
+  //                          allowlist), and it is not to be offered to a
+  //                          school before the real-register accuracy check in
+  //                          docs/modules/smart-student-import.md has passed,
+  //                          so aiEnabled alone is not enough to open it. It
+  //                          only narrows: the AI gates above still apply.
+  smartImportEnabled    Boolean   @default(false) @map("smart_import_enabled")
+  //   plan / studentCapOverride   the school's plan and, for a deal, its own
+  //                          student cap (2026-10-11, docs/modules/plans.md).
+  //                          Set by the platform operator only. Null override
+  //                          = the plan's cap (PLAN_STUDENT_CAPS in
+  //                          @school-kit/types). Nothing here bills, and
+  //                          prices are not stored: the caps only block when
+  //                          PLAN_ENFORCEMENT=enforce, which early access does
+  //                          not run.
+  plan                  SchoolPlan @default(FREE) @map("plan")
+  studentCapOverride    Int?      @map("student_cap_override")
 
   //   suspendedAt            platform-admin suspension (2026-10-07,
   //                          docs/modules/platform-admin.md slice 2). Non-null
@@ -766,6 +787,16 @@ enum Gender {
   MALE
   FEMALE
   OTHER
+}
+
+// Plans (2026-10-11, docs/modules/plans.md). The published plans on the
+// marketing site; caps live in PLAN_STUDENT_CAPS (@school-kit/types).
+enum SchoolPlan {
+  FREE
+  STARTER
+  GROWTH
+  PROFESSIONAL
+  ENTERPRISE
 }
 
 enum StudentStatus {

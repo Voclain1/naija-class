@@ -18,6 +18,7 @@ import {
 
 import type { AuthContext } from "../../common/auth/auth-context";
 import { assertUserActiveAndHasOneOf } from "../../common/auth/role-check";
+import { assertRoomForStudents } from "../../common/plans/plan-limits";
 import {
   insertEnrollmentInTx,
   loadCurrentEnrollmentForStudent,
@@ -208,6 +209,9 @@ export class StudentsService {
     await assertUserActiveAndHasOneOf(authCtx, ["owner", "admin"]);
 
     return withTenant(authCtx.schoolId, async (db) => {
+      // The plan's student cap: blocks only under PLAN_ENFORCEMENT=enforce
+      // (docs/modules/plans.md D3).
+      await assertRoomForStudents(db, authCtx.schoolId, 1);
       try {
         const created = await db.student.create({
           data: {

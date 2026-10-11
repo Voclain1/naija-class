@@ -104,6 +104,9 @@ describe("StudentScanService", () => {
         // here goes through reserve(), which throws DISABLED_SCHOOL when it
         // is off. AI being on is a precondition of what this suite tests.
         aiEnabled: true,
+        // Smart Import's own switch (2026-10-11), off by default. On here for
+        // the same reason; the off case has its own tests below.
+        smartImportEnabled: true,
       },
       select: { id: true },
     });
@@ -240,6 +243,45 @@ describe("StudentScanService", () => {
     expect(ledger[0].success).toBe(true);
   });
 
+  // -------------------------------------------------------------------------
+  // The school's own switch (2026-10-11).
+  // -------------------------------------------------------------------------
+  describe("with Smart Import switched off for the school", () => {
+    const setSwitch = (on: boolean) =>
+      basePrisma.school.update({ where: { id: schoolId }, data: { smartImportEnabled: on } });
+
+    it("refuses to read the register, before the image reaches the model", async () => {
+      await setSwitch(false);
+      try {
+        port.text = extraction([row()]);
+        await expect(service.extractFromImage(authCtx, upload(), reqCtx)).rejects.toMatchObject({
+          code: "SMART_IMPORT_DISABLED",
+          httpStatus: 403,
+        });
+        expect(port.calls).toHaveLength(0);
+        const jobs = await withTenant(schoolId, (db) => db.importJob.count({ where: { schoolId } }));
+        expect(jobs).toBe(0);
+      } finally {
+        await setSwitch(true);
+      }
+    });
+
+    it("says why the camera is not offered", async () => {
+      await expect(service.availability(authCtx)).resolves.toEqual({ available: true, reason: null });
+      await setSwitch(false);
+      try {
+        await expect(service.availability(authCtx)).resolves.toEqual({ available: false, reason: "NOT_ENABLED" });
+        // AI being off is the first thing to say: switching Smart Import on
+        // would not help.
+        await basePrisma.school.update({ where: { id: schoolId }, data: { aiEnabled: false } });
+        await expect(service.availability(authCtx)).resolves.toEqual({ available: false, reason: "AI_UNAVAILABLE" });
+      } finally {
+        await basePrisma.school.update({ where: { id: schoolId }, data: { aiEnabled: true } });
+        await setSwitch(true);
+      }
+    });
+  });
+
   it("rejects a payload whose bytes are not an image, before spending anything", async () => {
     const pdf = Buffer.from("%PDF-1.7 not really a photo");
     await expect(
@@ -353,6 +395,27 @@ describe("StudentScanService", () => {
     expect(result.committedRows).toBe(1);
     expect(result.failedRows).toHaveLength(1);
     expect(result.failedRows[0].rowNumber).toBe(2);
+  });
+
+  it("under PLAN_ENFORCEMENT=enforce, refuses a page that would pass the plan's cap, committing none of it", async () => {
+    const { jobId } = await service.extractFromImage(authCtx, upload(), reqCtx);
+    const rows = [
+      { rowNumber: 1, admissionNumber: "SK/2026/CAP1", firstName: "One", lastName: "Cap", dateOfBirth: "2015-04-04", gender: "MALE" as const },
+      { rowNumber: 2, admissionNumber: "SK/2026/CAP2", firstName: "Two", lastName: "Cap", dateOfBirth: "2015-05-05", gender: "FEMALE" as const },
+    ];
+    await basePrisma.school.update({ where: { id: schoolId }, data: { studentCapOverride: 1 } });
+    const saved = process.env.PLAN_ENFORCEMENT;
+    process.env.PLAN_ENFORCEMENT = "enforce";
+    try {
+      await expect(service.commitScan(authCtx, jobId, { rows }, reqCtx)).rejects.toMatchObject({
+        code: "PLAN_STUDENT_LIMIT",
+      });
+      expect(await withTenant(schoolId, (db) => db.student.count({ where: { schoolId } }))).toBe(0);
+    } finally {
+      if (saved === undefined) delete process.env.PLAN_ENFORCEMENT;
+      else process.env.PLAN_ENFORCEMENT = saved;
+      await basePrisma.school.update({ where: { id: schoolId }, data: { studentCapOverride: null } });
+    }
   });
 
   it("refuses to commit the same scan twice", async () => {

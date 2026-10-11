@@ -30,6 +30,7 @@ import {
   type PaystackSetupRequestDto,
   type SchoolLogoUrlDto,
   type SchoolMeDto,
+  type SchoolPlanDto,
 } from "@school-kit/types";
 import type { Request } from "express";
 import type { ZodError, ZodType, ZodTypeDef } from "zod";
@@ -113,6 +114,13 @@ export class SchoolsController {
   @Get("me/logo-url")
   async getLogoUrl(@CurrentUser() authCtx: AuthContext): Promise<SchoolLogoUrlDto> {
     return this.schoolsService.getLogoUrl(authCtx);
+  }
+
+  // GET /schools/me/plan — owner/admin. The plan, its student cap and the
+  // count against it (docs/modules/plans.md).
+  @Get("me/plan")
+  async getPlan(@CurrentUser() authCtx: AuthContext): Promise<SchoolPlanDto> {
+    return this.schoolsService.getPlan(authCtx);
   }
 
   // GET /schools/me/paystack-setup-request — owner/admin. Null when the

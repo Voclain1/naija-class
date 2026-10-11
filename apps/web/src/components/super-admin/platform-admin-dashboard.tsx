@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
 import { toast } from "sonner";
 
-import { paystackSetupStatusLabel } from "@school-kit/types";
+import { PLAN_LABELS, paystackSetupStatusLabel } from "@school-kit/types";
 import type {
   PlatformAdminCreateSchoolInput,
   PlatformAdminCreateSchoolResponse,
@@ -563,7 +563,21 @@ export function PlatformAdminDashboard() {
                         );
                       })()}
                     </TableCell>
-                    <TableCell>{school.studentCount}</TableCell>
+                    <TableCell>
+                      <span>{school.studentCount}</span>
+                      {/* Against the plan's cap: students on the roll, which
+                          leaves out withdrawn and graduated (plans.md D2). */}
+                      <span
+                        className={`block whitespace-nowrap text-xs ${
+                          school.studentCap !== null && school.studentsOnRoll > school.studentCap
+                            ? "text-amber-900"
+                            : "text-muted-foreground"
+                        }`}
+                      >
+                        {PLAN_LABELS[school.plan]}
+                        {school.studentCap !== null ? ` · ${school.studentsOnRoll}/${school.studentCap}` : ""}
+                      </span>
+                    </TableCell>
                     <TableCell>{school.staffCount}</TableCell>
                     <TableCell>{new Date(school.createdAt).toLocaleDateString()}</TableCell>
                     <TableCell>

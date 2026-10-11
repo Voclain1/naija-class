@@ -9,14 +9,17 @@ import {
 } from "@school-kit/ai";
 import { withTenant } from "@school-kit/db";
 import {
+  ForbiddenError,
   InternalError,
   SCAN_ACCEPTED_MIME_TYPES,
+  SMART_IMPORT_DISABLED,
   SCAN_MAX_FILE_SIZE_BYTES,
   ValidationError,
   studentImportRowSchema,
   studentListExtractionSchema,
   type CommitScanInput,
   type ReviewedStudentRow,
+  type ScanAvailabilityDto,
   type ScanExtractionResponse,
   type StudentImportRow,
 } from "@school-kit/types";
@@ -24,6 +27,7 @@ import {
 import { AiGenerationService } from "../../common/ai/ai-generation.service";
 import type { AuthContext } from "../../common/auth/auth-context";
 import { assertUserActiveAndHasOneOf } from "../../common/auth/role-check";
+import { assertRoomForStudents } from "../../common/plans/plan-limits";
 import { commitStudentRow } from "../imports/workers/commit-students.row";
 import { readImageDimensions, sniffImageMimeType } from "./image-dimensions";
 
@@ -93,22 +97,44 @@ export class StudentScanService {
 
   constructor(private readonly ai: AiGenerationService) {}
 
-  // True when a scan could actually be attempted. The UI uses this to hide
-  // the camera affordance rather than letting an admin photograph a register
-  // and only then discover AI is switched off for their school.
+  // Whether a scan could actually be attempted, and if not, why. The UI uses
+  // this to hide the camera affordance rather than letting an admin
+  // photograph a register and only then discover it cannot be read.
   isConfigured(): boolean {
     return this.ai.isConfigured();
+  }
+
+  async availability(authCtx: AuthContext): Promise<ScanAvailabilityDto> {
+    const school = await this.loadSwitches(authCtx.schoolId);
+    if (!this.isConfigured() || !school.aiEnabled) return { available: false, reason: "AI_UNAVAILABLE" };
+    if (!school.smartImportEnabled) return { available: false, reason: "NOT_ENABLED" };
+    return { available: true, reason: null };
+  }
+
+  private loadSwitches(schoolId: string): Promise<{ aiEnabled: boolean; smartImportEnabled: boolean }> {
+    return withTenant(schoolId, async (db) => {
+      const school = await db.school.findUnique({
+        where: { id: schoolId },
+        select: { aiEnabled: true, smartImportEnabled: true },
+      });
+      return school ?? { aiEnabled: false, smartImportEnabled: false };
+    });
   }
 
   // -------------------------------------------------------------------------
   // EXTRACT — POST /student-scan
   //
-  // Gating note (D2): this method contains NO gate of its own. Every
-  // safeguard — the AI_ENABLED platform switch, School.aiEnabled, the
-  // missing-key fail-soft, the monthly token budget and the per-user daily
-  // call cap — lives inside AiGenerationService.generate() and applies here
-  // by construction. Adding a second gate would create a place for the two
-  // to disagree.
+  // Gating (D2, revised 2026-10-11). One gate is this feature's own:
+  // School.smartImportEnabled, off by default and opened per school by the
+  // platform operator, checked before the image is read. It exists because
+  // this is the one prompt that sends student PII to the model, and the
+  // module doc says no school should use it before the real-register
+  // accuracy check; with only the AI gates, every AI-enabled school could.
+  // It only narrows. Every other safeguard — the AI_ENABLED platform switch,
+  // School.aiEnabled, the missing-key fail-soft, the monthly token budget and
+  // the per-user daily call cap — still lives inside
+  // AiGenerationService.generate() and applies here by construction; do not
+  // copy those here, or the two copies could disagree.
   // -------------------------------------------------------------------------
   async extractFromImage(
     authCtx: AuthContext,
@@ -116,6 +142,13 @@ export class StudentScanService {
     reqCtx: RequestContext,
   ): Promise<ScanExtractionResponse> {
     await assertUserActiveAndHasOneOf(authCtx, ["owner", "admin"]);
+
+    if (!(await this.loadSwitches(authCtx.schoolId)).smartImportEnabled) {
+      throw new ForbiddenError(
+        SMART_IMPORT_DISABLED,
+        "Reading registers from a photo isn't switched on for your school yet. Contact SchoolKit to turn it on.",
+      );
+    }
 
     const image = this.validateImage(file);
 
@@ -307,6 +340,10 @@ export class StudentScanService {
       }
       enrollmentTarget = { termId: term.id, academicYearId: term.academicYearId };
     }
+
+    // The plan's student cap, for the whole page at once. Blocks only under
+    // PLAN_ENFORCEMENT=enforce (docs/modules/plans.md D3).
+    await withTenant(authCtx.schoolId, (db) => assertRoomForStudents(db, authCtx.schoolId, dto.rows.length));
 
     let committedRows = 0;
     let notEnrolledRows = 0;

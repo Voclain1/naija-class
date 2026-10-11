@@ -15,11 +15,13 @@ import {
   type PatchSchoolInput,
   type SchoolLogoUrlDto,
   type SchoolMeDto,
+  type SchoolPlanDto,
 } from "@school-kit/types";
 
 import type { AuthContext } from "../../common/auth/auth-context";
 import { assertUserActiveAndHasOneOf } from "../../common/auth/role-check";
 import { PaystackService } from "../../common/paystack/paystack.service";
+import { readSchoolPlan } from "../../common/plans/plan-limits";
 import { redactEmail } from "../../common/redact";
 import { portalBaseUrl } from "../../common/portal-url";
 import { StorageService } from "../../common/storage/storage.service";
@@ -78,6 +80,13 @@ export class SchoolsService {
   async findMe(authCtx: AuthContext): Promise<SchoolMeDto> {
     await assertUserActiveAndHasOneOf(authCtx, ["owner", "admin"]);
     return loadSchoolOrThrow(authCtx.schoolId);
+  }
+
+  // GET /schools/me/plan — owner or admin. The school's plan, its student
+  // cap and how many students count toward it (docs/modules/plans.md).
+  async getPlan(authCtx: AuthContext): Promise<SchoolPlanDto> {
+    await assertUserActiveAndHasOneOf(authCtx, ["owner", "admin"]);
+    return withTenant(authCtx.schoolId, (db) => readSchoolPlan(db, authCtx.schoolId));
   }
 
   // PATCH /schools/me — owner or admin updates the school's basics and/or
