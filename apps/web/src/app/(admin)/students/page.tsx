@@ -11,6 +11,7 @@ import type {
 } from "@school-kit/types";
 
 import { ExportCsvButton } from "@/components/shared/export-csv-button";
+import { PlanNotice } from "@/components/plans/plan-notice";
 import { PrerequisiteNotice } from "@/components/setup/prerequisite-notice";
 import { PrintButton } from "@/components/shared/print-button";
 import { StudentsListControls } from "@/components/students/students-list-controls";
@@ -245,6 +246,7 @@ export default function StudentsRosterPage() {
           Students page it would be noise, and the page's own empty state
           already says what to do. */}
       <div className="print:hidden">
+        <PlanNotice />
         <PrerequisiteNotice
           stepKey="enrollments"
           onlyAfter="students"

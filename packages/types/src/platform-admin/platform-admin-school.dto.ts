@@ -1,3 +1,5 @@
+import type { SchoolPlan } from "../plans/index.js";
+
 // GET /platform-admin/schools — mirrors platform_admin_list_schools()'s
 // return shape exactly (see CLAUDE.md's SECURITY DEFINER inventory). Keep
 // this in sync with that function's column list — it is the single source
@@ -59,4 +61,11 @@ export interface PlatformAdminSchoolDto {
   suspendedAt: string | null;
   /** Smart Student Import switched on for this school (2026-10-11). */
   smartImportEnabled: boolean;
+  /** Plan and cap (2026-10-11, docs/modules/plans.md). */
+  plan: SchoolPlan;
+  studentCapOverride: number | null;
+  /** The cap in force: the override, else the plan's. Null: no cap. */
+  studentCap: number | null;
+  /** Students that count toward the cap (not withdrawn or graduated). */
+  studentsOnRoll: number;
 }

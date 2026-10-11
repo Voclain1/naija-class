@@ -27,6 +27,7 @@ import {
 
 import type { AuthContext } from "../../common/auth/auth-context";
 import { assertUserActiveAndHasOneOf } from "../../common/auth/role-check";
+import { assertRoomForStudents } from "../../common/plans/plan-limits";
 import {
   IMPORTS_JOB_COMMIT,
   IMPORTS_JOB_VALIDATE,
@@ -819,6 +820,13 @@ export class ImportsService {
         );
       }
       jobType = job.type;
+
+      // The plan's student cap, for the whole import at once, so it is
+      // refused rather than half done. Blocks only under
+      // PLAN_ENFORCEMENT=enforce (docs/modules/plans.md D3).
+      if (job.type === "STUDENTS") {
+        await assertRoomForStudents(db, authCtx.schoolId, job.validRows ?? 0);
+      }
 
       await db.importJob.update({
         where: { id: jobId },

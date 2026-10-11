@@ -27,6 +27,7 @@ import {
 import { AiGenerationService } from "../../common/ai/ai-generation.service";
 import type { AuthContext } from "../../common/auth/auth-context";
 import { assertUserActiveAndHasOneOf } from "../../common/auth/role-check";
+import { assertRoomForStudents } from "../../common/plans/plan-limits";
 import { commitStudentRow } from "../imports/workers/commit-students.row";
 import { readImageDimensions, sniffImageMimeType } from "./image-dimensions";
 
@@ -339,6 +340,10 @@ export class StudentScanService {
       }
       enrollmentTarget = { termId: term.id, academicYearId: term.academicYearId };
     }
+
+    // The plan's student cap, for the whole page at once. Blocks only under
+    // PLAN_ENFORCEMENT=enforce (docs/modules/plans.md D3).
+    await withTenant(authCtx.schoolId, (db) => assertRoomForStudents(db, authCtx.schoolId, dto.rows.length));
 
     let committedRows = 0;
     let notEnrolledRows = 0;

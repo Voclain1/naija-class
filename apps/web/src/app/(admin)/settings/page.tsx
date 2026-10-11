@@ -1,4 +1,4 @@
-import { BarChart3, Bell, Building2, CalendarCheck, CalendarClock, CreditCard, FileText, Gauge, Percent, ShieldCheck, SlidersHorizontal, Sparkles, User, Users, Wallet, type LucideIcon } from "lucide-react";
+import { BarChart3, Bell, Building2, CalendarCheck, CalendarClock, CreditCard, FileText, Gauge, Layers, Percent, ShieldCheck, SlidersHorizontal, Sparkles, User, Users, Wallet, type LucideIcon } from "lucide-react";
 import Link from "next/link";
 
 import { PageHeader } from "@/components/layout/page-primitives";
@@ -73,6 +73,12 @@ const LINKS: SettingsLink[] = [
     href: "/settings/parent-summaries",
     description: "AI-written weekly notes to parents. Off until you switch it on.",
     icon: Sparkles,
+  },
+  {
+    label: "Plan",
+    href: "/settings/plan",
+    description: "Your plan and how many students it covers.",
+    icon: Layers,
   },
   {
     label: "AI usage",

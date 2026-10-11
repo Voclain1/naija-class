@@ -397,6 +397,27 @@ describe("StudentScanService", () => {
     expect(result.failedRows[0].rowNumber).toBe(2);
   });
 
+  it("under PLAN_ENFORCEMENT=enforce, refuses a page that would pass the plan's cap, committing none of it", async () => {
+    const { jobId } = await service.extractFromImage(authCtx, upload(), reqCtx);
+    const rows = [
+      { rowNumber: 1, admissionNumber: "SK/2026/CAP1", firstName: "One", lastName: "Cap", dateOfBirth: "2015-04-04", gender: "MALE" as const },
+      { rowNumber: 2, admissionNumber: "SK/2026/CAP2", firstName: "Two", lastName: "Cap", dateOfBirth: "2015-05-05", gender: "FEMALE" as const },
+    ];
+    await basePrisma.school.update({ where: { id: schoolId }, data: { studentCapOverride: 1 } });
+    const saved = process.env.PLAN_ENFORCEMENT;
+    process.env.PLAN_ENFORCEMENT = "enforce";
+    try {
+      await expect(service.commitScan(authCtx, jobId, { rows }, reqCtx)).rejects.toMatchObject({
+        code: "PLAN_STUDENT_LIMIT",
+      });
+      expect(await withTenant(schoolId, (db) => db.student.count({ where: { schoolId } }))).toBe(0);
+    } finally {
+      if (saved === undefined) delete process.env.PLAN_ENFORCEMENT;
+      else process.env.PLAN_ENFORCEMENT = saved;
+      await basePrisma.school.update({ where: { id: schoolId }, data: { studentCapOverride: null } });
+    }
+  });
+
   it("refuses to commit the same scan twice", async () => {
     const { jobId } = await service.extractFromImage(authCtx, upload(), reqCtx);
     const rows = [

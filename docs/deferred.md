@@ -347,13 +347,17 @@ the module doc or the PR, then link it here.
     (Part 1) and the lawyer's brief and questions (Part 2). It also found that
     the onboarding step-4 consent text lists payment, SMS and email providers
     but not AI providers.
-- [ ] **Pricing.** This covers:
-  - tier shape;
-  - what early access grants;
-  - enforcement points;
+- [ ] **Pricing.** Decided 2026-10-11: the published per-term plans, sized by
+  students; pioneer schools get one term free on a paid plan. **Built:** the
+  plan on each school, student caps, the three places they are checked, and
+  `PLAN_ENFORCEMENT` (warn during early access): `docs/modules/plans.md`.
+  **Still open:**
+  - put every school on its right plan in the platform admin, then switch
+    `PLAN_ENFORCEMENT=enforce` when early access ends;
+  - feature limits by plan (Free has no report cards, and so on): needs its
+    own plan once the feature list is final;
+  - billing schools, and tracking the free term;
   - backfilling `earlyAccessGrantedAt`.
-
-  Platform-admin billing waits on it.
 - [ ] **Platform admin decisions:**
   - **Impersonation:** read-only or read-write, notification, audit, consent.
   - **Cross-tenant analytics:** needs an anonymisation design.

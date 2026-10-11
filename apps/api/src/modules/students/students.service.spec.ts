@@ -131,6 +131,45 @@ describe("StudentsService", () => {
       expect(metadata.medicalNotes).toBeUndefined();
     });
 
+    // Plans (2026-10-11, docs/modules/plans.md D3).
+    it("under PLAN_ENFORCEMENT=enforce, refuses the student past the plan's cap; withdrawn students do not count", async () => {
+      const { authCtx, schoolId } = await createActiveSchool("plan");
+      await basePrisma.school.update({ where: { id: schoolId }, data: { studentCapOverride: 2 } });
+      const saved = process.env.PLAN_ENFORCEMENT;
+      process.env.PLAN_ENFORCEMENT = "enforce";
+      try {
+        await service.create(authCtx, requiredFields("p1"), reqCtx);
+        const second = await service.create(authCtx, requiredFields("p2"), reqCtx);
+        await expect(service.create(authCtx, requiredFields("p3"), reqCtx)).rejects.toMatchObject({
+          code: "PLAN_STUDENT_LIMIT",
+          httpStatus: 403,
+        });
+        expect(await withTenant(schoolId, (db) => db.student.count({ where: { schoolId } }))).toBe(2);
+
+        // A withdrawn student frees the place.
+        await withTenant(schoolId, (db) =>
+          db.student.update({ where: { id: second.id }, data: { status: "WITHDRAWN" } }),
+        );
+        await expect(service.create(authCtx, requiredFields("p3"), reqCtx)).resolves.toMatchObject({ status: "ACTIVE" });
+      } finally {
+        if (saved === undefined) delete process.env.PLAN_ENFORCEMENT;
+        else process.env.PLAN_ENFORCEMENT = saved;
+      }
+    });
+
+    it("under the default (warn), adds students past the cap", async () => {
+      const { authCtx, schoolId } = await createActiveSchool("planwarn");
+      await basePrisma.school.update({ where: { id: schoolId }, data: { studentCapOverride: 1 } });
+      const saved = process.env.PLAN_ENFORCEMENT;
+      delete process.env.PLAN_ENFORCEMENT;
+      try {
+        await service.create(authCtx, requiredFields("w1"), reqCtx);
+        await expect(service.create(authCtx, requiredFields("w2"), reqCtx)).resolves.toMatchObject({ status: "ACTIVE" });
+      } finally {
+        if (saved !== undefined) process.env.PLAN_ENFORCEMENT = saved;
+      }
+    });
+
     it("creates with optional fields populated", async () => {
       const { authCtx } = await createActiveSchool("create-full");
       const created = await service.create(

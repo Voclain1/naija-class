@@ -28,7 +28,7 @@ import { Label } from "@/components/ui/label";
 import { ApiError, proxyFetch } from "@/lib/api-client";
 
 import { PlatformActivity } from "./platform-activity";
-import { SmartImportSection } from "./school-features-section";
+import { PlanSection, SmartImportSection } from "./school-features-section";
 import { DeleteSchoolSection, SchoolAccessSection } from "./school-lifecycle-sections";
 import { ownerStatusOf, parseTokenCount } from "./school-manage";
 
@@ -262,6 +262,7 @@ export function SchoolManageDialog({ school, onClose, onChanged, onDeleted }: Pr
           ) : null}
         </section>
 
+        <PlanSection school={school} onChanged={onChanged} />
         <SmartImportSection school={school} onChanged={onChanged} />
 
         <section

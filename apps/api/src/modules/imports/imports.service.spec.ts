@@ -573,6 +573,32 @@ describe("ImportsService", () => {
       expect(meta).toMatchObject({ validRowsAtTrigger: 3 });
     });
 
+    // Plans (2026-10-11, docs/modules/plans.md D3): under enforce, the whole
+    // import is checked against the cap when the commit is asked for, so it
+    // is refused rather than half done. Under warn nothing changes.
+    it("under PLAN_ENFORCEMENT=enforce, refuses an import that would pass the plan's cap, before anything is queued", async () => {
+      const { authCtx, schoolId, jobId } = await landJobInReady("plan");
+      await basePrisma.school.update({ where: { id: schoolId }, data: { studentCapOverride: 2 } });
+      mockQueue.calls.length = 0;
+      const saved = process.env.PLAN_ENFORCEMENT;
+      process.env.PLAN_ENFORCEMENT = "enforce";
+      try {
+        await expect(service.triggerCommit(authCtx, jobId, reqCtx)).rejects.toMatchObject({
+          code: "PLAN_STUDENT_LIMIT",
+          httpStatus: 403,
+        });
+        expect(mockQueue.calls).toHaveLength(0);
+        const row = await withTenant(schoolId, (db) => db.importJob.findUnique({ where: { id: jobId } }));
+        expect(row?.status).toBe("READY");
+
+        process.env.PLAN_ENFORCEMENT = "warn";
+        await expect(service.triggerCommit(authCtx, jobId, reqCtx)).resolves.toMatchObject({ status: "COMMITTING" });
+      } finally {
+        if (saved === undefined) delete process.env.PLAN_ENFORCEMENT;
+        else process.env.PLAN_ENFORCEMENT = saved;
+      }
+    });
+
     // User-specified edge case #1 — duplicate POST /commit back-to-back.
     // The first flips READY → COMMITTING; the second sees status =
     // COMMITTING and 409s. This is the SERVICE-layer guard; the worker

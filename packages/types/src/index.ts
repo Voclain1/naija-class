@@ -53,3 +53,4 @@ export * from './calendar/index.js';
 export * from './reports/index.js';
 export * from './timetable/index.js';
 export * from './promotions/index.js';
+export * from './plans/index.js';

@@ -347,10 +347,18 @@ describe("Platform admin access (2026-08-02)", () => {
     //   - smartImportEnabled              2026-10-11. Smart Student Import's
     //     own per-school switch, operator-set like aiEnabled, and the read for
     //     PATCH .../smart-import.
+    //   - plan, studentCapOverride, studentCap, studentsOnRoll
+    //                                     2026-10-11 (docs/modules/plans.md):
+    //     the read for PATCH .../plan, and each school against its cap.
+    //     Operator-set status and an aggregate count; no price or billing.
     expect(Object.keys(row).sort()).toEqual(
       [
         "aiEnabled",
         "smartImportEnabled",
+        "plan",
+        "studentCapOverride",
+        "studentCap",
+        "studentsOnRoll",
         "aiEffectiveMonthlyTokenBudget",
         "aiMonthlyTokenBudget",
         "hasOwner",
@@ -963,6 +971,73 @@ describe("Platform admin access (2026-08-02)", () => {
         .patch("/api/v1/platform-admin/schools/does-not-exist/smart-import")
         .set("Authorization", `Bearer ${platformAdminToken}`)
         .send({ smartImportEnabled: true })).status).toBe(404);
+    });
+  });
+
+  describe("PATCH /platform-admin/schools/:schoolId/plan (2026-10-11)", () => {
+    const listRow = async (schoolId: string) => {
+      const res = await request(app.getHttpServer())
+        .get("/api/v1/platform-admin/schools")
+        .set("Authorization", `Bearer ${platformAdminToken}`);
+      expect(res.status).toBe(200);
+      return res.body.find((r: { schoolId: string }) => r.schoolId === schoolId) as {
+        plan: string;
+        studentCapOverride: number | null;
+        studentCap: number | null;
+        studentsOnRoll: number;
+      };
+    };
+
+    it("is refused to school staff, audited, and read back for that school only", async () => {
+      const before = await listRow(schoolA);
+      expect(before).toMatchObject({ plan: "FREE", studentCapOverride: null, studentCap: 100, studentsOnRoll: 1 });
+
+      expect((await request(app.getHttpServer())
+        .patch(`/api/v1/platform-admin/schools/${schoolA}/plan`)
+        .set("Authorization", `Bearer ${ownerAToken}`)
+        .send({ plan: "GROWTH", studentCapOverride: null })).status).toBe(403);
+
+      const res = await request(app.getHttpServer())
+        .patch(`/api/v1/platform-admin/schools/${schoolA}/plan`)
+        .set("Authorization", `Bearer ${platformAdminToken}`)
+        .send({ plan: "STARTER", studentCapOverride: 250 });
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ schoolId: schoolA, plan: "STARTER", studentCapOverride: 250, studentCap: 250 });
+      expect(await listRow(schoolA)).toMatchObject({ plan: "STARTER", studentCapOverride: 250, studentCap: 250 });
+      expect(await listRow(schoolB)).toMatchObject({ plan: "FREE", studentCapOverride: null });
+
+      const audit = await basePrisma.auditLog.findFirst({
+        where: { action: "platform_admin.schools.set-plan", entityId: schoolA },
+        orderBy: { createdAt: "desc" },
+      });
+      expect(audit).toMatchObject({ schoolId: null, userId: platformAdminUserId, entityType: "school" });
+      expect(audit?.metadata).toMatchObject({
+        from: { plan: "FREE", studentCapOverride: null },
+        to: { plan: "STARTER", studentCapOverride: 250 },
+      });
+
+      await request(app.getHttpServer())
+        .patch(`/api/v1/platform-admin/schools/${schoolA}/plan`)
+        .set("Authorization", `Bearer ${platformAdminToken}`)
+        .send({ plan: "FREE", studentCapOverride: null })
+        .expect(200);
+    });
+
+    it("rejects an unknown plan, a non-positive cap and unknown schools", async () => {
+      for (const body of [
+        { plan: "GOLD", studentCapOverride: null },
+        { plan: "FREE", studentCapOverride: 0 },
+        { plan: "FREE" },
+      ]) {
+        expect((await request(app.getHttpServer())
+          .patch(`/api/v1/platform-admin/schools/${schoolA}/plan`)
+          .set("Authorization", `Bearer ${platformAdminToken}`)
+          .send(body)).status).toBe(400);
+      }
+      expect((await request(app.getHttpServer())
+        .patch("/api/v1/platform-admin/schools/does-not-exist/plan")
+        .set("Authorization", `Bearer ${platformAdminToken}`)
+        .send({ plan: "FREE", studentCapOverride: null })).status).toBe(404);
     });
   });
 

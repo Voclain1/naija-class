@@ -10,6 +10,7 @@ import {
   type PaystackSetupStatus,
   PLATFORM_AUDIT_PAGE_SIZE,
   PLATFORM_AUDIT_VIEW_ACTIONS,
+  studentCapFor,
   type PlatformAdminAuditEntryDto,
   type PlatformAdminAuditLogQuery,
   type PlatformAdminAuditLogResponse,
@@ -34,8 +35,11 @@ import {
   type PlatformAdminSetAiBudgetResponse,
   type PlatformAdminSetAiEnabledInput,
   type PlatformAdminSetAiEnabledResponse,
+  type PlatformAdminSetPlanInput,
+  type PlatformAdminSetPlanResponse,
   type PlatformAdminSetSmartImportInput,
   type PlatformAdminSetSmartImportResponse,
+  type SchoolPlan,
   type PlatformAdminSetEarlyAccessInput,
   type PlatformAdminSetEarlyAccessResponse,
   type PlatformAdminUserDto,
@@ -132,6 +136,9 @@ interface ListSchoolsRow {
   staff_mobile_enabled: boolean;
   suspended_at: Date | null;
   smart_import_enabled: boolean;
+  plan: SchoolPlan;
+  student_cap_override: number | null;
+  students_on_roll: bigint;
 }
 
 // Mirrors platform_admin_list_paystack_setup_requests()'s columns.
@@ -270,6 +277,7 @@ const SCHOOLS_SET_EARLY_ACCESS_AUDIT_ACTION = "platform_admin.schools.set-early-
 const SCHOOLS_SET_AI_ENABLED_AUDIT_ACTION = "platform_admin.schools.set-ai-enabled";
 const SCHOOLS_SET_STAFF_MOBILE_AUDIT_ACTION = "platform_admin.schools.set-staff-mobile";
 const SCHOOLS_SET_SMART_IMPORT_AUDIT_ACTION = "platform_admin.schools.set-smart-import";
+const SCHOOLS_SET_PLAN_AUDIT_ACTION = "platform_admin.schools.set-plan";
 // Same action name the hand-written production row used on 2026-08-16, so
 // that row and every later one read as one history.
 const SCHOOLS_SET_AI_BUDGET_AUDIT_ACTION = "platform_admin.schools.set-ai-budget";
@@ -391,6 +399,10 @@ export class PlatformAdminService {
       staffMobileEnabled: r.staff_mobile_enabled,
       suspendedAt: r.suspended_at ? r.suspended_at.toISOString() : null,
       smartImportEnabled: r.smart_import_enabled,
+      plan: r.plan,
+      studentCapOverride: r.student_cap_override,
+      studentCap: studentCapFor(r.plan, r.student_cap_override),
+      studentsOnRoll: Number(r.students_on_roll),
     }));
   }
 
@@ -744,6 +756,47 @@ export class PlatformAdminService {
       },
     });
     return { schoolId: updated.id, smartImportEnabled: updated.smartImportEnabled };
+  }
+
+  // PATCH /platform-admin/schools/:schoolId/plan (2026-10-11,
+  // docs/modules/plans.md D1). The plan and the optional cap override travel
+  // together, so one audit row says what the school was moved from and to.
+  async setPlan(
+    schoolId: string,
+    input: PlatformAdminSetPlanInput,
+    adminCtx: PlatformAdminContext,
+    reqCtx: RequestContext,
+  ): Promise<PlatformAdminSetPlanResponse> {
+    const existing = await basePrisma.school.findUnique({
+      where: { id: schoolId },
+      select: { id: true, plan: true, studentCapOverride: true },
+    });
+    if (!existing) throw new NotFoundError("School not found.");
+    const updated = await basePrisma.school.update({
+      where: { id: schoolId },
+      data: { plan: input.plan, studentCapOverride: input.studentCapOverride },
+      select: { id: true, plan: true, studentCapOverride: true },
+    });
+    await basePrisma.auditLog.create({
+      data: {
+        schoolId: null,
+        userId: adminCtx.userId,
+        action: SCHOOLS_SET_PLAN_AUDIT_ACTION,
+        entityType: "school",
+        entityId: schoolId,
+        ipAddress: reqCtx.ipAddress,
+        metadata: {
+          from: { plan: existing.plan, studentCapOverride: existing.studentCapOverride },
+          to: { plan: updated.plan, studentCapOverride: updated.studentCapOverride },
+        },
+      },
+    });
+    return {
+      schoolId: updated.id,
+      plan: updated.plan,
+      studentCapOverride: updated.studentCapOverride,
+      studentCap: studentCapFor(updated.plan, updated.studentCapOverride),
+    };
   }
 
   async setStaffMobileEnabled(

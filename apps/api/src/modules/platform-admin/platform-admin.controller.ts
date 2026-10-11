@@ -25,6 +25,7 @@ import {
   platformAdminSetAiEnabledSchema,
   platformAdminSetEarlyAccessSchema,
   platformAdminSetStaffMobileSchema,
+  platformAdminSetPlanSchema,
   platformAdminSetSmartImportSchema,
   type PlatformAdminAuditLogQuery,
   type PlatformAdminAuditLogResponse,
@@ -50,6 +51,8 @@ import {
   type PlatformAdminSetAiBudgetResponse,
   type PlatformAdminSetAiEnabledInput,
   type PlatformAdminSetAiEnabledResponse,
+  type PlatformAdminSetPlanInput,
+  type PlatformAdminSetPlanResponse,
   type PlatformAdminSetSmartImportInput,
   type PlatformAdminSetSmartImportResponse,
   type PlatformAdminSetEarlyAccessInput,
@@ -250,6 +253,23 @@ export class PlatformAdminController {
     @Req() req: Request,
   ): Promise<PlatformAdminSetSmartImportResponse> {
     return this.platformAdminService.setSmartImportEnabled(schoolId, dto, adminCtx, {
+      ipAddress: ip, userAgent: req.header("user-agent") ?? null,
+    });
+  }
+
+  // PATCH /platform-admin/schools/:schoolId/plan — the school's plan and an
+  // optional student cap override (2026-10-11, docs/modules/plans.md D1).
+  @Patch("schools/:schoolId/plan")
+  @UseGuards(PlatformAdminGuard)
+  @Throttle({ default: { ttl: 60000, limit: 20 } })
+  async setPlan(
+    @Param("schoolId") schoolId: string,
+    @Body(new ZodValidationPipe(platformAdminSetPlanSchema)) dto: PlatformAdminSetPlanInput,
+    @CurrentPlatformAdmin() adminCtx: PlatformAdminContext,
+    @Ip() ip: string,
+    @Req() req: Request,
+  ): Promise<PlatformAdminSetPlanResponse> {
+    return this.platformAdminService.setPlan(schoolId, dto, adminCtx, {
       ipAddress: ip, userAgent: req.header("user-agent") ?? null,
     });
   }

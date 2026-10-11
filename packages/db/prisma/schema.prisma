@@ -183,6 +183,16 @@ model School {
   //                          so aiEnabled alone is not enough to open it. It
   //                          only narrows: the AI gates above still apply.
   smartImportEnabled    Boolean   @default(false) @map("smart_import_enabled")
+  //   plan / studentCapOverride   the school's plan and, for a deal, its own
+  //                          student cap (2026-10-11, docs/modules/plans.md).
+  //                          Set by the platform operator only. Null override
+  //                          = the plan's cap (PLAN_STUDENT_CAPS in
+  //                          @school-kit/types). Nothing here bills, and
+  //                          prices are not stored: the caps only block when
+  //                          PLAN_ENFORCEMENT=enforce, which early access does
+  //                          not run.
+  plan                  SchoolPlan @default(FREE) @map("plan")
+  studentCapOverride    Int?      @map("student_cap_override")
 
   //   suspendedAt            platform-admin suspension (2026-10-07,
   //                          docs/modules/platform-admin.md slice 2). Non-null
@@ -777,6 +787,16 @@ enum Gender {
   MALE
   FEMALE
   OTHER
+}
+
+// Plans (2026-10-11, docs/modules/plans.md). The published plans on the
+// marketing site; caps live in PLAN_STUDENT_CAPS (@school-kit/types).
+enum SchoolPlan {
+  FREE
+  STARTER
+  GROWTH
+  PROFESSIONAL
+  ENTERPRISE
 }
 
 enum StudentStatus {

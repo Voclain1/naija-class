@@ -542,7 +542,7 @@ When working on a module, prompt Claude Code: "Read `docs/modules/attendance.md`
 
 ## 11. Open questions to resolve before building
 
-1. **Subscription pricing model** — per-student/month vs flat per-school. Affects billing system design.
+1. **Subscription pricing model** — decided: per-term plans sized by students on the roll (Free to 100, Starter 200, Growth 600, Professional 1,200, Enterprise by agreement). Plans and caps are built, warn-only during early access; billing is not (`docs/modules/plans.md`).
 2. **Data residency** — Nigerian Data Protection Regulation (NDPR) implications. Joburg is the practical closest region; some schools may require NG-only.
 3. **Curriculum source** — license textbook content, partner with publishers, or build from public syllabi only.
 4. **Offline strategy depth** — full offline-first sync (CRDTs, complex) vs basic offline cache for reads only.
