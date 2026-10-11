@@ -342,6 +342,11 @@ the module doc or the PR, then link it here.
   production since 2026-09). This is a legal question, not an engineering one.
   Phase 7 implementation waits on it, or on a recorded decision to proceed.
   (Archive: "NDPR compliance posture".)
+  - Drafted 2026-10-11, **awaiting the owner's signature**:
+    `docs/legal/ndpr-ai-review.md` holds the proceed-while-reviewing decision
+    (Part 1) and the lawyer's brief and questions (Part 2). It also found that
+    the onboarding step-4 consent text lists payment, SMS and email providers
+    but not AI providers.
 - [ ] **Pricing.** This covers:
   - tier shape;
   - what early access grants;
