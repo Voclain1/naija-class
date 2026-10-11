@@ -141,9 +141,27 @@ the module doc or the PR, then link it here.
   is dirty. Pinned by `session-end-invariants.spec.ts` (ask before
   `logoutRequest()`) and two cases in `e2e/tests/session-end-work-loss.spec.ts`
   (both fail on the old code).
-- [ ] **Forced session expiry still destroys unsaved gradebook work.** No
-  mechanism has been chosen; measure how often it happens first (archive:
-  "Session expiry", "Session-end work loss").
+- [x] **DONE 2026-10-11 — Forced sign-out no longer loses unsaved gradebook
+  marks.** Owner's choice of mechanism: keep the draft in the browser, offer
+  it back after signing in (archive option 2, "narrowly scoped draft
+  preservation").
+  - While a column has unsaved edits, the typed cells go to that tab's
+    sessionStorage on every change (`lib/assessment/score-draft.ts`): opaque
+    student and component ids and the typed strings, no names. Keyed by
+    teacher, term, arm and subject; dropped after 12 hours, on a save, and on a
+    deliberate sign-out (`logout()` clears every draft).
+  - Back on the column, an amber notice says "Unsaved marks found" with
+    Restore and Discard. Restore puts the marks back as UNSAVED edits; the
+    teacher presses Save. Not autosave, so `entered_by`/`entered_at` and the
+    sign-off rule keep their meaning (archive, "B — gradebook durability").
+  - A mark comes back only into the same student and column, typed against the
+    same "Out of"; anything else is counted and named in the toast.
+  - Proven end to end in `e2e/tests/session-end-work-loss.spec.ts` (revoked
+    session → sign in → Restore → Save → reload).
+  - Still open: lesson plans and the class-subject matrix have no draft; why
+    a session ends mid-work was never measured. Staff web sessions last a
+    fixed 30 days, so the likeliest causes are that day-30 expiry, a password
+    reset (ends every session) and deactivation.
 - [x] **Mobile no longer signs out silently on a 401** (found already built,
   2026-10-08). The API client passes the server's code to `onUnauthorized`,
   `session.tsx` turns it into a message (`session-end.ts`), and the sign-in

@@ -429,9 +429,9 @@ test.describe("gradebook", () => {
     expect(body).not.toContain("Adaeze");
     expect(body).not.toContain("Learner");
 
-    // Signing back in returns them to the exact column. The unsaved score is
-    // NOT restored — this slice removes the false promise, it does not keep
-    // the work. Asserted so the limitation is recorded, not assumed.
+    // Signing back in returns them to the exact column, and the mark they
+    // typed is offered back (2026-10-11, lib/assessment/score-draft.ts). It
+    // comes back UNSAVED: nothing reaches the server until they press Save.
     await page.getByLabel("Email").fill(teacher.email);
     await page.getByLabel("Password", { exact: true }).fill(teacher.password);
     await page.getByRole("button", { name: /sign in|log in/i }).click();
@@ -439,6 +439,20 @@ test.describe("gradebook", () => {
     const after = page.locator("tbody td input");
     await expect.poll(() => after.count(), { timeout: 60_000 }).toBeGreaterThan(0);
     await expect(after.nth(0)).toHaveValue("");
+    await expect(page.getByText("Unsaved marks found.")).toBeVisible({ timeout: 30_000 });
+
+    await page.getByRole("button", { name: "Restore marks" }).click();
+    await expect(after.nth(0)).toHaveValue("17");
+    await expect(page.getByText("Unsaved marks found.")).toHaveCount(0);
+    await page.getByRole("button", { name: /^save$/i }).click();
+    await expect(page.getByText("Saved", { exact: true })).toBeVisible({ timeout: 30_000 });
+
+    // Saved for real, and nothing is offered again.
+    await page.reload();
+    const reloaded = page.locator("tbody td input");
+    await expect.poll(() => reloaded.count(), { timeout: 60_000 }).toBeGreaterThan(0);
+    await expect(reloaded.nth(0)).toHaveValue("17");
+    await expect(page.getByText("Unsaved marks found.")).toHaveCount(0);
 
     await session.context.close();
     await teacher.context.close();

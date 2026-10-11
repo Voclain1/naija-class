@@ -2,7 +2,7 @@
 
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Check, Loader2, RefreshCw, RotateCcw } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFieldArray, useForm } from "react-hook-form";
 import { toast } from "sonner";
 
@@ -27,6 +27,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ApiError } from "@/lib/api-client";
+import { useAuth } from "@/lib/auth/use-auth";
 import { isAuthForcedNavigation } from "@/lib/auth/session-end-navigation";
 import {
   aggregateScores,
@@ -53,6 +54,15 @@ import {
   type GradebookFormValues,
   type SaveRow,
 } from "./gradebook-form";
+import {
+  changedCells,
+  clearScoreDraft,
+  readScoreDraft,
+  restorableCells,
+  writeScoreDraft,
+  type DraftScope,
+  type ScoreDraft,
+} from "@/lib/assessment/score-draft";
 import { PrintButton } from "@/components/shared/print-button";
 
 // Export reuses the read-only, server-computed feed already held in state —
@@ -118,6 +128,11 @@ export function GradebookGrid({
   canAggregate,
 }: Props) {
   const components = scheme.components; // ordered by orderIndex from the API
+  const { user } = useAuth();
+  const draftScope = useMemo<DraftScope | null>(
+    () => (user ? { userId: user.id, termId, classArmId, subjectId } : null),
+    [user, termId, classArmId, subjectId],
+  );
 
   const [feed, setFeed] = useState(initialFeed);
   const [saving, setSaving] = useState(false);
@@ -127,6 +142,11 @@ export function GradebookGrid({
   const [banner, setBanner] = useState<string | null>(null);
   const [savedFlash, setSavedFlash] = useState(false);
   const [reopened, setReopened] = useState(false);
+  // Marks typed before a forced sign-out, offered back once (score-draft.ts).
+  // While the offer stands, nothing new is written over it.
+  const [draftOffer, setDraftOffer] = useState<ScoreDraft | null>(null);
+  const draftOfferRef = useRef<ScoreDraft | null>(null);
+  draftOfferRef.current = draftOffer;
 
   // CP5a (D60): columns entered "out of" some total. Seeded from the feed so a
   // column saved that way reopens with the marks as typed. The resolver reads
@@ -204,6 +224,74 @@ export function GradebookGrid({
     return () => window.removeEventListener("beforeunload", handler);
   }, [isDirty]);
 
+  // Offer back any marks this teacher typed here before a forced sign-out.
+  useEffect(() => {
+    if (!draftScope) return;
+    setDraftOffer(readScoreDraft(draftScope));
+  }, [draftScope]);
+
+  // Keep a copy of the unsaved cells in this tab on every change, so a forced
+  // sign-out (which tears the page down) cannot take them. A save, which
+  // re-seeds the form, leaves nothing changed and so clears it.
+  useEffect(() => {
+    if (!draftScope) return;
+    const subscription = form.watch((values) => {
+      if (draftOfferRef.current) return;
+      const defaults = form.formState.defaultValues as GradebookFormValues | undefined;
+      if (!defaults) return;
+      writeScoreDraft(draftScope, changedCells(values as GradebookFormValues, defaults), outOfRef.current);
+    });
+    return () => subscription.unsubscribe();
+  }, [form, draftScope]);
+
+  function restoreDraft(): void {
+    const draft = draftOffer;
+    if (!draft || !draftScope) return;
+    // A column with nothing saved and no "Out of" yet takes the total the
+    // marks were typed against, as an exam paper's total would.
+    let units = outOfRef.current;
+    for (const [componentId, total] of Object.entries(draft.outOf)) {
+      if (total === null || units[componentId] !== undefined) continue;
+      const hasSaved = feed.data.some((row) => row.scores.some((sc) => sc.componentId === componentId));
+      if (!hasSaved && components.some((c) => c.id === componentId)) units = { ...units, [componentId]: total };
+    }
+    if (units !== outOfRef.current) {
+      outOfRef.current = units;
+      setOutOf(units);
+      setOutOfDraft((d) => ({
+        ...d,
+        ...Object.fromEntries(Object.entries(units).map(([k, v]) => [k, v === undefined ? "" : String(v)])),
+      }));
+      form.reset(buildDefaultValues(feed.data, components, units));
+    }
+    const { cells, skipped } = restorableCells(draft, form.getValues(), units);
+    setDraftOffer(null);
+    draftOfferRef.current = null;
+    for (const cell of cells) {
+      form.setValue(`rows.${cell.rowIndex}.scores.${cell.componentId}`, cell.value, {
+        shouldDirty: true,
+        shouldValidate: true,
+      });
+    }
+    if (cells.length > 0 && isSignedOff) setReopened(true);
+    if (cells.length === 0) clearScoreDraft(draftScope);
+    toast.success(
+      skipped > 0
+        ? `Restored ${cells.length} mark${cells.length === 1 ? "" : "s"}. ${skipped} could not come back because the class or the column changed.`
+        : `Restored ${cells.length} mark${cells.length === 1 ? "" : "s"}. Press Save to keep them.`,
+    );
+  }
+
+  function discardDraft(): void {
+    if (!draftScope) return;
+    clearScoreDraft(draftScope);
+    setDraftOffer(null);
+    draftOfferRef.current = null;
+    // Anything typed while the offer stood is now the draft.
+    const defaults = form.formState.defaultValues as GradebookFormValues | undefined;
+    if (defaults) writeScoreDraft(draftScope, changedCells(form.getValues(), defaults), outOfRef.current);
+  }
+
   // When were THIS subject's positions last computed (for the status line)?
   const loadPositionsStatus = useCallback(async () => {
     try {
@@ -225,7 +313,8 @@ export function GradebookGrid({
     let cancelled = false;
     getExamPaperOutOf(termId, classArmId, subjectId)
       .then(({ papers }) => {
-        if (cancelled || papers.length === 0) return;
+        // Re-seeding would wipe unsaved (or just restored) marks.
+        if (cancelled || papers.length === 0 || form.formState.isDirty) return;
         const next = { ...outOfRef.current };
         const source: Record<string, string> = {};
         for (const p of papers) {
@@ -302,6 +391,7 @@ export function GradebookGrid({
       const refreshed = await bulkSaveScores({ termId, subjectId, rows });
       setPending(null);
       applyFeed(refreshed);
+      if (draftScope) clearScoreDraft(draftScope);
       setReopened(false);
       setSavedFlash(true);
       window.setTimeout(() => setSavedFlash(false), 2500);
@@ -455,6 +545,24 @@ export function GradebookGrid({
           </Button>
         </div>
       </div>
+
+      {draftOffer && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-md bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-950/40 dark:text-amber-100 print:hidden">
+          <span>
+            <strong>Unsaved marks found.</strong> You typed {draftOffer.cells.length} mark
+            {draftOffer.cells.length === 1 ? "" : "s"} here that were not saved, at{" "}
+            {formatDateTime(new Date(draftOffer.savedAt))}.
+          </span>
+          <span className="flex gap-2">
+            <Button type="button" size="sm" onClick={restoreDraft}>
+              Restore marks
+            </Button>
+            <Button type="button" size="sm" variant="ghost" onClick={discardDraft}>
+              Discard
+            </Button>
+          </span>
+        </div>
+      )}
 
       {banner && (
         <div className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive print:hidden">
