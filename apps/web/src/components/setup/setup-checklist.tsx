@@ -68,7 +68,7 @@ export function SetupChecklist() {
   const progress = checklistProgress(steps);
 
   return (
-    <Card>
+    <Card data-testid="setup-checklist">
       <CardHeader>
         <CardTitle className="text-lg">
           {status === "setup" ? "Finish setting up your school" : "A few things left to set up"}

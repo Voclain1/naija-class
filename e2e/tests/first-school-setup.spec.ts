@@ -94,7 +94,11 @@ test("first-school setup: a new owner is told what to do next, and stops being t
   await page.goto("/dashboard");
   await expect(page.getByTestId("setup-step-students")).toHaveAttribute("data-done", "true");
   await expect(page.getByTestId("setup-step-enrollments")).toHaveAttribute("data-done", "false");
-  await expect(page.getByText(/next: put your students in their classes/i)).toBeVisible();
+  // Scoped to the checklist: the setup progress chip beside the greeting
+  // names the same next step (school-identity, 2026-10-11).
+  await expect(
+    page.getByTestId("setup-checklist").getByText(/next: put your students in their classes/i),
+  ).toBeVisible();
 
   // The handover appears on the Students page itself, at the moment it stops
   // being premature — an owner who has just built a roster is exactly who
