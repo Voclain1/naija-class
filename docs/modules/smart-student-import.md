@@ -206,6 +206,24 @@ added.** The only thing that does *not* come free is reservation accuracy —
 see §2's last subsection, which is a fix to the shared estimator, not a
 parallel gate.
 
+**Revised 2026-10-11 (owner's decision): Smart Import now has one switch of
+its own.** `School.smartImportEnabled`, default false, set per school by the
+platform operator (`PATCH /platform-admin/schools/:schoolId/smart-import`,
+audited as `platform_admin.schools.set-smart-import`, shown in the school's
+Manage dialog). `extractFromImage` refuses with 403 `SMART_IMPORT_DISABLED`
+before the image is read, and `GET /student-scan/availability` now answers
+`{ available, reason }` so the scan page can say which switch is off.
+
+Why the original "no gating of any kind" stopped being right: the table above
+gates AI as a whole, and this is the one feature on CLAUDE.md's PII allowlist.
+The accuracy section below says not to switch it on for a school before the
+real-register check, but with only the AI gates every AI-enabled school could
+already use it, so "not switched on" had no switch. The new gate only
+narrows; everything in the table still applies inside `generate()`, and is
+deliberately not repeated in the service. The commit endpoint is not gated:
+it sends nothing to the model, and an extraction that already happened should
+still be reviewable.
+
 A refusal (`stop_reason: "refusal"`) is already handled: recorded as
 `success=false` with `errorMessage="stop_reason=refusal"`, budget released,
 no crash. Anthropic's stated limitation is that Claude will not *name people
@@ -555,7 +573,8 @@ to expect it to be worse — handwriting varies more than score tables do.
 
 So: **~10 photographed pages from a real school, with hand-verified ground
 truth, then a per-field accuracy pass and almost certainly a v2.** Until that
-happens this feature should not be switched on for a school, on exactly the
+happens this feature should not be switched on for a school (since
+2026-10-11 that is a real switch, `School.smartImportEnabled`; see D2), on exactly the
 rule phase-5.md §9 already sets for slice 5: do not enable until someone has
 read real output.
 

@@ -57,4 +57,6 @@ export interface PlatformAdminSchoolDto {
   // When a platform admin suspended the school, or null. While set, every
   // sign-in is refused and live sessions end at their next request.
   suspendedAt: string | null;
+  /** Smart Student Import switched on for this school (2026-10-11). */
+  smartImportEnabled: boolean;
 }

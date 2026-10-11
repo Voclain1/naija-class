@@ -104,6 +104,9 @@ describe("StudentScanService", () => {
         // here goes through reserve(), which throws DISABLED_SCHOOL when it
         // is off. AI being on is a precondition of what this suite tests.
         aiEnabled: true,
+        // Smart Import's own switch (2026-10-11), off by default. On here for
+        // the same reason; the off case has its own tests below.
+        smartImportEnabled: true,
       },
       select: { id: true },
     });
@@ -238,6 +241,45 @@ describe("StudentScanService", () => {
     expect(ledger).toHaveLength(1);
     expect(ledger[0].promptName).toBe("student-list-extraction");
     expect(ledger[0].success).toBe(true);
+  });
+
+  // -------------------------------------------------------------------------
+  // The school's own switch (2026-10-11).
+  // -------------------------------------------------------------------------
+  describe("with Smart Import switched off for the school", () => {
+    const setSwitch = (on: boolean) =>
+      basePrisma.school.update({ where: { id: schoolId }, data: { smartImportEnabled: on } });
+
+    it("refuses to read the register, before the image reaches the model", async () => {
+      await setSwitch(false);
+      try {
+        port.text = extraction([row()]);
+        await expect(service.extractFromImage(authCtx, upload(), reqCtx)).rejects.toMatchObject({
+          code: "SMART_IMPORT_DISABLED",
+          httpStatus: 403,
+        });
+        expect(port.calls).toHaveLength(0);
+        const jobs = await withTenant(schoolId, (db) => db.importJob.count({ where: { schoolId } }));
+        expect(jobs).toBe(0);
+      } finally {
+        await setSwitch(true);
+      }
+    });
+
+    it("says why the camera is not offered", async () => {
+      await expect(service.availability(authCtx)).resolves.toEqual({ available: true, reason: null });
+      await setSwitch(false);
+      try {
+        await expect(service.availability(authCtx)).resolves.toEqual({ available: false, reason: "NOT_ENABLED" });
+        // AI being off is the first thing to say: switching Smart Import on
+        // would not help.
+        await basePrisma.school.update({ where: { id: schoolId }, data: { aiEnabled: false } });
+        await expect(service.availability(authCtx)).resolves.toEqual({ available: false, reason: "AI_UNAVAILABLE" });
+      } finally {
+        await basePrisma.school.update({ where: { id: schoolId }, data: { aiEnabled: true } });
+        await setSwitch(true);
+      }
+    });
   });
 
   it("rejects a payload whose bytes are not an image, before spending anything", async () => {

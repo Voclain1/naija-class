@@ -4,7 +4,7 @@ import { AlertTriangle, ArrowLeft, Camera, CheckCircle2, Loader2, Trash2 } from 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import type { ExtractedStudentRow, ReviewedStudentRow } from "@school-kit/types";
+import type { ExtractedStudentRow, ReviewedStudentRow, ScanUnavailableReason } from "@school-kit/types";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -94,6 +94,7 @@ export default function StudentScanPage() {
   const inputRef = useRef<HTMLInputElement>(null);
   const [phase, setPhase] = useState<Phase>("capture");
   const [available, setAvailable] = useState<boolean | null>(null);
+  const [unavailableReason, setUnavailableReason] = useState<ScanUnavailableReason | null>(null);
   const [busy, setBusy] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -106,7 +107,10 @@ export default function StudentScanPage() {
 
   useEffect(() => {
     getScanAvailability()
-      .then((r) => setAvailable(r.available))
+      .then((r) => {
+        setAvailable(r.available);
+        setUnavailableReason(r.reason);
+      })
       .catch(() => setAvailable(false));
   }, []);
 
@@ -399,7 +403,10 @@ export default function StudentScanPage() {
 
       {available === false && (
         <p className="rounded-md border border-secondary/40 bg-secondary/10 p-4 text-sm">
-          Scanning is not switched on for this school yet. You can still{" "}
+          {unavailableReason === "NOT_ENABLED"
+            ? "Reading registers from a photo isn't switched on for your school yet. Ask the SchoolKit team to turn it on. "
+            : "Reading registers from a photo needs AI features, which are switched off for your school. "}
+          You can still{" "}
           <Link href="/students/import" className="underline">
             import students from a spreadsheet
           </Link>

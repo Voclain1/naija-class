@@ -18,6 +18,8 @@ export function describeAuditEntry(e: Pick<PlatformAdminAuditEntryDto, "action" 
       return m.to ? "Marked as early access" : "Removed early access";
     case "platform_admin.schools.set-ai-enabled":
       return m.from === m.to ? `Confirmed AI is ${onOff(m.to)}` : `Turned AI ${onOff(m.to)}`;
+    case "platform_admin.schools.set-smart-import":
+      return `Turned Smart Import ${onOff(m.to)}`;
     case "platform_admin.schools.set-staff-mobile":
       return `Turned staff mobile ${onOff(m.to)}`;
     case "platform_admin.schools.set-ai-budget":

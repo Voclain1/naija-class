@@ -3,6 +3,7 @@
 
 import type {
   CommitScanInput,
+  ScanAvailabilityDto,
   ScanExtractionResponse,
 } from "@school-kit/types";
 
@@ -18,8 +19,8 @@ export interface ScanCommitResult {
 //
 // Asked before the camera is offered, so an admin never photographs a
 // register and only then discovers AI is switched off for their school.
-export async function getScanAvailability(): Promise<{ available: boolean }> {
-  return apiFetch<{ available: boolean }>("/student-scan/availability");
+export async function getScanAvailability(): Promise<ScanAvailabilityDto> {
+  return apiFetch<ScanAvailabilityDto>("/student-scan/availability");
 }
 
 // POST /student-scan — multipart.

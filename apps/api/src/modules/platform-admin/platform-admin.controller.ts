@@ -25,6 +25,7 @@ import {
   platformAdminSetAiEnabledSchema,
   platformAdminSetEarlyAccessSchema,
   platformAdminSetStaffMobileSchema,
+  platformAdminSetSmartImportSchema,
   type PlatformAdminAuditLogQuery,
   type PlatformAdminAuditLogResponse,
   type PlatformAdminCancelOwnerInvitationResponse,
@@ -49,6 +50,8 @@ import {
   type PlatformAdminSetAiBudgetResponse,
   type PlatformAdminSetAiEnabledInput,
   type PlatformAdminSetAiEnabledResponse,
+  type PlatformAdminSetSmartImportInput,
+  type PlatformAdminSetSmartImportResponse,
   type PlatformAdminSetEarlyAccessInput,
   type PlatformAdminSetEarlyAccessResponse,
   type PlatformAdminSetStaffMobileInput,
@@ -230,6 +233,24 @@ export class PlatformAdminController {
     return this.platformAdminService.setAiEnabled(schoolId, dto, adminCtx, {
       ipAddress: ip,
       userAgent: req.header("user-agent") ?? null,
+    });
+  }
+
+  // PATCH /platform-admin/schools/:schoolId/smart-import — Smart Student
+  // Import's own per-school switch (2026-10-11). Read on every scan, so it
+  // takes effect on the school's next request.
+  @Patch("schools/:schoolId/smart-import")
+  @UseGuards(PlatformAdminGuard)
+  @Throttle({ default: { ttl: 60000, limit: 20 } })
+  async setSmartImportEnabled(
+    @Param("schoolId") schoolId: string,
+    @Body(new ZodValidationPipe(platformAdminSetSmartImportSchema)) dto: PlatformAdminSetSmartImportInput,
+    @CurrentPlatformAdmin() adminCtx: PlatformAdminContext,
+    @Ip() ip: string,
+    @Req() req: Request,
+  ): Promise<PlatformAdminSetSmartImportResponse> {
+    return this.platformAdminService.setSmartImportEnabled(schoolId, dto, adminCtx, {
+      ipAddress: ip, userAgent: req.header("user-agent") ?? null,
     });
   }
 

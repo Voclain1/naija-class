@@ -62,26 +62,21 @@ test("smart student import — the scan page is reachable and degrades safely", 
     // invisible to the only person it protects.
     await expect(page.getByText(/is not stored/i)).toBeVisible();
 
-    // --- Degradation when AI is off ---------------------------------------
-    // In CI no ANTHROPIC_API_KEY is configured, so the API reports
-    // AI_NOT_CONFIGURED and availability comes back false. The correct
-    // behaviour is a disabled control plus a route onward to the CSV import —
+    // --- Degradation when it cannot be used ------------------------------
+    // A new school has Smart Import switched off (School.smartImportEnabled,
+    // 2026-10-11, turned on per school by the platform operator), so the
+    // control is always disabled here, with a route onward to the CSV import:
     // NOT a dead end, and not a button that fails after the admin has already
-    // taken the photo.
-    //
-    // If a key IS configured in this environment the button is enabled
-    // instead, which is equally correct; the assertion branches rather than
-    // pinning one environment's answer.
+    // taken the photo. Which reason the page gives depends on whether this
+    // environment has an AI key (none in CI: AI comes first), so it accepts
+    // either.
     const button = page.getByRole("button", { name: /take a photo/i });
     await expect(button).toBeVisible();
-
-    const disabled = await button.isDisabled();
-    if (disabled) {
-      await expect(page.getByText(/not switched on for this school/i)).toBeVisible();
-      await expect(
-        page.getByRole("link", { name: /import students from a spreadsheet/i }),
-      ).toBeVisible();
-    }
+    await expect(button).toBeDisabled();
+    await expect(page.getByText(/(isn't switched on|which are switched off) for your school/i)).toBeVisible();
+    await expect(
+      page.getByRole("link", { name: /import students from a spreadsheet/i }),
+    ).toBeVisible();
   } finally {
     for (const context of toClose) await context.close();
   }

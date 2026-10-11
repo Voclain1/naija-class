@@ -344,9 +344,13 @@ describe("Platform admin access (2026-08-02)", () => {
     //     lifecycle). Operator-set platform status about the tenancy, like
     //     isActive — and the read for POST .../suspend, so it is not a blind
     //     write.
+    //   - smartImportEnabled              2026-10-11. Smart Student Import's
+    //     own per-school switch, operator-set like aiEnabled, and the read for
+    //     PATCH .../smart-import.
     expect(Object.keys(row).sort()).toEqual(
       [
         "aiEnabled",
+        "smartImportEnabled",
         "aiEffectiveMonthlyTokenBudget",
         "aiMonthlyTokenBudget",
         "hasOwner",
@@ -902,6 +906,63 @@ describe("Platform admin access (2026-08-02)", () => {
         .patch("/api/v1/platform-admin/schools/does-not-exist/staff-mobile")
         .set("Authorization", `Bearer ${platformAdminToken}`)
         .send({ staffMobileEnabled: true })).status).toBe(404);
+    });
+  });
+
+  describe("PATCH /platform-admin/schools/:schoolId/smart-import (2026-10-11)", () => {
+    const flagOf = async (schoolId: string) =>
+      (await basePrisma.school.findUnique({ where: { id: schoolId }, select: { smartImportEnabled: true } }))
+        ?.smartImportEnabled;
+    const listed = async (schoolId: string): Promise<boolean> => {
+      const res = await request(app.getHttpServer())
+        .get("/api/v1/platform-admin/schools")
+        .set("Authorization", `Bearer ${platformAdminToken}`);
+      expect(res.status).toBe(200);
+      return res.body.find((r: { schoolId: string }) => r.schoolId === schoolId).smartImportEnabled as boolean;
+    };
+
+    it("is refused to school staff, audited for a platform admin, and read back in both directions", async () => {
+      const rejected = await request(app.getHttpServer())
+        .patch(`/api/v1/platform-admin/schools/${schoolA}/smart-import`)
+        .set("Authorization", `Bearer ${ownerAToken}`)
+        .send({ smartImportEnabled: true });
+      expect(rejected.status).toBe(403);
+      expect(await flagOf(schoolA)).toBe(false);
+      expect(await listed(schoolA)).toBe(false);
+
+      const enabled = await request(app.getHttpServer())
+        .patch(`/api/v1/platform-admin/schools/${schoolA}/smart-import`)
+        .set("Authorization", `Bearer ${platformAdminToken}`)
+        .send({ smartImportEnabled: true });
+      expect(enabled.status).toBe(200);
+      expect(enabled.body).toEqual({ schoolId: schoolA, smartImportEnabled: true });
+      expect(await listed(schoolA)).toBe(true);
+      expect(await flagOf(schoolB)).toBe(false);
+
+      const audit = await basePrisma.auditLog.findFirst({
+        where: { action: "platform_admin.schools.set-smart-import", entityId: schoolA },
+        orderBy: { createdAt: "desc" },
+      });
+      expect(audit).toMatchObject({ schoolId: null, userId: platformAdminUserId, entityType: "school" });
+      expect(audit?.metadata).toMatchObject({ field: "smartImportEnabled", from: false, to: true });
+
+      await request(app.getHttpServer())
+        .patch(`/api/v1/platform-admin/schools/${schoolA}/smart-import`)
+        .set("Authorization", `Bearer ${platformAdminToken}`)
+        .send({ smartImportEnabled: false })
+        .expect(200);
+      expect(await listed(schoolA)).toBe(false);
+    });
+
+    it("rejects non-boolean input and unknown schools", async () => {
+      expect((await request(app.getHttpServer())
+        .patch(`/api/v1/platform-admin/schools/${schoolA}/smart-import`)
+        .set("Authorization", `Bearer ${platformAdminToken}`)
+        .send({ smartImportEnabled: "yes" })).status).toBe(400);
+      expect((await request(app.getHttpServer())
+        .patch("/api/v1/platform-admin/schools/does-not-exist/smart-import")
+        .set("Authorization", `Bearer ${platformAdminToken}`)
+        .send({ smartImportEnabled: true })).status).toBe(404);
     });
   });
 

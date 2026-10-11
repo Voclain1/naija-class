@@ -8,6 +8,7 @@ describe("describeAuditEntry", () => {
   it("says what changed, in words", () => {
     expect(d("platform_admin.schools.set-ai-enabled", { from: false, to: true })).toBe("Turned AI on");
     expect(d("platform_admin.schools.set-ai-enabled", { from: true, to: true })).toBe("Confirmed AI is on");
+    expect(d("platform_admin.schools.set-smart-import", { from: false, to: true })).toBe("Turned Smart Import on");
     expect(d("platform_admin.schools.set-ai-budget", { from: null, to: 750000 })).toBe("Set the AI budget to 750,000 tokens a month");
     expect(d("platform_admin.schools.set-ai-budget", { from: 750000, to: null })).toBe("Put the AI budget back to the platform default");
     expect(d("platform_admin.schools.suspend", { reason: "Unpaid" })).toBe("Suspended the school — “Unpaid”");

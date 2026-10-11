@@ -79,6 +79,9 @@ the module doc or the PR, then link it here.
   - **Still needs:** the ~10 photographed pages and their ground truth (kept
     out of the repo; the default folder is git-ignored), one run on a real
     key, and the prompt v2 that run will probably call for.
+  - "Switched on" is a real switch since 2026-10-11: `School.smartImportEnabled`,
+    off for every school, turned on per school from the platform admin's
+    Manage dialog. Before that, every AI-enabled school could already scan.
 
 ## 2. Open engineering work
 

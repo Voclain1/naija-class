@@ -34,6 +34,8 @@ import {
   type PlatformAdminSetAiBudgetResponse,
   type PlatformAdminSetAiEnabledInput,
   type PlatformAdminSetAiEnabledResponse,
+  type PlatformAdminSetSmartImportInput,
+  type PlatformAdminSetSmartImportResponse,
   type PlatformAdminSetEarlyAccessInput,
   type PlatformAdminSetEarlyAccessResponse,
   type PlatformAdminUserDto,
@@ -129,6 +131,7 @@ interface ListSchoolsRow {
   ai_monthly_token_budget: number | null;
   staff_mobile_enabled: boolean;
   suspended_at: Date | null;
+  smart_import_enabled: boolean;
 }
 
 // Mirrors platform_admin_list_paystack_setup_requests()'s columns.
@@ -266,6 +269,7 @@ const SCHOOLS_CREATE_AUDIT_ACTION = "platform_admin.schools.create";
 const SCHOOLS_SET_EARLY_ACCESS_AUDIT_ACTION = "platform_admin.schools.set-early-access";
 const SCHOOLS_SET_AI_ENABLED_AUDIT_ACTION = "platform_admin.schools.set-ai-enabled";
 const SCHOOLS_SET_STAFF_MOBILE_AUDIT_ACTION = "platform_admin.schools.set-staff-mobile";
+const SCHOOLS_SET_SMART_IMPORT_AUDIT_ACTION = "platform_admin.schools.set-smart-import";
 // Same action name the hand-written production row used on 2026-08-16, so
 // that row and every later one read as one history.
 const SCHOOLS_SET_AI_BUDGET_AUDIT_ACTION = "platform_admin.schools.set-ai-budget";
@@ -386,6 +390,7 @@ export class PlatformAdminService {
       aiEffectiveMonthlyTokenBudget: r.ai_monthly_token_budget ?? DEFAULT_MONTHLY_TOKEN_BUDGET,
       staffMobileEnabled: r.staff_mobile_enabled,
       suspendedAt: r.suspended_at ? r.suspended_at.toISOString() : null,
+      smartImportEnabled: r.smart_import_enabled,
     }));
   }
 
@@ -706,6 +711,39 @@ export class PlatformAdminService {
       schoolId: updated.id,
       aiEnabled: updated.aiEnabled,
     };
+  }
+
+  // PATCH /platform-admin/schools/:schoolId/smart-import (2026-10-11). Same
+  // shape as setAiEnabled: schools has no RLS policy, so a single-column
+  // update plus a GUC-less audit row is the whole write.
+  async setSmartImportEnabled(
+    schoolId: string,
+    input: PlatformAdminSetSmartImportInput,
+    adminCtx: PlatformAdminContext,
+    reqCtx: RequestContext,
+  ): Promise<PlatformAdminSetSmartImportResponse> {
+    const existing = await basePrisma.school.findUnique({
+      where: { id: schoolId },
+      select: { id: true, smartImportEnabled: true },
+    });
+    if (!existing) throw new NotFoundError("School not found.");
+    const updated = await basePrisma.school.update({
+      where: { id: schoolId },
+      data: { smartImportEnabled: input.smartImportEnabled },
+      select: { id: true, smartImportEnabled: true },
+    });
+    await basePrisma.auditLog.create({
+      data: {
+        schoolId: null,
+        userId: adminCtx.userId,
+        action: SCHOOLS_SET_SMART_IMPORT_AUDIT_ACTION,
+        entityType: "school",
+        entityId: schoolId,
+        ipAddress: reqCtx.ipAddress,
+        metadata: { field: "smartImportEnabled", from: existing.smartImportEnabled, to: updated.smartImportEnabled },
+      },
+    });
+    return { schoolId: updated.id, smartImportEnabled: updated.smartImportEnabled };
   }
 
   async setStaffMobileEnabled(
