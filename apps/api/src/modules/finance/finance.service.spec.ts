@@ -544,9 +544,12 @@ describe("FinanceService (integration)", () => {
       const result = await svc.sendReminders(ctx(schoolId, ownerId), { termId, studentIds: [studentId] });
 
       expect(result.sent).toBe(1);
+      // Third argument: the school's approved sender name. This school never
+      // asked for one, so SchoolKit's own name is used (school-identity slice 2).
       expect(termiiStub.sendSms).toHaveBeenCalledWith(
         expect.stringMatching(/^234\d{10}$/),
         expect.any(String),
+        undefined,
       );
     });
 
