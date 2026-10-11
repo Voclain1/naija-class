@@ -39,7 +39,10 @@ import {
   type PlatformAdminSetPlanResponse,
   type PlatformAdminSetSmartImportInput,
   type PlatformAdminSetSmartImportResponse,
+  type PlatformAdminDecideSmsSenderInput,
+  type PlatformAdminDecideSmsSenderResponse,
   type SchoolPlan,
+  type SmsSenderStatus,
   type PlatformAdminSetEarlyAccessInput,
   type PlatformAdminSetEarlyAccessResponse,
   type PlatformAdminUserDto,
@@ -139,6 +142,8 @@ interface ListSchoolsRow {
   plan: SchoolPlan;
   student_cap_override: number | null;
   students_on_roll: bigint;
+  sms_sender_id: string | null;
+  sms_sender_status: SmsSenderStatus;
 }
 
 // Mirrors platform_admin_list_paystack_setup_requests()'s columns.
@@ -277,6 +282,7 @@ const SCHOOLS_SET_EARLY_ACCESS_AUDIT_ACTION = "platform_admin.schools.set-early-
 const SCHOOLS_SET_AI_ENABLED_AUDIT_ACTION = "platform_admin.schools.set-ai-enabled";
 const SCHOOLS_SET_STAFF_MOBILE_AUDIT_ACTION = "platform_admin.schools.set-staff-mobile";
 const SCHOOLS_SET_SMART_IMPORT_AUDIT_ACTION = "platform_admin.schools.set-smart-import";
+const SCHOOLS_DECIDE_SMS_SENDER_AUDIT_ACTION = "platform_admin.schools.decide-sms-sender";
 const SCHOOLS_SET_PLAN_AUDIT_ACTION = "platform_admin.schools.set-plan";
 // Same action name the hand-written production row used on 2026-08-16, so
 // that row and every later one read as one history.
@@ -403,6 +409,8 @@ export class PlatformAdminService {
       studentCapOverride: r.student_cap_override,
       studentCap: studentCapFor(r.plan, r.student_cap_override),
       studentsOnRoll: Number(r.students_on_roll),
+      smsSenderId: r.sms_sender_id,
+      smsSenderStatus: r.sms_sender_status,
     }));
   }
 
@@ -756,6 +764,47 @@ export class PlatformAdminService {
       },
     });
     return { schoolId: updated.id, smartImportEnabled: updated.smartImportEnabled };
+  }
+
+  // PATCH /platform-admin/schools/:schoolId/sms-sender (2026-10-11,
+  // docs/modules/school-identity.md slice 2). Records what the networks
+  // decided about the name the school asked for. Only a REQUESTED name can be
+  // decided: approving something the school has since changed, or approving
+  // twice, would put a name on the school's SMS nobody submitted. The
+  // conditional update makes that check and the write one statement.
+  async decideSmsSender(
+    schoolId: string,
+    input: PlatformAdminDecideSmsSenderInput,
+    adminCtx: PlatformAdminContext,
+    reqCtx: RequestContext,
+  ): Promise<PlatformAdminDecideSmsSenderResponse> {
+    const existing = await basePrisma.school.findUnique({
+      where: { id: schoolId },
+      select: { id: true, smsSenderId: true, smsSenderStatus: true },
+    });
+    if (!existing) throw new NotFoundError("School not found.");
+    const { count } = await basePrisma.school.updateMany({
+      where: { id: schoolId, smsSenderStatus: "REQUESTED", smsSenderId: existing.smsSenderId },
+      data: { smsSenderStatus: input.decision, smsSenderDecidedAt: new Date() },
+    });
+    if (count === 0 || !existing.smsSenderId) {
+      throw new ConflictError(
+        "SMS_SENDER_NOT_REQUESTED",
+        "This school has no sender name waiting for a decision. Refresh to see where it stands.",
+      );
+    }
+    await basePrisma.auditLog.create({
+      data: {
+        schoolId: null,
+        userId: adminCtx.userId,
+        action: SCHOOLS_DECIDE_SMS_SENDER_AUDIT_ACTION,
+        entityType: "school",
+        entityId: schoolId,
+        ipAddress: reqCtx.ipAddress,
+        metadata: { field: "smsSenderStatus", senderId: existing.smsSenderId, from: "REQUESTED", to: input.decision },
+      },
+    });
+    return { schoolId, senderId: existing.smsSenderId, status: input.decision };
   }
 
   // PATCH /platform-admin/schools/:schoolId/plan (2026-10-11,

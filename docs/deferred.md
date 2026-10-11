@@ -246,6 +246,15 @@ the module doc or the PR, then link it here.
   notes. Pinned by `apps/web/src/sentry-redaction.spec.ts`.
 
 ### Product gaps
+- [x] **DONE 2026-10-11 — First-login tour brought up to date.** It walked the
+  September menu. It now stops at the school's own name at the head of the
+  menu, then Students, Enrollments, Staff, Academics, Report cards, Result
+  checker, Questions and exams, Finance, Announcements and Settings, and its
+  closing card points at the setup progress beside the greeting
+  (`buildTourSteps` in `apps/web/src/components/tour/first-login-tour.tsx`).
+  The welcome still says "Welcome to SchoolKit" and now names the school in
+  its text, so the e2e happy path is unchanged. `first-login-tour.spec.ts`
+  fails if a stop points at a menu item that no longer exists.
 - [x] **DONE 2026-10-10 — Teachers' gradebook explains why it is empty.**
   `GET /teacher-scope/me` now returns `enrolledCountByArm` (this term's
   students in each of the teacher's OWN arms, nothing outside their scope;
@@ -383,6 +392,9 @@ the module doc or the PR, then link it here.
   neither fails when SMS is off. **Owner's decision 2026-10-11:** register
   SchoolKit with CAC (in progress, may take time), and let schools with their
   own CAC send SMS and WhatsApp under their own name, SchoolKit as the fallback.
+  Per-school SMS sender names are built (`docs/modules/school-identity.md`
+  slice 2); WhatsApp is its own later module. Still open: SchoolKit's own CAC,
+  then its sender name for `TERMII_SENDER_ID`.
 - [ ] **CP4 curriculum eval queries are author-written.** It needs:
   - 5–10 topics a real teacher would type, labelled by them with the week;
   - one or two near-miss negatives.

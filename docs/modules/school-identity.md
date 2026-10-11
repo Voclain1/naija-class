@@ -1,7 +1,7 @@
 # School identity: the school's name on screens and messages
 
-Plan-first, 2026-10-11. **Approved by the owner 2026-10-11.** Slice 1 built
-2026-10-11; slice 2 next.
+Plan-first, 2026-10-11. **Approved by the owner 2026-10-11.** Slices 1 and 2
+built 2026-10-11.
 
 ## Why
 
@@ -39,7 +39,9 @@ SchoolKit stays visible, smaller, as the platform ("Powered by SchoolKit").
   stores; a separate build per school is out of scope.
 - The super-admin dashboard.
 
-A school with no logo shows its initials on the primary colour. The school's
+A school with no logo shows SchoolKit's logo beside its name (owner's call,
+2026-10-11, replacing the initials first built), and its owner and admins see a
+reminder on the dashboard to add one. The school's
 own colour is not applied to the interface in this slice: free-form colours
 break contrast and dark mode, and the request was for names and logos.
 
@@ -69,7 +71,7 @@ break contrast and dark mode, and the request was for names and logos.
   guardian password reset, fee reminders and the weekly parent summary.
   SchoolKit's own mail to schools (owner invitations, setup nudges, Paystack
   setup) keeps the bare address.
-- **Shared:** `schoolInitials` and `signSchoolLogoUrl` (`apps/api/src/common/storage/school-logo.ts`).
+- **Shared:** `signSchoolLogoUrl` (`apps/api/src/common/storage/school-logo.ts`).
 
 ## Slice 2: SMS under the school's own name
 
@@ -92,6 +94,28 @@ it cannot be self-service.
 - **Until SchoolKit's CAC lands** there is no approved fallback. Schools without
   their own sender keep email and push, as today.
 
+### As built (2026-10-11)
+
+- **Data:** migration `20261014120000_school_sms_sender`. CHECKs: the name is
+  3 to 11 letters and digits with at least one letter, and any status but
+  `NONE` has a name. `platform_admin_list_schools()` returns the pair (10th
+  revision; SECURITY DEFINER count still 23).
+- **School:** `GET` / `POST /schools/me/sms-sender` (`SmsSenderService`), owner
+  or admin. Asking for the name already waiting changes nothing; asking for the
+  approved name again is a 409; a new name replaces an approved one and goes
+  back to `REQUESTED`. Each request is audited (`sms_sender.requested`, with the
+  name it replaced) and emailed to `SMS_SENDER_REQUEST_EMAIL`, else
+  `PAYSTACK_SETUP_EMAIL`. Screen: Settings → Notifications, "SMS sender name".
+- **Operator:** `PATCH /platform-admin/schools/:id/sms-sender` with
+  `APPROVED` or `REJECTED`, audited
+  (`platform_admin.schools.decide-sms-sender`). One conditional update, so a
+  name the school changed in the meantime, or one already decided, is a 409.
+  The roster flags "SMS name to submit"; the decision is under Manage.
+- **Sending:** `smsSenderFor` (`apps/api/src/common/termii/sms-sender.ts`)
+  returns the name only when `APPROVED`; `TermiiService.sendSms` takes it as
+  `from`, else `TERMII_SENDER_ID`. Both SMS callers (guardian invites, fee
+  reminders) pass it.
+
 ## Later slices (not in this plan)
 
 - WhatsApp (D2): needs each school's own WhatsApp Business number, verified by
@@ -100,9 +124,23 @@ it cannot be self-service.
   change to the staff cookie's Origin rule, which is the CSRF defence and
   needs its own security review.
 
+## Dashboard: logo reminder and setup progress (2026-10-11)
+
+- **No logo:** SchoolKit's icon beside the school's name on web, portal and app;
+  `LogoReminder` on the owner and admin dashboard links to Settings → School.
+  It can be closed, and comes back after three more visits until the logo is
+  uploaded (`lib/dashboard/logo-reminder-state.ts`: a per-school record in
+  localStorage, one count per tab session; no storage means it just shows).
+- **Setup progress:** `SetupProgressChip` sits on the greeting's line —
+  "School setup · N% done", a ring, and the next thing to do, linking to it.
+  `setupProgress` (`apps/web/src/lib/setup-state/setup-progress.ts`) counts the
+  setup checklist's required and recommended steps from `GET /setup-state`, plus
+  the profile parents see: logo, address, phone, email. Owner and admin only;
+  hidden at 100%, and it never rounds up to 100 while anything is missing.
+
 ## Tests
 
-- Each surface renders the school's name and logo, and initials with no logo.
+- Each surface renders the school's name and logo, and SchoolKit's logo when it has none.
 - No school's name or logo appears for another school's session.
 - `sendSms` uses the approved sender only when status is `approved`; a
   `requested` or `rejected` name never reaches Termii.

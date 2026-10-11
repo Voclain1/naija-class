@@ -15,6 +15,8 @@ import {
   type PlatformAdminSetPlanResponse,
   type PlatformAdminSetSmartImportInput,
   type PlatformAdminSetSmartImportResponse,
+  type PlatformAdminDecideSmsSenderInput,
+  type PlatformAdminDecideSmsSenderResponse,
   type SchoolPlan,
 } from "@school-kit/types";
 
@@ -199,6 +201,84 @@ export function PlanSection({
         <p className="text-sm text-destructive">
           Enter a whole number of students, up to {PLATFORM_ADMIN_STUDENT_CAP_MAX.toLocaleString("en-NG")}, or leave it blank.
         </p>
+      ) : null}
+    </section>
+  );
+}
+
+// The school's own SMS sender name (docs/modules/school-identity.md slice 2).
+// The school asks in its settings; the operator submits the name through
+// SchoolKit's Termii account with the school's CAC documents, then records here
+// what the networks decided. Only a REQUESTED name can be decided.
+export function SmsSenderSection({
+  school,
+  onChanged,
+}: {
+  school: PlatformAdminSchoolDto;
+  onChanged: (patch: Partial<PlatformAdminSchoolDto>) => void;
+}) {
+  const [busy, setBusy] = useState<PlatformAdminDecideSmsSenderInput["decision"] | null>(null);
+
+  async function decide(decision: PlatformAdminDecideSmsSenderInput["decision"]) {
+    const verb = decision === "APPROVED" ? "approved" : "rejected";
+    if (!window.confirm(`Record that the networks ${verb} "${school.smsSenderId}" for ${school.name}?`)) return;
+    setBusy(decision);
+    try {
+      const payload: PlatformAdminDecideSmsSenderInput = { decision };
+      const res = await proxyFetch<PlatformAdminDecideSmsSenderResponse>(
+        `/api/platform-admin/schools/${school.schoolId}/sms-sender`,
+        { method: "PATCH", body: JSON.stringify(payload) },
+      );
+      onChanged({ smsSenderId: res.senderId, smsSenderStatus: res.status });
+      toast.success(
+        res.status === "APPROVED"
+          ? `${school.name}'s SMS now go out as ${res.senderId}.`
+          : `Recorded that ${res.senderId} was not approved.`,
+      );
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : "Could not record the decision.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  const statusBadge: Record<PlatformAdminSchoolDto["smsSenderStatus"], { label: string; variant: "success" | "warning" | "destructive" | "muted" }> = {
+    NONE: { label: "None", variant: "muted" },
+    REQUESTED: { label: "Waiting", variant: "warning" },
+    APPROVED: { label: "Approved", variant: "success" },
+    REJECTED: { label: "Not approved", variant: "destructive" },
+  };
+  const badge = statusBadge[school.smsSenderStatus];
+
+  return (
+    <section className="flex flex-col gap-3 border-t pt-4" aria-labelledby="manage-sms-sender">
+      <h3 id="manage-sms-sender" className="flex items-center gap-2 font-medium">
+        SMS sender name
+        <Badge variant={badge.variant}>{badge.label}</Badge>
+      </h3>
+      {school.smsSenderId ? (
+        <p className="text-sm text-muted-foreground">
+          The school asked to send as <span className="font-mono text-foreground">{school.smsSenderId}</span>.
+          {school.smsSenderStatus === "REQUESTED"
+            ? " Collect its CAC certificate and request letter, submit the name through Termii, then record the networks' decision."
+            : ""}
+        </p>
+      ) : (
+        <p className="text-sm text-muted-foreground">
+          The school has not asked for one. Its SMS go out under SchoolKit&apos;s name.
+        </p>
+      )}
+      {school.smsSenderStatus === "REQUESTED" ? (
+        <div className="flex gap-2">
+          <Button type="button" variant="outline" disabled={busy !== null} onClick={() => void decide("APPROVED")}>
+            {busy === "APPROVED" ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : null}
+            Approved
+          </Button>
+          <Button type="button" variant="outline" disabled={busy !== null} onClick={() => void decide("REJECTED")}>
+            {busy === "REJECTED" ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : null}
+            Not approved
+          </Button>
+        </div>
       ) : null}
     </section>
   );

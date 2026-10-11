@@ -1020,9 +1020,12 @@ describe("GuardiansService", () => {
       // guardianFields() produces "+2348" + an 8-digit suffix — Termii wants
       // no leading '+', country code intact (normalizeNigerianPhone).
       expect(termiiStub.sendSms).toHaveBeenCalledTimes(1);
+      // Third argument: the school's approved sender name. This school never
+      // asked for one, so SchoolKit's own name is used (school-identity slice 2).
       expect(termiiStub.sendSms).toHaveBeenCalledWith(
         expect.stringMatching(/^234\d{10}$/),
         expect.any(String),
+        undefined,
       );
     });
 

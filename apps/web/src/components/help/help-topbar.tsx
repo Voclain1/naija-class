@@ -4,6 +4,7 @@ import { ArrowLeft, LogOut, User as UserIcon } from "lucide-react";
 import Link from "next/link";
 
 import { ThemeToggle } from "@/components/admin/theme-toggle";
+import { SchoolKitIcon } from "@/components/brand/schoolkit-mark";
 import { SchoolLogo } from "@/components/school/school-logo";
 import { Button } from "@/components/ui/button";
 import {
@@ -36,7 +37,7 @@ export function HelpTopbar() {
       </Button>
 
       <div className="flex min-w-0 flex-1 items-center gap-2">
-        <SchoolLogo className="h-7 w-7 shrink-0 rounded object-contain" />
+        <SchoolLogo className="h-7 w-7 shrink-0 rounded object-contain" fallback={<SchoolKitIcon size={28} />} />
         <span className="truncate text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
           {school?.name ?? ""}
         </span>

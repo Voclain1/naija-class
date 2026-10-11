@@ -1,4 +1,5 @@
 import type { SchoolPlan } from "../plans/index.js";
+import type { SmsSenderStatus } from "../sms-sender/sms-sender.dto.js";
 
 // GET /platform-admin/schools — mirrors platform_admin_list_schools()'s
 // return shape exactly (see CLAUDE.md's SECURITY DEFINER inventory). Keep
@@ -68,4 +69,11 @@ export interface PlatformAdminSchoolDto {
   studentCap: number | null;
   /** Students that count toward the cap (not withdrawn or graduated). */
   studentsOnRoll: number;
+  /**
+   * The school's own SMS sender name and where its request stands (2026-10-11,
+   * docs/modules/school-identity.md slice 2). Public by nature: an approved
+   * name is printed on every SMS the school sends.
+   */
+  smsSenderId: string | null;
+  smsSenderStatus: SmsSenderStatus;
 }

@@ -50,24 +50,6 @@ export interface SchoolContactResponse {
   name: string;
   phone: string | null;
   // A signed, directly displayable image URL valid for an hour, or null when
-  // the school has no logo (show its initials instead). Not the stored path.
+  // the school has no logo (SchoolKit's shows instead). Not the stored path.
   logoUrl: string | null;
-}
-
-/**
- * Up to two initials for a school with no logo, shown in its place on every
- * signed-in surface (docs/modules/school-identity.md). Short joining words are
- * skipped, so "Virgo Fidelis Montessori School" reads "VF" and "School of the
- * Nations" reads "SN". Falls back to "S" for a name with no letters at all.
- */
-export function schoolInitials(name: string): string {
-  const skip = new Set(["of", "the", "and", "&"]);
-  const initials = name
-    .split(/\s+/)
-    .map((w) => w.replace(/[^\p{L}\p{N}]/gu, ""))
-    .filter((w) => w && !skip.has(w.toLowerCase()))
-    .slice(0, 2)
-    .map((w) => w[0]!.toUpperCase())
-    .join("");
-  return initials || "S";
 }

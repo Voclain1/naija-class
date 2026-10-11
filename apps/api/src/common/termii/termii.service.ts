@@ -83,7 +83,11 @@ export class TermiiService {
   // Termii's own docs warn generic silently fails DND-registered numbers
   // and shouldn't carry OTP/transactional content). Every message this
   // slice sends (invite links, fee reminders) is transactional.
-  async sendSms(to: string, message: string): Promise<void> {
+  //
+  // senderId: the school's own APPROVED sender name (smsSenderFor in
+  // modules/schools/sms-sender.service.ts), else the platform's
+  // TERMII_SENDER_ID (docs/modules/school-identity.md slice 2).
+  async sendSms(to: string, message: string, senderId?: string): Promise<void> {
     if (!this.apiKey) {
       throw new InternalError("TERMII_API_KEY is not configured on this server");
     }
@@ -94,7 +98,7 @@ export class TermiiService {
       body: JSON.stringify({
         api_key: this.apiKey,
         to,
-        from: this.senderId,
+        from: senderId ?? this.senderId,
         sms: message,
         type: "plain",
         channel: "dnd",

@@ -31,6 +31,7 @@ import { portalBaseUrl } from "../../common/portal-url";
 import { redactEmail, redactPhone } from "../../common/redact";
 import { normalizeNigerianPhone, TermiiService } from "../../common/termii/termii.service.js";
 import { NotificationPreferencesService } from "../notifications/notification-preferences.service";
+import { smsSenderFor } from "../../common/termii/sms-sender";
 
 interface RequestContext {
   ipAddress: string | null;
@@ -385,7 +386,7 @@ export class GuardiansService {
 
       const school = await db.school.findUniqueOrThrow({
         where: { id: authCtx.schoolId },
-        select: { name: true },
+        select: { name: true, smsSenderId: true, smsSenderStatus: true },
       });
 
       return {
@@ -394,6 +395,7 @@ export class GuardiansService {
         phone: existing.phone,
         firstName: existing.firstName,
         schoolName: school.name,
+        smsSender: smsSenderFor(school),
       };
     });
 
@@ -410,6 +412,7 @@ export class GuardiansService {
     await this.deliverInvitation({
       schoolId: authCtx.schoolId,
       schoolName: result.schoolName,
+      smsSender: result.smsSender,
       firstName: result.firstName,
       email: result.email,
       phone: result.phone,
@@ -522,7 +525,7 @@ export class GuardiansService {
 
       const school = await db.school.findUniqueOrThrow({
         where: { id: authCtx.schoolId },
-        select: { name: true },
+        select: { name: true, smsSenderId: true, smsSenderStatus: true },
       });
 
       return {
@@ -531,6 +534,7 @@ export class GuardiansService {
         phone: existing.phone,
         firstName: existing.firstName,
         schoolName: school.name,
+        smsSender: smsSenderFor(school),
         replaced: count > 0,
       };
     });
@@ -541,6 +545,7 @@ export class GuardiansService {
     await this.deliverInvitation({
       schoolId: authCtx.schoolId,
       schoolName: result.schoolName,
+      smsSender: result.smsSender,
       firstName: result.firstName,
       email: result.email,
       phone: result.phone,
@@ -748,6 +753,8 @@ export class GuardiansService {
   private async deliverInvitation(params: {
     schoolId: string;
     schoolName: string;
+    // The school's approved SMS sender name, else undefined for SchoolKit's.
+    smsSender: string | undefined;
     firstName: string;
     email: string | null;
     phone: string | null;
@@ -799,6 +806,7 @@ export class GuardiansService {
           await this.termii.sendSms(
             normalized,
             `${params.schoolName}: You've been invited to the parent portal. Set your password: ${params.acceptUrl}`,
+            params.smsSender,
           );
         } catch (err) {
           this.logger.warn(

@@ -6,6 +6,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type CSSProperties,
@@ -21,8 +22,9 @@ import { completeTourRequest } from "@/lib/tour/tour-api";
 // 2026-08-01): a single-page, sidebar-anchored ORIENTATION tour — "here's
 // where things live" — not a page-navigating replica of the onboarding
 // guide's 13-stage setup sequence (docs/onboarding-guide.md already covers
-// the how-to in depth; this covers the map). Nine stops: a welcome card,
-// then one spotlight per top-level admin nav item, then a closing card.
+// the how-to in depth; this covers the map). A welcome card, the school's own
+// name at the head of the menu, one spotlight per main admin area, then a
+// closing card (buildTourSteps below).
 //
 // Auto-triggers once per account (User.tourCompletedAt gates it) for any
 // owner/admin whose school has finished onboarding. Replayable afterwards
@@ -33,66 +35,95 @@ type TourStep =
   | { kind: "intro" | "outro"; title: string; body: string }
   | { kind: "spot"; target: string; title: string; body: string };
 
-const STEPS: TourStep[] = [
-  {
-    kind: "intro",
-    title: "Welcome to SchoolKit",
-    body: "Quick tour of where things live — about a minute. Skip anytime.",
-  },
-  {
-    kind: "spot",
-    target: "/students",
-    title: "Students",
-    body: "Add students one at a time, in bulk, or import a whole roster from a CSV.",
-  },
-  {
-    kind: "spot",
-    target: "/enrollments",
-    title: "Enrollments",
-    body: "Once class arms exist, enrol students into them here — individually or in bulk.",
-  },
-  {
-    kind: "spot",
-    target: "/staff",
-    title: "Staff",
-    body: "Invite teachers and admins, and assign who teaches what.",
-  },
-  {
-    kind: "spot",
-    target: "/settings/academic",
-    title: "Academics",
-    body: "Your academic year, terms, class levels, arms, subjects, and which classes take which subjects.",
-  },
-  {
-    kind: "spot",
-    target: "/settings/grading",
-    title: "Grading",
-    body: "How scores become letter grades — your grading scheme and grade boundaries.",
-  },
-  {
-    kind: "spot",
-    target: "/report-cards",
-    title: "Report Cards",
-    body: "Once scores are entered, build, review, and release report cards from here.",
-  },
-  {
-    kind: "spot",
-    target: "/finance/dashboard",
-    title: "Finance",
-    body: "Your fee catalog, invoices, and payments all live here.",
-  },
-  {
-    kind: "spot",
-    target: "/settings",
-    title: "Settings",
-    body: "Your school profile, logo, and user management — plus this tour, if you want it again.",
-  },
-  {
-    kind: "outro",
-    title: "You're all set",
-    body: "That's the map — the rest is filling it in. Replay this anytime from Settings → School.",
-  },
-];
+// The stops, rewritten 2026-10-11 for the shell as it now stands: the school's
+// own name and logo at the head of the menu (docs/modules/school-identity.md),
+// the results and exam tools added since September, announcements, and the
+// setup progress beside the greeting. A stop whose menu item this person
+// cannot see (a permission they lack) still shows its card, centred, so the
+// tour reads the same for every owner and admin.
+export const TOUR_SCHOOL_TARGET = "school-brand";
+
+export function buildTourSteps(schoolName: string | null | undefined): TourStep[] {
+  const school = schoolName?.trim() || "your school";
+  return [
+    {
+      kind: "intro",
+      title: "Welcome to SchoolKit",
+      body: `This is ${school}'s home on SchoolKit. A quick tour of where things live — about a minute. Skip anytime.`,
+    },
+    {
+      kind: "spot",
+      target: TOUR_SCHOOL_TARGET,
+      title: "Your school",
+      body: "Your school's name and logo head the menu here, on the parent portal and in the app. Add or change the logo in Settings → School.",
+    },
+    {
+      kind: "spot",
+      target: "/students",
+      title: "Students",
+      body: "Add students one at a time, in bulk, or import a whole class list from a spreadsheet. Parents are linked to each child here or under Guardians.",
+    },
+    {
+      kind: "spot",
+      target: "/enrollments",
+      title: "Enrollments",
+      body: "Put students in their classes for the term — one at a time or a whole class at once. Registers, fees and report cards all follow from this.",
+    },
+    {
+      kind: "spot",
+      target: "/staff",
+      title: "Staff",
+      body: "Invite teachers and admins, make form teachers, and assign who teaches which subject.",
+    },
+    {
+      kind: "spot",
+      target: "/settings/academic",
+      title: "Academics",
+      body: "Your school year and terms, class levels, arms and subjects, and which classes take which subjects.",
+    },
+    {
+      kind: "spot",
+      target: "/report-cards",
+      title: "Report cards",
+      body: "Teachers enter scores in the Gradebook; you review, approve and release report cards from here.",
+    },
+    {
+      kind: "spot",
+      target: "/report-cards/pins",
+      title: "Result checker",
+      body: "Let parents check results online — free for everyone, or behind PIN cards you print and hand out.",
+    },
+    {
+      kind: "spot",
+      target: "/teacher/question-bank",
+      title: "Questions and exams",
+      body: "A question bank for each subject (AI can draft, a teacher approves), exam papers in versions A to D, and online exams on your lab computers.",
+    },
+    {
+      kind: "spot",
+      target: "/finance/dashboard",
+      title: "Finance",
+      body: "Your fee list, invoices and payments, including fees parents pay online through Paystack.",
+    },
+    {
+      kind: "spot",
+      target: "/announcements",
+      title: "Announcements",
+      body: "Send news to parents — it reaches them in the app, on the parent portal and by email.",
+    },
+    {
+      kind: "spot",
+      target: "/settings",
+      title: "Settings",
+      body: "Your school profile and logo, notifications and your own SMS sender name, and who can sign in.",
+    },
+    {
+      kind: "outro",
+      title: "You're all set",
+      body: "The ring beside your greeting shows how much of setup is done and what to do next. Replay this tour anytime from Settings → School.",
+    },
+  ];
+}
 
 interface TourContextValue {
   active: boolean;
@@ -151,10 +182,11 @@ export function TourProvider({
     setVisible(true);
   }, [shouldAutoShow]);
 
-  // stepIndex is always kept in [0, STEPS.length - 1] by next()/back(), so
+  // stepIndex is always kept in [0, steps.length - 1] by next()/back(), so
   // the fallback never actually triggers — the `!` just satisfies
   // noUncheckedIndexedAccess on a literal, non-empty, known-length array.
-  const step = STEPS[stepIndex] ?? STEPS[0]!;
+  const steps = useMemo(() => buildTourSteps(school?.name), [school?.name]);
+  const step = steps[stepIndex] ?? steps[0]!;
   const targetHref = step.kind === "spot" ? step.target : null;
 
   // Mobile: the sidebar doesn't exist below `md`, so a spotlight step needs
@@ -218,13 +250,13 @@ export function TourProvider({
 
   const next = useCallback(() => {
     setStepIndex((i) => {
-      if (i >= STEPS.length - 1) {
+      if (i >= steps.length - 1) {
         dismiss();
         return i;
       }
       return i + 1;
     });
-  }, [dismiss]);
+  }, [dismiss, steps.length]);
 
   const back = useCallback(() => {
     setStepIndex((i) => Math.max(i - 1, 0));
@@ -257,7 +289,7 @@ export function TourProvider({
           <TourOverlay
             step={step}
             stepIndex={stepIndex}
-            totalSteps={STEPS.length}
+            totalSteps={steps.length}
             rect={rect}
             isMobile={isMobile}
             busy={dismissing}

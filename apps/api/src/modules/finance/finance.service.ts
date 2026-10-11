@@ -26,6 +26,7 @@ import { redactPhone } from "../../common/redact.js";
 import { normalizeNigerianPhone, TermiiService } from "../../common/termii/termii.service.js";
 import { NotificationPreferencesService } from "../notifications/notification-preferences.service.js";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service.js";
+import { smsSenderFor } from "../../common/termii/sms-sender";
 
 // onModuleInit must never block NestFactory.create() indefinitely. Same fix
 // as PartitionService (see docs/deferred.md's "recurring dev-server bootstrap
@@ -548,8 +549,11 @@ export class FinanceService implements OnModuleInit {
     return withTenant(authCtx.schoolId, async (db) => {
       const school = await db.school.findUniqueOrThrow({
         where: { id: authCtx.schoolId },
-        select: { name: true },
+        select: { name: true, smsSenderId: true, smsSenderStatus: true },
       });
+      // The school's own approved sender name, else SchoolKit's
+      // (docs/modules/school-identity.md slice 2).
+      const smsSender = smsSenderFor(school);
 
       let sent = 0;
       let skipped = 0;
@@ -679,6 +683,7 @@ export class FinanceService implements OnModuleInit {
               await this.termii.sendSms(
                 normalized,
                 buildReminderSms({ studentName, schoolName: school.name, balance, dueDate: dueDateStr }),
+                smsSender,
               );
               sentAny = true;
             } catch (err) {

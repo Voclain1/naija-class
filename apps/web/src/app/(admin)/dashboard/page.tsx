@@ -15,6 +15,8 @@ import { BrandLoadingInline } from "@/components/brand-loading-screen";
 import { Badge } from "@/components/ui/badge";
 import { AlertList } from "@/components/shared/alert-list";
 import { InlineAlert } from "@/components/shared/inline-alert";
+import { LogoReminder } from "@/components/dashboard/logo-reminder";
+import { SetupProgressChip } from "@/components/dashboard/setup-progress-chip";
 import { SetupChecklist } from "@/components/setup/setup-checklist";
 import { StatCard } from "@/components/shared/stat-card";
 import { Button } from "@/components/ui/button";
@@ -155,11 +157,15 @@ export default function DashboardPage() {
     return (
       <div className="mx-auto flex max-w-3xl flex-col gap-6">
         <div>
-          <h1 className="font-serif text-2xl font-medium tracking-tight text-foreground">Dashboard</h1>
-          <p className="text-sm text-muted-foreground">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+            <h1 className="font-serif text-2xl font-medium tracking-tight text-foreground">Dashboard</h1>
+            <SetupProgressChip />
+          </div>
+          <p className="mt-1 text-sm text-muted-foreground">
             Once your school is set up, this is where the day-to-day will live.
           </p>
         </div>
+        <LogoReminder />
         <SetupChecklist />
       </div>
     );
@@ -203,9 +209,12 @@ export default function DashboardPage() {
           <span className="text-muted-foreground">{dashboard.termName}</span>
         </div>
 
-        <h1 className="mt-3 font-serif text-2xl font-medium tracking-tight text-foreground sm:text-4xl">
-          {greeting()}, {user?.firstName ?? ""}
-        </h1>
+        <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+          <h1 className="font-serif text-2xl font-medium tracking-tight text-foreground sm:text-4xl">
+            {greeting()}, {user?.firstName ?? ""}
+          </h1>
+          <SetupProgressChip />
+        </div>
         {school?.name && (
           <p className="mt-1 text-sm text-muted-foreground">
             Here is your daily administrative brief for {school.name}.
@@ -215,6 +224,8 @@ export default function DashboardPage() {
 
         <DashboardActionBar />
       </div>
+
+      <LogoReminder />
 
       {/* A partly-configured school reaches this branch as soon as it has one
           enrolled student or one billed fee — well before setup is finished.

@@ -27,6 +27,10 @@ export function describeAuditEntry(e: Pick<PlatformAdminAuditEntryDto, "action" 
     }
     case "platform_admin.schools.set-smart-import":
       return `Turned Smart Import ${onOff(m.to)}`;
+    case "platform_admin.schools.decide-sms-sender": {
+      const name = typeof m.senderId === "string" ? `the SMS sender name ${m.senderId}` : "the SMS sender name";
+      return m.to === "APPROVED" ? `Approved ${name}` : `Recorded that ${name} was not approved`;
+    }
     case "platform_admin.schools.set-staff-mobile":
       return `Turned staff mobile ${onOff(m.to)}`;
     case "platform_admin.schools.set-ai-budget":
