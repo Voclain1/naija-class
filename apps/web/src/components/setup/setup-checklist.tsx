@@ -13,7 +13,7 @@ import {
   doneSummary,
   shouldShowChecklist,
 } from "@/lib/setup-state/checklist-presentation";
-import { useSetupState } from "@/lib/setup-state/use-setup-state";
+import type { useSetupState } from "@/lib/setup-state/use-setup-state";
 
 // The dashboard setup checklist (F-25).
 //
@@ -54,13 +54,25 @@ const TIER_HEADINGS: Record<SetupStepTier, { title: string; blurb: string }> = {
   },
 };
 
-export function SetupChecklist() {
-  const { setupState } = useSetupState();
+export function SetupChecklist({
+  setup,
+  placeholder = false,
+}: {
+  setup: ReturnType<typeof useSetupState>;
+  /** Show a loading card while the state loads. Only where the checklist is
+   *  certain to appear (a new school's empty dashboard), so an established
+   *  school never sees a card flash up and vanish. */
+  placeholder?: boolean;
+}) {
+  const { setupState, loading, canSetUp } = setup;
   // Optional steps and the "already done for you" list start folded away.
   // The point of the card is the short list of things that matter now; the
   // rest is there for an owner who goes looking, not in their face.
   const [showRest, setShowRest] = useState(false);
 
+  // A placeholder while it loads, so a new school's dashboard never looks
+  // empty: on a cold database the first read can take several seconds.
+  if (loading && canSetUp) return placeholder ? <SetupChecklistSkeleton /> : null;
   if (!shouldShowChecklist(setupState) || !setupState) return null;
 
   const { steps, status, requiredRemaining, nextStepKey, alreadyDone } = setupState;
@@ -216,3 +228,22 @@ function StepRow({ step, highlight }: { step: SetupStepDto; highlight: boolean }
   );
 }
 
+function SetupChecklistSkeleton() {
+  return (
+    <Card aria-busy="true">
+      <CardHeader>
+        <CardTitle className="text-lg">Checking your school&apos;s setup…</CardTitle>
+        <CardDescription>This only takes a moment.</CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-3" aria-hidden="true">
+        <div className="h-2 w-full animate-pulse rounded-full bg-muted" />
+        {[0, 1, 2].map((i) => (
+          <div key={i} className="flex items-center gap-3">
+            <div className="h-5 w-5 shrink-0 animate-pulse rounded-full bg-muted" />
+            <div className="h-4 flex-1 animate-pulse rounded bg-muted" />
+          </div>
+        ))}
+      </CardContent>
+    </Card>
+  );
+}

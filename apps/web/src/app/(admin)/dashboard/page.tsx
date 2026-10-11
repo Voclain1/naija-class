@@ -18,6 +18,7 @@ import { InlineAlert } from "@/components/shared/inline-alert";
 import { LogoReminder } from "@/components/dashboard/logo-reminder";
 import { SetupProgressChip } from "@/components/dashboard/setup-progress-chip";
 import { SetupChecklist } from "@/components/setup/setup-checklist";
+import { useSetupState } from "@/lib/setup-state/use-setup-state";
 import { StatCard } from "@/components/shared/stat-card";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -43,6 +44,12 @@ function greeting(): string {
 
 export default function DashboardPage() {
   const { user, school } = useAuth();
+  // Started here, at mount, so it runs alongside the term lookup and the
+  // dashboard request instead of after them, and shared by the checklist and
+  // the progress chip (one request, not one each). A brand-new school's
+  // dashboard was a chain of round trips: term, then dashboard, then setup
+  // state, twice (owner report, 2026-10-11).
+  const setup = useSetupState();
   const searchParams = useSearchParams();
   const termId = searchParams.get("termId") ?? "";
   const noAcademicYear = searchParams.get("noAcademicYear") === "1";
@@ -159,14 +166,14 @@ export default function DashboardPage() {
         <div>
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
             <h1 className="font-serif text-2xl font-medium tracking-tight text-foreground">Dashboard</h1>
-            <SetupProgressChip />
+            <SetupProgressChip setup={setup} />
           </div>
           <p className="mt-1 text-sm text-muted-foreground">
             Once your school is set up, this is where the day-to-day will live.
           </p>
         </div>
         <LogoReminder />
-        <SetupChecklist />
+        <SetupChecklist setup={setup} placeholder />
       </div>
     );
   }
@@ -213,7 +220,7 @@ export default function DashboardPage() {
           <h1 className="font-serif text-2xl font-medium tracking-tight text-foreground sm:text-4xl">
             {greeting()}, {user?.firstName ?? ""}
           </h1>
-          <SetupProgressChip />
+          <SetupProgressChip setup={setup} />
         </div>
         {school?.name && (
           <p className="mt-1 text-sm text-muted-foreground">
@@ -232,7 +239,7 @@ export default function DashboardPage() {
           SetupChecklist renders nothing once the API calls the school
           established, so this is not permanent furniture; it is here so that
           progress on the roster does not make the remaining steps vanish. */}
-      <SetupChecklist />
+      <SetupChecklist setup={setup} />
 
       {/* KPI row */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
