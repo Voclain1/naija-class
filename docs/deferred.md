@@ -383,6 +383,9 @@ the module doc or the PR, then link it here.
   neither fails when SMS is off. **Owner's decision 2026-10-11:** register
   SchoolKit with CAC (in progress, may take time), and let schools with their
   own CAC send SMS and WhatsApp under their own name, SchoolKit as the fallback.
+  Per-school SMS sender names are built (`docs/modules/school-identity.md`
+  slice 2); WhatsApp is its own later module. Still open: SchoolKit's own CAC,
+  then its sender name for `TERMII_SENDER_ID`.
 - [ ] **CP4 curriculum eval queries are author-written.** It needs:
   - 5–10 topics a real teacher would type, labelled by them with the week;
   - one or two near-miss negatives.
