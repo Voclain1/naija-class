@@ -380,7 +380,9 @@ the module doc or the PR, then link it here.
   (needs a per-school sender ID in `TermiiService`, today one platform-wide
   `TERMII_SENDER_ID`); or run without SMS — push and email already cover both
   callers (`guardians.service.ts` invites, `finance.service.ts` reminders), and
-  neither fails when SMS is off. Owner's call.
+  neither fails when SMS is off. **Owner's decision 2026-10-11:** register
+  SchoolKit with CAC (in progress, may take time), and let schools with their
+  own CAC send SMS and WhatsApp under their own name, SchoolKit as the fallback.
 - [ ] **CP4 curriculum eval queries are author-written.** It needs:
   - 5–10 topics a real teacher would type, labelled by them with the week;
   - one or two near-miss negatives.
