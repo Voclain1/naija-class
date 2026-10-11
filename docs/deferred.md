@@ -246,6 +246,19 @@ the module doc or the PR, then link it here.
   notes. Pinned by `apps/web/src/sentry-redaction.spec.ts`.
 
 ### Product gaps
+- [ ] **First-login tour is out of date (owner, 2026-10-11).** It still walks
+  the menu as it stood in September: Students, Enrollments, Staff, Academics,
+  Grading, Report Cards, Finance, Settings. It says nothing about what has
+  shipped since: the school's own name and logo at the head of the menu, the
+  setup progress beside the greeting and the logo reminder
+  (`docs/modules/school-identity.md`), the SMS sender name in Settings, the
+  result checker and PIN cards, the question bank and exam papers, homework,
+  announcements and the timetable. Its welcome still says "Welcome to
+  SchoolKit" where the rest of the shell now names the school (the e2e happy
+  path asserts that heading, so change both together). **Trigger:** before the
+  next school is onboarded. **Where:**
+  `apps/web/src/components/tour/first-login-tour.tsx`,
+  `e2e/tests/phase-0-happy-path.spec.ts`.
 - [x] **DONE 2026-10-10 — Teachers' gradebook explains why it is empty.**
   `GET /teacher-scope/me` now returns `enrolledCountByArm` (this term's
   students in each of the teacher's OWN arms, nothing outside their scope;
