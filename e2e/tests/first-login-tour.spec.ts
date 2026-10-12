@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 
-import { loginAsAdmin } from "../fixtures/session";
+import { loginAsAdmin } from "../fixtures/session.js";
 
 // The first-login tour walks the menu (components/tour/first-login-tour.tsx).
 // It broke once in a way no unit test sees (2026-10-12): the card sat along
