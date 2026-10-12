@@ -6,6 +6,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -17,6 +18,7 @@ import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth/use-auth";
 import { completeTourRequest } from "@/lib/tour/tour-api";
+import { placeTourCard, type TourPointer } from "@/lib/tour/tour-placement";
 
 // The first-login product tour for the owner/admin shell. Scope (plan-first,
 // 2026-08-01): a single-page, sidebar-anchored ORIENTATION tour — "here's
@@ -202,12 +204,20 @@ export function TourProvider({
   // portal mounts asynchronously after the effect above requests it open —
   // rAF alone isn't guaranteed to land after that mount, so re-measuring
   // when mobileNavOpen itself changes closes that race).
+  //
+  // Each stop first scrolls its item into view: the menu is a scrolling column
+  // of ~20 items now, so Finance, Announcements and Settings sit below the
+  // fold on a laptop and in the lower half of the phone drawer. Centring the
+  // item leaves room above or below it for the card (tour-placement.ts).
+  // Once per stop, so it never fights someone scrolling the menu themselves.
+  const scrolledForRef = useRef<string | null>(null);
   useEffect(() => {
     if (!visible || !targetHref) {
+      scrolledForRef.current = null;
       setRect(null);
       return;
     }
-    function measure() {
+    function findTarget(): HTMLElement | undefined {
       // NavLink renders in BOTH AdminSidebar (desktop `<aside>`, `hidden
       // md:flex`) and MobileNav's drawer — the same data-tour-target value
       // exists twice in the DOM at once, one of them display:none. A plain
@@ -221,12 +231,24 @@ export function TourProvider({
       const candidates = document.querySelectorAll<HTMLElement>(
         `[data-tour-target="${CSS.escape(targetHref as string)}"]`,
       );
-      const el = Array.from(candidates).find(
+      return Array.from(candidates).find(
         (c) => c.offsetWidth > 0 || c.offsetHeight > 0 || c.getClientRects().length > 0,
       );
+    }
+    function measure() {
+      const el = findTarget();
       setRect(el ? el.getBoundingClientRect() : null);
     }
-    const raf = requestAnimationFrame(measure);
+    const raf = requestAnimationFrame(() => {
+      const el = findTarget();
+      const stopKey = `${targetHref}|${mobileNavOpen}`;
+      if (el && scrolledForRef.current !== stopKey) {
+        scrolledForRef.current = stopKey;
+        const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+        el.scrollIntoView({ block: "center", inline: "nearest", behavior: reduceMotion ? "auto" : "smooth" });
+      }
+      measure();
+    });
     window.addEventListener("resize", measure);
     window.addEventListener("scroll", measure, true);
     return () => {
@@ -389,12 +411,19 @@ function TourOverlay({
     );
   }
 
+  // The card goes beside its item, never over it (lib/tour/tour-placement.ts),
+  // with a pointer on the side facing the item, so it reads as "this one".
+  const placedCard = (
+    <PlacedTourCard rect={rect} isMobile={isMobile} title={step.title} target={step.target}>
+      {card}
+    </PlacedTourCard>
+  );
+
   if (isMobile) {
     // The drawer (MobileNav) already supplies its own backdrop — no second
     // dim layer here, just a highlight ring around the real target (inert:
     // pointer-events stay blocked so the tour can't be interrupted by
-    // navigating mid-step) and a fixed bottom sheet, since there's no room
-    // to float a tooltip beside an item inside an 85vw-wide drawer.
+    // navigating mid-step) and the card above or below the item.
     return (
       <>
         <div
@@ -402,28 +431,15 @@ function TourOverlay({
           style={{ top: rect.top, left: rect.left, width: rect.width, height: rect.height }}
           aria-hidden="true"
         />
-        <div className="fixed inset-x-0 bottom-0 z-[70] border-t border-border bg-card p-4 shadow-[0_-4px_16px_rgba(0,0,0,0.15)]">
-          {card}
-        </div>
+        {placedCard}
       </>
     );
   }
 
   // Desktop: full-page dim with a spotlight cutout around `rect` (the
   // classic box-shadow technique — one element sized exactly to the target
-  // with an oversized shadow standing in for "everything else"), plus a
-  // floating tooltip clamped to the viewport, preferring the target's right
-  // side and falling back below it when there isn't room.
-  const margin = 12;
-  const tooltipWidth = 320;
-  const preferRight = rect.right + margin + tooltipWidth <= window.innerWidth;
-  const tooltipStyle: CSSProperties = preferRight
-    ? { top: Math.max(margin, rect.top), left: rect.right + margin }
-    : {
-        top: Math.min(rect.bottom + margin, window.innerHeight - 220),
-        left: Math.min(Math.max(rect.left, margin), window.innerWidth - tooltipWidth - margin),
-      };
-
+  // with an oversized shadow standing in for "everything else"), and the card
+  // to the right of the menu, level with the item.
   return (
     <div className="fixed inset-0 z-[60]" onClick={onDismiss}>
       <div
@@ -447,16 +463,87 @@ function TourOverlay({
         style={{ top: rect.top, left: rect.left, width: rect.width, height: rect.height }}
         onClick={(e) => e.stopPropagation()}
       />
-      <div
-        className="fixed w-80 rounded-lg border border-border bg-card p-4 shadow-xl"
-        style={tooltipStyle}
-        role="dialog"
-        aria-modal="true"
-        aria-label={step.title}
-        onClick={(e) => e.stopPropagation()}
-      >
-        {card}
-      </div>
+      {placedCard}
     </div>
+  );
+}
+
+// Measures its own height (the text differs per stop), then asks
+// placeTourCard where to sit. The first paint uses an estimate and is hidden,
+// so the card never flashes in the wrong place.
+function PlacedTourCard({
+  rect,
+  isMobile,
+  title,
+  target,
+  children,
+}: {
+  rect: DOMRect;
+  isMobile: boolean;
+  title: string;
+  /** The stop's target, on the card for e2e/tests/first-login-tour.spec.ts. */
+  target: string;
+  children: ReactNode;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [height, setHeight] = useState<number | null>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    setHeight(el.offsetHeight);
+    const observer = new ResizeObserver(() => setHeight(el.offsetHeight));
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  const placement = placeTourCard({
+    target: { top: rect.top, left: rect.left, width: rect.width, height: rect.height },
+    viewport: { width: window.innerWidth, height: window.innerHeight },
+    card: { height: height ?? 200 },
+    isMobile,
+  });
+  const style: CSSProperties = {
+    top: placement.top,
+    left: placement.left,
+    width: placement.width,
+    visibility: height === null ? "hidden" : "visible",
+  };
+
+  return (
+    <div
+      ref={ref}
+      className="fixed z-[70] rounded-lg border border-border bg-card p-4 shadow-xl"
+      style={style}
+      role="dialog"
+      aria-modal="true"
+      aria-label={title}
+      data-tour-for={target}
+      onClick={(e) => e.stopPropagation()}
+    >
+      <TourPointerMark pointer={placement.pointer} />
+      {children}
+    </div>
+  );
+}
+
+// A small diamond on the card's edge, pointing at the item: the card's own
+// background and border, half of it outside the card. Not a side stripe
+// (CLAUDE.md, "No accent borders").
+function TourPointerMark({ pointer }: { pointer: TourPointer }) {
+  const size = 12;
+  const position: CSSProperties =
+    pointer.side === "left"
+      ? { left: -size / 2 - 1, top: pointer.offset - size / 2 }
+      : pointer.side === "top"
+        ? { top: -size / 2 - 1, left: pointer.offset - size / 2 }
+        : { bottom: -size / 2 - 1, left: pointer.offset - size / 2 };
+  const edges =
+    pointer.side === "left" ? "border-b border-l" : pointer.side === "top" ? "border-l border-t" : "border-b border-r";
+  return (
+    <span
+      className={`pointer-events-none absolute rotate-45 bg-card border-border ${edges}`}
+      style={{ ...position, width: size, height: size }}
+      aria-hidden="true"
+    />
   );
 }
