@@ -1,0 +1,39 @@
+# PR titles follow conventional commits (CLAUDE.md, "Git conventions").
+#
+# The title is what lands on main: every PR is squash-merged, and the squash
+# commit takes the PR's title. So this checks the title, not each commit on
+# the branch — those are squashed away (docs/deferred.md, "Tooling", the
+# commitlint item; added 2026-10-12).
+#
+# Accepted: `type(scope): summary` or `type: summary`, with an optional `!`
+# before the colon for a breaking change. Types are the ones CLAUDE.md lists,
+# plus the usual perf / ci / build / style / revert.
+
+name: pr-title
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, edited, reopened, synchronize]
+
+permissions: {}
+
+jobs:
+  title:
+    name: PR title (conventional commits)
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Check the title
+        # The title comes in through env, never pasted into the script: it is
+        # text anyone opening a PR controls.
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          pattern='^(feat|fix|chore|docs|refactor|test|perf|ci|build|style|revert)(\([a-z0-9][a-z0-9./-]*\))?!?: [^ ].*$'
+          if [[ "$TITLE" =~ $pattern ]]; then
+            echo "OK: $TITLE"
+          else
+            echo "::error::PR title must be a conventional commit, e.g. 'feat(attendance): daily marking'. Got: $TITLE"
+            exit 1
+          fi
