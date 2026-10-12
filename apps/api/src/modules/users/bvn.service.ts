@@ -57,13 +57,16 @@ export class BvnService {
       }
 
       await this.withBvnKey(db, async () => {
-        const rows = await db.$queryRaw<Array<{ ciphertext: Buffer }>>`
+        const rows = await db.$queryRaw<Array<{ ciphertext: Uint8Array }>>`
           SELECT encrypt_bvn(${dto.bvn}) AS ciphertext
         `;
         const [{ ciphertext }] = rows;
         await db.user.update({
           where: { id: targetUserId },
-          data: { bvnEncrypted: ciphertext, bvnLast4: dto.bvn.slice(-4) },
+          // Prisma 6+ types Bytes as Uint8Array over a plain ArrayBuffer; a
+          // raw query's bytea can come back as a Buffer over a shared pool,
+          // so copy it into a Uint8Array of its own.
+          data: { bvnEncrypted: Uint8Array.from(ciphertext), bvnLast4: dto.bvn.slice(-4) },
         });
       });
 
