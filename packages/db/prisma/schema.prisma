@@ -99,13 +99,13 @@ model School {
   // wrong or partial account number to parents the moment someone saves.
   // Display requires the toggle AND all three fields present — see
   // schoolBankDetails() in packages/types.
-  bankName              String?   @map("bank_name")
-  bankAccountName       String?   @map("bank_account_name")
-  bankAccountNumber     String?   @map("bank_account_number")
-  bankDetailsEnabled    Boolean   @default(false) @map("bank_details_enabled")
+  bankName              String?         @map("bank_name")
+  bankAccountName       String?         @map("bank_account_name")
+  bankAccountNumber     String?         @map("bank_account_number")
+  bankDetailsEnabled    Boolean         @default(false) @map("bank_details_enabled")
   // Staff mobile is deliberately enabled one school at a time. Shipping the
   // binary or API must never silently expose a new staff credential surface.
-  staffMobileEnabled    Boolean   @default(false) @map("staff_mobile_enabled")
+  staffMobileEnabled    Boolean         @default(false) @map("staff_mobile_enabled")
   // Onboarding-nudge email (2026-08-08): stamped once, the first (and only,
   // v1) time OnboardingNudgeService emails a school's owner that finished
   // the 5-step wizard but never came back to add an academic year or
@@ -114,7 +114,7 @@ model School {
   // User.tourCompletedAt: set unconditionally after the send attempt
   // (success or logged failure) so a Resend outage doesn't cause a resend
   // storm once it clears.
-  onboardingNudgeSentAt DateTime? @map("onboarding_nudge_sent_at")
+  onboardingNudgeSentAt DateTime?       @map("onboarding_nudge_sent_at")
   // Early-access marker (2026-08-09). Nullable stamp, NO enforcement logic
   // anywhere — deliberately just the flag, set by hand from the platform-admin
   // school list. Exists now because the platform has no concept of a plan,
@@ -130,7 +130,7 @@ model School {
   // Shape matches onboardingNudgeSentAt / ndprConsentAt: a timestamp, not a
   // boolean (the extra information is free) and not an enum (naming the tiers
   // before they are decided just buys a migration later).
-  earlyAccessGrantedAt  DateTime? @map("early_access_granted_at")
+  earlyAccessGrantedAt  DateTime?       @map("early_access_granted_at")
   // Phase 5 / Slice 1 CP2 — AI cost controls. Two deliberately separate knobs:
   //
   //   aiEnabled              per-school kill switch. Flipping it false stops
@@ -170,8 +170,8 @@ model School {
   // concept — none exists anywhere in the product code (see
   // earlyAccessGrantedAt's note directly above), and inventing one to hold an
   // AI budget would be the tail wagging the dog.
-  aiEnabled             Boolean   @default(false) @map("ai_enabled")
-  aiMonthlyTokenBudget  Int?      @map("ai_monthly_token_budget")
+  aiEnabled             Boolean         @default(false) @map("ai_enabled")
+  aiMonthlyTokenBudget  Int?            @map("ai_monthly_token_budget")
   //   smartImportEnabled     Smart Student Import (photograph a register,
   //                          the model transcribes it) for this school
   //                          (2026-10-11). Off by default, switched on by the
@@ -182,7 +182,7 @@ model School {
   //                          docs/modules/smart-student-import.md has passed,
   //                          so aiEnabled alone is not enough to open it. It
   //                          only narrows: the AI gates above still apply.
-  smartImportEnabled    Boolean   @default(false) @map("smart_import_enabled")
+  smartImportEnabled    Boolean         @default(false) @map("smart_import_enabled")
   //   plan / studentCapOverride   the school's plan and, for a deal, its own
   //                          student cap (2026-10-11, docs/modules/plans.md).
   //                          Set by the platform operator only. Null override
@@ -191,8 +191,8 @@ model School {
   //                          prices are not stored: the caps only block when
   //                          PLAN_ENFORCEMENT=enforce, which early access does
   //                          not run.
-  plan                  SchoolPlan @default(FREE) @map("plan")
-  studentCapOverride    Int?      @map("student_cap_override")
+  plan                  SchoolPlan      @default(FREE) @map("plan")
+  studentCapOverride    Int?            @map("student_cap_override")
   //   smsSender*           the school's own SMS sender name (2026-10-11,
   //                          docs/modules/school-identity.md slice 2). The
   //                          school asks; the platform operator submits it to
@@ -200,10 +200,22 @@ model School {
   //                          CAC registration) and records the outcome. Only
   //                          APPROVED is ever sent; anything else uses the
   //                          platform's TERMII_SENDER_ID.
-  smsSenderId           String?          @map("sms_sender_id")
-  smsSenderStatus       SmsSenderStatus  @default(NONE) @map("sms_sender_status")
-  smsSenderRequestedAt  DateTime?        @map("sms_sender_requested_at")
-  smsSenderDecidedAt    DateTime?        @map("sms_sender_decided_at")
+  smsSenderId           String?         @map("sms_sender_id")
+  smsSenderStatus       SmsSenderStatus @default(NONE) @map("sms_sender_status")
+  smsSenderRequestedAt  DateTime?       @map("sms_sender_requested_at")
+  smsSenderDecidedAt    DateTime?       @map("sms_sender_decided_at")
+
+  //   admissionNumber*       admission numbers assigned by SchoolKit
+  //                          (2026-10-12, docs/modules/admission-numbers.md).
+  //                          MANUAL = the admin types every number (the
+  //                          default). AUTO = a blank number gets the next one
+  //                          in `admissionNumberFormat`, counted per
+  //                          `admissionNumberOrder`. `decidedAt` records that
+  //                          the first-time question was answered.
+  admissionNumberMode      AdmissionNumberMode  @default(MANUAL) @map("admission_number_mode")
+  admissionNumberFormat    String?              @map("admission_number_format")
+  admissionNumberOrder     AdmissionNumberOrder @default(SCHOOL) @map("admission_number_order")
+  admissionNumberDecidedAt DateTime?            @map("admission_number_decided_at")
 
   //   suspendedAt            platform-admin suspension (2026-10-07,
   //                          docs/modules/platform-admin.md slice 2). Non-null
@@ -253,6 +265,8 @@ model School {
   passwordResetTokens PasswordResetToken[]
 
   guardianPasswordResetTokens GuardianPasswordResetToken[]
+
+  admissionNumberCounters AdmissionNumberCounter[]
 
   @@map("schools")
 }
@@ -3724,9 +3738,9 @@ model CbtCandidate {
   // CBT3: the mark for the questions sat on paper, typed in by the teacher.
   theoryMark Int?   @map("theory_mark")
 
-  sitting  CbtSitting @relation(fields: [sittingId], references: [id], onDelete: Cascade)
-  student  Student    @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  classArm ClassArm   @relation(fields: [classArmId], references: [id], onDelete: Cascade)
+  sitting  CbtSitting   @relation(fields: [sittingId], references: [id], onDelete: Cascade)
+  student  Student      @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  classArm ClassArm     @relation(fields: [classArmId], references: [id], onDelete: Cascade)
   attempts CbtAttempt[]
 
   @@unique([sittingId, studentId])
@@ -3767,4 +3781,30 @@ model CbtAttempt {
   @@index([sittingId])
   @@index([schoolId])
   @@map("cbt_attempts")
+}
+
+// Admission numbers assigned by SchoolKit (docs/modules/admission-numbers.md).
+enum AdmissionNumberMode {
+  MANUAL
+  AUTO
+}
+
+enum AdmissionNumberOrder {
+  SCHOOL
+  CLASS
+  RANDOM
+}
+
+// One running count per scope: the year and/or class code the format shows,
+// or "" for one count for ever. Taken with an upsert in the same transaction
+// as the student insert. FORCE RLS on school_id.
+model AdmissionNumberCounter {
+  schoolId  String   @map("school_id")
+  scope     String
+  lastValue Int      @map("last_value")
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
+  school    School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  @@id([schoolId, scope])
+  @@map("admission_number_counters")
 }

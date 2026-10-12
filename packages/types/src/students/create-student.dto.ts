@@ -13,7 +13,10 @@ import { z } from "zod";
 // is free-text required-unique-per-school.
 export const createStudentSchema = z
   .object({
-    admissionNumber: z.string().trim().min(1).max(40),
+    // Optional since 2026-10-12: left out, a school on automatic numbering
+    // gets the next number (docs/modules/admission-numbers.md); a school that
+    // types its numbers is refused with ADMISSION_NUMBER_REQUIRED.
+    admissionNumber: z.string().trim().min(1).max(40).optional(),
     firstName: z.string().trim().min(1).max(60),
     middleName: z.string().trim().min(1).max(60).nullable().optional(),
     lastName: z.string().trim().min(1).max(60),

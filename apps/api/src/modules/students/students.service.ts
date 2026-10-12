@@ -9,6 +9,7 @@ import {
   type BulkCreateStudentsResponse,
   type BulkStudentConflictDetails,
   NotFoundError,
+  ValidationError,
   type CreateStudentInput,
   type GraduateStudentInput,
   type ListStudentsQuery,
@@ -23,6 +24,12 @@ import {
 import type { AuthContext } from "../../common/auth/auth-context";
 import { assertUserActiveAndHasOneOf } from "../../common/auth/role-check";
 import { assertRoomForStudents } from "../../common/plans/plan-limits";
+import {
+  admissionYear,
+  assignAdmissionNumbers,
+  classCodeForArm,
+  loadNumbering,
+} from "./admission-numbers";
 import {
   insertEnrollmentInTx,
   loadCurrentEnrollmentForStudent,
@@ -216,11 +223,26 @@ export class StudentsService {
       // The plan's student cap: blocks only under PLAN_ENFORCEMENT=enforce
       // (docs/modules/plans.md D3).
       await assertRoomForStudents(db, authCtx.schoolId, 1);
+
+      // A blank number is SchoolKit's to give when the school numbers
+      // automatically (docs/modules/admission-numbers.md); a typed one wins.
+      let admissionNumber = input.admissionNumber;
+      if (!admissionNumber) {
+        const numbering = await loadNumbering(db, authCtx.schoolId);
+        if (!numbering) {
+          throw new ValidationError("ADMISSION_NUMBER_REQUIRED", "Enter the student's admission number.");
+        }
+        const classCode = input.enrollment ? await classCodeForArm(db, input.enrollment.classArmId) : undefined;
+        [admissionNumber] = await assignAdmissionNumbers(db, authCtx.schoolId, numbering, [{ classCode }], {
+          year: admissionYear(input.admittedAt ?? new Date()),
+        });
+      }
+
       try {
         const created = await db.student.create({
           data: {
             schoolId: authCtx.schoolId,
-            admissionNumber: input.admissionNumber,
+            admissionNumber: admissionNumber!,
             firstName: input.firstName,
             middleName: input.middleName ?? null,
             lastName: input.lastName,
@@ -328,10 +350,12 @@ export class StudentsService {
   ): Promise<BulkCreateStudentsResponse> {
     await assertUserActiveAndHasOneOf(authCtx, ["owner", "admin"]);
 
-    const numbers = input.students.map((s) => s.admissionNumber);
+    // Typed numbers only: a blank one is assigned below, after the checks.
+    const typed = input.students.map((s) => s.admissionNumber);
     const conflicts: BulkStudentConflictDetails["rows"] = [];
     const firstSeen = new Map<string, number>();
-    numbers.forEach((n, index) => {
+    typed.forEach((n, index) => {
+      if (!n) return;
       if (firstSeen.has(n)) conflicts.push({ index, reason: "REPEATED_IN_REQUEST" });
       else firstSeen.set(n, index);
     });
@@ -356,12 +380,42 @@ export class StudentsService {
       }
 
       await assertRoomForStudents(db, authCtx.schoolId, input.students.length);
+
+      // The batch's class: checked once, then placed with one insert below.
+      const placement = input.enrollment ? await loadPlacement(db, input.enrollment) : null;
+
+      // Blank numbers, in row order, when the school numbers automatically.
+      const blanks = typed.flatMap((n, index) => (n ? [] : [index]));
+      const numbers = [...typed];
+      if (blanks.length > 0) {
+        const numbering = await loadNumbering(db, authCtx.schoolId);
+        if (!numbering) {
+          throw new ValidationError(
+            "ADMISSION_NUMBER_REQUIRED",
+            blanks.length === 1
+              ? "One row has no admission number. Enter it, or turn on automatic numbering in Settings."
+              : `${blanks.length} rows have no admission number. Enter them, or turn on automatic numbering in Settings.`,
+            { rows: blanks.map((index) => ({ index })) },
+          );
+        }
+        const assigned = await assignAdmissionNumbers(
+          db,
+          authCtx.schoolId,
+          numbering,
+          blanks.map(() => ({ classCode: placement?.classCode })),
+          { taken: new Set(firstSeen.keys()) },
+        );
+        blanks.forEach((index, k) => {
+          numbers[index] = assigned[k];
+        });
+      }
+
       try {
         const now = new Date();
         const rows = await db.student.createManyAndReturn({
-          data: input.students.map((s) => ({
+          data: input.students.map((s, index) => ({
             schoolId: authCtx.schoolId,
-            admissionNumber: s.admissionNumber,
+            admissionNumber: numbers[index]!,
             firstName: s.firstName,
             middleName: s.middleName ?? null,
             lastName: s.lastName,
@@ -400,10 +454,42 @@ export class StudentsService {
           })),
         });
 
+        if (placement) {
+          const enrollments = await db.enrollment.createManyAndReturn({
+            data: rows.map((r) => ({
+              schoolId: authCtx.schoolId,
+              studentId: r.id,
+              termId: placement.termId,
+              academicYearId: placement.academicYearId,
+              classArmId: placement.classArmId,
+              status: "ENROLLED" as const,
+            })),
+            select: { id: true, studentId: true },
+          });
+          // As the single add audits a placement: its own event, per student.
+          await db.auditLog.createMany({
+            data: enrollments.map((e) => ({
+              schoolId: authCtx.schoolId,
+              userId: authCtx.userId,
+              action: "enrollment.create",
+              entityType: "enrollment",
+              entityId: e.id,
+              ipAddress: reqCtx.ipAddress,
+              metadata: {
+                studentId: e.studentId,
+                termId: placement.termId,
+                classArmId: placement.classArmId,
+                status: "ENROLLED",
+                via: "student-bulk-create",
+              },
+            })),
+          });
+        }
+
         // RETURNING order is not promised; the admission number is unique in
         // the request, so it puts the rows back in the order they were sent.
         const byNumber = new Map(rows.map((r) => [r.admissionNumber, r]));
-        return { created: numbers.map((n) => toStudentDto(byNumber.get(n)!)) };
+        return { created: numbers.map((n) => toStudentDto(byNumber.get(n!)!)) };
       } catch (e) {
         // A row added between the check above and this insert.
         throw mapAdmissionNumberUniqueViolation(e);
@@ -752,4 +838,23 @@ function mapAdmissionNumberUniqueViolation(e: unknown): unknown {
     );
   }
   return e;
+}
+
+// The bulk add's one class (POST /students/bulk `enrollment`), checked once:
+// the same checks insertEnrollmentInTx makes per student.
+async function loadPlacement(
+  db: Prisma.TransactionClient,
+  input: { termId: string; classArmId: string },
+): Promise<{ termId: string; academicYearId: string; classArmId: string; classCode: string }> {
+  const term = await db.term.findUnique({ where: { id: input.termId }, select: { academicYearId: true } });
+  if (!term) throw new NotFoundError("Term not found.");
+  const arm = await db.classArm.findUnique({
+    where: { id: input.classArmId },
+    select: { isActive: true, classLevel: { select: { code: true } } },
+  });
+  if (!arm) throw new NotFoundError("Class arm not found.");
+  if (!arm.isActive) {
+    throw new ValidationError("INACTIVE_CLASS_ARM", "Cannot enroll a student into an inactive class arm.");
+  }
+  return { termId: input.termId, academicYearId: term.academicYearId, classArmId: input.classArmId, classCode: arm.classLevel.code };
 }
