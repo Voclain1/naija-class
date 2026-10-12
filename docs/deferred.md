@@ -158,8 +158,11 @@ the module doc or the PR, then link it here.
     same "Out of"; anything else is counted and named in the toast.
   - Proven end to end in `e2e/tests/session-end-work-loss.spec.ts` (revoked
     session → sign in → Restore → Save → reload).
-  - Still open: lesson plans and the class-subject matrix have no draft; why
-    a session ends mid-work was never measured. Staff web sessions last a
+  - Lesson plans and the class-subject matrix: DONE 2026-10-12, the same
+    way (`lib/drafts/session-draft.ts`, `lib/drafts/matrix-draft.ts`; banner
+    "Unsaved edits found" / "Unsaved changes found" with Restore and
+    Discard), proven in `session-end-work-loss.spec.ts`. Still open: why a
+    session ends mid-work was never measured. Staff web sessions last a
     fixed 30 days, so the likeliest causes are that day-30 expiry, a password
     reset (ends every session) and deactivation.
 - [x] **Mobile no longer signs out silently on a 401** (found already built,

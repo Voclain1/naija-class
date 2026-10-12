@@ -523,3 +523,120 @@ test.describe("deliberate sign-out with unsaved work", () => {
     await admin.api.dispose();
   });
 });
+
+// Unsaved work offered back after a forced sign-out (2026-10-12): the lesson
+// plan editor and the class-subject matrix keep their unsaved edits in the
+// tab (apps/web/src/lib/drafts/session-draft.ts), like the gradebook.
+test.describe("unsaved work comes back after signing in again", () => {
+  async function signInAgain(page: Page, email: string, password: string, url: string) {
+    await page.waitForURL(/\/login/, { timeout: 30_000 });
+    await page.getByLabel("Email").fill(email);
+    await page.getByLabel("Password", { exact: true }).fill(password);
+    await page.getByRole("button", { name: /sign in|log in/i }).click();
+    await page.waitForURL(new RegExp(url.replace(/\//g, "\\/")), { timeout: 60_000 });
+  }
+
+  test("the class-subject matrix offers its unsaved toggles back, and they save", async ({ browser }) => {
+    test.setTimeout(180_000);
+    const admin = await loginAsAdmin(browser);
+    const { setupAcademicStructure } = await import("../fixtures/academic.js");
+    await setupAcademicStructure(admin.api);
+    const page = admin.page;
+    const url = "/settings/academic/class-subjects";
+
+    await page.goto(`${WEB}${url}`);
+    await page.getByRole("heading", { name: "Class-subject matrix" }).waitFor({ timeout: 60_000 });
+    const unlinked = page.getByRole("button", { name: /Link subject to level/ });
+    await expect.poll(() => unlinked.count(), { timeout: 30_000 }).toBeGreaterThan(0);
+    const before = await unlinked.count();
+    await unlinked.first().click();
+    await expect.poll(() => unlinked.count()).toBe(before - 1);
+
+    await revokeSession(admin.token);
+    await page.getByRole("button", { name: /^save/i }).first().click();
+    await signInAgain(page, admin.email, admin.password, url);
+
+    await expect(page.getByText("Unsaved changes found")).toBeVisible({ timeout: 60_000 });
+    await page.getByRole("button", { name: "Restore changes" }).click();
+    await expect.poll(() => unlinked.count()).toBe(before - 1);
+    await page.getByRole("button", { name: "Save changes" }).click();
+    // The save bar shows only while something is unsaved.
+    await expect(page.getByRole("button", { name: "Save changes" })).toHaveCount(0, { timeout: 30_000 });
+
+    // Saved for real, and nothing is offered again.
+    await page.reload();
+    await page.getByRole("heading", { name: "Class-subject matrix" }).waitFor({ timeout: 60_000 });
+    await expect.poll(() => unlinked.count(), { timeout: 30_000 }).toBe(before - 1);
+    await expect(page.getByText("Unsaved changes found")).toHaveCount(0);
+
+    await admin.context.close();
+    await admin.api.dispose();
+  });
+
+  test("the lesson plan editor offers its unsaved sections back", async ({ browser }) => {
+    test.setTimeout(180_000);
+    const admin = await loginAsAdmin(browser);
+    const teacher = await inviteAndAcceptTeacher(browser, { schoolId: admin.schoolId, invitedByUserId: admin.ownerUserId });
+    const session = await loginAsTeacher(browser, teacher.email, teacher.password);
+    const page = session.page;
+
+    // A plan needs the AI to exist, which e2e does not call, so the page is
+    // served a plan; everything else (the editor, the sign-out, the restore)
+    // is the real app.
+    const planId = "0f6e9a4c-2b1d-4c7a-9e3f-5d8b7a6c1e20";
+    const url = `/teacher/lesson-plans/${planId}`;
+    await page.route(`**/api/v1/lesson-plans/${planId}`, (route) => {
+      if (route.request().method() !== "GET") return route.fallback();
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          id: planId,
+          classLevelId: "lvl",
+          classLevelName: "JSS 1",
+          subjectId: "sub",
+          subjectName: "Mathematics",
+          topic: "Fractions",
+          objectives: null,
+          durationMinutes: 40,
+          status: "COMPLETED",
+          behaviouralObjectives: "Pupils can add simple fractions.",
+          instructionalMaterials: "Fraction cards",
+          previousKnowledge: "Whole numbers",
+          referenceMaterials: null,
+          mainContent: "Step 1",
+          assessment: "Five questions",
+          homework: null,
+          conclusion: null,
+          quiz: null,
+          groundedOn: null,
+          introduction: null,
+          activities: null,
+          createdBy: "teacher",
+          createdAt: "2026-10-12T08:00:00.000Z",
+          updatedAt: "2026-10-12T08:00:00.000Z",
+        }),
+      });
+    });
+
+    await page.goto(`${WEB}${url}`);
+    const first = page.locator("textarea").first();
+    await expect(first).toHaveValue("Pupils can add simple fractions.", { timeout: 60_000 });
+    await first.fill("Pupils can add and compare simple fractions.");
+
+    await revokeSession(session.token);
+    await page.getByRole("button", { name: "Save" }).first().click();
+    await signInAgain(page, teacher.email, teacher.password, url);
+
+    await expect(page.getByText("Unsaved edits found")).toBeVisible({ timeout: 60_000 });
+    await expect(page.locator("textarea").first()).toHaveValue("Pupils can add simple fractions.");
+    await page.getByRole("button", { name: "Restore edits" }).click();
+    await expect(page.locator("textarea").first()).toHaveValue("Pupils can add and compare simple fractions.");
+    await expect(page.getByText("Unsaved edits found")).toHaveCount(0);
+
+    await session.context.close();
+    await teacher.context.close();
+    await admin.context.close();
+    await admin.api.dispose();
+  });
+});
