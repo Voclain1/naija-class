@@ -396,7 +396,8 @@ the module doc or the PR, then link it here.
     small. **Trigger:** `ci` takes over 15 minutes.
   - **Codecov / Coveralls.** The run summary covers it until a trend line or
     PR comments are wanted; needs a token and a third-party service.
-- [ ] **Prisma 5 → 7 upgrade.** Plan first. Update CLAUDE.md in the same PR.
+- [ ] **Prisma 5 → 7 upgrade.** Plan written, awaiting the owner's approval:
+  `docs/modules/prisma-7-upgrade.md`. Update CLAUDE.md in the upgrade PR.
 
 ## 3. Waiting on the owner or outside parties
 
