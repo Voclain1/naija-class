@@ -11,10 +11,13 @@ import { PlacementPicker, type PlacementValue } from "./placement-picker";
 import { z } from "zod";
 
 import {
+  type AdmissionNumberSettingsDto,
   type CreateStudentInput,
   type StudentDto,
   type UpdateStudentInput,
 } from "@school-kit/types";
+
+import { admissionNumberHint } from "./admission-numbers";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,6 +32,11 @@ import { StudentStatusBadge } from "@/components/students/student-status-badge";
 interface Props {
   /** Existing student when editing; absent on create. */
   existing?: StudentDto;
+  /**
+   * The school's numbering, on create (docs/modules/admission-numbers.md).
+   * On automatic numbering the admission number may be left blank.
+   */
+  admissionNumbering?: AdmissionNumberSettingsDto | null;
 }
 
 // FORM-CLASS PROTECTION (slice-10 cp3 / slice-11 cp4 discipline, applied here
@@ -52,11 +60,9 @@ const GENDER_VALUES = ["MALE", "FEMALE", "OTHER"] as const;
 const optionalText = (max: number) => z.string().trim().max(max);
 
 const studentFormSchema = z.object({
-  admissionNumber: z
-    .string()
-    .trim()
-    .min(1, "Admission number is required.")
-    .max(40, "Admission number is too long."),
+  // Required unless SchoolKit numbers automatically: checked on submit,
+  // where the school's setting is known.
+  admissionNumber: z.string().trim().max(40, "Admission number is too long."),
   firstName: z.string().trim().min(1, "First name is required.").max(60),
   middleName: optionalText(60),
   lastName: z.string().trim().min(1, "Last name is required.").max(60),
@@ -151,7 +157,8 @@ function hasExtraDetails(values: FormValues): boolean {
   return EXTRA_DETAIL_FIELDS.some((f) => values[f].trim() !== "");
 }
 
-export function StudentForm({ existing }: Props) {
+export function StudentForm({ existing, admissionNumbering }: Props) {
+  const numberHint = existing ? null : admissionNumberHint(admissionNumbering ?? null);
   const router = useRouter();
   // Placement is offered only when CREATING. Editing a student is not where
   // enrollment changes belong — that lives on the student's Enrollments tab,
@@ -190,6 +197,10 @@ export function StudentForm({ existing }: Props) {
   const placementUnanswered = !existing && placement === undefined;
 
   const onSubmit = form.handleSubmit(async (values) => {
+    if (values.admissionNumber.trim() === "" && !numberHint) {
+      form.setError("admissionNumber", { type: "manual", message: "Admission number is required." });
+      return;
+    }
     if (placementUnanswered) {
       setPlacementBlocked(true);
       form.setError("root", {
@@ -202,7 +213,7 @@ export function StudentForm({ existing }: Props) {
     // than null — matches the existing slice patterns. The local schema has
     // already guaranteed required fields are present and formats are valid.
     const payload: CreateStudentInput = {
-      admissionNumber: values.admissionNumber.trim(),
+      admissionNumber: emptyToUndefined(values.admissionNumber),
       firstName: values.firstName.trim(),
       middleName: emptyToUndefined(values.middleName),
       lastName: values.lastName.trim(),
@@ -246,6 +257,13 @@ export function StudentForm({ existing }: Props) {
             type: "manual",
             message: "A student with that admission number already exists.",
           });
+        } else if (
+          error.code === "ADMISSION_NUMBER_REQUIRED" ||
+          error.code === "ADMISSION_NUMBER_NEEDS_CLASS" ||
+          error.code === "ADMISSION_NUMBERS_EXHAUSTED" ||
+          error.code === "ADMISSION_FORMAT_INVALID"
+        ) {
+          form.setError("admissionNumber", { type: "manual", message: error.message });
         } else {
           form.setError("root", { type: "manual", message: error.message });
         }
@@ -293,18 +311,23 @@ export function StudentForm({ existing }: Props) {
 
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <div className="flex flex-col gap-1">
-            <Label htmlFor="student-admissionNumber">Admission number</Label>
+            <Label htmlFor="student-admissionNumber">
+              Admission number
+              {numberHint && <span className="font-normal text-muted-foreground"> (optional)</span>}
+            </Label>
             <Input
               id="student-admissionNumber"
-              autoFocus={!existing}
-              placeholder="2025/JSS1/001"
+              autoFocus={!existing && !numberHint}
+              placeholder={numberHint ? "Assigned automatically" : "2025/JSS1/001"}
               {...form.register("admissionNumber")}
               aria-invalid={Boolean(form.formState.errors.admissionNumber)}
             />
-            {form.formState.errors.admissionNumber && (
+            {form.formState.errors.admissionNumber ? (
               <p className="text-sm text-destructive">
                 {form.formState.errors.admissionNumber.message}
               </p>
+            ) : (
+              numberHint && <p className="text-xs text-muted-foreground">{numberHint}</p>
             )}
           </div>
 

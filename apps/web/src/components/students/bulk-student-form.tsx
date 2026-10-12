@@ -7,7 +7,7 @@ import { useFieldArray, useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
 
-import { MAX_BULK_STUDENTS, type CreateStudentInput } from "@school-kit/types";
+import { MAX_BULK_STUDENTS, type AdmissionNumberSettingsDto, type CreateStudentInput } from "@school-kit/types";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -29,6 +29,9 @@ import {
   toBatches,
 } from "@/lib/students/bulk-create";
 import { bulkCreateStudents } from "@/lib/students/students-api";
+
+import { admissionNumberHint } from "./admission-numbers";
+import { PlacementPicker, type PlacementValue } from "./placement-picker";
 
 // /students/new/bulk — spreadsheet-like inline entry for adding several
 // students at once. Deliberately NOT a shared abstraction with
@@ -89,7 +92,9 @@ import { bulkCreateStudents } from "@/lib/students/students-api";
 const GENDER_VALUES = ["MALE", "FEMALE", "OTHER"] as const;
 
 const rowSchema = z.object({
-  admissionNumber: z.string().trim().min(1, "Required").max(40, "Too long"),
+  // Blank is allowed here; the submit pass requires it unless SchoolKit
+  // numbers automatically (docs/modules/admission-numbers.md).
+  admissionNumber: z.string().trim().max(40, "Too long"),
   firstName: z.string().trim().min(1, "Required").max(60, "Too long"),
   middleName: z.string().trim().max(60, "Too long"),
   lastName: z.string().trim().min(1, "Required").max(60, "Too long"),
@@ -198,7 +203,16 @@ interface RowStatus {
 
 const START_ROWS = 5;
 
-export function BulkStudentForm() {
+export function BulkStudentForm({
+  admissionNumbering = null,
+}: {
+  /** The school's numbering: on automatic, admission numbers may be left blank. */
+  admissionNumbering?: AdmissionNumberSettingsDto | null;
+} = {}) {
+  const numberHint = admissionNumberHint(admissionNumbering);
+  const perClass = Boolean(numberHint) && admissionNumbering?.order === "CLASS";
+  // Per-class numbering needs the batch's class; choosing it also places them.
+  const [placement, setPlacement] = useState<PlacementValue | null | undefined>(undefined);
   const form = useForm<FormValues>({
     defaultValues: { rows: Array.from({ length: START_ROWS }, emptyRow) },
     mode: "onSubmit",
@@ -310,6 +324,11 @@ export function BulkStudentForm() {
     let invalid = 0;
     for (const i of liveIndexes) {
       const parsed = rowSchema.safeParse(values.rows[i]);
+      const needsNumber = !numberHint && (values.rows[i]?.admissionNumber ?? "").trim() === "";
+      if (needsNumber) {
+        form.setError(`rows.${i}.admissionNumber`, { type: "manual", message: "Required" });
+        if (parsed.success) invalid++;
+      }
       if (parsed.success) continue;
       invalid++;
       for (const issue of parsed.error.issues) {
@@ -351,6 +370,15 @@ export function BulkStudentForm() {
       return;
     }
 
+    if (
+      perClass &&
+      !placement &&
+      pending.some((i) => (values.rows[i]?.admissionNumber ?? "").trim() === "")
+    ) {
+      setSummary("Choose the class for these students, so SchoolKit can number them per class.");
+      return;
+    }
+
     setSubmitting(true);
     setSummary(null);
     let createdThisPass = 0;
@@ -371,7 +399,7 @@ export function BulkStudentForm() {
       const students: CreateStudentInput[] = batch.map((i) => {
         const row = values.rows[i]!;
         return {
-          admissionNumber: row.admissionNumber.trim(),
+          admissionNumber: emptyToUndefined(row.admissionNumber),
           firstName: row.firstName.trim(),
           middleName: emptyToUndefined(row.middleName),
           lastName: row.lastName.trim(),
@@ -382,13 +410,21 @@ export function BulkStudentForm() {
       });
 
       try {
-        const { created } = await bulkCreateStudents({ students });
+        const { created } = await bulkCreateStudents({
+          students,
+          ...(perClass && placement ? { enrollment: placement } : {}),
+        });
         setRowStatus((prev) => ({
           ...prev,
           ...Object.fromEntries(
             ids.map((id, k) => [id, { state: "success" as const, studentId: created[k]?.id }]),
           ),
         }));
+        // Show the numbers SchoolKit gave, in the rows they went to.
+        batch.forEach((gridIndex, k) => {
+          const assigned = created[k]?.admissionNumber;
+          if (assigned) form.setValue(`rows.${gridIndex}.admissionNumber`, assigned);
+        });
         createdThisPass += created.length;
       } catch (error) {
         // Nothing in this batch was created (the request is all or nothing),
@@ -455,6 +491,25 @@ export function BulkStudentForm() {
 
   return (
     <form onSubmit={onSubmit} className="flex flex-col gap-4" noValidate>
+      {numberHint && (
+        <p className="text-xs text-muted-foreground">
+          Leave the admission number blank and SchoolKit fills it in when you create the students.
+        </p>
+      )}
+      {perClass && (
+        <div className="flex flex-col gap-1">
+          <p className="text-sm font-medium">Class for these students</p>
+          <p className="text-xs text-muted-foreground">
+            Your school numbers students per class, so pick the class. They are also placed in it.
+          </p>
+          <PlacementPicker
+            value={placement}
+            onChange={setPlacement}
+            onUnavailable={() => setPlacement(null)}
+            disabled={submitting}
+          />
+        </div>
+      )}
       {summary && (
         <div
           className={
@@ -528,7 +583,7 @@ export function BulkStudentForm() {
                   <TableCell>
                     <Input
                       className="h-8 min-w-32 text-xs"
-                      placeholder="2025/JSS1/001"
+                      placeholder={numberHint ? "Auto" : "2025/JSS1/001"}
                       {...cell("admissionNumber")}
                     />
                     {cellError("admissionNumber")}

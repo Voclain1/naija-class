@@ -3,9 +3,17 @@
 import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
 
+import {
+  AdmissionNumbersBar,
+  AdmissionNumbersQuestion,
+  useAdmissionNumbers,
+} from "@/components/students/admission-numbers";
 import { StudentForm } from "@/components/students/student-form";
 
 export default function NewStudentPage() {
+  // How the school gives admission numbers (docs/modules/admission-numbers.md):
+  // asked once on arrival by a new school, then shown above the form.
+  const { settings, setSettings } = useAdmissionNumbers();
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
       <Link
@@ -18,8 +26,8 @@ export default function NewStudentPage() {
       <header className="flex flex-col gap-1">
         <h1 className="font-serif text-2xl font-medium tracking-tight text-foreground">Add student</h1>
         <p className="text-sm text-muted-foreground">
-          Admission number, name, date of birth and gender are all that&apos;s
-          needed — everything else is optional and can come later. Adding
+          Name, date of birth and gender (and the admission number, unless
+          SchoolKit assigns it) are all that&apos;s needed — everything else is optional and can come later. Adding
           several at once?{" "}
           <Link href="/students/new/bulk" className="underline underline-offset-2">
             Use the grid
@@ -27,7 +35,9 @@ export default function NewStudentPage() {
           .
         </p>
       </header>
-      <StudentForm />
+      {settings && <AdmissionNumbersQuestion settings={settings} onDecided={setSettings} />}
+      {settings && <AdmissionNumbersBar settings={settings} onChanged={setSettings} />}
+      <StudentForm admissionNumbering={settings} />
     </div>
   );
 }

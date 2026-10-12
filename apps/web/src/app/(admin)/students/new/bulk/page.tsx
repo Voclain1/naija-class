@@ -3,9 +3,17 @@
 import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
 
+import {
+  AdmissionNumbersBar,
+  AdmissionNumbersQuestion,
+  useAdmissionNumbers,
+} from "@/components/students/admission-numbers";
 import { BulkStudentForm } from "@/components/students/bulk-student-form";
 
 export default function BulkAddStudentsPage() {
+  // Asked once on arrival by a new school, then shown above the grid
+  // (docs/modules/admission-numbers.md).
+  const { settings, setSettings } = useAdmissionNumbers();
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-6">
       <Link
@@ -60,7 +68,9 @@ export default function BulkAddStudentsPage() {
         one to trust.
       </div>
 
-      <BulkStudentForm />
+      {settings && <AdmissionNumbersQuestion settings={settings} onDecided={setSettings} />}
+      {settings && <AdmissionNumbersBar settings={settings} onChanged={setSettings} />}
+      <BulkStudentForm admissionNumbering={settings} />
     </div>
   );
 }
