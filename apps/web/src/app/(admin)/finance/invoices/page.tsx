@@ -36,6 +36,7 @@ import { canCancelInvoice } from "@/lib/finance/invoice-cancel";
 import {
   invoiceReference,
   studentDisplayName,
+  studentIdentityNote,
   studentSecondaryLabel,
 } from "@/lib/finance/invoice-identity";
 import { resolveInvoiceListView } from "@/lib/finance/invoice-list-state";
@@ -719,6 +720,9 @@ export default function InvoicesPage() {
                           <span className="block text-xs text-muted-foreground">
                             {studentSecondaryLabel(inv)}
                           </span>
+                        )}
+                        {studentIdentityNote(inv) && (
+                          <span className="block text-xs text-muted-foreground">{studentIdentityNote(inv)}</span>
                         )}
                       </TableCell>
                       <TableCell className="font-mono text-xs text-muted-foreground">
