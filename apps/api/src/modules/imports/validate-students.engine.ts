@@ -12,6 +12,7 @@ import {
   rebuildCsvRowFromParsed,
   type EngineResult,
 } from "./validate.engine";
+import { loadNumbering } from "../students/admission-numbers";
 
 // Student validate engine. Slice 6 owned this pipeline; slice 8 extracted
 // the shared CSV-parse loop into validate.engine.ts/parseSourceCsv, so
@@ -33,6 +34,7 @@ export async function runStudentValidationEngine(
   sourceBytes: Buffer,
   mapping: Record<string, string | null>,
   options: ImportOptions,
+  schoolId: string,
 ): Promise<EngineResult<StudentImportRow>> {
   const {
     headers,
@@ -53,6 +55,11 @@ export async function runStudentValidationEngine(
   const seenAdmission = new Map<string, number>();
   for (const g of parsed) {
     const adm = g.parsedRow.admissionNumber;
+    // A blank number is checked after this (numbering phase), not deduped.
+    if (adm === undefined) {
+      inFileDedupSurvivors.push(g);
+      continue;
+    }
     const firstRow = seenAdmission.get(adm);
     if (firstRow !== undefined) {
       bad.push({
@@ -83,8 +90,8 @@ export async function runStudentValidationEngine(
   // -----------------------------------------------------------------------
   let externallyTakenSet = new Set<string>();
   if (inFileDedupSurvivors.length > 0) {
-    const admissionNumbers = inFileDedupSurvivors.map(
-      (g) => g.parsedRow.admissionNumber,
+    const admissionNumbers = inFileDedupSurvivors.flatMap((g) =>
+      g.parsedRow.admissionNumber === undefined ? [] : [g.parsedRow.admissionNumber],
     );
     const existing = await db.student.findMany({
       where: { admissionNumber: { in: admissionNumbers } },
@@ -95,7 +102,7 @@ export async function runStudentValidationEngine(
 
   const dedupSurvivors: StudentImportRowGood[] = [];
   for (const g of inFileDedupSurvivors) {
-    if (externallyTakenSet.has(g.parsedRow.admissionNumber)) {
+    if (g.parsedRow.admissionNumber !== undefined && externallyTakenSet.has(g.parsedRow.admissionNumber)) {
       bad.push({
         rowNumber: g.rowNumber,
         csvRow: rebuildCsvRowFromParsed(
@@ -192,6 +199,35 @@ export async function runStudentValidationEngine(
     finalGood.push(g);
   }
 
+  // -----------------------------------------------------------------------
+  // Blank admission numbers (2026-10-12, docs/modules/admission-numbers.md
+  // slice 2). SchoolKit numbers them at commit when the school numbers
+  // automatically. Here: a school that types its numbers gets a row error,
+  // and per-class numbering needs the row's class.
+  // -----------------------------------------------------------------------
+  const blanks = finalGood.filter((g) => g.parsedRow.admissionNumber === undefined);
+  let numberedGood = finalGood;
+  if (blanks.length > 0) {
+    const numbering = await loadNumbering(db, schoolId);
+    const blankError = numbering === null
+      ? "Admission number required. Fill it in, or turn on automatic numbering in Settings → Admission numbers."
+      : numbering.order === "CLASS"
+        ? "Your school numbers students per class: give this row a class, or fill in the admission number."
+        : null;
+    if (blankError) {
+      numberedGood = finalGood.filter((g) => {
+        if (g.parsedRow.admissionNumber !== undefined) return true;
+        if (numbering?.order === "CLASS" && g.parsedRow.classArm !== undefined) return true;
+        bad.push({
+          rowNumber: g.rowNumber,
+          csvRow: rebuildCsvRowFromParsed(g.parsedRow as unknown as Record<string, unknown>),
+          errors: [{ field: "admissionNumber", message: blankError }],
+        });
+        return false;
+      });
+    }
+  }
+
   // Sort bad rows back into original row order — dedup steps appended
   // newly-bad rows at the end. The wizard / download CSV expect ascending
   // rowNumber order.
@@ -201,7 +237,7 @@ export async function runStudentValidationEngine(
   );
 
   return {
-    good: finalGood,
+    good: numberedGood,
     bad,
     totalRows: evaluatedRowCount,
     headers,

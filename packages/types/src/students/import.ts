@@ -114,7 +114,11 @@ function parseDate(raw: string, format: StudentImportDateFormat): Date | null {
 // on shape validation, not parsing tricks.
 export const studentImportRowSchema = z
   .object({
-    admissionNumber: z.string().trim().min(1, "admission number required").max(40),
+    // Optional since 2026-10-12 (docs/modules/admission-numbers.md slice 2):
+    // a blank cell is numbered by SchoolKit when the school numbers
+    // automatically; for a school that types its numbers, the validate
+    // engine makes a blank a row error.
+    admissionNumber: z.string().trim().min(1).max(40).optional(),
     firstName: z.string().trim().min(1, "first name required").max(60),
     middleName: z.string().trim().min(1).max(60).optional(),
     lastName: z.string().trim().min(1, "last name required").max(60),
@@ -275,8 +279,10 @@ export const STUDENT_IMPORT_CLASS_ARM_HEADER_ALIASES = [
   "arm",
 ] as const;
 
+// The admission number is not here since 2026-10-12: a school on automatic
+// numbering may leave it unmapped. The mapping page adds it back for a school
+// that types its numbers, and the validate engine is the check either way.
 export const STUDENT_IMPORT_REQUIRED_FIELDS = [
-  "admissionNumber",
   "firstName",
   "lastName",
   "dateOfBirth",

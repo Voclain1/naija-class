@@ -115,7 +115,10 @@ export const reviewedStudentRowSchema = z
     // the admin is looking at, rather than against an index that shifts when
     // they delete a row mid-review.
     rowNumber: z.number().int().min(1),
-    admissionNumber: z.string().trim().min(1, "admission number required").max(40),
+    // Blank = SchoolKit numbers it, for a school on automatic numbering
+    // (docs/modules/admission-numbers.md slice 2); otherwise the commit
+    // reports the row.
+    admissionNumber: z.string().trim().max(40).optional(),
     firstName: z.string().trim().min(1, "first name required").max(60),
     middleName: z.string().trim().max(60).optional(),
     lastName: z.string().trim().min(1, "last name required").max(60),

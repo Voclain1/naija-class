@@ -13,7 +13,7 @@ import { Redirect, Stack, useRouter } from "expo-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { GenderDto } from "@school-kit/types";
 
-import { staffClassArms, staffCreateStudent } from "../../../src/lib/api/staff-students";
+import { staffAdmissionNumbers, staffClassArms, staffCreateStudent } from "../../../src/lib/api/staff-students";
 import { ApiError, ApiNetworkError } from "../../../src/lib/api/client";
 import { queryKeys } from "../../../src/lib/query/keys";
 import { useSession } from "../../../src/lib/auth/session";
@@ -88,6 +88,16 @@ export default function NewStudentScreen() {
     enabled: ready,
     staleTime: 5 * 60_000,
   });
+  const numberingQuery = useQuery({
+    queryKey: queryKeys.staffAdmissionNumbers(schoolId, userId),
+    queryFn: staffAdmissionNumbers,
+    enabled: ready,
+    staleTime: 60_000,
+  });
+  const numbering = {
+    auto: numberingQuery.data?.mode === "AUTO",
+    perClass: numberingQuery.data?.order === "CLASS",
+  };
   const termContext = useTermContext({ schoolId, userId, enabled: ready });
   const termId = termContext.data?.term?.termId ?? null;
 
@@ -113,7 +123,7 @@ export default function NewStudentScreen() {
   if (!authed) return <Redirect href="/login" />;
 
   function save(): void {
-    const found = validateStudentForm(values, placement, serverToday());
+    const found = validateStudentForm(values, placement, serverToday(), numbering);
     setErrors(found);
     if (Object.keys(found).length > 0) return;
     create.mutate();
@@ -190,7 +200,18 @@ export default function NewStudentScreen() {
           <ScreenHeader title="Add a student" subtitle="The essentials now; the rest from their page later." />
 
           <Card style={styles.card}>
-            {field("Admission number", "admissionNumber", { error: errors.admissionNumber })}
+            {field(numbering.auto ? "Admission number (optional)" : "Admission number", "admissionNumber", {
+              error: errors.admissionNumber,
+            })}
+            {numbering.auto && !errors.admissionNumber ? (
+              <Text style={[styles.hint, { color: colors.mutedForeground }]}>
+                {numberingQuery.data?.nextNumber
+                  ? `Leave blank: SchoolKit will assign ${numberingQuery.data.nextNumber}.`
+                  : numbering.perClass
+                    ? "Leave blank: SchoolKit numbers the student in the class you choose."
+                    : "Leave blank: SchoolKit will assign a number."}
+              </Text>
+            ) : null}
             {field("First name", "firstName", { error: errors.firstName })}
             {field("Middle name (optional)", "middleName")}
             {field("Surname", "lastName", { error: errors.lastName })}
@@ -348,4 +369,5 @@ const styles = StyleSheet.create({
   },
   chipText: { fontFamily: fonts.sansSemibold, fontSize: fontSizes.body },
   error: { fontFamily: fonts.sans, fontSize: fontSizes.caption },
+  hint: { fontFamily: fonts.sans, fontSize: fontSizes.caption, marginTop: -spacing.xs },
 });

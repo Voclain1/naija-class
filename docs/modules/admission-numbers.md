@@ -1,6 +1,6 @@
 # Admission numbers assigned by SchoolKit
 
-Plan-first, 2026-10-12. Status: **approved 2026-10-12; slice 1 built (see "As built").**
+Plan-first, 2026-10-12. Status: **approved 2026-10-12; slices 1 and 2 built (see "As built").**
 
 ## Why
 
@@ -140,3 +140,30 @@ override one student.
   `admission-format-ui.spec.ts` (web), and two cases in
   `e2e/tests/bulk-student-add.spec.ts`. The e2e fixture answers the question
   ("We type them in") for every other spec, as it dismisses the tour.
+
+## As built (slice 2, 2026-10-12)
+
+A blank admission number now works in the other three ways students arrive.
+
+- **CSV import.** The column is optional (`studentImportRowSchema`;
+  `STUDENT_IMPORT_REQUIRED_FIELDS` no longer lists it, and the mapping page
+  adds it back for a school that types its numbers). The validate engine
+  (`runStudentValidationEngine`, now given the `schoolId`) skips blanks in
+  both dedup passes, then makes a blank a row error for a typing school, and
+  for per-class numbering on a row without a class. `commitStudentRow`
+  resolves the class first and numbers the row in its own transaction.
+- **Numbers typed elsewhere in the file are reserved.** A blank row committed
+  before a row that typed `C001` must not take `C001`; the commit handler (and
+  the scan commit) pass the file's typed numbers to the assigner. Found by the
+  slice's own test.
+- **Scanned registers.** `reviewedStudentRowSchema.admissionNumber` is
+  optional; the review grid lets a row through without one on automatic
+  numbering (per class: with a class), and the commit numbers it through the
+  same `commitStudentRow`.
+- **Staff mobile app.** The add-student screen reads
+  `GET /schools/me/admission-numbers` (query key `staffAdmissionNumbers`,
+  never persisted, like every staff key); the field becomes optional with the
+  next number as a hint, and a blank is left out of the request.
+- **Tests.** `admission-numbers.spec.ts` gains three CSV cases (typing school,
+  automatic around typed numbers, per class); `student-scan.service.spec.ts`
+  one; `apps/mobile/src/lib/staff/students.spec.ts` three.

@@ -1,4 +1,5 @@
 import type {
+  AdmissionNumberSettingsDto,
   ClassArmDto,
   CreateStudentInput,
   GraduateStudentInput,
@@ -24,6 +25,12 @@ import { apiFetch } from "./client";
 // also why every query key for them starts with "staff" and is never written
 // to disk: a phone left on a staffroom table is the last place that record
 // should persist.
+
+// How the school gives admission numbers (docs/modules/admission-numbers.md):
+// on automatic numbering the add-student form may leave the number blank.
+export function staffAdmissionNumbers(): Promise<AdmissionNumberSettingsDto> {
+  return apiFetch<AdmissionNumberSettingsDto>("/schools/me/admission-numbers");
+}
 
 export function staffListStudents(query: ListStudentsQuery = {}): Promise<StudentListResponse> {
   const params = new URLSearchParams();

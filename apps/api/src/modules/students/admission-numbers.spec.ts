@@ -3,6 +3,8 @@ import { afterAll, describe, expect, it } from "vitest";
 import { basePrisma, withTenant } from "@school-kit/db";
 
 import { AuthService } from "../auth/auth.service";
+import { runStudentValidationEngine } from "../imports/validate-students.engine";
+import { commitStudentRow } from "../imports/workers/commit-students.row";
 import { AdmissionNumberSettingsService } from "../schools/admission-number-settings.service";
 import { admissionYear, assignAdmissionNumbers, loadNumbering } from "./admission-numbers";
 import { StudentsService } from "./students.service";
@@ -196,5 +198,78 @@ describe("admission numbers", () => {
     await students.create(a.authCtx, kid("1"), reqCtx);
     const seenByB = await withTenant(b.schoolId, (db) => db.admissionNumberCounter.count());
     expect(seenByB).toBe(0);
+  });
+  // Slice 2: CSV import (and, through the same commit, scanned registers).
+  describe("CSV import", () => {
+    const csv = (rows: string[]) =>
+      Buffer.from(["Admission,First,Last,DOB,Gender,Class", ...rows].join("\n"));
+    const mapping = {
+      Admission: "admissionNumber",
+      First: "firstName",
+      Last: "lastName",
+      DOB: "dateOfBirth",
+      Gender: "gender",
+      Class: "classArm",
+    };
+    const options = { dateFormat: "YYYY-MM-DD" as const, treatBlankAs: "skip" as const };
+
+    it("a school that types its numbers: a blank number is a row error", async () => {
+      const { schoolId } = await school("csvmanual");
+      const result = await withTenant(schoolId, (db) =>
+        runStudentValidationEngine(db, csv(["T-1,Ada,Obi,2014-01-01,F,", ",Bayo,Ade,2014-01-01,M,"]), mapping, options, schoolId),
+      );
+      expect(result.good.map((g) => g.parsedRow.admissionNumber)).toEqual(["T-1"]);
+      expect(result.bad).toHaveLength(1);
+      expect(result.bad[0]!.errors[0]!.message).toMatch(/Admission number required/);
+    });
+
+    it("automatic numbering: blank rows pass validation and get numbers at commit, around typed ones", async () => {
+      const { authCtx, schoolId } = await school("csvauto");
+      await settings.update(authCtx, { mode: "AUTO", format: "C{NNN}", order: "SCHOOL" }, reqCtx);
+      const result = await withTenant(schoolId, (db) =>
+        runStudentValidationEngine(
+          db,
+          csv([",Ada,Obi,2014-01-01,F,", "C001,Bayo,Ade,2014-01-01,M,", ",Chi,Eze,2014-01-01,F,"]),
+          mapping,
+          options,
+          schoolId,
+        ),
+      );
+      expect(result.bad).toEqual([]);
+      // As the commit handler does: the file's typed numbers are reserved.
+      const typed = new Set(result.good.flatMap((g) => (g.parsedRow.admissionNumber ? [g.parsedRow.admissionNumber] : [])));
+      for (const g of result.good) {
+        await withTenant(schoolId, (db) => commitStudentRow(g.parsedRow, schoolId, db, undefined, false, typed));
+      }
+      const numbers = await withTenant(schoolId, (db) =>
+        db.student.findMany({ orderBy: { firstName: "asc" }, select: { firstName: true, admissionNumber: true } }),
+      );
+      expect(numbers).toEqual([
+        { firstName: "Ada", admissionNumber: "C002" },
+        { firstName: "Bayo", admissionNumber: "C001" },
+        { firstName: "Chi", admissionNumber: "C003" },
+      ]);
+    });
+
+    it("per class: a blank number needs the row's class, and takes that class's code", async () => {
+      const { authCtx, schoolId } = await school("csvclass");
+      const { levelCode } = await withArm(schoolId, "k");
+      const armName = await withTenant(schoolId, (db) => db.classArm.findFirstOrThrow({ select: { name: true } }));
+      await settings.update(authCtx, { mode: "AUTO", format: "{CLASS}-{NNN}", order: "CLASS" }, reqCtx);
+      const result = await withTenant(schoolId, (db) =>
+        runStudentValidationEngine(
+          db,
+          csv([`,Ada,Obi,2014-01-01,F,${armName.name}`, ",Bayo,Ade,2014-01-01,M,"]),
+          mapping,
+          options,
+          schoolId,
+        ),
+      );
+      expect(result.bad).toHaveLength(1);
+      expect(result.bad[0]!.errors[0]!.message).toMatch(/per class/);
+      await withTenant(schoolId, (db) => commitStudentRow(result.good[0]!.parsedRow, schoolId, db));
+      const [only] = await withTenant(schoolId, (db) => db.student.findMany({ select: { admissionNumber: true } }));
+      expect(only!.admissionNumber).toBe(`${levelCode}-001`);
+    });
   });
 });
