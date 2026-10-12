@@ -22,7 +22,14 @@ If the work touches multi-tenancy, money, or AI, also read the "Hard rules" sect
 - Next.js: 15.x (App Router, React Server Components)
 - React: 19.x
 - NestJS: 10.x
-- Prisma: 5.x
+- Prisma: 7.10.0, pinned exactly (upgraded from 5.22 on 2026-10-12,
+  `docs/modules/prisma-7-upgrade.md`). npm's `latest` tag is a Prisma 8
+  release candidate, so never `pnpm add prisma@latest`. The client talks to
+  Postgres through `@prisma/adapter-pg`; every client is built by
+  `createPrismaClient` in `packages/db/src/prisma-client.ts` (pool size 3,
+  10 s acquire timeout — `connection_limit` in a URL is ignored). The CLI's
+  config, including the migration URL (`DIRECT_URL`) and the seed command, is
+  `packages/db/prisma.config.ts`.
 - PostgreSQL: 16.x (with `pgvector` extension)
 - Redis: 7.x
 - Expo SDK: 57.x (React Native 0.86.x, React 19.2.x — upgraded from SDK 52 in
@@ -607,7 +614,7 @@ WHERE prosecdef` after applying.
 - Workspace packages (`packages/*`) compile to `dist/`. Their `package.json` `main`/`types`/`exports` fields point at compiled output, never at `src/`.
 - TypeScript `module: Node16`, `moduleResolution: Node16` in each workspace package's `tsconfig.json`.
 - Relative imports inside `.ts` source files use `.js` extensions — TypeScript preserves them; Node ESM requires them.
-- Generated code (Prisma client) lives outside `src/` so compiled `dist/` can reach it with the same relative path.
+- Generated code (the Prisma client) is TypeScript written into `packages/db/src/generated/prisma/` (gitignored) and compiled into `dist/` with the rest of the package (Prisma 7's `prisma-client` generator, `moduleFormat = "cjs"`). Import it only through `@school-kit/db`.
 - - Tests pass under Vitest+SWC's permissive resolution; runtime AND CI use 
   Node ESM's strict resolution. If a package builds clean but runtime fails 
   with `ERR_MODULE_NOT_FOUND`, either the package is misconfigured, or 
@@ -843,6 +850,7 @@ pnpm dev:mobile               # expo
 
 # Database
 pnpm db:migrate -- --name <name>
+pnpm --filter @school-kit/db generate   # after a migration: Prisma 7's migrate no longer generates
 pnpm db:reset                 # nuke and re-seed
 pnpm db:studio                # Prisma Studio
 

@@ -162,8 +162,9 @@ jobs:
           echo "Source maps uploaded for release ${SENTRY_RELEASE}"
 
       # Runs `prisma migrate deploy` against the Neon staging DB.
-      # Prisma reads DIRECT_URL (school_kit role) for DDL; DATABASE_URL
-      # (app_user) for the connection pool — both from the .env above.
+      # Since Prisma 7 the CLI's URL comes from packages/db/prisma.config.ts:
+      # DIRECT_URL (school_kit role), loaded from the .env above by the
+      # script's dotenv wrapper. The app's DATABASE_URL (app_user) is not used.
       - name: Run staging migrations
         run: pnpm --filter @school-kit/db migrate:deploy
 

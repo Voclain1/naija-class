@@ -1,4 +1,5 @@
-import { Prisma, PrismaClient } from "../generated/client/index.js";
+import { Prisma, PrismaClient } from "./generated/prisma/client.js";
+import { createPrismaClient } from "./prisma-client.js";
 // Single base client for the application. Tenant scoping is enforced by setting
 // a transaction-local Postgres GUC (`app.current_school_id`) that every RLS
 // policy reads. EVERY authenticated request MUST route through `withTenant`.
@@ -6,7 +7,11 @@ import { Prisma, PrismaClient } from "../generated/client/index.js";
 // Raw SQL outside this helper must also `SET LOCAL app.current_school_id = ...`
 // before any read/write — otherwise RLS returns zero rows or, for INSERT/UPDATE
 // without WITH CHECK, lets you write to the wrong tenant.
-const basePrisma = new PrismaClient();
+//
+// The runtime connection is DATABASE_URL, the app_user role (never the
+// migration role: RLS does not apply to it). The pool connects lazily, so a
+// missing URL fails at the first query, as it did before Prisma 7.
+const basePrisma = createPrismaClient(process.env.DATABASE_URL ?? "");
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -43,13 +48,73 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 //           gradebook-save incident).
 const RETRYABLE_PRISMA_CODES = new Set(["P1001", "P1002", "P1008", "P1017", "P2024", "P2028"]);
 
+// Prisma 7 (2026-10-12, docs/modules/prisma-7-upgrade.md D4) talks to Postgres
+// through node-postgres, and a connection lost IN THE MIDDLE of a transaction
+// no longer arrives as P1017: it is a P2010 carrying the driver's own cause in
+// `meta.driverAdapterError.cause` — a socket-level `kind` (reset, unreachable,
+// timed out), or `kind: "postgres"` with a Postgres code: class 08 (connection
+// exception) or 57P01-57P03 (server shutting down / restarting / not yet
+// accepting). pg's own "Connection terminated unexpectedly" is not mapped by
+// the adapter at all, so it is matched by message. Nor is a failed connect to
+// a host with SEVERAL addresses (IPv4 + IPv6, as on CI's `localhost`): Node
+// tries each and throws a bare AggregateError carrying the socket code
+// (ECONNREFUSED...), which Prisma passes through unwrapped. Caught by CI and
+// reproduced locally with a two-address hostname. All of these mean the
+// connection never opened or the server rolled the transaction back, which
+// is what made P1001 / P1017 safe to retry.
+// (A pooled connection killed while IDLE never reaches here: the pool drops it
+// and the next transaction gets a fresh one, proven against a real server.)
+const LOST_CONNECTION_KINDS = new Set(["DatabaseNotReachable", "ConnectionClosed", "SocketTimeout"]);
+const SERVER_GOING_AWAY_CODES = new Set(["57P01", "57P02", "57P03"]);
+const SOCKET_ERROR_CODES = new Set([
+  "ECONNREFUSED",
+  "ECONNRESET",
+  "ENOTFOUND",
+  "EAI_AGAIN",
+  "ETIMEDOUT",
+  "EHOSTUNREACH",
+  "ENETUNREACH",
+  "EPIPE",
+]);
+
+function hasSocketErrorCode(e: unknown): boolean {
+  if (typeof e !== "object" || e === null) return false;
+  const code = (e as { code?: unknown }).code;
+  if (typeof code === "string" && SOCKET_ERROR_CODES.has(code)) return true;
+  const inner = (e as { errors?: unknown }).errors;
+  return Array.isArray(inner) && inner.some(hasSocketErrorCode);
+}
+
+interface DriverAdapterCause {
+  kind?: string;
+  code?: string;
+}
+
+function driverAdapterCause(e: Prisma.PrismaClientKnownRequestError): DriverAdapterCause | undefined {
+  const meta = e.meta as { driverAdapterError?: { cause?: DriverAdapterCause } } | undefined;
+  return meta?.driverAdapterError?.cause;
+}
+
+function isLostConnection(e: unknown): boolean {
+  if (e instanceof Prisma.PrismaClientKnownRequestError) {
+    const cause = driverAdapterCause(e);
+    if (cause?.kind && LOST_CONNECTION_KINDS.has(cause.kind)) return true;
+    if (cause?.kind === "postgres" && typeof cause.code === "string") {
+      if (cause.code.startsWith("08") || SERVER_GOING_AWAY_CODES.has(cause.code)) return true;
+    }
+  }
+  if (!(e instanceof Prisma.PrismaClientKnownRequestError) && hasSocketErrorCode(e)) return true;
+  return e instanceof Error && /connection terminated unexpectedly/i.test(e.message);
+}
+
 // One retry only — this is papering over a connection blip, not a resilience
 // policy. If the retry also fails, something worse than a cold Neon compute
 // is going on and it should surface as a real error.
 const RETRY_DELAY_MS = 500;
 
-function isRetryableConnectionError(e: unknown): boolean {
+export function isRetryableConnectionError(e: unknown): boolean {
   if (e instanceof Prisma.PrismaClientInitializationError) return true;
+  if (isLostConnection(e)) return true;
   if (e instanceof Prisma.PrismaClientKnownRequestError) {
     return RETRYABLE_PRISMA_CODES.has(e.code) && !isBodyTimeout(e);
   }
@@ -99,7 +164,13 @@ export interface WithTenantOptions {
  * from Sentry event COUNTS to guess which mechanism was firing.
  */
 function describeAttemptFailure(e: unknown, elapsedMs: number, label?: string): string {
-  const code = e instanceof Prisma.PrismaClientKnownRequestError ? e.code : "init";
+  const cause = e instanceof Prisma.PrismaClientKnownRequestError ? driverAdapterCause(e) : undefined;
+  const code =
+    e instanceof Prisma.PrismaClientKnownRequestError
+      ? `${e.code}${cause?.code ? `/${cause.code}` : cause?.kind ? `/${cause.kind}` : ""}`
+      : e instanceof Prisma.PrismaClientInitializationError
+        ? "init"
+        : "connection lost";
   const mode =
     elapsedMs < 100
       ? "never-started (pool acquisition)"

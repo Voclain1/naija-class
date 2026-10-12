@@ -1,8 +1,8 @@
-import { PrismaClient } from "../generated/client/index.js";
+import { createPrismaClient } from "../src/prisma-client.js";
 
 async function main(): Promise<void> {
 if (!process.env.DIRECT_URL) throw new Error("DIRECT_URL is required for the read-only census.");
-const prisma = new PrismaClient({ datasources: { db: { url: process.env.DIRECT_URL } } });
+const prisma = createPrismaClient(process.env.DIRECT_URL);
 const rows = await prisma.school.findMany({
   where: { paystackPaymentsEnabled: true, paystackSubaccountCode: { not: null } },
   select: { id: true, paystackSplitCode: true },

@@ -59,9 +59,8 @@ COPY packages/ai/     ./packages/ai/
 COPY packages/db/     ./packages/db/
 COPY apps/api/        ./apps/api/
 
-RUN DATABASE_URL="postgresql://x:x@localhost/x" \
-    DIRECT_URL="postgresql://x:x@localhost/x" \
-    pnpm --filter @school-kit/db exec prisma generate --schema=./prisma/schema.prisma
+# Prisma 7: generate reads packages/db/prisma.config.ts and needs no URL.
+RUN pnpm --filter @school-kit/db exec prisma generate
 
 RUN pnpm --filter @school-kit/types build
 RUN pnpm --filter @school-kit/ai    build

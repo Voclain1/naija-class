@@ -26,7 +26,7 @@ import {
   computeSubjectPositions,
 } from "@school-kit/types";
 
-import { PrismaClient } from "../generated/client/index.js";
+import { createPrismaClient } from "../src/prisma-client.js";
 import { DEFAULT_CLASS_LEVELS } from "../src/seeds/class-levels.js";
 import {
   DEFAULT_GRADE_BOUNDARIES,
@@ -108,9 +108,7 @@ const ENGLISH_SCORES: Record<string, Marks> = {
   "NJC/2025/005": { ca1: 13, ca2: 14, exam: 42 }, // 69 → B3, subj 5th
 };
 
-const prisma = new PrismaClient({
-  datasources: { db: { url: process.env.DIRECT_URL } },
-});
+const prisma = createPrismaClient(process.env.DIRECT_URL ?? "");
 
 // --------------------------------------------------------------------------
 // Helpers

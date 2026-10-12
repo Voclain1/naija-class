@@ -46,7 +46,7 @@
 // the backfill script's own row), matching how the block behaved when it was
 // inline in signupOwner.
 
-import type { Prisma } from "../../generated/client/index.js";
+import type { Prisma } from "../generated/prisma/client.js";
 
 import { defaultArmFor } from "./class-arms.js";
 import { DEFAULT_CLASS_LEVELS } from "./class-levels.js";

@@ -1096,15 +1096,32 @@ function coercePermissions(raw: Prisma.JsonValue): string[] {
 // occasionally undefined. We build a single search haystack from target +
 // error message so substring matches against the field name catch every
 // observed shape, with the message as a final fallback.
-function translatePrismaError(err: unknown): unknown {
+//
+// Prisma 7 (pg adapter) has no `meta.target`: the constraint is in
+// `meta.driverAdapterError.cause.constraint`, as `{ index: "users_email_key" }`
+// or `{ fields: [...] }`, and the message names it too ("Unique constraint
+// failed on the constraint: `schools_slug_key`"). Both go in the haystack.
+// Exported for its spec (src/__tests__/prisma-7-errors.spec.ts).
+export function translatePrismaError(err: unknown): unknown {
   if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
-    const target = (err.meta as { target?: unknown } | undefined)?.target;
+    const meta = err.meta as
+      | {
+          target?: unknown;
+          driverAdapterError?: { cause?: { constraint?: { index?: unknown; fields?: unknown } } };
+        }
+      | undefined;
+    const target = meta?.target;
+    const constraint = meta?.driverAdapterError?.cause?.constraint;
     const fields: string[] = Array.isArray(target)
       ? target.map((t) => String(t))
       : typeof target === "string"
         ? [target]
         : [];
-    const haystack = (fields.join(",") + " " + (err.message ?? "")).toLowerCase();
+    if (typeof constraint?.index === "string") fields.push(constraint.index);
+    if (Array.isArray(constraint?.fields)) fields.push(...constraint.fields.map((f) => String(f)));
+    // The message is only a fallback: it carries a source snippet of the
+    // failing call, which can name other fields (`email:` in a phone clash).
+    const haystack = (fields.length > 0 ? fields.join(",") : (err.message ?? "")).toLowerCase();
 
     if (haystack.includes("slug")) {
       return new ConflictError("SCHOOL_SLUG_TAKEN", "That school slug is already taken.");

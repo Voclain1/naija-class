@@ -41,7 +41,9 @@ coverage/
 playwright-report/
 test-results/
 
-# prisma generated client
+# prisma generated client (Prisma 7 writes it into src/; the old path is kept
+# ignored so a stale checkout's copy never gets committed)
+packages/db/src/generated/
 packages/db/generated/
 
 # expo

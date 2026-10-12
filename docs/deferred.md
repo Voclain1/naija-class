@@ -396,8 +396,9 @@ the module doc or the PR, then link it here.
     small. **Trigger:** `ci` takes over 15 minutes.
   - **Codecov / Coveralls.** The run summary covers it until a trend line or
     PR comments are wanted; needs a token and a third-party service.
-- [ ] **Prisma 5 → 7 upgrade.** Plan written, awaiting the owner's approval:
-  `docs/modules/prisma-7-upgrade.md`. Update CLAUDE.md in the upgrade PR.
+- [x] **DONE 2026-10-12 — Prisma 5 → 7 upgrade** (7.10.0). See
+  `docs/modules/prisma-7-upgrade.md`, "As built". One check waits for the
+  deploy: a TLS connection to Neon through the new adapter.
 
 ## 3. Waiting on the owner or outside parties
 

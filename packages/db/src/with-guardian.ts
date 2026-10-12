@@ -1,6 +1,6 @@
 import { ForbiddenError } from "@school-kit/types";
 
-import { PrismaClient } from "../generated/client/index.js";
+import type { PrismaClient } from "./generated/prisma/client.js";
 
 // Guardian-to-student authorization (Decision B, docs/modules/phase-4.md §3/
 // §4). Layered on top of withTenant, not a replacement for it: withTenant
