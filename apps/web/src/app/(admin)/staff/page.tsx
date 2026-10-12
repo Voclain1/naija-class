@@ -279,7 +279,7 @@ export default function StaffRosterPage() {
 function StaffTable({ rows }: { rows: StaffRow[] }) {
   return (
     <div className="overflow-hidden rounded-md border">
-      <Table>
+      <Table stackOnMobile>
         <TableHeader>
           <TableRow>
             <TableHead>Name</TableHead>

@@ -396,9 +396,11 @@ export default function FeesPage() {
         </InlineAlert>
       )}
 
-      <div className="flex gap-6">
+      {/* Categories beside the items from `md`; stacked above them on a phone,
+          where a 256px column beside the items left them no room. */}
+      <div className="flex flex-col gap-6 md:flex-row">
         {/* ── Category panel ─────────────────────────────────────────── */}
-        <aside className="w-64 shrink-0">
+        <aside className="w-full md:w-64 md:shrink-0">
           <div className="mb-2 flex items-center justify-between">
             <h2 className="text-sm font-medium">Categories</h2>
             <Button size="sm" variant="outline" onClick={openCatCreate}>
@@ -495,10 +497,10 @@ export default function FeesPage() {
             </div>
           ) : (
             <div className="space-y-4">
-              <div className="flex items-start justify-between gap-2">
-                <div>
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div className="min-w-0">
                   <div className="flex items-center gap-2">
-                    <h2 className="text-base font-semibold">{selectedCat.name}</h2>
+                    <h2 className="min-w-0 break-words text-base font-semibold">{selectedCat.name}</h2>
                     <button
                       onClick={() => openCatEdit(selectedCat)}
                       className="text-muted-foreground hover:text-foreground"
@@ -534,7 +536,7 @@ export default function FeesPage() {
                 </div>
               ) : items.length > 0 ? (
                 <div className="rounded-lg border">
-                  <Table>
+                  <Table stackOnMobile>
                     <TableHeader>
                       <TableRow>
                         <TableHead>Name</TableHead>

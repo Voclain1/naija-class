@@ -313,7 +313,7 @@ export default function DiscountsPage() {
       {/* Rules table */}
       {selectedStudentId && (
         <div className="rounded-lg border">
-          <Table>
+          <Table stackOnMobile>
             <TableHeader>
               <TableRow>
                 <TableHead>Name</TableHead>

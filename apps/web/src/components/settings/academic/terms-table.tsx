@@ -31,7 +31,7 @@ export function TermsTable({ terms, onEdit, onSetCurrent, onDelete }: Props) {
 
   return (
     <div className="overflow-hidden rounded-md border">
-      <Table>
+      <Table stackOnMobile>
         <TableHeader>
           <TableRow>
             <TableHead>#</TableHead>

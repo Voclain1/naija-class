@@ -229,45 +229,42 @@ test.describe("wave 3A — accessibility regressions", () => {
     // was a plain flex row that neither wrapped nor scrolled, so the trailing
     // tabs were clipped by the shell's `overflow-x-hidden` <main>: invisible,
     // unclickable, and impossible for a user to scroll to — yet still
-    // keyboard-focusable into off-screen space.
+    // keyboard-focusable into off-screen space. The next fix made the strip
+    // scroll sideways, which was reachable but hid tabs with nothing to say so.
     //
-    // NOTE ON METHOD: Playwright's scrollIntoViewIfNeeded() does NOT prove
-    // reachability here and an earlier version of this test passed against the
-    // broken code because of it. `overflow-x: hidden` still creates a scroll
-    // container that can be scrolled PROGRAMMATICALLY (scrollLeft is settable)
-    // while offering the user no scrollbar and no gesture. So this asserts the
-    // structural property instead: whenever the strip is wider than its
-    // scrollport, that scrollport must be genuinely user-scrollable.
+    // Since 2026-10-12 the tabs wrap below `lg` (components/shared/
+    // section-tabs.tsx), so the property is stronger: at a tablet and a phone
+    // width every tab is fully on screen, no scrolling needed.
+    //
+    // NOTE ON METHOD (kept from the scroll version): Playwright's
+    // scrollIntoViewIfNeeded() does NOT prove reachability under an
+    // overflow-x-hidden ancestor, so this measures each tab's box against the
+    // screen instead of clicking it.
     const admin = await loginAsAdmin(browser);
-    await admin.page.setViewportSize({ width: 768, height: 1024 });
-    await admin.page.goto("/finance/invoices", { waitUntil: "domcontentloaded" });
+    for (const width of [768, 390]) {
+      await admin.page.setViewportSize({ width, height: 1024 });
+      await admin.page.goto("/finance/invoices", { waitUntil: "domcontentloaded" });
 
-    const tabs = admin.page.getByRole("navigation", { name: /finance/i }).getByRole("link");
-    // Wait for the strip to render before counting — a bare count() races the
-    // client-side render and silently sees zero.
-    await expect(tabs.first()).toBeVisible();
-    const count = await tabs.count();
-    expect(count).toBeGreaterThan(3);
+      const tabs = admin.page.getByRole("navigation", { name: /finance/i }).getByRole("link");
+      // Wait for the strip to render before counting — a bare count() races the
+      // client-side render and silently sees zero.
+      await expect(tabs.first()).toBeVisible();
+      const count = await tabs.count();
+      expect(count).toBeGreaterThan(3);
 
-    const strip = await admin.page.evaluate(() => {
-      const nav = document.querySelector<HTMLElement>('nav[aria-label="Finance sections"]');
-      if (!nav) return null;
-      const overflows = nav.scrollWidth > nav.clientWidth + 1;
-      // Walk up for the first ancestor (nav included) that manages overflow-x.
-      let owner: HTMLElement | null = nav;
-      let mode = "none";
-      while (owner) {
-        const ox = getComputedStyle(owner).overflowX;
-        if (ox !== "visible") { mode = ox; break; }
-        owner = owner.parentElement;
-      }
-      return { overflows, mode, scrollWidth: nav.scrollWidth, clientWidth: nav.clientWidth };
-    });
-    expect(strip).not.toBeNull();
-    // The strip is expected to be wider than 768px — that is the whole premise.
-    expect(strip!.overflows, `strip did not overflow (${strip!.scrollWidth} vs ${strip!.clientWidth}); premise no longer holds`).toBe(true);
-    // ...and the container that owns that overflow must let the user scroll.
-    expect(["auto", "scroll"], `overflow-x resolved to "${strip!.mode}" — clipped, not scrollable`).toContain(strip!.mode);
+      const offscreen = await admin.page.evaluate(() => {
+        const vw = document.documentElement.clientWidth;
+        const nav = document.querySelector<HTMLElement>('nav[aria-label="Finance sections"]');
+        if (!nav) return ["no finance nav"];
+        return Array.from(nav.querySelectorAll<HTMLElement>("a"))
+          .filter((a) => {
+            const r = a.getBoundingClientRect();
+            return r.left < 0 || r.right > vw + 1;
+          })
+          .map((a) => `${a.textContent?.trim()} (${Math.round(a.getBoundingClientRect().right)}px of ${vw}px)`);
+      });
+      expect(offscreen, `${width}px: tabs past the screen edge: ${offscreen.join(", ")}`).toEqual([]);
+    }
 
     await admin.context.close();
     await admin.api.dispose();

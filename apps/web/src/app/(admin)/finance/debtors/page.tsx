@@ -300,7 +300,7 @@ export default function DebtorsPage() {
               <strong className="text-foreground">{debtors.length}</strong> outstanding invoice{debtors.length !== 1 ? "s" : ""} —
               total balance <strong className="text-foreground">{formatKobo(totalBalance)}</strong>
             </p>
-            <div className="flex gap-2 print:hidden">
+            <div className="flex flex-wrap gap-2 print:hidden">
               <ExportCsvButton
                 onExport={() => exportRowsAsCsv("debtors.csv", debtors, DEBTOR_EXPORT_COLUMNS)}
               />
@@ -316,7 +316,7 @@ export default function DebtorsPage() {
           </div>
 
           <div className="overflow-x-auto rounded-lg border">
-            <Table>
+            <Table stackOnMobile>
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-10 print:hidden">

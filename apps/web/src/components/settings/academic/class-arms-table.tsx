@@ -81,7 +81,7 @@ export function ClassArmsTable({
                 No arms yet for {level.name}.
               </p>
             ) : (
-              <Table>
+              <Table stackOnMobile>
                 <TableHeader>
                   <TableRow>
                     <TableHead>Name</TableHead>

@@ -60,7 +60,7 @@ export function InvitationsTable({ invitations, copyableUrls, onResend, onRevoke
 
   return (
     <div className="overflow-hidden rounded-md border">
-      <Table>
+      <Table stackOnMobile>
         <TableHeader>
           <TableRow>
             <TableHead>Email</TableHead>

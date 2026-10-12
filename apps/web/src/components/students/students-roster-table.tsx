@@ -32,7 +32,7 @@ export function StudentsRosterTable({ students }: Props) {
   const router = useRouter();
   return (
     <div className="overflow-hidden rounded-md border">
-      <Table>
+      <Table stackOnMobile>
         <TableHeader>
           <TableRow>
             <TableHead>Student</TableHead>

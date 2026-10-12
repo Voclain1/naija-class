@@ -128,3 +128,75 @@
     color: #000 !important;
   }
 }
+
+/* Stacked tables (2026-10-12). `<Table stackOnMobile>` (components/ui/
+ * table.tsx) shows each row as a card below `sm`: the first column as the
+ * card's title, every other cell on its own line under its column's name
+ * (data-label, set from the header by lib/ui/stacked-table.ts), and the
+ * actions along the bottom, wrapping. A table wider than the phone used to
+ * push its last columns past the screen edge; this keeps every row inside it.
+ * The plain attribute selectors outrank a cell's own utility classes (a
+ * `flex` or `text-right` on a td) on purpose. */
+@media (max-width: 639.98px) {
+  table[data-stack],
+  table[data-stack] > tbody,
+  table[data-stack] > tfoot {
+    display: block;
+    width: 100%;
+  }
+  table[data-stack] > thead {
+    display: none;
+  }
+  table[data-stack] > tbody > tr,
+  table[data-stack] > tfoot > tr {
+    display: block;
+    padding: 0.875rem 1rem;
+  }
+  table[data-stack] > tbody > tr > td,
+  table[data-stack] > tfoot > tr > td {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.125rem 1rem;
+    width: 100%;
+    min-width: 0;
+    padding: 0.25rem 0;
+    text-align: right;
+    overflow-wrap: anywhere;
+  }
+  table[data-stack] td > * {
+    min-width: 0;
+    max-width: 100%;
+  }
+  table[data-stack] td[data-label]::before {
+    content: attr(data-label);
+    flex: none;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    text-align: left;
+    color: hsl(var(--muted-foreground));
+  }
+  table[data-stack] td[data-stack-role="title"] {
+    justify-content: flex-start;
+    padding-bottom: 0.375rem;
+    font-size: 0.9375rem;
+    font-weight: 600;
+    text-align: left;
+  }
+  table[data-stack] td[data-stack-role="actions"],
+  table[data-stack] td[data-stack-role="bare"] {
+    justify-content: flex-start;
+    gap: 0.5rem;
+    text-align: left;
+  }
+  table[data-stack] td[data-stack-role="actions"] {
+    padding-top: 0.625rem;
+  }
+  table[data-stack] td[data-stack-role="full"] {
+    display: block;
+    text-align: center;
+  }
+}

@@ -551,7 +551,7 @@ export default function InvoiceDetailPage() {
 
       {/* Line items */}
       <div className="rounded-lg border">
-        <Table>
+        <Table stackOnMobile>
           <TableHeader>
             <TableRow>
               <TableHead>Category</TableHead>
@@ -772,7 +772,7 @@ export default function InvoiceDetailPage() {
           <p className="text-sm text-muted-foreground">No payments recorded.</p>
         ) : (
           <div className="rounded-lg border">
-            <Table>
+            <Table stackOnMobile>
               <TableHeader>
                 <TableRow>
                   <TableHead>Date</TableHead>
@@ -862,7 +862,7 @@ export default function InvoiceDetailPage() {
           <div className="space-y-3">
             <p className="text-sm text-muted-foreground">{plan.name}</p>
             <div className="rounded-lg border">
-              <Table>
+              <Table stackOnMobile>
                 <TableHeader>
                   <TableRow>
                     <TableHead>Due date</TableHead>
