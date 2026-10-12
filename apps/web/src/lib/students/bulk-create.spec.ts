@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { isTerminalAuthFailure, partialSaveNotice } from "./bulk-create";
+import {
+  conflictRows,
+  isTerminalAuthFailure,
+  partialSaveNotice,
+  repeatedAdmissionRows,
+  toBatches,
+} from "./bulk-create";
 
 describe("isTerminalAuthFailure — when to stop the row loop", () => {
   it("stops on 401", () => {
@@ -74,5 +80,54 @@ describe("partialSaveNotice — what the user is told", () => {
     for (const notice of [partialSaveNotice(0, 3), partialSaveNotice(2, 3)]) {
       expect(notice).toMatch(/signed out/i);
     }
+  });
+});
+
+describe("repeatedAdmissionRows — caught before anything is sent", () => {
+  it("points each repeat at the first row with that number", () => {
+    const repeats = repeatedAdmissionRows(["A1", "B2", " A1 ", "C3", "B2", "A1"]);
+    expect([...repeats]).toEqual([
+      [2, 0],
+      [4, 1],
+      [5, 0],
+    ]);
+  });
+
+  it("ignores blank numbers, which validation reports on its own", () => {
+    expect(repeatedAdmissionRows(["", "", "X"]).size).toBe(0);
+  });
+});
+
+describe("toBatches — requests the bulk endpoint accepts", () => {
+  it("splits in order, the last batch holding the remainder", () => {
+    const rows = Array.from({ length: 450 }, (_, i) => i);
+    const batches = toBatches(rows, 200);
+    expect(batches.map((b) => b.length)).toEqual([200, 200, 50]);
+    expect(batches.flat()).toEqual(rows);
+  });
+
+  it("sends nothing for nothing", () => {
+    expect(toBatches([], 200)).toEqual([]);
+  });
+});
+
+describe("conflictRows — reading the server's 409", () => {
+  it("returns the named rows", () => {
+    expect(
+      conflictRows({
+        status: 409,
+        code: "ADMISSION_NUMBERS_TAKEN",
+        details: { rows: [{ index: 1, reason: "TAKEN" }, { index: 3, reason: "REPEATED_IN_REQUEST" }] },
+      }),
+    ).toEqual([
+      { index: 1, reason: "TAKEN" },
+      { index: 3, reason: "REPEATED_IN_REQUEST" },
+    ]);
+  });
+
+  it("is null for any other failure, so the grid does not mark rows it cannot name", () => {
+    expect(conflictRows({ status: 409, code: "ADMISSION_NUMBER_TAKEN" })).toBeNull();
+    expect(conflictRows({ status: 400, code: "ADMISSION_NUMBERS_TAKEN", details: { rows: [] } })).toBeNull();
+    expect(conflictRows({ status: 409, code: "ADMISSION_NUMBERS_TAKEN", details: {} })).toBeNull();
   });
 });

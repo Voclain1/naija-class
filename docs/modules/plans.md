@@ -59,8 +59,10 @@ production runs during early access) or `enforce`. Anything else reads as
   cap and over it.
 - **enforce:** adding students past the cap is refused with 403
   `PLAN_STUDENT_LIMIT`, and a message naming the plan and the cap. Checked at
-  the three places students are created:
+  the four places students are created:
   - adding one student (`POST /students`);
+  - the bulk add grid (`POST /students/bulk`, 2026-10-12): the whole batch
+    is checked, so a batch that would pass the cap adds nobody;
   - committing a CSV import (`POST /imports/:jobId/commit`): the whole
     import's valid rows are checked when the commit is asked for, so an
     import is refused rather than half done;

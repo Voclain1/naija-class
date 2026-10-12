@@ -43,8 +43,9 @@ export default function BulkAddStudentsPage() {
 
       {/*
         Recovery guidance for someone returning after an interrupted attempt.
-        Static, because it is always true and needs no state: a submit that
-        stops partway leaves the successful rows created, and this grid cannot
+        Static, because it is always true and needs no state: rows go to the
+        server 200 at a time, all or nothing per batch (POST /students/bulk), so
+        a submit that stops partway leaves earlier batches created, and this grid cannot
         remember them across a sign-out (drafts in browser storage were
         considered and rejected — see docs/deferred.md). What makes re-entering
         safe is the server, not our memory: admission numbers are unique per

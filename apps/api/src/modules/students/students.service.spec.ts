@@ -223,6 +223,94 @@ describe("StudentsService", () => {
   });
 
   // -----------------------------------------------------------------------
+  // bulkCreate — POST /students/bulk
+  // -----------------------------------------------------------------------
+
+  describe("bulkCreate", () => {
+    it("creates every row in the order sent, with one audit row each", async () => {
+      const { authCtx, schoolId } = await createActiveSchool("bulk");
+      const students = ["b3", "b1", "b2"].map((n) => ({ ...requiredFields(n), firstName: `Kid ${n}` }));
+
+      const { created } = await service.bulkCreate(authCtx, { students }, reqCtx);
+
+      expect(created.map((c) => c.admissionNumber)).toEqual(students.map((s) => s.admissionNumber));
+      expect(created.map((c) => c.firstName)).toEqual(["Kid b3", "Kid b1", "Kid b2"]);
+      expect(created.every((c) => c.status === "ACTIVE" && c.nationality === "Nigerian")).toBe(true);
+
+      const audits = await withTenant(schoolId, (db) =>
+        db.auditLog.findMany({ where: { schoolId, action: "student.create" } }),
+      );
+      expect(audits.map((a) => a.entityId).sort()).toEqual(created.map((c) => c.id).sort());
+      for (const audit of audits) {
+        // PII-free, as the single add: admission number, gender, and how.
+        expect(Object.keys(audit.metadata as object).sort()).toEqual(["admissionNumber", "gender", "via"]);
+        expect((audit.metadata as { via: string }).via).toBe("bulk");
+      }
+    });
+
+    it("an admission number already on the roll, or repeated, fails the whole request and names each row", async () => {
+      const { authCtx, schoolId } = await createActiveSchool("bulkdup");
+      await service.create(authCtx, requiredFields("taken"), reqCtx);
+
+      const students = [
+        requiredFields("new1"),
+        requiredFields("taken"),
+        requiredFields("new2"),
+        requiredFields("new1"),
+      ];
+      const error = await service.bulkCreate(authCtx, { students }, reqCtx).catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(ConflictError);
+      expect(error).toMatchObject({
+        code: "ADMISSION_NUMBERS_TAKEN",
+        details: {
+          rows: [
+            { index: 1, reason: "TAKEN" },
+            { index: 3, reason: "REPEATED_IN_REQUEST" },
+          ],
+        },
+      });
+      // Nothing half-created: only the student that was already there.
+      expect(await withTenant(schoolId, (db) => db.student.count({ where: { schoolId } }))).toBe(1);
+    });
+
+    it("under PLAN_ENFORCEMENT=enforce, refuses a batch that would pass the cap, adding none of it", async () => {
+      const { authCtx, schoolId } = await createActiveSchool("bulkplan");
+      await basePrisma.school.update({ where: { id: schoolId }, data: { studentCapOverride: 2 } });
+      const saved = process.env.PLAN_ENFORCEMENT;
+      process.env.PLAN_ENFORCEMENT = "enforce";
+      try {
+        const students = ["c1", "c2", "c3"].map((n) => requiredFields(n));
+        await expect(service.bulkCreate(authCtx, { students }, reqCtx)).rejects.toMatchObject({
+          code: "PLAN_STUDENT_LIMIT",
+          httpStatus: 403,
+        });
+        expect(await withTenant(schoolId, (db) => db.student.count({ where: { schoolId } }))).toBe(0);
+      } finally {
+        if (saved === undefined) delete process.env.PLAN_ENFORCEMENT;
+        else process.env.PLAN_ENFORCEMENT = saved;
+      }
+    });
+
+    it("another school's admission numbers do not conflict", async () => {
+      const a = await createActiveSchool("bulkA");
+      const b = await createActiveSchool("bulkB");
+      await service.create(a.authCtx, requiredFields("shared"), reqCtx);
+      await expect(
+        service.bulkCreate(b.authCtx, { students: [requiredFields("shared")] }, reqCtx),
+      ).resolves.toMatchObject({ created: [{ admissionNumber: requiredFields("shared").admissionNumber }] });
+    });
+
+    it("non-owner/admin → ForbiddenError", async () => {
+      const { schoolId } = await createActiveSchool("bulkforbidden");
+      const { authCtx: noRoleCtx } = await createUserWithoutRole(schoolId, "bulkforbidden");
+      await expect(
+        service.bulkCreate(noRoleCtx, { students: [requiredFields("X")] }, reqCtx),
+      ).rejects.toBeInstanceOf(ForbiddenError);
+    });
+  });
+
+  // -----------------------------------------------------------------------
   // findById
   // -----------------------------------------------------------------------
 

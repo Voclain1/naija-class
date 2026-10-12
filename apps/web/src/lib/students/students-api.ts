@@ -5,6 +5,8 @@
 // per-role.
 
 import type {
+  BulkCreateStudentsInput,
+  BulkCreateStudentsResponse,
   CreateStudentInput,
   GraduateStudentInput,
   ListStudentsQuery,
@@ -44,6 +46,11 @@ export function getStudent(id: string): Promise<StudentDetailDto> {
 
 export function createStudent(input: CreateStudentInput): Promise<StudentDto> {
   return apiFetch<StudentDto>("/students", { method: "POST", body: input });
+}
+
+// Up to MAX_BULK_STUDENTS in one all-or-nothing request (the bulk add grid).
+export function bulkCreateStudents(input: BulkCreateStudentsInput): Promise<BulkCreateStudentsResponse> {
+  return apiFetch<BulkCreateStudentsResponse>("/students/bulk", { method: "POST", body: input });
 }
 
 export function updateStudent(
