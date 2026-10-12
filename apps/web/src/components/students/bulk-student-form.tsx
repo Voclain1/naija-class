@@ -7,7 +7,7 @@ import { useFieldArray, useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
 
-import type { CreateStudentInput } from "@school-kit/types";
+import { MAX_BULK_STUDENTS, type CreateStudentInput } from "@school-kit/types";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -21,8 +21,14 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ApiError } from "@/lib/api-client";
-import { isTerminalAuthFailure, partialSaveNotice } from "@/lib/students/bulk-create";
-import { createStudent } from "@/lib/students/students-api";
+import {
+  conflictRows,
+  isTerminalAuthFailure,
+  partialSaveNotice,
+  repeatedAdmissionRows,
+  toBatches,
+} from "@/lib/students/bulk-create";
+import { bulkCreateStudents } from "@/lib/students/students-api";
 
 // /students/new/bulk — spreadsheet-like inline entry for adding several
 // students at once. Deliberately NOT a shared abstraction with
@@ -68,13 +74,13 @@ import { createStudent } from "@/lib/students/students-api";
 // blank-trailing-row rule above is precisely a "don't validate this row"
 // decision the resolver has no way to express.
 //
-// Submission is a sequential loop of the existing POST /students (no new
-// bulk endpoint, no BullMQ) — this doesn't have the CSV pipeline's
-// large-file/dedupe complexity, just N simultaneous rows. Sequential (not
-// parallel) is deliberate: it makes duplicate-admission-number-within-the-
-// same-batch handling correct for free (row 2 only fires after row 1's
-// response, so if row 1 committed, the server correctly rejects row 2 as
-// ADMISSION_NUMBER_TAKEN) without any extra client-side dedupe code.
+// Submission (2026-10-12): POST /students/bulk, up to MAX_BULK_STUDENTS rows
+// per request, all or nothing per request. It replaced a sequential loop of
+// POST /students, one round trip per child (100 students took minutes). A
+// repeated admission number is caught here before sending, and the server
+// checks again and names each taken or repeated row in its 409, so the admin
+// fixes exactly those rows and resubmits. Batches go one after another and
+// stop at the first that fails, so the grid always knows which rows exist.
 //
 // A row that already succeeded is skipped on a later submit (re-clicking
 // "Create students" after fixing a failed row's error only retries rows
@@ -322,95 +328,100 @@ export function BulkStudentForm() {
       return;
     }
 
+    // Rows still to create, in grid order. Created ones are never resent.
+    const pending = liveIndexes.filter((i) => {
+      const field = fields[i];
+      return field ? rowStatus[field.id]?.state !== "success" : false;
+    });
+    const alreadySucceededBeforeThisPass = liveIndexes.length - pending.length;
+
+    // A repeated admission number inside the grid is shown before anything is
+    // sent: the whole request would be refused for it anyway.
+    const repeats = repeatedAdmissionRows(pending.map((i) => values.rows[i]?.admissionNumber ?? ""));
+    if (repeats.size > 0) {
+      for (const [at, first] of repeats) {
+        form.setError(`rows.${pending[at]!}.admissionNumber`, {
+          type: "manual",
+          message: `Same as row ${pending[first]! + 1}.`,
+        });
+      }
+      setSummary(
+        `${repeats.size} admission number${repeats.size === 1 ? " is" : "s are"} repeated — see the highlighted cells.`,
+      );
+      return;
+    }
+
     setSubmitting(true);
     setSummary(null);
-    // Captured once, before this pass's setRowStatus calls — React state
-    // updates inside the loop below are async, so reading `rowStatus` again
-    // after the loop would race with (and likely miss) this render's own
-    // updates. Track this pass's outcome in local variables instead.
-    const alreadySucceededBeforeThisPass = liveIndexes.filter((i) => {
-      const field = fields[i];
-      return field ? rowStatus[field.id]?.state === "success" : false;
-    }).length;
     let createdThisPass = 0;
-    // Set when a row fails because the session is gone. Every remaining row
-    // would fail the same way, so the loop stops instead of firing them.
+    // Set when a request fails because the session is gone. Nothing more is
+    // sent: every later batch would fail the same way.
     let terminalAuthFailure = false;
+    let stoppedWith: string | null = null;
 
-    for (const i of liveIndexes) {
-      const field = fields[i];
-      if (!field) continue;
-      if (rowStatus[field.id]?.state === "success") continue; // already created — never resubmit
+    for (const batch of toBatches(pending, MAX_BULK_STUDENTS)) {
+      const ids = batch.map((i) => fields[i]!.id);
+      setRowStatus((prev) => ({
+        ...prev,
+        ...Object.fromEntries(ids.map((id) => [id, { state: "submitting" as const }])),
+      }));
 
-      setRowStatus((prev) => ({ ...prev, [field.id]: { state: "submitting" } }));
-
-      const row = values.rows[i];
-      if (!row) continue;
       // `nationality` is omitted deliberately — the column carries a DB
       // default of "Nigerian"; see the field-set note at the top of this file.
-      const payload: CreateStudentInput = {
-        admissionNumber: row.admissionNumber.trim(),
-        firstName: row.firstName.trim(),
-        middleName: emptyToUndefined(row.middleName),
-        lastName: row.lastName.trim(),
-        dateOfBirth: new Date(row.dateOfBirth),
-        gender: row.gender as CreateStudentInput["gender"],
-        email: emptyToUndefined(row.email),
-      };
+      const students: CreateStudentInput[] = batch.map((i) => {
+        const row = values.rows[i]!;
+        return {
+          admissionNumber: row.admissionNumber.trim(),
+          firstName: row.firstName.trim(),
+          middleName: emptyToUndefined(row.middleName),
+          lastName: row.lastName.trim(),
+          dateOfBirth: new Date(row.dateOfBirth),
+          gender: row.gender as CreateStudentInput["gender"],
+          email: emptyToUndefined(row.email),
+        };
+      });
 
       try {
-        const created = await createStudent(payload);
+        const { created } = await bulkCreateStudents({ students });
         setRowStatus((prev) => ({
           ...prev,
-          [field.id]: { state: "success", studentId: created.id },
+          ...Object.fromEntries(
+            ids.map((id, k) => [id, { state: "success" as const, studentId: created[k]?.id }]),
+          ),
         }));
-        createdThisPass++;
+        createdThisPass += created.length;
       } catch (error) {
+        // Nothing in this batch was created (the request is all or nothing),
+        // so every row in it goes back to waiting unless it is the problem.
+        const statuses: Record<string, RowStatus> = Object.fromEntries(
+          ids.map((id) => [id, { state: "idle" as const }]),
+        );
         if (error instanceof ApiError && isTerminalAuthFailure(error)) {
-          // The session ended mid-pass. Rows before this one are ALREADY
-          // CREATED server-side; rows after it have not been attempted.
-          //
-          // Stop here. Continuing would fire one doomed request per remaining
-          // row — reproduced 2026-08-28: a 401 on row 2 of 3 still sent row 3,
-          // each one dispatching another unauthorized event at a server that
-          // had already refused. Same shape as the class-subject matrix's
-          // save loop, which breaks on first failure and reports how far it
-          // got rather than pressing on.
           terminalAuthFailure = true;
-          setRowStatus((prev) => ({
-            ...prev,
-            [field.id]: { state: "error", message: "Not saved — you were signed out." },
-          }));
-          break;
-        }
-        if (error instanceof ApiError) {
-          if (error.code === "ADMISSION_NUMBER_TAKEN") {
-            form.setError(`rows.${i}.admissionNumber`, {
-              type: "manual",
-              message: "Already in use.",
-            });
-            setRowStatus((prev) => ({
-              ...prev,
-              [field.id]: {
-                state: "error",
-                message: "Admission number already in use.",
-              },
-            }));
-          } else {
-            setRowStatus((prev) => ({
-              ...prev,
-              [field.id]: { state: "error", message: error.message },
-            }));
-          }
-        } else {
-          setRowStatus((prev) => ({
-            ...prev,
-            [field.id]: {
+          for (const id of ids) statuses[id] = { state: "error", message: "Not saved — you were signed out." };
+        } else if (error instanceof ApiError && conflictRows(error)) {
+          const rows = conflictRows(error)!;
+          for (const { index, reason } of rows) {
+            const gridIndex = batch[index];
+            if (gridIndex === undefined) continue;
+            const message = reason === "TAKEN" ? "Already in use." : "Repeated in this list.";
+            form.setError(`rows.${gridIndex}.admissionNumber`, { type: "manual", message });
+            statuses[fields[gridIndex]!.id] = {
               state: "error",
-              message: "Could not reach the server.",
-            },
-          }));
+              message: reason === "TAKEN" ? "Admission number already in use." : "Admission number repeated.",
+            };
+          }
+          stoppedWith = `${rows.length} admission number${rows.length === 1 ? " is" : "s are"} already in use, so ${
+            batch.length === 1 ? "that row was" : `these ${batch.length} rows were`
+          } not added. Fix the highlighted cells and submit again.`;
+        } else {
+          const message =
+            error instanceof ApiError ? error.message : "Could not reach the server.";
+          for (const id of ids) statuses[id] = { state: "error", message };
+          stoppedWith = `${message} Nothing in this batch was added — submit again to retry.`;
         }
+        setRowStatus((prev) => ({ ...prev, ...statuses }));
+        break;
       }
     }
 
@@ -431,7 +442,9 @@ export function BulkStudentForm() {
       terminalAuthFailure
         ? partialSaveNotice(totalSuccess, liveIndexes.length)
         : failedCount > 0
-          ? `Created ${totalSuccess} of ${liveIndexes.length}. Fix the highlighted rows and submit again to retry the rest.`
+          ? totalSuccess > 0
+            ? `Created ${totalSuccess} of ${liveIndexes.length}. ${stoppedWith ?? ""}`
+            : (stoppedWith ?? `None of the ${liveIndexes.length} rows were added.`)
           : `All ${totalSuccess} student${totalSuccess === 1 ? "" : "s"} created.`,
     );
   });

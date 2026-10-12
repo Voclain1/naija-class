@@ -2,8 +2,12 @@ import { Injectable } from "@nestjs/common";
 
 import { Prisma, withTenant } from "@school-kit/db";
 import {
+  BULK_STUDENT_CONFLICT_CODE,
   deriveGuardianPortalStatus,
   ConflictError,
+  type BulkCreateStudentsInput,
+  type BulkCreateStudentsResponse,
+  type BulkStudentConflictDetails,
   NotFoundError,
   type CreateStudentInput,
   type GraduateStudentInput,
@@ -301,6 +305,107 @@ export class StudentsService {
 
         return toStudentDto(created);
       } catch (e) {
+        throw mapAdmissionNumberUniqueViolation(e);
+      }
+    });
+  }
+
+  // ----------------------------------------------------------------------
+  // bulkCreate — the bulk add grid's one request (POST /students/bulk).
+  //
+  // All or nothing. Every admission number is checked before anything is
+  // written: one repeated within the request, or already on the school's
+  // roll, fails the whole request with a 409 naming each row, so the grid can
+  // mark exactly those rows and nothing is left half-created. Then one
+  // multi-row INSERT and one multi-row audit INSERT, in the same transaction:
+  // a fixed number of round trips whatever the row count, where the grid used
+  // to send one request per student.
+  // ----------------------------------------------------------------------
+  async bulkCreate(
+    authCtx: AuthContext,
+    input: BulkCreateStudentsInput,
+    reqCtx: RequestContext,
+  ): Promise<BulkCreateStudentsResponse> {
+    await assertUserActiveAndHasOneOf(authCtx, ["owner", "admin"]);
+
+    const numbers = input.students.map((s) => s.admissionNumber);
+    const conflicts: BulkStudentConflictDetails["rows"] = [];
+    const firstSeen = new Map<string, number>();
+    numbers.forEach((n, index) => {
+      if (firstSeen.has(n)) conflicts.push({ index, reason: "REPEATED_IN_REQUEST" });
+      else firstSeen.set(n, index);
+    });
+
+    return withTenant(authCtx.schoolId, async (db) => {
+      const taken = await db.student.findMany({
+        where: { admissionNumber: { in: [...firstSeen.keys()] } },
+        select: { admissionNumber: true },
+      });
+      for (const { admissionNumber } of taken) {
+        conflicts.push({ index: firstSeen.get(admissionNumber)!, reason: "TAKEN" });
+      }
+      if (conflicts.length > 0) {
+        conflicts.sort((a, b) => a.index - b.index);
+        throw new ConflictError(
+          BULK_STUDENT_CONFLICT_CODE,
+          conflicts.length === 1
+            ? "One admission number is already in use. Nothing was added."
+            : `${conflicts.length} admission numbers are already in use. Nothing was added.`,
+          { rows: conflicts } satisfies BulkStudentConflictDetails,
+        );
+      }
+
+      await assertRoomForStudents(db, authCtx.schoolId, input.students.length);
+      try {
+        const now = new Date();
+        const rows = await db.student.createManyAndReturn({
+          data: input.students.map((s) => ({
+            schoolId: authCtx.schoolId,
+            admissionNumber: s.admissionNumber,
+            firstName: s.firstName,
+            middleName: s.middleName ?? null,
+            lastName: s.lastName,
+            dateOfBirth: s.dateOfBirth,
+            gender: s.gender,
+            photoUrl: s.photoUrl ?? null,
+            address: s.address ?? null,
+            phone: s.phone ?? null,
+            email: s.email ?? null,
+            bloodGroup: s.bloodGroup ?? null,
+            medicalNotes: s.medicalNotes ?? null,
+            religion: s.religion ?? null,
+            stateOfOrigin: s.stateOfOrigin ?? null,
+            nationality: s.nationality ?? "Nigerian",
+            admittedAt: s.admittedAt ?? now,
+            notes: s.notes ?? null,
+          })),
+          select: STUDENT_SELECT,
+        });
+
+        // One audit row per student, as the single add writes: the same
+        // action and the same PII-free metadata, plus how it was added.
+        await db.auditLog.createMany({
+          data: rows.map((created) => ({
+            schoolId: authCtx.schoolId,
+            userId: authCtx.userId,
+            action: AUDIT.create,
+            entityType: "student",
+            entityId: created.id,
+            ipAddress: reqCtx.ipAddress,
+            metadata: {
+              admissionNumber: created.admissionNumber,
+              gender: created.gender,
+              via: "bulk",
+            },
+          })),
+        });
+
+        // RETURNING order is not promised; the admission number is unique in
+        // the request, so it puts the rows back in the order they were sent.
+        const byNumber = new Map(rows.map((r) => [r.admissionNumber, r]));
+        return { created: numbers.map((n) => toStudentDto(byNumber.get(n)!)) };
+      } catch (e) {
+        // A row added between the check above and this insert.
         throw mapAdmissionNumberUniqueViolation(e);
       }
     });

@@ -12,12 +12,15 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import {
+  bulkCreateStudentsSchema,
   createStudentSchema,
   graduateStudentSchema,
   listStudentsQuerySchema,
   reactivateStudentSchema,
   updateStudentSchema,
   withdrawStudentSchema,
+  type BulkCreateStudentsInput,
+  type BulkCreateStudentsResponse,
   type CreateStudentInput,
   type GraduateStudentInput,
   type ListStudentsQuery,
@@ -78,6 +81,23 @@ export class StudentsController {
     @Req() req: Request,
   ): Promise<StudentDto> {
     return this.service.create(authCtx, dto, {
+      ipAddress: ip,
+      userAgent: req.header("user-agent") ?? null,
+    });
+  }
+
+  // The bulk add grid (/students/new/bulk): up to 200 students in one
+  // all-or-nothing request. See StudentsService.bulkCreate.
+  @Post("bulk")
+  @HttpCode(201)
+  @Permissions("student.create")
+  async bulkCreate(
+    @Body(new ZodValidationPipe(bulkCreateStudentsSchema)) dto: BulkCreateStudentsInput,
+    @CurrentUser() authCtx: AuthContext,
+    @Ip() ip: string,
+    @Req() req: Request,
+  ): Promise<BulkCreateStudentsResponse> {
+    return this.service.bulkCreate(authCtx, dto, {
       ipAddress: ip,
       userAgent: req.header("user-agent") ?? null,
     });

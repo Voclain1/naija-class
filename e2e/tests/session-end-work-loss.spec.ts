@@ -235,21 +235,19 @@ test.describe("forced session end offers no false choice", () => {
 // ---------------------------------------------------------------------------
 
 test.describe("bulk student add stops when the session is gone", () => {
-  test("no doomed requests after a 401, and the rows that landed are named", async ({
+  test("a 401 on the bulk request sends nothing more and creates nothing", async ({
     browser,
   }) => {
     const admin = await loginAsAdmin(browser);
     const page = admin.page;
     const suffix = uniqueSuffix();
 
-    // Let row 1 through; answer every later create exactly as a revoked
-    // session would. This is the real shape of "the session died between
-    // row 1 and row 2" and is the only way to place the failure precisely.
+    // Since 2026-10-12 the grid sends one all-or-nothing request per 200 rows
+    // (POST /students/bulk). Answer it exactly as a revoked session would.
     let attempts = 0;
-    await page.route("**/api/v1/students", async (route) => {
+    await page.route("**/api/v1/students/bulk", async (route) => {
       if (route.request().method() !== "POST") return route.fallback();
       attempts += 1;
-      if (attempts === 1) return route.fallback();
       return route.fulfill({
         status: 401,
         contentType: "application/json",
@@ -280,21 +278,14 @@ test.describe("bulk student add stops when the session is gone", () => {
     await page.getByRole("button", { name: /create students/i }).click();
     await page.waitForURL(/\/login/, { timeout: 30_000 });
 
-    // THE REGRESSION. Before the fix the loop swallowed the 401 into that
-    // row's status cell and carried on, so row 3 was also attempted: three
-    // requests where two is correct (row 1 succeeded, row 2 failed, stop).
-    expect(attempts, "the loop must stop at the first terminal auth failure").toBe(2);
+    expect(attempts, "one request for the batch, and nothing after the 401").toBe(1);
 
-    // The DB holds exactly the row that succeeded. admin.api's own session was
-    // never revoked — only the browser's calls were intercepted — so this is a
-    // clean read.
+    // admin.api's own session was never revoked — only the browser's calls
+    // were intercepted — so this is a clean read.
     const roster = await admin.api.get("students");
     const body = (await roster.json()) as { data?: { admissionNumber: string }[] };
-    const mine = (body.data ?? [])
-      .map((s) => s.admissionNumber)
-      .filter((a) => a.includes(suffix))
-      .sort();
-    expect(mine).toEqual([`E2E-${suffix}-A`]);
+    const mine = (body.data ?? []).filter((s) => s.admissionNumber.includes(suffix));
+    expect(mine).toEqual([]);
 
     await admin.context.close();
     await admin.api.dispose();

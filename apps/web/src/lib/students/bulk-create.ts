@@ -1,4 +1,5 @@
-// Pure helpers for the bulk student-add grid's submit pass.
+// Pure helpers for the bulk student-add grid's submit pass, which since
+// 2026-10-12 sends POST /students/bulk batches rather than one request per row.
 //
 // Extracted so they can be unit-tested: apps/web's Vitest runner is
 // node-environment and *.spec.ts only (no DOM tests by standing decision), so
@@ -51,5 +52,48 @@ export function partialSaveNotice(created: number, attempted: number): string {
     `You were signed out after ${created} of ${attempted} ` +
     `student${created === 1 ? "" : "s"} ${created === 1 ? "was" : "were"} added. ` +
     `Those ${created} ${created === 1 ? "is" : "are"} saved — check the roster before re-entering the rest.`
+  );
+}
+
+/**
+ * Rows whose admission number repeats an EARLIER row of the same batch, as
+ * `index → index of the first row with that number`. Checked before sending,
+ * so the admin sees the repeat at once; the server checks again regardless.
+ */
+export function repeatedAdmissionRows(numbers: string[]): Map<number, number> {
+  const first = new Map<string, number>();
+  const repeats = new Map<number, number>();
+  numbers.forEach((raw, index) => {
+    const n = raw.trim();
+    if (n === "") return;
+    const seen = first.get(n);
+    if (seen === undefined) first.set(n, index);
+    else repeats.set(index, seen);
+  });
+  return repeats;
+}
+
+/** Split rows into requests the bulk endpoint accepts (MAX_BULK_STUDENTS each). */
+export function toBatches<T>(items: T[], size: number): T[][] {
+  const batches: T[][] = [];
+  for (let i = 0; i < items.length; i += size) batches.push(items.slice(i, i + size));
+  return batches;
+}
+
+/**
+ * The rows a 409 ADMISSION_NUMBERS_TAKEN names, or null for any other error.
+ * Indexes are into the batch that was sent.
+ */
+export function conflictRows(error: {
+  status?: number;
+  code?: string;
+  details?: unknown;
+}): { index: number; reason: "TAKEN" | "REPEATED_IN_REQUEST" }[] | null {
+  if (error.status !== 409 || error.code !== "ADMISSION_NUMBERS_TAKEN") return null;
+  const rows = (error.details as { rows?: unknown } | undefined)?.rows;
+  if (!Array.isArray(rows)) return null;
+  return rows.filter(
+    (r): r is { index: number; reason: "TAKEN" | "REPEATED_IN_REQUEST" } =>
+      typeof r === "object" && r !== null && typeof (r as { index?: unknown }).index === "number",
   );
 }

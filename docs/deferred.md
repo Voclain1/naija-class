@@ -299,10 +299,19 @@ the module doc or the PR, then link it here.
   roster) need every staff member, and the roster's search, filters and CSV
   export work over all rows. Add a cursor only if a school's staff list itself
   becomes slow.
-- [ ] **Bulk student grid** — what is left:
-  - bounded-parallel submit;
-  - a real `POST /students/bulk`;
-  - draft persistence.
+- [x] **DONE 2026-10-12 — The bulk student grid saves in one request.**
+  `POST /students/bulk` takes up to 200 students, all or nothing: every
+  admission number is checked first, and a taken or repeated one refuses the
+  whole request with a 409 naming each row (`ADMISSION_NUMBERS_TAKEN`). Then
+  one multi-row insert and one multi-row audit insert (`student.create`,
+  `via: "bulk"`), in one transaction, with the plan's student cap checked for
+  the whole batch. The grid catches repeats before sending, sends larger lists
+  200 at a time, and stops at the first refused batch. This supersedes the
+  bounded-parallel submit. Proven in `e2e/tests/bulk-student-add.spec.ts`.
+- [ ] **Bulk student grid draft** (rows kept in the browser across a sign-out
+  or refresh). Not built: it would keep children's names and dates of birth in
+  browser storage, which an earlier decision rejected (the page note at
+  `app/(admin)/students/new/bulk/page.tsx`). Needs the owner's call.
 - [ ] **Teacher shell sidebar background stops partway down a short page.**
 - [x] **DONE 2026-10-10 — Moving a timetable lesson is one request.**
   `PUT /timetable/lessons` takes an optional `moveFrom` (day, start period,
@@ -324,28 +333,7 @@ the module doc or the PR, then link it here.
   the write to `history.replaceState`: with Next's own state it is never
   synced into `useSearchParams` (the dashboard stays loading), and without it
   Next's sync cancels the in-flight navigation exactly as `router.replace`
-  does. Both were tried on PR #388.
-- [x] **DONE 2026-10-10 — Staff roster's 200-profile cap.** `GET /users`
-  now returns each user's `teacherProfileId` (one join), so `/staff` no
-  longer reads one page of `GET /teacher-profiles`, which marked every teacher
-  past the 200th "Pending profile". `GET /users` still returns the full set,
-  deliberately: five screens (payroll, class arms, staff detail and edit, the
-  roster) need every staff member, and the roster's search, filters and CSV
-  export work over all rows. Add a cursor only if a school's staff list itself
-  becomes slow.
-- [ ] **Bulk student grid** — what is left:
-  - bounded-parallel submit;
-  - a real `POST /students/bulk`;
-  - draft persistence.
-- [ ] **Teacher shell sidebar background stops partway down a short page.**
-- [x] **DONE 2026-10-10 — Moving a timetable lesson is one request.**
-  `PUT /timetable/lessons` takes an optional `moveFrom` (day, start period,
-  span); the API clears that block in the same transaction as the save, so a
-  failed move leaves the lesson where it was and a successful one never
-  leaves it in both places. The old cells count as free, so a lesson may move
-  onto its own old cell (which used to fail with `CELL_OCCUPIED`). A stale
-  source answers `MOVE_SOURCE_EMPTY`; the audit row records `movedFrom`.
-
+  does. Both were tried on PR #388
 ### Docs and tooling
 - [x] **DONE 2026-10-08 — `docs/journal/` caught up** with a single catch-up
   entry, `docs/journal/2026-10-08.md`, covering 2026-09-06 to today by theme.
