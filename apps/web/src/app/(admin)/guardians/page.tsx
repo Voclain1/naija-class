@@ -297,7 +297,7 @@ export default function GuardiansRosterPage() {
       ) : (
         <>
           <div className="overflow-x-auto rounded-md border">
-            <Table aria-label="Guardians">
+            <Table stackOnMobile aria-label="Guardians">
               <TableHeader className="[&_tr]:bg-muted/40">
                 <TableRow>
                   <TableHead>Guardian</TableHead>

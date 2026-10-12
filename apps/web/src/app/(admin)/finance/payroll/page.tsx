@@ -230,7 +230,7 @@ export default function PayrollPage() {
         </div>
       ) : items.length > 0 ? (
         <div className="rounded-lg border">
-          <Table>
+          <Table stackOnMobile>
             <TableHeader>
               <TableRow>
                 <TableHead>Staff</TableHead>

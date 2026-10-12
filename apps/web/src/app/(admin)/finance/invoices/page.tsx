@@ -536,7 +536,7 @@ export default function InvoicesPage() {
                 &ldquo;Generate invoices&rdquo; recomputes from current fee catalog.
               </p>
               <div className="overflow-x-auto rounded-lg border">
-                <Table>
+                <Table stackOnMobile>
                   <TableHeader>
                     <TableRow>
                       <TableHead>Student</TableHead>
@@ -626,7 +626,7 @@ export default function InvoicesPage() {
           )}
 
           <div className="overflow-x-auto rounded-lg border">
-            <Table>
+            <Table stackOnMobile>
               <TableHeader>
                 <TableRow>
                   <TableHead>Student</TableHead>

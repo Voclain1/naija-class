@@ -43,24 +43,24 @@ export function SectionTabs({
 }) {
   const pathname = usePathname() ?? "";
 
-  // The strip scrolls horizontally rather than being clipped. A plain flex row
-  // neither wrapped nor scrolled, so once the tabs were wider than the viewport
-  // (Finance has seven) the overflowing ones were cut off by the admin shell's
-  // `overflow-x-hidden` <main> and became genuinely unreachable — not
-  // scrollable to, not clickable, yet still keyboard-focusable into off-screen
-  // space. Measured at 768px on /finance/invoices.
+  // Below `lg` the tabs WRAP into rows of rounded buttons (2026-10-12): every
+  // section visible and one tap away, nothing past the screen edge. Before,
+  // the strip scrolled sideways with nothing to say more tabs were there:
+  // "Ex…" and "Subje…" cut mid-word on a phone, and the current tab could be
+  // scrolled out of sight. Finance's seven take three rows on a phone.
   //
-  // The scrollport is the <nav> and the flex row moves inside it: a container
-  // with `overflow-x: auto` computes `overflow-y` to `auto` as well, so putting
-  // the scroll on the bordered row itself would clip each tab's `-mb-px`
-  // underline. `min-w-max` lets that row stay wider than the scrollport.
-  // The actions sit BESIDE the scrollport, not inside it: they must stay
-  // reachable when the seven finance tabs overflow, and a primary action that
-  // scrolls off-screen is the same unreachable-control bug the scrollport
-  // below was added to fix.
+  // From `lg` it is the underlined strip, which fits beside the sidebar. It
+  // keeps its scrollport as a safety net (the history: a plain flex row that
+  // neither wrapped nor scrolled made trailing tabs unreachable under the
+  // shell's overflow-x-hidden <main>). The scrollport is the <nav> and the row
+  // moves inside it: `overflow-x: auto` computes `overflow-y` to `auto` too, so
+  // scrolling the bordered row itself would clip each tab's `-mb-px` underline.
+  //
+  // One set of links styled by breakpoint, not two lists, so a screen reader
+  // and the e2e tests always see exactly one tab per section.
   const tabs = (
-    <nav aria-label={ariaLabel} className="min-w-0 flex-1 overflow-x-auto">
-      <div className="flex min-w-max gap-1 border-b border-border text-sm">
+    <nav aria-label={ariaLabel} className="min-w-0 flex-1 lg:overflow-x-auto">
+      <div className="flex flex-wrap gap-2 text-sm lg:min-w-max lg:flex-nowrap lg:gap-1 lg:border-b lg:border-border">
         {items.map((item) => {
           const active = item.exact ? pathname === item.href : pathname.startsWith(item.href);
           return (
@@ -70,10 +70,11 @@ export function SectionTabs({
               aria-current={active ? "page" : undefined}
               onClick={onNavigate ? (e) => onNavigate(item, active, e) : undefined}
               className={cn(
-                "-mb-px shrink-0 whitespace-nowrap border-b-2 px-3 py-2 font-medium transition-colors",
+                "shrink-0 whitespace-nowrap rounded-full border px-3 py-1.5 font-medium transition-colors",
+                "lg:-mb-px lg:rounded-none lg:border-0 lg:border-b-2 lg:px-3 lg:py-2",
                 active
-                  ? "border-primary text-primary"
-                  : "border-transparent text-muted-foreground hover:border-muted hover:text-foreground",
+                  ? "border-primary/40 bg-primary/10 text-primary lg:border-primary lg:bg-transparent"
+                  : "border-border text-muted-foreground hover:text-foreground lg:border-transparent lg:hover:border-muted",
               )}
             >
               {item.label}

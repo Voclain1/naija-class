@@ -238,7 +238,7 @@ export default function ExpensesPage() {
         </div>
       ) : expenses.length > 0 ? (
         <div className="rounded-lg border">
-          <Table>
+          <Table stackOnMobile>
             <TableHeader>
               <TableRow>
                 <TableHead>Date</TableHead>

@@ -1,14 +1,55 @@
+"use client";
+
 import * as React from "react";
 
+import { labelStackedCells } from "@/lib/ui/stacked-table";
 import { cn } from "@/lib/utils";
 
-const Table = React.forwardRef<HTMLTableElement, React.HTMLAttributes<HTMLTableElement>>(
-  ({ className, ...props }, ref) => (
-    <div className="w-full overflow-auto">
-      <table ref={ref} className={cn("w-full caption-bottom text-sm", className)} {...props} />
+interface TableProps extends React.HTMLAttributes<HTMLTableElement> {
+  /**
+   * On a phone (below `sm`), show each row as a card instead of a table row:
+   * every cell on its own line under its column's name, read from the
+   * table's own header, and the actions along the bottom. Nothing runs past
+   * the screen edge (2026-10-12; the rules are in globals.css under
+   * "Stacked tables"). For lists — not for editing grids like the gradebook,
+   * where the columns ARE the point.
+   */
+  stackOnMobile?: boolean;
+}
+
+const Table = React.forwardRef<HTMLTableElement, TableProps>(({ className, stackOnMobile, ...props }, ref) => {
+  const innerRef = React.useRef<HTMLTableElement | null>(null);
+  const setRef = React.useCallback(
+    (node: HTMLTableElement | null) => {
+      innerRef.current = node;
+      if (typeof ref === "function") ref(node);
+      else if (ref) ref.current = node;
+    },
+    [ref],
+  );
+
+  // Labels come from the header, so a table opts in with one prop. Kept in
+  // step as rows arrive, change or are filtered.
+  React.useEffect(() => {
+    const table = innerRef.current;
+    if (!stackOnMobile || !table) return;
+    labelStackedCells(table);
+    const observer = new MutationObserver(() => labelStackedCells(table));
+    observer.observe(table, { childList: true, subtree: true, characterData: true });
+    return () => observer.disconnect();
+  }, [stackOnMobile]);
+
+  return (
+    <div className={cn("w-full overflow-auto", stackOnMobile && "max-sm:overflow-visible")}>
+      <table
+        ref={setRef}
+        data-stack={stackOnMobile ? "" : undefined}
+        className={cn("w-full caption-bottom text-sm", className)}
+        {...props}
+      />
     </div>
-  ),
-);
+  );
+});
 Table.displayName = "Table";
 
 const TableHeader = React.forwardRef<HTMLTableSectionElement, React.HTMLAttributes<HTMLTableSectionElement>>(

@@ -32,7 +32,7 @@ export function AcademicYearsTable({ years, onEdit, onSetCurrent, onDelete }: Pr
 
   return (
     <div className="overflow-hidden rounded-md border">
-      <Table>
+      <Table stackOnMobile>
         <TableHeader>
           <TableRow>
             <TableHead>Label</TableHead>
