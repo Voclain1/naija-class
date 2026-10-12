@@ -397,6 +397,41 @@ describe("StudentScanService", () => {
     expect(result.failedRows[0].rowNumber).toBe(2);
   });
 
+  // Admission numbers slice 2 (docs/modules/admission-numbers.md): a blank
+  // number on a reviewed row is SchoolKit's to give on automatic numbering,
+  // and a failed row for a school that types its numbers.
+  it("numbers blank rows on automatic numbering, and reports them for a school that types its numbers", async () => {
+    const blankRows = [
+      { rowNumber: 1, admissionNumber: "", firstName: "Ngozi", lastName: "Eze", dateOfBirth: "2015-02-02", gender: "FEMALE" as const },
+      { rowNumber: 2, firstName: "Tunde", lastName: "Bello", dateOfBirth: "2015-03-03", gender: "MALE" as const },
+    ];
+
+    const manual = await service.extractFromImage(authCtx, upload(), reqCtx);
+    const refused = await service.commitScan(authCtx, manual.jobId, { rows: blankRows }, reqCtx);
+    expect(refused.committedRows).toBe(0);
+    expect(refused.failedRows.map((r) => r.field)).toEqual(["admissionNumber", "admissionNumber"]);
+
+    await basePrisma.school.update({
+      where: { id: schoolId },
+      data: { admissionNumberMode: "AUTO", admissionNumberFormat: "SCAN/{NNN}", admissionNumberOrder: "SCHOOL" },
+    });
+    try {
+      const auto = await service.extractFromImage(authCtx, upload(), reqCtx);
+      const result = await service.commitScan(authCtx, auto.jobId, { rows: blankRows }, reqCtx);
+      expect(result.committedRows).toBe(2);
+      const numbers = await withTenant(schoolId, (db) =>
+        db.student.findMany({ orderBy: { admissionNumber: "asc" }, select: { admissionNumber: true } }),
+      );
+      expect(numbers.map((n) => n.admissionNumber)).toEqual(["SCAN/001", "SCAN/002"]);
+    } finally {
+      await basePrisma.school.update({
+        where: { id: schoolId },
+        data: { admissionNumberMode: "MANUAL", admissionNumberFormat: null },
+      });
+      await withTenant(schoolId, (db) => db.admissionNumberCounter.deleteMany({ where: { schoolId } }));
+    }
+  });
+
   it("under PLAN_ENFORCEMENT=enforce, refuses a page that would pass the plan's cap, committing none of it", async () => {
     const { jobId } = await service.extractFromImage(authCtx, upload(), reqCtx);
     const rows = [

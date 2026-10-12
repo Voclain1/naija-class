@@ -133,6 +133,7 @@ export class ImportsProcessor extends WorkerHost {
             sourceBytes,
             mapping.mapping,
             mapping.options,
+            schoolId,
           );
         } else if (type === "GUARDIANS") {
           result = await runGuardianValidationEngine(

@@ -308,11 +308,10 @@ the module doc or the PR, then link it here.
   the whole batch. The grid catches repeats before sending, sends larger lists
   200 at a time, and stops at the first refused batch. This supersedes the
   bounded-parallel submit. Proven in `e2e/tests/bulk-student-add.spec.ts`.
-- [ ] **Admission numbers, slice 2** (`docs/modules/admission-numbers.md`).
-  Slice 1 assigns a number when it is left blank on the single add and the
-  bulk grid. Still requiring a typed number: CSV import, scanned registers
-  (Smart Student Import) and the staff mobile app. **Trigger:** once schools
-  have used slice 1.
+- [x] **DONE 2026-10-12 — Admission numbers, slice 2.** A blank admission
+  number is numbered by SchoolKit in the CSV import, scanned registers and the
+  staff mobile app too (`docs/modules/admission-numbers.md`, "As built
+  (slice 2)").
 - [x] **Decided 2026-10-12 (owner): no bulk student grid draft.** Rows are not
   kept in the browser across a sign-out or refresh: they hold children's names
   and dates of birth, and an earlier decision rejected that (the page note at

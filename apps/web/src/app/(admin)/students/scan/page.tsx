@@ -4,7 +4,14 @@ import { AlertTriangle, ArrowLeft, Camera, CheckCircle2, Loader2, Trash2 } from 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import type { ExtractedStudentRow, ReviewedStudentRow, ScanUnavailableReason } from "@school-kit/types";
+import type {
+  AdmissionNumberSettingsDto,
+  ExtractedStudentRow,
+  ReviewedStudentRow,
+  ScanUnavailableReason,
+} from "@school-kit/types";
+
+import { useAdmissionNumbers } from "@/components/students/admission-numbers";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -86,11 +93,19 @@ const REQUIRED: (keyof EditableRow)[] = [
   "gender",
 ];
 
-function rowIsComplete(row: EditableRow): boolean {
-  return REQUIRED.every((f) => String(row[f]).trim() !== "") && /^\d{4}-\d{2}-\d{2}$/.test(row.dateOfBirth);
+// On automatic numbering a blank admission number is SchoolKit's to give
+// (docs/modules/admission-numbers.md slice 2); per class, only with a class.
+function rowIsComplete(row: EditableRow, numbering: AdmissionNumberSettingsDto | null): boolean {
+  const auto = numbering?.mode === "AUTO";
+  const numberOptional = auto && (numbering?.order !== "CLASS" || row.classArm.trim() !== "");
+  return (
+    REQUIRED.every((f) => (f === "admissionNumber" && numberOptional) || String(row[f]).trim() !== "") &&
+    /^\d{4}-\d{2}-\d{2}$/.test(row.dateOfBirth)
+  );
 }
 
 export default function StudentScanPage() {
+  const { settings: numbering } = useAdmissionNumbers();
   const inputRef = useRef<HTMLInputElement>(null);
   const [phase, setPhase] = useState<Phase>("capture");
   const [available, setAvailable] = useState<boolean | null>(null);
@@ -167,7 +182,7 @@ export default function StudentScanPage() {
     try {
       const payload: ReviewedStudentRow[] = rows.map((r) => ({
         rowNumber: r.rowNumber,
-        admissionNumber: r.admissionNumber.trim(),
+        ...(r.admissionNumber.trim() ? { admissionNumber: r.admissionNumber.trim() } : {}),
         firstName: r.firstName.trim(),
         lastName: r.lastName.trim(),
         dateOfBirth: r.dateOfBirth,
@@ -184,7 +199,7 @@ export default function StudentScanPage() {
     }
   }, [jobId, rows]);
 
-  const incomplete = rows.filter((r) => !rowIsComplete(r)).length;
+  const incomplete = rows.filter((r) => !rowIsComplete(r, numbering)).length;
   const flagged = rows.filter((r) => r.unreadable.size > 0).length;
 
   // -------------------------------------------------------------------------
@@ -364,6 +379,13 @@ export default function StudentScanPage() {
             ))}
           </datalist>
         </div>
+
+        {numbering?.mode === "AUTO" && (
+          <p className="text-xs text-muted-foreground">
+            A blank admission number is filled in by SchoolKit when you add the students
+            {numbering.order === "CLASS" ? " (rows with a class only: your school numbers per class)" : ""}.
+          </p>
+        )}
 
         <div className="flex items-center gap-4">
           <Button onClick={handleCommit} disabled={busy || rows.length === 0 || incomplete > 0}>

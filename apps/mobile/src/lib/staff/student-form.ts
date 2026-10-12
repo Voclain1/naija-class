@@ -80,9 +80,18 @@ export function validateStudentForm(
   values: StudentFormValues,
   placement: Placement,
   today: string | null,
+  // SchoolKit gives the number when it is left blank (admission-numbers.md);
+  // per class, only once a class is chosen.
+  numbering: { auto: boolean; perClass: boolean } = { auto: false, perClass: false },
 ): StudentFormErrors {
   const errors: StudentFormErrors = {};
-  if (values.admissionNumber.trim() === "") errors.admissionNumber = "Enter the admission number.";
+  const numberOptional = numbering.auto && (!numbering.perClass || placement.kind === "arm");
+  if (values.admissionNumber.trim() === "" && !numberOptional) {
+    errors.admissionNumber =
+      numbering.auto && numbering.perClass
+        ? "Choose a class so SchoolKit can number the student, or enter the number."
+        : "Enter the admission number.";
+  }
   if (values.firstName.trim() === "") errors.firstName = "Enter the first name.";
   if (values.lastName.trim() === "") errors.lastName = "Enter the surname.";
   if (values.gender === null) errors.gender = "Choose one.";
@@ -117,12 +126,12 @@ export function buildCreateStudentInput(
   if (values.gender === null) throw new Error("buildCreateStudentInput called without a gender.");
 
   const input: CreateStudentInput = {
-    admissionNumber: values.admissionNumber.trim(),
     firstName: values.firstName.trim(),
     lastName: values.lastName.trim(),
     dateOfBirth: new Date(dob + "T00:00:00.000Z"),
     gender: values.gender,
   };
+  if (values.admissionNumber.trim() !== "") input.admissionNumber = values.admissionNumber.trim();
   if (values.middleName.trim() !== "") input.middleName = values.middleName.trim();
   if (values.phone.trim() !== "") input.phone = values.phone.trim();
   if (values.address.trim() !== "") input.address = values.address.trim();

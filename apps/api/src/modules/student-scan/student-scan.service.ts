@@ -300,6 +300,8 @@ export class StudentScanService {
     const seen = new Map<string, number>();
     const duplicates: { rowNumber: number; field: string; message: string }[] = [];
     for (const row of dto.rows) {
+      // A blank number is SchoolKit's to give at commit (admission-numbers.md).
+      if (!row.admissionNumber) continue;
       const key = row.admissionNumber.trim().toLowerCase();
       const first = seen.get(key);
       if (first !== undefined) {
@@ -345,6 +347,9 @@ export class StudentScanService {
     // PLAN_ENFORCEMENT=enforce (docs/modules/plans.md D3).
     await withTenant(authCtx.schoolId, (db) => assertRoomForStudents(db, authCtx.schoolId, dto.rows.length));
 
+    // Numbers typed on this page, so a blank row numbered first never takes one.
+    const typedOnPage = new Set(dto.rows.flatMap((r) => (r.admissionNumber ? [r.admissionNumber.trim()] : [])));
+
     let committedRows = 0;
     let notEnrolledRows = 0;
     const failedRows: { rowNumber: number; field: string; message: string }[] = [];
@@ -372,14 +377,14 @@ export class StudentScanService {
         await withTenant(authCtx.schoolId, (db) =>
           // aiExtracted = true. The row was confirmed by a human, so this is
           // provenance, not a trust downgrade — see the column's comment.
-          commitStudentRow(row, authCtx.schoolId, db, enrollmentTarget, true),
+          commitStudentRow(row, authCtx.schoolId, db, enrollmentTarget, true, typedOnPage),
         );
         committedRows += 1;
       } catch (e) {
         failedRows.push({
           rowNumber: reviewed.rowNumber,
           field: describeFailureField(e),
-          message: describeFailure(e, row.admissionNumber),
+          message: describeFailure(e, row.admissionNumber ?? "(assigned)"),
         });
       }
     }
@@ -485,7 +490,7 @@ export class StudentScanService {
 function toImportRow(reviewed: ReviewedStudentRow): Record<string, unknown> {
   const [y, m, d] = reviewed.dateOfBirth.split("-").map(Number);
   return {
-    admissionNumber: reviewed.admissionNumber,
+    ...(reviewed.admissionNumber ? { admissionNumber: reviewed.admissionNumber } : {}),
     firstName: reviewed.firstName,
     lastName: reviewed.lastName,
     dateOfBirth: new Date(Date.UTC(y, m - 1, d)),

@@ -16,6 +16,7 @@ import {
 } from "@school-kit/types";
 
 import { PageSkeleton } from "@/components/layout/page-primitives";
+import { useAdmissionNumbers } from "@/components/students/admission-numbers";
 import { IMPORT_WIZARD_STEPS, WizardStepper } from "@/components/shared/wizard-stepper";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -60,9 +61,12 @@ const TARGET_FIELD_LABELS: Record<StudentImportTargetField, string> = {
   classArm: "Class arm (enrols the student)",
 };
 
-const REQUIRED_FIELD_SET = new Set<StudentImportTargetField>(
-  STUDENT_IMPORT_REQUIRED_FIELDS,
-);
+// The admission number is required unless SchoolKit numbers the school's
+// students (docs/modules/admission-numbers.md slice 2): then blank cells, or
+// no column at all, get the next number.
+function requiredFields(autoNumbers: boolean): readonly StudentImportTargetField[] {
+  return autoNumbers ? STUDENT_IMPORT_REQUIRED_FIELDS : ["admissionNumber", ...STUDENT_IMPORT_REQUIRED_FIELDS];
+}
 
 interface TermOption {
   id: string;
@@ -77,6 +81,8 @@ const DATE_FORMAT_LABELS: Record<StudentImportDateFormat, string> = {
 };
 
 export default function ImportStudentsMappingPage() {
+  const { settings: numbering } = useAdmissionNumbers();
+  const autoNumbers = numbering?.mode === "AUTO";
   const router = useRouter();
   const params = useParams<{ jobId: string }>();
   const jobId = params.jobId;
@@ -193,8 +199,8 @@ export default function ImportStudentsMappingPage() {
   }, [mapping]);
 
   const missingRequired = useMemo(
-    () => STUDENT_IMPORT_REQUIRED_FIELDS.filter((f) => !usedFields.has(f)),
-    [usedFields],
+    () => requiredFields(autoNumbers).filter((f) => !usedFields.has(f)),
+    [usedFields, autoNumbers],
   );
 
   const duplicates = useMemo(
@@ -450,6 +456,14 @@ export default function ImportStudentsMappingPage() {
         </section>
       )}
 
+      {autoNumbers && (
+        <p className="rounded-md bg-muted/40 px-4 py-2.5 text-sm">
+          Your school&apos;s admission numbers are given automatically, so that column is optional: rows with
+          a blank admission number get the next one when you import
+          {numbering?.order === "CLASS" ? " (rows with a class only, as your school numbers per class)" : ""}.
+        </p>
+      )}
+
       {(missingRequired.length > 0 || duplicates.length > 0 || needsTerm) && (
         <div className="rounded-md border border-amber-300 bg-amber-50 p-4 text-sm">
           {needsTerm && (
@@ -486,6 +500,7 @@ export default function ImportStudentsMappingPage() {
           <TableBody>
             {session.headers.map((header) => (
               <MappingRow
+                autoNumbers={autoNumbers}
                 key={header}
                 header={header}
                 samples={session.sampleRows
@@ -537,6 +552,7 @@ interface MappingRowProps {
   value: StudentImportTargetField | null;
   onChange: (v: string) => void;
   usedFields: Map<StudentImportTargetField, number>;
+  autoNumbers: boolean;
 }
 
 function MappingRow({
@@ -545,6 +561,7 @@ function MappingRow({
   value,
   onChange,
   usedFields,
+  autoNumbers,
 }: MappingRowProps) {
   const isDuplicate = value !== null && (usedFields.get(value) ?? 0) > 1;
   return (
@@ -578,7 +595,7 @@ function MappingRow({
           {STUDENT_IMPORT_TARGET_FIELDS.map((field) => (
             <option key={field} value={field}>
               {TARGET_FIELD_LABELS[field]}
-              {REQUIRED_FIELD_SET.has(field) ? " *" : ""}
+              {requiredFields(autoNumbers).includes(field) ? " *" : ""}
             </option>
           ))}
         </select>

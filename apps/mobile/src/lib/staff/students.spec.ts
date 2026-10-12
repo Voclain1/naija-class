@@ -185,3 +185,25 @@ describe("student bindings", () => {
     expect(lastCall().url).toMatch(/\/students\/s-1\/graduate$/);
   });
 });
+
+// Admission numbers slice 2 (docs/modules/admission-numbers.md).
+describe("admission numbers given by SchoolKit", () => {
+  const blank = { ...FILLED, admissionNumber: "" };
+
+  it("a school that types its numbers still needs one", () => {
+    expect(validateStudentForm(blank, { kind: "later" }, "2026-09-21").admissionNumber).toBe("Enter the admission number.");
+  });
+
+  it("on automatic numbering a blank number is fine, and is left out of the request", () => {
+    expect(validateStudentForm(blank, { kind: "later" }, "2026-09-21", { auto: true, perClass: false })).toEqual({});
+    expect(buildCreateStudentInput(blank, { kind: "later" }, "term-1").admissionNumber).toBeUndefined();
+    // A typed number is always sent.
+    expect(buildCreateStudentInput(FILLED, { kind: "later" }, "term-1").admissionNumber).toBe(FILLED.admissionNumber.trim());
+  });
+
+  it("per class: a blank number needs a class", () => {
+    const perClass = { auto: true, perClass: true };
+    expect(validateStudentForm(blank, { kind: "later" }, "2026-09-21", perClass).admissionNumber).toMatch(/Choose a class/);
+    expect(validateStudentForm(blank, { kind: "arm", classArmId: "arm-1" }, "2026-09-21", perClass)).toEqual({});
+  });
+});

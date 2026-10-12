@@ -1,6 +1,9 @@
 import type { PrismaClient } from "@school-kit/db";
 import type { StudentImportRow } from "@school-kit/types";
 
+import { BaseError } from "@school-kit/types";
+
+import { assignAdmissionNumbers, loadNumbering } from "../../students/admission-numbers";
 import { CommitRowError } from "./commit-guardians.row";
 
 // Per-row commit for STUDENTS. The outer commit.handler.ts loop wraps this
@@ -49,11 +52,35 @@ export async function commitStudentRow(
   db: PrismaClient,
   enrollment?: { termId: string; academicYearId: string },
   aiExtracted = false,
+  // Numbers typed elsewhere in the same file or page: a blank row committed
+  // before them must not take one (admission-numbers.md slice 2).
+  typedInBatch: ReadonlySet<string> = new Set(),
 ): Promise<void> {
+  // The arm first: a blank admission number numbered per class needs its code.
+  const arm = row.classArm === undefined ? null : await resolveArm(db, row.classArm);
+
+  // A blank number is SchoolKit's to give (docs/modules/admission-numbers.md
+  // slice 2), in this row's own transaction like the single add.
+  let admissionNumber = row.admissionNumber;
+  if (admissionNumber === undefined) {
+    const numbering = await loadNumbering(db, schoolId);
+    if (!numbering) {
+      throw new CommitRowError("admissionNumber", "Admission number required: this school types its numbers.");
+    }
+    try {
+      [admissionNumber] = await assignAdmissionNumbers(db, schoolId, numbering, [{ classCode: arm?.code }], {
+        taken: new Set(typedInBatch),
+      });
+    } catch (e) {
+      if (e instanceof BaseError) throw new CommitRowError("admissionNumber", e.message);
+      throw e;
+    }
+  }
+
   const created = await db.student.create({
     data: {
       schoolId,
-      admissionNumber: row.admissionNumber,
+      admissionNumber: admissionNumber!,
       firstName: row.firstName,
       middleName: row.middleName ?? null,
       lastName: row.lastName,
@@ -73,33 +100,8 @@ export async function commitStudentRow(
 
   // No arm on this row, or the job has no target term → student only, which
   // is byte-identical to this function's pre-2026-08-09 behaviour.
-  if (row.classArm === undefined || enrollment === undefined) {
+  if (arm === null || enrollment === undefined) {
     return;
-  }
-
-  const matches = await db.classArm.findMany({
-    where: { name: { equals: row.classArm, mode: "insensitive" } },
-    select: { id: true, isActive: true },
-  });
-
-  if (matches.length === 0) {
-    throw new CommitRowError(
-      "classArm",
-      `Class arm "${row.classArm}" no longer exists.`,
-    );
-  }
-  if (matches.length > 1) {
-    throw new CommitRowError(
-      "classArm",
-      `Class arm "${row.classArm}" is ambiguous — ${matches.length} arms share that name.`,
-    );
-  }
-  const [arm] = matches;
-  if (!arm.isActive) {
-    throw new CommitRowError(
-      "classArm",
-      `Class arm "${row.classArm}" is no longer active.`,
-    );
   }
 
   // academicYearId is derived server-side from the chosen term by the
@@ -116,4 +118,23 @@ export async function commitStudentRow(
       status: "ENROLLED",
     },
   });
+}
+
+// Re-resolved at commit rather than trusted from validate (see the header).
+async function resolveArm(db: PrismaClient, name: string): Promise<{ id: string; code: string }> {
+  const matches = await db.classArm.findMany({
+    where: { name: { equals: name, mode: "insensitive" } },
+    select: { id: true, isActive: true, classLevel: { select: { code: true } } },
+  });
+  if (matches.length === 0) {
+    throw new CommitRowError("classArm", `Class arm "${name}" no longer exists.`);
+  }
+  if (matches.length > 1) {
+    throw new CommitRowError("classArm", `Class arm "${name}" is ambiguous — ${matches.length} arms share that name.`);
+  }
+  const [arm] = matches;
+  if (!arm.isActive) {
+    throw new CommitRowError("classArm", `Class arm "${name}" is no longer active.`);
+  }
+  return { id: arm.id, code: arm.classLevel.code };
 }

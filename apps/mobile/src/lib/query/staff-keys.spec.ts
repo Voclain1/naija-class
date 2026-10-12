@@ -55,6 +55,7 @@ const STAFF_KEYS: Record<string, readonly unknown[]> = {
   staffExpenseCategories: queryKeys.staffExpenseCategories(SCHOOL, USER),
   staffReceipts: queryKeys.staffReceipts(SCHOOL, USER, ""),
   staffClassArms: queryKeys.staffClassArms(SCHOOL, USER),
+  staffAdmissionNumbers: queryKeys.staffAdmissionNumbers(SCHOOL, USER),
   // CP4d — named colleagues' activity; an audited read.
   staffTeacherActivity: queryKeys.staffTeacherActivity(SCHOOL, USER),
   // Announcements — the sent list names its sender, and a STAFF-audience

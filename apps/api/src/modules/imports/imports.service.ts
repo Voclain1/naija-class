@@ -698,6 +698,7 @@ export class ImportsService {
             sourceBytes,
             mapping.mapping,
             mapping.options,
+            authCtx.schoolId,
           );
         }
         if (job.type === "GUARDIANS") {

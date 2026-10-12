@@ -167,6 +167,7 @@ export async function runCommitHandler(
             sourceBytes,
             mapping.mapping,
             mapping.options,
+            schoolId,
           );
         }
         if (type === "GUARDIANS") {
@@ -240,6 +241,16 @@ export async function runCommitHandler(
   // D7, approved 2026-08-09).
   let notEnrolledRows = 0;
   const commitErrors: ImportRowError[] = [];
+  // Numbers typed in this file, so a blank row numbered before them never
+  // takes one (docs/modules/admission-numbers.md slice 2).
+  const typedInFile = new Set(
+    type === "STUDENTS"
+      ? engineResult.good.flatMap((g) => {
+          const n = (g.parsedRow as StudentImportRow).admissionNumber;
+          return n === undefined ? [] : [n];
+        })
+      : [],
+  );
 
   for (const good of engineResult.good) {
     try {
@@ -250,6 +261,8 @@ export async function runCommitHandler(
             schoolId,
             rowDb,
             enrollmentTarget,
+            false,
+            typedInFile,
           );
         }
         if (type === "GUARDIANS") {
