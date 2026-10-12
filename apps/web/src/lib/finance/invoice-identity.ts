@@ -38,6 +38,18 @@ export function studentDisplayName(invoice: InvoiceIdentityFields): string {
 }
 
 /**
+ * Why a row has no name, in words a bursar can act on — or null when it has
+ * one. The API leaves `studentName` null only when the student's record no
+ * longer exists (invoices keep a plain student id, so the invoice and its
+ * payments survive the record). Said once, beside "Unknown student", so the
+ * label is never a mystery and nobody goes looking for a child to rename.
+ */
+export function studentIdentityNote(invoice: InvoiceIdentityFields): string | null {
+  if (invoice.studentName?.trim()) return null;
+  return "This student's record no longer exists. The invoice and its payments are kept for your accounts.";
+}
+
+/**
  * Secondary identity line — the admission number, which is what a Nigerian
  * school actually uses to disambiguate two children with the same name.
  * Returns null when there is nothing useful to add, so callers can skip the

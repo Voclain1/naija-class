@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   invoiceReference,
   studentDisplayName,
+  studentIdentityNote,
   studentSecondaryLabel,
   type InvoiceIdentityFields,
 } from "./invoice-identity";
@@ -66,5 +67,23 @@ describe("studentSecondaryLabel", () => {
 describe("invoiceReference", () => {
   it("produces a short upper-cased reference a bursar can read aloud", () => {
     expect(invoiceReference("9f2c1b7e-0f21-4a3a-9c88-2b0d51ee77aa")).toBe("9F2C1B7E");
+  });
+});
+
+describe("studentIdentityNote", () => {
+  it("says nothing when the student has a name", () => {
+    expect(studentIdentityNote(row())).toBeNull();
+  });
+
+  it("explains a missing name, without the student id, and says the money is kept", () => {
+    const note = studentIdentityNote(row({ studentName: null, admissionNumber: null }));
+    expect(note).toMatch(/record no longer exists/);
+    expect(note).toMatch(/payments are kept/);
+    expect(note).not.toContain(uuid);
+    expect(note).not.toContain(uuid.slice(0, 8));
+  });
+
+  it("treats a blank name as missing", () => {
+    expect(studentIdentityNote(row({ studentName: "   " }))).not.toBeNull();
   });
 });

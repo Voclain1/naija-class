@@ -190,8 +190,21 @@ the module doc or the PR, then link it here.
   - Still possible, by design: a checkout older than the window, or cash
     recorded while a parent is mid-checkout. Both now land on the backstop
     rather than going unnoticed.
-- [ ] **Finance UX follow-ups from PR #220**, including the F-34 bulk-invoice
-  confirmation (archive, "Finance / bursar invoice UX").
+- [x] **DONE 2026-10-12 — Finance UX follow-ups from PR #220** (archive,
+  "Finance / bursar invoice UX"). Audited item by item against the code:
+  - F-34 bulk-invoice confirmation: already built (`GenerateInvoicesDialog`
+    restates arm, term, count and naira total before anything is billed;
+    `finance-bulk-generation-confirmation.spec.ts`).
+  - Shared Generate/List picker: defused by that dialog, and the picker sits
+    above both tabs, so it is never hidden.
+  - Failed fetch shown as an empty list: every listed site now reports the
+    error with a retry; the remaining `setX([])` calls are resets, not catches.
+  - Cancel offered without `invoice.cancel`: `canCancelInvoice` takes the
+    permissions.
+  - `financeErrorMessage` adoption: every finance page uses it.
+  - "Unknown student" said nothing about why: now it says the record no longer
+    exists and the invoice and payments are kept (`studentIdentityNote`). The
+    invoice page also stopped falling back to the raw student and term ids.
 - [x] **DONE 2026-10-08 — `notIn: ["DRAFT", "CANCELLED"]` literals.** All
   five in `finance.service.ts` now use `BILLED_EXCLUDED_STATUSES`.
 

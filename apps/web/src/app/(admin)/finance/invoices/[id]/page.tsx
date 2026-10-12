@@ -46,6 +46,7 @@ import {
   recordManualPayment,
   reissuePaymentReceipt,
 } from "@/lib/finance/payments-api";
+import { studentDisplayName, studentIdentityNote, studentSecondaryLabel } from "@/lib/finance/invoice-identity";
 import { getStudent } from "@/lib/students/students-api";
 
 // Same mapping as /finance/invoices and /finance/debtors.
@@ -119,6 +120,8 @@ export default function InvoiceDetailPage() {
 
   const [invoice, setInvoice] = useState<InvoiceDto | null>(null);
   const [student, setStudent] = useState<StudentDetailDto | null>(null);
+  // The term list has answered (found or not), so "Term not found" is true.
+  const [termsSettled, setTermsSettled] = useState(false);
   const [term, setTerm] = useState<TermDto | null>(null);
   const [payments, setPayments] = useState<PaymentDto[]>([]);
   const [plan, setPlan] = useState<PaymentPlanDto | null | undefined>(undefined); // undefined = loading
@@ -180,10 +183,14 @@ export default function InvoiceDetailPage() {
       .then((inv) => {
         setInvoice(inv);
         Promise.all([
-          getStudent(inv.studentId).then(setStudent).catch((e) => {
-            logFinanceError("getInvoiceStudent", e);
-            setRelatedDataError(financeErrorMessage(e));
-          }),
+          // No name on the invoice means the student's record is gone: asking
+          // for it would only fail, and the page says so in its own words.
+          inv.studentName
+            ? getStudent(inv.studentId).then(setStudent).catch((e) => {
+                logFinanceError("getInvoiceStudent", e);
+                setRelatedDataError(financeErrorMessage(e));
+              })
+            : Promise.resolve(),
           listTerms(inv.academicYearId)
             .then((terms) => {
               const matched = terms.find((t) => t.id === inv.termId);
@@ -192,7 +199,8 @@ export default function InvoiceDetailPage() {
             .catch((e) => {
               logFinanceError("listInvoiceTerms", e);
               setRelatedDataError(financeErrorMessage(e));
-            }),
+            })
+            .finally(() => setTermsSettled(true)),
           listPayments({ invoiceId: inv.id })
             .then((r) => setPayments(r.data))
             .catch((e) => {
@@ -476,11 +484,15 @@ export default function InvoiceDetailPage() {
     );
   }
 
+  // Never the raw student or term id (F-04): the invoice carries the
+  // student's name and admission number itself, resolved by the API.
+  const secondary = studentSecondaryLabel(invoice);
   const studentLabel = student
     ? `${student.firstName} ${student.lastName} (${student.admissionNumber})`
-    : invoice.studentId;
+    : `${studentDisplayName(invoice)}${secondary ? ` (${secondary})` : ""}`;
+  const identityNote = studentIdentityNote(invoice);
 
-  const termLabel = term ? term.name : invoice.termId;
+  const termLabel = term ? term.name : termsSettled ? "Term not found" : "Loading…";
 
   const grandTotal = invoice.items.reduce((s, item) => s + item.netAmount, 0);
 
@@ -518,6 +530,7 @@ export default function InvoiceDetailPage() {
         <div>
           <dt className="text-muted-foreground">Student</dt>
           <dd>{studentLabel}</dd>
+          {identityNote && <dd className="text-xs text-muted-foreground">{identityNote}</dd>}
         </div>
         <div>
           <dt className="text-muted-foreground">Term</dt>
