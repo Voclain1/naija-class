@@ -397,9 +397,13 @@ export function BulkStudentForm() {
           ids.map((id) => [id, { state: "idle" as const }]),
         );
         if (error instanceof ApiError && isTerminalAuthFailure(error)) {
+          // The session is gone: send nothing more.
           terminalAuthFailure = true;
           for (const id of ids) statuses[id] = { state: "error", message: "Not saved — you were signed out." };
-        } else if (error instanceof ApiError && conflictRows(error)) {
+          setRowStatus((prev) => ({ ...prev, ...statuses }));
+          break;
+        }
+        if (error instanceof ApiError && conflictRows(error)) {
           const rows = conflictRows(error)!;
           for (const { index, reason } of rows) {
             const gridIndex = batch[index];
