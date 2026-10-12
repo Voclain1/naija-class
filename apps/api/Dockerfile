@@ -71,10 +71,10 @@ COPY packages/ai/     ./packages/ai/
 COPY packages/db/     ./packages/db/
 COPY apps/api/        ./apps/api/
 
-# Generate the Prisma client against a dummy URL (no DB connection made).
-RUN DATABASE_URL="postgresql://x:x@localhost/x" \
-    DIRECT_URL="postgresql://x:x@localhost/x" \
-    pnpm --filter @school-kit/db exec prisma generate --schema=./prisma/schema.prisma
+# Generate the Prisma client into packages/db/src/generated, compiled into
+# dist/ by the db build below. Prisma 7: generate reads
+# packages/db/prisma.config.ts and needs no database URL.
+RUN pnpm --filter @school-kit/db exec prisma generate
 
 # Build in workspace dependency order. @school-kit/ai has no workspace
 # dependencies of its own (only @anthropic-ai/sdk), so it only has to precede
@@ -84,22 +84,17 @@ RUN pnpm --filter @school-kit/ai    build
 RUN pnpm --filter @school-kit/db    build
 RUN pnpm --filter @school-kit/api   build
 
-# Strip Prisma query engine binaries for non-Bookworm targets before pnpm
-# deploy copies the generated client into the pruned closure. The runtime
-# image is Debian Bookworm (OpenSSL 3); only debian-openssl-3.0.x is needed.
-# Leaving other binaries (debian-openssl-1.1.x, rhel-*, etc.) causes the
-# wrong .so to be selected and produces libssl.so.1.1: cannot open shared
-# object file at startup.
-RUN find /app/packages/db/generated/client -name "*.node" \
-    | grep -v "debian-openssl-3.0.x" \
-    | xargs rm -f
+# No Prisma engine binaries to strip since Prisma 7: queries go through the
+# pg driver (plain JavaScript), and the generated client is compiled into
+# packages/db/dist.
 
 # Prune to the API's production dependency closure.
 #
 # pnpm deploy copies:
 #   - apps/api/ files (dist/, src/, package.json, …) to /app/api-deploy/ root
 #   - workspace packages (@school-kit/db, @school-kit/types) with their dist/
-#     and generated/ into node_modules/@school-kit/<name>/
+#     (the db package's includes the generated Prisma client) into
+#     node_modules/@school-kit/<name>/
 #   - all third-party prod deps into node_modules/
 # devDependencies (vitest, ts-node, @nestjs/cli, ~2 GB of dev tooling) excluded.
 # Chromium is absent: PUPPETEER_SKIP_DOWNLOAD=true above ensured no
@@ -112,11 +107,9 @@ RUN pnpm --filter @school-kit/api deploy --prod /app/api-deploy
 FROM node:22-slim AS runtime
 WORKDIR /app
 
-# libssl3 is required by the Prisma query engine binary (debian-openssl-3.0.x).
-# node:22-slim (Debian Bookworm slim) omits it; install explicitly.
-# No Chromium system libraries — the API never renders PDFs.
-RUN apt-get update -y && apt-get install -y --no-install-recommends libssl3 \
-    && rm -rf /var/lib/apt/lists/*
+# No system packages: libssl3 was here for the Prisma query engine binary,
+# gone since Prisma 7 (Node's own TLS talks to Neon). No Chromium system
+# libraries either — the API never renders PDFs.
 
 COPY --from=builder /app/api-deploy ./
 

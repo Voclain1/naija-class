@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { basePrisma, PrismaClient, withTenant } from "@school-kit/db";
+import { basePrisma, createPrismaClient, PrismaClient, withTenant } from "@school-kit/db";
 
 // Phase 8 / CP1 — Event Calendar isolation. docs/modules/phase-8.md §15.4.
 //
@@ -43,7 +43,7 @@ describe("Phase 8 CP1 — calendar RLS and the national-events write block", () 
     if (!DIRECT_URL) {
       throw new Error("DIRECT_URL is required: the layer-isolation tests need the migration role.");
     }
-    migrator = new PrismaClient({ datasources: { db: { url: DIRECT_URL } } });
+    migrator = createPrismaClient(DIRECT_URL);
 
     const ne = await basePrisma.nationalEvent.findFirst({
       where: { key: "democracy-day-2026" },
@@ -135,7 +135,9 @@ describe("Phase 8 CP1 — calendar RLS and the national-events write block", () 
     expect(rel).toEqual({ relrowsecurity: true, relforcerowsecurity: true });
 
     const policies = await basePrisma.$queryRawUnsafe<Array<{ polname: string; polcmd: string }>>(
-      `SELECT polname, polcmd FROM pg_policy WHERE polrelid = 'national_events'::regclass ORDER BY polname`,
+      // polcmd is Postgres's one-byte "char" type, which Prisma 7's pg adapter
+      // cannot read raw; cast it to text.
+      `SELECT polname, polcmd::text AS polcmd FROM pg_policy WHERE polrelid = 'national_events'::regclass ORDER BY polname`,
     );
     // polcmd 'r' = SELECT. No 'a' (INSERT), 'w' (UPDATE), 'd' (DELETE) or '*' (ALL).
     expect(policies).toEqual([{ polname: "national_events_read_all", polcmd: "r" }]);

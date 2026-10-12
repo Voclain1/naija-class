@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { basePrisma, Prisma, PrismaClient, withTenant } from "@school-kit/db";
+import { basePrisma, createPrismaClient, Prisma, PrismaClient, withTenant } from "@school-kit/db";
 
 import { createTimetableFixture, MON, type TimetableFixture } from "../modules/timetable/timetable.fixture-spec";
 
@@ -55,7 +55,7 @@ describe("Phase 8 CP3 — timetable RLS and composite foreign keys", () => {
 
   beforeAll(async () => {
     if (!DIRECT_URL) throw new Error("DIRECT_URL is required: the necessity test needs the migration role.");
-    migrator = new PrismaClient({ datasources: { db: { url: DIRECT_URL } } });
+    migrator = createPrismaClient(DIRECT_URL);
     A = await createTimetableFixture("rls-a");
     B = await createTimetableFixture("rls-b");
     aTimetable = (await A.timetable("a", null)).id;

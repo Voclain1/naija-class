@@ -1,6 +1,14 @@
-export { PrismaClient, Prisma } from "../generated/client/index.js";
-export type * from "../generated/client/index.js";
-export { basePrisma, withTenant } from "./tenant-client.js";
+export { PrismaClient, Prisma } from "./generated/prisma/client.js";
+export type * from "./generated/prisma/client.js";
+export {
+  createPrismaClient,
+  poolMaxFromEnv,
+  DEFAULT_POOL_MAX,
+  POOL_ACQUIRE_TIMEOUT_MS,
+  POOL_IDLE_TIMEOUT_MS,
+  type CreatePrismaClientOptions,
+} from "./prisma-client.js";
+export { basePrisma, withTenant, isRetryableConnectionError } from "./tenant-client.js";
 export { withGuardian } from "./with-guardian.js";
 export {
   DEFAULT_CLASS_LEVELS,

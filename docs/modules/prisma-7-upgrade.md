@@ -1,8 +1,7 @@
 # Prisma 5 → 7 upgrade
 
-Plan-first, 2026-10-12. Status: **plan, awaiting the owner's approval.** Nothing
-is upgraded yet. The upgrade PR updates CLAUDE.md's stack table, and this
-file's "As built" section, in the same PR.
+Plan-first, 2026-10-12. Status: **approved 2026-10-12 and built** (see "As
+built" at the end). CLAUDE.md's stack table was updated in the same PR.
 
 ## Why
 
@@ -92,3 +91,71 @@ The risk is in the runtime client, not the schema. No migration ships, so
 rolling back is reverting the PR and redeploying; the database is untouched.
 The deploy goes out on a quiet evening, with Sentry watched for `P1xxx`,
 `P2024` and `P2028` errors for the next school day.
+
+## As built (2026-10-12)
+
+**Versions.** `prisma` and `@prisma/client` 7.10.0, pinned exactly, with
+`@prisma/adapter-pg` 7.10.0 and `pg` 8.23.1. Two hops, as D1 said: 6.19.3
+first (full API suite green: 2642 passed), then 7.10.0.
+
+**Schema drift: none new.** `migrate diff` from the database to the schema
+shows the same pre-existing differences under 5.22, 6.19.3 and 7.10.0 — objects
+created in raw SQL that `schema.prisma` cannot express (the pgvector HNSW
+index, a `SMALLINT[]` default) — and 7 drops one of them (the payments unique
+index, which it now reads correctly). No migration ships.
+
+**What changed in code.**
+- `packages/db/src/prisma-client.ts`: `createPrismaClient(url, { max?, log? })`,
+  the only way a client is built. Pool `max` 3 (or `DATABASE_POOL_MAX`), 10 s
+  acquire timeout, 300 s idle timeout (D3). `basePrisma` uses `DATABASE_URL`;
+  the seed keeps `DATABASE_URL` (a no-argument Prisma 5 client used `url`, not
+  `directUrl`); the dev seed, the census script and the two RLS specs'
+  migration-role clients use `DIRECT_URL`, as before.
+- `packages/db/prisma.config.ts`: the CLI's config. `datasource.url` is
+  `DIRECT_URL` (what `directUrl` was), the seed command moved here from
+  `package.json`. `migrate:reset` now runs the seed itself (7's reset no
+  longer does). `generate` needs no URL, so the Docker builds dropped the
+  dummy URLs.
+- Generator: `prisma-client`, output `packages/db/src/generated/prisma`
+  (gitignored), `moduleFormat = "cjs"`, compiled into `dist/` with the package
+  (D2). Apps import only from `@school-kit/db`, so nothing outside
+  `packages/db` changed its imports.
+- Dockerfiles: the engine-binary strip step and `libssl3` are gone (there is
+  no engine). Verified by packaging the API exactly as the image does
+  (`pnpm deploy --prod`) and booting `node dist/main.js` from the result:
+  health, login, owner signup under RLS, a tenant read with the new session,
+  a taken-slug 409, SIGTERM exiting in 4 ms, and the deploy's own
+  `scripts/smoke-test.sh` passing all five operations.
+- `Bytes` is `Uint8Array` (6): one line in `BvnService`.
+
+**D4, proven against a real Postgres** (`apps/api/src/__tests__/prisma-7-errors.spec.ts`):
+
+| Case | Prisma 5 | Prisma 7 | Handling |
+|---|---|---|---|
+| Unique violation | `P2002`, `meta.target` | `P2002`, constraint in `meta.driverAdapterError.cause.constraint.index` and in the message | `translatePrismaError` reads the constraint; the message is now only a fallback, since it carries a source snippet that can name other fields |
+| No free connection | `P2028` "Unable to start a transaction" | same | retried, unchanged |
+| Body past its timeout | `P2028` | `P2028` "A query cannot be executed on an expired transaction" | not retried, unchanged |
+| Server unreachable | `P1001` | `P1001` inside a transaction | retried, unchanged |
+| Connection lost mid-transaction | `P1017` | **`P2010`** with the driver's cause (`57P01`, or a socket `kind`) | **new**: `withTenant` recognises it and retries once; the spec kills its own connection and sees the retry succeed |
+| Idle pooled connection killed | `P1017` on next use | **no error**: the pool drops it, the next transaction gets a new one | nothing to do |
+
+One more difference found by the suite: Prisma 7 cannot read Postgres's
+one-byte `"char"` type in a raw query (`pg_policy.polcmd`). Only a spec did;
+it now casts to `text`. Nothing in the app reads one (`school-deletion.ts`
+filters on `contype` but returns text).
+
+**Verification.** Full API suite on 7.10.0: 2642 passed, 3 skipped — the one
+red on the first run was the Redis idle-command measurement, polluted by the
+boot test's workers sharing the Redis, and green on a clean rerun. Full e2e
+suite locally, and both CI jobs.
+
+**At deploy** (the plan's last check, which needs production). The TLS and
+pool check against Neon is the deploy workflow's own smoke test: `/health/db`
+(role `app_user`), signup, login and a tenant read all go through the new
+adapter and Neon's pooler, and a failure rolls both Fly apps back
+automatically. No migration ships, so that rollback is complete. Two things
+were checked here rather than assumed: the adapter sends unnamed prepared
+statements unless told otherwise, which PgBouncer's transaction mode accepts;
+and `pg` treats `sslmode=require` as full certificate verification, which
+Neon's public certificates pass. Then watch Sentry for `P1xxx` / `P2010` /
+`P2024` / `P2028` for the next school day.

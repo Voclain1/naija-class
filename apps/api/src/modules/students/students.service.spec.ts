@@ -920,8 +920,10 @@ describe("StudentsService", () => {
       // enabled because the global basePrisma is configured without
       // event listeners — attaching here mutates only the local client
       // and is restored at end-of-test.
-      const { PrismaClient } = await import("@school-kit/db");
-      const logged = new PrismaClient({ log: [{ emit: "event", level: "query" }] });
+      const { createPrismaClient } = await import("@school-kit/db");
+      const logged = createPrismaClient(process.env.DATABASE_URL ?? "", {
+        log: [{ emit: "event", level: "query" }],
+      });
       const enrollmentQueryHits: string[] = [];
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (logged as any).$on("query", (e: { query: string }) => {

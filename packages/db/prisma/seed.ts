@@ -8,10 +8,12 @@
 // Postgres, so a naive upsert against that constraint will not deduplicate.
 // We dedupe by hand with findFirst + create. Re-running the seed is safe.
 
-import { PrismaClient } from "../generated/client/index.js";
+import { createPrismaClient } from "../src/prisma-client.js";
 import { SYSTEM_ROLE_SEEDS } from "../src/seeds/system-roles.js";
 
-const prisma = new PrismaClient();
+// DATABASE_URL, as before Prisma 7: a no-argument PrismaClient used the
+// schema's `url`, not `directUrl`.
+const prisma = createPrismaClient(process.env.DATABASE_URL ?? "");
 
 async function main() {
   for (const role of SYSTEM_ROLE_SEEDS) {
