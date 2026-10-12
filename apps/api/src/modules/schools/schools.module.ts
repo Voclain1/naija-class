@@ -4,6 +4,7 @@ import { EmailModule } from "../../common/email/email.module";
 import { PaystackModule } from "../../common/paystack/paystack.module";
 import { AcademicCalendarModule } from "../academic-calendar/academic-calendar.module";
 import { AuthModule } from "../auth/auth.module";
+import { AdmissionNumberSettingsService } from "./admission-number-settings.service";
 import { PaystackSetupService } from "./paystack-setup.service";
 import { SchoolsController } from "./schools.controller";
 import { SchoolsService } from "./schools.service";
@@ -21,7 +22,7 @@ import { SmsSenderService } from "./sms-sender.service";
   // activates it — see applyStep5 and #198.
   imports: [AuthModule, PaystackModule, EmailModule, AcademicCalendarModule],
   controllers: [SchoolsController],
-  providers: [SchoolsService, PaystackSetupService, SmsSenderService],
+  providers: [SchoolsService, PaystackSetupService, SmsSenderService, AdmissionNumberSettingsService],
   exports: [SchoolsService],
 })
 export class SchoolsModule {}

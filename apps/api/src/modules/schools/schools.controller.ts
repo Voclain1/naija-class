@@ -25,6 +25,7 @@ import {
   onboardingStep5Schema,
   patchSchoolSchema,
   requestSmsSenderSchema,
+  updateAdmissionNumberSettingsSchema,
   type CreatePaystackSetupRequestInput,
   type OnboardingStepResponse,
   type PatchSchoolInput,
@@ -32,8 +33,10 @@ import {
   type SchoolLogoUrlDto,
   type SchoolMeDto,
   type SchoolPlanDto,
+  type AdmissionNumberSettingsDto,
   type RequestSmsSenderInput,
   type SmsSenderDto,
+  type UpdateAdmissionNumberSettingsInput,
 } from "@school-kit/types";
 import type { Request } from "express";
 import type { ZodError, ZodType, ZodTypeDef } from "zod";
@@ -44,6 +47,7 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import { UploadErrorFilter } from "../../common/upload-error.filter";
 import { ZodValidationPipe } from "../../common/zod-validation.pipe";
 import { PaystackSetupService } from "./paystack-setup.service";
+import { AdmissionNumberSettingsService } from "./admission-number-settings.service";
 import { SmsSenderService } from "./sms-sender.service";
 import {
   LOGO_MAX_FILE_SIZE_BYTES,
@@ -58,6 +62,7 @@ export class SchoolsController {
     private readonly schoolsService: SchoolsService,
     private readonly paystackSetup: PaystackSetupService,
     private readonly smsSender: SmsSenderService,
+    private readonly admissionNumbers: AdmissionNumberSettingsService,
   ) {}
 
   // GET /schools/me — any authed user can read their own school.
@@ -174,6 +179,28 @@ export class SchoolsController {
     @Req() req: Request,
   ): Promise<SmsSenderDto> {
     return this.smsSender.request(authCtx, dto, {
+      ipAddress: ip,
+      userAgent: req.header("user-agent") ?? null,
+    });
+  }
+
+  // GET /schools/me/admission-numbers — owner/admin. How the school's
+  // admission numbers are given, and the next one (docs/modules/admission-numbers.md).
+  @Get("me/admission-numbers")
+  async getAdmissionNumbers(@CurrentUser() authCtx: AuthContext): Promise<AdmissionNumberSettingsDto> {
+    return this.admissionNumbers.get(authCtx);
+  }
+
+  // PATCH /schools/me/admission-numbers — owner/admin, audited. Answers the
+  // first-time question too: either choice records that it was asked.
+  @Patch("me/admission-numbers")
+  async updateAdmissionNumbers(
+    @Body(new ZodValidationPipe(updateAdmissionNumberSettingsSchema)) dto: UpdateAdmissionNumberSettingsInput,
+    @CurrentUser() authCtx: AuthContext,
+    @Ip() ip: string,
+    @Req() req: Request,
+  ): Promise<AdmissionNumberSettingsDto> {
+    return this.admissionNumbers.update(authCtx, dto, {
       ipAddress: ip,
       userAgent: req.header("user-agent") ?? null,
     });

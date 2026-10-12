@@ -308,10 +308,16 @@ the module doc or the PR, then link it here.
   the whole batch. The grid catches repeats before sending, sends larger lists
   200 at a time, and stops at the first refused batch. This supersedes the
   bounded-parallel submit. Proven in `e2e/tests/bulk-student-add.spec.ts`.
-- [ ] **Bulk student grid draft** (rows kept in the browser across a sign-out
-  or refresh). Not built: it would keep children's names and dates of birth in
-  browser storage, which an earlier decision rejected (the page note at
-  `app/(admin)/students/new/bulk/page.tsx`). Needs the owner's call.
+- [ ] **Admission numbers, slice 2** (`docs/modules/admission-numbers.md`).
+  Slice 1 assigns a number when it is left blank on the single add and the
+  bulk grid. Still requiring a typed number: CSV import, scanned registers
+  (Smart Student Import) and the staff mobile app. **Trigger:** once schools
+  have used slice 1.
+- [x] **Decided 2026-10-12 (owner): no bulk student grid draft.** Rows are not
+  kept in the browser across a sign-out or refresh: they hold children's names
+  and dates of birth, and an earlier decision rejected that (the page note at
+  `app/(admin)/students/new/bulk/page.tsx`). The one-request save leaves only
+  unsaved typing at risk.
 - [ ] **Teacher shell sidebar background stops partway down a short page.**
 - [x] **DONE 2026-10-10 — Moving a timetable lesson is one request.**
   `PUT /timetable/lessons` takes an optional `moveFrom` (day, start period,

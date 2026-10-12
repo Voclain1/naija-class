@@ -144,6 +144,15 @@ export async function apiCompleteTour(api: APIRequestContext): Promise<void> {
   await unwrap(await api.post("users/me/complete-tour", { data: {} }), "complete-tour");
 }
 
+// Answers the first-time admission number question ("We type them in") for a
+// fixture-provisioned school, for the same reason as apiCompleteTour: specs
+// that add students are testing something else, and the question opens over
+// the add-student pages. Its own coverage is bulk-student-add's admission
+// number tests, which ask loginAsAdmin to leave it unanswered.
+export async function apiTypeAdmissionNumbers(api: APIRequestContext): Promise<void> {
+  await unwrap(await api.patch("schools/me/admission-numbers", { data: { mode: "MANUAL" } }), "admission-numbers");
+}
+
 // Drive the five onboarding steps to flip the school from ONBOARDING to ACTIVE.
 // Each step gates on the previous one (the API enforces step order), so this
 // runs strictly sequentially. The school must be ACTIVE before invitations may
