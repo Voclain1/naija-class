@@ -8,6 +8,7 @@ import {
 import {
   apiActivateSchool,
   apiCompleteTour,
+  apiTypeAdmissionNumbers,
   apiLogin,
   apiSignupOwner,
   createApiContext,
@@ -72,7 +73,7 @@ export interface AdminSession {
 // disposes the whole session via closeSession().
 export async function loginAsAdmin(
   browser: Browser,
-  opts?: { email?: string; password?: string },
+  opts?: { email?: string; password?: string; admissionNumbersUndecided?: boolean },
 ): Promise<AdminSession> {
   if (opts?.email && opts.password) {
     const anonApi = await createApiContext();
@@ -120,6 +121,7 @@ export async function loginAsAdmin(
   });
   // Pre-dismiss the first-login tour — see apiCompleteTour's header comment.
   await apiCompleteTour(api);
+  if (!opts?.admissionNumbersUndecided) await apiTypeAdmissionNumbers(api);
 
   const { context, page } = await authedContext(browser, signup.token);
   return {

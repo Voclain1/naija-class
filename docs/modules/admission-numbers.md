@@ -1,6 +1,6 @@
 # Admission numbers assigned by SchoolKit
 
-Plan-first, 2026-10-12. Status: **approved 2026-10-12; slice 1 building.**
+Plan-first, 2026-10-12. Status: **approved 2026-10-12; slice 1 built (see "As built").**
 
 ## Why
 
@@ -110,3 +110,33 @@ override one student.
 - Bulk: a batch of blanks gets consecutive numbers in row order.
 - E2E: the first-time question on a new school, choose automatic, add three
   students with blank numbers, see `…/0001`–`…/0003` on the roster.
+
+## As built (slice 1, 2026-10-12)
+
+- **Format rules** in `packages/types/src/admission-numbers/admission-number-format.ts`,
+  shared by the API and the screens. `{CLASS}` is refused unless numbering per
+  class, and required when it is.
+- **Migration** `20261015120000_admission_numbers`: the four `schools`
+  columns (with CHECKs: `AUTO` needs a format), enums `AdmissionNumberMode`
+  and `AdmissionNumberOrder`, and `admission_number_counters`
+  (PK `(school_id, scope)`, FORCE RLS `tenant_isolation`).
+- **Assigning** in `apps/api/src/modules/students/admission-numbers.ts`:
+  `loadNumbering`, `assignAdmissionNumbers` (in order: `UPDATE … RETURNING`,
+  else seed from the register and `INSERT … ON CONFLICT DO UPDATE`; random:
+  `crypto.randomInt`, checked against the roll), `admissionYear` (Lagos).
+  Errors: `ADMISSION_NUMBER_REQUIRED` (typing school, blank number),
+  `ADMISSION_NUMBER_NEEDS_CLASS`, `ADMISSION_NUMBERS_EXHAUSTED`,
+  `ADMISSION_FORMAT_INVALID`.
+- **Endpoints**: `GET/PATCH /schools/me/admission-numbers` (owner/admin,
+  audited `school.admission-numbers.update` with before/after). `POST
+  /students` and `POST /students/bulk` take a blank admission number; the bulk
+  add also takes one `enrollment` for the batch, which places the students
+  (audited `enrollment.create`, `via: "student-bulk-create"`).
+- **Screens**: `components/students/admission-numbers.tsx` (the question, the
+  editor, the bar and its Change dialog), `/settings/admission-numbers`, a
+  Settings tile, and blank-number support in `student-form.tsx` and
+  `bulk-student-form.tsx` (per class: a class picker above the grid).
+- **Tests**: `admission-numbers.spec.ts` (API, real database, 10 cases),
+  `admission-format-ui.spec.ts` (web), and two cases in
+  `e2e/tests/bulk-student-add.spec.ts`. The e2e fixture answers the question
+  ("We type them in") for every other spec, as it dismisses the tour.
