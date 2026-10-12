@@ -13,6 +13,13 @@ import { ApiError } from "@/lib/api-client";
 import { InlineAlert } from "@/components/shared/inline-alert";
 import { buildRetryHref } from "@/lib/lesson-plans/retry-prefill";
 import { isAuthForcedNavigation } from "@/lib/auth/session-end-navigation";
+import { useAuth } from "@/lib/auth/use-auth";
+import {
+  clearSessionDraft,
+  readSessionDraft,
+  sessionDraftKey,
+  writeSessionDraft,
+} from "@/lib/drafts/session-draft";
 import {
   deleteLessonPlan,
   generateLessonQuiz,
@@ -94,6 +101,15 @@ export default function LessonPlanDetailPage() {
   const [busy, setBusy] = useState<"quiz" | "accept" | "delete" | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
+  // Unsaved sections kept in this tab, offered back after a forced sign-out
+  // or a reload (lib/drafts/session-draft.ts). `undefined` until read; while
+  // an offer stands, nothing new is written over it.
+  const { user } = useAuth();
+  const draftKey = user ? sessionDraftKey("lesson-plan", user.id, id) : null;
+  const [draftOffer, setDraftOffer] = useState<
+    { savedAt: number; data: Partial<Record<SectionKey, string>> } | null | undefined
+  >(undefined);
+
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -116,6 +132,46 @@ export default function LessonPlanDetailPage() {
   const hasUnsaved = plan
     ? SECTIONS.some(({ key }) => drafts[key] !== undefined && drafts[key] !== (plan[key] ?? ""))
     : false;
+
+  useEffect(() => {
+    if (!draftKey) return;
+    setDraftOffer(readSessionDraft<Partial<Record<SectionKey, string>>>(draftKey));
+  }, [draftKey]);
+
+  // Sections that would really change something: a draft equal to what is
+  // saved now (saved elsewhere since) is not worth offering.
+  const offeredSections = plan && draftOffer
+    ? [...SECTIONS, ...LEGACY_SECTIONS].filter(
+        ({ key }) => draftOffer.data[key] !== undefined && draftOffer.data[key] !== (plan[key] ?? ""),
+      )
+    : [];
+
+  useEffect(() => {
+    if (!draftKey || !plan || draftOffer === undefined) return;
+    if (draftOffer !== null) {
+      if (offeredSections.length === 0) {
+        clearSessionDraft(draftKey);
+        setDraftOffer(null);
+      }
+      return;
+    }
+    const dirty = Object.fromEntries(
+      Object.entries(drafts).filter(([key, value]) => value !== undefined && value !== (plan[key as SectionKey] ?? "")),
+    );
+    writeSessionDraft(draftKey, Object.keys(dirty).length > 0 ? dirty : null);
+  }, [draftKey, plan, drafts, draftOffer, offeredSections.length]);
+
+  function restoreDraft() {
+    if (!draftOffer) return;
+    const restored = Object.fromEntries(offeredSections.map(({ key }) => [key, draftOffer.data[key]!]));
+    setDraftOffer(null);
+    setDrafts((d) => ({ ...d, ...restored }));
+  }
+
+  function discardDraft() {
+    if (draftKey) clearSessionDraft(draftKey);
+    setDraftOffer(null);
+  }
 
   // Two exits, two mechanisms, because neither covers the other:
   //
@@ -373,6 +429,23 @@ export default function LessonPlanDetailPage() {
           </div>
         </dl>
       ) : null}
+
+      {draftOffer && offeredSections.length > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-md bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-950/40 dark:text-amber-100 print:hidden">
+          <span>
+            <strong>Unsaved edits found</strong> in {offeredSections.map(({ label }) => label).join(", ")}, from{" "}
+            {new Date(draftOffer.savedAt).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}.
+          </span>
+          <span className="flex gap-2">
+            <Button size="sm" onClick={restoreDraft}>
+              Restore edits
+            </Button>
+            <Button size="sm" variant="ghost" onClick={discardDraft}>
+              Discard
+            </Button>
+          </span>
+        </div>
+      )}
 
       {!hasContent ? (
         <div className="rounded-md border border-amber-500/40 bg-amber-500/5 p-4 text-sm">

@@ -11,6 +11,19 @@ import type {
 
 import { Button } from "@/components/ui/button";
 import { isAuthForcedNavigation } from "@/lib/auth/session-end-navigation";
+import { useAuth } from "@/lib/auth/use-auth";
+import {
+  matrixDraftCells,
+  restorableMatrixCells,
+  toDesiredMap,
+  type MatrixDraftCell,
+} from "@/lib/drafts/matrix-draft";
+import {
+  clearSessionDraft,
+  readSessionDraft,
+  sessionDraftKey,
+  writeSessionDraft,
+} from "@/lib/drafts/session-draft";
 
 // Per-cell server snapshot — null when no link exists for (level, subject).
 export type CellSnapshot = { linkId: string; isCore: boolean } | null;
@@ -267,6 +280,70 @@ export function ClassSubjectMatrix({
   }, [computeDiff, dirtyLevelIds, onLevelSaved, onPersistLevel]);
 
   // -----------------------------------------------------------------------
+  // unsaved toggles kept in this tab (lib/drafts/session-draft.ts)
+  // -----------------------------------------------------------------------
+  //
+  // Offered back after a forced sign-out or a reload; Restore puts them back
+  // as unsaved toggles and Save still does the writing. `undefined` until
+  // read; while an offer stands, nothing new is written over it.
+
+  const { user } = useAuth();
+  const draftKey = user ? sessionDraftKey("class-subjects", user.id) : null;
+  const [draftOffer, setDraftOffer] = useState<{ savedAt: number; data: MatrixDraftCell[] } | null | undefined>(
+    undefined,
+  );
+
+  useEffect(() => {
+    if (!draftKey) return;
+    setDraftOffer(readSessionDraft<MatrixDraftCell[]>(draftKey));
+  }, [draftKey]);
+
+  const savedCell = useCallback(
+    (levelId: string, subjectId: string) => {
+      const snap = getSnapshot(levelId, subjectId);
+      return snap ? { isCore: snap.isCore } : null;
+    },
+    [getSnapshot],
+  );
+
+  const offeredCells = useMemo(
+    () =>
+      draftOffer
+        ? restorableMatrixCells(
+            draftOffer.data,
+            new Set(levels.map((l) => l.id)),
+            new Set(subjects.map((s) => s.id)),
+            savedCell,
+          )
+        : [],
+    [draftOffer, levels, subjects, savedCell],
+  );
+
+  useEffect(() => {
+    if (!draftKey || draftOffer === undefined) return;
+    if (draftOffer !== null) {
+      if (offeredCells.length === 0 && levels.length > 0) {
+        clearSessionDraft(draftKey);
+        setDraftOffer(null);
+      }
+      return;
+    }
+    const cells = matrixDraftCells(desired, savedCell);
+    writeSessionDraft(draftKey, cells.length > 0 ? cells : null);
+  }, [draftKey, draftOffer, offeredCells.length, levels.length, desired, savedCell]);
+
+  const restoreDraft = useCallback(() => {
+    setDraftOffer(null);
+    setDesired(toDesiredMap(offeredCells) as Map<string, Map<string, CellDesired>>);
+    setSaveError(null);
+  }, [offeredCells]);
+
+  const discardDraft = useCallback(() => {
+    if (draftKey) clearSessionDraft(draftKey);
+    setDraftOffer(null);
+  }, [draftKey]);
+
+  // -----------------------------------------------------------------------
   // render
   // -----------------------------------------------------------------------
 
@@ -287,8 +364,26 @@ export function ClassSubjectMatrix({
     );
   }
 
+  const offeredLevels = new Set(offeredCells.map((c) => c.levelId)).size;
+
   return (
     <div className="flex flex-col gap-3">
+      {draftOffer && offeredCells.length > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-md bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-950/40 dark:text-amber-100">
+          <span>
+            <strong>Unsaved changes found</strong> for {offeredLevels} class level{offeredLevels === 1 ? "" : "s"}, from{" "}
+            {new Date(draftOffer.savedAt).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}.
+          </span>
+          <span className="flex gap-2">
+            <Button type="button" size="sm" onClick={restoreDraft}>
+              Restore changes
+            </Button>
+            <Button type="button" size="sm" variant="ghost" onClick={discardDraft}>
+              Discard
+            </Button>
+          </span>
+        </div>
+      )}
       <div className="overflow-auto rounded-md border">
         <table className="border-collapse text-sm">
           <thead>

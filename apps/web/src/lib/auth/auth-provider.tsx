@@ -15,6 +15,7 @@ import type {
 
 import { AUTH_UNAUTHORIZED_EVENT, ApiError, type UnauthorizedEventDetail } from "../api-client";
 import { clearAllScoreDrafts } from "../assessment/score-draft";
+import { clearAllSessionDrafts } from "../drafts/session-draft";
 import { identify, resetIdentity, track } from "../observability/events";
 import {
   loginRequest,
@@ -290,10 +291,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Server-side logout failure is non-fatal — clear local state regardless.
     }
     resetIdentity();
-    // A sign-out is a decision to leave: unsaved gradebook marks kept for a
-    // FORCED sign-out (score-draft.ts) are not left behind for the next person
-    // at this computer.
+    // A sign-out is a decision to leave: unsaved work kept for a FORCED
+    // sign-out (gradebook marks in score-draft.ts, lesson plans and the
+    // class-subject matrix in drafts/session-draft.ts) is not left behind for
+    // the next person at this computer.
     clearAllScoreDrafts();
+    clearAllSessionDrafts();
     setState(guestState());
     // FULL-DOCUMENT navigation, not router.replace.
     //
