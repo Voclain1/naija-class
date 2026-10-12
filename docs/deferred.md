@@ -317,7 +317,11 @@ the module doc or the PR, then link it here.
   and dates of birth, and an earlier decision rejected that (the page note at
   `app/(admin)/students/new/bulk/page.tsx`). The one-request save leaves only
   unsaved typing at risk.
-- [ ] **Teacher shell sidebar background stops partway down a short page.**
+- [x] **DONE 2026-10-12 — Teacher shell sidebar background stopped partway
+  down a short page.** The sidebar's print wrapper was a plain block, so the
+  sidebar was only as tall as its links; the wrapper is now `flex` (teacher and
+  admin shells), so it stretches to the shell's height. Pinned by
+  `e2e/tests/shell-sidebar.spec.ts`, which fails on the old layout.
 - [x] **DONE 2026-10-10 — Moving a timetable lesson is one request.**
   `PUT /timetable/lessons` takes an optional `moveFrom` (day, start period,
   span); the API clears that block in the same transaction as the save, so a

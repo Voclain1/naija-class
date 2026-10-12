@@ -27,11 +27,15 @@ import { TeacherTopbar } from "@/components/teacher/topbar";
 // Academics / Settings; TeacherTopbar keeps the mobile drawer in sync with
 // that same list. Same shell shape as the (admin) layout (sidebar + topbar +
 // main).
+//
+// The sidebar's print wrapper is `flex` so the sidebar stretches to the full
+// height of the shell; as a plain block it was only as tall as its links, and
+// on a short page its background stopped partway down (2026-10-12).
 export default function TeacherLayout({ children }: { children: ReactNode }) {
   return (
     <RequireAuth>
       <div className="flex min-h-screen bg-muted/30">
-        <div className="print:hidden">
+        <div className="flex print:hidden">
           <TeacherSidebar />
         </div>
         <div className="flex flex-1 flex-col">
