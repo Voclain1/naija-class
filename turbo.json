@@ -27,6 +27,7 @@
     },
     "test": {
       "dependsOn": ["^build"],
+      "env": ["VITEST_COVERAGE"],
       "outputs": ["coverage/**"]
     },
     "test:e2e": {

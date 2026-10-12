@@ -1,5 +1,16 @@
+import { existsSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
 import swc from "unplugin-swc";
+
+// The tests read the same env file the API does: AppModule's
+// `ConfigModule.forRoot({ envFilePath: ["../../.env"] })`. Loaded here, in
+// the main process, so the forked test worker inherits it. Like Nest's
+// loader (and the `dotenv -e ../../.env --` wrapper this replaced), a
+// variable already set in the shell wins over the file, and a missing file
+// is not an error. Node's own loader, so no extra dependency.
+const ROOT_ENV_FILE = fileURLToPath(new URL("../../.env", import.meta.url));
+if (existsSync(ROOT_ENV_FILE)) process.loadEnvFile(ROOT_ENV_FILE);
 
 // Vitest config for apps/api.
 //
@@ -32,6 +43,16 @@ export default defineConfig({
   ],
   test: {
     globals: false,
+    // Coverage runs only when VITEST_COVERAGE=1 (CI's test step sets it), so
+    // a local `pnpm test` stays as fast as before. Summary only: CI prints it
+    // on the run's page. See docs/deferred.md, "Tooling".
+    coverage: {
+      enabled: process.env.VITEST_COVERAGE === "1",
+      provider: "v8",
+      include: ["src/**/*.{ts,tsx}"],
+      exclude: ["src/**/*.spec.ts", "src/**/__tests__/**"],
+      reporter: ["text-summary", "json-summary"],
+    },
     include: ["src/**/*.spec.ts", "src/**/__tests__/**/*.spec.ts"],
     environment: "node",
     // Long timeout: the RLS test runs migrations against the dev DB.

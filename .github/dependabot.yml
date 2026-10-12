@@ -1,0 +1,44 @@
+# Dependency update PRs (docs/deferred.md, "Tooling"; added 2026-10-12).
+#
+# Minor and patch updates only, grouped into one weekly PR so they arrive as
+# one CI run rather than thirty. Major versions are left out on purpose: a
+# major is a planned change, and for the stack CLAUDE.md pins ("Tech stack")
+# it has to update CLAUDE.md in the same PR. Expo and React Native are left
+# out entirely: their versions are set by the Expo SDK and move together with
+# `npx expo install --fix`, never one package at a time.
+#
+# Security alerts are separate from this file: they are switched on under the
+# repository's Settings → Code security, and are not limited by it.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Africa/Lagos
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      minor-and-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "expo"
+      - dependency-name: "expo-*"
+      - dependency-name: "@expo/*"
+      - dependency-name: "react-native"
+      - dependency-name: "react-native-*"
+      - dependency-name: "@react-native/*"
+      - dependency-name: "@react-native-*"
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: "chore(ci)"

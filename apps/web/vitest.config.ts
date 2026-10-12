@@ -29,6 +29,18 @@ export default defineConfig({
   },
   test: {
     environment: "node",
+    // Coverage runs only when VITEST_COVERAGE=1 (CI's test step sets it), so
+    // a local `pnpm test` stays as fast as before. Summary only: CI prints it
+    // on the run's page. See docs/deferred.md, "Tooling".
+    coverage: {
+      enabled: process.env.VITEST_COVERAGE === "1",
+      provider: "v8",
+      // src/lib only: the unit runner covers pure logic (see above), and
+      // screens are covered by Playwright, which this does not measure.
+      include: ["src/lib/**/*.ts"],
+      exclude: ["src/**/*.spec.ts"],
+      reporter: ["text-summary", "json-summary"],
+    },
     include: ["src/**/*.spec.ts"],
     exclude: ["node_modules/**", ".next/**", "dist/**"],
   },

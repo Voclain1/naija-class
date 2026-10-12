@@ -856,6 +856,19 @@ pnpm test:e2e
 pnpm ai:eval                  # run prompt eval suite (required before any prompt PR merges)
 ```
 
+**Turbo on Windows.** If a root command (`pnpm dev:api`, `pnpm typecheck`)
+exits at once with code `3221225781` (`0xC0000135`, `STATUS_DLL_NOT_FOUND`),
+Windows could not load a DLL the `turbo` binary needs; nothing in this repo is
+at fault. Install the current Microsoft Visual C++ Redistributable (x64) and
+open a new terminal. Until then, run the command inside the workspace instead
+(`pnpm --filter @school-kit/api dev`), which skips Turbo.
+
+**API tests and `.env`.** `apps/api`'s tests load the repo-root `.env` in
+`apps/api/vitest.config.ts`, the same file `AppModule` reads, and a variable
+already set in the shell wins. `pnpm test` from the root or from `apps/api`
+behaves the same; there is no `dotenv` wrapper. `VITEST_COVERAGE=1` adds a
+coverage summary (CI sets it; `apps/api` and `apps/web` only).
+
 ## Git conventions
 
 - Branches: `<phase>/<module>` e.g. `phase-2/attendance`, or `fix/<short>`.

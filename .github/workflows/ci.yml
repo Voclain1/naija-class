@@ -3,11 +3,11 @@
 # Runs on every PR opened against `main` and every push to `main`.
 # Closes Phase 0 acceptance criterion #9 (CI passes on every PR).
 #
-# Single job by design. Splitting into parallel lint / typecheck / test jobs
-# would save ~20s of wall-clock but cost 2× a 60s cold `pnpm install` per
-# extra runner. With the Phase 0 test suite (117 backend tests, ~30s),
-# sequential-in-one-job is the cheaper and simpler win. Captured as a
-# deferred optimisation in docs/deferred.md ("Multi-job parallelism in CI").
+# Two jobs that run side by side (2026-10-12): `ci` (lint, typecheck, unit
+# tests, builds) and `e2e`. Until then e2e waited for ci, so a PR took the two
+# back to back (~9 + ~15 minutes). Neither uses the other's output. `ci` stays
+# one job: splitting lint / typecheck / test would re-pay the install and
+# database setup per runner to save under a minute.
 
 name: ci
 
@@ -102,17 +102,14 @@ jobs:
       - name: Install Chrome for Puppeteer
         run: pnpm --filter @school-kit/api exec puppeteer browsers install chrome
 
-      # Why this step exists: apps/api's test script is
-      #   `dotenv -e ../../.env -- vitest run`
-      # which errors out if `.env` is missing. We write a CI-only `.env` so
-      # the existing test command works unchanged. None of the keys here are
-      # real — Sentry/PostHog DSNs are deliberately blank (the no-op-when-DSN-
-      # empty contract was verified in Slice 8a), and Anthropic/Paystack/etc.
-      # are never called from tests.
-      #
-      # This step becomes unnecessary once we land the shared test bootstrap
-      # tracked in docs/deferred.md ("Convert from dotenv-cli test wrapper to
-      # a shared test bootstrap"). Remove this whole step in that PR.
+      # The repo-root `.env` is what every local command reads: the API
+      # (ConfigModule's envFilePath), the API's tests (apps/api/vitest.config.ts
+      # loads the same file, 2026-10-12), and packages/db's migrate and seed
+      # scripts (`dotenv -e ../../.env`). CI writes a CI-only one so the same
+      # commands run unchanged. None of the keys here are real — Sentry/PostHog
+      # DSNs are deliberately blank (the no-op-when-DSN-empty contract was
+      # verified in Slice 8a), and Anthropic/Paystack/etc. are never called
+      # from tests.
       - name: Write CI .env
         run: |
           cat > .env <<'EOF'
@@ -205,8 +202,28 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
 
+      # VITEST_COVERAGE=1 turns on coverage in apps/api and apps/web (their
+      # vitest configs); declared in turbo.json so Turbo passes it through.
       - name: Test
         run: pnpm test
+        env:
+          VITEST_COVERAGE: "1"
+
+      # Prints each app's line coverage on the run's summary page. Reporting
+      # only, no threshold: the number is there to be seen, not to fail a PR.
+      - name: Coverage summary
+        run: |
+          node -e '
+            const fs = require("node:fs");
+            const rows = ["| App | Lines | Branches | Functions |", "|---|---|---|---|"];
+            for (const app of ["api", "web"]) {
+              const file = `apps/${app}/coverage/coverage-summary.json`;
+              if (!fs.existsSync(file)) { rows.push(`| ${app} | not produced | | |`); continue; }
+              const t = JSON.parse(fs.readFileSync(file, "utf8")).total;
+              rows.push(`| ${app} | ${t.lines.pct}% | ${t.branches.pct}% | ${t.functions.pct}% |`);
+            }
+            fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, "### Unit test coverage\n\n" + rows.join("\n") + "\n");
+          '
 
       # CLAUDE.md calls `pnpm ai:eval` "required before any prompt PR merges",
       # but until now nothing enforced it — it was a manual gate, so a prompt
@@ -228,14 +245,13 @@ jobs:
         run: pnpm --filter @school-kit/portal build
 
   # Slice 9 — Playwright E2E smoke. Closes Phase 0 acceptance criterion #8.
-  # Runs sequentially after `ci` (needs: ci) — Phase 0 wall-clock isn't
-  # tight enough to justify the extra ~60s install cost on a parallel
-  # runner. Captured as a deferred optimisation when the test suite or
-  # CI critical path grows. The DB-setup steps duplicate the ci job by
-  # design; a composite action only pays off at 3+ consumers.
+  # Runs alongside `ci`, not after it (2026-10-12): it builds and seeds its
+  # own database and uses nothing `ci` produces, and waiting added ~9 minutes
+  # to every PR. The cost is that a PR failing lint still spends e2e's runner
+  # minutes. The DB-setup steps duplicate the ci job by design; a composite
+  # action only pays off at 3+ consumers.
   e2e:
     name: e2e (Playwright)
-    needs: ci
     runs-on: ubuntu-latest
     # 30, not 20 (2026-10-07): the suite reached 127 tests and a run on a
     # slower runner was cancelled at test 86 with nothing failing. A hang

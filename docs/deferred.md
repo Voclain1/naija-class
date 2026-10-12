@@ -364,17 +364,40 @@ the module doc or the PR, then link it here.
   entry, `docs/journal/2026-10-08.md`, covering 2026-09-06 to today by theme.
 - [ ] **`RESERVED_SLUGS` is exact-match only.** **Trigger:** before adding any
   reserved slug pattern.
-- [ ] **Tooling:**
-  - Turbo crashes on Windows (run per workspace);
-  - root `pnpm dev:api`;
-  - the `dotenv-cli` test wrapper;
-  - eslint-config-next's native flat config;
-  - CI remote cache and parallel jobs;
-  - coverage reporting;
-  - Dependabot and commitlint.
-
-  All low priority.
-- [ ] **Prisma 5 → 7 upgrade.** Plan first. Update CLAUDE.md in the same PR.
+- [x] **DONE 2026-10-12 — Tooling**, item by item:
+  - **Turbo on Windows, and root `pnpm dev:api`.** One problem: exit code
+    `3221225781` is `0xC0000135`, Windows failing to load a DLL the `turbo`
+    binary needs (the Visual C++ runtime), not a fault in the repo. The fix
+    is on the machine, written up under "Dev commands" in CLAUDE.md. Not
+    reproducible from Linux CI, so confirm it on the Windows machine.
+  - **`dotenv-cli` test wrapper.** Gone from `apps/api`'s `test` scripts:
+    `apps/api/vitest.config.ts` loads the root `.env` with Node's
+    `process.loadEnvFile`, the same file `AppModule` reads, shell values
+    winning. The one-off scripts and `packages/db` keep `dotenv -e`.
+  - **CI parallel jobs.** `e2e` no longer waits for `ci`; the two run side by
+    side. `ci` stays one job (see the workflow's header).
+  - **Coverage reporting.** CI's test step sets `VITEST_COVERAGE=1`, and a
+    table of line / branch / function coverage for `apps/api` and `apps/web`
+    is printed on each run's summary page. Reporting only, no threshold, and
+    no third-party service.
+  - **Dependabot** (`.github/dependabot.yml`): one grouped weekly PR of minor
+    and patch updates; majors and the Expo / React Native packages are left
+    out (see the file). **Commitlint** became a PR-title check
+    (`.github/workflows/pr-title.yml`): every PR is squash-merged, so the
+    title is the commit that lands.
+- [ ] **Tooling, still open:**
+  - **eslint-config-next's native flat config.** Ships with
+    eslint-config-next 16, which goes with Next 16; the installed 15.5.18 has
+    none. **Trigger:** the Next 16 upgrade (update CLAUDE.md's stack table in
+    that PR).
+  - **Turbo remote cache in CI.** Needs a Vercel token as a repository secret,
+    so it is the owner's call. Most of `ci`'s time is the API suite against a
+    real database, which should not be served from a cache, so the gain is
+    small. **Trigger:** `ci` takes over 15 minutes.
+  - **Codecov / Coveralls.** The run summary covers it until a trend line or
+    PR comments are wanted; needs a token and a third-party service.
+- [ ] **Prisma 5 → 7 upgrade.** Plan written, awaiting the owner's approval:
+  `docs/modules/prisma-7-upgrade.md`. Update CLAUDE.md in the upgrade PR.
 
 ## 3. Waiting on the owner or outside parties
 

@@ -13,8 +13,8 @@
     "start:prod": "node dist/main",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "lint": "eslint . --max-warnings=0",
-    "test": "dotenv -e ../../.env -- vitest run",
-    "test:watch": "dotenv -e ../../.env -- vitest",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "clean": "rm -rf dist"
   },
   "dependencies": {
@@ -54,6 +54,7 @@
     "@types/multer": "^2.1.0",
     "@types/node": "^22.10.0",
     "@types/supertest": "^6.0.2",
+    "@vitest/coverage-v8": "2.1.9",
     "dotenv-cli": "^7.4.4",
     "eslint": "^9",
     "source-map-support": "^0.5.21",
