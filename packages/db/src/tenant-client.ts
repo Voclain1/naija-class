@@ -55,12 +55,35 @@ const RETRYABLE_PRISMA_CODES = new Set(["P1001", "P1002", "P1008", "P1017", "P20
 // timed out), or `kind: "postgres"` with a Postgres code: class 08 (connection
 // exception) or 57P01-57P03 (server shutting down / restarting / not yet
 // accepting). pg's own "Connection terminated unexpectedly" is not mapped by
-// the adapter at all, so it is matched by message. All of these mean the
-// server rolled the transaction back, which is what made P1017 safe to retry.
+// the adapter at all, so it is matched by message. Nor is a failed connect to
+// a host with SEVERAL addresses (IPv4 + IPv6, as on CI's `localhost`): Node
+// tries each and throws a bare AggregateError carrying the socket code
+// (ECONNREFUSED...), which Prisma passes through unwrapped. Caught by CI and
+// reproduced locally with a two-address hostname. All of these mean the
+// connection never opened or the server rolled the transaction back, which
+// is what made P1001 / P1017 safe to retry.
 // (A pooled connection killed while IDLE never reaches here: the pool drops it
 // and the next transaction gets a fresh one, proven against a real server.)
 const LOST_CONNECTION_KINDS = new Set(["DatabaseNotReachable", "ConnectionClosed", "SocketTimeout"]);
 const SERVER_GOING_AWAY_CODES = new Set(["57P01", "57P02", "57P03"]);
+const SOCKET_ERROR_CODES = new Set([
+  "ECONNREFUSED",
+  "ECONNRESET",
+  "ENOTFOUND",
+  "EAI_AGAIN",
+  "ETIMEDOUT",
+  "EHOSTUNREACH",
+  "ENETUNREACH",
+  "EPIPE",
+]);
+
+function hasSocketErrorCode(e: unknown): boolean {
+  if (typeof e !== "object" || e === null) return false;
+  const code = (e as { code?: unknown }).code;
+  if (typeof code === "string" && SOCKET_ERROR_CODES.has(code)) return true;
+  const inner = (e as { errors?: unknown }).errors;
+  return Array.isArray(inner) && inner.some(hasSocketErrorCode);
+}
 
 interface DriverAdapterCause {
   kind?: string;
@@ -80,6 +103,7 @@ function isLostConnection(e: unknown): boolean {
       if (cause.code.startsWith("08") || SERVER_GOING_AWAY_CODES.has(cause.code)) return true;
     }
   }
+  if (!(e instanceof Prisma.PrismaClientKnownRequestError) && hasSocketErrorCode(e)) return true;
   return e instanceof Error && /connection terminated unexpectedly/i.test(e.message);
 }
 

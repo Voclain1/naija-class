@@ -135,7 +135,7 @@ index, which it now reads correctly). No migration ships.
 | Unique violation | `P2002`, `meta.target` | `P2002`, constraint in `meta.driverAdapterError.cause.constraint.index` and in the message | `translatePrismaError` reads the constraint; the message is now only a fallback, since it carries a source snippet that can name other fields |
 | No free connection | `P2028` "Unable to start a transaction" | same | retried, unchanged |
 | Body past its timeout | `P2028` | `P2028` "A query cannot be executed on an expired transaction" | not retried, unchanged |
-| Server unreachable | `P1001` | `P1001` inside a transaction | retried, unchanged |
+| Server unreachable | `P1001` | `P1001` inside a transaction — but a host with **several addresses** (CI's IPv4 + IPv6 `localhost`; possibly Neon) gives a bare `AggregateError` with code `ECONNREFUSED`, which Prisma passes through unwrapped | retried; the bare socket error is **new** handling, found when CI failed on it and reproduced locally with a two-address hostname |
 | Connection lost mid-transaction | `P1017` | **`P2010`** with the driver's cause (`57P01`, or a socket `kind`) | **new**: `withTenant` recognises it and retries once; the spec kills its own connection and sees the retry succeed |
 | Idle pooled connection killed | `P1017` on next use | **no error**: the pool drops it, the next transaction gets a new one | nothing to do |
 

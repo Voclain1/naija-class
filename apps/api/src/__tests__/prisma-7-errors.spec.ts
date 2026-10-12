@@ -115,6 +115,24 @@ describe("Prisma 7 errors (real database)", () => {
       }
     });
 
+    it("a host with several addresses, all refusing, is retryable (CI's IPv4 + IPv6 localhost)", () => {
+      // The one hand-built error here: this machine cannot be given a second
+      // address family, so the shape is copied from what Node threw on CI and
+      // from a two-address hostname locally — a bare AggregateError, passed
+      // through by Prisma unwrapped, with the socket code on it and inside.
+      const refused = (address: string) =>
+        Object.assign(new Error(`connect ECONNREFUSED ${address}:5432`), { code: "ECONNREFUSED", syscall: "connect" });
+      const e = Object.assign(new AggregateError([refused("::1"), refused("127.0.0.1")]), { code: "ECONNREFUSED" });
+      expect(isRetryableConnectionError(e)).toBe(true);
+    });
+
+    it("ordinary failures are not retried: a unique violation, a plain error", async () => {
+      const dup = await caught(basePrisma.school.create({ data: { name: "Dup", slug: `p7-a-${run}` } }));
+      expect(isRetryableConnectionError(dup)).toBe(false);
+      expect(isRetryableConnectionError(new Error("boom"))).toBe(false);
+      expect(isRetryableConnectionError(new AggregateError([new Error("a")]))).toBe(false);
+    });
+
     it("a connection lost mid-transaction is retried once, and the retry succeeds", async () => {
       let attempts = 0;
       const result = await withTenant(schoolA, async (db) => {
