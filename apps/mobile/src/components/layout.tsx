@@ -4,7 +4,7 @@ import { Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } fro
 
 import { useTheme } from "../theme/theme-provider";
 import { fontSizes, fonts, radii, spacing } from "../theme/tokens";
-import { Body, Card, Label } from "./ui";
+import { Body, Caption, Card, Label } from "./ui";
 
 // CP8 — the layout vocabulary every staff screen shares.
 //
@@ -141,7 +141,7 @@ export function StatRow({
       <Ionicons name={icon} size={18} color={accent} />
       <View style={styles.statText}>
         <Text style={[styles.statValue, { color: colors.foreground }]}>{value}</Text>
-        <Label>{label}</Label>
+        <Caption>{label}</Caption>
       </View>
       {onPress ? <Ionicons name="chevron-forward" size={16} color={colors.mutedForeground} /> : null}
     </View>
@@ -176,7 +176,7 @@ export function ListRow({
       {icon ? <Ionicons name={icon} size={20} color={colors.primary} /> : null}
       <View style={styles.rowText}>
         <Body>{title}</Body>
-        {subtitle ? <Label>{subtitle}</Label> : null}
+        {subtitle ? <Caption>{subtitle}</Caption> : null}
       </View>
       {meta ? <Label>{meta}</Label> : null}
       {onPress ? <Ionicons name="chevron-forward" size={16} color={colors.mutedForeground} /> : null}
@@ -217,7 +217,7 @@ export function EmptyState({
     <Card style={styles.empty}>
       <Ionicons name={icon} size={28} color={colors.mutedForeground} />
       <Body>{title}</Body>
-      <Label>{body}</Label>
+      <Caption style={styles.emptyBody}>{body}</Caption>
       {action ?? null}
     </Card>
   );
@@ -294,6 +294,7 @@ const styles = StyleSheet.create({
   row: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
   rowText: { flex: 1, gap: spacing.xs },
   empty: { alignItems: "center", gap: spacing.sm, paddingVertical: spacing.lg },
+  emptyBody: { textAlign: "center" },
   skeleton: { gap: spacing.sm },
   skeletonLine: { height: 12, borderRadius: radii.sm, opacity: 0.7 },
 });

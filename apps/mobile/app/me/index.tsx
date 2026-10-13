@@ -27,7 +27,7 @@ import {
 } from "../../src/lib/family/today";
 import { totalOwed } from "../../src/lib/family/fees";
 import { spacing } from "../../src/theme/tokens";
-import { Card, CenteredMessage, Label, Notice, Screen } from "../../src/components/ui";
+import { Caption, Card, CenteredMessage, Notice, Screen } from "../../src/components/ui";
 import { ListRow, ScreenHeader, SectionHeader, Skeleton, StatRow } from "../../src/components/layout";
 import { SchoolBadge } from "../../src/components/school-badge";
 import { FreshnessLabel } from "../../src/components/freshness-label";
@@ -212,7 +212,7 @@ export default function MyHomeScreen() {
               <StatRow icon="id-card-outline" value={student.admissionNumber} label="Admission number" />
               {school ? <StatRow icon="school-outline" value={school.slug} label="School code" /> : null}
             </Card>
-            <Label>Keep these somewhere safe.</Label>
+            <Caption>Keep these somewhere safe.</Caption>
           </>
         ) : null}
         {/* D12. A student with a problem should not have to find the number

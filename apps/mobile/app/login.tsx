@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import {
+  Image,
   KeyboardAvoidingView,
+  Linking,
   Platform,
   Pressable,
   StyleSheet,
@@ -11,11 +13,16 @@ import {
 import { Link, Redirect } from "expo-router";
 import { ApiError, ApiNetworkError } from "../src/lib/api/client";
 import { useSession } from "../src/lib/auth/session";
+import { webUrl } from "../src/lib/web-handoff";
 import { loadSchoolHint } from "../src/lib/auth/school-hint-store";
 import { shouldCollapseSchoolField } from "../src/lib/auth/school-hint";
 import { useTheme } from "../src/theme/theme-provider";
 import { fontSizes, fonts, radii, spacing } from "../src/theme/tokens";
 import { Body, Button, Heading, Notice, Screen } from "../src/components/ui";
+
+// eslint-disable-next-line @typescript-eslint/no-require-imports -- React Native bundles images through require()
+const SCHOOLKIT_ICON = require("../assets/icon.png");
+const staffResetUrl = webUrl("/forgot-password");
 
 // One login screen, two principals.
 //
@@ -185,6 +192,17 @@ export default function LoginScreen() {
         style={styles.fill}
       >
         <View style={styles.form}>
+          {/* SchoolKit's mark: the school is not known until someone signs
+              in, so this is the app's own (mobile review, 2026-10-13). */}
+          <View style={styles.brand} accessibilityRole="header">
+            <Image
+              source={SCHOOLKIT_ICON}
+              style={[styles.brandIcon, { borderRadius: radii.sm }]}
+              accessibilityElementsHidden
+              importantForAccessibility="no"
+            />
+            <Text style={[styles.brandName, { color: colors.foreground }]}>SchoolKit</Text>
+          </View>
           <View style={styles.intro}>
             <Heading>Welcome back</Heading>
             <Body muted>
@@ -360,6 +378,18 @@ export default function LoginScreen() {
               </Pressable>
             </Link>
           ) : null}
+          {/* Staff passwords are reset on the website, where the reset email's
+              link opens; the app has no staff reset screen of its own. */}
+          {isStaff && staffResetUrl ? (
+            <Pressable
+              style={styles.activateLink}
+              disabled={submitting}
+              accessibilityRole="link"
+              onPress={() => void Linking.openURL(staffResetUrl)}
+            >
+              <Text style={[styles.activateText, { color: colors.primary }]}>Forgot password?</Text>
+            </Pressable>
+          ) : null}
           {isStudent ? (
             <Body muted>Forgot your password? Ask your parent to reset it from their SchoolKit app.</Body>
           ) : null}
@@ -376,6 +406,9 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     gap: spacing.md,
   },
+  brand: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  brandIcon: { width: 36, height: 36 },
+  brandName: { fontFamily: fonts.sansSemibold, fontSize: fontSizes.bodyLarge },
   intro: {
     gap: spacing.xs,
     marginBottom: spacing.sm,

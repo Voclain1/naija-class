@@ -38,6 +38,7 @@ import { Appear, Settle } from "../../../../../src/components/motion";
 import {
   Body,
   Button,
+  Caption,
   Card,
   CenteredMessage,
   Label,
@@ -420,7 +421,7 @@ export default function SubjectCommentsScreen() {
                     {signedOff ? (
                       <>
                         <Body muted>{accepted ?? "No comment was recorded before sign-off."}</Body>
-                        <Label>Signed off — the comment is frozen.</Label>
+                        <Caption>Signed off — the comment is frozen.</Caption>
                       </>
                     ) : (
                       <>

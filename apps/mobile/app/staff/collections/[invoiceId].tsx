@@ -17,7 +17,15 @@ import { queryKeys } from "../../../src/lib/query/keys";
 import { useSession } from "../../../src/lib/auth/session";
 import { moneyAbilities } from "../../../src/lib/staff/money";
 import { spacing } from "../../../src/theme/tokens";
-import { Body, Button, Card, CenteredMessage, Label, Notice, Screen } from "../../../src/components/ui";
+import {
+  Body,
+  Button,
+  Caption,
+  Card,
+  CenteredMessage,
+  Notice,
+  Screen,
+} from "../../../src/components/ui";
 import { ScreenHeader, SectionHeader, Skeleton, StatRow } from "../../../src/components/layout";
 
 // CP9b — one family's unpaid invoice, and the three things a bursar does
@@ -185,7 +193,7 @@ export default function DebtorScreen() {
           <StatRow icon="wallet-outline" value={formatKobo(row.balance)} label="Outstanding" tone="warning" />
           <StatRow icon="checkmark-done-outline" value={formatKobo(row.totalPaid)} label={`Paid of ${formatKobo(row.totalDue)}`} />
           {row.dueDate ? <StatRow icon="calendar-outline" value={row.dueDate} label="Due" /> : null}
-          {row.hasPaymentPlan ? <Label>On a payment plan.</Label> : null}
+          {row.hasPaymentPlan ? <Caption>On a payment plan.</Caption> : null}
         </Card>
 
         {notice ? <Notice tone="info">{notice}</Notice> : null}

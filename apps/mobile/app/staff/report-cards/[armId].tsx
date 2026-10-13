@@ -36,6 +36,7 @@ import { Appear, Settle } from "../../../src/components/motion";
 import {
   Body,
   Button,
+  Caption,
   Card,
   CenteredMessage,
   Label,
@@ -438,7 +439,7 @@ export default function FormCommentsScreen() {
                     ) : (
                       <>
                         <Body muted>{accepted ?? "No comment was written before this card locked."}</Body>
-                        <Label>Locked — this card has moved past the form teacher stage.</Label>
+                        <Caption>Locked — this card has moved past the form teacher stage.</Caption>
                       </>
                     )}
                   </Card>

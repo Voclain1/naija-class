@@ -40,6 +40,7 @@ import { ScreenHeader, Skeleton } from "../../../src/components/layout";
 import {
   Body,
   Button,
+  Caption,
   Card,
   CenteredMessage,
   Label,
@@ -311,9 +312,9 @@ export default function LessonNoteScreen() {
           />
         </View>
         {unsavedCount > 0 ? (
-          <Label>
+          <Caption>
             Save your changes first — a printed note only carries what has been saved.
-          </Label>
+          </Caption>
         ) : null}
 
         {notice ? <Notice tone="info">{notice}</Notice> : null}

@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react";
 import { Alert, KeyboardAvoidingView, Platform, RefreshControl, ScrollView, StyleSheet, View } from "react-native";
-import { Redirect, Stack } from "expo-router";
+import { Redirect } from "expo-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ANNOUNCEMENT_BODY_MAX,
@@ -172,11 +172,9 @@ export default function StaffAnnouncementsScreen() {
 
   return (
     <Screen>
-      <Stack.Screen options={{ headerShown: true, title: "Announcements" }} />
       <KeyboardAvoidingView
         style={styles.flex}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
-        keyboardVerticalOffset={80}
       >
         <ScrollView
           contentContainerStyle={styles.content}

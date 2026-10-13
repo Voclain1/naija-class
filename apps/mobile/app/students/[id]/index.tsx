@@ -1,10 +1,11 @@
 import { useState } from "react";
-import { Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { ScrollView, StyleSheet, View } from "react-native";
 import * as Clipboard from "expo-clipboard";
-import { Link, Redirect, Stack, useLocalSearchParams } from "expo-router";
+import { Redirect, Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { formatKobo, type PortalInvoiceDto } from "@school-kit/types";
 
+import { classLabel } from "../../../src/lib/family/class-label";
 import { getBankDetails, getStudent, listInvoices } from "../../../src/lib/api/portal";
 import { queryKeys } from "../../../src/lib/query/keys";
 import { runCheckout } from "../../../src/lib/payments/checkout";
@@ -15,6 +16,7 @@ import { spacing } from "../../../src/theme/tokens";
 import {
   Body,
   Button,
+  Caption,
   Card,
   CenteredMessage,
   Heading,
@@ -23,6 +25,7 @@ import {
   Screen,
 } from "../../../src/components/ui";
 import { FreshnessLabel, useIsOnline } from "../../../src/components/freshness-label";
+import { ListRow } from "../../../src/components/layout";
 import { StudentPortalAccess } from "../../../src/components/student-portal-access";
 import {
   canPay,
@@ -40,6 +43,7 @@ import {
 // (C1), and a parent asks the office for theirs.
 
 export default function StudentDetailScreen() {
+  const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { status } = useSession();
   const queryClient = useQueryClient();
@@ -122,7 +126,7 @@ export default function StudentDetailScreen() {
             </Heading>
             <Body muted>
               {student.currentEnrollment
-                ? `${student.currentEnrollment.classArm.classLevel.name} · ${student.currentEnrollment.classArm.name}`
+                ? classLabel(student.currentEnrollment.classArm.classLevel.name, student.currentEnrollment.classArm.name)
                 : "Not currently enrolled"}
             </Body>
             {/* Deliberately the OLDER of the two timestamps: the screen is
@@ -148,36 +152,30 @@ export default function StudentDetailScreen() {
             child's page is far more often checking how they did than paying
             an invoice, and the results screen is the one thing this app can
             show that nothing else in School Kit currently can. */}
-        <Link href={`/students/${studentId}/results`} asChild>
-          <Pressable accessibilityRole="button" accessibilityLabel="View released results">
-            <Card>
-              <Heading>Results</Heading>
-              <Body muted>Report cards the school has released.</Body>
-            </Card>
-          </Pressable>
-        </Link>
+        <ListRow
+          icon="ribbon-outline"
+          title="Results"
+          subtitle="Report cards the school has released."
+          onPress={() => router.push(`/students/${studentId}/results`)}
+        />
 
         {/* Homework (the-school-day.md Part B). Above the timetable, because it
             is the thing that changes daily and the timetable changes once a
             term. */}
-        <Link href={`/students/${studentId}/homework`} asChild>
-          <Pressable accessibilityRole="button" accessibilityLabel="View homework">
-            <Card>
-              <Heading>Homework</Heading>
-              <Body muted>What has been set, and when it is due.</Body>
-            </Card>
-          </Pressable>
-        </Link>
+        <ListRow
+          icon="book-outline"
+          title="Homework"
+          subtitle="What has been set, and when it is due."
+          onPress={() => router.push(`/students/${studentId}/homework`)}
+        />
 
         {/* Phase 8 / CP4 — the class timetable the school PUBLISHED (§18 D39). */}
-        <Link href={`/students/${studentId}/timetable`} asChild>
-          <Pressable accessibilityRole="button" accessibilityLabel="View class timetable">
-            <Card>
-              <Heading>Timetable</Heading>
-              <Body muted>{"This term’s class timetable, as published by the school."}</Body>
-            </Card>
-          </Pressable>
-        </Link>
+        <ListRow
+          icon="calendar-outline"
+          title="Timetable"
+          subtitle="This term's class timetable, as published by the school."
+          onPress={() => router.push(`/students/${studentId}/timetable`)}
+        />
 
         {/* Portal access sits under Results and above Fees: it is a
             one-off setup action, not something a parent returns to daily. */}
@@ -264,7 +262,7 @@ export default function StudentDetailScreen() {
           </Card>
         ) : null}
 
-        <Label>Receipts are issued by the school — ask the office and they will send yours.</Label>
+        <Caption>Receipts are issued by the school — ask the office and they will send yours.</Caption>
       </ScrollView>
     </Screen>
   );

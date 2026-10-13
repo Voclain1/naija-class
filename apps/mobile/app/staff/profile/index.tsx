@@ -13,6 +13,7 @@ import { ScreenHeader, SectionHeader, Skeleton } from "../../../src/components/l
 import {
   Body,
   Button,
+  Caption,
   Card,
   CenteredMessage,
   Label,
@@ -194,9 +195,9 @@ export default function ProfileScreen() {
               Joined:{" "}
               {data?.joinedAt ? new Date(data.joinedAt).toLocaleDateString() : "—"}
             </Body>
-            <Label>
+            <Caption>
               Your school keeps these. Ask your administrator if anything here is wrong.
-            </Label>
+            </Caption>
           </Card>
         </ScrollView>
       </KeyboardAvoidingView>

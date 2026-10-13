@@ -29,7 +29,14 @@ import {
   type EventFormValues,
 } from "../../../src/lib/staff/event-form";
 import { spacing } from "../../../src/theme/tokens";
-import { Button, Card, CenteredMessage, Label, Notice, Screen } from "../../../src/components/ui";
+import {
+  Button,
+  Caption,
+  Card,
+  CenteredMessage,
+  Notice,
+  Screen,
+} from "../../../src/components/ui";
 import { ScreenHeader, Skeleton } from "../../../src/components/layout";
 import { ChoiceChips, DateBoxes, TextField } from "../../../src/components/form";
 
@@ -269,7 +276,7 @@ export default function SchoolEventScreen() {
           {editingId && abilities.remove ? (
             <Button title="Remove event" variant="secondary" loading={remove.isPending} disabled={busy} onPress={confirmRemove} />
           ) : null}
-          {editingId && !abilities.update ? <Label>Your account can remove this event but not edit it.</Label> : null}
+          {editingId && !abilities.update ? <Caption>Your account can remove this event but not edit it.</Caption> : null}
         </ScrollView>
       </KeyboardAvoidingView>
     </Screen>

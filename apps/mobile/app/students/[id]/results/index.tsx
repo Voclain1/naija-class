@@ -3,6 +3,7 @@ import { Link, Redirect, Stack, useLocalSearchParams } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
 import type { ReleasedResultSummaryDto } from "@school-kit/types";
 
+import { EmptyState } from "../../../../src/components/layout";
 import { listResults } from "../../../../src/lib/api/portal";
 import { queryKeys } from "../../../../src/lib/query/keys";
 import { useSession } from "../../../../src/lib/auth/session";
@@ -79,13 +80,11 @@ export default function ResultsListScreen() {
             {results.length === 0 ? (
               // Deliberately not an error and not an empty box. Most families
               // will see this for most of the year, so it explains itself.
-              <Card>
-                <Heading>Nothing released yet</Heading>
-                <Body>
-                  When the school publishes a term&apos;s report card, it will
-                  appear here.
-                </Body>
-              </Card>
+              <EmptyState
+                icon="ribbon-outline"
+                title="Nothing released yet"
+                body="When the school publishes a term's report card, it will appear here."
+              />
             ) : (
               results.map((r) => (
                 <Link

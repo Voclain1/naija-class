@@ -3,6 +3,7 @@ import { Redirect, Stack } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
 import type { StudentAttendanceTermDto } from "@school-kit/types";
 
+import { EmptyState } from "../../src/components/layout";
 import { LoadError } from "../../src/components/load-error";
 import { listStudentAttendance } from "../../src/lib/api/student-portal";
 import { queryKeys } from "../../src/lib/query/keys";
@@ -65,13 +66,11 @@ export default function MyAttendanceScreen() {
             <FreshnessLabel updatedAt={query.dataUpdatedAt} />
 
             {terms.length === 0 ? (
-              <Card>
-                <Heading>Nothing marked yet</Heading>
-                <Body>
-                  Once your school starts marking the register, your attendance
-                  will appear here.
-                </Body>
-              </Card>
+              <EmptyState
+                icon="checkbox-outline"
+                title="Nothing marked yet"
+                body="Once your school starts marking the register, your attendance will appear here."
+              />
             ) : (
               terms.map((t) => (
                 <Card key={t.termId}>
