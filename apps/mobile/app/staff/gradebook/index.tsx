@@ -66,6 +66,14 @@ export default function GradebookPickerScreen() {
   const columns = (data?.classArms ?? []).flatMap((arm) =>
     (data?.subjectsByArm[arm.id] ?? []).map((subject) => ({ arm, subject })),
   );
+  // Students this term in each of the teacher's own classes (#388), so an
+  // empty mark sheet is explained before it is opened, as on the web.
+  const enrolled = (armId: string) => data?.enrolledCountByArm?.[armId] ?? 0;
+  const noStudentsAnywhere = !!term && columns.length > 0 && columns.every(({ arm }) => enrolled(arm.id) === 0);
+  const studentsLabel = (armId: string) => {
+    const n = enrolled(armId);
+    return n === 0 ? "no students enrolled yet" : `${n} ${n === 1 ? "student" : "students"}`;
+  };
 
   return (
     <Screen>
@@ -99,6 +107,13 @@ export default function GradebookPickerScreen() {
           />
         )}
 
+        {noStudentsAnywhere && (
+          <Notice tone="info">
+            None of your classes has students enrolled for {term?.name ?? "this term"}. Your school
+            administrator enrols them; your class lists fill in here once they do.
+          </Notice>
+        )}
+
         {term &&
           columns.map(({ arm, subject }) => {
             const unsaved = columnHasDrafts({
@@ -113,7 +128,7 @@ export default function GradebookPickerScreen() {
                 key={arm.id + subject.id}
                 icon={unsaved ? "alert-circle-outline" : "create-outline"}
                 title={subject.name}
-                subtitle={unsaved ? `${arm.name} · unsaved marks` : arm.name}
+                subtitle={`${arm.name} · ${unsaved ? "unsaved marks" : studentsLabel(arm.id)}`}
                 onPress={() => router.push(`/staff/gradebook/${arm.id}/${subject.id}`)}
               />
             );

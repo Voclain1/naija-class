@@ -2,6 +2,7 @@ import { Injectable } from "@nestjs/common";
 
 import { Prisma, withGuardian, withTenant } from "@school-kit/db";
 import {
+  lagosTodayIso,
   NotFoundError,
   type CurrentEnrollmentRefDto,
   type PortalStudentDto,
@@ -9,6 +10,7 @@ import {
 } from "@school-kit/types";
 
 import type { GuardianAuthContext } from "../../common/auth/guardian-auth-context";
+import { parseIsoDate } from "../attendance/shared/attendance-shared.util";
 import {
   loadCurrentEnrollmentForStudent,
   loadCurrentEnrollmentsForStudents,
@@ -73,15 +75,24 @@ export class PortalStudentsService {
 
       const studentIds = links.map((l) => l.student.id);
       const enrollments = await loadCurrentEnrollmentsForStudents(db, studentIds);
+      // Today's mark for each child, so the absence alert's "a child was
+      // marked absent" can be answered on this list. Same tenant transaction,
+      // filtered to this guardian's own children.
+      const todays = await db.attendanceRecord.findMany({
+        where: { studentId: { in: studentIds }, date: parseIsoDate(lagosTodayIso()) },
+        select: { studentId: true, status: true },
+      });
+      const todayByStudent = new Map(todays.map((r) => [r.studentId, r.status]));
 
       return {
-        data: links.map((link) =>
-          toPortalStudentDto(
+        data: links.map((link) => ({
+          ...toPortalStudentDto(
             link.student,
             link,
             enrollments.get(link.student.id) ?? null,
           ),
-        ),
+          todayAttendance: todayByStudent.get(link.student.id) ?? null,
+        })),
       };
     });
   }

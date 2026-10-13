@@ -4609,10 +4609,16 @@ behind `assessment-score.create`, like the save.
   "Saved 22/60" beneath it. This replaces the planned inline
   "37/60 → 37": a confirmation step before saving says the same thing at the
   moment it matters.
-- **Not in the staff app yet.** The mobile gradebook still enters marks in
-  weight units, which the API still accepts. A score typed there over a
-  converted cell clears its raw pair, the same rule as on the web. The app
-  gets "Out of" when the staff gradebook is next touched.
+- **In the staff app since 2026-10-13** (pre-build audit). Each component
+  of the mark sheet has an "Out of" box: blank means marks in the
+  component's weight, as before. It reopens in the total a component's
+  saved marks share, is locked while marks are unsaved, and checks each
+  cell against the total. A save with raw marks calls the preview and lists
+  "75/100 → 45/60" in a confirmation; "Back to editing" writes nothing. A
+  cell saved in another total shows "Saved 22/60 (typed 37/100)" beneath
+  it. The rules are `parseOutOf`, `sharedSavedOutOf`, `savedCellText` and
+  `collectComponentSave` in `apps/mobile/src/lib/staff/gradebook-rules.ts`,
+  with tests beside them; the server still does all the scaling.
 - Proven by `raw-mark-scaling.spec.ts`, five any-total tests in
   `assessment.service.spec.ts` (scaled and raw kept; preview writes nothing;
   an over-total mark rejects the batch, naming the row; a direct score

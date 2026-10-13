@@ -19,6 +19,7 @@ import { staffTeacherScope } from "../../../../../src/lib/api/staff-attendance";
 import {
   staffGradebookFeed,
   staffGradingScheme,
+  staffPreviewScores,
   staffSaveScores,
   staffSignOffColumn,
 } from "../../../../../src/lib/api/staff-gradebook";
@@ -32,6 +33,7 @@ import {
   hasCommentDrafts,
   draftKey,
   getGradebookDraftsVersion,
+  outOfDraftKey,
   readDraft,
   setDraftCell,
   subscribeGradebookDrafts,
@@ -43,8 +45,13 @@ import {
   componentProgress,
   isColumnFullyScored,
   issuesByStudent,
+  parseOutOf,
+  savedCellText,
+  savedNote,
   savedScore,
+  sharedSavedOutOf,
   signOffBlockReason,
+  type ScoreRow,
 } from "../../../../../src/lib/staff/gradebook-rules";
 import { useTheme } from "../../../../../src/theme/theme-provider";
 import { fontSizes, fonts, radii, spacing } from "../../../../../src/theme/tokens";
@@ -176,6 +183,16 @@ export default function MarkSheetScreen() {
   const key = component && termId ? draftKey(draftScope, component.id) : null;
   const draft = key ? readDraft(key) : {};
 
+  // Marks "out of" any total (phase-8.md D60): the teacher's chosen total
+  // for this component, or the one its saved marks share, or blank for the
+  // component's own weight. Kept beside the draft marks it gives meaning to.
+  const outOfKey = component && termId ? outOfDraftKey(draftScope, component.id) : null;
+  const chosenOutOf = outOfKey ? readDraft(outOfKey).outOf : undefined;
+  const savedOutOf = component ? sharedSavedOutOf(rows, component.id) : null;
+  const outOfText = chosenOutOf ?? (savedOutOf === null ? "" : String(savedOutOf));
+  const { outOf, error: outOfError } = parseOutOf(outOfText);
+  const hasDraftMarks = Object.keys(draft).length > 0;
+
   const [editingSignedOff, setEditingSignedOff] = useState(false);
   const [serverErrors, setServerErrors] = useState<Record<string, string>>({});
   const [banner, setBanner] = useState<Banner>(null);
@@ -188,11 +205,11 @@ export default function MarkSheetScreen() {
   const locked = signedOffAt !== null && !editingSignedOff && componentsWithUnsaved.length === 0;
 
   const pending = component
-    ? collectComponentSave(rows, component, draft)
+    ? collectComponentSave(rows, component, draft, outOf)
     : { rows: [], dirtyStudentIds: [], errors: {} as Record<string, string> };
 
   const save = useMutation({
-    mutationFn: (sent: { studentId: string; componentId: string; score: number }[]) =>
+    mutationFn: (sent: ScoreRow[]) =>
       staffSaveScores({ termId, subjectId: subjectId as string, rows: sent }),
     onSuccess: (refreshed) => {
       // The server's column replaces ours: totals, grades and the cleared
@@ -243,10 +260,41 @@ export default function MarkSheetScreen() {
     },
   });
 
-  const busy = save.isPending || signOff.isPending;
+  // A save carrying raw marks shows the server's scaled figures first, as
+  // the web's confirmation dialog does; "Back to editing" writes nothing.
+  const preview = useMutation({
+    mutationFn: (sent: ScoreRow[]) =>
+      staffPreviewScores({ termId, subjectId: subjectId as string, rows: sent }),
+    onSuccess: (result, sent) => {
+      const names = new Map(rows.map((r) => [r.student.id, studentName(r.student)]));
+      const lines = result.rows
+        .filter((r) => r.raw)
+        .map((r) => `${names.get(r.studentId) ?? "A student"}: ${r.raw!.mark}/${r.raw!.outOf} → ${r.score}/${component?.weight ?? ""}`);
+      const shown = lines.slice(0, 8).join("\n") + (lines.length > 8 ? `\n…and ${lines.length - 8} more` : "");
+      Alert.alert(`Save ${sent.length} mark${sent.length === 1 ? "" : "s"}?`, shown, [
+        { text: "Back to editing", style: "cancel" },
+        { text: "Save", onPress: () => save.mutate(sent) },
+      ]);
+    },
+    onError: (error: unknown, sent) => {
+      if (error instanceof ApiError && error.status === 400) {
+        const bound = issuesByStudent(error.details, sent);
+        setServerErrors(bound);
+        const count = Object.keys(bound).length;
+        setBanner({
+          tone: "danger",
+          text: count > 0 ? `Not saved. ${count} mark${count === 1 ? "" : "s"} need fixing.` : describeSaveFailure(error),
+        });
+        return;
+      }
+      setBanner({ tone: "danger", text: describeSaveFailure(error) });
+    },
+  });
+
+  const busy = save.isPending || signOff.isPending || preview.isPending;
 
   const onChangeCell = useCallback(
-    (studentId: string, value: string, saved: number | null) => {
+    (studentId: string, value: string, savedText: string) => {
       if (!key) return;
       setBanner(null);
       setServerErrors((prev) => {
@@ -259,7 +307,7 @@ export default function MarkSheetScreen() {
       // A cell typed back to what is already saved (or left blank when nothing
       // is saved) is not a draft. Keeping it would hold sign-off back and warn
       // about "unsaved marks" that are not.
-      if (digits === (saved === null ? "" : String(saved))) {
+      if (digits === savedText) {
         clearDraftCells(key, [studentId]);
         return;
       }
@@ -277,8 +325,13 @@ export default function MarkSheetScreen() {
       });
       return;
     }
+    if (outOfError) {
+      setBanner({ tone: "danger", text: `Fix "Out of" before saving: ${outOfError}.` });
+      return;
+    }
     if (pending.rows.length === 0) return;
-    save.mutate(pending.rows);
+    if (pending.rows.some((r) => "raw" in r)) preview.mutate(pending.rows);
+    else save.mutate(pending.rows);
   };
 
   const confirmEdit = () => {
@@ -394,7 +447,10 @@ export default function MarkSheetScreen() {
       <Screen>
         {header}
         <ScreenHeader title={subject?.name ?? "Marks"} subtitle={arm?.name ?? null} />
-        <Notice tone="info">No students are enrolled in this class for {term?.name ?? "this term"}.</Notice>
+        <Notice tone="info">
+          No students are enrolled in this class for {term?.name ?? "this term"}. Your school
+          administrator enrols them; the mark sheet fills in once they do.
+        </Notice>
       </Screen>
     );
   }
@@ -460,6 +516,44 @@ export default function MarkSheetScreen() {
           })}
         </ScrollView>
 
+        {component && (
+          <View style={styles.outOfRow}>
+            <Text style={[styles.outOfLabel, { color: colors.foreground }]}>Out of</Text>
+            <TextInput
+              value={outOfText}
+              onChangeText={(text) => {
+                if (!outOfKey) return;
+                setBanner(null);
+                setDraftCell(outOfKey, "outOf", text.replace(/[^0-9]/g, ""));
+              }}
+              editable={!locked && !busy && !hasDraftMarks}
+              keyboardType="number-pad"
+              maxLength={4}
+              placeholder={String(component.weight)}
+              placeholderTextColor={colors.mutedForeground}
+              accessibilityLabel={`Out of, for ${component.label}. Blank means marks out of ${component.weight}.`}
+              style={[
+                styles.outOfInput,
+                {
+                  color: colors.foreground,
+                  backgroundColor: colors.card,
+                  borderColor: outOfError ? colors.danger : colors.border,
+                  opacity: !locked && !hasDraftMarks ? 1 : 0.6,
+                },
+              ]}
+            />
+            <Caption style={styles.outOfHint}>
+              {outOfError
+                ? outOfError
+                : hasDraftMarks
+                  ? "Save or clear your marks to change this."
+                  : outOf === null
+                    ? `Marks out of ${component.weight}. Type a total to enter them out of it instead.`
+                    : `SchoolKit converts each mark to ${component.weight} when you save.`}
+            </Caption>
+          </View>
+        )}
+
         {signedOffAt !== null && locked && (
           <Card style={styles.signedOff}>
             <Body>Signed off {formatDate(signedOffAt)}. These marks are locked.</Body>
@@ -479,9 +573,10 @@ export default function MarkSheetScreen() {
         >
           {rows.map((row, index) => {
             const studentId = row.student.id;
-            const saved = component ? savedScore(row, component.id) : null;
+            const savedText = component ? savedCellText(row, component.id, outOf) : "";
             const draftValue = draft[studentId];
-            const value = draftValue ?? (saved === null ? "" : String(saved));
+            const value = draftValue ?? savedText;
+            const note = component && outOf !== null ? savedNote(row, component) : null;
             const error = serverErrors[studentId] ?? (draftValue !== undefined ? pending.errors[studentId] : undefined);
             const isDirty = pending.dirtyStudentIds.includes(studentId);
             const next = rows[index + 1]?.student.id;
@@ -508,7 +603,7 @@ export default function MarkSheetScreen() {
                         inputs.current[studentId] = input;
                       }}
                       value={value}
-                      onChangeText={(text) => onChangeCell(studentId, text, saved)}
+                      onChangeText={(text) => onChangeCell(studentId, text, savedText)}
                       editable={!locked && !busy}
                       keyboardType="number-pad"
                       returnKeyType={next ? "next" : "done"}
@@ -516,9 +611,9 @@ export default function MarkSheetScreen() {
                       onSubmitEditing={() => {
                         if (next) inputs.current[next]?.focus();
                       }}
-                      maxLength={3}
+                      maxLength={outOf === null ? 3 : 4}
                       selectTextOnFocus
-                      accessibilityLabel={`${component?.label ?? "Mark"} for ${studentName(row.student)}, out of ${component?.weight ?? ""}`}
+                      accessibilityLabel={`${component?.label ?? "Mark"} for ${studentName(row.student)}, out of ${outOf ?? component?.weight ?? ""}`}
                       style={[
                         styles.input,
                         {
@@ -530,11 +625,12 @@ export default function MarkSheetScreen() {
                       ]}
                     />
                     <Text style={[styles.weight, { color: colors.mutedForeground }]}>
-                      /{component?.weight ?? ""}
+                      /{outOf ?? component?.weight ?? ""}
                     </Text>
                   </View>
                 </View>
                 {error ? <Text style={[styles.error, { color: colors.danger }]}>{error}</Text> : null}
+                {!error && note ? <Caption>{note}</Caption> : null}
                 {open && (
                   <View style={styles.summary}>
                     {components.map((c) => {
@@ -631,6 +727,18 @@ const styles = StyleSheet.create({
   },
   weight: { fontFamily: fonts.sans, fontSize: fontSizes.body, minWidth: 28 },
   error: { fontFamily: fonts.sans, fontSize: fontSizes.caption },
+  outOfRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, flexWrap: "wrap", marginTop: spacing.sm },
+  outOfLabel: { fontFamily: fonts.sansSemibold, fontSize: fontSizes.body },
+  outOfInput: {
+    width: 72,
+    minHeight: 44,
+    borderWidth: 1,
+    borderRadius: radii.md,
+    textAlign: "center",
+    fontFamily: fonts.sansSemibold,
+    fontSize: fontSizes.body,
+  },
+  outOfHint: { flex: 1, minWidth: 160 },
   summary: { gap: spacing.xs, paddingTop: spacing.xs },
   actions: { gap: spacing.sm, paddingTop: spacing.sm },
 });

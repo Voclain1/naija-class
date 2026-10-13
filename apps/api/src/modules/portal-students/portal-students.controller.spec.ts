@@ -6,6 +6,7 @@ import { INestApplication, Global, Module } from "@nestjs/common";
 import request from "supertest";
 
 import { basePrisma, withTenant } from "@school-kit/db";
+import { lagosTodayIso } from "@school-kit/types";
 
 import { HttpExceptionFilter } from "../../common/http-exception.filter";
 import { createGuardianSession } from "../../common/auth/guardian-sessions";
@@ -257,6 +258,7 @@ describe("PortalStudentsController (Phase 4 / Slice 3)", () => {
       .set("Authorization", `Bearer ${tokenA1}`);
     expect(res.status).toBe(200);
     expect(res.body.data).toHaveLength(1);
+    // The list adds one field the detail does not: today's register mark.
     expect(Object.keys(res.body.data[0]).sort()).toEqual(
       [
         "id",
@@ -271,8 +273,47 @@ describe("PortalStudentsController (Phase 4 / Slice 3)", () => {
         "isPrimary",
         "canPickup",
         "currentEnrollment",
+        "todayAttendance",
       ].sort(),
     );
+  });
+
+  // The absence alert says "a child was marked absent today"; the list is
+  // where a family sees which (pre-build audit, 2026-10-13).
+  it("each child carries today's register mark, and only today's", async () => {
+    const today = lagosTodayIso();
+    await withTenant(schoolA, async (db) => {
+      await db.attendanceRecord.create({
+        data: {
+          schoolId: schoolA,
+          studentId: studentA1,
+          classArmId: cryptoModule.randomUUID(),
+          termId: cryptoModule.randomUUID(),
+          date: new Date(`${today}T00:00:00.000Z`),
+          status: "ABSENT",
+          markedBy: cryptoModule.randomUUID(),
+        },
+      });
+      // Yesterday's mark for the other family's child must not show as today's.
+      const yesterday = new Date(`${today}T00:00:00.000Z`);
+      yesterday.setUTCDate(yesterday.getUTCDate() - 1);
+      await db.attendanceRecord.create({
+        data: {
+          schoolId: schoolA,
+          studentId: studentA2,
+          classArmId: cryptoModule.randomUUID(),
+          termId: cryptoModule.randomUUID(),
+          date: yesterday,
+          status: "ABSENT",
+          markedBy: cryptoModule.randomUUID(),
+        },
+      });
+    });
+
+    const a1 = await request(app.getHttpServer()).get("/api/v1/portal/students").set("Authorization", `Bearer ${tokenA1}`);
+    expect(a1.body.data[0].todayAttendance).toBe("ABSENT");
+    const a2 = await request(app.getHttpServer()).get("/api/v1/portal/students").set("Authorization", `Bearer ${tokenA2}`);
+    expect(a2.body.data[0].todayAttendance).toBeNull();
   });
 
   it("SAME-SCHOOL cross-guardian block: guardian A1 cannot fetch A2's child, even though RLS alone would allow it (both in school A)", async () => {

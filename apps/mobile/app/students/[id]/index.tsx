@@ -10,7 +10,7 @@ import { getBankDetails, getStudent, listInvoices } from "../../../src/lib/api/p
 import { queryKeys } from "../../../src/lib/query/keys";
 import { runCheckout } from "../../../src/lib/payments/checkout";
 import { describeOutcome, type CheckoutOutcome } from "../../../src/lib/payments/poll";
-import { ApiNetworkError } from "../../../src/lib/api/client";
+import { ApiError, ApiNetworkError } from "../../../src/lib/api/client";
 import { useSession } from "../../../src/lib/auth/session";
 import { spacing } from "../../../src/theme/tokens";
 import {
@@ -98,7 +98,12 @@ export default function StudentDetailScreen() {
           ? // This is D9 in practice. The mutation was NOT queued for later:
             // it failed now, and the user is told now.
             "You're offline, so this payment wasn't started. Reconnect and try again."
-          : "We couldn't start that payment. Please try again.",
+          : error instanceof ApiError && error.status === 409
+            ? // A payment already under way for this invoice (the API's
+              // double-payment guard). Its own words say to wait; "try again"
+              // invited the repeated taps the guard exists to stop.
+              error.message
+            : "We couldn't start that payment. Please try again.",
       );
     },
   });

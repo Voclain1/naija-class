@@ -508,3 +508,26 @@ Behaviour tab in the web admin student view.
 
 13 integration tests against real Postgres, weighted towards who may touch it
 rather than the happy path.
+
+## Pre-build audit follow-ups (2026-10-13)
+
+Two gaps the audit before the next app build found in Parts A and C, both
+fixed:
+
+- **Which child was absent.** The absence alert says "A child was marked
+  absent today. Open the app to see." and opens the children list, but
+  nothing there said which child. `GET /portal/students` now carries
+  `todayAttendance` per child (today's register mark on the Lagos calendar
+  day, or null before the register is taken), and each child's card in the
+  app says "Marked absent today." (a warning), or late, excused or in
+  school. Optional on the DTO, so the detail endpoint and the web portal are
+  unchanged. Proven in `portal-students.controller.spec.ts` and
+  `apps/mobile/src/lib/family/attendance-today.spec.ts`.
+- **Teachers had no screen for behaviour.** C14 says the form teacher
+  writes and reads these, and the API has allowed any teacher of the child
+  since #351 (`assertTeachesStudent`), but the only screen was the admin's
+  student record. A teacher now opens a child from their own class list, on
+  the web (`/teacher/classes/[armId]/students/[studentId]`, reusing the
+  admin's Behaviour tab) and in the app (`app/staff/classes/behaviour/
+  [studentId].tsx`, the same `BehaviourCard`). The API still refuses a child
+  the teacher does not teach.
