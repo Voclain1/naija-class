@@ -13,6 +13,7 @@ import * as Sharing from "expo-sharing";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { LessonPlanDto, UpdateLessonPlanInput } from "@school-kit/types";
 
+import { LoadError } from "../../../src/components/load-error";
 import {
   staffGenerateQuiz,
   staffGetLessonPlan,
@@ -226,8 +227,7 @@ export default function LessonNoteScreen() {
         <CenteredMessage>
           {plan.isError ? (
             <>
-              <Notice tone="danger">We couldn&apos;t load this note. Try again shortly.</Notice>
-              <Button title="Try again" variant="secondary" onPress={() => void plan.refetch()} />
+              <LoadError error={plan.error} what="this note" onRetry={() => void plan.refetch()} />
             </>
           ) : (
             <Skeleton lines={5} />

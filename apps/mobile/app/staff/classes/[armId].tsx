@@ -4,6 +4,7 @@ import { Redirect, Stack, useLocalSearchParams } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
 import type { TeacherRosterStudentDto } from "@school-kit/types";
 
+import { LoadError } from "../../../src/components/load-error";
 import { staffArmRoster, staffTeacherScope } from "../../../src/lib/api/staff-attendance";
 import { ApiError } from "../../../src/lib/api/client";
 import { queryKeys } from "../../../src/lib/query/keys";
@@ -17,7 +18,6 @@ import {
   Skeleton,
 } from "../../../src/components/layout";
 import {
-  Button,
   CenteredMessage,
   Label,
   Notice,
@@ -116,11 +116,10 @@ export default function ClassRosterScreen() {
 
             {roster.isError && !roster.data && !outOfScope && (
               <CenteredMessage>
-                <Notice tone="danger">We couldn&apos;t load this class. Try again shortly.</Notice>
-                <Button
-                  title="Try again"
-                  variant="secondary"
-                  onPress={() => void roster.refetch()}
+                <LoadError
+                  error={roster.error}
+                  what="this class"
+                  onRetry={() => void roster.refetch()}
                 />
               </CenteredMessage>
             )}

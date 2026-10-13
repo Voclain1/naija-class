@@ -3,6 +3,7 @@ import { Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, TextInpu
 import { Redirect, Stack, useLocalSearchParams } from "expo-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
+import { LoadError } from "../../../src/components/load-error";
 import {
   staffApproveArm,
   staffBuildArm,
@@ -210,11 +211,10 @@ export default function ApprovalArmScreen() {
       <Screen>
         {header}
         <CenteredMessage>
-          <Notice tone="danger">We couldn&apos;t load this class. Try again shortly.</Notice>
-          <Button
-            title="Try again"
-            variant="secondary"
-            onPress={() => {
+          <LoadError
+            error={report.error ?? board.error}
+            what="this class"
+            onRetry={() => {
               void report.refetch();
               void board.refetch();
             }}

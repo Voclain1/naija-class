@@ -3,6 +3,7 @@ import { ScrollView, StyleSheet } from "react-native";
 import { Redirect, useRouter } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
 
+import { LoadError } from "../../../src/components/load-error";
 import { staffCompleteness } from "../../../src/lib/api/staff-approvals";
 import { queryKeys } from "../../../src/lib/query/keys";
 import { useSession } from "../../../src/lib/auth/session";
@@ -13,7 +14,7 @@ import {
   stageNeedsAction,
 } from "../../../src/lib/staff/approval-stage";
 import { spacing } from "../../../src/theme/tokens";
-import { Button, CenteredMessage, Notice, Screen } from "../../../src/components/ui";
+import { CenteredMessage, Screen } from "../../../src/components/ui";
 import {
   EmptyState,
   ListRow,
@@ -81,8 +82,7 @@ export default function ApprovalsScreen() {
 
         {report.isError && !report.data ? (
           <CenteredMessage>
-            <Notice tone="danger">We couldn&apos;t load the report cards. Try again shortly.</Notice>
-            <Button title="Try again" variant="secondary" onPress={() => void report.refetch()} />
+            <LoadError error={report.error} what="the report cards" onRetry={() => void report.refetch()} />
           </CenteredMessage>
         ) : null}
 

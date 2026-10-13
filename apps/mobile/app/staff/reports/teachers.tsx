@@ -3,6 +3,7 @@ import { ScrollView, StyleSheet } from "react-native";
 import { Redirect, Stack } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
 
+import { LoadError } from "../../../src/components/load-error";
 import { staffTeacherActivity } from "../../../src/lib/api/staff-reports";
 import { queryKeys } from "../../../src/lib/query/keys";
 import { useSession } from "../../../src/lib/auth/session";
@@ -10,7 +11,7 @@ import { hasPermission } from "../../../src/lib/auth/permissions";
 import { isSchoolAdmin } from "../../../src/lib/auth/roles";
 import { percent, teachersByOutstanding } from "../../../src/lib/staff/report-summary";
 import { spacing } from "../../../src/theme/tokens";
-import { Button, CenteredMessage, Notice, Screen } from "../../../src/components/ui";
+import { CenteredMessage, Notice, Screen } from "../../../src/components/ui";
 import { EmptyState, ListRow, ScreenHeader, Skeleton } from "../../../src/components/layout";
 
 // CP4d — recording activity, by teacher.
@@ -74,8 +75,7 @@ export default function TeacherActivityScreen() {
 
         {report.isError && !report.data ? (
           <CenteredMessage>
-            <Notice tone="danger">We couldn&apos;t load this. Try again shortly.</Notice>
-            <Button title="Try again" variant="secondary" onPress={() => void report.refetch()} />
+            <LoadError error={report.error} what="this" onRetry={() => void report.refetch()} />
           </CenteredMessage>
         ) : null}
 

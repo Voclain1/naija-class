@@ -3,13 +3,14 @@ import { ScrollView, StyleSheet, TextInput } from "react-native";
 import { Redirect, useRouter } from "expo-router";
 import { useInfiniteQuery } from "@tanstack/react-query";
 
+import { LoadError } from "../../../src/components/load-error";
 import { staffListStudents } from "../../../src/lib/api/staff-students";
 import { queryKeys } from "../../../src/lib/query/keys";
 import { useSession } from "../../../src/lib/auth/session";
 import { isSchoolAdmin } from "../../../src/lib/auth/roles";
 import { useTheme } from "../../../src/theme/theme-provider";
 import { fontSizes, fonts, radii, spacing } from "../../../src/theme/tokens";
-import { Button, CenteredMessage, Notice, Screen } from "../../../src/components/ui";
+import { Button, CenteredMessage, Screen } from "../../../src/components/ui";
 import {
   EmptyState,
   ListRow,
@@ -99,8 +100,7 @@ export default function StudentsScreen() {
 
             {students.isError && !students.data ? (
               <CenteredMessage>
-                <Notice tone="danger">We couldn&apos;t load students. Try again shortly.</Notice>
-                <Button title="Try again" variant="secondary" onPress={() => void students.refetch()} />
+                <LoadError error={students.error} what="students" onRetry={() => void students.refetch()} />
               </CenteredMessage>
             ) : null}
 

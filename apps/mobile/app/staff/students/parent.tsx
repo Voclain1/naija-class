@@ -3,6 +3,7 @@ import { Alert, KeyboardAvoidingView, Platform, ScrollView, Share, StyleSheet } 
 import { Redirect, Stack, useLocalSearchParams } from "expo-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
+import { LoadError } from "../../../src/components/load-error";
 import {
   staffGetGuardian,
   staffInviteGuardian,
@@ -159,8 +160,7 @@ export default function ParentScreen() {
       <Screen>
         {header}
         <CenteredMessage>
-          <Notice tone="danger">We couldn&apos;t load this parent. Try again shortly.</Notice>
-          <Button title="Try again" variant="secondary" onPress={() => void guardian.refetch()} />
+          <LoadError error={guardian.error} what="this parent" onRetry={() => void guardian.refetch()} />
         </CenteredMessage>
       </Screen>
     );

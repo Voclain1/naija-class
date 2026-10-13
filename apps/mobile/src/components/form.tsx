@@ -90,7 +90,7 @@ export function DateBoxes({
   error?: string | null;
 }) {
   const { colors } = useTheme();
-  function box(key: keyof DateBoxValues, placeholder: string, width: number) {
+  function box(key: keyof DateBoxValues, placeholder: string, flex: number) {
     return (
       <TextInput
         value={value[key]}
@@ -104,7 +104,7 @@ export function DateBoxes({
           styles.input,
           styles.dateBox,
           {
-            width,
+            flex,
             color: colors.foreground,
             backgroundColor: colors.card,
             borderColor: error ? colors.danger : colors.border,
@@ -117,9 +117,9 @@ export function DateBoxes({
     <View style={styles.field}>
       <Label>{label}</Label>
       <View style={styles.dateRow}>
-        {box("day", "Day", 64)}
-        {box("month", "Month", 72)}
-        {box("year", "Year", 92)}
+        {box("day", "Day", 1)}
+        {box("month", "Month", 1.2)}
+        {box("year", "Year", 1.4)}
       </View>
       <FieldError message={error} />
     </View>
@@ -188,8 +188,12 @@ const styles = StyleSheet.create({
     fontFamily: fonts.sans,
     fontSize: fontSizes.body,
   },
-  dateRow: { flexDirection: "row", gap: spacing.sm },
-  dateBox: { textAlign: "center" },
+  // The boxes share the row rather than taking fixed widths: at fixed widths
+  // "Month" was cut to "Montl" (mobile review, 2026-10-13), and wider fixed
+  // boxes would run past the edge of a 320-point phone. Capped so they do not
+  // stretch across a tablet.
+  dateRow: { flexDirection: "row", gap: spacing.sm, maxWidth: 320 },
+  dateBox: { textAlign: "center", minWidth: 0, paddingHorizontal: spacing.sm },
   chips: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
   chip: {
     borderWidth: 1,

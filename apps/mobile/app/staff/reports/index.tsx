@@ -3,6 +3,7 @@ import { Linking, ScrollView, StyleSheet } from "react-native";
 import { Redirect, useRouter } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
 
+import { LoadError } from "../../../src/components/load-error";
 import { staffCompleteness } from "../../../src/lib/api/staff-approvals";
 import { queryKeys } from "../../../src/lib/query/keys";
 import { useSession } from "../../../src/lib/auth/session";
@@ -11,7 +12,7 @@ import { isSchoolAdmin } from "../../../src/lib/auth/roles";
 import { laggingRegisters, laggingScores, percent } from "../../../src/lib/staff/report-summary";
 import { webUrl } from "../../../src/lib/web-handoff";
 import { spacing } from "../../../src/theme/tokens";
-import { Body, Button, Card, CenteredMessage, Notice, Screen } from "../../../src/components/ui";
+import { Body, Button, Card, CenteredMessage, Screen } from "../../../src/components/ui";
 import {
   EmptyState,
   ListRow,
@@ -90,8 +91,7 @@ export default function ReportsScreen() {
 
         {report.isError && !data ? (
           <CenteredMessage>
-            <Notice tone="danger">We couldn&apos;t load the report. Try again shortly.</Notice>
-            <Button title="Try again" variant="secondary" onPress={() => void report.refetch()} />
+            <LoadError error={report.error} what="the report" onRetry={() => void report.refetch()} />
           </CenteredMessage>
         ) : null}
 

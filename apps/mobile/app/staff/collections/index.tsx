@@ -3,6 +3,7 @@ import { Redirect, useRouter } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
 import { formatKobo } from "@school-kit/types";
 
+import { LoadError } from "../../../src/components/load-error";
 import { staffFinanceDashboard } from "../../../src/lib/api/staff-finance";
 import { queryKeys } from "../../../src/lib/query/keys";
 import { useSession } from "../../../src/lib/auth/session";
@@ -92,11 +93,10 @@ export default function CollectionsScreen() {
 
         {(termContext.isError || dashboard.isError) && !data && (
           <CenteredMessage>
-            <Notice tone="danger">We couldn&apos;t load collections. Try again shortly.</Notice>
-            <Button
-              title="Try again"
-              variant="secondary"
-              onPress={() => {
+            <LoadError
+              error={termContext.error ?? dashboard.error}
+              what="collections"
+              onRetry={() => {
                 void termContext.refetch();
                 void dashboard.refetch();
               }}

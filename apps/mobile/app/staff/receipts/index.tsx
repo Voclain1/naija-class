@@ -4,6 +4,7 @@ import { Redirect, Stack, useRouter } from "expo-router";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { formatKobo } from "@school-kit/types";
 
+import { LoadError } from "../../../src/components/load-error";
 import { staffListReceipts } from "../../../src/lib/api/staff-money";
 import { queryKeys } from "../../../src/lib/query/keys";
 import { useSession } from "../../../src/lib/auth/session";
@@ -82,8 +83,7 @@ export default function ReceiptsScreen() {
 
         {receipts.isError && !receipts.data ? (
           <CenteredMessage>
-            <Notice tone="danger">We couldn&apos;t load receipts. Try again shortly.</Notice>
-            <Button title="Try again" variant="secondary" onPress={() => void receipts.refetch()} />
+            <LoadError error={receipts.error} what="receipts" onRetry={() => void receipts.refetch()} />
           </CenteredMessage>
         ) : null}
 

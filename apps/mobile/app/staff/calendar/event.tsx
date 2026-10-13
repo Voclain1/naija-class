@@ -8,6 +8,7 @@ import {
   type SchoolEventCategory,
 } from "@school-kit/types";
 
+import { LoadError } from "../../../src/components/load-error";
 import {
   staffCreateSchoolEvent,
   staffDeleteSchoolEvent,
@@ -172,12 +173,16 @@ export default function SchoolEventScreen() {
       <Screen>
         {header}
         <CenteredMessage>
-          <Notice tone="danger">
-            {existing.isError
-              ? "We couldn't load this event. Try again shortly."
-              : "This event no longer exists — someone may have removed it."}
-          </Notice>
-          <Button title="Try again" variant="secondary" onPress={() => void existing.refetch()} />
+          {existing.isError ? (
+            <LoadError
+              error={existing.error}
+              what="this event"
+              notFound="This event no longer exists — someone may have removed it."
+              onRetry={() => void existing.refetch()}
+            />
+          ) : (
+            <Notice tone="info">This event no longer exists — someone may have removed it.</Notice>
+          )}
         </CenteredMessage>
       </Screen>
     );

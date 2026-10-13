@@ -3,6 +3,7 @@ import { ScrollView, StyleSheet } from "react-native";
 import { Redirect, useRouter } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
 
+import { LoadError } from "../../../src/components/load-error";
 import { staffCalendar } from "../../../src/lib/api/staff-schedule";
 import { queryKeys } from "../../../src/lib/query/keys";
 import { useSession } from "../../../src/lib/auth/session";
@@ -15,7 +16,6 @@ import { ScreenHeader, Skeleton } from "../../../src/components/layout";
 import {
   Button,
   CenteredMessage,
-  Notice,
   Screen,
 } from "../../../src/components/ui";
 
@@ -117,8 +117,7 @@ export default function StaffCalendarScreen() {
 
         {calendar.isError && !calendar.data && (
           <CenteredMessage>
-            <Notice tone="danger">We couldn&apos;t load the calendar. Try again shortly.</Notice>
-            <Button title="Try again" variant="secondary" onPress={() => void calendar.refetch()} />
+            <LoadError error={calendar.error} what="the calendar" onRetry={() => void calendar.refetch()} />
           </CenteredMessage>
         )}
       </ScrollView>

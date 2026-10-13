@@ -3,6 +3,7 @@ import { Redirect, Stack } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
 import type { StudentAttendanceTermDto } from "@school-kit/types";
 
+import { LoadError } from "../../src/components/load-error";
 import { listStudentAttendance } from "../../src/lib/api/student-portal";
 import { queryKeys } from "../../src/lib/query/keys";
 import { useSession } from "../../src/lib/auth/session";
@@ -14,7 +15,6 @@ import {
   CenteredMessage,
   Heading,
   Label,
-  Notice,
   Screen,
 } from "../../src/components/ui";
 import { FreshnessLabel } from "../../src/components/freshness-label";
@@ -56,9 +56,7 @@ export default function MyAttendanceScreen() {
 
         {query.isError && !query.data && (
           <CenteredMessage>
-            <Notice tone="danger">
-              We couldn&apos;t load your attendance. Try again shortly.
-            </Notice>
+            <LoadError error={query.error} what="your attendance" />
           </CenteredMessage>
         )}
 
