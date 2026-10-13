@@ -31,6 +31,7 @@ import {
 import { useTheme } from "../../../src/theme/theme-provider";
 import { fontSizes, fonts, radii, spacing } from "../../../src/theme/tokens";
 import { EmptyState, ScreenHeader, Skeleton } from "../../../src/components/layout";
+import { LoadError } from "../../../src/components/load-error";
 import { Appear, Settle } from "../../../src/components/motion";
 import {
   Body,
@@ -271,7 +272,11 @@ export default function FormCommentsScreen() {
   }
 
   const loading = scope.isPending || comments.isPending || roster.isPending;
-  const loadFailed = comments.isError && !comments.data;
+  // Scope and roster are checked too: when the scope fails the comments query
+  // never starts (it waits for the term), and the screen showed a skeleton
+  // forever.
+  const scopeFailed = (scope.isError && !scope.data) || (roster.isError && !roster.data);
+  const loadFailed = scopeFailed || (comments.isError && !comments.data);
 
   if (loading || loadFailed) {
     return (
@@ -280,8 +285,21 @@ export default function FormCommentsScreen() {
         <CenteredMessage>
           {loadFailed ? (
             <>
-              <Notice tone="danger">{describeFailure(comments.error, "We couldn't load these comments.")}</Notice>
-              <Button title="Try again" variant="secondary" onPress={() => void comments.refetch()} />
+              {scopeFailed ? (
+                <LoadError
+                  error={scope.error ?? roster.error}
+                  what="this class"
+                  onRetry={() => {
+                    void scope.refetch();
+                    void roster.refetch();
+                  }}
+                />
+              ) : (
+                <>
+                  <Notice tone="danger">{describeFailure(comments.error, "We couldn't load these comments.")}</Notice>
+                  <Button title="Try again" variant="secondary" onPress={() => void comments.refetch()} />
+                </>
+              )}
             </>
           ) : (
             <Skeleton lines={4} />

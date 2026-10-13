@@ -12,6 +12,7 @@ import {
 import { Redirect, useRouter } from "expo-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
+import { LoadError } from "../../../src/components/load-error";
 import { staffTeacherScope } from "../../../src/lib/api/staff-attendance";
 import {
   staffCreateLessonPlan,
@@ -185,6 +186,16 @@ export default function LessonNotesScreen() {
                 Stopping may still cost your school for the work already done.
               </Label>
             </Card>
+          ) : !scope.isPending && arms.length === 0 ? (
+            // Without a class the form below had an empty class picker and no
+            // word on why (mobile review, 2026-10-13). Homework says this too.
+            <Card style={styles.form}>
+              <Body>New lesson note</Body>
+              <Notice tone="info">
+                You have no classes assigned yet, so there is nothing to write a note for. Ask your
+                school administrator.
+              </Notice>
+            </Card>
           ) : (
             <Card style={styles.form}>
               <Body>New lesson note</Body>
@@ -315,8 +326,7 @@ export default function LessonNotesScreen() {
 
           {plans.isError && !plans.data && (
             <CenteredMessage>
-              <Notice tone="danger">We couldn&apos;t load your notes. Try again shortly.</Notice>
-              <Button title="Try again" variant="secondary" onPress={() => void plans.refetch()} />
+              <LoadError error={plans.error} what="your notes" onRetry={() => void plans.refetch()} />
             </CenteredMessage>
           )}
 

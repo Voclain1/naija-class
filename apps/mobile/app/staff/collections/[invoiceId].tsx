@@ -9,6 +9,7 @@ import {
   type PaymentLinkStateDto,
 } from "@school-kit/types";
 
+import { describeLoadError } from "../../../src/lib/api/load-error";
 import { staffDebtors } from "../../../src/lib/api/staff-finance";
 import { staffCreatePaymentLink, staffPaymentLink, staffSendReminders } from "../../../src/lib/api/staff-money";
 import { ApiError, ApiNetworkError } from "../../../src/lib/api/client";
@@ -133,7 +134,7 @@ export default function DebtorScreen() {
         <CenteredMessage>
           <Notice tone="info">
             {debtors.isError
-              ? "We couldn't load this invoice. Try again shortly."
+              ? describeLoadError(debtors.error, { what: "this invoice" }).message
               : "This invoice is no longer unpaid — it may have just been settled."}
           </Notice>
           <Button title="Back to the list" variant="secondary" onPress={() => router.back()} />

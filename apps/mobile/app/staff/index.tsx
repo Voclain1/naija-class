@@ -4,6 +4,7 @@ import { Redirect, useRouter } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
 import { formatKobo, formatMinuteOfDay, type DashboardAlertType } from "@school-kit/types";
 
+import { LoadError } from "../../src/components/load-error";
 import { staffTeacherScope } from "../../src/lib/api/staff-attendance";
 import { staffMyTimetable } from "../../src/lib/api/staff-schedule";
 import { staffAdminDashboard } from "../../src/lib/api/staff-admin";
@@ -231,7 +232,7 @@ export default function StaffDashboardScreen() {
           </Notice>
         ) : null}
         {canSeeMoney && finance.isError && !finance.data ? (
-          <Notice tone="danger">We couldn&apos;t load this term&apos;s figures. Try again shortly.</Notice>
+          <LoadError error={finance.error} what="this term's figures" />
         ) : null}
         {finance.data ? (
           <Card style={styles.band}>
@@ -345,9 +346,7 @@ export default function StaffDashboardScreen() {
 
         {/* ---- TEACHER band (teacher role, D32) ---- */}
         {teacher && scope.isError && !data ? (
-          <Notice tone="danger">
-            We couldn&apos;t load your classes. Try again shortly.
-          </Notice>
+          <LoadError error={scope.error} what="your classes" />
         ) : null}
 
         {hasToday ? (

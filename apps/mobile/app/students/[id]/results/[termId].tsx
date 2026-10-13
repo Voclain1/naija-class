@@ -2,6 +2,7 @@ import { ScrollView, StyleSheet, View } from "react-native";
 import { Redirect, Stack, useLocalSearchParams } from "expo-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
+import { LoadError } from "../../../../src/components/load-error";
 import { getResult, unlockResult } from "../../../../src/lib/api/portal";
 import { queryKeys } from "../../../../src/lib/query/keys";
 import { useSession } from "../../../../src/lib/auth/session";
@@ -12,7 +13,6 @@ import {
   CenteredMessage,
   Heading,
   Label,
-  Notice,
   Screen,
 } from "../../../../src/components/ui";
 import { FreshnessLabel } from "../../../../src/components/freshness-label";
@@ -98,9 +98,7 @@ export default function ResultDetailScreen() {
 
         {resultQuery.isError && !result && !isResultLocked(resultQuery.error) && (
           <CenteredMessage>
-            <Notice tone="danger">
-              We couldn&apos;t load this report card. Try again shortly.
-            </Notice>
+            <LoadError error={resultQuery.error} what="this report card" notFound="This report card isn't available. It may not have been released yet." />
           </CenteredMessage>
         )}
 

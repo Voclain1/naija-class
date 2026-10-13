@@ -11,6 +11,7 @@ import { Redirect, Stack, useFocusEffect, useLocalSearchParams } from "expo-rout
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { AssessmentFeedRowDto, SubjectCommentRowDto } from "@school-kit/types";
 
+import { LoadError } from "../../../../../src/components/load-error";
 import { staffTeacherScope } from "../../../../../src/lib/api/staff-attendance";
 import { staffGradebookFeed } from "../../../../../src/lib/api/staff-gradebook";
 import {
@@ -300,7 +301,10 @@ export default function SubjectCommentsScreen() {
   }
 
   const loading = scope.isPending || feed.isPending || comments.isPending;
-  const loadFailed = (feed.isError && !feed.data) || (comments.isError && !comments.data);
+  // The scope is checked too: when it fails, feed and comments never start
+  // (both wait for its term), and the screen showed a skeleton forever.
+  const loadFailed =
+    (scope.isError && !scope.data) || (feed.isError && !feed.data) || (comments.isError && !comments.data);
 
   if (loading || loadFailed) {
     return (
@@ -309,11 +313,11 @@ export default function SubjectCommentsScreen() {
         <CenteredMessage>
           {loadFailed ? (
             <>
-              <Notice tone="danger">We couldn&apos;t load these comments. Try again shortly.</Notice>
-              <Button
-                title="Try again"
-                variant="secondary"
-                onPress={() => {
+              <LoadError
+                error={scope.error ?? feed.error ?? comments.error}
+                what="these comments"
+                onRetry={() => {
+                  void scope.refetch();
                   void feed.refetch();
                   void comments.refetch();
                 }}

@@ -8,6 +8,7 @@ import {
   type TeacherTimetableDto,
 } from "@school-kit/types";
 
+import { LoadError } from "../../../src/components/load-error";
 import { staffMyTimetable } from "../../../src/lib/api/staff-schedule";
 import { queryKeys } from "../../../src/lib/query/keys";
 import { useSession } from "../../../src/lib/auth/session";
@@ -102,11 +103,10 @@ export default function TimetableScreen() {
         <CenteredMessage>
           {timetable.isError ? (
             <>
-              <Notice tone="danger">We couldn&apos;t load your timetable. Try again shortly.</Notice>
-              <Button
-                title="Try again"
-                variant="secondary"
-                onPress={() => void timetable.refetch()}
+              <LoadError
+                error={timetable.error}
+                what="your timetable"
+                onRetry={() => void timetable.refetch()}
               />
             </>
           ) : (

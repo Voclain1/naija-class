@@ -14,6 +14,7 @@ import { Redirect, Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { AssessmentFeedRowDto, GradingComponentDto } from "@school-kit/types";
 
+import { LoadError } from "../../../../../src/components/load-error";
 import { staffTeacherScope } from "../../../../../src/lib/api/staff-attendance";
 import {
   staffGradebookFeed,
@@ -357,11 +358,10 @@ export default function MarkSheetScreen() {
         <CenteredMessage>
           {loadFailed ? (
             <>
-              <Notice tone="danger">We couldn&apos;t load these marks. Try again shortly.</Notice>
-              <Button
-                title="Try again"
-                variant="secondary"
-                onPress={() => {
+              <LoadError
+                error={scope.error ?? scheme.error ?? feed.error}
+                what="these marks"
+                onRetry={() => {
                   void scope.refetch();
                   void scheme.refetch();
                   void feed.refetch();

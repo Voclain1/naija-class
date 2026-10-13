@@ -13,6 +13,7 @@ import { Redirect } from "expo-router";
 import * as DocumentPicker from "expo-document-picker";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
+import { LoadError } from "../../../src/components/load-error";
 import { staffTeacherScope } from "../../../src/lib/api/staff-attendance";
 import {
   staffApproveCurriculum,
@@ -253,135 +254,146 @@ export default function CurriculumScreen() {
         <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
           <Card style={styles.form}>
             <Body>Add a scheme of work</Body>
+            {!scope.isPending && arms.length === 0 ? (
+              // Without a class the form had an empty class picker and no word
+              // on why (mobile review, 2026-10-13).
+              <Notice tone="info">
+                You have no classes assigned yet, so there is no class to add a scheme of work
+                for. Ask your school administrator.
+              </Notice>
+            ) : (
+              <>
 
-            <Label>Class</Label>
-            <View style={styles.chips}>
-              {arms.map((arm) => {
-                const active = arm.id === armId;
-                return (
-                  <Pressable
-                    key={arm.id}
-                    accessibilityRole="button"
-                    accessibilityState={{ selected: active }}
-                    onPress={() => {
-                      setArmId(arm.id);
-                      setSubjectId(null);
-                    }}
-                    style={[
-                      styles.chip,
-                      {
-                        borderColor: colors.primary,
-                        backgroundColor: active ? colors.primary : "transparent",
-                      },
-                    ]}
-                  >
-                    <Text
+              <Label>Class</Label>
+              <View style={styles.chips}>
+                {arms.map((arm) => {
+                  const active = arm.id === armId;
+                  return (
+                    <Pressable
+                      key={arm.id}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected: active }}
+                      onPress={() => {
+                        setArmId(arm.id);
+                        setSubjectId(null);
+                      }}
                       style={[
-                        styles.chipText,
-                        { color: active ? colors.primaryForeground : colors.primary },
+                        styles.chip,
+                        {
+                          borderColor: colors.primary,
+                          backgroundColor: active ? colors.primary : "transparent",
+                        },
                       ]}
                     >
-                      {arm.name}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </View>
+                      <Text
+                        style={[
+                          styles.chipText,
+                          { color: active ? colors.primaryForeground : colors.primary },
+                        ]}
+                      >
+                        {arm.name}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
 
-            {armId ? (
-              <>
-                <Label>Subject</Label>
-                {subjects.length === 0 ? (
-                  <Body muted>You teach no subject in that class.</Body>
-                ) : (
-                  <View style={styles.chips}>
-                    {subjects.map((subject) => {
-                      const active = subject.id === subjectId;
-                      return (
-                        <Pressable
-                          key={subject.id}
-                          accessibilityRole="button"
-                          accessibilityState={{ selected: active }}
-                          onPress={() => setSubjectId(subject.id)}
-                          style={[
-                            styles.chip,
-                            {
-                              borderColor: colors.primary,
-                              backgroundColor: active ? colors.primary : "transparent",
-                            },
-                          ]}
-                        >
-                          <Text
+              {armId ? (
+                <>
+                  <Label>Subject</Label>
+                  {subjects.length === 0 ? (
+                    <Body muted>You teach no subject in that class.</Body>
+                  ) : (
+                    <View style={styles.chips}>
+                      {subjects.map((subject) => {
+                        const active = subject.id === subjectId;
+                        return (
+                          <Pressable
+                            key={subject.id}
+                            accessibilityRole="button"
+                            accessibilityState={{ selected: active }}
+                            onPress={() => setSubjectId(subject.id)}
                             style={[
-                              styles.chipText,
-                              { color: active ? colors.primaryForeground : colors.primary },
+                              styles.chip,
+                              {
+                                borderColor: colors.primary,
+                                backgroundColor: active ? colors.primary : "transparent",
+                              },
                             ]}
                           >
-                            {subject.name}
-                          </Text>
-                        </Pressable>
-                      );
-                    })}
-                  </View>
-                )}
+                            <Text
+                              style={[
+                                styles.chipText,
+                                { color: active ? colors.primaryForeground : colors.primary },
+                              ]}
+                            >
+                              {subject.name}
+                            </Text>
+                          </Pressable>
+                        );
+                      })}
+                    </View>
+                  )}
+                </>
+              ) : null}
+
+              <Label>Title</Label>
+              <TextInput
+                value={title}
+                onChangeText={setTitle}
+                placeholder="e.g. JSS2 Basic Science, first term"
+                placeholderTextColor={colors.mutedForeground}
+                maxLength={200}
+                accessibilityLabel="Document title"
+                style={[
+                  styles.input,
+                  {
+                    color: colors.foreground,
+                    backgroundColor: colors.card,
+                    borderColor: colors.border,
+                  },
+                ]}
+              />
+
+              <Label>Type or paste the scheme of work</Label>
+              <TextInput
+                value={content}
+                onChangeText={setContent}
+                multiline
+                placeholder="Paste the weekly topics here."
+                placeholderTextColor={colors.mutedForeground}
+                accessibilityLabel="Scheme of work text"
+                style={[
+                  styles.textarea,
+                  {
+                    color: colors.foreground,
+                    backgroundColor: colors.card,
+                    borderColor: colors.border,
+                  },
+                ]}
+              />
+              <Button
+                title="Send this text"
+                loading={paste.isPending}
+                disabled={!canPaste}
+                onPress={() => paste.mutate()}
+              />
+
+              {/* D26 — said before anyone tries, not discovered afterwards. */}
+              <Notice tone="info">
+                You can also attach a PDF or Word file, up to 10 MB. A photograph of a syllabus
+                cannot be read — type or paste the words instead.
+              </Notice>
+              <Button
+                title="Attach a PDF or Word file"
+                variant="secondary"
+                loading={upload.isPending}
+                disabled={!canUpload}
+                onPress={() => upload.mutate()}
+              />
+              {!targeted ? <Label>Choose a class and subject first.</Label> : null}
               </>
-            ) : null}
-
-            <Label>Title</Label>
-            <TextInput
-              value={title}
-              onChangeText={setTitle}
-              placeholder="e.g. JSS2 Basic Science, first term"
-              placeholderTextColor={colors.mutedForeground}
-              maxLength={200}
-              accessibilityLabel="Document title"
-              style={[
-                styles.input,
-                {
-                  color: colors.foreground,
-                  backgroundColor: colors.card,
-                  borderColor: colors.border,
-                },
-              ]}
-            />
-
-            <Label>Type or paste the scheme of work</Label>
-            <TextInput
-              value={content}
-              onChangeText={setContent}
-              multiline
-              placeholder="Paste the weekly topics here."
-              placeholderTextColor={colors.mutedForeground}
-              accessibilityLabel="Scheme of work text"
-              style={[
-                styles.textarea,
-                {
-                  color: colors.foreground,
-                  backgroundColor: colors.card,
-                  borderColor: colors.border,
-                },
-              ]}
-            />
-            <Button
-              title="Send this text"
-              loading={paste.isPending}
-              disabled={!canPaste}
-              onPress={() => paste.mutate()}
-            />
-
-            {/* D26 — said before anyone tries, not discovered afterwards. */}
-            <Notice tone="info">
-              You can also attach a PDF or Word file, up to 10 MB. A photograph of a syllabus
-              cannot be read — type or paste the words instead.
-            </Notice>
-            <Button
-              title="Attach a PDF or Word file"
-              variant="secondary"
-              loading={upload.isPending}
-              disabled={!canUpload}
-              onPress={() => upload.mutate()}
-            />
-            {!targeted ? <Label>Choose a class and subject first.</Label> : null}
+            )}
           </Card>
 
           {notice ? <Notice tone="info">{notice}</Notice> : null}
@@ -404,11 +416,10 @@ export default function CurriculumScreen() {
 
           {documents.isError && !documents.data && (
             <CenteredMessage>
-              <Notice tone="danger">We couldn&apos;t load this. Try again shortly.</Notice>
-              <Button
-                title="Try again"
-                variant="secondary"
-                onPress={() => void documents.refetch()}
+              <LoadError
+                error={documents.error}
+                what="your school's schemes of work"
+                onRetry={() => void documents.refetch()}
               />
             </CenteredMessage>
           )}

@@ -157,7 +157,7 @@ export default function NewStudentScreen() {
     );
   }
 
-  function dobBox(key: "dobDay" | "dobMonth" | "dobYear", placeholder: string, width: number) {
+  function dobBox(key: "dobDay" | "dobMonth" | "dobYear", placeholder: string, flex: number) {
     return (
       <TextInput
         value={values[key]}
@@ -171,7 +171,7 @@ export default function NewStudentScreen() {
           styles.input,
           styles.dobBox,
           {
-            width,
+            flex,
             color: colors.foreground,
             backgroundColor: colors.card,
             borderColor: errors.dateOfBirth ? colors.danger : colors.border,
@@ -219,9 +219,9 @@ export default function NewStudentScreen() {
             <View style={styles.field}>
               <Label>Date of birth</Label>
               <View style={styles.dobRow}>
-                {dobBox("dobDay", "Day", 64)}
-                {dobBox("dobMonth", "Month", 72)}
-                {dobBox("dobYear", "Year", 92)}
+                {dobBox("dobDay", "Day", 1)}
+                {dobBox("dobMonth", "Month", 1.2)}
+                {dobBox("dobYear", "Year", 1.4)}
               </View>
               {errors.dateOfBirth ? (
                 <Text style={[styles.error, { color: colors.danger }]}>{errors.dateOfBirth}</Text>
@@ -356,8 +356,9 @@ const styles = StyleSheet.create({
     fontFamily: fonts.sans,
     fontSize: fontSizes.body,
   },
-  dobRow: { flexDirection: "row", gap: spacing.sm },
-  dobBox: { textAlign: "center" },
+  // Shared row, not fixed widths: see dateRow in src/components/form.tsx.
+  dobRow: { flexDirection: "row", gap: spacing.sm, maxWidth: 320 },
+  dobBox: { textAlign: "center", minWidth: 0, paddingHorizontal: spacing.sm },
   chips: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
   chip: {
     borderWidth: 1,

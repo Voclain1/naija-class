@@ -3,6 +3,7 @@ import { ScrollView, StyleSheet } from "react-native";
 import { Redirect, useRouter } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
 
+import { LoadError } from "../../../src/components/load-error";
 import { staffTeacherScope } from "../../../src/lib/api/staff-attendance";
 import { queryKeys } from "../../../src/lib/query/keys";
 import { useSession } from "../../../src/lib/auth/session";
@@ -19,7 +20,6 @@ import {
   Skeleton,
 } from "../../../src/components/layout";
 import {
-  Button,
   CenteredMessage,
   Notice,
   Screen,
@@ -76,8 +76,7 @@ export default function GradebookPickerScreen() {
 
         {scope.isError && !data && (
           <CenteredMessage>
-            <Notice tone="danger">We couldn&apos;t load your subjects. Try again shortly.</Notice>
-            <Button title="Try again" variant="secondary" onPress={() => void scope.refetch()} />
+            <LoadError error={scope.error} what="your subjects" onRetry={() => void scope.refetch()} />
           </CenteredMessage>
         )}
 
