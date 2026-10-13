@@ -6,6 +6,7 @@ import {
   type FamilyTimetableDto,
 } from "@school-kit/types";
 
+import { EmptyState } from "./layout";
 import { spacing } from "../theme/tokens";
 import { Body, Card, Heading, Label } from "./ui";
 
@@ -28,10 +29,7 @@ export function TimetableDays({ data }: { data: FamilyTimetableDto }) {
   if (data.state !== "PUBLISHED" || !data.grid) {
     const empty = EMPTY[data.state as keyof typeof EMPTY];
     return (
-      <Card>
-        <Heading>{empty.title}</Heading>
-        <Body muted>{empty.body(data)}</Body>
-      </Card>
+      <EmptyState icon="calendar-outline" title={empty.title} body={empty.body(data)} />
     );
   }
 

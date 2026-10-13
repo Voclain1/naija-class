@@ -3,6 +3,7 @@ import { Redirect, Stack } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
 import { formatKobo, invoiceStatusLabel, type PortalInvoiceDto } from "@school-kit/types";
 
+import { EmptyState } from "../../src/components/layout";
 import { LoadError } from "../../src/components/load-error";
 import { listStudentFees } from "../../src/lib/api/student-portal";
 import { queryKeys } from "../../src/lib/query/keys";
@@ -77,12 +78,11 @@ export default function MyFeesScreen() {
             <FreshnessLabel updatedAt={query.dataUpdatedAt} />
 
             {invoices.length === 0 ? (
-              <Card>
-                <Heading>No invoices yet</Heading>
-                <Body>
-                  When your school issues a fee invoice, it will appear here.
-                </Body>
-              </Card>
+              <EmptyState
+                icon="wallet-outline"
+                title="No invoices yet"
+                body="When your school issues a fee invoice, it will appear here."
+              />
             ) : (
               invoices.map((invoice) => {
                 const owed = outstanding(invoice);

@@ -32,6 +32,7 @@ import { EmptyState, ScreenHeader, Skeleton } from "../../../src/components/layo
 import {
   Body,
   Button,
+  Caption,
   Card,
   CenteredMessage,
   Label,
@@ -391,7 +392,7 @@ export default function CurriculumScreen() {
                 disabled={!canUpload}
                 onPress={() => upload.mutate()}
               />
-              {!targeted ? <Label>Choose a class and subject first.</Label> : null}
+              {!targeted ? <Caption>Choose a class and subject first.</Caption> : null}
               </>
             )}
           </Card>

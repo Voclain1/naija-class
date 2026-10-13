@@ -5,6 +5,7 @@ import {
   Text,
   View,
   type StyleProp,
+  type TextStyle,
   type ViewStyle,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -142,6 +143,21 @@ export function Label({ children }: { children: ReactNode }) {
   );
 }
 
+/**
+ * Small muted text in normal case: a row's subtitle, an empty state's body, a
+ * hint under a figure. Label stays for short labels ("TOTAL", "FIRST TERM");
+ * a whole sentence in small capitals is hard to read (mobile review,
+ * 2026-10-13).
+ */
+export function Caption({ children, style }: { children: ReactNode; style?: StyleProp<TextStyle> }) {
+  const { colors } = useTheme();
+  return (
+    <Text style={[styles.caption, { color: colors.mutedForeground }, style]}>
+      {children}
+    </Text>
+  );
+}
+
 export function Button({
   title,
   onPress,
@@ -245,6 +261,11 @@ const styles = StyleSheet.create({
     fontSize: fontSizes.caption,
     textTransform: "uppercase",
     letterSpacing: 0.8,
+  },
+  caption: {
+    fontFamily: fonts.sans,
+    fontSize: fontSizes.caption,
+    lineHeight: Math.round(fontSizes.caption * 1.4),
   },
   button: {
     minHeight: 48, // comfortably above the 44pt minimum tap target

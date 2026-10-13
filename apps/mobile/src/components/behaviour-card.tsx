@@ -14,7 +14,7 @@ import { useTheme } from "../theme/theme-provider";
 import { fontSizes, fonts, radii, spacing } from "../theme/tokens";
 import { ChoiceChips, TextField } from "./form";
 import { Skeleton } from "./layout";
-import { Body, Button, Card, Heading, Label, Notice } from "./ui";
+import { Body, Button, Caption, Card, Heading, Label, Notice } from "./ui";
 
 // One child's behaviour record (docs/modules/the-school-day.md Part C), on the
 // staff student page — where a teacher already is when they need it.
@@ -113,7 +113,7 @@ export function BehaviourCard({
 
       {/* Said plainly, on the screen, because a teacher deciding how frankly to
           write needs to know who can read it. */}
-      <Label>Staff only. Parents do not see these.</Label>
+      <Caption>Staff only. Parents do not see these.</Caption>
 
       {list.isPending ? (
         <Skeleton lines={2} />
@@ -174,7 +174,7 @@ export function BehaviourCard({
             placeholder="Write it as you would say it to a colleague."
             autoCapitalize="sentences"
           />
-          <Label>Recorded as happening today ({when(occurredOn)}).</Label>
+          <Caption>Recorded as happening today ({when(occurredOn)}).</Caption>
           <Button
             title={save.isPending ? "Saving…" : "Save record"}
             onPress={() => save.mutate()}

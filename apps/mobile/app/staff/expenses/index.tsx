@@ -114,7 +114,9 @@ export default function LogExpenseScreen() {
   if (status === "locked") return <Redirect href="/unlock" />;
   if (!authed) return <Redirect href="/login" />;
 
-  const header = <Stack.Screen options={{ headerShown: true, headerTitle: "" }} />;
+  // A section's first screen: no bar, as every other one (it has no back arrow
+  // to carry; mobile review, 2026-10-13).
+  const header = <Stack.Screen options={{ headerShown: false }} />;
 
   if (!abilities.logExpense) {
     return (

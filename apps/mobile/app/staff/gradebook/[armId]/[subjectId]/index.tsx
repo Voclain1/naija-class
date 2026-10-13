@@ -52,6 +52,7 @@ import { ScreenHeader, Skeleton } from "../../../../../src/components/layout";
 import {
   Body,
   Button,
+  Caption,
   Card,
   CenteredMessage,
   Label,
@@ -548,7 +549,7 @@ export default function MarkSheetScreen() {
                       Total: {row.assessment ? row.assessment.totalScore : "—"}
                       {row.assessment?.letterGrade ? ` · Grade ${row.assessment.letterGrade}` : ""}
                     </Label>
-                    <Label>Totals and grades update when marks are saved.</Label>
+                    <Caption>Totals and grades update when marks are saved.</Caption>
                   </View>
                 )}
               </Card>

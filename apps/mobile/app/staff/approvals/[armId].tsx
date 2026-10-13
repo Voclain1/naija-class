@@ -29,7 +29,15 @@ import {
 } from "../../../src/lib/staff/approval-stage";
 import { useTheme } from "../../../src/theme/theme-provider";
 import { fontSizes, fonts, radii, spacing } from "../../../src/theme/tokens";
-import { Button, Card, CenteredMessage, Label, Notice, Screen } from "../../../src/components/ui";
+import {
+  Button,
+  Caption,
+  Card,
+  CenteredMessage,
+  Label,
+  Notice,
+  Screen,
+} from "../../../src/components/ui";
 import { ListRow, ScreenHeader, SectionHeader, Skeleton, StatRow } from "../../../src/components/layout";
 
 // CP4b — one class's report cards, and the three things a head can do.
@@ -302,7 +310,9 @@ export default function ApprovalArmScreen() {
                 value={`${pipeline.studentsWithoutCard} without a card`}
                 label={
                   buildable
-                    ? "Enrolled but not included — rebuild below to add them"
+                    ? total === 0
+                      ? "No cards yet — build them below"
+                      : "Enrolled but not included — rebuild below to add them"
                     : "Enrolled but not included — reopen the class, then rebuild, to add them"
                 }
               />
@@ -341,7 +351,7 @@ export default function ApprovalArmScreen() {
                   { color: colors.foreground, backgroundColor: colors.card, borderColor: colors.border },
                 ]}
               />
-              <Label>The same note goes on every card in {pipeline.label}. Leave it blank for none.</Label>
+              <Caption>The same note goes on every card in {pipeline.label}. Leave it blank for none.</Caption>
               <Button
                 title="Save note"
                 variant="secondary"
@@ -380,10 +390,10 @@ export default function ApprovalArmScreen() {
                     { color: colors.foreground, backgroundColor: colors.card, borderColor: colors.border },
                   ]}
                 />
-                <Label>
+                <Caption>
                   Every card in the class goes back to draft. The reason is kept in the school&apos;s
                   records.
-                </Label>
+                </Caption>
                 <Button
                   title="Reopen class"
                   loading={busy}

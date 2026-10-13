@@ -3,7 +3,7 @@ import { Redirect, Stack } from "expo-router";
 
 import { useSession } from "../../src/lib/auth/session";
 import { spacing } from "../../src/theme/tokens";
-import { Body, Card, Label, Notice, Screen } from "../../src/components/ui";
+import { Body, Caption, Card, Notice, Screen } from "../../src/components/ui";
 import { ScreenHeader } from "../../src/components/layout";
 
 // The AI tutor's pathway, not the tutor (phone-for-every-role.md C2).
@@ -28,9 +28,9 @@ export default function TutorComingSoonScreen() {
         <Notice tone="info">This is being built. It isn&apos;t available yet.</Notice>
         <Card style={styles.card}>
           <Body>When it&apos;s ready, you&apos;ll be able to:</Body>
-          <Label>· Ask about a topic you&apos;re stuck on, in your own words.</Label>
-          <Label>· Get an explanation that follows YOUR school&apos;s scheme of work.</Label>
-          <Label>· Practise a topic before a test.</Label>
+          <Caption>· Ask about a topic you&apos;re stuck on, in your own words.</Caption>
+          <Caption>· Get an explanation that follows YOUR school&apos;s scheme of work.</Caption>
+          <Caption>· Practise a topic before a test.</Caption>
         </Card>
         <Body muted>
           It is deliberately not switched on early: an answer that follows a different syllabus is

@@ -3,6 +3,7 @@ import { Redirect, useRouter } from "expo-router";
 import { useQueries, useQuery } from "@tanstack/react-query";
 import type { PortalStudentDto } from "@school-kit/types";
 
+import { classLabel } from "../../src/lib/family/class-label";
 import { guardianHomework, listInvoices, listResults, listStudents } from "../../src/lib/api/portal";
 import { queryKeys } from "../../src/lib/query/keys";
 import { useSession } from "../../src/lib/auth/session";
@@ -143,7 +144,7 @@ export default function StudentsScreen() {
                   <Body>{fullName(student)}</Body>
                   <Label>
                     {student.currentEnrollment
-                      ? `${student.currentEnrollment.classArm.classLevel.name} · ${student.currentEnrollment.classArm.name}`
+                      ? classLabel(student.currentEnrollment.classArm.classLevel.name, student.currentEnrollment.classArm.name)
                       : "Not currently enrolled"}
                   </Label>
                 </View>

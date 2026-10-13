@@ -30,7 +30,7 @@ import {
 } from "../../../src/lib/staff/student-form";
 import { useTheme } from "../../../src/theme/theme-provider";
 import { fontSizes, fonts, radii, spacing } from "../../../src/theme/tokens";
-import { Body, Button, Card, Label, Notice, Screen } from "../../../src/components/ui";
+import { Body, Button, Caption, Card, Label, Notice, Screen } from "../../../src/components/ui";
 import { ScreenHeader, SectionHeader } from "../../../src/components/layout";
 
 // CP4c — add a student from the phone.
@@ -326,7 +326,7 @@ export default function NewStudentScreen() {
             onPress={save}
           />
           {placement.kind === "unanswered" ? (
-            <Label>Choose a class or &quot;Place later&quot; to continue.</Label>
+            <Caption>Choose a class or &quot;Place later&quot; to continue.</Caption>
           ) : null}
         </ScrollView>
       </KeyboardAvoidingView>

@@ -3,6 +3,7 @@ import { Link, Redirect, Stack } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
 import type { ReleasedResultSummaryDto } from "@school-kit/types";
 
+import { EmptyState } from "../../../src/components/layout";
 import { listStudentResults } from "../../../src/lib/api/student-portal";
 import { queryKeys } from "../../../src/lib/query/keys";
 import { useSession } from "../../../src/lib/auth/session";
@@ -84,13 +85,11 @@ export default function MyResultsScreen() {
             <FreshnessLabel updatedAt={resultsQuery.dataUpdatedAt} />
 
             {results.length === 0 ? (
-              <Card>
-                <Heading>Nothing released yet</Heading>
-                <Body>
-                  When your school publishes a term&apos;s report card, it will
-                  appear here.
-                </Body>
-              </Card>
+              <EmptyState
+                icon="ribbon-outline"
+                title="Nothing released yet"
+                body="When your school publishes a term's report card, it will appear here."
+              />
             ) : (
               results.map((r) => (
                 <Link key={r.reportCardId} href={`/me/results/${r.termId}`} asChild>

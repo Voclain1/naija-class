@@ -23,7 +23,7 @@ import {
   type NewParentValues,
 } from "../../../src/lib/staff/guardian-form";
 import { spacing } from "../../../src/theme/tokens";
-import { Body, Button, Card, Label, Notice, Screen } from "../../../src/components/ui";
+import { Body, Button, Caption, Card, Notice, Screen } from "../../../src/components/ui";
 import { EmptyState, ListRow, ScreenHeader, SectionHeader, Skeleton } from "../../../src/components/layout";
 import { ChoiceChips, TextField } from "../../../src/components/form";
 
@@ -270,7 +270,7 @@ export default function LinkParentScreen() {
                   onChange={(answer) => setValues({ ...values, isPrimary: answer === "yes" })}
                 />
                 {values.isPrimary && existingParents > 0 ? (
-                  <Label>The current main contact will stop being the main contact.</Label>
+                  <Caption>The current main contact will stop being the main contact.</Caption>
                 ) : null}
               </Card>
               <Button title="Add and link" loading={create.isPending} disabled={busy} onPress={saveNew} />

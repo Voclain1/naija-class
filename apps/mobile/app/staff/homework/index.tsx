@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Alert, KeyboardAvoidingView, Platform, RefreshControl, ScrollView, StyleSheet, View } from "react-native";
-import { Redirect, Stack } from "expo-router";
+import { Redirect } from "expo-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   HOMEWORK_INSTRUCTIONS_MAX,
@@ -132,11 +132,9 @@ export default function StaffHomeworkScreen() {
 
   return (
     <Screen>
-      <Stack.Screen options={{ headerShown: true, title: "Homework" }} />
       <KeyboardAvoidingView
         style={styles.flex}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
-        keyboardVerticalOffset={80}
       >
         <ScrollView
           contentContainerStyle={styles.content}

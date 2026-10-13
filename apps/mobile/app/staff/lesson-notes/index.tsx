@@ -33,6 +33,7 @@ import {
 import {
   Body,
   Button,
+  Caption,
   Card,
   CenteredMessage,
   Label,
@@ -182,9 +183,9 @@ export default function LessonNotesScreen() {
                 variant="secondary"
                 onPress={() => abort.current?.abort()}
               />
-              <Label>
+              <Caption>
                 Stopping may still cost your school for the work already done.
-              </Label>
+              </Caption>
             </Card>
           ) : !scope.isPending && arms.length === 0 ? (
             // Without a class the form below had an empty class picker and no
@@ -313,7 +314,7 @@ export default function LessonNotesScreen() {
                 }
               />
               {topic.trim().length > 0 && topic.trim().length < 3 ? (
-                <Label>Give the topic at least three letters.</Label>
+                <Caption>Give the topic at least three letters.</Caption>
               ) : null}
             </Card>
           )}

@@ -2,8 +2,9 @@ import { useState } from "react";
 import { StyleSheet, View } from "react-native";
 import { formatCalendarDate, type FamilyTimetableDto } from "@school-kit/types";
 
+import { EmptyState } from "./layout";
 import { spacing } from "../theme/tokens";
-import { Body, Button, Card, Heading } from "./ui";
+import { Body, Button } from "./ui";
 import { TimetableDays } from "./timetable-days";
 import { TimetableGrid } from "./timetable-grid";
 
@@ -49,10 +50,7 @@ export function FamilyTimetable({
   if (data.state !== "PUBLISHED" || !data.grid) {
     const empty = EMPTY[data.state as keyof typeof EMPTY];
     return (
-      <Card>
-        <Heading>{empty.title}</Heading>
-        <Body muted>{empty.body(data)}</Body>
-      </Card>
+      <EmptyState icon="calendar-outline" title={empty.title} body={empty.body(data)} />
     );
   }
 
