@@ -5,7 +5,10 @@
 # major is a planned change, and for the stack CLAUDE.md pins ("Tech stack")
 # it has to update CLAUDE.md in the same PR. Expo and React Native are left
 # out entirely: their versions are set by the Expo SDK and move together with
-# `npx expo install --fix`, never one package at a time.
+# `npx expo install --fix`, never one package at a time. React goes with them
+# (2026-10-13): React Native ships its own renderer and refuses a `react` that
+# is not that renderer's exact version, and web, portal, cbt and ui stay on the
+# same React line as mobile, so React moves only with an Expo SDK upgrade.
 #
 # Security alerts are separate from this file: they are switched on under the
 # repository's Settings → Code security, and are not limited by it.
@@ -35,6 +38,10 @@ updates:
       - dependency-name: "react-native-*"
       - dependency-name: "@react-native/*"
       - dependency-name: "@react-native-*"
+      - dependency-name: "react"
+      - dependency-name: "react-dom"
+      - dependency-name: "@types/react"
+      - dependency-name: "@types/react-dom"
 
   - package-ecosystem: github-actions
     directory: "/"
