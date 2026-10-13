@@ -22,11 +22,11 @@ importers:
   apps/api:
     dependencies:
       '@aws-sdk/client-s3':
-        specifier: ^3.1148.0
-        version: 3.1148.0
+        specifier: ^3.1149.0
+        version: 3.1149.0
       '@aws-sdk/s3-request-presigner':
-        specifier: ^3.1148.0
-        version: 3.1148.0
+        specifier: ^3.1149.0
+        version: 3.1149.0
       '@nestjs/bullmq':
         specifier: ^10.2.3
         version: 10.2.3(@nestjs/common@10.4.22(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@10.4.22)(bullmq@5.81.5)
@@ -479,8 +479,8 @@ importers:
         specifier: ^8
         version: 8.5.29
       posthog-js:
-        specifier: ^1.438.6
-        version: 1.438.6(@types/react@19.2.18)(react@19.2.3)
+        specifier: ^1.438.7
+        version: 1.438.7(@types/react@19.2.18)(react@19.2.3)
       react:
         specifier: ~19.2.3
         version: 19.2.3
@@ -730,8 +730,8 @@ packages:
     resolution: {integrity: sha512-CcAkVyEUKGngbEqJdVdSc53Iy52+XzVL5NIcTen2BlK8UByNC1DThVtf5VKSrNzyA+SqyTvs+3S+knVBbOUizQ==}
     engines: {node: '>=20.0.0'}
 
-  '@aws-sdk/client-s3@3.1148.0':
-    resolution: {integrity: sha512-d2AcfJCZTi4w5zJZD7H/XeVRgJy1vOD5EfO1Y3pKAwfp8pWz2dyJ8Q3vOJFbRiTIQF7c4mB+aptNUyCE4i4kqw==}
+  '@aws-sdk/client-s3@3.1149.0':
+    resolution: {integrity: sha512-wEccG+3/ap7iIBO4DbWwqNHh2u5Qm5OCQJzJaAvtVFIoZbp0qia8HIXv4rpnNmJJEX8205mlq67F9QJ0nKlcxg==}
     engines: {node: '>=20.0.0'}
 
   '@aws-sdk/core@3.978.3':
@@ -778,8 +778,8 @@ packages:
     resolution: {integrity: sha512-B01jdXJtAW/XOiUzGdI2mz67WyEHbGEc9X6Euzw3bjLAa+txTqdZDER4X2FsIEcXzV2ABqudVZ5thali8tCCzQ==}
     engines: {node: '>=20.0.0'}
 
-  '@aws-sdk/s3-request-presigner@3.1148.0':
-    resolution: {integrity: sha512-k9UM9y4fSUl6QzO2tluO2/MzQRghVhF3kbQ2DXAcZAEECvarGa8zxI4oTEq2VHthhNyYuBuOmLvGD8EH/1vtTQ==}
+  '@aws-sdk/s3-request-presigner@3.1149.0':
+    resolution: {integrity: sha512-baBynYmUAeUkcgY/PZJJsEFzVYLhbvQo9e0kVm5NA4zmNQornvoN5FID4gaDvxZVnZjXsBEcEygjtbYg1l2gMQ==}
     engines: {node: '>=20.0.0'}
 
   '@aws-sdk/signature-v4-multi-region@3.996.48':
@@ -7433,8 +7433,8 @@ packages:
     resolution: {integrity: sha512-Jtc2612XINuBjIl/QTWsV5UvE8UHuNblcO3vVADSrKsrc6RqGX6lOW1cEo3CM2v0XG4Nat8nI+YM7/f26VxXLw==}
     engines: {node: '>=12'}
 
-  posthog-js@1.438.6:
-    resolution: {integrity: sha512-Z+1CTWDpMScrAK62riIiZtg/04mmN95ZAfEf45pZBwVLpvu2i3V0sWmY+24e658KeZHD9pDGpgU5v84iUsDAYA==}
+  posthog-js@1.438.7:
+    resolution: {integrity: sha512-fcP3x031ASiq0/xXpK7QccnnbEQlF4oO2nXyXID0QXkMIoNXuBZg7u0MdsxJYXFqFEgGGtNP83ynsm8PCxi9BA==}
     peerDependencies:
       '@types/react': 19.2.18
       react: '>=16.8.0'
@@ -9089,7 +9089,7 @@ snapshots:
       '@smithy/types': 4.19.0
       tslib: 2.8.1
 
-  '@aws-sdk/client-s3@3.1148.0':
+  '@aws-sdk/client-s3@3.1149.0':
     dependencies:
       '@aws-sdk/checksums': 3.1001.3
       '@aws-sdk/core': 3.978.3
@@ -9218,7 +9218,7 @@ snapshots:
       '@smithy/types': 4.19.0
       tslib: 2.8.1
 
-  '@aws-sdk/s3-request-presigner@3.1148.0':
+  '@aws-sdk/s3-request-presigner@3.1149.0':
     dependencies:
       '@aws-sdk/core': 3.978.3
       '@aws-sdk/signature-v4-multi-region': 3.996.48
@@ -16784,7 +16784,7 @@ snapshots:
 
   postgres@3.4.7: {}
 
-  posthog-js@1.438.6(@types/react@19.2.18)(react@19.2.3):
+  posthog-js@1.438.7(@types/react@19.2.18)(react@19.2.3):
     dependencies:
       '@posthog/browser-common': 0.9.4
       '@posthog/core': 1.58.1

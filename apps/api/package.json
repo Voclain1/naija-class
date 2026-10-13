@@ -18,8 +18,8 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@aws-sdk/client-s3": "^3.1148.0",
-    "@aws-sdk/s3-request-presigner": "^3.1148.0",
+    "@aws-sdk/client-s3": "^3.1149.0",
+    "@aws-sdk/s3-request-presigner": "^3.1149.0",
     "@nestjs/bullmq": "^10.2.3",
     "@nestjs/common": "^10.4.15",
     "@nestjs/config": "^4.0.4",
