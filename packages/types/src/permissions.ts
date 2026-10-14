@@ -705,6 +705,13 @@ export const REPORTS_PERMISSIONS = [
   "reports.analytics.read",
 ] as const;
 
+// Phase 9 / CP1.3 — Excel and PDF copies of a list the person is already
+// looking at (docs/modules/phase-9.md §8.9 CP1-D10). The server lays out rows
+// the page sends; it reads nothing, so this grants no data — only the use of
+// the formatter. Every staff role holds it (owner by wildcard); every export
+// is audited.
+export const TABLE_EXPORT_PERMISSIONS = ["export.table"] as const;
+
 // Phase 8 / CP3 — Timetable builder (docs/modules/phase-8.md §17 D35).
 // CP3 grants both to owner/admin only. Teacher, student and guardian read
 // surfaces arrive in CP4, whose plan-first decides their endpoints and grants.
@@ -793,6 +800,7 @@ export const ALL_PERMISSIONS = [
   ...HOMEWORK_MANAGE_PERMISSIONS,
   ...BEHAVIOUR_PERMISSIONS_LIST,
   ...REPORTS_PERMISSIONS,
+  ...TABLE_EXPORT_PERMISSIONS,
   ...TIMETABLE_PERMISSIONS,
   ...TIMETABLE_OWN_READ_PERMISSIONS,
   ...PROMOTION_PERMISSIONS,

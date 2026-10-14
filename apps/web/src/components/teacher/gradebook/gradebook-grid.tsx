@@ -13,7 +13,7 @@ import type {
   ScorePreviewRowDto,
 } from "@school-kit/types";
 
-import { ExportCsvButton } from "@/components/shared/export-csv-button";
+import { ListExportMenu } from "@/components/shared/list-export-menu";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -37,7 +37,7 @@ import {
   previewScores,
   signOffColumn,
 } from "@/lib/assessment/assessment-api";
-import { exportRowsAsCsv, type CsvColumn } from "@/lib/csv-export";
+import type { CsvColumn } from "@/lib/csv-export";
 import { getExamPaperOutOf } from "@/lib/exam-papers/exam-papers-api";
 import { cn } from "@/lib/utils";
 
@@ -496,8 +496,11 @@ export function GradebookGrid({
         </div>
 
         <div className="flex items-center gap-2">
-          <ExportCsvButton
-            onExport={() => exportRowsAsCsv("gradebook.csv", feed.data, buildExportColumns(components))}
+          <ListExportMenu
+            title="Gradebook"
+            csvFilename="gradebook.csv"
+            columns={buildExportColumns(components)}
+            getRows={() => feed.data}
             disabled={feed.data.length === 0}
           />
           <PrintButton disabled={feed.data.length === 0} />

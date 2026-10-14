@@ -8,13 +8,13 @@ import type { ExpenseCategoryDto, ExpenseDto } from "@school-kit/types";
 
 import { ExpenseCategoriesModal } from "@/components/finance/expense-categories-modal";
 import { ExpenseFormModal } from "@/components/finance/expense-form-modal";
-import { ExportCsvButton } from "@/components/shared/export-csv-button";
+import { ListExportMenu } from "@/components/shared/list-export-menu";
 import { InlineAlert } from "@/components/shared/inline-alert";
 import { PrintButton } from "@/components/shared/print-button";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ApiError } from "@/lib/api-client";
-import { exportRowsAsCsv, type CsvColumn } from "@/lib/csv-export";
+import type { CsvColumn } from "@/lib/csv-export";
 import {
   createExpense,
   deleteExpense,
@@ -186,8 +186,11 @@ export default function ExpensesPage() {
           </p>
         </div>
         <div className="flex gap-2 print:hidden">
-          <ExportCsvButton
-            onExport={() => exportRowsAsCsv("expenses.csv", expenses, exportColumns)}
+          <ListExportMenu
+            title="Expenses"
+            csvFilename="expenses.csv"
+            columns={exportColumns}
+            getRows={() => expenses}
             disabled={expenses.length === 0}
           />
           <PrintButton disabled={expenses.length === 0} />

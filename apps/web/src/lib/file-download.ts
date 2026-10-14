@@ -11,7 +11,11 @@ export function filenameFromDisposition(header: string | null, fallback: string)
 }
 
 export async function downloadApiFile(path: string, fallbackFilename: string): Promise<void> {
-  const response = await apiFetchResponse(path, { method: "GET" });
+  await saveResponseAsFile(await apiFetchResponse(path, { method: "GET" }), fallbackFilename);
+}
+
+/** Hands an API file response to the browser as a download. */
+export async function saveResponseAsFile(response: Response, fallbackFilename: string): Promise<void> {
   const blob = await response.blob();
   const filename = filenameFromDisposition(response.headers.get("Content-Disposition"), fallbackFilename);
   const url = window.URL.createObjectURL(blob);

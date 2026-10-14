@@ -10,7 +10,7 @@ import type {
   StudentStatusDto,
 } from "@school-kit/types";
 
-import { ExportCsvButton } from "@/components/shared/export-csv-button";
+import { ListExportMenu } from "@/components/shared/list-export-menu";
 import { PlanNotice } from "@/components/plans/plan-notice";
 import { PrerequisiteNotice } from "@/components/setup/prerequisite-notice";
 import { PrintButton } from "@/components/shared/print-button";
@@ -27,7 +27,7 @@ import {
 import { ApiError } from "@/lib/api-client";
 import { listClassArms } from "@/lib/class-arms/class-arms-api";
 import { listStudents } from "@/lib/students/students-api";
-import { exportRowsAsCsv, type CsvColumn } from "@/lib/csv-export";
+import type { CsvColumn } from "@/lib/csv-export";
 
 // Export reuses the same GET /students query the page already runs (same
 // filters, same permission) — it just loops the cursor at the endpoint's max
@@ -135,7 +135,7 @@ export default function StudentsRosterPage() {
     }
   }, [cursor, search, status, classArmId]);
 
-  const onExport = useCallback(async () => {
+  const fetchExportRows = useCallback(async (): Promise<StudentDto[]> => {
     const rows: StudentDto[] = [];
     let exportCursor: string | undefined;
     let pages = 0;
@@ -151,7 +151,7 @@ export default function StudentsRosterPage() {
       exportCursor = res.meta.cursor;
       pages += 1;
     } while (exportCursor && pages < 100);
-    exportRowsAsCsv("students.csv", rows, STUDENT_EXPORT_COLUMNS);
+    return rows;
   }, [search, status, classArmId]);
 
   // max-w-7xl, wider than the 5xl reading pages use: this one is a TABLE, and
@@ -177,7 +177,13 @@ export default function StudentsRosterPage() {
              One primary action, one row, at any width. */
           <div className="flex flex-wrap items-center gap-2 print:hidden">
             <div className="flex items-center gap-2">
-              <ExportCsvButton onExport={onExport} disabled={students.length === 0} />
+              <ListExportMenu
+                title="Students"
+                csvFilename="students.csv"
+                columns={STUDENT_EXPORT_COLUMNS}
+                getRows={fetchExportRows}
+                disabled={students.length === 0}
+              />
               <PrintButton />
             </div>
 

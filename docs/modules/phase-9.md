@@ -684,3 +684,73 @@ section with what was actually built.
   - Permission coverage for all the new handlers.
   - e2e `report-analytics.spec.ts`: the three tabs, Excel, the threshold setting
     driving the report, and a teacher refused.
+
+### 8.9 As built — CP1.3a, Excel and PDF on the existing lists (2026-10-17)
+
+CP1.3 lands as two PRs: this one (the website's lists), then CP1.3b (the app's
+report summaries).
+
+- **CP1-D10, new: the lists use one shared formatter, not one export route per
+  list.** The page sends the rows it is already showing, the same rows its CSV
+  writes, as a small JSON file. The API only lays them out (`TableExportsService`).
+  - Why this is safe: the API reads no table to do it, so it adds no data-access
+    path. A person can export exactly what their own list showed them, under
+    that list's own permission. This is the reasoning `csv-export.ts` already
+    rested on, moved to the server only because Excel and PDF are built there.
+  - Why one permission is enough: the formatter grants no data, so a single
+    `export.table` serves every staff role (admin, teacher and bursar are
+    granted it, the owner holds it by wildcard).
+  - Why it was chosen over per-list routes: those would have meant eight new
+    queries, each repeating its list's filters and permission checks, and
+    eight places to drift from the screen.
+  - **Routes:** `POST /exports/table/xlsx`, `POST /exports/table/pdf`, and
+    `GET /exports/:exportId`. A PDF's status is readable only by the person who
+    asked for it, so even the owner cannot fetch another person's list copy.
+  - **Audit:** every copy is recorded as `export.table`, with its title, format
+    and row count.
+  - **Why a file, not a JSON body:** a school's student list can pass the API's
+    100 KB body limit. A 3 MB cap on these two routes is narrower than raising
+    the limit for every route.
+  - **Validation:** at most 10,000 rows and 60 columns, cells of at most 2,000
+    characters, and every row must have one value per column.
+  - **Width:** a PDF wider than 14 columns is refused with the reason, and the
+    menu shows PDF as unavailable ("too many columns for a page — use Excel").
+    This is the gradebook case §8.3 foresaw.
+- **PDF path:** PDF queueing moved into `PdfExportQueue`, used by both the
+  report and the list exports, so they keep the same guarantees:
+  - the row commits before the job exists;
+  - a job that cannot be queued is marked FAILED;
+  - the job carries ids only.
+
+  List copies are stored with `report = "table"`, and the daily clean-up
+  covers them.
+- **Website:** one `ListExportMenu` (CSV, Excel, PDF), built from the columns
+  each page already defined for CSV, so the three files always agree. It is
+  now on:
+  - Students and Staff;
+  - Invoices, Debtors and Expenses;
+  - the finance dashboard's collection-by-level table;
+  - the gradebook.
+
+  The old `ExportCsvButton` is gone. On Invoices and Students the rows are
+  still fetched page by page first, and a failure part-way downloads nothing,
+  in any format.
+- **Left CSV-only, on purpose:**
+  - **Result PINs.** PINs are hashed so that the server never keeps a
+    plaintext PIN after issuing it. A PDF copy would sit in storage for a day
+    holding live PINs.
+  - **Exam papers.** They already export to Word and print, which suit a paper
+    better, and keeping copies of exam content on the server is a risk for no
+    gain.
+- **Tests:**
+  - `table-exports.service.spec.ts` (real database):
+    - parsing refuses bad input;
+    - Excel keeps numbers as numbers and formula-looking text as text, and is
+      audited;
+    - a too-wide PDF is refused;
+    - a PDF is queued with ids only, and another user, even the owner, cannot
+      read it.
+  - Permission coverage for the new controller and grants.
+  - Web helper tests.
+  - e2e `list-exports.spec.ts`: the Students list as Excel, CSV and PDF; a
+    bursar using the formatter; a malformed table refused.

@@ -15,6 +15,7 @@ import {
   CALENDAR_PERMISSIONS,
   CALENDAR_READ_PERMISSIONS,
   REPORTS_PERMISSIONS,
+  TABLE_EXPORT_PERMISSIONS,
   TIMETABLE_PERMISSIONS,
   TIMETABLE_OWN_READ_PERMISSIONS,
   PROMOTION_PERMISSIONS,
@@ -110,6 +111,9 @@ const ADMIN_PERMISSIONS: readonly string[] = [
   // Kept IN SYNC with the idempotent append in
   // prisma/migrations/20260914120000_phase_8_cp2_reports_permissions.
   ...REPORTS_PERMISSIONS,
+  // Phase 9 / CP1.3 — Excel/PDF of a list already on screen; every staff role.
+  // Kept IN SYNC with prisma/migrations/20261018120000_table_export_permission.
+  ...TABLE_EXPORT_PERMISSIONS,
   // Phase 8 / CP3 — Timetable builder: read + manage (bell schedule, school week,
   // timetables, lessons). Owner/admin only in CP3 (§17 D35). Kept IN SYNC with
   // prisma/migrations/20260914140100_phase_8_cp3_timetable_permissions.
@@ -223,6 +227,8 @@ export const SYSTEM_ROLE_SEEDS: SystemRoleSeed[] = [
       // Online exams (CBT1), held to the same subjects by the service. Kept IN
       // SYNC with prisma/migrations/20261008120000_cbt1_sittings.
       ...CBT_PERMISSIONS,
+      // Phase 9 / CP1.3 — Excel/PDF of the teacher's own lists (gradebook).
+      ...TABLE_EXPORT_PERMISSIONS,
     ],
   },
   // Phase 3 / Slice 15 — `bursar` role wire-up + RBAC close-out. Finance-only
@@ -253,6 +259,8 @@ export const SYSTEM_ROLE_SEEDS: SystemRoleSeed[] = [
       // Read only: a bursar at the counter can answer "what homework does my
       // child have?" and can set none.
       ...HOMEWORK_READ_PERMISSIONS,
+      // Phase 9 / CP1.3 — Excel/PDF of the finance lists the bursar works from.
+      ...TABLE_EXPORT_PERMISSIONS,
     ],
   },
 ];

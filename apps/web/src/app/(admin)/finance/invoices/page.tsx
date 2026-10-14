@@ -17,7 +17,7 @@ import {
 
 import { CancelInvoiceDialog } from "@/components/finance/cancel-invoice-dialog";
 import { GenerateInvoicesDialog } from "@/components/finance/generate-invoices-dialog";
-import { ExportCsvButton } from "@/components/shared/export-csv-button";
+import { ListExportMenu } from "@/components/shared/list-export-menu";
 import { InlineAlert } from "@/components/shared/inline-alert";
 import { PrerequisiteNotice } from "@/components/setup/prerequisite-notice";
 import { PrintButton } from "@/components/shared/print-button";
@@ -28,7 +28,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { listAcademicYears, listTerms } from "@/lib/academic-years/academic-years-api";
 import { useAuth } from "@/lib/auth/use-auth";
 import { listClassArms } from "@/lib/class-arms/class-arms-api";
-import { exportRowsAsCsv, type CsvColumn } from "@/lib/csv-export";
+import type { CsvColumn } from "@/lib/csv-export";
 import { currentSuffix, unambiguousCurrent } from "@/lib/finance/current-context";
 import { financeErrorMessage, logFinanceError } from "@/lib/finance/error-copy";
 import { formatKobo } from "@/lib/finance/format";
@@ -289,7 +289,8 @@ export default function InvoicesPage() {
     statusLabel: statusFilter ? invoiceStatusLabel[statusFilter] : "",
   });
 
-  async function handleExport() {
+  // The rows every export format writes: the whole filtered list, every page.
+  async function fetchExportRows(): Promise<InvoiceDto[]> {
     setExportError(null);
     try {
       const rows: InvoiceDto[] = [];
@@ -307,12 +308,14 @@ export default function InvoicesPage() {
         seenTotal = res.total;
         exportPage += 1;
       }
-      exportRowsAsCsv("invoices.csv", rows, INVOICE_EXPORT_COLUMNS);
+      return rows;
     } catch (e) {
       // A half-fetched export must not be written to a file the bursar would
-      // then reconcile against — fail loudly and download nothing.
+      // then reconcile against — fail loudly and download nothing (the throw
+      // stops every format, not just CSV).
       logFinanceError("invoice export", e);
       setExportError(financeErrorMessage(e));
+      throw e;
     }
   }
 
@@ -614,7 +617,13 @@ export default function InvoicesPage() {
               </select>
             </div>
             <div className="flex gap-2">
-              <ExportCsvButton onExport={handleExport} disabled={invoices.length === 0} />
+              <ListExportMenu
+                title="Invoices"
+                csvFilename="invoices.csv"
+                columns={INVOICE_EXPORT_COLUMNS}
+                getRows={fetchExportRows}
+                disabled={invoices.length === 0}
+              />
               <PrintButton disabled={invoices.length === 0} />
             </div>
           </div>
