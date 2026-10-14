@@ -1498,3 +1498,32 @@ by the owner.
   sheet warns.
 - Closing the app still loses drafts, as the screens say.
 - The two-minute lock still keeps them in memory, as before.
+
+## Question bank, exam papers and online exams (owner's decision, 2026-10-14)
+
+All three came to the app at the pre-build audit, against the same endpoints
+and permissions as the website's teacher pages:
+
+- **Question bank** (`app/staff/question-bank/`): pick a class and subject,
+  then review drafts, approved and retired questions. Write or revise a
+  question, or draft questions with AI (`question.generate`). The screen says
+  that this spends the school's AI budget and that every drafted question
+  arrives as a DRAFT. Approve, retire and discard all ask first. The form
+  rules are the web's (`src/lib/staff/question-form.ts`).
+- **Exam papers** (`app/staff/exam-papers/`): start a paper, edit sections and
+  questions (picked from approved questions, or drawn at random), save,
+  finalise and duplicate. A final paper exports as a PDF to share, to print,
+  or as a CSV. Each export is fetched fresh, so the server audits it. Shared
+  files are deleted from the cache when the share sheet closes. **Word
+  (.docx) export is website-only**: the web builds it with the `docx`
+  library, which the app does not include.
+- **Online exams** (`app/staff/online-exams/`): schedule a sitting from a
+  final paper, then publish, return to draft, close or delete it, follow the
+  students' progress, and see the results. On the results screen you can mark
+  theory questions, choose which computer's attempt counts, and send totals
+  to the gradebook (preview first). The invigilator sheet can be printed or
+  shared as a PDF. It is fetched once and kept only in the screen's state,
+  because every fetch reveals the codes again and is audited.
+
+All their query keys are staff-prefixed, so unreleased exam content is never
+persisted on the handset.
