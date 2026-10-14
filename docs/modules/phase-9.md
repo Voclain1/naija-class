@@ -100,13 +100,13 @@ blocked by it.
 | Q3 | **Health records: who may read.** | Owner, admin and a new **school nurse** role (sickbay). Teachers see only an "allergies and conditions" line, for safety on trips and in class, and never the sickbay log. Every read audited. | CP3 |
 | Q4 | **Transport, library and hostel fees.** Invoices are one per student per term and cannot have lines added after issue. | A new **student charge** primitive (§4, CP5). Charges are created through the finance service, then picked up by the next invoice run, or issued as a small "supplementary invoice" per charge if you approve one. **Owner, 2026-10-14 (transport):** the admin sets each route's fee on that route's own page; the fee is not typed per student. **Still to decide: supplementary invoices yes/no.** | CP5 |
 | Q5 | **WhatsApp Business.** Needs a Meta-approved business number and a provider (Termii proxies it). That is your side, not code. | Build the channel behind a per-school switch with SMS fallback, but only once you have an approved number. Until then, keep the `wa.me` share links that already work. | CP9 |
-| Q6 | **AI and children's text** (essay feedback, message translation). **Owner, 2026-10-14:** students get no AI writing help of any kind; they type or paste their own work. Still open: whether a *teacher* may use AI to draft marking feedback (CP4b). Both send text that may name children. | **Essays:** strip the student's own name and send only the answer text, under a new prompt that **you** add to the allowlist table by name. Feedback is a draft the teacher approves. **Translation:** do not build until you have decided; it is the weaker case (a parent can use their phone's own translator), and it would be a second allowlist row. | CP4b, CP9 |
-| Q7 | **Detecting AI-written student work** (spec §6.8). | **Do not build.** These detectors are unreliable, and a false "you cheated" against a child is a real harm. Offer the in-class similarity check (plagiarism between submissions) instead. | CP4 |
+| Q6 | **AI and children's text** (essay feedback, message translation). **Owner, 2026-10-14:** students get no AI writing help of any kind; they type or paste their own work. **Owner, 2026-10-14: approved** for teachers — AI may draft marking feedback, name removed, teacher approves (CP4b). The `assignment-feedback` allowlist row is added to `CLAUDE.md` in CP4b's own PR, as a visible edit. Translation stays unbuilt. Both send text that may name children. | **Essays:** strip the student's own name and send only the answer text, under a new prompt that **you** add to the allowlist table by name. Feedback is a draft the teacher approves. **Translation:** do not build until you have decided; it is the weaker case (a parent can use their phone's own translator), and it would be a second allowlist row. | CP4b, CP9 |
+| Q7 | **Detecting AI-written student work** (spec §6.8). | **Do not build.** These detectors are unreliable, and a false "you cheated" against a child is a real harm. Offer the in-class similarity check (plagiarism between submissions) instead. **Owner, 2026-10-14:** no detector. Approved instead: the similarity check, and a **paste indicator** (the teacher sees how much of a typed answer was pasted rather than typed — a fact, never an accusation, and it never changes a mark). | CP4 |
 | Q8 | **Students uploading files** (photos of handwritten work). The student account has no upload today. | Yes, from the app only, images and PDF up to 10 MB, three files per submission. They are stored privately and visible only to the teacher, admin, the student and that student's linked guardians. | CP4 |
 | Q9 | **Online admissions: public form.** Strangers can submit a child's details and documents. | Yes, behind a per-school switch, with rate limits, a hidden honeypot field (new; nothing in the codebase uses one yet), an NDPR consent tickbox, and a 90-day purge of rejected applications. Accepting creates the student through the existing create path. | CP7 |
 | Q10 | **Fee-default risk** (spec says AI). | **Rules, not AI.** A transparent score from payment history (late terms, part-payments, current balance), shown only to owner, admin and bursar, with the reasons listed. No family data goes to a model. | CP10 |
-| Q11 | **Excel export** needs one new library (`exceljs`, MIT). | Yes. CSV stays the default. | CP1 |
-| Q12 | **Order.** §5 proposes an order by value and risk. | Approve or reorder. | — |
+| Q11 | **Excel export** needs one new library (`exceljs`, MIT). | Yes. CSV stays the default. **Owner, 2026-10-14: approved, and PDF too wherever possible.** | CP1 |
+| Q12 | **Order.** §5 proposes an order by value and risk. | Approve or reorder. **Not yet answered; CP1 is first in any order, so it proceeds.** | — |
 
 ## 4. Shared pieces built once, before the modules that need them
 
@@ -244,6 +244,10 @@ into an assignment.
 - **Similarity check** (Q7): flags pairs of typed submissions in the same
   class whose text overlaps strongly. Teacher-only, worded as "look at these
   two", never "plagiarised".
+- **Paste indicator** (Q7, owner 2026-10-14): the answer box counts typed and
+  pasted characters; the teacher sees "about 80% pasted". Pasting stays
+  allowed. Shown to the teacher only, never to parents, and never used in a
+  mark.
 - **Parents** see what is due, what was submitted, and the mark once the
   teacher releases it.
 - **Surfaces:**
@@ -399,3 +403,168 @@ into an assignment.
    here for approval, then build it.
 3. The same for each checkpoint, in the agreed order. Each one closes with an
    "as built" section.
+
+## 8. CP1 plan-first — Reports and analytics, with exports
+
+Status: **for the owner's approval. Nothing below is built yet.**
+
+### 8.1 What exists today (read from the code, 2026-10-14)
+
+- `apps/api/src/modules/reports/` serves two reports, both owner/admin only
+  (`REPORTS_PERMISSIONS`) and both audited on read:
+  - `GET /reports/completeness`, registers and score entry per class;
+  - `GET /reports/teacher-activity`.
+- The web `/reports` page shows both. The app has `staff/reports` (index, teachers).
+- **CSV export exists only in the browser** (`apps/web/src/lib/csv-export.ts`).
+  It is used by the reports, students, staff, invoices, debtors, expenses, PIN
+  and gradebook pages. The API has no export endpoint. No Excel library exists.
+- **PDF** is rendered only for report cards, by the separate render worker
+  (Puppeteer, `report-cards/render/`), queued through BullMQ and stored in
+  R2.
+- The data the new reports need already exists:
+  - **Results:** `Assessment.totalScore` per student, subject and term.
+    `ReportCard.overallAverage` (hundredths) and `status = RELEASED` mark the
+    released results.
+  - **Attendance:** `AttendanceRecord` (one row per student per day). The rate
+    rule `rateHundredths` is (present + late) ÷ days marked.
+    `computeSchoolDays` gives the school days of a term.
+  - **Enrolment:** `Enrollment`, one row per student per term, with its status.
+
+### 8.2 Decisions taken here (owner may overrule any)
+
+| D | Decision | Why |
+|---|---|---|
+| CP1-D1 | **Excel and PDF files are made on the server**, by one export helper. Browser CSV stays as it is. | The app needs the same files as the website. Making them once on the server means both get the same file and the web page doesn't grow by a 1 MB library. |
+| CP1-D2 | **Excel files are built in the API** with `exceljs`. They download straight away. | Building a report sheet is fast (well under a second for a school), so it needs no queue. |
+| CP1-D3 | **PDFs are made by the existing render worker**, as report cards are. The page shows "Preparing PDF…" and then downloads it. | Chrome lives only in the worker. Putting it in the API too would double memory on the machine that answers every request. The worker already sleeps and wakes on demand. |
+| CP1-D4 | **Analytics read released results only.** A subject counts only for students whose report card for that term is RELEASED. | A draft mark that is shown in a chart, then changed, misleads. This keeps one rule: what parents can see is what the reports count. |
+| CP1-D5 | **"Chronic absence" threshold is set by the school**, default 90% attendance. It is a new `schools` column, edited in Settings. | Schools differ. `schools` has no RLS policy, so this is a plain column. |
+| CP1-D6 | **Who sees what.** Owner and admin see everything. Teachers, bursars and parents see none of the new reports in CP1. | This matches the reports that exist. Teacher views of their own classes can come later, if you want them. |
+| CP1-D7 | **Every export is audited** (`reports.export`, with report, format and term), like the existing report reads. | An export takes children's data out of the system, so who took what, and when, is on record. |
+| CP1-D8 | **No teacher league table.** The teacher view shows what each teacher recorded (registers, scores) over time, never their pupils' marks side by side. | This is the rule from §5. Ranking teachers on pupils' marks punishes those given the weakest classes. |
+| CP1-D9 | **Money stays out of CP1's analytics.** Finance already has its own dashboard and debtors list; they gain Excel and PDF in step 4 below, with figures exactly as the API returns them. | The money rules: nothing is recomputed outside `FinanceService`. |
+
+### 8.3 What gets built
+
+**Academic tab** (term picker):
+- Class and subject averages: each class's average per subject, to 2 decimal
+  places, and the number of students counted.
+- Subject × class heatmap on the web: cells are shaded and show the number.
+- Top 5 and bottom 5 students per class, by overall average.
+- Term-on-term: each class's average against the previous term, with the
+  change, ↑ or ↓, and the figures.
+
+**Attendance tab:**
+- Weekly attendance rate per class across the term.
+- Chronic absence: the students below the school's threshold, with their rate
+  and days missed.
+- Days with no register: each class's school days with nothing marked. This
+  reuses the completeness rules, so the two reports can never disagree.
+
+**Enrolment tab:**
+- Students per class level, this term against last term.
+- Joiners (in this term, not last) and leavers (in last, not this), with the
+  leaving status: withdrawn, transferred, graduated.
+
+**Teachers tab:**
+- Each teacher's register and score-entry completeness for the last 3 terms,
+  as figures.
+- It adds history to the existing teacher-activity report and does not
+  replace it.
+
+**Exports:**
+- Every table on every tab has **CSV, Excel and PDF**. Excel keeps numbers as
+  numbers, so a school can sort and total them.
+- Each PDF page carries the school's name, logo, term and date printed.
+- The two existing reports gain Excel and PDF too.
+
+**Step 4, existing lists** — Excel and PDF added beside today's CSV on:
+- students and staff;
+- invoices, debtors and expenses;
+- result PINs, exam papers and the gradebook.
+
+Each list uses the same filters the screen shows. "Where possible" per the
+owner: a list too wide for a page (for example the gradebook with many
+components) gets Excel only, and the button says so.
+
+**App:**
+- The `staff/reports` section gains Academic, Attendance and Enrolment
+  summaries as lists that fit a phone.
+- No heatmap; a "See the full chart on the website" link opens the web page,
+  signed in.
+- Each summary has "Share as Excel" and "Share as PDF". The file is downloaded,
+  shared and then deleted from the phone, as the PIN cards are.
+
+### 8.4 Data and API
+
+- **Migration:**
+  - Add `schools.chronic_absence_threshold` (INTEGER, default 90, CHECK 50–100).
+  - Add a table `report_exports` for PDF jobs:
+    - columns: id, school_id, requested_by, report, params JSONB, status,
+      storage key, created_at, finished_at;
+    - RLS enabled and forced, with the standard `tenant_isolation` policy.
+  - No SECURITY DEFINER function. The count stays at 23.
+- **Storage:**
+  - A new key kind, `report-export`, extension `pdf`.
+  - Presigned GET with a 15-minute TTL, as for receipts.
+  - A daily cleanup deletes export files older than 24 hours.
+- **Permissions:**
+  - `reports.analytics.read` and `reports.export`, both in `REPORTS_PERMISSIONS`
+    (owner and admin).
+  - Each one goes into three places: the seed, an append migration and
+    `permissions-coverage.spec.ts`.
+- **Endpoints** (all `AuthGuard` + `PermissionsGuard`, both RBAC gates, `withTenant`):
+  - `GET /reports/academic?termId=`
+  - `GET /reports/attendance?termId=`
+  - `GET /reports/enrolment?termId=`
+  - `GET /reports/teacher-trend?termId=`
+  - `GET /reports/:report/export?format=csv|xlsx&…filters` returns the file.
+    The report name is checked against a fixed list.
+  - `POST /reports/:report/pdf` queues a PDF and returns `{ exportId }`.
+  - `GET /reports/exports/:exportId` returns the status and, once done, a
+    short-lived URL. It is tenant-checked through RLS.
+  - `PATCH /schools/me` gains `chronicAbsenceThreshold`.
+- **Speed:** each report runs a handful of grouped SQL queries, not a query per
+  class, inside one `withTenant` transaction with the reports timeout. The
+  pool has 3 connections, so nothing fans out in parallel.
+- **DTOs:** Zod schemas in `packages/types/src/reports/`. Averages and rates
+  are integers in hundredths, as `overallAverage` already is, and formatted
+  only at display.
+
+### 8.5 Tests (written first for the sums)
+
+- **Aggregates against a seeded school with known answers:**
+  - averages, including a class where one report card is unreleased, which
+    must not count;
+  - term-on-term with a missing previous term;
+  - joiners and leavers across a promotion;
+  - chronic absence at exactly the threshold.
+- **RLS and permissions:**
+  - school B never appears in school A's reports or exports;
+  - a teacher or bursar gets 403 on every new endpoint;
+  - a PDF export id from another school returns 404.
+- **Export round-trip:**
+  - the Excel file opens and its cells equal the API's JSON, with numbers
+    typed as numbers;
+  - the CSV equals the browser CSV for the same rows;
+  - the PDF job ends GENERATED with a non-empty file.
+- **Audit:** every export writes `reports.export`, and the existing
+  `audit-coverage` and two-gate conformance specs include the new endpoints.
+- **Phone fit:** the app summaries render at 360 px with nothing spilling off
+  the screen, checked in the browser build as before.
+- **End-to-end (Playwright):** an admin opens Reports → Academic, sees a
+  class average, and downloads Excel.
+
+### 8.6 How it lands
+
+Three PRs, in order, each green before the next. CP1 is split because one PR
+would be too large to review well:
+
+| PR | Contents | Estimate |
+|---|---|---|
+| CP1.1 | Export foundation: `exceljs`, the export helper, PDF jobs in the worker, `report_exports`, permissions; Excel and PDF on the two existing reports | 2–3 days |
+| CP1.2 | Academic, Attendance, Enrolment and Teachers tabs (API and web) and the chronic-absence setting | 3–4 days |
+| CP1.3 | App summaries and sharing; Excel and PDF on the existing lists (step 4) | 2–3 days |
+
+Total: 7–10 working days (the §5 estimate plus step 4). Each PR updates this
+section with what was actually built.
