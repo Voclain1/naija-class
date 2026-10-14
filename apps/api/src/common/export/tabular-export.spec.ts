@@ -88,6 +88,22 @@ describe("toPrintHtml", () => {
   });
 });
 
+describe("decimals", () => {
+  it("prints 73.5 as 73.50 in the PDF and keeps the number with a 0.00 format in Excel", async () => {
+    const d: ExportDocument = {
+      title: "Averages",
+      schoolName: "S",
+      subtitle: null,
+      tables: [{ title: "Averages", columns: [{ header: "Average", value: (r: { a: number }) => r.a, numeric: true, decimals: 2 }], rows: [{ a: 73.5 }] }],
+    };
+    expect(toPrintHtml(d, { logoDataUri: null, printedOn: "2026-10-16" })).toContain(">73.50</td>");
+    const wb = await readBack(await toXlsx(d));
+    const cell = wb.getWorksheet("Averages")!.getRow(5).getCell(1);
+    expect(cell.value).toBe(73.5);
+    expect(cell.numFmt).toBe("0.00");
+  });
+});
+
 describe("exportFilename", () => {
   it("makes a safe name from the title and term", () => {
     expect(exportFilename("Registers", "First Term 2026/2027", "xlsx")).toBe("registers-first-term-2026-2027.xlsx");

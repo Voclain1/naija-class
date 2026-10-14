@@ -624,3 +624,63 @@ section with what was actually built.
   - permission coverage;
   - an end-to-end test: Excel and CSV download, PDF queued, a teacher refused
     all four routes.
+
+### 8.8 As built — CP1.2, report tabs (2026-10-16)
+
+- **Routes:**
+  - `GET /reports/academic`, `/reports/attendance` and `/reports/enrolment` need
+    `reports.analytics.read`. It is new, admin only: seed and append migration
+    `20261017120000_reports_analytics`.
+  - `GET /reports/teacher-trend` needs `reports.teacher-activity.read`, like the
+    per-term view, and is audited the same way (`reports.teacher-activity.view`,
+    metadata `view: "trend"`).
+  - Each analytics tab exports whole, as one workbook (a sheet per table) or
+    one PDF (a section per table):
+    - `GET /reports/analytics/:report/export` and `POST /reports/analytics/:report/pdf`,
+      with `:report` checked against academic, attendance and enrolment;
+    - `/reports/teacher-trend/export` and `/reports/teacher-trend/pdf`.
+- **Rules**, each in one place (`analytics.service.ts` header):
+  - Results come from RELEASED report cards only: a draft card counts in no
+    average, cell or ranking.
+  - Attendance is (present + late) ÷ records marked, the rate every other
+    screen uses.
+  - "On roll" means an enrolment for the term that is not WITHDRAWN or
+    TRANSFERRED.
+  - Chronic absence is **below** the school's line, not at it.
+  - Top and bottom come from one ordering, so a tie can never put a student in
+    both lists. A class with fewer than ten students has a shorter bottom list.
+- **Shared with the Recording report:** "days with no register" and the teacher
+  trend reuse `CompletenessService`'s school days and term context through new
+  helpers (`termForReport`, `previousTerms`, `missingRegisterRows`,
+  `teacherRowsForTerm`). The two reports therefore cannot disagree.
+- **The teacher trend** runs one transaction per term, because three full term
+  contexts in one transaction would crowd the 15-second reports timeout.
+- **Setting:** `schools.chronic_absence_threshold` (default 90, CHECK 50–100),
+  edited under Settings → Attendance → "Often absent". It rides `PATCH /schools/me`.
+- **Website:**
+  - `/reports` gains a section bar: Recording, Academic, Attendance, Enrolment.
+    Each tab is its own page.
+  - The subject heatmap and the weekly table are grids: they scroll inside
+    their own box on a phone. Every other table stacks into cards. Shading is a
+    background tint with the number printed and a legend in words; there are no
+    accent borders.
+  - Each table has its own Export menu: CSV of that table, and Excel or PDF of
+    the whole tab.
+  - The teacher trend loads only when "Compare the last three terms" is pressed,
+    so opening the teacher tab still writes exactly one audit row (the Phase 8
+    e2e test pins this).
+- **Tests:**
+  - `analytics.service.spec.ts`, against a real database, with every figure
+    counted by hand in its header:
+    - a draft card excluded;
+    - change from the previous term;
+    - weekly rates;
+    - the threshold boundary;
+    - missing registers;
+    - joiners and leavers with their reasons;
+    - the teacher trend with a form teacher;
+    - another school's term returns 404.
+  - Export spec: the academic workbook's sheets and number formats.
+  - Permission coverage for all the new handlers.
+  - e2e `report-analytics.spec.ts`: the three tabs, Excel, the threshold setting
+    driving the report, and a teacher refused.

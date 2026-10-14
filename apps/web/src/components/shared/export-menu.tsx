@@ -24,6 +24,9 @@ interface Props {
   onExcel?: () => Promise<void>;
   /** Queues the API's PDF; the menu waits for it and offers it to open. */
   onPdf?: () => Promise<ReportPdfAcceptedDto>;
+  /** e.g. "Excel (whole report)" when the file holds more than this table. */
+  excelLabel?: string;
+  pdfLabel?: string;
 }
 
 type Busy = "excel" | "pdf" | null;
@@ -35,7 +38,7 @@ type Busy = "excel" | "pdf" | null;
 // The finished PDF opens from a button in the toast rather than by itself:
 // it lives behind a short-lived link on another origin, and a window opened
 // after a wait (not straight from a click) is blocked by most browsers.
-export function ExportMenu({ disabled, onCsv, onExcel, onPdf }: Props) {
+export function ExportMenu({ disabled, onCsv, onExcel, onPdf, excelLabel = "Excel", pdfLabel = "PDF" }: Props) {
   const [busy, setBusy] = useState<Busy>(null);
 
   async function run(kind: Exclude<Busy, null>, fn: () => Promise<void>) {
@@ -90,13 +93,13 @@ export function ExportMenu({ disabled, onCsv, onExcel, onPdf }: Props) {
         {onExcel ? (
           <DropdownMenuItem onSelect={() => void run("excel", onExcel)}>
             <FileSpreadsheet className="mr-2 h-4 w-4" />
-            Excel
+            {excelLabel}
           </DropdownMenuItem>
         ) : null}
         {onPdf ? (
           <DropdownMenuItem onSelect={() => void run("pdf", () => pdf(onPdf))}>
             <FileText className="mr-2 h-4 w-4" />
-            PDF
+            {pdfLabel}
           </DropdownMenuItem>
         ) : null}
       </DropdownMenuContent>

@@ -50,8 +50,35 @@ export type TeacherActivityExportQuery = z.infer<typeof teacherActivityExportQue
 export const teacherActivityPdfRequestSchema = z.object({ termId: termIdField });
 export type TeacherActivityPdfRequest = z.infer<typeof teacherActivityPdfRequestSchema>;
 
+// Phase 9 / CP1.2 — the analytics tabs export whole: one workbook (a sheet per
+// table) or one PDF (a section per table).
+//   GET  /reports/analytics/:report/export   ?termId=&format=xlsx
+//   POST /reports/analytics/:report/pdf       { termId? }
+//   GET  /reports/teacher-trend/export        ?termId=&format=xlsx
+//   POST /reports/teacher-trend/pdf           { termId? }
+export const ANALYTICS_EXPORT_REPORTS = ["academic", "attendance", "enrolment"] as const;
+export type AnalyticsExportReport = (typeof ANALYTICS_EXPORT_REPORTS)[number];
+export const analyticsExportParamSchema = z.enum(ANALYTICS_EXPORT_REPORTS);
+
+export const analyticsExportQuerySchema = z.object({
+  termId: termIdField,
+  format: z.enum(REPORT_FILE_FORMATS).default("xlsx"),
+});
+export type AnalyticsExportQuery = z.infer<typeof analyticsExportQuerySchema>;
+
+export const analyticsPdfRequestSchema = z.object({ termId: termIdField });
+export type AnalyticsPdfRequest = z.infer<typeof analyticsPdfRequestSchema>;
+
 /** What a stored export row says it was a copy of; written to the row and the audit log. */
-export const REPORT_EXPORT_KEYS = ["completeness-registers", "completeness-scores", "teacher-activity"] as const;
+export const REPORT_EXPORT_KEYS = [
+  "completeness-registers",
+  "completeness-scores",
+  "teacher-activity",
+  "academic",
+  "attendance",
+  "enrolment",
+  "teacher-trend",
+] as const;
 export type ReportExportKey = (typeof REPORT_EXPORT_KEYS)[number];
 
 export const REPORT_EXPORT_STATUSES = ["PENDING", "GENERATED", "FAILED"] as const;

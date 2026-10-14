@@ -1101,13 +1101,21 @@ describe("Phase 8 CP1 RBAC coverage: calendar role grants match D28", () => {
 describe("Phase 8 CP2 RBAC coverage: reports route handlers declare @Permissions", () => {
   it("ReportsController: every handler carries exactly its own reports permission", () => {
     expect(routeHandlers(ReportsController).sort()).toEqual([
+      "academic",
+      "analyticsExport",
+      "analyticsPdf",
+      "attendance",
       "completeness",
       "completenessExport",
       "completenessPdf",
+      "enrolment",
       "exportStatus",
       "teacherActivity",
       "teacherActivityExport",
       "teacherActivityPdf",
+      "teacherTrend",
+      "teacherTrendExport",
+      "teacherTrendPdf",
     ]);
     const unknown = handlerPermissions(ReportsController).filter((p) => !(REPORTS_PERMISSIONS as readonly string[]).includes(p));
     expect(unknown).toEqual([]);
@@ -1127,6 +1135,13 @@ describe("Phase 8 CP2 RBAC coverage: reports route handlers declare @Permissions
     expect(perms("teacherActivityExport").sort()).toEqual(["reports.export", "reports.teacher-activity.read"]);
     expect(perms("teacherActivityPdf").sort()).toEqual(["reports.export", "reports.teacher-activity.read"]);
     expect(perms("exportStatus")).toEqual(["reports.export"]);
+    // Phase 9 / CP1.2 — the analytics tabs and their copies.
+    for (const read of ["academic", "attendance", "enrolment"]) expect(perms(read)).toEqual(["reports.analytics.read"]);
+    expect(perms("analyticsExport").sort()).toEqual(["reports.analytics.read", "reports.export"]);
+    expect(perms("analyticsPdf").sort()).toEqual(["reports.analytics.read", "reports.export"]);
+    expect(perms("teacherTrend")).toEqual(["reports.teacher-activity.read"]);
+    expect(perms("teacherTrendExport").sort()).toEqual(["reports.export", "reports.teacher-activity.read"]);
+    expect(perms("teacherTrendPdf").sort()).toEqual(["reports.export", "reports.teacher-activity.read"]);
   });
 });
 

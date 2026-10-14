@@ -1070,6 +1070,7 @@ const SCHOOL_RESPONSE_SELECT = {
   subjectAttendanceEnabled: true,
   positionVisibleToFamilies: true,
   positionOnReportCardPdf: true,
+  chronicAbsenceThreshold: true,
   paystackSubaccountCode: true,
   paystackSplitCode: true,
   paystackPaymentsEnabled: true,

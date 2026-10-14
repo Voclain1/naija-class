@@ -22,6 +22,8 @@ export interface ExportColumn<T> {
   value: (row: T) => ExportCell;
   /** Right-aligned in the PDF. Excel decides from the value's type. */
   numeric?: boolean;
+  /** Fixed decimal places for a number: "73.50" in the PDF, a 0.00 format in Excel. */
+  decimals?: number;
 }
 
 export interface ExportTable<T> {
@@ -105,6 +107,11 @@ export async function toXlsx(doc: ExportDocument): Promise<Buffer> {
     widths.forEach((w, i) => {
       sheet.getColumn(i + 1).width = Math.min(MAX_COLUMN_WIDTH, Math.max(MIN_COLUMN_WIDTH, w + 2));
     });
+    table.columns.forEach((c, i) => {
+      if (c.decimals === undefined) return;
+      const fmt = c.decimals > 0 ? `0.${"0".repeat(c.decimals)}` : "0";
+      for (let r = headerRow.number + 1; r <= sheet.rowCount; r++) sheet.getRow(r).getCell(i + 1).numFmt = fmt;
+    });
   }
 
   const out = await workbook.xlsx.writeBuffer();
@@ -142,7 +149,8 @@ export function toPrintHtml(doc: ExportDocument, opts: PrintHtmlOptions): string
                 `<tr>${t.columns
                   .map((c) => {
                     const v = c.value(r);
-                    return `<td class="${cellClass(c.numeric === true, v)}">${esc(v)}</td>`;
+                    const shown = typeof v === "number" && c.decimals !== undefined ? v.toFixed(c.decimals) : v;
+                    return `<td class="${cellClass(c.numeric === true, v)}">${esc(shown)}</td>`;
                   })
                   .join("")}</tr>`,
             )

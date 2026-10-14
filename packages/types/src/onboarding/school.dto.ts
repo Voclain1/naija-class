@@ -34,6 +34,9 @@ export interface SchoolMeDto {
   // app (default false), and printed on the report-card PDF (default true).
   positionVisibleToFamilies: boolean;
   positionOnReportCardPdf: boolean;
+  // Phase 9 / CP1.2 — attendance rate (whole percent) below which a student
+  // is listed as chronically absent on the Attendance report. Default 90.
+  chronicAbsenceThreshold: number;
   // Direct bank transfer (2026-09-11) — the school's own COLLECTION account,
   // shown to parents who would rather transfer than use Paystack. NOT the
   // guarded Paystack payout account on PaystackSetupRequest; see

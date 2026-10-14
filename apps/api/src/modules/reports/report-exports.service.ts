@@ -5,6 +5,7 @@ import { Queue } from "bullmq";
 import { withTenant } from "@school-kit/db";
 import {
   lagosTodayIso,
+  type AnalyticsExportReport,
   NotFoundError,
   type AttendanceArmRowDto,
   type CompletenessExportSection,
@@ -31,6 +32,13 @@ import { StorageService } from "../../common/storage/index.js";
 import { loadReceiptLogo } from "../payments/receipt.js";
 import type { ExportPdfJobData } from "../report-cards/render/export-pdf.service.js";
 import { wakeRenderWorker } from "../report-cards/render/wake-render-worker.js";
+import {
+  academicTables,
+  attendanceTables,
+  enrolmentTables,
+  teacherTrendTables,
+} from "./analytics-export.js";
+import { AnalyticsService } from "./analytics.service.js";
 import { CompletenessService } from "./completeness.service.js";
 
 // Phase 9 / CP1.1 — Excel and PDF copies of the reports (docs/modules/phase-9.md §8).
@@ -119,6 +127,7 @@ const teacherActivityTable = (rows: TeacherActivityRowDto[]): ExportTable<Teache
 export class ReportExportsService {
   constructor(
     private readonly completeness: CompletenessService,
+    private readonly analytics: AnalyticsService,
     private readonly storage: StorageService,
     @InjectQueue(REPORT_CARDS_QUEUE) private readonly queue: Queue,
   ) {}
@@ -168,6 +177,31 @@ export class ReportExportsService {
     await assertUserActiveAndHasOneOf(authCtx, MANAGER_ROLES);
     const { key, doc, termIdUsed } = await this.teacherActivityDocument(authCtx, termId, reqCtx);
     return this.queuePdf(authCtx, key, doc, termIdUsed, reqCtx);
+  }
+
+  // ===========================================================================
+  // Phase 9 / CP1.2 — the analytics tabs, exported whole
+  // ===========================================================================
+  async analyticsFile(
+    authCtx: AuthContext,
+    report: AnalyticsExportReport | "teacher-trend",
+    termId: string | undefined,
+    reqCtx: RequestContext,
+  ): Promise<ExportFile> {
+    await assertUserActiveAndHasOneOf(authCtx, MANAGER_ROLES);
+    const { doc } = await this.analyticsDocument(authCtx, report, termId, reqCtx);
+    return this.xlsxFile(authCtx, report, doc, reqCtx);
+  }
+
+  async requestAnalyticsPdf(
+    authCtx: AuthContext,
+    report: AnalyticsExportReport | "teacher-trend",
+    termId: string | undefined,
+    reqCtx: RequestContext,
+  ): Promise<ReportPdfAcceptedDto> {
+    await assertUserActiveAndHasOneOf(authCtx, MANAGER_ROLES);
+    const { doc, termIdUsed } = await this.analyticsDocument(authCtx, report, termId, reqCtx);
+    return this.queuePdf(authCtx, report, doc, termIdUsed, reqCtx);
   }
 
   // ===========================================================================
@@ -222,6 +256,46 @@ export class ReportExportsService {
       key: "teacher-activity",
       doc: { title: table.title, schoolName, subtitle: subtitleFor(report.term), tables: [table] },
       termIdUsed: report.term?.id ?? null,
+    };
+  }
+
+  private async analyticsDocument(
+    authCtx: AuthContext,
+    report: AnalyticsExportReport | "teacher-trend",
+    termId: string | undefined,
+    reqCtx: RequestContext,
+  ): Promise<{ doc: ExportDocument; termIdUsed: string | null }> {
+    const schoolName = this.schoolName(authCtx.schoolId);
+    let title: string;
+    let term: CompletenessTermDto | null;
+    let tables: ExportDocument["tables"];
+    switch (report) {
+      case "academic": {
+        const r = await this.analytics.getAcademic(authCtx, termId);
+        [title, term, tables] = ["Academic report", r.term, academicTables(r)];
+        break;
+      }
+      case "attendance": {
+        const r = await this.analytics.getAttendance(authCtx, termId);
+        [title, term, tables] = ["Attendance report", r.term, attendanceTables(r)];
+        break;
+      }
+      case "enrolment": {
+        const r = await this.analytics.getEnrolment(authCtx, termId);
+        [title, term, tables] = ["Enrolment report", r.term, enrolmentTables(r)];
+        break;
+      }
+      case "teacher-trend": {
+        // getTeacherTrend audits its own read; the export audits the copy.
+        const r = await this.analytics.getTeacherTrend(authCtx, termId, reqCtx);
+        const last = r.terms[r.terms.length - 1] ?? null;
+        [title, term, tables] = ["Teacher recording trend", last, teacherTrendTables(r)];
+        break;
+      }
+    }
+    return {
+      doc: { title, schoolName: await schoolName, subtitle: subtitleFor(term), tables },
+      termIdUsed: term?.id ?? null,
     };
   }
 
