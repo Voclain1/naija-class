@@ -754,3 +754,44 @@ report summaries).
   - Web helper tests.
   - e2e `list-exports.spec.ts`: the Students list as Excel, CSV and PDF; a
     bursar using the formatter; a malformed table refused.
+
+### 8.10 As built — CP1.3b, the reports in the app (2026-10-17)
+
+This closes CP1.
+
+- **Where:** Reports in the staff app gains a "More reports" section with
+  three screens: Academic results, Attendance and Enrolment. They read the
+  same routes as the website's tabs (§8.8), so the two cannot disagree.
+- **Who:** the section shows only for the owner and administrators, the same
+  people the API serves (`reports.analytics.read`). Anyone else would only be
+  refused, so they are not shown a door.
+- **What fits a phone:**
+  - **Academic:** each class's average; its top five and its bottom list,
+    lowest first, numbered under their own headings as on the website. The
+    subject chart does not fit a phone, so a button opens it on the website,
+    already signed in.
+  - **Attendance:** each class's rate and its latest week; students below the
+    school's often-absent line; days with no register.
+  - **Enrolment:** the number on roll and the change since last term; each
+    level's count; who joined and who left (the first 15 of each, then
+    "And N more"). In a school's first term this says the joiners and leavers
+    will show from its second term.
+- **Sharing:** each screen has "Share as Excel" and "Share as PDF", which use
+  the same files the website downloads (§8.7):
+  - The phone saves the file to its cache, opens the share sheet, and deletes
+    the file afterwards, even if sharing fails.
+  - Excel is fetched with the person's own session.
+  - For a PDF, the app asks for the file, then checks every 2 seconds for up
+    to 2 minutes. It downloads the finished file from the short-lived signed
+    link, sending no session with it.
+  - If the PDF is still being made after 2 minutes, the app says so and asks
+    the person to try again.
+- **Cache:** the three summaries name students, so their query keys carry the
+  `staff` prefix and the school and user. They are never written to the
+  phone's offline copy, and they are dropped when the app locks
+  (`staff-keys.spec.ts` enforces both).
+- **Tests:** unit tests for the PDF wait and the file names
+  (`report-wait.spec.ts`), and for the figures' wording (`report-copy.spec.ts`).
+  The four screens were checked at phone width (390 px) against a seeded
+  school: nothing runs off the screen, including with long class and student
+  names.

@@ -235,6 +235,14 @@ export const queryKeys = {
   // (D35), so the query using this key never refetches in the background.
   staffTeacherActivity: (schoolId: string, userId: string) =>
     ["staff", schoolId, userId, "teacher-activity"] as const,
+  // Phase 9 / CP1.3b — the analytics summaries. They name students (top and
+  // bottom, often absent, joiners), so staff-prefixed and never persisted.
+  staffAcademicReport: (schoolId: string, userId: string) =>
+    ["staff", schoolId, userId, "report-academic"] as const,
+  staffAttendanceReport: (schoolId: string, userId: string) =>
+    ["staff", schoolId, userId, "report-attendance"] as const,
+  staffEnrolmentReport: (schoolId: string, userId: string) =>
+    ["staff", schoolId, userId, "report-enrolment"] as const,
 
   // Announcements on the staff side. NOT persisted, like every staff key: a
   // STAFF-audience announcement is internal ("the head is away, do not admit

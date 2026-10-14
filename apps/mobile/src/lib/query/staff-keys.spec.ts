@@ -70,6 +70,10 @@ const STAFF_KEYS: Record<string, readonly unknown[]> = {
   staffAdmissionNumbers: queryKeys.staffAdmissionNumbers(SCHOOL, USER),
   // CP4d — named colleagues' activity; an audited read.
   staffTeacherActivity: queryKeys.staffTeacherActivity(SCHOOL, USER),
+  // Phase 9 / CP1.3b — the analytics summaries name students.
+  staffAcademicReport: queryKeys.staffAcademicReport(SCHOOL, USER),
+  staffAttendanceReport: queryKeys.staffAttendanceReport(SCHOOL, USER),
+  staffEnrolmentReport: queryKeys.staffEnrolmentReport(SCHOOL, USER),
   // Announcements — the sent list names its sender, and a STAFF-audience
   // message is internal.
   staffAnnouncements: queryKeys.staffAnnouncements(SCHOOL, USER),
