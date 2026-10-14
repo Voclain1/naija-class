@@ -1467,3 +1467,34 @@ before the next build:
   a batch, share it as a PDF of cards or a CSV, or print it; list batches;
   void a batch or one card by serial. See phase-8.md §21.3 for how the PINs
   are kept off the phone.
+
+## D19 and D24 revisited: unsaved work survives a forced sign-out (owner's decision, 2026-10-14)
+
+**Decision.** At the pre-build audit the owner chose to keep unsaved marks
+(and, with them, lesson-note text and report comments) when the **server**
+ends a staff session. That covers a session that expired or was revoked, an
+account switched off, and a school suspended. This reopens CP1's never-persist
+rule for the first time, in one narrow place. D24 said to "treat any report of
+lost work as the evidence that reopens it", and this is that reopening, made
+by the owner.
+
+**What changed:**
+
+- When the 401 handler ends a staff session, `session.tsx` takes every draft
+  from the in-memory store (`exportAllDrafts`) and writes it to SecureStore
+  (`draft-stash-store.ts`) before clearing memory. SecureStore is the
+  Keychain or Keystore storage the token already uses, never AsyncStorage.
+- At the next staff sign-in, `takeStashedDrafts` reads the stash and deletes
+  it, whoever is signing in. It returns only the keys whose school and user
+  match the person signing in, and `importDrafts` puts those back. Any other
+  account on the handset gets nothing, unread.
+- The stash expires after 7 days. It is written in 8,000-character pieces,
+  with the count written last, so a write cut off half-way is never read.
+  The rules are in `draft-stash.ts` and tested in `draft-stash.spec.ts`.
+
+**What did not change:**
+
+- A sign-out the person chooses still discards unsaved work, as the mark
+  sheet warns.
+- Closing the app still loses drafts, as the screens say.
+- The two-minute lock still keeps them in memory, as before.

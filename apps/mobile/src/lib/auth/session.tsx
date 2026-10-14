@@ -41,7 +41,8 @@ import { wipeOfflineCache } from "../query/persist";
 import { canProtectStaffSession, unlockStaffSession } from "./local-lock";
 import { getStaffDevice } from "./staff-device";
 import { sessionEndMessage, type SessionEndNotice } from "./session-end";
-import { clearAllGradebookDrafts } from "../staff/gradebook-drafts";
+import { clearAllGradebookDrafts, exportAllDrafts, importDrafts } from "../staff/gradebook-drafts";
+import { stashDrafts, takeStashedDrafts } from "../staff/draft-stash-store";
 
 // Guardian session state for apps/mobile.
 //
@@ -124,10 +125,16 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     setSchool(null);
     setStaff(null);
     // CP6a D19: unsaved marks are in-memory staff data and end with the
-    // principal. They deliberately survive the LOCK below, not a session end.
+    // principal. They deliberately survive the LOCK below. When the SERVER
+    // ended a staff session (a notice), they are stashed in SecureStore first
+    // and given back if the same person signs in again (draft-stash.ts,
+    // 2026-10-14). A sign-out the person chose (no notice) discards them, as
+    // the mark sheet warns.
+    const stash = notice?.principal === "staff" ? exportAllDrafts() : [];
     clearAllGradebookDrafts();
     await clearToken();
     await wipeOfflineCache(queryClient);
+    if (stash.length > 0) await stashDrafts(stash);
   }, [queryClient]);
 
   const consumeSessionEnd = useCallback(() => setSessionEnd(null), []);
@@ -221,6 +228,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     clearAllGradebookDrafts();
     try {
       const me = await staffMe();
+      // Work the server's sign-out interrupted comes back to the same person;
+      // anyone else signing in on this handset discards it unread.
+      importDrafts(await takeStashedDrafts({ schoolId: me.school.id, userId: me.user.id }));
       setPrincipal("staff");
       setStaff(me);
       setGuardian(null);
