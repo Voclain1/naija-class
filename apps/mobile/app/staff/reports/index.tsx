@@ -46,6 +46,8 @@ export default function ReportsScreen() {
   const allowed = isSchoolAdmin(staff?.roles) && hasPermission(permissions, "reports.completeness.read");
   const canSeeTeachers =
     isSchoolAdmin(staff?.roles) && hasPermission(permissions, "reports.teacher-activity.read");
+  // Phase 9 / CP1.3b — the results, attendance and enrolment summaries.
+  const canSeeAnalytics = isSchoolAdmin(staff?.roles) && hasPermission(permissions, "reports.analytics.read");
 
   const report = useQuery({
     queryKey: queryKeys.staffCompleteness(schoolId, userId, null),
@@ -202,6 +204,30 @@ export default function ReportsScreen() {
             title="Nothing behind"
             body="Every register due has been taken and every mark due has been entered."
           />
+        ) : null}
+
+        {canSeeAnalytics ? (
+          <>
+            <SectionHeader title="More reports" />
+            <ListRow
+              icon="ribbon-outline"
+              title="Academic results"
+              subtitle="Class averages, top and bottom students"
+              onPress={() => router.push("/staff/reports/academic")}
+            />
+            <ListRow
+              icon="calendar-outline"
+              title="Attendance"
+              subtitle="Each class's rate, and students often absent"
+              onPress={() => router.push("/staff/reports/attendance")}
+            />
+            <ListRow
+              icon="people-outline"
+              title="Enrolment"
+              subtitle="Students on roll, joiners and leavers"
+              onPress={() => router.push("/staff/reports/enrolment")}
+            />
+          </>
         ) : null}
 
         {canSeeTeachers ? (
