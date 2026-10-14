@@ -3,6 +3,7 @@ import { Redirect, useRouter } from "expo-router";
 import { useQueries, useQuery } from "@tanstack/react-query";
 import type { PortalStudentDto } from "@school-kit/types";
 
+import { attendanceTodayLine } from "../../src/lib/family/attendance-today";
 import { classLabel } from "../../src/lib/family/class-label";
 import { guardianHomework, listInvoices, listResults, listStudents } from "../../src/lib/api/portal";
 import { queryKeys } from "../../src/lib/query/keys";
@@ -132,6 +133,7 @@ export default function StudentsScreen() {
             homeworkDueSoon: homework?.dueSoonCount ?? 0,
             homeworkOverdue: homework?.data.filter((item) => item.overdue).length ?? 0,
           });
+          const today = attendanceTodayLine(student.todayAttendance);
           return (
             <Card key={student.id} style={styles.child}>
               <View style={styles.childHead}>
@@ -149,6 +151,8 @@ export default function StudentsScreen() {
                   </Label>
                 </View>
               </View>
+
+              {today ? <Notice tone={today.tone}>{today.text}</Notice> : null}
 
               {highlight ? (
                 <Notice tone={highlight.tone}>{highlight.text}</Notice>

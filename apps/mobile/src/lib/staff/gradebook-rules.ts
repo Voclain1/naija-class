@@ -1,7 +1,8 @@
-import type {
-  AssessmentFeedResponse,
-  AssessmentFeedRowDto,
-  GradingComponentDto,
+import {
+  MAX_RAW_OUT_OF,
+  type AssessmentFeedResponse,
+  type AssessmentFeedRowDto,
+  type GradingComponentDto,
 } from "@school-kit/types";
 
 // Pure rules behind the CP6a mark sheet. They mirror the web teacher
@@ -18,13 +19,14 @@ export type ComponentDraft = Readonly<Record<string, string>>;
 
 /**
  * Per-cell rule, same as web: empty is "unentered" (valid), otherwise a whole
- * number in 0..weight. Returns a short message or null.
+ * number in 0..max, where max is the component's weight or the "out of" the
+ * teacher chose. Returns a short message or null.
  */
-export function cellError(value: string, weight: number): string | null {
+export function cellError(value: string, max: number): string | null {
   const v = value.trim();
   if (v === "") return null;
-  if (!/^\d+$/.test(v)) return "Whole number, 0–" + weight;
-  if (Number(v) > weight) return "Maximum is " + weight;
+  if (!/^\d+$/.test(v)) return "Whole number, 0–" + max;
+  if (Number(v) > max) return "Maximum is " + max;
   return null;
 }
 
@@ -33,13 +35,69 @@ export function savedScore(row: AssessmentFeedRowDto, componentId: string): numb
   return row.scores.find((s) => s.componentId === componentId)?.score ?? null;
 }
 
+// ---- Marks "out of" any total (phase-8.md D60; on the web since CP5a, in
+// the app since the pre-build audit, 2026-10-13). The SERVER scales: the app
+// sends the raw mark and its total and shows the server's preview.
+
+/** A typed "out of": null for blank (marks in weight units), or why it is not usable. */
+export function parseOutOf(text: string): { outOf: number | null; error: string | null } {
+  const v = text.trim();
+  if (v === "") return { outOf: null, error: null };
+  if (!/^\d+$/.test(v) || Number(v) < 1 || Number(v) > MAX_RAW_OUT_OF) {
+    return { outOf: null, error: `A whole number from 1 to ${MAX_RAW_OUT_OF}` };
+  }
+  return { outOf: Number(v), error: null };
+}
+
+/**
+ * The total a component's saved marks were entered out of, when every saved
+ * mark shares one. Same rule as the web: the column reopens in that total,
+ * with the marks as they were typed.
+ */
+export function sharedSavedOutOf(rows: readonly AssessmentFeedRowDto[], componentId: string): number | null {
+  let shared: number | null = null;
+  for (const row of rows) {
+    const s = row.scores.find((x) => x.componentId === componentId);
+    if (!s) continue;
+    if (s.rawOutOf === null || s.rawScore === null) return null;
+    if (shared === null) shared = s.rawOutOf;
+    else if (shared !== s.rawOutOf) return null;
+  }
+  return shared;
+}
+
+/**
+ * What a cell shows when nothing is typed in it. In weight units, the saved
+ * score. Out of a total, the saved raw mark when it was saved in that same
+ * total; otherwise blank, with the saved mark shown beside it (savedNote).
+ */
+export function savedCellText(row: AssessmentFeedRowDto, componentId: string, outOf: number | null): string {
+  const s = row.scores.find((x) => x.componentId === componentId);
+  if (!s) return "";
+  if (outOf === null) return String(s.score);
+  return s.rawOutOf === outOf && s.rawScore !== null ? String(s.rawScore) : "";
+}
+
+/** "Saved 22/60" (and "as 37/100" when it was typed out of a total). */
+export function savedNote(row: AssessmentFeedRowDto, component: Pick<GradingComponentDto, "id" | "weight">): string | null {
+  const s = row.scores.find((x) => x.componentId === component.id);
+  if (!s) return null;
+  const typed = s.rawOutOf !== null && s.rawScore !== null ? ` (typed ${s.rawScore}/${s.rawOutOf})` : "";
+  return `Saved ${s.score}/${component.weight}${typed}`;
+}
+
 // D21. The bulk endpoint is an upsert with no delete, so an emptied cell that
 // already holds a saved mark would look cleared and quietly stay saved.
 export const CANNOT_REMOVE_MESSAGE = "Saved marks can be changed but not removed.";
 
+/** One cell to save: a score in weight units, or a raw mark the server scales. */
+export type ScoreRow =
+  | { studentId: string; componentId: string; score: number }
+  | { studentId: string; componentId: string; raw: { mark: number; outOf: number } };
+
 export interface ComponentSaveSet {
   /** Rows to send, sorted by studentId so a server issue path maps back. */
-  rows: { studentId: string; componentId: string; score: number }[];
+  rows: ScoreRow[];
   /** Students whose draft differs from what is saved (includes invalid ones). */
   dirtyStudentIds: string[];
   /** studentId → message for cells that must be fixed before saving. */
@@ -56,6 +114,7 @@ export function collectComponentSave(
   feedRows: readonly AssessmentFeedRowDto[],
   component: Pick<GradingComponentDto, "id" | "weight">,
   draft: ComponentDraft,
+  outOf: number | null = null,
 ): ComponentSaveSet {
   const rows: ComponentSaveSet["rows"] = [];
   const dirtyStudentIds: string[] = [];
@@ -76,17 +135,24 @@ export function collectComponentSave(
       continue;
     }
 
-    const error = cellError(text, component.weight);
+    const error = cellError(text, outOf ?? component.weight);
     if (error) {
       dirtyStudentIds.push(studentId);
       errors[studentId] = error;
       continue;
     }
 
-    const score = Number(text);
-    if (saved === score) continue;
+    const mark = Number(text);
+    if (outOf === null) {
+      if (saved === mark) continue;
+      dirtyStudentIds.push(studentId);
+      rows.push({ studentId, componentId: component.id, score: mark });
+      continue;
+    }
+    // Out of a total: unchanged only if it was saved as this same raw mark.
+    if (savedCellText(row, component.id, outOf) === String(mark)) continue;
     dirtyStudentIds.push(studentId);
-    rows.push({ studentId, componentId: component.id, score });
+    rows.push({ studentId, componentId: component.id, raw: { mark, outOf } });
   }
 
   rows.sort((a, b) => a.studentId.localeCompare(b.studentId));

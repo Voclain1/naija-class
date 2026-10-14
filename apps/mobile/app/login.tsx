@@ -13,6 +13,7 @@ import {
 import { Link, Redirect } from "expo-router";
 import { ApiError, ApiNetworkError } from "../src/lib/api/client";
 import { useSession } from "../src/lib/auth/session";
+import { sessionEndMessage as endMessageFor } from "../src/lib/auth/session-end";
 import { webUrl } from "../src/lib/web-handoff";
 import { loadSchoolHint } from "../src/lib/auth/school-hint-store";
 import { shouldCollapseSchoolField } from "../src/lib/auth/school-hint";
@@ -155,6 +156,11 @@ export default function LoginScreen() {
         // their password is wrong when they are simply on a bad connection
         // sends them to reset a password that was never the problem.
         setError("Can't reach SchoolKit. Check your connection and try again.");
+      } else if (caught instanceof ApiError && caught.code === "SCHOOL_SUSPENDED") {
+        // Refused only after the password checked out, so saying why gives
+        // nothing away; "wrong password" sent people to reset a password that
+        // was never the problem (pre-build audit, 2026-10-13).
+        setError(endMessageFor("SCHOOL_SUSPENDED"));
       } else if (caught instanceof ApiError) {
         setError(
           caught.status === 401

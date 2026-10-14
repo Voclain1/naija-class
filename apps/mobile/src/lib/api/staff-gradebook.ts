@@ -3,6 +3,7 @@ import type {
   AssessmentFeedResponse,
   BulkAssessmentScoreInput,
   GradingSchemeDto,
+  ScorePreviewResponse,
   SignOffBulkInput,
 } from "@school-kit/types";
 
@@ -28,6 +29,18 @@ export function staffGradebookFeed(
 ): Promise<AssessmentFeedResponse> {
   const query = new URLSearchParams({ termId, classArmId, subjectId });
   return apiFetch<AssessmentFeedResponse>(`/assessments?${query.toString()}`);
+}
+
+/**
+ * What each row would be saved as, without saving (phase-8.md D60). The app
+ * shows this before a save that carries raw marks; the save sends the same
+ * rows and the server recomputes, never trusting a client-scaled figure.
+ */
+export function staffPreviewScores(input: BulkAssessmentScoreInput): Promise<ScorePreviewResponse> {
+  return apiFetch<ScorePreviewResponse>("/assessment-scores/preview", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
 }
 
 export function staffSaveScores(input: BulkAssessmentScoreInput): Promise<AssessmentFeedResponse> {

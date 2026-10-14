@@ -19,6 +19,7 @@
 
 import type { GenderDto, StudentStatusDto } from "../students/student.dto.js";
 import type { CurrentEnrollmentRefDto } from "../enrollments/enrollment.dto.js";
+import type { AttendanceStatusDto } from "../attendance/attendance.dto.js";
 
 export interface PortalStudentDto {
   id: string;
@@ -35,6 +36,12 @@ export interface PortalStudentDto {
   isPrimary: boolean;
   canPickup: boolean;
   currentEnrollment: CurrentEnrollmentRefDto | null;
+  // Today's register mark (Lagos calendar day), or null when the register has
+  // not been taken. Only on GET /portal/students: the absence alert says "a
+  // child was marked absent", and a family with several children needs to see
+  // which (pre-build audit, 2026-10-13). Optional so the detail endpoint and
+  // older clients are unaffected.
+  todayAttendance?: AttendanceStatusDto | null;
 }
 
 // No pagination — a guardian has a small, bounded number of linked

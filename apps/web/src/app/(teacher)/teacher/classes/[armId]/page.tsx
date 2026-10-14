@@ -179,9 +179,14 @@ export default function TeacherArmRosterPage() {
                           photoUrl={s.photoUrl}
                           size="sm"
                         />
-                        <span className="font-medium">
+                        {/* A teacher records conduct for a child they teach
+                            from here (pre-build audit, 2026-10-13). */}
+                        <Link
+                          href={`/teacher/classes/${armId}/students/${s.id}`}
+                          className="font-medium underline-offset-4 hover:underline"
+                        >
                           {s.lastName}, {s.firstName}
-                        </span>
+                        </Link>
                       </div>
                     </TableCell>
                     <TableCell className="font-mono text-xs text-muted-foreground">

@@ -71,6 +71,16 @@ export function draftKey(scope: DraftScope, componentId: string): string {
   return columnPrefix(scope) + "|score:" + componentId;
 }
 
+/**
+ * The "out of" a teacher chose for one component (pre-build audit, 2026-10-13,
+ * phase-8.md D60). Stored beside the marks it gives meaning to, under its own
+ * prefix so it never counts as an unsaved mark: one cell, "outOf", whose text
+ * is the total ("" = marks in the component's own weight).
+ */
+export function outOfDraftKey(scope: DraftScope, componentId: string): string {
+  return columnPrefix(scope) + "|out-of:" + componentId;
+}
+
 /** CP6b — unaccepted comment text, keyed by studentId within the column. */
 export function commentDraftKey(scope: DraftScope): string {
   return columnPrefix(scope) + "|comment";

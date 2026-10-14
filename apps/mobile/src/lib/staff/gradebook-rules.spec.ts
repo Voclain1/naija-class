@@ -9,6 +9,10 @@ import {
   componentProgress,
   isColumnFullyScored,
   issuesByStudent,
+  parseOutOf,
+  savedCellText,
+  savedNote,
+  sharedSavedOutOf,
   signOffBlockReason,
 } from "./gradebook-rules";
 
@@ -168,5 +172,58 @@ describe("column state", () => {
     expect(
       signOffBlockReason({ hasUnsavedMarks: false, hasUnsavedComments: true, fullyScored: true }),
     ).toBe("Accept or clear your comment drafts first.");
+  });
+});
+
+// Marks "out of" any total (phase-8.md D60), in the app since 2026-10-13.
+function rawRow(studentId: string, componentId: string, score: number, raw: [number, number] | null): AssessmentFeedRowDto {
+  const r = row(studentId, { [componentId]: score });
+  return {
+    ...r,
+    scores: r.scores.map((s) => ({ ...s, rawScore: raw ? raw[0] : null, rawOutOf: raw ? raw[1] : null })),
+  };
+}
+
+describe("marks out of any total", () => {
+  it("parses the total: blank is weight units, 1..1000 is a total, anything else says why", () => {
+    expect(parseOutOf("")).toEqual({ outOf: null, error: null });
+    expect(parseOutOf("100")).toEqual({ outOf: 100, error: null });
+    expect(parseOutOf("0").error).toMatch(/1 to 1000/);
+    expect(parseOutOf("1001").error).toMatch(/1 to 1000/);
+    expect(parseOutOf("7.5").error).not.toBeNull();
+  });
+
+  it("checks each cell against the total, not the weight", () => {
+    const set = collectComponentSave([row("a", {})], EXAM, { a: "75" }, 100);
+    expect(set.errors).toEqual({});
+    expect(set.rows).toEqual([{ studentId: "a", componentId: "exam", raw: { mark: 75, outOf: 100 } }]);
+    expect(collectComponentSave([row("a", {})], EXAM, { a: "101" }, 100).errors.a).toBe("Maximum is 100");
+  });
+
+  it("sends raw marks for the server to scale; never a client-scaled score", () => {
+    const set = collectComponentSave([row("a", {}), row("b", {})], EXAM, { a: "37", b: "100" }, 100);
+    expect(set.rows.every((r) => "raw" in r && !("score" in r))).toBe(true);
+  });
+
+  it("a raw mark typed again in its own total is not a change", () => {
+    const rows = [rawRow("a", "exam", 45, [75, 100])];
+    expect(collectComponentSave(rows, EXAM, { a: "75" }, 100).rows).toEqual([]);
+    expect(collectComponentSave(rows, EXAM, { a: "76" }, 100).rows).toHaveLength(1);
+  });
+
+  it("reopens a column in the total its saved marks share, and not when they differ", () => {
+    expect(sharedSavedOutOf([rawRow("a", "exam", 45, [75, 100]), rawRow("b", "exam", 30, [50, 100])], "exam")).toBe(100);
+    expect(sharedSavedOutOf([rawRow("a", "exam", 45, [75, 100]), rawRow("b", "exam", 30, [25, 50])], "exam")).toBeNull();
+    expect(sharedSavedOutOf([rawRow("a", "exam", 45, [75, 100]), row("b", { exam: 30 })], "exam")).toBeNull();
+    expect(sharedSavedOutOf([row("a", {})], "exam")).toBeNull();
+  });
+
+  it("shows the saved raw mark in its own total, and the saved score otherwise", () => {
+    const r = rawRow("a", "exam", 45, [75, 100]);
+    expect(savedCellText(r, "exam", 100)).toBe("75");
+    expect(savedCellText(r, "exam", 50)).toBe("");
+    expect(savedCellText(r, "exam", null)).toBe("45");
+    expect(savedNote(r, EXAM)).toBe("Saved 45/60 (typed 75/100)");
+    expect(savedNote(row("b", { exam: 30 }), EXAM)).toBe("Saved 30/60");
   });
 });

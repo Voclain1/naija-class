@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { ScrollView, StyleSheet, TextInput } from "react-native";
-import { Redirect, Stack, useLocalSearchParams } from "expo-router";
+import { Redirect, Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
 import type { TeacherRosterStudentDto } from "@school-kit/types";
 
@@ -9,6 +9,7 @@ import { staffArmRoster, staffTeacherScope } from "../../../src/lib/api/staff-at
 import { ApiError } from "../../../src/lib/api/client";
 import { queryKeys } from "../../../src/lib/query/keys";
 import { useSession } from "../../../src/lib/auth/session";
+import { hasPermission } from "../../../src/lib/auth/permissions";
 import { useTheme } from "../../../src/theme/theme-provider";
 import { fontSizes, fonts, radii, spacing } from "../../../src/theme/tokens";
 import {
@@ -46,6 +47,8 @@ export default function ClassRosterScreen() {
   const authed = status === "authenticated" && principal === "staff";
   const schoolId = staff?.school.id ?? "";
   const userId = staff?.user.id ?? "";
+  const router = useRouter();
+  const canRecordBehaviour = hasPermission(staff?.permissions ?? [], "behaviour.read");
   const ready = authed && schoolId !== "" && userId !== "" && !!armId;
 
   const [search, setSearch] = useState("");
@@ -144,6 +147,17 @@ export default function ClassRosterScreen() {
                 subtitle={`${student.admissionNumber}${
                   student.status === "ACTIVE" ? "" : ` · ${student.status.toLowerCase()}`
                 }`}
+                // A teacher records conduct for a child they teach from here
+                // (pre-build audit, 2026-10-13).
+                onPress={
+                  canRecordBehaviour
+                    ? () =>
+                        router.push({
+                          pathname: "/staff/classes/behaviour/[studentId]",
+                          params: { studentId: student.id, name: fullName(student) },
+                        })
+                    : undefined
+                }
               />
             ))}
 
