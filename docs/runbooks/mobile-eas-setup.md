@@ -43,6 +43,25 @@ For CI, use a token rather than an interactive login — create one at
 https://expo.dev/accounts/[account]/settings/access-tokens and expose it as
 `EXPO_TOKEN`. Do not commit it.
 
+### 1a. Building with no computer (GitHub Actions)
+
+`.github/workflows/mobile-build.yml` ("Build the app") starts an EAS build
+from GitHub, so a build can be started from a phone. It runs only when started
+by hand: open the repository's **Actions** tab, choose **Build the app**, then
+**Run workflow**, and pick the profile (production by default) and the
+platform (android by default). The job only *starts* the build; EAS builds it
+in its own cloud, and the result and install link appear at expo.dev under
+`voclains-team/school-kit`.
+
+It needs one repository secret, `EXPO_TOKEN`. Create a token at expo.dev
+(Account settings → Access tokens) and add it on GitHub under Settings →
+Secrets and variables → Actions → New repository secret. Never paste it into
+a chat, an issue or a commit. Without the secret, the workflow stops at its
+first step and says so.
+
+The build is of the commit the workflow ran on (a clean checkout), so §2a's
+working-tree trap does not apply here.
+
 ---
 
 ## 2. Link the repo to an EAS project — already done

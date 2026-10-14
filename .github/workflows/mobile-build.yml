@@ -1,0 +1,78 @@
+name: Build the app
+
+# Starts an EAS build of apps/mobile from GitHub, for when no computer is to
+# hand (docs/runbooks/mobile-eas-setup.md §1a). Run it from the Actions tab:
+# "Build the app" → "Run workflow", choose the profile and platform.
+#
+# It only STARTS the build (--no-wait); EAS builds it in its own cloud and the
+# result appears at expo.dev under voclains-team/school-kit, with the install
+# link. Signing credentials are the ones already stored on EAS.
+#
+# Needs the repository secret EXPO_TOKEN (an Expo access token). Without it
+# the first step fails and says so; nothing else runs.
+
+on:
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: "EAS build profile"
+        type: choice
+        options: [production, preview]
+        default: production
+      platform:
+        description: "Platform"
+        type: choice
+        options: [android, ios, all]
+        default: android
+
+concurrency:
+  group: mobile-build
+  cancel-in-progress: false
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  build:
+    name: start EAS build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check the Expo token is set
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          if [ -z "$EXPO_TOKEN" ]; then
+            echo "::error::The repository secret EXPO_TOKEN is not set. Add it under Settings → Secrets and variables → Actions."
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+
+      # The app's config plugins are resolved from node_modules when EAS reads
+      # the project. Chrome (for the API's PDF tests) is not needed here.
+      - name: Install dependencies
+        env:
+          PUPPETEER_SKIP_DOWNLOAD: "1"
+        run: pnpm install --frozen-lockfile
+
+      - name: Start the build
+        working-directory: apps/mobile
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: >
+          pnpm dlx eas-cli build
+          --profile "${{ inputs.profile }}"
+          --platform "${{ inputs.platform }}"
+          --non-interactive
+          --no-wait
