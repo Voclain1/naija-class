@@ -150,6 +150,21 @@ export function staffDestinations(ctx: StaffContext): Destination[] {
     });
   }
 
+  // Question bank, exam papers and online exams (phase-8.md §22.2–22.3,
+  // cbt.md), brought to the app by the owner's decision on the pre-build
+  // audit (2026-10-14). Admin and teacher hold all three permissions; each
+  // service holds a teacher to the subjects they teach, so the menu offers
+  // them on the permission and the screens show what the server returns.
+  if (can("question.read")) {
+    out.push({ key: "question-bank", label: "Question bank", hint: "Questions, and AI drafts to check", icon: "help-circle-outline", group: teacher ? "Teaching" : "School", route: "/staff/question-bank" });
+  }
+  if (can("exam-paper.read")) {
+    out.push({ key: "exam-papers", label: "Exam papers", hint: "Set, finalise and export", icon: "newspaper-outline", group: teacher ? "Teaching" : "School", route: "/staff/exam-papers" });
+  }
+  if (can("cbt.read")) {
+    out.push({ key: "online-exams", label: "Online exams", hint: "Schedule and see results", icon: "desktop-outline", group: teacher ? "Teaching" : "School", route: "/staff/online-exams" });
+  }
+
   // --- Calendar ---
   if (teacher) {
     out.push({ key: "timetable", label: "Timetable", icon: "calendar-outline", group: "Calendar", route: "/staff/timetable" });

@@ -192,6 +192,19 @@ export const queryKeys = {
   // The batch list only: counts and status, never a PIN.
   staffResultPinBatches: (schoolId: string, userId: string) => ["staff", schoolId, userId, "result-pin-batches"] as const,
   staffTermOptions: (schoolId: string, userId: string) => ["staff", schoolId, userId, "term-options"] as const,
+  // Question bank, exam papers and online exams (pre-build audit, 2026-10-14).
+  // Unreleased exam content: staff-prefixed, so never persisted.
+  staffQuestionScope: (schoolId: string, userId: string) => ["staff", schoolId, userId, "question-scope"] as const,
+  staffQuestions: (schoolId: string, userId: string, filter: string) =>
+    ["staff", schoolId, userId, "questions", filter] as const,
+  staffExamPapers: (schoolId: string, userId: string) => ["staff", schoolId, userId, "exam-papers"] as const,
+  staffExamPaper: (schoolId: string, userId: string, paperId: string) =>
+    ["staff", schoolId, userId, "exam-paper", paperId] as const,
+  staffCbtExams: (schoolId: string, userId: string) => ["staff", schoolId, userId, "cbt-exams"] as const,
+  staffCbtExam: (schoolId: string, userId: string, examId: string) =>
+    ["staff", schoolId, userId, "cbt-exam", examId] as const,
+  staffCbtResults: (schoolId: string, userId: string, examId: string) =>
+    ["staff", schoolId, userId, "cbt-results", examId] as const,
 
   // CP4b — report card approval. The completeness report is keyed "current"
   // when no term is named, matching the endpoint's own default.

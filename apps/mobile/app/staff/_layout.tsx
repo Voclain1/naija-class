@@ -105,6 +105,9 @@ export default function StaffTabsLayout() {
       <Tabs.Screen name="profile" options={{ href: null }} />
       <Tabs.Screen name="students" options={{ href: null }} />
       <Tabs.Screen name="reports" options={{ href: null }} />
+      <Tabs.Screen name="question-bank" options={{ href: null }} />
+      <Tabs.Screen name="exam-papers" options={{ href: null }} />
+      <Tabs.Screen name="online-exams" options={{ href: null }} />
     </Tabs>
   );
 }
