@@ -98,9 +98,9 @@ blocked by it.
 | Q1 | **Messaging scope.** Reverse D11 fully (parent ↔ teacher, teacher ↔ teacher), or the D13 shape (parent → school inbox, answered by the admin)? | **D13 shape first**: one inbox per school, any staff member with the permission answers as "the school", never a child, all threads visible to admins. Teacher ↔ teacher only if you want it; it is lower risk than parent ↔ teacher. | CP8 |
 | Q2 | **Parent notice of serious incidents** (reverses C14 in part). | Yes, but narrowly. Only a **discipline action** (suspension and above) that an admin has approved sends the parent a factual notice: dates and the action, not the teacher's note. Ordinary records stay internal. | CP2 |
 | Q3 | **Health records: who may read.** | Owner, admin and a new **school nurse** role (sickbay). Teachers see only an "allergies and conditions" line, for safety on trips and in class, and never the sickbay log. Every read audited. | CP3 |
-| Q4 | **Transport, library and hostel fees.** Invoices are one per student per term and cannot have lines added after issue. | A new **student charge** primitive (§4, CP5). Charges are created through the finance service, then picked up by the next invoice run, or issued as a small "supplementary invoice" per charge if you approve one. **Decide: supplementary invoices yes/no.** | CP5 |
+| Q4 | **Transport, library and hostel fees.** Invoices are one per student per term and cannot have lines added after issue. | A new **student charge** primitive (§4, CP5). Charges are created through the finance service, then picked up by the next invoice run, or issued as a small "supplementary invoice" per charge if you approve one. **Owner, 2026-10-14 (transport):** the admin sets each route's fee on that route's own page; the fee is not typed per student. **Still to decide: supplementary invoices yes/no.** | CP5 |
 | Q5 | **WhatsApp Business.** Needs a Meta-approved business number and a provider (Termii proxies it). That is your side, not code. | Build the channel behind a per-school switch with SMS fallback, but only once you have an approved number. Until then, keep the `wa.me` share links that already work. | CP9 |
-| Q6 | **AI and children's text** (essay feedback, message translation). Both send text that may name children. | **Essays:** strip the student's own name and send only the answer text, under a new prompt that **you** add to the allowlist table by name. Feedback is a draft the teacher approves. **Translation:** do not build until you have decided; it is the weaker case (a parent can use their phone's own translator), and it would be a second allowlist row. | CP4b, CP9 |
+| Q6 | **AI and children's text** (essay feedback, message translation). **Owner, 2026-10-14:** students get no AI writing help of any kind; they type or paste their own work. Still open: whether a *teacher* may use AI to draft marking feedback (CP4b). Both send text that may name children. | **Essays:** strip the student's own name and send only the answer text, under a new prompt that **you** add to the allowlist table by name. Feedback is a draft the teacher approves. **Translation:** do not build until you have decided; it is the weaker case (a parent can use their phone's own translator), and it would be a second allowlist row. | CP4b, CP9 |
 | Q7 | **Detecting AI-written student work** (spec §6.8). | **Do not build.** These detectors are unreliable, and a false "you cheated" against a child is a real harm. Offer the in-class similarity check (plagiarism between submissions) instead. | CP4 |
 | Q8 | **Students uploading files** (photos of handwritten work). The student account has no upload today. | Yes, from the app only, images and PDF up to 10 MB, three files per submission. They are stored privately and visible only to the teacher, admin, the student and that student's linked guardians. | CP4 |
 | Q9 | **Online admissions: public form.** Strangers can submit a child's details and documents. | Yes, behind a per-school switch, with rate limits, a hidden honeypot field (new; nothing in the codebase uses one yet), an NDPR consent tickbox, and a 90-day purge of rejected applications. Accepting creates the student through the existing create path. | CP7 |
@@ -230,8 +230,9 @@ This builds on the homework board without changing what is already shipped.
 A homework item gets an optional "**collect work**" switch, which turns it
 into an assignment.
 
-- **Students** submit typed text, or files from the app (Q8), before or after
-  the due date; late work is marked as late.
+- **Students** submit typed or pasted text, or files from the app (Q8),
+  before or after the due date; late work is marked as late. There is no AI
+  writing help for students anywhere (owner, 2026-10-14).
 - **Questions:** multiple choice and fill-in-the-blank, reusing the question
   bank's shapes.
   - Marked automatically.
@@ -280,7 +281,9 @@ into an assignment.
     capacity) and drivers (name, phone, licence expiry).
   - **Assignments:** students to a route and stop per term; route capacity is
     enforced.
-  - **Fees:** a fee per route or per stop raises a student charge per term.
+  - **Fees:** the admin opens a route and sets its fee there (owner,
+    2026-10-14). Assigning a student to the route raises a student charge for
+    that fee each term; nobody types a transport amount per student.
   - **Lists:** a daily route list for the driver, printable or in the app.
   - **Parents** see the route, stop and driver's phone.
   - **Out of scope:** GPS.
