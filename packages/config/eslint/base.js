@@ -208,6 +208,11 @@ export const baseConfig = [
       // (schools has no RLS); the expired-session deletes run through
       // withTenant per school. No tenant data is accessed via basePrisma.
       "**/modules/system/session-sweeper.service.ts",
+      // report-export-sweeper.service.ts — Phase 9 / CP1.1. Same category: a
+      // daily system cron that iterates every school. basePrisma fetches ONLY
+      // the school id list (schools has no RLS); every read and delete of
+      // report_exports goes through withTenant per school.
+      "**/modules/reports/report-export-sweeper.service.ts",
       // parent-summaries.service.ts — Phase 5 / Slice 5. Same category again:
       // sweepWeeklySummaries is a weekly system cron that iterates every
       // ACTIVE school which has opted into parent summaries. basePrisma

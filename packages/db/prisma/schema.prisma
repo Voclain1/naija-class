@@ -267,6 +267,7 @@ model School {
   guardianPasswordResetTokens GuardianPasswordResetToken[]
 
   admissionNumberCounters AdmissionNumberCounter[]
+  reportExports           ReportExport[]
 
   @@map("schools")
 }
@@ -3807,4 +3808,33 @@ model AdmissionNumberCounter {
 
   @@id([schoolId, scope])
   @@map("admission_number_counters")
+}
+
+// Phase 9 / CP1 — a PDF copy of a report, made by the render worker
+// (docs/modules/phase-9.md §8 CP1-D3). The API writes the finished HTML here,
+// the worker prints it to PDF, stores the file and clears `html`, so the
+// report's rows sit in this table only for the seconds between the two. A
+// daily clean-up deletes rows and files older than 24 hours.
+model ReportExport {
+  id          String             @id @default(uuid())
+  schoolId    String             @map("school_id")
+  requestedBy String             @map("requested_by")
+  report      String
+  termId      String?            @map("term_id")
+  status      ReportExportStatus @default(PENDING)
+  filename    String
+  html        String?
+  storagePath String?            @map("storage_path")
+  createdAt   DateTime           @default(now()) @map("created_at")
+  finishedAt  DateTime?          @map("finished_at")
+  school      School             @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  @@index([schoolId, createdAt])
+  @@map("report_exports")
+}
+
+enum ReportExportStatus {
+  PENDING
+  GENERATED
+  FAILED
 }

@@ -49,6 +49,10 @@ async function bootstrap() {
       origin: corsOrigins,
       methods: ["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
       allowedHeaders: ["Content-Type", "Authorization", "X-CBT-Signature"],
+      // A cross-origin page can read only the response headers listed here.
+      // Without it every file download (report exports, import reports) lost
+      // the file name the API chose and fell back to the page's default.
+      exposedHeaders: ["Content-Disposition"],
       credentials: origin !== undefined && origin === corsOrigin,
     });
   });

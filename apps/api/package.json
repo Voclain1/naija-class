@@ -34,6 +34,7 @@
     "argon2": "^0.45.1",
     "bullmq": "^5.81.5",
     "csv-parse": "^6.2.1",
+    "exceljs": "4.4.0",
     "ioredis": "^5.11.1",
     "otplib": "^13.5.0",
     "pdfjs-dist": "4.10.38",

@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 
 import { ReportCardsModule } from "../report-cards.module";
 import { BrowserPool } from "./browser-pool";
+import { ExportPdfService } from "./export-pdf.service";
 import { ReportCardRenderProcessor } from "./render.processor";
 import { RenderService } from "./render.service";
 
@@ -22,8 +23,10 @@ import { RenderService } from "./render.service";
 //   - RenderService: card → HTML → PDF → storage → status.
 //   - ReportCardRenderProcessor: the sole @Processor on REPORT_CARDS_QUEUE
 //     (concurrency 1).
+//   - ExportPdfService: prints a report export the API laid out (Phase 9 /
+//     CP1.1), on the same processor and so the same single page.
 @Module({
   imports: [ReportCardsModule],
-  providers: [BrowserPool, RenderService, ReportCardRenderProcessor],
+  providers: [BrowserPool, RenderService, ExportPdfService, ReportCardRenderProcessor],
 })
 export class ReportCardRenderModule {}

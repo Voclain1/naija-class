@@ -65,6 +65,12 @@ export function pathFor(schoolId: string, key: StorageObjectKey): string {
       }
       return `schools/${schoolId}/curriculum/${key.documentId}/source`;
     }
+    case "report-export": {
+      if (!UUID_RE.test(key.exportId)) {
+        throw new Error(`storage: exportId is not a UUID: ${redact(key.exportId)}`);
+      }
+      return `schools/${schoolId}/report-exports/${key.exportId}.pdf`;
+    }
   }
 }
 

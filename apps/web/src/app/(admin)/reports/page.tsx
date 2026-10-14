@@ -13,13 +13,19 @@ import {
   type TeacherActivityReportDto,
 } from "@school-kit/types";
 
-import { ExportCsvButton } from "@/components/shared/export-csv-button";
+import { ExportMenu } from "@/components/shared/export-menu";
 import { InlineAlert } from "@/components/shared/inline-alert";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ApiError } from "@/lib/api-client";
 import { useAuth } from "@/lib/auth/use-auth";
 import { exportRowsAsCsv } from "@/lib/csv-export";
+import {
+  downloadCompletenessExcel,
+  downloadTeacherActivityExcel,
+  requestCompletenessPdf,
+  requestTeacherActivityPdf,
+} from "@/lib/reports/report-exports-api";
 import { getCompletenessReport, getTeacherActivityReport, ofCount } from "@/lib/reports/reports-api";
 import { hasPermission } from "@/lib/auth/has-permission";
 
@@ -45,6 +51,9 @@ export default function ReportsPage() {
   const { permissions } = useAuth();
   const canRead = hasPermission(permissions, "reports.completeness.read");
   const canSeeTeachers = hasPermission(permissions, "reports.teacher-activity.read");
+  // Excel and PDF are built by the API under their own permission (Phase 9
+  // CP1-D7); CSV is built here from rows the page already holds.
+  const canExport = hasPermission(permissions, "reports.export");
   const termId = useSearchParams().get("termId") ?? undefined;
 
   const [report, setReport] = useState<CompletenessReportDto | null>(null);
@@ -132,14 +141,14 @@ export default function ReportsPage() {
               </TabsList>
 
               <TabsContent value="school" className="flex flex-col gap-8">
-                <SchoolSections report={report} />
+                <SchoolSections report={report} canExport={canExport} />
               </TabsContent>
 
               {canSeeTeachers && (
                 // Radix mounts TabsContent only while its tab is selected, so the
                 // audited fetch happens only when an admin opens this tab.
                 <TabsContent value="teachers">
-                  <TeacherActivityPanel termId={report.term.id} />
+                  <TeacherActivityPanel termId={report.term.id} canExport={canExport} />
                 </TabsContent>
               )}
             </Tabs>
@@ -150,7 +159,7 @@ export default function ReportsPage() {
   );
 }
 
-function SchoolSections({ report }: { report: CompletenessReportDto }) {
+function SchoolSections({ report, canExport }: { report: CompletenessReportDto; canExport: boolean }) {
   const term = report.term!;
   const days = report.schoolDays!;
   const attendance = report.attendance!;
@@ -187,9 +196,11 @@ function SchoolSections({ report }: { report: CompletenessReportDto }) {
           <h2 id="attendance-heading" className="font-serif text-xl font-medium text-foreground">
             Daily registers
           </h2>
-          <ExportCsvButton
+          <ExportMenu
             disabled={attendance.rows.length === 0}
-            onExport={() =>
+            onExcel={canExport ? () => downloadCompletenessExcel("registers", term.id) : undefined}
+            onPdf={canExport ? () => requestCompletenessPdf("registers", term.id) : undefined}
+            onCsv={() =>
               exportRowsAsCsv(`registers-${slug}.csv`, attendance.rows, [
                 { header: "Class", accessor: (r) => r.label },
                 { header: "Level", accessor: (r) => r.classLevelName },
@@ -244,9 +255,11 @@ function SchoolSections({ report }: { report: CompletenessReportDto }) {
           <h2 id="scores-heading" className="font-serif text-xl font-medium text-foreground">
             Score entry
           </h2>
-          <ExportCsvButton
+          <ExportMenu
             disabled={scores.rows.length === 0}
-            onExport={() =>
+            onExcel={canExport ? () => downloadCompletenessExcel("scores", term.id) : undefined}
+            onPdf={canExport ? () => requestCompletenessPdf("scores", term.id) : undefined}
+            onCsv={() =>
               exportRowsAsCsv(`score-entry-${slug}.csv`, scores.rows, [
                 { header: "Class", accessor: (r) => r.label },
                 { header: "Subject", accessor: (r) => r.subjectName },
@@ -338,7 +351,7 @@ function SchoolSections({ report }: { report: CompletenessReportDto }) {
   );
 }
 
-function TeacherActivityPanel({ termId }: { termId: string }) {
+function TeacherActivityPanel({ termId, canExport }: { termId: string; canExport: boolean }) {
   const [data, setData] = useState<TeacherActivityReportDto | null>(null);
   const [error, setError] = useState<string | null>(null);
   // Every fetch writes an audit row (§3.4 D23). React StrictMode runs mount
@@ -370,6 +383,14 @@ function TeacherActivityPanel({ termId }: { termId: string }) {
         Registers are counted against the class, whoever marked them; &quot;keyed themselves&quot; shows what this
         teacher entered personally, since admins sometimes enter records for teachers.
       </p>
+      {canExport && data.rows.length > 0 ? (
+        <div className="flex justify-end">
+          <ExportMenu
+            onExcel={() => downloadTeacherActivityExcel(termId)}
+            onPdf={() => requestTeacherActivityPdf(termId)}
+          />
+        </div>
+      ) : null}
       {data.rows.length === 0 ? (
         <p className="text-sm text-muted-foreground">No staff hold the teacher role yet.</p>
       ) : (
