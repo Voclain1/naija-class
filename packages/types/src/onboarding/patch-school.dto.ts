@@ -31,6 +31,10 @@ const schoolSettingsSchema = z.object({
   // carries. The first defaults OFF, the second ON.
   positionVisibleToFamilies: z.boolean(),
   positionOnReportCardPdf: z.boolean(),
+  // Phase 9 / CP1.2 — the chronic-absence line on the Attendance report, as a
+  // whole percent (docs/modules/phase-9.md §8 CP1-D5). Mirrors the column's
+  // CHECK (50–100).
+  chronicAbsenceThreshold: z.number().int().min(50).max(100),
   paystackSubaccountCode: z.string().trim().min(1, "subaccount code cannot be blank").nullable(),
   paystackPaymentsEnabled: z.boolean(),
   // Direct bank transfer (2026-09-11). All nullable so a school can clear what

@@ -16,6 +16,7 @@ import { StorageService } from "../../common/storage/storage.service";
 import { AuthService } from "../auth/auth.service";
 import type { BrowserPool } from "../report-cards/render/browser-pool";
 import { ExportPdfService } from "../report-cards/render/export-pdf.service";
+import type { AnalyticsService } from "./analytics.service";
 import type { CompletenessService } from "./completeness.service";
 import { ReportExportSweeperService } from "./report-export-sweeper.service";
 import { ReportExportsService } from "./report-exports.service";
@@ -100,6 +101,39 @@ const stubCompleteness = {
   getTeacherActivity: async () => TEACHERS,
 } as unknown as CompletenessService;
 
+// The analytics tabs have their own spec (analytics.service.spec.ts); here only
+// their export path is exercised, against a fixed academic report.
+const stubAnalytics = {
+  getAcademic: async () => ({
+    term: TERM,
+    previousTerm: null,
+    classes: [
+      {
+        groupId: "a1",
+        label: "JSS 1 Blue",
+        classLevelName: "JSS 1",
+        releasedCount: 2,
+        averageHundredths: 7350,
+        previousAverageHundredths: null,
+        changeHundredths: null,
+      },
+    ],
+    subjects: [{ subjectId: "s1", subjectName: "Mathematics" }],
+    cells: [{ groupId: "a1", subjectId: "s1", averageHundredths: 6800, studentCount: 2 }],
+    rankings: [
+      {
+        groupId: "a1",
+        label: "JSS 1 Blue",
+        top: [
+          { studentId: "st1", name: "Ada Obi", admissionNumber: "A/1", averageHundredths: 8000 },
+          { studentId: "st2", name: "Bayo Ade", admissionNumber: "A/2", averageHundredths: 6700 },
+        ],
+        bottom: [],
+      },
+    ],
+  }),
+} as unknown as AnalyticsService;
+
 interface AddedJob {
   name: string;
   data: Record<string, unknown>;
@@ -133,7 +167,7 @@ describe("ReportExportsService (Phase 9 CP1.1) — real database", () => {
   let ownerB: AuthContext;
 
   const service = (queue: Queue) => {
-    const s = new ReportExportsService(stubCompleteness, storage, queue);
+    const s = new ReportExportsService(stubCompleteness, stubAnalytics, storage, queue);
     s.todayFn = () => "2026-10-16";
     return s;
   };
@@ -205,6 +239,26 @@ describe("ReportExportsService (Phase 9 CP1.1) — real database", () => {
     expect(audits).toHaveLength(1);
     expect(audits[0]!.userId).toBe(ownerA.userId);
     expect(audits[0]!.metadata).toEqual({ report: "completeness-registers", format: "xlsx", rows: 2 });
+  });
+
+  it("Excel: the academic report is one workbook, a sheet per table, averages as numbers to two places", async () => {
+    const file = await service(fakeQueue().queue).analyticsFile(ownerA, "academic", undefined, reqCtx);
+    expect(file.filename).toBe("academic-report-first-term-2026-2027.xlsx");
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(file.body as unknown as ExcelJS.Buffer);
+    expect(wb.worksheets.map((w) => w.name)).toEqual(["Class averages", "Subject averages", "Top and bottom students"]);
+    const rows: unknown[][] = [];
+    const sheet = wb.getWorksheet("Class averages")!;
+    sheet.eachRow((r) => rows.push((r.values as unknown[]).slice(1)));
+    const header = rows.findIndex((r) => r[0] === "Class");
+    expect(rows[header + 1]!.slice(0, 4)).toEqual(["JSS 1 Blue", "JSS 1", 2, 73.5]);
+    let headerRowNumber = 0;
+    sheet.eachRow((r, n) => {
+      if (r.getCell(1).value === "Class") headerRowNumber = n;
+    });
+    expect(sheet.getRow(headerRowNumber + 1).getCell(4).numFmt).toBe("0.00");
+    const audit = (await auditRows(ownerA.schoolId)).at(-1);
+    expect(audit?.metadata).toEqual({ report: "academic", format: "xlsx", rows: 4 });
   });
 
   it("Excel: teacher activity shows recording counts and dates, never marks", async () => {

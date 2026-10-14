@@ -131,6 +131,10 @@ export class SchoolsService {
     if (input.positionOnReportCardPdf !== undefined) {
       data.positionOnReportCardPdf = input.positionOnReportCardPdf;
     }
+    // Phase 9 / CP1.2 — the Attendance report's chronic-absence line.
+    if (input.chronicAbsenceThreshold !== undefined) {
+      data.chronicAbsenceThreshold = input.chronicAbsenceThreshold;
+    }
 
     // Paystack subaccount routing (compressed plan-first, 2026-07-31).
     // "Enabling requires a valid code" is a cross-field rule the Zod schema
@@ -646,6 +650,7 @@ const SCHOOL_RESPONSE_SELECT = {
   subjectAttendanceEnabled: true,
   positionVisibleToFamilies: true,
   positionOnReportCardPdf: true,
+  chronicAbsenceThreshold: true,
   paystackSubaccountCode: true,
   paystackSplitCode: true,
   paystackPaymentsEnabled: true,
@@ -677,6 +682,7 @@ function toSchoolMeDto(school: SchoolRow): SchoolMeDto {
     subjectAttendanceEnabled: school.subjectAttendanceEnabled,
     positionVisibleToFamilies: school.positionVisibleToFamilies,
     positionOnReportCardPdf: school.positionOnReportCardPdf,
+    chronicAbsenceThreshold: school.chronicAbsenceThreshold,
     bankName: school.bankName,
     bankAccountName: school.bankAccountName,
     bankAccountNumber: school.bankAccountNumber,

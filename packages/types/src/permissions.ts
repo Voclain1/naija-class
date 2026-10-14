@@ -699,6 +699,10 @@ export const REPORTS_PERMISSIONS = [
   "reports.completeness.read",
   "reports.teacher-activity.read",
   "reports.export",
+  // Phase 9 / CP1.2: the Academic, Attendance and Enrolment tabs (§8.3).
+  // Owner/admin only; they name students, so they are not part of the
+  // completeness permission a wider role might one day be given.
+  "reports.analytics.read",
 ] as const;
 
 // Phase 8 / CP3 — Timetable builder (docs/modules/phase-8.md §17 D35).

@@ -1,9 +1,9 @@
 "use client";
 
-import { AlertTriangle, Loader2 } from "lucide-react";
+import { AlertTriangle, History, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 
 import {
   formatCalendarDate,
@@ -11,10 +11,12 @@ import {
   REPORT_CARD_STATUS_KEYS,
   type CompletenessReportDto,
   type TeacherActivityReportDto,
+  type TeacherTrendReportDto,
 } from "@school-kit/types";
 
 import { ExportMenu } from "@/components/shared/export-menu";
 import { InlineAlert } from "@/components/shared/inline-alert";
+import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ApiError } from "@/lib/api-client";
@@ -26,6 +28,11 @@ import {
   requestCompletenessPdf,
   requestTeacherActivityPdf,
 } from "@/lib/reports/report-exports-api";
+import {
+  downloadTeacherTrendExcel,
+  getTeacherTrendReport,
+  requestTeacherTrendPdf,
+} from "@/lib/reports/analytics-api";
 import { getCompletenessReport, getTeacherActivityReport, ofCount } from "@/lib/reports/reports-api";
 import { hasPermission } from "@/lib/auth/has-permission";
 
@@ -423,6 +430,106 @@ function TeacherActivityPanel({ termId, canExport }: { termId: string; canExport
           </TableBody>
         </Table>
       )}
+      <TeacherTrend termId={termId} canExport={canExport} />
     </div>
+  );
+}
+
+// Phase 9 / CP1.2 — the same recording figures over the last three terms
+// (docs/modules/phase-9.md §8.3, CP1-D8: recording only, never pupils' marks).
+// Loaded only when asked for: like the view above, every load is audited, and
+// opening the tab must still write exactly one audit row.
+function TeacherTrend({ termId, canExport }: { termId: string; canExport: boolean }) {
+  const [data, setData] = useState<TeacherTrendReportDto | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function load() {
+    setLoading(true);
+    setError(null);
+    try {
+      setData(await getTeacherTrendReport(termId));
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "Could not load the last three terms.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  if (!data) {
+    return (
+      <div className="flex flex-col items-start gap-2">
+        {error && <InlineAlert>{error}</InlineAlert>}
+        <Button type="button" variant="outline" size="sm" disabled={loading} onClick={() => void load()}>
+          {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <History className="h-4 w-4" />}
+          Compare the last three terms
+        </Button>
+      </div>
+    );
+  }
+
+  const cellText = (taken: number, expected: number) => (expected > 0 ? ofCount(taken, expected) : "—");
+  return (
+    <section aria-labelledby="trend-heading" className="flex min-w-0 flex-col gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 id="trend-heading" className="font-serif text-xl font-medium text-foreground">
+          Last three terms
+        </h2>
+        {canExport && data.rows.length > 0 ? (
+          <ExportMenu onExcel={() => downloadTeacherTrendExcel(termId)} onPdf={() => requestTeacherTrendPdf(termId)} />
+        ) : null}
+      </div>
+      {data.rows.length === 0 ? (
+        <p className="text-sm text-muted-foreground">No staff hold the teacher role yet.</p>
+      ) : (
+        <div className="max-w-full overflow-x-auto rounded-md border">
+          <table className="w-full border-collapse text-sm">
+            <thead>
+              <tr>
+                <th scope="col" rowSpan={2} className="sticky left-0 bg-card px-3 py-2 text-left align-bottom font-medium">
+                  Teacher
+                </th>
+                {data.terms.map((t) => (
+                  <th key={t.id} scope="colgroup" colSpan={2} className="whitespace-nowrap px-3 pt-2 text-center font-medium">
+                    {t.name} ({t.academicYearLabel})
+                  </th>
+                ))}
+              </tr>
+              <tr>
+                {data.terms.map((t) => (
+                  <Fragment key={t.id}>
+                    <th scope="col" className="whitespace-nowrap px-3 pb-2 text-right text-xs font-normal text-muted-foreground">
+                      Form registers
+                    </th>
+                    <th scope="col" className="whitespace-nowrap px-3 pb-2 text-right text-xs font-normal text-muted-foreground">
+                      Scores
+                    </th>
+                  </Fragment>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {data.rows.map((r) => (
+                <tr key={r.userId} className="border-t">
+                  <th scope="row" className="sticky left-0 whitespace-nowrap bg-card px-3 py-2 text-left font-medium">
+                    {r.name}
+                  </th>
+                  {r.terms.map((c, i) => (
+                    <Fragment key={data.terms[i]!.id}>
+                      <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">
+                        {c ? cellText(c.formRegistersTaken, c.formRegistersExpected) : "—"}
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">
+                        {c ? cellText(c.scoresEntered, c.scoresExpected) : "—"}
+                      </td>
+                    </Fragment>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
   );
 }

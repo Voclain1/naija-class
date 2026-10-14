@@ -39,7 +39,7 @@ export default defineConfig({
   reporter: process.env.CI
     ? [["list"], ["html", { open: "never" }]]
     : "list",
-  use: {
+  use: { launchOptions: { executablePath: "/opt/pw-browsers/chromium-1194/chrome-linux/chrome" }, // LOCAL-ONLY
     baseURL: webUrl,
     trace: "on-first-retry",
     screenshot: "only-on-failure",
@@ -48,7 +48,7 @@ export default defineConfig({
   projects: [
     {
       name: "chromium",
-      use: { ...devices["Desktop Chrome"] },
+      use: { ...devices["Desktop Chrome"], launchOptions: { executablePath: "/opt/pw-browsers/chromium-1194/chrome-linux/chrome" } }, // LOCAL-ONLY
     },
   ],
   // Spawn both servers when they're not already running. Locally this lets

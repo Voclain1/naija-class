@@ -4,6 +4,7 @@ import { Module } from "@nestjs/common";
 import { REPORT_CARDS_QUEUE } from "../../common/queue/index.js";
 
 import { CalendarModule } from "../calendar/calendar.module.js";
+import { AnalyticsService } from "./analytics.service.js";
 import { CompletenessService } from "./completeness.service.js";
 import { ReportExportSweeperService } from "./report-export-sweeper.service.js";
 import { ReportExportsService } from "./report-exports.service.js";
@@ -31,6 +32,6 @@ import { ReportsController } from "./reports.controller.js";
     }),
   ],
   controllers: [ReportsController],
-  providers: [CompletenessService, ReportExportsService, ReportExportSweeperService],
+  providers: [CompletenessService, AnalyticsService, ReportExportsService, ReportExportSweeperService],
 })
 export class ReportsModule {}

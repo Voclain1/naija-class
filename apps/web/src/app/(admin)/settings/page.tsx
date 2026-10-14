@@ -59,7 +59,7 @@ const LINKS: SettingsLink[] = [
   {
     label: "Attendance",
     href: "/settings/attendance",
-    description: "Enable subject-period attendance for teachers.",
+    description: "Subject-period attendance, and when a student counts as often absent.",
     icon: CalendarCheck,
   },
   {

@@ -8,6 +8,7 @@ import {
   type AttendanceArmRowDto,
   type CompletenessReportDto,
   type CompletenessTermDto,
+  type MissingRegisterRowDto,
   type ReportCardPipelineRowDto,
   type ScoreEntryRowDto,
   type TeacherActivityReportDto,
@@ -39,7 +40,7 @@ import { computeTermHealth } from "./term-health.js";
 // All inside ONE withTenant transaction (RLS applies; school_id is also stated
 // in every WHERE).
 
-type TenantDb = Parameters<Parameters<typeof withTenant>[1]>[0];
+export type TenantDb = Parameters<Parameters<typeof withTenant>[1]>[0];
 
 interface RequestContext {
   ipAddress: string | null;
@@ -66,7 +67,7 @@ export const REPORTS_TRANSACTION_TIMEOUT_MS = 15_000;
 
 const AUDIT_TEACHER_ACTIVITY_VIEW = "reports.teacher-activity.view";
 
-interface TermRow {
+export interface TermRow {
   id: string;
   name: string;
   start_date: string;
@@ -219,24 +220,88 @@ export class CompletenessService {
       if (!termRow) return { term: null, schoolDays: null, rows: [] };
 
       const ctx = await this.loadTermContext(db, authCtx.schoolId, termRow, today);
-      const teachers = await db.$queryRawUnsafe<Array<{ id: string; first_name: string; last_name: string }>>(
-        `SELECT u.id, u.first_name, u.last_name
-         FROM users u
-         JOIN user_roles ur ON ur.user_id = u.id
-         JOIN roles r ON r.id = ur.role_id
-         WHERE u.school_id = $1 AND u.is_active AND r.key = 'teacher'
-         GROUP BY u.id, u.first_name, u.last_name
-         ORDER BY u.last_name, u.first_name`,
-        authCtx.schoolId,
-      );
+      const teachers = await this.loadTeachers(db, authCtx.schoolId);
 
       return { term: ctx.term, schoolDays: ctx.days.dto, rows: this.buildTeacherRows(ctx, teachers) };
     }, { timeoutMs: REPORTS_TRANSACTION_TIMEOUT_MS, label: "reports.getTeacherActivity" });
   }
 
   // ===========================================================================
+  // Shared with the Phase 9 / CP1.2 analytics (analytics.service.ts), so the
+  // Attendance tab's "days with no register" and the Teachers tab's trend use
+  // exactly the definitions above and can never disagree with this report.
+  // Each runs inside the CALLER's withTenant transaction; the caller has
+  // already checked the role and audits its own read.
+  // ===========================================================================
+
+  /** The given term, or the current one; null when neither exists. 404 for another school's id. */
+  async termForReport(db: TenantDb, schoolId: string, termId: string | undefined): Promise<TermRow | null> {
+    return this.loadTerm(db, schoolId, termId);
+  }
+
+  /** Up to `count` terms before `term`, newest first. */
+  async previousTerms(db: TenantDb, schoolId: string, term: TermRow, count: number): Promise<TermRow[]> {
+    return db.$queryRawUnsafe<TermRow[]>(
+      `SELECT t.id, t.name, t.start_date::text AS start_date, t.end_date::text AS end_date, t.is_current,
+              t.academic_year_id, ay.label AS year_label,
+              (SELECT s.school_week_days::int[] FROM schools s WHERE s.id = $1) AS school_week_days
+       FROM terms t JOIN academic_years ay ON ay.id = t.academic_year_id AND ay.school_id = $1
+       WHERE t.school_id = $1 AND t.start_date < $2::date
+       ORDER BY t.start_date DESC
+       LIMIT $3`,
+      schoolId,
+      term.start_date,
+      count,
+    );
+  }
+
+  termDto(t: TermRow): CompletenessTermDto {
+    return {
+      id: t.id,
+      name: t.name,
+      academicYearLabel: t.year_label,
+      startDate: t.start_date,
+      endDate: t.end_date,
+      isCurrent: t.is_current,
+    };
+  }
+
+  /** Each class's counted school days with no register, oldest first; classes with none missing are left out. */
+  async missingRegisterRows(db: TenantDb, schoolId: string, term: TermRow, today: string): Promise<MissingRegisterRowDto[]> {
+    const ctx = await this.loadTermContext(db, schoolId, term, today);
+    const byArm = this.registerDates(ctx);
+    const schoolDays = [...ctx.days.schoolDaySet].sort();
+    return ctx.arms
+      .map((a) => ({
+        groupId: a.id,
+        label: a.name,
+        dates: schoolDays.filter((d) => !byArm.get(a.id)?.onSchoolDays.has(d)),
+      }))
+      .filter((r) => r.dates.length > 0);
+  }
+
+  /** The teacher-activity rows for one term, without auditing (the caller audits). */
+  async teacherRowsForTerm(db: TenantDb, schoolId: string, term: TermRow, today: string): Promise<TeacherActivityRowDto[]> {
+    const ctx = await this.loadTermContext(db, schoolId, term, today);
+    return this.buildTeacherRows(ctx, await this.loadTeachers(db, schoolId));
+  }
+
+  // ===========================================================================
   // Loading
   // ===========================================================================
+
+  private async loadTeachers(db: TenantDb, schoolId: string): Promise<Array<{ id: string; first_name: string; last_name: string }>> {
+    return db.$queryRawUnsafe<Array<{ id: string; first_name: string; last_name: string }>>(
+      `SELECT u.id, u.first_name, u.last_name
+       FROM users u
+       JOIN user_roles ur ON ur.user_id = u.id
+       JOIN roles r ON r.id = ur.role_id
+       WHERE u.school_id = $1 AND u.is_active AND r.key = 'teacher'
+       GROUP BY u.id, u.first_name, u.last_name
+       ORDER BY u.last_name, u.first_name`,
+      schoolId,
+    );
+  }
 
   private async loadTerm(db: TenantDb, schoolId: string, termId: string | undefined): Promise<TermRow | null> {
     const [row] = await db.$queryRawUnsafe<TermRow[]>(
