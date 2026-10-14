@@ -39,7 +39,7 @@ export function staffGradebookFeed(
 export function staffPreviewScores(input: BulkAssessmentScoreInput): Promise<ScorePreviewResponse> {
   return apiFetch<ScorePreviewResponse>("/assessment-scores/preview", {
     method: "POST",
-    body: JSON.stringify(input),
+    body: input,
   });
 }
 
