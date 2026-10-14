@@ -568,3 +568,59 @@ would be too large to review well:
 
 Total: 7–10 working days (the §5 estimate plus step 4). Each PR updates this
 section with what was actually built.
+
+### 8.7 As built — CP1.1, export foundation (2026-10-16)
+
+- **Export helper** (`apps/api/src/common/export/tabular-export.ts`): a table
+  is described once, as columns with a header and a value per row. The same
+  table becomes:
+  - an Excel workbook (`exceljs` 4.4.0): one sheet per table, a frozen header
+    row, numbers stored as numbers, text never stored as a formula;
+  - print HTML for a PDF: A4 landscape, the header row repeated on each page,
+    "Page X of Y", every value escaped, and numbers and dates never wrapped.
+
+  Checked by printing real reports through Chromium and looking at the pages.
+- **Routes.** Each report has its own export routes, so each route declares
+  `reports.export` **and** the report's own read permission. The guard needs
+  both, so an export can never reach a report the person cannot open. This is
+  a change from §8.4's single `:report` route.
+  - `GET /reports/completeness/export?section=registers|scores&termId=&format=xlsx`
+  - `POST /reports/completeness/pdf`
+  - `GET /reports/teacher-activity/export`
+  - `POST /reports/teacher-activity/pdf`
+  - `GET /reports/exports/:exportId`
+- **PDFs** go to the render worker as `export-pdf` jobs on the **report-cards
+  queue**, handled by the same single processor. The worker therefore still
+  holds one Chromium page at a time, the memory rule that worker depends on.
+  - The job carries ids only.
+  - The API writes the laid-out HTML on the `report_exports` row, the worker
+    prints it and the HTML is cleared at once. Pupils' and teachers' names
+    never pass through Redis.
+  - The row commits before the job is queued. If queuing fails, the row is
+    marked FAILED straight away.
+- **Clean-up:** `ReportExportSweeperService` runs daily at 01:25 UTC and
+  deletes copies older than 24 hours, the file before its row. It is listed
+  in the `basePrisma` allowlist under the same category as the session
+  sweeper: it reads only the school ids, and every delete runs under that
+  school's own RLS.
+- **`reports.export`** is in `REPORTS_PERMISSIONS`: admin is given it in the
+  seed and in an append migration, and teacher and bursar get nothing. Every
+  Excel and PDF export writes `reports.export` with the report, the format and
+  the row count.
+- **Found and fixed on the way:** the API's CORS did not expose
+  `Content-Disposition`, so every file download from the website silently lost
+  the file name the API chose (the import error reports included). It now
+  exposes it.
+- **Website:** one **Export** menu (CSV, Excel, PDF) replaces the CSV button on
+  the registers and score-entry tables. The teacher-activity tab gains Excel
+  and PDF.
+  - CSV is still built in the browser.
+  - A PDF shows "Preparing…" and then an **Open PDF** button. It is not opened
+    automatically because browsers block a window opened after a wait.
+- **Tests:**
+  - helper unit tests;
+  - the export service against a real database (cells, audit, RLS WITH CHECK,
+    unset GUC, the worker, failure, clean-up);
+  - permission coverage;
+  - an end-to-end test: Excel and CSV download, PDF queued, a teacher refused
+    all four routes.

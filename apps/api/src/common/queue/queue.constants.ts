@@ -13,6 +13,10 @@ export const IMPORTS_JOB_COMMIT = "commit";
 // card; concurrency 1 (pooled single browser; the memory-budget control).
 export const REPORT_CARDS_QUEUE = "report-cards";
 export const REPORT_CARDS_JOB_RENDER = "render";
+// Phase 9 / CP1 — a PDF copy of a report (docs/modules/phase-9.md §8 CP1-D3).
+// On the report-cards queue on purpose: its one processor runs one job at a
+// time, which is what keeps the worker to a single Chromium page.
+export const REPORT_CARDS_JOB_EXPORT_PDF = "export-pdf";
 
 // Phase 5 / Slice 3 — AI generation queue. One job per student comment, not
 // one per class: a 40-student arm is 40 short Haiku calls, and batching them

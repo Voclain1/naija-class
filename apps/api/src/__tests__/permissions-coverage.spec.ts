@@ -1100,21 +1100,44 @@ describe("Phase 8 CP1 RBAC coverage: calendar role grants match D28", () => {
 // ---------------------------------------------------------------------------
 describe("Phase 8 CP2 RBAC coverage: reports route handlers declare @Permissions", () => {
   it("ReportsController: every handler carries exactly its own reports permission", () => {
-    expect(routeHandlers(ReportsController).sort()).toEqual(["completeness", "teacherActivity"]);
+    expect(routeHandlers(ReportsController).sort()).toEqual([
+      "completeness",
+      "completenessExport",
+      "completenessPdf",
+      "exportStatus",
+      "teacherActivity",
+      "teacherActivityExport",
+      "teacherActivityPdf",
+    ]);
     const unknown = handlerPermissions(ReportsController).filter((p) => !(REPORTS_PERMISSIONS as readonly string[]).includes(p));
     expect(unknown).toEqual([]);
-    expect(handlerPermissions(ReportsController).sort()).toEqual([...REPORTS_PERMISSIONS].sort());
+    expect([...new Set(handlerPermissions(ReportsController))].sort()).toEqual([...REPORTS_PERMISSIONS].sort());
+  });
+
+  // Phase 9 / CP1.1 (docs/modules/phase-9.md §8): a copy of a report needs
+  // BOTH `reports.export` and that report's own read permission, so exporting
+  // can never reach a report the person cannot open.
+  it("ReportsController: each export route needs reports.export AND its report's read permission", () => {
+    const perms = (handler: string) =>
+      (Reflect.getMetadata(PERMISSIONS_METADATA_KEY, (ReportsController.prototype as unknown as Record<string, object>)[handler]!) as
+        | string[]
+        | undefined) ?? [];
+    expect(perms("completenessExport").sort()).toEqual(["reports.completeness.read", "reports.export"]);
+    expect(perms("completenessPdf").sort()).toEqual(["reports.completeness.read", "reports.export"]);
+    expect(perms("teacherActivityExport").sort()).toEqual(["reports.export", "reports.teacher-activity.read"]);
+    expect(perms("teacherActivityPdf").sort()).toEqual(["reports.export", "reports.teacher-activity.read"]);
+    expect(perms("exportStatus")).toEqual(["reports.export"]);
   });
 });
 
 describe("Phase 8 CP2 RBAC coverage: reports role grants match D39", () => {
-  it("admin holds both reports permissions; owner is the wildcard", () => {
+  it("admin holds every reports permission; owner is the wildcard", () => {
     const adminPerms = new Set(roleSeed("admin").permissions);
     for (const p of REPORTS_PERMISSIONS) expect(adminPerms.has(p), `admin should have ${p}`).toBe(true);
     expect(roleSeed("owner").permissions).toEqual(["*"]);
   });
 
-  it("teacher and bursar hold NEITHER reports permission", () => {
+  it("teacher and bursar hold NO reports permission", () => {
     for (const key of ["teacher", "bursar"]) {
       const perms = new Set(roleSeed(key).permissions);
       for (const p of REPORTS_PERMISSIONS) expect(perms.has(p), `${key} should NOT have ${p}`).toBe(false);

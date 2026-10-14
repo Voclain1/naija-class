@@ -57,7 +57,15 @@ export type StorageObjectKey =
   // and it is immutable, so there is no re-upload-with-a-different-format case
   // needing an explicit delete of the old key. A re-upload is a new document
   // with a new id.
-  | { kind: "curriculum-document"; documentId: string };
+  | { kind: "curriculum-document"; documentId: string }
+  // Phase 9 / CP1 — a PDF copy of a report (docs/modules/phase-9.md §8).
+  // Layout: schools/<schoolId>/report-exports/<exportId>.pdf
+  //
+  // WITH an extension, following school-logo: the dev filesystem driver keeps
+  // no Content-Type, and DevStorageController recovers it from the extension
+  // so the download opens as a PDF. Short-lived: deleted with its row by the
+  // daily clean-up after 24 hours.
+  | { kind: "report-export"; exportId: string };
 
 export type StorageDriverKind = "filesystem" | "r2";
 

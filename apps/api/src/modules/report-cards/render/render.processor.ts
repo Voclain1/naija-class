@@ -4,7 +4,8 @@ import { Job } from "bullmq";
 
 import { withTenant } from "@school-kit/db";
 
-import { REPORT_CARDS_JOB_RENDER, REPORT_CARDS_QUEUE } from "../../../common/queue";
+import { REPORT_CARDS_JOB_EXPORT_PDF, REPORT_CARDS_JOB_RENDER, REPORT_CARDS_QUEUE } from "../../../common/queue";
+import { ExportPdfService, type ExportPdfJobData } from "./export-pdf.service";
 import { RenderService, type RenderJobData } from "./render.service";
 import { WORKER_TUNING } from "../../../common/queue/worker-tuning.js";
 
@@ -25,13 +26,25 @@ import { WORKER_TUNING } from "../../../common/queue/worker-tuning.js";
 export class ReportCardRenderProcessor extends WorkerHost {
   private readonly logger = new Logger(ReportCardRenderProcessor.name);
 
-  constructor(private readonly render: RenderService) {
+  constructor(
+    private readonly render: RenderService,
+    private readonly exportPdf: ExportPdfService,
+  ) {
     super();
   }
 
   async process(job: Job): Promise<unknown> {
     if (job.name === REPORT_CARDS_JOB_RENDER) {
       return this.handleRender(job as Job<RenderJobData>);
+    }
+    // Phase 9 / CP1.1 — PDF copies of reports share this processor, and so its
+    // concurrency of 1: the worker still holds one Chromium page at a time.
+    if (job.name === REPORT_CARDS_JOB_EXPORT_PDF) {
+      const data = job.data as ExportPdfJobData;
+      if (!data?.schoolId || !data?.exportId) {
+        throw new Error(`export-pdf: job ${job.id ?? "(no id)"} missing schoolId/exportId; refusing to run`);
+      }
+      return this.exportPdf.renderExport(data);
     }
     throw new Error(`unknown job name on report-cards queue: ${job.name}`);
   }
@@ -62,6 +75,10 @@ export class ReportCardRenderProcessor extends WorkerHost {
   // we leave the status as-is so a later attempt can still reach GENERATED.
   @OnWorkerEvent("failed")
   async onFailed(job: Job<RenderJobData>, error: Error): Promise<void> {
+    if (job.name === REPORT_CARDS_JOB_EXPORT_PDF) {
+      await this.onExportFailed(job as unknown as Job<ExportPdfJobData>, error);
+      return;
+    }
     if (!job.data?.schoolId || !job.data?.reportCardId) {
       this.logger.error(
         `render failed listener: job ${job.id} missing schoolId/reportCardId; cannot mark FAILED`,
@@ -89,6 +106,26 @@ export class ReportCardRenderProcessor extends WorkerHost {
     } catch (writeErr) {
       this.logger.error(
         `render: could not mark card ${job.data.reportCardId} FAILED: ${
+          writeErr instanceof Error ? writeErr.message : String(writeErr)
+        }`,
+      );
+    }
+  }
+
+  // A report export's FAILED, once retries are exhausted. The page polling
+  // for it then says the PDF could not be made, instead of waiting for ever.
+  private async onExportFailed(job: Job<ExportPdfJobData>, error: Error): Promise<void> {
+    const maxAttempts = job.opts?.attempts ?? 1;
+    if (job.attemptsMade < maxAttempts || !job.data?.schoolId || !job.data?.exportId) {
+      this.logger.warn(`export-pdf: job ${job.id} attempt ${job.attemptsMade}/${maxAttempts} failed: ${error?.message}`);
+      return;
+    }
+    try {
+      await this.exportPdf.markFailed(job.data);
+      this.logger.error(`export-pdf: export ${job.data.exportId} FAILED after ${maxAttempts} attempts: ${error?.message}`);
+    } catch (writeErr) {
+      this.logger.error(
+        `export-pdf: could not mark export ${job.data.exportId} FAILED: ${
           writeErr instanceof Error ? writeErr.message : String(writeErr)
         }`,
       );

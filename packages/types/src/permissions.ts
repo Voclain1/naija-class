@@ -689,9 +689,16 @@ export const BEHAVIOUR_PERMISSIONS_LIST = ["behaviour.read", "behaviour.create"]
 // `reports.teacher-activity.read` is separate so a future grant of the
 // school-wide completeness report to a wider role cannot silently carry the
 // per-teacher view with it (§4.4, §3.4 D22). Every read of it is audited (D23).
+//
+// Phase 9 / CP1 adds `reports.export` (docs/modules/phase-9.md §8 CP1-D7): an
+// Excel or PDF copy of a report takes its rows out of the system, so it is a
+// permission of its own, owner/admin only, and every export is audited. It
+// never stands alone — the export also checks the report's own read
+// permission, so exporting cannot reach a report the person cannot open.
 export const REPORTS_PERMISSIONS = [
   "reports.completeness.read",
   "reports.teacher-activity.read",
+  "reports.export",
 ] as const;
 
 // Phase 8 / CP3 — Timetable builder (docs/modules/phase-8.md §17 D35).
