@@ -1463,3 +1463,7 @@ before the next build:
     AsyncStorage per school, so it survives sign-out, like the theme.
 - **The plan limit notice** on the app's Students screen, at `near` and `over`.
   It uses the website's sentences, copied to `src/lib/staff/plan-copy.ts`.
+- **Result PIN cards** (`app/staff/report-cards/pins.tsx`, owner/admin): make
+  a batch, share it as a PDF of cards or a CSV, or print it; list batches;
+  void a batch or one card by serial. See phase-8.md §21.3 for how the PINs
+  are kept off the phone.

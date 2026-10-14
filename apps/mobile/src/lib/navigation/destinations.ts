@@ -84,6 +84,11 @@ export function staffDestinations(ctx: StaffContext): Destination[] {
   if (admin && can("report-card.principal-approve")) {
     out.push({ key: "approvals", label: "Report cards", hint: "Approve and release", icon: "ribbon-outline", group: "School", route: "/staff/approvals" });
   }
+  // Result PIN cards (phase-8.md §21.3), the website's /report-cards/pins.
+  // Owner/admin: the service re-checks the role behind result-pin.read.
+  if (admin && can("result-pin.read")) {
+    out.push({ key: "result-pins", label: "Result PINs", hint: "Cards for checking results", icon: "key-outline", group: "School", route: "/staff/report-cards/pins" });
+  }
   if (admin) {
     out.push({ key: "students", label: "Students", hint: "Find, add, update", icon: "people-circle-outline", group: "School", route: "/staff/students" });
   }

@@ -189,6 +189,9 @@ export const queryKeys = {
     ["staff", schoolId, userId, "admin-dashboard", termId] as const,
   staffSetupState: (schoolId: string, userId: string) => ["staff", schoolId, userId, "setup-state"] as const,
   staffSchoolPlan: (schoolId: string, userId: string) => ["staff", schoolId, userId, "school-plan"] as const,
+  // The batch list only: counts and status, never a PIN.
+  staffResultPinBatches: (schoolId: string, userId: string) => ["staff", schoolId, userId, "result-pin-batches"] as const,
+  staffTermOptions: (schoolId: string, userId: string) => ["staff", schoolId, userId, "term-options"] as const,
 
   // CP4b — report card approval. The completeness report is keyed "current"
   // when no term is named, matching the endpoint's own default.
