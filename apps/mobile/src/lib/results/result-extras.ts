@@ -54,3 +54,18 @@ export function cumulativeLine(result: Pick<Partial<ReleasedResultDetailDto>, "c
   const position = typeof c.position === "number" ? ` · ${ordinal(c.position)} in class` : "";
   return `Year average ${hundredths(c.average)} over ${terms}${position}`;
 }
+
+/**
+ * One subject's year average on the final term, "Year average 72.50% over 3
+ * terms" (CP5a, D61), as the portal's "Year avg" column shows it. null on
+ * other terms and for a subject with no cumulative figure.
+ */
+export function subjectYearLine(subject: {
+  cumulativeAverage?: number | null;
+  cumulativeTerms?: number | null;
+}): string | null {
+  if (typeof subject.cumulativeAverage !== "number") return null;
+  const n = subject.cumulativeTerms;
+  const terms = typeof n === "number" ? ` over ${n} term${n === 1 ? "" : "s"}` : "";
+  return `Year average ${hundredths(subject.cumulativeAverage)}${terms}`;
+}

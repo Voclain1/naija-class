@@ -1,5 +1,6 @@
 import {
   BarChart3,
+  BookOpenCheck,
   Megaphone,
   CalendarClock,
   CalendarDays,
@@ -135,6 +136,12 @@ export const NAV_ITEMS: NavItem[] = [
   // Gated on timetable.read — owner/admin only in CP3; teacher, student and
   // guardian timetable views are CP4's.
   { label: "Timetable", href: "/timetable", icon: CalendarClock, enabled: true, requiredPermission: "timetable.read" },
+  // Homework (docs/modules/the-school-day.md Part B), added 2026-10-14 by the
+  // pre-build audit. A read-only lookup by class, so a bursar can answer "what
+  // homework does my child have?" at the counter — the reason they hold
+  // homework.read, which no screen used. Owner, admin and bursar hold it;
+  // teachers do too but set homework from the teacher shell.
+  { label: "Homework", href: "/homework", icon: BookOpenCheck, enabled: true, requiredPermission: "homework.read" },
   // Announcements (docs/modules/announcements.md). Gated on
   // announcement.create, not announcement.read: every staff role can READ the
   // school's announcements in their own feed, but this page is the sending

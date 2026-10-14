@@ -531,3 +531,21 @@ fixed:
   admin's Behaviour tab) and in the app (`app/staff/classes/behaviour/
   [studentId].tsx`, the same `BehaviourCard`). The API still refuses a child
   the teacher does not teach.
+
+**2026-10-14, the bursar's homework lookup (owner's decision on the audit).**
+Part B gave a bursar `homework.read` "so they can answer 'what homework does
+my child have?' at the counter", but no screen on either surface used it: the
+web's only homework page is the teacher's, and the app's Homework entry is
+gated on `homework.create`. Now:
+
+- **web:** `/homework` in the admin shell, gated on `homework.read` (owner,
+  admin and bursar). Pick a class; it lists what is due today and later,
+  soonest first, then what was due in the last 7 days. Withdrawn work is left
+  out, since the class no longer sees it. Read only.
+- **app:** `staff/homework/lookup`, the same lookup, offered in the menu only
+  to someone who holds `homework.read` without `homework.create`. Anyone who
+  can set homework keeps the full screen.
+
+No API change: `GET /homework` already gave a bursar the school's list.
+Proven by `e2e/tests/bursar-homework-lookup.spec.ts`, `homework-lookup.spec.ts`
+(web and app) and `destinations.spec.ts`.

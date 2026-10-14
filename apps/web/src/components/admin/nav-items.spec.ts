@@ -19,6 +19,7 @@ import { LATER_PHASE_ITEMS, NAV_ITEMS } from "./nav-items";
 
 const SHIPPED_HREFS = [
   "/announcements",
+  "/homework",
   "/guardians",
   "/gradebook",
   "/timetable",
@@ -107,6 +108,16 @@ describe("admin nav items", () => {
 
   it("leaves only genuinely unbuilt features under Coming soon", () => {
     expect(LATER_PHASE_ITEMS.map((i) => i.label)).toEqual(["AI Tutor"]);
+  });
+
+  it("lists Homework as a read-only lookup a bursar can reach", () => {
+    const item = NAV_ITEMS.find((i) => i.label === "Homework");
+    expect(item).toBeDefined();
+    expect(item!.enabled).toBe(true);
+    expect(item!.href).toBe("/homework");
+    // homework.read, not homework.create: the page sets nothing, and a bursar
+    // holds read only.
+    expect(item!.requiredPermission).toBe("homework.read");
   });
 
   it("lists Gradebook as live, gated on score entry, which owner and admin hold and bursar does not", () => {
