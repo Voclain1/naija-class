@@ -25,6 +25,7 @@ import { AppMenu, MenuButton, useAppMenu } from "../../src/components/app-menu";
 import { spacing } from "../../src/theme/tokens";
 import { Body, Card, Notice, Screen } from "../../src/components/ui";
 import { PushStatusNotice } from "../../src/components/push-status-notice";
+import { LogoReminderCard, SetupProgressCard } from "../../src/components/owner-notices";
 import {
   ActionTile,
   EmptyState,
@@ -205,6 +206,15 @@ export default function StaffDashboardScreen() {
           subtitle={formatToday(today)}
           action={<MenuButton onPress={menu.open} />}
         />
+
+        {/* ---- Owner/admin: setup progress and the logo reminder, as on the
+            website's dashboard (pre-build audit, 2026-10-14) ---- */}
+        {schoolAdmin && staff ? (
+          <>
+            <SetupProgressCard schoolId={schoolId} userId={userId} school={staff.school} />
+            <LogoReminderCard school={staff.school} />
+          </>
+        ) : null}
 
         {/* ---- MONEY band (finance.dashboard.read, no school dashboard) ---- */}
         {canSeeMoney && actions.length > 0 ? (

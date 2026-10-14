@@ -18,6 +18,7 @@ import {
   Skeleton,
 } from "../../../src/components/layout";
 import { Appear } from "../../../src/components/motion";
+import { PlanNotice } from "../../../src/components/owner-notices";
 
 // CP4c — the school's students: search, open one, or add one.
 //
@@ -83,6 +84,7 @@ export default function StudentsScreen() {
           />
         ) : (
           <>
+            <PlanNotice schoolId={schoolId} userId={userId} />
             <TextInput
               value={search}
               onChangeText={setSearch}

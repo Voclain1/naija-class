@@ -1440,3 +1440,26 @@ Built on the phone, behind D37/D38/D39:
   the request settles.
 
 Adds `expo-image-picker` (native — lands with the next APK build).
+
+## Owner tools from the pre-build audit (2026-10-14)
+
+The owner chose to bring three website-only owner/admin pieces to the app
+before the next build:
+
+- **Switch a parent's portal access off and on.** The parent screen
+  (`app/staff/students/parent.tsx`) now offers "Switch off access" for a parent
+  who is using the app or has a live invitation, and "Turn access back on" for
+  one who was switched off. These are the web roster's rules
+  (`roster-actions.ts`) and its wording, behind the same `guardian.invite`
+  permission. Until now `portalActions` returned nothing for a switched-off
+  parent, and the switch lived only on the web roster.
+- **School setup progress and the logo reminder** on the staff home, for owners
+  and admins (`src/components/owner-notices.tsx`):
+  - The setup card uses the web's `setupProgress` rule, copied to
+    `src/lib/staff/setup-progress.ts`. It opens the next step on the website,
+    signed in, because setup is done there.
+  - The logo reminder works as on the web. It can be closed, and it comes back
+    after 3 sittings. A sitting is one run of the app. The record is kept in
+    AsyncStorage per school, so it survives sign-out, like the theme.
+- **The plan limit notice** on the app's Students screen, at `near` and `over`.
+  It uses the website's sentences, copied to `src/lib/staff/plan-copy.ts`.

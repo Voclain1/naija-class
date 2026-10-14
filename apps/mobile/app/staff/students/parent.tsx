@@ -5,7 +5,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { LoadError } from "../../../src/components/load-error";
 import {
+  staffDeactivateGuardianPortal,
   staffGetGuardian,
+  staffReactivateGuardianPortal,
   staffInviteGuardian,
   staffResendGuardianInvite,
   staffRevokeGuardianInvite,
@@ -54,11 +56,25 @@ function describeFailure(error: unknown): string {
         return "There is no live invitation to cancel — it may have been used or expired.";
       case "GUARDIAN_EMAIL_ALREADY_EXISTS":
         return "Another parent at this school already uses that email.";
+      case "GUARDIAN_PORTAL_ALREADY_DISABLED":
+        return "Their access is already switched off.";
+      case "GUARDIAN_PORTAL_NOT_DISABLED":
+        return "Their access is already on.";
     }
     return error.message || "That couldn't be done.";
   }
   return "That couldn't be done.";
 }
+
+type PortalChange = "invite" | "resend" | "revoke" | "deactivate" | "reactivate";
+
+const PORTAL_NOTICE: Record<PortalChange, string> = {
+  invite: "The invitation was sent to their email, and by text if your school sends invitation texts.",
+  resend: "A fresh invitation was sent. The previous link no longer works.",
+  revoke: "The invitation was cancelled. The link they were sent no longer works.",
+  deactivate: "Access switched off. They have been signed out of the parent app everywhere.",
+  reactivate: "Access turned back on. They can sign in with the password they already have.",
+};
 
 export default function ParentScreen() {
   const queryClient = useQueryClient();
@@ -94,10 +110,12 @@ export default function ParentScreen() {
   }
 
   const portal = useMutation({
-    mutationFn: async (action: "invite" | "resend" | "revoke") => {
+    mutationFn: async (action: PortalChange) => {
       if (action === "invite") return { action, url: (await staffInviteGuardian(id as string)).acceptUrl };
       if (action === "resend") return { action, url: (await staffResendGuardianInvite(id as string)).acceptUrl };
-      await staffRevokeGuardianInvite(id as string);
+      if (action === "deactivate") await staffDeactivateGuardianPortal(id as string);
+      else if (action === "reactivate") await staffReactivateGuardianPortal(id as string);
+      else await staffRevokeGuardianInvite(id as string);
       return { action, url: null };
     },
     onMutate: () => {
@@ -106,13 +124,7 @@ export default function ParentScreen() {
     },
     onSuccess: async ({ action, url }) => {
       setAcceptUrl(url);
-      setNotice(
-        action === "revoke"
-          ? "The invitation was cancelled. The link they were sent no longer works."
-          : action === "resend"
-            ? "A fresh invitation was sent. The previous link no longer works."
-            : "The invitation was sent to their email, and by text if your school sends invitation texts.",
-      );
+      setNotice(PORTAL_NOTICE[action]);
       await refresh();
     },
     onError: (error) => setFailure(describeFailure(error)),
@@ -171,7 +183,7 @@ export default function ParentScreen() {
   const busy = portal.isPending || saveEmail.isPending;
   const fullName = `${g.firstName} ${g.lastName}`;
 
-  function confirm(action: "invite" | "resend" | "revoke"): void {
+  function confirm(action: PortalChange): void {
     const copy = {
       invite: {
         title: `Invite ${g.firstName} to the parent app?`,
@@ -188,10 +200,24 @@ export default function ParentScreen() {
         body: "The link they were sent stops working. You can invite them again later.",
         ok: "Cancel invitation",
       },
+      // The web roster's wording (guardians/page.tsx), so the two say the same.
+      deactivate: {
+        title: `Switch off access for ${fullName}?`,
+        body:
+          "They are signed out of the parent app straight away and cannot sign in again. Any invitation or password-reset link already sent stops working.\n\n" +
+          "They stay linked to their children as a contact and still receive the school's SMS. You can turn access back on at any time; their password is kept.",
+        ok: "Switch off access",
+      },
+      reactivate: {
+        title: `Turn access back on for ${fullName}?`,
+        body: "They can sign in again with the password they already have. No new invitation is needed.",
+        ok: "Turn access back on",
+      },
     }[action];
+    const destructive = action === "revoke" || action === "deactivate";
     Alert.alert(copy.title, copy.body, [
       { text: "Back", style: "cancel" },
-      { text: copy.ok, style: action === "revoke" ? "destructive" : "default", onPress: () => portal.mutate(action) },
+      { text: copy.ok, style: destructive ? "destructive" : "default", onPress: () => portal.mutate(action) },
     ]);
   }
 
@@ -252,6 +278,12 @@ export default function ParentScreen() {
           ) : null}
           {abilities.invite && actions.includes("revoke") ? (
             <Button title="Cancel invitation" variant="secondary" disabled={busy} onPress={() => confirm("revoke")} />
+          ) : null}
+          {abilities.invite && actions.includes("reactivate") ? (
+            <Button title="Turn access back on" loading={portal.isPending} disabled={busy} onPress={() => confirm("reactivate")} />
+          ) : null}
+          {abilities.invite && actions.includes("deactivate") ? (
+            <Button title="Switch off access" variant="secondary" disabled={busy} onPress={() => confirm("deactivate")} />
           ) : null}
 
           {abilities.update && actions.includes("add-email") ? (

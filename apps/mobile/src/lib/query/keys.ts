@@ -187,6 +187,8 @@ export const queryKeys = {
   // the whole school. Never persisted, like every staff key.
   staffAdminDashboard: (schoolId: string, userId: string, termId: string) =>
     ["staff", schoolId, userId, "admin-dashboard", termId] as const,
+  staffSetupState: (schoolId: string, userId: string) => ["staff", schoolId, userId, "setup-state"] as const,
+  staffSchoolPlan: (schoolId: string, userId: string) => ["staff", schoolId, userId, "school-plan"] as const,
 
   // CP4b — report card approval. The completeness report is keyed "current"
   // when no term is named, matching the endpoint's own default.
