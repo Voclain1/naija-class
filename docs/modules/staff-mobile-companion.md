@@ -1440,3 +1440,90 @@ Built on the phone, behind D37/D38/D39:
   the request settles.
 
 Adds `expo-image-picker` (native — lands with the next APK build).
+
+## Owner tools from the pre-build audit (2026-10-14)
+
+The owner chose to bring three website-only owner/admin pieces to the app
+before the next build:
+
+- **Switch a parent's portal access off and on.** The parent screen
+  (`app/staff/students/parent.tsx`) now offers "Switch off access" for a parent
+  who is using the app or has a live invitation, and "Turn access back on" for
+  one who was switched off. These are the web roster's rules
+  (`roster-actions.ts`) and its wording, behind the same `guardian.invite`
+  permission. Until now `portalActions` returned nothing for a switched-off
+  parent, and the switch lived only on the web roster.
+- **School setup progress and the logo reminder** on the staff home, for owners
+  and admins (`src/components/owner-notices.tsx`):
+  - The setup card uses the web's `setupProgress` rule, copied to
+    `src/lib/staff/setup-progress.ts`. It opens the next step on the website,
+    signed in, because setup is done there.
+  - The logo reminder works as on the web. It can be closed, and it comes back
+    after 3 sittings. A sitting is one run of the app. The record is kept in
+    AsyncStorage per school, so it survives sign-out, like the theme.
+- **The plan limit notice** on the app's Students screen, at `near` and `over`.
+  It uses the website's sentences, copied to `src/lib/staff/plan-copy.ts`.
+- **Result PIN cards** (`app/staff/report-cards/pins.tsx`, owner/admin): make
+  a batch, share it as a PDF of cards or a CSV, or print it; list batches;
+  void a batch or one card by serial. See phase-8.md §21.3 for how the PINs
+  are kept off the phone.
+
+## D19 and D24 revisited: unsaved work survives a forced sign-out (owner's decision, 2026-10-14)
+
+**Decision.** At the pre-build audit the owner chose to keep unsaved marks
+(and, with them, lesson-note text and report comments) when the **server**
+ends a staff session. That covers a session that expired or was revoked, an
+account switched off, and a school suspended. This reopens CP1's never-persist
+rule for the first time, in one narrow place. D24 said to "treat any report of
+lost work as the evidence that reopens it", and this is that reopening, made
+by the owner.
+
+**What changed:**
+
+- When the 401 handler ends a staff session, `session.tsx` takes every draft
+  from the in-memory store (`exportAllDrafts`) and writes it to SecureStore
+  (`draft-stash-store.ts`) before clearing memory. SecureStore is the
+  Keychain or Keystore storage the token already uses, never AsyncStorage.
+- At the next staff sign-in, `takeStashedDrafts` reads the stash and deletes
+  it, whoever is signing in. It returns only the keys whose school and user
+  match the person signing in, and `importDrafts` puts those back. Any other
+  account on the handset gets nothing, unread.
+- The stash expires after 7 days. It is written in 8,000-character pieces,
+  with the count written last, so a write cut off half-way is never read.
+  The rules are in `draft-stash.ts` and tested in `draft-stash.spec.ts`.
+
+**What did not change:**
+
+- A sign-out the person chooses still discards unsaved work, as the mark
+  sheet warns.
+- Closing the app still loses drafts, as the screens say.
+- The two-minute lock still keeps them in memory, as before.
+
+## Question bank, exam papers and online exams (owner's decision, 2026-10-14)
+
+All three came to the app at the pre-build audit, against the same endpoints
+and permissions as the website's teacher pages:
+
+- **Question bank** (`app/staff/question-bank/`): pick a class and subject,
+  then review drafts, approved and retired questions. Write or revise a
+  question, or draft questions with AI (`question.generate`). The screen says
+  that this spends the school's AI budget and that every drafted question
+  arrives as a DRAFT. Approve, retire and discard all ask first. The form
+  rules are the web's (`src/lib/staff/question-form.ts`).
+- **Exam papers** (`app/staff/exam-papers/`): start a paper, edit sections and
+  questions (picked from approved questions, or drawn at random), save,
+  finalise and duplicate. A final paper exports as a PDF to share, to print,
+  or as a CSV. Each export is fetched fresh, so the server audits it. Shared
+  files are deleted from the cache when the share sheet closes. **Word
+  (.docx) export is website-only**: the web builds it with the `docx`
+  library, which the app does not include.
+- **Online exams** (`app/staff/online-exams/`): schedule a sitting from a
+  final paper, then publish, return to draft, close or delete it, follow the
+  students' progress, and see the results. On the results screen you can mark
+  theory questions, choose which computer's attempt counts, and send totals
+  to the gradebook (preview first). The invigilator sheet can be printed or
+  shared as a PDF. It is fetched once and kept only in the screen's state,
+  because every fetch reveals the codes again and is audited.
+
+All their query keys are staff-prefixed, so unreleased exam content is never
+persisted on the handset.

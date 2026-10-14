@@ -8,18 +8,22 @@
 //
 // The answer is this module-level store, deliberately:
 //
-//   - IN MEMORY ONLY. Nothing here is ever written to AsyncStorage or
-//     SecureStore. CP1's rule is that staff data is never persisted on the
-//     handset, and student marks by name are staff data. Closing the app loses
-//     the draft; the screen says so while marks are unsaved.
+//   - IN MEMORY, with ONE exception. Nothing here is written to AsyncStorage,
+//     and closing the app loses the draft; the screen says so while marks are
+//     unsaved. The exception (owner's decision, 2026-10-14): when the SERVER
+//     ends the session (a 401: expired, revoked, deactivated, suspended), the
+//     drafts are stashed in SecureStore and given back when the same person
+//     signs in again (draft-stash.ts). A teacher signed out mid-mark-sheet
+//     through no act of their own should not lose the marks.
 //
 //   - KEYED BY PRINCIPAL. Every key starts with schoolId and userId, so a
 //     different staff account on the same handset can never read another's
 //     drafts, even before the wipe below runs.
 //
-//   - WIPED at every principal boundary: sign-out, a 401 session end, and a
-//     fresh staff sign-in (session.tsx calls clearAllGradebookDrafts). It is
-//     NOT wiped on lock — surviving the lock is the entire point.
+//   - WIPED from memory at every principal boundary: sign-out, a 401 session
+//     end (after stashing), and a fresh staff sign-in (session.tsx calls
+//     clearAllGradebookDrafts). It is NOT wiped on lock — surviving the lock
+//     is the entire point.
 //
 // No React import, so it stays testable under Vitest's node environment; the
 // screen subscribes with useSyncExternalStore.
@@ -182,6 +186,26 @@ export function lessonPlanDraftKey(scope: {
   return (
     JSON.stringify([scope.schoolId, scope.userId, scope.lessonPlanId]) + "|lesson-plan"
   );
+}
+
+/**
+ * Every draft, for the forced-sign-out stash (draft-stash.ts). A copy: the
+ * caller cannot reach into the store through it.
+ */
+export function exportAllDrafts(): [string, Record<string, string>][] {
+  return [...drafts].map(([key, cells]) => [key, { ...cells }]);
+}
+
+/**
+ * Put stashed drafts back after the same person signs in again. Merged over
+ * whatever is in memory, which a fresh sign-in has just emptied.
+ */
+export function importDrafts(entries: readonly [string, Record<string, string>][]): void {
+  if (entries.length === 0) return;
+  const map = new Map(drafts);
+  for (const [key, cells] of entries) map.set(key, { ...(map.get(key) ?? {}), ...cells });
+  drafts = map;
+  emit();
 }
 
 /** Principal boundary: sign-out, session end, a new staff sign-in. */

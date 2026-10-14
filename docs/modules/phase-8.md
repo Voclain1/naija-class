@@ -4363,6 +4363,13 @@ next review stays due at **26**.
 - **Void** a batch, or one PIN by serial. A voided PIN stops working for new
   checks; unlocks it already made stand (the family paid for them).
 - Every generate and void is audited; the audit row never holds a PIN.
+- **In the app (2026-10-14, pre-build audit).** `app/staff/report-cards/pins.tsx`
+  makes, lists and voids batches against the same endpoints. A new batch's
+  PINs are held only in the screen's memory and are never shown on screen.
+  The admin can share them as a PDF of cards or as a CSV, or print them. The
+  file goes to the phone's cache for the share sheet and is deleted when the
+  sheet closes. Leaving the screen with the PINs unsaved asks first, as the
+  web page's leave-page prompt does.
 
 ### 21.4 Redemption — one function, three callers
 

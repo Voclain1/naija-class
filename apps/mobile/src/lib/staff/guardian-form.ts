@@ -50,9 +50,16 @@ export function parentAbilities(
   };
 }
 
-export type PortalAction = "add-email" | "invite" | "resend" | "revoke";
+export type PortalAction = "add-email" | "invite" | "resend" | "revoke" | "deactivate" | "reactivate";
 
-/** The portal actions the server will accept for a parent in this state. */
+/**
+ * The portal actions the server will accept for a parent in this state.
+ *
+ * Switch off is offered where a parent HAS access or a live way to get it
+ * (ACTIVE, INVITED), the web roster's rule (roster-actions.ts). It came to the
+ * app on 2026-10-14, by the owner's decision on the pre-build audit; until
+ * then the switch lived only on the web roster.
+ */
 export function portalActions(status: GuardianPortalStatusDto): PortalAction[] {
   switch (status) {
     case "NO_EMAIL":
@@ -61,15 +68,12 @@ export function portalActions(status: GuardianPortalStatusDto): PortalAction[] {
     case "EXPIRED":
       return ["invite"];
     case "INVITED":
-      return ["resend", "revoke"];
+      return ["resend", "revoke", "deactivate"];
     case "ACTIVE":
-      return [];
-    // The school switched access off (2026-10-02). Invite and resend are
-    // refused until it is turned back on, and that switch lives on the web
-    // Guardians roster — a decision that ends someone's access, made where
-    // the full roster and its confirmation are.
+      return ["deactivate"];
+    // Invite and resend are refused until access is turned back on.
     case "DEACTIVATED":
-      return [];
+      return ["reactivate"];
   }
 }
 

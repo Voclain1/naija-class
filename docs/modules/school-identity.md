@@ -41,7 +41,8 @@ SchoolKit stays visible, smaller, as the platform ("Powered by SchoolKit").
 
 A school with no logo shows SchoolKit's logo beside its name (owner's call,
 2026-10-11, replacing the initials first built), and its owner and admins see a
-reminder on the dashboard to add one. The school's
+reminder on the dashboard to add one (and, since 2026-10-14, on the app's staff
+home, which opens the website to upload it). The school's
 own colour is not applied to the interface in this slice: free-form colours
 break contrast and dark mode, and the request was for names and logos.
 

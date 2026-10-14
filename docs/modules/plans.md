@@ -128,7 +128,7 @@ the school's own colour (`primaryColor`), which it also never read.
 |---|---|---|
 | `GET /schools/me/plan` | owner, admin | `{ plan, label, studentCap, studentsOnRoll, enforcement, status, features }`, where status is `ok`, `near` or `over`, and each feature says whether the plan includes it and whether the school has it now |
 | Settings → Plan (`/settings/plan`) | owner, admin | the same, in words |
-| Students page notice | owner, admin | at `near` and `over` |
+| Students page notice | owner, admin | at `near` and `over`; on the website and, since 2026-10-14, on the app's Students screen (`PlanNotice`, the same sentences) |
 | `PATCH /platform-admin/schools/:schoolId/plan` | platform admin | `{ plan, studentCapOverride }` |
 | `platform_admin_list_schools()` | platform admin | adds `plan`, `student_cap_override`, `students_on_roll` |
 

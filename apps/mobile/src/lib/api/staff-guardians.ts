@@ -6,6 +6,7 @@ import type {
   GuardianDetailDto,
   GuardianDto,
   GuardianListResponse,
+  GuardianPortalAccessResponse,
   InviteGuardianResponse,
   LinkExistingGuardianInput,
   MoveEnrollmentInput,
@@ -72,6 +73,20 @@ export function staffResendGuardianInvite(id: string): Promise<ResendGuardianInv
 
 export function staffRevokeGuardianInvite(id: string): Promise<RevokeGuardianInviteResponse> {
   return apiFetch<RevokeGuardianInviteResponse>(`/guardians/${encodeURIComponent(id)}/invite/revoke`, {
+    method: "POST",
+  });
+}
+
+/** Switch a parent's portal access off: signed out everywhere, links dead, password kept. */
+export function staffDeactivateGuardianPortal(id: string): Promise<GuardianPortalAccessResponse> {
+  return apiFetch<GuardianPortalAccessResponse>(`/guardians/${encodeURIComponent(id)}/portal/deactivate`, {
+    method: "POST",
+  });
+}
+
+/** Turn it back on. The password was kept, so no new invitation is needed. */
+export function staffReactivateGuardianPortal(id: string): Promise<GuardianPortalAccessResponse> {
+  return apiFetch<GuardianPortalAccessResponse>(`/guardians/${encodeURIComponent(id)}/portal/reactivate`, {
     method: "POST",
   });
 }

@@ -71,10 +71,11 @@ describe("portal actions — exactly what the server accepts", () => {
     expect(portalActions("NOT_INVITED")).toEqual(["invite"]);
     // An expired invitation is not live, so a fresh invite is accepted.
     expect(portalActions("EXPIRED")).toEqual(["invite"]);
-    expect(portalActions("INVITED")).toEqual(["resend", "revoke"]);
-    expect(portalActions("ACTIVE")).toEqual([]);
-    // Switched off by the school: nothing to send until it is turned back on.
-    expect(portalActions("DEACTIVATED")).toEqual([]);
+    expect(portalActions("INVITED")).toEqual(["resend", "revoke", "deactivate"]);
+    expect(portalActions("ACTIVE")).toEqual(["deactivate"]);
+    // Switched off by the school: nothing to send until it is turned back on,
+    // and turning it back on is the one thing offered.
+    expect(portalActions("DEACTIVATED")).toEqual(["reactivate"]);
   });
 
   it("never offers Invite while an invitation is live (INVITATION_ALREADY_PENDING)", () => {

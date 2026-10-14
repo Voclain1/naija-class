@@ -4,6 +4,7 @@ import { ApiError, ApiNetworkError, setTokenProvider } from "./client";
 import {
   staffGradebookFeed,
   staffGradingScheme,
+  staffPreviewScores,
   staffSaveScores,
   staffSignOffColumn,
 } from "./staff-gradebook";
@@ -65,6 +66,20 @@ describe("staff gradebook bindings", () => {
     const { url, init } = lastCall();
     expect(url).toMatch(/\/assessment-scores\/bulk$/);
     expect(init.method).toBe("POST");
+    expect(JSON.parse(String(init.body))).toEqual(input);
+  });
+
+  it("previews raw marks with the body encoded once, not twice", async () => {
+    const input = {
+      termId: "t",
+      subjectId: "s",
+      rows: [{ studentId: "a", componentId: "c", raw: { mark: 75, outOf: 100 } }],
+    };
+    await staffPreviewScores(input);
+    const { url, init } = lastCall();
+    expect(url).toMatch(/\/assessment-scores\/preview$/);
+    // A string here would mean the body was stringified before apiFetch
+    // stringified it again, and the server would refuse it.
     expect(JSON.parse(String(init.body))).toEqual(input);
   });
 

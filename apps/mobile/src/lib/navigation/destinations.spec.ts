@@ -90,6 +90,12 @@ describe("a bursar", () => {
     expect(keys(BURSAR).sort()).toEqual(["announcements", "calendar", "collections", "debtors", "homework"]);
   });
 
+  it("never gets Result PINs, which are owner/admin only", () => {
+    expect(keys(BURSAR)).not.toContain("result-pins");
+    expect(keys(OWNER)).toContain("result-pins");
+    expect(staffDestinations(OWNER).find((d) => d.key === "result-pins")?.route).toBe("/staff/report-cards/pins");
+  });
+
   it("gets the read-only homework lookup, never the screen that sets work", () => {
     const homework = staffDestinations(BURSAR).find((d) => d.key === "homework");
     expect(homework?.route).toBe("/staff/homework/lookup");

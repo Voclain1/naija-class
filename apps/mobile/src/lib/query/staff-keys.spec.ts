@@ -42,6 +42,18 @@ const STAFF_KEYS: Record<string, readonly unknown[]> = {
   staffCalendar: queryKeys.staffCalendar(SCHOOL, USER, "2026-09-01", "2027-03-01"),
   // CP4 — whole-school figures.
   staffAdminDashboard: queryKeys.staffAdminDashboard(SCHOOL, USER, "term_1"),
+  staffSetupState: queryKeys.staffSetupState(SCHOOL, USER),
+  staffSchoolPlan: queryKeys.staffSchoolPlan(SCHOOL, USER),
+  staffResultPinBatches: queryKeys.staffResultPinBatches(SCHOOL, USER),
+  staffTermOptions: queryKeys.staffTermOptions(SCHOOL, USER),
+  // Unreleased exam content.
+  staffQuestionScope: queryKeys.staffQuestionScope(SCHOOL, USER),
+  staffQuestions: queryKeys.staffQuestions(SCHOOL, USER, "level_1|subject_1"),
+  staffExamPapers: queryKeys.staffExamPapers(SCHOOL, USER),
+  staffExamPaper: queryKeys.staffExamPaper(SCHOOL, USER, "paper_1"),
+  staffCbtExams: queryKeys.staffCbtExams(SCHOOL, USER),
+  staffCbtExam: queryKeys.staffCbtExam(SCHOOL, USER, "exam_1"),
+  staffCbtResults: queryKeys.staffCbtResults(SCHOOL, USER, "exam_1"),
   staffCompleteness: queryKeys.staffCompleteness(SCHOOL, USER, null),
   staffReportCardBoard: queryKeys.staffReportCardBoard(SCHOOL, USER, "term_1", "arm_1"),
   // CP4c — full student records, including medical notes.
