@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { attendanceLine, cumulativeLine, ordinal, positionLabel, promotionLabel } from "./result-extras";
+import {
+  attendanceLine,
+  cumulativeLine,
+  ordinal,
+  positionLabel,
+  promotionLabel,
+  subjectYearLine,
+} from "./result-extras";
 
 describe("result extras (Phase 8 / CP6a)", () => {
   it("ordinals, including the teens", () => {
@@ -45,5 +52,17 @@ describe("result extras (Phase 8 / CP6a)", () => {
     );
     expect(cumulativeLine({ cumulative: null })).toBeNull();
     expect(cumulativeLine({})).toBeNull();
+  });
+});
+
+describe("subjectYearLine", () => {
+  it("says a subject's year average and how many terms it covers", () => {
+    expect(subjectYearLine({ cumulativeAverage: 7250, cumulativeTerms: 3 })).toBe("Year average 72.50% over 3 terms");
+    expect(subjectYearLine({ cumulativeAverage: 6000, cumulativeTerms: 1 })).toBe("Year average 60.00% over 1 term");
+  });
+
+  it("says nothing on a term with no year figure", () => {
+    expect(subjectYearLine({ cumulativeAverage: null, cumulativeTerms: null })).toBeNull();
+    expect(subjectYearLine({})).toBeNull();
   });
 });

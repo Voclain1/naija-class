@@ -131,6 +131,19 @@ export function staffDestinations(ctx: StaffContext): Destination[] {
       route: "/staff/homework",
     });
   }
+  // The read-only lookup for someone who holds homework.read but cannot set
+  // work — a bursar, answering a parent at the counter. Anyone who can set
+  // homework already has the full screen above, which lists it too.
+  else if (can("homework.read")) {
+    out.push({
+      key: "homework",
+      label: "Homework",
+      hint: "Look up a class's homework",
+      icon: "book-outline",
+      group: "School",
+      route: "/staff/homework/lookup",
+    });
+  }
 
   // --- Calendar ---
   if (teacher) {

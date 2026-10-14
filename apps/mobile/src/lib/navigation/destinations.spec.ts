@@ -33,7 +33,7 @@ const BURSAR: StaffContext = {
   roles: [{ key: "bursar" }],
   // A bursar holds announcement.read (they read what the school sends; they
   // cannot send it) — see PHASE_3_BURSAR_PERMISSIONS.
-  permissions: ["finance.dashboard.read", "finance.debtors.read", "calendar-event.read", "announcement.read"],
+  permissions: ["finance.dashboard.read", "finance.debtors.read", "calendar-event.read", "announcement.read", "homework.read"],
 };
 
 const keys = (ctx: StaffContext) => staffDestinations(ctx).map((d) => d.key);
@@ -86,8 +86,14 @@ describe("an owner", () => {
 });
 
 describe("a bursar", () => {
-  it("gets money and the calendar only", () => {
-    expect(keys(BURSAR).sort()).toEqual(["announcements", "calendar", "collections", "debtors"]);
+  it("gets money, the calendar and the homework lookup only", () => {
+    expect(keys(BURSAR).sort()).toEqual(["announcements", "calendar", "collections", "debtors", "homework"]);
+  });
+
+  it("gets the read-only homework lookup, never the screen that sets work", () => {
+    const homework = staffDestinations(BURSAR).find((d) => d.key === "homework");
+    expect(homework?.route).toBe("/staff/homework/lookup");
+    expect(staffDestinations(TEACHER).find((d) => d.key === "homework")?.route).toBe("/staff/homework");
   });
 });
 

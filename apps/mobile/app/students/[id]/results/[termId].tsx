@@ -7,18 +7,11 @@ import { getResult, unlockResult } from "../../../../src/lib/api/portal";
 import { queryKeys } from "../../../../src/lib/query/keys";
 import { useSession } from "../../../../src/lib/auth/session";
 import { spacing } from "../../../../src/theme/tokens";
-import {
-  Body,
-  Card,
-  CenteredMessage,
-  Heading,
-  Label,
-  Screen,
-} from "../../../../src/components/ui";
+import { Body, Caption, Card, CenteredMessage, Heading, Label, Screen } from "../../../../src/components/ui";
 import { FreshnessLabel } from "../../../../src/components/freshness-label";
 import { PrincipalRemark, ResultStanding } from "../../../../src/components/result-extras";
 import { ResultPinUnlock, isResultLocked } from "../../../../src/components/result-pin-unlock";
-import { positionLabel } from "../../../../src/lib/results/result-extras";
+import { positionLabel, subjectYearLine } from "../../../../src/lib/results/result-extras";
 
 // Phase 6 / Slice 4 — one released term, in full.
 //
@@ -153,6 +146,7 @@ export default function ResultDetailScreen() {
                     <View style={styles.subjectName}>
                       <Body>{s.subjectName}</Body>
                       {s.remark ? <Body muted>{s.remark}</Body> : null}
+                      {subjectYearLine(s) ? <Caption>{subjectYearLine(s)}</Caption> : null}
                     </View>
                     <View style={styles.subjectScore}>
                       <Body>{s.totalScore}</Body>

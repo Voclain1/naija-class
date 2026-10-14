@@ -4641,7 +4641,9 @@ behind `assessment-score.create`, like the save.
 - Shown on the PDF (a "Cum. Avg" column, a "Cumulative Average (N terms)"
   box, and the position box), on the portal and in the checker (the shared
   `ResultCard`: "Year average … over N terms, Nth in class" plus a
-  "Year avg" column), in the app ("The year so far"), and on the web board
+  "Year avg" column), in the app ("The year so far", and since 2026-10-14 a
+  "Year average … over N terms" line under each subject, which the pre-build
+  audit found missing), and on the web board
   and card detail. The board shows "Year avg" in the Promotion cell, where
   the promotion decision is made. Cumulative position follows the school's
   position settings (D51) for both family principals (negative-walk test 10).
