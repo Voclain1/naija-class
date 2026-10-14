@@ -106,7 +106,7 @@ blocked by it.
 | Q9 | **Online admissions: public form.** Strangers can submit a child's details and documents. | Yes, behind a per-school switch, with rate limits, a hidden honeypot field (new; nothing in the codebase uses one yet), an NDPR consent tickbox, and a 90-day purge of rejected applications. Accepting creates the student through the existing create path. | CP7 |
 | Q10 | **Fee-default risk** (spec says AI). | **Rules, not AI.** A transparent score from payment history (late terms, part-payments, current balance), shown only to owner, admin and bursar, with the reasons listed. No family data goes to a model. | CP10 |
 | Q11 | **Excel export** needs one new library (`exceljs`, MIT). | Yes. CSV stays the default. **Owner, 2026-10-14: approved, and PDF too wherever possible.** | CP1 |
-| Q12 | **Order.** §5 proposes an order by value and risk. | Approve or reorder. **Not yet answered; CP1 is first in any order, so it proceeds.** | — |
+| Q12 | **Order.** §5 proposes an order by value and risk. | Approve or reorder. **Owner, 2026-10-14: approved as listed.** | — |
 
 ## 4. Shared pieces built once, before the modules that need them
 
@@ -406,7 +406,7 @@ into an assignment.
 
 ## 8. CP1 plan-first — Reports and analytics, with exports
 
-Status: **for the owner's approval. Nothing below is built yet.**
+Status: **approved by the owner as listed, 2026-10-14.** Build starts with CP1.1.
 
 ### 8.1 What exists today (read from the code, 2026-10-14)
 
