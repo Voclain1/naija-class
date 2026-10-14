@@ -9,6 +9,8 @@ import { CompletenessService } from "./completeness.service.js";
 import { ReportExportSweeperService } from "./report-export-sweeper.service.js";
 import { ReportExportsService } from "./report-exports.service.js";
 import { ReportsController } from "./reports.controller.js";
+import { TableExportsController } from "./table-exports.controller.js";
+import { TableExportsService } from "./table-exports.service.js";
 
 // Phase 8 / CP2 — Recording Completeness. Imports CalendarModule for
 // CalendarService.buildCalendar, the single calendar reader, which decides the
@@ -31,7 +33,7 @@ import { ReportsController } from "./reports.controller.js";
       },
     }),
   ],
-  controllers: [ReportsController],
-  providers: [CompletenessService, AnalyticsService, ReportExportsService, ReportExportSweeperService],
+  controllers: [ReportsController, TableExportsController],
+  providers: [CompletenessService, AnalyticsService, ReportExportsService, ReportExportSweeperService, TableExportsService],
 })
 export class ReportsModule {}

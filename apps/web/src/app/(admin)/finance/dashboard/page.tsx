@@ -20,7 +20,7 @@ import { InlineAlert } from "@/components/shared/inline-alert";
 import { StatCard } from "@/components/shared/stat-card";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { ExportCsvButton } from "@/components/shared/export-csv-button";
+import { ListExportMenu } from "@/components/shared/list-export-menu";
 import { listAcademicYears, listTerms } from "@/lib/academic-years/academic-years-api";
 import { resolveSchoolBankDetails } from "@school-kit/types";
 
@@ -29,7 +29,7 @@ import { cn } from "@/lib/utils";
 
 import { hasPermission } from "@/lib/auth/has-permission";
 import { resolveBillingWindow } from "@/lib/finance/billing-window";
-import { exportRowsAsCsv, type CsvColumn } from "@/lib/csv-export";
+import type { CsvColumn } from "@/lib/csv-export";
 import { useAuth } from "@/lib/auth/use-auth";
 import {
   getCollectionByLevel,
@@ -47,7 +47,7 @@ import { ledgerDeepLinkHref } from "@/lib/finance/ledger-deep-link";
 // file opens in a spreadsheet in front of a school owner, and "450000" in a
 // column headed Collected is a number wrong by a factor of 100.
 //
-// No extra permission gate, following ExportCsvButton's existing call sites
+// No extra permission gate, following the list exports' existing call sites
 // on /finance/debtors and /finance/expenses: this exports rows already
 // rendered on screen, so the read that fetched them is the gate.
 const BY_LEVEL_EXPORT_COLUMNS: CsvColumn<DashboardCollectionGroupDto>[] = [
@@ -642,17 +642,14 @@ export default function FinanceDashboardPage() {
                   Collection by class level
                 </h2>
                 {byLevel && byLevel.groups.length > 0 && (
-                  <ExportCsvButton
-                    label="Export CSV"
-                    className="print:hidden"
-                    onExport={() =>
-                      exportRowsAsCsv(
-                        "collection-by-class-level.csv",
-                        byLevel.groups,
-                        BY_LEVEL_EXPORT_COLUMNS,
-                      )
-                    }
-                  />
+                  <div className="print:hidden">
+                    <ListExportMenu
+                      title="Collection by class level"
+                      csvFilename="collection-by-class-level.csv"
+                      columns={BY_LEVEL_EXPORT_COLUMNS}
+                      getRows={() => byLevel.groups}
+                    />
+                  </div>
                 )}
               </div>
               {byLevelError ? (

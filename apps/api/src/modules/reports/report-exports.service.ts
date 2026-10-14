@@ -6,7 +6,6 @@ import { withTenant } from "@school-kit/db";
 import {
   lagosTodayIso,
   type AnalyticsExportReport,
-  NotFoundError,
   type AttendanceArmRowDto,
   type CompletenessExportSection,
   type CompletenessTermDto,
@@ -21,17 +20,13 @@ import type { AuthContext } from "../../common/auth/auth-context.js";
 import { assertUserActiveAndHasOneOf } from "../../common/auth/role-check.js";
 import {
   exportFilename,
-  toPrintHtml,
   toXlsx,
   XLSX_CONTENT_TYPE,
   type ExportDocument,
   type ExportTable,
 } from "../../common/export/tabular-export.js";
-import { REPORT_CARDS_JOB_EXPORT_PDF, REPORT_CARDS_QUEUE } from "../../common/queue/index.js";
+import { REPORT_CARDS_QUEUE } from "../../common/queue/index.js";
 import { StorageService } from "../../common/storage/index.js";
-import { loadReceiptLogo } from "../payments/receipt.js";
-import type { ExportPdfJobData } from "../report-cards/render/export-pdf.service.js";
-import { wakeRenderWorker } from "../report-cards/render/wake-render-worker.js";
 import {
   academicTables,
   attendanceTables,
@@ -40,6 +35,7 @@ import {
 } from "./analytics-export.js";
 import { AnalyticsService } from "./analytics.service.js";
 import { CompletenessService } from "./completeness.service.js";
+import { PdfExportQueue, schoolNameOf } from "./pdf-export-queue.js";
 
 // Phase 9 / CP1.1 — Excel and PDF copies of the reports (docs/modules/phase-9.md §8).
 //
@@ -68,8 +64,6 @@ export interface ExportFile {
 
 const MANAGER_ROLES = ["owner", "admin"] as const;
 const AUDIT_REPORT_EXPORT = "reports.export";
-/** Signed-link lifetime for a finished PDF, as for receipts. */
-const PDF_URL_TTL_SECONDS = 15 * 60;
 
 const subtitleFor = (term: CompletenessTermDto | null): string | null =>
   term ? `${term.name} ${term.academicYearLabel}` : null;
@@ -209,16 +203,7 @@ export class ReportExportsService {
   // ===========================================================================
   async getPdfStatus(authCtx: AuthContext, exportId: string): Promise<ReportExportStatusDto> {
     await assertUserActiveAndHasOneOf(authCtx, MANAGER_ROLES);
-    // RLS bounds the read to this school: another school's id is simply absent.
-    const row = await withTenant(authCtx.schoolId, (db) =>
-      db.reportExport.findUnique({ where: { id: exportId }, select: { id: true, status: true, filename: true } }),
-    );
-    if (!row) throw new NotFoundError("Export not found.");
-    const url =
-      row.status === "GENERATED"
-        ? await this.storage.signUrl(authCtx.schoolId, { kind: "report-export", exportId: row.id }, PDF_URL_TTL_SECONDS)
-        : null;
-    return { exportId: row.id, status: row.status, filename: row.filename, url };
+    return this.pdf().status(authCtx, exportId);
   }
 
   // ---------------------------------------------------------------------------
@@ -330,53 +315,15 @@ export class ReportExportsService {
     termId: string | null,
     reqCtx: RequestContext,
   ): Promise<ReportPdfAcceptedDto> {
-    const logoUrl = await withTenant(authCtx.schoolId, async (db) =>
-      (await db.school.findUnique({ where: { id: authCtx.schoolId }, select: { logoUrl: true } }))?.logoUrl ?? null,
-    );
-    const logoDataUri = await loadReceiptLogo(this.storage, authCtx.schoolId, logoUrl);
-    const html = toPrintHtml(doc, { logoDataUri, printedOn: this.todayFn() });
-    const filename = exportFilename(doc.title, doc.subtitle, "pdf");
+    return this.pdf().queuePdf(authCtx, key, doc, termId, { action: AUDIT_REPORT_EXPORT, metadata: { report: key } }, reqCtx.ipAddress);
+  }
 
-    // The row commits BEFORE the job exists, so the worker can never pick up
-    // an id whose row is not yet visible to it.
-    const exportId = await withTenant(authCtx.schoolId, async (db) => {
-      const row = await db.reportExport.create({
-        data: { schoolId: authCtx.schoolId, requestedBy: authCtx.userId, report: key, termId, filename, html },
-        select: { id: true },
-      });
-      await db.auditLog.create({
-        data: {
-          schoolId: authCtx.schoolId,
-          userId: authCtx.userId,
-          action: AUDIT_REPORT_EXPORT,
-          entityType: "report_export",
-          entityId: row.id,
-          ipAddress: reqCtx.ipAddress,
-          metadata: { report: key, format: "pdf", rows: doc.tables.reduce((n, t) => n + t.rows.length, 0) },
-        },
-      });
-      return row.id;
-    });
-
-    try {
-      const data: ExportPdfJobData = { schoolId: authCtx.schoolId, userId: authCtx.userId, exportId };
-      await this.queue.add(REPORT_CARDS_JOB_EXPORT_PDF, data);
-    } catch (err) {
-      // No job means nothing will ever finish this row; say so now rather
-      // than leave the page waiting.
-      await withTenant(authCtx.schoolId, (db) =>
-        db.reportExport.update({ where: { id: exportId }, data: { status: "FAILED", html: null, finishedAt: new Date() } }),
-      );
-      throw err;
-    }
-    wakeRenderWorker("report export");
-    return { exportId };
+  // Built per call so a spec's todayFn override is honoured.
+  private pdf(): PdfExportQueue {
+    return new PdfExportQueue(this.storage, this.queue, this.todayFn);
   }
 
   private async schoolName(schoolId: string): Promise<string> {
-    const school = await withTenant(schoolId, (db) =>
-      db.school.findUnique({ where: { id: schoolId }, select: { name: true } }),
-    );
-    return school?.name ?? "";
+    return schoolNameOf(schoolId);
   }
 }

@@ -6,6 +6,7 @@ import {
   HOMEWORK_READ_PERMISSIONS,
   CALENDAR_READ_PERMISSIONS,
   REPORTS_PERMISSIONS,
+  TABLE_EXPORT_PERMISSIONS,
   TIMETABLE_PERMISSIONS,
   TIMETABLE_OWN_READ_PERMISSIONS,
   PHASE_0_PERMISSIONS,
@@ -26,6 +27,7 @@ import { PERMISSIONS_METADATA_KEY } from "../common/auth/permissions.decorator";
 import { AcademicYearsController } from "../modules/academic-years/academic-years.controller";
 import { CalendarController } from "../modules/calendar/calendar.controller";
 import { ReportsController } from "../modules/reports/reports.controller";
+import { TableExportsController } from "../modules/reports/table-exports.controller";
 import { TimetableController } from "../modules/timetable/timetable.controller";
 import { TeacherTimetableController } from "../modules/timetable/timetable-read.controllers";
 import { AssessmentScoresController, AssessmentsController } from "../modules/assessment/assessment.controller";
@@ -758,11 +760,16 @@ describe("Phase 3 RBAC close-out: seeded role grants", () => {
     // kind. A bursar fielding "what homework does my child have?" at the
     // counter should be able to answer; homework carries no financial data and
     // setting it stays with teachers and admins (the-school-day.md B8).
+    //
+    // + TABLE_EXPORT_PERMISSIONS (Phase 9 CP1.3): Excel/PDF of a list already
+    // on screen. It grants no data — the server formats rows the page holds —
+    // so it widens nothing a bursar can see. Asserted in the CP1.3 block.
     expect(bursarPerms.size).toBe(
       PHASE_3_BURSAR_PERMISSIONS.length +
         CALENDAR_READ_PERMISSIONS.length +
         ANNOUNCEMENT_READ_PERMISSIONS.length +
-        HOMEWORK_READ_PERMISSIONS.length,
+        HOMEWORK_READ_PERMISSIONS.length +
+        TABLE_EXPORT_PERMISSIONS.length,
     );
     expect(bursarPerms.has("announcement.read")).toBe(true);
     expect(bursarPerms.has("announcement.create")).toBe(false);
@@ -1156,6 +1163,23 @@ describe("Phase 8 CP2 RBAC coverage: reports role grants match D39", () => {
     for (const key of ["teacher", "bursar"]) {
       const perms = new Set(roleSeed(key).permissions);
       for (const p of REPORTS_PERMISSIONS) expect(perms.has(p), `${key} should NOT have ${p}`).toBe(false);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 9 / CP1.3 — Excel/PDF of a list already on screen (docs/modules/phase-9.md
+// §8.9 CP1-D10). The formatter reads no data, so every staff role holds it.
+// ---------------------------------------------------------------------------
+describe("Phase 9 CP1.3 RBAC coverage: list exports", () => {
+  it("TableExportsController: every handler needs export.table and nothing else", () => {
+    expect(routeHandlers(TableExportsController).sort()).toEqual(["exportStatus", "tablePdf", "tableXlsx"]);
+    expect([...new Set(handlerPermissions(TableExportsController))]).toEqual(["export.table"]);
+  });
+
+  it("admin, teacher and bursar hold export.table; owner is the wildcard", () => {
+    for (const key of ["admin", "teacher", "bursar"]) {
+      expect(new Set(roleSeed(key).permissions).has("export.table"), `${key} should have export.table`).toBe(true);
     }
   });
 });

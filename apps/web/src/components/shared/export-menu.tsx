@@ -4,7 +4,7 @@ import { ChevronDown, Download, FileSpreadsheet, FileText, Loader2, Sheet } from
 import { useState } from "react";
 import { toast } from "sonner";
 
-import type { ReportPdfAcceptedDto } from "@school-kit/types";
+import type { ReportExportStatusDto, ReportPdfAcceptedDto } from "@school-kit/types";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -18,8 +18,8 @@ import { waitForPdf } from "@/lib/reports/report-exports-api";
 
 interface Props {
   disabled?: boolean;
-  /** Built in the browser from rows the page already holds (csv-export.ts). */
-  onCsv?: () => void;
+  /** Built in the browser from rows the page already holds (csv-export.ts). May fetch first. */
+  onCsv?: () => void | Promise<void>;
   /** Downloads the API-built workbook. */
   onExcel?: () => Promise<void>;
   /** Queues the API's PDF; the menu waits for it and offers it to open. */
@@ -27,9 +27,13 @@ interface Props {
   /** e.g. "Excel (whole report)" when the file holds more than this table. */
   excelLabel?: string;
   pdfLabel?: string;
+  /** Where the queued PDF's status is read; defaults to the reports route. */
+  pdfStatus?: (exportId: string) => Promise<ReportExportStatusDto>;
+  /** Shown as a disabled PDF item when the table cannot be printed, e.g. too wide. */
+  pdfUnavailable?: string;
 }
 
-type Busy = "excel" | "pdf" | null;
+type Busy = "csv" | "excel" | "pdf" | null;
 
 // One "Export" menu for a table: CSV, Excel and PDF (Phase 9 / CP1.1,
 // docs/modules/phase-9.md §8). A menu rather than three buttons, so a table
@@ -38,7 +42,16 @@ type Busy = "excel" | "pdf" | null;
 // The finished PDF opens from a button in the toast rather than by itself:
 // it lives behind a short-lived link on another origin, and a window opened
 // after a wait (not straight from a click) is blocked by most browsers.
-export function ExportMenu({ disabled, onCsv, onExcel, onPdf, excelLabel = "Excel", pdfLabel = "PDF" }: Props) {
+export function ExportMenu({
+  disabled,
+  onCsv,
+  onExcel,
+  onPdf,
+  excelLabel = "Excel",
+  pdfLabel = "PDF",
+  pdfStatus,
+  pdfUnavailable,
+}: Props) {
   const [busy, setBusy] = useState<Busy>(null);
 
   async function run(kind: Exclude<Busy, null>, fn: () => Promise<void>) {
@@ -56,7 +69,7 @@ export function ExportMenu({ disabled, onCsv, onExcel, onPdf, excelLabel = "Exce
     const id = toast.loading("Preparing the PDF… this can take up to a minute.");
     try {
       const { exportId } = await request();
-      const done = await waitForPdf(exportId);
+      const done = await waitForPdf(exportId, pdfStatus ? { fetchStatus: pdfStatus } : {});
       if (done.status === "GENERATED" && done.url) {
         const url = done.url;
         toast.success("Your PDF is ready.", {
@@ -85,7 +98,7 @@ export function ExportMenu({ disabled, onCsv, onExcel, onPdf, excelLabel = "Exce
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
         {onCsv ? (
-          <DropdownMenuItem onSelect={() => onCsv()}>
+          <DropdownMenuItem onSelect={() => void run("csv", async () => onCsv())}>
             <Sheet className="mr-2 h-4 w-4" />
             CSV
           </DropdownMenuItem>
@@ -96,7 +109,15 @@ export function ExportMenu({ disabled, onCsv, onExcel, onPdf, excelLabel = "Exce
             {excelLabel}
           </DropdownMenuItem>
         ) : null}
-        {onPdf ? (
+        {onPdf && pdfUnavailable ? (
+          <DropdownMenuItem disabled>
+            <FileText className="mr-2 h-4 w-4" />
+            <span className="flex flex-col">
+              <span>{pdfLabel}</span>
+              <span className="text-xs text-muted-foreground">{pdfUnavailable}</span>
+            </span>
+          </DropdownMenuItem>
+        ) : onPdf ? (
           <DropdownMenuItem onSelect={() => void run("pdf", () => pdf(onPdf))}>
             <FileText className="mr-2 h-4 w-4" />
             {pdfLabel}

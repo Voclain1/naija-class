@@ -12,7 +12,7 @@ interface Props extends Pick<ButtonProps, "variant" | "size" | "className"> {
 // Triggers the browser's native print dialog — no backend PDF generation.
 // Chrome (nav/topbar, page-level buttons, filters, pagination) is hidden via
 // `print:hidden` at the layout level and per-page; the data table underneath
-// prints as-is. Pairs with ExportCsvButton: Export gets the working data,
+// prints as-is. Pairs with ListExportMenu: Export gets the working data,
 // Print gets a presentable view of what's currently on screen.
 export function PrintButton({ label = "Print", disabled, variant = "outline", size = "sm", className }: Props) {
   return (

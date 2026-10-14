@@ -6,13 +6,13 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type { PendingInvitationDto, UserListItemDto } from "@school-kit/types";
 
-import { ExportCsvButton } from "@/components/shared/export-csv-button";
+import { ListExportMenu } from "@/components/shared/list-export-menu";
 import { PrintButton } from "@/components/shared/print-button";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ApiError } from "@/lib/api-client";
-import { exportRowsAsCsv, type CsvColumn } from "@/lib/csv-export";
+import type { CsvColumn } from "@/lib/csv-export";
 import { listStaff, listStaffInvitations } from "@/lib/staff/staff-api";
 
 // /staff — Phase 1 / Slice 10 cp3 staff roster.
@@ -157,8 +157,11 @@ export default function StaffRosterPage() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2 print:hidden">
-          <ExportCsvButton
-            onExport={() => exportRowsAsCsv("staff.csv", filtered, STAFF_EXPORT_COLUMNS)}
+          <ListExportMenu
+            title="Staff"
+            csvFilename="staff.csv"
+            columns={STAFF_EXPORT_COLUMNS}
+            getRows={() => filtered}
             disabled={filtered.length === 0}
           />
           <PrintButton />

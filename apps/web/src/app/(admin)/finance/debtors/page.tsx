@@ -12,14 +12,14 @@ import {
   type TermDto,
 } from "@school-kit/types";
 
-import { ExportCsvButton } from "@/components/shared/export-csv-button";
+import { ListExportMenu } from "@/components/shared/list-export-menu";
 import { InlineAlert } from "@/components/shared/inline-alert";
 import { PrintButton } from "@/components/shared/print-button";
 import { Badge, type BadgeProps } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { listAcademicYears, listTerms } from "@/lib/academic-years/academic-years-api";
-import { exportRowsAsCsv, type CsvColumn } from "@/lib/csv-export";
+import type { CsvColumn } from "@/lib/csv-export";
 import { financeErrorMessage, logFinanceError } from "@/lib/finance/error-copy";
 import { formatKobo } from "@/lib/finance/format";
 import { useAuth } from "@/lib/auth/use-auth";
@@ -301,8 +301,12 @@ export default function DebtorsPage() {
               total balance <strong className="text-foreground">{formatKobo(totalBalance)}</strong>
             </p>
             <div className="flex flex-wrap gap-2 print:hidden">
-              <ExportCsvButton
-                onExport={() => exportRowsAsCsv("debtors.csv", debtors, DEBTOR_EXPORT_COLUMNS)}
+              <ListExportMenu
+                title="Debtors"
+                csvFilename="debtors.csv"
+                columns={DEBTOR_EXPORT_COLUMNS}
+                getRows={() => debtors}
+                disabled={debtors.length === 0}
               />
               <PrintButton />
               <Button onClick={handleRemind} disabled={reminding || selected.size === 0}>
