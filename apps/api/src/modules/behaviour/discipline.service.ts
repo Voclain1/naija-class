@@ -532,6 +532,7 @@ export class DisciplineService {
       decidedAt: r.decidedAt,
       decisionReason: r.decisionReason,
       withdrawnAt: r.withdrawnAt,
+      approvedOnProposal: r.decidedBy !== null && r.decidedBy === r.proposedBy,
       guardiansNotified: notified.get(r.id) ?? 0,
       canDecide: isAdmin && r.status === "PROPOSED" && r.proposedBy !== authCtx.userId,
       canWithdraw:
