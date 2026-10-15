@@ -2,6 +2,7 @@ import { ScrollView, StyleSheet } from "react-native";
 import { Redirect, Stack, useLocalSearchParams } from "expo-router";
 
 import { BehaviourCard } from "../../../../src/components/behaviour-card";
+import { DisciplineCard } from "../../../../src/components/discipline-card";
 import { ScreenHeader } from "../../../../src/components/layout";
 import { Caption, Notice, Screen } from "../../../../src/components/ui";
 import { hasPermission } from "../../../../src/lib/auth/permissions";
@@ -28,14 +29,23 @@ export default function TeacherBehaviourScreen() {
       <Stack.Screen options={{ headerShown: true, headerTitle: "" }} />
       <ScrollView contentContainerStyle={styles.content}>
         <ScreenHeader title={name || "Behaviour"} subtitle="Behaviour records" />
-        <Caption>Staff only: parents and students never see these.</Caption>
+        <Caption>Staff only: parents and students never see these, except an approved suspension or exclusion.</Caption>
         {canRead ? (
-          <BehaviourCard
-            studentId={studentId ?? ""}
-            schoolId={staff?.school.id ?? ""}
-            userId={staff?.user.id ?? ""}
-            enabled={(studentId ?? "") !== ""}
-          />
+          <>
+            <BehaviourCard
+              studentId={studentId ?? ""}
+              schoolId={staff?.school.id ?? ""}
+              userId={staff?.user.id ?? ""}
+              enabled={(studentId ?? "") !== ""}
+            />
+            {/* Phase 9 / CP2.3: propose a discipline action for this child. */}
+            <DisciplineCard
+              studentId={studentId ?? ""}
+              schoolId={staff?.school.id ?? ""}
+              userId={staff?.user.id ?? ""}
+              enabled={(studentId ?? "") !== ""}
+            />
+          </>
         ) : (
           <Notice tone="info">Your account can&apos;t see behaviour records.</Notice>
         )}

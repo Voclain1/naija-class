@@ -187,6 +187,13 @@ Making it parent-visible later is a decision with a design (right of reply,
 retention, who may amend). Making it parent-visible *by default now* is how a
 school ends up in an argument it cannot win.
 
+**2026-10-15, narrow reversal (Phase 9 / CP2.3, `phase-9.md` §9 CP2-D4).** An
+owner or admin's APPROVED suspension or exclusion is sent to the child's
+guardians: the action and its dates, by push then SMS, and a "Notices from the
+school" card on the parent website and app. Nothing else changes. Records,
+notes, incidents, points, warnings, detentions and every reason stay
+staff-only, and the one family route's response type has no field for them.
+
 ### C15 — No AI anywhere near it
 
 Not summarised, not drafted, not categorised. The hard rule bars

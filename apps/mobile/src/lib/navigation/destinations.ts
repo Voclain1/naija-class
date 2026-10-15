@@ -92,6 +92,11 @@ export function staffDestinations(ctx: StaffContext): Destination[] {
   if (admin) {
     out.push({ key: "students", label: "Students", hint: "Find, add, update", icon: "people-circle-outline", group: "School", route: "/staff/students" });
   }
+  // Phase 9 / CP2.3 — proposed discipline actions to approve or reject. The
+  // service checks the owner/admin role behind behaviour.decide.
+  if (admin && can("behaviour.decide")) {
+    out.push({ key: "discipline", label: "Behaviour decisions", hint: "Approve or reject", icon: "shield-checkmark-outline", group: "School", route: "/staff/discipline" });
+  }
   if (admin && can("reports.completeness.read")) {
     out.push({ key: "reports", label: "Reports", hint: "What's behind", icon: "bar-chart-outline", group: "School", route: "/staff/reports" });
   }

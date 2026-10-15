@@ -26,6 +26,7 @@ import { PERMISSIONS_METADATA_KEY } from "../common/auth/permissions.decorator";
 
 import { AcademicYearsController } from "../modules/academic-years/academic-years.controller";
 import { BehaviourController } from "../modules/behaviour/behaviour.controller";
+import { DisciplineController } from "../modules/behaviour/discipline.controller";
 import { CalendarController } from "../modules/calendar/calendar.controller";
 import { ReportsController } from "../modules/reports/reports.controller";
 import { TableExportsController } from "../modules/reports/table-exports.controller";
@@ -1422,5 +1423,34 @@ describe("Phase 9 CP2.2 RBAC coverage: behaviour incidents", () => {
     const bursar = new Set(roleSeed("bursar").permissions);
     expect(bursar.has("behaviour.read")).toBe(false);
     expect(bursar.has("behaviour.create")).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 9 / CP2.3 — discipline (docs/modules/phase-9.md §9 CP2-D5). A teacher
+// proposes and withdraws with behaviour.create; only owner and admin decide.
+// ---------------------------------------------------------------------------
+describe("Phase 9 CP2.3 RBAC coverage: discipline", () => {
+  const perms = (handler: string): string[] =>
+    Reflect.getMetadata(
+      PERMISSIONS_METADATA_KEY,
+      (DisciplineController.prototype as unknown as Record<string, object>)[handler]!,
+    ) as string[];
+
+  it("proposing and withdrawing need behaviour.create; reading needs behaviour.read", () => {
+    expect(perms("propose")).toEqual(["behaviour.create"]);
+    expect(perms("withdraw")).toEqual(["behaviour.create"]);
+    expect(perms("list")).toEqual(["behaviour.read"]);
+  });
+
+  it("deciding needs behaviour.decide", () => {
+    expect(perms("decide")).toEqual(["behaviour.decide"]);
+  });
+
+  it("admin holds behaviour.decide; teacher and bursar never do", () => {
+    expect(new Set(roleSeed("admin").permissions).has("behaviour.decide")).toBe(true);
+    for (const key of ["teacher", "bursar"]) {
+      expect(new Set(roleSeed(key).permissions).has("behaviour.decide"), `${key} must not decide`).toBe(false);
+    }
   });
 });

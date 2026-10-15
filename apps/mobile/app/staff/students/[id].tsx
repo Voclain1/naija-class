@@ -39,6 +39,7 @@ import { useTheme } from "../../../src/theme/theme-provider";
 import { fontSizes, fonts, radii, spacing } from "../../../src/theme/tokens";
 import { Body, Button, Card, CenteredMessage, Label, Notice, Screen } from "../../../src/components/ui";
 import { BehaviourCard } from "../../../src/components/behaviour-card";
+import { DisciplineCard } from "../../../src/components/discipline-card";
 import { hasPermission } from "../../../src/lib/auth/permissions";
 import { ListRow, ScreenHeader, SectionHeader, Skeleton, StatRow } from "../../../src/components/layout";
 
@@ -522,6 +523,13 @@ export default function StudentScreen() {
             practical business of placement and guardians: it is the thing you
             open deliberately, not something to meet on the way past. */}
         <BehaviourCard
+          studentId={id ?? ""}
+          schoolId={schoolId}
+          userId={userId}
+          enabled={authed && (id ?? "") !== "" && hasPermission(staff?.permissions ?? [], "behaviour.read")}
+        />
+        {/* Phase 9 / CP2.3: discipline actions for this child. */}
+        <DisciplineCard
           studentId={id ?? ""}
           schoolId={schoolId}
           userId={userId}
