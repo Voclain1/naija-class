@@ -1,8 +1,16 @@
-import { Body, Controller, Get, HttpCode, Ip, Param, Post, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, HttpCode, Ip, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
 
 import {
   behaviourListQuerySchema,
+  createBehaviourCategorySchema,
   createBehaviourSchema,
+  updateBehaviourCategorySchema,
+  updateBehaviourSettingsSchema,
+  type BehaviourCategoryDto,
+  type BehaviourSettingsDto,
+  type CreateBehaviourCategoryInput,
+  type UpdateBehaviourCategoryInput,
+  type UpdateBehaviourSettingsInput,
   type BehaviourListQuery,
   type BehaviourListResponse,
   type BehaviourRecordDto,
@@ -48,6 +56,50 @@ export class BehaviourController {
     @Ip() ip: string,
   ): Promise<BehaviourListResponse> {
     return this.service.listForStudent(authCtx, query, { ipAddress: ip });
+  }
+
+  // -------------------------------------------------------------------------
+  // Phase 9 / CP2.1 — points (docs/modules/phase-9.md §9 CP2-D1). Reading the
+  // settings is open to every writer, who needs the categories to offer them;
+  // changing them is owner/admin only (CP2-D5).
+  // -------------------------------------------------------------------------
+
+  @Get("settings")
+  @Permissions("behaviour.read")
+  async settings(@CurrentUser() authCtx: AuthContext): Promise<BehaviourSettingsDto> {
+    return this.service.getSettings(authCtx);
+  }
+
+  @Patch("settings")
+  @Permissions("behaviour.manage")
+  async updateSettings(
+    @CurrentUser() authCtx: AuthContext,
+    @Body(new ZodValidationPipe(updateBehaviourSettingsSchema)) dto: UpdateBehaviourSettingsInput,
+    @Ip() ip: string,
+  ): Promise<BehaviourSettingsDto> {
+    return this.service.updateSettings(authCtx, dto, { ipAddress: ip });
+  }
+
+  @Post("categories")
+  @HttpCode(201)
+  @Permissions("behaviour.manage")
+  async createCategory(
+    @CurrentUser() authCtx: AuthContext,
+    @Body(new ZodValidationPipe(createBehaviourCategorySchema)) dto: CreateBehaviourCategoryInput,
+    @Ip() ip: string,
+  ): Promise<BehaviourCategoryDto> {
+    return this.service.createCategory(authCtx, dto, { ipAddress: ip });
+  }
+
+  @Patch("categories/:id")
+  @Permissions("behaviour.manage")
+  async updateCategory(
+    @CurrentUser() authCtx: AuthContext,
+    @Param("id") id: string,
+    @Body(new ZodValidationPipe(updateBehaviourCategorySchema)) dto: UpdateBehaviourCategoryInput,
+    @Ip() ip: string,
+  ): Promise<BehaviourCategoryDto> {
+    return this.service.updateCategory(authCtx, id, dto, { ipAddress: ip });
   }
 
   @Post(":id/withdraw")

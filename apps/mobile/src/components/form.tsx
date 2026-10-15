@@ -196,6 +196,9 @@ const styles = StyleSheet.create({
   dateBox: { textAlign: "center", minWidth: 0, paddingHorizontal: spacing.sm },
   chips: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
   chip: {
+    // A long label (a behaviour category, a class name) wraps inside the chip
+    // instead of running off the screen.
+    maxWidth: "100%",
     borderWidth: 1,
     borderRadius: radii.md,
     paddingVertical: spacing.sm,
@@ -203,6 +206,6 @@ const styles = StyleSheet.create({
     minHeight: 44,
     justifyContent: "center",
   },
-  chipText: { fontFamily: fonts.sansSemibold, fontSize: fontSizes.body },
+  chipText: { fontFamily: fonts.sansSemibold, fontSize: fontSizes.body, flexShrink: 1 },
   error: { fontFamily: fonts.sans, fontSize: fontSizes.caption },
 });

@@ -1,4 +1,4 @@
-import { BarChart3, Bell, Building2, CalendarCheck, CalendarClock, CreditCard, FileText, Gauge, Hash, Layers, Percent, ShieldCheck, SlidersHorizontal, Sparkles, User, Users, Wallet, type LucideIcon } from "lucide-react";
+import { Award, BarChart3, Bell, Building2, CalendarCheck, CalendarClock, CreditCard, FileText, Gauge, Hash, Layers, Percent, ShieldCheck, SlidersHorizontal, Sparkles, User, Users, Wallet, type LucideIcon } from "lucide-react";
 import Link from "next/link";
 
 import { PageHeader } from "@/components/layout/page-primitives";
@@ -61,6 +61,12 @@ const LINKS: SettingsLink[] = [
     href: "/settings/attendance",
     description: "Subject-period attendance, and when a student counts as often absent.",
     icon: CalendarCheck,
+  },
+  {
+    label: "Behaviour",
+    href: "/settings/behaviour",
+    description: "Behaviour points, and the categories teachers choose from.",
+    icon: Award,
   },
   {
     label: "Report cards",

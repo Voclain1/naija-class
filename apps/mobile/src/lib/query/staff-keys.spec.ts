@@ -82,6 +82,7 @@ const STAFF_KEYS: Record<string, readonly unknown[]> = {
   // A named child and a written judgement — the single most sensitive thing
   // the staff app caches.
   staffBehaviour: queryKeys.staffBehaviour(SCHOOL, USER, "student_1"),
+  staffBehaviourSettings: queryKeys.staffBehaviourSettings(SCHOOL, USER),
 };
 
 describe("staff query keys", () => {

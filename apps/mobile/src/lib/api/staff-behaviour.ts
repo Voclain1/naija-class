@@ -1,6 +1,7 @@
 import type {
   BehaviourListResponse,
   BehaviourRecordDto,
+  BehaviourSettingsDto,
   CreateBehaviourInput,
 } from "@school-kit/types";
 
@@ -21,4 +22,9 @@ export function createStaffBehaviour(input: CreateBehaviourInput): Promise<Behav
 
 export function withdrawStaffBehaviour(id: string): Promise<BehaviourRecordDto> {
   return apiFetch<BehaviourRecordDto>(`/behaviour/${encodeURIComponent(id)}/withdraw`, { method: "POST" });
+}
+
+/** Phase 9 / CP2.1 — whether points are on, and the categories to offer. */
+export function staffBehaviourSettings(): Promise<BehaviourSettingsDto> {
+  return apiFetch<BehaviourSettingsDto>("/behaviour/settings");
 }

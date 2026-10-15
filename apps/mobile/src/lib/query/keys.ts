@@ -263,4 +263,9 @@ export const queryKeys = {
   // to write it to a shared staffroom handset's storage.
   staffBehaviour: (schoolId: string, userId: string, studentId: string) =>
     ["staff", schoolId, userId, "behaviour", studentId] as const,
+  // Phase 9 / CP2.1 — the school's points categories. Not sensitive on its
+  // own, but staff-prefixed like every staff key, so the lock teardown and the
+  // persister treat it the same way.
+  staffBehaviourSettings: (schoolId: string, userId: string) =>
+    ["staff", schoolId, userId, "behaviour-settings"] as const,
 } as const;

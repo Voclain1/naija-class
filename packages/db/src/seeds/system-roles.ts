@@ -9,6 +9,7 @@ import {
   ADMIN_DASHBOARD_PERMISSIONS,
   ANNOUNCEMENT_MANAGE_PERMISSIONS,
   ANNOUNCEMENT_READ_PERMISSIONS,
+  BEHAVIOUR_ADMIN_PERMISSIONS,
   BEHAVIOUR_PERMISSIONS_LIST,
   HOMEWORK_MANAGE_PERMISSIONS,
   HOMEWORK_READ_PERMISSIONS,
@@ -105,6 +106,9 @@ const ADMIN_PERMISSIONS: readonly string[] = [
   // Behaviour records (C14/C16). Kept IN SYNC with the idempotent append in
   // prisma/migrations/20260927120000_behaviour_records.
   ...BEHAVIOUR_PERMISSIONS_LIST,
+  // Phase 9 / CP2.1 — behaviour settings and points categories. Owner/admin
+  // only. Kept IN SYNC with prisma/migrations/20261019120000_behaviour_points.
+  ...BEHAVIOUR_ADMIN_PERMISSIONS,
   // Phase 8 / CP2 — Recording Completeness: the school-wide report and the
   // per-teacher recording-activity view (audited per read). Owner/admin only;
   // never teacher or bursar (§16 D39, pinned in permissions-coverage.spec.ts).

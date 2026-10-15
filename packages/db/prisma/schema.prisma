@@ -54,6 +54,9 @@ model School {
   // student is listed as chronically absent on the Attendance report
   // (docs/modules/phase-9.md §8 CP1-D5). Edited in Settings; CHECK 50–100.
   chronicAbsenceThreshold   Int          @default(90) @map("chronic_absence_threshold")
+  // Phase 9 / CP2.1 — behaviour points (docs/modules/phase-9.md §9 CP2-D1).
+  // Off by default; with it off, behaviour records work exactly as before.
+  behaviourPointsEnabled    Boolean      @default(false) @map("behaviour_points_enabled")
   // Phase 8 / CP3 (docs/modules/phase-8.md §17 D34). ISO weekdays the school
   // teaches (1 = Monday … 7 = Sunday). Default Monday–Friday; some Nigerian
   // private schools also teach Saturday. The timetable grid shows these days,
@@ -3327,8 +3330,36 @@ model BehaviourRecord {
   withdrawnAt DateTime? @map("withdrawn_at")
   withdrawnBy String?   @map("withdrawn_by")
 
+  // Phase 9 / CP2.1 (CP2-D1). Both null unless the school has points on and
+  // the writer chose a category. `points` is COPIED from the category at the
+  // time of writing, so changing a category's value later never rewrites a
+  // past term.
+  categoryId String?             @map("category_id")
+  category   BehaviourCategory?  @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  points     Int?
+
   @@index([schoolId, studentId, occurredOn])
   @@map("behaviour_records")
+}
+
+// Phase 9 / CP2.1 — a school's behaviour categories (docs/modules/phase-9.md
+// §9 CP2-D1), for example "Helping others +2" or "Late to class −1".
+// Deactivated, never deleted: records point at them.
+model BehaviourCategory {
+  id        String        @id @default(uuid())
+  schoolId  String        @map("school_id")
+  name      String
+  kind      BehaviourKind
+  // −10…−1 for a concern, 1…10 for a commendation (CHECK in the migration).
+  points    Int
+  active    Boolean       @default(true)
+  createdAt DateTime      @default(now()) @map("created_at")
+  updatedAt DateTime      @updatedAt @map("updated_at")
+
+  records BehaviourRecord[]
+
+  @@unique([schoolId, name])
+  @@map("behaviour_categories")
 }
 
 model Announcement {

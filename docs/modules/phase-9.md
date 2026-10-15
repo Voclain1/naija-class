@@ -96,7 +96,7 @@ blocked by it.
 | Q | Question | My recommendation | Needed by |
 |---|---|---|---|
 | Q1 | **Messaging scope.** Reverse D11 fully (parent ↔ teacher, teacher ↔ teacher), or the D13 shape (parent → school inbox, answered by the admin)? | **D13 shape first**: one inbox per school, any staff member with the permission answers as "the school", never a child, all threads visible to admins. Teacher ↔ teacher only if you want it; it is lower risk than parent ↔ teacher. | CP8 |
-| Q2 | **Parent notice of serious incidents** (reverses C14 in part). | Yes, but narrowly. Only a **discipline action** (suspension and above) that an admin has approved sends the parent a factual notice: dates and the action, not the teacher's note. Ordinary records stay internal. | CP2 |
+| Q2 | **Parent notice of serious incidents** (reverses C14 in part). | Yes, but narrowly. Only a **discipline action** (suspension and above) that an admin has approved sends the parent a factual notice: dates and the action, not the teacher's note. Ordinary records stay internal. **Owner, 2026-10-15: approved as recommended.** | CP2 |
 | Q3 | **Health records: who may read.** | Owner, admin and a new **school nurse** role (sickbay). Teachers see only an "allergies and conditions" line, for safety on trips and in class, and never the sickbay log. Every read audited. | CP3 |
 | Q4 | **Transport, library and hostel fees.** Invoices are one per student per term and cannot have lines added after issue. | A new **student charge** primitive (§4, CP5). Charges are created through the finance service, then picked up by the next invoice run, or issued as a small "supplementary invoice" per charge if you approve one. **Owner, 2026-10-14 (transport):** the admin sets each route's fee on that route's own page; the fee is not typed per student. **Still to decide: supplementary invoices yes/no.** | CP5 |
 | Q5 | **WhatsApp Business.** Needs a Meta-approved business number and a provider (Termii proxies it). That is your side, not code. | Build the channel behind a per-school switch with SMS fallback, but only once you have an approved number. Until then, keep the `wa.me` share links that already work. | CP9 |
@@ -795,3 +795,269 @@ This closes CP1.
   The four screens were checked at phone width (390 px) against a seeded
   school: nothing runs off the screen, including with long class and student
   names.
+
+## 9. CP2 plan-first — Behaviour: points, incidents, discipline
+
+Written 2026-10-15, after the owner approved Q2. Nothing here is built until
+the owner approves this section.
+
+### 9.1 What exists today (read from the code)
+
+- **Records:** `behaviour_records` holds one row per note. Each row has:
+  - a student;
+  - a kind (COMMENDATION or CONCERN);
+  - the note text;
+  - the day it happened;
+  - who wrote it.
+
+  A record is withdrawn, never deleted.
+- **Who:**
+  - The owner, admins and teachers write and read records. A teacher may only
+    touch a student they teach.
+  - A teacher withdraws only their own records; an admin withdraws any.
+  - Bursars see nothing.
+- **Audit:** every write and every read is audited. The note text never goes
+  into the audit log.
+- **Screens:**
+  - the website's student page has a Behaviour tab;
+  - the staff app has a behaviour screen per student, reached from a class
+    and from the student page.
+- **Families:** there is no parent or student endpoint at all (C14). No AI
+  (C15).
+- **Notifications:** `NotificationDispatchService.notifyGuardian` chooses
+  push or SMS for one guardian, never both. Push wins when the school has push
+  on and the guardian has a live app. The push text must be safe on a locked
+  screen: it names the school and says something happened, never what or about
+  whom. SMS may be specific. The notifications rule N4 keeps new events off SMS,
+  so this would be the first exception.
+
+### 9.2 Decisions taken here (owner may overrule any)
+
+- **CP2-D1. Points are optional, and off by default.**
+  - The school turns points on in Settings → Behaviour and keeps a list of
+    categories. Each category has a name, a kind (commendation or concern) and
+    a value. Commendations score +1 to +10; concerns score −1 to −10.
+  - A record may name a category. When it does, the record **copies** the
+    category's value at the time of writing, so changing a value later does
+    not rewrite past terms.
+  - A student's term total is the sum of their live (not withdrawn) records
+    dated inside the term. Totals show on the student's Behaviour tab and in
+    the app; there is no school-wide league table, because ranking children
+    by conduct points is the punishment-log failure C16 warns about.
+  - With points off, everything works exactly as today.
+- **CP2-D2. An incident groups the records of several students.**
+  - An incident has a date, a place (free text, for example "Playground"), a
+    short description, the students involved and the staff who saw it.
+  - Each student involved gets their own CONCERN record linked to the
+    incident, so their history stays complete. The incident's description is
+    shared; each student's record keeps its own note.
+  - The usual scope applies: a teacher names only students they teach. An
+    owner or admin names any student. (A playground fight between pupils the
+    teacher does not teach goes to an admin to record. This keeps one rule for
+    who may write about a child.)
+  - Witnesses are staff members chosen from a list, not typed names.
+- **CP2-D3. Discipline actions are proposed, then decided.**
+  - The four actions are Warning, Detention (a date), Suspension (first and
+    last day) and Exclusion (first day).
+  - An action may link to a record or an incident. Its reason is internal
+    text.
+  - A teacher **proposes**. An owner or admin **approves** or **rejects**; a
+    rejection needs a reason.
+  - **No one decides their own proposal.** An admin's proposal waits for the
+    owner or another admin. The owner's own proposals are approved when made,
+    because there is no one above the owner. Each one is recorded as
+    "proposed and approved by the owner".
+  - A school with a single admin and no other decider: the owner decides.
+  - Any action can be **withdrawn**, before or after the decision, but never
+    deleted. The person who proposed it or an admin may withdraw it.
+- **CP2-D4. Parents hear about approved suspensions and exclusions only (Q2).**
+  - Warnings and detentions, records, points and incidents stay staff-only,
+    as today.
+  - On approval of a suspension or an exclusion, every linked guardian is
+    notified once:
+    - **App (push):** the locked-screen text is the school's name and "The
+      school has sent you a notice. Open the app to read it." It names no
+      child and no action.
+    - **SMS (when there is no live app):** "{School}: {first name} has been
+      suspended from 20 Oct to 22 Oct 2026. Please contact the school."
+      Exclusion reads "…has been excluded from 20 Oct 2026…". This is the
+      first exception to N4, by the owner's decision. It is
+      sent under the school's own sender name and costs one SMS per guardian.
+  - **In the app and on the parent website**, the child's page gets a
+    "Notices from the school" card listing only the action, the dates, the
+    date it was decided, and "Please contact the school". It never shows the
+    reason, the notes, the incident or who proposed it.
+  - **If an approved suspension or exclusion is withdrawn,** guardians who
+    were told get a second notice: "The notice of {date} has been withdrawn."
+    The card then shows it as withdrawn rather than hiding it.
+  - The student's own app shows nothing.
+  - The notice is sent once per guardian per action, enforced by a unique
+    row, so a retry or a second click cannot send twice.
+- **CP2-D5. Permissions.**
+  - The existing `behaviour.read` and `behaviour.create` stay as they are.
+  - New `behaviour.manage` (settings and categories) and `behaviour.decide`
+    (approve and reject) are owner and admin only. The service checks the
+    role as well, as every other write does.
+  - The parent-side read is a new portal route returning only the notice
+    fields. There is still no route that can return a note to a family.
+- **CP2-D6. Audit.**
+  - Every proposal, decision, withdrawal and notice sent is audited, with the
+    action type and dates, never the reason text.
+  - Reads stay audited as today.
+- **C15 holds:** no AI anywhere in CP2.
+
+### 9.3 What gets built
+
+| Slice | What | Where |
+|---|---|---|
+| **CP2.1** | Points: the school's switch, categories, a category on each record, term totals | API, website (Settings → Behaviour, the student's Behaviour tab), staff app |
+| **CP2.2** | Incidents: several students, witnesses, place | API, website (a new Behaviour page listing incidents, and the student tab), staff app |
+| **CP2.3** | Discipline: propose, decide, withdraw; parent notices by push then SMS | API, website (a decisions queue on the Behaviour page), staff app (propose; decide for admins), parent app and parent website (the notices card) |
+
+Each slice is one PR, merged before the next starts.
+
+### 9.4 Data
+
+- **CP2.1:**
+  - `schools.behaviour_points_enabled` (default false).
+  - A new `behaviour_categories` table (school, name, kind, points, active,
+    order). The value is a `CHECK` between −10 and 10, never 0, and its sign
+    must match the kind.
+  - Two nullable columns on `behaviour_records`: `category_id` and `points`.
+- **CP2.2:**
+  - `behaviour_incidents` (school, date, place, description, recorded by,
+    withdrawn).
+  - `behaviour_incident_witnesses` (incident, staff user).
+  - A nullable `incident_id` on `behaviour_records`.
+- **CP2.3:**
+  - `discipline_actions`, holding:
+    - the school and student;
+    - an optional record or incident;
+    - the type;
+    - the start and end dates (`DATE`);
+    - the reason;
+    - the status (PROPOSED, APPROVED, REJECTED, WITHDRAWN);
+    - proposed by and when;
+    - decided by and when, with the reason;
+    - withdrawn by and when.
+  - `CHECK`s keep the dates consistent with the type: a suspension has both
+    dates, end not before start.
+  - `discipline_notices` (action, guardian, kind SENT or WITHDRAWN, channel,
+    sent at), unique on action, guardian and kind.
+- Every new table is tenant-scoped with RLS (FORCE), like
+  `behaviour_records`. No SECURITY DEFINER function is needed: every read
+  happens after the tenant is known.
+
+### 9.5 Tests (the rules first)
+
+- **CP2.1:**
+  - A category's value is copied, and changing the category later leaves old
+    records alone.
+  - The term total counts only live records inside the term's dates.
+  - With points off, a category is refused.
+  - A teacher cannot manage categories.
+- **CP2.2:**
+  - An incident creates one linked record per student.
+  - A teacher naming a student they do not teach is refused, and nothing is
+    written.
+  - A witness must be a staff member of the same school.
+- **CP2.3:**
+  - A teacher cannot approve.
+  - No one approves their own proposal, except the owner, as D3 says.
+  - The parent notice fires only when a suspension or exclusion is approved,
+    never on a proposal, rejection, warning or detention.
+  - The push text names no child and no action.
+  - The SMS is sent only when push is not available, and carries no reason
+    text.
+  - The notice is sent once per guardian, even on a retry.
+  - Withdrawing a notified action sends one withdrawal notice.
+  - The parent route returns no reason, note or proposer.
+  - Another school's parent gets nothing (RLS).
+- **e2e per slice:**
+  - CP2.1: the owner sets up categories and a teacher records with one.
+  - CP2.2: an incident with two students.
+  - CP2.3: a teacher proposes a suspension, the owner approves, and the
+    guardian sees the card in the portal.
+- **Phone-fit check:** every new app screen at 390 px.
+
+### 9.6 How it lands
+
+- **CP2.1**, then **CP2.2**, then **CP2.3**, each squash-merged when CI is
+  green.
+- `the-school-day.md` C14 gets a dated note pointing here: the narrow reversal
+  is the parent notice in D4, and nothing else.
+- An estimate of six to eight days, as §5 says.
+
+### 9.7 Left out on purpose
+
+- Suspended days do not change the attendance register. A suspended student
+  is still marked by the teacher, as today. Linking the two is a later
+  decision.
+- No parent reply or appeal inside the system. The notice asks the parent to
+  contact the school, which is what C14's "right of reply" needs until a real
+  design exists.
+- No printed letter. The school can still print one from its own records.
+
+### 9.8 As built — CP2.1, behaviour points (2026-10-15)
+
+- **Data:** migration `20261019120000_behaviour_points` adds:
+  - `schools.behaviour_points_enabled`, default false;
+  - the `behaviour_categories` table (RLS forced, unique name per school);
+  - `category_id` and `points` on `behaviour_records`.
+
+  Two `CHECK`s hold the rules in the database: a commendation's value is 1 to
+  10 and a concern's −10 to −1, and a record carries points only together
+  with a category. No SECURITY DEFINER function; the count stays 23.
+- **Permission:** `behaviour.manage` is new, held by admin (owner by
+  wildcard). Teacher and bursar never hold it, which
+  `permissions-coverage.spec.ts` pins.
+- **API**, on the existing `/behaviour` controller:
+  - `GET /behaviour/settings` (`behaviour.read`) returns the switch and every
+    category, so a writer can offer them.
+  - `PATCH /behaviour/settings`, `POST /behaviour/categories` and
+    `PATCH /behaviour/categories/:id` need `behaviour.manage`.
+  - `POST /behaviour` takes an optional `categoryId`. It is refused while
+    points are off, for a switched-off category, or for a category of the
+    other kind. The value is copied onto the record.
+  - `GET /behaviour?studentId=` adds each record's category name and points,
+    and `termPoints`: the sum of live records dated inside the current term.
+    It is null when points are off or there is no current term.
+  - Every settings and category change is audited with before and after.
+- **Categories:**
+  - A category's kind cannot change; its name and value can, and past records
+    keep the value they copied.
+  - A category is switched off rather than deleted, because records point at
+    it.
+  - Names are unique per school, ignoring case.
+  - Sorting is commendations first, then the larger value, then the name. The
+    planned manual order (§9.4) was left out: the fixed order is enough for a
+    short list.
+- **Website:**
+  - **Settings → Behaviour** has the switch, the category list (edit, switch
+    off, switch on) and an add form. Points are entered as a size from 1 to
+    10; the sign comes from the kind.
+  - **The Behaviour tab** (admin and teacher pages) offers the categories of
+    the chosen kind and shows each record's category with its points, plus
+    "+3 points this term" beside the counts.
+- **App:**
+  - The staff behaviour card offers the categories as choices, shows each
+    record's category and the term total, and uses the new staff-prefixed
+    key `staffBehaviourSettings`.
+  - Categories are managed on the website only.
+  - All chip pickers in the app now wrap a long label inside the chip instead
+    of running off the screen. This was found at 390 px with a long category
+    name.
+- **Tests:**
+  - 11 new service tests:
+    - the value is copied;
+    - the total counts only live, in-term records;
+    - points off, a switched-off category and the wrong kind are refused;
+    - the sign stays with the kind;
+    - names are unique;
+    - a teacher cannot manage;
+    - another school's category is refused.
+  - Permission coverage.
+  - e2e `behaviour-points.spec.ts`: the owner sets up categories and a
+    teacher scores a child.
+  - The website screens (390 px and 1280 px) and the app card (390 px) were
+    checked with long names, and nothing runs off the screen.
