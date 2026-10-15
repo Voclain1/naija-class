@@ -237,6 +237,7 @@ describe("DisciplineService (integration)", () => {
       expect(action.status).toBe("APPROVED");
       expect(action.proposedByName).toBe("Owen Owner");
       expect(action.decidedByName).toBe("Owen Owner");
+      expect(action.approvedOnProposal).toBe(true);
       // A warning is never sent to a parent, even approved.
       expect(dispatch.calls).toHaveLength(0);
     });
@@ -282,6 +283,7 @@ describe("DisciplineService (integration)", () => {
       const decided = await service.decide(ctx(A.schoolId, A.otherAdminId), action.id, { decision: "REJECT", reason: "Not enough." }, reqCtx);
       expect(decided.status).toBe("REJECTED");
       expect(decided.decisionReason).toBe("Not enough.");
+      expect(decided.approvedOnProposal).toBe(false);
       // A rejection tells no one.
       expect(dispatch.calls).toHaveLength(0);
     });

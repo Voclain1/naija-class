@@ -115,6 +115,12 @@ export interface DisciplineActionDto {
   decidedAt: string | Date | null;
   decisionReason: string | null;
   withdrawnAt: string | Date | null;
+  /**
+   * True when the same person proposed and decided it: the owner's own
+   * proposal, approved when made (CP2-D3). Shown as one line, "Proposed and
+   * approved by …", rather than two.
+   */
+  approvedOnProposal: boolean;
   /** How many guardians were sent the notice (approved suspensions and exclusions). */
   guardiansNotified: number;
   /** The viewer may approve or reject it now (never their own proposal). */

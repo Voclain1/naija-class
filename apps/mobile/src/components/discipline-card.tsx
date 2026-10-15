@@ -129,9 +129,10 @@ export function DisciplineRow({
       {showStudent ? <Body>{action.studentName}</Body> : null}
       <Body muted={action.status === "WITHDRAWN" || action.status === "REJECTED"}>{describeDisciplineAction(action)}</Body>
       <Caption>
-        {STATUS_LABEL[action.status]} · proposed by {action.proposedByName ?? "Staff"}
+        {STATUS_LABEL[action.status]} · {action.approvedOnProposal ? "proposed and approved" : "proposed"} by{" "}
+        {action.proposedByName ?? "Staff"}
       </Caption>
-      {action.decidedByName && action.status !== "PROPOSED" ? (
+      {action.decidedByName && action.status !== "PROPOSED" && !action.approvedOnProposal ? (
         <Caption>
           {action.status === "REJECTED" ? "Rejected" : "Approved"} by {action.decidedByName}
         </Caption>
@@ -171,7 +172,9 @@ export function DisciplineRow({
           {action.canDecide ? <Button title="Approve" loading={decide.isPending} disabled={busy} onPress={confirmApprove} /> : null}
           {action.canDecide ? <Button title="Reject" variant="secondary" disabled={busy} onPress={() => setRejecting(true)} /> : null}
           {action.canWithdraw ? (
-            <Button title="Withdraw" variant="secondary" loading={withdraw.isPending} disabled={busy} onPress={confirmWithdraw} />
+            // "Withdraw action", not "Withdraw": on the admin's student screen this
+            // sits just below the button that withdraws the student from school.
+            <Button title="Withdraw action" variant="secondary" loading={withdraw.isPending} disabled={busy} onPress={confirmWithdraw} />
           ) : null}
         </View>
       ) : null}

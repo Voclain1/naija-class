@@ -114,9 +114,10 @@ export function DisciplineActionItem({
             {describeDisciplineAction(action)}
           </p>
           <p className="text-xs text-muted-foreground">
-            {STATUS_LABEL[action.status]} · proposed by {action.proposedByName ?? "Staff"} on {formatMoment(action.proposedAt)}
+            {STATUS_LABEL[action.status]} · {action.approvedOnProposal ? "proposed and approved" : "proposed"} by{" "}
+            {action.proposedByName ?? "Staff"} on {formatMoment(action.proposedAt)}
           </p>
-          {action.decidedAt && action.decidedByName && action.status !== "PROPOSED" && (
+          {action.decidedAt && action.decidedByName && action.status !== "PROPOSED" && !action.approvedOnProposal && (
             <p className="text-xs text-muted-foreground">
               {action.status === "REJECTED" ? "Rejected" : "Approved"} by {action.decidedByName} on {formatMoment(action.decidedAt)}
             </p>
@@ -142,7 +143,7 @@ export function DisciplineActionItem({
           )}
           {action.canWithdraw && !rejecting && (
             <Button size="sm" variant="outline" disabled={busy} onClick={withdraw}>
-              Withdraw
+              Withdraw action
             </Button>
           )}
         </div>

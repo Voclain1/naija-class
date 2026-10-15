@@ -97,7 +97,7 @@ blocked by it.
 |---|---|---|---|
 | Q1 | **Messaging scope.** Reverse D11 fully (parent ↔ teacher, teacher ↔ teacher), or the D13 shape (parent → school inbox, answered by the admin)? | **D13 shape first**: one inbox per school, any staff member with the permission answers as "the school", never a child, all threads visible to admins. Teacher ↔ teacher only if you want it; it is lower risk than parent ↔ teacher. | CP8 |
 | Q2 | **Parent notice of serious incidents** (reverses C14 in part). | Yes, but narrowly. Only a **discipline action** (suspension and above) that an admin has approved sends the parent a factual notice: dates and the action, not the teacher's note. Ordinary records stay internal. **Owner, 2026-10-15: approved as recommended.** | CP2 |
-| Q3 | **Health records: who may read.** | Owner, admin and a new **school nurse** role (sickbay). Teachers see only an "allergies and conditions" line, for safety on trips and in class, and never the sickbay log. Every read audited. | CP3 |
+| Q3 | **Health records: who may read.** | Owner, admin and a new **school nurse** role (sickbay). Teachers see only an "allergies and conditions" line, for safety on trips and in class, and never the sickbay log. Every read audited. **Owner, 2026-10-15:** the role is called **health officer**, not nurse. Owner, admin, health officer and the child's **parent** may read. A teacher sees only what the health officer chooses to share with teachers (for example the allergies line or a summary), never the rest. | CP3 |
 | Q4 | **Transport, library and hostel fees.** Invoices are one per student per term and cannot have lines added after issue. | A new **student charge** primitive (§4, CP5). Charges are created through the finance service, then picked up by the next invoice run, or issued as a small "supplementary invoice" per charge if you approve one. **Owner, 2026-10-14 (transport):** the admin sets each route's fee on that route's own page; the fee is not typed per student. **Still to decide: supplementary invoices yes/no.** | CP5 |
 | Q5 | **WhatsApp Business.** Needs a Meta-approved business number and a provider (Termii proxies it). That is your side, not code. | Build the channel behind a per-school switch with SMS fallback, but only once you have an approved number. Until then, keep the `wa.me` share links that already work. | CP9 |
 | Q6 | **AI and children's text** (essay feedback, message translation). **Owner, 2026-10-14:** students get no AI writing help of any kind; they type or paste their own work. **Owner, 2026-10-14: approved** for teachers — AI may draft marking feedback, name removed, teacher approves (CP4b). The `assignment-feedback` allowlist row is added to `CLAUDE.md` in CP4b's own PR, as a visible edit. Translation stays unbuilt. Both send text that may name children. | **Essays:** strip the student's own name and send only the answer text, under a new prompt that **you** add to the allowlist table by name. Feedback is a draft the teacher approves. **Translation:** do not build until you have decided; it is the weaker case (a parent can use their phone's own translator), and it would be a second allowlist row. | CP4b, CP9 |
@@ -1253,3 +1253,153 @@ Each slice is one PR, merged before the next starts.
   - e2e `behaviour-discipline.spec.ts`: a teacher proposes a suspension, the
     owner approves it from the queue, and the guardian sees the notice in the
     portal without the reason.
+
+## 10. CP3 plan-first — Health records and sickbay
+
+Written 2026-10-15, after the owner answered Q3. **Owner, 2026-10-15: approved
+as written**, including CP3-D6 (SMS only when the child is sent home) and
+CP3-D7 (F1 built here).
+
+### 10.1 What exists today (read from the code)
+
+- **Fields:** `students.blood_group` and `students.medical_notes`, free text,
+  set on the admin student form and by CSV import (blood group only; import
+  refuses free-text medical notes).
+- **Who can read them:** owner and admin only. `GET /students/:id` holds
+  `student.read`, which teachers also have, but the service refuses anyone who
+  is not an owner or admin. The teacher roster and the parent portal's student
+  DTO both leave the two fields out on purpose.
+- **Not there yet:** no allergies or conditions structure, no vaccinations, no
+  sickbay log, no health role, no private upload for documents (F1), and no
+  family-facing health route.
+- **Notifications:** `NotificationDispatchService.notifyGuardian` picks push
+  or SMS for one guardian. N4 keeps new events off SMS; CP2.3 made the first
+  exception, by the owner's decision.
+
+### 10.2 Decisions taken here (owner may overrule any)
+
+- **CP3-D1. A new system role, Health officer** (`health_officer`; owner,
+  2026-10-15, replacing "nurse").
+  - New permissions: `health.read`, `health.manage` (profile and
+    vaccinations) and `sickbay.manage` (the visit log). Admin holds all three;
+    owner by wildcard; the health officer holds all three, plus `student.read`
+    and the class and term reads needed to find a child. Teacher and bursar
+    hold none of them.
+  - The service checks the role as well, as every other write does.
+- **CP3-D2. Teachers see only what the health officer shares** (owner,
+  2026-10-15).
+  - The profile has a **"For teachers"** note, written by the health officer
+    or an admin, for example "Severe peanut allergy. EpiPen in her school
+    bag." It is empty until someone writes it.
+  - A teacher of the child sees that note and nothing else: not the
+    allergies, conditions, medication or vaccinations as recorded, and never
+    the sickbay log. A teacher who does not teach the child sees nothing.
+  - It shows on the teacher's class list and the child's page, on the website
+    and in the app.
+- **CP3-D3. Parents read their own child's health record** (owner,
+  2026-10-15).
+  - The profile (allergies, conditions, medication, GP or clinic, emergency
+    notes, blood group), the vaccinations, and the sickbay visits.
+  - A visit shows the time and "visited the sickbay". It shows the complaint,
+    action and medicine given only when the health officer ticked "share
+    details with the parent".
+  - The "For teachers" note is shown to the parent too, so a family can see
+    exactly what teachers were told.
+  - Read-only. A correction is "contact the school", as with the discipline
+    notices.
+  - The student's own portal shows nothing.
+- **CP3-D4. `blood_group` and `medical_notes` move into the profile.**
+  - A data migration creates a profile for every student with either field,
+    copying blood group as it is and medical notes into "conditions".
+  - The two columns leave the student form, the student DTOs and the CSV
+    import (blood group is imported into the profile instead). The columns are
+    dropped in the same migration, after the copy.
+- **CP3-D5. The sickbay log.**
+  - A visit records: when, the complaint, the action taken, whether the child
+    was sent home, "share details with the parent", and who recorded it.
+  - Medicine given is its own list on the visit: name, dose, the time given
+    and who gave it.
+  - Corrected by withdrawing, never deleted, as behaviour records are.
+- **CP3-D6. Parents are told of a visit.**
+  - Push, under the school's name: "The school has sent you an update. Open
+    the app to read it." It names no child and no complaint.
+  - **SMS only when the child was sent home** (my recommendation): "{School}:
+    {first name} visited the sickbay at 10:40 and is being sent home. Please
+    contact the school." An ordinary visit is not worth an SMS, and N4 is kept
+    for everything else. This is a second N4 exception; overrule if you want
+    SMS for every visit, or none.
+  - Once per guardian per visit, enforced by a unique row, as in CP2.3.
+- **CP3-D7. F1, private file uploads, is built here, not in CP4.** CP3 comes
+  first, and a vaccination record's proof (a card photo or a PDF) needs it.
+  - A `health-document` storage key; images and PDF up to 10 MB; uploaded
+    from the website and the app; read through a short-lived signed URL, as
+    receipts are.
+  - Only the people who may read the record may fetch the file. CP4, CP6 and
+    CP7 reuse the same piece.
+- **CP3-D8. Audit and AI.**
+  - Every read of a profile, a vaccination list, a document or the sickbay
+    log is audited, including the teacher's read of the "For teachers" note
+    and the parent's reads. The free text never goes into audit metadata.
+  - No AI anywhere in CP3.
+
+### 10.3 What gets built
+
+| Slice | What | Where |
+|---|---|---|
+| **CP3.1** | The Health officer role, the profile, the move of the two old fields, the "For teachers" note, the parent's read | API, website (a Health tab on the student page, and the note on the teacher's class and student pages), staff app, parent website and app |
+| **CP3.2** | F1 uploads, and vaccinations with an optional document | API, website, staff app, parent website and app |
+| **CP3.3** | The sickbay log, medicine given, and the parent notice | API, website (a Sickbay page for the health officer and admins), staff app, parent website and app |
+
+Each slice is one PR, merged before the next starts.
+
+### 10.4 Data
+
+- **CP3.1:**
+  - `health_profiles` (one per student): allergies, conditions, medication,
+    GP or clinic, emergency notes, blood group, the "For teachers" note, who
+    last changed it and when.
+  - The data migration from `students`, then the two columns dropped.
+  - The `health_officer` system role and the three permissions, appended in
+    the migration as earlier permissions were.
+- **CP3.2:** `health_vaccinations` (student, name, date given as `DATE`,
+  optional document key, recorded by, withdrawn).
+- **CP3.3:**
+  - `sickbay_visits` (student, visited at, complaint, action taken, sent
+    home, share with the parent, recorded by, withdrawn);
+  - `sickbay_medications` (visit, name, dose, given at, given by);
+  - `sickbay_notices` (visit, guardian, channel), unique on visit and
+    guardian.
+- Every table is tenant-scoped with RLS forced. No SECURITY DEFINER function:
+  every read happens after the tenant is known.
+
+### 10.5 Tests (the rules first)
+
+- **Who reads what, pinned per role:**
+  - owner, admin and health officer read and write;
+  - a teacher of the child reads the "For teachers" note only, and a teacher
+    who does not teach them reads nothing;
+  - a bursar reads nothing;
+  - a linked parent reads the profile, vaccinations and visits; an unlinked
+    parent, and another school's parent, get nothing (RLS);
+  - the student's own portal has no route.
+- The data migration copies both old fields and leaves no student's data
+  behind.
+- A visit without "share details" shows the parent the time only.
+- The push text names no child and no complaint; the SMS goes only when the
+  child was sent home, carries no complaint or medicine, and is sent once per
+  guardian.
+- Every read is audited, and the audit log holds no health text.
+- A document is fetchable only by those who may read the record.
+- **e2e:**
+  - CP3.1: the health officer writes a profile and a teacher note; the
+    teacher sees only the note; the parent sees the profile.
+  - CP3.2: a vaccination with a document.
+  - CP3.3: a visit with "sent home", and the parent's card.
+- **Phone-fit:** every new page and app screen at 320px and 390px.
+
+### 10.6 Left out on purpose
+
+- A medicine stock list, prescriptions and consent forms for giving medicine.
+- Emergency contacts: they are already the child's guardians.
+- Parents editing the record. A correction goes through the school.
+- Linking a sickbay visit to the attendance register.
