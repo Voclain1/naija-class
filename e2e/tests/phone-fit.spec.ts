@@ -82,7 +82,7 @@ const PAGES: Array<{ path: string; ready: (page: Page) => Promise<unknown> }> = 
   { path: "/staff", ready: (page) => page.locator("main table tbody tr").first().waitFor({ timeout: 120_000 }) },
   // Phase 9 / CP3.1 — the Health page's student list.
   { path: "/health", ready: (page) => page.locator("main ul li a").first().waitFor({ timeout: 120_000 }) },
-  { path: "/sickbay", ready: (page) => page.getByRole("button", { name: "Record a visit" }).waitFor({ timeout: 120_000 }) },
+  { path: "/sickbay", ready: (page) => page.getByRole("button", { name: "Withdraw visit" }).first().waitFor({ timeout: 120_000 }) },
 ];
 
 async function pastTheEdge(page: Page) {
@@ -108,7 +108,7 @@ test("admin pages fit a phone screen: nothing past the right edge", async ({ bro
   test.setTimeout(15 * 60 * 1000);
   const admin = await loginAsAdmin(browser);
   const structure = await setupAcademicStructure(admin.api);
-  await setupFinanceScaffold(admin.api, {
+  const scaffold = await setupFinanceScaffold(admin.api, {
     suffix: uniqueSuffix(),
     termId: structure.termId,
     classArmId: structure.arms[0]!.id,
@@ -121,6 +121,20 @@ test("admin pages fit a phone screen: nothing past the right edge", async ({ bro
   await admin.api.post("invoices/arm/generate", {
     data: { termId: structure.termId, classArmId: structure.arms[0]!.id },
   });
+  // A sickbay visit with medicine, so /sickbay has a real row to lay out (an
+  // empty day is too little page to measure).
+  const visitedAt = new Date().toISOString();
+  const visit = await admin.api.post("health/sickbay/visits", {
+    data: {
+      studentId: scaffold.students[0]!.id,
+      visitedAt,
+      complaint: "Headache and a high temperature since the morning assembly",
+      actionTaken: "Rested in the sickbay and given water",
+      sentHome: true,
+      medications: [{ name: "Paracetamol syrup", dose: "500 mg", givenAt: visitedAt }],
+    },
+  });
+  expect(visit.ok(), await visit.text()).toBe(true);
 
   const problems: string[] = [];
   for (const width of PHONES) {
