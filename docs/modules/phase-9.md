@@ -1534,3 +1534,92 @@ Each slice is one PR, merged before the next starts.
     gets its link.
   - Every new section was checked at 320px and 390px on the website, the
     parent website and the app.
+
+### 10.9 As built — CP3.3, the sickbay log and the parent notice (2026-10-15)
+
+CP3 is complete with this slice.
+
+- **Data:** migration `20261024120000_sickbay` adds three tables, all with
+  RLS forced:
+  - `sickbay_visits`: the student, when (`TIMESTAMP`), the complaint, the
+    action taken, sent home, shared with the parent, who recorded it, and
+    withdrawn. `CHECK`s keep the text lengths and require the two withdrawn
+    columns to be set together.
+  - `sickbay_medications`: the visit, the medicine, the dose, the time given
+    and who gave it.
+  - `sickbay_notices`: the visit, the guardian and the channel (`PUSH`, `SMS`
+    or `NONE`), unique on visit and guardian.
+
+  No new permission (`sickbay.manage` came with CP3.1) and no SECURITY
+  DEFINER function; the count stays 23.
+- **Time:** a visit is a moment, shown in the school's time (Lagos, UTC+1 all
+  year) on every screen. `formatSickbayTime`, `formatSickbayDay`,
+  `sickbayDayOf` and `sickbayMomentFrom` are in `@school-kit/types`, so the
+  API's SMS and every screen agree. A visit may not be in the future (five
+  minutes of clock slack) or more than 30 days old. A medicine may not be
+  given before the visit or in the future.
+- **API**, `SickbayController` at `/health/sickbay`, every route
+  `sickbay.manage`, with the role checked in the service too:
+  - `GET /health/sickbay/visits?date=` lists one Lagos day, today by default.
+    `?studentId=` lists one child instead. Both are audited.
+  - `POST /health/sickbay/visits` records a visit, with up to 10 medicines.
+  - `POST /health/sickbay/visits/:id/medications` adds a medicine given later.
+  - `POST /health/sickbay/visits/:id/withdraw`: kept and marked withdrawn.
+  - There is no teacher route.
+- **Parents** (`GET /portal/students/:id/sickbay-visits`, behind
+  `withGuardian`, audited):
+  - Each live visit shows its time and whether the child was sent home.
+  - The complaint, action and medicine appear only when the visit was shared
+    with the parent. The response's `details` is `null` otherwise, so the text
+    never leaves the API.
+  - A withdrawn visit is not listed.
+- **The notice (CP3-D6):** sent after the visit is committed, once per
+  guardian (claimed by the unique row first).
+  - Push, under the school's name: "The school has sent you an update. Open
+    the app to read it." It names no child and no complaint.
+  - An SMS goes only when the child was sent home and the guardian has no
+    live app: "{School}: {first name} visited the sickbay at 10:40 and is
+    being sent home. Please contact the school." It names no complaint and no
+    medicine. An ordinary visit to a parent without the app records `NONE`.
+  - Withdrawing a visit sends nothing. The first message named nothing to
+    take back.
+  - The staff view shows how each guardian was told.
+- **Audit:** create, add medicine, withdraw, both reads and the notice
+  counts. Flags and counts only: no complaint, action, medicine or dose.
+- **Website:**
+  - A **Sickbay** page (`/sickbay`, its own menu item gated on
+    `sickbay.manage`, and in the middleware list). It shows one day's visits;
+    **Record a visit** finds the child, then takes the day, time, complaint,
+    action, medicines, **Sent home** and **Share details with the parent**.
+    Each visit can **Add medicine** and **Withdraw visit**.
+  - The child's health record gains a **Sickbay visits** section, shown only
+    with `sickbay.manage`.
+- **Staff app:** a **Sickbay visits** card on the child's health record. It
+  lists visits, records a visit for today (time, complaint, action, one
+  medicine, sent home, share) and withdraws. An earlier day, and medicine
+  given later, are on the website.
+- **Parent website and app:** the Health record card lists the visits, with
+  the details when shared. The app keeps them off the phone's storage
+  (`persist: false`).
+- **Tests:**
+  - 13 sickbay service tests against real Postgres:
+    - record with medicine;
+    - future, backdated and before-the-visit times refused;
+    - medicine added later;
+    - withdrawn means kept and closed;
+    - a teacher and a bursar are refused, and another school sees nothing;
+    - an ordinary visit: push only, no SMS;
+    - sent home: one SMS, with the exact text and no complaint or medicine;
+    - once per guardian;
+    - the fixed SMS text;
+    - unshared visits show the parent the time only, shared ones the details;
+    - a withdrawn visit is gone for the parent;
+    - an unlinked guardian and another school's guardian get nothing;
+    - the audit log holds no health text.
+  - Permission coverage for the four new routes.
+  - e2e `health-sickbay.spec.ts`: the Health officer records a sent-home
+    visit that is not shared and a shared visit with medicine. The parent
+    sees both, "Sent home" on one, and only the shared one's details.
+  - `/sickbay` was added to `phone-fit.spec.ts`. The page, the form, the
+    child's section, the parent website and both app cards were checked at
+    320px and 390px.

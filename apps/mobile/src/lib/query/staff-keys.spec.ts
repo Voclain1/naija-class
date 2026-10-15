@@ -91,6 +91,7 @@ const STAFF_KEYS: Record<string, readonly unknown[]> = {
   staffHealthProfile: queryKeys.staffHealthProfile(SCHOOL, USER, "stu_1"),
   staffHealthNote: queryKeys.staffHealthNote(SCHOOL, USER, "stu_1"),
   staffClassHealthNotes: queryKeys.staffClassHealthNotes(SCHOOL, USER, "arm_1"),
+  staffSickbayVisits: queryKeys.staffSickbayVisits(SCHOOL, USER, "stu_1"),
 };
 
 describe("staff query keys", () => {

@@ -12,6 +12,7 @@ import {
   FileText,
   GraduationCap,
   HeartPulse,
+  Stethoscope,
   LayoutDashboard,
   NotebookText,
   ScrollText,
@@ -151,6 +152,9 @@ export const NAV_ITEMS: NavItem[] = [
   // Phase 9 / CP3.1 — health records (docs/modules/phase-9.md §10). Owner, admin
   // and the Health officer, whose whole menu this is.
   { label: "Health", href: "/health", icon: HeartPulse, enabled: true, requiredPermission: "health.read" },
+  // Phase 9 / CP3.3 — the sickbay log. sickbay.manage: owner, admin and the
+  // Health officer. A teacher never holds it.
+  { label: "Sickbay", href: "/sickbay", icon: Stethoscope, enabled: true, requiredPermission: "sickbay.manage" },
   // Announcements (docs/modules/announcements.md). Gated on
   // announcement.create, not announcement.read: every staff role can READ the
   // school's announcements in their own feed, but this page is the sending

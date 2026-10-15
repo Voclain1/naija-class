@@ -1,5 +1,8 @@
 import type {
+  CreateSickbayVisitInput,
   CreateVaccinationInput,
+  SickbayVisitDto,
+  SickbayVisitListResponse,
   HealthDocumentUrlDto,
   HealthProfileDto,
   HealthStudentListResponse,
@@ -64,4 +67,18 @@ export function uploadStaffVaccinationDocument(id: string, fileUri: string, mime
 
 export function staffVaccinationDocumentUrl(id: string): Promise<HealthDocumentUrlDto> {
   return apiFetch<HealthDocumentUrlDto>(`/health/vaccinations/${encodeURIComponent(id)}/document`);
+}
+
+// Phase 9 / CP3.3 — the sickbay log (sickbay.manage: owner, admin, Health officer).
+
+export function staffSickbayVisits(studentId: string): Promise<SickbayVisitListResponse> {
+  return apiFetch<SickbayVisitListResponse>(`/health/sickbay/visits?studentId=${encodeURIComponent(studentId)}`);
+}
+
+export function recordStaffSickbayVisit(input: CreateSickbayVisitInput): Promise<SickbayVisitDto> {
+  return apiFetch<SickbayVisitDto>("/health/sickbay/visits", { method: "POST", body: input });
+}
+
+export function withdrawStaffSickbayVisit(visitId: string): Promise<SickbayVisitDto> {
+  return apiFetch<SickbayVisitDto>(`/health/sickbay/visits/${encodeURIComponent(visitId)}/withdraw`, { method: "POST" });
 }

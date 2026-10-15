@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { HEALTH_LIMITS, type HealthProfileDto, type HealthProfileField } from "@school-kit/types";
 
 import { TextField } from "../../../src/components/form";
+import { SickbayCard } from "../../../src/components/sickbay-card";
 import { VaccinationsCard } from "../../../src/components/vaccinations-card";
 import { ScreenHeader, Skeleton } from "../../../src/components/layout";
 import { LoadError } from "../../../src/components/load-error";
@@ -51,6 +52,7 @@ export default function HealthRecordScreen() {
   const { colors } = useTheme();
   const authed = status === "authenticated" && principal === "staff";
   const canEdit = hasPermission(staff?.permissions ?? [], "health.manage");
+  const canSickbay = hasPermission(staff?.permissions ?? [], "sickbay.manage");
   const schoolId = staff?.school.id ?? "";
   const userId = staff?.user.id ?? "";
   const queryClient = useQueryClient();
@@ -155,6 +157,8 @@ export default function HealthRecordScreen() {
           {p && !values ? (
             <VaccinationsCard profile={p} canEdit={canEdit} onChanged={(next) => queryClient.setQueryData(key, next)} />
           ) : null}
+          {/* Phase 9 / CP3.3: the sickbay log, for sickbay.manage only. */}
+          {p && !values && canSickbay ? <SickbayCard schoolId={schoolId} userId={userId} studentId={id} /> : null}
         </ScrollView>
       </KeyboardAvoidingView>
     </Screen>

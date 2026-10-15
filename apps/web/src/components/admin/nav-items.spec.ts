@@ -22,6 +22,7 @@ const SHIPPED_HREFS = [
   "/homework",
   "/behaviour",
   "/health",
+  "/sickbay",
   "/guardians",
   "/gradebook",
   "/timetable",
