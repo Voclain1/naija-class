@@ -80,6 +80,8 @@ const PAGES: Array<{ path: string; ready: (page: Page) => Promise<unknown> }> = 
   },
   { path: "/students", ready: (page) => page.locator("main table tbody tr").first().waitFor({ timeout: 120_000 }) },
   { path: "/staff", ready: (page) => page.locator("main table tbody tr").first().waitFor({ timeout: 120_000 }) },
+  // Phase 9 / CP3.1 — the Health page's student list.
+  { path: "/health", ready: (page) => page.locator("main ul li a").first().waitFor({ timeout: 120_000 }) },
 ];
 
 async function pastTheEdge(page: Page) {

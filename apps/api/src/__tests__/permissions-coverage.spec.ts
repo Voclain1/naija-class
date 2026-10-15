@@ -27,6 +27,7 @@ import { PERMISSIONS_METADATA_KEY } from "../common/auth/permissions.decorator";
 import { AcademicYearsController } from "../modules/academic-years/academic-years.controller";
 import { BehaviourController } from "../modules/behaviour/behaviour.controller";
 import { DisciplineController } from "../modules/behaviour/discipline.controller";
+import { HealthController } from "../modules/health/health.controller";
 import { CalendarController } from "../modules/calendar/calendar.controller";
 import { ReportsController } from "../modules/reports/reports.controller";
 import { TableExportsController } from "../modules/reports/table-exports.controller";
@@ -1452,5 +1453,40 @@ describe("Phase 9 CP2.3 RBAC coverage: discipline", () => {
     for (const key of ["teacher", "bursar"]) {
       expect(new Set(roleSeed(key).permissions).has("behaviour.decide"), `${key} must not decide`).toBe(false);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 9 / CP3.1 — health records (docs/modules/phase-9.md §10 CP3-D1, D2).
+// The record is owner, admin and Health officer; a teacher holds only the
+// note permission; a bursar holds nothing.
+// ---------------------------------------------------------------------------
+describe("Phase 9 CP3.1 RBAC coverage: health records", () => {
+  const perms = (handler: string): string[] =>
+    Reflect.getMetadata(
+      PERMISSIONS_METADATA_KEY,
+      (HealthController.prototype as unknown as Record<string, object>)[handler]!,
+    ) as string[];
+
+  it("the record routes need health.read / health.manage; the note routes health.note.read", () => {
+    expect(perms("listStudents")).toEqual(["health.read"]);
+    expect(perms("getProfile")).toEqual(["health.read"]);
+    expect(perms("updateProfile")).toEqual(["health.manage"]);
+    expect(perms("teacherNotes")).toEqual(["health.note.read"]);
+    expect(perms("teacherNote")).toEqual(["health.note.read"]);
+  });
+
+  it("the Health officer holds the three record permissions and nothing else", () => {
+    expect([...roleSeed("health_officer").permissions].sort()).toEqual(["health.manage", "health.read", "sickbay.manage"]);
+  });
+
+  it("admin holds all four; teacher holds the note only; bursar holds none", () => {
+    const admin = new Set(roleSeed("admin").permissions);
+    for (const p of ["health.read", "health.manage", "sickbay.manage", "health.note.read"]) expect(admin.has(p), p).toBe(true);
+    const teacher = new Set(roleSeed("teacher").permissions);
+    expect(teacher.has("health.note.read")).toBe(true);
+    for (const p of ["health.read", "health.manage", "sickbay.manage"]) expect(teacher.has(p), `teacher must not hold ${p}`).toBe(false);
+    const bursar = new Set(roleSeed("bursar").permissions);
+    for (const p of ["health.read", "health.manage", "sickbay.manage", "health.note.read"]) expect(bursar.has(p), `bursar must not hold ${p}`).toBe(false);
   });
 });

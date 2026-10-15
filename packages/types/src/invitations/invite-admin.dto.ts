@@ -26,7 +26,8 @@ export const inviteAdminSchema = z
     email: z.string().trim().toLowerCase().email(),
     firstName: z.string().trim().min(1).max(60).optional(),
     lastName: z.string().trim().min(1).max(60).optional(),
-    roleKey: z.enum(["admin", "bursar", "teacher"]).default("admin"),
+    // health_officer added Phase 9 / CP3.1 (docs/modules/phase-9.md §10 CP3-D1).
+    roleKey: z.enum(["admin", "bursar", "teacher", "health_officer"]).default("admin"),
   })
   .strict();
 

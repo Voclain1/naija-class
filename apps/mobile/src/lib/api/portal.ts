@@ -21,6 +21,7 @@ import type {
   AnnouncementFeedResponse,
   HomeworkFeedResponse,
   PortalDisciplineNoticeListResponse,
+  PortalHealthProfileDto,
 } from "@school-kit/types";
 
 import { apiFetch } from "./client";
@@ -241,4 +242,9 @@ export function guardianDisciplineNotices(studentId: string): Promise<PortalDisc
   return apiFetch<PortalDisciplineNoticeListResponse>(
     `/portal/students/${encodeURIComponent(studentId)}/discipline-notices`,
   );
+}
+
+// Phase 9 / CP3.1 — the child's health record, read-only.
+export function guardianHealthRecord(studentId: string): Promise<PortalHealthProfileDto> {
+  return apiFetch<PortalHealthProfileDto>(`/portal/students/${encodeURIComponent(studentId)}/health`);
 }

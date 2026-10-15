@@ -54,6 +54,8 @@ const ROLE_NAMES: Record<string, string> = {
   owner: "Owner",
   admin: "Administrator",
   teacher: "Teacher",
+  bursar: "Bursar",
+  health_officer: "Health officer",
 };
 
 function fullName(first: string | null, last: string | null): string {

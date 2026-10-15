@@ -3,6 +3,7 @@ import { Redirect, Stack, useLocalSearchParams } from "expo-router";
 
 import { BehaviourCard } from "../../../../src/components/behaviour-card";
 import { DisciplineCard } from "../../../../src/components/discipline-card";
+import { StudentHealthNote } from "../../../../src/components/health-note";
 import { ScreenHeader } from "../../../../src/components/layout";
 import { Caption, Notice, Screen } from "../../../../src/components/ui";
 import { hasPermission } from "../../../../src/lib/auth/permissions";
@@ -32,6 +33,8 @@ export default function TeacherBehaviourScreen() {
         <Caption>Staff only: parents and students never see these, except an approved suspension or exclusion.</Caption>
         {canRead ? (
           <>
+            {/* Phase 9 / CP3.1: the health officer's note for teachers, if any. */}
+            <StudentHealthNote studentId={studentId ?? ""} schoolId={staff?.school.id ?? ""} userId={staff?.user.id ?? ""} />
             <BehaviourCard
               studentId={studentId ?? ""}
               schoolId={staff?.school.id ?? ""}

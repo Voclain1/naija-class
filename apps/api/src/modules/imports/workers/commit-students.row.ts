@@ -90,13 +90,20 @@ export async function commitStudentRow(
       email: row.email ?? null,
       address: row.address ?? null,
       photoUrl: row.photoUrl ?? null,
-      bloodGroup: row.bloodGroup ?? null,
       religion: row.religion ?? null,
       stateOfOrigin: row.stateOfOrigin ?? null,
       aiExtracted,
     },
     select: { id: true },
   });
+
+  // A blood group goes into the child's health profile (Phase 9 / CP3.1,
+  // docs/modules/phase-9.md §10 CP3-D4), not onto the student row.
+  if (row.bloodGroup) {
+    await db.healthProfile.create({
+      data: { schoolId, studentId: created.id, bloodGroup: row.bloodGroup },
+    });
+  }
 
   // No arm on this row, or the job has no target term → student only, which
   // is byte-identical to this function's pre-2026-08-09 behaviour.

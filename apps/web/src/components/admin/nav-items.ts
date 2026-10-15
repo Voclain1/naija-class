@@ -11,6 +11,7 @@ import {
   FileSearch,
   FileText,
   GraduationCap,
+  HeartPulse,
   LayoutDashboard,
   NotebookText,
   ScrollText,
@@ -147,6 +148,9 @@ export const NAV_ITEMS: NavItem[] = [
   // more than one student. Gated on behaviour.read, which owner and admin hold
   // here and bursar never does (C14). Teachers reach it in their own shell.
   { label: "Behaviour", href: "/behaviour", icon: ShieldAlert, enabled: true, requiredPermission: "behaviour.read" },
+  // Phase 9 / CP3.1 — health records (docs/modules/phase-9.md §10). Owner, admin
+  // and the Health officer, whose whole menu this is.
+  { label: "Health", href: "/health", icon: HeartPulse, enabled: true, requiredPermission: "health.read" },
   // Announcements (docs/modules/announcements.md). Gated on
   // announcement.create, not announcement.read: every staff role can READ the
   // school's announcements in their own feed, but this page is the sending

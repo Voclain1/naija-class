@@ -72,7 +72,7 @@ test("a teacher proposes a suspension, the owner approves, and the guardian sees
     await parent.goto(`${PORTAL_BASE_URL}/students/${guardian.studentId}`);
     await expect(parent.getByRole("heading", { name: "Notices from the school" })).toBeVisible({ timeout: 60_000 });
     await expect(parent.getByText("Suspended from 2 Nov to 4 Nov 2026")).toBeVisible();
-    await expect(parent.getByText("Please contact the school.")).toBeVisible();
+    await expect(parent.getByText("Please contact the school.", { exact: true })).toBeVisible();
     await expect(parent.getByText(reason)).toHaveCount(0);
   } finally {
     await parentContext.close();

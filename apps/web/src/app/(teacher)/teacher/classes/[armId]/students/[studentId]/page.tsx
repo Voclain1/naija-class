@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 
 import type { TeacherRosterStudentDto } from "@school-kit/types";
 
+import { StudentHealthNote } from "@/components/health/teacher-health-notes";
 import { BehaviourTab } from "@/components/students/behaviour-tab";
 import { Button } from "@/components/ui/button";
 import { ApiError } from "@/lib/api-client";
@@ -80,6 +81,8 @@ export default function TeacherStudentBehaviourPage() {
               Behaviour records. Staff only: parents and students never see these.
             </p>
           </header>
+          {/* Phase 9 / CP3.1: the health officer's note for teachers, if any. */}
+          <StudentHealthNote studentId={student.id} />
           <BehaviourTab studentId={student.id} />
         </>
       ) : null}

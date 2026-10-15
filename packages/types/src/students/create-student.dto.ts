@@ -26,8 +26,6 @@ export const createStudentSchema = z
     address: z.string().trim().min(1).max(500).nullable().optional(),
     phone: z.string().trim().min(1).max(30).nullable().optional(),
     email: z.string().trim().email().max(254).nullable().optional(),
-    bloodGroup: z.string().trim().min(1).max(10).nullable().optional(),
-    medicalNotes: z.string().trim().min(1).max(2000).nullable().optional(),
     religion: z.string().trim().min(1).max(40).nullable().optional(),
     stateOfOrigin: z.string().trim().min(1).max(40).nullable().optional(),
     nationality: z.string().trim().min(1).max(40).optional(),

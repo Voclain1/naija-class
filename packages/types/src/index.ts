@@ -16,6 +16,7 @@ export * from './class-subjects/index.js';
 export * from './students/index.js';
 export * from './announcements/index.js';
 export * from './behaviour/index.js';
+export * from './health/index.js';
 export * from './homework/index.js';
 export * from './question-bank/index.js';
 export * from './exam-papers/index.js';

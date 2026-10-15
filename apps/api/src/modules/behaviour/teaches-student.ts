@@ -16,17 +16,22 @@ type Db = Parameters<Parameters<typeof withTenant>[1]>[0];
  * records stop being written at all. But a teacher with no connection to a
  * child has no business writing about them.
  */
-export async function assertTeachesStudent(db: Db, teacherId: string, studentId: string): Promise<void> {
+export async function assertTeachesStudent(
+  db: Db,
+  teacherId: string,
+  studentId: string,
+  message = "You can only record behaviour for a student you teach.",
+): Promise<void> {
   const scope = await getTeacherScope(db as never, teacherId);
   const armIds = new Set(scope.classArms.map((arm) => arm.id));
   if (armIds.size === 0) {
-    throw new ForbiddenError("You can only record behaviour for a student you teach.");
+    throw new ForbiddenError(message);
   }
   const enrolment = await db.enrollment.findFirst({
     where: { studentId, status: "ENROLLED", classArmId: { in: [...armIds] } },
     select: { id: true },
   });
   if (!enrolment) {
-    throw new ForbiddenError("You can only record behaviour for a student you teach.");
+    throw new ForbiddenError(message);
   }
 }

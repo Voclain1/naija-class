@@ -36,7 +36,9 @@ const PHONE_RE = /(\+?\d{1,3}[-.\s]?)?\(?\d{3,4}\)?[-.\s]?\d{3,4}[-.\s]?\d{3,4}/
 // health data). first/middle/last name + address get masked too because
 // together with DOB they are uniquely identifying — see the slice-4
 // PII-redaction acceptance criterion in docs/journal/2026-05-24.
-// bloodGroup is health-adjacent. email + phone are already covered by
+// bloodGroup is health-adjacent. Phase 9 / CP3.1 adds the health profile's
+// fields (allergies, conditions, medication, gpClinic, emergencyNotes,
+// teacherNote), all special-category health data. email + phone are already covered by
 // the value regexes above; they're caught regardless of the key name.
 // Phase 1 slice 5: Guardian adds two new workplace identifiers —
 // `occupation` (e.g. "Banker at GTBank") and `employer` (e.g. "GTBank").
@@ -44,7 +46,7 @@ const PHONE_RE = /(\+?\d{1,3}[-.\s]?)?\(?\d{3,4}\)?[-.\s]?\d{3,4}[-.\s]?\d{3,4}/
 // they go behind the redactor too. Guardian's first/last/phone/email/
 // address are already covered by the slice-4 entries.
 const SENSITIVE_KEY_RE =
-  /password|passwd|token|secret|api[_-]?key|bvn|nin|otp|authorization|cookie|set-cookie|date[_]?of[_]?birth|\bdob\b|first[_]?name|middle[_]?name|last[_]?name|^address$|medical[_]?notes|blood[_]?group|occupation|employer/i;
+  /password|passwd|token|secret|api[_-]?key|bvn|nin|otp|authorization|cookie|set-cookie|date[_]?of[_]?birth|\bdob\b|first[_]?name|middle[_]?name|last[_]?name|^address$|medical[_]?notes|blood[_]?group|allergies|^conditions$|^medication$|gp[_]?clinic|emergency[_]?notes|teacher[_]?note|occupation|employer/i;
 
 // Maximum depth for object traversal. Sentry events nest a few levels deep
 // (event.contexts.runtime.foo); 8 is comfortably more than we'd ever produce

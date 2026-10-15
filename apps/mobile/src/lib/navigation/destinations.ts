@@ -97,6 +97,11 @@ export function staffDestinations(ctx: StaffContext): Destination[] {
   if (admin && can("behaviour.decide")) {
     out.push({ key: "discipline", label: "Behaviour decisions", hint: "Approve or reject", icon: "shield-checkmark-outline", group: "School", route: "/staff/discipline" });
   }
+  // Phase 9 / CP3.1 — health records. The service checks the owner, admin or
+  // health_officer ROLE behind health.read; the Health officer's main screen.
+  if ((admin || hasRole(ctx.roles, "health_officer")) && can("health.read")) {
+    out.push({ key: "health", label: "Health", hint: "Health records", icon: "medkit-outline", group: "School", route: "/staff/health" });
+  }
   if (admin && can("reports.completeness.read")) {
     out.push({ key: "reports", label: "Reports", hint: "What's behind", icon: "bar-chart-outline", group: "School", route: "/staff/reports" });
   }

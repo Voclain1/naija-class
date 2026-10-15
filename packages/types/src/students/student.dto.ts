@@ -36,8 +36,6 @@ export interface StudentDto {
   address: string | null;
   phone: string | null;
   email: string | null;
-  bloodGroup: string | null;
-  medicalNotes: string | null;
   religion: string | null;
   stateOfOrigin: string | null;
   nationality: string;

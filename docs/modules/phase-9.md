@@ -1403,3 +1403,77 @@ Each slice is one PR, merged before the next starts.
 - Emergency contacts: they are already the child's guardians.
 - Parents editing the record. A correction goes through the school.
 - Linking a sickbay visit to the attendance register.
+
+### 10.7 As built — CP3.1, health profiles and the Health officer (2026-10-15)
+
+- **Data:** migration `20261022120000_health_profiles` adds:
+  - `health_profiles`, one per student (allergies, conditions, medication,
+    GP or clinic, emergency notes, blood group, the "For teachers" note, who
+    last changed it), with RLS forced and a length `CHECK` on every field;
+  - the data move: every student with a non-blank blood group or medical
+    notes gets a profile, blood group copied and medical notes into
+    "conditions". Then `students.blood_group` and `students.medical_notes`
+    are dropped. The copy was checked against test rows in a rolled-back
+    transaction: both fields move, blanks become empty, and a student with
+    only blanks gets no profile;
+  - the `health_officer` system role, holding `health.read`,
+    `health.manage` and `sickbay.manage` and nothing else;
+  - admin gains all three plus `health.note.read`; teacher gains
+    `health.note.read` only.
+
+  No SECURITY DEFINER function; the count stays 23.
+- **The old fields leave the student record:** the student form, the
+  student DTOs and the bio tab no longer carry them. CSV import keeps its
+  blood group column and writes it into the profile. The log redaction list
+  gains the profile's field names.
+- **API**, a new `HealthController` at `/health`:
+  - `GET /health/students?q=&armId=` (`health.read`): the Health page's list,
+    names, class and two flags (recorded, note for teachers), no health text,
+    at most 100.
+  - `GET /health/students/:id` (`health.read`), audited.
+  - `PUT /health/students/:id` (`health.manage`): creates or changes the
+    profile; an emptied field is cleared. The audit holds the changed field
+    names, never the text.
+  - `GET /health/teacher-notes?armId=` and
+    `GET /health/teacher-notes/students/:id` (`health.note.read`): the "For
+    teachers" note only, for a teacher of that class or child (or an owner or
+    admin), audited.
+  - The service checks the owner, admin or health_officer role as well.
+- **Parents:** `GET /portal/students/:id/health` (`withTenant` +
+  `withGuardian`), the whole profile read-only, audited with the guardian as
+  the reader. The student's own portal has nothing.
+- **Invitations:** an owner or admin can invite a Health officer (the
+  invite form, the API's role list, and the staff list's role names).
+- **Website:**
+  - A **Health** menu item (`health.read`), and the Health officer's home
+    page: search by name or admission number, filter by class, open a child.
+  - The child's health record page, and a **Health** tab on the admin
+    student page, both from one panel. The "For teachers" note is edited in
+    its own tinted box that says it is the only part teachers see.
+  - Teachers see a tinted **Health note** on the child's page and a **Health
+    notes** list on the class page, only when a note exists.
+- **Parent website and app:** a **Health record** card on the child's page,
+  read-only, with "Something wrong or missing? Please contact the school."
+  The app never writes it to the phone's storage.
+- **Staff app:**
+  - A **Health** home tile for an owner, admin or Health officer, opening a
+    searchable list and each child's record, editable with `health.manage`.
+  - The teacher's class screen and child behaviour screen show the note.
+  - New staff-prefixed keys `staffHealthList`, `staffHealthProfile`,
+    `staffHealthNote` and `staffClassHealthNotes`; the parent key
+    `healthRecord`, never persisted.
+- **Tests:**
+  - 10 new service tests against real Postgres:
+    - the Health officer writes and reads, and an emptied field clears;
+    - owner and admin read; the list carries flags, not health text;
+    - a teacher and a bursar cannot read or write the record;
+    - a teacher of the child gets the note in exactly two fields, and a
+      teacher who does not teach the child gets nothing;
+    - a linked guardian reads the whole profile; an unlinked guardian and
+      another school's guardian get nothing (RLS);
+    - every read is audited, and the audit log holds no health text.
+  - Permission coverage for the five routes and the three role grants, and
+    the app's menu and query-key specs.
+  - e2e `health-profile.spec.ts`: the Health officer records a profile and a
+    note, the teacher sees only the note on the class and child pages, and the
+    parent sees the record in the portal. `/health` joins the phone-fit check.

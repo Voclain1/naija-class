@@ -21,6 +21,7 @@ const SHIPPED_HREFS = [
   "/announcements",
   "/homework",
   "/behaviour",
+  "/health",
   "/guardians",
   "/gradebook",
   "/timetable",

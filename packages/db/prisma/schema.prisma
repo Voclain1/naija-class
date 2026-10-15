@@ -736,8 +736,9 @@ model Student {
   address         String?
   phone           String?
   email           String?
-  bloodGroup      String?       @map("blood_group")
-  medicalNotes    String?       @map("medical_notes")
+  // blood_group and medical_notes moved into HealthProfile (Phase 9 / CP3.1,
+  // docs/modules/phase-9.md §10 CP3-D4): health data is read by a narrower set
+  // of people than the rest of the student record, and audited on every read.
   religion        String?
   stateOfOrigin   String?       @map("state_of_origin")
   nationality     String        @default("Nigerian")
@@ -808,6 +809,7 @@ model Student {
   deviceTokens      DeviceToken[] // Phase 6 / Slice 5.
 
   cbtCandidates CbtCandidate[] // Online exams (CBT1)
+  healthProfile HealthProfile? // Phase 9 / CP3.1
 
   @@unique([schoolId, admissionNumber])
   @@index([schoolId])
@@ -3989,4 +3991,31 @@ enum ReportExportStatus {
   PENDING
   GENERATED
   FAILED
+}
+
+// ---------- Phase 9 / CP3.1 — health profile (docs/modules/phase-9.md §10) ----------
+//
+// One per student. Read by owner, admin, the health officer and the child's
+// guardians; every read is audited and the text never goes into the audit log.
+// A teacher of the child sees ONLY `teacherNote`, which the health officer
+// writes for that purpose (CP3-D2). No AI anywhere near it.
+model HealthProfile {
+  id             String   @id @default(uuid())
+  schoolId       String   @map("school_id")
+  studentId      String   @unique @map("student_id")
+  student        Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  allergies      String?
+  conditions     String?
+  medication     String?
+  gpClinic       String?  @map("gp_clinic")
+  emergencyNotes String?  @map("emergency_notes")
+  bloodGroup     String?  @map("blood_group")
+  // The ONE field a teacher of the child sees ("For teachers").
+  teacherNote    String?  @map("teacher_note")
+  updatedBy      String?  @map("updated_by")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  @@index([schoolId])
+  @@map("health_profiles")
 }

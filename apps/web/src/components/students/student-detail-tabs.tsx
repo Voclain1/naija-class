@@ -4,6 +4,7 @@ import { useState } from "react";
 
 import type { StudentDetailDto, StudentGuardianRefDto } from "@school-kit/types";
 
+import { HealthProfilePanel } from "@/components/health/health-profile-panel";
 import { BehaviourTab } from "@/components/students/behaviour-tab";
 import { EnrollmentsTab } from "@/components/students/enrollments-tab";
 import { GuardiansTab } from "@/components/students/guardians-tab";
@@ -14,12 +15,15 @@ interface Props {
   onGuardiansChanged: (next: StudentGuardianRefDto[]) => void;
 }
 
-type TabKey = "bio" | "guardians" | "enrollments" | "behaviour";
+type TabKey = "bio" | "guardians" | "enrollments" | "health" | "behaviour";
 
 const TABS: { key: TabKey; label: string }[] = [
   { key: "bio", label: "Bio" },
   { key: "guardians", label: "Guardians" },
   { key: "enrollments", label: "Enrollments" },
+  // Phase 9 / CP3.1 — the health record (docs/modules/phase-9.md §10). Opens
+  // its own audited read only when chosen.
+  { key: "health", label: "Health" },
   // Last, after the practical business of who this child is and where they
   // sit: behaviour is the tab you open deliberately (the-school-day.md Part C).
   { key: "behaviour", label: "Behaviour" },
@@ -83,6 +87,7 @@ export function StudentDetailTabs({ student, onGuardiansChanged }: Props) {
         />
       )}
       {tab === "enrollments" && <EnrollmentsTab studentId={student.id} />}
+      {tab === "health" && <HealthProfilePanel studentId={student.id} />}
       {tab === "behaviour" && <BehaviourTab studentId={student.id} />}
     </div>
   );
@@ -105,10 +110,6 @@ function BioPanel({ student }: { student: StudentDetailDto }) {
       <Field label="Nationality">{student.nationality}</Field>
       <Field label="State of origin">{student.stateOfOrigin ?? "—"}</Field>
       <Field label="Religion">{student.religion ?? "—"}</Field>
-      <Field label="Blood group">{student.bloodGroup ?? "—"}</Field>
-      <Field label="Medical notes" full>
-        {student.medicalNotes ?? "—"}
-      </Field>
       <Field label="Notes" full>
         {student.notes ?? "—"}
       </Field>

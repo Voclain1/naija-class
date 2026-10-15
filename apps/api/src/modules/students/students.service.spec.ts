@@ -180,8 +180,6 @@ describe("StudentsService", () => {
           phone: "+2348012345678",
           email: "ada@example.test",
           address: "12 Allen Avenue, Ikeja",
-          bloodGroup: "O+",
-          medicalNotes: "Asthma — inhaler in school bag",
           religion: "Christian",
           stateOfOrigin: "Anambra",
           notes: "Strong in mathematics",
@@ -189,8 +187,7 @@ describe("StudentsService", () => {
         reqCtx,
       );
       expect(created.middleName).toBe("Chioma");
-      expect(created.bloodGroup).toBe("O+");
-      expect(created.medicalNotes).toBe("Asthma — inhaler in school bag");
+      expect(created.religion).toBe("Christian");
     });
 
     it("duplicate admissionNumber per school → ConflictError ADMISSION_NUMBER_TAKEN", async () => {
@@ -504,10 +501,10 @@ describe("StudentsService", () => {
       const updated = await service.update(
         authCtx,
         s.id,
-        { medicalNotes: "Updated note" },
+        { religion: "Updated note" },
         reqCtx,
       );
-      expect(updated.medicalNotes).toBe("Updated note");
+      expect(updated.religion).toBe("Updated note");
 
       const audit = await withTenant(schoolId, (db) =>
         db.auditLog.findFirst({
@@ -516,9 +513,9 @@ describe("StudentsService", () => {
         }),
       );
       const metadata = audit?.metadata as Record<string, unknown>;
-      expect(metadata.changed).toEqual(["medicalNotes"]);
+      expect(metadata.changed).toEqual(["religion"]);
       // No PII value should appear in audit metadata.
-      expect(metadata.medicalNotes).toBeUndefined();
+      expect(metadata.religion).toBeUndefined();
     });
 
     it("renaming admissionNumber to an existing one → ADMISSION_NUMBER_TAKEN", async () => {
