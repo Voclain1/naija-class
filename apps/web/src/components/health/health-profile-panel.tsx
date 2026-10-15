@@ -10,6 +10,7 @@ import { ApiError } from "@/lib/api-client";
 import { hasPermission } from "@/lib/auth/has-permission";
 import { useAuth } from "@/lib/auth/use-auth";
 import { getHealthProfile, saveHealthProfile } from "@/lib/health/health-api";
+import { VaccinationsSection } from "@/components/health/vaccinations-section";
 
 // Phase 9 / CP3.1 — one child's health profile (docs/modules/phase-9.md §10).
 // Shown to owner, admin and the Health officer: on the Health page and as the
@@ -200,6 +201,8 @@ export function HealthProfilePanel({
           </Button>
         </div>
       )}
+      {/* Phase 9 / CP3.2 */}
+      <VaccinationsSection profile={profile} canEdit={canEdit} onChanged={setProfile} />
     </div>
   );
 }

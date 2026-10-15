@@ -1477,3 +1477,60 @@ Each slice is one PR, merged before the next starts.
   - e2e `health-profile.spec.ts`: the Health officer records a profile and a
     note, the teacher sees only the note on the class and child pages, and the
     parent sees the record in the portal. `/health` joins the phone-fit check.
+
+### 10.8 As built — CP3.2, private uploads (F1) and vaccinations (2026-10-15)
+
+- **F1, private file uploads** (`apps/api/src/common/storage/private-file.ts`),
+  built here rather than in CP4 (CP3-D7):
+  - images (JPEG, PNG, WebP) or PDF, at most 10 MB;
+  - the type is read from the file's own first bytes, never from its name or
+    the browser's declared type, so a renamed file is refused and every object
+    is stored and served with the type it really has;
+  - stored privately and read only through a five-minute signed URL, issued
+    after the reader's access to the owning record is checked;
+  - a new `health-document` storage key, `schools/<school>/health/<id>.<ext>`.
+    CP4, CP6 and CP7 add their own keys and reuse the same check.
+- **Data:** migration `20261023120000_health_vaccinations` adds
+  `health_vaccinations` (student, vaccine name, the day given as `DATE`, the
+  document's type and size, who recorded it, withdrawn). RLS forced; a
+  `CHECK` keeps the document's type to the four allowed and its size within
+  10 MB. No new permission and no SECURITY DEFINER function; the count stays
+  23.
+- **API**, on `/health`:
+  - `POST /health/students/:id/vaccinations` and
+    `POST /health/vaccinations/:id/withdraw` (`health.manage`);
+  - `POST /health/vaccinations/:id/document` (`health.manage`, multipart):
+    attach or replace; a replacement of another type deletes the old object;
+  - `GET /health/vaccinations/:id/document` (`health.read`): the five-minute
+    link, audited;
+  - the profile now carries its vaccinations, newest first, withdrawn ones
+    marked.
+- **Parents:** the portal profile lists live vaccinations (withdrawn ones are
+  left out), and `GET /portal/students/:id/vaccinations/:vaccinationId/document`
+  gives a guardian of that child the link, audited with the guardian as the
+  reader. Another child's vaccination reads as not found.
+- **Audit:** create, withdraw, upload (type and size), and every document
+  read. The vaccine's name stays out of the audit log, as all health text
+  does.
+- **Website:** a **Vaccinations** section under the health record: add (name
+  and date), **Add document** / **Replace document**, **View PDF** or **View
+  photo** (the tab opens first, so a popup blocker allows it), and Withdraw.
+- **Parent website and app:** the Health record card lists the vaccinations
+  with **View PDF** / **View photo**.
+- **Staff app:** a **Vaccinations** card on the child's health record: add,
+  attach a photo from the library or a PDF (sent by the native uploader), view
+  and withdraw.
+- **Tests:**
+  - 3 tests for F1: each allowed type recognised by its bytes; other files,
+    empty files and files over 10 MB refused; the storage path.
+  - 6 new health service tests: record and attach, typed by bytes; a
+    disguised file refused; a replacement of another type; teacher and bursar
+    refused; a linked guardian opens it while an unlinked one and another
+    school's guardian get nothing; withdrawn means kept for staff, gone for
+    the parent, and refused twice.
+  - Permission coverage for the four new staff routes.
+  - e2e `health-vaccinations.spec.ts`: the Health officer adds a vaccination,
+    a disguised file is refused, a PDF is attached, and the parent sees it and
+    gets its link.
+  - Every new section was checked at 320px and 390px on the website, the
+    parent website and the app.

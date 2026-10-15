@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { HEALTH_LIMITS, type HealthProfileDto, type HealthProfileField } from "@school-kit/types";
 
 import { TextField } from "../../../src/components/form";
+import { VaccinationsCard } from "../../../src/components/vaccinations-card";
 import { ScreenHeader, Skeleton } from "../../../src/components/layout";
 import { LoadError } from "../../../src/components/load-error";
 import { Body, Button, Caption, Card, Label, Screen } from "../../../src/components/ui";
@@ -149,6 +150,10 @@ export default function HealthRecordScreen() {
                 />
               ) : null}
             </Card>
+          ) : null}
+          {/* Phase 9 / CP3.2: vaccinations, with an optional document each. */}
+          {p && !values ? (
+            <VaccinationsCard profile={p} canEdit={canEdit} onChanged={(next) => queryClient.setQueryData(key, next)} />
           ) : null}
         </ScrollView>
       </KeyboardAvoidingView>

@@ -65,7 +65,22 @@ export type StorageObjectKey =
   // no Content-Type, and DevStorageController recovers it from the extension
   // so the download opens as a PDF. Short-lived: deleted with its row by the
   // daily clean-up after 24 hours.
-  | { kind: "report-export"; exportId: string };
+  | { kind: "report-export"; exportId: string }
+  // Phase 9 / CP3.2 — a document attached to a health record, today a
+  // vaccination card (docs/modules/phase-9.md §10 CP3-D7, F1). Layout:
+  // schools/<schoolId>/health/<documentId>.<ext>
+  //
+  // WITH an extension, like school-logo and report-export: the dev driver
+  // keeps no Content-Type and recovers it from the extension. The id is the
+  // owning row's id (one document per vaccination), and a replacement with a
+  // different type deletes the old object first. Read only through a
+  // short-lived signed URL, after the caller's access to the record is
+  // checked. See private-file.ts for the type check.
+  | { kind: "health-document"; documentId: string; ext: PrivateFileExt };
+
+// The file types a private upload may be (F1). Decided from the file's own
+// first bytes, never from the name or the browser's declared type.
+export type PrivateFileExt = "jpg" | "png" | "webp" | "pdf";
 
 export type StorageDriverKind = "filesystem" | "r2";
 

@@ -21,6 +21,7 @@ import type {
   AnnouncementFeedResponse,
   HomeworkFeedResponse,
   PortalDisciplineNoticeListResponse,
+  HealthDocumentUrlDto,
   PortalHealthProfileDto,
 } from "@school-kit/types";
 
@@ -247,4 +248,11 @@ export function guardianDisciplineNotices(studentId: string): Promise<PortalDisc
 // Phase 9 / CP3.1 — the child's health record, read-only.
 export function guardianHealthRecord(studentId: string): Promise<PortalHealthProfileDto> {
   return apiFetch<PortalHealthProfileDto>(`/portal/students/${encodeURIComponent(studentId)}/health`);
+}
+
+// Phase 9 / CP3.2 — a five-minute link to a vaccination's document.
+export function guardianVaccinationDocumentUrl(studentId: string, vaccinationId: string): Promise<HealthDocumentUrlDto> {
+  return apiFetch<HealthDocumentUrlDto>(
+    `/portal/students/${encodeURIComponent(studentId)}/vaccinations/${encodeURIComponent(vaccinationId)}/document`,
+  );
 }

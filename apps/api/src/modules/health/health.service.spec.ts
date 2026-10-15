@@ -1,7 +1,14 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { basePrisma, withTenant } from "@school-kit/db";
-import { ForbiddenError, NotFoundError, updateHealthProfileSchema } from "@school-kit/types";
+import { ConflictError, ForbiddenError, NotFoundError, ValidationError, updateHealthProfileSchema } from "@school-kit/types";
+
+import { FilesystemStorageDriver } from "../../common/storage/filesystem-storage.driver";
+import { StorageService } from "../../common/storage/storage.service";
 
 import { AuthService } from "../auth/auth.service";
 import { HealthService } from "./health.service";
@@ -41,7 +48,8 @@ async function makeSchool(label: string) {
 }
 
 describe("HealthService (integration)", () => {
-  const service = new HealthService();
+  const storageRoot = mkdtempSync(join(tmpdir(), "health-docs-"));
+  const service = new HealthService(new StorageService(new FilesystemStorageDriver(storageRoot)));
   const schoolIds = new Set<string>();
 
   let A: {
@@ -129,6 +137,7 @@ describe("HealthService (integration)", () => {
   afterAll(async () => {
     for (const id of schoolIds) await basePrisma.school.delete({ where: { id } }).catch(() => undefined);
     await basePrisma.$disconnect();
+    rmSync(storageRoot, { recursive: true, force: true });
   });
 
   describe("the Health officer keeps the record", () => {
@@ -217,15 +226,96 @@ describe("HealthService (integration)", () => {
     });
   });
 
+  describe("vaccinations and their documents (CP3.2)", () => {
+    const pdf = Buffer.from("%PDF-1.7\nvaccination card");
+    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x01, 0x02]);
+    let vaccinationId: string;
+
+    it("the Health officer records one and attaches a document, typed by its bytes", async () => {
+      const added = await service.createVaccination(
+        ctx(A.schoolId, A.officerId),
+        A.child,
+        { name: "Yellow fever", givenOn: "2026-03-14" },
+        reqCtx,
+      );
+      vaccinationId = added.vaccinations[0]!.id;
+      expect(added.vaccinations[0]).toMatchObject({ name: "Yellow fever", givenOn: "2026-03-14", documentType: null });
+
+      const withDoc = await service.uploadDocument(ctx(A.schoolId, A.officerId), vaccinationId, { buffer: pdf }, reqCtx);
+      expect(withDoc.vaccinations[0]!.documentType).toBe("pdf");
+      const link = await service.documentUrl(ctx(A.schoolId, A.adminId), vaccinationId, reqCtx);
+      expect(link.url).toContain(`/health/${vaccinationId}.pdf`);
+    });
+
+    it("refuses a file that is not an image or PDF, whatever its name", async () => {
+      await expect(
+        service.uploadDocument(ctx(A.schoolId, A.officerId), vaccinationId, { buffer: Buffer.from("MZ not a picture") }, reqCtx),
+      ).rejects.toBeInstanceOf(ValidationError);
+    });
+
+    it("a replacement of another type takes its place", async () => {
+      const replaced = await service.uploadDocument(ctx(A.schoolId, A.officerId), vaccinationId, { buffer: png }, reqCtx);
+      expect(replaced.vaccinations[0]!.documentType).toBe("image");
+      expect((await service.documentUrl(ctx(A.schoolId, A.officerId), vaccinationId, reqCtx)).url).toContain(".png");
+    });
+
+    it("a teacher and a bursar can neither add one nor open its document", async () => {
+      for (const userId of [A.teacherId, A.bursarId]) {
+        await expect(
+          service.createVaccination(ctx(A.schoolId, userId), A.child, { name: "x", givenOn: "2026-01-01" }, reqCtx),
+        ).rejects.toBeInstanceOf(ForbiddenError);
+        await expect(service.documentUrl(ctx(A.schoolId, userId), vaccinationId, reqCtx)).rejects.toBeInstanceOf(ForbiddenError);
+      }
+    });
+
+    it("a linked guardian sees it and opens its document; others get nothing", async () => {
+      const g = { sessionId: "s", schoolId: A.schoolId, guardianId: A.guardianId };
+      const profile = await service.profileForGuardian(g, A.child);
+      expect(profile.vaccinations).toEqual([{ id: vaccinationId, name: "Yellow fever", givenOn: "2026-03-14", documentType: "image" }]);
+      expect((await service.documentUrlForGuardian(g, A.child, vaccinationId)).url).toContain(vaccinationId);
+      // The id under another child's name reads as not found.
+      await expect(service.documentUrlForGuardian(g, A.child, "00000000-0000-4000-8000-000000000000")).rejects.toBeInstanceOf(
+        NotFoundError,
+      );
+      await expect(
+        service.documentUrlForGuardian({ sessionId: "s", schoolId: A.schoolId, guardianId: A.unlinkedGuardianId }, A.child, vaccinationId),
+      ).rejects.toBeInstanceOf(ForbiddenError);
+      await expect(
+        service.documentUrlForGuardian({ sessionId: "s", schoolId: B.schoolId, guardianId: B.guardianId }, A.child, vaccinationId),
+      ).rejects.toBeInstanceOf(ForbiddenError);
+    });
+
+    it("withdrawn: kept for staff and marked, gone for the parent, refused twice", async () => {
+      const after = await service.withdrawVaccination(ctx(A.schoolId, A.officerId), vaccinationId, reqCtx);
+      expect(after.vaccinations[0]!.withdrawnAt).not.toBeNull();
+      await expect(service.withdrawVaccination(ctx(A.schoolId, A.officerId), vaccinationId, reqCtx)).rejects.toBeInstanceOf(
+        ConflictError,
+      );
+      const g = { sessionId: "s", schoolId: A.schoolId, guardianId: A.guardianId };
+      expect((await service.profileForGuardian(g, A.child)).vaccinations).toEqual([]);
+      await expect(service.documentUrlForGuardian(g, A.child, vaccinationId)).rejects.toBeInstanceOf(NotFoundError);
+    });
+  });
+
   it("every read is audited, and the audit log holds no health text", async () => {
     const rows = await withTenant(A.schoolId, (db) => db.auditLog.findMany({ where: { action: { startsWith: "health." } } }));
     expect(new Set(rows.map((r) => r.action))).toEqual(
-      new Set(["health.update", "health.read", "health.note.read", "health.portal.read"]),
+      new Set([
+        "health.update",
+        "health.read",
+        "health.note.read",
+        "health.portal.read",
+        "health.vaccination.create",
+        "health.vaccination.withdraw",
+        "health.document.upload",
+        "health.document.read",
+        "health.portal.document.read",
+      ]),
     );
     const update = rows.find((r) => r.action === "health.update")!;
     expect((update.metadata as { changed: string[] }).changed).toEqual(
       expect.arrayContaining(["allergies", "bloodGroup", "teacherNote"]),
     );
-    expect(JSON.stringify(rows.map((r) => r.metadata))).not.toMatch(/peanut|EpiPen|O\+|Inhaler|Dust/i);
+    expect(JSON.stringify(rows.map((r) => r.metadata))).not.toMatch(/peanut|EpiPen|O\+|Inhaler|Dust|Yellow fever/i);
   });
 });

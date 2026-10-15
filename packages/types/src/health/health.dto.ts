@@ -66,6 +66,50 @@ export interface HealthProfileFieldsDto {
   teacherNote: string | null;
 }
 
+// ---------------------------------------------------------------------------
+// Phase 9 / CP3.2 — vaccinations, with an optional document (F1).
+// ---------------------------------------------------------------------------
+
+export const VACCINATION_NAME_MAX = 120;
+
+const isoDate = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, "Use a date like 2026-09-30.")
+  .refine((value) => !Number.isNaN(Date.parse(`${value}T00:00:00.000Z`)), "That date does not exist.");
+
+export const createVaccinationSchema = z
+  .object({
+    name: z.string().trim().min(1, "Name the vaccine.").max(VACCINATION_NAME_MAX),
+    givenOn: isoDate,
+  })
+  .strict();
+export type CreateVaccinationInput = z.infer<typeof createVaccinationSchema>;
+
+/** Staff view of one vaccination. */
+export interface HealthVaccinationDto {
+  id: string;
+  name: string;
+  /** ISO date it was given. */
+  givenOn: string;
+  /** "image" or "pdf" when a document is attached, else null. */
+  documentType: "image" | "pdf" | null;
+  recordedByName: string | null;
+  withdrawnAt: string | Date | null;
+}
+
+/** A guardian's view of one vaccination. Withdrawn ones are not listed. */
+export interface PortalVaccinationDto {
+  id: string;
+  name: string;
+  givenOn: string;
+  documentType: "image" | "pdf" | null;
+}
+
+/** A short-lived link to a private document (F1). Expires in minutes. */
+export interface HealthDocumentUrlDto {
+  url: string;
+}
+
 /** Staff (owner, admin, Health officer). */
 export interface HealthProfileDto extends HealthProfileFieldsDto {
   studentId: string;
@@ -75,6 +119,8 @@ export interface HealthProfileDto extends HealthProfileFieldsDto {
   updatedByName: string | null;
   /** Null when nothing has been recorded yet. */
   updatedAt: string | Date | null;
+  /** Newest first, withdrawn ones included and marked (CP3.2). */
+  vaccinations: HealthVaccinationDto[];
 }
 
 export const healthStudentListQuerySchema = z
@@ -122,4 +168,6 @@ export interface TeacherHealthNoteForStudentDto {
 export interface PortalHealthProfileDto extends HealthProfileFieldsDto {
   /** Null when the school has recorded nothing. */
   updatedAt: string | Date | null;
+  /** Newest first; withdrawn ones are left out (CP3.2). */
+  vaccinations: PortalVaccinationDto[];
 }
