@@ -85,6 +85,8 @@ const STAFF_KEYS: Record<string, readonly unknown[]> = {
   staffBehaviourSettings: queryKeys.staffBehaviourSettings(SCHOOL, USER),
   staffIncidentOptions: queryKeys.staffIncidentOptions(SCHOOL, USER),
   staffIncidentRoster: queryKeys.staffIncidentRoster(SCHOOL, USER, "arm_1"),
+  staffDiscipline: queryKeys.staffDiscipline(SCHOOL, USER, "stu_1"),
+  staffDisciplineQueue: queryKeys.staffDisciplineQueue(SCHOOL, USER),
 };
 
 describe("staff query keys", () => {

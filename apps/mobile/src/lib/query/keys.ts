@@ -36,6 +36,10 @@ export const queryKeys = {
   // A guardian's view of one child's portal access state.
   portalStatus: (studentId: string) =>
     ["students", studentId, "portal-status"] as const,
+  // Phase 9 / CP2.3 — approved suspensions and exclusions for one child: the
+  // action and its dates only, never a reason.
+  disciplineNotices: (studentId: string) =>
+    ["students", studentId, "discipline-notices"] as const,
 
   me: ["me"] as const,
 
@@ -274,4 +278,10 @@ export const queryKeys = {
     ["staff", schoolId, userId, "incident-options"] as const,
   staffIncidentRoster: (schoolId: string, userId: string, armId: string) =>
     ["staff", schoolId, userId, "incident-roster", armId] as const,
+  // Phase 9 / CP2.3 — discipline actions: one child's, and the decisions
+  // queue. A named child and the reason for a sanction, so staff-prefixed.
+  staffDiscipline: (schoolId: string, userId: string, studentId: string) =>
+    ["staff", schoolId, userId, "discipline", studentId] as const,
+  staffDisciplineQueue: (schoolId: string, userId: string) =>
+    ["staff", schoolId, userId, "discipline-queue"] as const,
 } as const;

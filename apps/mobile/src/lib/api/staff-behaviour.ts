@@ -7,6 +7,10 @@ import type {
   BehaviourRecordDto,
   BehaviourSettingsDto,
   CreateBehaviourInput,
+  CreateDisciplineActionInput,
+  DecideDisciplineActionInput,
+  DisciplineActionDto,
+  DisciplineListResponse,
 } from "@school-kit/types";
 
 import { apiFetch } from "./client";
@@ -44,4 +48,27 @@ export function staffIncidentRoster(armId: string): Promise<BehaviourIncidentRos
 
 export function createStaffIncident(input: CreateBehaviourIncidentInput): Promise<BehaviourIncidentDto> {
   return apiFetch<BehaviourIncidentDto>("/behaviour/incidents", { method: "POST", body: input });
+}
+
+// Phase 9 / CP2.3 — discipline (docs/modules/phase-9.md §9 CP2-D3). A teacher
+// proposes and withdraws their own; an owner or admin decides, never their own.
+
+export function staffDiscipline(studentId: string): Promise<DisciplineListResponse> {
+  return apiFetch<DisciplineListResponse>(`/behaviour/discipline?studentId=${encodeURIComponent(studentId)}`);
+}
+
+export function staffDisciplineQueue(): Promise<DisciplineListResponse> {
+  return apiFetch<DisciplineListResponse>("/behaviour/discipline?status=PROPOSED");
+}
+
+export function proposeStaffDiscipline(input: CreateDisciplineActionInput): Promise<DisciplineActionDto> {
+  return apiFetch<DisciplineActionDto>("/behaviour/discipline", { method: "POST", body: input });
+}
+
+export function decideStaffDiscipline(id: string, input: DecideDisciplineActionInput): Promise<DisciplineActionDto> {
+  return apiFetch<DisciplineActionDto>(`/behaviour/discipline/${encodeURIComponent(id)}/decide`, { method: "POST", body: input });
+}
+
+export function withdrawStaffDiscipline(id: string): Promise<DisciplineActionDto> {
+  return apiFetch<DisciplineActionDto>(`/behaviour/discipline/${encodeURIComponent(id)}/withdraw`, { method: "POST" });
 }

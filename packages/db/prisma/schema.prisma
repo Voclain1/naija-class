@@ -3401,6 +3401,84 @@ model BehaviourCategory {
   @@map("behaviour_categories")
 }
 
+// ---------- Phase 9 / CP2.3 — discipline (docs/modules/phase-9.md §9 CP2-D3) ----------
+//
+// A teacher PROPOSES, an owner or admin DECIDES, and anyone with the right may
+// WITHDRAW. Never deleted. The reason is internal text: it never reaches a
+// parent, the audit log, a push or an SMS (CP2-D4, CP2-D6).
+enum DisciplineActionType {
+  WARNING
+  DETENTION
+  SUSPENSION
+  EXCLUSION
+
+  @@map("discipline_action_type")
+}
+
+enum DisciplineActionStatus {
+  PROPOSED
+  APPROVED
+  REJECTED
+  WITHDRAWN
+
+  @@map("discipline_action_status")
+}
+
+model DisciplineAction {
+  id         String               @id @default(uuid())
+  schoolId   String               @map("school_id")
+  studentId  String               @map("student_id")
+  // Optional links to what it is about.
+  recordId   String?              @map("record_id")
+  incidentId String?              @map("incident_id")
+  type       DisciplineActionType
+  // DATE: a detention's day; a suspension's first and last day; an
+  // exclusion's first day. CHECKs in the migration keep them consistent with
+  // the type. A warning has neither.
+  startOn    DateTime?            @map("start_on") @db.Date
+  endOn      DateTime?            @map("end_on") @db.Date
+  reason     String
+  status     DisciplineActionStatus @default(PROPOSED)
+
+  proposedBy     String    @map("proposed_by")
+  proposedAt     DateTime  @default(now()) @map("proposed_at")
+  decidedBy      String?   @map("decided_by")
+  decidedAt      DateTime? @map("decided_at")
+  decisionReason String?   @map("decision_reason")
+  withdrawnBy    String?   @map("withdrawn_by")
+  withdrawnAt    DateTime? @map("withdrawn_at")
+
+  notices DisciplineNotice[]
+
+  @@index([schoolId, studentId])
+  @@index([schoolId, status])
+  @@map("discipline_actions")
+}
+
+enum DisciplineNoticeKind {
+  SENT
+  WITHDRAWN
+
+  @@map("discipline_notice_kind")
+}
+
+// One row per guardian per action per kind, UNIQUE, so a retry or a second
+// click can never notify a parent twice (CP2-D4).
+model DisciplineNotice {
+  id         String               @id @default(uuid())
+  schoolId   String               @map("school_id")
+  actionId   String               @map("action_id")
+  guardianId String               @map("guardian_id")
+  kind       DisciplineNoticeKind
+  // "PUSH", "SMS" or "NONE" (no live app and no usable phone).
+  channel    String
+  sentAt     DateTime             @default(now()) @map("sent_at")
+  action     DisciplineAction     @relation(fields: [actionId], references: [id], onDelete: Restrict)
+
+  @@unique([actionId, guardianId, kind])
+  @@map("discipline_notices")
+}
+
 model Announcement {
   id          String               @id @default(uuid())
   schoolId    String               @map("school_id")

@@ -1139,3 +1139,117 @@ Each slice is one PR, merged before the next starts.
     two students and the student's tab shows it.
   - The website page and the app's class and incident screens were checked
     at 390 px with long names, and nothing runs off the screen.
+
+### 9.10 As built — CP2.3, discipline and parent notices (2026-10-15)
+
+- **Data:** migration `20261021120000_discipline_actions` adds:
+  - `discipline_actions` (student; optional record or incident; type; start
+    and end `DATE`; reason; status; proposed, decided and withdrawn by and
+    when; the decision's reason);
+  - `discipline_notices` (action, guardian, kind SENT or WITHDRAWN, channel
+    PUSH, SMS or NONE), UNIQUE on action, guardian and kind.
+
+  `CHECK`s hold the rules in the database: the dates follow the type (a
+  warning has none, a detention one day, a suspension a first and last day
+  with the last not before the first, an exclusion a first day), a decision
+  always has its decider, and a rejection always has a reason. Both tables
+  have RLS forced. No SECURITY DEFINER function; the count stays 23.
+- **Permission:** `behaviour.decide` is new, held by admin (owner by
+  wildcard), appended to the admin system role in the same migration.
+  Teacher and bursar never hold it, which `permissions-coverage.spec.ts`
+  pins.
+- **API**, a new `DisciplineController` at `/behaviour/discipline`:
+  - `POST /behaviour/discipline` (`behaviour.create`) proposes. A teacher
+    names only a child they teach (the check now lives in
+    `behaviour/teaches-student.ts`, shared with records and incidents). A
+    linked record must be about the child, and a linked incident must
+    include them. **The owner's own proposal is approved when made**, and is
+    recorded as proposed and approved by the owner.
+  - `POST /behaviour/discipline/:id/decide` (`behaviour.decide`, and the
+    service checks the owner or admin role) approves or rejects; a
+    rejection needs a reason. **No one decides their own proposal**: an
+    admin's waits for the owner or another admin. The update is conditional
+    on the action still being PROPOSED, so two people deciding at once
+    cannot both succeed, and cannot both notify parents.
+  - `POST /behaviour/discipline/:id/withdraw` (`behaviour.create`) is for the
+    proposer or an owner or admin, before or after the decision. A rejected
+    action cannot be withdrawn.
+  - `GET /behaviour/discipline?studentId=&status=` (`behaviour.read`): an
+    owner or admin sees every action. A teacher sees a child's actions when
+    they teach the child, and otherwise only their own proposals. Each row
+    carries `canDecide`, `canWithdraw` and how many guardians were told.
+  - Every proposal, decision, withdrawal, notice and read is audited with the
+    type, dates and counts, never the reason.
+- **Parent notices** (CP2-D4):
+  - Sent only when a SUSPENSION or EXCLUSION is approved (or proposed by the
+    owner, which approves it). Never on a proposal, a rejection, a warning or
+    a detention.
+  - Each guardian is claimed first with a `discipline_notices` row
+    (`skipDuplicates`), so a retry or a second click cannot send twice. The
+    channel comes from `NotificationDispatchService.notifyGuardian`: push
+    when the school has push on and the guardian has a live app, SMS
+    otherwise. The push text is "The school has sent you a notice. Open the
+    app to read it." under the school's name. The SMS reads "{School}:
+    {first name} has been suspended from 20 Oct to 22 Oct 2026. Please
+    contact the school." and goes under the school's approved sender name.
+    This is the first exception to N4, as D4 says.
+  - Withdrawing an approved suspension or exclusion sends "The notice of
+    {date} has been withdrawn." to the guardians who were told, and no one
+    else.
+  - The notice is sent after the decision commits. A crash between the two
+    means a parent was not told (the staff page then shows "0 parents
+    told"), never that a parent was told about a decision that did not
+    happen.
+  - `GET /portal/students/:id/discipline-notices` (`GuardianAuthGuard`,
+    `withTenant` + `withGuardian`) returns approved suspensions and
+    exclusions, and withdrawn ones that had been approved, marked. Its type,
+    `PortalDisciplineNoticeDto`, has fields for the type, the dates, the day
+    it was decided and the day it was withdrawn, and nothing else. The
+    student's own portal gets nothing.
+- **Website:**
+  - The student's Behaviour tab has a **Discipline** section: propose an
+    action (type, dates, a staff-only reason), and the child's history with
+    Approve, Reject (with a reason) and Withdraw where the API allows. The
+    tab's "Staff only" note now names the one exception.
+  - The **Behaviour** page (admin and teacher) has a **Waiting for a
+    decision** queue above the incidents.
+  - Approving a suspension or exclusion, and withdrawing one parents were
+    told about, both ask for confirmation and say who will be told.
+- **Parent website and app:** a **Notices from the school** card on the
+  child's page, tinted rather than edged, showing "Suspended from 20 Oct to
+  22 Oct 2026" or "Excluded from 20 Oct 2026", the day it was decided, and
+  "Please contact the school." It fetches on its own and renders nothing
+  when there are no notices or the read fails. The wording comes from one
+  helper in `@school-kit/types`, shared with the SMS.
+- **Staff app:**
+  - A **Discipline** card under the behaviour card, on the teacher's class
+    behaviour screen and the admin's student screen: propose (date boxes, not
+    a picker) and the child's history with the same actions.
+  - A **Behaviour decisions** home tile for an owner or admin with
+    `behaviour.decide`, opening the queue at `/staff/discipline`.
+  - New staff-prefixed keys `staffDiscipline` and `staffDisciplineQueue`;
+    the parent key `disciplineNotices`.
+- **Tests:**
+  - 19 new service tests against real Postgres, with stand-in notification
+    and SMS services that record what reached each parent:
+    - a teacher proposes for a child they teach, and is refused (writing
+      nothing) for one they do not;
+    - the owner's own proposal is approved when made;
+    - the dates follow the type in the DTO and in the database `CHECK`;
+    - a teacher cannot approve; no admin decides their own proposal;
+    - a rejection needs a reason; nothing is decided twice;
+    - proposals, rejections and approved detentions and warnings tell no
+      parent;
+    - an approved suspension tells each guardian once: push for one with
+      the app, SMS for one without, and the push text names no child and
+      no action; the SMS carries no reason;
+    - a retried send tells nobody twice;
+    - the parent route returns exactly the six notice fields;
+    - withdrawing sends one withdrawal notice per guardian who was told;
+      withdrawing a proposal tells no one;
+    - an unlinked guardian and another school's guardian get nothing (RLS);
+    - the audit log holds no reason text.
+  - Permission coverage for the four new routes, and the app's menu spec.
+  - e2e `behaviour-discipline.spec.ts`: a teacher proposes a suspension, the
+    owner approves it from the queue, and the guardian sees the notice in the
+    portal without the reason.

@@ -26,6 +26,7 @@ import {
 } from "../../../src/components/ui";
 import { FreshnessLabel, useIsOnline } from "../../../src/components/freshness-label";
 import { ListRow } from "../../../src/components/layout";
+import { DisciplineNotices } from "../../../src/components/discipline-notices";
 import { StudentPortalAccess } from "../../../src/components/student-portal-access";
 import {
   canPay,
@@ -157,6 +158,10 @@ export default function StudentDetailScreen() {
             child's page is far more often checking how they did than paying
             an invoice, and the results screen is the one thing this app can
             show that nothing else in School Kit currently can. */}
+        {/* Phase 9 / CP2.3: approved suspensions and exclusions, at the top
+            because a parent must not miss one. Absent when there are none. */}
+        <DisciplineNotices studentId={studentId} />
+
         <ListRow
           icon="ribbon-outline"
           title="Results"

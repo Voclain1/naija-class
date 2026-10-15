@@ -17,7 +17,11 @@ import type {
   DeactivateStudentPortalResponse,
   CalendarResponse,
 } from "@school-kit/types";
-import type { AnnouncementFeedResponse, HomeworkFeedResponse } from "@school-kit/types";
+import type {
+  AnnouncementFeedResponse,
+  HomeworkFeedResponse,
+  PortalDisciplineNoticeListResponse,
+} from "@school-kit/types";
 
 import { apiFetch } from "./client";
 
@@ -229,4 +233,12 @@ export function markGuardianAnnouncementRead(id: string): Promise<void> {
 // what is due, and there is nothing to submit.
 export function guardianHomework(studentId: string): Promise<HomeworkFeedResponse> {
   return apiFetch<HomeworkFeedResponse>(`/portal/students/${encodeURIComponent(studentId)}/homework`);
+}
+
+// Phase 9 / CP2.3 — approved suspensions and exclusions for one child. The
+// response type has no field for a reason, a note or who proposed it.
+export function guardianDisciplineNotices(studentId: string): Promise<PortalDisciplineNoticeListResponse> {
+  return apiFetch<PortalDisciplineNoticeListResponse>(
+    `/portal/students/${encodeURIComponent(studentId)}/discipline-notices`,
+  );
 }

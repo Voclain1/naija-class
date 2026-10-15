@@ -10,6 +10,7 @@ import {
   type BehaviourSettingsDto,
 } from "@school-kit/types";
 
+import { DisciplineSection } from "@/components/behaviour/discipline";
 import { Button } from "@/components/ui/button";
 import { InlineAlert } from "@/components/shared/inline-alert";
 import { ApiError } from "@/lib/api-client";
@@ -126,7 +127,8 @@ export function BehaviourTab({ studentId }: { studentId: string }) {
       <div className="rounded-md border border-dashed bg-muted/30 p-3 text-sm text-muted-foreground">
         <strong className="font-medium text-foreground">Staff only.</strong> Parents and students do not see these
         records. They are for the school&apos;s own use — a conversation at a parent meeting, or context for a report
-        card comment a person still writes.
+        card comment a person still writes. The one exception is an approved suspension or exclusion, below: parents
+        are told the action and its dates, never the reason.
       </div>
 
       {error && <InlineAlert>{error}</InlineAlert>}
@@ -291,6 +293,9 @@ export function BehaviourTab({ studentId }: { studentId: string }) {
           </ul>
         )}
       </section>
+
+      {/* Phase 9 / CP2.3: propose a discipline action, and this child's history. */}
+      <DisciplineSection studentId={studentId} />
     </div>
   );
 }

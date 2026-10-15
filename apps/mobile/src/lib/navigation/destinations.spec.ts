@@ -80,6 +80,12 @@ describe("an owner", () => {
     }
   });
 
+  it("gets the behaviour decisions queue; a teacher and a bursar never do", () => {
+    expect(staffDestinations(OWNER).find((d) => d.key === "discipline")?.route).toBe("/staff/discipline");
+    expect(keys(TEACHER)).not.toContain("discipline");
+    expect(keys(BURSAR)).not.toContain("discipline");
+  });
+
   it("does not get a website link when this build has no website address", () => {
     expect(keys({ ...OWNER, webConfigured: false })).not.toContain("website");
   });
