@@ -7,6 +7,7 @@ import {
   ValidationError,
   createSickbayVisitSchema,
   formatSickbayTime,
+  sickbayDayOf,
   sickbayMomentFrom,
 } from "@school-kit/types";
 
@@ -196,7 +197,8 @@ describe("SickbayService (integration)", () => {
       });
       expect(dto.medications).toHaveLength(1);
       expect(dto.medications[0]).toMatchObject({ name: MEDICINE, dose: "500 mg", givenByName: "Halima Staff" });
-      const day = (await service.listVisits(ctx(A.schoolId, A.adminId), {}, reqCtx)).data;
+      // The visit's own Lagos day, not "today": near midnight the two differ.
+      const day = (await service.listVisits(ctx(A.schoolId, A.adminId), { date: sickbayDayOf(dto.visitedAt) }, reqCtx)).data;
       expect(day.map((v) => v.id)).toContain(dto.id);
     });
 
