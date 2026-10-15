@@ -4,6 +4,8 @@
 // routes return the "For teachers" note only.
 
 import type {
+  CreateVaccinationInput,
+  HealthDocumentUrlDto,
   HealthProfileDto,
   HealthStudentListResponse,
   TeacherHealthNoteForStudentDto,
@@ -35,4 +37,28 @@ export function getClassHealthNotes(armId: string): Promise<TeacherHealthNotesRe
 
 export function getStudentHealthNote(studentId: string): Promise<TeacherHealthNoteForStudentDto> {
   return apiFetch<TeacherHealthNoteForStudentDto>(`/health/teacher-notes/students/${encodeURIComponent(studentId)}`);
+}
+
+// Phase 9 / CP3.2 — vaccinations and their documents (F1).
+
+export function addVaccination(studentId: string, input: CreateVaccinationInput): Promise<HealthProfileDto> {
+  return apiFetch<HealthProfileDto>(`/health/students/${encodeURIComponent(studentId)}/vaccinations`, {
+    method: "POST",
+    body: input,
+  });
+}
+
+export function withdrawVaccination(id: string): Promise<HealthProfileDto> {
+  return apiFetch<HealthProfileDto>(`/health/vaccinations/${encodeURIComponent(id)}/withdraw`, { method: "POST" });
+}
+
+// multipart/form-data: no Content-Type set here, the browser adds the boundary.
+export function uploadVaccinationDocument(id: string, file: File): Promise<HealthProfileDto> {
+  const form = new FormData();
+  form.append("file", file);
+  return apiFetch<HealthProfileDto>(`/health/vaccinations/${encodeURIComponent(id)}/document`, { method: "POST", body: form });
+}
+
+export function getVaccinationDocumentUrl(id: string): Promise<HealthDocumentUrlDto> {
+  return apiFetch<HealthDocumentUrlDto>(`/health/vaccinations/${encodeURIComponent(id)}/document`);
 }

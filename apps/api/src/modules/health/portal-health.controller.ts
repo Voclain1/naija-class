@@ -1,5 +1,5 @@
 import { Controller, Get, Param, UseGuards } from "@nestjs/common";
-import type { PortalHealthProfileDto } from "@school-kit/types";
+import type { HealthDocumentUrlDto, PortalHealthProfileDto } from "@school-kit/types";
 
 import { CurrentGuardian } from "../../common/auth/current-guardian.decorator.js";
 import type { GuardianAuthContext } from "../../common/auth/guardian-auth-context.js";
@@ -20,5 +20,16 @@ export class PortalHealthController {
     @Param("id") id: string,
   ): Promise<PortalHealthProfileDto> {
     return this.service.profileForGuardian(guardianCtx, id);
+  }
+
+  // Phase 9 / CP3.2 — a five-minute link to a vaccination's document, for a
+  // guardian linked to the child.
+  @Get("students/:id/vaccinations/:vaccinationId/document")
+  async document(
+    @CurrentGuardian() guardianCtx: GuardianAuthContext,
+    @Param("id") id: string,
+    @Param("vaccinationId") vaccinationId: string,
+  ): Promise<HealthDocumentUrlDto> {
+    return this.service.documentUrlForGuardian(guardianCtx, id, vaccinationId);
   }
 }

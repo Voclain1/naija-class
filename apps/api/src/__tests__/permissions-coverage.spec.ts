@@ -1476,6 +1476,13 @@ describe("Phase 9 CP3.1 RBAC coverage: health records", () => {
     expect(perms("teacherNote")).toEqual(["health.note.read"]);
   });
 
+  it("vaccinations: writing and uploading need health.manage; opening a document health.read", () => {
+    for (const handler of ["createVaccination", "withdrawVaccination", "uploadDocument"]) {
+      expect(perms(handler), handler).toEqual(["health.manage"]);
+    }
+    expect(perms("documentUrl")).toEqual(["health.read"]);
+  });
+
   it("the Health officer holds the three record permissions and nothing else", () => {
     expect([...roleSeed("health_officer").permissions].sort()).toEqual(["health.manage", "health.read", "sickbay.manage"]);
   });

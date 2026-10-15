@@ -71,6 +71,15 @@ export function pathFor(schoolId: string, key: StorageObjectKey): string {
       }
       return `schools/${schoolId}/report-exports/${key.exportId}.pdf`;
     }
+    case "health-document": {
+      if (!UUID_RE.test(key.documentId)) {
+        throw new Error(`storage: documentId is not a UUID: ${redact(key.documentId)}`);
+      }
+      if (!["jpg", "png", "webp", "pdf"].includes(key.ext)) {
+        throw new Error(`storage: unsupported health-document extension: ${redact(key.ext)}`);
+      }
+      return `schools/${schoolId}/health/${key.documentId}.${key.ext}`;
+    }
   }
 }
 

@@ -810,6 +810,7 @@ model Student {
 
   cbtCandidates CbtCandidate[] // Online exams (CBT1)
   healthProfile HealthProfile? // Phase 9 / CP3.1
+  vaccinations  HealthVaccination[] // Phase 9 / CP3.2
 
   @@unique([schoolId, admissionNumber])
   @@index([schoolId])
@@ -4018,4 +4019,29 @@ model HealthProfile {
 
   @@index([schoolId])
   @@map("health_profiles")
+}
+
+// ---------- Phase 9 / CP3.2 — vaccinations (docs/modules/phase-9.md §10) ----------
+//
+// Read by the same people as the profile. The optional document (a card photo
+// or a PDF) is a private object at schools/<school>/health/<id>.<ext>, read
+// only through a short-lived signed URL. Withdrawn, never deleted.
+model HealthVaccination {
+  id           String    @id @default(uuid())
+  schoolId     String    @map("school_id")
+  studentId    String    @map("student_id")
+  student      Student   @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  name         String
+  // DATE: the day it was given, a calendar day with no time of day.
+  givenOn      DateTime  @map("given_on") @db.Date
+  // Set when a document is attached: its real type, read from its bytes.
+  documentExt  String?   @map("document_ext")
+  documentSize Int?      @map("document_size")
+  recordedBy   String    @map("recorded_by")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  withdrawnAt  DateTime? @map("withdrawn_at")
+  withdrawnBy  String?   @map("withdrawn_by")
+
+  @@index([schoolId, studentId])
+  @@map("health_vaccinations")
 }

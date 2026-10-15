@@ -2,9 +2,14 @@ import { Injectable } from "@nestjs/common";
 
 import { withGuardian, withTenant } from "@school-kit/db";
 import {
+  ConflictError,
   NotFoundError,
   ValidationError,
   HEALTH_PROFILE_FIELDS,
+  type CreateVaccinationInput,
+  type HealthDocumentUrlDto,
+  type HealthVaccinationDto,
+  type PortalVaccinationDto,
   type HealthProfileDto,
   type HealthProfileFieldsDto,
   type HealthStudentListQuery,
@@ -18,6 +23,9 @@ import {
 import type { AuthContext } from "../../common/auth/auth-context.js";
 import type { GuardianAuthContext } from "../../common/auth/guardian-auth-context.js";
 import { assertUserActiveAndHasOneOf, getActiveUserRoleKeys } from "../../common/auth/role-check.js";
+import { assertPrivateFile, PRIVATE_FILE_URL_TTL_SECONDS } from "../../common/storage/private-file.js";
+import { StorageService } from "../../common/storage/storage.service.js";
+import type { PrivateFileExt } from "../../common/storage/storage.types.js";
 import { assertTeachesStudent } from "../behaviour/teaches-student.js";
 import { getTeacherScope } from "../teacher-scope/teacher-scope.helper.js";
 
@@ -37,6 +45,11 @@ const AUDIT = {
   update: "health.update",
   noteRead: "health.note.read",
   portalRead: "health.portal.read",
+  vaccinationCreate: "health.vaccination.create",
+  vaccinationWithdraw: "health.vaccination.withdraw",
+  documentUpload: "health.document.upload",
+  documentRead: "health.document.read",
+  portalDocumentRead: "health.portal.document.read",
 } as const;
 
 const RECORD_ROLES = ["owner", "admin", "health_officer"];
@@ -73,8 +86,13 @@ function fieldsOf(row: HealthProfileFieldsDto | null): HealthProfileFieldsDto {
   };
 }
 
+const docType = (ext: string | null): "image" | "pdf" | null => (ext === null ? null : ext === "pdf" ? "pdf" : "image");
+const asIsoDate = (value: Date): string => value.toISOString().slice(0, 10);
+
 @Injectable()
 export class HealthService {
+  constructor(private readonly storage: StorageService) {}
+
   // =========================================================================
   // GET /health/students — the Health page's list: names and flags only
   // =========================================================================
@@ -297,8 +315,182 @@ export class HealthService {
             metadata: { studentId, principal: "guardian" },
           },
         });
-        return { ...fieldsOf(row), updatedAt: row?.updatedAt ?? null };
+        const vaccinations = await db2.healthVaccination.findMany({
+          where: { studentId, withdrawnAt: null },
+          orderBy: [{ givenOn: "desc" }, { createdAt: "desc" }],
+        });
+        return {
+          ...fieldsOf(row),
+          updatedAt: row?.updatedAt ?? null,
+          vaccinations: vaccinations.map(
+            (v): PortalVaccinationDto => ({ id: v.id, name: v.name, givenOn: asIsoDate(v.givenOn), documentType: docType(v.documentExt) }),
+          ),
+        };
       }),
+    );
+  }
+
+  // =========================================================================
+  // Phase 9 / CP3.2 — vaccinations and their documents (F1)
+  // =========================================================================
+
+  /** POST /health/students/:id/vaccinations */
+  async createVaccination(
+    authCtx: AuthContext,
+    studentId: string,
+    input: CreateVaccinationInput,
+    reqCtx: RequestContext,
+  ): Promise<HealthProfileDto> {
+    await assertUserActiveAndHasOneOf(authCtx, RECORD_ROLES);
+    return withTenant(authCtx.schoolId, async (db) => {
+      const student = await db.student.findUnique({ where: { id: studentId }, select: { id: true } });
+      if (!student) throw new NotFoundError("That student could not be found.");
+      const created = await db.healthVaccination.create({
+        data: {
+          schoolId: authCtx.schoolId,
+          studentId,
+          name: input.name,
+          givenOn: new Date(`${input.givenOn}T00:00:00.000Z`),
+          recordedBy: authCtx.userId,
+        },
+        select: { id: true },
+      });
+      // The vaccine's name is health data too: it stays out of the audit log.
+      await db.auditLog.create({
+        data: {
+          schoolId: authCtx.schoolId,
+          userId: authCtx.userId,
+          action: AUDIT.vaccinationCreate,
+          entityType: "health_vaccination",
+          entityId: created.id,
+          ipAddress: reqCtx.ipAddress,
+          metadata: { studentId, givenOn: input.givenOn },
+        },
+      });
+      return this.readProfile(db, studentId);
+    });
+  }
+
+  /** POST /health/vaccinations/:id/withdraw — kept, marked withdrawn. */
+  async withdrawVaccination(authCtx: AuthContext, id: string, reqCtx: RequestContext): Promise<HealthProfileDto> {
+    await assertUserActiveAndHasOneOf(authCtx, RECORD_ROLES);
+    return withTenant(authCtx.schoolId, async (db) => {
+      const row = await db.healthVaccination.findUnique({ where: { id } });
+      if (!row) throw new NotFoundError("That vaccination could not be found.");
+      if (row.withdrawnAt) throw new ConflictError("VACCINATION_ALREADY_WITHDRAWN", "That vaccination was already withdrawn.");
+      await db.healthVaccination.update({ where: { id }, data: { withdrawnAt: new Date(), withdrawnBy: authCtx.userId } });
+      await db.auditLog.create({
+        data: {
+          schoolId: authCtx.schoolId,
+          userId: authCtx.userId,
+          action: AUDIT.vaccinationWithdraw,
+          entityType: "health_vaccination",
+          entityId: id,
+          ipAddress: reqCtx.ipAddress,
+          metadata: { studentId: row.studentId },
+        },
+      });
+      return this.readProfile(db, row.studentId);
+    });
+  }
+
+  /**
+   * POST /health/vaccinations/:id/document — attach or replace the document.
+   * Its type is read from the file's bytes (F1). A replacement of a different
+   * type deletes the old object, since the key carries the extension.
+   */
+  async uploadDocument(
+    authCtx: AuthContext,
+    id: string,
+    file: { buffer: Buffer },
+    reqCtx: RequestContext,
+  ): Promise<HealthProfileDto> {
+    await assertUserActiveAndHasOneOf(authCtx, RECORD_ROLES);
+    const kind = assertPrivateFile(file.buffer);
+    const row = await withTenant(authCtx.schoolId, (db) => db.healthVaccination.findUnique({ where: { id } }));
+    if (!row) throw new NotFoundError("That vaccination could not be found.");
+    if (row.withdrawnAt) throw new ConflictError("VACCINATION_WITHDRAWN", "That vaccination was withdrawn.");
+
+    await this.storage.put(authCtx.schoolId, { kind: "health-document", documentId: id, ext: kind.ext }, file.buffer, kind.mime);
+    if (row.documentExt && row.documentExt !== kind.ext) {
+      await this.storage.delete(authCtx.schoolId, {
+        kind: "health-document",
+        documentId: id,
+        ext: row.documentExt as PrivateFileExt,
+      });
+    }
+    return withTenant(authCtx.schoolId, async (db) => {
+      await db.healthVaccination.update({ where: { id }, data: { documentExt: kind.ext, documentSize: file.buffer.length } });
+      await db.auditLog.create({
+        data: {
+          schoolId: authCtx.schoolId,
+          userId: authCtx.userId,
+          action: AUDIT.documentUpload,
+          entityType: "health_vaccination",
+          entityId: id,
+          ipAddress: reqCtx.ipAddress,
+          metadata: { studentId: row.studentId, type: kind.ext, size: file.buffer.length, replaced: row.documentExt !== null },
+        },
+      });
+      return this.readProfile(db, row.studentId);
+    });
+  }
+
+  /** GET /health/vaccinations/:id/document — a five-minute link, audited. */
+  async documentUrl(authCtx: AuthContext, id: string, reqCtx: RequestContext): Promise<HealthDocumentUrlDto> {
+    await assertUserActiveAndHasOneOf(authCtx, RECORD_ROLES);
+    return withTenant(authCtx.schoolId, async (db) => {
+      const row = await db.healthVaccination.findUnique({ where: { id } });
+      if (!row || !row.documentExt) throw new NotFoundError("There is no document for that vaccination.");
+      await db.auditLog.create({
+        data: {
+          schoolId: authCtx.schoolId,
+          userId: authCtx.userId,
+          action: AUDIT.documentRead,
+          entityType: "health_vaccination",
+          entityId: id,
+          ipAddress: reqCtx.ipAddress,
+          metadata: { studentId: row.studentId },
+        },
+      });
+      return { url: await this.signDocument(authCtx.schoolId, id, row.documentExt) };
+    });
+  }
+
+  /** GET /portal/students/:studentId/vaccinations/:id/document — the parent's link. */
+  async documentUrlForGuardian(
+    guardianCtx: GuardianAuthContext,
+    studentId: string,
+    id: string,
+  ): Promise<HealthDocumentUrlDto> {
+    return withTenant(guardianCtx.schoolId, (db) =>
+      withGuardian(guardianCtx.guardianId, studentId, db, async (db2) => {
+        const row = await db2.healthVaccination.findUnique({ where: { id } });
+        // The vaccination must be this child's, live, and have a document;
+        // anything else reads as not found.
+        if (!row || row.studentId !== studentId || row.withdrawnAt || !row.documentExt) {
+          throw new NotFoundError("There is no document for that vaccination.");
+        }
+        await db2.auditLog.create({
+          data: {
+            schoolId: guardianCtx.schoolId,
+            userId: guardianCtx.guardianId,
+            action: AUDIT.portalDocumentRead,
+            entityType: "health_vaccination",
+            entityId: id,
+            metadata: { studentId, principal: "guardian" },
+          },
+        });
+        return { url: await this.signDocument(guardianCtx.schoolId, id, row.documentExt) };
+      }),
+    );
+  }
+
+  private signDocument(schoolId: string, id: string, ext: string): Promise<string> {
+    return this.storage.signUrl(
+      schoolId,
+      { kind: "health-document", documentId: id, ext: ext as PrivateFileExt },
+      PRIVATE_FILE_URL_TTL_SECONDS,
     );
   }
 
@@ -326,7 +518,26 @@ export class HealthService {
     const editor = profile?.updatedBy
       ? await db.user.findUnique({ where: { id: profile.updatedBy }, select: { firstName: true, lastName: true } })
       : null;
+    const vaccinations = await db.healthVaccination.findMany({
+      where: { studentId },
+      orderBy: [{ givenOn: "desc" }, { createdAt: "desc" }],
+    });
+    const recorders = await db.user.findMany({
+      where: { id: { in: [...new Set(vaccinations.map((v) => v.recordedBy))] } },
+      select: { id: true, firstName: true, lastName: true },
+    });
+    const recorder = new Map(recorders.map((u) => [u.id, fullName(u)]));
     return {
+      vaccinations: vaccinations.map(
+        (v): HealthVaccinationDto => ({
+          id: v.id,
+          name: v.name,
+          givenOn: asIsoDate(v.givenOn),
+          documentType: docType(v.documentExt),
+          recordedByName: recorder.get(v.recordedBy) ?? null,
+          withdrawnAt: v.withdrawnAt,
+        }),
+      ),
       studentId: student.id,
       studentName: fullName(student),
       admissionNumber: student.admissionNumber,

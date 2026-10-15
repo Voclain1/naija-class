@@ -1,4 +1,6 @@
 import type {
+  CreateVaccinationInput,
+  HealthDocumentUrlDto,
   HealthProfileDto,
   HealthStudentListResponse,
   TeacherHealthNoteForStudentDto,
@@ -7,6 +9,7 @@ import type {
 } from "@school-kit/types";
 
 import { apiFetch } from "./client";
+import { uploadMultipart } from "./native-upload";
 
 // Phase 9 / CP3.1 — health records (docs/modules/phase-9.md §10). The record
 // routes are owner, admin and Health officer; the note routes return the
@@ -34,4 +37,31 @@ export function staffHealthNote(studentId: string): Promise<TeacherHealthNoteFor
 
 export function staffClassHealthNotes(armId: string): Promise<TeacherHealthNotesResponse> {
   return apiFetch<TeacherHealthNotesResponse>(`/health/teacher-notes?armId=${encodeURIComponent(armId)}`);
+}
+
+// Phase 9 / CP3.2 — vaccinations and their documents (F1).
+
+export function addStaffVaccination(studentId: string, input: CreateVaccinationInput): Promise<HealthProfileDto> {
+  return apiFetch<HealthProfileDto>(`/health/students/${encodeURIComponent(studentId)}/vaccinations`, {
+    method: "POST",
+    body: input,
+  });
+}
+
+export function withdrawStaffVaccination(id: string): Promise<HealthProfileDto> {
+  return apiFetch<HealthProfileDto>(`/health/vaccinations/${encodeURIComponent(id)}/withdraw`, { method: "POST" });
+}
+
+/** Streams the file from disk through the native uploader (see native-upload.ts). */
+export function uploadStaffVaccinationDocument(id: string, fileUri: string, mimeType: string): Promise<HealthProfileDto> {
+  return uploadMultipart<HealthProfileDto>(`/health/vaccinations/${encodeURIComponent(id)}/document`, {
+    fileUri,
+    fieldName: "file",
+    mimeType,
+    parameters: {},
+  });
+}
+
+export function staffVaccinationDocumentUrl(id: string): Promise<HealthDocumentUrlDto> {
+  return apiFetch<HealthDocumentUrlDto>(`/health/vaccinations/${encodeURIComponent(id)}/document`);
 }
