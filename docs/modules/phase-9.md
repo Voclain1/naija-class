@@ -1256,8 +1256,9 @@ Each slice is one PR, merged before the next starts.
 
 ## 10. CP3 plan-first — Health records and sickbay
 
-Written 2026-10-15, after the owner answered Q3. Nothing here is built until the
-owner approves this section.
+Written 2026-10-15, after the owner answered Q3. **Owner, 2026-10-15: approved
+as written**, including CP3-D6 (SMS only when the child is sent home) and
+CP3-D7 (F1 built here).
 
 ### 10.1 What exists today (read from the code)
 
