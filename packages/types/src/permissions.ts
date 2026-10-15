@@ -683,6 +683,10 @@ export const HOMEWORK_READ_PERMISSIONS = ["homework.read"] as const;
 // parent-facing endpoint (C14).
 export const BEHAVIOUR_PERMISSIONS_LIST = ["behaviour.read", "behaviour.create"] as const;
 
+// Phase 9 / CP2.1 — the school's behaviour settings and points categories
+// (docs/modules/phase-9.md §9 CP2-D5). Owner (wildcard) and admin only.
+export const BEHAVIOUR_ADMIN_PERMISSIONS = ["behaviour.manage"] as const;
+
 // Phase 8 / CP2 — Recording Completeness (docs/modules/phase-8.md §16 D39).
 // Owner/admin only. Named `reports.*`, deliberately not `report-card.*`.
 //
@@ -799,6 +803,7 @@ export const ALL_PERMISSIONS = [
   ...ANNOUNCEMENT_MANAGE_PERMISSIONS,
   ...HOMEWORK_MANAGE_PERMISSIONS,
   ...BEHAVIOUR_PERMISSIONS_LIST,
+  ...BEHAVIOUR_ADMIN_PERMISSIONS,
   ...REPORTS_PERMISSIONS,
   ...TABLE_EXPORT_PERMISSIONS,
   ...TIMETABLE_PERMISSIONS,

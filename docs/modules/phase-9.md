@@ -997,3 +997,67 @@ Each slice is one PR, merged before the next starts.
   contact the school, which is what C14's "right of reply" needs until a real
   design exists.
 - No printed letter. The school can still print one from its own records.
+
+### 9.8 As built — CP2.1, behaviour points (2026-10-15)
+
+- **Data:** migration `20261019120000_behaviour_points` adds:
+  - `schools.behaviour_points_enabled`, default false;
+  - the `behaviour_categories` table (RLS forced, unique name per school);
+  - `category_id` and `points` on `behaviour_records`.
+
+  Two `CHECK`s hold the rules in the database: a commendation's value is 1 to
+  10 and a concern's −10 to −1, and a record carries points only together
+  with a category. No SECURITY DEFINER function; the count stays 23.
+- **Permission:** `behaviour.manage` is new, held by admin (owner by
+  wildcard). Teacher and bursar never hold it, which
+  `permissions-coverage.spec.ts` pins.
+- **API**, on the existing `/behaviour` controller:
+  - `GET /behaviour/settings` (`behaviour.read`) returns the switch and every
+    category, so a writer can offer them.
+  - `PATCH /behaviour/settings`, `POST /behaviour/categories` and
+    `PATCH /behaviour/categories/:id` need `behaviour.manage`.
+  - `POST /behaviour` takes an optional `categoryId`. It is refused while
+    points are off, for a switched-off category, or for a category of the
+    other kind. The value is copied onto the record.
+  - `GET /behaviour?studentId=` adds each record's category name and points,
+    and `termPoints`: the sum of live records dated inside the current term.
+    It is null when points are off or there is no current term.
+  - Every settings and category change is audited with before and after.
+- **Categories:**
+  - A category's kind cannot change; its name and value can, and past records
+    keep the value they copied.
+  - A category is switched off rather than deleted, because records point at
+    it.
+  - Names are unique per school, ignoring case.
+  - Sorting is commendations first, then the larger value, then the name. The
+    planned manual order (§9.4) was left out: the fixed order is enough for a
+    short list.
+- **Website:**
+  - **Settings → Behaviour** has the switch, the category list (edit, switch
+    off, switch on) and an add form. Points are entered as a size from 1 to
+    10; the sign comes from the kind.
+  - **The Behaviour tab** (admin and teacher pages) offers the categories of
+    the chosen kind and shows each record's category with its points, plus
+    "+3 points this term" beside the counts.
+- **App:**
+  - The staff behaviour card offers the categories as choices, shows each
+    record's category and the term total, and uses the new staff-prefixed
+    key `staffBehaviourSettings`.
+  - Categories are managed on the website only.
+  - All chip pickers in the app now wrap a long label inside the chip instead
+    of running off the screen. This was found at 390 px with a long category
+    name.
+- **Tests:**
+  - 11 new service tests:
+    - the value is copied;
+    - the total counts only live, in-term records;
+    - points off, a switched-off category and the wrong kind are refused;
+    - the sign stays with the kind;
+    - names are unique;
+    - a teacher cannot manage;
+    - another school's category is refused.
+  - Permission coverage.
+  - e2e `behaviour-points.spec.ts`: the owner sets up categories and a
+    teacher scores a child.
+  - The website screens (390 px and 1280 px) and the app card (390 px) were
+    checked with long names, and nothing runs off the screen.

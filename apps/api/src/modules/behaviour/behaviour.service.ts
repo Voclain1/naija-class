@@ -5,6 +5,12 @@ import {
   ConflictError,
   ForbiddenError,
   NotFoundError,
+  ValidationError,
+  type BehaviourCategoryDto,
+  type BehaviourSettingsDto,
+  type CreateBehaviourCategoryInput,
+  type UpdateBehaviourCategoryInput,
+  type UpdateBehaviourSettingsInput,
   type BehaviourListQuery,
   type BehaviourListResponse,
   type BehaviourRecordDto,
@@ -34,7 +40,20 @@ const AUDIT = {
   create: "behaviour.create",
   withdraw: "behaviour.withdraw",
   read: "behaviour.read",
+  settings: "behaviour.settings.update",
+  categoryCreate: "behaviour.category.create",
+  categoryUpdate: "behaviour.category.update",
 } as const;
+
+type Db = Parameters<Parameters<typeof withTenant>[1]>[0];
+
+const toCategoryDto = (row: { id: string; name: string; kind: BehaviourCategoryDto["kind"]; points: number; active: boolean }): BehaviourCategoryDto => ({
+  id: row.id,
+  name: row.name,
+  kind: row.kind,
+  points: row.points,
+  active: row.active,
+});
 
 interface RequestContext {
   ipAddress: string | null;
@@ -64,6 +83,8 @@ export class BehaviourService {
 
       if (!isAdmin) await this.assertTeachesStudent(db, authCtx.userId, dto.studentId);
 
+      const category = dto.categoryId ? await this.usableCategory(db, authCtx.schoolId, dto.categoryId, dto.kind) : null;
+
       const created = await db.behaviourRecord.create({
         data: {
           schoolId: authCtx.schoolId,
@@ -72,6 +93,10 @@ export class BehaviourService {
           note: dto.note,
           occurredOn: new Date(`${dto.occurredOn}T00:00:00.000Z`),
           recordedBy: authCtx.userId,
+          // CP2-D1: the value is COPIED, so a later change to the category
+          // never rewrites this record or the term it counted towards.
+          categoryId: category?.id ?? null,
+          points: category?.points ?? null,
         },
         select: { id: true, createdAt: true },
       });
@@ -88,7 +113,12 @@ export class BehaviourService {
           entityType: "behaviour",
           entityId: created.id,
           ipAddress: reqCtx.ipAddress,
-          metadata: { studentId: dto.studentId, kind: dto.kind, occurredOn: dto.occurredOn },
+          metadata: {
+            studentId: dto.studentId,
+            kind: dto.kind,
+            occurredOn: dto.occurredOn,
+            ...(category ? { categoryId: category.id, points: category.points } : {}),
+          },
         },
       });
 
@@ -106,6 +136,8 @@ export class BehaviourService {
         recordedByName: author ? `${author.firstName} ${author.lastName}` : null,
         createdAt: created.createdAt,
         withdrawnAt: null,
+        categoryName: category?.name ?? null,
+        points: category?.points ?? null,
       };
     });
   }
@@ -128,6 +160,7 @@ export class BehaviourService {
         where: { studentId: query.studentId },
         orderBy: [{ occurredOn: "desc" }, { createdAt: "desc" }],
         take: 200,
+        include: { category: { select: { name: true } } },
       });
 
       // READING is audited too, not only writing — the same treatment the
@@ -161,6 +194,8 @@ export class BehaviourService {
         recordedByName: name.get(row.recordedBy) ?? null,
         createdAt: row.createdAt,
         withdrawnAt: row.withdrawnAt,
+        categoryName: row.category?.name ?? null,
+        points: row.points,
       }));
 
       // Withdrawn records are shown (struck through by the UI) but never
@@ -171,6 +206,7 @@ export class BehaviourService {
         data,
         commendations: live.filter((row) => row.kind === "COMMENDATION").length,
         concerns: live.filter((row) => row.kind === "CONCERN").length,
+        termPoints: await this.termPoints(db, authCtx.schoolId, query.studentId),
       };
     });
   }
@@ -197,6 +233,7 @@ export class BehaviourService {
       const updated = await db.behaviourRecord.update({
         where: { id },
         data: { withdrawnAt: new Date(), withdrawnBy: authCtx.userId },
+        include: { category: { select: { name: true } } },
       });
       await db.auditLog.create({
         data: {
@@ -223,8 +260,192 @@ export class BehaviourService {
         recordedByName: author ? `${author.firstName} ${author.lastName}` : null,
         createdAt: updated.createdAt,
         withdrawnAt: updated.withdrawnAt,
+        categoryName: updated.category?.name ?? null,
+        points: updated.points,
       };
     });
+  }
+
+  // =========================================================================
+  // Phase 9 / CP2.1 — points and categories (docs/modules/phase-9.md §9 CP2-D1)
+  // =========================================================================
+
+  /** GET /behaviour/settings — every writer needs the categories to offer them. */
+  async getSettings(authCtx: AuthContext): Promise<BehaviourSettingsDto> {
+    await assertUserActiveAndHasOneOf(authCtx, ["owner", "admin", "teacher"]);
+    return withTenant(authCtx.schoolId, (db) => this.readSettings(db, authCtx.schoolId));
+  }
+
+  /** PATCH /behaviour/settings — the school's points switch. */
+  async updateSettings(
+    authCtx: AuthContext,
+    dto: UpdateBehaviourSettingsInput,
+    reqCtx: RequestContext,
+  ): Promise<BehaviourSettingsDto> {
+    await assertUserActiveAndHasOneOf(authCtx, ["owner", "admin"]);
+    return withTenant(authCtx.schoolId, async (db) => {
+      await db.school.update({ where: { id: authCtx.schoolId }, data: { behaviourPointsEnabled: dto.pointsEnabled } });
+      await db.auditLog.create({
+        data: {
+          schoolId: authCtx.schoolId,
+          userId: authCtx.userId,
+          action: AUDIT.settings,
+          entityType: "school",
+          entityId: authCtx.schoolId,
+          ipAddress: reqCtx.ipAddress,
+          metadata: { pointsEnabled: dto.pointsEnabled },
+        },
+      });
+      return this.readSettings(db, authCtx.schoolId);
+    });
+  }
+
+  /** POST /behaviour/categories */
+  async createCategory(
+    authCtx: AuthContext,
+    dto: CreateBehaviourCategoryInput,
+    reqCtx: RequestContext,
+  ): Promise<BehaviourCategoryDto> {
+    await assertUserActiveAndHasOneOf(authCtx, ["owner", "admin"]);
+    return withTenant(authCtx.schoolId, async (db) => {
+      await this.assertNameFree(db, dto.name, null);
+      const created = await db.behaviourCategory.create({
+        data: { schoolId: authCtx.schoolId, name: dto.name, kind: dto.kind, points: dto.points },
+      });
+      await db.auditLog.create({
+        data: {
+          schoolId: authCtx.schoolId,
+          userId: authCtx.userId,
+          action: AUDIT.categoryCreate,
+          entityType: "behaviour_category",
+          entityId: created.id,
+          ipAddress: reqCtx.ipAddress,
+          metadata: { name: created.name, kind: created.kind, points: created.points },
+        },
+      });
+      return toCategoryDto(created);
+    });
+  }
+
+  /**
+   * PATCH /behaviour/categories/:id — rename, revalue, or switch off.
+   *
+   * The kind cannot change (the DTO has no field for it), and the new value
+   * must keep the kind's sign. Past records keep the value they copied.
+   */
+  async updateCategory(
+    authCtx: AuthContext,
+    id: string,
+    dto: UpdateBehaviourCategoryInput,
+    reqCtx: RequestContext,
+  ): Promise<BehaviourCategoryDto> {
+    await assertUserActiveAndHasOneOf(authCtx, ["owner", "admin"]);
+    return withTenant(authCtx.schoolId, async (db) => {
+      const existing = await db.behaviourCategory.findUnique({ where: { id } });
+      if (!existing) throw new NotFoundError("That category could not be found.");
+      if (dto.points !== undefined) {
+        const ok = existing.kind === "COMMENDATION" ? dto.points >= 1 : dto.points <= -1;
+        if (!ok) {
+          throw new ValidationError(
+            existing.kind === "COMMENDATION"
+              ? "A commendation scores 1 to 10 points."
+              : "A concern scores −1 to −10 points.",
+          );
+        }
+      }
+      if (dto.name !== undefined) await this.assertNameFree(db, dto.name, id);
+      const updated = await db.behaviourCategory.update({
+        where: { id },
+        data: {
+          ...(dto.name !== undefined ? { name: dto.name } : {}),
+          ...(dto.points !== undefined ? { points: dto.points } : {}),
+          ...(dto.active !== undefined ? { active: dto.active } : {}),
+        },
+      });
+      await db.auditLog.create({
+        data: {
+          schoolId: authCtx.schoolId,
+          userId: authCtx.userId,
+          action: AUDIT.categoryUpdate,
+          entityType: "behaviour_category",
+          entityId: id,
+          ipAddress: reqCtx.ipAddress,
+          metadata: {
+            before: { name: existing.name, points: existing.points, active: existing.active },
+            after: { name: updated.name, points: updated.points, active: updated.active },
+          },
+        },
+      });
+      return toCategoryDto(updated);
+    });
+  }
+
+  private async readSettings(db: Db, schoolId: string): Promise<BehaviourSettingsDto> {
+    const school = await db.school.findUnique({ where: { id: schoolId }, select: { behaviourPointsEnabled: true } });
+    const categories = await db.behaviourCategory.findMany();
+    // Commendations first (C16), then the larger value, then the name.
+    const sorted = [...categories].sort(
+      (a, b) =>
+        (a.kind === b.kind ? 0 : a.kind === "COMMENDATION" ? -1 : 1) ||
+        Math.abs(b.points) - Math.abs(a.points) ||
+        a.name.localeCompare(b.name),
+    );
+    return { pointsEnabled: school?.behaviourPointsEnabled ?? false, categories: sorted.map(toCategoryDto) };
+  }
+
+  /**
+   * The category a new record may use: the school must have points on, the
+   * category must be active, and its kind must be the record's kind (a
+   * "Helping others" commendation cannot score a concern).
+   */
+  private async usableCategory(
+    db: Db,
+    schoolId: string,
+    categoryId: string,
+    kind: BehaviourRecordDto["kind"],
+  ): Promise<{ id: string; name: string; points: number }> {
+    const school = await db.school.findUnique({ where: { id: schoolId }, select: { behaviourPointsEnabled: true } });
+    if (!school?.behaviourPointsEnabled) {
+      throw new ConflictError("BEHAVIOUR_POINTS_OFF", "Points are switched off for this school.");
+    }
+    const category = await db.behaviourCategory.findUnique({ where: { id: categoryId } });
+    if (!category || !category.active) throw new NotFoundError("That category could not be found.");
+    if (category.kind !== kind) {
+      throw new ValidationError(
+        kind === "COMMENDATION" ? "Choose a commendation category." : "Choose a concern category.",
+      );
+    }
+    return { id: category.id, name: category.name, points: category.points };
+  }
+
+  /**
+   * The student's points this term: live records dated inside the current
+   * term. Null when the school has points off or no current term, so a page
+   * never shows a misleading zero.
+   */
+  private async termPoints(db: Db, schoolId: string, studentId: string): Promise<number | null> {
+    const school = await db.school.findUnique({ where: { id: schoolId }, select: { behaviourPointsEnabled: true } });
+    if (!school?.behaviourPointsEnabled) return null;
+    const term = await db.term.findFirst({ where: { isCurrent: true }, select: { startDate: true, endDate: true } });
+    if (!term) return null;
+    const sum = await db.behaviourRecord.aggregate({
+      where: {
+        studentId,
+        withdrawnAt: null,
+        points: { not: null },
+        occurredOn: { gte: term.startDate, lte: term.endDate },
+      },
+      _sum: { points: true },
+    });
+    return sum._sum.points ?? 0;
+  }
+
+  private async assertNameFree(db: Db, name: string, exceptId: string | null): Promise<void> {
+    const clash = await db.behaviourCategory.findFirst({
+      where: { name: { equals: name, mode: "insensitive" }, ...(exceptId ? { id: { not: exceptId } } : {}) },
+      select: { id: true },
+    });
+    if (clash) throw new ConflictError("BEHAVIOUR_CATEGORY_EXISTS", "There is already a category with that name.");
   }
 
   // =========================================================================
@@ -239,7 +460,7 @@ export class BehaviourService {
    * child has no business writing about them.
    */
   private async assertTeachesStudent(
-    db: Parameters<Parameters<typeof withTenant>[1]>[0],
+    db: Db,
     teacherId: string,
     studentId: string,
   ): Promise<void> {

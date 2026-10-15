@@ -7,12 +7,13 @@ import {
   type BehaviourKind,
   type BehaviourListResponse,
   type BehaviourRecordDto,
+  type BehaviourSettingsDto,
 } from "@school-kit/types";
 
 import { Button } from "@/components/ui/button";
 import { InlineAlert } from "@/components/shared/inline-alert";
 import { ApiError } from "@/lib/api-client";
-import { createBehaviour, listBehaviour, withdrawBehaviour } from "@/lib/behaviour/behaviour-api";
+import { createBehaviour, getBehaviourSettings, listBehaviour, withdrawBehaviour } from "@/lib/behaviour/behaviour-api";
 
 // One child's behaviour record (docs/modules/the-school-day.md Part C).
 //
@@ -31,6 +32,10 @@ function isoToday(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+function signed(points: number): string {
+  return points > 0 ? `+${points}` : `−${Math.abs(points)}`;
+}
+
 function formatDay(iso: string): string {
   return new Date(`${iso}T00:00:00.000Z`).toLocaleDateString("en-NG", {
     weekday: "short",
@@ -47,6 +52,10 @@ export function BehaviourTab({ studentId }: { studentId: string }) {
 
   const [kind, setKind] = useState<BehaviourKind>("COMMENDATION");
   const [note, setNote] = useState("");
+  // Phase 9 / CP2.1: the school's points categories, when points are on.
+  // A failure to load them hides the picker rather than blocking a record.
+  const [settings, setSettings] = useState<BehaviourSettingsDto | null>(null);
+  const [categoryId, setCategoryId] = useState("");
   const [occurredOn, setOccurredOn] = useState(isoToday());
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -67,13 +76,30 @@ export function BehaviourTab({ studentId }: { studentId: string }) {
     void load();
   }, [load]);
 
+  useEffect(() => {
+    getBehaviourSettings()
+      .then(setSettings)
+      .catch(() => setSettings(null));
+  }, []);
+
+  const offered = settings?.pointsEnabled
+    ? settings.categories.filter((c) => c.active && c.kind === kind)
+    : [];
+
   async function save(event: React.FormEvent) {
     event.preventDefault();
     setSaveError(null);
     setSaving(true);
     try {
-      await createBehaviour({ studentId, kind, note: note.trim(), occurredOn });
+      await createBehaviour({
+        studentId,
+        kind,
+        note: note.trim(),
+        occurredOn,
+        ...(categoryId ? { categoryId } : {}),
+      });
       setNote("");
+      setCategoryId("");
       await load();
     } catch (e) {
       setSaveError(e instanceof ApiError ? e.message : "Could not save that record.");
@@ -117,12 +143,33 @@ export function BehaviourTab({ studentId }: { studentId: string }) {
                 name="kind"
                 value={option}
                 checked={kind === option}
-                onChange={() => setKind(option)}
+                onChange={() => {
+                  setKind(option);
+                  setCategoryId("");
+                }}
               />
               {option === "COMMENDATION" ? "Commendation" : "Concern"}
             </label>
           ))}
         </fieldset>
+
+        {offered.length > 0 && (
+          <label className="flex w-full max-w-sm flex-col gap-1 text-sm">
+            <span className="font-medium">Category (optional)</span>
+            <select
+              value={categoryId}
+              onChange={(e) => setCategoryId(e.target.value)}
+              className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+            >
+              <option value="">No category</option>
+              {offered.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name} ({signed(c.points)})
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
 
         <label className="flex flex-col gap-1 text-sm">
           <span className="font-medium">What happened</span>
@@ -168,6 +215,15 @@ export function BehaviourTab({ studentId }: { studentId: string }) {
             <p className="text-sm text-muted-foreground">
               {data.commendations} commendation{data.commendations === 1 ? "" : "s"} · {data.concerns} concern
               {data.concerns === 1 ? "" : "s"}
+              {data.termPoints !== null && (
+                <>
+                  {" · "}
+                  <span className="font-medium text-foreground">
+                    {data.termPoints === 0 ? "0" : signed(data.termPoints)} point
+                    {Math.abs(data.termPoints) === 1 ? "" : "s"} this term
+                  </span>
+                </>
+              )}
             </p>
           )}
         </div>
@@ -206,6 +262,13 @@ export function BehaviourTab({ studentId }: { studentId: string }) {
                         ].join(" ")}
                       >
                         {item.kind === "CONCERN" ? "Concern" : "Commendation"}
+                        {item.categoryName !== null && (
+                          <span className="font-normal">
+                            {" · "}
+                            {item.categoryName}
+                            {item.points !== null ? ` (${signed(item.points)})` : ""}
+                          </span>
+                        )}
                       </p>
                       <p className="text-xs text-muted-foreground">
                         {formatDay(item.occurredOn)} · {item.recordedByName ?? "Staff"}

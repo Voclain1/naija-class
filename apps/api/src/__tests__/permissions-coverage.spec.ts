@@ -25,6 +25,7 @@ import { describe, expect, it } from "vitest";
 import { PERMISSIONS_METADATA_KEY } from "../common/auth/permissions.decorator";
 
 import { AcademicYearsController } from "../modules/academic-years/academic-years.controller";
+import { BehaviourController } from "../modules/behaviour/behaviour.controller";
 import { CalendarController } from "../modules/calendar/calendar.controller";
 import { ReportsController } from "../modules/reports/reports.controller";
 import { TableExportsController } from "../modules/reports/table-exports.controller";
@@ -1365,5 +1366,31 @@ describe("CBT1 RBAC coverage: online exam sittings", () => {
     }
     const bursar = new Set(roleSeed("bursar").permissions);
     for (const p of ["cbt.read", "cbt.manage"]) expect(bursar.has(p), `bursar should NOT have ${p}`).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 9 / CP2.1 — behaviour points (docs/modules/phase-9.md §9 CP2-D5).
+// Reading the settings is for every writer; changing them is owner/admin only.
+// ---------------------------------------------------------------------------
+describe("Phase 9 CP2.1 RBAC coverage: behaviour points", () => {
+  const perms = (handler: string): string[] =>
+    Reflect.getMetadata(PERMISSIONS_METADATA_KEY, (BehaviourController.prototype as unknown as Record<string, object>)[handler]!) as string[];
+
+  it("the settings write and both category writes need behaviour.manage", () => {
+    for (const handler of ["updateSettings", "createCategory", "updateCategory"]) {
+      expect(perms(handler), handler).toEqual(["behaviour.manage"]);
+    }
+  });
+
+  it("reading the settings needs only behaviour.read", () => {
+    expect(perms("settings")).toEqual(["behaviour.read"]);
+  });
+
+  it("admin holds behaviour.manage; teacher and bursar never do", () => {
+    expect(new Set(roleSeed("admin").permissions).has("behaviour.manage")).toBe(true);
+    for (const key of ["teacher", "bursar"]) {
+      expect(new Set(roleSeed(key).permissions).has("behaviour.manage"), `${key} must not manage behaviour`).toBe(false);
+    }
   });
 });

@@ -6,6 +6,7 @@ import { BEHAVIOUR_NOTE_MAX, type BehaviourKind, type BehaviourRecordDto } from 
 import {
   createStaffBehaviour,
   staffBehaviour,
+  staffBehaviourSettings,
   withdrawStaffBehaviour,
 } from "../lib/api/staff-behaviour";
 import { queryKeys } from "../lib/query/keys";
@@ -32,6 +33,14 @@ const KIND_OPTIONS: readonly { value: BehaviourKind; label: string }[] = [
   { value: "CONCERN", label: "Concern" },
 ];
 
+/** "+2" or "−1" — a real minus sign, as on the website. */
+export function signedPoints(points: number): string {
+  return points > 0 ? `+${points}` : points < 0 ? `−${Math.abs(points)}` : "0";
+}
+
+/** No category is a real choice, so it is a chip of its own. */
+const NO_CATEGORY = "none";
+
 function when(iso: string): string {
   return new Date(`${iso}T00:00:00.000Z`).toLocaleDateString("en-NG", {
     weekday: "short",
@@ -57,8 +66,24 @@ export function BehaviourCard({
   const [open, setOpen] = useState(false);
   const [kind, setKind] = useState<BehaviourKind>("COMMENDATION");
   const [note, setNote] = useState("");
+  const [categoryId, setCategoryId] = useState<string>(NO_CATEGORY);
 
   const key = queryKeys.staffBehaviour(schoolId, userId, studentId);
+  // Phase 9 / CP2.1. A failure here hides the category chips; it never
+  // blocks writing a record.
+  const settings = useQuery({
+    queryKey: queryKeys.staffBehaviourSettings(schoolId, userId),
+    queryFn: staffBehaviourSettings,
+    enabled,
+    staleTime: 5 * 60_000,
+  });
+  const offered = settings.data?.pointsEnabled
+    ? settings.data.categories.filter((c) => c.active && c.kind === kind)
+    : [];
+  const categoryOptions = [
+    { value: NO_CATEGORY, label: "No category" },
+    ...offered.map((c) => ({ value: c.id, label: `${c.name} (${signedPoints(c.points)})` })),
+  ];
   const list = useQuery({
     queryKey: key,
     queryFn: () => staffBehaviour(studentId),
@@ -69,9 +94,17 @@ export function BehaviourCard({
   const occurredOn = serverToday() ?? new Date().toISOString().slice(0, 10);
 
   const save = useMutation({
-    mutationFn: () => createStaffBehaviour({ studentId, kind, note: note.trim(), occurredOn }),
+    mutationFn: () =>
+      createStaffBehaviour({
+        studentId,
+        kind,
+        note: note.trim(),
+        occurredOn,
+        ...(categoryId !== NO_CATEGORY ? { categoryId } : {}),
+      }),
     onSuccess: () => {
       setNote("");
+      setCategoryId(NO_CATEGORY);
       setOpen(false);
       void queryClient.invalidateQueries({ queryKey: key });
     },
@@ -110,6 +143,11 @@ export function BehaviourCard({
           </Label>
         ) : null}
       </View>
+      {data && data.termPoints !== null ? (
+        <Body>
+          {signedPoints(data.termPoints)} point{Math.abs(data.termPoints) === 1 ? "" : "s"} this term
+        </Body>
+      ) : null}
 
       {/* Said plainly, on the screen, because a teacher deciding how frankly to
           write needs to know who can read it. */}
@@ -149,6 +187,12 @@ export function BehaviourCard({
                 </Text>
                 <Label>{when(item.occurredOn)}</Label>
               </View>
+              {item.categoryName !== null ? (
+                <Caption>
+                  {item.categoryName}
+                  {item.points !== null ? ` (${signedPoints(item.points)})` : ""}
+                </Caption>
+              ) : null}
               <Body muted={withdrawn}>{item.note}</Body>
               <Label>
                 {item.recordedByName ?? "Staff"}
@@ -164,7 +208,18 @@ export function BehaviourCard({
 
       {open ? (
         <View style={styles.form}>
-          <ChoiceChips label="What kind" options={KIND_OPTIONS} value={kind} onChange={setKind} />
+          <ChoiceChips
+            label="What kind"
+            options={KIND_OPTIONS}
+            value={kind}
+            onChange={(next) => {
+              setKind(next);
+              setCategoryId(NO_CATEGORY);
+            }}
+          />
+          {offered.length > 0 ? (
+            <ChoiceChips label="Category" options={categoryOptions} value={categoryId} onChange={setCategoryId} />
+          ) : null}
           <TextField
             label="What happened"
             value={note}

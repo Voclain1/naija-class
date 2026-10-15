@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { basePrisma, withTenant } from "@school-kit/db";
-import { ConflictError, ForbiddenError, NotFoundError } from "@school-kit/types";
+import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from "@school-kit/types";
 
 import { AuthService } from "../auth/auth.service";
 import { BehaviourService } from "./behaviour.service";
@@ -266,6 +266,130 @@ describe("BehaviourService (integration)", () => {
       // with a different retention.
       expect(JSON.stringify(audit.metadata)).not.toContain("nobody should find twice");
       expect(audit.metadata).toMatchObject({ kind: "CONCERN", studentId: A.mine });
+    });
+  });
+
+  // Phase 9 / CP2.1 — points (docs/modules/phase-9.md §9 CP2-D1). The rules
+  // first: the value is copied, the total counts only live records in the
+  // term, nothing works with points off, and a teacher cannot manage them.
+  describe("points", () => {
+    const owner = () => ctx(A.schoolId, A.ownerId);
+    let helping: { id: string };
+    let late: { id: string };
+
+    beforeAll(async () => {
+      helping = await service.createCategory(owner(), { name: "Helping others", kind: "COMMENDATION", points: 2 }, reqCtx);
+      late = await service.createCategory(owner(), { name: "Late to class", kind: "CONCERN", points: -1 }, reqCtx);
+    });
+
+    const scored = (over: Record<string, unknown>) =>
+      service.create(
+        owner(),
+        { studentId: A.notMine, kind: "COMMENDATION", note: "Scored.", occurredOn: "2026-10-01", ...over } as never,
+        reqCtx,
+      );
+
+    it("refuses a category while the school has points off", async () => {
+      await service.updateSettings(owner(), { pointsEnabled: false }, reqCtx);
+      await expect(scored({ categoryId: helping.id })).rejects.toBeInstanceOf(ConflictError);
+      const list = await service.listForStudent(owner(), { studentId: A.notMine }, reqCtx);
+      // No misleading zero when the school does not use points.
+      expect(list.termPoints).toBeNull();
+    });
+
+    it("copies the category's value, so a later change leaves old records alone", async () => {
+      await service.updateSettings(owner(), { pointsEnabled: true }, reqCtx);
+      const before = await service.listForStudent(owner(), { studentId: A.notMine }, reqCtx);
+      const row = await scored({ categoryId: helping.id });
+      expect(row.points).toBe(2);
+      expect(row.categoryName).toBe("Helping others");
+
+      await service.updateCategory(owner(), helping.id, { points: 5 }, reqCtx);
+      const after = await service.listForStudent(owner(), { studentId: A.notMine }, reqCtx);
+      expect(after.data.find((r) => r.id === row.id)?.points).toBe(2);
+      expect(after.termPoints).toBe((before.termPoints ?? 0) + 2);
+    });
+
+    it("counts only live records dated inside the current term", async () => {
+      const start = (await service.listForStudent(owner(), { studentId: A.notMine }, reqCtx)).termPoints ?? 0;
+      await scored({ kind: "CONCERN", categoryId: late.id }); // −1, in term
+      await scored({ kind: "CONCERN", categoryId: late.id, occurredOn: "2026-08-20" }); // before the term
+      const withdrawn = await scored({ kind: "CONCERN", categoryId: late.id });
+      await service.withdraw(owner(), withdrawn.id, reqCtx);
+      const list = await service.listForStudent(owner(), { studentId: A.notMine }, reqCtx);
+      expect(list.termPoints).toBe(start - 1);
+    });
+
+    it("refuses a category of the other kind", async () => {
+      await expect(scored({ kind: "CONCERN", categoryId: helping.id })).rejects.toBeInstanceOf(ValidationError);
+    });
+
+    it("refuses a switched-off category", async () => {
+      const old = await service.createCategory(owner(), { name: "Retired", kind: "COMMENDATION", points: 1 }, reqCtx);
+      await service.updateCategory(owner(), old.id, { active: false }, reqCtx);
+      await expect(scored({ categoryId: old.id })).rejects.toBeInstanceOf(NotFoundError);
+    });
+
+    it("keeps the sign with the kind when a value changes", async () => {
+      await expect(service.updateCategory(owner(), late.id, { points: 3 }, reqCtx)).rejects.toBeInstanceOf(
+        ValidationError,
+      );
+    });
+
+    it("refuses a second category with the same name, whatever its case", async () => {
+      await expect(
+        service.createCategory(owner(), { name: "helping OTHERS", kind: "COMMENDATION", points: 1 }, reqCtx),
+      ).rejects.toBeInstanceOf(ConflictError);
+    });
+
+    it("refuses a teacher managing categories or the switch", async () => {
+      const teacher = ctx(A.schoolId, A.teacherId);
+      await expect(
+        service.createCategory(teacher, { name: "Mine", kind: "COMMENDATION", points: 1 }, reqCtx),
+      ).rejects.toBeInstanceOf(ForbiddenError);
+      await expect(service.updateCategory(teacher, helping.id, { points: 3 }, reqCtx)).rejects.toBeInstanceOf(
+        ForbiddenError,
+      );
+      await expect(service.updateSettings(teacher, { pointsEnabled: false }, reqCtx)).rejects.toBeInstanceOf(
+        ForbiddenError,
+      );
+    });
+
+    it("lets a teacher read the categories, to offer them when writing", async () => {
+      const settings = await service.getSettings(ctx(A.schoolId, A.teacherId));
+      expect(settings.pointsEnabled).toBe(true);
+      expect(settings.categories.map((c) => c.name)).toEqual(expect.arrayContaining(["Helping others", "Late to class"]));
+      // Commendations first (C16).
+      expect(settings.categories[0]?.kind).toBe("COMMENDATION");
+    });
+
+    it("lets a teacher score a child they teach", async () => {
+      const row = await record(A.teacherId, { kind: "COMMENDATION", categoryId: helping.id, note: "Helped tidy up." });
+      expect(row.points).toBe(5);
+    });
+
+    it("refuses another school's category (RLS)", async () => {
+      const other = await new AuthService().signupOwner(
+        {
+          schoolName: `Behaviour other ${runId}`,
+          schoolSlug: `behaviour-other-${runId}`,
+          ownerFirstName: "Olu",
+          ownerLastName: "Other",
+          ownerEmail: `behaviour-other-${runId}@example.test`,
+          ownerPhone: `+23498${Math.floor(Math.random() * 100_000_000).toString().padStart(8, "0")}`,
+          password: "Correct-Horse-9",
+          ndprConsent: true,
+        },
+        { ipAddress: "127.0.0.1", userAgent: "vitest" },
+      );
+      schoolIds.add(other.school.id);
+      await basePrisma.school.update({ where: { id: other.school.id }, data: { status: "ACTIVE", onboardingStep: 5 } });
+      const theirs = await service.createCategory(
+        ctx(other.school.id, other.user.id),
+        { name: "Theirs", kind: "COMMENDATION", points: 3 },
+        reqCtx,
+      );
+      await expect(scored({ categoryId: theirs.id })).rejects.toBeInstanceOf(NotFoundError);
     });
   });
 });
