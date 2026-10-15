@@ -38,11 +38,13 @@ export default function TeacherLayout({ children }: { children: ReactNode }) {
         <div className="flex print:hidden">
           <TeacherSidebar />
         </div>
-        <div className="flex flex-1 flex-col">
+        {/* min-w-0, as in the admin shell (#412): without it this column grows
+            to fit a wide table and the whole page scrolls sideways on a phone. */}
+        <div className="flex min-w-0 flex-1 flex-col">
           <div className="print:hidden">
             <TeacherTopbar />
           </div>
-          <main className="flex-1 p-6 print:p-0">{children}</main>
+          <main className="min-w-0 flex-1 overflow-x-hidden p-4 sm:p-6 print:p-0">{children}</main>
         </div>
       </div>
     </RequireAuth>

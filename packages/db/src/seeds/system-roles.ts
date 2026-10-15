@@ -10,6 +10,8 @@ import {
   ANNOUNCEMENT_MANAGE_PERMISSIONS,
   ANNOUNCEMENT_READ_PERMISSIONS,
   BEHAVIOUR_ADMIN_PERMISSIONS,
+  HEALTH_NOTE_PERMISSIONS,
+  HEALTH_PERMISSIONS,
   BEHAVIOUR_PERMISSIONS_LIST,
   HOMEWORK_MANAGE_PERMISSIONS,
   HOMEWORK_READ_PERMISSIONS,
@@ -109,6 +111,10 @@ const ADMIN_PERMISSIONS: readonly string[] = [
   // Phase 9 / CP2.1 — behaviour settings and points categories. Owner/admin
   // only. Kept IN SYNC with prisma/migrations/20261019120000_behaviour_points.
   ...BEHAVIOUR_ADMIN_PERMISSIONS,
+  // Phase 9 / CP3 — health records, the sickbay, and the teacher note. Kept IN
+  // SYNC with prisma/migrations/20261022120000_health_profiles.
+  ...HEALTH_PERMISSIONS,
+  ...HEALTH_NOTE_PERMISSIONS,
   // Phase 8 / CP2 — Recording Completeness: the school-wide report and the
   // per-teacher recording-activity view (audited per read). Owner/admin only;
   // never teacher or bursar (§16 D39, pinned in permissions-coverage.spec.ts).
@@ -233,7 +239,21 @@ export const SYSTEM_ROLE_SEEDS: SystemRoleSeed[] = [
       ...CBT_PERMISSIONS,
       // Phase 9 / CP1.3 — Excel/PDF of the teacher's own lists (gradebook).
       ...TABLE_EXPORT_PERMISSIONS,
+      // Phase 9 / CP3 — the "For teachers" health note, for a child they teach
+      // (the service checks that). Nothing else from the health record.
+      ...HEALTH_NOTE_PERMISSIONS,
     ],
+  },
+  // Phase 9 / CP3 — the Health officer (docs/modules/phase-9.md §10 CP3-D1).
+  // Health records and the sickbay only: no academic, finance, staff or
+  // settings access. Kept IN SYNC with the INSERT in
+  // prisma/migrations/20261022120000_health_profiles.
+  {
+    key: "health_officer",
+    name: "Health officer",
+    description:
+      "School health officer — reads and keeps students' health records and the sickbay log, and writes the note teachers see. No academic, finance, staff or settings access.",
+    permissions: [...HEALTH_PERMISSIONS],
   },
   // Phase 3 / Slice 15 — `bursar` role wire-up + RBAC close-out. Finance-only
   // system role: fee catalog, discounts, invoices, payments (not refunds),

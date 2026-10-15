@@ -27,6 +27,7 @@ import {
 import { FreshnessLabel, useIsOnline } from "../../../src/components/freshness-label";
 import { ListRow } from "../../../src/components/layout";
 import { DisciplineNotices } from "../../../src/components/discipline-notices";
+import { HealthRecord } from "../../../src/components/health-record";
 import { StudentPortalAccess } from "../../../src/components/student-portal-access";
 import {
   canPay,
@@ -186,6 +187,9 @@ export default function StudentDetailScreen() {
           subtitle="This term's class timetable, as published by the school."
           onPress={() => router.push(`/students/${studentId}/timetable`)}
         />
+
+        {/* Phase 9 / CP3.1: the child's health record, read-only. */}
+        <HealthRecord studentId={studentId} />
 
         {/* Portal access sits under Results and above Fees: it is a
             one-off setup action, not something a parent returns to daily. */}

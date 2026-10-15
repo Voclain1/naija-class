@@ -12,5 +12,7 @@ import type { AuthMeRoleDto } from "@school-kit/types";
 export function homeRouteForRoles(roles: AuthMeRoleDto[]): string {
   if (roles.some((r) => r.key === "owner" || r.key === "admin")) return "/dashboard";
   if (roles.some((r) => r.key === "bursar")) return "/finance/dashboard";
+  // Phase 9 / CP3.1 — the Health officer's only page.
+  if (roles.some((r) => r.key === "health_officer")) return "/health";
   return "/teacher/dashboard";
 }

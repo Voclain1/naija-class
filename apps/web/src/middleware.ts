@@ -103,6 +103,8 @@ export const config = {
     "/homework/:path*",
     // Behaviour incidents (Phase 9 / CP2.2), added in the same PR as the page.
     "/behaviour/:path*",
+    // Health records (Phase 9 / CP3.1), added in the same PR as the page.
+    "/health/:path*",
     "/teacher/:path*",
     "/super-admin/dashboard/:path*",
   ],

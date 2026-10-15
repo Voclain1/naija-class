@@ -44,6 +44,7 @@ import { StudentScanModule } from "./modules/student-scan/student-scan.module";
 import { InvitationsModule } from "./modules/invitations/invitations.module";
 import { AnnouncementsModule } from "./modules/announcements/announcements.module";
 import { BehaviourModule } from "./modules/behaviour/behaviour.module";
+import { HealthModule } from "./modules/health/health.module";
 import { HomeworkModule } from "./modules/homework/homework.module";
 import { SchoolContactModule } from "./modules/school-contact/school-contact.module";
 import { NotificationsModule } from "./modules/notifications/notifications.module";
@@ -137,6 +138,7 @@ const isProd = process.env.NODE_ENV === "production";
     AnnouncementsModule,
     HomeworkModule,
     BehaviourModule,
+    HealthModule,
     SchoolContactModule,
     // Phase 5 / Slice 2 — lesson plan generator (first AI feature).
     LessonPlansModule,

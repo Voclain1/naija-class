@@ -40,6 +40,9 @@ export const queryKeys = {
   // action and its dates only, never a reason.
   disciplineNotices: (studentId: string) =>
     ["students", studentId, "discipline-notices"] as const,
+  // Phase 9 / CP3.1 — the child's health record. Read with
+  // `meta: { persist: false }`: special-category health data stays in memory.
+  healthRecord: (studentId: string) => ["students", studentId, "health"] as const,
 
   me: ["me"] as const,
 
@@ -284,4 +287,14 @@ export const queryKeys = {
     ["staff", schoolId, userId, "discipline", studentId] as const,
   staffDisciplineQueue: (schoolId: string, userId: string) =>
     ["staff", schoolId, userId, "discipline-queue"] as const,
+  // Phase 9 / CP3.1 — health records (Health officer, owner, admin) and the
+  // "For teachers" note. Health data, so staff-prefixed and never persisted.
+  staffHealthList: (schoolId: string, userId: string, q: string, armId: string) =>
+    ["staff", schoolId, userId, "health-list", q, armId] as const,
+  staffHealthProfile: (schoolId: string, userId: string, studentId: string) =>
+    ["staff", schoolId, userId, "health", studentId] as const,
+  staffHealthNote: (schoolId: string, userId: string, studentId: string) =>
+    ["staff", schoolId, userId, "health-note", studentId] as const,
+  staffClassHealthNotes: (schoolId: string, userId: string, armId: string) =>
+    ["staff", schoolId, userId, "class-health-notes", armId] as const,
 } as const;

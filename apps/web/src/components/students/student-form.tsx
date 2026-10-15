@@ -92,8 +92,6 @@ const studentFormSchema = z.object({
       (v) => v === "" || z.string().email().safeParse(v).success,
       "Enter a valid email address.",
     ),
-  bloodGroup: optionalText(10),
-  medicalNotes: optionalText(2000),
   religion: optionalText(40),
   stateOfOrigin: optionalText(40),
   nationality: optionalText(40),
@@ -126,8 +124,6 @@ function defaultValues(existing?: StudentDto): FormValues {
     address: existing?.address ?? "",
     phone: existing?.phone ?? "",
     email: existing?.email ?? "",
-    bloodGroup: existing?.bloodGroup ?? "",
-    medicalNotes: existing?.medicalNotes ?? "",
     religion: existing?.religion ?? "",
     stateOfOrigin: existing?.stateOfOrigin ?? "",
     nationality: existing?.nationality ?? "Nigerian",
@@ -147,9 +143,7 @@ const EXTRA_DETAIL_FIELDS = [
   "address",
   "stateOfOrigin",
   "religion",
-  "bloodGroup",
   "photoUrl",
-  "medicalNotes",
   "notes",
 ] as const satisfies readonly (keyof FormValues)[];
 
@@ -223,8 +217,6 @@ export function StudentForm({ existing, admissionNumbering }: Props) {
       address: emptyToUndefined(values.address),
       phone: emptyToUndefined(values.phone),
       email: emptyToUndefined(values.email),
-      bloodGroup: emptyToUndefined(values.bloodGroup),
-      medicalNotes: emptyToUndefined(values.medicalNotes),
       religion: emptyToUndefined(values.religion),
       stateOfOrigin: emptyToUndefined(values.stateOfOrigin),
       nationality: emptyToUndefined(values.nationality) ?? "Nigerian",
@@ -561,21 +553,6 @@ export function StudentForm({ existing, admissionNumbering }: Props) {
             )}
           </div>
 
-          <div className="flex flex-col gap-1">
-            <Label htmlFor="student-bloodGroup">Blood group (optional)</Label>
-            <Input
-              id="student-bloodGroup"
-              placeholder="O+"
-              {...form.register("bloodGroup")}
-              aria-invalid={Boolean(form.formState.errors.bloodGroup)}
-            />
-            {form.formState.errors.bloodGroup && (
-              <p className="text-sm text-destructive">
-                {form.formState.errors.bloodGroup.message}
-              </p>
-            )}
-          </div>
-
           <div className="flex flex-col gap-1 md:col-span-2">
             <Label htmlFor="student-photoUrl">Photo URL (optional)</Label>
             <Input
@@ -591,22 +568,6 @@ export function StudentForm({ existing, admissionNumbering }: Props) {
             {form.formState.errors.photoUrl && (
               <p className="text-sm text-destructive">
                 {form.formState.errors.photoUrl.message}
-              </p>
-            )}
-          </div>
-
-          <div className="flex flex-col gap-1 md:col-span-2">
-            <Label htmlFor="student-medicalNotes">Medical notes (optional)</Label>
-            <textarea
-              id="student-medicalNotes"
-              rows={3}
-              className="rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-              {...form.register("medicalNotes")}
-              aria-invalid={Boolean(form.formState.errors.medicalNotes)}
-            />
-            {form.formState.errors.medicalNotes && (
-              <p className="text-sm text-destructive">
-                {form.formState.errors.medicalNotes.message}
               </p>
             )}
           </div>

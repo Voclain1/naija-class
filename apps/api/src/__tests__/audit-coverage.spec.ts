@@ -351,7 +351,7 @@ describe("Phase 1 audit coverage — every mutation writes one audit row", () =>
     const id = await makeStudent("life");
     await expectOneAudit("student.create", id);
 
-    await students.update(ownerCtx, id, { medicalNotes: "note" }, reqCtx);
+    await students.update(ownerCtx, id, { religion: "note" }, reqCtx);
     await expectOneAudit("student.update", id);
 
     await students.withdraw(ownerCtx, id, {}, reqCtx);

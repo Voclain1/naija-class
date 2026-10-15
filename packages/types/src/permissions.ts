@@ -689,6 +689,14 @@ export const BEHAVIOUR_PERMISSIONS_LIST = ["behaviour.read", "behaviour.create"]
 // action. A teacher proposes with `behaviour.create` and never decides.
 export const BEHAVIOUR_ADMIN_PERMISSIONS = ["behaviour.manage", "behaviour.decide"] as const;
 
+// Phase 9 / CP3 — health records and the sickbay (docs/modules/phase-9.md §10
+// CP3-D1, CP3-D2). Owner (wildcard), admin and the Health officer hold the
+// three record permissions. A teacher holds `health.note.read` only: the
+// "For teachers" note, for a child they teach (the service checks that).
+// Bursar holds none of them.
+export const HEALTH_PERMISSIONS = ["health.read", "health.manage", "sickbay.manage"] as const;
+export const HEALTH_NOTE_PERMISSIONS = ["health.note.read"] as const;
+
 // Phase 8 / CP2 — Recording Completeness (docs/modules/phase-8.md §16 D39).
 // Owner/admin only. Named `reports.*`, deliberately not `report-card.*`.
 //
@@ -806,6 +814,8 @@ export const ALL_PERMISSIONS = [
   ...HOMEWORK_MANAGE_PERMISSIONS,
   ...BEHAVIOUR_PERMISSIONS_LIST,
   ...BEHAVIOUR_ADMIN_PERMISSIONS,
+  ...HEALTH_PERMISSIONS,
+  ...HEALTH_NOTE_PERMISSIONS,
   ...REPORTS_PERMISSIONS,
   ...TABLE_EXPORT_PERMISSIONS,
   ...TIMETABLE_PERMISSIONS,

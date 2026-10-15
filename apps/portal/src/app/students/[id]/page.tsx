@@ -34,6 +34,7 @@ import {
   reasonFromErrorCode,
 } from "@/lib/session-end";
 import { DisciplineNotices } from "@/components/discipline-notices";
+import { HealthRecord } from "@/components/health-record";
 import { StudentPortalAccess } from "@/components/student-portal-access";
 import { SchoolBanner } from "@/components/school-banner";
 
@@ -296,6 +297,9 @@ export default function StudentDetailPage() {
               View released results
             </Link>
           </section>
+
+          {/* Phase 9 / CP3.1: the child's health record, read-only. */}
+          <HealthRecord studentId={state.student.id} />
 
           {/* Phase 8 / CP4 (docs/modules/phase-8.md §18 D39): the class timetable the school PUBLISHED. */}
           <section className="flex flex-col gap-2 rounded-lg border bg-card p-4 shadow-sm">

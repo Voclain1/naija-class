@@ -5,6 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import type { TeacherRosterStudentDto } from "@school-kit/types";
 
 import { LoadError } from "../../../src/components/load-error";
+import { ClassHealthNotes } from "../../../src/components/health-note";
 import { staffArmRoster, staffTeacherScope } from "../../../src/lib/api/staff-attendance";
 import { ApiError } from "../../../src/lib/api/client";
 import { queryKeys } from "../../../src/lib/query/keys";
@@ -118,6 +119,10 @@ export default function ClassRosterScreen() {
             {roster.isPending && (
               <Skeleton lines={5} />
             )}
+
+            {/* Phase 9 / CP3.1 — the health officer's notes for teachers in
+                this class, if any. */}
+            <ClassHealthNotes armId={armId ?? ""} schoolId={schoolId} userId={userId} />
 
             {/* Phase 9 / CP2.2 — an incident involving several students in
                 this class. */}

@@ -252,8 +252,6 @@ export class StudentsService {
             address: input.address ?? null,
             phone: input.phone ?? null,
             email: input.email ?? null,
-            bloodGroup: input.bloodGroup ?? null,
-            medicalNotes: input.medicalNotes ?? null,
             religion: input.religion ?? null,
             stateOfOrigin: input.stateOfOrigin ?? null,
             nationality: input.nationality ?? "Nigerian",
@@ -425,8 +423,6 @@ export class StudentsService {
             address: s.address ?? null,
             phone: s.phone ?? null,
             email: s.email ?? null,
-            bloodGroup: s.bloodGroup ?? null,
-            medicalNotes: s.medicalNotes ?? null,
             religion: s.religion ?? null,
             stateOfOrigin: s.stateOfOrigin ?? null,
             nationality: s.nationality ?? "Nigerian",
@@ -528,8 +524,6 @@ export class StudentsService {
       if (input.address !== undefined) data.address = input.address;
       if (input.phone !== undefined) data.phone = input.phone;
       if (input.email !== undefined) data.email = input.email;
-      if (input.bloodGroup !== undefined) data.bloodGroup = input.bloodGroup;
-      if (input.medicalNotes !== undefined) data.medicalNotes = input.medicalNotes;
       if (input.religion !== undefined) data.religion = input.religion;
       if (input.stateOfOrigin !== undefined) data.stateOfOrigin = input.stateOfOrigin;
       if (input.nationality !== undefined) data.nationality = input.nationality;
@@ -781,8 +775,6 @@ export const STUDENT_SELECT = {
   address: true,
   phone: true,
   email: true,
-  bloodGroup: true,
-  medicalNotes: true,
   religion: true,
   stateOfOrigin: true,
   nationality: true,
@@ -810,8 +802,6 @@ export function toStudentDto(row: StudentRow): StudentDto {
     address: row.address,
     phone: row.phone,
     email: row.email,
-    bloodGroup: row.bloodGroup,
-    medicalNotes: row.medicalNotes,
     religion: row.religion,
     stateOfOrigin: row.stateOfOrigin,
     nationality: row.nationality,

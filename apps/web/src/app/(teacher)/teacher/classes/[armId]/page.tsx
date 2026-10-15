@@ -17,6 +17,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ApiError } from "@/lib/api-client";
+import { ClassHealthNotes } from "@/components/health/teacher-health-notes";
 import { getMyArmRoster, getMyScope } from "@/lib/teacher/teacher-scope-api";
 
 // /teacher/classes/[armId] — slice 11 cp3. One arm: the subjects this teacher
@@ -150,6 +151,9 @@ export default function TeacherArmRosterPage() {
         )}
       </header>
 
+      {/* Phase 9 / CP3.1: the health officer's notes for teachers in this class. */}
+      <ClassHealthNotes armId={armId} />
+
       <section className="flex flex-col gap-3">
         <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
           Roster ({students.length})
@@ -159,7 +163,9 @@ export default function TeacherArmRosterPage() {
             No students are enrolled in this class for the current term yet.
           </div>
         ) : (
-          <div className="overflow-hidden rounded-md border">
+          // overflow-x-auto, not overflow-hidden: on a 320px phone the table is
+          // wider than the screen, and hiding the overflow widened the page.
+          <div className="overflow-x-auto rounded-md border">
             <Table>
               <TableHeader>
                 <TableRow>

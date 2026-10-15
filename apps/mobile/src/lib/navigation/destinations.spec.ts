@@ -86,6 +86,15 @@ describe("an owner", () => {
     expect(keys(BURSAR)).not.toContain("discipline");
   });
 
+  it("gets Health; so does the Health officer, and nothing from school or money besides", () => {
+    expect(staffDestinations(OWNER).find((d) => d.key === "health")?.route).toBe("/staff/health");
+    const officer = staffDestinations({ ...base, roles: [{ key: "health_officer" }], permissions: ["health.read", "health.manage", "sickbay.manage"] });
+    expect(officer.map((d) => d.key)).toContain("health");
+    for (const key of ["students", "approvals", "collections", "discipline"]) expect(officer.map((d) => d.key)).not.toContain(key);
+    expect(keys(TEACHER)).not.toContain("health");
+    expect(keys(BURSAR)).not.toContain("health");
+  });
+
   it("does not get a website link when this build has no website address", () => {
     expect(keys({ ...OWNER, webConfigured: false })).not.toContain("website");
   });
