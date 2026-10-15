@@ -187,6 +187,7 @@ export function BehaviourCard({
                 </Text>
                 <Label>{when(item.occurredOn)}</Label>
               </View>
+              {item.incident !== null ? <Caption>Part of an incident: {item.incident.place}</Caption> : null}
               {item.categoryName !== null ? (
                 <Caption>
                   {item.categoryName}

@@ -392,4 +392,185 @@ describe("BehaviourService (integration)", () => {
       await expect(scored({ categoryId: theirs.id })).rejects.toBeInstanceOf(NotFoundError);
     });
   });
+
+  // Phase 9 / CP2.2 — incidents (docs/modules/phase-9.md §9 CP2-D2).
+  describe("incidents", () => {
+    const owner = () => ctx(A.schoolId, A.ownerId);
+    const teacher = () => ctx(A.schoolId, A.teacherId);
+    const otherTeacher = () => ctx(A.schoolId, A.otherTeacherId);
+    const countIncidents = () => withTenant(A.schoolId, (db) => db.behaviourIncident.count());
+
+    it("writes one linked CONCERN record per student; a student's own note wins, else the description", async () => {
+      const incident = await service.createIncident(
+        owner(),
+        {
+          occurredOn: "2026-10-02",
+          place: "Playground",
+          description: "A fight over a football.",
+          students: [{ studentId: A.mine, note: "Threw the first punch." }, { studentId: A.notMine }],
+          witnessIds: [A.teacherId],
+        },
+        reqCtx,
+      );
+      expect(incident.place).toBe("Playground");
+      expect(incident.students).toHaveLength(2);
+      expect(incident.witnesses.map((w) => w.name)).toEqual(["Tunde Teacher"]);
+      const notes = Object.fromEntries(incident.students.map((st) => [st.studentId, st.note]));
+      expect(notes[A.mine]).toBe("Threw the first punch.");
+      expect(notes[A.notMine]).toBe("A fight over a football.");
+
+      const list = await service.listForStudent(owner(), { studentId: A.notMine }, reqCtx);
+      const row = list.data.find((r) => r.incident?.id === incident.id);
+      expect(row?.kind).toBe("CONCERN");
+      expect(row?.incident?.place).toBe("Playground");
+    });
+
+    it("refuses a teacher naming a child they do not teach, and writes nothing", async () => {
+      const before = await countIncidents();
+      await expect(
+        service.createIncident(
+          teacher(),
+          {
+            occurredOn: "2026-10-02",
+            place: "Corridor",
+            description: "Shouting.",
+            students: [{ studentId: A.mine }, { studentId: A.notMine }],
+          },
+          reqCtx,
+        ),
+      ).rejects.toBeInstanceOf(ForbiddenError);
+      expect(await countIncidents()).toBe(before);
+    });
+
+    it("refuses a witness who is not staff at this school", async () => {
+      await expect(
+        service.createIncident(
+          owner(),
+          {
+            occurredOn: "2026-10-02",
+            place: "Hall",
+            description: "Ran in the hall.",
+            students: [{ studentId: A.mine }],
+            witnessIds: ["00000000-0000-4000-8000-000000000000"],
+          },
+          reqCtx,
+        ),
+      ).rejects.toBeInstanceOf(ValidationError);
+    });
+
+    it("applies a concern category to every student, and refuses a commendation category", async () => {
+      await service.updateSettings(owner(), { pointsEnabled: true }, reqCtx);
+      const fighting = await service.createCategory(owner(), { name: "Fighting", kind: "CONCERN", points: -3 }, reqCtx);
+      const incident = await service.createIncident(
+        owner(),
+        {
+          occurredOn: "2026-10-03",
+          place: "Field",
+          description: "Pushing.",
+          students: [{ studentId: A.mine }, { studentId: A.notMine }],
+          categoryId: fighting.id,
+        },
+        reqCtx,
+      );
+      const records = await withTenant(A.schoolId, (db) =>
+        db.behaviourRecord.findMany({ where: { incidentId: incident.id }, select: { points: true } }),
+      );
+      expect(records.map((r) => r.points)).toEqual([-3, -3]);
+
+      const kind = await service.createCategory(owner(), { name: "Kindness", kind: "COMMENDATION", points: 1 }, reqCtx);
+      await expect(
+        service.createIncident(
+          owner(),
+          { occurredOn: "2026-10-03", place: "Field", description: "x", students: [{ studentId: A.mine }], categoryId: kind.id },
+          reqCtx,
+        ),
+      ).rejects.toBeInstanceOf(ValidationError);
+    });
+
+    it("shows a teacher only the incidents they recorded or witnessed", async () => {
+      const mineToSee = await service.createIncident(
+        teacher(),
+        { occurredOn: "2026-10-04", place: "Lab", description: "Broke a beaker.", students: [{ studentId: A.mine }] },
+        reqCtx,
+      );
+      const witnessed = await service.createIncident(
+        owner(),
+        {
+          occurredOn: "2026-10-04",
+          place: "Gate",
+          description: "Left early.",
+          students: [{ studentId: A.notMine }],
+          witnessIds: [A.otherTeacherId],
+        },
+        reqCtx,
+      );
+
+      const tunde = (await service.listIncidents(teacher(), {}, reqCtx)).data.map((i) => i.id);
+      expect(tunde).toContain(mineToSee.id);
+      expect(tunde).not.toContain(witnessed.id);
+
+      const ngozi = (await service.listIncidents(otherTeacher(), {}, reqCtx)).data.map((i) => i.id);
+      expect(ngozi).toContain(witnessed.id);
+      expect(ngozi).not.toContain(mineToSee.id);
+
+      await expect(service.getIncident(otherTeacher(), mineToSee.id, reqCtx)).rejects.toBeInstanceOf(NotFoundError);
+      const all = (await service.listIncidents(owner(), { from: "2026-10-04", to: "2026-10-04" }, reqCtx)).data.map((i) => i.id);
+      expect(all).toEqual(expect.arrayContaining([mineToSee.id, witnessed.id]));
+    });
+
+    it("withdraws the incident and every record in it; only the recorder or an admin may", async () => {
+      const incident = await service.createIncident(
+        owner(),
+        {
+          occurredOn: "2026-10-05",
+          place: "Canteen",
+          description: "Food thrown.",
+          students: [{ studentId: A.mine }, { studentId: A.notMine }],
+          witnessIds: [A.teacherId],
+        },
+        reqCtx,
+      );
+      // A witness may read it but not withdraw it.
+      expect((await service.getIncident(teacher(), incident.id, reqCtx)).canWithdraw).toBe(false);
+      await expect(service.withdrawIncident(teacher(), incident.id, reqCtx)).rejects.toBeInstanceOf(ForbiddenError);
+
+      const out = await service.withdrawIncident(owner(), incident.id, reqCtx);
+      expect(out.withdrawnAt).not.toBeNull();
+      const live = await withTenant(A.schoolId, (db) =>
+        db.behaviourRecord.count({ where: { incidentId: incident.id, withdrawnAt: null } }),
+      );
+      expect(live).toBe(0);
+      await expect(service.withdrawIncident(owner(), incident.id, reqCtx)).rejects.toBeInstanceOf(ConflictError);
+    });
+
+    it("keeps the description and notes out of the audit log", async () => {
+      const incident = await service.createIncident(
+        owner(),
+        {
+          occurredOn: "2026-10-06",
+          place: "Library",
+          description: "A description nobody should find twice.",
+          students: [{ studentId: A.mine, note: "A note nobody should find twice." }],
+        },
+        reqCtx,
+      );
+      const audit = await withTenant(A.schoolId, (db) =>
+        db.auditLog.findFirstOrThrow({ where: { action: "behaviour.incident.create", entityId: incident.id } }),
+      );
+      expect(JSON.stringify(audit.metadata)).not.toContain("nobody should find twice");
+    });
+
+    it("offers a teacher only their own classes and rosters", async () => {
+      const options = await service.incidentOptions(teacher());
+      expect(options.arms.map((a) => a.name)).toEqual(["JSS1A"]);
+      expect(options.staff.map((s) => s.name)).toEqual(expect.arrayContaining(["Tunde Teacher", "Ngozi Teacher"]));
+
+      const roster = await service.incidentRoster(teacher(), options.arms[0]!.id);
+      expect(roster.students.map((st) => st.studentId)).toEqual([A.mine]);
+
+      const all = await service.incidentOptions(owner());
+      const otherArm = all.arms.find((a) => a.name === "JSS1B")!;
+      await expect(service.incidentRoster(teacher(), otherArm.id)).rejects.toBeInstanceOf(NotFoundError);
+    });
+  });
 });

@@ -1061,3 +1061,81 @@ Each slice is one PR, merged before the next starts.
     teacher scores a child.
   - The website screens (390 px and 1280 px) and the app card (390 px) were
     checked with long names, and nothing runs off the screen.
+
+### 9.9 As built — CP2.2, behaviour incidents (2026-10-15)
+
+- **Data:** migration `20261020120000_behaviour_incidents` adds:
+  - `behaviour_incidents` (date, place, description, who recorded it,
+    withdrawn);
+  - `behaviour_incident_witnesses` (incident and staff user);
+  - a nullable `incident_id` on `behaviour_records`.
+
+  Both new tables have RLS forced. No new permission and no SECURITY
+  DEFINER function; the count stays 23.
+- **API**, on the `/behaviour` controller:
+  - `POST /behaviour/incidents` (`behaviour.create`) takes:
+    - a date, a place and a description;
+    - 1 to 30 students, each with an optional note of their own;
+    - up to 10 witnesses;
+    - an optional concern category.
+
+    It writes the incident and one CONCERN record per student in a single
+    transaction. A student without their own note gets the description. One
+    student the teacher does not teach refuses the whole incident, and
+    nothing is written. A witness must be an active staff user of the
+    school.
+  - `GET /behaviour/incidents` (`behaviour.read`, optional `from` and `to`)
+    returns the newest 200. An owner or admin sees all of them. A teacher sees
+    only those they recorded or witnessed. The read is audited.
+  - `GET /behaviour/incidents/:id` follows the same rule. "Not yours" reads
+    as not found, so an id cannot be probed.
+  - `POST /behaviour/incidents/:id/withdraw` is for the person who recorded it
+    or an owner or admin. It withdraws the incident and every live record in
+    it.
+  - `GET /behaviour/incident-options` and
+    `GET /behaviour/incident-options/arms/:armId/students` (`behaviour.create`)
+    feed the form:
+    - the classes the person may name students from (all of them for an owner
+      or admin, their own for a teacher);
+    - the active staff names;
+    - one class's current-term roster.
+
+    They return names only.
+  - Each record now carries `incident: { id, place }` when it is part of one.
+  - Audit metadata holds ids and counts; the description and notes never go
+    into the audit log.
+- **Website:**
+  - A new **Behaviour** page in the admin menu (`/behaviour`, gated on
+    `behaviour.read`, so a bursar never sees it) and the teacher menu
+    (`/teacher/behaviour`). One shared panel lists incidents and records new
+    ones.
+  - Students are picked class by class, and the choices build up across
+    classes. Each chosen student can have a note of their own.
+  - The student's Behaviour tab shows "Part of an incident: {place}".
+- **App:**
+  - A teacher's class screen has **Record an incident**. It opens a form
+    with the place, what happened, the class's students, the staff who saw it
+    and an optional concern category.
+  - Per-student notes and students from several classes are on the website
+    only. In the app, the description is every student's note.
+  - The behaviour card shows when a record is part of an incident.
+  - New staff-prefixed keys `staffIncidentOptions` and
+    `staffIncidentRoster`.
+- **Tests:**
+  - 8 new service tests:
+    - one linked record per student, and a student's own note wins;
+    - a teacher naming a child they do not teach writes nothing;
+    - a witness who is not staff is refused;
+    - a category applies to every student, and only a concern category is
+      accepted;
+    - each teacher sees only their own incidents;
+    - withdrawing withdraws every record, and only the recorder or an admin
+      may;
+    - the audit log holds no text;
+    - a teacher's options and rosters are their own.
+  - Permission coverage.
+  - The admin-menu spec.
+  - e2e `behaviour-incidents.spec.ts`: the owner records an incident with
+    two students and the student's tab shows it.
+  - The website page and the app's class and incident screens were checked
+    at 390 px with long names, and nothing runs off the screen.

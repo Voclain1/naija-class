@@ -7,7 +7,13 @@ import {
   NotFoundError,
   ValidationError,
   type BehaviourCategoryDto,
+  type BehaviourIncidentDto,
+  type BehaviourIncidentListQuery,
+  type BehaviourIncidentListResponse,
+  type BehaviourIncidentOptionsDto,
+  type BehaviourIncidentRosterDto,
   type BehaviourSettingsDto,
+  type CreateBehaviourIncidentInput,
   type CreateBehaviourCategoryInput,
   type UpdateBehaviourCategoryInput,
   type UpdateBehaviourSettingsInput,
@@ -43,7 +49,12 @@ const AUDIT = {
   settings: "behaviour.settings.update",
   categoryCreate: "behaviour.category.create",
   categoryUpdate: "behaviour.category.update",
+  incidentCreate: "behaviour.incident.create",
+  incidentWithdraw: "behaviour.incident.withdraw",
+  incidentRead: "behaviour.incident.read",
 } as const;
+
+const fullName = (u: { firstName: string; lastName: string }): string => `${u.firstName} ${u.lastName}`;
 
 type Db = Parameters<Parameters<typeof withTenant>[1]>[0];
 
@@ -138,6 +149,7 @@ export class BehaviourService {
         withdrawnAt: null,
         categoryName: category?.name ?? null,
         points: category?.points ?? null,
+        incident: null,
       };
     });
   }
@@ -160,7 +172,7 @@ export class BehaviourService {
         where: { studentId: query.studentId },
         orderBy: [{ occurredOn: "desc" }, { createdAt: "desc" }],
         take: 200,
-        include: { category: { select: { name: true } } },
+        include: { category: { select: { name: true } }, incident: { select: { id: true, place: true } } },
       });
 
       // READING is audited too, not only writing — the same treatment the
@@ -196,6 +208,7 @@ export class BehaviourService {
         withdrawnAt: row.withdrawnAt,
         categoryName: row.category?.name ?? null,
         points: row.points,
+        incident: row.incident ? { id: row.incident.id, place: row.incident.place } : null,
       }));
 
       // Withdrawn records are shown (struck through by the UI) but never
@@ -233,7 +246,7 @@ export class BehaviourService {
       const updated = await db.behaviourRecord.update({
         where: { id },
         data: { withdrawnAt: new Date(), withdrawnBy: authCtx.userId },
-        include: { category: { select: { name: true } } },
+        include: { category: { select: { name: true } }, incident: { select: { id: true, place: true } } },
       });
       await db.auditLog.create({
         data: {
@@ -262,6 +275,7 @@ export class BehaviourService {
         withdrawnAt: updated.withdrawnAt,
         categoryName: updated.category?.name ?? null,
         points: updated.points,
+        incident: updated.incident ? { id: updated.incident.id, place: updated.incident.place } : null,
       };
     });
   }
@@ -378,6 +392,318 @@ export class BehaviourService {
       });
       return toCategoryDto(updated);
     });
+  }
+
+  // =========================================================================
+  // Phase 9 / CP2.2 — incidents (docs/modules/phase-9.md §9 CP2-D2)
+  // =========================================================================
+
+  /**
+   * POST /behaviour/incidents — one incident, one CONCERN record per student.
+   *
+   * The usual scope applies to EVERY student: a teacher names only children
+   * they teach, and one child out of scope refuses the whole incident, so
+   * nothing is half-written (it all runs in one tenant transaction).
+   */
+  async createIncident(
+    authCtx: AuthContext,
+    dto: CreateBehaviourIncidentInput,
+    reqCtx: RequestContext,
+  ): Promise<BehaviourIncidentDto> {
+    await assertUserActiveAndHasOneOf(authCtx, ["owner", "admin", "teacher"]);
+    const isAdmin = await this.isAdmin(authCtx);
+    const witnessIds = dto.witnessIds ?? [];
+
+    const incidentId = await withTenant(authCtx.schoolId, async (db) => {
+      const studentIds = dto.students.map((s) => s.studentId);
+      const found = await db.student.findMany({ where: { id: { in: studentIds } }, select: { id: true } });
+      if (found.length !== studentIds.length) throw new NotFoundError("A student could not be found.");
+      if (!isAdmin) {
+        for (const id of studentIds) await this.assertTeachesStudent(db, authCtx.userId, id);
+      }
+
+      if (witnessIds.length > 0) {
+        const staff = await db.user.findMany({
+          where: { id: { in: witnessIds }, isActive: true },
+          select: { id: true },
+        });
+        if (staff.length !== witnessIds.length) {
+          throw new ValidationError("A witness must be a current member of staff at this school.");
+        }
+      }
+
+      const category = dto.categoryId
+        ? await this.usableCategory(db, authCtx.schoolId, dto.categoryId, "CONCERN")
+        : null;
+      const occurredOn = new Date(`${dto.occurredOn}T00:00:00.000Z`);
+
+      const incident = await db.behaviourIncident.create({
+        data: {
+          schoolId: authCtx.schoolId,
+          occurredOn,
+          place: dto.place,
+          description: dto.description,
+          recordedBy: authCtx.userId,
+        },
+        select: { id: true },
+      });
+      if (witnessIds.length > 0) {
+        await db.behaviourIncidentWitness.createMany({
+          data: witnessIds.map((userId) => ({ incidentId: incident.id, userId, schoolId: authCtx.schoolId })),
+        });
+      }
+      for (const student of dto.students) {
+        await db.behaviourRecord.create({
+          data: {
+            schoolId: authCtx.schoolId,
+            studentId: student.studentId,
+            kind: "CONCERN",
+            note: student.note && student.note.length > 0 ? student.note : dto.description,
+            occurredOn,
+            recordedBy: authCtx.userId,
+            categoryId: category?.id ?? null,
+            points: category?.points ?? null,
+            incidentId: incident.id,
+          },
+        });
+      }
+
+      // Ids and counts only: the description and notes stay out of the audit
+      // log, as on a single record.
+      await db.auditLog.create({
+        data: {
+          schoolId: authCtx.schoolId,
+          userId: authCtx.userId,
+          action: AUDIT.incidentCreate,
+          entityType: "behaviour_incident",
+          entityId: incident.id,
+          ipAddress: reqCtx.ipAddress,
+          metadata: {
+            occurredOn: dto.occurredOn,
+            studentIds,
+            witnessCount: witnessIds.length,
+            ...(category ? { categoryId: category.id, points: category.points } : {}),
+          },
+        },
+      });
+      return incident.id;
+    });
+
+    return this.getIncident(authCtx, incidentId, reqCtx, { audit: false });
+  }
+
+  /**
+   * GET /behaviour/incidents — newest first, at most 200.
+   *
+   * An owner or admin sees every incident. A teacher sees those they recorded
+   * or witnessed: those are the ones they already know about.
+   */
+  async listIncidents(
+    authCtx: AuthContext,
+    query: BehaviourIncidentListQuery,
+    reqCtx: RequestContext,
+  ): Promise<BehaviourIncidentListResponse> {
+    await assertUserActiveAndHasOneOf(authCtx, ["owner", "admin", "teacher"]);
+    const isAdmin = await this.isAdmin(authCtx);
+    return withTenant(authCtx.schoolId, async (db) => {
+      const rows = await db.behaviourIncident.findMany({
+        where: {
+          ...(query.from || query.to
+            ? {
+                occurredOn: {
+                  ...(query.from ? { gte: new Date(`${query.from}T00:00:00.000Z`) } : {}),
+                  ...(query.to ? { lte: new Date(`${query.to}T00:00:00.000Z`) } : {}),
+                },
+              }
+            : {}),
+          ...(isAdmin
+            ? {}
+            : { OR: [{ recordedBy: authCtx.userId }, { witnesses: { some: { userId: authCtx.userId } } }] }),
+        },
+        orderBy: [{ occurredOn: "desc" }, { createdAt: "desc" }],
+        take: 200,
+        select: { id: true },
+      });
+      await db.auditLog.create({
+        data: {
+          schoolId: authCtx.schoolId,
+          userId: authCtx.userId,
+          action: AUDIT.incidentRead,
+          entityType: "behaviour_incident",
+          entityId: null,
+          ipAddress: reqCtx.ipAddress,
+          metadata: { count: rows.length },
+        },
+      });
+      const data = await this.incidentDtos(db, authCtx, isAdmin, rows.map((r) => r.id));
+      return { data };
+    });
+  }
+
+  /** GET /behaviour/incidents/:id — the same visibility as the list. */
+  async getIncident(
+    authCtx: AuthContext,
+    id: string,
+    reqCtx: RequestContext,
+    opts: { audit: boolean } = { audit: true },
+  ): Promise<BehaviourIncidentDto> {
+    await assertUserActiveAndHasOneOf(authCtx, ["owner", "admin", "teacher"]);
+    const isAdmin = await this.isAdmin(authCtx);
+    return withTenant(authCtx.schoolId, async (db) => {
+      const row = await db.behaviourIncident.findUnique({
+        where: { id },
+        select: { id: true, recordedBy: true, witnesses: { select: { userId: true } } },
+      });
+      const visible =
+        row &&
+        (isAdmin || row.recordedBy === authCtx.userId || row.witnesses.some((w) => w.userId === authCtx.userId));
+      // Not found and not yours read the same, so an id cannot be probed.
+      if (!visible) throw new NotFoundError("That incident could not be found.");
+      if (opts.audit) {
+        await db.auditLog.create({
+          data: {
+            schoolId: authCtx.schoolId,
+            userId: authCtx.userId,
+            action: AUDIT.incidentRead,
+            entityType: "behaviour_incident",
+            entityId: id,
+            ipAddress: reqCtx.ipAddress,
+            metadata: {},
+          },
+        });
+      }
+      const [dto] = await this.incidentDtos(db, authCtx, isAdmin, [id]);
+      return dto!;
+    });
+  }
+
+  /**
+   * POST /behaviour/incidents/:id/withdraw — withdraws the incident and every
+   * live record in it. The person who recorded it, or an owner or admin.
+   */
+  async withdrawIncident(authCtx: AuthContext, id: string, reqCtx: RequestContext): Promise<BehaviourIncidentDto> {
+    await assertUserActiveAndHasOneOf(authCtx, ["owner", "admin", "teacher"]);
+    const isAdmin = await this.isAdmin(authCtx);
+    await withTenant(authCtx.schoolId, async (db) => {
+      const existing = await db.behaviourIncident.findUnique({ where: { id } });
+      if (!existing) throw new NotFoundError("That incident could not be found.");
+      if (!isAdmin && existing.recordedBy !== authCtx.userId) {
+        throw new ForbiddenError("You can only withdraw an incident you recorded.");
+      }
+      if (existing.withdrawnAt) {
+        throw new ConflictError("BEHAVIOUR_INCIDENT_ALREADY_WITHDRAWN", "That incident was already withdrawn.");
+      }
+      const now = new Date();
+      await db.behaviourIncident.update({ where: { id }, data: { withdrawnAt: now, withdrawnBy: authCtx.userId } });
+      const records = await db.behaviourRecord.updateMany({
+        where: { incidentId: id, withdrawnAt: null },
+        data: { withdrawnAt: now, withdrawnBy: authCtx.userId },
+      });
+      await db.auditLog.create({
+        data: {
+          schoolId: authCtx.schoolId,
+          userId: authCtx.userId,
+          action: AUDIT.incidentWithdraw,
+          entityType: "behaviour_incident",
+          entityId: id,
+          ipAddress: reqCtx.ipAddress,
+          metadata: { recordsWithdrawn: records.count },
+        },
+      });
+    });
+    return this.getIncident(authCtx, id, reqCtx, { audit: false });
+  }
+
+  /**
+   * GET /behaviour/incident-options — the classes the viewer may name
+   * students from, and the staff who may be named as witnesses. Names only.
+   */
+  async incidentOptions(authCtx: AuthContext): Promise<BehaviourIncidentOptionsDto> {
+    await assertUserActiveAndHasOneOf(authCtx, ["owner", "admin", "teacher"]);
+    const isAdmin = await this.isAdmin(authCtx);
+    return withTenant(authCtx.schoolId, async (db) => {
+      const arms = isAdmin
+        ? await db.classArm.findMany({ where: { isActive: true }, select: { id: true, name: true }, orderBy: { name: "asc" } })
+        : (await getTeacherScope(db as never, authCtx.userId)).classArms.map((a) => ({ id: a.id, name: a.name }));
+      const staff = await db.user.findMany({
+        where: { isActive: true },
+        select: { id: true, firstName: true, lastName: true },
+        orderBy: [{ firstName: "asc" }, { lastName: "asc" }],
+      });
+      return {
+        arms: [...arms].sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true })),
+        staff: staff.map((u) => ({ userId: u.id, name: fullName(u) })),
+      };
+    });
+  }
+
+  /** GET /behaviour/incident-options/arms/:armId/students — one class's roster. */
+  async incidentRoster(authCtx: AuthContext, armId: string): Promise<BehaviourIncidentRosterDto> {
+    await assertUserActiveAndHasOneOf(authCtx, ["owner", "admin", "teacher"]);
+    const isAdmin = await this.isAdmin(authCtx);
+    return withTenant(authCtx.schoolId, async (db) => {
+      if (!isAdmin) {
+        const scope = await getTeacherScope(db as never, authCtx.userId);
+        if (!scope.classArms.some((a) => a.id === armId)) throw new NotFoundError("That class could not be found.");
+      }
+      const term = await db.term.findFirst({ where: { isCurrent: true }, select: { id: true } });
+      const enrolments = await db.enrollment.findMany({
+        where: { classArmId: armId, status: "ENROLLED", ...(term ? { termId: term.id } : {}) },
+        select: { student: { select: { id: true, firstName: true, lastName: true } } },
+      });
+      const unique = new Map(enrolments.map((e) => [e.student.id, e.student]));
+      return {
+        students: [...unique.values()]
+          .sort((a, b) => a.lastName.localeCompare(b.lastName) || a.firstName.localeCompare(b.firstName))
+          .map((s) => ({ studentId: s.id, name: fullName(s) })),
+      };
+    });
+  }
+
+  private async incidentDtos(db: Db, authCtx: AuthContext, isAdmin: boolean, ids: string[]): Promise<BehaviourIncidentDto[]> {
+    if (ids.length === 0) return [];
+    const rows = await db.behaviourIncident.findMany({
+      where: { id: { in: ids } },
+      include: {
+        witnesses: { select: { userId: true } },
+        records: { select: { id: true, note: true, studentId: true }, orderBy: { createdAt: "asc" } },
+      },
+    });
+    const students = await db.student.findMany({
+      where: { id: { in: [...new Set(rows.flatMap((r) => r.records.map((rec) => rec.studentId)))] } },
+      select: { id: true, firstName: true, lastName: true },
+    });
+    const studentName = new Map(students.map((st) => [st.id, fullName(st)]));
+    const userIds = new Set<string>();
+    for (const r of rows) {
+      userIds.add(r.recordedBy);
+      for (const w of r.witnesses) userIds.add(w.userId);
+    }
+    const users = await db.user.findMany({
+      where: { id: { in: [...userIds] } },
+      select: { id: true, firstName: true, lastName: true },
+    });
+    const name = new Map(users.map((u) => [u.id, fullName(u)]));
+    const order = new Map(ids.map((id, i) => [id, i]));
+    return rows
+      .sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0))
+      .map((r) => ({
+        id: r.id,
+        occurredOn: asIsoDate(r.occurredOn),
+        place: r.place,
+        description: r.description,
+        recordedByName: name.get(r.recordedBy) ?? null,
+        createdAt: r.createdAt,
+        withdrawnAt: r.withdrawnAt,
+        students: r.records.map((rec) => ({
+          studentId: rec.studentId,
+          name: studentName.get(rec.studentId) ?? "Student",
+          recordId: rec.id,
+          note: rec.note,
+        })),
+        witnesses: r.witnesses.map((w) => ({ userId: w.userId, name: name.get(w.userId) ?? "Staff" })),
+        canWithdraw: r.withdrawnAt === null && (isAdmin || r.recordedBy === authCtx.userId),
+      }));
   }
 
   private async readSettings(db: Db, schoolId: string): Promise<BehaviourSettingsDto> {

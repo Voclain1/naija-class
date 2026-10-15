@@ -1394,3 +1394,33 @@ describe("Phase 9 CP2.1 RBAC coverage: behaviour points", () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// Phase 9 / CP2.2 — incidents (docs/modules/phase-9.md §9 CP2-D2). The same
+// two permissions as a single record; the service narrows the scope.
+// ---------------------------------------------------------------------------
+describe("Phase 9 CP2.2 RBAC coverage: behaviour incidents", () => {
+  const perms = (handler: string): string[] =>
+    Reflect.getMetadata(
+      PERMISSIONS_METADATA_KEY,
+      (BehaviourController.prototype as unknown as Record<string, object>)[handler]!,
+    ) as string[];
+
+  it("writing an incident, and the form's options, need behaviour.create", () => {
+    for (const handler of ["createIncident", "withdrawIncident", "incidentOptions", "incidentRoster"]) {
+      expect(perms(handler), handler).toEqual(["behaviour.create"]);
+    }
+  });
+
+  it("reading incidents needs behaviour.read", () => {
+    for (const handler of ["listIncidents", "getIncident"]) {
+      expect(perms(handler), handler).toEqual(["behaviour.read"]);
+    }
+  });
+
+  it("bursar holds neither behaviour permission", () => {
+    const bursar = new Set(roleSeed("bursar").permissions);
+    expect(bursar.has("behaviour.read")).toBe(false);
+    expect(bursar.has("behaviour.create")).toBe(false);
+  });
+});

@@ -19,6 +19,7 @@ import {
   Skeleton,
 } from "../../../src/components/layout";
 import {
+  Button,
   CenteredMessage,
   Label,
   Notice,
@@ -49,6 +50,7 @@ export default function ClassRosterScreen() {
   const userId = staff?.user.id ?? "";
   const router = useRouter();
   const canRecordBehaviour = hasPermission(staff?.permissions ?? [], "behaviour.read");
+  const canRecordIncident = hasPermission(staff?.permissions ?? [], "behaviour.create");
   const ready = authed && schoolId !== "" && userId !== "" && !!armId;
 
   const [search, setSearch] = useState("");
@@ -115,6 +117,21 @@ export default function ClassRosterScreen() {
           <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
             {roster.isPending && (
               <Skeleton lines={5} />
+            )}
+
+            {/* Phase 9 / CP2.2 — an incident involving several students in
+                this class. */}
+            {canRecordIncident && students.length > 0 && (
+              <Button
+                title="Record an incident"
+                variant="secondary"
+                onPress={() =>
+                  router.push({
+                    pathname: "/staff/classes/incident/[armId]",
+                    params: { armId: armId ?? "", armName: arm?.name ?? "" },
+                  })
+                }
+              />
             )}
 
             {roster.isError && !roster.data && !outOfScope && (

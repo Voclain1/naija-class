@@ -58,6 +58,8 @@ export interface BehaviourRecordDto {
   categoryName: string | null;
   /** The value copied from the category when the record was written. */
   points: number | null;
+  /** Phase 9 / CP2.2. Set when the record is one student's part of an incident. */
+  incident: { id: string; place: string } | null;
 }
 
 export interface BehaviourListResponse {
@@ -130,4 +132,92 @@ export interface BehaviourCategoryDto {
 export interface BehaviourSettingsDto {
   pointsEnabled: boolean;
   categories: BehaviourCategoryDto[];
+}
+
+// ---------------------------------------------------------------------------
+// Phase 9 / CP2.2 — incidents (docs/modules/phase-9.md §9 CP2-D2)
+// ---------------------------------------------------------------------------
+
+export const BEHAVIOUR_INCIDENT_PLACE_MAX = 120;
+export const BEHAVIOUR_INCIDENT_MAX_STUDENTS = 30;
+export const BEHAVIOUR_INCIDENT_MAX_WITNESSES = 10;
+
+/**
+ * Recording an incident. Each student gets a CONCERN record linked to it.
+ * A student's own note is optional; without one, their record carries the
+ * incident's description. One category, if chosen, applies to every student.
+ */
+export const createBehaviourIncidentSchema = z
+  .object({
+    occurredOn: isoDate,
+    place: z.string().trim().min(1, "Say where it happened.").max(BEHAVIOUR_INCIDENT_PLACE_MAX),
+    description: z.string().trim().min(1, "Describe what happened.").max(BEHAVIOUR_NOTE_MAX),
+    students: z
+      .array(
+        z
+          .object({
+            studentId: z.string().uuid(),
+            note: z.string().trim().max(BEHAVIOUR_NOTE_MAX).optional(),
+          })
+          .strict(),
+      )
+      .min(1, "Choose at least one student.")
+      .max(BEHAVIOUR_INCIDENT_MAX_STUDENTS)
+      .refine((rows) => new Set(rows.map((r) => r.studentId)).size === rows.length, "A student is listed twice."),
+    witnessIds: z
+      .array(z.string().uuid())
+      .max(BEHAVIOUR_INCIDENT_MAX_WITNESSES)
+      .refine((ids) => new Set(ids).size === ids.length, "A witness is listed twice.")
+      .default([]),
+    categoryId: z.string().uuid().optional(),
+  })
+  .strict();
+export type CreateBehaviourIncidentInput = z.input<typeof createBehaviourIncidentSchema>;
+
+export const behaviourIncidentListQuerySchema = z
+  .object({
+    from: isoDate.optional(),
+    to: isoDate.optional(),
+  })
+  .strict();
+export type BehaviourIncidentListQuery = z.infer<typeof behaviourIncidentListQuerySchema>;
+
+export interface BehaviourIncidentStudentDto {
+  studentId: string;
+  name: string;
+  /** The student's record in this incident. */
+  recordId: string;
+  note: string;
+}
+
+export interface BehaviourIncidentDto {
+  id: string;
+  occurredOn: string;
+  place: string;
+  description: string;
+  recordedByName: string | null;
+  createdAt: string | Date;
+  withdrawnAt: string | Date | null;
+  students: BehaviourIncidentStudentDto[];
+  witnesses: { userId: string; name: string }[];
+  /** Whether the viewer may withdraw it: the person who recorded it, or an admin. */
+  canWithdraw: boolean;
+}
+
+export interface BehaviourIncidentListResponse {
+  data: BehaviourIncidentDto[];
+}
+
+/**
+ * What the incident form offers: the classes the viewer may name students
+ * from (all of them for an owner or admin, their own for a teacher) and the
+ * staff who can be named as witnesses. Names only.
+ */
+export interface BehaviourIncidentOptionsDto {
+  arms: { id: string; name: string }[];
+  staff: { userId: string; name: string }[];
+}
+
+export interface BehaviourIncidentRosterDto {
+  students: { studentId: string; name: string }[];
 }

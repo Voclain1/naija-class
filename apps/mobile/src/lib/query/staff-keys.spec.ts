@@ -83,6 +83,8 @@ const STAFF_KEYS: Record<string, readonly unknown[]> = {
   // the staff app caches.
   staffBehaviour: queryKeys.staffBehaviour(SCHOOL, USER, "student_1"),
   staffBehaviourSettings: queryKeys.staffBehaviourSettings(SCHOOL, USER),
+  staffIncidentOptions: queryKeys.staffIncidentOptions(SCHOOL, USER),
+  staffIncidentRoster: queryKeys.staffIncidentRoster(SCHOOL, USER, "arm_1"),
 };
 
 describe("staff query keys", () => {

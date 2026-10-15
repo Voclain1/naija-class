@@ -5,6 +5,11 @@
 
 import type {
   BehaviourCategoryDto,
+  BehaviourIncidentDto,
+  BehaviourIncidentListResponse,
+  BehaviourIncidentOptionsDto,
+  BehaviourIncidentRosterDto,
+  CreateBehaviourIncidentInput,
   BehaviourListResponse,
   BehaviourRecordDto,
   BehaviourSettingsDto,
@@ -44,4 +49,27 @@ export function createBehaviourCategory(input: CreateBehaviourCategoryInput): Pr
 
 export function updateBehaviourCategory(id: string, input: UpdateBehaviourCategoryInput): Promise<BehaviourCategoryDto> {
   return apiFetch<BehaviourCategoryDto>(`/behaviour/categories/${encodeURIComponent(id)}`, { method: "PATCH", body: input });
+}
+
+// Phase 9 / CP2.2 — incidents (docs/modules/phase-9.md §9 CP2-D2). Scope is
+// the server's: a teacher's options and list come back already narrowed.
+
+export function getIncidentOptions(): Promise<BehaviourIncidentOptionsDto> {
+  return apiFetch<BehaviourIncidentOptionsDto>("/behaviour/incident-options");
+}
+
+export function getIncidentRoster(armId: string): Promise<BehaviourIncidentRosterDto> {
+  return apiFetch<BehaviourIncidentRosterDto>(`/behaviour/incident-options/arms/${encodeURIComponent(armId)}/students`);
+}
+
+export function listIncidents(): Promise<BehaviourIncidentListResponse> {
+  return apiFetch<BehaviourIncidentListResponse>("/behaviour/incidents");
+}
+
+export function createIncident(input: CreateBehaviourIncidentInput): Promise<BehaviourIncidentDto> {
+  return apiFetch<BehaviourIncidentDto>("/behaviour/incidents", { method: "POST", body: input });
+}
+
+export function withdrawIncident(id: string): Promise<BehaviourIncidentDto> {
+  return apiFetch<BehaviourIncidentDto>(`/behaviour/incidents/${encodeURIComponent(id)}/withdraw`, { method: "POST" });
 }

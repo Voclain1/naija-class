@@ -268,4 +268,10 @@ export const queryKeys = {
   // persister treat it the same way.
   staffBehaviourSettings: (schoolId: string, userId: string) =>
     ["staff", schoolId, userId, "behaviour-settings"] as const,
+  // Phase 9 / CP2.2 — the incident form's classes, staff names and a class
+  // roster. Names of children and colleagues, so staff-prefixed.
+  staffIncidentOptions: (schoolId: string, userId: string) =>
+    ["staff", schoolId, userId, "incident-options"] as const,
+  staffIncidentRoster: (schoolId: string, userId: string, armId: string) =>
+    ["staff", schoolId, userId, "incident-roster", armId] as const,
 } as const;
