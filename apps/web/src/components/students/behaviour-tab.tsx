@@ -274,6 +274,9 @@ export function BehaviourTab({ studentId }: { studentId: string }) {
                         {formatDay(item.occurredOn)} · {item.recordedByName ?? "Staff"}
                         {withdrawn ? " · withdrawn" : ""}
                       </p>
+                      {item.incident !== null && (
+                        <p className="break-words text-xs text-muted-foreground">Part of an incident: {item.incident.place}</p>
+                      )}
                     </div>
                     {!withdrawn && (
                       <Button size="sm" variant="outline" onClick={() => void withdraw(item)}>

@@ -3338,8 +3338,47 @@ model BehaviourRecord {
   category   BehaviourCategory?  @relation(fields: [categoryId], references: [id], onDelete: Restrict)
   points     Int?
 
+  // Phase 9 / CP2.2 (CP2-D2). Set when the record is one student's part of an
+  // incident; the incident's own description is shared, the note is theirs.
+  incidentId String?            @map("incident_id")
+  incident   BehaviourIncident? @relation(fields: [incidentId], references: [id], onDelete: Restrict)
+
   @@index([schoolId, studentId, occurredOn])
+  @@index([incidentId])
   @@map("behaviour_records")
+}
+
+// Phase 9 / CP2.2 — an incident groups the CONCERN records of several
+// students (docs/modules/phase-9.md §9 CP2-D2). Withdrawn, never deleted;
+// withdrawing it withdraws its records.
+model BehaviourIncident {
+  id          String    @id @default(uuid())
+  schoolId    String    @map("school_id")
+  // DATE, as on the record: the day it happened.
+  occurredOn  DateTime  @map("occurred_on") @db.Date
+  place       String
+  description String
+  recordedBy  String    @map("recorded_by")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  withdrawnAt DateTime? @map("withdrawn_at")
+  withdrawnBy String?   @map("withdrawn_by")
+
+  records   BehaviourRecord[]
+  witnesses BehaviourIncidentWitness[]
+
+  @@index([schoolId, occurredOn])
+  @@map("behaviour_incidents")
+}
+
+// A member of staff who saw it. Chosen from the staff list, never typed.
+model BehaviourIncidentWitness {
+  incidentId String            @map("incident_id")
+  userId     String            @map("user_id")
+  schoolId   String            @map("school_id")
+  incident   BehaviourIncident @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+
+  @@id([incidentId, userId])
+  @@map("behaviour_incident_witnesses")
 }
 
 // Phase 9 / CP2.1 — a school's behaviour categories (docs/modules/phase-9.md

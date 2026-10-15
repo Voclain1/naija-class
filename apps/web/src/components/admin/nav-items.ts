@@ -14,6 +14,7 @@ import {
   LayoutDashboard,
   NotebookText,
   ScrollText,
+  ShieldAlert,
   MonitorCheck,
   Settings,
   Sparkles,
@@ -142,6 +143,10 @@ export const NAV_ITEMS: NavItem[] = [
   // homework.read, which no screen used. Owner, admin and bursar hold it;
   // teachers do too but set homework from the teacher shell.
   { label: "Homework", href: "/homework", icon: BookOpenCheck, enabled: true, requiredPermission: "homework.read" },
+  // Phase 9 / CP2.2 (docs/modules/phase-9.md §9 CP2-D2) — incidents involving
+  // more than one student. Gated on behaviour.read, which owner and admin hold
+  // here and bursar never does (C14). Teachers reach it in their own shell.
+  { label: "Behaviour", href: "/behaviour", icon: ShieldAlert, enabled: true, requiredPermission: "behaviour.read" },
   // Announcements (docs/modules/announcements.md). Gated on
   // announcement.create, not announcement.read: every staff role can READ the
   // school's announcements in their own feed, but this page is the sending

@@ -2,11 +2,19 @@ import { Body, Controller, Get, HttpCode, Ip, Param, Patch, Post, Query, UseGuar
 
 import {
   behaviourListQuerySchema,
+  behaviourIncidentListQuerySchema,
   createBehaviourCategorySchema,
+  createBehaviourIncidentSchema,
   createBehaviourSchema,
   updateBehaviourCategorySchema,
   updateBehaviourSettingsSchema,
   type BehaviourCategoryDto,
+  type BehaviourIncidentDto,
+  type BehaviourIncidentListQuery,
+  type BehaviourIncidentListResponse,
+  type BehaviourIncidentOptionsDto,
+  type BehaviourIncidentRosterDto,
+  type CreateBehaviourIncidentInput,
   type BehaviourSettingsDto,
   type CreateBehaviourCategoryInput,
   type UpdateBehaviourCategoryInput,
@@ -100,6 +108,70 @@ export class BehaviourController {
     @Ip() ip: string,
   ): Promise<BehaviourCategoryDto> {
     return this.service.updateCategory(authCtx, id, dto, { ipAddress: ip });
+  }
+
+  // -------------------------------------------------------------------------
+  // Phase 9 / CP2.2 — incidents (docs/modules/phase-9.md §9 CP2-D2). The same
+  // two permissions as a single record: writing one is behaviour.create,
+  // reading is behaviour.read. Scope (who may name which child, who sees
+  // which incident) is the service's.
+  // -------------------------------------------------------------------------
+
+  @Get("incident-options")
+  @Permissions("behaviour.create")
+  async incidentOptions(@CurrentUser() authCtx: AuthContext): Promise<BehaviourIncidentOptionsDto> {
+    return this.service.incidentOptions(authCtx);
+  }
+
+  @Get("incident-options/arms/:armId/students")
+  @Permissions("behaviour.create")
+  async incidentRoster(
+    @CurrentUser() authCtx: AuthContext,
+    @Param("armId") armId: string,
+  ): Promise<BehaviourIncidentRosterDto> {
+    return this.service.incidentRoster(authCtx, armId);
+  }
+
+  @Post("incidents")
+  @HttpCode(201)
+  @Permissions("behaviour.create")
+  async createIncident(
+    @CurrentUser() authCtx: AuthContext,
+    @Body(new ZodValidationPipe(createBehaviourIncidentSchema)) dto: CreateBehaviourIncidentInput,
+    @Ip() ip: string,
+  ): Promise<BehaviourIncidentDto> {
+    return this.service.createIncident(authCtx, dto, { ipAddress: ip });
+  }
+
+  @Get("incidents")
+  @Permissions("behaviour.read")
+  async listIncidents(
+    @CurrentUser() authCtx: AuthContext,
+    @Query(new ZodValidationPipe(behaviourIncidentListQuerySchema)) query: BehaviourIncidentListQuery,
+    @Ip() ip: string,
+  ): Promise<BehaviourIncidentListResponse> {
+    return this.service.listIncidents(authCtx, query, { ipAddress: ip });
+  }
+
+  @Get("incidents/:id")
+  @Permissions("behaviour.read")
+  async getIncident(
+    @CurrentUser() authCtx: AuthContext,
+    @Param("id") id: string,
+    @Ip() ip: string,
+  ): Promise<BehaviourIncidentDto> {
+    return this.service.getIncident(authCtx, id, { ipAddress: ip });
+  }
+
+  @Post("incidents/:id/withdraw")
+  @HttpCode(200)
+  @Permissions("behaviour.create")
+  async withdrawIncident(
+    @CurrentUser() authCtx: AuthContext,
+    @Param("id") id: string,
+    @Ip() ip: string,
+  ): Promise<BehaviourIncidentDto> {
+    return this.service.withdrawIncident(authCtx, id, { ipAddress: ip });
   }
 
   @Post(":id/withdraw")

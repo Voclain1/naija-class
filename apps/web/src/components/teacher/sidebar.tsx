@@ -8,6 +8,7 @@ import {
   CalendarDays,
   Clock,
   Library,
+  ShieldAlert,
   Sparkles,
   ClipboardList,
   FileQuestion,
@@ -45,6 +46,9 @@ const BASE_ITEMS: NavItem[] = [
   // Attendance: both are daily, both are about the class in front of you, and
   // this is the one a student's family sees the same day.
   { label: "Homework", href: "/teacher/homework", icon: BookMarked, enabled: true },
+  // Phase 9 / CP2.2 — incidents involving more than one student. A single
+  // child's record stays on their page in Classes.
+  { label: "Behaviour", href: "/teacher/behaviour", icon: ShieldAlert, enabled: true },
   // Phase 5 / Slice 2 — lesson plan generator. Unconditional: unlike subject
   // attendance it needs no per-school opt-in, and unlike gradebook/report
   // cards it needs no prior data, so it is usable by every school from day one.

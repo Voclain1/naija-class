@@ -101,6 +101,8 @@ export const config = {
     "/announcements/:path*",
     // The homework lookup, added 2026-10-14 in the same PR as the page.
     "/homework/:path*",
+    // Behaviour incidents (Phase 9 / CP2.2), added in the same PR as the page.
+    "/behaviour/:path*",
     "/teacher/:path*",
     "/super-admin/dashboard/:path*",
   ],

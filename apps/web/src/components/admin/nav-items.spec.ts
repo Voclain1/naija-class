@@ -20,6 +20,7 @@ import { LATER_PHASE_ITEMS, NAV_ITEMS } from "./nav-items";
 const SHIPPED_HREFS = [
   "/announcements",
   "/homework",
+  "/behaviour",
   "/guardians",
   "/gradebook",
   "/timetable",
