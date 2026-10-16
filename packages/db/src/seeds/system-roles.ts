@@ -13,6 +13,8 @@ import {
   HEALTH_NOTE_PERMISSIONS,
   ASSIGNMENT_PERMISSIONS,
   STUDENT_CHARGE_PERMISSIONS,
+  TRANSPORT_PERMISSIONS,
+  TRANSPORT_READ_PERMISSIONS,
   HEALTH_PERMISSIONS,
   BEHAVIOUR_PERMISSIONS_LIST,
   HOMEWORK_MANAGE_PERMISSIONS,
@@ -123,6 +125,9 @@ const ADMIN_PERMISSIONS: readonly string[] = [
   // Phase 9 / CP5.1 — student charges. Kept IN SYNC with
   // prisma/migrations/20261029120000_student_charges.
   ...STUDENT_CHARGE_PERMISSIONS,
+  // Phase 9 / CP5.2 — transport. Kept IN SYNC with
+  // prisma/migrations/20261030120000_transport.
+  ...TRANSPORT_PERMISSIONS,
   // Phase 8 / CP2 — Recording Completeness: the school-wide report and the
   // per-teacher recording-activity view (audited per read). Owner/admin only;
   // never teacher or bursar (§16 D39, pinned in permissions-coverage.spec.ts).
@@ -300,6 +305,9 @@ export const SYSTEM_ROLE_SEEDS: SystemRoleSeed[] = [
       // Phase 9 / CP5.1 — student charges. Kept IN SYNC with
       // prisma/migrations/20261029120000_student_charges.
       ...STUDENT_CHARGE_PERMISSIONS,
+      // Phase 9 / CP5.2 — transport, read only; route fees via charge.raise.
+      // Kept IN SYNC with prisma/migrations/20261030120000_transport.
+      ...TRANSPORT_READ_PERMISSIONS,
     ],
   },
 ];

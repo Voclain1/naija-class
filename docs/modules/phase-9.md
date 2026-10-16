@@ -2705,3 +2705,79 @@ recommendation; the owner's approval of this plan is that answer.
     bursar's invoice page; the parent sees it in the portal.
   - The Charges page was checked at 320px and 390px with no overflow. That
     check found the void form staying open after a void, which is fixed.
+
+### 13.9 As built — CP5.2, transport records and places (2026-10-16)
+
+- **Data** (migration `20261030120000_transport`). Five tables, each with RLS
+  forced and the `tenant_isolation` policy:
+  - `transport_vehicles`: plate (upper case, unique per school), description
+    and seats (1–200);
+  - `transport_drivers`: name, phone, licence number, licence expiry (a
+    `DATE`);
+  - `transport_routes`: name (unique per school), vehicle and driver (set to
+    null if either is deleted), and the fee per term in kobo (₦0 to ₦10m;
+    0 means free);
+  - `transport_stops`: in order, with an optional pickup time in minutes since
+    midnight;
+  - `transport_assignments` ("places"): one per student per term, with a
+    route and stop.
+
+  Permissions:
+  - `transport.read`: owner, admin and bursar;
+  - `transport.manage`: owner and admin;
+  - the route's fee is set under `charge.raise`, so the bursar can set it
+    (CP5-D11).
+
+  No SECURITY DEFINER function; the count stays 23.
+- **Money**, all through `StudentChargeService` (source `transport` plus the
+  place's id). `TransportService` never writes `student_charges` itself, and
+  the CP5.1 write-scan spec proves it.
+  - A place on a paid route raises one TRANSPORT charge,
+    "Transport — <route>", at the fee.
+  - A move to another route re-prices a waiting charge to the new fee. A move
+    to a free route voids it. A billed charge is left alone.
+  - Removing a child voids a waiting charge.
+  - Changing the fee affects terms that have not ended. Waiting charges are
+    re-priced, a fee of 0 voids them, and moving from free to paid raises
+    them. The result counts each outcome, and the page says them in words.
+- **Capacity.** The route row is locked (`SELECT … FOR UPDATE`) and the
+  term's places are counted against the vehicle's seats. A route without a
+  vehicle takes nobody. Two moves lock their routes in id order, so they
+  cannot deadlock. A vehicle cannot shrink, nor a route change to a smaller
+  vehicle, below the most children it has in any term not yet ended.
+- **Stops** are saved as one ordered list. A stop with an id is kept and its
+  id preserved. A stop that a child is picked up at cannot be removed. A route
+  with places cannot be deleted.
+- **Copy to next term** (`POST /transport/places/copy`) copies each place to
+  the same stop, oldest first, within seats. It skips children who have left
+  the school and those already placed, and reports how many were copied,
+  already placed, left out because the route was full, and gone from the
+  school. It can copy to any term of any year.
+- **Withdrawal.** `StudentsService.withdraw` calls
+  `removeTransportAfterWithdrawal` in its own transaction. It removes places
+  in terms that start after the withdrawal and voids their waiting charges;
+  the current term's place stays. The audit metadata records the count.
+- **Website** (sidebar **Transport**, gated on `transport.read`, and added to
+  the middleware matcher):
+  - `/transport`: the routes with how full each is in a term, **New route**,
+    and **Copy to next term**.
+  - `/transport/vehicles`: vehicles and drivers, add, edit and delete. A
+    driver's licence state is the server's. An expired or expiring licence
+    has a tinted row and says so in words.
+  - `/transport/routes/[id]`: vehicle and driver; the fee (in naira,
+    converted with `nairaInputToKobo`); the stops editor; the children on the
+    route for a term, with their stop, class and whether the fee is waiting or
+    billed; **Move** and **Remove**; **Add a child** (search, then a stop,
+    with the charge it will raise stated).
+  - The student page's Bio tab shows "Transport this term".
+  - As on the finance pages, the term is never chosen for the user.
+- **Not in this slice:** the daily route list, the staff app, and the parent
+  view. Those are CP5.3.
+- **Tests:**
+  - `transport.service.spec.ts` (17 tests, real Postgres) covers every rule
+    in §13.5 for this slice, including the last seat going to exactly one of
+    two concurrent requests, and withdrawal through `StudentsService`.
+  - e2e `transport-routes.spec.ts`: a vehicle and a driver (expired licence in
+    words), a route with stops, vehicle, driver and fee, a child at the second
+    stop, the student page line, and the charge on Finance → Charges.
+  - The three pages were checked at 320px and 390px, with no overflow.

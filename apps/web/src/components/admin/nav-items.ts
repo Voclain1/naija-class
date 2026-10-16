@@ -1,6 +1,7 @@
 import {
   BarChart3,
   BookOpenCheck,
+  Bus,
   Megaphone,
   CalendarClock,
   CalendarDays,
@@ -155,6 +156,9 @@ export const NAV_ITEMS: NavItem[] = [
   // Phase 9 / CP3.3 — the sickbay log. sickbay.manage: owner, admin and the
   // Health officer. A teacher never holds it.
   { label: "Sickbay", href: "/sickbay", icon: Stethoscope, enabled: true, requiredPermission: "sickbay.manage" },
+  // Phase 9 / CP5.2 — transport (docs/modules/phase-9.md §13). transport.read:
+  // owner, admin and the bursar (who sets route fees there). Teachers never.
+  { label: "Transport", href: "/transport", icon: Bus, enabled: true, requiredPermission: "transport.read" },
   // Announcements (docs/modules/announcements.md). Gated on
   // announcement.create, not announcement.read: every staff role can READ the
   // school's announcements in their own feed, but this page is the sending
