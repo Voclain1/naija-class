@@ -4127,6 +4127,7 @@ model AssignmentCollection {
   updatedAt    DateTime               @default(now()) @updatedAt @map("updated_at")
   submissions  AssignmentSubmission[]
   files        AssignmentSubmissionFile[]
+  questions    AssignmentQuestion[]
 
   @@map("assignment_collections")
 }
@@ -4160,6 +4161,11 @@ model AssignmentSubmission {
   returnedAt   DateTime?            @map("returned_at")
   returnNote   String?              @map("return_note")
   files        AssignmentSubmissionFile[]
+  // CP4.3: the answers to the questions, keyed by question id (multiple
+  // choice: the option's index; fill-in: the text), and the mark the server
+  // worked out from them. The teacher gives the real mark.
+  answers      Json?
+  autoMark     Int?                 @map("auto_mark")
 
   @@unique([collectionId, studentId, attempt])
   @@index([schoolId, studentId])
@@ -4185,4 +4191,34 @@ model AssignmentSubmissionFile {
   @@index([collectionId, studentId])
   @@index([submissionId])
   @@map("assignment_submission_files")
+}
+
+// Phase 9 / CP4.3 — a question on collected work, marked automatically
+// (CP4-D6). Fixed once anyone has handed in.
+enum AssignmentQuestionType {
+  MULTIPLE_CHOICE
+  FILL_IN
+}
+
+model AssignmentQuestion {
+  id               String                 @id @default(uuid())
+  schoolId         String                 @map("school_id")
+  collectionId     String                 @map("collection_id")
+  collection       AssignmentCollection   @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  orderIndex       Int                    @map("order_index")
+  type             AssignmentQuestionType
+  text             String
+  marks            Int
+  // Multiple choice: the options' text in order, and which one is right.
+  options          Json?
+  correctIndex     Int?                   @map("correct_index")
+  // Fill-in: every accepted answer, as the teacher typed them.
+  acceptedAnswers  Json?                  @map("accepted_answers")
+  // The question-bank question this was copied from. A plain column: the copy
+  // stands on its own and the bank question may later be retired.
+  sourceQuestionId String?                @map("source_question_id")
+  createdAt        DateTime               @default(now()) @map("created_at")
+
+  @@unique([collectionId, orderIndex])
+  @@map("assignment_questions")
 }

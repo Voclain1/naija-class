@@ -1960,3 +1960,83 @@ Each slice is one PR, merged before the next starts.
     parent's page.
   - The student's attach screen, the staff app's and website's marking
     views with files were checked at 320px and 390px.
+
+### 11.9 As built — CP4.3, questions and automatic marking (2026-10-16)
+
+- **Data:** migration `20261027120000_assignment_questions`:
+  - Adds `assignment_questions` (the collected homework, the order, the type
+    `MULTIPLE_CHOICE` or `FILL_IN`, the text, the marks, and either the
+    options with the right one's index or the accepted answers), with RLS
+    forced. A `CHECK` holds each type to its shape: multiple choice has 2–5
+    options and a right index inside them; fill-in has 1–10 accepted answers.
+    `source_question_id` records a copy from the question bank (a plain
+    column; the copy stands on its own).
+  - Adds `answers` (keyed by question id: the option's index or the text) and
+    `auto_mark` to `assignment_submissions`.
+  - No new permission and no SECURITY DEFINER function; the count stays 23.
+- **Rules:**
+  - The teacher edits the questions as one list and saves them together. The
+    questions add up to no more than the total, and the total can't then drop
+    below them.
+  - **The questions are fixed once anyone has handed in**, so an automatic mark
+    never has to be worked out again against different questions.
+  - The server works out the automatic mark when the student hands in, never
+    the phone. A fill-in answer is right when it equals an accepted answer
+    after ignoring case, spaces at either end and repeated spaces inside
+    (`normaliseFillIn` in `@school-kit/types`). Blank answers are wrong.
+  - An answer to a question that isn't on the work, or the wrong kind of
+    answer, is refused. An attempt needs an answer, text or a file.
+  - The automatic mark is the teacher's starting point. The mark box opens
+    with it, and the teacher saves it or changes it. **Use automatic marks**
+    sets the mark from it in one go, but only for work that is answers alone:
+    work with written text or a file still needs a person to read it. Nothing
+    reaches the family until **Release marks**, as before.
+  - The student never receives a right answer. They see which of theirs were
+    right only with the released mark. Parents see no answers at all.
+- **API** (owner, admin, the class's teachers; `assignment.mark`):
+  - `PUT /assignments/:id/questions` replaces the questions.
+  - `GET /assignments/:id/bank-questions` lists approved multiple-choice
+    bank questions for the homework's class level and subject: the pair the
+    teacher is already held to. Only ones that fit (2–5 options, one right)
+    are listed, and a copy must name one of them.
+  - `POST /assignments/:id/auto-marks` uses the automatic marks.
+  - Audited as `assignment.questions.set` (counts and marks only) and
+    `assignment.automarks.use` (how many). No question or answer text goes
+    into the audit log.
+- **Screens:**
+  - Teacher website (marking page): a **Questions** section to add multiple
+    choice and fill-in questions, or copy multiple choice from the question
+    bank, with a running total against the work's total. Each attempt shows
+    its answers marked **Right** or **Wrong**, in words as well as by tint,
+    and the roster shows the automatic mark. **Use automatic marks** sits
+    beside **Release marks**.
+  - Staff app: the questions with their right answers, each attempt's
+    answers, the automatic mark in the mark box, and **Use automatic marks**.
+    Questions are added and changed on the website. The app says so; a list
+    editor on a phone was left out of this slice.
+  - Student app: the questions above the written answer, with tappable
+    options and a box for each fill-in. Handing in with blanks asks first. After
+    release, each answer shows right or wrong.
+- **Housekeeping:** removes `e2e/tests/zz-fit-tmp.spec.ts`, a temporary
+  phone-fit check committed by mistake with CP4.1.
+- **Tests:**
+  - 4 new service tests:
+    - setting questions: over the total refused, another class's teacher
+      refused, no right answer reaching the student;
+    - wrong kinds of answer refused, blanks wrong, the automatic mark worked
+      out, the questions fixed after the first hand-in, the total held above
+      them, right or wrong shown to the student only after release, nothing
+      reaching the family;
+    - automatic marks used only for answers-only work, not for another
+      class's teacher;
+    - copying from the bank: only approved multiple choice for this level and
+      subject;
+    - fill-in matching: case and spacing ignored, a misspelling or a missing
+      space not.
+  - Permission coverage for the three new routes.
+  - e2e `assignment-questions.spec.ts`: a teacher adds both kinds of question
+    on the website, sees a child's answers marked right, uses the automatic
+    mark and releases it.
+  - The website's question editor and marking view, the staff app's marking
+    screen and the student's answering screen were checked at 320px and
+    390px.

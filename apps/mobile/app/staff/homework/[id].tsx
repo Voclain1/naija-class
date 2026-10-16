@@ -5,12 +5,15 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ASSIGNMENT_LIMITS,
   describeWorkStatus,
+  optionLetter,
   type AssignmentMarkingDto,
+  type AssignmentQuestionDto,
   type AssignmentRosterRowDto,
   type AssignmentSubmissionDto,
   type StudentWorkDto,
 } from "@school-kit/types";
 
+import { AnswerList } from "../../../src/components/assignment-questions";
 import { TextField } from "../../../src/components/form";
 import { SubmissionFiles } from "../../../src/components/submission-files";
 import { ScreenHeader, Skeleton } from "../../../src/components/layout";
@@ -18,6 +21,7 @@ import { LoadError } from "../../../src/components/load-error";
 import { Body, Button, Caption, Card, Label, Screen } from "../../../src/components/ui";
 import { ApiError } from "../../../src/lib/api/client";
 import {
+  applyStaffAutoMarks,
   collectStaffWork,
   markStaffSubmission,
   releaseStaffMarks,
@@ -35,6 +39,10 @@ import { spacing } from "../../../src/theme/tokens";
 // (docs/modules/phase-9.md §11). Tap a student to read and mark their work.
 // Marks reach the student and parents only after "Release marks". The paste
 // figure (Q7) is shown to staff and nowhere else.
+//
+// CP4.3: each student's answers to the questions, right or wrong, with the
+// automatic mark as the starting point. Questions are set on the website; the
+// app shows them.
 
 function message(e: unknown, fallback: string): string {
   return e instanceof ApiError ? e.message : fallback;
@@ -54,15 +62,20 @@ function Attempt({
   attempt,
   latest,
   totalMarks,
+  questions,
   onChanged,
 }: {
   attempt: AssignmentSubmissionDto;
   latest: boolean;
   totalMarks: number;
+  questions: AssignmentQuestionDto[];
   onChanged: (work: StudentWorkDto) => void;
 }) {
   const { colors } = useTheme();
-  const [mark, setMark] = useState(attempt.mark === null ? "" : String(attempt.mark));
+  // An unmarked attempt starts from the automatic mark, when there is one.
+  const [mark, setMark] = useState(
+    attempt.mark !== null ? String(attempt.mark) : attempt.autoMark !== null ? String(attempt.autoMark) : "",
+  );
   const [feedback, setFeedback] = useState(attempt.feedback ?? "");
   const [note, setNote] = useState("");
   const [returning, setReturning] = useState(false);
@@ -107,6 +120,14 @@ function Attempt({
             About {attempt.pastedPercent}% was pasted rather than typed, as the student&apos;s phone reported it. Not a
             judgement, and never part of the mark. The student and parents don&apos;t see it.
           </Caption>
+        </>
+      ) : null}
+      {attempt.answers.length > 0 ? (
+        <>
+          <Label>
+            Questions: {attempt.autoMark} of {questions.reduce((sum, q) => sum + q.marks, 0)}, marked automatically
+          </Label>
+          <AnswerList questions={questions} answers={attempt.answers} />
         </>
       ) : null}
       <SubmissionFiles files={attempt.files} getUrl={staffAssignmentFileUrl} />
@@ -188,6 +209,7 @@ function StudentWork({
           attempt={a}
           latest={i === 0}
           totalMarks={work.data.totalMarks}
+          questions={work.data.questions}
           onChanged={(next) => {
             queryClient.setQueryData(key, next);
             onChanged();
@@ -222,12 +244,18 @@ export default function HandedInWorkScreen() {
     onSuccess: settle,
     onError: (e) => Alert.alert("Not released", message(e, "Try again in a moment.")),
   });
+  const autoMarks = useMutation({
+    mutationFn: () => applyStaffAutoMarks(homeworkId),
+    onSuccess: settle,
+    onError: (e) => Alert.alert("Not marked", message(e, "Try again in a moment.")),
+  });
 
   if (status === "locked") return <Redirect href="/unlock" />;
   if (!authed) return <Redirect href="/login" />;
 
   const d = marking.data;
   const unreleased = d ? d.roster.filter((r) => r.status === "MARKED" && !r.released).length : 0;
+  const autoMarkable = d ? d.roster.filter((r) => r.status === "SUBMITTED" && r.autoMark !== null).length : 0;
 
   return (
     <Screen>
@@ -268,8 +296,45 @@ export default function HandedInWorkScreen() {
                       ])
                     }
                   />
+                  {d.questions.length > 0 && autoMarkable > 0 ? (
+                    <Button
+                      title="Use automatic marks"
+                      variant="secondary"
+                      loading={autoMarks.isPending}
+                      onPress={() =>
+                        Alert.alert(
+                          "Use automatic marks?",
+                          "Only for work that is answers to the questions and nothing else. Work with a written answer or a file still needs you to mark it. Nothing is released until you release it.",
+                          [
+                            { text: "Cancel", style: "cancel" },
+                            { text: "Use them", onPress: () => autoMarks.mutate() },
+                          ],
+                        )
+                      }
+                    />
+                  ) : null}
                 </View>
               </Card>
+              {d.questions.length > 0 ? (
+                <Card>
+                  <Label>Questions</Label>
+                  <Caption>
+                    Marked automatically when a student hands in. Add or change them on the website, before anyone hands in.
+                  </Caption>
+                  {d.questions.map((q) => (
+                    <View key={q.id} style={styles.question}>
+                      <Body>
+                        {q.number}. {q.text} ({q.marks} mark{q.marks === 1 ? "" : "s"})
+                      </Body>
+                      <Caption>
+                        {q.type === "MULTIPLE_CHOICE"
+                          ? `Right answer: ${optionLetter(q.correctIndex ?? 0)}. ${q.options?.[q.correctIndex ?? 0] ?? ""}`
+                          : `Accepted: ${(q.acceptedAnswers ?? []).join(" · ")}`}
+                      </Caption>
+                    </View>
+                  ))}
+                </Card>
+              ) : null}
               {d.roster.map((row) => (
                 <Card key={row.studentId}>
                   <Pressable
@@ -284,6 +349,7 @@ export default function HandedInWorkScreen() {
                       {row.late ? " · late" : ""}
                       {row.mark !== null ? ` · ${row.mark}/${d.collection.totalMarks}${row.released ? " released" : ""}` : ""}
                       {row.attempts > 1 ? ` · ${row.attempts} attempts` : ""}
+                      {row.autoMark !== null && row.mark === null ? ` · automatic ${row.autoMark}/${d.collection.totalMarks}` : ""}
                       {row.fileCount > 0 ? ` · ${row.fileCount} file${row.fileCount === 1 ? "" : "s"}` : ""}
                     </Caption>
                   </Pressable>
@@ -311,6 +377,7 @@ const styles = StyleSheet.create({
   content: { gap: spacing.md, paddingVertical: spacing.md },
   row: { gap: spacing.xs, minHeight: 44, justifyContent: "center" },
   attempt: { gap: spacing.sm, paddingTop: spacing.sm },
+  question: { gap: 2, paddingTop: spacing.xs },
   answer: { padding: spacing.sm, borderRadius: 8 },
   buttons: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
 });

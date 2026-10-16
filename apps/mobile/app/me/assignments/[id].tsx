@@ -6,6 +6,7 @@ import * as ImagePicker from "expo-image-picker";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ASSIGNMENT_LIMITS, describeWorkStatus, type MyAssignmentDto } from "@school-kit/types";
 
+import { AnswerList, QuestionInputs, type AnswerMap } from "../../../src/components/assignment-questions";
 import { ScreenHeader, Skeleton } from "../../../src/components/layout";
 import { LoadError } from "../../../src/components/load-error";
 import { Body, Button, Caption, Card, Label, Screen } from "../../../src/components/ui";
@@ -36,6 +37,10 @@ import { fontSizes, fonts, radii, spacing } from "../../../src/theme/tokens";
 // handwritten work. Each is uploaded on its own and waits until "Hand it in",
 // which sends the text (if any) and the files as one attempt.
 //
+// CP4.3: questions (multiple choice and fill-in), marked by the server when
+// the work is handed in. The student sees which they got right only once the
+// teacher releases the marks, and never the right answers.
+//
 // Kept off the phone's storage: the answer and the mark stay in memory.
 
 function formatDue(iso: string): string {
@@ -65,6 +70,7 @@ export default function HandInWorkScreen() {
   const queryClient = useQueryClient();
   const authed = status === "authenticated" && principal === "student";
   const [text, setText] = useState("");
+  const [answers, setAnswers] = useState<AnswerMap>({});
   const counts = useRef<PasteCounts>({ typed: 0, pasted: 0 });
 
   const query = useQuery({
@@ -119,11 +125,13 @@ export default function HandInWorkScreen() {
         body: text.trim(),
         typedChars: counts.current.typed,
         pastedChars: counts.current.pasted,
+        ...(Object.keys(answers).length > 0 ? { answers } : {}),
       }),
     onSuccess: (next: MyAssignmentDto) => {
       queryClient.setQueryData(queryKeys.myAssignment(homeworkId), next);
       void queryClient.invalidateQueries({ queryKey: queryKeys.myAssignments });
       setText("");
+      setAnswers({});
       counts.current = { typed: 0, pasted: 0 };
     },
     onError: (e) =>
@@ -144,7 +152,12 @@ export default function HandInWorkScreen() {
   }
 
   function confirmSubmit(): void {
-    Alert.alert("Hand it in?", "You can't change it after you hand it in, unless your teacher returns it to you.", [
+    const blank = (d?.questions ?? []).filter((q) => {
+      const a = answers[q.id];
+      return a === undefined || (typeof a === "string" && a.trim() === "");
+    }).length;
+    const warning = blank > 0 ? `You haven't answered ${blank} question${blank === 1 ? "" : "s"}. ` : "";
+    Alert.alert("Hand it in?", `${warning}You can't change it after you hand it in, unless your teacher returns it to you.`, [
       { text: "Not yet", style: "cancel" },
       { text: "Hand it in", onPress: () => submit.mutate() },
     ]);
@@ -171,7 +184,15 @@ export default function HandInWorkScreen() {
 
               {d.canSubmit ? (
                 <Card>
-                  <Label>{d.status === "RETURNED" ? "Hand it in again" : "Your answer"}</Label>
+                  {d.questions.length > 0 ? (
+                    <>
+                      <Label>Questions</Label>
+                      <QuestionInputs questions={d.questions} answers={answers} onChange={setAnswers} />
+                    </>
+                  ) : null}
+                  <Label>
+                    {d.status === "RETURNED" ? "Hand it in again" : d.questions.length > 0 ? "Anything else to say (optional)" : "Your answer"}
+                  </Label>
                   <TextInput
                     value={text}
                     onChangeText={onChange}
@@ -212,7 +233,12 @@ export default function HandInWorkScreen() {
                   <Button
                     title="Hand it in"
                     loading={submit.isPending}
-                    disabled={(text.trim() === "" && d.stagedFiles.length === 0) || stage.isPending}
+                    disabled={
+                      (text.trim() === "" &&
+                        d.stagedFiles.length === 0 &&
+                        !Object.values(answers).some((a) => typeof a === "number" || a.trim() !== "")) ||
+                      stage.isPending
+                    }
                     onPress={confirmSubmit}
                   />
                 </Card>
@@ -233,6 +259,7 @@ export default function HandInWorkScreen() {
                       <Body>{a.body}</Body>
                     </View>
                   ) : null}
+                  <AnswerList questions={d.questions} answers={a.answers} />
                   <SubmissionFiles files={a.files} getUrl={studentFileUrl} />
                   {a.returnNote ? <Caption>Returned by your teacher: {a.returnNote}</Caption> : null}
                   {a.mark !== null ? (

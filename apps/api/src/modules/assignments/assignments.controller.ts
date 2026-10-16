@@ -19,11 +19,14 @@ import {
   collectWorkSchema,
   markSubmissionSchema,
   returnSubmissionSchema,
+  setAssignmentQuestionsSchema,
   submitWorkSchema,
   ValidationError,
   type AssignmentFileUrlDto,
   type AssignmentMarkingDto,
+  type BankQuestionListResponse,
   type CollectWorkInput,
+  type SetAssignmentQuestionsInput,
   type FamilyAssignmentListResponse,
   type MarkSubmissionInput,
   type MyAssignmentDto,
@@ -69,6 +72,33 @@ export class AssignmentsController {
     @Ip() ip: string,
   ): Promise<AssignmentMarkingDto> {
     return this.service.collect(authCtx, id, dto, { ipAddress: ip });
+  }
+
+  /** CP4.3 — replace the questions, in order. Only before anyone has handed in. */
+  @Put(":id/questions")
+  @Permissions("assignment.mark")
+  async setQuestions(
+    @CurrentUser() authCtx: AuthContext,
+    @Param("id") id: string,
+    @Body(new ZodValidationPipe(setAssignmentQuestionsSchema)) dto: SetAssignmentQuestionsInput,
+    @Ip() ip: string,
+  ): Promise<AssignmentMarkingDto> {
+    return this.service.setQuestions(authCtx, id, dto, { ipAddress: ip });
+  }
+
+  /** CP4.3 — approved multiple-choice bank questions for this class level and subject. */
+  @Get(":id/bank-questions")
+  @Permissions("assignment.mark")
+  async bankQuestions(@CurrentUser() authCtx: AuthContext, @Param("id") id: string): Promise<BankQuestionListResponse> {
+    return this.service.bankQuestions(authCtx, id);
+  }
+
+  /** CP4.3 — use the automatic mark for work that is only answers to the questions. */
+  @Post(":id/auto-marks")
+  @HttpCode(200)
+  @Permissions("assignment.mark")
+  async useAutoMarks(@CurrentUser() authCtx: AuthContext, @Param("id") id: string, @Ip() ip: string): Promise<AssignmentMarkingDto> {
+    return this.service.useAutoMarks(authCtx, id, { ipAddress: ip });
   }
 
   @Get(":id/submissions")
