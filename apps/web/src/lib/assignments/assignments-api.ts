@@ -5,7 +5,9 @@
 import type {
   AssignmentFileUrlDto,
   AssignmentMarkingDto,
+  BankQuestionListResponse,
   CollectWorkInput,
+  SetAssignmentQuestionsInput,
   MarkSubmissionInput,
   ReturnSubmissionInput,
   StudentWorkDto,
@@ -42,4 +44,17 @@ export function releaseMarks(homeworkId: string): Promise<AssignmentMarkingDto> 
 // Phase 9 / CP4.2 — a five-minute link to a handed-in photo or PDF, audited.
 export function getAssignmentFileUrl(fileId: string): Promise<AssignmentFileUrlDto> {
   return apiFetch<AssignmentFileUrlDto>(`/assignments/files/${enc(fileId)}`);
+}
+
+// Phase 9 / CP4.3 — questions marked automatically.
+export function setQuestions(homeworkId: string, input: SetAssignmentQuestionsInput): Promise<AssignmentMarkingDto> {
+  return apiFetch<AssignmentMarkingDto>(`/assignments/${enc(homeworkId)}/questions`, { method: "PUT", body: input });
+}
+
+export function getBankQuestions(homeworkId: string): Promise<BankQuestionListResponse> {
+  return apiFetch<BankQuestionListResponse>(`/assignments/${enc(homeworkId)}/bank-questions`);
+}
+
+export function applyAutoMarks(homeworkId: string): Promise<AssignmentMarkingDto> {
+  return apiFetch<AssignmentMarkingDto>(`/assignments/${enc(homeworkId)}/auto-marks`, { method: "POST" });
 }

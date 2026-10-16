@@ -4,7 +4,8 @@ import { z } from "zod";
 // (docs/modules/phase-9.md §11).
 //
 // "Collect work" is switched on for one homework item. Students hand in a
-// typed answer (CP4.1); files and questions come in CP4.2 and CP4.3.
+// typed answer (CP4.1), photos or PDFs (CP4.2), and answers to questions the
+// server marks automatically (CP4.3).
 //
 // Who reads what (CP4-D2):
 //   - owner, admin and the class's teachers: every submission, with the paste
@@ -24,6 +25,15 @@ export const ASSIGNMENT_LIMITS = {
   returnNote: 500,
   /** Photos or PDFs per attempt (Q8, CP4.2). */
   files: 3,
+  /** CP4.3: questions per assignment, and their parts. */
+  questions: 50,
+  questionText: 2000,
+  questionMarks: 100,
+  optionText: 500,
+  optionsMin: 2,
+  optionsMax: 5,
+  acceptedAnswers: 10,
+  answerText: 200,
 } as const;
 
 /** Switch "collect work" on for a homework item, or change its settings. */
@@ -51,6 +61,20 @@ export const submitWorkSchema = z
       .transform((v) => (v ? v : undefined)),
     typedChars: z.number().int().min(0).max(1_000_000).default(0),
     pastedChars: z.number().int().min(0).max(1_000_000).default(0),
+    /**
+     * CP4.3: answers to the questions, keyed by question id — the option's
+     * index for multiple choice, the text for fill-in. Unanswered questions
+     * are simply left out.
+     */
+    answers: z
+      .record(
+        z.string().uuid(),
+        z.union([
+          z.number().int().min(0).max(ASSIGNMENT_LIMITS.optionsMax - 1),
+          z.string().max(ASSIGNMENT_LIMITS.answerText),
+        ]),
+      )
+      .optional(),
   })
   .strict();
 export type SubmitWorkInput = z.input<typeof submitWorkSchema>;
@@ -74,6 +98,140 @@ export const returnSubmissionSchema = z
   })
   .strict();
 export type ReturnSubmissionInput = z.infer<typeof returnSubmissionSchema>;
+
+// ---------------------------------------------------------------------------
+// CP4.3 — questions and automatic marking (CP4-D6).
+// ---------------------------------------------------------------------------
+
+export type AssignmentQuestionType = "MULTIPLE_CHOICE" | "FILL_IN";
+
+const questionText = z
+  .string()
+  .trim()
+  .min(1, "Write the question.")
+  .max(ASSIGNMENT_LIMITS.questionText);
+const questionMarks = z
+  .number()
+  .int()
+  .min(1, "A question is worth at least 1 mark.")
+  .max(ASSIGNMENT_LIMITS.questionMarks);
+
+const multipleChoiceQuestionSchema = z
+  .object({
+    type: z.literal("MULTIPLE_CHOICE"),
+    text: questionText,
+    marks: questionMarks,
+    options: z
+      .array(z.string().trim().min(1, "Fill in every option, or remove it.").max(ASSIGNMENT_LIMITS.optionText))
+      .min(ASSIGNMENT_LIMITS.optionsMin, "Give at least 2 options.")
+      .max(ASSIGNMENT_LIMITS.optionsMax, "Give at most 5 options."),
+    correctIndex: z.number().int().min(0),
+    /** The question-bank question it was copied from, if any. */
+    sourceQuestionId: z.string().uuid().optional(),
+  })
+  .strict()
+  .refine((q) => q.correctIndex < q.options.length, { message: "Pick the right option.", path: ["correctIndex"] });
+
+const fillInQuestionSchema = z
+  .object({
+    type: z.literal("FILL_IN"),
+    text: questionText,
+    marks: questionMarks,
+    acceptedAnswers: z
+      .array(z.string().trim().min(1).max(ASSIGNMENT_LIMITS.answerText))
+      .min(1, "List at least one accepted answer.")
+      .max(ASSIGNMENT_LIMITS.acceptedAnswers, "List at most 10 accepted answers."),
+  })
+  .strict();
+
+export const assignmentQuestionInputSchema = z.union([multipleChoiceQuestionSchema, fillInQuestionSchema]);
+export type AssignmentQuestionInput = z.infer<typeof assignmentQuestionInputSchema>;
+
+/** Replace the whole list, in order. Only before anyone has handed in. */
+export const setAssignmentQuestionsSchema = z
+  .object({
+    questions: z.array(assignmentQuestionInputSchema).max(ASSIGNMENT_LIMITS.questions, "At most 50 questions."),
+  })
+  .strict();
+export type SetAssignmentQuestionsInput = z.infer<typeof setAssignmentQuestionsSchema>;
+
+/** A question as staff see it: with the right answer. */
+export interface AssignmentQuestionDto {
+  id: string;
+  number: number;
+  type: AssignmentQuestionType;
+  text: string;
+  marks: number;
+  /** Multiple choice only. */
+  options: string[] | null;
+  correctIndex: number | null;
+  /** Fill-in only. */
+  acceptedAnswers: string[] | null;
+  /** Copied from the question bank. */
+  fromBank: boolean;
+}
+
+/** A question as the student sees it: never the right answer. */
+export interface MyAssignmentQuestionDto {
+  id: string;
+  number: number;
+  type: AssignmentQuestionType;
+  text: string;
+  marks: number;
+  options: string[] | null;
+}
+
+/**
+ * One answer on an attempt. Staff always get `correct`; the student gets it
+ * only once the marks are released, and never the right answer itself.
+ */
+export interface AnswerResultDto {
+  questionId: string;
+  number: number;
+  /** The option's index, the text, or null when left blank. */
+  answer: number | string | null;
+  correct: boolean | null;
+}
+
+/** An approved multiple-choice question in the bank, for copying in. */
+export interface BankQuestionDto {
+  id: string;
+  topic: string;
+  text: string;
+  marks: number;
+  options: string[];
+  correctIndex: number;
+}
+
+export interface BankQuestionListResponse {
+  data: BankQuestionDto[];
+}
+
+/**
+ * How a fill-in answer is compared: case ignored, spaces at either end
+ * dropped, repeated spaces inside counted as one. Nothing fuzzier (CP4-D6).
+ */
+export function normaliseFillIn(value: string): string {
+  return value.normalize("NFC").trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+/** Whether one answer is right. A blank answer never is. */
+export function isAnswerRight(
+  question: Pick<AssignmentQuestionDto, "type" | "correctIndex" | "acceptedAnswers">,
+  answer: number | string | null | undefined,
+): boolean {
+  if (answer === null || answer === undefined) return false;
+  if (question.type === "MULTIPLE_CHOICE") return typeof answer === "number" && answer === question.correctIndex;
+  if (typeof answer !== "string") return false;
+  const given = normaliseFillIn(answer);
+  if (given === "") return false;
+  return (question.acceptedAnswers ?? []).some((a) => normaliseFillIn(a) === given);
+}
+
+/** The letter for an option: A, B, C… */
+export function optionLetter(index: number): string {
+  return String.fromCharCode(65 + index);
+}
 
 /**
  * Where one student stands, from their latest attempt:
@@ -112,6 +270,10 @@ export interface AssignmentSubmissionDto {
   files: SubmissionFileDto[];
   submittedAt: string | Date;
   late: boolean;
+  /** CP4.3: one per question, in order; empty when there are no questions. */
+  answers: AnswerResultDto[];
+  /** The mark worked out from the questions; null when there are none. */
+  autoMark: number | null;
   /** Q7: about how much of the answer arrived by pasting, 0–100. Staff only. */
   pastedPercent: number;
   mark: number | null;
@@ -138,6 +300,8 @@ export interface AssignmentRosterRowDto {
   pastedPercent: number | null;
   /** Files on the latest attempt. */
   fileCount: number;
+  /** CP4.3: the automatic mark on the latest attempt, when there are questions. */
+  autoMark: number | null;
 }
 
 export interface AssignmentMarkingDto {
@@ -147,6 +311,10 @@ export interface AssignmentMarkingDto {
   subjectName: string;
   dueDate: string;
   collection: AssignmentCollectionDto;
+  /** CP4.3: the questions, with their right answers. */
+  questions: AssignmentQuestionDto[];
+  /** False once anyone has handed in: the questions are fixed from then. */
+  questionsEditable: boolean;
   roster: AssignmentRosterRowDto[];
   counts: { submitted: number; marked: number; released: number; notSubmitted: number };
 }
@@ -158,6 +326,8 @@ export interface StudentWorkDto {
   studentName: string;
   totalMarks: number;
   attempts: AssignmentSubmissionDto[];
+  /** CP4.3: the questions, so each answer can be shown beside its question. */
+  questions: AssignmentQuestionDto[];
 }
 
 /** The student's own view. No paste counts. */
@@ -165,6 +335,8 @@ export interface MyAssignmentAttemptDto {
   attempt: number;
   body: string | null;
   files: SubmissionFileDto[];
+  /** CP4.3: what the student answered; `correct` only once released. */
+  answers: AnswerResultDto[];
   submittedAt: string | Date;
   late: boolean;
   /** Only once released. */
@@ -186,6 +358,8 @@ export interface MyAssignmentDto {
   canSubmit: boolean;
   /** Files attached and waiting to be handed in with the next attempt. */
   stagedFiles: SubmissionFileDto[];
+  /** CP4.3: the questions to answer, without their answers. */
+  questions: MyAssignmentQuestionDto[];
   attempts: MyAssignmentAttemptDto[];
 }
 

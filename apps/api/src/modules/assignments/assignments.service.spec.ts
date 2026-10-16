@@ -12,7 +12,10 @@ import {
   ValidationError,
   addDaysIso,
   describeSubmissionFile,
+  isAnswerRight,
   lagosTodayIso,
+  normaliseFillIn,
+  setAssignmentQuestionsSchema,
   submitWorkSchema,
 } from "@school-kit/types";
 
@@ -70,6 +73,7 @@ describe("AssignmentsService (integration)", () => {
     otherTeacherId: string;
     bursarId: string;
     armId: string;
+    levelId: string;
     subjectId: string;
     child: string;
     classmate: string;
@@ -129,6 +133,7 @@ describe("AssignmentsService (integration)", () => {
         otherTeacherId: await staff(`as-t2-${runId}@example.test`, "Ngozi", "teacher", otherArm.id),
         bursarId: await staff(`as-b-${runId}@example.test`, "Bisi", "bursar", null),
         armId: arm.id,
+        levelId: level.id,
         subjectId: subject.id,
         child: kid,
         classmate: await child("Bola", arm.id),
@@ -342,6 +347,173 @@ describe("AssignmentsService (integration)", () => {
     });
   });
 
+  describe("questions and automatic marking (CP4.3)", () => {
+    const QUESTIONS = setAssignmentQuestionsSchema.parse({
+      questions: [
+        { type: "MULTIPLE_CHOICE", text: "Where does photosynthesis happen?", marks: 2, options: ["Roots", "Leaves", "Stem"], correctIndex: 1 },
+        { type: "FILL_IN", text: "Plants take in carbon ____.", marks: 3, acceptedAnswers: ["dioxide", "Dioxide gas"] },
+      ],
+    });
+    const answer = (studentId: string, id: string, answers: Record<string, number | string>, body?: string) =>
+      service.submitForStudent(A.schoolId, studentId, id, submitWorkSchema.parse({ ...(body ? { body, typedChars: body.length } : {}), answers }));
+
+    it("the teacher sets questions; the student never receives the right answers until marked, and only right or wrong then", async () => {
+      const id = await A.homework(addDaysIso(today(), 2));
+      await service.collect(ctx(A.schoolId, A.teacherId), id, { totalMarks: 4 }, reqCtx);
+      // 5 marks of questions can't fit a total of 4.
+      await expect(service.setQuestions(ctx(A.schoolId, A.teacherId), id, QUESTIONS, reqCtx)).rejects.toMatchObject({ code: "QUESTIONS_OVER_TOTAL" });
+      await service.collect(ctx(A.schoolId, A.teacherId), id, { totalMarks: 10 }, reqCtx);
+      await expect(service.setQuestions(ctx(A.schoolId, A.otherTeacherId), id, QUESTIONS, reqCtx)).rejects.toBeInstanceOf(ForbiddenError);
+      const marking = await service.setQuestions(ctx(A.schoolId, A.teacherId), id, QUESTIONS, reqCtx);
+      expect(marking.questions.map((q) => [q.number, q.type, q.marks])).toEqual([
+        [1, "MULTIPLE_CHOICE", 2],
+        [2, "FILL_IN", 3],
+      ]);
+      expect(marking.questionsEditable).toBe(true);
+      const [mc, fill] = marking.questions as [(typeof marking.questions)[0], (typeof marking.questions)[0]];
+
+      const mine = await service.getForStudent(A.schoolId, A.child, id);
+      expect(mine.questions[0]).toEqual({ id: mc.id, number: 1, type: "MULTIPLE_CHOICE", text: mc.text, marks: 2, options: ["Roots", "Leaves", "Stem"] });
+      expect(JSON.stringify(mine)).not.toMatch(/correctIndex|acceptedAnswers|Dioxide gas/);
+
+      // Wrong kinds of answer are refused; blanks are fine.
+      await expect(answer(A.child, id, { [mc.id]: 4 })).rejects.toBeInstanceOf(ValidationError);
+      await expect(answer(A.child, id, { [fill.id]: 1 })).rejects.toBeInstanceOf(ValidationError);
+      await expect(answer(A.child, id, { "00000000-0000-4000-8000-000000000000": 1 })).rejects.toBeInstanceOf(ValidationError);
+      await expect(answer(A.child, id, { [fill.id]: "   " })).rejects.toBeInstanceOf(ValidationError);
+
+      const handed = await answer(A.child, id, { [mc.id]: 1, [fill.id]: "  DIOXIDE   gas " });
+      expect(handed.attempts[0]!.answers).toEqual([
+        { questionId: mc.id, number: 1, answer: 1, correct: null },
+        { questionId: fill.id, number: 2, answer: "DIOXIDE   gas", correct: null },
+      ]);
+      // Fixed from the first hand-in, and the total can't drop below them.
+      await expect(service.setQuestions(ctx(A.schoolId, A.teacherId), id, { questions: [] }, reqCtx)).rejects.toMatchObject({ code: "QUESTIONS_FIXED" });
+      await expect(service.collect(ctx(A.schoolId, A.teacherId), id, { totalMarks: 4 }, reqCtx)).rejects.toMatchObject({ code: "TOTAL_BELOW_QUESTIONS" });
+      expect((await service.marking(ctx(A.schoolId, A.teacherId), id)).questionsEditable).toBe(false);
+
+      const work = await service.studentWork(ctx(A.schoolId, A.teacherId), id, A.child);
+      expect(work.attempts[0]).toMatchObject({ autoMark: 5 });
+      expect(work.attempts[0]!.answers.map((a) => a.correct)).toEqual([true, true]);
+
+      // The classmate gets one wrong and leaves one blank.
+      await answer(A.classmate, id, { [mc.id]: 0 });
+      const theirs = await service.studentWork(ctx(A.schoolId, A.teacherId), id, A.classmate);
+      expect(theirs.attempts[0]).toMatchObject({ autoMark: 0 });
+      expect(theirs.attempts[0]!.answers).toEqual([
+        { questionId: mc.id, number: 1, answer: 0, correct: false },
+        { questionId: fill.id, number: 2, answer: null, correct: false },
+      ]);
+
+      // The automatic mark is a starting point; the teacher's mark is the mark.
+      await service.mark(ctx(A.schoolId, A.teacherId), work.attempts[0]!.id, { mark: 7 }, reqCtx);
+      await service.release(ctx(A.schoolId, A.teacherId), id, reqCtx);
+      const released = await service.getForStudent(A.schoolId, A.child, id);
+      expect(released.attempts[0]).toMatchObject({ mark: 7 });
+      expect(released.attempts[0]!.answers.map((a) => a.correct)).toEqual([true, true]);
+      expect(JSON.stringify(released)).not.toMatch(/correctIndex|acceptedAnswers|autoMark/);
+      // The family's list carries no answers at all.
+      const family = await service.listForGuardian(guardianCtx(A.schoolId, A.guardianId), A.child);
+      expect(JSON.stringify(family.data.find((r) => r.assignmentId === id))).not.toMatch(/answers|DIOXIDE|autoMark/);
+    });
+
+    it("automatic marks become the marks only for work that is answers alone, and only when the teacher says so", async () => {
+      const id = await A.homework(addDaysIso(today(), 2));
+      await service.collect(ctx(A.schoolId, A.teacherId), id, { totalMarks: 10 }, reqCtx);
+      const { questions } = await service.setQuestions(ctx(A.schoolId, A.teacherId), id, QUESTIONS, reqCtx);
+      await answer(A.child, id, { [questions[0]!.id]: 1 });
+      await answer(A.classmate, id, { [questions[0]!.id]: 1 }, "And here is my working.");
+      const before = await service.marking(ctx(A.schoolId, A.teacherId), id);
+      expect(before.roster.map((r) => [r.name, r.status, r.autoMark])).toEqual([
+        ["Amara Pupil", "SUBMITTED", 2],
+        ["Bola Pupil", "SUBMITTED", 2],
+      ]);
+      await expect(service.useAutoMarks(ctx(A.schoolId, A.otherTeacherId), id, reqCtx)).rejects.toBeInstanceOf(ForbiddenError);
+      const after = await service.useAutoMarks(ctx(A.schoolId, A.teacherId), id, reqCtx);
+      // The written answer still waits for a person.
+      expect(after.roster.map((r) => [r.name, r.status, r.mark])).toEqual([
+        ["Amara Pupil", "MARKED", 2],
+        ["Bola Pupil", "SUBMITTED", null],
+      ]);
+      await expect(service.useAutoMarks(ctx(A.schoolId, A.teacherId), id, reqCtx)).rejects.toMatchObject({ code: "NOTHING_TO_MARK" });
+      // Still hidden from the family until released.
+      expect((await service.getForStudent(A.schoolId, A.child, id)).attempts[0]).toMatchObject({ mark: null });
+    });
+
+    it("approved multiple-choice questions from the bank, for this class level and subject only, can be copied in", async () => {
+      const ids = await withTenant(A.schoolId, async (db) => {
+        const make = async (opts: { type: "MULTIPLE_CHOICE" | "THEORY"; status: "APPROVED" | "DRAFT"; subjectId?: string; text: string }) =>
+          (
+            await db.question.create({
+              data: {
+                schoolId: A.schoolId,
+                subjectId: opts.subjectId ?? A.subjectId,
+                classLevelId: A.levelId,
+                topic: "Plants",
+                type: opts.type,
+                text: opts.text,
+                marks: 1,
+                status: opts.status,
+                createdBy: A.teacherId,
+                ...(opts.status === "APPROVED" ? { approvedBy: A.teacherId, approvedAt: new Date() } : {}),
+                answerGuide: opts.type === "THEORY" ? "Guide" : null,
+                ...(opts.type === "MULTIPLE_CHOICE"
+                  ? {
+                      options: {
+                        create: [
+                          { schoolId: A.schoolId, orderIndex: 0, text: "Chlorophyll", isCorrect: true },
+                          { schoolId: A.schoolId, orderIndex: 1, text: "Starch", isCorrect: false },
+                        ],
+                      },
+                    }
+                  : {}),
+              },
+              select: { id: true },
+            })
+          ).id;
+        const otherSubject = await db.subject.findFirstOrThrow({ where: { id: { not: A.subjectId } }, select: { id: true } });
+        return {
+          approved: await make({ type: "MULTIPLE_CHOICE", status: "APPROVED", text: `What makes leaves green? ${runId}` }),
+          draft: await make({ type: "MULTIPLE_CHOICE", status: "DRAFT", text: `Draft ${runId}` }),
+          theory: await make({ type: "THEORY", status: "APPROVED", text: `Theory ${runId}` }),
+          otherSubject: await make({ type: "MULTIPLE_CHOICE", status: "APPROVED", subjectId: otherSubject.id, text: `Other ${runId}` }),
+        };
+      });
+      const id = await A.homework(addDaysIso(today(), 2));
+      await service.collect(ctx(A.schoolId, A.teacherId), id, { totalMarks: 10 }, reqCtx);
+      const bank = await service.bankQuestions(ctx(A.schoolId, A.teacherId), id);
+      expect(bank.data.map((q) => q.id)).toEqual([ids.approved]);
+      expect(bank.data[0]).toMatchObject({ options: ["Chlorophyll", "Starch"], correctIndex: 0, marks: 1 });
+      await expect(service.bankQuestions(ctx(A.schoolId, A.otherTeacherId), id)).rejects.toBeInstanceOf(ForbiddenError);
+
+      const copy = (sourceQuestionId: string) =>
+        setAssignmentQuestionsSchema.parse({
+          questions: [{ type: "MULTIPLE_CHOICE", text: "What makes leaves green?", marks: 1, options: ["Chlorophyll", "Starch"], correctIndex: 0, sourceQuestionId }],
+        });
+      for (const bad of [ids.draft, ids.theory, ids.otherSubject]) {
+        await expect(service.setQuestions(ctx(A.schoolId, A.teacherId), id, copy(bad), reqCtx)).rejects.toBeInstanceOf(ValidationError);
+      }
+      const copied = await service.setQuestions(ctx(A.schoolId, A.teacherId), id, copy(ids.approved), reqCtx);
+      expect(copied.questions[0]).toMatchObject({ fromBank: true, options: ["Chlorophyll", "Starch"], correctIndex: 0 });
+    });
+
+    it("fill-in matching ignores case and spacing, and nothing else", () => {
+      expect(normaliseFillIn("  Carbon   DIOXIDE ")).toBe("carbon dioxide");
+      const q = { type: "FILL_IN" as const, correctIndex: null, acceptedAnswers: ["Carbon dioxide", "CO2"] };
+      expect(isAnswerRight(q, "carbon  dioxide")).toBe(true);
+      expect(isAnswerRight(q, " co2 ")).toBe(true);
+      expect(isAnswerRight(q, "carbon dioxid")).toBe(false);
+      expect(isAnswerRight(q, "carbondioxide")).toBe(false);
+      expect(isAnswerRight(q, "")).toBe(false);
+      expect(isAnswerRight(q, null)).toBe(false);
+      expect(isAnswerRight(q, 0)).toBe(false);
+      const mc = { type: "MULTIPLE_CHOICE" as const, correctIndex: 2, acceptedAnswers: null };
+      expect(isAnswerRight(mc, 2)).toBe(true);
+      expect(isAnswerRight(mc, 1)).toBe(false);
+      expect(isAnswerRight(mc, "2")).toBe(false);
+    });
+  });
+
   it("names files the same way on every screen", () => {
     const files = [
       { id: "a", type: "image" as const, size: 1 },
@@ -375,8 +547,10 @@ describe("AssignmentsService (integration)", () => {
         "assignment.file.stage",
         "assignment.file.remove",
         "assignment.file.read",
+        "assignment.questions.set",
+        "assignment.automarks.use",
       ]),
     );
-    expect(JSON.stringify(rows.map((r) => r.metadata))).not.toMatch(/Photosynthesis turns|leaf|Explain each part|Too short/);
+    expect(JSON.stringify(rows.map((r) => r.metadata))).not.toMatch(/Photosynthesis turns|leaf|Explain each part|Too short|DIOXIDE|my working|Roots/);
   });
 });

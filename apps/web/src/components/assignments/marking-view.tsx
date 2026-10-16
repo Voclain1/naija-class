@@ -7,7 +7,9 @@ import {
   ASSIGNMENT_LIMITS,
   describeSubmissionFile,
   describeWorkStatus,
+  optionLetter,
   type AssignmentMarkingDto,
+  type AssignmentQuestionDto,
   type AssignmentRosterRowDto,
   type AssignmentSubmissionDto,
   type StudentWorkDto,
@@ -17,7 +19,9 @@ import { Button } from "@/components/ui/button";
 import { InlineAlert } from "@/components/shared/inline-alert";
 import { ApiError } from "@/lib/api-client";
 import { openPrivateDocument } from "@/components/health/vaccinations-section";
+import { QuestionsEditor } from "@/components/assignments/questions-editor";
 import {
+  applyAutoMarks,
   collectWork,
   getAssignmentFileUrl,
   getMarking,
@@ -31,6 +35,9 @@ import {
 // (docs/modules/phase-9.md §11). The class's teachers, owner and admin. Marks
 // reach the student and parents only after "Release marks" (CP4-D7). The paste
 // figure (Q7) is shown here and nowhere a family can see it.
+//
+// CP4.3: the questions, each student's answers marked right or wrong, and the
+// automatic mark as the starting point for the teacher's own.
 
 function formatDay(iso: string): string {
   return new Date(`${iso}T00:00:00.000Z`).toLocaleDateString("en-NG", {
@@ -62,18 +69,64 @@ const STATUS_STYLE: Record<AssignmentRosterRowDto["status"], string> = {
   MARKED: "bg-secondary/20 text-foreground",
 };
 
+function formatAnswer(q: AssignmentQuestionDto | undefined, answer: number | string | null): string {
+  if (answer === null) return "Left blank";
+  if (typeof answer === "number") return `${optionLetter(answer)}. ${q?.options?.[answer] ?? ""}`;
+  return answer;
+}
+
+function Answers({ attempt, questions }: { attempt: AssignmentSubmissionDto; questions: AssignmentQuestionDto[] }) {
+  if (attempt.answers.length === 0) return null;
+  const byId = new Map(questions.map((q) => [q.id, q]));
+  return (
+    <section aria-label={`Answers, attempt ${attempt.attempt}`} className="flex flex-col gap-2">
+      <p className="text-sm font-medium">
+        Questions: {attempt.autoMark} of {questions.reduce((sum, q) => sum + q.marks, 0)} marks, marked automatically
+      </p>
+      <ol className="flex flex-col gap-1.5">
+        {attempt.answers.map((a) => {
+          const q = byId.get(a.questionId);
+          return (
+            <li
+              key={a.questionId}
+              className={`flex flex-col gap-0.5 rounded-md p-2 text-sm ${
+                a.correct ? "bg-primary/10" : "bg-amber-50 dark:bg-amber-900/30"
+              }`}
+            >
+              <span className="break-words">
+                <span className="font-medium">{a.number}.</span> {q?.text}
+              </span>
+              <span className="break-words">
+                <span className={a.correct ? "font-medium text-primary" : "font-medium text-amber-900 dark:text-amber-100"}>
+                  {a.correct ? "Right" : "Wrong"}:
+                </span>{" "}
+                {formatAnswer(q, a.answer)}
+              </span>
+            </li>
+          );
+        })}
+      </ol>
+    </section>
+  );
+}
+
 function Attempt({
   attempt,
   latest,
   totalMarks,
+  questions,
   onChanged,
 }: {
   attempt: AssignmentSubmissionDto;
   latest: boolean;
   totalMarks: number;
+  questions: AssignmentQuestionDto[];
   onChanged: (work: StudentWorkDto) => void;
 }) {
-  const [mark, setMark] = useState(attempt.mark === null ? "" : String(attempt.mark));
+  // An unmarked attempt starts from the automatic mark, when there is one.
+  const [mark, setMark] = useState(
+    attempt.mark !== null ? String(attempt.mark) : attempt.autoMark !== null ? String(attempt.autoMark) : "",
+  );
   const [feedback, setFeedback] = useState(attempt.feedback ?? "");
   const [note, setNote] = useState("");
   const [returning, setReturning] = useState(false);
@@ -115,6 +168,7 @@ function Attempt({
           </p>
         </>
       )}
+      <Answers attempt={attempt} questions={questions} />
       {attempt.files.length > 0 && (
         <div className="flex flex-wrap gap-2">
           {attempt.files.map((f, i) => (
@@ -264,6 +318,7 @@ function StudentPanel({
           attempt={a}
           latest={i === 0}
           totalMarks={work.totalMarks}
+          questions={work.questions}
           onChanged={(next) => {
             setWork(next);
             onChanged();
@@ -320,6 +375,7 @@ export function MarkingView({ homeworkId, backHref, backLabel }: { homeworkId: s
   }
 
   const unreleased = data.roster.filter((r) => r.status === "MARKED" && !r.released).length;
+  const autoMarkable = data.roster.filter((r) => r.status === "SUBMITTED" && r.autoMark !== null).length;
 
   return (
     <div className="flex w-full max-w-4xl flex-col gap-6">
@@ -392,9 +448,36 @@ export function MarkingView({ homeworkId, backHref, backLabel }: { homeworkId: s
           >
             {unreleased === 0 ? "No new marks to release" : `Release ${unreleased} mark${unreleased === 1 ? "" : "s"}`}
           </Button>
+          {data.questions.length > 0 && autoMarkable > 0 && (
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={busy}
+              onClick={() => {
+                if (
+                  window.confirm(
+                    "Use the automatic mark as the mark?\n\nOnly for work that is answers to the questions and nothing else. Work with a written answer or a file still needs you to mark it. Nothing is released until you release it.",
+                  )
+                ) {
+                  void act(() => applyAutoMarks(homeworkId));
+                }
+              }}
+            >
+              Use automatic marks
+            </Button>
+          )}
         </div>
         {actionError && <InlineAlert>{actionError}</InlineAlert>}
       </section>
+
+      <QuestionsEditor
+        homeworkId={homeworkId}
+        data={data}
+        onSaved={(next) => {
+          setData(next);
+          setTotal(String(next.collection.totalMarks));
+        }}
+      />
 
       <ul className="flex flex-col gap-2">
         {data.roster.map((row) => (
@@ -419,6 +502,11 @@ export function MarkingView({ homeworkId, backHref, backLabel }: { homeworkId: s
                   </span>
                 )}
                 {row.attempts > 1 && <span className="rounded bg-muted px-1.5 py-0.5">{row.attempts} attempts</span>}
+                {row.autoMark !== null && row.mark === null && (
+                  <span className="rounded bg-muted px-1.5 py-0.5">
+                    Automatic {row.autoMark}/{data.collection.totalMarks}
+                  </span>
+                )}
                 {row.fileCount > 0 && (
                   <span className="rounded bg-muted px-1.5 py-0.5">
                     {row.fileCount} file{row.fileCount === 1 ? "" : "s"}

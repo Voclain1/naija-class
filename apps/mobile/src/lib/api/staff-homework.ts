@@ -68,3 +68,9 @@ export function releaseStaffMarks(homeworkId: string): Promise<AssignmentMarking
 export function staffAssignmentFileUrl(fileId: string): Promise<AssignmentFileUrlDto> {
   return apiFetch<AssignmentFileUrlDto>(`/assignments/files/${enc(fileId)}`);
 }
+
+// Phase 9 / CP4.3 — use the automatic mark for work that is only answers to
+// the questions. The questions themselves are set on the website.
+export function applyStaffAutoMarks(homeworkId: string): Promise<AssignmentMarkingDto> {
+  return apiFetch<AssignmentMarkingDto>(`/assignments/${enc(homeworkId)}/auto-marks`, { method: "POST" });
+}

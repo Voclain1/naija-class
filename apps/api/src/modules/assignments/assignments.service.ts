@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { Injectable } from "@nestjs/common";
 
-import { withGuardian, withTenant } from "@school-kit/db";
+import { withGuardian, withTenant, type Prisma } from "@school-kit/db";
 import {
   ConflictError,
   ForbiddenError,
@@ -10,9 +10,14 @@ import {
   ValidationError,
   addDaysIso,
   lagosTodayIso,
+  isAnswerRight,
   pastedPercent,
   ASSIGNMENT_LIMITS,
+  type AnswerResultDto,
   type AssignmentFileUrlDto,
+  type AssignmentQuestionDto,
+  type BankQuestionListResponse,
+  type SetAssignmentQuestionsInput,
   type AssignmentMarkingDto,
   type AssignmentRosterRowDto,
   type AssignmentSubmissionDto,
@@ -53,6 +58,11 @@ import { getTeacherScope } from "../teacher-scope/teacher-scope.helper.js";
 //   - Marks and feedback reach the student and parents only once released
 //     (CP4-D7).
 //
+//   - CP4.3: questions marked by the server (CP4-D6). Multiple choice by
+//     option; fill-in by exact match after ignoring case and spacing. The
+//     automatic mark is the teacher's starting point, never the mark itself
+//     until they save or accept it. The student never receives a right answer.
+//
 // No push or SMS (CP4-D10), and no AI anywhere (Q6). The answer text and the
 // feedback never go into the audit log.
 
@@ -65,6 +75,8 @@ const AUDIT = {
   fileStage: "assignment.file.stage",
   fileRemove: "assignment.file.remove",
   fileRead: "assignment.file.read",
+  questions: "assignment.questions.set",
+  autoMarks: "assignment.automarks.use",
 } as const;
 
 const STAFF_ROLES = ["owner", "admin", "teacher"];
@@ -112,6 +124,84 @@ const asIsoDate = (value: Date): string => value.toISOString().slice(0, 10);
 type FileRow = { id: string; ext: string; size: number; submissionId: string | null };
 const fileDto = (f: FileRow): SubmissionFileDto => ({ id: f.id, type: f.ext === "pdf" ? "pdf" : "image", size: f.size });
 const fullName = (u: { firstName: string; lastName: string }): string => `${u.firstName} ${u.lastName}`;
+
+type QuestionRow = {
+  id: string;
+  orderIndex: number;
+  type: "MULTIPLE_CHOICE" | "FILL_IN";
+  text: string;
+  marks: number;
+  options: Prisma.JsonValue;
+  correctIndex: number | null;
+  acceptedAnswers: Prisma.JsonValue;
+  sourceQuestionId: string | null;
+};
+
+const stringList = (value: Prisma.JsonValue): string[] | null =>
+  Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : null;
+
+export function questionDto(q: QuestionRow): AssignmentQuestionDto {
+  return {
+    id: q.id,
+    number: q.orderIndex,
+    type: q.type,
+    text: q.text,
+    marks: q.marks,
+    options: q.type === "MULTIPLE_CHOICE" ? stringList(q.options) : null,
+    correctIndex: q.type === "MULTIPLE_CHOICE" ? q.correctIndex : null,
+    acceptedAnswers: q.type === "FILL_IN" ? stringList(q.acceptedAnswers) : null,
+    fromBank: q.sourceQuestionId !== null,
+  };
+}
+
+type Answers = Record<string, number | string>;
+
+const answersOf = (value: Prisma.JsonValue | null): Answers =>
+  value && typeof value === "object" && !Array.isArray(value) ? (value as Answers) : {};
+
+/** The automatic mark: the marks of every question answered right. */
+export function autoMarkOf(questions: readonly AssignmentQuestionDto[], answers: Answers): number {
+  return questions.reduce((sum, q) => sum + (isAnswerRight(q, answers[q.id]) ? q.marks : 0), 0);
+}
+
+/** One row per question. `reveal` false leaves out whether each was right. */
+function answerResults(questions: readonly AssignmentQuestionDto[], answers: Answers, reveal: boolean): AnswerResultDto[] {
+  return questions.map((q) => {
+    const given = answers[q.id];
+    return {
+      questionId: q.id,
+      number: q.number,
+      answer: given === undefined ? null : given,
+      correct: reveal ? isAnswerRight(q, given) : null,
+    };
+  });
+}
+
+/**
+ * The answers a student sent, checked against the questions: an unknown
+ * question, or the wrong kind of answer for one, is refused; blanks are
+ * dropped. Returns null when nothing was answered.
+ */
+export function cleanAnswers(questions: readonly AssignmentQuestionDto[], raw: Answers | undefined): Answers | null {
+  if (!raw) return null;
+  const byId = new Map(questions.map((q) => [q.id, q]));
+  const out: Answers = {};
+  for (const [id, value] of Object.entries(raw)) {
+    const q = byId.get(id);
+    if (!q) throw new ValidationError("One of those answers is for a question that isn't on this work.");
+    if (q.type === "MULTIPLE_CHOICE") {
+      if (typeof value !== "number" || value >= (q.options?.length ?? 0)) {
+        throw new ValidationError(`Question ${q.number} needs one of its options.`);
+      }
+      out[id] = value;
+    } else {
+      if (typeof value !== "string") throw new ValidationError(`Question ${q.number} needs a written answer.`);
+      const text = value.trim();
+      if (text !== "") out[id] = text;
+    }
+  }
+  return Object.keys(out).length > 0 ? out : null;
+}
 
 /** Where a student stands, from their latest attempt (null when none). */
 export function statusOf(latest: Pick<SubmissionRow, "returnedAt" | "markedAt"> | null): WorkStatus {
@@ -167,6 +257,17 @@ export class AssignmentsService {
           throw new ConflictError(
             "TOTAL_BELOW_MARK",
             `A student already has ${top._max.mark}. The total can't be lower than that.`,
+          );
+        }
+        const questionMarks = await db.assignmentQuestion.aggregate({
+          where: { collectionId: existing.id },
+          _sum: { marks: true },
+        });
+        const sum = questionMarks._sum.marks ?? 0;
+        if (input.totalMarks < sum) {
+          throw new ConflictError(
+            "TOTAL_BELOW_QUESTIONS",
+            `The questions are worth ${sum} marks. The total can't be lower than that.`,
           );
         }
         await db.assignmentCollection.update({
@@ -345,6 +446,165 @@ export class AssignmentsService {
   }
 
   // =========================================================================
+  // CP4.3 — PUT /assignments/:id/questions: replace the questions, in order
+  // =========================================================================
+  async setQuestions(
+    authCtx: AuthContext,
+    assignmentId: string,
+    input: SetAssignmentQuestionsInput,
+    reqCtx: RequestContext,
+  ): Promise<AssignmentMarkingDto> {
+    await assertUserActiveAndHasOneOf(authCtx, STAFF_ROLES);
+    const isAdmin = await this.isAdmin(authCtx);
+    return withTenant(authCtx.schoolId, async (db) => {
+      const assignment = await this.staffAssignment(db, authCtx, assignmentId, isAdmin);
+      const collection = await this.collectionOf(db, assignmentId);
+      // Fixed once anyone has handed in, so an automatic mark never has to be
+      // worked out again against different questions.
+      const handedIn = await db.assignmentSubmission.count({ where: { collectionId: collection.id } });
+      if (handedIn > 0) {
+        throw new ConflictError("QUESTIONS_FIXED", "Students have started handing in, so the questions can't change now.");
+      }
+      const sum = input.questions.reduce((total, q) => total + q.marks, 0);
+      if (sum > collection.totalMarks) {
+        throw new ConflictError(
+          "QUESTIONS_OVER_TOTAL",
+          `The questions add up to ${sum} marks, more than the total of ${collection.totalMarks}. Raise the total first.`,
+        );
+      }
+      // A copy from the bank must be an approved multiple-choice question for
+      // this class level and subject: the same pair the teacher is held to.
+      const sourceIds = [
+        ...new Set(
+          input.questions.flatMap((q) => (q.type === "MULTIPLE_CHOICE" && q.sourceQuestionId ? [q.sourceQuestionId] : [])),
+        ),
+      ];
+      if (sourceIds.length > 0) {
+        const levelId = await this.levelOf(db, assignment.classArmId);
+        const found = await db.question.count({
+          where: {
+            id: { in: sourceIds },
+            subjectId: assignment.subjectId,
+            classLevelId: levelId,
+            type: "MULTIPLE_CHOICE",
+            status: "APPROVED",
+          },
+        });
+        if (found !== sourceIds.length) {
+          throw new ValidationError("One of those bank questions isn't an approved question for this class and subject.");
+        }
+      }
+      await db.assignmentQuestion.deleteMany({ where: { collectionId: collection.id } });
+      if (input.questions.length > 0) {
+        await db.assignmentQuestion.createMany({
+          data: input.questions.map((q, i) => ({
+            schoolId: authCtx.schoolId,
+            collectionId: collection.id,
+            orderIndex: i + 1,
+            type: q.type,
+            text: q.text,
+            marks: q.marks,
+            ...(q.type === "MULTIPLE_CHOICE"
+              ? { options: q.options, correctIndex: q.correctIndex, sourceQuestionId: q.sourceQuestionId ?? null }
+              : { acceptedAnswers: q.acceptedAnswers }),
+          })),
+        });
+      }
+      await db.auditLog.create({
+        data: {
+          schoolId: authCtx.schoolId,
+          userId: authCtx.userId,
+          action: AUDIT.questions,
+          entityType: "homework",
+          entityId: assignmentId,
+          ipAddress: reqCtx.ipAddress,
+          metadata: {
+            questions: input.questions.length,
+            multipleChoice: input.questions.filter((q) => q.type === "MULTIPLE_CHOICE").length,
+            fromBank: sourceIds.length,
+            marks: sum,
+          },
+        },
+      });
+      return this.readMarking(db, assignment);
+    });
+  }
+
+  // =========================================================================
+  // CP4.3 — GET /assignments/:id/bank-questions: what may be copied in
+  // =========================================================================
+  async bankQuestions(authCtx: AuthContext, assignmentId: string): Promise<BankQuestionListResponse> {
+    await assertUserActiveAndHasOneOf(authCtx, STAFF_ROLES);
+    const isAdmin = await this.isAdmin(authCtx);
+    return withTenant(authCtx.schoolId, async (db) => {
+      const assignment = await this.staffAssignment(db, authCtx, assignmentId, isAdmin);
+      const levelId = await this.levelOf(db, assignment.classArmId);
+      const rows = await db.question.findMany({
+        where: { subjectId: assignment.subjectId, classLevelId: levelId, type: "MULTIPLE_CHOICE", status: "APPROVED" },
+        include: { options: { orderBy: { orderIndex: "asc" } } },
+        orderBy: [{ topic: "asc" }, { createdAt: "asc" }],
+        take: 200,
+      });
+      const data = rows.flatMap((q) => {
+        const correct = q.options.map((o, i) => (o.isCorrect ? i : -1)).filter((i) => i >= 0);
+        // Only questions that already fit the shape a copy must have.
+        if (q.options.length < ASSIGNMENT_LIMITS.optionsMin || q.options.length > ASSIGNMENT_LIMITS.optionsMax) return [];
+        if (correct.length !== 1 || q.marks > ASSIGNMENT_LIMITS.questionMarks) return [];
+        return [{ id: q.id, topic: q.topic, text: q.text, marks: q.marks, options: q.options.map((o) => o.text), correctIndex: correct[0]! }];
+      });
+      return { data };
+    });
+  }
+
+  // =========================================================================
+  // CP4.3 — POST /assignments/:id/auto-marks: use the automatic mark as the
+  // mark, for work that is answers to questions and nothing else
+  // =========================================================================
+  async useAutoMarks(authCtx: AuthContext, assignmentId: string, reqCtx: RequestContext): Promise<AssignmentMarkingDto> {
+    await assertUserActiveAndHasOneOf(authCtx, STAFF_ROLES);
+    const isAdmin = await this.isAdmin(authCtx);
+    return withTenant(authCtx.schoolId, async (db) => {
+      const assignment = await this.staffAssignment(db, authCtx, assignmentId, isAdmin);
+      const collection = await this.collectionOf(db, assignmentId);
+      // Unmarked and not returned is always a student's latest attempt. Work
+      // with written text or a file still needs a person to read it.
+      const rows = await db.assignmentSubmission.findMany({
+        where: {
+          collectionId: collection.id,
+          markedAt: null,
+          returnedAt: null,
+          autoMark: { not: null },
+          body: null,
+          files: { none: {} },
+        },
+        select: { id: true, autoMark: true },
+      });
+      if (rows.length === 0) {
+        throw new ConflictError("NOTHING_TO_MARK", "There is no unmarked work that is only answers to the questions.");
+      }
+      const now = new Date();
+      for (const r of rows) {
+        await db.assignmentSubmission.update({
+          where: { id: r.id },
+          data: { mark: r.autoMark, markedBy: authCtx.userId, markedAt: now },
+        });
+      }
+      await db.auditLog.create({
+        data: {
+          schoolId: authCtx.schoolId,
+          userId: authCtx.userId,
+          action: AUDIT.autoMarks,
+          entityType: "homework",
+          entityId: assignmentId,
+          ipAddress: reqCtx.ipAddress,
+          metadata: { marked: rows.length, outOf: collection.totalMarks },
+        },
+      });
+      return this.readMarking(db, assignment);
+    });
+  }
+
+  // =========================================================================
   // The student's own: GET /student-portal/me/assignments(/:id), POST submit
   // =========================================================================
   async listForStudent(schoolId: string, studentId: string): Promise<FamilyAssignmentListResponse> {
@@ -384,8 +644,14 @@ export class AssignmentsService {
         where: { collectionId: collection.id, studentId, submissionId: null },
         select: { id: true },
       });
-      if (!body && staged.length === 0) {
-        throw new ValidationError("Write your answer or attach a photo or PDF before handing it in.");
+      const questions = await this.questionsOf(db, collection.id);
+      const answers = cleanAnswers(questions, input.answers);
+      if (!body && staged.length === 0 && !answers) {
+        throw new ValidationError(
+          questions.length > 0
+            ? "Answer at least one question, write your answer or attach a photo or PDF before handing it in."
+            : "Write your answer or attach a photo or PDF before handing it in.",
+        );
       }
       const counts = clampCounts(body?.length ?? 0, input.typedChars ?? 0, input.pastedChars ?? 0);
       const now = new Date();
@@ -408,6 +674,10 @@ export class AssignmentsService {
           pastedChars: counts.pasted,
           submittedAt: now,
           late: isLate(asIsoDate(assignment.dueDate), now),
+          // Worked out here, never sent by the phone. Null when there are no questions.
+          ...(questions.length > 0
+            ? { answers: answers ?? {}, autoMark: autoMarkOf(questions, answers ?? {}) }
+            : {}),
         },
         select: { id: true, late: true },
       });
@@ -424,7 +694,15 @@ export class AssignmentsService {
           action: AUDIT.submit,
           entityType: "assignment_submission",
           entityId: created.id,
-          metadata: { assignmentId, attempt, late: created.late, files: staged.length, text: body !== null, principal: "student" },
+          metadata: {
+            assignmentId,
+            attempt,
+            late: created.late,
+            files: staged.length,
+            text: body !== null,
+            answered: answers ? Object.keys(answers).length : 0,
+            principal: "student",
+          },
         },
       });
       return this.readMine(db, assignment, collection, studentId);
@@ -597,6 +875,17 @@ export class AssignmentsService {
     return assignment;
   }
 
+  private async questionsOf(db: Db, collectionId: string): Promise<AssignmentQuestionDto[]> {
+    const rows = await db.assignmentQuestion.findMany({ where: { collectionId }, orderBy: { orderIndex: "asc" } });
+    return rows.map(questionDto);
+  }
+
+  private async levelOf(db: Db, classArmId: string): Promise<string> {
+    const arm = await db.classArm.findUnique({ where: { id: classArmId }, select: { classLevelId: true } });
+    if (!arm) throw new NotFoundError("That class could not be found.");
+    return arm.classLevelId;
+  }
+
   private async collectionOf(db: Db, assignmentId: string) {
     const collection = await db.assignmentCollection.findUnique({ where: { assignmentId } });
     if (!collection) throw new NotFoundError("Work is not being collected for that homework.");
@@ -652,7 +941,8 @@ export class AssignmentsService {
       orderBy: [{ studentId: "asc" }, { attempt: "desc" }],
       include: { _count: { select: { files: true } } },
     });
-    const latestBy = new Map<string, SubmissionRow>();
+    const questions = await this.questionsOf(db, collection.id);
+    const latestBy = new Map<string, SubmissionRow & { autoMark: number | null }>();
     const attemptsBy = new Map<string, number>();
     for (const s of submissions) {
       if (!latestBy.has(s.studentId)) latestBy.set(s.studentId, s);
@@ -683,6 +973,7 @@ export class AssignmentsService {
         released: latest?.releasedAt != null,
         pastedPercent: latest?.body ? pastedPercent(latest.typedChars, latest.pastedChars) : null,
         fileCount: (latest as { _count?: { files: number } } | null)?._count?.files ?? 0,
+        autoMark: latest?.autoMark ?? null,
       };
     });
     return {
@@ -692,6 +983,8 @@ export class AssignmentsService {
       subjectName: subject?.name ?? "",
       dueDate: asIsoDate(assignment.dueDate),
       collection: { assignmentId: assignment.id, totalMarks: collection.totalMarks, accepting: collection.accepting },
+      questions,
+      questionsEditable: submissions.length === 0,
       roster,
       counts: {
         submitted: roster.filter((r) => r.status === "SUBMITTED").length,
@@ -716,11 +1009,13 @@ export class AssignmentsService {
       select: { id: true, firstName: true, lastName: true },
     });
     const markerName = new Map(markers.map((u) => [u.id, fullName(u)]));
+    const questions = await this.questionsOf(db, collection.id);
     return {
       assignmentId,
       studentId,
       studentName: fullName(student),
       totalMarks: collection.totalMarks,
+      questions,
       attempts: rows.map(
         (r): AssignmentSubmissionDto => ({
           id: r.id,
@@ -730,6 +1025,8 @@ export class AssignmentsService {
           files: r.files.map(fileDto),
           submittedAt: r.submittedAt,
           late: r.late,
+          answers: answerResults(questions, answersOf(r.answers), true),
+          autoMark: r.autoMark,
           pastedPercent: pastedPercent(r.typedChars, r.pastedChars),
           mark: r.mark,
           feedback: r.feedback,
@@ -762,6 +1059,7 @@ export class AssignmentsService {
       }),
     ]);
     const status = statusOf(rows[0] ?? null);
+    const questions = await this.questionsOf(db, collection.id);
     return {
       assignmentId: assignment.id,
       title: assignment.title,
@@ -773,11 +1071,22 @@ export class AssignmentsService {
       status,
       canSubmit: status === "RETURNED" || (status === "NOT_SUBMITTED" && collection.accepting),
       stagedFiles: staged.map(fileDto),
-      // No paste counts here, and nothing marked until it is released.
+      // Never the right answers.
+      questions: questions.map((q) => ({
+        id: q.id,
+        number: q.number,
+        type: q.type,
+        text: q.text,
+        marks: q.marks,
+        options: q.options,
+      })),
+      // No paste counts here, and nothing marked until it is released. Which
+      // answers were right shows with the mark, never before.
       attempts: rows.map((r) => ({
         attempt: r.attempt,
         body: r.body,
         files: r.files.map(fileDto),
+        answers: answerResults(questions, answersOf(r.answers), r.releasedAt !== null),
         submittedAt: r.submittedAt,
         late: r.late,
         mark: r.releasedAt ? r.mark : null,
