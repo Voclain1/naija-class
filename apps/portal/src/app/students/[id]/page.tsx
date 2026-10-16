@@ -35,6 +35,7 @@ import {
 } from "@/lib/session-end";
 import { DisciplineNotices } from "@/components/discipline-notices";
 import { HealthRecord } from "@/components/health-record";
+import { HomeworkCard } from "@/components/homework-card";
 import { StudentPortalAccess } from "@/components/student-portal-access";
 import { SchoolBanner } from "@/components/school-banner";
 
@@ -284,6 +285,9 @@ export default function StudentDetailPage() {
           {/* Phase 9 / CP2.3: approved suspensions and exclusions. Absent when
               there are none. */}
           <DisciplineNotices studentId={state.student.id} />
+
+          {/* Phase 9 / CP4.1: homework, handed-in work and released marks. */}
+          <HomeworkCard studentId={state.student.id} />
 
           <section className="flex flex-col gap-2 rounded-lg border bg-card p-4 shadow-sm">
             <h2 className="text-lg font-semibold tracking-tight">Results</h2>

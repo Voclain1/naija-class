@@ -812,6 +812,7 @@ model Student {
   healthProfile HealthProfile? // Phase 9 / CP3.1
   vaccinations  HealthVaccination[] // Phase 9 / CP3.2
   sickbayVisits SickbayVisit[] // Phase 9 / CP3.3
+  assignmentSubmissions AssignmentSubmission[] // Phase 9 / CP4
 
   @@unique([schoolId, admissionNumber])
   @@index([schoolId])
@@ -3262,7 +3263,9 @@ enum AnnouncementAudience {
 // open the app on a Tuesday, which results (three times a year) never will.
 //
 // If submissions are ever built they are their own plan-first and their own
-// table. This model must not quietly grow a `submittedAt`.
+// table. This model must not quietly grow a `submittedAt`. (Phase 9 / CP4 did
+// exactly that: AssignmentCollection and AssignmentSubmission below. This
+// model gained only the relation field, no column.)
 model Assignment {
   id         String @id @default(uuid())
   schoolId   String @map("school_id")
@@ -3285,6 +3288,9 @@ model Assignment {
   // that it existed and was cancelled. Same treatment as an announcement.
   withdrawnAt DateTime? @map("withdrawn_at")
   withdrawnBy String?   @map("withdrawn_by")
+
+  // Phase 9 / CP4 — set when the teacher switches on "collect work".
+  collection AssignmentCollection?
 
   // The family read is "this class, due on or after today", and the staff read
   // is "what I set, newest first".
@@ -4101,4 +4107,57 @@ model SickbayNotice {
 
   @@unique([visitId, guardianId])
   @@map("sickbay_notices")
+}
+
+// Phase 9 / CP4 — assignments: submitted work and marking
+// (docs/modules/phase-9.md §11). "Collect work" switched on for one homework
+// item. Read and marked by owner, admin and the class's teachers
+// (assignment.read / assignment.mark); never the bursar.
+model AssignmentCollection {
+  id           String                 @id @default(uuid())
+  schoolId     String                 @map("school_id")
+  assignmentId String                 @unique @map("assignment_id")
+  assignment   Assignment             @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  totalMarks   Int                    @map("total_marks")
+  // Off once the teacher clicks "Stop accepting work".
+  accepting    Boolean                @default(true)
+  createdBy    String                 @map("created_by")
+  createdAt    DateTime               @default(now()) @map("created_at")
+  updatedAt    DateTime               @default(now()) @updatedAt @map("updated_at")
+  submissions  AssignmentSubmission[]
+
+  @@map("assignment_collections")
+}
+
+// One row per student per attempt. A submitted attempt is final; a return
+// opens the next attempt and this one is kept as it was.
+model AssignmentSubmission {
+  id           String               @id @default(uuid())
+  schoolId     String               @map("school_id")
+  collectionId String               @map("collection_id")
+  collection   AssignmentCollection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  studentId    String               @map("student_id")
+  student      Student              @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  attempt      Int
+  body         String
+  // Q7's paste indicator, as reported by the student's own device. Shown to
+  // the teacher only; never to the student or parents, never in a mark.
+  typedChars   Int                  @default(0) @map("typed_chars")
+  pastedChars  Int                  @default(0) @map("pasted_chars")
+  submittedAt  DateTime             @default(now()) @map("submitted_at")
+  // After the due date's school day (Lagos), worked out by the server.
+  late         Boolean              @default(false)
+  mark         Int?
+  feedback     String?
+  markedBy     String?              @map("marked_by")
+  markedAt     DateTime?            @map("marked_at")
+  // The student and parents see the mark and feedback only once released.
+  releasedAt   DateTime?            @map("released_at")
+  returnedBy   String?              @map("returned_by")
+  returnedAt   DateTime?            @map("returned_at")
+  returnNote   String?              @map("return_note")
+
+  @@unique([collectionId, studentId, attempt])
+  @@index([schoolId, studentId])
+  @@map("assignment_submissions")
 }

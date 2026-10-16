@@ -2,7 +2,8 @@ import { RefreshControl, ScrollView, StyleSheet } from "react-native";
 import { Redirect, Stack, useLocalSearchParams } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
 
-import { guardianHomework } from "../../../src/lib/api/portal";
+import { guardianAssignments, guardianHomework } from "../../../src/lib/api/portal";
+import { PastWorkList } from "../../../src/components/past-work-list";
 import { queryKeys } from "../../../src/lib/query/keys";
 import { HomeworkList } from "../../../src/components/homework-list";
 import { useSession } from "../../../src/lib/auth/session";
@@ -24,8 +25,9 @@ import { FreshnessLabel } from "../../../src/components/freshness-label";
 // exactly what a child needs at a kitchen table with no signal, and the
 // freshness label keeps a cached list honest about when it was fetched.
 //
-// Nothing is submitted here (B7). A child reads what to do and does it on
-// paper, which is what every one of these schools actually does.
+// A parent reads; a child hands collected work in from their own app
+// (Phase 9 / CP4.1). Here the parent sees whether it was handed in, and the
+// mark once the teacher released it.
 
 const ONE_HOUR_MS = 1000 * 60 * 60;
 
@@ -48,6 +50,18 @@ export default function ChildHomeworkScreen() {
     enabled: status === "authenticated" && principal === "guardian" && studentId !== "",
     staleTime: ONE_HOUR_MS,
   });
+
+  // Phase 9 / CP4.1 — what the child handed in, and marks once released. No
+  // answer text; kept off the phone's storage.
+  const work = useQuery({
+    queryKey: queryKeys.guardianAssignments(studentId),
+    queryFn: () => guardianAssignments(studentId),
+    enabled: status === "authenticated" && principal === "guardian" && studentId !== "",
+    meta: { persist: false },
+  });
+  const workById = new Map((work.data?.data ?? []).map((w) => [w.assignmentId, w]));
+  const shown = new Set((query.data?.data ?? []).map((h) => h.id));
+  const earlier = (work.data?.data ?? []).filter((w) => !shown.has(w.assignmentId));
 
   if (status === "guest") return <Redirect href="/login" />;
   if (status === "authenticated" && principal === "student") return <Redirect href="/me/homework" />;
@@ -90,8 +104,9 @@ export default function ChildHomeworkScreen() {
                 body="Homework your child&apos;s teachers set will appear here."
               />
             ) : (
-              <HomeworkList items={data.data} today={today} tomorrow={tomorrow} />
+              <HomeworkList items={data.data} today={today} tomorrow={tomorrow} work={workById} />
             )}
+            <PastWorkList items={earlier} />
           </>
         )}
       </ScrollView>

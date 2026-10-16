@@ -9,7 +9,8 @@ import { z } from "zod";
 // parent asking "what is your homework?" needs tonight.
 //
 // If submissions are ever built they get their own plan-first and their own
-// types. Do not grow this file into them.
+// types. Do not grow this file into them. (Phase 9 / CP4 built them, in
+// ../assignments; this file gained only `collectsWork`.)
 
 export const HOMEWORK_TITLE_MAX = 120;
 export const HOMEWORK_INSTRUCTIONS_MAX = 2000;
@@ -71,6 +72,8 @@ export interface HomeworkDto {
   /** Who set it. Staff see this; a family sees the subject teacher's name too. */
   postedByName: string | null;
   withdrawnAt: string | Date | null;
+  /** Phase 9 / CP4: "collect work" is on, so students hand work in for it. */
+  collectsWork: boolean;
 }
 
 export interface HomeworkListResponse {

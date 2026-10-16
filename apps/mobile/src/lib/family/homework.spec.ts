@@ -23,6 +23,7 @@ const item = (over: Partial<HomeworkFeedItemDto> & { dueDate: string }): Homewor
   postedAt: "2026-09-27T09:00:00.000Z",
   postedByName: "Tunde Teacher",
   withdrawnAt: null,
+  collectsWork: false,
   overdue: over.dueDate < TODAY,
   ...over,
 });

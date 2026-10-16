@@ -1,0 +1,308 @@
+import { useState } from "react";
+import { Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import { Redirect, Stack, useLocalSearchParams } from "expo-router";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  ASSIGNMENT_LIMITS,
+  describeWorkStatus,
+  type AssignmentMarkingDto,
+  type AssignmentRosterRowDto,
+  type AssignmentSubmissionDto,
+  type StudentWorkDto,
+} from "@school-kit/types";
+
+import { TextField } from "../../../src/components/form";
+import { ScreenHeader, Skeleton } from "../../../src/components/layout";
+import { LoadError } from "../../../src/components/load-error";
+import { Body, Button, Caption, Card, Label, Screen } from "../../../src/components/ui";
+import { ApiError } from "../../../src/lib/api/client";
+import {
+  collectStaffWork,
+  markStaffSubmission,
+  releaseStaffMarks,
+  returnStaffSubmission,
+  staffMarking,
+  staffStudentWork,
+} from "../../../src/lib/api/staff-homework";
+import { useSession } from "../../../src/lib/auth/session";
+import { queryKeys } from "../../../src/lib/query/keys";
+import { useTheme } from "../../../src/theme/theme-provider";
+import { spacing } from "../../../src/theme/tokens";
+
+// Phase 9 / CP4.1 — handed-in work for one homework item, in the staff app
+// (docs/modules/phase-9.md §11). Tap a student to read and mark their work.
+// Marks reach the student and parents only after "Release marks". The paste
+// figure (Q7) is shown to staff and nowhere else.
+
+function message(e: unknown, fallback: string): string {
+  return e instanceof ApiError ? e.message : fallback;
+}
+
+function when(value: string | Date): string {
+  return new Date(value).toLocaleString("en-NG", {
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "Africa/Lagos",
+  });
+}
+
+function Attempt({
+  attempt,
+  latest,
+  totalMarks,
+  onChanged,
+}: {
+  attempt: AssignmentSubmissionDto;
+  latest: boolean;
+  totalMarks: number;
+  onChanged: (work: StudentWorkDto) => void;
+}) {
+  const { colors } = useTheme();
+  const [mark, setMark] = useState(attempt.mark === null ? "" : String(attempt.mark));
+  const [feedback, setFeedback] = useState(attempt.feedback ?? "");
+  const [note, setNote] = useState("");
+  const [returning, setReturning] = useState(false);
+  const canWork = latest && !attempt.returnedAt;
+
+  const save = useMutation({
+    mutationFn: (value: number) =>
+      markStaffSubmission(attempt.id, { mark: value, ...(feedback.trim() ? { feedback: feedback.trim() } : {}) }),
+    onSuccess: onChanged,
+    onError: (e) => Alert.alert("Not saved", message(e, "We couldn't save the mark. Try again.")),
+  });
+  const send = useMutation({
+    mutationFn: () => returnStaffSubmission(attempt.id, { note: note.trim() }),
+    onSuccess: (w) => {
+      setReturning(false);
+      onChanged(w);
+    },
+    onError: (e) => Alert.alert("Not returned", message(e, "We couldn't return the work. Try again.")),
+  });
+
+  function submitMark(): void {
+    const value = Number(mark);
+    if (mark.trim() === "" || !Number.isInteger(value)) {
+      Alert.alert("Mark needed", "Enter a whole-number mark.");
+      return;
+    }
+    save.mutate(value);
+  }
+
+  return (
+    <View style={styles.attempt}>
+      <Label>
+        Attempt {attempt.attempt} · {when(attempt.submittedAt)}
+        {attempt.late ? " · late" : ""}
+      </Label>
+      <View style={[styles.answer, { backgroundColor: `${colors.mutedForeground}14` }]}>
+        <Body>{attempt.body}</Body>
+      </View>
+      <Caption>
+        About {attempt.pastedPercent}% was pasted rather than typed, as the student&apos;s phone reported it. Not a
+        judgement, and never part of the mark. The student and parents don&apos;t see it.
+      </Caption>
+      {attempt.returnedAt ? <Caption>Returned: {attempt.returnNote}</Caption> : null}
+      {canWork ? (
+        <>
+          <TextField
+            label={`Mark out of ${totalMarks}`}
+            value={mark}
+            onChangeText={setMark}
+            keyboardType="number-pad"
+            maxLength={4}
+          />
+          <TextField
+            label="Feedback"
+            value={feedback}
+            onChangeText={setFeedback}
+            multiline
+            maxLength={ASSIGNMENT_LIMITS.feedback}
+            autoCapitalize="sentences"
+          />
+          {attempt.markedAt ? (
+            <Caption>
+              Marked {attempt.mark}/{totalMarks}. {attempt.releasedAt ? "Released." : "Not released yet."}
+            </Caption>
+          ) : null}
+          <View style={styles.buttons}>
+            <Button title={attempt.markedAt ? "Update mark" : "Save mark"} loading={save.isPending} onPress={submitMark} />
+            {!attempt.markedAt && !returning ? (
+              <Button title="Return to student" variant="secondary" onPress={() => setReturning(true)} />
+            ) : null}
+          </View>
+          {returning ? (
+            <>
+              <TextField
+                label="What should the student change?"
+                value={note}
+                onChangeText={setNote}
+                multiline
+                maxLength={ASSIGNMENT_LIMITS.returnNote}
+                autoCapitalize="sentences"
+              />
+              <View style={styles.buttons}>
+                <Button title="Return work" loading={send.isPending} disabled={note.trim() === ""} onPress={() => send.mutate()} />
+                <Button title="Cancel" variant="secondary" onPress={() => setReturning(false)} />
+              </View>
+            </>
+          ) : null}
+        </>
+      ) : null}
+    </View>
+  );
+}
+
+function StudentWork({
+  schoolId,
+  userId,
+  homeworkId,
+  row,
+  onChanged,
+}: {
+  schoolId: string;
+  userId: string;
+  homeworkId: string;
+  row: AssignmentRosterRowDto;
+  onChanged: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const key = queryKeys.staffStudentWork(schoolId, userId, homeworkId, row.studentId);
+  const work = useQuery({ queryKey: key, queryFn: () => staffStudentWork(homeworkId, row.studentId) });
+  if (work.isLoading) return <Body muted>Loading…</Body>;
+  if (work.isError || !work.data) return <Body muted>We couldn&apos;t load the work.</Body>;
+  if (work.data.attempts.length === 0) return <Body muted>Nothing handed in yet.</Body>;
+  return (
+    <>
+      {work.data.attempts.map((a, i) => (
+        <Attempt
+          key={a.id}
+          attempt={a}
+          latest={i === 0}
+          totalMarks={work.data.totalMarks}
+          onChanged={(next) => {
+            queryClient.setQueryData(key, next);
+            onChanged();
+          }}
+        />
+      ))}
+    </>
+  );
+}
+
+export default function HandedInWorkScreen() {
+  const { id } = useLocalSearchParams<{ id: string }>();
+  const homeworkId = typeof id === "string" ? id : "";
+  const { status, principal, staff } = useSession();
+  const authed = status === "authenticated" && principal === "staff";
+  const schoolId = staff?.school.id ?? "";
+  const userId = staff?.user.id ?? "";
+  const queryClient = useQueryClient();
+  const key = queryKeys.staffAssignmentMarking(schoolId, userId, homeworkId);
+  const [open, setOpen] = useState<string | null>(null);
+
+  const marking = useQuery({ queryKey: key, queryFn: () => staffMarking(homeworkId), enabled: authed && homeworkId !== "" });
+  const settle = (next: AssignmentMarkingDto) => queryClient.setQueryData(key, next);
+  const toggle = useMutation({
+    mutationFn: (d: AssignmentMarkingDto) =>
+      collectStaffWork(homeworkId, { totalMarks: d.collection.totalMarks, accepting: !d.collection.accepting }),
+    onSuccess: settle,
+    onError: (e) => Alert.alert("Not changed", message(e, "Try again in a moment.")),
+  });
+  const release = useMutation({
+    mutationFn: () => releaseStaffMarks(homeworkId),
+    onSuccess: settle,
+    onError: (e) => Alert.alert("Not released", message(e, "Try again in a moment.")),
+  });
+
+  if (status === "locked") return <Redirect href="/unlock" />;
+  if (!authed) return <Redirect href="/login" />;
+
+  const d = marking.data;
+  const unreleased = d ? d.roster.filter((r) => r.status === "MARKED" && !r.released).length : 0;
+
+  return (
+    <Screen>
+      <Stack.Screen options={{ headerShown: true, headerTitle: "" }} />
+      <KeyboardAvoidingView style={styles.fill} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+          <ScreenHeader title={d?.title ?? "Handed-in work"} subtitle={d ? `${d.className} · ${d.subjectName}` : null} />
+          {marking.isLoading ? (
+            <Skeleton lines={4} />
+          ) : marking.isError || !d ? (
+            <LoadError error={marking.error} what="the handed-in work" onRetry={() => void marking.refetch()} />
+          ) : (
+            <>
+              <Card>
+                <Body>
+                  {d.counts.submitted} to mark · {d.counts.marked} marked · {d.counts.released} released ·{" "}
+                  {d.counts.notSubmitted} not handed in
+                </Body>
+                <Caption>
+                  Out of {d.collection.totalMarks}.{" "}
+                  {d.collection.accepting ? "Students can hand work in, late work included." : "Not accepting new work."}
+                </Caption>
+                <View style={styles.buttons}>
+                  <Button
+                    title={d.collection.accepting ? "Stop accepting work" : "Accept work again"}
+                    variant="secondary"
+                    loading={toggle.isPending}
+                    onPress={() => toggle.mutate(d)}
+                  />
+                  <Button
+                    title={unreleased === 0 ? "No new marks to release" : `Release ${unreleased} mark${unreleased === 1 ? "" : "s"}`}
+                    disabled={unreleased === 0}
+                    loading={release.isPending}
+                    onPress={() =>
+                      Alert.alert("Release marks?", "The students and their parents will see the mark and your feedback.", [
+                        { text: "Cancel", style: "cancel" },
+                        { text: "Release", onPress: () => release.mutate() },
+                      ])
+                    }
+                  />
+                </View>
+              </Card>
+              {d.roster.map((row) => (
+                <Card key={row.studentId}>
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityState={{ expanded: open === row.studentId }}
+                    onPress={() => setOpen(open === row.studentId ? null : row.studentId)}
+                    style={styles.row}
+                  >
+                    <Body>{row.name}</Body>
+                    <Caption>
+                      {describeWorkStatus(row.status)}
+                      {row.late ? " · late" : ""}
+                      {row.mark !== null ? ` · ${row.mark}/${d.collection.totalMarks}${row.released ? " released" : ""}` : ""}
+                      {row.attempts > 1 ? ` · ${row.attempts} attempts` : ""}
+                    </Caption>
+                  </Pressable>
+                  {open === row.studentId ? (
+                    <StudentWork
+                      schoolId={schoolId}
+                      userId={userId}
+                      homeworkId={homeworkId}
+                      row={row}
+                      onChanged={() => void queryClient.invalidateQueries({ queryKey: key })}
+                    />
+                  ) : null}
+                </Card>
+              ))}
+            </>
+          )}
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </Screen>
+  );
+}
+
+const styles = StyleSheet.create({
+  fill: { flex: 1 },
+  content: { gap: spacing.md, paddingVertical: spacing.md },
+  row: { gap: spacing.xs, minHeight: 44, justifyContent: "center" },
+  attempt: { gap: spacing.sm, paddingTop: spacing.sm },
+  answer: { padding: spacing.sm, borderRadius: 8 },
+  buttons: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
+});

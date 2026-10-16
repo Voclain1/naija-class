@@ -24,6 +24,7 @@ import type {
   HealthDocumentUrlDto,
   PortalHealthProfileDto,
   PortalSickbayVisitListResponse,
+  FamilyAssignmentListResponse,
 } from "@school-kit/types";
 
 import { apiFetch } from "./client";
@@ -236,6 +237,12 @@ export function markGuardianAnnouncementRead(id: string): Promise<void> {
 // what is due, and there is nothing to submit.
 export function guardianHomework(studentId: string): Promise<HomeworkFeedResponse> {
   return apiFetch<HomeworkFeedResponse>(`/portal/students/${encodeURIComponent(studentId)}/homework`);
+}
+
+// Phase 9 / CP4.1 — what the child handed in, and the mark once the teacher
+// released it. No answer text.
+export function guardianAssignments(studentId: string): Promise<FamilyAssignmentListResponse> {
+  return apiFetch<FamilyAssignmentListResponse>(`/portal/students/${encodeURIComponent(studentId)}/assignments`);
 }
 
 // Phase 9 / CP2.3 — approved suspensions and exclusions for one child. The

@@ -1,0 +1,662 @@
+import { Injectable } from "@nestjs/common";
+
+import { withGuardian, withTenant } from "@school-kit/db";
+import {
+  ConflictError,
+  ForbiddenError,
+  NotFoundError,
+  ValidationError,
+  addDaysIso,
+  lagosTodayIso,
+  pastedPercent,
+  type AssignmentMarkingDto,
+  type AssignmentRosterRowDto,
+  type AssignmentSubmissionDto,
+  type CollectWorkInput,
+  type FamilyAssignmentDto,
+  type FamilyAssignmentListResponse,
+  type MarkSubmissionInput,
+  type MyAssignmentDto,
+  type ReturnSubmissionInput,
+  type StudentWorkDto,
+  type SubmitWorkInput,
+  type WorkStatus,
+} from "@school-kit/types";
+
+import type { AuthContext } from "../../common/auth/auth-context.js";
+import type { GuardianAuthContext } from "../../common/auth/guardian-auth-context.js";
+import { assertUserActiveAndHasOneOf, getActiveUserRoleKeys } from "../../common/auth/role-check.js";
+import { getTeacherScope } from "../teacher-scope/teacher-scope.helper.js";
+
+// Phase 9 / CP4 — assignments: submitted work and marking
+// (docs/modules/phase-9.md §11).
+//
+//   - "Collect work" is its own record beside a homework item (CP4-D1); the
+//     homework model gains nothing.
+//   - Owner, admin and the class's teachers read and mark (CP4-D2). A teacher
+//     is held to the class and subject pairs their own teacher scope lists, as
+//     homework and the gradebook already are. The bursar holds neither
+//     permission.
+//   - One row per student per attempt. A submitted attempt is final; a return
+//     opens the next one and the old attempt is kept (CP4-D3).
+//   - Late is worked out here, on the school's (Lagos) day, never by a phone.
+//   - The paste counts (Q7) reach staff only. The student's and the family's
+//     shapes have no field for them.
+//   - Marks and feedback reach the student and parents only once released
+//     (CP4-D7).
+//
+// No push or SMS (CP4-D10), and no AI anywhere (Q6). The answer text and the
+// feedback never go into the audit log.
+
+const AUDIT = {
+  collect: "assignment.collect",
+  submit: "assignment.submit",
+  mark: "assignment.mark",
+  return: "assignment.return",
+  release: "assignment.release",
+} as const;
+
+const STAFF_ROLES = ["owner", "admin", "teacher"];
+/** How far back a family's list looks: marks arrive after the due date. */
+const FAMILY_LOOKBACK_DAYS = 60;
+/** And how far ahead, matching the homework list. */
+const FAMILY_LOOKAHEAD_DAYS = 21;
+
+type Db = Parameters<Parameters<typeof withTenant>[1]>[0];
+
+interface RequestContext {
+  ipAddress: string | null;
+}
+
+type SubmissionRow = {
+  id: string;
+  studentId: string;
+  attempt: number;
+  body: string;
+  typedChars: number;
+  pastedChars: number;
+  submittedAt: Date;
+  late: boolean;
+  mark: number | null;
+  feedback: string | null;
+  markedBy: string | null;
+  markedAt: Date | null;
+  releasedAt: Date | null;
+  returnedAt: Date | null;
+  returnNote: string | null;
+};
+
+type AssignmentRow = {
+  id: string;
+  classArmId: string;
+  subjectId: string;
+  title: string;
+  instructions: string | null;
+  dueDate: Date;
+  withdrawnAt: Date | null;
+};
+
+const asIsoDate = (value: Date): string => value.toISOString().slice(0, 10);
+const fullName = (u: { firstName: string; lastName: string }): string => `${u.firstName} ${u.lastName}`;
+
+/** Where a student stands, from their latest attempt (null when none). */
+export function statusOf(latest: Pick<SubmissionRow, "returnedAt" | "markedAt"> | null): WorkStatus {
+  if (!latest) return "NOT_SUBMITTED";
+  if (latest.returnedAt) return "RETURNED";
+  if (latest.markedAt) return "MARKED";
+  return "SUBMITTED";
+}
+
+/** Late when handed in after the due date's school day. */
+export function isLate(dueDate: string, submittedAt: Date): boolean {
+  return lagosTodayIso(submittedAt) > dueDate;
+}
+
+/**
+ * Q7's counts, as the device reported them, clamped to the answer's length so
+ * a doctored request cannot claim more characters than the answer holds.
+ */
+export function clampCounts(length: number, typed: number, pasted: number): { typed: number; pasted: number } {
+  const p = Math.min(Math.max(0, pasted), length);
+  const t = Math.min(Math.max(0, typed), length - p);
+  return { typed: t, pasted: p };
+}
+
+@Injectable()
+export class AssignmentsService {
+  // =========================================================================
+  // PUT /assignments/:id/collection — switch on "collect work", or change it
+  // =========================================================================
+  async collect(
+    authCtx: AuthContext,
+    assignmentId: string,
+    input: CollectWorkInput,
+    reqCtx: RequestContext,
+  ): Promise<AssignmentMarkingDto> {
+    await assertUserActiveAndHasOneOf(authCtx, STAFF_ROLES);
+    const isAdmin = await this.isAdmin(authCtx);
+    return withTenant(authCtx.schoolId, async (db) => {
+      const assignment = await this.staffAssignment(db, authCtx, assignmentId, isAdmin);
+      if (assignment.withdrawnAt) {
+        throw new ConflictError("HOMEWORK_WITHDRAWN", "That homework was withdrawn.");
+      }
+      const existing = await db.assignmentCollection.findUnique({ where: { assignmentId } });
+      if (existing) {
+        // A total below a mark already given would leave that mark out of range.
+        const top = await db.assignmentSubmission.aggregate({
+          where: { collectionId: existing.id },
+          _max: { mark: true },
+        });
+        if (top._max.mark !== null && input.totalMarks < top._max.mark) {
+          throw new ConflictError(
+            "TOTAL_BELOW_MARK",
+            `A student already has ${top._max.mark}. The total can't be lower than that.`,
+          );
+        }
+        await db.assignmentCollection.update({
+          where: { id: existing.id },
+          data: { totalMarks: input.totalMarks, ...(input.accepting === undefined ? {} : { accepting: input.accepting }) },
+        });
+      } else {
+        await db.assignmentCollection.create({
+          data: {
+            schoolId: authCtx.schoolId,
+            assignmentId,
+            totalMarks: input.totalMarks,
+            accepting: input.accepting ?? true,
+            createdBy: authCtx.userId,
+          },
+        });
+      }
+      await db.auditLog.create({
+        data: {
+          schoolId: authCtx.schoolId,
+          userId: authCtx.userId,
+          action: AUDIT.collect,
+          entityType: "homework",
+          entityId: assignmentId,
+          ipAddress: reqCtx.ipAddress,
+          metadata: {
+            totalMarks: input.totalMarks,
+            accepting: input.accepting ?? existing?.accepting ?? true,
+            created: existing === null,
+          },
+        },
+      });
+      return this.readMarking(db, assignment);
+    });
+  }
+
+  // =========================================================================
+  // GET /assignments/:id/submissions — the marking page
+  // =========================================================================
+  async marking(authCtx: AuthContext, assignmentId: string): Promise<AssignmentMarkingDto> {
+    await assertUserActiveAndHasOneOf(authCtx, STAFF_ROLES);
+    const isAdmin = await this.isAdmin(authCtx);
+    return withTenant(authCtx.schoolId, async (db) => {
+      const assignment = await this.staffAssignment(db, authCtx, assignmentId, isAdmin);
+      return this.readMarking(db, assignment);
+    });
+  }
+
+  // =========================================================================
+  // GET /assignments/:id/students/:studentId — one student's attempts
+  // =========================================================================
+  async studentWork(authCtx: AuthContext, assignmentId: string, studentId: string): Promise<StudentWorkDto> {
+    await assertUserActiveAndHasOneOf(authCtx, STAFF_ROLES);
+    const isAdmin = await this.isAdmin(authCtx);
+    return withTenant(authCtx.schoolId, async (db) => {
+      await this.staffAssignment(db, authCtx, assignmentId, isAdmin);
+      return this.readStudentWork(db, assignmentId, studentId);
+    });
+  }
+
+  // =========================================================================
+  // POST /assignments/submissions/:id/mark
+  // =========================================================================
+  async mark(
+    authCtx: AuthContext,
+    submissionId: string,
+    input: MarkSubmissionInput,
+    reqCtx: RequestContext,
+  ): Promise<StudentWorkDto> {
+    await assertUserActiveAndHasOneOf(authCtx, STAFF_ROLES);
+    const isAdmin = await this.isAdmin(authCtx);
+    return withTenant(authCtx.schoolId, async (db) => {
+      const { submission, collection } = await this.staffSubmission(db, authCtx, submissionId, isAdmin);
+      if (submission.returnedAt) {
+        throw new ConflictError("SUBMISSION_RETURNED", "That work was returned to the student to do again.");
+      }
+      if (input.mark > collection.totalMarks) {
+        throw new ValidationError(`The mark can't be more than the total, ${collection.totalMarks}.`);
+      }
+      await db.assignmentSubmission.update({
+        where: { id: submissionId },
+        data: { mark: input.mark, feedback: input.feedback ?? null, markedBy: authCtx.userId, markedAt: new Date() },
+      });
+      // The mark is a number and stays; the feedback text does not go here.
+      await db.auditLog.create({
+        data: {
+          schoolId: authCtx.schoolId,
+          userId: authCtx.userId,
+          action: AUDIT.mark,
+          entityType: "assignment_submission",
+          entityId: submissionId,
+          ipAddress: reqCtx.ipAddress,
+          metadata: {
+            studentId: submission.studentId,
+            mark: input.mark,
+            outOf: collection.totalMarks,
+            feedback: !!input.feedback,
+            remark: submission.markedAt !== null,
+            released: submission.releasedAt !== null,
+          },
+        },
+      });
+      return this.readStudentWork(db, collection.assignmentId, submission.studentId);
+    });
+  }
+
+  // =========================================================================
+  // POST /assignments/submissions/:id/return — send it back to be done again
+  // =========================================================================
+  async returnWork(
+    authCtx: AuthContext,
+    submissionId: string,
+    input: ReturnSubmissionInput,
+    reqCtx: RequestContext,
+  ): Promise<StudentWorkDto> {
+    await assertUserActiveAndHasOneOf(authCtx, STAFF_ROLES);
+    const isAdmin = await this.isAdmin(authCtx);
+    return withTenant(authCtx.schoolId, async (db) => {
+      const { submission, collection } = await this.staffSubmission(db, authCtx, submissionId, isAdmin);
+      if (submission.returnedAt) {
+        throw new ConflictError("SUBMISSION_RETURNED", "That work was already returned.");
+      }
+      if (submission.markedAt) {
+        throw new ConflictError("SUBMISSION_MARKED", "That work is already marked. Change the mark instead.");
+      }
+      await db.assignmentSubmission.update({
+        where: { id: submissionId },
+        data: { returnedAt: new Date(), returnedBy: authCtx.userId, returnNote: input.note },
+      });
+      await db.auditLog.create({
+        data: {
+          schoolId: authCtx.schoolId,
+          userId: authCtx.userId,
+          action: AUDIT.return,
+          entityType: "assignment_submission",
+          entityId: submissionId,
+          ipAddress: reqCtx.ipAddress,
+          metadata: { studentId: submission.studentId, attempt: submission.attempt },
+        },
+      });
+      return this.readStudentWork(db, collection.assignmentId, submission.studentId);
+    });
+  }
+
+  // =========================================================================
+  // POST /assignments/:id/release — the student and parents see the marks
+  // =========================================================================
+  async release(authCtx: AuthContext, assignmentId: string, reqCtx: RequestContext): Promise<AssignmentMarkingDto> {
+    await assertUserActiveAndHasOneOf(authCtx, STAFF_ROLES);
+    const isAdmin = await this.isAdmin(authCtx);
+    return withTenant(authCtx.schoolId, async (db) => {
+      const assignment = await this.staffAssignment(db, authCtx, assignmentId, isAdmin);
+      const collection = await this.collectionOf(db, assignmentId);
+      // Every marked attempt not yet released. A mark changed after release
+      // was released already and simply shows its new value.
+      const released = await db.assignmentSubmission.updateMany({
+        where: { collectionId: collection.id, markedAt: { not: null }, releasedAt: null },
+        data: { releasedAt: new Date() },
+      });
+      if (released.count === 0) {
+        throw new ConflictError("NOTHING_TO_RELEASE", "There are no new marks to release.");
+      }
+      await db.auditLog.create({
+        data: {
+          schoolId: authCtx.schoolId,
+          userId: authCtx.userId,
+          action: AUDIT.release,
+          entityType: "homework",
+          entityId: assignmentId,
+          ipAddress: reqCtx.ipAddress,
+          metadata: { released: released.count },
+        },
+      });
+      return this.readMarking(db, assignment);
+    });
+  }
+
+  // =========================================================================
+  // The student's own: GET /student-portal/me/assignments(/:id), POST submit
+  // =========================================================================
+  async listForStudent(schoolId: string, studentId: string): Promise<FamilyAssignmentListResponse> {
+    return withTenant(schoolId, (db) => this.familyList(db, studentId));
+  }
+
+  async getForStudent(schoolId: string, studentId: string, assignmentId: string): Promise<MyAssignmentDto> {
+    return withTenant(schoolId, async (db) => {
+      const { assignment, collection } = await this.studentAssignment(db, studentId, assignmentId);
+      return this.readMine(db, assignment, collection, studentId);
+    });
+  }
+
+  async submitForStudent(
+    schoolId: string,
+    studentId: string,
+    assignmentId: string,
+    input: SubmitWorkInput,
+  ): Promise<MyAssignmentDto> {
+    return withTenant(schoolId, async (db) => {
+      const { assignment, collection } = await this.studentAssignment(db, studentId, assignmentId);
+      const latest = await db.assignmentSubmission.findFirst({
+        where: { collectionId: collection.id, studentId },
+        orderBy: { attempt: "desc" },
+      });
+      const status = statusOf(latest);
+      if (status === "SUBMITTED" || status === "MARKED") {
+        throw new ConflictError("ALREADY_SUBMITTED", "You have already handed this in.");
+      }
+      // Returned work may always come back; new work only while it is accepted.
+      if (status === "NOT_SUBMITTED" && !collection.accepting) {
+        throw new ConflictError("NOT_ACCEPTING", "Your teacher has stopped accepting work for this.");
+      }
+      const body = input.body.trim();
+      const counts = clampCounts(body.length, input.typedChars ?? 0, input.pastedChars ?? 0);
+      const now = new Date();
+      const attempt = (latest?.attempt ?? 0) + 1;
+      // The unique (collection, student, attempt) row is what stops a double
+      // tap handing in twice.
+      const exists = await db.assignmentSubmission.findUnique({
+        where: { collectionId_studentId_attempt: { collectionId: collection.id, studentId, attempt } },
+        select: { id: true },
+      });
+      if (exists) throw new ConflictError("ALREADY_SUBMITTED", "You have already handed this in.");
+      const created = await db.assignmentSubmission.create({
+        data: {
+          schoolId,
+          collectionId: collection.id,
+          studentId,
+          attempt,
+          body,
+          typedChars: counts.typed,
+          pastedChars: counts.pasted,
+          submittedAt: now,
+          late: isLate(asIsoDate(assignment.dueDate), now),
+        },
+        select: { id: true, late: true },
+      });
+      await db.auditLog.create({
+        data: {
+          schoolId,
+          userId: studentId,
+          action: AUDIT.submit,
+          entityType: "assignment_submission",
+          entityId: created.id,
+          metadata: { assignmentId, attempt, late: created.late, principal: "student" },
+        },
+      });
+      return this.readMine(db, assignment, collection, studentId);
+    });
+  }
+
+  // =========================================================================
+  // GET /portal/students/:id/assignments — the parent's read
+  // =========================================================================
+  async listForGuardian(guardianCtx: GuardianAuthContext, studentId: string): Promise<FamilyAssignmentListResponse> {
+    return withTenant(guardianCtx.schoolId, (db) =>
+      withGuardian(guardianCtx.guardianId, studentId, db, (db2) => this.familyList(db2 as never, studentId)),
+    );
+  }
+
+  // =========================================================================
+
+  /** The homework item, if this member of staff may work on it. */
+  private async staffAssignment(db: Db, authCtx: AuthContext, assignmentId: string, isAdmin: boolean): Promise<AssignmentRow> {
+    const assignment = await db.assignment.findUnique({ where: { id: assignmentId } });
+    if (!assignment) throw new NotFoundError("That homework could not be found.");
+    if (!isAdmin) {
+      const scope = await getTeacherScope(db as never, authCtx.userId);
+      const subjects = scope.subjectsByArm.get(assignment.classArmId) ?? [];
+      if (!subjects.some((s) => s.id === assignment.subjectId)) {
+        throw new ForbiddenError("You can only see work for a class and subject you teach.");
+      }
+    }
+    return assignment;
+  }
+
+  private async collectionOf(db: Db, assignmentId: string) {
+    const collection = await db.assignmentCollection.findUnique({ where: { assignmentId } });
+    if (!collection) throw new NotFoundError("Work is not being collected for that homework.");
+    return collection;
+  }
+
+  /** A submission a member of staff may mark: it must be the student's latest attempt. */
+  private async staffSubmission(db: Db, authCtx: AuthContext, submissionId: string, isAdmin: boolean) {
+    const submission = await db.assignmentSubmission.findUnique({
+      where: { id: submissionId },
+      include: { collection: true },
+    });
+    if (!submission) throw new NotFoundError("That piece of work could not be found.");
+    await this.staffAssignment(db, authCtx, submission.collection.assignmentId, isAdmin);
+    const newer = await db.assignmentSubmission.count({
+      where: { collectionId: submission.collectionId, studentId: submission.studentId, attempt: { gt: submission.attempt } },
+    });
+    if (newer > 0) {
+      throw new ConflictError("NOT_LATEST_ATTEMPT", "The student has handed in a newer attempt. Mark that one.");
+    }
+    return { submission, collection: submission.collection };
+  }
+
+  /** The class a student is in now, by their latest enrolment. */
+  private async studentArm(db: Db, studentId: string): Promise<string | null> {
+    const enrollment = await db.enrollment.findFirst({
+      where: { studentId, status: "ENROLLED" },
+      orderBy: { enrolledAt: "desc" },
+      select: { classArmId: true },
+    });
+    return enrollment?.classArmId ?? null;
+  }
+
+  /** A collected, live homework item for the student's own class; anything else reads as not found. */
+  private async studentAssignment(db: Db, studentId: string, assignmentId: string) {
+    const armId = await this.studentArm(db, studentId);
+    const assignment = await db.assignment.findUnique({ where: { id: assignmentId }, include: { collection: true } });
+    if (!assignment || !assignment.collection || assignment.withdrawnAt || assignment.classArmId !== armId) {
+      throw new NotFoundError("That work could not be found.");
+    }
+    return { assignment, collection: assignment.collection };
+  }
+
+  private async readMarking(db: Db, assignment: AssignmentRow): Promise<AssignmentMarkingDto> {
+    const collection = await this.collectionOf(db, assignment.id);
+    const [arm, subject, term] = await Promise.all([
+      db.classArm.findUnique({ where: { id: assignment.classArmId }, select: { name: true } }),
+      db.subject.findUnique({ where: { id: assignment.subjectId }, select: { name: true } }),
+      db.term.findFirst({ where: { isCurrent: true }, select: { id: true } }),
+    ]);
+    const submissions = await db.assignmentSubmission.findMany({
+      where: { collectionId: collection.id },
+      orderBy: [{ studentId: "asc" }, { attempt: "desc" }],
+    });
+    const latestBy = new Map<string, SubmissionRow>();
+    const attemptsBy = new Map<string, number>();
+    for (const s of submissions) {
+      if (!latestBy.has(s.studentId)) latestBy.set(s.studentId, s);
+      attemptsBy.set(s.studentId, (attemptsBy.get(s.studentId) ?? 0) + 1);
+    }
+    // Everyone in the class now, plus anyone who handed in and has since moved.
+    const enrolled = await db.enrollment.findMany({
+      where: { classArmId: assignment.classArmId, status: "ENROLLED", ...(term ? { termId: term.id } : {}) },
+      select: { studentId: true },
+    });
+    const ids = [...new Set([...enrolled.map((e) => e.studentId), ...latestBy.keys()])];
+    const students = await db.student.findMany({
+      where: { id: { in: ids } },
+      select: { id: true, firstName: true, lastName: true, admissionNumber: true },
+      orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
+    });
+    const roster: AssignmentRosterRowDto[] = students.map((s) => {
+      const latest = latestBy.get(s.id) ?? null;
+      return {
+        studentId: s.id,
+        name: fullName(s),
+        admissionNumber: s.admissionNumber,
+        status: statusOf(latest),
+        latestSubmissionId: latest?.id ?? null,
+        attempts: attemptsBy.get(s.id) ?? 0,
+        late: latest?.late ?? false,
+        mark: latest?.mark ?? null,
+        released: latest?.releasedAt != null,
+        pastedPercent: latest ? pastedPercent(latest.typedChars, latest.pastedChars) : null,
+      };
+    });
+    return {
+      assignmentId: assignment.id,
+      title: assignment.title,
+      className: arm?.name ?? "",
+      subjectName: subject?.name ?? "",
+      dueDate: asIsoDate(assignment.dueDate),
+      collection: { assignmentId: assignment.id, totalMarks: collection.totalMarks, accepting: collection.accepting },
+      roster,
+      counts: {
+        submitted: roster.filter((r) => r.status === "SUBMITTED").length,
+        marked: roster.filter((r) => r.status === "MARKED").length,
+        released: roster.filter((r) => r.released).length,
+        notSubmitted: roster.filter((r) => r.status === "NOT_SUBMITTED").length,
+      },
+    };
+  }
+
+  private async readStudentWork(db: Db, assignmentId: string, studentId: string): Promise<StudentWorkDto> {
+    const collection = await this.collectionOf(db, assignmentId);
+    const student = await db.student.findUnique({ where: { id: studentId }, select: { firstName: true, lastName: true } });
+    if (!student) throw new NotFoundError("That student could not be found.");
+    const rows = await db.assignmentSubmission.findMany({
+      where: { collectionId: collection.id, studentId },
+      orderBy: { attempt: "desc" },
+    });
+    const markers = await db.user.findMany({
+      where: { id: { in: [...new Set(rows.map((r) => r.markedBy).filter((v): v is string => !!v))] } },
+      select: { id: true, firstName: true, lastName: true },
+    });
+    const markerName = new Map(markers.map((u) => [u.id, fullName(u)]));
+    return {
+      assignmentId,
+      studentId,
+      studentName: fullName(student),
+      totalMarks: collection.totalMarks,
+      attempts: rows.map(
+        (r): AssignmentSubmissionDto => ({
+          id: r.id,
+          studentId: r.studentId,
+          attempt: r.attempt,
+          body: r.body,
+          submittedAt: r.submittedAt,
+          late: r.late,
+          pastedPercent: pastedPercent(r.typedChars, r.pastedChars),
+          mark: r.mark,
+          feedback: r.feedback,
+          markedByName: r.markedBy ? (markerName.get(r.markedBy) ?? null) : null,
+          markedAt: r.markedAt,
+          releasedAt: r.releasedAt,
+          returnedAt: r.returnedAt,
+          returnNote: r.returnNote,
+        }),
+      ),
+    };
+  }
+
+  private async readMine(
+    db: Db,
+    assignment: AssignmentRow,
+    collection: { id: string; totalMarks: number; accepting: boolean },
+    studentId: string,
+  ): Promise<MyAssignmentDto> {
+    const [subject, rows] = await Promise.all([
+      db.subject.findUnique({ where: { id: assignment.subjectId }, select: { name: true } }),
+      db.assignmentSubmission.findMany({ where: { collectionId: collection.id, studentId }, orderBy: { attempt: "desc" } }),
+    ]);
+    const status = statusOf(rows[0] ?? null);
+    return {
+      assignmentId: assignment.id,
+      title: assignment.title,
+      instructions: assignment.instructions,
+      subjectName: subject?.name ?? "",
+      dueDate: asIsoDate(assignment.dueDate),
+      totalMarks: collection.totalMarks,
+      accepting: collection.accepting,
+      status,
+      canSubmit: status === "RETURNED" || (status === "NOT_SUBMITTED" && collection.accepting),
+      // No paste counts here, and nothing marked until it is released.
+      attempts: rows.map((r) => ({
+        attempt: r.attempt,
+        body: r.body,
+        submittedAt: r.submittedAt,
+        late: r.late,
+        mark: r.releasedAt ? r.mark : null,
+        feedback: r.releasedAt ? r.feedback : null,
+        returnNote: r.returnNote,
+      })),
+    };
+  }
+
+  /** The list a student or a parent sees. No answer text and no paste counts. */
+  private async familyList(db: Db, studentId: string): Promise<FamilyAssignmentListResponse> {
+    const armId = await this.studentArm(db, studentId);
+    if (!armId) return { data: [] };
+    const today = lagosTodayIso();
+    const assignments = await db.assignment.findMany({
+      where: {
+        classArmId: armId,
+        withdrawnAt: null,
+        collection: { isNot: null },
+        dueDate: {
+          gte: new Date(`${addDaysIso(today, -FAMILY_LOOKBACK_DAYS)}T00:00:00.000Z`),
+          lte: new Date(`${addDaysIso(today, FAMILY_LOOKAHEAD_DAYS)}T00:00:00.000Z`),
+        },
+      },
+      include: { collection: true },
+      orderBy: [{ dueDate: "desc" }, { postedAt: "desc" }],
+    });
+    if (assignments.length === 0) return { data: [] };
+    const [subjects, rows] = await Promise.all([
+      db.subject.findMany({
+        where: { id: { in: [...new Set(assignments.map((a) => a.subjectId))] } },
+        select: { id: true, name: true },
+      }),
+      db.assignmentSubmission.findMany({
+        where: { studentId, collectionId: { in: assignments.map((a) => a.collection!.id) } },
+        orderBy: { attempt: "desc" },
+      }),
+    ]);
+    const subjectName = new Map(subjects.map((s) => [s.id, s.name]));
+    const latestBy = new Map<string, SubmissionRow>();
+    for (const r of rows) if (!latestBy.has(r.collectionId)) latestBy.set(r.collectionId, r);
+    return {
+      data: assignments.map((a): FamilyAssignmentDto => {
+        const latest = latestBy.get(a.collection!.id) ?? null;
+        const released = latest?.releasedAt != null;
+        return {
+          assignmentId: a.id,
+          title: a.title,
+          subjectName: subjectName.get(a.subjectId) ?? "",
+          dueDate: asIsoDate(a.dueDate),
+          totalMarks: a.collection!.totalMarks,
+          status: statusOf(latest),
+          late: latest?.late ?? false,
+          submittedAt: latest?.submittedAt ?? null,
+          mark: released ? latest!.mark : null,
+          feedback: released ? latest!.feedback : null,
+          returnNote: latest?.returnNote ?? null,
+        };
+      }),
+    };
+  }
+
+  private async isAdmin(authCtx: AuthContext): Promise<boolean> {
+    const roles = await getActiveUserRoleKeys(authCtx);
+    return roles.includes("owner") || roles.includes("admin");
+  }
+}

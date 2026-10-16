@@ -16,6 +16,7 @@ function hw(id: string, dueDate: string, withdrawnAt: string | null = null): Hom
     postedAt: "2026-10-01T08:00:00.000Z",
     postedByName: "Mrs Okafor",
     withdrawnAt,
+    collectsWork: false,
   };
 }
 

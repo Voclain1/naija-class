@@ -139,6 +139,7 @@ export class HomeworkService {
         postedAt: created.postedAt,
         postedByName: poster ? `${poster.firstName} ${poster.lastName}` : null,
         withdrawnAt: null,
+        collectsWork: false,
       };
     });
   }
@@ -334,7 +335,7 @@ export class HomeworkService {
     // Three small lookups rather than three joins per row: the lists here are
     // short (a class's term, a teacher's own), and the names are what make a
     // row readable.
-    const [arms, subjects, users] = await Promise.all([
+    const [arms, subjects, users, collections] = await Promise.all([
       db.classArm.findMany({
         where: { id: { in: [...new Set(rows.map((r) => r.classArmId))] } },
         select: { id: true, name: true },
@@ -347,7 +348,13 @@ export class HomeworkService {
         where: { id: { in: [...new Set(rows.map((r) => r.createdBy))] } },
         select: { id: true, firstName: true, lastName: true },
       }),
+      // Phase 9 / CP4: which of these collect work.
+      db.assignmentCollection.findMany({
+        where: { assignmentId: { in: rows.map((r) => r.id) } },
+        select: { assignmentId: true },
+      }),
     ]);
+    const collecting = new Set(collections.map((c) => c.assignmentId));
     const armName = new Map(arms.map((a) => [a.id, a.name]));
     const subjectName = new Map(subjects.map((s) => [s.id, s.name]));
     const userName = new Map(users.map((u) => [u.id, `${u.firstName} ${u.lastName}`]));
@@ -364,6 +371,7 @@ export class HomeworkService {
       postedAt: row.postedAt,
       postedByName: userName.get(row.createdBy) ?? null,
       withdrawnAt: row.withdrawnAt,
+      collectsWork: collecting.has(row.id),
     }));
   }
 }
