@@ -99,11 +99,12 @@ describe("plan limits against the database", () => {
           included: false,
           available: true,
         },
+        { feature: "aiMarkingFeedback", label: "AI drafts of marking feedback", included: false, available: true },
       ],
     });
     // Under enforce, a Free school has none of them.
     const enforced = await withTenant(schoolId, (db) => readSchoolPlan(db, schoolId, "enforce"));
-    expect(enforced.features.map((f) => f.available)).toEqual([false, false, false]);
+    expect(enforced.features.map((f) => f.available)).toEqual([false, false, false, false]);
   });
 
   it("a feature is refused only under enforce, and only below its plan", async () => {

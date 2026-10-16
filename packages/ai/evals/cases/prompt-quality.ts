@@ -13,6 +13,7 @@
 //     over-applies. Shouty "CRITICAL: YOU MUST" phrasing causes
 //     over-triggering and rigid output rather than compliance.
 
+import { ASSIGNMENT_FEEDBACK_SYSTEM } from "../../src/prompts/assignment-feedback.js";
 import {
   LESSON_PLAN_PROMPT,
   LESSON_PLAN_SCHEMA,
@@ -638,6 +639,40 @@ export const promptQualityCase: EvalCase = {
         "without this the model invents questions on material the lesson never covered",
       ),
     );
+
+    // ---- assignment-feedback (CP4b): a draft a teacher can trust ---------
+    {
+      const sys = ASSIGNMENT_FEEDBACK_SYSTEM;
+      results.push(
+        check(
+          "assignment-feedback: says it is a draft another teacher decides",
+          /draft/i.test(sys) && /decide the real mark/i.test(sys),
+          "the model must know the teacher, not it, gives the mark",
+        ),
+        check(
+          "assignment-feedback: forbids invented mistakes",
+          /never invent mistakes/i.test(sys) && /only point out an error the answer actually contains/i.test(sys),
+          "listing errors that are not there is the failure a teacher would notice first and trust least",
+        ),
+        check(
+          "assignment-feedback: asks for the same mark for the same answer",
+          /same answer must always get the same mark/i.test(sys),
+        ),
+        check(
+          "assignment-feedback: keeps the mark within the total",
+          /from 0 to the total/i.test(sys) && /never above it/i.test(sys),
+        ),
+        check(
+          "assignment-feedback: forbids names and gendered pronouns",
+          /never use a name/i.test(sys) && /"he", "she"/.test(sys) && /\[name\]/.test(sys),
+          "names are removed before sending; the model must not guess them back or guess a gender",
+        ),
+        check(
+          "assignment-feedback: marks against the guide when there is one",
+          /mark against it/i.test(sys),
+        ),
+      );
+    }
 
     // ---- student-list-extraction (Smart Student Import) ------------------
     // D6's two failure modes. Both produce output that LOOKS correct, which

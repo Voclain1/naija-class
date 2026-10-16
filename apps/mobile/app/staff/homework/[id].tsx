@@ -13,6 +13,7 @@ import {
   type StudentWorkDto,
 } from "@school-kit/types";
 
+import { AiDraftCard, AiDraftPanel } from "../../../src/components/ai-draft";
 import { AnswerList } from "../../../src/components/assignment-questions";
 import { GradebookCard, SimilarityCard } from "../../../src/components/assignment-tools";
 import { TextField } from "../../../src/components/form";
@@ -64,13 +65,18 @@ function Attempt({
   latest,
   totalMarks,
   questions,
+  aiDrafting,
   onChanged,
+  onReload,
 }: {
   attempt: AssignmentSubmissionDto;
   latest: boolean;
   totalMarks: number;
   questions: AssignmentQuestionDto[];
+  /** CP4b: the school has AI drafts switched on. */
+  aiDrafting: boolean;
   onChanged: (work: StudentWorkDto) => void;
+  onReload: () => void;
 }) {
   const { colors } = useTheme();
   // An unmarked attempt starts from the automatic mark, when there is one.
@@ -80,11 +86,17 @@ function Attempt({
   const [feedback, setFeedback] = useState(attempt.feedback ?? "");
   const [note, setNote] = useState("");
   const [returning, setReturning] = useState(false);
+  // CP4b: the boxes were filled from an AI draft. Recorded when saved.
+  const [fromDraft, setFromDraft] = useState(false);
   const canWork = latest && !attempt.returnedAt;
 
   const save = useMutation({
     mutationFn: (value: number) =>
-      markStaffSubmission(attempt.id, { mark: value, ...(feedback.trim() ? { feedback: feedback.trim() } : {}) }),
+      markStaffSubmission(attempt.id, {
+        mark: value,
+        ...(feedback.trim() ? { feedback: feedback.trim() } : {}),
+        ...(fromDraft ? { fromAiDraft: true } : {}),
+      }),
     onSuccess: onChanged,
     onError: (e) => Alert.alert("Not saved", message(e, "We couldn't save the mark. Try again.")),
   });
@@ -133,6 +145,17 @@ function Attempt({
       ) : null}
       <SubmissionFiles files={attempt.files} getUrl={staffAssignmentFileUrl} />
       {attempt.returnedAt ? <Caption>Returned: {attempt.returnNote}</Caption> : null}
+      {canWork && aiDrafting && !attempt.markedAt ? (
+        <AiDraftPanel
+          attempt={attempt}
+          onChanged={onReload}
+          onUse={(m, f) => {
+            setMark(String(m));
+            setFeedback(f);
+            setFromDraft(true);
+          }}
+        />
+      ) : null}
       {canWork ? (
         <>
           <TextField
@@ -188,17 +211,24 @@ function StudentWork({
   userId,
   homeworkId,
   row,
+  aiDrafting,
   onChanged,
 }: {
   schoolId: string;
   userId: string;
   homeworkId: string;
   row: AssignmentRosterRowDto;
+  aiDrafting: boolean;
   onChanged: () => void;
 }) {
   const queryClient = useQueryClient();
   const key = queryKeys.staffStudentWork(schoolId, userId, homeworkId, row.studentId);
-  const work = useQuery({ queryKey: key, queryFn: () => staffStudentWork(homeworkId, row.studentId) });
+  const work = useQuery({
+    queryKey: key,
+    queryFn: () => staffStudentWork(homeworkId, row.studentId),
+    // CP4b: while a draft is being made, look again every few seconds.
+    refetchInterval: (q) => (q.state.data?.attempts[0]?.draft?.status === "PENDING" ? 3000 : false),
+  });
   if (work.isLoading) return <Body muted>Loading…</Body>;
   if (work.isError || !work.data) return <Body muted>We couldn&apos;t load the work.</Body>;
   if (work.data.attempts.length === 0) return <Body muted>Nothing handed in yet.</Body>;
@@ -211,6 +241,11 @@ function StudentWork({
           latest={i === 0}
           totalMarks={work.data.totalMarks}
           questions={work.data.questions}
+          aiDrafting={aiDrafting}
+          onReload={() => {
+            void work.refetch();
+            onChanged();
+          }}
           onChanged={(next) => {
             queryClient.setQueryData(key, next);
             onChanged();
@@ -232,7 +267,13 @@ export default function HandedInWorkScreen() {
   const key = queryKeys.staffAssignmentMarking(schoolId, userId, homeworkId);
   const [open, setOpen] = useState<string | null>(null);
 
-  const marking = useQuery({ queryKey: key, queryFn: () => staffMarking(homeworkId), enabled: authed && homeworkId !== "" });
+  const marking = useQuery({
+    queryKey: key,
+    queryFn: () => staffMarking(homeworkId),
+    enabled: authed && homeworkId !== "",
+    // CP4b: while any AI draft is being made, look again every few seconds.
+    refetchInterval: (q) => (q.state.data?.roster.some((r) => r.draftStatus === "PENDING") ? 4000 : false),
+  });
   const settle = (next: AssignmentMarkingDto) => queryClient.setQueryData(key, next);
   const toggle = useMutation({
     mutationFn: (d: AssignmentMarkingDto) =>
@@ -316,6 +357,13 @@ export default function HandedInWorkScreen() {
                   ) : null}
                 </View>
               </Card>
+              {d.aiDrafting ? (
+                <AiDraftCard
+                  homeworkId={homeworkId}
+                  data={d}
+                  onChanged={(next) => (next ? settle(next) : void queryClient.invalidateQueries({ queryKey: key }))}
+                />
+              ) : null}
               {d.questions.length > 0 ? (
                 <Card>
                   <Label>Questions</Label>
@@ -350,6 +398,8 @@ export default function HandedInWorkScreen() {
                       {row.late ? " · late" : ""}
                       {row.mark !== null ? ` · ${row.mark}/${d.collection.totalMarks}${row.released ? " released" : ""}` : ""}
                       {row.attempts > 1 ? ` · ${row.attempts} attempts` : ""}
+                      {row.draftStatus === "PENDING" ? " · drafting" : ""}
+                      {row.draftStatus === "READY" && row.status === "SUBMITTED" ? " · AI draft ready" : ""}
                       {row.autoMark !== null && row.mark === null ? ` · automatic ${row.autoMark}/${d.collection.totalMarks}` : ""}
                       {row.fileCount > 0 ? ` · ${row.fileCount} file${row.fileCount === 1 ? "" : "s"}` : ""}
                     </Caption>
@@ -360,6 +410,7 @@ export default function HandedInWorkScreen() {
                       userId={userId}
                       homeworkId={homeworkId}
                       row={row}
+                      aiDrafting={d.aiDrafting}
                       onChanged={() => void queryClient.invalidateQueries({ queryKey: key })}
                     />
                   ) : null}

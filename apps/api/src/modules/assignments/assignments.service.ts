@@ -41,6 +41,7 @@ import { assertPrivateFile, PRIVATE_FILE_URL_TTL_SECONDS } from "../../common/st
 import { StorageService } from "../../common/storage/storage.service.js";
 import type { PrivateFileExt } from "../../common/storage/storage.types.js";
 import { getTeacherScope } from "../teacher-scope/teacher-scope.helper.js";
+import { AssignmentFeedbackService } from "./assignment-feedback.service.js";
 import { findSimilarPairs, promptShingles } from "./similarity.js";
 
 // Phase 9 / CP4 — assignments: submitted work and marking
@@ -117,6 +118,7 @@ type SubmissionRow = {
 
 type AssignmentRow = {
   id: string;
+  schoolId: string;
   classArmId: string;
   subjectId: string;
   title: string;
@@ -234,7 +236,11 @@ export function clampCounts(length: number, typed: number, pasted: number): { ty
 
 @Injectable()
 export class AssignmentsService {
-  constructor(private readonly storage: StorageService) {}
+  constructor(
+    private readonly storage: StorageService,
+    // CP4b: whether AI drafting is offered, for the marking page.
+    private readonly feedback: AssignmentFeedbackService,
+  ) {}
 
   // =========================================================================
   // PUT /assignments/:id/collection — switch on "collect work", or change it
@@ -278,7 +284,11 @@ export class AssignmentsService {
         }
         await db.assignmentCollection.update({
           where: { id: existing.id },
-          data: { totalMarks: input.totalMarks, ...(input.accepting === undefined ? {} : { accepting: input.accepting }) },
+          data: {
+            totalMarks: input.totalMarks,
+            ...(input.accepting === undefined ? {} : { accepting: input.accepting }),
+            ...(input.markingGuide === undefined ? {} : { markingGuide: input.markingGuide }),
+          },
         });
       } else {
         await db.assignmentCollection.create({
@@ -287,6 +297,7 @@ export class AssignmentsService {
             assignmentId,
             totalMarks: input.totalMarks,
             accepting: input.accepting ?? true,
+            markingGuide: input.markingGuide ?? null,
             createdBy: authCtx.userId,
           },
         });
@@ -303,6 +314,8 @@ export class AssignmentsService {
             totalMarks: input.totalMarks,
             accepting: input.accepting ?? existing?.accepting ?? true,
             created: existing === null,
+            // Whether there is a guide, never its text.
+            ...(input.markingGuide === undefined ? {} : { markingGuide: input.markingGuide !== null }),
           },
         },
       });
@@ -355,7 +368,14 @@ export class AssignmentsService {
       }
       await db.assignmentSubmission.update({
         where: { id: submissionId },
-        data: { mark: input.mark, feedback: input.feedback ?? null, markedBy: authCtx.userId, markedAt: new Date() },
+        data: {
+          mark: input.mark,
+          feedback: input.feedback ?? null,
+          markedBy: authCtx.userId,
+          markedAt: new Date(),
+          // CP4b: the teacher started from an AI draft. Their save is what makes it a mark.
+          feedbackAiDrafted: input.fromAiDraft ?? false,
+        },
       });
       // The mark is a number and stays; the feedback text does not go here.
       await db.auditLog.create({
@@ -373,6 +393,7 @@ export class AssignmentsService {
             feedback: !!input.feedback,
             remark: submission.markedAt !== null,
             released: submission.releasedAt !== null,
+            aiDrafted: input.fromAiDraft ?? false,
           },
         },
       });
@@ -1004,10 +1025,13 @@ export class AssignmentsService {
     const submissions = await db.assignmentSubmission.findMany({
       where: { collectionId: collection.id },
       orderBy: [{ studentId: "asc" }, { attempt: "desc" }],
-      include: { _count: { select: { files: true } } },
+      include: { _count: { select: { files: true } }, feedbackDraft: { select: { status: true } } },
     });
     const questions = await this.questionsOf(db, collection.id);
-    const latestBy = new Map<string, SubmissionRow & { autoMark: number | null }>();
+    const latestBy = new Map<
+      string,
+      SubmissionRow & { autoMark: number | null; feedbackDraft: { status: "PENDING" | "READY" | "FAILED" } | null }
+    >();
     const attemptsBy = new Map<string, number>();
     for (const s of submissions) {
       if (!latestBy.has(s.studentId)) latestBy.set(s.studentId, s);
@@ -1039,6 +1063,7 @@ export class AssignmentsService {
         pastedPercent: latest?.body ? pastedPercent(latest.typedChars, latest.pastedChars) : null,
         fileCount: (latest as { _count?: { files: number } } | null)?._count?.files ?? 0,
         autoMark: latest?.autoMark ?? null,
+        draftStatus: latest?.feedbackDraft?.status ?? null,
       };
     });
     return {
@@ -1049,9 +1074,15 @@ export class AssignmentsService {
       subjectId: assignment.subjectId,
       termId: term?.id ?? null,
       dueDate: asIsoDate(assignment.dueDate),
-      collection: { assignmentId: assignment.id, totalMarks: collection.totalMarks, accepting: collection.accepting },
+      collection: {
+        assignmentId: assignment.id,
+        totalMarks: collection.totalMarks,
+        accepting: collection.accepting,
+        markingGuide: collection.markingGuide,
+      },
       questions,
       questionsEditable: submissions.length === 0,
+      aiDrafting: await this.feedback.available(db, assignment.schoolId),
       roster,
       counts: {
         submitted: roster.filter((r) => r.status === "SUBMITTED").length,
@@ -1069,7 +1100,7 @@ export class AssignmentsService {
     const rows = await db.assignmentSubmission.findMany({
       where: { collectionId: collection.id, studentId },
       orderBy: { attempt: "desc" },
-      include: { files: { orderBy: { createdAt: "asc" } } },
+      include: { files: { orderBy: { createdAt: "asc" } }, feedbackDraft: true },
     });
     const markers = await db.user.findMany({
       where: { id: { in: [...new Set(rows.map((r) => r.markedBy).filter((v): v is string => !!v))] } },
@@ -1094,6 +1125,17 @@ export class AssignmentsService {
           late: r.late,
           answers: answerResults(questions, answersOf(r.answers), true),
           autoMark: r.autoMark,
+          feedbackAiDrafted: r.feedbackAiDrafted,
+          draft: r.feedbackDraft
+            ? {
+                status: r.feedbackDraft.status,
+                mark: r.feedbackDraft.mark,
+                feedback: r.feedbackDraft.feedback,
+                reason: r.feedbackDraft.reason,
+                failure: r.feedbackDraft.failure,
+                createdAt: r.feedbackDraft.createdAt,
+              }
+            : null,
           pastedPercent: pastedPercent(r.typedChars, r.pastedChars),
           mark: r.mark,
           feedback: r.feedback,

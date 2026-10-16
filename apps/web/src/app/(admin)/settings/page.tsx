@@ -87,6 +87,12 @@ const LINKS: SettingsLink[] = [
     icon: Sparkles,
   },
   {
+    label: "AI marking drafts",
+    href: "/settings/ai-marking",
+    description: "Let teachers ask AI for a first draft of marks and feedback. Off until you switch it on.",
+    icon: Sparkles,
+  },
+  {
     label: "Plan",
     href: "/settings/plan",
     description: "Your plan and how many students it covers.",

@@ -5,6 +5,7 @@
 // maxTokens that exceeds the model's ceiling, a version someone forgot to
 // bump, or a cost profile nobody looked at.
 
+import { ASSIGNMENT_FEEDBACK_SCHEMA } from "../../src/prompts/assignment-feedback.js";
 import { MODEL_PRICING, estimateCostMicroUsd } from "../../src/models.js";
 import { EXAM_QUESTIONS_SCHEMA } from "../../src/prompts/exam-questions.js";
 import { LESSON_PLAN_SCHEMA } from "../../src/prompts/lesson-plan.js";
@@ -133,6 +134,27 @@ export const registryIntegrityCase: EvalCase = {
               return o.additionalProperties === false && props.length === required.length && props.every((p) => required.includes(p));
             }),
           "an open object or an optional property is a 400 on the first real call",
+        ),
+      );
+    }
+
+    // ---- assignment-feedback: a closed schema the API will accept --------
+    {
+      const unsupported: string[] = [];
+      let open = 0;
+      walkSchema(ASSIGNMENT_FEEDBACK_SCHEMA, (obj) => {
+        if (obj.type === "object" && obj.additionalProperties !== false) open += 1;
+        for (const k of UNSUPPORTED_SCHEMA_KEYWORDS) if (k in obj) unsupported.push(k);
+      });
+      const props = Object.keys((ASSIGNMENT_FEEDBACK_SCHEMA.properties ?? {}) as Record<string, unknown>);
+      results.push(
+        check(
+          "assignment-feedback: schema is closed, fully required, and uses no rejected keyword",
+          open === 0 &&
+            unsupported.length === 0 &&
+            props.sort().join() === "feedback,mark,reason" &&
+            ((ASSIGNMENT_FEEDBACK_SCHEMA.required ?? []) as string[]).length === 3,
+          `open objects: ${open}; unsupported: ${unsupported.join(", ")}`,
         ),
       );
     }

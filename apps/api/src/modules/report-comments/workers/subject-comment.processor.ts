@@ -3,6 +3,7 @@ import { Logger } from "@nestjs/common";
 import { Job } from "bullmq";
 
 import {
+  AI_JOB_ASSIGNMENT_FEEDBACK,
   AI_JOB_FORM_COMMENT,
   AI_JOB_PARENT_SUMMARY,
   AI_JOB_SUBJECT_COMMENT,
@@ -12,6 +13,10 @@ import {
   ParentSummariesService,
   type ParentSummaryJobData,
 } from "../../parent-summaries/parent-summaries.service.js";
+import {
+  AssignmentFeedbackService,
+  type AssignmentFeedbackJobData,
+} from "../../assignments/assignment-feedback.service.js";
 import { FormCommentsService, type FormCommentJobData } from "../form-comments.service.js";
 import { ReportCommentsService, type SubjectCommentJobData } from "../report-comments.service.js";
 import { WORKER_TUNING } from "../../../common/queue/worker-tuning.js";
@@ -54,6 +59,11 @@ export class SubjectCommentProcessor extends WorkerHost {
     // fourth AI feature lands, the honest refactor is to move this dispatcher
     // into common/ai rather than keep accreting cross-module injections here.
     private readonly parentSummaries: ParentSummariesService,
+    // Phase 9 / CP4b — the fourth AI feature on this queue. The comment above
+    // says the honest refactor at this point is moving the dispatcher into
+    // common/ai; that is recorded in docs/deferred.md rather than done inside
+    // a feature slice.
+    private readonly assignmentFeedback: AssignmentFeedbackService,
   ) {
     super();
   }
@@ -67,6 +77,13 @@ export class SubjectCommentProcessor extends WorkerHost {
     }
     if (job.name === AI_JOB_PARENT_SUMMARY) {
       return this.handleParentSummary(job as Job<ParentSummaryJobData>);
+    }
+    if (job.name === AI_JOB_ASSIGNMENT_FEEDBACK) {
+      const d = (job as Job<AssignmentFeedbackJobData>).data;
+      if (!d?.schoolId || !d?.userId || !d?.submissionId) {
+        throw new Error(`assignment-feedback: job ${job.id ?? "(no id)"} missing tenancy/target data; refusing to run`);
+      }
+      return this.assignmentFeedback.generate(d);
     }
     throw new Error(`unknown job name on ai queue: ${job.name}`);
   }

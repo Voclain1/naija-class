@@ -47,6 +47,10 @@ export const AI_JOB_FORM_COMMENT = "form-comment";
 // sweep enqueues and returns; the worker drains at concurrency 3 like
 // everything else on this queue.
 export const AI_JOB_PARENT_SUMMARY = "parent-summary";
+// Phase 9 / CP4b — one AI draft of marking feedback. Fourth job NAME on the
+// same queue and dispatcher. The job carries ids only; the answer is read
+// from the attempt when it runs (CLAUDE.md allowlist rule 1).
+export const AI_JOB_ASSIGNMENT_FEEDBACK = "assignment-feedback";
 
 // Phase 6 / Slice 5 (D38) — push notification delivery.
 //

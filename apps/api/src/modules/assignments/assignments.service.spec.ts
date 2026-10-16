@@ -19,9 +19,14 @@ import {
   submitWorkSchema,
 } from "@school-kit/types";
 
+import type { ConfigService } from "@nestjs/config";
+import type { Queue } from "bullmq";
+
+import { AiGenerationService } from "../../common/ai/ai-generation.service";
 import { FilesystemStorageDriver } from "../../common/storage/filesystem-storage.driver";
 import { StorageService } from "../../common/storage/storage.service";
 import { AuthService } from "../auth/auth.service";
+import { AssignmentFeedbackService } from "./assignment-feedback.service";
 import { AssignmentsService, clampCounts, isLate, statusOf } from "./assignments.service";
 
 // Phase 9 / CP4.1 — assignments: submitted work and marking
@@ -62,7 +67,15 @@ async function makeSchool(label: string) {
 
 describe("AssignmentsService (integration)", () => {
   const storageRoot = mkdtempSync(join(tmpdir(), "assignment-files-"));
-  const service = new AssignmentsService(new StorageService(new FilesystemStorageDriver(storageRoot)));
+  // CP4b's drafting is off for these schools (ai_enabled is off by default), so
+  // a feedback service with no AI port behind it changes nothing here.
+  const service = new AssignmentsService(
+    new StorageService(new FilesystemStorageDriver(storageRoot)),
+    new AssignmentFeedbackService(
+      new AiGenerationService({ get: () => undefined } as unknown as ConfigService, undefined),
+      { add: async () => ({}) } as unknown as Queue,
+    ),
+  );
   const schoolIds = new Set<string>();
 
   let A: {
@@ -177,7 +190,7 @@ describe("AssignmentsService (integration)", () => {
     it("the class's teacher switches it on; a teacher of another class and a bursar cannot", async () => {
       const id = await A.homework(addDaysIso(today(), 3));
       const marking = await service.collect(ctx(A.schoolId, A.teacherId), id, { totalMarks: 10 }, reqCtx);
-      expect(marking.collection).toEqual({ assignmentId: id, totalMarks: 10, accepting: true });
+      expect(marking.collection).toEqual({ assignmentId: id, totalMarks: 10, accepting: true, markingGuide: null });
       expect(marking.roster.map((r) => r.name).sort()).toEqual(["Amara Pupil", "Bola Pupil"]);
       expect(marking.counts.notSubmitted).toBe(2);
       await expect(service.collect(ctx(A.schoolId, A.otherTeacherId), id, { totalMarks: 10 }, reqCtx)).rejects.toBeInstanceOf(ForbiddenError);

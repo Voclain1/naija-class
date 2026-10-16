@@ -3,6 +3,7 @@ import { Module } from "@nestjs/common";
 
 import { AiModule } from "../../common/ai/ai.module.js";
 import { AI_QUEUE } from "../../common/queue/index.js";
+import { AssignmentsModule } from "../assignments/assignments.module.js";
 import { AuthModule } from "../auth/auth.module.js";
 import { ParentSummariesModule } from "../parent-summaries/parent-summaries.module.js";
 import { FormCommentsService } from "./form-comments.service.js";
@@ -23,6 +24,8 @@ import { SubjectCommentProcessor } from "./workers/subject-comment.processor.js"
     // now dispatches parent-summary jobs too, so it needs that service. One
     // direction only — ParentSummariesModule does not import this one.
     ParentSummariesModule,
+    // Phase 9 / CP4b: the dispatcher below runs assignment-feedback jobs too.
+    AssignmentsModule,
     BullModule.registerQueue({
       name: AI_QUEUE,
       defaultJobOptions: {

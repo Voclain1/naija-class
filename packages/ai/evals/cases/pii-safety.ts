@@ -20,6 +20,7 @@ import {
   renderInsightsNarrationPrompt,
   renderInsightsRouterPrompt,
 } from "../../src/prompts/insights.js";
+import { removeNames, renderAssignmentFeedbackPrompt } from "../../src/prompts/assignment-feedback.js";
 import { renderExamQuestionsPrompt } from "../../src/prompts/exam-questions.js";
 import { renderParentWeeklySummaryPrompt } from "../../src/prompts/parent-weekly-summary.js";
 import { renderReportCardCommentPrompt } from "../../src/prompts/report-card-comment.js";
@@ -48,7 +49,13 @@ import { check, type EvalCase } from "../harness.js";
 // in the image, and renderStudentListExtractionPrompt takes only class arm
 // names. That is asserted below, and it is what keeps this suite meaningful
 // for the one prompt it exempts.
-const PII_BEARING_PROMPT_ALLOWLIST = ["student-list-extraction"] as const;
+//
+// SECOND ROW (owner sign-off 2026-10-16, phase-9.md §12 CP4b-D5):
+// `assignment-feedback`. A child's typed answer is the payload, so the text
+// channel DOES carry it — but with every known name removed by the renderer
+// itself, which is asserted below. Two rows is the whole list; a third is
+// another deliberate edit here and in CLAUDE.md.
+const PII_BEARING_PROMPT_ALLOWLIST = ["student-list-extraction", "assignment-feedback"] as const;
 
 // Field names that must never appear in a rendered prompt. If a template ever
 // interpolates a labelled PII field, the label itself usually travels with it.
@@ -528,8 +535,8 @@ export const piiSafetyCase: EvalCase = {
     // ---- the PII-bearing prompt allowlist --------------------------------
     results.push(
       check(
-        "allowlist: exactly one prompt is permitted to carry student PII",
-        PII_BEARING_PROMPT_ALLOWLIST.length === 1,
+        "allowlist: exactly two prompts are permitted to carry student PII",
+        PII_BEARING_PROMPT_ALLOWLIST.length === 2,
         `the allowlist has ${PII_BEARING_PROMPT_ALLOWLIST.length} entries. Adding one is a deliberate act ` +
           "requiring its own sign-off and its own row in CLAUDE.md's PII-bearing prompt allowlist — " +
           "if you meant to do that, update this assertion in the same commit and say why.",
@@ -545,6 +552,56 @@ export const piiSafetyCase: EvalCase = {
           "which orphans the carve-out and would let the real prompt fall outside it",
       ),
     );
+
+    // ---- assignment-feedback renderer (allowlisted, names removed) --------
+    // The answer travels, by design. What must NOT travel is any name the
+    // server knows: the student's own names and admission number, and every
+    // classmate's names. The renderer removes them itself, so no caller can
+    // forget; these checks pin that, with the realistic record above.
+    {
+      const answer =
+        "My name is Chinedu Okafor (SK/2024/0147). CHINEDU thinks plants need light; chinedu's friend Ngozi Ade agrees. " +
+        "We studied in Adamawa with Ade.";
+      const rendered = renderAssignmentFeedbackPrompt({
+        classLevel: "SENTINEL_LEVEL_JSS2",
+        subject: "SENTINEL_SUBJECT_BIOLOGY",
+        title: "SENTINEL_TITLE",
+        instructions: "SENTINEL_INSTRUCTIONS",
+        markingGuide: "SENTINEL_GUIDE",
+        totalMarks: 10,
+        answer,
+        namesToRemove: ["Chinedu", "Okafor", "SK/2024/0147", "Ngozi", "Ade"],
+      });
+      results.push(...assertNoForbidden("assignment-feedback", rendered));
+      results.push(
+        check(
+          "assignment-feedback: removes names in any capitals and before a possessive",
+          !/chinedu|okafor|ngozi/i.test(rendered) && rendered.includes("[name]'s friend"),
+          "a name the server knows reached the model",
+        ),
+        check(
+          "assignment-feedback: never removes part of another word",
+          rendered.includes("Adamawa") && !/\bAde\b/.test(rendered),
+          '"Ade" must go and "Adamawa" must stay — a renderer that eats parts of words corrupts the answer',
+        ),
+        check(
+          "assignment-feedback: renders all declared inputs",
+          ["SENTINEL_LEVEL_JSS2", "SENTINEL_SUBJECT_BIOLOGY", "SENTINEL_TITLE", "SENTINEL_INSTRUCTIONS", "SENTINEL_GUIDE"].every((s) =>
+            rendered.includes(s),
+          ),
+          "a declared input was silently dropped from the template",
+        ),
+        check(
+          "assignment-feedback: carries no id and no gender",
+          !/\b(student id|studentId|gender|male|female)\b/i.test(rendered),
+          "the class level is the only thing said about who wrote it",
+        ),
+        check(
+          "assignment-feedback: one-letter names are skipped rather than removing every letter",
+          removeNames("A plant needs water.", ["A", "Bo"]) === "A plant needs water.",
+        ),
+      );
+    }
 
     // ---- student-list-extraction renderer --------------------------------
     // The allowlisted prompt, and the check that matters most for it: the

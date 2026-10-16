@@ -105,7 +105,7 @@ export default function PlanPage() {
       {plan ? (
         <section className="flex flex-col gap-3" aria-labelledby="plan-features">
           <h2 id="plan-features" className="font-medium">
-            Report card extras
+            Paid-plan extras
           </h2>
           <ul className="flex flex-col divide-y rounded-lg border bg-card">
             {plan.features.map((f) => (

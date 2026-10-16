@@ -190,6 +190,11 @@ model School {
   //                          so aiEnabled alone is not enough to open it. It
   //                          only narrows: the AI gates above still apply.
   smartImportEnabled    Boolean         @default(false) @map("smart_import_enabled")
+  //   assignmentFeedbackAiEnabled  Phase 9 / CP4b. The school's own opt-in to
+  //                          AI drafts of marking feedback. OFF by default,
+  //                          set by owner/admin; aiEnabled must be on too, and
+  //                          a teacher still has to press the button.
+  assignmentFeedbackAiEnabled Boolean   @default(false) @map("assignment_feedback_ai_enabled")
   //   plan / studentCapOverride   the school's plan and, for a deal, its own
   //                          student cap (2026-10-11, docs/modules/plans.md).
   //                          Set by the platform operator only. Null override
@@ -4122,6 +4127,8 @@ model AssignmentCollection {
   totalMarks   Int                    @map("total_marks")
   // Off once the teacher clicks "Stop accepting work".
   accepting    Boolean                @default(true)
+  // CP4b: what a good answer includes. Staff only; sent to the AI drafter.
+  markingGuide String?                @map("marking_guide")
   createdBy    String                 @map("created_by")
   createdAt    DateTime               @default(now()) @map("created_at")
   updatedAt    DateTime               @default(now()) @updatedAt @map("updated_at")
@@ -4166,6 +4173,9 @@ model AssignmentSubmission {
   // worked out from them. The teacher gives the real mark.
   answers      Json?
   autoMark     Int?                 @map("auto_mark")
+  // CP4b: the saved mark started from an AI draft (the teacher saved it).
+  feedbackAiDrafted Boolean         @default(false) @map("feedback_ai_drafted")
+  feedbackDraft AssignmentFeedbackDraft?
 
   @@unique([collectionId, studentId, attempt])
   @@index([schoolId, studentId])
@@ -4221,4 +4231,32 @@ model AssignmentQuestion {
 
   @@unique([collectionId, orderIndex])
   @@map("assignment_questions")
+}
+
+// Phase 9 / CP4b — an AI draft of a mark and feedback, for staff only. Never a
+// mark: the teacher's own "Save mark" writes that (docs/modules/phase-9.md §12).
+enum AssignmentFeedbackDraftStatus {
+  PENDING
+  READY
+  FAILED
+}
+
+model AssignmentFeedbackDraft {
+  id            String                        @id @default(uuid())
+  schoolId      String                        @map("school_id")
+  submissionId  String                        @unique @map("submission_id")
+  submission    AssignmentSubmission          @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  status        AssignmentFeedbackDraftStatus @default(PENDING)
+  mark          Int?
+  feedback      String?
+  // One line for the teacher on why that mark; the student never sees it.
+  reason        String?
+  // Why it failed, in words a teacher can read.
+  failure       String?
+  promptVersion String                        @map("prompt_version")
+  requestedBy   String                        @map("requested_by")
+  createdAt     DateTime                      @default(now()) @map("created_at")
+  updatedAt     DateTime                      @default(now()) @updatedAt @map("updated_at")
+
+  @@map("assignment_feedback_drafts")
 }

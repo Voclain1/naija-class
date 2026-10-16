@@ -110,12 +110,14 @@ infra/      Terraform / Pulumi
 - Every call to `claudeClient.messages.create` must log to the `ai_generations` table: model, prompt name + version, input/output tokens, latency, cost estimate, success/error.
 - Per-school monthly token budget enforced before the call, not after.
 
-**The PII-bearing prompt allowlist (approved 2026-08-20).** Exactly one prompt
-is permitted to send student PII to the model:
+**The PII-bearing prompt allowlist (approved 2026-08-20; second row approved
+2026-10-16).** Exactly two prompts are permitted to send student PII to the
+model:
 
 | Prompt name | Feature | Why the PII *is* the payload |
 |---|---|---|
 | `student-list-extraction` | Smart Student Import (`docs/modules/smart-student-import.md`) | The feature transcribes a register the school already holds and already has the data in. Opaque IDs are not merely worse here — there is nothing to make opaque, because the transcription is the product. |
+| `assignment-feedback` | AI-drafted marking feedback (`docs/modules/phase-9.md` §12, CP4b) | The child's typed answer is what is being marked; there is nothing to make opaque. Mitigated, not exempted: the renderer itself removes the student's names and admission number and every classmate's name before the text is built, and nothing else about the child is sent (the class level only). Optional at every level: the platform's switch, the school's own switch (off by default), and the teacher's button. |
 
 Two rules bind every prompt on this list, and they are what make membership
 survivable:
@@ -126,7 +128,7 @@ survivable:
 2. **The extraction never writes to a student record without explicit human
    confirmation.** Same gate as D15's report comments.
 
-**This is an allowlist of one prompt name, deliberately — not a new
+**This is an allowlist of prompt names, deliberately — not a new
 category.** The distinction is load-bearing: a category ("transcription
 features", "onboarding features") is something a future prompt could argue
 itself into during review. A named list cannot be joined by accident — adding
