@@ -80,6 +80,15 @@ export function pathFor(schoolId: string, key: StorageObjectKey): string {
       }
       return `schools/${schoolId}/health/${key.documentId}.${key.ext}`;
     }
+    case "submission-file": {
+      if (!UUID_RE.test(key.fileId)) {
+        throw new Error(`storage: fileId is not a UUID: ${redact(key.fileId)}`);
+      }
+      if (!["jpg", "png", "webp", "pdf"].includes(key.ext)) {
+        throw new Error(`storage: unsupported submission-file extension: ${redact(key.ext)}`);
+      }
+      return `schools/${schoolId}/submissions/${key.fileId}.${key.ext}`;
+    }
   }
 }
 

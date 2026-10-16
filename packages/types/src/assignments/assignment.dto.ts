@@ -22,6 +22,8 @@ export const ASSIGNMENT_LIMITS = {
   body: 20_000,
   feedback: 2000,
   returnNote: 500,
+  /** Photos or PDFs per attempt (Q8, CP4.2). */
+  files: 3,
 } as const;
 
 /** Switch "collect work" on for a homework item, or change its settings. */
@@ -34,12 +36,19 @@ export const collectWorkSchema = z
 export type CollectWorkInput = z.infer<typeof collectWorkSchema>;
 
 /**
- * A student hands in a typed answer. The two counts are what the student's own
- * device saw arrive by typing and by pasting (Q7); the server clamps them.
+ * A student hands in a typed answer, the files they attached (CP4.2), or both.
+ * The two counts are what the student's own device saw arrive by typing and by
+ * pasting (Q7); the server clamps them. The server refuses an attempt with
+ * neither text nor files.
  */
 export const submitWorkSchema = z
   .object({
-    body: z.string().trim().min(1, "Write your answer before handing it in.").max(ASSIGNMENT_LIMITS.body),
+    body: z
+      .string()
+      .trim()
+      .max(ASSIGNMENT_LIMITS.body)
+      .optional()
+      .transform((v) => (v ? v : undefined)),
     typedChars: z.number().int().min(0).max(1_000_000).default(0),
     pastedChars: z.number().int().min(0).max(1_000_000).default(0),
   })
@@ -81,12 +90,26 @@ export interface AssignmentCollectionDto {
   accepting: boolean;
 }
 
+/** A photo or PDF answer (CP4.2). Opened through a five-minute link. */
+export interface SubmissionFileDto {
+  id: string;
+  type: "image" | "pdf";
+  size: number;
+}
+
+/** A five-minute link to a private file (F1). */
+export interface AssignmentFileUrlDto {
+  url: string;
+}
+
 /** One attempt, as staff see it. */
 export interface AssignmentSubmissionDto {
   id: string;
   studentId: string;
   attempt: number;
-  body: string;
+  /** Null when the attempt is files alone. */
+  body: string | null;
+  files: SubmissionFileDto[];
   submittedAt: string | Date;
   late: boolean;
   /** Q7: about how much of the answer arrived by pasting, 0–100. Staff only. */
@@ -113,6 +136,8 @@ export interface AssignmentRosterRowDto {
   mark: number | null;
   released: boolean;
   pastedPercent: number | null;
+  /** Files on the latest attempt. */
+  fileCount: number;
 }
 
 export interface AssignmentMarkingDto {
@@ -138,7 +163,8 @@ export interface StudentWorkDto {
 /** The student's own view. No paste counts. */
 export interface MyAssignmentAttemptDto {
   attempt: number;
-  body: string;
+  body: string | null;
+  files: SubmissionFileDto[];
   submittedAt: string | Date;
   late: boolean;
   /** Only once released. */
@@ -158,6 +184,8 @@ export interface MyAssignmentDto {
   status: WorkStatus;
   /** Whether the student may hand in now. */
   canSubmit: boolean;
+  /** Files attached and waiting to be handed in with the next attempt. */
+  stagedFiles: SubmissionFileDto[];
   attempts: MyAssignmentAttemptDto[];
 }
 
@@ -175,6 +203,8 @@ export interface FamilyAssignmentDto {
   mark: number | null;
   feedback: string | null;
   returnNote: string | null;
+  /** The files handed in with the latest attempt (Q8: the child's guardians may open them). */
+  files: SubmissionFileDto[];
 }
 
 export interface FamilyAssignmentListResponse {

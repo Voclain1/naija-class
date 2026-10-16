@@ -1,10 +1,27 @@
-import { Body, Controller, Get, HttpCode, Ip, Param, Post, Put, UseGuards } from "@nestjs/common";
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  Ip,
+  Param,
+  Post,
+  Put,
+  UploadedFile,
+  UseFilters,
+  UseGuards,
+  UseInterceptors,
+} from "@nestjs/common";
+import { FileInterceptor } from "@nestjs/platform-express";
 
 import {
   collectWorkSchema,
   markSubmissionSchema,
   returnSubmissionSchema,
   submitWorkSchema,
+  ValidationError,
+  type AssignmentFileUrlDto,
   type AssignmentMarkingDto,
   type CollectWorkInput,
   type FamilyAssignmentListResponse,
@@ -26,6 +43,8 @@ import { Permissions } from "../../common/auth/permissions.decorator.js";
 import { PermissionsGuard } from "../../common/auth/permissions.guard.js";
 import type { StudentAuthContext } from "../../common/auth/student-auth-context.js";
 import { StudentAuthGuard } from "../../common/auth/student-auth.guard.js";
+import { PRIVATE_FILE_MAX_BYTES } from "../../common/storage/private-file.js";
+import { UploadErrorFilter } from "../../common/upload-error.filter.js";
 import { ZodValidationPipe } from "../../common/zod-validation.pipe.js";
 import { AssignmentsService } from "./assignments.service.js";
 
@@ -87,6 +106,17 @@ export class AssignmentsController {
     return this.service.mark(authCtx, id, dto, { ipAddress: ip });
   }
 
+  /** CP4.2 — a five-minute link to a handed-in photo or PDF, audited. */
+  @Get("files/:fileId")
+  @Permissions("assignment.read")
+  async file(
+    @CurrentUser() authCtx: AuthContext,
+    @Param("fileId") fileId: string,
+    @Ip() ip: string,
+  ): Promise<AssignmentFileUrlDto> {
+    return this.service.fileUrlForStaff(authCtx, fileId, { ipAddress: ip });
+  }
+
   @Post("submissions/:id/return")
   @HttpCode(200)
   @Permissions("assignment.mark")
@@ -112,6 +142,16 @@ export class PortalAssignmentsController {
     @Param("id") id: string,
   ): Promise<FamilyAssignmentListResponse> {
     return this.service.listForGuardian(ctx, id);
+  }
+
+  /** CP4.2 — a five-minute link to a file the child handed in (Q8). */
+  @Get("students/:id/assignment-files/:fileId")
+  async file(
+    @CurrentGuardian() ctx: GuardianAuthContext,
+    @Param("id") id: string,
+    @Param("fileId") fileId: string,
+  ): Promise<AssignmentFileUrlDto> {
+    return this.service.fileUrlForGuardian(ctx, id, fileId);
   }
 }
 
@@ -139,5 +179,36 @@ export class StudentAssignmentsController {
     @Body(new ZodValidationPipe(submitWorkSchema)) dto: SubmitWorkInput,
   ): Promise<MyAssignmentDto> {
     return this.service.submitForStudent(ctx.schoolId, ctx.studentId, id, dto);
+  }
+
+  // CP4.2 — attach a photo or PDF (F1: typed by its bytes, at most 10 MB, up to
+  // three). It waits, staged, until the student hands in.
+  @Post("me/assignments/:id/files")
+  @HttpCode(200)
+  @UseInterceptors(FileInterceptor("file", { limits: { fileSize: PRIVATE_FILE_MAX_BYTES } }))
+  @UseFilters(new UploadErrorFilter("10 MB"))
+  async stage(
+    @CurrentStudent() ctx: StudentAuthContext,
+    @Param("id") id: string,
+    @UploadedFile() file: Express.Multer.File | undefined,
+  ): Promise<MyAssignmentDto> {
+    if (!file) {
+      throw new ValidationError("INVALID_UPLOAD", "No file uploaded. Use multipart/form-data with a 'file' field.");
+    }
+    return this.service.stageFile(ctx.schoolId, ctx.studentId, id, file.buffer);
+  }
+
+  @Delete("me/assignments/:id/files/:fileId")
+  async unstage(
+    @CurrentStudent() ctx: StudentAuthContext,
+    @Param("id") id: string,
+    @Param("fileId") fileId: string,
+  ): Promise<MyAssignmentDto> {
+    return this.service.removeStagedFile(ctx.schoolId, ctx.studentId, id, fileId);
+  }
+
+  @Get("me/assignments/files/:fileId")
+  async file(@CurrentStudent() ctx: StudentAuthContext, @Param("fileId") fileId: string): Promise<AssignmentFileUrlDto> {
+    return this.service.fileUrlForStudent(ctx.schoolId, ctx.studentId, fileId);
   }
 }

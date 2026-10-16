@@ -76,7 +76,10 @@ export type StorageObjectKey =
   // different type deletes the old object first. Read only through a
   // short-lived signed URL, after the caller's access to the record is
   // checked. See private-file.ts for the type check.
-  | { kind: "health-document"; documentId: string; ext: PrivateFileExt };
+  | { kind: "health-document"; documentId: string; ext: PrivateFileExt }
+  // Phase 9 / CP4.2 — a student's photo or PDF answer (Q8). Private, F1-typed,
+  // read through a five-minute link after the reader's access is checked.
+  | { kind: "submission-file"; fileId: string; ext: PrivateFileExt };
 
 // The file types a private upload may be (F1). Decided from the file's own
 // first bytes, never from the name or the browser's declared type.

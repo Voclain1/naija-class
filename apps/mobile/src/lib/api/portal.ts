@@ -25,6 +25,7 @@ import type {
   PortalHealthProfileDto,
   PortalSickbayVisitListResponse,
   FamilyAssignmentListResponse,
+  AssignmentFileUrlDto,
 } from "@school-kit/types";
 
 import { apiFetch } from "./client";
@@ -243,6 +244,13 @@ export function guardianHomework(studentId: string): Promise<HomeworkFeedRespons
 // released it. No answer text.
 export function guardianAssignments(studentId: string): Promise<FamilyAssignmentListResponse> {
   return apiFetch<FamilyAssignmentListResponse>(`/portal/students/${encodeURIComponent(studentId)}/assignments`);
+}
+
+// Phase 9 / CP4.2 — a five-minute link to a file the child handed in.
+export function guardianAssignmentFileUrl(studentId: string, fileId: string): Promise<AssignmentFileUrlDto> {
+  return apiFetch<AssignmentFileUrlDto>(
+    `/portal/students/${encodeURIComponent(studentId)}/assignment-files/${encodeURIComponent(fileId)}`,
+  );
 }
 
 // Phase 9 / CP2.3 — approved suspensions and exclusions for one child. The

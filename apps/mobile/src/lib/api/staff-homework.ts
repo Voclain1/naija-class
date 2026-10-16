@@ -1,4 +1,5 @@
 import type {
+  AssignmentFileUrlDto,
   AssignmentMarkingDto,
   CollectWorkInput,
   MarkSubmissionInput,
@@ -61,4 +62,9 @@ export function returnStaffSubmission(submissionId: string, input: ReturnSubmiss
 
 export function releaseStaffMarks(homeworkId: string): Promise<AssignmentMarkingDto> {
   return apiFetch<AssignmentMarkingDto>(`/assignments/${enc(homeworkId)}/release`, { method: "POST" });
+}
+
+// Phase 9 / CP4.2 — a five-minute link to a handed-in photo or PDF, audited.
+export function staffAssignmentFileUrl(fileId: string): Promise<AssignmentFileUrlDto> {
+  return apiFetch<AssignmentFileUrlDto>(`/assignments/files/${enc(fileId)}`);
 }

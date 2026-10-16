@@ -11,6 +11,7 @@ import type {
   StudentLoginResponse,
   StudentMeResponse,
   CalendarResponse,
+  AssignmentFileUrlDto,
   FamilyAssignmentListResponse,
   MyAssignmentDto,
   SubmitWorkInput,
@@ -19,6 +20,7 @@ import type {
 import type { AnnouncementFeedResponse, HomeworkFeedResponse } from "@school-kit/types";
 
 import { apiFetch } from "./client";
+import { uploadMultipart } from "./native-upload";
 
 // Phase 6 — the student principal's API surface.
 //
@@ -168,6 +170,29 @@ export function studentAssignments(): Promise<FamilyAssignmentListResponse> {
 
 export function studentAssignment(homeworkId: string): Promise<MyAssignmentDto> {
   return apiFetch<MyAssignmentDto>(`/student-portal/me/assignments/${encodeURIComponent(homeworkId)}`);
+}
+
+// Phase 9 / CP4.2 — a photo or PDF answer (Q8), staged until the student hands
+// in. One file per request: on a weak signal, a failed photo is retried alone.
+export function stageStudentFile(homeworkId: string, fileUri: string, mimeType: string): Promise<MyAssignmentDto> {
+  return uploadMultipart<MyAssignmentDto>(`/student-portal/me/assignments/${encodeURIComponent(homeworkId)}/files`, {
+    fileUri,
+    fieldName: "file",
+    mimeType,
+    parameters: {},
+  });
+}
+
+export function removeStagedStudentFile(homeworkId: string, fileId: string): Promise<MyAssignmentDto> {
+  return apiFetch<MyAssignmentDto>(
+    `/student-portal/me/assignments/${encodeURIComponent(homeworkId)}/files/${encodeURIComponent(fileId)}`,
+    { method: "DELETE" },
+  );
+}
+
+/** A five-minute link to one of the student's own files. */
+export function studentFileUrl(fileId: string): Promise<AssignmentFileUrlDto> {
+  return apiFetch<AssignmentFileUrlDto>(`/student-portal/me/assignments/files/${encodeURIComponent(fileId)}`);
 }
 
 export function submitStudentWork(homeworkId: string, input: SubmitWorkInput): Promise<MyAssignmentDto> {

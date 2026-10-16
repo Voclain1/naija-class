@@ -1,7 +1,8 @@
 import { StyleSheet, View } from "react-native";
-import { describeWorkStatus, type FamilyAssignmentDto } from "@school-kit/types";
+import { describeWorkStatus, type AssignmentFileUrlDto, type FamilyAssignmentDto } from "@school-kit/types";
 
 import { spacing } from "../theme/tokens";
+import { SubmissionFiles } from "./submission-files";
 import { Body, Button, Caption, Card, Label } from "./ui";
 
 // Phase 9 / CP4.1 — collected work whose due date has left the homework list,
@@ -19,9 +20,12 @@ function formatDue(iso: string): string {
 export function PastWorkList({
   items,
   onOpen,
+  fileUrl,
 }: {
   items: readonly FamilyAssignmentDto[];
   onOpen?: (homeworkId: string) => void;
+  /** CP4.2 — the link call for a handed-in file. */
+  fileUrl?: (fileId: string) => Promise<AssignmentFileUrlDto>;
 }) {
   if (items.length === 0) return null;
   return (
@@ -40,6 +44,7 @@ export function PastWorkList({
           </Label>
           {w.feedback ? <Caption>{w.feedback}</Caption> : null}
           {w.status === "RETURNED" && w.returnNote ? <Caption>Teacher: {w.returnNote}</Caption> : null}
+          {fileUrl ? <SubmissionFiles files={w.files} getUrl={fileUrl} /> : null}
           {onOpen ? <Button title="Open" variant="secondary" onPress={() => onOpen(w.assignmentId)} /> : null}
         </Card>
       ))}

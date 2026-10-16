@@ -15,8 +15,10 @@ import {
 import { Button } from "@/components/ui/button";
 import { InlineAlert } from "@/components/shared/inline-alert";
 import { ApiError } from "@/lib/api-client";
+import { openPrivateDocument } from "@/components/health/vaccinations-section";
 import {
   collectWork,
+  getAssignmentFileUrl,
   getMarking,
   getStudentWork,
   markSubmission,
@@ -102,12 +104,34 @@ function Attempt({
           </span>
         )}
       </header>
-      <p className="whitespace-pre-wrap break-words rounded-md bg-muted/30 p-3 text-sm">{attempt.body}</p>
-      <p className="text-xs text-muted-foreground">
-        About {attempt.pastedPercent}% of this answer was pasted rather than typed, as the student&apos;s device reported
-        it. A fact about how the text arrived, not a judgement; it does not affect the mark, and the student and parents
-        never see it.
-      </p>
+      {attempt.body && (
+        <>
+          <p className="whitespace-pre-wrap break-words rounded-md bg-muted/30 p-3 text-sm">{attempt.body}</p>
+          <p className="text-xs text-muted-foreground">
+            About {attempt.pastedPercent}% of this answer was pasted rather than typed, as the student&apos;s device
+            reported it. A fact about how the text arrived, not a judgement; it does not affect the mark, and the student
+            and parents never see it.
+          </p>
+        </>
+      )}
+      {attempt.files.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {attempt.files.map((f, i) => (
+            <Button
+              key={f.id}
+              size="sm"
+              variant="outline"
+              onClick={() =>
+                void openPrivateDocument(() => getAssignmentFileUrl(f.id)).catch((e) =>
+                  setError(message(e, "Could not open the file.")),
+                )
+              }
+            >
+              View {f.type === "pdf" ? "PDF" : "photo"} {attempt.files.length > 1 ? i + 1 : ""}
+            </Button>
+          ))}
+        </div>
+      )}
       {attempt.returnedAt && (
         <p className="rounded-md bg-amber-50 p-2 text-sm text-amber-900 dark:bg-amber-900/30 dark:text-amber-100">
           Returned {formatMoment(attempt.returnedAt)}: {attempt.returnNote}
@@ -394,6 +418,11 @@ export function MarkingView({ homeworkId, backHref, backLabel }: { homeworkId: s
                   </span>
                 )}
                 {row.attempts > 1 && <span className="rounded bg-muted px-1.5 py-0.5">{row.attempts} attempts</span>}
+                {row.fileCount > 0 && (
+                  <span className="rounded bg-muted px-1.5 py-0.5">
+                    {row.fileCount} file{row.fileCount === 1 ? "" : "s"}
+                  </span>
+                )}
               </span>
             </button>
             {open === row.studentId && (

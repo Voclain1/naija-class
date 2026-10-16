@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import { Injectable } from "@nestjs/common";
 
 import { withGuardian, withTenant } from "@school-kit/db";
@@ -9,6 +11,8 @@ import {
   addDaysIso,
   lagosTodayIso,
   pastedPercent,
+  ASSIGNMENT_LIMITS,
+  type AssignmentFileUrlDto,
   type AssignmentMarkingDto,
   type AssignmentRosterRowDto,
   type AssignmentSubmissionDto,
@@ -19,6 +23,7 @@ import {
   type MyAssignmentDto,
   type ReturnSubmissionInput,
   type StudentWorkDto,
+  type SubmissionFileDto,
   type SubmitWorkInput,
   type WorkStatus,
 } from "@school-kit/types";
@@ -26,6 +31,9 @@ import {
 import type { AuthContext } from "../../common/auth/auth-context.js";
 import type { GuardianAuthContext } from "../../common/auth/guardian-auth-context.js";
 import { assertUserActiveAndHasOneOf, getActiveUserRoleKeys } from "../../common/auth/role-check.js";
+import { assertPrivateFile, PRIVATE_FILE_URL_TTL_SECONDS } from "../../common/storage/private-file.js";
+import { StorageService } from "../../common/storage/storage.service.js";
+import type { PrivateFileExt } from "../../common/storage/storage.types.js";
 import { getTeacherScope } from "../teacher-scope/teacher-scope.helper.js";
 
 // Phase 9 / CP4 — assignments: submitted work and marking
@@ -54,6 +62,9 @@ const AUDIT = {
   mark: "assignment.mark",
   return: "assignment.return",
   release: "assignment.release",
+  fileStage: "assignment.file.stage",
+  fileRemove: "assignment.file.remove",
+  fileRead: "assignment.file.read",
 } as const;
 
 const STAFF_ROLES = ["owner", "admin", "teacher"];
@@ -72,7 +83,7 @@ type SubmissionRow = {
   id: string;
   studentId: string;
   attempt: number;
-  body: string;
+  body: string | null;
   typedChars: number;
   pastedChars: number;
   submittedAt: Date;
@@ -97,6 +108,9 @@ type AssignmentRow = {
 };
 
 const asIsoDate = (value: Date): string => value.toISOString().slice(0, 10);
+
+type FileRow = { id: string; ext: string; size: number; submissionId: string | null };
+const fileDto = (f: FileRow): SubmissionFileDto => ({ id: f.id, type: f.ext === "pdf" ? "pdf" : "image", size: f.size });
 const fullName = (u: { firstName: string; lastName: string }): string => `${u.firstName} ${u.lastName}`;
 
 /** Where a student stands, from their latest attempt (null when none). */
@@ -124,6 +138,8 @@ export function clampCounts(length: number, typed: number, pasted: number): { ty
 
 @Injectable()
 export class AssignmentsService {
+  constructor(private readonly storage: StorageService) {}
+
   // =========================================================================
   // PUT /assignments/:id/collection — switch on "collect work", or change it
   // =========================================================================
@@ -362,8 +378,16 @@ export class AssignmentsService {
       if (status === "NOT_SUBMITTED" && !collection.accepting) {
         throw new ConflictError("NOT_ACCEPTING", "Your teacher has stopped accepting work for this.");
       }
-      const body = input.body.trim();
-      const counts = clampCounts(body.length, input.typedChars ?? 0, input.pastedChars ?? 0);
+      const body = input.body?.trim() || null;
+      // Staged files (CP4.2) go in with this attempt and become as final as its text.
+      const staged = await db.assignmentSubmissionFile.findMany({
+        where: { collectionId: collection.id, studentId, submissionId: null },
+        select: { id: true },
+      });
+      if (!body && staged.length === 0) {
+        throw new ValidationError("Write your answer or attach a photo or PDF before handing it in.");
+      }
+      const counts = clampCounts(body?.length ?? 0, input.typedChars ?? 0, input.pastedChars ?? 0);
       const now = new Date();
       const attempt = (latest?.attempt ?? 0) + 1;
       // The unique (collection, student, attempt) row is what stops a double
@@ -387,6 +411,12 @@ export class AssignmentsService {
         },
         select: { id: true, late: true },
       });
+      if (staged.length > 0) {
+        await db.assignmentSubmissionFile.updateMany({
+          where: { id: { in: staged.map((f) => f.id) } },
+          data: { submissionId: created.id },
+        });
+      }
       await db.auditLog.create({
         data: {
           schoolId,
@@ -394,10 +424,151 @@ export class AssignmentsService {
           action: AUDIT.submit,
           entityType: "assignment_submission",
           entityId: created.id,
-          metadata: { assignmentId, attempt, late: created.late, principal: "student" },
+          metadata: { assignmentId, attempt, late: created.late, files: staged.length, text: body !== null, principal: "student" },
         },
       });
       return this.readMine(db, assignment, collection, studentId);
+    });
+  }
+
+  // =========================================================================
+  // Phase 9 / CP4.2 — file answers (Q8). Staged, then handed in with the attempt.
+  // =========================================================================
+
+  /** POST /student-portal/me/assignments/:id/files — stage one photo or PDF. */
+  async stageFile(schoolId: string, studentId: string, assignmentId: string, buffer: Buffer): Promise<MyAssignmentDto> {
+    const kind = assertPrivateFile(buffer);
+    const { collection } = await withTenant(schoolId, async (db) => {
+      const found = await this.studentAssignment(db, studentId, assignmentId);
+      const latest = await db.assignmentSubmission.findFirst({
+        where: { collectionId: found.collection.id, studentId },
+        orderBy: { attempt: "desc" },
+      });
+      const status = statusOf(latest);
+      if (!(status === "RETURNED" || (status === "NOT_SUBMITTED" && found.collection.accepting))) {
+        throw new ConflictError("CANNOT_ATTACH", "You can't add files to this now.");
+      }
+      const staged = await db.assignmentSubmissionFile.count({
+        where: { collectionId: found.collection.id, studentId, submissionId: null },
+      });
+      if (staged >= ASSIGNMENT_LIMITS.files) {
+        throw new ConflictError("TOO_MANY_FILES", `You can attach up to ${ASSIGNMENT_LIMITS.files} files.`);
+      }
+      return found;
+    });
+    const id = randomUUID();
+    await this.storage.put(schoolId, { kind: "submission-file", fileId: id, ext: kind.ext }, buffer, kind.mime);
+    return withTenant(schoolId, async (db) => {
+      await db.assignmentSubmissionFile.create({
+        data: { id, schoolId, collectionId: collection.id, studentId, ext: kind.ext, size: buffer.length },
+      });
+      await db.auditLog.create({
+        data: {
+          schoolId,
+          userId: studentId,
+          action: AUDIT.fileStage,
+          entityType: "assignment_submission_file",
+          entityId: id,
+          metadata: { assignmentId, type: kind.ext, size: buffer.length, principal: "student" },
+        },
+      });
+      const { assignment } = await this.studentAssignment(db, studentId, assignmentId);
+      return this.readMine(db, assignment, collection, studentId);
+    });
+  }
+
+  /** DELETE /student-portal/me/assignments/:id/files/:fileId — only a staged file. */
+  async removeStagedFile(schoolId: string, studentId: string, assignmentId: string, fileId: string): Promise<MyAssignmentDto> {
+    const removed = await withTenant(schoolId, async (db) => {
+      const { assignment, collection } = await this.studentAssignment(db, studentId, assignmentId);
+      const file = await db.assignmentSubmissionFile.findUnique({ where: { id: fileId } });
+      if (!file || file.studentId !== studentId || file.collectionId !== collection.id || file.submissionId !== null) {
+        throw new NotFoundError("That file could not be found.");
+      }
+      await db.assignmentSubmissionFile.delete({ where: { id: fileId } });
+      await db.auditLog.create({
+        data: {
+          schoolId,
+          userId: studentId,
+          action: AUDIT.fileRemove,
+          entityType: "assignment_submission_file",
+          entityId: fileId,
+          metadata: { assignmentId, principal: "student" },
+        },
+      });
+      return { file, dto: await this.readMine(db, assignment, collection, studentId) };
+    });
+    await this.storage
+      .delete(schoolId, { kind: "submission-file", fileId, ext: removed.file.ext as PrivateFileExt })
+      .catch(() => undefined);
+    return removed.dto;
+  }
+
+  /** GET /assignments/files/:fileId — a member of staff opens a handed-in file. */
+  async fileUrlForStaff(authCtx: AuthContext, fileId: string, reqCtx: RequestContext): Promise<AssignmentFileUrlDto> {
+    await assertUserActiveAndHasOneOf(authCtx, STAFF_ROLES);
+    const isAdmin = await this.isAdmin(authCtx);
+    return withTenant(authCtx.schoolId, async (db) => {
+      const file = await db.assignmentSubmissionFile.findUnique({ where: { id: fileId }, include: { collection: true } });
+      // Staged files are the student's own until handed in.
+      if (!file || file.submissionId === null) throw new NotFoundError("That file could not be found.");
+      await this.staffAssignment(db, authCtx, file.collection.assignmentId, isAdmin);
+      await this.auditFileRead(db, authCtx.schoolId, authCtx.userId, file.id, file.studentId, "staff", reqCtx.ipAddress);
+      return { url: await this.signFile(authCtx.schoolId, file) };
+    });
+  }
+
+  /** GET /student-portal/me/assignments/files/:fileId — the student's own, staged or handed in. */
+  async fileUrlForStudent(schoolId: string, studentId: string, fileId: string): Promise<AssignmentFileUrlDto> {
+    return withTenant(schoolId, async (db) => {
+      const file = await db.assignmentSubmissionFile.findUnique({ where: { id: fileId } });
+      if (!file || file.studentId !== studentId) throw new NotFoundError("That file could not be found.");
+      await this.auditFileRead(db, schoolId, studentId, file.id, studentId, "student", null);
+      return { url: await this.signFile(schoolId, file) };
+    });
+  }
+
+  /** GET /portal/students/:id/assignment-files/:fileId — a linked guardian, handed-in files only. */
+  async fileUrlForGuardian(guardianCtx: GuardianAuthContext, studentId: string, fileId: string): Promise<AssignmentFileUrlDto> {
+    return withTenant(guardianCtx.schoolId, (db) =>
+      withGuardian(guardianCtx.guardianId, studentId, db, async (db2) => {
+        const file = await db2.assignmentSubmissionFile.findUnique({ where: { id: fileId } });
+        if (!file || file.studentId !== studentId || file.submissionId === null) {
+          throw new NotFoundError("That file could not be found.");
+        }
+        await this.auditFileRead(db2 as never, guardianCtx.schoolId, guardianCtx.guardianId, file.id, studentId, "guardian", null);
+        return { url: await this.signFile(guardianCtx.schoolId, file) };
+      }),
+    );
+  }
+
+  private signFile(schoolId: string, file: { id: string; ext: string }): Promise<string> {
+    return this.storage.signUrl(
+      schoolId,
+      { kind: "submission-file", fileId: file.id, ext: file.ext as PrivateFileExt },
+      PRIVATE_FILE_URL_TTL_SECONDS,
+    );
+  }
+
+  private auditFileRead(
+    db: Db,
+    schoolId: string,
+    userId: string,
+    fileId: string,
+    studentId: string,
+    principal: "staff" | "student" | "guardian",
+    ipAddress: string | null,
+  ) {
+    return db.auditLog.create({
+      data: {
+        schoolId,
+        userId,
+        action: AUDIT.fileRead,
+        entityType: "assignment_submission_file",
+        entityId: fileId,
+        ipAddress,
+        metadata: { studentId, principal },
+      },
     });
   }
 
@@ -479,6 +650,7 @@ export class AssignmentsService {
     const submissions = await db.assignmentSubmission.findMany({
       where: { collectionId: collection.id },
       orderBy: [{ studentId: "asc" }, { attempt: "desc" }],
+      include: { _count: { select: { files: true } } },
     });
     const latestBy = new Map<string, SubmissionRow>();
     const attemptsBy = new Map<string, number>();
@@ -509,7 +681,8 @@ export class AssignmentsService {
         late: latest?.late ?? false,
         mark: latest?.mark ?? null,
         released: latest?.releasedAt != null,
-        pastedPercent: latest ? pastedPercent(latest.typedChars, latest.pastedChars) : null,
+        pastedPercent: latest?.body ? pastedPercent(latest.typedChars, latest.pastedChars) : null,
+        fileCount: (latest as { _count?: { files: number } } | null)?._count?.files ?? 0,
       };
     });
     return {
@@ -536,6 +709,7 @@ export class AssignmentsService {
     const rows = await db.assignmentSubmission.findMany({
       where: { collectionId: collection.id, studentId },
       orderBy: { attempt: "desc" },
+      include: { files: { orderBy: { createdAt: "asc" } } },
     });
     const markers = await db.user.findMany({
       where: { id: { in: [...new Set(rows.map((r) => r.markedBy).filter((v): v is string => !!v))] } },
@@ -553,6 +727,7 @@ export class AssignmentsService {
           studentId: r.studentId,
           attempt: r.attempt,
           body: r.body,
+          files: r.files.map(fileDto),
           submittedAt: r.submittedAt,
           late: r.late,
           pastedPercent: pastedPercent(r.typedChars, r.pastedChars),
@@ -574,9 +749,17 @@ export class AssignmentsService {
     collection: { id: string; totalMarks: number; accepting: boolean },
     studentId: string,
   ): Promise<MyAssignmentDto> {
-    const [subject, rows] = await Promise.all([
+    const [subject, rows, staged] = await Promise.all([
       db.subject.findUnique({ where: { id: assignment.subjectId }, select: { name: true } }),
-      db.assignmentSubmission.findMany({ where: { collectionId: collection.id, studentId }, orderBy: { attempt: "desc" } }),
+      db.assignmentSubmission.findMany({
+        where: { collectionId: collection.id, studentId },
+        orderBy: { attempt: "desc" },
+        include: { files: { orderBy: { createdAt: "asc" } } },
+      }),
+      db.assignmentSubmissionFile.findMany({
+        where: { collectionId: collection.id, studentId, submissionId: null },
+        orderBy: { createdAt: "asc" },
+      }),
     ]);
     const status = statusOf(rows[0] ?? null);
     return {
@@ -589,10 +772,12 @@ export class AssignmentsService {
       accepting: collection.accepting,
       status,
       canSubmit: status === "RETURNED" || (status === "NOT_SUBMITTED" && collection.accepting),
+      stagedFiles: staged.map(fileDto),
       // No paste counts here, and nothing marked until it is released.
       attempts: rows.map((r) => ({
         attempt: r.attempt,
         body: r.body,
+        files: r.files.map(fileDto),
         submittedAt: r.submittedAt,
         late: r.late,
         mark: r.releasedAt ? r.mark : null,
@@ -629,10 +814,11 @@ export class AssignmentsService {
       db.assignmentSubmission.findMany({
         where: { studentId, collectionId: { in: assignments.map((a) => a.collection!.id) } },
         orderBy: { attempt: "desc" },
+        include: { files: { orderBy: { createdAt: "asc" } } },
       }),
     ]);
     const subjectName = new Map(subjects.map((s) => [s.id, s.name]));
-    const latestBy = new Map<string, SubmissionRow>();
+    const latestBy = new Map<string, (typeof rows)[number]>();
     for (const r of rows) if (!latestBy.has(r.collectionId)) latestBy.set(r.collectionId, r);
     return {
       data: assignments.map((a): FamilyAssignmentDto => {
@@ -650,6 +836,7 @@ export class AssignmentsService {
           mark: released ? latest!.mark : null,
           feedback: released ? latest!.feedback : null,
           returnNote: latest?.returnNote ?? null,
+          files: latest ? latest.files.map(fileDto) : [],
         };
       }),
     };

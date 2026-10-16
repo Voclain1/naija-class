@@ -2,7 +2,7 @@ import { RefreshControl, ScrollView, StyleSheet } from "react-native";
 import { Redirect, Stack, useLocalSearchParams } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
 
-import { guardianAssignments, guardianHomework } from "../../../src/lib/api/portal";
+import { guardianAssignmentFileUrl, guardianAssignments, guardianHomework } from "../../../src/lib/api/portal";
 import { PastWorkList } from "../../../src/components/past-work-list";
 import { queryKeys } from "../../../src/lib/query/keys";
 import { HomeworkList } from "../../../src/components/homework-list";
@@ -104,9 +104,9 @@ export default function ChildHomeworkScreen() {
                 body="Homework your child&apos;s teachers set will appear here."
               />
             ) : (
-              <HomeworkList items={data.data} today={today} tomorrow={tomorrow} work={workById} />
+              <HomeworkList items={data.data} today={today} tomorrow={tomorrow} work={workById} fileUrl={(fileId) => guardianAssignmentFileUrl(studentId, fileId)} />
             )}
-            <PastWorkList items={earlier} />
+            <PastWorkList items={earlier} fileUrl={(fileId) => guardianAssignmentFileUrl(studentId, fileId)} />
           </>
         )}
       </ScrollView>

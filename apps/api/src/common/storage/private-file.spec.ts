@@ -33,4 +33,11 @@ describe("private files (F1)", () => {
     );
     expect(() => pathFor(school, { kind: "health-document", documentId: "../x", ext: "pdf" })).toThrow();
   });
+
+  it("lays a submitted file out under the school, by id and real extension (CP4.2)", () => {
+    const school = "11111111-1111-4111-8111-111111111111";
+    const file = "33333333-3333-4333-8333-333333333333";
+    expect(pathFor(school, { kind: "submission-file", fileId: file, ext: "jpg" })).toBe(`schools/${school}/submissions/${file}.jpg`);
+    expect(() => pathFor(school, { kind: "submission-file", fileId: "../x", ext: "jpg" })).toThrow();
+  });
 });
