@@ -18,6 +18,7 @@ import {
   type AssignmentQuestionDto,
   type BankQuestionListResponse,
   type SetAssignmentQuestionsInput,
+  type SimilarityReportDto,
   type AssignmentMarkingDto,
   type AssignmentRosterRowDto,
   type AssignmentSubmissionDto,
@@ -40,6 +41,7 @@ import { assertPrivateFile, PRIVATE_FILE_URL_TTL_SECONDS } from "../../common/st
 import { StorageService } from "../../common/storage/storage.service.js";
 import type { PrivateFileExt } from "../../common/storage/storage.types.js";
 import { getTeacherScope } from "../teacher-scope/teacher-scope.helper.js";
+import { findSimilarPairs, promptShingles } from "./similarity.js";
 
 // Phase 9 / CP4 — assignments: submitted work and marking
 // (docs/modules/phase-9.md §11).
@@ -62,6 +64,9 @@ import { getTeacherScope } from "../teacher-scope/teacher-scope.helper.js";
 //     option; fill-in by exact match after ignoring case and spacing. The
 //     automatic mark is the teacher's starting point, never the mark itself
 //     until they save or accept it. The student never receives a right answer.
+//   - CP4.4: the similarity check (CP4-D9), for staff only and never stored.
+//     The gradebook push needs no code here: the screens send the marks
+//     through the gradebook's own preview and save (CP4-D8).
 //
 // No push or SMS (CP4-D10), and no AI anywhere (Q6). The answer text and the
 // feedback never go into the audit log.
@@ -77,6 +82,7 @@ const AUDIT = {
   fileRead: "assignment.file.read",
   questions: "assignment.questions.set",
   autoMarks: "assignment.automarks.use",
+  similarity: "assignment.similarity.run",
 } as const;
 
 const STAFF_ROLES = ["owner", "admin", "teacher"];
@@ -605,6 +611,65 @@ export class AssignmentsService {
   }
 
   // =========================================================================
+  // CP4.4 — POST /assignments/:id/similarity: which typed answers share a lot
+  // of wording. Worked out on request, shown to staff, never stored.
+  // =========================================================================
+  async similarity(authCtx: AuthContext, assignmentId: string, reqCtx: RequestContext): Promise<SimilarityReportDto> {
+    await assertUserActiveAndHasOneOf(authCtx, STAFF_ROLES);
+    const isAdmin = await this.isAdmin(authCtx);
+    return withTenant(authCtx.schoolId, async (db) => {
+      const assignment = await this.staffAssignment(db, authCtx, assignmentId, isAdmin);
+      const collection = await this.collectionOf(db, assignmentId);
+      const rows = await db.assignmentSubmission.findMany({
+        where: { collectionId: collection.id, body: { not: null } },
+        orderBy: [{ studentId: "asc" }, { attempt: "desc" }],
+        select: { studentId: true, body: true },
+      });
+      // Each student's latest typed answer.
+      const latest = new Map<string, string>();
+      for (const r of rows) if (!latest.has(r.studentId) && r.body) latest.set(r.studentId, r.body);
+      const questions = await this.questionsOf(db, collection.id);
+      const prompt = promptShingles([
+        assignment.title,
+        assignment.instructions ?? "",
+        ...questions.flatMap((q) => [q.text, ...(q.options ?? []), ...(q.acceptedAnswers ?? [])]),
+      ]);
+      const result = findSimilarPairs(
+        [...latest].map(([studentId, text]) => ({ studentId, text })),
+        prompt,
+      );
+      const ids = [...new Set(result.pairs.flatMap((p) => [p.a.studentId, p.b.studentId]))];
+      const students = await db.student.findMany({
+        where: { id: { in: ids } },
+        select: { id: true, firstName: true, lastName: true },
+      });
+      const name = new Map(students.map((s) => [s.id, fullName(s)]));
+      // Counts only: no names, no wording.
+      await db.auditLog.create({
+        data: {
+          schoolId: authCtx.schoolId,
+          userId: authCtx.userId,
+          action: AUDIT.similarity,
+          entityType: "homework",
+          entityId: assignmentId,
+          ipAddress: reqCtx.ipAddress,
+          metadata: { compared: result.compared, skippedShort: result.skippedShort, pairs: result.pairs.length },
+        },
+      });
+      return {
+        assignmentId,
+        compared: result.compared,
+        skippedShort: result.skippedShort,
+        pairs: result.pairs.map((p) => ({
+          overlapPercent: p.overlapPercent,
+          a: { ...p.a, name: name.get(p.a.studentId) ?? "" },
+          b: { ...p.b, name: name.get(p.b.studentId) ?? "" },
+        })),
+      };
+    });
+  }
+
+  // =========================================================================
   // The student's own: GET /student-portal/me/assignments(/:id), POST submit
   // =========================================================================
   async listForStudent(schoolId: string, studentId: string): Promise<FamilyAssignmentListResponse> {
@@ -981,6 +1046,8 @@ export class AssignmentsService {
       title: assignment.title,
       className: arm?.name ?? "",
       subjectName: subject?.name ?? "",
+      subjectId: assignment.subjectId,
+      termId: term?.id ?? null,
       dueDate: asIsoDate(assignment.dueDate),
       collection: { assignmentId: assignment.id, totalMarks: collection.totalMarks, accepting: collection.accepting },
       questions,

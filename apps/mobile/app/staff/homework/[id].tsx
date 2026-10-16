@@ -14,6 +14,7 @@ import {
 } from "@school-kit/types";
 
 import { AnswerList } from "../../../src/components/assignment-questions";
+import { GradebookCard, SimilarityCard } from "../../../src/components/assignment-tools";
 import { TextField } from "../../../src/components/form";
 import { SubmissionFiles } from "../../../src/components/submission-files";
 import { ScreenHeader, Skeleton } from "../../../src/components/layout";
@@ -364,6 +365,8 @@ export default function HandedInWorkScreen() {
                   ) : null}
                 </Card>
               ))}
+              <GradebookCard data={d} schoolId={schoolId} userId={userId} />
+              <SimilarityCard homeworkId={homeworkId} />
             </>
           )}
         </ScrollView>

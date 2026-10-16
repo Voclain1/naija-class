@@ -309,6 +309,9 @@ export interface AssignmentMarkingDto {
   title: string;
   className: string;
   subjectName: string;
+  /** CP4.4: what the gradebook push needs — the subject and the current term. */
+  subjectId: string;
+  termId: string | null;
   dueDate: string;
   collection: AssignmentCollectionDto;
   /** CP4.3: the questions, with their right answers. */
@@ -383,6 +386,51 @@ export interface FamilyAssignmentDto {
 
 export interface FamilyAssignmentListResponse {
   data: FamilyAssignmentDto[];
+}
+
+// ---------------------------------------------------------------------------
+// CP4.4 — the similarity check (CP4-D9). For the teacher only: never shown to
+// a student or a parent, never stored, never part of a mark. The words are
+// "share a lot of wording", never "plagiarism".
+// ---------------------------------------------------------------------------
+
+export const SIMILARITY = {
+  /** Overlapping runs of this many words are compared. */
+  shingleWords: 5,
+  /** Answers shorter than this are skipped: too short to say anything. */
+  minWords: 50,
+  /** Share of the shorter answer's runs found in the other, 0–1, to be listed. */
+  threshold: 0.5,
+  /** At most this many pairs are listed, most alike first. */
+  maxPairs: 50,
+} as const;
+
+/** A stretch of an answer, marked when the other answer has the same wording. */
+export interface SimilaritySegmentDto {
+  text: string;
+  shared: boolean;
+}
+
+export interface SimilarityAnswerDto {
+  studentId: string;
+  name: string;
+  segments: SimilaritySegmentDto[];
+}
+
+export interface SimilarPairDto {
+  /** About how much of the shorter answer's wording is in the other, 0–100. */
+  overlapPercent: number;
+  a: SimilarityAnswerDto;
+  b: SimilarityAnswerDto;
+}
+
+export interface SimilarityReportDto {
+  assignmentId: string;
+  /** Typed answers compared (each student's latest). */
+  compared: number;
+  /** Typed answers under the minimum length, left out. */
+  skippedShort: number;
+  pairs: SimilarPairDto[];
 }
 
 /** Q7: the share of an answer that arrived by pasting, from the two counts. */
