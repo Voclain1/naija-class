@@ -231,3 +231,14 @@ export function describeWorkStatus(status: WorkStatus): string {
       return "Marked";
   }
 }
+
+/**
+ * How a file is named on its button: "photo", "PDF", or "photo 2" when there
+ * is more than one of that kind. The same words on every screen.
+ */
+export function describeSubmissionFile(files: readonly SubmissionFileDto[], index: number): string {
+  const file = files[index]!;
+  const sameType = files.filter((f) => f.type === file.type);
+  const word = file.type === "pdf" ? "PDF" : "photo";
+  return sameType.length === 1 ? word : `${word} ${sameType.indexOf(file) + 1}`;
+}

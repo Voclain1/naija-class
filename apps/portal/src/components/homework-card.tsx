@@ -14,6 +14,7 @@
 import { useEffect, useState } from "react";
 
 import {
+  describeSubmissionFile,
   describeWorkStatus,
   type AssignmentFileUrlDto,
   type FamilyAssignmentDto,
@@ -68,8 +69,7 @@ function WorkLine({ w, studentId }: { w: FamilyAssignmentDto; studentId: string 
               onClick={() => void openFile(studentId, f.id)}
               className="text-sm font-medium text-primary hover:underline"
             >
-              View {f.type === "pdf" ? "PDF" : "photo"}
-              {w.files.length > 1 ? ` ${i + 1}` : ""}
+              View {describeSubmissionFile(w.files, i)}
             </button>
           ))}
         </div>

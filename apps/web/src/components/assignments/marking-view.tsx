@@ -5,6 +5,7 @@ import { Loader2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import {
   ASSIGNMENT_LIMITS,
+  describeSubmissionFile,
   describeWorkStatus,
   type AssignmentMarkingDto,
   type AssignmentRosterRowDto,
@@ -127,7 +128,7 @@ function Attempt({
                 )
               }
             >
-              View {f.type === "pdf" ? "PDF" : "photo"} {attempt.files.length > 1 ? i + 1 : ""}
+              View {describeSubmissionFile(attempt.files, i)}
             </Button>
           ))}
         </div>

@@ -11,6 +11,7 @@ import {
   NotFoundError,
   ValidationError,
   addDaysIso,
+  describeSubmissionFile,
   lagosTodayIso,
   submitWorkSchema,
 } from "@school-kit/types";
@@ -339,6 +340,15 @@ describe("AssignmentsService (integration)", () => {
       expect(list.data.map((r) => r.assignmentId)).not.toContain(id);
       await expect(service.getForStudent(A.schoolId, A.child, id)).rejects.toBeInstanceOf(NotFoundError);
     });
+  });
+
+  it("names files the same way on every screen", () => {
+    const files = [
+      { id: "a", type: "image" as const, size: 1 },
+      { id: "b", type: "pdf" as const, size: 1 },
+      { id: "c", type: "image" as const, size: 1 },
+    ];
+    expect(files.map((_, i) => describeSubmissionFile(files, i))).toEqual(["photo 1", "PDF", "photo 2"]);
   });
 
   it("the rules in isolation", () => {
