@@ -32,6 +32,8 @@ import { useAuth } from "@/lib/auth/use-auth";
 const TABS: SectionTabItem[] = [
   { href: "/finance/dashboard", label: "Dashboard", exact: true },
   { href: "/finance/invoices", label: "Invoices" },
+  // Phase 9 / CP5.1 — student charges and supplementary invoices.
+  { href: "/finance/charges", label: "Charges", exact: true },
   { href: "/finance/debtors", label: "Debtors", exact: true },
   { href: "/finance/fees", label: "Fee Catalog", exact: true },
   { href: "/finance/discounts", label: "Discounts", exact: true },

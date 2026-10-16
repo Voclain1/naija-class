@@ -18,6 +18,8 @@ export interface DebtorDto {
   status: "ISSUED" | "PARTIALLY_PAID" | "OVERDUE";
   dueDate: string | null;      // ISO date (YYYY-MM-DD) or null if not set
   hasPaymentPlan: boolean;
+  /** Phase 9 / CP5.1 — a supplementary invoice, not the term invoice. */
+  supplementary: boolean;
 }
 
 // ---------------------------------------------------------------------------

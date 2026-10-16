@@ -12,6 +12,7 @@ import {
   BEHAVIOUR_ADMIN_PERMISSIONS,
   HEALTH_NOTE_PERMISSIONS,
   ASSIGNMENT_PERMISSIONS,
+  STUDENT_CHARGE_PERMISSIONS,
   HEALTH_PERMISSIONS,
   BEHAVIOUR_PERMISSIONS_LIST,
   HOMEWORK_MANAGE_PERMISSIONS,
@@ -119,6 +120,9 @@ const ADMIN_PERMISSIONS: readonly string[] = [
   // Phase 9 / CP4 — submitted work and marking. Kept IN SYNC with
   // prisma/migrations/20261025120000_assignment_submissions.
   ...ASSIGNMENT_PERMISSIONS,
+  // Phase 9 / CP5.1 — student charges. Kept IN SYNC with
+  // prisma/migrations/20261029120000_student_charges.
+  ...STUDENT_CHARGE_PERMISSIONS,
   // Phase 8 / CP2 — Recording Completeness: the school-wide report and the
   // per-teacher recording-activity view (audited per read). Owner/admin only;
   // never teacher or bursar (§16 D39, pinned in permissions-coverage.spec.ts).
@@ -293,6 +297,9 @@ export const SYSTEM_ROLE_SEEDS: SystemRoleSeed[] = [
       ...HOMEWORK_READ_PERMISSIONS,
       // Phase 9 / CP1.3 — Excel/PDF of the finance lists the bursar works from.
       ...TABLE_EXPORT_PERMISSIONS,
+      // Phase 9 / CP5.1 — student charges. Kept IN SYNC with
+      // prisma/migrations/20261029120000_student_charges.
+      ...STUDENT_CHARGE_PERMISSIONS,
     ],
   },
 ];

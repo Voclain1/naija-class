@@ -203,6 +203,7 @@ export default function DebtorsScreen() {
             </View>
             <Label>
               {row.classArm} · {row.admissionNumber}
+              {row.supplementary ? " · supplementary invoice" : ""}
             </Label>
             <Label>
               {formatKobo(row.totalPaid)} paid of {formatKobo(row.totalDue)}

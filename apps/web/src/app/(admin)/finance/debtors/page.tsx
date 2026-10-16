@@ -37,6 +37,7 @@ const DEBTOR_EXPORT_COLUMNS: CsvColumn<DebtorDto>[] = [
   { header: "Due Date", accessor: (d) => d.dueDate ?? "" },
   { header: "Status", accessor: (d) => STATUS_LABELS[d.status] },
   { header: "Payment Plan", accessor: (d) => (d.hasPaymentPlan ? "Yes" : "No") },
+  { header: "Invoice", accessor: (d) => (d.supplementary ? "Supplementary" : "Term") },
 ];
 
 type Status = "ISSUED" | "PARTIALLY_PAID" | "OVERDUE";
@@ -360,6 +361,9 @@ export default function DebtorsPage() {
                     <TableCell>
                       <p className="font-medium text-foreground">{d.studentName}</p>
                       <p className="text-xs text-muted-foreground">{d.admissionNumber}</p>
+                      {/* Phase 9 / CP5.1: a family can owe on a term invoice
+                          and a supplementary one, which shows as two rows. */}
+                      {d.supplementary && <p className="text-xs text-foreground">Supplementary invoice</p>}
                     </TableCell>
                     <TableCell>{d.classArm}</TableCell>
                     <TableCell className="text-right tabular-nums">{formatKobo(d.totalDue)}</TableCell>

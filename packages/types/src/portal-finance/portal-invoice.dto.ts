@@ -36,6 +36,12 @@ export interface PortalInvoiceDto {
   id: string;
   studentId: string;
   term: PortalInvoiceTermRefDto;
+  /**
+   * Phase 9 / CP5.1 — a supplementary invoice for charges (transport, an
+   * excursion) raised after the term's invoice went out. The parent sees it
+   * labelled, beside the term invoice, and pays it the same way.
+   */
+  supplementary: boolean;
   status: InvoiceStatus;
   items: InvoiceLineItemDto[];
   totalAmount: number; // kobo

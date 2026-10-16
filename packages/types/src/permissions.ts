@@ -704,6 +704,12 @@ export const HEALTH_NOTE_PERMISSIONS = ["health.note.read"] as const;
 // homework list: a child's work is not a counter matter.
 export const ASSIGNMENT_PERMISSIONS = ["assignment.read", "assignment.mark"] as const;
 
+// Phase 9 / CP5.1 — student charges (F2, docs/modules/phase-9.md §13 CP5-D6).
+// Owner, admin and bursar: list a student's charges, add one by hand, void an
+// open one. Billing waiting charges onto a supplementary invoice uses the
+// existing invoice.issue. Teachers hold none.
+export const STUDENT_CHARGE_PERMISSIONS = ["charge.read", "charge.raise", "charge.void"] as const;
+
 // Phase 8 / CP2 — Recording Completeness (docs/modules/phase-8.md §16 D39).
 // Owner/admin only. Named `reports.*`, deliberately not `report-card.*`.
 //
@@ -824,6 +830,7 @@ export const ALL_PERMISSIONS = [
   ...HEALTH_PERMISSIONS,
   ...HEALTH_NOTE_PERMISSIONS,
   ...ASSIGNMENT_PERMISSIONS,
+  ...STUDENT_CHARGE_PERMISSIONS,
   ...REPORTS_PERMISSIONS,
   ...TABLE_EXPORT_PERMISSIONS,
   ...TIMETABLE_PERMISSIONS,

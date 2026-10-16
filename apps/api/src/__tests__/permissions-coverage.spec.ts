@@ -7,6 +7,7 @@ import {
   CALENDAR_READ_PERMISSIONS,
   REPORTS_PERMISSIONS,
   TABLE_EXPORT_PERMISSIONS,
+  STUDENT_CHARGE_PERMISSIONS,
   TIMETABLE_PERMISSIONS,
   TIMETABLE_OWN_READ_PERMISSIONS,
   PHASE_0_PERMISSIONS,
@@ -769,13 +770,18 @@ describe("Phase 3 RBAC close-out: seeded role grants", () => {
     // + TABLE_EXPORT_PERMISSIONS (Phase 9 CP1.3): Excel/PDF of a list already
     // on screen. It grants no data — the server formats rows the page holds —
     // so it widens nothing a bursar can see. Asserted in the CP1.3 block.
+    //
+    // + STUDENT_CHARGE_PERMISSIONS (Phase 9 CP5.1): finance work proper —
+    // listing, adding and voiding student charges (phase-9.md §13 CP5-D6).
     expect(bursarPerms.size).toBe(
       PHASE_3_BURSAR_PERMISSIONS.length +
         CALENDAR_READ_PERMISSIONS.length +
         ANNOUNCEMENT_READ_PERMISSIONS.length +
         HOMEWORK_READ_PERMISSIONS.length +
-        TABLE_EXPORT_PERMISSIONS.length,
+        TABLE_EXPORT_PERMISSIONS.length +
+        STUDENT_CHARGE_PERMISSIONS.length,
     );
+    for (const p of STUDENT_CHARGE_PERMISSIONS) expect(bursarPerms.has(p)).toBe(true);
     expect(bursarPerms.has("announcement.read")).toBe(true);
     expect(bursarPerms.has("announcement.create")).toBe(false);
     expect(bursarPerms.has("homework.read")).toBe(true);

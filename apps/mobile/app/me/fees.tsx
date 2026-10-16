@@ -89,6 +89,8 @@ export default function MyFeesScreen() {
                 return (
                   <Card key={invoice.id}>
                     <Heading>{invoice.term.name}</Heading>
+                    {/* Phase 9 / CP5.1 — charges raised after the term's invoice. */}
+                    {invoice.supplementary ? <Body muted>Supplementary invoice</Body> : null}
                     <Body muted>{invoiceStatusLabel[invoice.status]}</Body>
 
                     <View style={styles.row}>
@@ -109,8 +111,8 @@ export default function MyFeesScreen() {
                     {invoice.items.length > 0 ? (
                       <View style={styles.items}>
                         <Label>What this covers</Label>
-                        {invoice.items.map((item) => (
-                          <View key={item.feeItemId} style={styles.itemRow}>
+                        {invoice.items.map((item, index) => (
+                          <View key={item.feeItemId ?? item.chargeId ?? index} style={styles.itemRow}>
                             <Body>{item.feeName}</Body>
                             {/* netAmount, not amount: it is the figure after
                                 the discounts the school actually applied, and

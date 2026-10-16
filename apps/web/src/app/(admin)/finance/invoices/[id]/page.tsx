@@ -509,7 +509,14 @@ export default function InvoiceDetailPage() {
       {/* Header */}
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="font-serif text-2xl font-medium tracking-tight text-foreground">Invoice</h1>
+          <h1 className="font-serif text-2xl font-medium tracking-tight text-foreground">
+            {invoice.kind === "SUPPLEMENTARY" ? "Supplementary invoice" : "Invoice"}
+          </h1>
+          {invoice.kind === "SUPPLEMENTARY" && (
+            <p className="mt-1 text-sm text-muted-foreground">
+              For charges raised after this term&apos;s invoice was issued.
+            </p>
+          )}
           <p className="mt-0.5 font-mono text-sm text-muted-foreground">{invoice.id}</p>
         </div>
         <Badge variant={STATUS_VARIANTS[invoice.status]} className="px-3 py-1 text-sm">
@@ -562,10 +569,10 @@ export default function InvoiceDetailPage() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {invoice.items.map((item) => {
+            {invoice.items.map((item, index) => {
               const displayDiscount = item.amount - item.netAmount;
               return (
-                <TableRow key={item.feeItemId}>
+                <TableRow key={item.feeItemId ?? item.chargeId ?? index}>
                   <TableCell className="text-muted-foreground">{item.categoryName}</TableCell>
                   <TableCell>{item.feeName}</TableCell>
                   <TableCell className="text-right font-mono tabular-nums">{formatKobo(item.amount)}</TableCell>
@@ -650,7 +657,7 @@ export default function InvoiceDetailPage() {
           <div className="mt-2 space-y-1 pl-4">
             {invoice.items.flatMap((item) =>
               item.discountsApplied.map((d) => (
-                <div key={`${item.feeItemId}-${d.ruleId}`} className="flex justify-between gap-4 text-muted-foreground">
+                <div key={`${item.feeItemId ?? item.chargeId}-${d.ruleId}`} className="flex justify-between gap-4 text-muted-foreground">
                   <span>{d.ruleName} → {item.feeName}</span>
                   <span className="font-mono tabular-nums text-destructive">−{formatKobo(d.discountAmount)}</span>
                 </div>

@@ -15,6 +15,11 @@ export const invoiceStatusValues = [
 ] as const;
 export type InvoiceStatus = (typeof invoiceStatusValues)[number];
 
+export type InvoiceKind = "TERM" | "SUPPLEMENTARY";
+export function invoiceKind(sequence: number): InvoiceKind {
+  return sequence === 0 ? "TERM" : "SUPPLEMENTARY";
+}
+
 // ---------------------------------------------------------------------------
 // Snapshot types — frozen at issue time, never mutated by service layer
 // ---------------------------------------------------------------------------
@@ -26,7 +31,14 @@ export interface DiscountSnapshotDto {
 }
 
 export interface InvoiceLineItemDto {
-  feeItemId: string;
+  /** The fee item this line came from; null on a student-charge line. */
+  feeItemId: string | null;
+  /**
+   * Phase 9 / CP5.1 — the student charge this line came from; absent on a
+   * fee-item line (and on every invoice issued before charges existed).
+   * Discounts never apply to a charge line.
+   */
+  chargeId?: string | null;
   categoryName: string;
   feeName: string;
   amount: number; // kobo — original fee item amount (frozen)
@@ -63,6 +75,12 @@ export interface InvoiceDto {
   /** Immutable issuance-time arm snapshot; null only for unresolved legacy rows. */
   classArmId: string | null;
   status: InvoiceStatus;
+  /**
+   * Phase 9 / CP5.1 — 0 is the term invoice; 1, 2, … are supplementary
+   * invoices for charges raised after it went out.
+   */
+  sequence: number;
+  kind: InvoiceKind;
   items: InvoiceLineItemDto[];
   totalAmount: number;   // kobo
   totalDiscount: number; // kobo
@@ -116,6 +134,8 @@ export interface PreviewLineDto {
   /** See InvoiceDto.admissionNumber. */
   admissionNumber: string | null;
   feeItemCount: number;
+  /** Phase 9 / CP5.1 — the student's OPEN charges for the term, billed with the fees. */
+  chargeCount: number;
   totalAmount: number;   // kobo
   totalDiscount: number; // kobo
   totalDue: number;      // kobo

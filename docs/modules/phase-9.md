@@ -98,7 +98,7 @@ blocked by it.
 | Q1 | **Messaging scope.** Reverse D11 fully (parent ↔ teacher, teacher ↔ teacher), or the D13 shape (parent → school inbox, answered by the admin)? | **D13 shape first**: one inbox per school, any staff member with the permission answers as "the school", never a child, all threads visible to admins. Teacher ↔ teacher only if you want it; it is lower risk than parent ↔ teacher. | CP8 |
 | Q2 | **Parent notice of serious incidents** (reverses C14 in part). | Yes, but narrowly. Only a **discipline action** (suspension and above) that an admin has approved sends the parent a factual notice: dates and the action, not the teacher's note. Ordinary records stay internal. **Owner, 2026-10-15: approved as recommended.** | CP2 |
 | Q3 | **Health records: who may read.** | Owner, admin and a new **school nurse** role (sickbay). Teachers see only an "allergies and conditions" line, for safety on trips and in class, and never the sickbay log. Every read audited. **Owner, 2026-10-15:** the role is called **health officer**, not nurse. Owner, admin, health officer and the child's **parent** may read. A teacher sees only what the health officer chooses to share with teachers (for example the allergies line or a summary), never the rest. | CP3 |
-| Q4 | **Transport, library and hostel fees.** Invoices are one per student per term and cannot have lines added after issue. | A new **student charge** primitive (§4, CP5). Charges are created through the finance service, then picked up by the next invoice run, or issued as a small "supplementary invoice" per charge if you approve one. **Owner, 2026-10-14 (transport):** the admin sets each route's fee on that route's own page; the fee is not typed per student. **Still to decide: supplementary invoices yes/no.** | CP5 |
+| Q4 | **Transport, library and hostel fees.** Invoices are one per student per term and cannot have lines added after issue. | A new **student charge** primitive (§4, CP5). Charges are created through the finance service, then picked up by the next invoice run, or issued as a small "supplementary invoice" per charge if you approve one. **Owner, 2026-10-14 (transport):** the admin sets each route's fee on that route's own page; the fee is not typed per student. **Owner, 2026-10-16: supplementary invoices yes**, issued only when the bursar presses **Bill waiting charges** (§13 CP5-D3). | CP5 |
 | Q5 | **WhatsApp Business.** Needs a Meta-approved business number and a provider (Termii proxies it). That is your side, not code. | Build the channel behind a per-school switch with SMS fallback, but only once you have an approved number. Until then, keep the `wa.me` share links that already work. | CP9 |
 | Q6 | **AI and children's text** (essay feedback, message translation). **Owner, 2026-10-14:** students get no AI writing help of any kind; they type or paste their own work. **Owner, 2026-10-14: approved** for teachers — AI may draft marking feedback, name removed, teacher approves (CP4b). The `assignment-feedback` allowlist row is added to `CLAUDE.md` in CP4b's own PR, as a visible edit. Translation stays unbuilt. Both send text that may name children. | **Essays:** strip the student's own name and send only the answer text, under a new prompt that **you** add to the allowlist table by name. Feedback is a draft the teacher approves. **Translation:** do not build until you have decided; it is the weaker case (a parent can use their phone's own translator), and it would be a second allowlist row. | CP4b, CP9 |
 | Q7 | **Detecting AI-written student work** (spec §6.8). | **Do not build.** These detectors are unreliable, and a false "you cheated" against a child is a real harm. Offer the in-class similarity check (plagiarism between submissions) instead. **Owner, 2026-10-14:** no detector. Approved instead: the similarity check, and a **paste indicator** (the teacher sees how much of a typed answer was pasted rather than typed — a fact, never an accusation, and it never changes a mark). | CP4 |
@@ -2376,8 +2376,10 @@ name removed, and a teacher approves it.
 
 ## 13. CP5 plan-first — Student charges (F2), then Transport
 
-Written 2026-10-16 for the owner's approval. Nothing here is built until it
-is approved. It answers Q4's open half (supplementary invoices) with a
+Written 2026-10-16 for the owner's approval. **Owner, 2026-10-16: approved
+as written, with all four recommendations in §13.7** (supplementary invoices
+yes; no discounts on charges; the primary guardian's phone on the driver's
+list; no pro-rating). It answers Q4's open half (supplementary invoices) with a
 recommendation; the owner's approval of this plan is that answer.
 
 ### 13.1 What exists today (read from the code)
@@ -2617,3 +2619,89 @@ recommendation; the owner's approval of this plan is that answer.
    "Confidential: for the driver's use on this route".
 4. **No pro-rating** (§13.6)? Recommended: yes, keep it simple; the bursar
    adjusts by hand.
+
+### 13.8 As built — CP5.1, student charges and supplementary invoices (2026-10-16)
+
+- **Data** (migration `20261029120000_student_charges`):
+  - `student_charges`, RLS forced. CHECKs on the database itself:
+    - amount from 1 kobo to ₦10m;
+    - description 1–200 characters;
+    - BILLED exactly when an invoice is set;
+    - VOID exactly when a reason and time are set;
+    - source module and id both set or both null.
+  - A partial unique index allows one live (not VOID) charge per source, so a
+    transport assignment can never raise two.
+  - `invoices.sequence`: 0 is the term invoice, 1, 2, … are supplementary.
+  - **One deviation from the plan's wording:** the plan named an `invoices.kind`
+    column and a partial unique index. As built, the unique key simply widens
+    to `(school, student, term, sequence)`, and the API derives `kind`
+    (`TERM`/`SUPPLEMENTARY`) from the sequence. It is the same rule (one term
+    invoice per student per term, any number of supplementary ones), but Prisma
+    knows the key exactly, so `findUnique` still works and there is no index
+    the client cannot see.
+  - Permissions `charge.read`, `charge.raise` and `charge.void`, for owner (via
+    `*`), admin and bursar. No new SECURITY DEFINER function; the count stays
+    23.
+- **One writer.** `StudentChargeService` (finance module) is the only code that
+  writes the table. `student-charge-writes.spec.ts` scans the API source and
+  fails on any other Prisma or SQL write. Its in-transaction methods are what
+  transport will call in CP5.2:
+  - `raise`;
+  - `reprice` (OPEN only, returning `repriced`/`billed`/`none`);
+  - `voidBySource`;
+  - `openForBilling`;
+  - `markBilled`, which is conditional on each charge still being OPEN and
+    throws otherwise, rolling the invoice back with it;
+  - `releaseFromInvoice`.
+
+  Every write is audited (`charge.raise`, `.reprice`, `.void`, `.bill`,
+  `.release`) with amounts and ids, never the description.
+- **Invoices:**
+  - Generation adds each student's OPEN charges for the term after the fee
+    items, as lines with `chargeId` and no discount (`buildSnapshot` takes
+    them as a third argument). It bills them in the same transaction.
+  - The preview counts and totals them.
+  - **Bill waiting charges** (`GET /invoices/waiting-charges`,
+    `POST /invoices/waiting-charges/bill`) issues one supplementary invoice per
+    student who has the term invoice, in any status, at the next sequence.
+    Students without one are only counted, as "waiting for their term invoice".
+  - Cancelling an invoice returns its charges to OPEN.
+- **Fixed for more than one invoice per term:**
+  - reminders quote the balance across all the student's outstanding invoices
+    for the term, with the earliest due date;
+  - the debt figures count distinct **students**, in both
+    `FinanceService.getDashboard` (a `groupBy`) and `finance-totals.ts`.
+    `finance-totals.spec.ts` now holds a student with two outstanding
+    invoices;
+  - the class-change check looks for the term invoice only;
+  - debtor rows carry `supplementary`, added deliberately to the staff app's
+    pinned key set; the portal invoice carries `supplementary`.
+- **Screens:**
+  - **Website:** a new **Finance → Charges** page. Year, term and class
+    pickers, where the term is never chosen for the bursar, as on Invoices.
+    The page has:
+    - the **Waiting charges** panel, with its preview, an optional due date
+      and **Bill waiting charges**;
+    - the class's students, each with their charges, status and a link to
+      the invoice;
+    - **Add a charge** (described in naira, converted with string arithmetic
+      by `nairaInputToKobo`) and **Void** with a reason.
+
+    It lives under Finance rather than the student page because the bursar
+    has no `student.read`. The invoice page heads a supplementary invoice
+    "Supplementary invoice"; the list, its export and the debtor list label
+    one; the generation preview has a Charges column.
+  - **Portal and parent app:** "Supplementary invoice" on the invoice card.
+  - **Staff app:** the debtor row says "supplementary invoice".
+- **Tests:**
+  - `student-charge.service.spec.ts` (22 tests, real Postgres) covers every
+    rule in §13.5, including two presses of **Bill waiting charges** at once
+    billing each charge exactly once, and the database refusing a second
+    term invoice and a malformed charge.
+  - Also added: pure snapshot tests, the reminder and debtor test, and the
+    totals parity case.
+  - e2e `student-charges.spec.ts`: a charge rides on the term invoice; a later
+    one is billed on a supplementary invoice; a void with reason; the
+    bursar's invoice page; the parent sees it in the portal.
+  - The Charges page was checked at 320px and 390px with no overflow. That
+    check found the void form staying open after a void, which is fixed.

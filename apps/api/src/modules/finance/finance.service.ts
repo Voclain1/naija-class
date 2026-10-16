@@ -101,6 +101,7 @@ export class FinanceService implements OnModuleInit {
           totalPaid: true,
           status: true,
           dueDate: true,
+          sequence: true,
         },
       });
 
@@ -159,6 +160,7 @@ export class FinanceService implements OnModuleInit {
           status: inv.status as "ISSUED" | "PARTIALLY_PAID" | "OVERDUE",
           dueDate: dueDateStr,
           hasPaymentPlan: planSet.has(inv.id),
+          supplementary: inv.sequence > 0,
         };
       });
 
@@ -188,9 +190,10 @@ export class FinanceService implements OnModuleInit {
   // Debtor set (ISSUED/PARTIALLY_PAID/OVERDUE only) is a separate, LEANER
   // aggregate than listDebtors() — the dashboard only needs two numbers
   // (outstandingBalance, debtorCount), not the per-invoice student/class-arm/
-  // payment-plan joins listDebtors does for its UI list. Invoice carries
-  // @@unique([schoolId, studentId, termId]), so debtorCount === the aggregate
-  // count directly — no distinct-student dance needed.
+  // payment-plan joins listDebtors does for its UI list. debtorCount is the
+  // number of distinct STUDENTS owing: since Phase 9 / CP5.1 a student can
+  // hold a supplementary invoice beside the term one, so it is a groupBy on
+  // studentId, not the row count.
   //
   // Expense has no termId (only a bare incurredAt date), so "expenses for
   // this term" is resolved via the Term row's own date range rather than a
@@ -207,7 +210,7 @@ export class FinanceService implements OnModuleInit {
       // dashboard cannot drift apart on what counts as billed or outstanding.
       // The AGGREGATION stays here on the DB side deliberately — see that
       // module's header, and D5 of docs/modules/revenue-trajectory.md.
-      const [invoicedAgg, debtorAgg, expenseAgg] = await Promise.all([
+      const [invoicedAgg, debtorAgg, debtorStudents, expenseAgg] = await Promise.all([
         db.invoice.aggregate({
           where: { termId, status: { notIn: [...BILLED_EXCLUDED_STATUSES] } },
           _sum: { totalDue: true, totalPaid: true },
@@ -215,7 +218,10 @@ export class FinanceService implements OnModuleInit {
         db.invoice.aggregate({
           where: { termId, status: { in: [...OUTSTANDING_STATUSES] } },
           _sum: { totalDue: true, totalPaid: true },
-          _count: true,
+        }),
+        db.invoice.groupBy({
+          by: ["studentId"],
+          where: { termId, status: { in: [...OUTSTANDING_STATUSES] } },
         }),
         db.expense.aggregate({
           where: { incurredAt: { gte: term.startDate, lte: term.endDate } },
@@ -228,7 +234,7 @@ export class FinanceService implements OnModuleInit {
 
       const outstandingBalance =
         (debtorAgg._sum.totalDue ?? 0) - (debtorAgg._sum.totalPaid ?? 0);
-      const debtorCount = debtorAgg._count;
+      const debtorCount = debtorStudents.length;
 
       const totalExpenses = expenseAgg._sum.amount ?? 0;
       const netPosition = totalCollected - totalExpenses;
@@ -559,19 +565,29 @@ export class FinanceService implements OnModuleInit {
       let skipped = 0;
 
       for (const studentId of dto.studentIds) {
-        // Load the outstanding invoice for this student in the specified term.
-        const invoice = await db.invoice.findFirst({
+        // Load the outstanding invoices for this student in the specified
+        // term. Phase 9 / CP5.1: a student can hold a supplementary invoice
+        // beside the term one, so the reminder quotes the balance across all
+        // of them, and the earliest due date set on any.
+        const outstanding = await db.invoice.findMany({
           where: {
             studentId,
             termId: dto.termId,
             status: { in: ["ISSUED", "PARTIALLY_PAID", "OVERDUE"] },
           },
           select: { totalDue: true, totalPaid: true, dueDate: true },
+          orderBy: { sequence: "asc" },
         });
-        if (!invoice) {
+        if (outstanding.length === 0) {
           skipped++;
           continue;
         }
+        const dueDates = outstanding.flatMap((i) => (i.dueDate ? [i.dueDate] : []));
+        const invoice = {
+          totalDue: outstanding.reduce((sum, i) => sum + i.totalDue, 0),
+          totalPaid: outstanding.reduce((sum, i) => sum + i.totalPaid, 0),
+          dueDate: dueDates.length ? new Date(Math.min(...dueDates.map((d) => d.getTime()))) : null,
+        };
 
         // Load the student name for the message body.
         const student = await db.student.findUnique({

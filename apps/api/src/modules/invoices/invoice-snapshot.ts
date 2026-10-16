@@ -1,4 +1,4 @@
-import type { InvoiceLineItemDto } from "@school-kit/types";
+import { STUDENT_CHARGE_KIND_LABELS, type InvoiceLineItemDto, type StudentChargeKind } from "@school-kit/types";
 
 // ---------------------------------------------------------------------------
 // Internal types shared between the snapshot builder and the service
@@ -19,6 +19,14 @@ export interface DiscountRuleForSnapshot {
   feeCategoryId: string | null;
   discountType: "PERCENTAGE" | "FIXED_AMOUNT" | "FULL_WAIVER";
   value: number | null; // basis points | kobo | null for FULL_WAIVER
+}
+
+/** Phase 9 / CP5.1 — an OPEN student charge billed onto the invoice. */
+export interface ChargeForSnapshot {
+  id: string;
+  kind: StudentChargeKind;
+  description: string;
+  amount: number; // kobo
 }
 
 export interface SnapshotResult {
@@ -59,10 +67,16 @@ export function computeRuleDiscount(amount: number, rule: DiscountRuleForSnapsho
 /**
  * Builds the frozen invoice snapshot from a list of matched fee items and a
  * student's active discount rules. Pure function — no DB access.
+ *
+ * Phase 9 / CP5.1 — the student's charges follow the fee items as lines of
+ * their own. Discount rules point at fee items and fee categories, and a
+ * charge is neither, so no discount ever reaches a charge line
+ * (docs/modules/phase-9.md §13 CP5-D2).
  */
 export function buildSnapshot(
   feeItems: FeeItemForSnapshot[],
   discountRules: DiscountRuleForSnapshot[],
+  charges: ChargeForSnapshot[] = [],
 ): SnapshotResult {
   let totalAmount = 0;
   let totalDiscount = 0;
@@ -95,6 +109,19 @@ export function buildSnapshot(
       netAmount: item.amount - cappedDiscount,
     };
   });
+
+  for (const charge of charges) {
+    totalAmount += charge.amount;
+    items.push({
+      feeItemId: null,
+      chargeId: charge.id,
+      categoryName: STUDENT_CHARGE_KIND_LABELS[charge.kind],
+      feeName: charge.description,
+      amount: charge.amount,
+      discountsApplied: [],
+      netAmount: charge.amount,
+    });
+  }
 
   return {
     items,

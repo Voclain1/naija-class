@@ -82,13 +82,13 @@ export interface FinanceTotals {
  * Money stays Int kobo throughout; no float arithmetic enters here.
  */
 export function buildFinanceTotalsFromRows(
-  rows: Array<{ status: InvoiceStatus; totalDue: number; totalPaid: number }>,
+  rows: Array<{ studentId: string; status: InvoiceStatus; totalDue: number; totalPaid: number }>,
 ): FinanceTotals {
   let totalInvoiced = 0;
   let totalCollected = 0;
   let outstandingDue = 0;
   let outstandingPaid = 0;
-  let debtorCount = 0;
+  const debtors = new Set<string>();
 
   const outstanding = new Set<InvoiceStatus>(OUTSTANDING_STATUSES);
 
@@ -98,11 +98,11 @@ export function buildFinanceTotalsFromRows(
     if (outstanding.has(row.status)) {
       outstandingDue += row.totalDue;
       outstandingPaid += row.totalPaid;
-      // Counts invoice ROWS, matching FinanceService's `_count` on the same
-      // filter exactly. Within a term that is also the number of distinct
-      // students, since Invoice carries @@unique([schoolId, studentId,
-      // termId]) — so the name is accurate, not a latent off-by-duplicate.
-      debtorCount += 1;
+      // Counts distinct STUDENTS, matching FinanceService's groupBy on the
+      // same filter. Since Phase 9 / CP5.1 a student can hold a supplementary
+      // invoice beside the term one, so invoice rows are no longer students:
+      // one family owing on two invoices is one debtor.
+      debtors.add(row.studentId);
     }
   }
 
@@ -111,6 +111,6 @@ export function buildFinanceTotalsFromRows(
     totalCollected,
     collectionRatePercent: collectionRatePercent(totalInvoiced, totalCollected),
     outstandingBalance: outstandingDue - outstandingPaid,
-    debtorCount,
+    debtorCount: debtors.size,
   };
 }

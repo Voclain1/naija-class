@@ -4,6 +4,9 @@ import { Prisma, withTenant, type PrismaClient } from "@school-kit/db";
 import {
   ConflictError,
   NotFoundError,
+  invoiceKind,
+  type BillWaitingChargesInput,
+  type BillWaitingChargesResponseDto,
   type GenerateInvoicesInput,
   type GenerateInvoicesResponseDto,
   type InvoiceDto,
@@ -13,9 +16,13 @@ import {
   type PaginatedInvoicesDto,
   type PreviewInvoicesInput,
   type PreviewLineDto,
+  type PreviewWaitingChargesInput,
+  type WaitingChargesPreviewDto,
 } from "@school-kit/types";
 
 import type { AuthContext } from "../../common/auth/auth-context.js";
+import { assertUserActiveAndHasOneOf } from "../../common/auth/role-check.js";
+import { StudentChargeService } from "../finance/student-charge.service.js";
 import {
   buildSnapshot,
   type DiscountRuleForSnapshot,
@@ -31,6 +38,10 @@ const AUDIT = {
   issue: "invoice.issue",
   cancel: "invoice.cancel",
 } as const;
+
+// Billing waiting charges onto supplementary invoices (CP5-D6): the roles
+// that hold invoice.issue. Re-checked in the service on every call.
+const BILLING_ROLES = ["owner", "admin", "bursar"] as const;
 
 interface ArmContext {
   classLevelId: string;
@@ -48,6 +59,9 @@ interface TermContext {
 export class InvoiceGenerationService {
   constructor(
     @Optional() private readonly paymentLinkInvalidation?: PaymentLinkInvalidationService,
+    // Phase 9 / CP5.1 — the only writer of student_charges. Defaulted so the
+    // many specs that build this service by hand keep working.
+    @Optional() private readonly charges: StudentChargeService = new StudentChargeService(),
   ) {}
 
   // ─── Generate ──────────────────────────────────────────────────────────────
@@ -101,10 +115,11 @@ export class InvoiceGenerationService {
         // Skip if an invoice already exists for this student-term pair.
         const existing = await db.invoice.findUnique({
           where: {
-            schoolId_studentId_termId: {
+            schoolId_studentId_termId_sequence: {
               schoolId: authCtx.schoolId,
               studentId,
               termId: dto.termId,
+              sequence: 0,
             },
           },
           select: { id: true },
@@ -122,7 +137,10 @@ export class InvoiceGenerationService {
           term.academicYearId,
         );
 
-        const snapshot = buildSnapshot(feeItems, discountRules);
+        // Phase 9 / CP5.1 — the student's OPEN charges for the term ride on
+        // the term invoice, and are marked BILLED in this same transaction.
+        const openCharges = await this.charges.openForBilling(db, authCtx.schoolId, studentId, dto.termId);
+        const snapshot = buildSnapshot(feeItems, discountRules, openCharges);
 
         const invoice = await db.invoice.create({
           data: {
@@ -158,9 +176,16 @@ export class InvoiceGenerationService {
               totalAmount: snapshot.totalAmount,
               totalDiscount: snapshot.totalDiscount,
               totalDue: snapshot.totalDue,
+              chargeCount: openCharges.length,
             },
           },
         });
+        await this.charges.markBilled(
+          db,
+          { schoolId: authCtx.schoolId, userId: authCtx.userId, ipAddress: reqCtx.ipAddress },
+          openCharges.map((c) => c.id),
+          invoice.id,
+        );
 
         created.push(
           toDto(invoice, snapshot.items, issuerName, studentIdentities.get(studentId) ?? null),
@@ -223,6 +248,7 @@ export class InvoiceGenerationService {
         where: {
           schoolId: authCtx.schoolId,
           termId: dto.termId,
+          sequence: 0,
           studentId: { in: enrollments.map((e) => e.studentId) },
         },
         select: { studentId: true },
@@ -238,13 +264,15 @@ export class InvoiceGenerationService {
           dto.termId,
           term.academicYearId,
         );
-        const snapshot = buildSnapshot(feeItems, discountRules);
+        const openCharges = await this.charges.openForBilling(db, authCtx.schoolId, studentId, dto.termId);
+        const snapshot = buildSnapshot(feeItems, discountRules, openCharges);
         const identity = studentIdentities.get(studentId) ?? null;
         previews.push({
           studentId,
           studentName: identity?.studentName ?? null,
           admissionNumber: identity?.admissionNumber ?? null,
           feeItemCount: feeItems.length,
+          chargeCount: openCharges.length,
           totalAmount: snapshot.totalAmount,
           totalDiscount: snapshot.totalDiscount,
           totalDue: snapshot.totalDue,
@@ -254,6 +282,140 @@ export class InvoiceGenerationService {
 
       return previews;
     });
+  }
+
+  // ─── Supplementary invoices (Phase 9 / CP5.1, §13 CP5-D3) ─────────────────
+  //
+  // "Bill waiting charges": for every student who already has the term's
+  // invoice (sequence 0, in any status) and holds OPEN charges for the term,
+  // one supplementary invoice carrying all of them. A student with no term
+  // invoice is left alone; their charges ride on it when it is generated.
+  // Nothing here ever runs on its own: only the bursar's press.
+
+  async previewWaitingCharges(
+    authCtx: AuthContext,
+    dto: PreviewWaitingChargesInput,
+  ): Promise<WaitingChargesPreviewDto> {
+    await assertUserActiveAndHasOneOf(authCtx, BILLING_ROLES);
+    return withTenant(authCtx.schoolId, async (db) => {
+      await this.fetchTerm(db, authCtx.schoolId, dto.termId);
+      const { toBill, waiting } = await this.waitingCharges(db, authCtx.schoolId, dto.termId);
+      const identities = await this.resolveStudentIdentities(db, authCtx.schoolId, [...toBill.keys()]);
+      const rows = [...toBill.entries()].map(([studentId, list]) => ({
+        studentId,
+        studentName: identities.get(studentId)?.studentName ?? null,
+        admissionNumber: identities.get(studentId)?.admissionNumber ?? null,
+        chargeCount: list.length,
+        total: list.reduce((sum, c) => sum + c.amount, 0),
+      }));
+      rows.sort((a, b) => (a.studentName ?? "").localeCompare(b.studentName ?? ""));
+      return {
+        toBill: rows,
+        totalToBill: rows.reduce((sum, r) => sum + r.total, 0),
+        waitingForTermInvoice: waiting,
+      };
+    });
+  }
+
+  async billWaitingCharges(
+    authCtx: AuthContext,
+    dto: BillWaitingChargesInput,
+    reqCtx: RequestContext,
+  ): Promise<BillWaitingChargesResponseDto> {
+    await assertUserActiveAndHasOneOf(authCtx, BILLING_ROLES);
+    return withTenant(authCtx.schoolId, async (db) => {
+      const term = await this.fetchTerm(db, authCtx.schoolId, dto.termId);
+      const { toBill, termInvoices } = await this.waitingCharges(db, authCtx.schoolId, dto.termId);
+      const actor = { schoolId: authCtx.schoolId, userId: authCtx.userId, ipAddress: reqCtx.ipAddress };
+      const issuedAt = new Date();
+      let created = 0;
+      let chargesBilled = 0;
+      let total = 0;
+
+      for (const [studentId, list] of toBill) {
+        const termInvoice = termInvoices.get(studentId)!;
+        const last = await db.invoice.aggregate({
+          where: { schoolId: authCtx.schoolId, studentId, termId: dto.termId },
+          _max: { sequence: true },
+        });
+        const sequence = (last._max.sequence ?? 0) + 1;
+        const snapshot = buildSnapshot([], [], list);
+        const invoice = await db.invoice.create({
+          data: {
+            schoolId: authCtx.schoolId,
+            studentId,
+            termId: dto.termId,
+            academicYearId: term.academicYearId,
+            classArmId: termInvoice.classArmId,
+            sequence,
+            status: "ISSUED",
+            items: snapshot.items as object[],
+            totalAmount: snapshot.totalAmount,
+            totalDiscount: snapshot.totalDiscount,
+            totalDue: snapshot.totalDue,
+            dueDate: dto.dueDate ? new Date(dto.dueDate) : null,
+            issuedAt,
+            issuedBy: authCtx.userId,
+          },
+        });
+        await db.auditLog.create({
+          data: {
+            schoolId: authCtx.schoolId,
+            userId: authCtx.userId,
+            action: AUDIT.issue,
+            entityType: "invoice",
+            entityId: invoice.id,
+            ipAddress: reqCtx.ipAddress,
+            metadata: {
+              studentId,
+              termId: dto.termId,
+              sequence,
+              supplementary: true,
+              chargeCount: list.length,
+              totalAmount: snapshot.totalAmount,
+              totalDiscount: snapshot.totalDiscount,
+              totalDue: snapshot.totalDue,
+            },
+          },
+        });
+        await this.charges.markBilled(db, actor, list.map((c) => c.id), invoice.id);
+        created += 1;
+        chargesBilled += list.length;
+        total += snapshot.totalDue;
+      }
+
+      return { created, chargesBilled, total };
+    });
+  }
+
+  // The term's OPEN charges, split into those whose student has the term
+  // invoice (billable now) and a count of students still waiting for it.
+  private async waitingCharges(db: PrismaClient, schoolId: string, termId: string) {
+    const open = await db.studentCharge.findMany({
+      where: { schoolId, termId, status: "OPEN" },
+      select: { id: true, studentId: true, kind: true, description: true, amount: true },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    });
+    const studentIds = [...new Set(open.map((c) => c.studentId))];
+    const termInvoiceRows = studentIds.length
+      ? await db.invoice.findMany({
+          where: { schoolId, termId, sequence: 0, studentId: { in: studentIds } },
+          select: { studentId: true, classArmId: true },
+        })
+      : [];
+    const termInvoices = new Map(termInvoiceRows.map((r) => [r.studentId, r]));
+    const toBill = new Map<string, typeof open>();
+    const waitingStudents = new Set<string>();
+    for (const charge of open) {
+      if (!termInvoices.has(charge.studentId)) {
+        waitingStudents.add(charge.studentId);
+        continue;
+      }
+      const list = toBill.get(charge.studentId) ?? [];
+      list.push(charge);
+      toBill.set(charge.studentId, list);
+    }
+    return { toBill, termInvoices, waiting: waitingStudents.size };
   }
 
   // ─── Read operations ───────────────────────────────────────────────────────
@@ -364,6 +526,13 @@ export class InvoiceGenerationService {
           metadata: { previousStatus: row.status },
         },
       });
+      // Phase 9 / CP5.1 — its charges go back to OPEN, to be voided or billed
+      // again on a supplementary invoice (docs/modules/phase-9.md §13 CP5-D4).
+      await this.charges.releaseFromInvoice(
+        db,
+        { schoolId: authCtx.schoolId, userId: authCtx.userId, ipAddress: reqCtx.ipAddress },
+        id,
+      );
       await this.paymentLinkInvalidation?.markForArchive(db, authCtx.schoolId, id);
 
       const issuerName = updated.issuedBy
@@ -557,6 +726,7 @@ function toDto(
     academicYearId: string;
     classArmId: string | null;
     status: string;
+    sequence: number;
     totalAmount: number;
     totalDiscount: number;
     totalDue: number;
@@ -581,6 +751,8 @@ function toDto(
     academicYearId: row.academicYearId,
     classArmId: row.classArmId,
     status: row.status as InvoiceStatus,
+    sequence: row.sequence,
+    kind: invoiceKind(row.sequence),
     items,
     totalAmount: row.totalAmount,
     totalDiscount: row.totalDiscount,
