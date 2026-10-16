@@ -2102,3 +2102,170 @@ Each slice is one PR, merged before the next starts.
 
 CP4 is complete with this slice. CP4b (AI-drafted feedback) has its own plan,
 and its own row in CLAUDE.md's allowlist if it ever needs one.
+
+## 12. CP4b plan-first — AI-drafted marking feedback (optional)
+
+Written 2026-10-16. **Waiting for the owner's approval.** Owner, 2026-10-16:
+"make it optional so teachers can do it without AI". Q6 (owner, 2026-10-14)
+already approved the principle: the model may draft marking feedback, with the
+name removed, and a teacher approves it.
+
+### 12.1 What exists today (read from the code)
+
+- **Marking (CP4.1–CP4.4):** a teacher types a mark and feedback per attempt
+  and saves it; nothing reaches the student or parents until **Release
+  marks**. Questions are marked automatically; written text and files are
+  marked by hand.
+- **AI plumbing:**
+  - `AiGenerationService.generate` refuses when the school's `ai_enabled` is
+    off (the platform's per-school kill switch). It reserves the tokens
+    against the school's monthly budget **before** the call, logs every call
+    to `ai_generations`, and settles afterwards.
+  - Prompts live in `packages/ai/src/prompts` with a name, version and model,
+    and are covered by `pnpm ai:eval`.
+- **The nearest pattern** is report-card comment drafts (`report-comments`):
+  - Drafts are queued (BullMQ), one call per student, and never written into
+    the student's record. Only an explicit **accept** does that.
+  - No model call happens inside a database transaction (read, then call,
+    then write).
+  - Under `PLAN_ENFORCEMENT=enforce`, the `aiReportComments` plan feature
+    keeps them off the Free plan.
+- **The PII allowlist** in CLAUDE.md has one row (`student-list-extraction`),
+  pinned by `packages/ai/evals/cases/pii-safety.ts`, which fails CI if the
+  list changes without the spec changing too.
+
+### 12.2 Decisions (owner may overrule any)
+
+- **CP4b-D1. Optional at every level; marking by hand is unchanged.**
+  - Nothing about marking changes for a teacher who never presses the new
+    button. The mark box, the feedback box, **Save mark**, **Return to
+    student** and **Release marks** work exactly as they do now.
+  - Three switches, all of which must be on for the button to show:
+    1. **The platform's** `ai_enabled` for the school (exists).
+    2. **The school's own** new setting, **AI drafts of marking feedback**.
+       It is **off by default**, and owner or admin turns it on in school
+       settings. A school that wants no AI near children's work leaves it off.
+    3. **The teacher's choice each time:** a **Draft with AI** button per
+       piece of work, and **Draft feedback for all** per assignment. Nothing
+       is ever drafted on its own.
+  - Under `enforce`, a new plan feature, `aiMarkingFeedback`, keeps it off
+    the Free plan, like report comment drafts.
+- **CP4b-D2. What the model sees (Q6).**
+  - The question as the teacher set it: the title, instructions and total
+    marks.
+  - The teacher's **marking guide**, if one was written. This is a new
+    optional, staff-only field on the collected work ("what a good answer
+    includes").
+  - **The typed answer, with names removed.** Before sending, the server
+    replaces the student's own first name, last name and admission number,
+    and the first and last name of every student in the class, with
+    `[name]`. The class level ("a JSS 2 student") is the only thing said
+    about who wrote it.
+  - Never sent: photos, PDFs, the student's id, the paste figure, earlier
+    attempts, other students' work, or any record (health, behaviour,
+    attendance).
+  - Answers to the automatic questions are not sent; they are already
+    marked.
+- **CP4b-D3. What comes back: a draft, never a mark.**
+  - A suggested mark (a whole number from 0 to the total), feedback written
+    to the student (at most 2,000 characters), and one line for the teacher
+    on why the mark was suggested. The teacher sees that line; the student
+    never does.
+  - Drafts are kept in their own staff-only table, `assignment_feedback_drafts`,
+    and never written into the mark or feedback.
+  - **Use draft** copies the mark and feedback into the teacher's own boxes.
+    The teacher edits them and saves with **Save mark**, as now. Only that
+    save writes a mark. Release stays a separate step.
+  - **Discard** drops a draft. A new attempt starts with no draft.
+- **CP4b-D4. The record says whether AI helped.**
+  - A saved mark records whether it started from an AI draft
+    (`feedback_ai_drafted`), so the school can always answer "was this
+    AI-drafted?". The audit log records the draft request and its use, with
+    counts and ids only and never the text.
+  - Families are **not** shown a label. Feedback a teacher has read, edited
+    and saved is the teacher's feedback. (Owner may overrule: a small "drafted
+    with AI help" note for families is easy to add.)
+- **CP4b-D5. The allowlist row, as Q6 requires.** CP4b's PR adds a second
+  row, `assignment-feedback`, to CLAUDE.md's PII allowlist, and updates the
+  eval spec that pins it.
+  - The reason: the answer is the payload, and a child's own writing can
+    name people even after the class roster's names are removed.
+  - The row carries the same two binding rules as the first:
+    1. The text is not kept by the model path beyond the request: no
+       queue payload, no cache. The queue job carries ids only and reads the
+       answer from the database when it runs.
+    2. Nothing is written to a student's record without a teacher's
+       explicit save.
+- **CP4b-D6. Model and cost.** Haiku 4.5, as report comments use: short,
+  structured output, one call per piece of work.
+  - A class of 40 with 300-word answers costs a few naira. The output cap
+    (about 600 tokens) keeps the budget reservation honest.
+  - If the evals show Haiku marks unfairly, the next step is Sonnet for this
+    one prompt, not a bigger output.
+- **CP4b-D7. Queued, like report comments.**
+  - **Draft with AI** and **Draft feedback for all** both enqueue jobs and
+    return at once. The screen shows "Drafting…" and picks up drafts as they
+    arrive.
+  - **Draft feedback for all** covers unmarked, typed attempts that have no
+    draft yet, up to the class size.
+  - Each job is checked against the budget before its call. When the budget
+    runs out, the remaining jobs stop with "The school's AI allowance for
+    this month is used up", and marking by hand carries on.
+- **CP4b-D8. Who.** Owner, admin and the class's teachers, using the
+  existing `assignment.mark` (the bursar has none of it). Students and
+  parents never see a draft, the teacher's line or the flag.
+
+### 12.3 What gets built (one slice, one PR, web and app together)
+
+| Part | What |
+|---|---|
+| Data | `assignment_feedback_drafts` (RLS forced); `assignment_collections.marking_guide`; `assignment_submissions.feedback_ai_drafted`; `schools.assignment_feedback_ai_enabled` |
+| Prompt | `assignment-feedback` v1 in the registry, with its JSON schema and evals; the CLAUDE.md allowlist row and the pinning spec |
+| API | the school setting; the marking guide on the collection; draft one, draft all, list drafts, discard; `Save mark` gains "started from an AI draft" |
+| Website | school settings switch; marking guide box; **Draft with AI**, **Draft feedback for all**, the draft beside the mark box with **Use draft** and **Discard** |
+| Staff app | the same buttons and draft card on the marking screen |
+
+### 12.4 Tests (the rules first)
+
+- **Optional:** with any of the three switches off, there is no draft route
+  that works and no button. With all on, manual marking still behaves
+  exactly as before (the CP4.1 tests stay as they are).
+- **Name removal:** the rendered prompt has none of the student's names, the
+  admission number, or any classmate's name, including inside words and
+  with different capitals. It has no ids.
+- **Never final:** a draft never changes the mark, the feedback or what the
+  student or parents see. Only **Save mark** does, and release still gates
+  the family.
+- **Budget:** refused when it is used up; refused when `ai_enabled` is off;
+  every call logged to `ai_generations`.
+- **The queue payload** holds ids only, no answer text.
+- **Evals** (`pnpm ai:eval`, real output where a key is set):
+  - fairness: the same answer gets the same suggested mark within 1 across
+    runs, and an answer with the student's name swapped gets the same mark;
+  - no invented errors (a correct answer gets no "mistakes" listed);
+  - the suggested mark stays within 0 to the total;
+  - no names or gendered pronouns in the feedback.
+- **Who:** another class's teacher and the bursar are refused; a student and
+  a guardian never see a draft.
+- **e2e:** the owner turns the setting on; a teacher drafts feedback (the AI
+  client faked in e2e, as report comments are), uses it, edits it, saves and
+  releases; the parent sees the teacher's saved text.
+- **Phone fit:** the new controls at 320px and 390px.
+
+### 12.5 Left out on purpose
+
+- Drafting from photos or PDFs of handwriting (more of the child's page goes
+  to the model, and names on paper can't be removed reliably).
+- Any AI help for students (Q6).
+- Drafting without a teacher pressing the button, or saving a draft as a mark
+  without a teacher's save.
+- A family-facing "AI-assisted" label (CP4b-D4, unless the owner wants it).
+
+### 12.6 Questions for the owner
+
+1. **School switch off by default** (CP4b-D1)? Recommended: yes.
+2. **Typed answers only** (CP4b-D2, §12.5)? Recommended: yes.
+3. **No label for families** (CP4b-D4)? Recommended: no label, but the school
+   keeps the record internally.
+4. **The `assignment-feedback` allowlist row** (CP4b-D5), as Q6 anticipated.
+   Your approval of this plan is the sign-off the CLAUDE.md rule asks for.
