@@ -621,7 +621,7 @@ async function main() {
   for (const inv of INVOICES) {
     const studentId = studentIdByAdmission.get(inv.admissionNumber)!;
     await prisma.invoice.upsert({
-      where: { schoolId_studentId_termId: { schoolId, studentId, termId: currentTermId } },
+      where: { schoolId_studentId_termId_sequence: { schoolId, studentId, termId: currentTermId, sequence: 0 } },
       update: { status: inv.status, totalPaid: inv.totalPaid, dueDate: inv.dueDate },
       create: {
         schoolId,

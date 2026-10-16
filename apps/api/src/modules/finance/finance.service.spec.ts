@@ -553,6 +553,55 @@ describe("FinanceService (integration)", () => {
       );
     });
 
+    it("quotes the balance across the term invoice and a supplementary one (Phase 9 / CP5.1)", async () => {
+      const { schoolId, ownerId } = await makeSchool("remind-supp");
+      const { termId, studentId, invoiceId } = await makeInvoice(schoolId, ownerId, {
+        totalDue: 100_000,
+        totalPaid: 40_000,
+        status: "PARTIALLY_PAID",
+      });
+      await withTenant(schoolId, async (db) => {
+        const termInvoice = await db.invoice.findUniqueOrThrow({ where: { id: invoiceId } });
+        await db.invoice.create({
+          data: {
+            schoolId,
+            studentId,
+            termId,
+            academicYearId: termInvoice.academicYearId,
+            sequence: 1,
+            status: "ISSUED",
+            items: [],
+            totalAmount: 25_000,
+            totalDiscount: 0,
+            totalDue: 25_000,
+            issuedAt: new Date(),
+            issuedBy: ownerId,
+          },
+        });
+      });
+      await linkPrimaryGuardian(schoolId, studentId, { phone: "+2348012345678" });
+
+      const termiiStub = makeTermiiStub({ isConfigured: true });
+      const svc = makeFinanceService({
+        termii: { isConfigured: true, sendSms: termiiStub.sendSms },
+        notificationPreferences: {
+          getEnabledChannels: vi.fn(async () => ({ email: false, sms: true, push: false })),
+        },
+      });
+
+      const result = await svc.sendReminders(ctx(schoolId, ownerId), { termId, studentIds: [studentId] });
+      expect(result.sent).toBe(1);
+      // ₦600 still owed on the term invoice + ₦250 on the supplementary = ₦850.
+      expect(termiiStub.sendSms).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.stringContaining("850"),
+        undefined,
+      );
+      const debtors = await svc.listDebtors(ctx(schoolId, ownerId), termId);
+      expect(debtors.map((d) => d.supplementary).sort()).toEqual([false, true]);
+      expect((await svc.getDashboard(ctx(schoolId, ownerId), termId)).debtorCount).toBe(1);
+    });
+
     it("acceptance criterion: both channels disabled sends neither email nor SMS, regardless of configuration", async () => {
       const { schoolId, ownerId } = await makeSchool("remind-both-off");
       const { termId, studentId } = await makeInvoice(schoolId, ownerId, {

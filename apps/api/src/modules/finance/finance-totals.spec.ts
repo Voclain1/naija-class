@@ -33,10 +33,9 @@ import { buildFinanceTotalsFromRows } from "./finance-totals.js";
 //   - a partially-paid invoice, so collected != billed and the rate is
 //     neither 0 nor 100
 //
-// NOT covered, because the schema forbids it: a student holding several
-// invoices in one term. Invoice carries @@unique([schoolId, studentId,
-// termId]), so within a term "count of invoices" and "count of distinct
-// students" are the same number by construction.
+//   - Phase 9 / CP5.1: a student holding a term invoice AND a supplementary
+//     one, both outstanding, so "count of invoices" and "count of debtors"
+//     differ and the debtor count must be of students.
 // ---------------------------------------------------------------------------
 
 function makeFinanceService(): FinanceService {
@@ -153,11 +152,13 @@ describe("finance totals parity: DB aggregates vs row derivation", () => {
         status: InvoiceStatus,
         totalDue: number,
         totalPaid: number,
+        sequence = 0,
       ) {
         await db.invoice.create({
           data: {
             schoolId,
             studentId,
+            sequence,
             termId: term.id,
             academicYearId: year.id,
             status,
@@ -184,6 +185,10 @@ describe("finance totals parity: DB aggregates vs row derivation", () => {
       await invoice(await student(true), "CANCELLED", 888_000, 0); // must not count
       // No enrollment row: still belongs to the term's totals (see #278).
       await invoice(await student(false), "ISSUED", 25_000, 5_000);
+      // CP5.1: one student, a term invoice and a supplementary one, both owing.
+      const twice = await student(true);
+      await invoice(twice, "PARTIALLY_PAID", 60_000, 20_000);
+      await invoice(twice, "ISSUED", 7_000, 0, 1);
 
       return term.id;
     });
@@ -198,22 +203,23 @@ describe("finance totals parity: DB aggregates vs row derivation", () => {
     const rows = await withTenant(schoolId, async (db) =>
       db.invoice.findMany({
         where: { termId, status: { notIn: ["DRAFT", "CANCELLED"] } },
-        select: { status: true, totalDue: true, totalPaid: true },
+        select: { studentId: true, status: true, totalDue: true, totalPaid: true },
       }),
     );
     const direct = buildFinanceTotalsFromRows(rows);
 
     // Hand-computed from the fixture above; DRAFT and CANCELLED excluded.
-    const expectedBilled = 100_000 + 200_000 + 50_000 + 300_000 + 40_000 + 25_000;
-    const expectedCollected = 0 + 75_000 + 10_000 + 300_000 + 40_000 + 5_000;
-    // ISSUED + PARTIALLY_PAID + OVERDUE + ISSUED(unenrolled) = 4 invoices
+    const expectedBilled = 100_000 + 200_000 + 50_000 + 300_000 + 40_000 + 25_000 + 60_000 + 7_000;
+    const expectedCollected = 0 + 75_000 + 10_000 + 300_000 + 40_000 + 5_000 + 20_000;
+    // ISSUED + PARTIALLY_PAID + OVERDUE + ISSUED(unenrolled) = 4 students, plus
+    // the student with two outstanding invoices = 5 debtors over 6 invoices.
     const expectedOutstanding =
-      100_000 + 200_000 + 50_000 + 25_000 - (0 + 75_000 + 10_000 + 5_000);
+      100_000 + 200_000 + 50_000 + 25_000 + 60_000 + 7_000 - (0 + 75_000 + 10_000 + 5_000 + 20_000);
 
     expect(direct.totalInvoiced).toBe(expectedBilled);
     expect(direct.totalCollected).toBe(expectedCollected);
     expect(direct.outstandingBalance).toBe(expectedOutstanding);
-    expect(direct.debtorCount).toBe(4);
+    expect(direct.debtorCount).toBe(5);
 
     // The parity assertions themselves.
     expect(viaDashboard.fees.billed).toBe(viaAggregates.totalInvoiced);

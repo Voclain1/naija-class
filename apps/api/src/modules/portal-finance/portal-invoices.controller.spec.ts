@@ -253,6 +253,9 @@ describe("PortalInvoicesController (Phase 4 / Slice 4)", () => {
         "id",
         "studentId",
         "term",
+        // Phase 9 / CP5.1: a boolean about the invoice itself (charges raised
+        // after the term invoice), so the parent can tell the two apart.
+        "supplementary",
         "status",
         "items",
         "totalAmount",

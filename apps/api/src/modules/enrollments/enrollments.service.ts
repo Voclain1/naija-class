@@ -446,7 +446,9 @@ export class EnrollmentsService {
       const levelChanged = fromArm?.classLevelId !== toArm.classLevelId;
       const invoice = levelChanged
         ? await db.invoice.findFirst({
-            where: { studentId: existing.studentId, termId: existing.termId },
+            // The term invoice (sequence 0); a supplementary one carries
+            // charges only, not the class level's fees.
+            where: { studentId: existing.studentId, termId: existing.termId, sequence: 0 },
             select: { id: true },
           })
         : null;

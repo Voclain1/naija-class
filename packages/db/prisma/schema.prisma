@@ -2423,9 +2423,12 @@ model DiscountRule {
 // can be edited freely afterwards; issued invoices are unaffected because they
 // carry the frozen snapshot. (Mirrors the released-report-card snapshot pattern.)
 //
-// The @@unique([schoolId, studentId, termId]) constraint enforces one invoice per
-// student per term. CANCELLED invoices hold the slot — re-generation after cancel
-// is not supported (void + create a new record is the intended workflow).
+// The @@unique([schoolId, studentId, termId, sequence]) constraint enforces one
+// TERM invoice (sequence 0) per student per term. CANCELLED invoices hold the
+// slot — re-generation after cancel is not supported. Phase 9 / CP5.1 (F2):
+// sequence 1, 2, … are SUPPLEMENTARY invoices, issued only when the bursar bills
+// student charges raised after the term invoice went out
+// (docs/modules/phase-9.md §13 CP5-D3).
 //
 // `totalPaid` starts at 0 and is updated by the payment service (slice 7).
 
@@ -2464,11 +2467,64 @@ model Invoice {
   payments       Payment[]
   paymentPlans   PaymentPlan[]
   paymentLinks   PaymentLink[]
+  // Phase 9 / CP5.1 — 0 = the term invoice; 1, 2, … = supplementary invoices.
+  sequence       Int           @default(0)
+  charges        StudentCharge[]
 
-  @@unique([schoolId, studentId, termId])
+  @@unique([schoolId, studentId, termId, sequence])
   @@index([schoolId, status])
   @@index([schoolId, termId, classArmId])
   @@map("invoices")
+}
+
+// ---------- Phase 9 / CP5.1 — Student charges (F2) ----------
+//
+// One amount owed by one student for one term, raised by a module (transport,
+// later library and hostel) or by hand (OTHER). OPEN until an invoice carries
+// it (BILLED, invoice_id set, in the same transaction), or VOID with a reason.
+// Written ONLY by StudentChargeService (apps/api/src/modules/finance); a spec
+// fails on any other write. docs/modules/phase-9.md §13.
+
+enum StudentChargeKind {
+  TRANSPORT
+  LIBRARY_FINE
+  HOSTEL
+  OTHER
+}
+
+enum StudentChargeStatus {
+  OPEN
+  BILLED
+  VOID
+}
+
+model StudentCharge {
+  id           String              @id @default(uuid())
+  schoolId     String              @map("school_id")
+  studentId    String              @map("student_id") // plain FK — validated in service
+  termId       String              @map("term_id") // plain FK
+  kind         StudentChargeKind
+  description  String
+  amount       Int // kobo, > 0
+  status       StudentChargeStatus @default(OPEN)
+  // Where it came from: both set (e.g. "transport" + the assignment id) or both
+  // null (added by hand). At most one live charge per source (partial unique).
+  sourceModule String?             @map("source_module")
+  sourceId     String?             @map("source_id")
+  invoiceId    String?             @map("invoice_id")
+  voidReason   String?             @map("void_reason")
+  voidedBy     String?             @map("voided_by")
+  voidedAt     DateTime?           @map("voided_at")
+  createdBy    String?             @map("created_by")
+  createdAt    DateTime            @default(now()) @map("created_at")
+  updatedAt    DateTime            @updatedAt @map("updated_at")
+
+  invoice Invoice? @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
+
+  @@index([schoolId, termId, status])
+  @@index([schoolId, studentId, termId])
+  @@index([invoiceId])
+  @@map("student_charges")
 }
 
 enum PaymentLinkStatus {

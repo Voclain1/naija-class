@@ -490,6 +490,10 @@ function InvoiceCard({ invoice }: { invoice: PortalInvoiceDto }) {
       <div className="flex items-center justify-between gap-3">
         <div className="flex flex-col gap-0.5">
           <span className="font-medium">{invoice.term.name}</span>
+          {/* Phase 9 / CP5.1 — charges raised after the term's invoice. */}
+          {invoice.supplementary && (
+            <span className="text-xs text-muted-foreground">Supplementary invoice</span>
+          )}
           {invoice.dueDate && (
             <span className="text-xs text-muted-foreground">Due {invoice.dueDate}</span>
           )}
@@ -503,7 +507,7 @@ function InvoiceCard({ invoice }: { invoice: PortalInvoiceDto }) {
 
       <ul className="flex flex-col gap-1 text-sm">
         {invoice.items.map((item, idx) => (
-          <li key={item.feeItemId + idx} className="flex flex-col gap-0.5">
+          <li key={(item.feeItemId ?? item.chargeId ?? "") + idx} className="flex flex-col gap-0.5">
             <div className="flex items-center justify-between">
               <span>
                 {item.categoryName} — {item.feeName}

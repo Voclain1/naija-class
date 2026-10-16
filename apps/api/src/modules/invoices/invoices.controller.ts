@@ -10,7 +10,13 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import {
+  billWaitingChargesSchema,
   generateInvoicesSchema,
+  previewWaitingChargesSchema,
+  type BillWaitingChargesInput,
+  type BillWaitingChargesResponseDto,
+  type PreviewWaitingChargesInput,
+  type WaitingChargesPreviewDto,
   listInvoicesSchema,
   previewInvoicesSchema,
   type GenerateInvoicesInput,
@@ -63,6 +69,28 @@ export class InvoicesController {
     @Ip() ip: string,
   ): Promise<GenerateInvoicesResponseDto> {
     return this.service.generateForArm(authCtx, dto, { ipAddress: ip });
+  }
+
+  // Phase 9 / CP5.1 — supplementary invoices for charges raised after the
+  // term invoice went out (docs/modules/phase-9.md §13 CP5-D3).
+  @Get("waiting-charges")
+  @Permissions("invoice.read")
+  async previewWaitingCharges(
+    @CurrentUser() authCtx: AuthContext,
+    @Query(new ZodValidationPipe(previewWaitingChargesSchema)) query: PreviewWaitingChargesInput,
+  ): Promise<WaitingChargesPreviewDto> {
+    return this.service.previewWaitingCharges(authCtx, query);
+  }
+
+  @Post("waiting-charges/bill")
+  @HttpCode(201)
+  @Permissions("invoice.issue")
+  async billWaitingCharges(
+    @Body(new ZodValidationPipe(billWaitingChargesSchema)) dto: BillWaitingChargesInput,
+    @CurrentUser() authCtx: AuthContext,
+    @Ip() ip: string,
+  ): Promise<BillWaitingChargesResponseDto> {
+    return this.service.billWaitingCharges(authCtx, dto, { ipAddress: ip });
   }
 
   // ─── Dynamic routes ────────────────────────────────────────────────────────

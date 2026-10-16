@@ -56,6 +56,7 @@ const INVOICE_EXPORT_COLUMNS: CsvColumn<InvoiceDto>[] = [
   { header: "Student", accessor: (i) => studentDisplayName(i) },
   { header: "Admission number", accessor: (i) => i.admissionNumber ?? "" },
   { header: "Invoice reference", accessor: (i) => invoiceReference(i.id) },
+  { header: "Kind", accessor: (i) => (i.kind === "SUPPLEMENTARY" ? "Supplementary" : "Term") },
   { header: "Status", accessor: (i) => invoiceStatusLabel[i.status] },
   { header: "Total due", accessor: (i) => formatKobo(i.totalDue) },
   { header: "Paid", accessor: (i) => formatKobo(i.totalPaid) },
@@ -544,6 +545,7 @@ export default function InvoicesPage() {
                     <TableRow>
                       <TableHead>Student</TableHead>
                       <TableHead className="text-right">Fee items</TableHead>
+                      <TableHead className="text-right">Charges</TableHead>
                       <TableHead className="text-right">Gross</TableHead>
                       <TableHead className="text-right">Discount</TableHead>
                       <TableHead className="text-right">Due</TableHead>
@@ -563,6 +565,7 @@ export default function InvoicesPage() {
                           )}
                         </TableCell>
                         <TableCell className="text-right">{row.feeItemCount}</TableCell>
+                        <TableCell className="text-right">{row.chargeCount}</TableCell>
                         <TableCell className="text-right font-mono tabular-nums">{formatKobo(row.totalAmount)}</TableCell>
                         <TableCell className="text-right font-mono tabular-nums text-destructive">
                           {row.totalDiscount > 0 ? `−${formatKobo(row.totalDiscount)}` : "—"}
@@ -575,7 +578,7 @@ export default function InvoicesPage() {
                   </TableBody>
                   <tfoot className="border-t bg-muted/40 font-medium">
                     <tr>
-                      <td colSpan={4} className="p-4 text-right">Total due</td>
+                      <td colSpan={5} className="p-4 text-right">Total due</td>
                       <td className="p-4 text-right font-mono tabular-nums">{formatKobo(previewTotalDue)}</td>
                     </tr>
                   </tfoot>
@@ -736,6 +739,9 @@ export default function InvoicesPage() {
                       </TableCell>
                       <TableCell className="font-mono text-xs text-muted-foreground">
                         {invoiceReference(inv.id)}
+                        {inv.kind === "SUPPLEMENTARY" && (
+                          <span className="mt-0.5 block font-sans text-foreground">Supplementary</span>
+                        )}
                       </TableCell>
                       <TableCell>
                         <Badge variant={STATUS_VARIANTS[inv.status]}>{invoiceStatusLabel[inv.status]}</Badge>

@@ -72,6 +72,10 @@ const DEBTOR_KEYS = [
   "status",
   "dueDate",
   "hasPaymentPlan",
+  // Phase 9 / CP5.1 (docs/modules/phase-9.md §13 CP5-D3): a boolean about the
+  // invoice, no contact detail. The staff app labels the row "Supplementary"
+  // so a family with two rows reads as two invoices, not a duplicate.
+  "supplementary",
 ].sort();
 
 const DASHBOARD_KEYS = [

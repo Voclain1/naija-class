@@ -21,6 +21,7 @@ function line(over: Partial<PreviewLineDto> = {}): PreviewLineDto {
     studentName: over.studentName ?? "Adaeze Okonkwo",
     admissionNumber: over.admissionNumber ?? "SKA/0001",
     feeItemCount: over.feeItemCount ?? 1,
+    chargeCount: 0,
     totalAmount: over.totalAmount ?? 45_000_00,
     totalDiscount: over.totalDiscount ?? 0,
     totalDue: over.totalDue ?? 45_000_00,

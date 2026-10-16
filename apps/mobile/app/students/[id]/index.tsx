@@ -223,7 +223,7 @@ export default function StudentDetailScreen() {
             return (
               <Card key={invoice.id}>
                 <View style={styles.invoiceHead}>
-                  <Label>{invoice.term.name}</Label>
+                  <Label>{invoice.supplementary ? `${invoice.term.name} · supplementary` : invoice.term.name}</Label>
                   <Label>{describeInvoiceStatus(invoice.status)}</Label>
                 </View>
                 {/* What the fee is FOR — the school's own lines, at the

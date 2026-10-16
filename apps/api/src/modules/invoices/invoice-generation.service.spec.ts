@@ -96,6 +96,40 @@ describe("buildSnapshot", () => {
     expect(result.items[1].netAmount).toBe(8_000_000);
   });
 
+  it("charges follow the fee items as their own lines, and no discount reaches them (CP5.1)", () => {
+    const waiver = {
+      id: "r1",
+      name: "Full waiver on everything in Tuition",
+      feeItemId: null,
+      feeCategoryId: tuitionCatId,
+      discountType: "FULL_WAIVER" as const,
+      value: null,
+    };
+    const result = buildSnapshot([tuitionItem], [waiver], [
+      { id: "ch-1", kind: "TRANSPORT", description: "Transport — Route A", amount: 3_000_000 },
+      { id: "ch-2", kind: "OTHER", description: "Excursion", amount: 500_000 },
+    ]);
+    expect(result.items.map((i) => i.feeItemId ?? i.chargeId)).toEqual(["item-tuition", "ch-1", "ch-2"]);
+    expect(result.items[1]).toEqual({
+      feeItemId: null,
+      chargeId: "ch-1",
+      categoryName: "Transport",
+      feeName: "Transport — Route A",
+      amount: 3_000_000,
+      discountsApplied: [],
+      netAmount: 3_000_000,
+    });
+    expect(result.totalAmount).toBe(18_500_000);
+    expect(result.totalDiscount).toBe(15_000_000);
+    expect(result.totalDue).toBe(3_500_000);
+  });
+
+  it("charges alone make a supplementary snapshot", () => {
+    const result = buildSnapshot([], [], [{ id: "ch-1", kind: "HOSTEL", description: "Hostel", amount: 7 }]);
+    expect(result).toMatchObject({ totalAmount: 7, totalDiscount: 0, totalDue: 7 });
+    expect(result.items[0]!.categoryName).toBe("Hostel");
+  });
+
   it("empty fee items → all zeros", () => {
     const result = buildSnapshot([], []);
     expect(result.totalAmount).toBe(0);
