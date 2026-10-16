@@ -2105,7 +2105,10 @@ and its own row in CLAUDE.md's allowlist if it ever needs one.
 
 ## 12. CP4b plan-first — AI-drafted marking feedback (optional)
 
-Written 2026-10-16. **Waiting for the owner's approval.** Owner, 2026-10-16:
+Written 2026-10-16. **Owner, 2026-10-16: approved, with all four
+recommendations in §12.6** (school switch off by default; typed answers only;
+no label for families; the `assignment-feedback` allowlist row, this approval
+being its sign-off). Owner, 2026-10-16:
 "make it optional so teachers can do it without AI". Q6 (owner, 2026-10-14)
 already approved the principle: the model may draft marking feedback, with the
 name removed, and a teacher approves it.
@@ -2269,3 +2272,104 @@ name removed, and a teacher approves it.
    keeps the record internally.
 4. **The `assignment-feedback` allowlist row** (CP4b-D5), as Q6 anticipated.
    Your approval of this plan is the sign-off the CLAUDE.md rule asks for.
+
+### 12.7 As built — CP4b, AI-drafted marking feedback (2026-10-16)
+
+- **Data:** migration `20261028120000_assignment_feedback_drafts`.
+  - `assignment_feedback_drafts`: one per attempt, `PENDING`, `READY` or
+    `FAILED`, with the suggested mark, feedback, the teacher's line and a
+    readable failure. RLS is forced. `CHECK`s cap the lengths, and a `READY`
+    draft must have a mark and feedback.
+  - `schools.assignment_feedback_ai_enabled` (default false),
+    `assignment_collections.marking_guide` (staff only, at most 4,000
+    characters) and `assignment_submissions.feedback_ai_drafted`.
+  - No new permission and no SECURITY DEFINER function; the count stays 23.
+- **Optional at every level.** The buttons show only when all of these hold:
+  the platform's `ai_enabled`, the school's own switch, the plan
+  (`aiMarkingFeedback`, new, Starter and up under `enforce`), and AI being
+  configured on the deployment. The job re-checks all of them when it runs.
+  Marking by hand is untouched.
+- **Prompt `assignment-feedback` v1** (Haiku 4.5, 600 output tokens), in the
+  registry.
+  - The renderer itself removes names (`removeNames`), so no caller can skip
+    it. It takes whole words in any capitals, including before a possessive,
+    never part of another word, and skips one-letter names.
+  - The job passes the student's first, middle and last names and admission
+    number, and every enrolled classmate's names (each part of a double
+    name too). Names are removed again from the model's feedback before a
+    teacher sees it.
+  - The model returns `{ mark, feedback, reason }` as structured output. A
+    mark that is not a whole number within the total is a failed draft,
+    never clamped.
+- **CLAUDE.md:** the allowlist has its second row, `assignment-feedback`, and
+  `pii-safety.ts` pins the list at two.
+- **API:**
+  - `GET/PUT /assignments/ai-drafts/settings` (`school.update`; owner and
+    admin), audited `assignment.ai-drafts.enabled` / `.disabled`.
+  - `POST /assignments/submissions/:id/ai-draft` (one) and
+    `POST /assignments/:id/ai-drafts` (every unmarked typed answer with no
+    draft), both `assignment.mark`, both audited
+    `assignment.ai-draft.request` with a count.
+  - `DELETE /assignments/submissions/:id/ai-draft`, audited
+    `assignment.ai-draft.discard`.
+  - `PUT /assignments/:id/collection` takes `markingGuide`; the audit records
+    only whether there is one.
+  - `POST /assignments/submissions/:id/mark` takes `fromAiDraft`, stored as
+    `feedback_ai_drafted` and audited as a flag.
+  - The marking response gains `aiDrafting`, each roster row `draftStatus`,
+    and each staff attempt `draft` and `feedbackAiDrafted`. The student's and
+    family's shapes gain nothing.
+- **Queue:** a fourth job name, `assignment-feedback`, on the AI queue.
+  - The job holds `{ schoolId, userId, submissionId }` only (allowlist rule 1)
+    and makes one attempt: a failure is shown to the teacher, who can press
+    again, rather than paid for twice.
+  - The work is read, then the model is called, then the draft is written,
+    with no model call inside a transaction.
+  - The single `@Processor` on that queue dispatches it. Its own note says
+    moving the dispatcher into `common/ai` is due at a fourth feature; that
+    is logged in `docs/deferred.md`, not done here.
+- **Screens:**
+  - Website **Settings → AI marking drafts**: what is sent to the AI, and the
+    switch, with a note when the platform, the plan or the deployment keeps
+    it off.
+  - Marking page, when offered:
+    - an **AI drafts (optional)** box with the **Marking guide** and **Draft
+      feedback for all**;
+    - per typed attempt, **Draft with AI**, then "Drafting…", then the draft
+      in a tinted box. It shows the suggested mark, the feedback and "For
+      you, not the student: …", with **Use draft** (fills the teacher's own
+      boxes) and **Discard**. A failed draft says why, with **Try again**;
+    - the roster shows "Drafting…" or "AI draft ready";
+    - the page and the student's panel look again every few seconds while
+      a draft is being made.
+  - Staff app: the same box, panel and roster words on the marking screen.
+- **Tests:**
+  - `assignment-feedback.service.spec.ts`, 6 tests, real Postgres and the real
+    `AiGenerationService`, with only the model faked:
+    - off by default, a teacher can't switch it on, the platform switch
+      still wins, and marking by hand is unchanged;
+    - names (the student's, the admission number, a classmate's) never
+      reach the model, and the job holds ids only;
+    - the draft is never a mark and never reaches the student;
+    - **Use draft** then **Save mark** records the flag, and release still
+      gates the family;
+    - **Draft feedback for all** covers unmarked typed answers only; another
+      class's teacher is refused; files-only work is refused; discard works;
+    - readable failures: an out-of-range mark, a used-up budget, and the
+      switch turned off before the job ran (the model is never called);
+    - the audit holds counts only.
+  - Evals: the PII suite checks name removal (capitals, a possessive, a
+    word that contains a name, one-letter names) and the two-row allowlist;
+    prompt-quality and schema checks; and a live fairness suite (same mark
+    within 1, name-swap, a complete answer not told it has errors, no
+    pronouns), skipped without an API key.
+  - Permission coverage for the five new routes; the plan-feature list.
+  - e2e `assignment-ai-drafts.spec.ts`: the owner finds the switch off and
+    turns it on. With the platform's AI off, the teacher sees no AI controls
+    and marks by hand, and the mark is not flagged as AI-drafted. CI has no
+    AI key, so the drafting path is covered by the integration tests.
+  - The settings page, the marking page with a draft, and the staff app's
+    marking screen with a draft were checked at 320px and 390px. **Use
+    draft** filling the boxes and the saved flag were checked through the
+    real UI with a seeded draft.
+

@@ -19,6 +19,7 @@ import { Button } from "@/components/ui/button";
 import { InlineAlert } from "@/components/shared/inline-alert";
 import { ApiError } from "@/lib/api-client";
 import { openPrivateDocument } from "@/components/health/vaccinations-section";
+import { AiDraftPanel, AiDraftTools } from "@/components/assignments/ai-draft";
 import { GradebookPush, SimilarityCheck } from "@/components/assignments/assignment-tools";
 import { QuestionsEditor } from "@/components/assignments/questions-editor";
 import {
@@ -116,13 +117,18 @@ function Attempt({
   latest,
   totalMarks,
   questions,
+  aiDrafting,
   onChanged,
+  onReload,
 }: {
   attempt: AssignmentSubmissionDto;
   latest: boolean;
   totalMarks: number;
   questions: AssignmentQuestionDto[];
+  /** CP4b: the school has AI drafts switched on. */
+  aiDrafting: boolean;
   onChanged: (work: StudentWorkDto) => void;
+  onReload: () => void;
 }) {
   // An unmarked attempt starts from the automatic mark, when there is one.
   const [mark, setMark] = useState(
@@ -131,6 +137,8 @@ function Attempt({
   const [feedback, setFeedback] = useState(attempt.feedback ?? "");
   const [note, setNote] = useState("");
   const [returning, setReturning] = useState(false);
+  // CP4b: the boxes were filled from an AI draft. Recorded when saved.
+  const [fromDraft, setFromDraft] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const canWork = latest && !attempt.returnedAt;
@@ -193,6 +201,17 @@ function Attempt({
           Returned {formatMoment(attempt.returnedAt)}: {attempt.returnNote}
         </p>
       )}
+      {canWork && aiDrafting && !attempt.markedAt && (
+        <AiDraftPanel
+          attempt={attempt}
+          onChanged={onReload}
+          onUse={(m, f) => {
+            setMark(String(m));
+            setFeedback(f);
+            setFromDraft(true);
+          }}
+        />
+      )}
       {canWork && (
         <form
           className="flex flex-col gap-2"
@@ -204,7 +223,13 @@ function Attempt({
               setError("Enter a whole-number mark.");
               return;
             }
-            void run(() => markSubmission(attempt.id, { mark: value, ...(feedback.trim() ? { feedback: feedback.trim() } : {}) }));
+            void run(() =>
+              markSubmission(attempt.id, {
+                mark: value,
+                ...(feedback.trim() ? { feedback: feedback.trim() } : {}),
+                ...(fromDraft ? { fromAiDraft: true } : {}),
+              }),
+            );
           }}
         >
           <label className="flex w-40 flex-col gap-1 text-sm">
@@ -283,14 +308,17 @@ function Attempt({
 function StudentPanel({
   homeworkId,
   row,
+  aiDrafting,
   onChanged,
 }: {
   homeworkId: string;
   row: AssignmentRosterRowDto;
+  aiDrafting: boolean;
   onChanged: () => void;
 }) {
   const [work, setWork] = useState<StudentWorkDto | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [tick, setTick] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -300,7 +328,15 @@ function StudentPanel({
     return () => {
       cancelled = true;
     };
-  }, [homeworkId, row.studentId]);
+  }, [homeworkId, row.studentId, tick, row.draftStatus]);
+
+  // CP4b: while a draft is being made, look again every few seconds.
+  const pending = work?.attempts[0]?.draft?.status === "PENDING";
+  useEffect(() => {
+    if (!pending) return;
+    const t = setTimeout(() => setTick((n) => n + 1), 3000);
+    return () => clearTimeout(t);
+  }, [pending, tick]);
 
   if (error) return <InlineAlert>{error}</InlineAlert>;
   if (!work) {
@@ -320,6 +356,11 @@ function StudentPanel({
           latest={i === 0}
           totalMarks={work.totalMarks}
           questions={work.questions}
+          aiDrafting={aiDrafting}
+          onReload={() => {
+            setTick((n) => n + 1);
+            onChanged();
+          }}
           onChanged={(next) => {
             setWork(next);
             onChanged();
@@ -351,6 +392,14 @@ export function MarkingView({ homeworkId, backHref, backLabel }: { homeworkId: s
   useEffect(() => {
     void load();
   }, [load]);
+
+  // CP4b: while any AI draft is being made, look again every few seconds.
+  const drafting = data?.roster.some((r) => r.draftStatus === "PENDING") ?? false;
+  useEffect(() => {
+    if (!drafting) return;
+    const t = setTimeout(() => void load(), 4000);
+    return () => clearTimeout(t);
+  }, [drafting, data, load]);
 
   async function act(fn: () => Promise<AssignmentMarkingDto>) {
     setBusy(true);
@@ -468,6 +517,16 @@ export function MarkingView({ homeworkId, backHref, backLabel }: { homeworkId: s
             </Button>
           )}
         </div>
+        {data.aiDrafting && (
+          <AiDraftTools
+            homeworkId={homeworkId}
+            data={data}
+            onChanged={(next) => {
+              if (next) setData(next);
+              else void load();
+            }}
+          />
+        )}
         {actionError && <InlineAlert>{actionError}</InlineAlert>}
       </section>
 
@@ -503,6 +562,10 @@ export function MarkingView({ homeworkId, backHref, backLabel }: { homeworkId: s
                   </span>
                 )}
                 {row.attempts > 1 && <span className="rounded bg-muted px-1.5 py-0.5">{row.attempts} attempts</span>}
+                {row.draftStatus === "PENDING" && <span className="rounded bg-muted px-1.5 py-0.5">Drafting…</span>}
+                {row.draftStatus === "READY" && row.status === "SUBMITTED" && (
+                  <span className="rounded bg-primary/10 px-1.5 py-0.5">AI draft ready</span>
+                )}
                 {row.autoMark !== null && row.mark === null && (
                   <span className="rounded bg-muted px-1.5 py-0.5">
                     Automatic {row.autoMark}/{data.collection.totalMarks}
@@ -517,7 +580,7 @@ export function MarkingView({ homeworkId, backHref, backLabel }: { homeworkId: s
             </button>
             {open === row.studentId && (
               <div className="border-t p-3">
-                <StudentPanel homeworkId={homeworkId} row={row} onChanged={() => void load()} />
+                <StudentPanel homeworkId={homeworkId} row={row} aiDrafting={data.aiDrafting} onChanged={() => void load()} />
               </div>
             )}
           </li>

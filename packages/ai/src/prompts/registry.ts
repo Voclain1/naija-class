@@ -26,6 +26,7 @@
 import { MODELS, type ModelId } from "../models.js";
 // Runtime import; lesson-plan.ts imports only the TYPE back from here, and
 // type-only imports are erased at compile time, so there is no runtime cycle.
+import { ASSIGNMENT_FEEDBACK_PROMPT } from "./assignment-feedback.js";
 import { EXAM_QUESTIONS_PROMPT } from "./exam-questions.js";
 import { INSIGHTS_NARRATION_PROMPT, INSIGHTS_ROUTER_PROMPT } from "./insights.js";
 import { LESSON_PLAN_PROMPT, LESSON_QUIZ_PROMPT } from "./lesson-plan.js";
@@ -71,6 +72,10 @@ export const PROMPTS = {
   // CLAUDE.md's PII-bearing prompt allowlist and this prompt's own header
   // before touching it, and note the allowlist is one row long by design.
   STUDENT_LIST_EXTRACTION: STUDENT_LIST_EXTRACTION_PROMPT,
+  // Phase 9 / CP4b — the SECOND row of the PII allowlist (owner sign-off
+  // 2026-10-16): a child's typed answer, with every known name removed by the
+  // renderer. A draft for the teacher; never a mark.
+  ASSIGNMENT_FEEDBACK: ASSIGNMENT_FEEDBACK_PROMPT,
 } as const satisfies Record<string, PromptDefinition>;
 
 export type PromptKey = keyof typeof PROMPTS;

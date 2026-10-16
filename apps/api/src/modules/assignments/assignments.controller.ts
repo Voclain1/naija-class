@@ -20,6 +20,7 @@ import {
   markSubmissionSchema,
   returnSubmissionSchema,
   setAssignmentQuestionsSchema,
+  updateAiMarkingSettingsSchema,
   submitWorkSchema,
   ValidationError,
   type AssignmentFileUrlDto,
@@ -28,6 +29,9 @@ import {
   type CollectWorkInput,
   type SetAssignmentQuestionsInput,
   type SimilarityReportDto,
+  type AiMarkingSettingsDto,
+  type DraftFeedbackResultDto,
+  type UpdateAiMarkingSettingsInput,
   type FamilyAssignmentListResponse,
   type MarkSubmissionInput,
   type MyAssignmentDto,
@@ -50,6 +54,7 @@ import { StudentAuthGuard } from "../../common/auth/student-auth.guard.js";
 import { PRIVATE_FILE_MAX_BYTES } from "../../common/storage/private-file.js";
 import { UploadErrorFilter } from "../../common/upload-error.filter.js";
 import { ZodValidationPipe } from "../../common/zod-validation.pipe.js";
+import { AssignmentFeedbackService } from "./assignment-feedback.service.js";
 import { AssignmentsService } from "./assignments.service.js";
 
 // Phase 9 / CP4 — assignments: submitted work and marking
@@ -61,7 +66,51 @@ import { AssignmentsService } from "./assignments.service.js";
 @Controller("assignments")
 @UseGuards(AuthGuard, PermissionsGuard)
 export class AssignmentsController {
-  constructor(private readonly service: AssignmentsService) {}
+  constructor(
+    private readonly service: AssignmentsService,
+    private readonly feedback: AssignmentFeedbackService,
+  ) {}
+
+  // ---- CP4b: AI-drafted marking feedback, optional at every level ---------
+
+  /** The school's own switch (owner or admin). Off by default. */
+  @Get("ai-drafts/settings")
+  @Permissions("school.update")
+  async aiDraftSettings(@CurrentUser() authCtx: AuthContext): Promise<AiMarkingSettingsDto> {
+    return this.feedback.getSettings(authCtx);
+  }
+
+  @Put("ai-drafts/settings")
+  @Permissions("school.update")
+  async updateAiDraftSettings(
+    @CurrentUser() authCtx: AuthContext,
+    @Body(new ZodValidationPipe(updateAiMarkingSettingsSchema)) dto: UpdateAiMarkingSettingsInput,
+    @Ip() ip: string,
+  ): Promise<AiMarkingSettingsDto> {
+    return this.feedback.updateSettings(authCtx, dto.enabled, ip);
+  }
+
+  /** Draft every unmarked typed answer that has no draft yet. */
+  @Post(":id/ai-drafts")
+  @HttpCode(200)
+  @Permissions("assignment.mark")
+  async draftAll(@CurrentUser() authCtx: AuthContext, @Param("id") id: string, @Ip() ip: string): Promise<DraftFeedbackResultDto> {
+    return this.feedback.draftAll(authCtx, id, ip);
+  }
+
+  @Post("submissions/:id/ai-draft")
+  @HttpCode(200)
+  @Permissions("assignment.mark")
+  async draftOne(@CurrentUser() authCtx: AuthContext, @Param("id") id: string, @Ip() ip: string): Promise<DraftFeedbackResultDto> {
+    return this.feedback.draftOne(authCtx, id, ip);
+  }
+
+  @Delete("submissions/:id/ai-draft")
+  @HttpCode(204)
+  @Permissions("assignment.mark")
+  async discardDraft(@CurrentUser() authCtx: AuthContext, @Param("id") id: string, @Ip() ip: string): Promise<void> {
+    await this.feedback.discard(authCtx, id, ip);
+  }
 
   /** Switch on "collect work" for a homework item, or change its settings. */
   @Put(":id/collection")

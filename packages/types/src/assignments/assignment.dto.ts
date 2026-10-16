@@ -25,6 +25,8 @@ export const ASSIGNMENT_LIMITS = {
   returnNote: 500,
   /** Photos or PDFs per attempt (Q8, CP4.2). */
   files: 3,
+  /** CP4b: the staff-only marking guide sent to the AI drafter. */
+  markingGuide: 4000,
   /** CP4.3: questions per assignment, and their parts. */
   questions: 50,
   questionText: 2000,
@@ -41,6 +43,13 @@ export const collectWorkSchema = z
   .object({
     totalMarks: z.number().int().min(1, "Give the work a total mark.").max(ASSIGNMENT_LIMITS.totalMarks),
     accepting: z.boolean().optional(),
+    /** CP4b: what a good answer includes. Staff only. Empty clears it; absent leaves it. */
+    markingGuide: z
+      .string()
+      .trim()
+      .max(ASSIGNMENT_LIMITS.markingGuide)
+      .optional()
+      .transform((v) => (v === undefined ? undefined : v === "" ? null : v)),
   })
   .strict();
 export type CollectWorkInput = z.infer<typeof collectWorkSchema>;
@@ -88,6 +97,8 @@ export const markSubmissionSchema = z
       .max(ASSIGNMENT_LIMITS.feedback)
       .optional()
       .transform((v) => (v ? v : undefined)),
+    /** CP4b: the teacher started from an AI draft. Recorded, never shown to families. */
+    fromAiDraft: z.boolean().optional(),
   })
   .strict();
 export type MarkSubmissionInput = z.input<typeof markSubmissionSchema>;
@@ -246,6 +257,48 @@ export interface AssignmentCollectionDto {
   assignmentId: string;
   totalMarks: number;
   accepting: boolean;
+  /** CP4b: staff only. */
+  markingGuide: string | null;
+}
+
+// ---------------------------------------------------------------------------
+// CP4b — AI-drafted marking feedback, optional at every level (§12). A draft
+// is never a mark: only the teacher's own "Save mark" writes one.
+// ---------------------------------------------------------------------------
+
+export type FeedbackDraftStatus = "PENDING" | "READY" | "FAILED";
+
+/** An AI draft, for staff only. */
+export interface FeedbackDraftDto {
+  status: FeedbackDraftStatus;
+  /** READY only. */
+  mark: number | null;
+  feedback: string | null;
+  /** One line for the teacher on why that mark. Never shown to the student. */
+  reason: string | null;
+  /** FAILED only: why, in words a teacher can read. */
+  failure: string | null;
+  createdAt: string | Date;
+}
+
+/** The school's own switch, and what else decides whether drafting is offered. */
+export interface AiMarkingSettingsDto {
+  /** The school's own opt-in (owner or admin). Off by default. */
+  enabled: boolean;
+  /** The platform's per-school AI switch. */
+  aiEnabled: boolean;
+  /** Whether the school's plan includes it now. */
+  planIncludes: boolean;
+  /** Whether AI is set up on this system at all. */
+  aiConfigured: boolean;
+}
+
+export const updateAiMarkingSettingsSchema = z.object({ enabled: z.boolean() }).strict();
+export type UpdateAiMarkingSettingsInput = z.infer<typeof updateAiMarkingSettingsSchema>;
+
+export interface DraftFeedbackResultDto {
+  /** Typed answers queued for a draft. */
+  queued: number;
 }
 
 /** A photo or PDF answer (CP4.2). Opened through a five-minute link. */
@@ -270,6 +323,10 @@ export interface AssignmentSubmissionDto {
   files: SubmissionFileDto[];
   submittedAt: string | Date;
   late: boolean;
+  /** CP4b: the saved mark started from an AI draft. Staff only. */
+  feedbackAiDrafted: boolean;
+  /** CP4b: the AI draft for this attempt, if one was asked for. Staff only. */
+  draft: FeedbackDraftDto | null;
   /** CP4.3: one per question, in order; empty when there are no questions. */
   answers: AnswerResultDto[];
   /** The mark worked out from the questions; null when there are none. */
@@ -302,6 +359,8 @@ export interface AssignmentRosterRowDto {
   fileCount: number;
   /** CP4.3: the automatic mark on the latest attempt, when there are questions. */
   autoMark: number | null;
+  /** CP4b: the AI draft on the latest attempt, if any. */
+  draftStatus: FeedbackDraftStatus | null;
 }
 
 export interface AssignmentMarkingDto {
@@ -318,6 +377,12 @@ export interface AssignmentMarkingDto {
   questions: AssignmentQuestionDto[];
   /** False once anyone has handed in: the questions are fixed from then. */
   questionsEditable: boolean;
+  /**
+   * CP4b: whether "Draft with AI" is offered — the platform's switch, the
+   * school's own, and the plan all allow it. False hides the buttons; marking
+   * by hand is the same either way.
+   */
+  aiDrafting: boolean;
   roster: AssignmentRosterRowDto[];
   counts: { submitted: number; marked: number; released: number; notSubmitted: number };
 }

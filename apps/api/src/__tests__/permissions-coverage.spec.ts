@@ -1532,7 +1532,9 @@ describe("Phase 9 CP4 RBAC coverage: submitted work and marking", () => {
 
   it("reading needs assignment.read; everything that changes work needs assignment.mark", () => {
     for (const handler of ["marking", "studentWork", "file", "similarity"]) expect(perms(handler), handler).toEqual(["assignment.read"]);
-    for (const handler of ["collect", "mark", "returnWork", "release", "setQuestions", "bankQuestions", "useAutoMarks"]) expect(perms(handler), handler).toEqual(["assignment.mark"]);
+    for (const handler of ["collect", "mark", "returnWork", "release", "setQuestions", "bankQuestions", "useAutoMarks", "draftAll", "draftOne", "discardDraft"]) expect(perms(handler), handler).toEqual(["assignment.mark"]);
+    // CP4b: the school's own AI-drafts switch is a school setting (owner/admin).
+    for (const handler of ["aiDraftSettings", "updateAiDraftSettings"]) expect(perms(handler), handler).toEqual(["school.update"]);
   });
 
   it("admin and teacher hold both; the bursar holds neither", () => {

@@ -167,3 +167,12 @@ export {
   renderStudentListExtractionPrompt,
   type StudentListExtractionInput,
 } from "./prompts/student-list-extraction.js";
+
+export {
+  ASSIGNMENT_FEEDBACK_PROMPT,
+  ASSIGNMENT_FEEDBACK_SCHEMA,
+  ASSIGNMENT_FEEDBACK_SYSTEM,
+  removeNames,
+  renderAssignmentFeedbackPrompt,
+  type AssignmentFeedbackInput,
+} from "./prompts/assignment-feedback.js";

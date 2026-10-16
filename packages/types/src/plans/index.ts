@@ -67,13 +67,16 @@ export const PLAN_ERROR_CODES = {
 // paid plans. Like the caps, they only take effect under
 // PLAN_ENFORCEMENT=enforce; under warn every school has them.
 // ---------------------------------------------------------------------------
-export const PLAN_FEATURES = ["reportCardBranding", "aiReportComments", "reportCardPositions"] as const;
+// aiMarkingFeedback (2026-10-16, phase-9.md §12 CP4b-D1): AI drafts of
+// marking feedback, kept off Free like the report comment drafts.
+export const PLAN_FEATURES = ["reportCardBranding", "aiReportComments", "reportCardPositions", "aiMarkingFeedback"] as const;
 export type PlanFeature = (typeof PLAN_FEATURES)[number];
 
 export const PLAN_FEATURE_LABELS: Record<PlanFeature, string> = {
   reportCardBranding: "Your logo and colours on report cards",
   aiReportComments: "AI drafts of report card comments",
   reportCardPositions: "Class positions and cumulative results on report cards",
+  aiMarkingFeedback: "AI drafts of marking feedback",
 };
 
 /** The cheapest plan that includes each feature. */
@@ -81,6 +84,7 @@ export const PLAN_FEATURE_MIN_PLAN: Record<PlanFeature, SchoolPlan> = {
   reportCardBranding: "STARTER",
   aiReportComments: "STARTER",
   reportCardPositions: "STARTER",
+  aiMarkingFeedback: "STARTER",
 };
 
 /** Whether the plan includes the feature, whatever the enforcement switch says. */

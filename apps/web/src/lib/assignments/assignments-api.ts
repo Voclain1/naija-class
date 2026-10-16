@@ -9,6 +9,8 @@ import type {
   CollectWorkInput,
   SetAssignmentQuestionsInput,
   SimilarityReportDto,
+  AiMarkingSettingsDto,
+  DraftFeedbackResultDto,
   MarkSubmissionInput,
   ReturnSubmissionInput,
   StudentWorkDto,
@@ -64,4 +66,27 @@ export function applyAutoMarks(homeworkId: string): Promise<AssignmentMarkingDto
 // audited, never stored.
 export function checkSimilarity(homeworkId: string): Promise<SimilarityReportDto> {
   return apiFetch<SimilarityReportDto>(`/assignments/${enc(homeworkId)}/similarity`, { method: "POST" });
+}
+
+// Phase 9 / CP4b — AI drafts of marking feedback. Optional at every level:
+// the school's own switch (owner/admin), then a teacher's button. A draft is
+// never a mark; only "Save mark" writes one.
+export function getAiMarkingSettings(): Promise<AiMarkingSettingsDto> {
+  return apiFetch<AiMarkingSettingsDto>("/assignments/ai-drafts/settings");
+}
+
+export function updateAiMarkingSettings(enabled: boolean): Promise<AiMarkingSettingsDto> {
+  return apiFetch<AiMarkingSettingsDto>("/assignments/ai-drafts/settings", { method: "PUT", body: { enabled } });
+}
+
+export function draftAllFeedback(homeworkId: string): Promise<DraftFeedbackResultDto> {
+  return apiFetch<DraftFeedbackResultDto>(`/assignments/${enc(homeworkId)}/ai-drafts`, { method: "POST" });
+}
+
+export function draftFeedback(submissionId: string): Promise<DraftFeedbackResultDto> {
+  return apiFetch<DraftFeedbackResultDto>(`/assignments/submissions/${enc(submissionId)}/ai-draft`, { method: "POST" });
+}
+
+export function discardFeedbackDraft(submissionId: string): Promise<void> {
+  return apiFetch<void>(`/assignments/submissions/${enc(submissionId)}/ai-draft`, { method: "DELETE" });
 }
