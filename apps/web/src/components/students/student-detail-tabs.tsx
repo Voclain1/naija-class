@@ -8,6 +8,7 @@ import { HealthProfilePanel } from "@/components/health/health-profile-panel";
 import { BehaviourTab } from "@/components/students/behaviour-tab";
 import { EnrollmentsTab } from "@/components/students/enrollments-tab";
 import { GuardiansTab } from "@/components/students/guardians-tab";
+import { StudentTransportField } from "@/components/transport/student-transport";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -113,6 +114,7 @@ function BioPanel({ student }: { student: StudentDetailDto }) {
       <Field label="Notes" full>
         {student.notes ?? "—"}
       </Field>
+      <StudentTransportField studentId={student.id} />
       {student.status === "WITHDRAWN" && (
         <Field label="Withdrawn at">{formatDateTime(student.withdrawnAt)}</Field>
       )}

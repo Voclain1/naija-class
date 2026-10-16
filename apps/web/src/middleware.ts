@@ -107,6 +107,8 @@ export const config = {
     "/health/:path*",
     // The sickbay log (Phase 9 / CP3.3), added in the same PR as the page.
     "/sickbay/:path*",
+    // Transport (Phase 9 / CP5.2), added in the same PR as the page.
+    "/transport/:path*",
     "/teacher/:path*",
     "/super-admin/dashboard/:path*",
   ],

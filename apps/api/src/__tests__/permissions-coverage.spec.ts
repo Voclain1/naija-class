@@ -8,6 +8,7 @@ import {
   REPORTS_PERMISSIONS,
   TABLE_EXPORT_PERMISSIONS,
   STUDENT_CHARGE_PERMISSIONS,
+  TRANSPORT_READ_PERMISSIONS,
   TIMETABLE_PERMISSIONS,
   TIMETABLE_OWN_READ_PERMISSIONS,
   PHASE_0_PERMISSIONS,
@@ -779,8 +780,12 @@ describe("Phase 3 RBAC close-out: seeded role grants", () => {
         ANNOUNCEMENT_READ_PERMISSIONS.length +
         HOMEWORK_READ_PERMISSIONS.length +
         TABLE_EXPORT_PERMISSIONS.length +
-        STUDENT_CHARGE_PERMISSIONS.length,
+        STUDENT_CHARGE_PERMISSIONS.length +
+        // Phase 9 CP5.2: transport, read only (route fees ride on charge.raise).
+        TRANSPORT_READ_PERMISSIONS.length,
     );
+    expect(bursarPerms.has("transport.read")).toBe(true);
+    expect(bursarPerms.has("transport.manage")).toBe(false);
     for (const p of STUDENT_CHARGE_PERMISSIONS) expect(bursarPerms.has(p)).toBe(true);
     expect(bursarPerms.has("announcement.read")).toBe(true);
     expect(bursarPerms.has("announcement.create")).toBe(false);

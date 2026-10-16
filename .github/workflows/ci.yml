@@ -256,7 +256,10 @@ jobs:
     # 30, not 20 (2026-10-07): the suite reached 127 tests and a run on a
     # slower runner was cancelled at test 86 with nothing failing. A hang
     # still ends here; the per-test 180s timeout catches a single stuck test.
-    timeout-minutes: 30
+    # 45, not 30 (2026-10-16): at 160 tests a green run takes ~28 minutes, and
+    # one dev-server memory restart (a 3-minute retry) cancelled the run on
+    # its last spec with nothing failing (PR #441).
+    timeout-minutes: 45
 
     services:
       postgres:

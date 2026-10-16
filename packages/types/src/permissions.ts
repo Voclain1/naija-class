@@ -710,6 +710,12 @@ export const ASSIGNMENT_PERMISSIONS = ["assignment.read", "assignment.mark"] as 
 // existing invoice.issue. Teachers hold none.
 export const STUDENT_CHARGE_PERMISSIONS = ["charge.read", "charge.raise", "charge.void"] as const;
 
+// Phase 9 / CP5.2 — transport (docs/modules/phase-9.md §13 CP5-D11). Owner and
+// admin manage vehicles, drivers, routes, stops and places; the bursar reads.
+// Setting a route's FEE needs charge.raise instead, so the bursar can set it.
+export const TRANSPORT_READ_PERMISSIONS = ["transport.read"] as const;
+export const TRANSPORT_PERMISSIONS = ["transport.read", "transport.manage"] as const;
+
 // Phase 8 / CP2 — Recording Completeness (docs/modules/phase-8.md §16 D39).
 // Owner/admin only. Named `reports.*`, deliberately not `report-card.*`.
 //
@@ -831,6 +837,7 @@ export const ALL_PERMISSIONS = [
   ...HEALTH_NOTE_PERMISSIONS,
   ...ASSIGNMENT_PERMISSIONS,
   ...STUDENT_CHARGE_PERMISSIONS,
+  ...TRANSPORT_PERMISSIONS,
   ...REPORTS_PERMISSIONS,
   ...TABLE_EXPORT_PERMISSIONS,
   ...TIMETABLE_PERMISSIONS,

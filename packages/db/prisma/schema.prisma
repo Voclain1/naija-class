@@ -819,6 +819,7 @@ model Student {
   sickbayVisits SickbayVisit[] // Phase 9 / CP3.3
   assignmentSubmissions AssignmentSubmission[] // Phase 9 / CP4
   assignmentFiles       AssignmentSubmissionFile[] // Phase 9 / CP4.2
+  transportAssignments  TransportAssignment[] // Phase 9 / CP5.2
 
   @@unique([schoolId, admissionNumber])
   @@index([schoolId])
@@ -4315,4 +4316,96 @@ model AssignmentFeedbackDraft {
   updatedAt     DateTime                      @default(now()) @updatedAt @map("updated_at")
 
   @@map("assignment_feedback_drafts")
+}
+
+// ---------- Phase 9 / CP5.2 — Transport ----------
+//
+// docs/modules/phase-9.md §13 CP5-D7/D8. Vehicles, drivers, routes with ordered
+// stops, and each student's place on one route and stop per term. A place
+// raises a TRANSPORT student charge at the route's fee, through
+// StudentChargeService only (source "transport", the assignment's id). A
+// route takes no more children in a term than its vehicle has seats.
+
+model TransportVehicle {
+  id          String           @id @default(uuid())
+  schoolId    String           @map("school_id")
+  plate       String // normalised upper case, unique per school
+  description String?
+  seats       Int
+  createdAt   DateTime         @default(now()) @map("created_at")
+  updatedAt   DateTime         @updatedAt @map("updated_at")
+  routes      TransportRoute[]
+
+  @@unique([schoolId, plate])
+  @@map("transport_vehicles")
+}
+
+model TransportDriver {
+  id            String           @id @default(uuid())
+  schoolId      String           @map("school_id")
+  name          String
+  phone         String
+  licenceNumber String?          @map("licence_number")
+  licenceExpiry DateTime?        @map("licence_expiry") @db.Date
+  createdAt     DateTime         @default(now()) @map("created_at")
+  updatedAt     DateTime         @updatedAt @map("updated_at")
+  routes        TransportRoute[]
+
+  @@index([schoolId])
+  @@map("transport_drivers")
+}
+
+model TransportRoute {
+  id          String                @id @default(uuid())
+  schoolId    String                @map("school_id")
+  name        String
+  vehicleId   String?               @map("vehicle_id")
+  driverId    String?               @map("driver_id")
+  // Per term, in kobo. 0 = free: no charge is raised.
+  fee         Int                   @default(0)
+  createdAt   DateTime              @default(now()) @map("created_at")
+  updatedAt   DateTime              @updatedAt @map("updated_at")
+  vehicle     TransportVehicle?     @relation(fields: [vehicleId], references: [id], onDelete: SetNull)
+  driver      TransportDriver?      @relation(fields: [driverId], references: [id], onDelete: SetNull)
+  stops       TransportStop[]
+  assignments TransportAssignment[]
+
+  @@unique([schoolId, name])
+  @@map("transport_routes")
+}
+
+model TransportStop {
+  id           String                @id @default(uuid())
+  schoolId     String                @map("school_id")
+  routeId      String                @map("route_id")
+  name         String
+  position     Int
+  // Minutes since midnight, school wall-clock time (CLAUDE.md time-of-day rule).
+  pickupMinute Int?                  @map("pickup_minute")
+  createdAt    DateTime              @default(now()) @map("created_at")
+  updatedAt    DateTime              @updatedAt @map("updated_at")
+  route        TransportRoute        @relation(fields: [routeId], references: [id], onDelete: Cascade)
+  assignments  TransportAssignment[]
+
+  @@index([routeId, position])
+  @@map("transport_stops")
+}
+
+model TransportAssignment {
+  id        String         @id @default(uuid())
+  schoolId  String         @map("school_id")
+  studentId String         @map("student_id")
+  termId    String         @map("term_id")
+  routeId   String         @map("route_id")
+  stopId    String         @map("stop_id")
+  createdBy String?        @map("created_by")
+  createdAt DateTime       @default(now()) @map("created_at")
+  updatedAt DateTime       @updatedAt @map("updated_at")
+  student   Student        @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  route     TransportRoute @relation(fields: [routeId], references: [id], onDelete: Restrict)
+  stop      TransportStop  @relation(fields: [stopId], references: [id], onDelete: Restrict)
+
+  @@unique([studentId, termId])
+  @@index([schoolId, routeId, termId])
+  @@map("transport_assignments")
 }

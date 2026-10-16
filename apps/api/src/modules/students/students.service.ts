@@ -22,6 +22,7 @@ import {
 } from "@school-kit/types";
 
 import type { AuthContext } from "../../common/auth/auth-context";
+import { removeTransportAfterWithdrawal } from "../transport/transport.service";
 import { assertUserActiveAndHasOneOf } from "../../common/auth/role-check";
 import { assertRoomForStudents } from "../../common/plans/plan-limits";
 import {
@@ -613,6 +614,16 @@ export class StudentsService {
         data: { status: "WITHDRAWN", withdrawnAt },
       });
 
+      // Phase 9 / CP5.2 — places on a bus in terms that start later are
+      // freed, and their waiting transport charges voided, in this same
+      // transaction (docs/modules/phase-9.md §13 CP5-D8).
+      const transportPlacesRemoved = await removeTransportAfterWithdrawal(
+        db,
+        { schoolId: authCtx.schoolId, userId: authCtx.userId, ipAddress: reqCtx.ipAddress },
+        id,
+        withdrawnAt,
+      );
+
       await db.auditLog.create({
         data: {
           schoolId: authCtx.schoolId,
@@ -629,6 +640,7 @@ export class StudentsService {
             // forensic reads can tell whether the current-term row was
             // flipped or whether the student had no current enrollment.
             cascadedEnrollmentCount: enrollmentCascade.count,
+            transportPlacesRemoved,
           },
         },
       });
