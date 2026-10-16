@@ -20,11 +20,12 @@ test("an admin sees the school's plan, and a notice on Students when close to it
     await expect(page.getByRole("heading", { name: "Plan", level: 1 })).toBeVisible({ timeout: 60_000 });
     await expect(page.getByRole("heading", { name: "Free plan" })).toBeVisible();
     await expect(page.getByText(/of the 100 students its Free plan covers/)).toBeVisible();
-    // The report-card extras (plans.md D5): not in Free, but every school has
-    // them during early access.
-    await expect(page.getByRole("heading", { name: "Report card extras" })).toBeVisible();
+    // The paid-plan extras (plans.md D5, and AI marking drafts from
+    // phase-9.md §12): not in Free, but every school has them during early access.
+    await expect(page.getByRole("heading", { name: "Paid-plan extras" })).toBeVisible();
     await expect(page.getByText("AI drafts of report card comments")).toBeVisible();
-    await expect(page.getByText("Free during early access")).toHaveCount(3);
+    await expect(page.getByText("AI drafts of marking feedback")).toBeVisible();
+    await expect(page.getByText("Free during early access")).toHaveCount(4);
 
     // No notice while there is room.
     await page.goto("/students");
