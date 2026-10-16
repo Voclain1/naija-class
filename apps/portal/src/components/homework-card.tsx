@@ -14,7 +14,9 @@
 import { useEffect, useState } from "react";
 
 import {
+  describeSubmissionFile,
   describeWorkStatus,
+  type AssignmentFileUrlDto,
   type FamilyAssignmentDto,
   type FamilyAssignmentListResponse,
   type HomeworkFeedItemDto,
@@ -30,7 +32,23 @@ function formatDue(iso: string): string {
   });
 }
 
-function WorkLine({ w }: { w: FamilyAssignmentDto }) {
+// CP4.2 — a file the child handed in is private: the portal asks for a
+// five-minute link. The tab opens first so a popup blocker allows it.
+async function openFile(studentId: string, fileId: string): Promise<void> {
+  const tab = window.open("", "_blank");
+  const res = await fetch(
+    `/api/portal/students/${encodeURIComponent(studentId)}/assignment-files/${encodeURIComponent(fileId)}`,
+  );
+  if (!res.ok) {
+    tab?.close();
+    return;
+  }
+  const { url } = (await res.json()) as AssignmentFileUrlDto;
+  if (tab) tab.location.href = url;
+  else window.location.href = url;
+}
+
+function WorkLine({ w, studentId }: { w: FamilyAssignmentDto; studentId: string }) {
   return (
     <div className="flex flex-col gap-0.5 rounded-md bg-primary/5 p-2 text-sm">
       <p className="font-medium">
@@ -41,6 +59,20 @@ function WorkLine({ w }: { w: FamilyAssignmentDto }) {
       {w.feedback && <p className="whitespace-pre-wrap break-words text-muted-foreground">{w.feedback}</p>}
       {w.status === "RETURNED" && w.returnNote && (
         <p className="break-words text-muted-foreground">Teacher: {w.returnNote}</p>
+      )}
+      {w.files.length > 0 && (
+        <div className="flex flex-wrap gap-3">
+          {w.files.map((f, i) => (
+            <button
+              key={f.id}
+              type="button"
+              onClick={() => void openFile(studentId, f.id)}
+              className="text-sm font-medium text-primary hover:underline"
+            >
+              View {describeSubmissionFile(w.files, i)}
+            </button>
+          ))}
+        </div>
       )}
     </div>
   );
@@ -93,7 +125,7 @@ export function HomeworkCard({ studentId }: { studentId: string }) {
                   {h.overdue && !handedIn ? <span className="font-medium text-amber-800 dark:text-amber-200"> · overdue</span> : null}
                 </p>
                 {h.instructions && <p className="whitespace-pre-wrap break-words text-sm">{h.instructions}</p>}
-                {w && <WorkLine w={w} />}
+                {w && <WorkLine w={w} studentId={studentId} />}
               </li>
             );
           })}
@@ -109,7 +141,7 @@ export function HomeworkCard({ studentId }: { studentId: string }) {
                 <p className="text-xs text-muted-foreground">
                   {w.subjectName} · due {formatDue(w.dueDate)}
                 </p>
-                <WorkLine w={w} />
+                <WorkLine w={w} studentId={studentId} />
               </li>
             ))}
           </ul>

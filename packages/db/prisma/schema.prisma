@@ -813,6 +813,7 @@ model Student {
   vaccinations  HealthVaccination[] // Phase 9 / CP3.2
   sickbayVisits SickbayVisit[] // Phase 9 / CP3.3
   assignmentSubmissions AssignmentSubmission[] // Phase 9 / CP4
+  assignmentFiles       AssignmentSubmissionFile[] // Phase 9 / CP4.2
 
   @@unique([schoolId, admissionNumber])
   @@index([schoolId])
@@ -4125,6 +4126,7 @@ model AssignmentCollection {
   createdAt    DateTime               @default(now()) @map("created_at")
   updatedAt    DateTime               @default(now()) @updatedAt @map("updated_at")
   submissions  AssignmentSubmission[]
+  files        AssignmentSubmissionFile[]
 
   @@map("assignment_collections")
 }
@@ -4139,7 +4141,8 @@ model AssignmentSubmission {
   studentId    String               @map("student_id")
   student      Student              @relation(fields: [studentId], references: [id], onDelete: Cascade)
   attempt      Int
-  body         String
+  // Null when the attempt is files alone (CP4.2).
+  body         String?
   // Q7's paste indicator, as reported by the student's own device. Shown to
   // the teacher only; never to the student or parents, never in a mark.
   typedChars   Int                  @default(0) @map("typed_chars")
@@ -4156,8 +4159,30 @@ model AssignmentSubmission {
   returnedBy   String?              @map("returned_by")
   returnedAt   DateTime?            @map("returned_at")
   returnNote   String?              @map("return_note")
+  files        AssignmentSubmissionFile[]
 
   @@unique([collectionId, studentId, attempt])
   @@index([schoolId, studentId])
   @@map("assignment_submissions")
+}
+
+// Phase 9 / CP4.2 — a photo or PDF answer (Q8). STAGED while submissionId is
+// null (the student is getting ready to hand in); attached, and final, once
+// the attempt is handed in. Type from the file's own bytes (F1).
+model AssignmentSubmissionFile {
+  id           String                @id @default(uuid())
+  schoolId     String                @map("school_id")
+  collectionId String                @map("collection_id")
+  collection   AssignmentCollection  @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  studentId    String                @map("student_id")
+  student      Student               @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  submissionId String?               @map("submission_id")
+  submission   AssignmentSubmission? @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  ext          String
+  size         Int
+  createdAt    DateTime              @default(now()) @map("created_at")
+
+  @@index([collectionId, studentId])
+  @@index([submissionId])
+  @@map("assignment_submission_files")
 }

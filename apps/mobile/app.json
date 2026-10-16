@@ -43,8 +43,8 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Allow School Kit to attach a photo of a receipt to an expense.",
-          "cameraPermission": "Allow School Kit to take a photo of a receipt for an expense.",
+          "photosPermission": "Allow School Kit to attach a photo of a receipt, a record or your schoolwork.",
+          "cameraPermission": "Allow School Kit to take a photo of a receipt or your schoolwork.",
           "microphonePermission": false
         }
       ],

@@ -1900,3 +1900,63 @@ Each slice is one PR, merged before the next starts.
     sees the mark and feedback but never the answer or the paste figure.
   - Every new screen was checked at 320px and 390px on the website, the
     parent website and the app.
+
+### 11.8 As built — CP4.2, file answers (2026-10-16)
+
+- **Data:** migration `20261026120000_assignment_submission_files`:
+  - Adds `assignment_submission_files` (the collected homework, the student,
+    the attempt once handed in, the file's type and size), with RLS forced.
+    `CHECK`s keep the type to the four F1 allows and the size within 10 MB.
+  - Makes an attempt's text optional, so an attempt may be files alone. It
+    still needs text or at least one file.
+  - No new permission and no SECURITY DEFINER function; the count stays 23.
+- **How a file travels:** a new `submission-file` storage key,
+  `schools/<school>/submissions/<id>.<ext>`.
+  - The student attaches up to three photos or PDFs one at a time. On a weak
+    signal a failed photo is retried alone, not the whole batch.
+  - Each file is typed by its own bytes (F1) and **staged**: it belongs to the
+    student and the homework, with no attempt yet. The student can remove a
+    staged file.
+  - **Hand it in** sends the text (if any) and attaches every staged file to
+    the new attempt, as final as its text. A handed-in file can't be removed.
+  - Nobody but the student sees a staged file.
+- **API:**
+  - Student: `POST /student-portal/me/assignments/:id/files` (multipart)
+    stages a file. `DELETE …/files/:fileId` removes a staged one.
+    `GET /student-portal/me/assignments/files/:fileId` gives the student's own
+    five-minute link.
+  - `GET /assignments/files/:fileId` (`assignment.read`): staff open a
+    handed-in file, held to the teacher's own class and subject pairs.
+  - `GET /portal/students/:id/assignment-files/:fileId`: a linked guardian
+    opens a handed-in file. A staged file reads as not found.
+  - The DTOs carry each attempt's files, the student's staged files, the
+    roster's file count, and the family's latest handed-in files.
+  - Every read is audited, with the reader's kind (staff, student, guardian).
+    So are staging and removing.
+- **Screens:**
+  - Student app: the hand-in screen gains **Take a photo**, **Choose a photo**
+    and **Choose a PDF**, the staged list with **View** and **Remove**, and
+    the files on each attempt. Handing in is possible with files alone.
+  - Staff app and teacher website: each attempt shows **View photo** /
+    **View PDF**, and the roster shows the file count.
+  - Parent app and website: the handed-in files under each item's status.
+- **App permission wording** (`app.json`) now names schoolwork as well as
+  receipts. The new wording shows after the app is next built.
+- **Tests:**
+  - 3 new service tests:
+    - staging up to three, a disguised file refused, a staged file removed;
+    - handing in with files alone, after which a file can't be removed or
+      added;
+    - the teacher can't open a staged file, and another class's teacher is
+      refused;
+    - the student and a linked guardian open handed-in files, and an
+      unlinked guardian is refused;
+    - an attempt needs text or a file;
+    - a guardian never reaches a staged file.
+  - The storage path for `submission-file`, and permission coverage for the
+    staff file route.
+  - e2e `assignment-files.spec.ts`: the teacher and the parent each open a
+    handed-in PDF through its link, and a staged photo is not on the
+    parent's page.
+  - The student's attach screen, the staff app's and website's marking
+    views with files were checked at 320px and 390px.

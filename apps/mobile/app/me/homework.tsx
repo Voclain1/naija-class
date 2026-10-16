@@ -2,7 +2,7 @@ import { RefreshControl, ScrollView, StyleSheet } from "react-native";
 import { Redirect, Stack, useRouter } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
 
-import { studentAssignments, studentHomework } from "../../src/lib/api/student-portal";
+import { studentAssignments, studentFileUrl, studentHomework } from "../../src/lib/api/student-portal";
 import { PastWorkList } from "../../src/components/past-work-list";
 import { queryKeys } from "../../src/lib/query/keys";
 import { HomeworkList } from "../../src/components/homework-list";
@@ -101,9 +101,9 @@ export default function MyHomeworkScreen() {
                 body="Homework your teachers set will appear here."
               />
             ) : (
-              <HomeworkList items={data.data} today={today} tomorrow={tomorrow} work={workById} onOpenWork={open} />
+              <HomeworkList items={data.data} today={today} tomorrow={tomorrow} work={workById} onOpenWork={open} fileUrl={studentFileUrl} />
             )}
-            <PastWorkList items={earlier} onOpen={open} />
+            <PastWorkList items={earlier} onOpen={open} fileUrl={studentFileUrl} />
           </>
         )}
       </ScrollView>

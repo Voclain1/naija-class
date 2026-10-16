@@ -1,9 +1,15 @@
 import { StyleSheet, Text, View } from "react-native";
-import { describeWorkStatus, type FamilyAssignmentDto, type HomeworkFeedItemDto } from "@school-kit/types";
+import {
+  describeWorkStatus,
+  type AssignmentFileUrlDto,
+  type FamilyAssignmentDto,
+  type HomeworkFeedItemDto,
+} from "@school-kit/types";
 
 import { useTheme } from "../theme/theme-provider";
 import { fontSizes, fonts, radii, spacing } from "../theme/tokens";
 import { groupHomework } from "../lib/family/homework";
+import { SubmissionFiles } from "./submission-files";
 import { Body, Button, Caption, Card, Heading, Label } from "./ui";
 
 // Homework as a family reads it (docs/modules/the-school-day.md Part B).
@@ -28,6 +34,7 @@ export function HomeworkList({
   tomorrow,
   work,
   onOpenWork,
+  fileUrl,
 }: {
   items: readonly HomeworkFeedItemDto[];
   today: string;
@@ -39,6 +46,8 @@ export function HomeworkList({
   work?: ReadonlyMap<string, FamilyAssignmentDto>;
   /** The student's own screen: open an item to hand work in or read it. */
   onOpenWork?: (homeworkId: string) => void;
+  /** CP4.2 — the link call for a handed-in file, when this viewer may open files. */
+  fileUrl?: (fileId: string) => Promise<AssignmentFileUrlDto>;
 }) {
   const { colors } = useTheme();
 
@@ -83,6 +92,7 @@ export function HomeworkList({
                     </Label>
                     {w.feedback ? <Caption>{w.feedback}</Caption> : null}
                     {w.status === "RETURNED" && w.returnNote ? <Caption>Teacher: {w.returnNote}</Caption> : null}
+                    {fileUrl ? <SubmissionFiles files={w.files} getUrl={fileUrl} /> : null}
                   </View>
                 ) : null}
                 {item.collectsWork && onOpenWork ? (

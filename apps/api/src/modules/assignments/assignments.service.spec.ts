@@ -1,3 +1,7 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { basePrisma, withTenant } from "@school-kit/db";
@@ -7,10 +11,13 @@ import {
   NotFoundError,
   ValidationError,
   addDaysIso,
+  describeSubmissionFile,
   lagosTodayIso,
   submitWorkSchema,
 } from "@school-kit/types";
 
+import { FilesystemStorageDriver } from "../../common/storage/filesystem-storage.driver";
+import { StorageService } from "../../common/storage/storage.service";
 import { AuthService } from "../auth/auth.service";
 import { AssignmentsService, clampCounts, isLate, statusOf } from "./assignments.service";
 
@@ -25,6 +32,8 @@ const reqCtx = { ipAddress: "127.0.0.1" };
 const day = (iso: string) => new Date(`${iso}T00:00:00.000Z`);
 const ANSWER = "Photosynthesis turns light, water and carbon dioxide into sugar and oxygen.";
 const FEEDBACK = "Good. Say where it happens in the leaf.";
+const PDF = Buffer.from("%PDF-1.4\n1 0 obj << >> endobj\ntrailer << >>\n%%EOF\n");
+const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(32, 1)]);
 
 function ctx(schoolId: string, userId: string) {
   return { sessionId: `sess-${runId}`, schoolId, userId };
@@ -49,7 +58,8 @@ async function makeSchool(label: string) {
 }
 
 describe("AssignmentsService (integration)", () => {
-  const service = new AssignmentsService();
+  const storageRoot = mkdtempSync(join(tmpdir(), "assignment-files-"));
+  const service = new AssignmentsService(new StorageService(new FilesystemStorageDriver(storageRoot)));
   const schoolIds = new Set<string>();
 
   let A: {
@@ -150,6 +160,7 @@ describe("AssignmentsService (integration)", () => {
   afterAll(async () => {
     for (const id of schoolIds) await basePrisma.school.delete({ where: { id } }).catch(() => undefined);
     await basePrisma.$disconnect();
+    rmSync(storageRoot, { recursive: true, force: true });
   });
 
   const today = () => lagosTodayIso();
@@ -263,6 +274,58 @@ describe("AssignmentsService (integration)", () => {
     });
   });
 
+  describe("file answers (CP4.2, Q8)", () => {
+    it("a student stages up to three files, hands in with files alone, and they become part of the attempt", async () => {
+      const id = await A.homework(addDaysIso(today(), 2), "Draw the leaf");
+      await service.collect(ctx(A.schoolId, A.teacherId), id, { totalMarks: 10 }, reqCtx);
+      await expect(service.stageFile(A.schoolId, A.child, id, Buffer.from("not a picture at all"))).rejects.toBeInstanceOf(ValidationError);
+      await service.stageFile(A.schoolId, A.child, id, PNG);
+      await service.stageFile(A.schoolId, A.child, id, PDF);
+      const third = await service.stageFile(A.schoolId, A.child, id, PNG);
+      expect(third.stagedFiles.map((f) => f.type)).toEqual(["image", "pdf", "image"]);
+      await expect(service.stageFile(A.schoolId, A.child, id, PNG)).rejects.toBeInstanceOf(ConflictError);
+      const fewer = await service.removeStagedFile(A.schoolId, A.child, id, third.stagedFiles[2]!.id);
+      expect(fewer.stagedFiles).toHaveLength(2);
+
+      // The teacher can't see staged files: they are not handed in yet.
+      await expect(service.fileUrlForStaff(ctx(A.schoolId, A.teacherId), third.stagedFiles[0]!.id, reqCtx)).rejects.toBeInstanceOf(NotFoundError);
+
+      const mine = await service.submitForStudent(A.schoolId, A.child, id, submitWorkSchema.parse({}));
+      expect(mine.stagedFiles).toEqual([]);
+      expect(mine.attempts[0]).toMatchObject({ body: null });
+      expect(mine.attempts[0]!.files.map((f) => f.type)).toEqual(["image", "pdf"]);
+      const fileId = mine.attempts[0]!.files[1]!.id;
+      // Handed in is final: no removing, and no staging more.
+      await expect(service.removeStagedFile(A.schoolId, A.child, id, fileId)).rejects.toBeInstanceOf(NotFoundError);
+      await expect(service.stageFile(A.schoolId, A.child, id, PNG)).rejects.toBeInstanceOf(ConflictError);
+
+      const roster = (await service.marking(ctx(A.schoolId, A.teacherId), id)).roster.find((r) => r.studentId === A.child)!;
+      expect(roster).toMatchObject({ fileCount: 2, pastedPercent: null });
+      expect((await service.fileUrlForStaff(ctx(A.schoolId, A.teacherId), fileId, reqCtx)).url).toContain(fileId);
+      await expect(service.fileUrlForStaff(ctx(A.schoolId, A.otherTeacherId), fileId, reqCtx)).rejects.toBeInstanceOf(ForbiddenError);
+      expect((await service.fileUrlForStudent(A.schoolId, A.child, fileId)).url).toContain(fileId);
+      await expect(service.fileUrlForStudent(A.schoolId, A.classmate, fileId)).rejects.toBeInstanceOf(NotFoundError);
+
+      const family = (await service.listForGuardian(guardianCtx(A.schoolId, A.guardianId), A.child)).data.find((r) => r.assignmentId === id)!;
+      expect(family.files).toHaveLength(2);
+      expect((await service.fileUrlForGuardian(guardianCtx(A.schoolId, A.guardianId), A.child, fileId)).url).toContain(fileId);
+      await expect(service.fileUrlForGuardian(guardianCtx(A.schoolId, A.unlinkedGuardianId), A.child, fileId)).rejects.toBeInstanceOf(ForbiddenError);
+    });
+
+    it("an attempt needs text or a file", async () => {
+      const id = await A.homework(addDaysIso(today(), 2), "Empty attempt");
+      await service.collect(ctx(A.schoolId, A.teacherId), id, { totalMarks: 10 }, reqCtx);
+      await expect(service.submitForStudent(A.schoolId, A.child, id, submitWorkSchema.parse({ body: "   " }))).rejects.toBeInstanceOf(ValidationError);
+    });
+
+    it("a guardian never reaches a staged file", async () => {
+      const id = await A.homework(addDaysIso(today(), 2), "Staged only");
+      await service.collect(ctx(A.schoolId, A.teacherId), id, { totalMarks: 10 }, reqCtx);
+      const staged = (await service.stageFile(A.schoolId, A.child, id, PDF)).stagedFiles[0]!.id;
+      await expect(service.fileUrlForGuardian(guardianCtx(A.schoolId, A.guardianId), A.child, staged)).rejects.toBeInstanceOf(NotFoundError);
+    });
+  });
+
   describe("families", () => {
     it("an unlinked guardian and another school's guardian get nothing", async () => {
       await expect(service.listForGuardian(guardianCtx(A.schoolId, A.unlinkedGuardianId), A.child)).rejects.toBeInstanceOf(ForbiddenError);
@@ -277,6 +340,15 @@ describe("AssignmentsService (integration)", () => {
       expect(list.data.map((r) => r.assignmentId)).not.toContain(id);
       await expect(service.getForStudent(A.schoolId, A.child, id)).rejects.toBeInstanceOf(NotFoundError);
     });
+  });
+
+  it("names files the same way on every screen", () => {
+    const files = [
+      { id: "a", type: "image" as const, size: 1 },
+      { id: "b", type: "pdf" as const, size: 1 },
+      { id: "c", type: "image" as const, size: 1 },
+    ];
+    expect(files.map((_, i) => describeSubmissionFile(files, i))).toEqual(["photo 1", "PDF", "photo 2"]);
   });
 
   it("the rules in isolation", () => {
@@ -294,7 +366,16 @@ describe("AssignmentsService (integration)", () => {
   it("every write is audited, and the audit log holds no answer or feedback text", async () => {
     const rows = await withTenant(A.schoolId, (db) => db.auditLog.findMany({ where: { action: { startsWith: "assignment." } } }));
     expect(new Set(rows.map((r) => r.action))).toEqual(
-      new Set(["assignment.collect", "assignment.submit", "assignment.mark", "assignment.return", "assignment.release"]),
+      new Set([
+        "assignment.collect",
+        "assignment.submit",
+        "assignment.mark",
+        "assignment.return",
+        "assignment.release",
+        "assignment.file.stage",
+        "assignment.file.remove",
+        "assignment.file.read",
+      ]),
     );
     expect(JSON.stringify(rows.map((r) => r.metadata))).not.toMatch(/Photosynthesis turns|leaf|Explain each part|Too short/);
   });

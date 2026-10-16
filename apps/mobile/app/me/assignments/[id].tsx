@@ -1,6 +1,8 @@
 import { useRef, useState } from "react";
 import { Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, TextInput, View } from "react-native";
 import { Redirect, Stack, useLocalSearchParams } from "expo-router";
+import * as DocumentPicker from "expo-document-picker";
+import * as ImagePicker from "expo-image-picker";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ASSIGNMENT_LIMITS, describeWorkStatus, type MyAssignmentDto } from "@school-kit/types";
 
@@ -8,7 +10,15 @@ import { ScreenHeader, Skeleton } from "../../../src/components/layout";
 import { LoadError } from "../../../src/components/load-error";
 import { Body, Button, Caption, Card, Label, Screen } from "../../../src/components/ui";
 import { ApiError } from "../../../src/lib/api/client";
-import { studentAssignment, submitStudentWork } from "../../../src/lib/api/student-portal";
+import { SubmissionFiles } from "../../../src/components/submission-files";
+import { uploadFailureDetail } from "../../../src/lib/api/native-upload";
+import {
+  removeStagedStudentFile,
+  stageStudentFile,
+  studentAssignment,
+  studentFileUrl,
+  submitStudentWork,
+} from "../../../src/lib/api/student-portal";
 import { useSession } from "../../../src/lib/auth/session";
 import { countChange, type PasteCounts } from "../../../src/lib/family/paste-counter";
 import { queryKeys } from "../../../src/lib/query/keys";
@@ -21,6 +31,10 @@ import { fontSizes, fonts, radii, spacing } from "../../../src/theme/tokens";
 //
 // The answer box counts typed and pasted characters (Q7). The student is told
 // so; the teacher sees "about N% pasted"; it never changes a mark.
+//
+// CP4.2 (Q8): up to three photos or PDFs, 10 MB each, e.g. a photo of
+// handwritten work. Each is uploaded on its own and waits until "Hand it in",
+// which sends the text (if any) and the files as one attempt.
 //
 // Kept off the phone's storage: the answer and the mark stay in memory.
 
@@ -59,6 +73,45 @@ export default function HandInWorkScreen() {
     enabled: authed && homeworkId !== "",
     meta: { persist: false },
   });
+
+  const settle = (next: MyAssignmentDto) => queryClient.setQueryData(queryKeys.myAssignment(homeworkId), next);
+  const stage = useMutation({
+    mutationFn: (file: { uri: string; mimeType: string }) => stageStudentFile(homeworkId, file.uri, file.mimeType),
+    onSuccess: settle,
+    onError: (e) =>
+      Alert.alert(
+        "Not attached",
+        e instanceof ApiError ? e.message : (uploadFailureDetail(e) ?? "Check your connection and try again."),
+      ),
+  });
+  const unstage = useMutation({
+    mutationFn: (fileId: string) => removeStagedStudentFile(homeworkId, fileId),
+    onSuccess: settle,
+    onError: (e) => Alert.alert("Not removed", e instanceof ApiError ? e.message : "Try again in a moment."),
+  });
+
+  async function addPhoto(fromCamera: boolean): Promise<void> {
+    const permission = fromCamera
+      ? await ImagePicker.requestCameraPermissionsAsync()
+      : await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert(
+        fromCamera ? "Camera needed" : "Photos needed",
+        fromCamera ? "School Kit needs the camera to photograph your work." : "School Kit needs your photos to attach your work.",
+      );
+      return;
+    }
+    const options: ImagePicker.ImagePickerOptions = { mediaTypes: ["images"], quality: 0.7, exif: false };
+    const result = fromCamera ? await ImagePicker.launchCameraAsync(options) : await ImagePicker.launchImageLibraryAsync(options);
+    const asset = result.canceled ? null : result.assets[0];
+    if (asset) stage.mutate({ uri: asset.uri, mimeType: asset.mimeType ?? "image/jpeg" });
+  }
+
+  async function addPdf(): Promise<void> {
+    const result = await DocumentPicker.getDocumentAsync({ type: "application/pdf", copyToCacheDirectory: true });
+    const asset = result.canceled ? null : result.assets[0];
+    if (asset) stage.mutate({ uri: asset.uri, mimeType: asset.mimeType ?? "application/pdf" });
+  }
 
   const submit = useMutation({
     mutationFn: () =>
@@ -138,10 +191,28 @@ export default function HandInWorkScreen() {
                     Your teacher sees how much of your answer was typed and how much was pasted. Write it in your own
                     words.
                   </Caption>
+                  <Label>Photos or PDFs</Label>
+                  <Caption>
+                    Up to {ASSIGNMENT_LIMITS.files}, 10 MB each. A photo of your written work is fine. Only your teacher,
+                    the school and your parents can open them.
+                  </Caption>
+                  <SubmissionFiles
+                    files={d.stagedFiles}
+                    getUrl={studentFileUrl}
+                    onRemove={(fileId) => unstage.mutate(fileId)}
+                    removing={unstage.isPending}
+                  />
+                  {d.stagedFiles.length < ASSIGNMENT_LIMITS.files ? (
+                    <View style={styles.buttons}>
+                      <Button title="Take a photo" variant="secondary" loading={stage.isPending} onPress={() => void addPhoto(true)} />
+                      <Button title="Choose a photo" variant="secondary" disabled={stage.isPending} onPress={() => void addPhoto(false)} />
+                      <Button title="Choose a PDF" variant="secondary" disabled={stage.isPending} onPress={() => void addPdf()} />
+                    </View>
+                  ) : null}
                   <Button
                     title="Hand it in"
                     loading={submit.isPending}
-                    disabled={text.trim() === ""}
+                    disabled={(text.trim() === "" && d.stagedFiles.length === 0) || stage.isPending}
                     onPress={confirmSubmit}
                   />
                 </Card>
@@ -157,9 +228,12 @@ export default function HandInWorkScreen() {
                     {d.attempts.length > 1 ? `Attempt ${a.attempt} · ` : ""}handed in {when(a.submittedAt)}
                     {a.late ? " · late" : ""}
                   </Label>
-                  <View style={[styles.answer, { backgroundColor: `${colors.mutedForeground}14` }]}>
-                    <Body>{a.body}</Body>
-                  </View>
+                  {a.body ? (
+                    <View style={[styles.answer, { backgroundColor: `${colors.mutedForeground}14` }]}>
+                      <Body>{a.body}</Body>
+                    </View>
+                  ) : null}
+                  <SubmissionFiles files={a.files} getUrl={studentFileUrl} />
                   {a.returnNote ? <Caption>Returned by your teacher: {a.returnNote}</Caption> : null}
                   {a.mark !== null ? (
                     <Label>
@@ -189,4 +263,5 @@ const styles = StyleSheet.create({
     fontSize: fontSizes.body,
   },
   answer: { padding: spacing.sm, borderRadius: radii.sm },
+  buttons: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
 });

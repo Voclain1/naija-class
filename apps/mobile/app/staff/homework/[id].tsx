@@ -12,6 +12,7 @@ import {
 } from "@school-kit/types";
 
 import { TextField } from "../../../src/components/form";
+import { SubmissionFiles } from "../../../src/components/submission-files";
 import { ScreenHeader, Skeleton } from "../../../src/components/layout";
 import { LoadError } from "../../../src/components/load-error";
 import { Body, Button, Caption, Card, Label, Screen } from "../../../src/components/ui";
@@ -21,6 +22,7 @@ import {
   markStaffSubmission,
   releaseStaffMarks,
   returnStaffSubmission,
+  staffAssignmentFileUrl,
   staffMarking,
   staffStudentWork,
 } from "../../../src/lib/api/staff-homework";
@@ -96,13 +98,18 @@ function Attempt({
         Attempt {attempt.attempt} · {when(attempt.submittedAt)}
         {attempt.late ? " · late" : ""}
       </Label>
-      <View style={[styles.answer, { backgroundColor: `${colors.mutedForeground}14` }]}>
-        <Body>{attempt.body}</Body>
-      </View>
-      <Caption>
-        About {attempt.pastedPercent}% was pasted rather than typed, as the student&apos;s phone reported it. Not a
-        judgement, and never part of the mark. The student and parents don&apos;t see it.
-      </Caption>
+      {attempt.body ? (
+        <>
+          <View style={[styles.answer, { backgroundColor: `${colors.mutedForeground}14` }]}>
+            <Body>{attempt.body}</Body>
+          </View>
+          <Caption>
+            About {attempt.pastedPercent}% was pasted rather than typed, as the student&apos;s phone reported it. Not a
+            judgement, and never part of the mark. The student and parents don&apos;t see it.
+          </Caption>
+        </>
+      ) : null}
+      <SubmissionFiles files={attempt.files} getUrl={staffAssignmentFileUrl} />
       {attempt.returnedAt ? <Caption>Returned: {attempt.returnNote}</Caption> : null}
       {canWork ? (
         <>
@@ -277,6 +284,7 @@ export default function HandedInWorkScreen() {
                       {row.late ? " · late" : ""}
                       {row.mark !== null ? ` · ${row.mark}/${d.collection.totalMarks}${row.released ? " released" : ""}` : ""}
                       {row.attempts > 1 ? ` · ${row.attempts} attempts` : ""}
+                      {row.fileCount > 0 ? ` · ${row.fileCount} file${row.fileCount === 1 ? "" : "s"}` : ""}
                     </Caption>
                   </Pressable>
                   {open === row.studentId ? (

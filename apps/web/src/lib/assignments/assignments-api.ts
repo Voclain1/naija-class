@@ -3,6 +3,7 @@
 // Owner, admin and the class's teachers; never the bursar.
 
 import type {
+  AssignmentFileUrlDto,
   AssignmentMarkingDto,
   CollectWorkInput,
   MarkSubmissionInput,
@@ -36,4 +37,9 @@ export function returnSubmission(submissionId: string, input: ReturnSubmissionIn
 
 export function releaseMarks(homeworkId: string): Promise<AssignmentMarkingDto> {
   return apiFetch<AssignmentMarkingDto>(`/assignments/${enc(homeworkId)}/release`, { method: "POST" });
+}
+
+// Phase 9 / CP4.2 — a five-minute link to a handed-in photo or PDF, audited.
+export function getAssignmentFileUrl(fileId: string): Promise<AssignmentFileUrlDto> {
+  return apiFetch<AssignmentFileUrlDto>(`/assignments/files/${enc(fileId)}`);
 }
