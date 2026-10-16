@@ -29,6 +29,7 @@ import { BehaviourController } from "../modules/behaviour/behaviour.controller";
 import { DisciplineController } from "../modules/behaviour/discipline.controller";
 import { HealthController } from "../modules/health/health.controller";
 import { SickbayController } from "../modules/health/sickbay.controller";
+import { AssignmentsController } from "../modules/assignments/assignments.controller";
 import { CalendarController } from "../modules/calendar/calendar.controller";
 import { ReportsController } from "../modules/reports/reports.controller";
 import { TableExportsController } from "../modules/reports/table-exports.controller";
@@ -1514,5 +1515,33 @@ describe("Phase 9 CP3.3 RBAC coverage: the sickbay log", () => {
     for (const handler of ["list", "create", "addMedication", "withdraw"]) {
       expect(perms(handler), handler).toEqual(["sickbay.manage"]);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 9 / CP4 — assignments: submitted work and marking
+// (docs/modules/phase-9.md §11 CP4-D2). Owner, admin and teacher; never the
+// bursar, although the bursar reads the homework list.
+// ---------------------------------------------------------------------------
+describe("Phase 9 CP4 RBAC coverage: submitted work and marking", () => {
+  const perms = (handler: string): string[] =>
+    Reflect.getMetadata(
+      PERMISSIONS_METADATA_KEY,
+      (AssignmentsController.prototype as unknown as Record<string, object>)[handler]!,
+    ) as string[];
+
+  it("reading needs assignment.read; everything that changes work needs assignment.mark", () => {
+    for (const handler of ["marking", "studentWork"]) expect(perms(handler), handler).toEqual(["assignment.read"]);
+    for (const handler of ["collect", "mark", "returnWork", "release"]) expect(perms(handler), handler).toEqual(["assignment.mark"]);
+  });
+
+  it("admin and teacher hold both; the bursar holds neither", () => {
+    for (const key of ["admin", "teacher"]) {
+      const held = new Set(roleSeed(key).permissions);
+      for (const p of ["assignment.read", "assignment.mark"]) expect(held.has(p), `${key} ${p}`).toBe(true);
+    }
+    const bursar = new Set(roleSeed("bursar").permissions);
+    for (const p of ["assignment.read", "assignment.mark"]) expect(bursar.has(p), `bursar must not hold ${p}`).toBe(false);
+    expect(bursar.has("homework.read")).toBe(true);
   });
 });

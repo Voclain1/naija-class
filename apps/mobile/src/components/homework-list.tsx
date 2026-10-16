@@ -1,10 +1,10 @@
 import { StyleSheet, Text, View } from "react-native";
-import type { HomeworkFeedItemDto } from "@school-kit/types";
+import { describeWorkStatus, type FamilyAssignmentDto, type HomeworkFeedItemDto } from "@school-kit/types";
 
 import { useTheme } from "../theme/theme-provider";
 import { fontSizes, fonts, radii, spacing } from "../theme/tokens";
 import { groupHomework } from "../lib/family/homework";
-import { Body, Card, Heading, Label } from "./ui";
+import { Body, Button, Caption, Card, Heading, Label } from "./ui";
 
 // Homework as a family reads it (docs/modules/the-school-day.md Part B).
 // Shared by the student and parent screens, like AnnouncementFeed: the same
@@ -26,10 +26,19 @@ export function HomeworkList({
   items,
   today,
   tomorrow,
+  work,
+  onOpenWork,
 }: {
   items: readonly HomeworkFeedItemDto[];
   today: string;
   tomorrow: string;
+  /**
+   * Phase 9 / CP4.1 — where the child stands on each item that collects work,
+   * keyed by homework id. The mark is in it only once the teacher released it.
+   */
+  work?: ReadonlyMap<string, FamilyAssignmentDto>;
+  /** The student's own screen: open an item to hand work in or read it. */
+  onOpenWork?: (homeworkId: string) => void;
 }) {
   const { colors } = useTheme();
 
@@ -45,12 +54,16 @@ export function HomeworkList({
           >
             {group.label}
           </Text>
-          {group.items.map((item) => (
+          {group.items.map((item) => {
+            const w = work?.get(item.id);
+            // Work handed in is not "late homework", whatever the date says.
+            const handedIn = w !== undefined && w.status !== "NOT_SUBMITTED" && w.status !== "RETURNED";
+            return (
             <Card key={item.id}>
               <View style={styles.row}>
                 <View style={styles.titleRow}>
                   <Heading>{item.title}</Heading>
-                  {group.overdue ? (
+                  {group.overdue && !handedIn ? (
                     <View style={[styles.badge, { backgroundColor: colors.danger }]}>
                       <Text style={[styles.badgeText, { color: colors.background }]}>Late</Text>
                     </View>
@@ -61,9 +74,28 @@ export function HomeworkList({
                   {item.postedByName ? ` · ${item.postedByName}` : ""}
                 </Label>
                 {item.instructions ? <Body>{item.instructions}</Body> : null}
+                {w ? (
+                  <View style={[styles.work, { backgroundColor: `${colors.primary}12` }]}>
+                    <Label>
+                      {describeWorkStatus(w.status)}
+                      {w.late && w.status !== "NOT_SUBMITTED" ? " · late" : ""}
+                      {w.mark !== null ? ` · ${w.mark}/${w.totalMarks}` : ""}
+                    </Label>
+                    {w.feedback ? <Caption>{w.feedback}</Caption> : null}
+                    {w.status === "RETURNED" && w.returnNote ? <Caption>Teacher: {w.returnNote}</Caption> : null}
+                  </View>
+                ) : null}
+                {item.collectsWork && onOpenWork ? (
+                  <Button
+                    title={w && w.status !== "NOT_SUBMITTED" && w.status !== "RETURNED" ? "View my work" : "Hand in work"}
+                    variant="secondary"
+                    onPress={() => onOpenWork(item.id)}
+                  />
+                ) : null}
               </View>
             </Card>
-          ))}
+            );
+          })}
         </View>
       ))}
     </>
@@ -77,4 +109,5 @@ const styles = StyleSheet.create({
   titleRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, flexWrap: "wrap" },
   badge: { borderRadius: radii.sm, paddingHorizontal: spacing.sm, paddingVertical: 2 },
   badgeText: { fontFamily: fonts.sansSemibold, fontSize: fontSizes.caption },
+  work: { gap: spacing.xs, padding: spacing.sm, borderRadius: radii.sm },
 });

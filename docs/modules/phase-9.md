@@ -102,7 +102,7 @@ blocked by it.
 | Q5 | **WhatsApp Business.** Needs a Meta-approved business number and a provider (Termii proxies it). That is your side, not code. | Build the channel behind a per-school switch with SMS fallback, but only once you have an approved number. Until then, keep the `wa.me` share links that already work. | CP9 |
 | Q6 | **AI and children's text** (essay feedback, message translation). **Owner, 2026-10-14:** students get no AI writing help of any kind; they type or paste their own work. **Owner, 2026-10-14: approved** for teachers — AI may draft marking feedback, name removed, teacher approves (CP4b). The `assignment-feedback` allowlist row is added to `CLAUDE.md` in CP4b's own PR, as a visible edit. Translation stays unbuilt. Both send text that may name children. | **Essays:** strip the student's own name and send only the answer text, under a new prompt that **you** add to the allowlist table by name. Feedback is a draft the teacher approves. **Translation:** do not build until you have decided; it is the weaker case (a parent can use their phone's own translator), and it would be a second allowlist row. | CP4b, CP9 |
 | Q7 | **Detecting AI-written student work** (spec §6.8). | **Do not build.** These detectors are unreliable, and a false "you cheated" against a child is a real harm. Offer the in-class similarity check (plagiarism between submissions) instead. **Owner, 2026-10-14:** no detector. Approved instead: the similarity check, and a **paste indicator** (the teacher sees how much of a typed answer was pasted rather than typed — a fact, never an accusation, and it never changes a mark). | CP4 |
-| Q8 | **Students uploading files** (photos of handwritten work). The student account has no upload today. | Yes, from the app only, images and PDF up to 10 MB, three files per submission. They are stored privately and visible only to the teacher, admin, the student and that student's linked guardians. | CP4 |
+| Q8 | **Students uploading files** (photos of handwritten work). The student account has no upload today. | Yes, from the app only, images and PDF up to 10 MB, three files per submission. They are stored privately and visible only to the teacher, admin, the student and that student's linked guardians. **Owner, 2026-10-16: approved as recommended.** | CP4 |
 | Q9 | **Online admissions: public form.** Strangers can submit a child's details and documents. | Yes, behind a per-school switch, with rate limits, a hidden honeypot field (new; nothing in the codebase uses one yet), an NDPR consent tickbox, and a 90-day purge of rejected applications. Accepting creates the student through the existing create path. | CP7 |
 | Q10 | **Fee-default risk** (spec says AI). | **Rules, not AI.** A transparent score from payment history (late terms, part-payments, current balance), shown only to owner, admin and bursar, with the reasons listed. No family data goes to a model. | CP10 |
 | Q11 | **Excel export** needs one new library (`exceljs`, MIT). | Yes. CSV stays the default. **Owner, 2026-10-14: approved, and PDF too wherever possible.** | CP1 |
@@ -1623,3 +1623,280 @@ CP3 is complete with this slice.
   - `/sickbay` was added to `phone-fit.spec.ts`. The page, the form, the
     child's section, the parent website and both app cards were checked at
     320px and 390px.
+
+## 11. CP4 plan-first — Assignments: submissions and marking
+
+Written 2026-10-16. **Owner, 2026-10-16: approved as written**, with my
+recommendations taken for Q8 (CP4-D5), for no push on returned work or
+released marks (CP4-D10), and for exact fill-in matching (CP4-D6).
+
+### 11.1 What exists today (read from the code)
+
+- **Homework** (`the-school-day.md` Part B) is the `Assignment` model
+  (`assignments`): class arm, subject, title, instructions, `due_date` as a
+  `DATE`, posted, withdrawn. B7 says it is information, not workflow, and its
+  schema comment says submissions, if built, get **their own plan and their
+  own table**. The model must not grow a `submittedAt`.
+  - Routes: staff `POST/GET /homework` and `POST /homework/:id/withdraw`
+    (`homework.create` / `homework.read`), guardian
+    `GET /portal/students/:id/homework`, student
+    `GET /student-portal/me/homework`.
+  - Who may read: owner, admin and teacher (`homework.read`/`create`), and the
+    bursar (`homework.read`, for the counter lookup).
+  - Where it shows: teacher and admin web, staff app, student app (`me/homework`),
+    parent app. **The parent website has no homework view at all.**
+- **Question bank:** types are `MULTIPLE_CHOICE`, `SHORT_ANSWER` and `THEORY`.
+  **There is no fill-in-the-blank type.** Online exams mark multiple choice
+  only, by exact option id (`cbt-marking.ts`); no text-answer marking or
+  normalisation exists anywhere.
+- **Gradebook:** online exams push results through
+  `POST /assessment-scores/preview`, then `POST /assessment-scores/bulk`, with
+  raw marks scaled by D60 (`scaleRawMark`, round half up). Teacher scope,
+  enrolment and sign-off rules apply there already.
+- **Students upload nothing today.** F1 (CP3.2) gives a checked, private
+  upload: images and PDF, at most 10 MB, typed by the file's own bytes, read
+  through five-minute links.
+- **No text-similarity code exists** (only an eval-only Levenshtein in
+  `packages/ai/evals`).
+
+### 11.2 Decisions taken here (owner may overrule any)
+
+- **CP4-D1. "Collect work" is a separate record, not new homework columns.**
+  - A teacher switches it on for one homework item; that creates an
+    `assignment_collections` row for it (one per homework item) holding: the
+    total marks, which kinds of answer are accepted (typed text, files,
+    questions), and whether work is still being accepted.
+  - Homework without it behaves exactly as today. B7's rule holds: the
+    `assignments` table gains nothing.
+- **CP4-D2. Who may read and mark.**
+  - Two new permissions in their own constant: `assignment.read` (see
+    submissions) and `assignment.mark` (mark, return, release, push to the
+    gradebook). Owner, admin and teacher hold both; **the bursar holds
+    neither**, although the bursar keeps reading the homework list. Children's
+    work is not a counter matter.
+  - A teacher is held to their own class and subject pairs, as homework and
+    the gradebook already are.
+  - A student sees only their own submissions. A guardian sees only their
+    linked children's.
+- **CP4-D3. Submitting.**
+  - One submission per student per attempt. A submitted attempt is final:
+    the student cannot change it unless the teacher **returns** it for
+    resubmission, which opens a new attempt. Earlier attempts are kept, never
+    overwritten.
+  - Work is accepted before and after the due date until the teacher clicks
+    **Stop accepting work**. Work submitted after the due date's school day
+    (Lagos) is marked **late**, worked out by the server.
+  - Withdrawing the homework item hides the assignment from students and
+    parents; its submissions are kept.
+  - Students get no AI help of any kind (owner, 2026-10-14).
+- **CP4-D4. Typed answers and the paste indicator (Q7).**
+  - The answer box counts characters typed and characters pasted, and sends
+    both with the text. The server clamps them to the text's length.
+  - The teacher sees "about 80% pasted" beside the answer, with the note "a
+    fact about how the text arrived, not a judgement". Pasting is allowed.
+    The student and parent never see it, and it never changes a mark.
+  - It is reported by the student's own device, so it can be wrong; the
+    screen says so.
+- **CP4-D5. File answers (Q8, owner 2026-10-16: as recommended).**
+  - From the **app only**: photos or PDFs, at most **3 files per attempt**,
+    10 MB each, checked by F1 and stored privately under a new
+    `submission-file` key.
+  - Readable by the teacher, owner and admin, the student, and that
+    student's linked guardians, each through a five-minute link, audited.
+- **CP4-D6. Questions and automatic marking.**
+  - An assignment can carry a short list of questions: **multiple choice**
+    (2–5 options, one correct, the question bank's shape) and **fill in the
+    blank** (the teacher lists every accepted answer).
+  - Multiple choice is marked by option. A fill-in answer is right when it
+    equals an accepted answer after ignoring case, spaces at either end and
+    repeated spaces inside. Nothing fuzzier: no "close enough" spelling.
+  - The automatic mark is shown to the teacher, who can change it before
+    release. A written answer is always marked by hand.
+  - Multiple-choice questions can be copied in from the question bank. The
+    question bank itself does not change (no fill-in type is added to it).
+- **CP4-D7. Manual marking, feedback and release.**
+  - The teacher gives a mark out of the total and written feedback per
+    submission, or returns it for resubmission with a note.
+  - Marks and feedback stay hidden from the student and the parents until the
+    teacher clicks **Release marks** for the assignment. Release can be
+    repeated as more work is marked; a mark changed after release shows the
+    new value.
+- **CP4-D8. The gradebook.** The teacher picks a grading component; the
+  marked submissions go through the existing preview and save
+  (`/assessment-scores/preview`, then `/bulk`) as raw marks scaled by D60. No
+  new gradebook code, and the existing scope, enrolment and sign-off rules
+  apply unchanged.
+- **CP4-D9. The similarity check (Q7).**
+  - On request, for one assignment: every pair of typed answers is compared
+    on overlapping runs of five words (shingles), after removing the words of
+    the assignment's own instructions and questions, so quoting the question
+    is not counted.
+  - Pairs above a set overlap (0.5) are listed for the teacher as "these two
+    answers share a lot of wording: worth a look", with the shared passages
+    highlighted. Answers under 50 words are skipped.
+  - Never called plagiarism, never shown to students or parents, never
+    stored as a finding against a child, never used in a mark. Each run is
+    audited.
+  - Files are not compared (a photo of handwriting has no text to compare).
+- **CP4-D10. Notifications.** None in CP4, as B9 decided for homework. The
+  student's Today band shows "work returned to you" and "marks released"; the
+  parent's child card shows what is due and what was handed in. A push for
+  these is left out on purpose (§11.6).
+- **CP4-D11. Audit.** Every mark, return, release, gradebook push,
+  similarity run and file read is audited. The answer text and feedback never
+  go into audit metadata: ids, counts and flags only.
+
+### 11.3 What gets built
+
+| Slice | What | Where |
+|---|---|---|
+| **CP4.1** | Collect work, typed answers with the paste indicator, manual marking, feedback, return, release; the student's and parents' views | API; teacher web and staff app; student app; parent app and parent website (which also gains the homework list it has never had) |
+| **CP4.2** | File answers (Q8) under the `submission-file` key | API; student app; teacher web and app; parent app and website (view only) |
+| **CP4.3** | Questions and automatic marking, with copying multiple choice in from the question bank | API; teacher web and app; student app |
+| **CP4.4** | The similarity check and the gradebook push | API; teacher web and app |
+
+Each slice is one PR, merged before the next starts.
+
+### 11.4 Data
+
+- **CP4.1:**
+  - `assignment_collections`: the homework item (unique), total marks,
+    accepts typed text, accepts files, accepts questions, accepting work,
+    marks released at.
+  - `assignment_submissions`: the assignment, the student, the attempt
+    number (unique together), the text, typed and pasted character counts,
+    submitted at, late, the mark, feedback, marked by and when, returned by,
+    when and why.
+- **CP4.2:** `assignment_submission_files`: the submission, its order (1–3),
+  type and size (a `CHECK` keeps both within F1's limits).
+- **CP4.3:** `assignment_questions`: the assignment, order, type
+  (`MULTIPLE_CHOICE` or `FILL_IN`), text, marks, options (multiple choice),
+  accepted answers (fill-in). The student's answers are kept on the
+  submission, keyed by question.
+- Every table is tenant-scoped with RLS forced. No SECURITY DEFINER function:
+  every read happens after the tenant is known.
+
+### 11.5 Tests (the rules first)
+
+- **Who reads what, pinned per role:**
+  - a teacher sees and marks only their own classes' submissions; owner and
+    admin see all; the bursar sees none;
+  - a student sees only their own submissions, and their mark only after
+    release;
+  - a linked guardian sees their child's; an unlinked guardian, and another
+    school's, get nothing (RLS).
+- A submitted attempt cannot be changed; a return opens a new attempt and
+  keeps the old one.
+- Late is worked out on the Lagos date, including just after midnight.
+- The paste counts never reach a student or a parent response.
+- Automatic marking: case, spacing, an empty answer, an answer that matches
+  none of the list.
+- Release hides and then shows marks to the student and parents.
+- The gradebook push goes through the existing preview and save, scaled by
+  D60.
+- The similarity check: identical answers, answers sharing only the quoted
+  question, short answers skipped, and a teacher of another class refused.
+- Files: three per attempt, disguised files refused, links only for those
+  who may read.
+- **e2e:** a teacher collects work; a student submits a typed answer; the
+  teacher marks it and releases; the parent sees the mark. One per later
+  slice.
+- **Phone-fit:** every new page and app screen at 320px and 390px.
+
+### 11.6 Left out on purpose
+
+- Any AI-written-work detector (Q7: no).
+- AI help for students of any kind (Q6), and AI marking (that is CP4b, its
+  own plan and PR).
+- Push or SMS for returned work or released marks (CP4-D10; B9's reasoning).
+- Comparing files or handwriting for similarity.
+- Peer review, group submissions, rubrics with several criteria.
+- A fill-in type in the question bank itself.
+- A student web account; students use the app.
+
+### 11.7 As built — CP4.1, collecting work, typed answers and marking (2026-10-16)
+
+- **Data:** migration `20261025120000_assignment_submissions` adds two
+  tables, both with RLS forced:
+  - `assignment_collections`: one per homework item (unique), the total
+    marks (1–1000) and whether work is still accepted.
+  - `assignment_submissions`: one row per student per attempt (unique on
+    collection, student and attempt), the answer (up to 20,000 characters),
+    the typed and pasted counts, submitted at, late, mark, feedback, who
+    marked it and when, released at, and who returned it, when and why.
+    `CHECK`s keep a mark together with its marker and time, allow release
+    only of a marked attempt, and never let a returned attempt carry a mark.
+  - The `assignments` (homework) table gains nothing: only a Prisma relation
+    field. The homework list's DTO gains `collectsWork`.
+  - The two permissions, `assignment.read` and `assignment.mark`, go to admin
+    and teacher in the same migration. Owner holds them by wildcard; the
+    bursar holds neither. No SECURITY DEFINER function; the count stays 23.
+- **API**, `AssignmentsController` at `/assignments` (the homework item's id):
+  - `PUT /assignments/:id/collection` (`assignment.mark`): switch on
+    "collect work", change the total, stop or restart accepting work. The
+    total can't go below a mark already given.
+  - `GET /assignments/:id/submissions` (`assignment.read`): the marking page,
+    with everyone in the class now, plus anyone who handed in and has since
+    moved.
+  - `GET /assignments/:id/students/:studentId` (`assignment.read`): one
+    student's attempts, newest first, with "about N% pasted".
+  - `POST /assignments/submissions/:id/mark` and `/return`
+    (`assignment.mark`): only the student's latest attempt. A returned
+    attempt can't be marked; a marked one can't be returned.
+  - `POST /assignments/:id/release` (`assignment.mark`): releases every
+    marked attempt not yet released. A mark changed later shows its new
+    value.
+  - A teacher is held to the class and subject pairs in their own teacher
+    scope, as homework is.
+- **Students** (`/student-portal/me/assignments`, `/:id`, `/:id/submit`):
+  - Work is handed in once. Returned work may always come back; new work
+    only while the teacher accepts it.
+  - Late is worked out by the server on the Lagos day.
+  - The paste counts are clamped to the answer's length. The student's
+    shape has no field for them, and shows a mark only once released.
+- **Parents** (`GET /portal/students/:id/assignments`, behind
+  `withGuardian`): status, late, and the mark and feedback once released.
+  No answer text and no paste counts.
+- **The paste counter** (`apps/mobile/src/lib/family/paste-counter.ts`): a
+  phone's text box has no paste event, so one change that adds 15 or more
+  characters counts as pasted and smaller ones as typed. Predictive text
+  stays under the threshold. The student is told it is counted.
+- **Audit:** collect, submit (as the student), mark (the number, never the
+  feedback text), return, release.
+- **Website:**
+  - Teacher homework page: **Collect work** on each item (asks for the
+    total), then **Handed-in work**, which opens `/teacher/homework/[id]`.
+  - The admin homework lookup links to `/homework/[id]` for anyone holding
+    `assignment.read`; the bursar sees the homework but not the link.
+  - The marking page: the counts, the total, **Stop accepting work**,
+    **Release N marks**, and a row per student that opens their attempts
+    with a mark and feedback form, or **Return to student** with a note.
+- **Staff app:** the same on the homework screen (**Collect work**,
+  **Handed-in work**) and a marking screen, `app/staff/homework/[id]`.
+- **Student app:** collected items on My homework get **Hand in work** /
+  **View my work**, opening `app/me/assignments/[id]`. Earlier work with
+  marks is listed below the homework. Kept off the phone's storage.
+- **Parent app and website:** the child's homework shows each collected
+  item's status and the released mark and feedback, plus earlier work. The
+  parent website gains a **Homework** card it never had.
+- **Tests:**
+  - 11 service tests against real Postgres covering:
+    - who may collect and read (another class's teacher and the bursar are
+      refused);
+    - handing in once, with the paste counts reaching staff only;
+    - late on the Lagos day, and stopping acceptance;
+    - another class's child refused;
+    - marks hidden until release, and a changed mark shown after it;
+    - the total not going below a given mark;
+    - return opening a new attempt that keeps the old one;
+    - an unlinked or another school's guardian refused;
+    - withdrawn homework leaving the family's list;
+    - the pure rules (status, late just after midnight, clamping);
+    - no answer or feedback text in the audit log.
+  - 3 tests for the paste counter. Permission coverage for the six staff
+    routes, and the bursar holding neither permission.
+  - e2e `assignment-marking.spec.ts`: the teacher sets homework and collects
+    work, an answer arrives, the teacher marks and releases, and the parent
+    sees the mark and feedback but never the answer or the paste figure.
+  - Every new screen was checked at 320px and 390px on the website, the
+    parent website and the app.

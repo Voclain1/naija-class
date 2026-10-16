@@ -11,6 +11,7 @@ import {
   ANNOUNCEMENT_READ_PERMISSIONS,
   BEHAVIOUR_ADMIN_PERMISSIONS,
   HEALTH_NOTE_PERMISSIONS,
+  ASSIGNMENT_PERMISSIONS,
   HEALTH_PERMISSIONS,
   BEHAVIOUR_PERMISSIONS_LIST,
   HOMEWORK_MANAGE_PERMISSIONS,
@@ -115,6 +116,9 @@ const ADMIN_PERMISSIONS: readonly string[] = [
   // SYNC with prisma/migrations/20261022120000_health_profiles.
   ...HEALTH_PERMISSIONS,
   ...HEALTH_NOTE_PERMISSIONS,
+  // Phase 9 / CP4 — submitted work and marking. Kept IN SYNC with
+  // prisma/migrations/20261025120000_assignment_submissions.
+  ...ASSIGNMENT_PERMISSIONS,
   // Phase 8 / CP2 — Recording Completeness: the school-wide report and the
   // per-teacher recording-activity view (audited per read). Owner/admin only;
   // never teacher or bursar (§16 D39, pinned in permissions-coverage.spec.ts).
@@ -242,6 +246,10 @@ export const SYSTEM_ROLE_SEEDS: SystemRoleSeed[] = [
       // Phase 9 / CP3 — the "For teachers" health note, for a child they teach
       // (the service checks that). Nothing else from the health record.
       ...HEALTH_NOTE_PERMISSIONS,
+      // Phase 9 / CP4 — submitted work and marking, held by the service to the
+      // class and subject pairs the teacher teaches. Kept IN SYNC with
+      // prisma/migrations/20261025120000_assignment_submissions.
+      ...ASSIGNMENT_PERMISSIONS,
     ],
   },
   // Phase 9 / CP3 — the Health officer (docs/modules/phase-9.md §10 CP3-D1).

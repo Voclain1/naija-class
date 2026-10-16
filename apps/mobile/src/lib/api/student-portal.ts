@@ -11,6 +11,9 @@ import type {
   StudentLoginResponse,
   StudentMeResponse,
   CalendarResponse,
+  FamilyAssignmentListResponse,
+  MyAssignmentDto,
+  SubmitWorkInput,
 } from "@school-kit/types";
 
 import type { AnnouncementFeedResponse, HomeworkFeedResponse } from "@school-kit/types";
@@ -155,4 +158,21 @@ export function markStudentAnnouncementRead(id: string): Promise<void> {
 // identity, as everywhere on this surface.
 export function studentHomework(): Promise<HomeworkFeedResponse> {
   return apiFetch<HomeworkFeedResponse>("/student-portal/me/homework");
+}
+
+// Phase 9 / CP4.1 — handing in work, and reading it back. No AI help of any
+// kind (Q6); the answer is the student's own.
+export function studentAssignments(): Promise<FamilyAssignmentListResponse> {
+  return apiFetch<FamilyAssignmentListResponse>("/student-portal/me/assignments");
+}
+
+export function studentAssignment(homeworkId: string): Promise<MyAssignmentDto> {
+  return apiFetch<MyAssignmentDto>(`/student-portal/me/assignments/${encodeURIComponent(homeworkId)}`);
+}
+
+export function submitStudentWork(homeworkId: string, input: SubmitWorkInput): Promise<MyAssignmentDto> {
+  return apiFetch<MyAssignmentDto>(`/student-portal/me/assignments/${encodeURIComponent(homeworkId)}/submit`, {
+    method: "POST",
+    body: input,
+  });
 }

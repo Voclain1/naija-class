@@ -697,6 +697,13 @@ export const BEHAVIOUR_ADMIN_PERMISSIONS = ["behaviour.manage", "behaviour.decid
 export const HEALTH_PERMISSIONS = ["health.read", "health.manage", "sickbay.manage"] as const;
 export const HEALTH_NOTE_PERMISSIONS = ["health.note.read"] as const;
 
+// Phase 9 / CP4 — assignments: submitted work and marking
+// (docs/modules/phase-9.md §11 CP4-D2). Owner (wildcard), admin and TEACHER;
+// the service holds a teacher to their own class and subject pairs, as homework
+// and the gradebook do. The BURSAR holds neither, although they read the
+// homework list: a child's work is not a counter matter.
+export const ASSIGNMENT_PERMISSIONS = ["assignment.read", "assignment.mark"] as const;
+
 // Phase 8 / CP2 — Recording Completeness (docs/modules/phase-8.md §16 D39).
 // Owner/admin only. Named `reports.*`, deliberately not `report-card.*`.
 //
@@ -816,6 +823,7 @@ export const ALL_PERMISSIONS = [
   ...BEHAVIOUR_ADMIN_PERMISSIONS,
   ...HEALTH_PERMISSIONS,
   ...HEALTH_NOTE_PERMISSIONS,
+  ...ASSIGNMENT_PERMISSIONS,
   ...REPORTS_PERMISSIONS,
   ...TABLE_EXPORT_PERMISSIONS,
   ...TIMETABLE_PERMISSIONS,

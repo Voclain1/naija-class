@@ -1,8 +1,9 @@
 import { RefreshControl, ScrollView, StyleSheet } from "react-native";
-import { Redirect, Stack } from "expo-router";
+import { Redirect, Stack, useRouter } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
 
-import { studentHomework } from "../../src/lib/api/student-portal";
+import { studentAssignments, studentHomework } from "../../src/lib/api/student-portal";
+import { PastWorkList } from "../../src/components/past-work-list";
 import { queryKeys } from "../../src/lib/query/keys";
 import { HomeworkList } from "../../src/components/homework-list";
 import { useSession } from "../../src/lib/auth/session";
@@ -23,8 +24,8 @@ import { FreshnessLabel } from "../../src/components/freshness-label";
 // exactly what a child needs at a kitchen table with no signal, and the
 // freshness label keeps a cached list honest about when it was fetched.
 //
-// Nothing is submitted here (B7). A child reads what to do and does it on
-// paper, which is what every one of these schools actually does.
+// Nothing is submitted here (B7), except for work a teacher collects (Phase 9 /
+// CP4.1): that item gets a "Hand in work" button and its own screen.
 
 const ONE_HOUR_MS = 1000 * 60 * 60;
 
@@ -45,6 +46,19 @@ export default function MyHomeworkScreen() {
     enabled: status === "authenticated" && principal === "student",
     staleTime: ONE_HOUR_MS,
   });
+
+  // Phase 9 / CP4.1 — handed-in work and released marks, kept off the phone's storage.
+  const router = useRouter();
+  const work = useQuery({
+    queryKey: queryKeys.myAssignments,
+    queryFn: () => studentAssignments(),
+    enabled: status === "authenticated" && principal === "student",
+    meta: { persist: false },
+  });
+  const workById = new Map((work.data?.data ?? []).map((w) => [w.assignmentId, w]));
+  const shown = new Set((query.data?.data ?? []).map((h) => h.id));
+  const earlier = (work.data?.data ?? []).filter((w) => !shown.has(w.assignmentId));
+  const open = (id: string) => router.push({ pathname: "/me/assignments/[id]", params: { id } });
 
   if (status === "guest") return <Redirect href="/login" />;
   if (status === "authenticated" && principal !== "student") return <Redirect href="/students" />;
@@ -87,8 +101,9 @@ export default function MyHomeworkScreen() {
                 body="Homework your teachers set will appear here."
               />
             ) : (
-              <HomeworkList items={data.data} today={today} tomorrow={tomorrow} />
+              <HomeworkList items={data.data} today={today} tomorrow={tomorrow} work={workById} onOpenWork={open} />
             )}
+            <PastWorkList items={earlier} onOpen={open} />
           </>
         )}
       </ScrollView>

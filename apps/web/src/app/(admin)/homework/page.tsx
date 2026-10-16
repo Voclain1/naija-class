@@ -1,11 +1,14 @@
 "use client";
 
+import Link from "next/link";
 import { Loader2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { lagosTodayIso, type ClassArmDto, type HomeworkDto } from "@school-kit/types";
 
 import { InlineAlert } from "@/components/shared/inline-alert";
 import { ApiError } from "@/lib/api-client";
+import { hasPermission } from "@/lib/auth/has-permission";
+import { useAuth } from "@/lib/auth/use-auth";
 import { listClassArms } from "@/lib/class-arms/class-arms-api";
 import { listHomework } from "@/lib/homework/homework-api";
 import { RECENT_DAYS, splitHomeworkForLookup } from "@/lib/homework/homework-lookup";
@@ -28,6 +31,7 @@ function formatDue(dueDate: string): string {
 }
 
 function HomeworkRow({ item, today }: { item: HomeworkDto; today: string }) {
+  const { permissions } = useAuth();
   const due = item.dueDate === today ? "due today" : `due ${formatDue(item.dueDate)}`;
   return (
     <li className="flex flex-col gap-1 py-3">
@@ -37,6 +41,12 @@ function HomeworkRow({ item, today }: { item: HomeworkDto; today: string }) {
         {item.postedByName ? ` · set by ${item.postedByName}` : ""}
       </p>
       {item.instructions && <p className="whitespace-pre-line break-words text-sm">{item.instructions}</p>}
+      {/* Phase 9 / CP4.1 — the bursar reads homework but never handed-in work. */}
+      {item.collectsWork && hasPermission(permissions, "assignment.read") && (
+        <Link href={`/homework/${item.id}`} className="text-sm text-primary hover:underline">
+          Handed-in work
+        </Link>
+      )}
     </li>
   );
 }

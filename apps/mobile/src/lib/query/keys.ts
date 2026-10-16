@@ -92,6 +92,11 @@ export const queryKeys = {
   // between them.
   guardianHomework: (studentId: string) => ["students", studentId, "homework"] as const,
   myHomework: ["me", "homework"] as const,
+  // Phase 9 / CP4.1 — handed-in work and marks. Read with `persist: false`:
+  // a child's answers and marks stay in memory.
+  guardianAssignments: (studentId: string) => ["students", studentId, "assignments"] as const,
+  myAssignments: ["me", "assignments"] as const,
+  myAssignment: (homeworkId: string) => ["me", "assignments", homeworkId] as const,
 
   // --- staff (CP2) --------------------------------------------------------
   //
@@ -302,4 +307,9 @@ export const queryKeys = {
   // Phase 9 / CP3.3 — one child's sickbay visits.
   staffSickbayVisits: (schoolId: string, userId: string, studentId: string) =>
     ["staff", schoolId, userId, "sickbay", studentId] as const,
+  // Phase 9 / CP4.1 — handed-in work for one homework item, and one student's attempts.
+  staffAssignmentMarking: (schoolId: string, userId: string, homeworkId: string) =>
+    ["staff", schoolId, userId, "assignment-marking", homeworkId] as const,
+  staffStudentWork: (schoolId: string, userId: string, homeworkId: string, studentId: string) =>
+    ["staff", schoolId, userId, "student-work", homeworkId, studentId] as const,
 } as const;

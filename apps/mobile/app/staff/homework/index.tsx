@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Alert, KeyboardAvoidingView, Platform, RefreshControl, ScrollView, StyleSheet, View } from "react-native";
-import { Redirect } from "expo-router";
+import { Redirect, useRouter } from "expo-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   HOMEWORK_INSTRUCTIONS_MAX,
@@ -10,6 +10,7 @@ import {
 } from "@school-kit/types";
 
 import {
+  collectStaffWork,
   createStaffHomework,
   staffHomework,
   withdrawStaffHomework,
@@ -113,6 +114,29 @@ export default function StaffHomeworkScreen() {
     },
     onError: () => Alert.alert("Not withdrawn", "We couldn't withdraw that. Try again in a moment."),
   });
+
+  // Phase 9 / CP4.1 — "collect work" on one item, then mark what comes in.
+  const router = useRouter();
+  const [collectingId, setCollectingId] = useState<string | null>(null);
+  const [totalMarks, setTotalMarks] = useState("10");
+  const collect = useMutation({
+    mutationFn: (args: { id: string; total: number }) => collectStaffWork(args.id, { totalMarks: args.total }),
+    onSuccess: (_d, args) => {
+      setCollectingId(null);
+      void queryClient.invalidateQueries({ queryKey: ["staff", schoolId, userId, "homework"] });
+      router.push({ pathname: "/staff/homework/[id]", params: { id: args.id } });
+    },
+    onError: () => Alert.alert("Not started", "We couldn't start collecting work. Try again in a moment."),
+  });
+
+  function startCollecting(id: string): void {
+    const total = Number(totalMarks);
+    if (!Number.isInteger(total) || total < 1) {
+      Alert.alert("Total needed", "Enter a whole-number total mark.");
+      return;
+    }
+    collect.mutate({ id, total });
+  }
 
   if (status === "locked") return <Redirect href="/unlock" />;
   if (!authed) return <Redirect href="/login" />;
@@ -231,6 +255,31 @@ export default function StaffHomeworkScreen() {
                   {item.withdrawnAt ? " · withdrawn" : ""}
                 </Label>
                 {item.instructions ? <Body>{item.instructions}</Body> : null}
+                {!item.withdrawnAt && item.collectsWork ? (
+                  <Button
+                    title="Handed-in work"
+                    onPress={() => router.push({ pathname: "/staff/homework/[id]", params: { id: item.id } })}
+                  />
+                ) : null}
+                {!item.withdrawnAt && !item.collectsWork && collectingId !== item.id ? (
+                  <Button title="Collect work" variant="secondary" onPress={() => setCollectingId(item.id)} />
+                ) : null}
+                {collectingId === item.id ? (
+                  <View style={styles.form}>
+                    <TextField
+                      label="Total marks"
+                      value={totalMarks}
+                      onChangeText={setTotalMarks}
+                      keyboardType="number-pad"
+                      maxLength={4}
+                    />
+                    <Body muted>
+                      Students hand in a typed answer in the app. They and their parents see the mark once you release it.
+                    </Body>
+                    <Button title="Start collecting" loading={collect.isPending} onPress={() => startCollecting(item.id)} />
+                    <Button title="Cancel" variant="secondary" onPress={() => setCollectingId(null)} />
+                  </View>
+                ) : null}
                 {!item.withdrawnAt && (
                   <Button title="Withdraw" variant="secondary" onPress={() => confirmWithdraw(item)} />
                 )}

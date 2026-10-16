@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { Loader2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
@@ -13,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { InlineAlert } from "@/components/shared/inline-alert";
 import { ApiError } from "@/lib/api-client";
+import { collectWork } from "@/lib/assignments/assignments-api";
 import { createHomework, listHomework, withdrawHomework } from "@/lib/homework/homework-api";
 import { getMyScope } from "@/lib/teacher/teacher-scope-api";
 
@@ -99,6 +101,25 @@ export default function TeacherHomeworkPage() {
       setSaveError(e instanceof ApiError ? e.message : "Could not set that homework.");
     } finally {
       setSaving(false);
+    }
+  }
+
+  // Phase 9 / CP4.1 — "collect work" on one homework item.
+  const [collecting, setCollecting] = useState<string | null>(null);
+  const [totalMarks, setTotalMarks] = useState("10");
+
+  async function startCollecting(item: HomeworkDto) {
+    const value = Number(totalMarks);
+    if (!Number.isInteger(value) || value < 1) {
+      setError("Enter a whole-number total mark.");
+      return;
+    }
+    try {
+      await collectWork(item.id, { totalMarks: value });
+      setItems((list) => list.map((x) => (x.id === item.id ? { ...x, collectsWork: true } : x)));
+      setCollecting(null);
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "Could not start collecting work.");
     }
   }
 
@@ -261,11 +282,54 @@ export default function TeacherHomeworkPage() {
                         </p>
                       </div>
                       {!item.withdrawnAt && (
-                        <Button size="sm" variant="outline" onClick={() => void withdraw(item)}>
-                          Withdraw
-                        </Button>
+                        <div className="flex flex-wrap gap-2">
+                          {item.collectsWork ? (
+                            <Button size="sm" variant="outline" asChild>
+                              <Link href={`/teacher/homework/${item.id}`}>Handed-in work</Link>
+                            </Button>
+                          ) : (
+                            collecting !== item.id && (
+                              <Button size="sm" variant="outline" onClick={() => setCollecting(item.id)}>
+                                Collect work
+                              </Button>
+                            )
+                          )}
+                          <Button size="sm" variant="outline" onClick={() => void withdraw(item)}>
+                            Withdraw
+                          </Button>
+                        </div>
                       )}
                     </div>
+                    {collecting === item.id && (
+                      <form
+                        className="mt-3 flex flex-wrap items-end gap-2 rounded-md bg-muted/40 p-3"
+                        aria-label={`Collect work for ${item.title}`}
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          void startCollecting(item);
+                        }}
+                      >
+                        <label className="flex w-36 flex-col gap-1 text-sm">
+                          <span className="font-medium">Total marks</span>
+                          <input
+                            inputMode="numeric"
+                            value={totalMarks}
+                            onChange={(e) => setTotalMarks(e.target.value)}
+                            className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                          />
+                        </label>
+                        <Button type="submit" size="sm">
+                          Start collecting
+                        </Button>
+                        <Button type="button" size="sm" variant="outline" onClick={() => setCollecting(null)}>
+                          Cancel
+                        </Button>
+                        <p className="w-full text-xs text-muted-foreground">
+                          Students hand in a typed answer in the app. You mark it, and they and their parents see the
+                          mark once you release it.
+                        </p>
+                      </form>
+                    )}
                     {item.instructions && (
                       <p className="mt-2 whitespace-pre-wrap text-sm text-foreground">{item.instructions}</p>
                     )}
