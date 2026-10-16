@@ -1531,7 +1531,7 @@ describe("Phase 9 CP4 RBAC coverage: submitted work and marking", () => {
     ) as string[];
 
   it("reading needs assignment.read; everything that changes work needs assignment.mark", () => {
-    for (const handler of ["marking", "studentWork", "file"]) expect(perms(handler), handler).toEqual(["assignment.read"]);
+    for (const handler of ["marking", "studentWork", "file", "similarity"]) expect(perms(handler), handler).toEqual(["assignment.read"]);
     for (const handler of ["collect", "mark", "returnWork", "release", "setQuestions", "bankQuestions", "useAutoMarks"]) expect(perms(handler), handler).toEqual(["assignment.mark"]);
   });
 

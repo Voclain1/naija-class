@@ -514,6 +514,40 @@ describe("AssignmentsService (integration)", () => {
     });
   });
 
+  describe("the similarity check (CP4.4)", () => {
+    const COPIED =
+      "Photosynthesis is how green plants make their own food. Using light from the sun, the plant takes water from the soil " +
+      "and carbon dioxide from the air and turns them into glucose and oxygen. Most of it happens in the leaves, inside " +
+      "chloroplasts, where the green pigment chlorophyll catches the light energy the plant needs to do this work every day.";
+
+    it("lists answers that share a lot of wording, for the class's staff only, and audits counts alone", async () => {
+      const id = await A.homework(addDaysIso(today(), 2));
+      await service.collect(ctx(A.schoolId, A.teacherId), id, { totalMarks: 10 }, reqCtx);
+      await submit(A.child, id, COPIED);
+      await submit(A.classmate, id, COPIED.replace("every day", "each day"));
+      const report = await service.similarity(ctx(A.schoolId, A.teacherId), id, reqCtx);
+      expect(report).toMatchObject({ compared: 2, skippedShort: 0 });
+      expect(report.pairs).toHaveLength(1);
+      expect(report.pairs[0]!.overlapPercent).toBeGreaterThanOrEqual(90);
+      expect([report.pairs[0]!.a.name, report.pairs[0]!.b.name].sort()).toEqual(["Amara Pupil", "Bola Pupil"]);
+      await expect(service.similarity(ctx(A.schoolId, A.otherTeacherId), id, reqCtx)).rejects.toBeInstanceOf(ForbiddenError);
+      await expect(service.similarity(ctx(A.schoolId, A.bursarId), id, reqCtx)).rejects.toBeInstanceOf(ForbiddenError);
+      // Nothing about it reaches the student or the family.
+      expect(JSON.stringify(await service.getForStudent(A.schoolId, A.child, id))).not.toMatch(/similar|overlap/i);
+      const audit = await withTenant(A.schoolId, (db) =>
+        db.auditLog.findFirstOrThrow({ where: { action: "assignment.similarity.run", entityId: id } }),
+      );
+      expect(audit.metadata).toEqual({ compared: 2, skippedShort: 0, pairs: 1 });
+    });
+
+    it("gives the marking page the subject and current term the gradebook push needs", async () => {
+      const id = await A.homework(addDaysIso(today(), 2));
+      const marking = await service.collect(ctx(A.schoolId, A.teacherId), id, { totalMarks: 10 }, reqCtx);
+      const term = await withTenant(A.schoolId, (db) => db.term.findFirstOrThrow({ where: { isCurrent: true } }));
+      expect(marking).toMatchObject({ subjectId: A.subjectId, termId: term.id });
+    });
+  });
+
   it("names files the same way on every screen", () => {
     const files = [
       { id: "a", type: "image" as const, size: 1 },
@@ -549,6 +583,7 @@ describe("AssignmentsService (integration)", () => {
         "assignment.file.read",
         "assignment.questions.set",
         "assignment.automarks.use",
+        "assignment.similarity.run",
       ]),
     );
     expect(JSON.stringify(rows.map((r) => r.metadata))).not.toMatch(/Photosynthesis turns|leaf|Explain each part|Too short|DIOXIDE|my working|Roots/);

@@ -8,6 +8,7 @@ import type {
   BankQuestionListResponse,
   CollectWorkInput,
   SetAssignmentQuestionsInput,
+  SimilarityReportDto,
   MarkSubmissionInput,
   ReturnSubmissionInput,
   StudentWorkDto,
@@ -57,4 +58,10 @@ export function getBankQuestions(homeworkId: string): Promise<BankQuestionListRe
 
 export function applyAutoMarks(homeworkId: string): Promise<AssignmentMarkingDto> {
   return apiFetch<AssignmentMarkingDto>(`/assignments/${enc(homeworkId)}/auto-marks`, { method: "POST" });
+}
+
+// Phase 9 / CP4.4 — which typed answers share a lot of wording. Staff only,
+// audited, never stored.
+export function checkSimilarity(homeworkId: string): Promise<SimilarityReportDto> {
+  return apiFetch<SimilarityReportDto>(`/assignments/${enc(homeworkId)}/similarity`, { method: "POST" });
 }

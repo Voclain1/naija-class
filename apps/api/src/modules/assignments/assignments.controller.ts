@@ -27,6 +27,7 @@ import {
   type BankQuestionListResponse,
   type CollectWorkInput,
   type SetAssignmentQuestionsInput,
+  type SimilarityReportDto,
   type FamilyAssignmentListResponse,
   type MarkSubmissionInput,
   type MyAssignmentDto,
@@ -99,6 +100,14 @@ export class AssignmentsController {
   @Permissions("assignment.mark")
   async useAutoMarks(@CurrentUser() authCtx: AuthContext, @Param("id") id: string, @Ip() ip: string): Promise<AssignmentMarkingDto> {
     return this.service.useAutoMarks(authCtx, id, { ipAddress: ip });
+  }
+
+  /** CP4.4 — which typed answers share a lot of wording. Staff only, audited, never stored. */
+  @Post(":id/similarity")
+  @HttpCode(200)
+  @Permissions("assignment.read")
+  async similarity(@CurrentUser() authCtx: AuthContext, @Param("id") id: string, @Ip() ip: string): Promise<SimilarityReportDto> {
+    return this.service.similarity(authCtx, id, { ipAddress: ip });
   }
 
   @Get(":id/submissions")

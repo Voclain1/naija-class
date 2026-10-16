@@ -2040,3 +2040,65 @@ Each slice is one PR, merged before the next starts.
   - The website's question editor and marking view, the staff app's marking
     screen and the student's answering screen were checked at 320px and
     390px.
+
+### 11.10 As built — CP4.4, the similarity check and the gradebook push (2026-10-16)
+
+- **Data:** none. No migration, no new permission, no SECURITY DEFINER
+  function; the count stays 23. Nothing the similarity check finds is stored.
+- **The similarity check (CP4-D9):** `POST /assignments/:id/similarity`
+  (`assignment.read`: owner, admin and the class's teachers, held to the
+  teacher's own class and subject pairs).
+  - Each student's latest typed answer is cut into overlapping runs of five
+    words (case and punctuation ignored). Runs that also appear in the
+    homework's title, instructions or questions are dropped, so quoting the
+    question is not counted. Answers under 50 words are skipped.
+  - A pair is listed when at least half of the **shorter** answer's runs are
+    in the other one. That is containment, not Jaccard, so an answer copied
+    whole into a longer one still shows. Most alike first, at most 50 pairs.
+  - The screens say "share a lot of wording (about N%): worth a look", and
+    "Show the answers" highlights the shared wording in both, in words and by
+    tint. Never "plagiarism".
+  - Never shown to a student or parent, never stored, never part of a mark.
+    Each run is audited as `assignment.similarity.run`, with counts only and
+    no names or wording.
+  - The code is `apps/api/src/modules/assignments/similarity.ts`: pure
+    functions with their own spec.
+- **The gradebook push (CP4-D8):** no new gradebook code. The marking DTO
+  gains `subjectId` and the current `termId`. The screen sends each marked
+  student's mark as a raw mark out of the work's total through the
+  gradebook's own `POST /assessment-scores/preview`, then `/bulk`. The
+  server scales it (D60), applies its own scope, enrolment and sign-off
+  rules, and audits the save as it does any gradebook save. Work still to
+  mark is not sent.
+  - The column list comes from `GET /grading-scheme`, which teachers may
+    read. `GET /grading-scheme/components` needs `grading-component.read`,
+    which teachers don't hold. (The online-exams results page uses the
+    latter, so a teacher's column list there is empty until the exam names
+    a column; recorded here, not changed in this slice.)
+- **Screens:**
+  - Teacher website (marking page, below the students): **Send to the
+    gradebook** (column, **Preview gradebook marks**, the preview, **Save to
+    gradebook**) and **Similar wording** (**Check for similar wording**, the
+    pairs, **Show the answers**).
+  - Staff app: the same two, as cards below the students. Columns are chips.
+- **Tests:**
+  - `similarity.spec.ts`:
+    - identical answers, with every character returned in order;
+    - wording quoted from the question not counted;
+    - an answer copied into a longer one found;
+    - short answers skipped, and under half not listed;
+    - case and punctuation ignored.
+  - 2 new service tests:
+    - the pair listed for the class's teacher, another class's teacher and
+      the bursar refused, nothing reaching the student, the audit holding
+      counts alone;
+    - the marking DTO carrying the subject and current term.
+  - Permission coverage for the new route.
+  - e2e `assignment-gradebook.spec.ts`: two marked answers sharing their
+    wording are listed with the shared passage highlighted, and both marks
+    are previewed, scaled and saved to a gradebook column.
+  - The website's two sections and the staff app's two cards were checked at
+    320px and 390px.
+
+CP4 is complete with this slice. CP4b (AI-drafted feedback) has its own plan,
+and its own row in CLAUDE.md's allowlist if it ever needs one.

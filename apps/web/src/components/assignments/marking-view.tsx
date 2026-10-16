@@ -19,6 +19,7 @@ import { Button } from "@/components/ui/button";
 import { InlineAlert } from "@/components/shared/inline-alert";
 import { ApiError } from "@/lib/api-client";
 import { openPrivateDocument } from "@/components/health/vaccinations-section";
+import { GradebookPush, SimilarityCheck } from "@/components/assignments/assignment-tools";
 import { QuestionsEditor } from "@/components/assignments/questions-editor";
 import {
   applyAutoMarks,
@@ -522,6 +523,9 @@ export function MarkingView({ homeworkId, backHref, backLabel }: { homeworkId: s
           </li>
         ))}
       </ul>
+
+      <GradebookPush data={data} />
+      <SimilarityCheck homeworkId={homeworkId} />
     </div>
   );
 }
