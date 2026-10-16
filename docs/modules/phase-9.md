@@ -2373,3 +2373,247 @@ name removed, and a teacher approves it.
     draft** filling the boxes and the saved flag were checked through the
     real UI with a seeded draft.
 
+
+## 13. CP5 plan-first — Student charges (F2), then Transport
+
+Written 2026-10-16 for the owner's approval. Nothing here is built until it
+is approved. It answers Q4's open half (supplementary invoices) with a
+recommendation; the owner's approval of this plan is that answer.
+
+### 13.1 What exists today (read from the code)
+
+- **Invoices are one per student per term.** `invoices` carries
+  `UNIQUE(school_id, student_id, term_id)`. The generation run
+  (`InvoiceGenerationService.generateForArm`) skips a student who already has
+  one, and a CANCELLED invoice still blocks a second one, deliberately.
+- **An invoice is a frozen snapshot.** `items` is a JSON copy of each fee
+  item and its discounts at issue time (`buildSnapshot`, a pure function). No
+  code adds or changes a line after issue, and nothing should.
+- **Everything after issue works per invoice:** payments, Paystack payment
+  links, payment plans, refunds, receipts, overdue marking, the debtor list,
+  the dashboards' totals (`finance-totals.ts`), and the parent's fees page on
+  the portal and app.
+- **Two places assume one invoice per term:**
+  - fee reminders (`FinanceService.sendReminders` reads "the" invoice with
+    `findFirst`);
+  - the class-change check in `enrollments.service.ts`, which also uses
+    `findFirst`.
+  Nothing else does. Report cards and the result checker do not read
+  invoices.
+- **A line item's `feeItemId` is only used as a list key** on the web,
+  portal and app, so a line that does not come from a fee item is safe.
+- **Transport does not exist.** `docs/ARCHITECTURE.md` §6.12 lists routes and
+  pickup points, vehicles and drivers, student assignment, and transport fees
+  tied to the fee structure. GPS is post-MVP.
+
+### 13.2 Decisions on student charges (owner may overrule any)
+
+- **CP5-D1. A charge is a single amount owed by one student for one term.**
+  - It has:
+    - a kind (TRANSPORT, LIBRARY_FINE, HOSTEL, OTHER);
+    - a description ("Transport — Route A, Lekki");
+    - the amount in kobo;
+    - the source (module and record id; none for a charge added by hand);
+    - a status (OPEN, BILLED, VOID), and the invoice once billed.
+  - Charges are written in one place only, a new `StudentChargeService` in
+    the finance module. Transport (and later library and hostel) call it
+    inside their own transaction; they never write the table themselves. A
+    spec scans the API for any other write to `student_charges` and fails, as
+    the accent-border spec does for styles.
+  - Every raise, re-price, bill and void writes to `audit_logs`, with
+    amounts and ids, never a name.
+- **CP5-D2. How invoices pick charges up.**
+  - When the term's invoices are generated, each student's OPEN charges for
+    that term become lines on the invoice, after the fee items. They are
+    marked BILLED with the invoice's id in the same transaction, so a charge
+    can never be on two invoices.
+  - A charge line reads like a fee line: the category is the kind's name
+    ("Transport"), the fee name is the description. It carries `chargeId` in
+    place of `feeItemId`.
+  - **Discounts do not apply to charges.** Discount rules point at fee items
+    and fee categories; a charge is neither. To excuse a child a charge, the
+    bursar voids it.
+  - The **preview** shows the charges too, so the bursar sees what will be
+    billed before issuing.
+- **CP5-D3. Supplementary invoices: recommended yes (answers Q4).**
+  - Without them, a charge raised after the term's invoice went out (a child
+    joins a bus route in week 3) waits for next term's invoice. The parent
+    then pays this term's bus fare on next term's bill, which reads like a
+    mistake, and the school waits months for the money.
+  - The design:
+    - An invoice gains a `kind`: TERM (every invoice today) or SUPPLEMENTARY.
+    - The unique rule becomes one **term** invoice per student per term, as
+      a partial unique index (`WHERE kind = 'TERM'`). Supplementary invoices
+      are not limited.
+    - The bursar presses **Bill waiting charges** for a term. For every
+      student who **already has that term's invoice** and holds OPEN charges
+      for the term, it issues one supplementary invoice holding all of those
+      charges, with a due date the bursar sets. A student with no term
+      invoice yet is left alone; the charges ride on their term invoice when
+      it is generated.
+    - The screen first shows what will be issued (students, charges, total),
+      like the invoice preview.
+    - Nothing is issued on its own when a charge is raised. Tiny invoices
+      sent one by one would flood parents with payment links.
+  - A supplementary invoice is an ordinary invoice afterwards: payment,
+    Paystack, payment plans, refunds, receipts, overdue marking and the
+    totals all work unchanged. It is labelled "Supplementary" on the invoice
+    page, the debtor list, and the parent's fees page.
+  - The two `findFirst` readers are fixed:
+    - reminders sum every outstanding invoice the student has for the term
+      and quote that balance;
+    - the class-change check looks for the term invoice only.
+- **CP5-D4. Voiding, and what can never change.**
+  - An OPEN charge can be voided, with a reason, by the bursar, owner or
+    admin.
+  - A BILLED charge cannot be voided, because it is on an invoice the parent
+    has already received. If the invoice is unpaid, cancelling it (which
+    exists) returns its charges to OPEN, where they can be voided or billed
+    again. If money has been paid, the existing refund path is the remedy.
+  - A charge's amount can change only while it is OPEN, and only through its
+    source (a route's new fee, D7). A billed amount never changes.
+- **CP5-D5. Adding a charge by hand.** The bursar, owner or admin can add an
+  OTHER charge on a student's finance tab ("Excursion to Badagry", ₦5,000).
+  This makes F2 useful, and testable, before transport exists, and covers
+  the one-off costs schools ask about.
+- **CP5-D6. Who.**
+  - New permissions:
+    - `charge.read` for owner, admin and bursar;
+    - `charge.raise` and `charge.void` for owner, admin and bursar.
+  - Billing waiting charges uses the existing `invoice.issue`.
+  - Teachers, students and parents never see charges as such. Parents see
+    them only as lines on an invoice, like every fee.
+
+### 13.3 Decisions on transport (owner may overrule any)
+
+- **CP5-D7. Records.**
+  - **Vehicles:** plate number (unique in the school), a description
+    ("Toyota Coaster, white") and the number of seats.
+  - **Drivers:** name, phone, licence number and licence expiry (a calendar
+    date). The list warns 30 days before a licence expires, and shows "expired"
+    after. Drivers are records, not accounts; they never sign in.
+  - **Routes:** a name, the vehicle, the driver, and the **fee per term**.
+    The fee is set on the route's own page (owner, 2026-10-14). Changing it
+    re-prices the route's OPEN charges for the current and later terms, with
+    audit; billed charges keep their amount.
+  - **Stops:** each route has stops in order, with a name and an optional
+    pickup time (minutes since midnight, the project's time-of-day rule).
+- **CP5-D8. Putting a child on a route.**
+  - A student is put on one route and one stop for a term. Putting them on
+    a route raises one TRANSPORT charge for that term at the route's fee.
+    Nobody types a transport amount for a child.
+  - **Capacity:** a route takes no more children in a term than its vehicle
+    has seats. A route with no vehicle takes none. The check runs inside the
+    same transaction as the insert, with the route row locked, so two staff
+    adding the last seat at once cannot both succeed.
+  - **Moving** a child to another route in the same term keeps the single
+    transport charge. If the charge is still OPEN, it takes the new route's
+    fee; if it is billed, it stays as it is.
+  - **Removing** a child voids an OPEN charge. A billed one stays, and the
+    school decides on any refund, as today.
+  - **Next term:** **Copy to next term** puts the same children on the same
+    stops for the next term, checks capacity, and raises next term's charges.
+    Those charges wait, OPEN, for next term's invoice run.
+  - A withdrawn student's assignment for later terms is removed and its OPEN
+    charges voided, through the same path.
+- **CP5-D9. The daily route list.**
+  - For a route and a date, the list shows the stops in order with their
+    pickup times, and the children at each stop with their class.
+  - It shows only children enrolled on that date.
+  - It is available as a printable PDF (the existing renderer, F3) and on
+    the staff app.
+  - It includes the primary guardian's phone number, so a driver waiting at
+    a stop can call. This is a question for the owner (§13.7); without it,
+    the list has names and classes only.
+- **CP5-D10. Parents.** The portal and parent app show each child's route,
+  stop, pickup time, the driver's name and phone, and the vehicle's plate,
+  for the current term. The fee appears on the invoice like any other line.
+- **CP5-D11. Who manages transport.**
+  - New permissions, held by owner and admin:
+    - `transport.read`;
+    - `transport.manage` (vehicles, drivers, routes, stops, assignments).
+  - Setting a route's **fee** also needs `charge.raise`, so the bursar can
+    set fees, and an admin without finance access cannot.
+  - The bursar gets `transport.read`. Teachers get nothing.
+  - No new role in this checkpoint. A "transport officer" role, like the
+    health officer, can be added later if schools ask for one.
+- **CP5-D12. Plans.** Transport and charges are not a paid extra. Billing is
+  core finance, and gating it would make a Free school's invoices wrong.
+
+### 13.4 What gets built
+
+| Slice | PR | What |
+|---|---|---|
+| **CP5.1** | its own, reviewed first | **F2.** `student_charges` (RLS forced); `invoices.kind` and the partial unique index; `StudentChargeService` (raise, re-price, void, list); generation and preview pick up charges; **Bill waiting charges** with its preview; cancelling an invoice returns its charges to OPEN; the reminder and class-change fixes; the "Supplementary" label on web, portal and app; the student finance tab's charges list with **Add a charge** and **Void**; the write-only-here spec. |
+| **CP5.2** | second | **Transport records and assignments.** Vehicles, drivers, routes with stops and fee, assignments with capacity, moving, removing, copy to next term, charges through CP5.1's service. Web pages under Transport, and the student's transport line on the student page. |
+| **CP5.3** | third | **The daily list and families.** The route list (PDF and staff app); the transport card on the portal and parent app; licence expiry warnings. |
+
+### 13.5 Tests (the money first, written before the code)
+
+- **Charges (CP5.1), test-first:**
+  - A generated invoice includes the student's OPEN charges for that term,
+    and none from another term or another student. Its totals are
+    fee items + charges − discounts, and discounts never touch a charge
+    line.
+  - Billing marks each charge BILLED with the invoice id in the same
+    transaction. Generating twice, or two runs at once, never bills a charge
+    twice.
+  - **Bill waiting charges** issues one supplementary invoice per student
+    who has a term invoice, holding exactly their OPEN charges. It skips
+    students with no term invoice, and skips everyone once nothing is OPEN.
+    The preview's figures equal what is issued.
+  - The partial unique index: a second TERM invoice is refused; any number
+    of SUPPLEMENTARY invoices are allowed. A cancelled term invoice still
+    blocks regeneration, as now.
+  - Void works on OPEN only, needs a reason, and is audited. Cancelling an
+    unpaid invoice returns its charges to OPEN. A billed amount is never
+    changed by any path.
+  - Payments, Paystack, payment plans, refunds and overdue marking work on a
+    supplementary invoice unchanged: the existing specs re-run against one.
+  - Totals: `finance-totals.spec.ts` gains a student with a term invoice and
+    a supplementary one, and the dashboard and finance figures still agree.
+  - Reminders quote the sum of the student's outstanding invoices for the
+    term.
+  - Who: a teacher, a parent and a student are refused on every charge
+    route. Another school's charge is invisible (RLS).
+  - The write-only-here spec fails if any other file writes the table.
+- **Transport (CP5.2, CP5.3):**
+  - Capacity: the last seat goes to exactly one of two concurrent requests;
+    a route with no vehicle refuses.
+  - Assigning raises one charge at the route fee. A fee change re-prices
+    OPEN charges only. A move keeps one charge, and removal voids an OPEN
+    charge but leaves a billed one alone.
+  - Copy to next term honours capacity and raises next term's charges.
+  - The daily list holds only children enrolled on the date, in stop order.
+  - A parent sees their own child's route and the driver's phone, never
+    another child's.
+- **e2e:**
+  - The bursar adds a charge and generates invoices; the charge is a line.
+    A charge raised after issue is billed as a supplementary invoice, and
+    the parent sees and can pay it.
+  - The admin creates a vehicle, driver and route with stops and a fee,
+    puts a child on it, and the charge appears; the parent sees the route
+    card.
+- **Phone fit:** every new screen at 320px and 390px.
+
+### 13.6 Left out on purpose
+
+- GPS and live bus tracking (post-MVP, needs hardware).
+- Boarding check-in on the bus, and SMS to parents on pickup.
+- Pro-rating a fee for a child who joins mid-term. The full term's fee is
+  charged; the bursar can void it and add a smaller OTHER charge by hand.
+- Discounts on charges (D2).
+- Driver accounts or a driver app.
+- Library and hostel; they reuse F2 in CP6 and CP6b.
+
+### 13.7 Questions for the owner
+
+1. **Supplementary invoices** (CP5-D3, Q4)? Recommended: **yes**, issued only
+   when the bursar presses **Bill waiting charges**, never on their own.
+2. **No discounts on charges** (CP5-D2)? Recommended: yes; voiding covers
+   the exceptions.
+3. **The guardian's phone on the driver's printed list** (CP5-D9)?
+   Recommended: yes, the primary guardian's number only. The sheet carries
+   "Confidential: for the driver's use on this route".
+4. **No pro-rating** (§13.6)? Recommended: yes, keep it simple; the bursar
+   adjusts by hand.
