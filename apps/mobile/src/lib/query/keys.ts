@@ -43,6 +43,8 @@ export const queryKeys = {
   // Phase 9 / CP3.1 — the child's health record. Read with
   // `meta: { persist: false }`: special-category health data stays in memory.
   healthRecord: (studentId: string) => ["students", studentId, "health"] as const,
+  // Phase 9 / CP3.3 — the child's sickbay visits. Also `persist: false`.
+  sickbayVisits: (studentId: string) => ["students", studentId, "sickbay"] as const,
 
   me: ["me"] as const,
 
@@ -297,4 +299,7 @@ export const queryKeys = {
     ["staff", schoolId, userId, "health-note", studentId] as const,
   staffClassHealthNotes: (schoolId: string, userId: string, armId: string) =>
     ["staff", schoolId, userId, "class-health-notes", armId] as const,
+  // Phase 9 / CP3.3 — one child's sickbay visits.
+  staffSickbayVisits: (schoolId: string, userId: string, studentId: string) =>
+    ["staff", schoolId, userId, "sickbay", studentId] as const,
 } as const;

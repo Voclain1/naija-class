@@ -17,7 +17,7 @@ test("the health officer records a profile; the teacher sees only the note; the 
   const allergy = `Severe peanut allergy ${suffix}`;
   const note = `EpiPen in her school bag ${suffix}`;
   const admin = await loginAsAdmin(browser);
-  const structure = await setupAcademicStructure(admin.api, { arms: [{ name: "JSS 1 Green", code: `jss1-green-${suffix}` }] });
+  const structure = await setupAcademicStructure(admin.api, { arms: [{ name: "JSS 1 Green", code: `jss1g-${suffix}` }] });
   const classArmId = armId(structure, "JSS 1 Green");
   const guardian = await createPortalGuardian(admin.api, { suffix, schoolId: admin.schoolId });
   await apiCreateEnrollment(admin.api, { studentId: guardian.studentId, termId: structure.termId, classArmId });

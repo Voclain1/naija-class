@@ -811,6 +811,7 @@ model Student {
   cbtCandidates CbtCandidate[] // Online exams (CBT1)
   healthProfile HealthProfile? // Phase 9 / CP3.1
   vaccinations  HealthVaccination[] // Phase 9 / CP3.2
+  sickbayVisits SickbayVisit[] // Phase 9 / CP3.3
 
   @@unique([schoolId, admissionNumber])
   @@index([schoolId])
@@ -4044,4 +4045,60 @@ model HealthVaccination {
 
   @@index([schoolId, studentId])
   @@map("health_vaccinations")
+}
+
+// Phase 9 / CP3.3 — the sickbay log (docs/modules/phase-9.md §10 CP3-D5).
+// Read and written by owner, admin and the Health officer (sickbay.manage);
+// never by a teacher. Withdrawn, never deleted.
+model SickbayVisit {
+  id              String               @id @default(uuid())
+  schoolId        String               @map("school_id")
+  studentId       String               @map("student_id")
+  student         Student              @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  visitedAt       DateTime             @map("visited_at")
+  complaint       String
+  actionTaken     String?              @map("action_taken")
+  sentHome        Boolean              @default(false) @map("sent_home")
+  // The parent sees the complaint, action and medicine only when this is set.
+  shareWithParent Boolean              @default(false) @map("share_with_parent")
+  recordedBy      String               @map("recorded_by")
+  createdAt       DateTime             @default(now()) @map("created_at")
+  withdrawnAt     DateTime?            @map("withdrawn_at")
+  withdrawnBy     String?              @map("withdrawn_by")
+  medications     SickbayMedication[]
+  notices         SickbayNotice[]
+
+  @@index([schoolId, visitedAt])
+  @@index([schoolId, studentId])
+  @@map("sickbay_visits")
+}
+
+model SickbayMedication {
+  id        String       @id @default(uuid())
+  schoolId  String       @map("school_id")
+  visitId   String       @map("visit_id")
+  visit     SickbayVisit @relation(fields: [visitId], references: [id], onDelete: Cascade)
+  name      String
+  dose      String
+  givenAt   DateTime     @map("given_at")
+  givenBy   String       @map("given_by")
+  createdAt DateTime     @default(now()) @map("created_at")
+
+  @@index([visitId])
+  @@map("sickbay_medications")
+}
+
+// Once per guardian per visit (CP3-D6).
+model SickbayNotice {
+  id         String       @id @default(uuid())
+  schoolId   String       @map("school_id")
+  visitId    String       @map("visit_id")
+  visit      SickbayVisit @relation(fields: [visitId], references: [id], onDelete: Cascade)
+  guardianId String       @map("guardian_id")
+  // "PUSH", "SMS" or "NONE".
+  channel    String
+  sentAt     DateTime     @default(now()) @map("sent_at")
+
+  @@unique([visitId, guardianId])
+  @@map("sickbay_notices")
 }

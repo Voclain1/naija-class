@@ -1,8 +1,8 @@
 import { Alert, Linking, StyleSheet, View } from "react-native";
 import { useQuery } from "@tanstack/react-query";
-import type { PortalHealthProfileDto } from "@school-kit/types";
+import { formatSickbayDay, formatSickbayTime, type PortalHealthProfileDto } from "@school-kit/types";
 
-import { guardianHealthRecord, guardianVaccinationDocumentUrl } from "../lib/api/portal";
+import { guardianHealthRecord, guardianSickbayVisits, guardianVaccinationDocumentUrl } from "../lib/api/portal";
 import { queryKeys } from "../lib/query/keys";
 import { spacing } from "../theme/tokens";
 import { Body, Button, Caption, Card, Label } from "./ui";
@@ -39,7 +39,15 @@ export function HealthRecord({ studentId }: { studentId: string }) {
     enabled: studentId !== "",
     meta: { persist: false },
   });
+  // Phase 9 / CP3.3 — sickbay visits, also kept off the phone's storage.
+  const visitsQuery = useQuery({
+    queryKey: queryKeys.sickbayVisits(studentId),
+    queryFn: () => guardianSickbayVisits(studentId),
+    enabled: studentId !== "",
+    meta: { persist: false },
+  });
   const profile = query.data;
+  const visits = visitsQuery.data?.data ?? [];
   if (!profile) return null;
   const recorded = ROWS.filter((r) => profile[r.key]);
 
@@ -56,7 +64,7 @@ export function HealthRecord({ studentId }: { studentId: string }) {
   return (
     <Card>
       <Label>Health record</Label>
-      {recorded.length === 0 && profile.vaccinations.length === 0 ? (
+      {recorded.length === 0 && profile.vaccinations.length === 0 && visits.length === 0 ? (
         <Body muted>The school has not recorded anything yet.</Body>
       ) : (
         recorded.map((r) => (
@@ -80,6 +88,30 @@ export function HealthRecord({ studentId }: { studentId: string }) {
                   variant="secondary"
                   onPress={() => void view(v.id)}
                 />
+              ) : null}
+            </View>
+          ))}
+        </View>
+      ) : null}
+      {visits.length > 0 ? (
+        <View style={styles.row}>
+          <Caption>Sickbay visits</Caption>
+          {visits.map((v) => (
+            <View key={v.id} style={styles.row}>
+              <Body>
+                Visited the sickbay at {formatSickbayTime(v.visitedAt)} on {formatSickbayDay(v.visitedAt)}.
+                {v.sentHome ? " Sent home." : ""}
+              </Body>
+              {v.details ? (
+                <>
+                  <Caption>Complaint: {v.details.complaint}</Caption>
+                  {v.details.actionTaken ? <Caption>Action: {v.details.actionTaken}</Caption> : null}
+                  {v.details.medications.map((m, i) => (
+                    <Caption key={i}>
+                      Medicine: {m.name}, {m.dose}, at {formatSickbayTime(m.givenAt)}
+                    </Caption>
+                  ))}
+                </>
               ) : null}
             </View>
           ))}

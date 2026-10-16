@@ -23,6 +23,7 @@ import type {
   PortalDisciplineNoticeListResponse,
   HealthDocumentUrlDto,
   PortalHealthProfileDto,
+  PortalSickbayVisitListResponse,
 } from "@school-kit/types";
 
 import { apiFetch } from "./client";
@@ -248,6 +249,12 @@ export function guardianDisciplineNotices(studentId: string): Promise<PortalDisc
 // Phase 9 / CP3.1 — the child's health record, read-only.
 export function guardianHealthRecord(studentId: string): Promise<PortalHealthProfileDto> {
   return apiFetch<PortalHealthProfileDto>(`/portal/students/${encodeURIComponent(studentId)}/health`);
+}
+
+// Phase 9 / CP3.3 — the child's sickbay visits: the time, whether they were
+// sent home, and the details only when the school shared them.
+export function guardianSickbayVisits(studentId: string): Promise<PortalSickbayVisitListResponse> {
+  return apiFetch<PortalSickbayVisitListResponse>(`/portal/students/${encodeURIComponent(studentId)}/sickbay-visits`);
 }
 
 // Phase 9 / CP3.2 — a five-minute link to a vaccination's document.

@@ -28,6 +28,7 @@ import { AcademicYearsController } from "../modules/academic-years/academic-year
 import { BehaviourController } from "../modules/behaviour/behaviour.controller";
 import { DisciplineController } from "../modules/behaviour/discipline.controller";
 import { HealthController } from "../modules/health/health.controller";
+import { SickbayController } from "../modules/health/sickbay.controller";
 import { CalendarController } from "../modules/calendar/calendar.controller";
 import { ReportsController } from "../modules/reports/reports.controller";
 import { TableExportsController } from "../modules/reports/table-exports.controller";
@@ -1495,5 +1496,23 @@ describe("Phase 9 CP3.1 RBAC coverage: health records", () => {
     for (const p of ["health.read", "health.manage", "sickbay.manage"]) expect(teacher.has(p), `teacher must not hold ${p}`).toBe(false);
     const bursar = new Set(roleSeed("bursar").permissions);
     for (const p of ["health.read", "health.manage", "sickbay.manage", "health.note.read"]) expect(bursar.has(p), `bursar must not hold ${p}`).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 9 / CP3.3 — the sickbay log (docs/modules/phase-9.md §10 CP3-D5).
+// Every route is sickbay.manage, which a teacher never holds.
+// ---------------------------------------------------------------------------
+describe("Phase 9 CP3.3 RBAC coverage: the sickbay log", () => {
+  const perms = (handler: string): string[] =>
+    Reflect.getMetadata(
+      PERMISSIONS_METADATA_KEY,
+      (SickbayController.prototype as unknown as Record<string, object>)[handler]!,
+    ) as string[];
+
+  it("every sickbay route needs sickbay.manage", () => {
+    for (const handler of ["list", "create", "addMedication", "withdraw"]) {
+      expect(perms(handler), handler).toEqual(["sickbay.manage"]);
+    }
   });
 });

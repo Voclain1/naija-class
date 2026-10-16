@@ -10,6 +10,7 @@ import { ApiError } from "@/lib/api-client";
 import { hasPermission } from "@/lib/auth/has-permission";
 import { useAuth } from "@/lib/auth/use-auth";
 import { getHealthProfile, saveHealthProfile } from "@/lib/health/health-api";
+import { StudentSickbaySection } from "@/components/health/student-sickbay-section";
 import { VaccinationsSection } from "@/components/health/vaccinations-section";
 
 // Phase 9 / CP3.1 — one child's health profile (docs/modules/phase-9.md §10).
@@ -54,6 +55,7 @@ export function HealthProfilePanel({
 }) {
   const { permissions } = useAuth();
   const canEdit = hasPermission(permissions, "health.manage");
+  const canSickbay = hasPermission(permissions, "sickbay.manage");
   const [profile, setProfile] = useState<HealthProfileDto | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
@@ -203,6 +205,8 @@ export function HealthProfilePanel({
       )}
       {/* Phase 9 / CP3.2 */}
       <VaccinationsSection profile={profile} canEdit={canEdit} onChanged={setProfile} />
+      {/* Phase 9 / CP3.3 */}
+      {canSickbay && <StudentSickbaySection studentId={profile.studentId} studentName={profile.studentName} />}
     </div>
   );
 }

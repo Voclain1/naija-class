@@ -10,7 +10,14 @@
 
 import { useEffect, useState } from "react";
 
-import type { HealthDocumentUrlDto, PortalHealthProfileDto } from "@school-kit/types";
+import {
+  formatSickbayDay,
+  formatSickbayTime,
+  type HealthDocumentUrlDto,
+  type PortalHealthProfileDto,
+  type PortalSickbayVisitDto,
+  type PortalSickbayVisitListResponse,
+} from "@school-kit/types";
 
 type TextKey = Exclude<keyof PortalHealthProfileDto, "vaccinations" | "updatedAt">;
 
@@ -51,6 +58,7 @@ const ROWS: { key: TextKey; label: string }[] = [
 
 export function HealthRecord({ studentId }: { studentId: string }) {
   const [profile, setProfile] = useState<PortalHealthProfileDto | null>(null);
+  const [visits, setVisits] = useState<PortalSickbayVisitDto[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -60,6 +68,13 @@ export function HealthRecord({ studentId }: { studentId: string }) {
         if (!cancelled) setProfile(body);
       })
       .catch(() => undefined);
+    // Phase 9 / CP3.3 — sickbay visits. Quiet on failure, like the rest.
+    fetch(`/api/portal/students/${encodeURIComponent(studentId)}/sickbay-visits`)
+      .then(async (res) => (res.ok ? ((await res.json()) as PortalSickbayVisitListResponse) : null))
+      .then((body) => {
+        if (!cancelled && body) setVisits(body.data);
+      })
+      .catch(() => undefined);
     return () => {
       cancelled = true;
     };
@@ -67,7 +82,7 @@ export function HealthRecord({ studentId }: { studentId: string }) {
 
   if (!profile) return null;
   const recorded = ROWS.filter((r) => profile[r.key]);
-  const empty = recorded.length === 0 && profile.vaccinations.length === 0;
+  const empty = recorded.length === 0 && profile.vaccinations.length === 0 && visits.length === 0;
 
   return (
     <section className="flex flex-col gap-3 rounded-lg border bg-card p-4 shadow-sm">
@@ -101,6 +116,43 @@ export function HealthRecord({ studentId }: { studentId: string }) {
                   >
                     View {v.documentType === "pdf" ? "PDF" : "photo"}
                   </button>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {visits.length > 0 && (
+        <div className="flex flex-col gap-2">
+          <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Sickbay visits</h3>
+          <ul className="flex flex-col gap-2">
+            {visits.map((v) => (
+              <li key={v.id} className="flex flex-col gap-1 rounded-md bg-muted/40 p-3 text-sm">
+                <p>
+                  Visited the sickbay at {formatSickbayTime(v.visitedAt)} on {formatSickbayDay(v.visitedAt)}.
+                  {v.sentHome && <span className="font-medium text-amber-800 dark:text-amber-200"> Sent home.</span>}
+                </p>
+                {v.details && (
+                  <dl className="flex flex-col gap-1">
+                    <div>
+                      <dt className="inline font-medium">Complaint: </dt>
+                      <dd className="inline whitespace-pre-wrap break-words">{v.details.complaint}</dd>
+                    </div>
+                    {v.details.actionTaken && (
+                      <div>
+                        <dt className="inline font-medium">Action: </dt>
+                        <dd className="inline whitespace-pre-wrap break-words">{v.details.actionTaken}</dd>
+                      </div>
+                    )}
+                    {v.details.medications.map((m, i) => (
+                      <div key={i}>
+                        <dt className="inline font-medium">Medicine: </dt>
+                        <dd className="inline break-words">
+                          {m.name}, {m.dose}, at {formatSickbayTime(m.givenAt)}
+                        </dd>
+                      </div>
+                    ))}
+                  </dl>
                 )}
               </li>
             ))}
