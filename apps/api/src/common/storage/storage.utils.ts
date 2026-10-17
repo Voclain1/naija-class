@@ -89,6 +89,16 @@ export function pathFor(schoolId: string, key: StorageObjectKey): string {
       }
       return `schools/${schoolId}/submissions/${key.fileId}.${key.ext}`;
     }
+    case "library-resource": {
+      if (!UUID_RE.test(key.resourceId)) {
+        throw new Error(`storage: resourceId is not a UUID: ${redact(key.resourceId)}`);
+      }
+      // Typed "pdf", but checked anyway against a caller that casts.
+      if ((key.ext as string) !== "pdf") {
+        throw new Error(`storage: unsupported library-resource extension: ${redact(key.ext as string)}`);
+      }
+      return `schools/${schoolId}/library/${key.resourceId}.pdf`;
+    }
   }
 }
 

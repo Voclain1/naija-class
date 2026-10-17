@@ -291,3 +291,83 @@ export interface FamilyLibraryLoanDto {
 export interface FamilyLibraryDto {
   loans: FamilyLibraryLoanDto[];
 }
+
+// ─── Digital resources (CP6.3, CP6-D7) ────────────────────────────────────
+
+export type LibraryResourceKind = "FILE" | "LINK";
+
+export interface LibraryResourceDto {
+  id: string;
+  title: string;
+  description: string | null;
+  subject: { id: string; name: string };
+  levels: { id: string; name: string }[];
+  kind: LibraryResourceKind;
+  /** LINK only. A FILE opens through a short-lived link from its own route. */
+  url: string | null;
+  fileSize: number | null;
+  addedBy: { id: string; name: string };
+  createdAt: string;
+  /** Whether the reader may remove it: the librarian, owner or admin, or the teacher who added it. */
+  canRemove: boolean;
+}
+
+/** What a staff member may add: everything, or the (level, subject) pairs they teach. */
+export interface LibraryResourceScopeDto {
+  any: boolean;
+  subjects: { id: string; name: string }[];
+  levels: { id: string; name: string }[];
+  /** For a teacher: the levels at which they teach each subject. */
+  pairs: { subjectId: string; classLevelId: string }[];
+}
+
+export interface LibraryResourceListDto {
+  resources: LibraryResourceDto[];
+  scope: LibraryResourceScopeDto;
+}
+
+const resourceFields = {
+  title: z.string().trim().min(1, "Give it a title.").max(200),
+  description: optionalText(500),
+  subjectId: z.string().min(1, "Choose the subject."),
+  levelIds: z.array(z.string().min(1)).min(1, "Choose at least one class.").max(30),
+};
+
+export const createResourceLinkSchema = z.object({
+  ...resourceFields,
+  url: z
+    .string()
+    .trim()
+    .max(500)
+    .url("Enter a web address.")
+    .refine((v) => v.startsWith("https://"), "The address must start with https://"),
+});
+export type CreateResourceLinkInput = z.infer<typeof createResourceLinkSchema>;
+
+/** The fields sent beside an uploaded PDF, as the multipart "data" field (JSON). */
+export const createResourceFileSchema = z.object(resourceFields);
+export type CreateResourceFileInput = z.infer<typeof createResourceFileSchema>;
+
+export const listResourcesSchema = z.object({
+  subjectId: z.string().min(1).optional(),
+  classLevelId: z.string().min(1).optional(),
+});
+export type ListResourcesInput = z.infer<typeof listResourcesSchema>;
+
+/** A student's view of a resource: nothing about who added it. */
+export interface StudentLibraryResourceDto {
+  id: string;
+  title: string;
+  description: string | null;
+  subjectName: string;
+  kind: LibraryResourceKind;
+  url: string | null;
+}
+
+export interface StudentLibraryResourcesDto {
+  resources: StudentLibraryResourceDto[];
+}
+
+export interface LibraryResourceUrlDto {
+  url: string;
+}

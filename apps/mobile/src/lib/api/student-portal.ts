@@ -1,5 +1,7 @@
 import type {
   FamilyLibraryDto,
+  LibraryResourceUrlDto,
+  StudentLibraryResourcesDto,
   FamilyTimetableDto,
   PortalInvoiceListResponse,
   StudentAttendanceResponse,
@@ -206,4 +208,14 @@ export function submitStudentWork(homeworkId: string, input: SubmitWorkInput): P
 // Phase 9 / CP6.2 — the student's own library books out (CP6-D6).
 export function studentLibrary(): Promise<FamilyLibraryDto> {
   return apiFetch<FamilyLibraryDto>("/student-portal/me/library");
+}
+
+// Phase 9 / CP6.3 — PDFs and links for the student's class (CP6-D7). A PDF
+// opens through a five-minute link the server signs after the level check.
+export function studentLibraryResources(): Promise<StudentLibraryResourcesDto> {
+  return apiFetch<StudentLibraryResourcesDto>("/student-portal/me/library/resources");
+}
+
+export function studentLibraryResourceFile(id: string): Promise<LibraryResourceUrlDto> {
+  return apiFetch<LibraryResourceUrlDto>(`/student-portal/me/library/resources/${encodeURIComponent(id)}/file`);
 }

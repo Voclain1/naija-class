@@ -595,7 +595,8 @@ model ClassLevel {
   questions     Question[] // Phase 8c / CP5b back-relation.
   examPapers    ExamPaper[] // Phase 8c / CP5c back-relation.
 
-  libraryBookLevels LibraryBookLevel[] // Phase 9 / CP6.1
+  libraryBookLevels     LibraryBookLevel[] // Phase 9 / CP6.1
+  libraryResourceLevels LibraryResourceLevel[] // Phase 9 / CP6.3
 
   @@unique([schoolId, code])
   @@index([schoolId])
@@ -670,7 +671,8 @@ model Subject {
   examPapers         ExamPaper[] // Phase 8c / CP5c back-relation.
   timetableEntries   TimetableEntry[] // Phase 8 / CP3 — composite (school_id, id) FK target.
 
-  libraryBooks LibraryBook[] // Phase 9 / CP6.1
+  libraryBooks     LibraryBook[] // Phase 9 / CP6.1
+  libraryResources LibraryResource[] // Phase 9 / CP6.3
 
   @@unique([schoolId, id]) // Phase 8 / CP3 — composite FK target (§17 D29)
   @@unique([schoolId, code])
@@ -4527,4 +4529,43 @@ model LibraryLoan {
   @@index([studentId])
   @@index([userId])
   @@map("library_loans")
+}
+
+// Phase 9 / CP6.3 — digital resources: a PDF (F1, private) or an https link
+// for one subject and some class levels, read by students in those levels.
+enum LibraryResourceKind {
+  FILE
+  LINK
+}
+
+model LibraryResource {
+  id          String                 @id @default(uuid())
+  schoolId    String                 @map("school_id")
+  title       String
+  description String?
+  subjectId   String                 @map("subject_id")
+  kind        LibraryResourceKind
+  url         String? // LINK only, https
+  fileExt     String?                @map("file_ext") // FILE only: "pdf"
+  fileSize    Int?                   @map("file_size")
+  addedBy     String                 @map("added_by")
+  createdAt   DateTime               @default(now()) @map("created_at")
+  updatedAt   DateTime               @updatedAt @map("updated_at")
+  subject     Subject                @relation(fields: [subjectId], references: [id], onDelete: Restrict)
+  levels      LibraryResourceLevel[]
+
+  @@index([schoolId, subjectId])
+  @@map("library_resources")
+}
+
+model LibraryResourceLevel {
+  schoolId     String          @map("school_id")
+  resourceId   String          @map("resource_id")
+  classLevelId String          @map("class_level_id")
+  resource     LibraryResource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  classLevel   ClassLevel      @relation(fields: [classLevelId], references: [id], onDelete: Cascade)
+
+  @@id([resourceId, classLevelId])
+  @@index([schoolId, classLevelId])
+  @@map("library_resource_levels")
 }

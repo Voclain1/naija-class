@@ -7,6 +7,7 @@ import {
   CalendarClock,
   CalendarDays,
   Clock,
+  BookCopy,
   Library,
   ShieldAlert,
   Sparkles,
@@ -61,6 +62,8 @@ const BASE_ITEMS: NavItem[] = [
   // Phase 8c / CP5b (docs/modules/phase-8.md §22.2) — exam questions for the
   // subjects this teacher teaches. Grounded in the same curriculum as above.
   { label: "Question bank", href: "/teacher/question-bank", icon: FileQuestion, enabled: true },
+  // Phase 9 / CP6.3 — PDFs and links for the subjects the teacher teaches.
+  { label: "Library resources", href: "/teacher/resources", icon: BookCopy, enabled: true },
   // Phase 8c / CP5c (§22.3) — papers set from the approved questions above.
   { label: "Exam papers", href: "/teacher/exam-papers", icon: ScrollText, enabled: true },
   // Online exams (CBT, docs/modules/cbt.md) — a final paper sat in the lab.

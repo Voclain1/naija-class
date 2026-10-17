@@ -9,6 +9,11 @@ import type {
   LibraryBorrowerLoansDto,
   LibraryContextDto,
   LibraryCopyLookupDto,
+  CreateResourceFileInput,
+  CreateResourceLinkInput,
+  LibraryResourceDto,
+  LibraryResourceListDto,
+  LibraryResourceUrlDto,
   LibraryLoanDto,
   LibraryLoanResultDto,
   LibrarySettingsDto,
@@ -62,3 +67,18 @@ export const getStudentLoans = (studentId: string) =>
   apiFetch<LibraryBorrowerLoansDto>(`/library/students/${id(studentId)}/loans`, { method: "GET" });
 export const getStaffLoans = (userId: string) =>
   apiFetch<LibraryBorrowerLoansDto>(`/library/staff/${id(userId)}/loans`, { method: "GET" });
+
+// CP6.3 — digital resources: PDFs and links for a subject and some classes.
+export const listResources = (params: { subjectId?: string; classLevelId?: string } = {}) =>
+  apiFetch<LibraryResourceListDto>(`/library/resources${query(params)}`, { method: "GET" });
+export const createResourceLink = (body: CreateResourceLinkInput) =>
+  apiFetch<LibraryResourceDto>("/library/resources/links", { method: "POST", body });
+export function createResourceFile(fields: CreateResourceFileInput, file: File) {
+  const form = new FormData();
+  form.append("file", file);
+  form.append("data", JSON.stringify(fields));
+  return apiFetch<LibraryResourceDto>("/library/resources/files", { method: "POST", body: form });
+}
+export const removeResource = (resourceId: string) => apiFetch<void>(`/library/resources/${id(resourceId)}`, { method: "DELETE" });
+export const getResourceFile = (resourceId: string) =>
+  apiFetch<LibraryResourceUrlDto>(`/library/resources/${id(resourceId)}/file`, { method: "GET" });

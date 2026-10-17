@@ -79,7 +79,10 @@ export type StorageObjectKey =
   | { kind: "health-document"; documentId: string; ext: PrivateFileExt }
   // Phase 9 / CP4.2 — a student's photo or PDF answer (Q8). Private, F1-typed,
   // read through a five-minute link after the reader's access is checked.
-  | { kind: "submission-file"; fileId: string; ext: PrivateFileExt };
+  | { kind: "submission-file"; fileId: string; ext: PrivateFileExt }
+  // Phase 9 / CP6.3 — a library resource PDF (CP6-D7). Private, F1-typed (PDF
+  // only), read through a five-minute link after the reader's level is checked.
+  | { kind: "library-resource"; resourceId: string; ext: "pdf" };
 
 // The file types a private upload may be (F1). Decided from the file's own
 // first bytes, never from the name or the browser's declared type.

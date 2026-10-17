@@ -18,6 +18,7 @@ import {
   HEALTH_PERMISSIONS,
   LIBRARY_PERMISSIONS,
   LIBRARY_SETTINGS_PERMISSIONS,
+  LIBRARY_RESOURCE_PERMISSIONS,
   BEHAVIOUR_PERMISSIONS_LIST,
   HOMEWORK_MANAGE_PERMISSIONS,
   HOMEWORK_READ_PERMISSIONS,
@@ -134,6 +135,9 @@ const ADMIN_PERMISSIONS: readonly string[] = [
   // IN SYNC with prisma/migrations/20261031120000_library.
   ...LIBRARY_PERMISSIONS,
   ...LIBRARY_SETTINGS_PERMISSIONS,
+  // Phase 9 / CP6.3 — digital resources. Kept IN SYNC with
+  // prisma/migrations/20261102120000_library_resources.
+  ...LIBRARY_RESOURCE_PERMISSIONS,
   // Phase 8 / CP2 — Recording Completeness: the school-wide report and the
   // per-teacher recording-activity view (audited per read). Owner/admin only;
   // never teacher or bursar (§16 D39, pinned in permissions-coverage.spec.ts).
@@ -265,6 +269,10 @@ export const SYSTEM_ROLE_SEEDS: SystemRoleSeed[] = [
       // class and subject pairs the teacher teaches. Kept IN SYNC with
       // prisma/migrations/20261025120000_assignment_submissions.
       ...ASSIGNMENT_PERMISSIONS,
+      // Phase 9 / CP6.3 — digital resources for the subjects the teacher
+      // teaches (the service checks that). Kept IN SYNC with
+      // prisma/migrations/20261102120000_library_resources.
+      ...LIBRARY_RESOURCE_PERMISSIONS,
     ],
   },
   // Phase 9 / CP3 — the Health officer (docs/modules/phase-9.md §10 CP3-D1).
@@ -289,7 +297,8 @@ export const SYSTEM_ROLE_SEEDS: SystemRoleSeed[] = [
     name: "Librarian",
     description:
       "School librarian — keeps the catalogue and lends books to students and staff. No academic, finance, health, staff or settings access.",
-    permissions: [...LIBRARY_PERMISSIONS],
+    // CP6.3 adds the digital resources (20261102120000_library_resources).
+    permissions: [...LIBRARY_PERMISSIONS, ...LIBRARY_RESOURCE_PERMISSIONS],
   },
   // Phase 3 / Slice 15 — `bursar` role wire-up + RBAC close-out. Finance-only
   // system role: fee catalog, discounts, invoices, payments (not refunds),
