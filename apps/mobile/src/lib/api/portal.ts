@@ -1,4 +1,5 @@
 import type {
+  PortalStudentTransportDto,
   PortalBankDetailsResponse,
   FamilyTimetableDto,
   GuardianForgotPasswordInput,
@@ -277,4 +278,9 @@ export function guardianVaccinationDocumentUrl(studentId: string, vaccinationId:
   return apiFetch<HealthDocumentUrlDto>(
     `/portal/students/${encodeURIComponent(studentId)}/vaccinations/${encodeURIComponent(vaccinationId)}/document`,
   );
+}
+
+// Phase 9 / CP5.3 — the child's school bus this term; null with no place.
+export function guardianTransport(studentId: string): Promise<PortalStudentTransportDto | null> {
+  return apiFetch<PortalStudentTransportDto | null>(`/portal/students/${encodeURIComponent(studentId)}/transport`);
 }

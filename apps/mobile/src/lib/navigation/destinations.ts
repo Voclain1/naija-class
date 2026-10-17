@@ -102,6 +102,11 @@ export function staffDestinations(ctx: StaffContext): Destination[] {
   if ((admin || hasRole(ctx.roles, "health_officer")) && can("health.read")) {
     out.push({ key: "health", label: "Health", hint: "Health records", icon: "medkit-outline", group: "School", route: "/staff/health" });
   }
+  // Phase 9 / CP5.3 — the bus routes and each one's day. transport.read is a
+  // permission check on the server: owner, admin and the bursar.
+  if (can("transport.read")) {
+    out.push({ key: "transport", label: "Bus routes", hint: "Today's pickups", icon: "bus-outline", group: "School", route: "/staff/transport" });
+  }
   if (admin && can("reports.completeness.read")) {
     out.push({ key: "reports", label: "Reports", hint: "What's behind", icon: "bar-chart-outline", group: "School", route: "/staff/reports" });
   }

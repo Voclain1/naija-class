@@ -95,6 +95,12 @@ describe("an owner", () => {
     expect(keys(BURSAR)).not.toContain("health");
   });
 
+  it("gets Bus routes with transport.read; so does the bursar, and a teacher never does", () => {
+    expect(staffDestinations(OWNER).find((d) => d.key === "transport")?.route).toBe("/staff/transport");
+    expect(keys({ ...BURSAR, permissions: [...BURSAR.permissions, "transport.read"] })).toContain("transport");
+    expect(keys(TEACHER)).not.toContain("transport");
+  });
+
   it("does not get a website link when this build has no website address", () => {
     expect(keys({ ...OWNER, webConfigured: false })).not.toContain("website");
   });

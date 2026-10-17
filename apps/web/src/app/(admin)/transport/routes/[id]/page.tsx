@@ -76,7 +76,12 @@ export default function RoutePage() {
         <Link href="/transport" className="text-sm text-primary underline-offset-2 hover:underline">
           ← Transport
         </Link>
-        <h1 className="break-words font-serif text-2xl font-semibold">{route.name}</h1>
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <h1 className="break-words font-serif text-2xl font-semibold">{route.name}</h1>
+          <Button asChild size="sm" variant="outline">
+            <Link href={`/transport/routes/${route.id}/daily`}>Today&apos;s list</Link>
+          </Button>
+        </div>
         <p className="text-sm text-muted-foreground">
           {route.fee > 0 ? `${formatKobo(route.fee)} a term` : "Free"} ·{" "}
           {route.vehicle ? `${route.vehicle.plate}, ${route.vehicle.seats} seats` : "no vehicle yet"} ·{" "}
