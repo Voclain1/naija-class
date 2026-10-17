@@ -723,6 +723,11 @@ export const TRANSPORT_PERMISSIONS = ["transport.read", "transport.manage"] as c
 // fine is money a family owes, and the librarian lends rather than sets policy.
 export const LIBRARY_PERMISSIONS = ["library.read", "library.manage", "library.lend"] as const;
 export const LIBRARY_SETTINGS_PERMISSIONS = ["library.settings"] as const;
+// Phase 9 / CP6.3 — digital resources (§14 CP6-D7). Owner (wildcard), admin,
+// the Librarian and TEACHER hold both. Like the question bank, the guard
+// authorises the role and the service scopes the row: a teacher adds only for
+// the subjects they teach at those levels, and removes only their own.
+export const LIBRARY_RESOURCE_PERMISSIONS = ["library.resource.read", "library.resource.write"] as const;
 
 // Phase 8 / CP2 — Recording Completeness (docs/modules/phase-8.md §16 D39).
 // Owner/admin only. Named `reports.*`, deliberately not `report-card.*`.
@@ -848,6 +853,7 @@ export const ALL_PERMISSIONS = [
   ...TRANSPORT_PERMISSIONS,
   ...LIBRARY_PERMISSIONS,
   ...LIBRARY_SETTINGS_PERMISSIONS,
+  ...LIBRARY_RESOURCE_PERMISSIONS,
   ...REPORTS_PERMISSIONS,
   ...TABLE_EXPORT_PERMISSIONS,
   ...TIMETABLE_PERMISSIONS,

@@ -44,6 +44,7 @@ export function LibraryNav() {
     { href: "/library", label: "Catalogue", match: (p: string) => p === "/library" || p.startsWith("/library/books") },
     ...(hasPermission(permissions, "library.lend") ? [{ href: "/library/desk", label: "Lending desk", match: (p: string) => p.startsWith("/library/desk") }] : []),
     { href: "/library/loans", label: "Loans", match: (p: string) => p.startsWith("/library/loans") },
+    ...(hasPermission(permissions, "library.resource.read") ? [{ href: "/library/resources", label: "Resources", match: (p: string) => p.startsWith("/library/resources") }] : []),
     ...(hasPermission(permissions, "library.settings") ? [{ href: "/library/settings", label: "Rules", match: (p: string) => p.startsWith("/library/settings") }] : []),
   ];
   return (

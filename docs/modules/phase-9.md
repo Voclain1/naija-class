@@ -3188,3 +3188,72 @@ charges, for fines and lost books), both shipped.
     the fine is a waiting library charge on Finance → Charges.
   - Phone fit at 320 and 390 px: the desk with fine and loss, the Lost tab,
     the rules and the portal card.
+
+### 14.10 As built — CP6.3, digital resources (2026-10-17)
+
+- **Data** (migration `20261102120000_library_resources`):
+  - `library_resources`: title, description, subject (required), `kind`
+    FILE or LINK, the https address (LINK) or the file's size (FILE, PDF
+    only), and who added it.
+  - `library_resource_levels`: the class levels it is for.
+  - A `CHECK` holds the shape: a link has an https address and no file; a
+    file is a PDF of 1 byte to 10 MB with no address.
+  - RLS forced on both tables. No SECURITY DEFINER function; the count stays
+    23.
+- **Storage:** the F1 key `library-resource` stores the file at
+  `schools/<id>/library/<resourceId>.pdf`. It is typed by its own bytes
+  (`assertPrivateFile`, then PDF only), read through a five-minute signed
+  link, and deleted with the resource. If the database row fails to land,
+  the stored file is removed again.
+- **Permissions, a change from §14.2 D8:** two permissions,
+  `library.resource.read` and `library.resource.write`, held by owner (`*`),
+  admin, the Librarian and teacher. This replaces the planned `.manage` /
+  `.own` pair, because `@Permissions` requires all the listed permissions,
+  so one route cannot take either. The guard authorises the role and the
+  service scopes the row, the question bank's pattern:
+  - owner, admin and the Librarian add and remove anything;
+  - a teacher adds only for a subject they teach at **every** class level
+    chosen (`getTeacherScope`'s level-and-subject pairs), and removes only
+    their own;
+  - teachers see every resource.
+
+  The migration appends both permissions to admin, librarian and teacher;
+  the seeds and `permissions-coverage.spec.ts` match.
+- **Routes:**
+  - `GET /library/resources` returns the list with `canRemove` on each and
+    the reader's `scope`, so the form offers a teacher only their subjects
+    and classes;
+  - `POST /library/resources/links`;
+  - `POST /library/resources/files` (multipart: `file`, plus `data` as JSON);
+  - `DELETE /library/resources/:id`;
+  - `GET /library/resources/:id/file`;
+  - for students, `GET /student-portal/me/library/resources` and
+    `.../:id/file`. A student sees a resource when enrolled this term in an
+    arm of one of its levels, and the file link is signed only after that
+    check runs again.
+  - Parents do not see resources.
+  - Adding and removing are audited (`library.resource.create` / `.remove`);
+    opening is not.
+- **Not built:** changing a resource after adding it. Removing it and adding
+  it again does the same job, and nobody has asked for more yet.
+- **Web:**
+  - **Resources** in the library's tabs, for owner, admin and the Librarian.
+  - **Library resources** in the teacher's menu.
+  - Both pages share one panel: add a PDF or a link (subject, then the
+    classes), the list with **Open PDF** / **Open link**, and **Remove**
+    where allowed.
+- **Student app:** the Library screen becomes **My library**: books out,
+  then **Reading for your class**. A PDF opens through the signed link, a
+  link in the browser.
+- **Tests:**
+  - `library-resources.service.spec.ts` (5, against real Postgres and the
+    filesystem driver): the teacher's scope at every level; PDF-only by
+    bytes; https-only; another school's subject or level refused; the list
+    with `canRemove` and scope; a student sees only their levels, and the
+    signed link refuses another class, a link and another school; a teacher
+    removes only their own; the stored PDF is deleted; audit rows.
+  - RBAC pins for the five routes and the role grants.
+  - e2e `library-resources.spec.ts`: a teacher adds a PDF for their one
+    subject and class and opens it through its signed link; the admin sees
+    it and adds a link; the teacher cannot remove the admin's link.
+  - Phone fit at 320 and 390 px.

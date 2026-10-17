@@ -90,6 +90,8 @@ export const queryKeys = {
   myAnnouncements: ["me", "announcements"] as const,
   // Phase 9 / CP6.2 — the student's own library books out.
   myLibrary: ["me", "library"] as const,
+  // Phase 9 / CP6.3 — PDFs and links for the student's class.
+  myLibraryResources: ["me", "library", "resources"] as const,
 
   // Homework (the-school-day.md Part B). Persisted like the calendar and
   // announcements: "questions 1 to 10 by Friday" is exactly what a child needs

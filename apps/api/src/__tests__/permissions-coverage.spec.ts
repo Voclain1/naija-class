@@ -31,6 +31,7 @@ import { BehaviourController } from "../modules/behaviour/behaviour.controller";
 import { DisciplineController } from "../modules/behaviour/discipline.controller";
 import { HealthController } from "../modules/health/health.controller";
 import { SickbayController } from "../modules/health/sickbay.controller";
+import { LibraryResourcesController } from "../modules/library/library-resources.controller";
 import { LibraryController } from "../modules/library/library.controller";
 import { AssignmentsController } from "../modules/assignments/assignments.controller";
 import { CalendarController } from "../modules/calendar/calendar.controller";
@@ -1584,8 +1585,31 @@ describe("Phase 9 CP6.1 RBAC coverage: the library", () => {
     expect(perms("updateSettings")).toEqual(["library.settings"]);
   });
 
-  it("the Librarian holds the three library permissions and nothing else", () => {
-    expect([...roleSeed("librarian").permissions].sort()).toEqual(["library.lend", "library.manage", "library.read"]);
+  it("the Librarian holds the library permissions and nothing else", () => {
+    expect([...roleSeed("librarian").permissions].sort()).toEqual([
+      "library.lend",
+      "library.manage",
+      "library.read",
+      "library.resource.read",
+      "library.resource.write",
+    ]);
+  });
+
+  it("CP6.3 resources: reads need library.resource.read, adding and removing library.resource.write", () => {
+    const resourcePerms = (handler: string): string[] =>
+      Reflect.getMetadata(
+        PERMISSIONS_METADATA_KEY,
+        (LibraryResourcesController.prototype as unknown as Record<string, object>)[handler]!,
+      ) as string[];
+    for (const handler of ["list", "file"]) expect(resourcePerms(handler), handler).toEqual(["library.resource.read"]);
+    for (const handler of ["createLink", "createFile", "remove"]) expect(resourcePerms(handler), handler).toEqual(["library.resource.write"]);
+    // Teachers hold both (the service scopes them); the bursar and the Health officer neither.
+    const teacher = new Set(roleSeed("teacher").permissions);
+    for (const p of ["library.resource.read", "library.resource.write"]) expect(teacher.has(p), p).toBe(true);
+    for (const key of ["bursar", "health_officer"]) {
+      const held = new Set(roleSeed(key).permissions);
+      for (const p of ["library.resource.read", "library.resource.write"]) expect(held.has(p), `${key} must not hold ${p}`).toBe(false);
+    }
   });
 
   it("admin holds all four; teacher, bursar and the Health officer hold none", () => {

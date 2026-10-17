@@ -194,7 +194,7 @@ export default function MyHomeScreen() {
         <ListRow icon="calendar-outline" title="My timetable" subtitle="Your class's published timetable" onPress={() => router.push("/me/timetable")} />
         <ListRow icon="wallet-outline" title="My fees" subtitle="What has been billed and paid" onPress={() => router.push("/me/fees")} />
         <ListRow icon="today-outline" title="School calendar" subtitle="Holidays, exams and events" onPress={() => router.push("/me/calendar")} />
-        <ListRow icon="library-outline" title="My library books" subtitle="Books you have out and when they are due" onPress={() => router.push("/me/library")} />
+        <ListRow icon="library-outline" title="My library" subtitle="Books you have out, and reading for your class" onPress={() => router.push("/me/library")} />
 
         {/* The AI tutor is Phase 7 and honestly labelled: it needs curriculum
             grounding to be worth anything, and that is a vendor decision, not
