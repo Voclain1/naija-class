@@ -8,6 +8,7 @@ import { HealthProfilePanel } from "@/components/health/health-profile-panel";
 import { BehaviourTab } from "@/components/students/behaviour-tab";
 import { EnrollmentsTab } from "@/components/students/enrollments-tab";
 import { GuardiansTab } from "@/components/students/guardians-tab";
+import { StudentHostelField } from "@/components/hostels/student-hostel";
 import { BooksOutField } from "@/components/library/books-out";
 import { StudentTransportField } from "@/components/transport/student-transport";
 import { cn } from "@/lib/utils";
@@ -117,6 +118,7 @@ function BioPanel({ student }: { student: StudentDetailDto }) {
       </Field>
       <StudentTransportField studentId={student.id} />
       <BooksOutField kind="STUDENT" id={student.id} />
+      <StudentHostelField studentId={student.id} />
       {student.status === "WITHDRAWN" && (
         <Field label="Withdrawn at">{formatDateTime(student.withdrawnAt)}</Field>
       )}

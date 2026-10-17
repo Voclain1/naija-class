@@ -27,8 +27,8 @@ export const inviteAdminSchema = z
     firstName: z.string().trim().min(1).max(60).optional(),
     lastName: z.string().trim().min(1).max(60).optional(),
     // health_officer added Phase 9 / CP3.1 (docs/modules/phase-9.md §10 CP3-D1);
-    // librarian Phase 9 / CP6.1 (§14 CP6-D8).
-    roleKey: z.enum(["admin", "bursar", "teacher", "health_officer", "librarian"]).default("admin"),
+    // librarian Phase 9 / CP6.1 (§14 CP6-D8); house_master CP6b.1 (§15.8).
+    roleKey: z.enum(["admin", "bursar", "teacher", "health_officer", "librarian", "house_master"]).default("admin"),
   })
   .strict();
 

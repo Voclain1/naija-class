@@ -729,6 +729,16 @@ export const LIBRARY_SETTINGS_PERMISSIONS = ["library.settings"] as const;
 // the subjects they teach at those levels, and removes only their own.
 export const LIBRARY_RESOURCE_PERMISSIONS = ["library.resource.read", "library.resource.write"] as const;
 
+// Phase 9 / CP6b — hostels and boarding (docs/modules/phase-9.md §15 CP6b-D9,
+// §15.8). `read` sees hostels, rooms and boarders (owner, admin, bursar);
+// `manage` keeps hostels, rooms, house masters and beds (owner, admin);
+// `house` is a house master's work on the hostels they are assigned to
+// (teacher, the optional House master role, admin), scoped by the service. A
+// hostel's FEE needs charge.raise instead, as a route's fee does.
+export const HOSTEL_READ_PERMISSIONS = ["hostel.read"] as const;
+export const HOSTEL_PERMISSIONS = ["hostel.read", "hostel.manage"] as const;
+export const HOSTEL_HOUSE_PERMISSIONS = ["hostel.house"] as const;
+
 // Phase 8 / CP2 — Recording Completeness (docs/modules/phase-8.md §16 D39).
 // Owner/admin only. Named `reports.*`, deliberately not `report-card.*`.
 //
@@ -854,6 +864,8 @@ export const ALL_PERMISSIONS = [
   ...LIBRARY_PERMISSIONS,
   ...LIBRARY_SETTINGS_PERMISSIONS,
   ...LIBRARY_RESOURCE_PERMISSIONS,
+  ...HOSTEL_PERMISSIONS,
+  ...HOSTEL_HOUSE_PERMISSIONS,
   ...REPORTS_PERMISSIONS,
   ...TABLE_EXPORT_PERMISSIONS,
   ...TIMETABLE_PERMISSIONS,

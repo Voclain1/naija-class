@@ -2,6 +2,7 @@ import {
   BarChart3,
   BookOpenCheck,
   Bus,
+  BedDouble,
   Library,
   Megaphone,
   CalendarClock,
@@ -163,6 +164,9 @@ export const NAV_ITEMS: NavItem[] = [
   // Phase 9 / CP6.1 — the library (docs/modules/phase-9.md §14). library.read:
   // owner, admin and the Librarian, whose whole menu this is.
   { label: "Library", href: "/library", icon: Library, enabled: true, requiredPermission: "library.read" },
+  // Phase 9 / CP6b.1 — hostels (docs/modules/phase-9.md §15). hostel.read:
+  // owner, admin and the bursar (who sets hostel fees there).
+  { label: "Hostels", href: "/hostels", icon: BedDouble, enabled: true, requiredPermission: "hostel.read" },
   // Announcements (docs/modules/announcements.md). Gated on
   // announcement.create, not announcement.read: every staff role can READ the
   // school's announcements in their own feed, but this page is the sending

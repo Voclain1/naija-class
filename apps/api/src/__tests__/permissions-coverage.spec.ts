@@ -9,6 +9,7 @@ import {
   TABLE_EXPORT_PERMISSIONS,
   STUDENT_CHARGE_PERMISSIONS,
   TRANSPORT_READ_PERMISSIONS,
+  HOSTEL_READ_PERMISSIONS,
   TIMETABLE_PERMISSIONS,
   TIMETABLE_OWN_READ_PERMISSIONS,
   PHASE_0_PERMISSIONS,
@@ -33,6 +34,7 @@ import { HealthController } from "../modules/health/health.controller";
 import { SickbayController } from "../modules/health/sickbay.controller";
 import { LibraryResourcesController } from "../modules/library/library-resources.controller";
 import { LibraryController } from "../modules/library/library.controller";
+import { HostelController } from "../modules/hostels/hostel.controller";
 import { AssignmentsController } from "../modules/assignments/assignments.controller";
 import { CalendarController } from "../modules/calendar/calendar.controller";
 import { ReportsController } from "../modules/reports/reports.controller";
@@ -784,7 +786,9 @@ describe("Phase 3 RBAC close-out: seeded role grants", () => {
         TABLE_EXPORT_PERMISSIONS.length +
         STUDENT_CHARGE_PERMISSIONS.length +
         // Phase 9 CP5.2: transport, read only (route fees ride on charge.raise).
-        TRANSPORT_READ_PERMISSIONS.length,
+        TRANSPORT_READ_PERMISSIONS.length +
+        // Phase 9 CP6b.1: hostels, read only (hostel fees ride on charge.raise).
+        HOSTEL_READ_PERMISSIONS.length,
     );
     expect(bursarPerms.has("transport.read")).toBe(true);
     expect(bursarPerms.has("transport.manage")).toBe(false);
@@ -1620,5 +1624,41 @@ describe("Phase 9 CP6.1 RBAC coverage: the library", () => {
       const held = new Set(roleSeed(key).permissions);
       for (const p of all) expect(held.has(p), `${key} must not hold ${p}`).toBe(false);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 9 / CP6b.1 — hostels (docs/modules/phase-9.md §15, §15.8). Reads need
+// hostel.read, writes hostel.manage, the fee charge.raise; the optional House
+// master role holds hostel.house only.
+// ---------------------------------------------------------------------------
+describe("Phase 9 CP6b.1 RBAC coverage: hostels", () => {
+  const perms = (handler: string): string[] =>
+    Reflect.getMetadata(
+      PERMISSIONS_METADATA_KEY,
+      (HostelController.prototype as unknown as Record<string, object>)[handler]!,
+    ) as string[];
+
+  it("reads need hostel.read, writes hostel.manage, the fee charge.raise", () => {
+    for (const handler of ["list", "get", "beds", "studentHostel"]) expect(perms(handler), handler).toEqual(["hostel.read"]);
+    for (const handler of ["create", "update", "delete", "candidates", "setHouseMasters", "createRoom", "updateRoom", "deleteRoom", "place", "move", "remove", "copy"]) {
+      expect(perms(handler), handler).toEqual(["hostel.manage"]);
+    }
+    expect(perms("setFee")).toEqual(["charge.raise"]);
+  });
+
+  it("the House master holds hostel.house and nothing else", () => {
+    expect([...roleSeed("house_master").permissions]).toEqual(["hostel.house"]);
+  });
+
+  it("admin holds all three; the bursar reads; a teacher holds hostel.house only", () => {
+    const admin = new Set(roleSeed("admin").permissions);
+    for (const p of ["hostel.read", "hostel.manage", "hostel.house"]) expect(admin.has(p), p).toBe(true);
+    const bursar = new Set(roleSeed("bursar").permissions);
+    expect(bursar.has("hostel.read")).toBe(true);
+    for (const p of ["hostel.manage", "hostel.house"]) expect(bursar.has(p), `bursar must not hold ${p}`).toBe(false);
+    const teacher = new Set(roleSeed("teacher").permissions);
+    expect(teacher.has("hostel.house")).toBe(true);
+    for (const p of ["hostel.read", "hostel.manage"]) expect(teacher.has(p), `teacher must not hold ${p}`).toBe(false);
   });
 });
