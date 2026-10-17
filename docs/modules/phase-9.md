@@ -3538,3 +3538,83 @@ both shipped, and copies the shape transport proved in CP5.
    - **Copy to next term**, including into a new session, charges the
      hostel's fee as it stands.
    - Changing it re-prices only waiting charges, as D3. No pro-rating.
+
+### 15.9 As built — CP6b.1, hostels, rooms, beds and fees (2026-10-17)
+
+- **Data** (migration `20261103120000_hostels`):
+  - `hostels`: name unique per school, `for_gender` (enum `HostelGender`:
+    `BOYS`, `GIRLS`), `fee` in kobo (0 to ₦10m, a `CHECK`);
+  - `hostel_house_masters`: the hostel and the member of staff, keyed on the
+    pair;
+  - `hostel_rooms`: 1 to 60 beds, name unique per hostel;
+  - `hostel_beds`: one row per child per term. `UNIQUE(student_id, term_id)`
+    makes "one bed per child per term" hold in SQL, and
+    `UNIQUE(room_id, term_id, bed_number)` does the same for "one child per
+    bed". The hostel and room FKs are `RESTRICT`; the student FK cascades.
+  - Every table carries `school_id` with RLS enabled and forced and the
+    `tenant_isolation` policy. No SECURITY DEFINER function; the count stays
+    23.
+- **Roles and permissions:**
+  - `hostel.read`: owner, admin, bursar;
+  - `hostel.manage`: owner, admin;
+  - `hostel.house`: admin, teacher and the new optional **House master**
+    role, which holds nothing else. The migration inserts the role and the
+    seed carries it. It is pinned in `permissions-coverage.spec.ts` and the
+    two-gate conformance spec.
+  - The API accepts `house_master` on a staff invitation already.
+  - **The web invite option, the House master's landing page and every house
+    master screen come in CP6b.2.** Until then a house master can be chosen
+    on a hostel's page, but has nothing to open.
+- **API** (`apps/api/src/modules/hostels/`):
+  - hostels: `GET/POST /hostels`, `GET/PATCH/DELETE /hostels/:id`,
+    `PUT /hostels/:id/fee` (needs `charge.raise`, so the bursar can set it);
+  - house masters: `GET /hostels/house-master-candidates`,
+    `PUT /hostels/:id/house-masters`;
+  - rooms: `POST /hostels/:id/rooms`, `PATCH/DELETE /hostels/rooms/:roomId`;
+  - beds: `GET /hostels/:id/beds?termId=`, `POST /hostels/beds`,
+    `PATCH/DELETE /hostels/beds/:id`, `POST /hostels/beds/copy`;
+  - the student page: `GET /hostels/students/:id`.
+- **How the rules came out:**
+  - Placing a child locks the room (`FOR UPDATE`) and checks, in order:
+    - the child has not left (`STUDENT_LEFT`);
+    - the child's gender is set (`GENDER_NOT_SET`, which covers OTHER);
+    - it matches the hostel (`WRONG_HOSTEL`);
+    - the bed exists (`NO_SUCH_BED`) and is free (`BED_TAKEN`);
+    - the room is not full (`ROOM_FULL`);
+    - the child has no bed this term (`ALREADY_PLACED`).
+    With no bed number given, the child gets the lowest free bed.
+  - Moving a child locks both rooms in id order, so two moves crossing each
+    other cannot deadlock. A move to another hostel re-prices the waiting
+    charge to that hostel's fee.
+  - A room cannot shrink below a bed in use in the current or a later term
+    (`ROOM_TOO_SMALL`), and a room or hostel ever used cannot be deleted
+    (`ROOM_IN_USE`, `HOSTEL_IN_USE`). Bed history stays.
+  - A hostel's gender cannot change while it has boarders in the current or a
+    later term (`HOSTEL_HAS_BOARDERS`).
+  - **The fee goes through F2.** A bed raises a `HOSTEL` charge with source
+    `hostel` and the bed's id, described as "Hostel — <name>". Changing the
+    fee re-prices the waiting charges for the current and later terms, raises
+    one where the fee was zero, voids one where it becomes zero, and leaves an
+    invoiced charge alone. The answer says how many of each.
+  - **Copy to next term** puts each boarder in the same bed where it is free,
+    charged at the hostel's fee as it stands. It reports how many were
+    copied, already placed, found their bed taken, or have left.
+  - Withdrawing a student removes their beds for terms that start after the
+    withdrawal date (as transport does), voids any waiting charge on them, and
+    records the count on the withdrawal's audit row. The bed in the term they
+    leave stays, with its charge.
+  - Every write is audited under entity type `hostel`.
+- **Web:**
+  - `/hostels` lists hostels with "x of y beds taken" for the chosen term,
+    creates a hostel and copies beds to the next term.
+  - `/hostels/[id]` holds the details, house masters, fee, rooms and the
+    term's boarders, with move, remove and add.
+  - The student page's Bio tab shows "Hostel this term" to anyone with
+    `hostel.read`.
+  - The nav item is "Hostels".
+  - Checked at 320 and 390 px with no sideways scroll.
+- **Tests:**
+  - `hostel.service.spec.ts`: 14 tests against the real database.
+  - `e2e/tests/hostel-beds.spec.ts`: a girls' hostel, a room and a fee, a
+    girl given a bed, the student page line, and the hostel line on Finance →
+    Charges.

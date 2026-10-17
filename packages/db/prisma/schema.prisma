@@ -379,6 +379,8 @@ model User {
 
   libraryLoans LibraryLoan[] // Phase 9 / CP6.1 — books this member of staff has borrowed.
 
+  hostelHouseMasters HostelHouseMaster[] // Phase 9 / CP6b.1 — hostels this member of staff is house master of.
+
   @@unique([schoolId, id]) // Phase 8 / CP3 — composite FK target (§17 D29)
   @@index([schoolId])
   @@map("users")
@@ -829,6 +831,7 @@ model Student {
   assignmentFiles       AssignmentSubmissionFile[] // Phase 9 / CP4.2
   transportAssignments  TransportAssignment[] // Phase 9 / CP5.2
   libraryLoans          LibraryLoan[] // Phase 9 / CP6.1
+  hostelBeds            HostelBed[] // Phase 9 / CP6b.1
 
   @@unique([schoolId, admissionNumber])
   @@index([schoolId])
@@ -4568,4 +4571,81 @@ model LibraryResourceLevel {
   @@id([resourceId, classLevelId])
   @@index([schoolId, classLevelId])
   @@map("library_resource_levels")
+}
+
+// ─── Phase 9 / CP6b — hostels and boarding ──────────────────────────────────
+// A hostel is for boys or girls, with house masters and a fee per term that
+// stands until changed. A student holds one bed a term (that makes them a
+// boarder); a bed holds one student a term. The HOSTEL charge is raised through
+// StudentChargeService only. docs/modules/phase-9.md §15.
+
+enum HostelGender {
+  BOYS
+  GIRLS
+}
+
+model Hostel {
+  id           String              @id @default(uuid())
+  schoolId     String              @map("school_id")
+  name         String
+  forGender    HostelGender        @map("for_gender")
+  fee          Int                 @default(0) // kobo per term; 0 is none
+  createdAt    DateTime            @default(now()) @map("created_at")
+  updatedAt    DateTime            @updatedAt @map("updated_at")
+  houseMasters HostelHouseMaster[]
+  rooms        HostelRoom[]
+  beds         HostelBed[]
+
+  @@unique([schoolId, name])
+  @@map("hostels")
+}
+
+model HostelHouseMaster {
+  schoolId  String   @map("school_id")
+  hostelId  String   @map("hostel_id")
+  userId    String   @map("user_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  hostel    Hostel   @relation(fields: [hostelId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([hostelId, userId])
+  @@index([schoolId, userId])
+  @@map("hostel_house_masters")
+}
+
+model HostelRoom {
+  id        String      @id @default(uuid())
+  schoolId  String      @map("school_id")
+  hostelId  String      @map("hostel_id")
+  name      String
+  beds      Int
+  createdAt DateTime    @default(now()) @map("created_at")
+  updatedAt DateTime    @updatedAt @map("updated_at")
+  hostel    Hostel      @relation(fields: [hostelId], references: [id], onDelete: Cascade)
+  allocated HostelBed[]
+
+  @@unique([hostelId, name])
+  @@index([schoolId])
+  @@map("hostel_rooms")
+}
+
+model HostelBed {
+  id        String     @id @default(uuid())
+  schoolId  String     @map("school_id")
+  studentId String     @map("student_id")
+  termId    String     @map("term_id")
+  hostelId  String     @map("hostel_id")
+  roomId    String     @map("room_id")
+  bedNumber Int        @map("bed_number")
+  createdBy String?    @map("created_by")
+  createdAt DateTime   @default(now()) @map("created_at")
+  updatedAt DateTime   @updatedAt @map("updated_at")
+  student   Student    @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  hostel    Hostel     @relation(fields: [hostelId], references: [id], onDelete: Restrict)
+  room      HostelRoom @relation(fields: [roomId], references: [id], onDelete: Restrict)
+
+  @@unique([studentId, termId])
+  @@unique([roomId, termId, bedNumber])
+  @@index([schoolId, hostelId, termId])
+  @@map("hostel_beds")
 }

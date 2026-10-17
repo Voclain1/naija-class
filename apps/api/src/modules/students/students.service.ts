@@ -23,6 +23,7 @@ import {
 
 import type { AuthContext } from "../../common/auth/auth-context";
 import { removeTransportAfterWithdrawal } from "../transport/transport.service";
+import { removeHostelBedsAfterWithdrawal } from "../hostels/hostel.service";
 import { assertUserActiveAndHasOneOf } from "../../common/auth/role-check";
 import { assertRoomForStudents } from "../../common/plans/plan-limits";
 import {
@@ -623,6 +624,14 @@ export class StudentsService {
         id,
         withdrawnAt,
       );
+      // Phase 9 / CP6b.1 — beds in later terms are freed the same way, and
+      // their waiting hostel charges voided (§15 CP6b-D3).
+      const hostelBedsRemoved = await removeHostelBedsAfterWithdrawal(
+        db,
+        { schoolId: authCtx.schoolId, userId: authCtx.userId, ipAddress: reqCtx.ipAddress },
+        id,
+        withdrawnAt,
+      );
 
       await db.auditLog.create({
         data: {
@@ -641,6 +650,7 @@ export class StudentsService {
             // flipped or whether the student had no current enrollment.
             cascadedEnrollmentCount: enrollmentCascade.count,
             transportPlacesRemoved,
+            hostelBedsRemoved,
           },
         },
       });

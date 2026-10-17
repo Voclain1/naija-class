@@ -19,6 +19,9 @@ import {
   LIBRARY_PERMISSIONS,
   LIBRARY_SETTINGS_PERMISSIONS,
   LIBRARY_RESOURCE_PERMISSIONS,
+  HOSTEL_PERMISSIONS,
+  HOSTEL_READ_PERMISSIONS,
+  HOSTEL_HOUSE_PERMISSIONS,
   BEHAVIOUR_PERMISSIONS_LIST,
   HOMEWORK_MANAGE_PERMISSIONS,
   HOMEWORK_READ_PERMISSIONS,
@@ -138,6 +141,10 @@ const ADMIN_PERMISSIONS: readonly string[] = [
   // Phase 9 / CP6.3 — digital resources. Kept IN SYNC with
   // prisma/migrations/20261102120000_library_resources.
   ...LIBRARY_RESOURCE_PERMISSIONS,
+  // Phase 9 / CP6b.1 — hostels and boarding. Kept IN SYNC with
+  // prisma/migrations/20261103120000_hostels.
+  ...HOSTEL_PERMISSIONS,
+  ...HOSTEL_HOUSE_PERMISSIONS,
   // Phase 8 / CP2 — Recording Completeness: the school-wide report and the
   // per-teacher recording-activity view (audited per read). Owner/admin only;
   // never teacher or bursar (§16 D39, pinned in permissions-coverage.spec.ts).
@@ -273,6 +280,10 @@ export const SYSTEM_ROLE_SEEDS: SystemRoleSeed[] = [
       // teaches (the service checks that). Kept IN SYNC with
       // prisma/migrations/20261102120000_library_resources.
       ...LIBRARY_RESOURCE_PERMISSIONS,
+      // Phase 9 / CP6b.1 — a teacher may be a hostel's house master without
+      // changing role (§15.8); the service checks the assignment. Kept IN SYNC
+      // with prisma/migrations/20261103120000_hostels.
+      ...HOSTEL_HOUSE_PERMISSIONS,
     ],
   },
   // Phase 9 / CP3 — the Health officer (docs/modules/phase-9.md §10 CP3-D1).
@@ -299,6 +310,17 @@ export const SYSTEM_ROLE_SEEDS: SystemRoleSeed[] = [
       "School librarian — keeps the catalogue and lends books to students and staff. No academic, finance, health, staff or settings access.",
     // CP6.3 adds the digital resources (20261102120000_library_resources).
     permissions: [...LIBRARY_PERMISSIONS, ...LIBRARY_RESOURCE_PERMISSIONS],
+  },
+  // Phase 9 / CP6b.1 — the optional House master (docs/modules/phase-9.md
+  // §15.8): boarding staff who are not teachers. hostel.house only, scoped by
+  // the service to the hostels they are assigned to. Kept IN SYNC with the
+  // INSERT in prisma/migrations/20261103120000_hostels.
+  {
+    key: "house_master",
+    name: "House master",
+    description:
+      "Boarding house master — sees the boarders of the hostels they are assigned to, keeps the visitor log and decides leave-out requests. No academic, finance, health, staff or settings access.",
+    permissions: [...HOSTEL_HOUSE_PERMISSIONS],
   },
   // Phase 3 / Slice 15 — `bursar` role wire-up + RBAC close-out. Finance-only
   // system role: fee catalog, discounts, invoices, payments (not refunds),
@@ -336,6 +358,9 @@ export const SYSTEM_ROLE_SEEDS: SystemRoleSeed[] = [
       // Phase 9 / CP5.2 — transport, read only; route fees via charge.raise.
       // Kept IN SYNC with prisma/migrations/20261030120000_transport.
       ...TRANSPORT_READ_PERMISSIONS,
+      // Phase 9 / CP6b.1 — hostels, read only; hostel fees via charge.raise.
+      // Kept IN SYNC with prisma/migrations/20261103120000_hostels.
+      ...HOSTEL_READ_PERMISSIONS,
     ],
   },
 ];
