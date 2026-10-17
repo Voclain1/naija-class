@@ -4074,3 +4074,120 @@ existing create path).
    way; admitted applications kept with the student (CP7-D7)? Recommended:
    yes.
 6. **On every plan** (CP7-D9)? Recommended: yes.
+
+### 16.8 Owner's answers (2026-10-17) and what they change
+
+The owner also set the direction: **applications are open by default**, it
+must be "easy, fast and simple", the school is told of **every new
+application by email, SMS and push**, applicants are **listed separately from
+students until the school clears them** for a class (after an entrance exam,
+an online assessment, or whatever the school uses), and **Settings gives each
+school flexibility over its own requirements and form fields**. Each school
+will soon have its own address (`virgofidelis.schoolkit.ng`), whose main page
+shows "Apply" by default.
+
+- **Open by default** (replaces "off by default" in D1).
+  - `admissions_enabled` defaults to **true** for every school, existing and
+    new, with **every class level open**.
+  - The admin turns it off, or closes classes, in Settings → Admissions.
+  - The form is built to take the school from the address, so today's
+    `portal.schoolkit.ng/apply/<slug>` and tomorrow's
+    `<slug>.schoolkit.ng` main page are the same page. The subdomain itself
+    (DNS, certificates, routing) is not part of CP7.
+- **The school's own form** (extends D1, D2). In Settings → Admissions the
+  admin sets:
+  - **Built-in fields**, each required, optional or not asked:
+    - the child's middle name, previous school and previous class;
+    - home address, religion, state of origin;
+    - medical needs or allergies;
+    - a second parent or guardian.
+
+    The child's names, date of birth, gender and class applied for, and one
+    parent's name, relationship, phone and email, are always asked.
+  - **Documents**, each required, optional or not asked:
+    - passport photo and birth certificate (optional by default, answer 4);
+    - last school report or results (not asked by default);
+    - up to **3 more documents the school names itself** ("Baptismal
+      certificate").
+
+    At most 6 files, 10 MB each, typed by their bytes as F1.
+  - **Up to 5 questions of the school's own**: short answer, long answer,
+    yes/no, or one of a list ("How did you hear about us?", "Boarding or
+    day?").
+  - The introduction, the classes open, and who is told (below).
+- **Telling the school of each new application** (replaces D8). Every
+  application that passes the honeypot and the limits tells **the admins and
+  the admissions officers**:
+  - by **push** on the staff app, through the event notifier staff push
+    already uses (announcements);
+  - by **email** to each of them, and to the optional school address;
+  - by **SMS** to each of them, through the school's Termii sender. SMS costs
+    money per message, so a school can switch SMS off in Settings, and
+    alerts stop at **30 SMS a school a day**. Past that the email and push
+    still go, and the next SMS says how many were not texted. A flood can
+    therefore never run up a bill.
+
+  The dashboard's "Needs you today" line stays.
+- **Applicants are separate from students.**
+  - Nobody appears in Students, attendance, fees, classes or counts until the
+    school **admits** them.
+  - The **Admissions** page is its own list, by status and class applied
+    for.
+- **Answer 1: the Admissions officer role** (replaces D6).
+  - A new optional system role, `admission_officer`, holding `admission.read`
+    and `admission.manage` and nothing else.
+  - **Nobody holds it by default**; the owner and admins do the work. The
+    admin can give it to any member of staff in Settings → Admissions →
+    Admissions officers.
+  - It is an **extra** role: a teacher or bursar keeps their own role and
+    gains this one. Granting and removing are audited.
+  - A teacher who is an officer reaches Admissions from the teacher portal,
+    as Boarding is reached in CP6b.2.
+  - The service re-checks the role on every call.
+- **Answer 2: offers show the complete breakdown** (extends D4, D5).
+  - **Offer** carries an **offer letter** the school writes: the fees, the
+    items, the resumption date, and any deadline to accept.
+  - A default is kept in Settings and can be edited for each offer.
+  - The family receives it in full by email and on the tracking page.
+  - Acceptance is recorded only **after the family has seen the complete
+    breakdown**:
+    - the family presses **Accept the offer** on the tracking page, which
+      shows the letter in full above the button; or
+    - the school records the acceptance (by phone or in person) with a
+      tickbox "The family has seen the full offer letter".
+
+    Either way the time, and who recorded it, are stored.
+  - **Admit** is offered only once the offer is accepted.
+  - The new status is OFFER_ACCEPTED:
+    SUBMITTED → UNDER REVIEW → OFFERED → OFFER ACCEPTED → ADMITTED, with
+    REJECTED or WITHDRAWN from any open state.
+- **Answer 3: tracking** (replaces "emails only" in D4 and question 3).
+  - Every email carries the family's **private tracking link**: a random
+    token, stored hashed, as invitation links are. No login.
+  - The page shows:
+    - the status in words;
+    - the **assessment** (entrance exam, interview or online assessment) with
+      date, time and the school's note;
+    - the offer letter.
+  - The family can **accept the offer** or **withdraw** the application
+    there.
+  - The link stops working once the application is deleted.
+  - It is rate-limited and reveals nothing beyond that one application.
+  - Emails stay the main channel. The assessment is a step with a type
+    (entrance exam, interview, online assessment, other) rather than "exam"
+    only, because schools differ.
+- **Answer 4:** documents optional by default; each school changes it. As
+  above.
+- **Answer 5:** deletion stands. A rejected or withdrawn application, with
+  its files, goes **90 days after it closed**. An application left open for
+  12 months is closed as withdrawn, with the family told, and then follows
+  the same 90 days. Admitted applications stay with the student.
+- **Answer 6:** every plan has equal access. A school at its cap still
+  receives applications but cannot admit past the limit under `enforce`.
+
+**What gets built, revised:**
+
+| Slice | PR | What |
+|---|---|---|
+| **CP7.1** | its own, reviewed first | **Settings, the form, the alerts and the list.** Tables, RLS, permissions; the Admissions officer role and its grant; Settings → Admissions (switch on by default, classes, built-in fields, documents, the school's questions, who is told, SMS on or off, the default offer letter); the public form, with honeypot, rate limits, consent and the `admission-document` key; the confirmation email with the tracking link; the alerts by push, email and SMS with the daily SMS cap; the **Admissions** page (list, and an application's page with its answers and documents); the dashboard line; the nightly purge. |
+| **CP7.2** | second | **Review, assessment, offer and admitting.** Under review; booking the assessment; offer with its letter; reject and withdraw; the status emails; the **tracking page** (status, assessment, offer letter, Accept the offer, Withdraw); recording an acceptance by the school; **Admit** (create and enrol the student, create or link the guardian, the possible-duplicate warning); the student page's admission documents; the 12-month close. |
