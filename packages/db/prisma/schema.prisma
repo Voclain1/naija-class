@@ -106,13 +106,13 @@ model School {
   // wrong or partial account number to parents the moment someone saves.
   // Display requires the toggle AND all three fields present — see
   // schoolBankDetails() in packages/types.
-  bankName              String?         @map("bank_name")
-  bankAccountName       String?         @map("bank_account_name")
-  bankAccountNumber     String?         @map("bank_account_number")
-  bankDetailsEnabled    Boolean         @default(false) @map("bank_details_enabled")
+  bankName                    String?         @map("bank_name")
+  bankAccountName             String?         @map("bank_account_name")
+  bankAccountNumber           String?         @map("bank_account_number")
+  bankDetailsEnabled          Boolean         @default(false) @map("bank_details_enabled")
   // Staff mobile is deliberately enabled one school at a time. Shipping the
   // binary or API must never silently expose a new staff credential surface.
-  staffMobileEnabled    Boolean         @default(false) @map("staff_mobile_enabled")
+  staffMobileEnabled          Boolean         @default(false) @map("staff_mobile_enabled")
   // Onboarding-nudge email (2026-08-08): stamped once, the first (and only,
   // v1) time OnboardingNudgeService emails a school's owner that finished
   // the 5-step wizard but never came back to add an academic year or
@@ -121,7 +121,7 @@ model School {
   // User.tourCompletedAt: set unconditionally after the send attempt
   // (success or logged failure) so a Resend outage doesn't cause a resend
   // storm once it clears.
-  onboardingNudgeSentAt DateTime?       @map("onboarding_nudge_sent_at")
+  onboardingNudgeSentAt       DateTime?       @map("onboarding_nudge_sent_at")
   // Early-access marker (2026-08-09). Nullable stamp, NO enforcement logic
   // anywhere — deliberately just the flag, set by hand from the platform-admin
   // school list. Exists now because the platform has no concept of a plan,
@@ -137,7 +137,7 @@ model School {
   // Shape matches onboardingNudgeSentAt / ndprConsentAt: a timestamp, not a
   // boolean (the extra information is free) and not an enum (naming the tiers
   // before they are decided just buys a migration later).
-  earlyAccessGrantedAt  DateTime?       @map("early_access_granted_at")
+  earlyAccessGrantedAt        DateTime?       @map("early_access_granted_at")
   // Phase 5 / Slice 1 CP2 — AI cost controls. Two deliberately separate knobs:
   //
   //   aiEnabled              per-school kill switch. Flipping it false stops
@@ -177,8 +177,8 @@ model School {
   // concept — none exists anywhere in the product code (see
   // earlyAccessGrantedAt's note directly above), and inventing one to hold an
   // AI budget would be the tail wagging the dog.
-  aiEnabled             Boolean         @default(false) @map("ai_enabled")
-  aiMonthlyTokenBudget  Int?            @map("ai_monthly_token_budget")
+  aiEnabled                   Boolean         @default(false) @map("ai_enabled")
+  aiMonthlyTokenBudget        Int?            @map("ai_monthly_token_budget")
   //   smartImportEnabled     Smart Student Import (photograph a register,
   //                          the model transcribes it) for this school
   //                          (2026-10-11). Off by default, switched on by the
@@ -189,12 +189,12 @@ model School {
   //                          docs/modules/smart-student-import.md has passed,
   //                          so aiEnabled alone is not enough to open it. It
   //                          only narrows: the AI gates above still apply.
-  smartImportEnabled    Boolean         @default(false) @map("smart_import_enabled")
+  smartImportEnabled          Boolean         @default(false) @map("smart_import_enabled")
   //   assignmentFeedbackAiEnabled  Phase 9 / CP4b. The school's own opt-in to
   //                          AI drafts of marking feedback. OFF by default,
   //                          set by owner/admin; aiEnabled must be on too, and
   //                          a teacher still has to press the button.
-  assignmentFeedbackAiEnabled Boolean   @default(false) @map("assignment_feedback_ai_enabled")
+  assignmentFeedbackAiEnabled Boolean         @default(false) @map("assignment_feedback_ai_enabled")
   //   plan / studentCapOverride   the school's plan and, for a deal, its own
   //                          student cap (2026-10-11, docs/modules/plans.md).
   //                          Set by the platform operator only. Null override
@@ -203,8 +203,8 @@ model School {
   //                          prices are not stored: the caps only block when
   //                          PLAN_ENFORCEMENT=enforce, which early access does
   //                          not run.
-  plan                  SchoolPlan      @default(FREE) @map("plan")
-  studentCapOverride    Int?            @map("student_cap_override")
+  plan                        SchoolPlan      @default(FREE) @map("plan")
+  studentCapOverride          Int?            @map("student_cap_override")
   //   smsSender*           the school's own SMS sender name (2026-10-11,
   //                          docs/modules/school-identity.md slice 2). The
   //                          school asks; the platform operator submits it to
@@ -212,10 +212,10 @@ model School {
   //                          CAC registration) and records the outcome. Only
   //                          APPROVED is ever sent; anything else uses the
   //                          platform's TERMII_SENDER_ID.
-  smsSenderId           String?         @map("sms_sender_id")
-  smsSenderStatus       SmsSenderStatus @default(NONE) @map("sms_sender_status")
-  smsSenderRequestedAt  DateTime?       @map("sms_sender_requested_at")
-  smsSenderDecidedAt    DateTime?       @map("sms_sender_decided_at")
+  smsSenderId                 String?         @map("sms_sender_id")
+  smsSenderStatus             SmsSenderStatus @default(NONE) @map("sms_sender_status")
+  smsSenderRequestedAt        DateTime?       @map("sms_sender_requested_at")
+  smsSenderDecidedAt          DateTime?       @map("sms_sender_decided_at")
 
   //   admissionNumber*       admission numbers assigned by SchoolKit
   //                          (2026-10-12, docs/modules/admission-numbers.md).
@@ -376,6 +376,8 @@ model User {
   timetableTeaching TimetableEntryTeacher[] // Phase 8 / CP3 — composite (school_id, id) FK target.
 
   deviceTokens DeviceToken[] // Notifications v1 (N2) — this staff member's phones.
+
+  libraryLoans LibraryLoan[] // Phase 9 / CP6.1 — books this member of staff has borrowed.
 
   @@unique([schoolId, id]) // Phase 8 / CP3 — composite FK target (§17 D29)
   @@index([schoolId])
@@ -593,6 +595,8 @@ model ClassLevel {
   questions     Question[] // Phase 8c / CP5b back-relation.
   examPapers    ExamPaper[] // Phase 8c / CP5c back-relation.
 
+  libraryBookLevels LibraryBookLevel[] // Phase 9 / CP6.1
+
   @@unique([schoolId, code])
   @@index([schoolId])
   @@index([schoolId, orderIndex])
@@ -665,6 +669,8 @@ model Subject {
   questions          Question[] // Phase 8c / CP5b back-relation.
   examPapers         ExamPaper[] // Phase 8c / CP5c back-relation.
   timetableEntries   TimetableEntry[] // Phase 8 / CP3 — composite (school_id, id) FK target.
+
+  libraryBooks LibraryBook[] // Phase 9 / CP6.1
 
   @@unique([schoolId, id]) // Phase 8 / CP3 — composite FK target (§17 D29)
   @@unique([schoolId, code])
@@ -813,13 +819,14 @@ model Student {
   portalInvitations StudentPortalInvitation[] // Phase 6 / Slice 3.
   deviceTokens      DeviceToken[] // Phase 6 / Slice 5.
 
-  cbtCandidates CbtCandidate[] // Online exams (CBT1)
-  healthProfile HealthProfile? // Phase 9 / CP3.1
-  vaccinations  HealthVaccination[] // Phase 9 / CP3.2
-  sickbayVisits SickbayVisit[] // Phase 9 / CP3.3
+  cbtCandidates         CbtCandidate[] // Online exams (CBT1)
+  healthProfile         HealthProfile? // Phase 9 / CP3.1
+  vaccinations          HealthVaccination[] // Phase 9 / CP3.2
+  sickbayVisits         SickbayVisit[] // Phase 9 / CP3.3
   assignmentSubmissions AssignmentSubmission[] // Phase 9 / CP4
   assignmentFiles       AssignmentSubmissionFile[] // Phase 9 / CP4.2
   transportAssignments  TransportAssignment[] // Phase 9 / CP5.2
+  libraryLoans          LibraryLoan[] // Phase 9 / CP6.1
 
   @@unique([schoolId, admissionNumber])
   @@index([schoolId])
@@ -2444,32 +2451,32 @@ enum InvoiceStatus {
 }
 
 model Invoice {
-  id             String        @id @default(uuid())
-  schoolId       String        @map("school_id")
-  studentId      String        @map("student_id") // plain-FK — validated in service
-  termId         String        @map("term_id") // plain-FK
-  academicYearId String        @map("academic_year_id") // denormalised from term at issue time
+  id             String          @id @default(uuid())
+  schoolId       String          @map("school_id")
+  studentId      String          @map("student_id") // plain-FK — validated in service
+  termId         String          @map("term_id") // plain-FK
+  academicYearId String          @map("academic_year_id") // denormalised from term at issue time
   // Immutable issuance-time arm snapshot. Deliberately a plain FK: deleting or
   // renaming an academic arm must not rewrite historical finance attribution.
-  classArmId     String?       @map("class_arm_id")
-  status         InvoiceStatus @default(ISSUED)
+  classArmId     String?         @map("class_arm_id")
+  status         InvoiceStatus   @default(ISSUED)
   // Frozen snapshot of fee line items and applied discounts at issue time.
   // Shape: [{ feeItemId, categoryName, feeName, amount, discountsApplied: [{ ruleId, ruleName, discountAmount }], netAmount }]
   items          Json
-  totalAmount    Int           @map("total_amount") // Σ item.amount (kobo)
-  totalDiscount  Int           @map("total_discount") // Σ capped item discount (kobo)
-  totalDue       Int           @map("total_due") // totalAmount − totalDiscount (kobo)
-  totalPaid      Int           @default(0) @map("total_paid") // updated by slice 7 payment service
-  dueDate        DateTime?     @map("due_date") @db.Date
-  issuedAt       DateTime?     @map("issued_at")
-  issuedBy       String?       @map("issued_by")
-  createdAt      DateTime      @default(now()) @map("created_at")
-  updatedAt      DateTime      @updatedAt @map("updated_at")
+  totalAmount    Int             @map("total_amount") // Σ item.amount (kobo)
+  totalDiscount  Int             @map("total_discount") // Σ capped item discount (kobo)
+  totalDue       Int             @map("total_due") // totalAmount − totalDiscount (kobo)
+  totalPaid      Int             @default(0) @map("total_paid") // updated by slice 7 payment service
+  dueDate        DateTime?       @map("due_date") @db.Date
+  issuedAt       DateTime?       @map("issued_at")
+  issuedBy       String?         @map("issued_by")
+  createdAt      DateTime        @default(now()) @map("created_at")
+  updatedAt      DateTime        @updatedAt @map("updated_at")
   payments       Payment[]
   paymentPlans   PaymentPlan[]
   paymentLinks   PaymentLink[]
   // Phase 9 / CP5.1 — 0 = the term invoice; 1, 2, … = supplementary invoices.
-  sequence       Int           @default(0)
+  sequence       Int             @default(0)
   charges        StudentCharge[]
 
   @@unique([schoolId, studentId, termId, sequence])
@@ -3407,8 +3414,8 @@ model BehaviourRecord {
   // the writer chose a category. `points` is COPIED from the category at the
   // time of writing, so changing a category's value later never rewrites a
   // past term.
-  categoryId String?             @map("category_id")
-  category   BehaviourCategory?  @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  categoryId String?            @map("category_id")
+  category   BehaviourCategory? @relation(fields: [categoryId], references: [id], onDelete: Restrict)
   points     Int?
 
   // Phase 9 / CP2.2 (CP2-D2). Set when the record is one student's part of an
@@ -3498,18 +3505,18 @@ enum DisciplineActionStatus {
 }
 
 model DisciplineAction {
-  id         String               @id @default(uuid())
-  schoolId   String               @map("school_id")
-  studentId  String               @map("student_id")
+  id         String                 @id @default(uuid())
+  schoolId   String                 @map("school_id")
+  studentId  String                 @map("student_id")
   // Optional links to what it is about.
-  recordId   String?              @map("record_id")
-  incidentId String?              @map("incident_id")
+  recordId   String?                @map("record_id")
+  incidentId String?                @map("incident_id")
   type       DisciplineActionType
   // DATE: a detention's day; a suspension's first and last day; an
   // exclusion's first day. CHECKs in the migration keep them consistent with
   // the type. A warning has neither.
-  startOn    DateTime?            @map("start_on") @db.Date
-  endOn      DateTime?            @map("end_on") @db.Date
+  startOn    DateTime?              @map("start_on") @db.Date
+  endOn      DateTime?              @map("end_on") @db.Date
   reason     String
   status     DisciplineActionStatus @default(PROPOSED)
 
@@ -4120,20 +4127,20 @@ model HealthVaccination {
 // Read and written by owner, admin and the Health officer (sickbay.manage);
 // never by a teacher. Withdrawn, never deleted.
 model SickbayVisit {
-  id              String               @id @default(uuid())
-  schoolId        String               @map("school_id")
-  studentId       String               @map("student_id")
-  student         Student              @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  visitedAt       DateTime             @map("visited_at")
+  id              String              @id @default(uuid())
+  schoolId        String              @map("school_id")
+  studentId       String              @map("student_id")
+  student         Student             @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  visitedAt       DateTime            @map("visited_at")
   complaint       String
-  actionTaken     String?              @map("action_taken")
-  sentHome        Boolean              @default(false) @map("sent_home")
+  actionTaken     String?             @map("action_taken")
+  sentHome        Boolean             @default(false) @map("sent_home")
   // The parent sees the complaint, action and medicine only when this is set.
-  shareWithParent Boolean              @default(false) @map("share_with_parent")
-  recordedBy      String               @map("recorded_by")
-  createdAt       DateTime             @default(now()) @map("created_at")
-  withdrawnAt     DateTime?            @map("withdrawn_at")
-  withdrawnBy     String?              @map("withdrawn_by")
+  shareWithParent Boolean             @default(false) @map("share_with_parent")
+  recordedBy      String              @map("recorded_by")
+  createdAt       DateTime            @default(now()) @map("created_at")
+  withdrawnAt     DateTime?           @map("withdrawn_at")
+  withdrawnBy     String?             @map("withdrawn_by")
   medications     SickbayMedication[]
   notices         SickbayNotice[]
 
@@ -4177,18 +4184,18 @@ model SickbayNotice {
 // item. Read and marked by owner, admin and the class's teachers
 // (assignment.read / assignment.mark); never the bursar.
 model AssignmentCollection {
-  id           String                 @id @default(uuid())
-  schoolId     String                 @map("school_id")
-  assignmentId String                 @unique @map("assignment_id")
-  assignment   Assignment             @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
-  totalMarks   Int                    @map("total_marks")
+  id           String                     @id @default(uuid())
+  schoolId     String                     @map("school_id")
+  assignmentId String                     @unique @map("assignment_id")
+  assignment   Assignment                 @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  totalMarks   Int                        @map("total_marks")
   // Off once the teacher clicks "Stop accepting work".
-  accepting    Boolean                @default(true)
+  accepting    Boolean                    @default(true)
   // CP4b: what a good answer includes. Staff only; sent to the AI drafter.
-  markingGuide String?                @map("marking_guide")
-  createdBy    String                 @map("created_by")
-  createdAt    DateTime               @default(now()) @map("created_at")
-  updatedAt    DateTime               @default(now()) @updatedAt @map("updated_at")
+  markingGuide String?                    @map("marking_guide")
+  createdBy    String                     @map("created_by")
+  createdAt    DateTime                   @default(now()) @map("created_at")
+  updatedAt    DateTime                   @default(now()) @updatedAt @map("updated_at")
   submissions  AssignmentSubmission[]
   files        AssignmentSubmissionFile[]
   questions    AssignmentQuestion[]
@@ -4199,40 +4206,40 @@ model AssignmentCollection {
 // One row per student per attempt. A submitted attempt is final; a return
 // opens the next attempt and this one is kept as it was.
 model AssignmentSubmission {
-  id           String               @id @default(uuid())
-  schoolId     String               @map("school_id")
-  collectionId String               @map("collection_id")
-  collection   AssignmentCollection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
-  studentId    String               @map("student_id")
-  student      Student              @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  attempt      Int
+  id                String                     @id @default(uuid())
+  schoolId          String                     @map("school_id")
+  collectionId      String                     @map("collection_id")
+  collection        AssignmentCollection       @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  studentId         String                     @map("student_id")
+  student           Student                    @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  attempt           Int
   // Null when the attempt is files alone (CP4.2).
-  body         String?
+  body              String?
   // Q7's paste indicator, as reported by the student's own device. Shown to
   // the teacher only; never to the student or parents, never in a mark.
-  typedChars   Int                  @default(0) @map("typed_chars")
-  pastedChars  Int                  @default(0) @map("pasted_chars")
-  submittedAt  DateTime             @default(now()) @map("submitted_at")
+  typedChars        Int                        @default(0) @map("typed_chars")
+  pastedChars       Int                        @default(0) @map("pasted_chars")
+  submittedAt       DateTime                   @default(now()) @map("submitted_at")
   // After the due date's school day (Lagos), worked out by the server.
-  late         Boolean              @default(false)
-  mark         Int?
-  feedback     String?
-  markedBy     String?              @map("marked_by")
-  markedAt     DateTime?            @map("marked_at")
+  late              Boolean                    @default(false)
+  mark              Int?
+  feedback          String?
+  markedBy          String?                    @map("marked_by")
+  markedAt          DateTime?                  @map("marked_at")
   // The student and parents see the mark and feedback only once released.
-  releasedAt   DateTime?            @map("released_at")
-  returnedBy   String?              @map("returned_by")
-  returnedAt   DateTime?            @map("returned_at")
-  returnNote   String?              @map("return_note")
-  files        AssignmentSubmissionFile[]
+  releasedAt        DateTime?                  @map("released_at")
+  returnedBy        String?                    @map("returned_by")
+  returnedAt        DateTime?                  @map("returned_at")
+  returnNote        String?                    @map("return_note")
+  files             AssignmentSubmissionFile[]
   // CP4.3: the answers to the questions, keyed by question id (multiple
   // choice: the option's index; fill-in: the text), and the mark the server
   // worked out from them. The teacher gives the real mark.
-  answers      Json?
-  autoMark     Int?                 @map("auto_mark")
+  answers           Json?
+  autoMark          Int?                       @map("auto_mark")
   // CP4b: the saved mark started from an AI draft (the teacher saved it).
-  feedbackAiDrafted Boolean         @default(false) @map("feedback_ai_drafted")
-  feedbackDraft AssignmentFeedbackDraft?
+  feedbackAiDrafted Boolean                    @default(false) @map("feedback_ai_drafted")
+  feedbackDraft     AssignmentFeedbackDraft?
 
   @@unique([collectionId, studentId, attempt])
   @@index([schoolId, studentId])
@@ -4408,4 +4415,107 @@ model TransportAssignment {
   @@unique([studentId, termId])
   @@index([schoolId, routeId, termId])
   @@map("transport_assignments")
+}
+
+// ─── Phase 9 / CP6 — the library ────────────────────────────────────────────
+// A book, its physical copies (accession number unique in the school) and
+// loans to a student OR a member of staff. One open loan per copy, by a partial
+// unique index in the migration (library_loans_open_copy_key). Fines are
+// student charges (F2), never written here. docs/modules/phase-9.md §14.
+
+enum LibraryCopyStatus {
+  AVAILABLE
+  ON_LOAN
+  LOST
+  WITHDRAWN
+}
+
+model LibrarySettings {
+  id            String   @id @default(uuid())
+  schoolId      String   @unique @map("school_id")
+  loanDays      Int      @default(14) @map("loan_days")
+  studentLimit  Int      @default(2) @map("student_limit")
+  staffLimit    Int      @default(5) @map("staff_limit")
+  renewalLimit  Int      @default(2) @map("renewal_limit")
+  nextAccession Int      @default(1) @map("next_accession")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  @@map("library_settings")
+}
+
+model LibraryBook {
+  id               String             @id @default(uuid())
+  schoolId         String             @map("school_id")
+  title            String
+  authors          String?
+  isbn             String?
+  publisher        String?
+  publishedYear    Int?               @map("published_year")
+  subjectId        String?            @map("subject_id")
+  shelfLocation    String?            @map("shelf_location")
+  replacementPrice Int?               @map("replacement_price") // kobo
+  referenceOnly    Boolean            @default(false) @map("reference_only")
+  createdBy        String?            @map("created_by")
+  createdAt        DateTime           @default(now()) @map("created_at")
+  updatedAt        DateTime           @updatedAt @map("updated_at")
+  subject          Subject?           @relation(fields: [subjectId], references: [id], onDelete: SetNull)
+  levels           LibraryBookLevel[]
+  copies           LibraryCopy[]
+
+  @@index([schoolId, title])
+  @@map("library_books")
+}
+
+model LibraryBookLevel {
+  schoolId     String      @map("school_id")
+  bookId       String      @map("book_id")
+  classLevelId String      @map("class_level_id")
+  book         LibraryBook @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  classLevel   ClassLevel  @relation(fields: [classLevelId], references: [id], onDelete: Cascade)
+
+  @@id([bookId, classLevelId])
+  @@index([schoolId])
+  @@map("library_book_levels")
+}
+
+model LibraryCopy {
+  id              String            @id @default(uuid())
+  schoolId        String            @map("school_id")
+  bookId          String            @map("book_id")
+  accessionNumber String            @map("accession_number") // upper case
+  status          LibraryCopyStatus @default(AVAILABLE)
+  note            String?
+  createdAt       DateTime          @default(now()) @map("created_at")
+  updatedAt       DateTime          @updatedAt @map("updated_at")
+  book            LibraryBook       @relation(fields: [bookId], references: [id], onDelete: Cascade)
+  loans           LibraryLoan[]
+
+  @@unique([schoolId, accessionNumber])
+  @@index([bookId])
+  @@map("library_copies")
+}
+
+model LibraryLoan {
+  id         String      @id @default(uuid())
+  schoolId   String      @map("school_id")
+  copyId     String      @map("copy_id")
+  studentId  String?     @map("student_id") // exactly one of studentId, userId
+  userId     String?     @map("user_id")
+  issuedAt   DateTime    @default(now()) @map("issued_at")
+  dueOn      DateTime    @map("due_on") @db.Date
+  renewals   Int         @default(0)
+  returnedAt DateTime?   @map("returned_at")
+  issuedBy   String?     @map("issued_by")
+  returnedBy String?     @map("returned_by")
+  createdAt  DateTime    @default(now()) @map("created_at")
+  updatedAt  DateTime    @updatedAt @map("updated_at")
+  copy       LibraryCopy @relation(fields: [copyId], references: [id], onDelete: Restrict)
+  student    Student?    @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  user       User?       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([schoolId, returnedAt])
+  @@index([studentId])
+  @@index([userId])
+  @@map("library_loans")
 }

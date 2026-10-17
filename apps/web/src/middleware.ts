@@ -109,6 +109,8 @@ export const config = {
     "/sickbay/:path*",
     // Transport (Phase 9 / CP5.2), added in the same PR as the page.
     "/transport/:path*",
+    // The library (Phase 9 / CP6.1), added in the same PR as the pages.
+    "/library/:path*",
     "/teacher/:path*",
     "/super-admin/dashboard/:path*",
   ],

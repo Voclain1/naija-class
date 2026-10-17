@@ -18,6 +18,7 @@ export * from './announcements/index.js';
 export * from './behaviour/index.js';
 export * from './health/index.js';
 export * from './transport/index.js';
+export * from './library/index.js';
 export * from './homework/index.js';
 export * from './assignments/index.js';
 export * from './question-bank/index.js';

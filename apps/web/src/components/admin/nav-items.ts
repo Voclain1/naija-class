@@ -2,6 +2,7 @@ import {
   BarChart3,
   BookOpenCheck,
   Bus,
+  Library,
   Megaphone,
   CalendarClock,
   CalendarDays,
@@ -159,6 +160,9 @@ export const NAV_ITEMS: NavItem[] = [
   // Phase 9 / CP5.2 — transport (docs/modules/phase-9.md §13). transport.read:
   // owner, admin and the bursar (who sets route fees there). Teachers never.
   { label: "Transport", href: "/transport", icon: Bus, enabled: true, requiredPermission: "transport.read" },
+  // Phase 9 / CP6.1 — the library (docs/modules/phase-9.md §14). library.read:
+  // owner, admin and the Librarian, whose whole menu this is.
+  { label: "Library", href: "/library", icon: Library, enabled: true, requiredPermission: "library.read" },
   // Announcements (docs/modules/announcements.md). Gated on
   // announcement.create, not announcement.read: every staff role can READ the
   // school's announcements in their own feed, but this page is the sending

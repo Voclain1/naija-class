@@ -2820,3 +2820,298 @@ recommendation; the owner's approval of this plan is that answer.
     **School bus** card in the portal.
   - The list and the portal card were checked at 320px and 390px, with no
     overflow.
+
+## 14. CP6 plan-first — Library
+
+Written 2026-10-17 for the owner's approval. **Owner, 2026-10-17: approved
+as written, with all six recommendations in §14.7.** It uses F1 (private files, for digital resources) and F2 (student
+charges, for fines and lost books), both shipped.
+
+### 14.1 What exists today (read from the code)
+
+- **No library tables or routes exist.** `docs/ARCHITECTURE.md` §6.11 lists a
+  catalogue, issue and return, overdue with fines, and digital resources
+  linked to subjects.
+- **F2 is ready for fines.** `StudentChargeService` already has the
+  `LIBRARY_FINE` kind (labelled "Library" on invoices). Its `raise`,
+  `voidBySource` and the partial unique index (one live charge per source)
+  are the whole interface a library needs. **Bill waiting charges** already
+  bills a fine raised after the term invoice went out.
+- **F1 is ready for files.** Private uploads take PDF, JPG, PNG and WebP up
+  to 10 MB, served by a 5-minute signed URL after an access check. A
+  `library-resource` storage key would join `health-document` and
+  `submission-file`.
+- **Roles.** `health_officer` (CP3) is the model for a narrow staff role: a
+  system role with only its own module's permissions, plus the read-only
+  context (years, terms, class arms, the student roster) its screens need.
+- **Teaching scope.** `getTeacherScope` (attendance, assessment, question
+  bank) already answers "which subjects and arms does this teacher teach".
+- **Students** use the app (`apps/mobile/app/me/*`, `StudentAuthGuard`
+  routes under `/student-portal`). **Parents** use the portal and the app.
+
+### 14.2 Decisions (owner may overrule any)
+
+- **CP6-D1. The catalogue: a book, and its copies.**
+  - A **book** has a title, author(s), ISBN (optional; schools hold many
+    local titles without one), publisher, year, subject (optional), class
+    level(s) it suits (optional), shelf location, a **replacement price** in
+    kobo (optional), and a "reference only" switch.
+  - Each physical **copy** has an **accession number**, unique in the
+    school, and a status: AVAILABLE, ON_LOAN, LOST or WITHDRAWN (worn out or
+    discarded). The librarian types the accession number or scans its
+    barcode; a USB scanner types into the field, so no scanner support is
+    needed.
+  - Adding a book can add several copies at once, numbered from the school's
+    next accession number.
+  - The catalogue search covers title, author, ISBN and accession number.
+  - Not a book? Magazines, atlases and kits are books with "reference only"
+    on, or ordinary books; no separate item types.
+- **CP6-D2. Lending.**
+  - A copy is issued to a **student** or to a **member of staff**. A
+    reference-only book, or a copy that is not AVAILABLE, cannot be issued.
+  - The due date is today plus the school's **loan period** (default 14
+    days); the librarian may change it on the spot.
+  - **Limits**, set by the school: the most books a student may hold at once
+    (default 2) and a member of staff (default 5), and the most renewals of
+    one loan (default 2). A renewal moves the due date on by one loan period
+    and is allowed only before the book is overdue; an overdue book is
+    returned first.
+  - **One open loan per copy**, as a partial unique index, and the copy row
+    is locked while issuing, so two librarians cannot lend the same copy.
+  - A student who has left (withdrawn or graduated) keeps their open loans on
+    the overdue list, labelled "Left the school". Withdrawal is not blocked
+    by an unreturned book; the school chases it.
+- **CP6-D3. Fines: off by default, students only.**
+  - The school turns fines on and sets a **daily rate**, **grace days**
+    (default 0) and an optional **cap** per loan. All in kobo.
+  - The fine is worked out **on the server, at return**:
+    rate × (late days − grace), never below 0, never above the cap.
+  - **Late days** are calendar days after the due date, counting only days
+    inside a term (start to end date). A book kept over the long holiday is
+    not fined for the holiday. Mid-term breaks and public holidays count, as
+    the calendar does not mark them as closures today.
+  - At return the librarian sees the fine before confirming, and may
+    **waive** it with a reason; the waiver is audited with the amount.
+  - A fine above ₦0 is raised as a `LIBRARY_FINE` charge through
+    `StudentChargeService` (source `library` + the loan id), described
+    "Library fine — <title>, <n> days late". It goes on the term invoice, or
+    on a supplementary one when the bursar bills waiting charges. The term is
+    the one containing the return date, or the next term to start if the
+    book comes back in a holiday.
+  - **No fines for staff.** Their overdue books appear on the list; the
+    school deals with it.
+  - The overdue list shows the fine **so far** for each student loan, worked
+    out by the same function, marked "estimate".
+- **CP6-D4. Lost books.**
+  - The librarian marks an open loan **lost**. The copy becomes LOST. For a
+    student, a `LIBRARY_FINE` charge is raised at the book's **replacement
+    price** ("Lost book — <title>"), in place of any overdue fine, not on top
+    of it. One charge per loan, as the index already requires.
+  - A book with no replacement price raises no charge; the librarian is told
+    so before confirming.
+  - The librarian may waive the charge, with a reason, as for fines.
+  - **Found again:** if the charge is still OPEN it is voided and the copy
+    returns to AVAILABLE. If it is already billed it stays, and any refund is
+    the school's decision, as for every billed charge.
+  - A staff member's lost book raises no charge (D3).
+- **CP6-D5. The overdue list.**
+  - Every open loan past its due date, oldest first: borrower, class (or
+    "Staff"), title, accession number, days late and the fine so far.
+  - Filterable by class and by students or staff; exportable (F3,
+    `ListExportMenu`).
+  - **No automatic messages.** The list is the tool; reminders to families
+    can come later if schools ask (§14.6).
+- **CP6-D6. Families.**
+  - The **portal** and the **parent app** show, on each child's page, the
+    books the child has out with their due dates, and "Overdue" in words on a
+    tinted row for a late one.
+  - The **student app** gets a **Library** screen: my books and due dates,
+    and the digital resources for my class (D7).
+  - Fines reach parents as invoice lines, like every charge. No separate
+    fines screen.
+- **CP6-D7. Digital resources.**
+  - A resource is a **PDF** (F1, up to 10 MB, new key `library-resource`) or
+    an **https link**, with a title, an optional description, a **subject**
+    and one or more **class levels**.
+  - **Students** enrolled this term in an arm of one of those levels see it
+    in the app's Library screen. A PDF opens through a 5-minute signed URL,
+    after the same check on the server; a link opens in the browser.
+  - **Who adds them:** the librarian, owner and admin for any subject and
+    level; a **teacher** for the subjects they teach, at the levels they
+    teach them (`getTeacherScope`), and may edit or remove only their own.
+  - Staff with library access see every resource; parents do not (they are
+    the student's reading, not a report).
+  - Adding and removing a resource are audited. Opening one is not: it is
+    teaching material, not a record about a child.
+- **CP6-D8. The librarian role, and who else.**
+  - New permissions:
+    - `library.read`: the catalogue, loans and the overdue list;
+    - `library.manage`: books and copies;
+    - `library.lend`: issue, return, renew, mark lost or found, waive;
+    - `library.settings`: loan period, limits, and the fine rules;
+    - `library.resource.manage`: any digital resource;
+    - `library.resource.own`: resources in one's own teaching scope.
+  - **Librarian** (new system role): every library permission except
+    `library.settings`, plus read-only years, terms, class arms and the
+    student and staff lists its screens search. No finance, academic,
+    health or settings access.
+  - **Owner and admin:** every library permission. **Fine rules are theirs
+    alone** (`library.settings`): a fine is money owed by a family, and the
+    librarian lends rather than sets policy. Same idea as the route fee in
+    CP5.
+  - **Teacher:** `library.resource.own` only.
+  - **Bursar:** nothing new; fines are already visible to them as charges.
+  - Two-gate checks on every route, as everywhere: `@Permissions` and
+    `assertUserActiveAndHasOneOf` in the service.
+- **CP6-D9. Plans.** The library is not a paid extra.
+
+### 14.3 What gets built
+
+| Slice | PR | What |
+|---|---|---|
+| **CP6.1** | its own, reviewed first | **Catalogue and lending.** Tables, RLS, the librarian role and permissions; books and copies; issue, return, renew with limits and the copy lock; the school's library settings (without fines yet); web pages under **Library** (catalogue, a book's page with its copies, the lending desk, loans), a student's and a staff member's "Books out" line. |
+| **CP6.2** | second | **Fines, lost books and the overdue list.** The fine function (term days, grace, cap), fines and lost-book charges through F2, waivers, found-again; the overdue list with export; the lending desk and overdue list on the staff app; the child's books on the portal and parent app; the student app's Library screen (books only). |
+| **CP6.3** | third | **Digital resources.** The `library-resource` key, resources with subject and levels, the teacher scope check; web pages for staff; the student app's resources list. |
+
+### 14.4 Data
+
+- `library_settings` (one row per school): loan period days, student and
+  staff loan limits, renewal limit, fines on/off, daily rate, grace days,
+  cap (kobo, nullable).
+- `library_books`: title, authors, ISBN, publisher, year, subject id, shelf
+  location, replacement price (kobo, nullable), reference only, and
+  `library_book_levels` for its class levels.
+- `library_copies`: book id, accession number (`UNIQUE(school_id,
+  accession_number)`), status, acquired on (date), note.
+- `library_loans`: copy id, borrower (student id **or** user id, with a
+  `CHECK` that exactly one is set), issued at, due on (date), renewals,
+  returned at, lost at, found at, fine amount, waived (with reason and by
+  whom), issued by, returned by. Partial unique index: one loan per copy
+  `WHERE returned_at IS NULL AND lost_at IS NULL`.
+- `library_resources`: title, description, subject id, kind (FILE or LINK),
+  URL or file id, added by, and `library_resource_levels`.
+- Every table: `school_id`, RLS enabled and forced, `tenant_isolation`
+  policy, explicit grants to `app_user`. No SECURITY DEFINER function; the
+  count stays 23.
+- Money in `Int` kobo; due dates `@db.Date`; moments `DateTime`.
+
+### 14.5 Tests (the rules first)
+
+- **The fine function** (pure, written first): zero within the due date and
+  the grace days; rate × days after; the cap holds; holiday days between
+  terms do not count; a due date inside a holiday; a return the day after
+  the due date with grace 0.
+- **Lending:** a reference-only book and a non-available copy are refused;
+  limits per student and per staff member; renewals only before overdue and
+  up to the limit; two concurrent issues of one copy, exactly one succeeds.
+- **Fines and lost books (F2):** a late return raises one `LIBRARY_FINE`
+  charge for the right student and term; fines off or a waiver raise
+  nothing and the waiver is audited; staff are never charged; lost raises
+  the replacement price and no overdue fine; found voids an OPEN charge and
+  leaves a billed one; the charge reaches the term or supplementary invoice.
+  `student-charge-writes.spec.ts` still passes (the library never writes
+  the table itself).
+- **The overdue list** holds exactly the open late loans; its estimate
+  equals the fine raised at return on the same day.
+- **Resources:** a student in a listed level sees it and gets a signed URL;
+  a student in another level, a parent and another school get nothing; a
+  teacher may add only within their scope and change only their own.
+- **Who:** the librarian is refused on fine settings and on every finance
+  route; a teacher is refused on lending; a parent sees only their own
+  child's books. RLS: another school's books, loans and resources are
+  invisible. `permissions-coverage.spec.ts` pins the new role.
+- **e2e:** the librarian adds a book with two copies, issues one to a
+  student, the parent sees it with its due date; with fines on, a late
+  return raises a charge that appears on Finance → Charges. CP6.3: a
+  teacher uploads a PDF for their subject and the student opens it.
+- **Phone fit:** every new screen at 320px and 390px.
+
+### 14.6 Left out on purpose
+
+- Reservations (holds) and a waiting list.
+- Automatic overdue reminders by SMS or email.
+- ISBN look-up from an online catalogue, and cover images.
+- Printing barcode labels (a scanner reading an existing label works).
+- Fines for staff, and fines on anything but a late or lost book.
+- Inter-branch or inter-school lending.
+- An e-book reader in the app; a PDF opens in the device's viewer.
+
+### 14.7 Questions for the owner
+
+1. **Fines off by default** (CP6-D3), set by the owner or admin only?
+   Recommended: yes.
+2. **Holidays between terms do not count** towards a fine (CP6-D3)?
+   Recommended: yes; mid-term breaks still count.
+3. **A lost book charges its replacement price, in place of the fine**
+   (CP6-D4)? Recommended: yes.
+4. **No fines or charges for staff** (CP6-D3, D4)? Recommended: yes.
+5. **Teachers may add resources for the subjects and levels they teach**
+   (CP6-D7)? Recommended: yes.
+6. **Parents see the child's books and due dates** (CP6-D6), but not the
+   digital resources? Recommended: yes.
+
+### 14.8 As built — CP6.1, the catalogue and lending (2026-10-17)
+
+- **Data** (migration `20261031120000_library`): `library_settings` (one row
+  per school, created on first save; until then the defaults apply),
+  `library_books`, `library_book_levels`, `library_copies` and
+  `library_loans`, every one carrying `school_id` with RLS enabled and forced
+  and the `tenant_isolation` policy. A loan names a student **or** a member of
+  staff (a `CHECK` that exactly one is set). One open loan per copy is the
+  partial unique index `library_loans_open_copy_key`. Accession numbers and
+  ISBNs are checked in SQL too (upper case; 10 or 13 digits). No SECURITY
+  DEFINER function; the count stays 23. School deletion needs no change: its
+  child-before-parent order is read from the catalog.
+- **The librarian role** is inserted by the migration and seeded in
+  `system-roles.ts`, holding `library.read`, `library.manage` and
+  `library.lend`. Admin gains those three and `library.settings`. The role is
+  on the staff invite form, lands on `/library` after sign-in, and is pinned
+  in `permissions-coverage.spec.ts` and the two-gate conformance spec.
+- **No roster permission for the librarian.** `GET /library/context` returns
+  the subjects and class levels the book form needs, and
+  `GET /library/borrowers` returns only a name, the admission number and
+  class (or "Staff") and the books out, as the health page does for the
+  Health officer.
+- **API** (`apps/api/src/modules/library/`):
+  - catalogue: `GET/POST /library/books`, `GET/PATCH/DELETE /library/books/:id`,
+    `POST /library/books/:id/copies`, `PATCH /library/copies/:id`
+    (withdraw or put back), `GET /library/copies/lookup`;
+  - lending: `POST /library/loans/issue`, `POST /library/loans/return` (both
+    by accession number), `POST /library/loans/:id/renew`,
+    `GET /library/loans?state=OPEN|OVERDUE|RETURNED`;
+  - per borrower: `GET /library/students/:id/loans`,
+    `GET /library/staff/:id/loans`;
+  - rules: `PUT /library/settings` (owner, admin).
+- **How the rules came out:**
+  - Issuing locks the copy row and the borrower's row (`FOR UPDATE`), so the
+    one-loan-per-copy rule and the borrower's limit both hold when two
+    librarians work at once; the unique index is the backstop.
+  - A student who has left, or a staff account that is switched off, cannot
+    borrow (`BORROWER_NOT_ACTIVE`).
+  - A renewal runs one loan period **from the day it is renewed**, never
+    earlier than the current due date; a second renewal on the same day
+    therefore keeps the date. It is refused once the book is overdue.
+  - "Number them for me" hands out the school's next number, skipping any
+    number already typed by hand, with the settings row locked.
+  - A book that has ever been lent cannot be deleted; its copies are
+    withdrawn instead. A copy on loan cannot be withdrawn.
+  - Every change is audited (`library.book`, `library.copy`,
+    `library.loan.issue|return|renew`, `library.settings`) with ids, dates
+    and counts, never a name.
+- **Web** (`apps/web/src/app/(admin)/library/`): the catalogue with search
+  and **Add a book**; a book's page with its details, copies, who has each
+  one and the due date, **Add copies**, **Withdraw** and **Delete book**; the
+  **Lending desk** (type or scan a number, then lend, return or renew);
+  **Loans** (out now, overdue, returned, with the export menu); and **Rules**
+  for the owner and admin. "Library books out" appears on the student page
+  and the staff page for those who hold `library.read`. An overdue loan is
+  tinted and says "Overdue by n days" in words. Nav item "Library".
+- **Tests:** `library.service.spec.ts` (16, against real Postgres: the
+  concurrent issue, limits per kind, renewals, reference and withdrawn
+  copies, numbering, deleting, the borrower search, who may do what, RLS and
+  the audit trail); RBAC coverage pins; e2e `library-lending.spec.ts` (the
+  Librarian catalogues, lends at the desk, sees the loan, takes it back; the
+  admin sees the book on the student page and saves the rules). Every page
+  checked at 320 and 390 px.
+- **Left for CP6.2 as planned:** fines and lost books, the overdue list's
+  fine estimate, the staff app, and the parent and student views.

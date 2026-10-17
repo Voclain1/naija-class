@@ -46,7 +46,7 @@ const inviteFormSchema = z.object({
     .email("Enter a valid email address."),
   firstName: z.string().trim().max(60, "First name is too long."),
   lastName: z.string().trim().max(60, "Last name is too long."),
-  roleKey: z.enum(["admin", "bursar", "teacher", "health_officer"]),
+  roleKey: z.enum(["admin", "bursar", "teacher", "health_officer", "librarian"]),
 });
 
 type FormValues = z.infer<typeof inviteFormSchema>;
@@ -185,7 +185,9 @@ export default function InviteStaffPage() {
               ? "a teacher"
               : roleKey === "health_officer"
                 ? "the health officer, who keeps students' health records"
-                : "an admin"}
+                : roleKey === "librarian"
+                  ? "the librarian, who keeps the library's books and lends them"
+                  : "an admin"}
           .
         </p>
       </header>
@@ -241,6 +243,7 @@ export default function InviteStaffPage() {
             <option value="bursar">Bursar</option>
             <option value="teacher">Teacher</option>
             <option value="health_officer">Health officer</option>
+            <option value="librarian">Librarian</option>
           </select>
         </div>
 

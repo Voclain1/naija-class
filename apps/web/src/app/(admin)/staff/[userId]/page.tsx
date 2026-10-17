@@ -11,6 +11,7 @@ import type {
   UserListItemDto,
 } from "@school-kit/types";
 
+import { BooksOutField } from "@/components/library/books-out";
 import { BvnSection } from "@/components/staff/bvn-section";
 import { TeacherAssignmentsSection } from "@/components/staff/teacher-assignments-section";
 import { Badge } from "@/components/ui/badge";
@@ -180,6 +181,11 @@ export default function StaffDetailPage() {
 
       {/* BVN — staff-wide payroll identifier, not teacher-specific */}
       <BvnSection mode="other" userId={userId} />
+
+      {/* Phase 9 / CP6.1 — library books this person has out (library.read only). */}
+      <dl className="grid grid-cols-1 gap-x-6 gap-y-3 rounded-md border bg-card p-4 empty:hidden sm:grid-cols-2">
+        <BooksOutField kind="STAFF" id={userId} />
+      </dl>
 
       {/* Teacher profile */}
       <section className="flex flex-col gap-3">

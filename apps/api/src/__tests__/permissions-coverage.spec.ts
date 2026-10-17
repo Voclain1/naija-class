@@ -31,6 +31,7 @@ import { BehaviourController } from "../modules/behaviour/behaviour.controller";
 import { DisciplineController } from "../modules/behaviour/discipline.controller";
 import { HealthController } from "../modules/health/health.controller";
 import { SickbayController } from "../modules/health/sickbay.controller";
+import { LibraryController } from "../modules/library/library.controller";
 import { AssignmentsController } from "../modules/assignments/assignments.controller";
 import { CalendarController } from "../modules/calendar/calendar.controller";
 import { ReportsController } from "../modules/reports/reports.controller";
@@ -1556,5 +1557,44 @@ describe("Phase 9 CP4 RBAC coverage: submitted work and marking", () => {
     const bursar = new Set(roleSeed("bursar").permissions);
     for (const p of ["assignment.read", "assignment.mark"]) expect(bursar.has(p), `bursar must not hold ${p}`).toBe(false);
     expect(bursar.has("homework.read")).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 9 / CP6.1 — the library (docs/modules/phase-9.md §14 CP6-D8). The
+// librarian reads, keeps the catalogue and lends; the rules are owner/admin.
+// ---------------------------------------------------------------------------
+describe("Phase 9 CP6.1 RBAC coverage: the library", () => {
+  const perms = (handler: string): string[] =>
+    Reflect.getMetadata(
+      PERMISSIONS_METADATA_KEY,
+      (LibraryController.prototype as unknown as Record<string, object>)[handler]!,
+    ) as string[];
+
+  it("reads need library.read, catalogue writes library.manage, the desk library.lend, the rules library.settings", () => {
+    for (const handler of ["context", "listBooks", "getBook", "lookupCopy", "listLoans", "studentLoans", "staffLoans"]) {
+      expect(perms(handler), handler).toEqual(["library.read"]);
+    }
+    for (const handler of ["createBook", "updateBook", "deleteBook", "addCopies", "updateCopy"]) {
+      expect(perms(handler), handler).toEqual(["library.manage"]);
+    }
+    for (const handler of ["findBorrowers", "issue", "returnCopy", "renew"]) {
+      expect(perms(handler), handler).toEqual(["library.lend"]);
+    }
+    expect(perms("updateSettings")).toEqual(["library.settings"]);
+  });
+
+  it("the Librarian holds the three library permissions and nothing else", () => {
+    expect([...roleSeed("librarian").permissions].sort()).toEqual(["library.lend", "library.manage", "library.read"]);
+  });
+
+  it("admin holds all four; teacher, bursar and the Health officer hold none", () => {
+    const all = ["library.read", "library.manage", "library.lend", "library.settings"];
+    const admin = new Set(roleSeed("admin").permissions);
+    for (const p of all) expect(admin.has(p), p).toBe(true);
+    for (const key of ["teacher", "bursar", "health_officer"]) {
+      const held = new Set(roleSeed(key).permissions);
+      for (const p of all) expect(held.has(p), `${key} must not hold ${p}`).toBe(false);
+    }
   });
 });

@@ -144,13 +144,13 @@ export class UsersService {
     await assertUserActiveAndHasOneOf(authCtx, ["owner", "admin"]);
 
     const roleKey = input.roleKey ?? "admin";
-    if (roleKey !== "admin" && roleKey !== "bursar" && roleKey !== "teacher" && roleKey !== "health_officer") {
+    if (roleKey !== "admin" && roleKey !== "bursar" && roleKey !== "teacher" && roleKey !== "health_officer" && roleKey !== "librarian") {
       // Unreachable via the HTTP path (ZodValidationPipe/inviteAdminSchema
       // already rejects anything outside the enum) — this is the
       // defence-in-depth check for direct service callers.
       throw new ValidationError(
         "INVALID_ROLE_KEY",
-        "roleKey must be 'admin', 'bursar', 'teacher' or 'health_officer'.",
+        "roleKey must be 'admin', 'bursar', 'teacher', 'health_officer' or 'librarian'.",
       );
     }
 
