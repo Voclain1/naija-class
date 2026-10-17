@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { basePrisma, withTenant } from "@school-kit/db";
-import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from "@school-kit/types";
+import { ConflictError, ForbiddenError, NotFoundError, sickbayDayOf, ValidationError } from "@school-kit/types";
 
 import { AuthService } from "../auth/auth.service";
 import { StudentChargeService } from "../finance/student-charge.service";
@@ -225,10 +225,11 @@ describe("HostelHouseService (integration)", () => {
       expect(left.leftAt).not.toBeNull();
       await expect(house.visitLeft(hm, v.id, {}, reqCtx)).rejects.toBeInstanceOf(ConflictError);
 
-      expect((await house.visits(hm, h.id, {})).map((x) => x.id)).toContain(v.id);
+      // The visit's own Lagos day: an hour ago can be yesterday just after midnight.
+      expect((await house.visits(hm, h.id, { day: sickbayDayOf(arrived) })).map((x) => x.id)).toContain(v.id);
       expect(await house.visits(hm, h.id, { day: "2020-01-01" })).toEqual([]);
       // Admin sees every hostel's log.
-      expect((await house.visits(admin(A), h.id, {})).map((x) => x.id)).toContain(v.id);
+      expect((await house.visits(admin(A), h.id, { day: sickbayDayOf(arrived) })).map((x) => x.id)).toContain(v.id);
 
       const audit = await withTenant(A.schoolId, (db) => db.auditLog.findFirstOrThrow({ where: { entityId: v.id, action: "hostel.visit.log" } }));
       // The visitor's contact details stay out of the audit row.

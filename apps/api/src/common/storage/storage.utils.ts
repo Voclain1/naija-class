@@ -99,6 +99,15 @@ export function pathFor(schoolId: string, key: StorageObjectKey): string {
       }
       return `schools/${schoolId}/library/${key.resourceId}.pdf`;
     }
+    case "admission-document": {
+      if (!UUID_RE.test(key.documentId)) {
+        throw new Error(`storage: documentId is not a UUID: ${redact(key.documentId)}`);
+      }
+      if (!["jpg", "png", "webp", "pdf"].includes(key.ext)) {
+        throw new Error(`storage: unsupported admission-document extension: ${redact(key.ext)}`);
+      }
+      return `schools/${schoolId}/admissions/${key.documentId}.${key.ext}`;
+    }
   }
 }
 

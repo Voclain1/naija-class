@@ -1,4 +1,4 @@
-import { Award, BarChart3, Bell, Building2, CalendarCheck, CalendarClock, CreditCard, FileText, Gauge, Hash, Layers, Percent, ShieldCheck, SlidersHorizontal, Sparkles, User, Users, Wallet, type LucideIcon } from "lucide-react";
+import { Award, BarChart3, Inbox, Bell, Building2, CalendarCheck, CalendarClock, CreditCard, FileText, Gauge, Hash, Layers, Percent, ShieldCheck, SlidersHorizontal, Sparkles, User, Users, Wallet, type LucideIcon } from "lucide-react";
 import Link from "next/link";
 
 import { PageHeader } from "@/components/layout/page-primitives";
@@ -25,6 +25,12 @@ const LINKS: SettingsLink[] = [
     href: "/settings/admission-numbers",
     description: "Your format, and whether SchoolKit gives each new student the next number.",
     icon: Hash,
+  },
+  {
+    label: "Admissions",
+    href: "/settings/admissions",
+    description: "Your online application form, the classes open, and who hears about each new application.",
+    icon: Inbox,
   },
   { label: "Users", href: "/settings/users", description: "Staff accounts, roles, and invitations.", icon: Users },
   { label: "Academics", href: "/settings/academic", description: "Years, terms, levels, arms, and subjects.", icon: BarChart3 },

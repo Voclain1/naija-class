@@ -259,6 +259,16 @@ export const baseConfig = [
       // withTenant. Same category as schools.service.ts above — and the
       // reason the checker needed no SECURITY DEFINER function.
       "**/modules/result-checker/result-checker.service.ts",
+      // admissions-public.service.ts — the PUBLIC admission form (Phase 9 /
+      // CP7.1, docs/modules/phase-9.md §16). Same category as the Result
+      // Checker: its only basePrisma read is `schools` by slug (non-RLS) to
+      // learn which tenant a public request is for; every read and write
+      // after that goes through withTenant.
+      "**/modules/admissions/admissions-public.service.ts",
+      // admissions-purge.service.ts — the nightly NDPR purge (CP7.1). Same
+      // category as the sweeps above: basePrisma fetches ONLY the school id
+      // list; every read and delete goes through withTenant per school.
+      "**/modules/admissions/admissions-purge.service.ts",
       "**/common/auth/platform-admin.guard.ts",
       "**/modules/platform-admin/platform-admin.service.ts",
       // school-deletion.ts (platform-admin tools slice 2, 2026-10-07) only
