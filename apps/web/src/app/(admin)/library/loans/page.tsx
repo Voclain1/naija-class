@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
-import type { LibraryLoanDto } from "@school-kit/types";
+import { formatKobo, type LibraryLoanDto } from "@school-kit/types";
 
 import { dueText, formatDay, LibraryHeader, message } from "@/components/library/library-shared";
 import { InlineAlert } from "@/components/shared/inline-alert";
@@ -14,18 +14,30 @@ import { Label } from "@/components/ui/label";
 import { hasPermission } from "@/lib/auth/has-permission";
 import { useAuth } from "@/lib/auth/use-auth";
 import type { CsvColumn } from "@/lib/csv-export";
-import { listLoans, renewLoan } from "@/lib/library/library-api";
+import { listLoans, markFound, renewLoan } from "@/lib/library/library-api";
 
 // Phase 9 / CP6.1 — loans: books out now, the overdue ones, and those
 // returned (docs/modules/phase-9.md §14 CP6-D2). "Overdue" and the days late
-// are worked out by the API against today's date in Lagos.
+// are worked out by the API against today's date in Lagos. CP6.2: the fine so
+// far on a late student loan (an estimate, by the rule the return applies),
+// the fine or replacement price on a closed one, and lost books, which can be
+// marked found.
 
-type State = "OPEN" | "OVERDUE" | "RETURNED";
+type State = "OPEN" | "OVERDUE" | "RETURNED" | "LOST";
 const STATES: { value: State; label: string }[] = [
   { value: "OPEN", label: "Out now" },
   { value: "OVERDUE", label: "Overdue" },
   { value: "RETURNED", label: "Returned" },
+  { value: "LOST", label: "Lost" },
 ];
+
+/** The money on a loan, in words: an estimate while open, the figure once closed. */
+function moneyText(l: LibraryLoanDto): string | null {
+  if (!l.returnedAt && !l.lostAt) return l.fineSoFar ? `Fine so far ${formatKobo(l.fineSoFar)} (estimate)` : null;
+  if (!l.fineAmount) return null;
+  const what = l.lostAt ? "Replacement price" : "Fine";
+  return l.fineWaivedReason ? `${what} ${formatKobo(l.fineAmount)} waived: ${l.fineWaivedReason}` : `${what} ${formatKobo(l.fineAmount)} charged`;
+}
 
 const COLUMNS: CsvColumn<LibraryLoanDto>[] = [
   { header: "Title", accessor: (l) => l.title },
@@ -34,7 +46,8 @@ const COLUMNS: CsvColumn<LibraryLoanDto>[] = [
   { header: "Class", accessor: (l) => l.borrower.detail },
   { header: "Due", accessor: (l) => formatDay(l.dueOn) },
   { header: "Days late", accessor: (l) => String(l.daysLate) },
-  { header: "Returned", accessor: (l) => (l.returnedAt ? formatDay(l.returnedAt) : "") },
+  { header: "Returned", accessor: (l) => (l.returnedAt ? formatDay(l.returnedAt) : l.lostAt ? `Lost ${formatDay(l.lostAt)}` : "") },
+  { header: "Fine", accessor: (l) => moneyText(l) ?? "" },
 ];
 
 export default function LibraryLoansPage() {
@@ -44,6 +57,7 @@ export default function LibraryLoansPage() {
   const [q, setQ] = useState("");
   const [loans, setLoans] = useState<LibraryLoanDto[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const load = useCallback(async (s: State, search: string) => {
     setError(null);
@@ -63,7 +77,7 @@ export default function LibraryLoansPage() {
 
   return (
     <div className="mx-auto max-w-5xl space-y-6">
-      <LibraryHeader title="Loans" intro="Books out now, the overdue ones, and the most recent returns." />
+      <LibraryHeader title="Loans" intro="Books out now, the overdue ones, the most recent returns, and lost books." />
 
       <div className="flex flex-wrap gap-2" role="group" aria-label="Which loans">
         {STATES.map((s) => (
@@ -95,11 +109,12 @@ export default function LibraryLoansPage() {
       </div>
 
       {error && <InlineAlert>{error}</InlineAlert>}
+      {notice && <p className="rounded-md bg-emerald-500/10 p-3 text-sm text-emerald-900 dark:text-emerald-200">{notice}</p>}
 
       {!loans ? (
         <p className="text-sm text-muted-foreground">Loading…</p>
       ) : loans.length === 0 ? (
-        <p className="text-sm text-muted-foreground">{state === "OVERDUE" ? "No books are overdue." : "No loans to show."}</p>
+        <p className="text-sm text-muted-foreground">{state === "OVERDUE" ? "No books are overdue." : state === "LOST" ? "No books are lost." : "No loans to show."}</p>
       ) : (
         <ul className="divide-y rounded-md border bg-card">
           {loans.map((l) => (
@@ -111,8 +126,35 @@ export default function LibraryLoansPage() {
                 <p className="break-words text-muted-foreground">
                   No. {l.accessionNumber} · {l.borrower.name} ({l.borrower.detail})
                 </p>
-                <p className={l.overdue ? "font-medium text-amber-900 dark:text-amber-200" : ""}>{dueText(l)}</p>
+                <p className={l.overdue ? "font-medium text-amber-900 dark:text-amber-200" : ""}>
+                  {l.lostAt ? `Lost ${formatDay(l.lostAt)}${l.foundAt ? `, found ${formatDay(l.foundAt)}` : ""}` : dueText(l)}
+                </p>
+                {moneyText(l) && <p className="text-muted-foreground">{moneyText(l)}</p>}
               </div>
+              {canLend && l.lostAt && !l.foundAt && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  aria-label={`Found ${l.title}`}
+                  onClick={async () => {
+                    try {
+                      const { charge } = await markFound(l.id);
+                      setNotice(
+                        charge === "voided"
+                          ? "Back on the shelf. The replacement charge was cancelled."
+                          : charge === "billed"
+                            ? "Back on the shelf. The replacement charge is already on an invoice; any refund is for the bursar."
+                            : "Back on the shelf.",
+                      );
+                      await load(state, q);
+                    } catch (e) {
+                      setError(message(e));
+                    }
+                  }}
+                >
+                  Found it
+                </Button>
+              )}
               {canLend && !l.returnedAt && !l.overdue && l.renewalsLeft > 0 && (
                 <Button
                   size="sm"

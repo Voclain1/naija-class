@@ -4438,6 +4438,10 @@ model LibrarySettings {
   staffLimit    Int      @default(5) @map("staff_limit")
   renewalLimit  Int      @default(2) @map("renewal_limit")
   nextAccession Int      @default(1) @map("next_accession")
+  finesEnabled  Boolean  @default(false) @map("fines_enabled") // CP6.2
+  finePerDay    Int      @default(0) @map("fine_per_day") // kobo
+  fineGraceDays Int      @default(0) @map("fine_grace_days")
+  fineCap       Int?     @map("fine_cap") // kobo; null: no cap
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
 
@@ -4497,22 +4501,27 @@ model LibraryCopy {
 }
 
 model LibraryLoan {
-  id         String      @id @default(uuid())
-  schoolId   String      @map("school_id")
-  copyId     String      @map("copy_id")
-  studentId  String?     @map("student_id") // exactly one of studentId, userId
-  userId     String?     @map("user_id")
-  issuedAt   DateTime    @default(now()) @map("issued_at")
-  dueOn      DateTime    @map("due_on") @db.Date
-  renewals   Int         @default(0)
-  returnedAt DateTime?   @map("returned_at")
-  issuedBy   String?     @map("issued_by")
-  returnedBy String?     @map("returned_by")
-  createdAt  DateTime    @default(now()) @map("created_at")
-  updatedAt  DateTime    @updatedAt @map("updated_at")
-  copy       LibraryCopy @relation(fields: [copyId], references: [id], onDelete: Restrict)
-  student    Student?    @relation(fields: [studentId], references: [id], onDelete: Cascade)
-  user       User?       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id               String      @id @default(uuid())
+  schoolId         String      @map("school_id")
+  copyId           String      @map("copy_id")
+  studentId        String?     @map("student_id") // exactly one of studentId, userId
+  userId           String?     @map("user_id")
+  issuedAt         DateTime    @default(now()) @map("issued_at")
+  dueOn            DateTime    @map("due_on") @db.Date
+  renewals         Int         @default(0)
+  returnedAt       DateTime?   @map("returned_at")
+  lostAt           DateTime?   @map("lost_at") // CP6.2; a lost loan is closed
+  foundAt          DateTime?   @map("found_at")
+  fineAmount       Int?        @map("fine_amount") // kobo: the fine, or the replacement price
+  fineWaivedReason String?     @map("fine_waived_reason")
+  fineWaivedBy     String?     @map("fine_waived_by")
+  issuedBy         String?     @map("issued_by")
+  returnedBy       String?     @map("returned_by")
+  createdAt        DateTime    @default(now()) @map("created_at")
+  updatedAt        DateTime    @updatedAt @map("updated_at")
+  copy             LibraryCopy @relation(fields: [copyId], references: [id], onDelete: Restrict)
+  student          Student?    @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  user             User?       @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([schoolId, returnedAt])
   @@index([studentId])

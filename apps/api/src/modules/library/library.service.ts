@@ -1,6 +1,6 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, Optional } from "@nestjs/common";
 
-import { Prisma, withTenant, type PrismaClient } from "@school-kit/db";
+import { Prisma, withGuardian, withTenant, type PrismaClient } from "@school-kit/db";
 import {
   addDaysIso,
   ConflictError,
@@ -10,6 +10,7 @@ import {
   ValidationError,
   type AddCopiesInput,
   type CreateBookInput,
+  type FamilyLibraryDto,
   type IssueLoanInput,
   type LibraryBookDto,
   type LibraryBookSummaryDto,
@@ -19,10 +20,12 @@ import {
   type LibraryContextDto,
   type LibraryCopyLookupDto,
   type LibraryLoanDto,
+  type LibraryLoanResultDto,
   type LibrarySettingsDto,
   type ListBooksInput,
   type ListBorrowersInput,
   type ListLoansInput,
+  type MarkLostInput,
   type ReturnLoanInput,
   type UpdateBookInput,
   type UpdateCopyInput,
@@ -30,7 +33,10 @@ import {
 } from "@school-kit/types";
 
 import type { AuthContext } from "../../common/auth/auth-context.js";
+import type { GuardianAuthContext } from "../../common/auth/guardian-auth-context.js";
 import { assertUserActiveAndHasOneOf } from "../../common/auth/role-check.js";
+import { StudentChargeService, type ChargeActor } from "../finance/student-charge.service.js";
+import { chargeTermFor, fineFor, type TermSpan } from "./library-fines.js";
 
 // Phase 9 / CP6.1 — the library's catalogue and lending (docs/modules/phase-9.md
 // §14 CP6-D1/D2/D8).
@@ -48,6 +54,16 @@ import { assertUserActiveAndHasOneOf } from "../../common/auth/role-check.js";
 // limit, and runs one loan period from today (never earlier than the current
 // due date).
 //
+// FINES AND LOST BOOKS (CP6.2, CP6-D3/D4). Students only, and only with fines
+// on. At return the fine is worked out by fineFor (library-fines.ts: late days
+// inside a term, less the grace days, up to the cap) and raised as one
+// LIBRARY_FINE student charge through StudentChargeService, source "library"
+// and the loan's id — never a write of our own. A lost book raises the book's
+// replacement price instead, not on top. The librarian may waive either, with
+// a reason, recorded on the loan and audited. A lost book found again voids a
+// charge still waiting; a billed one stays, as for every billed charge. A lost
+// loan is closed: it no longer counts against the borrower or holds the copy.
+//
 // WHO. owner, admin and the librarian read, keep the catalogue and lend. The
 // loan period and limits (and, from CP6.2, the fine rules) are owner and
 // admin only. The library returns the student, staff, subject and class-level
@@ -56,7 +72,20 @@ import { assertUserActiveAndHasOneOf } from "../../common/auth/role-check.js";
 const LIBRARY_ROLES = ["owner", "admin", "librarian"] as const;
 const SETTINGS_ROLES = ["owner", "admin"] as const;
 
-const DEFAULT_SETTINGS = { loanDays: 14, studentLimit: 2, staffLimit: 5, renewalLimit: 2, nextAccession: 1 };
+const DEFAULT_SETTINGS: LibrarySettingsDto = {
+  loanDays: 14,
+  studentLimit: 2,
+  staffLimit: 5,
+  renewalLimit: 2,
+  nextAccession: 1,
+  finesEnabled: false,
+  finePerDay: 0,
+  fineGraceDays: 0,
+  fineCap: null,
+};
+const CHARGE_SOURCE = "library";
+/** A loan still out: neither returned nor lost. */
+const OPEN = { returnedAt: null, lostAt: null } as const;
 
 const AUDIT = {
   book: "library.book",
@@ -64,6 +93,8 @@ const AUDIT = {
   issue: "library.loan.issue",
   return: "library.loan.return",
   renew: "library.loan.renew",
+  lost: "library.loan.lost",
+  found: "library.loan.found",
   settings: "library.settings",
 } as const;
 
@@ -86,8 +117,13 @@ const BOOK_INCLUDE = {
 } satisfies Prisma.LibraryBookInclude;
 type BookRow = Prisma.LibraryBookGetPayload<{ include: typeof BOOK_INCLUDE }>;
 
+/** The settings a loan's figures need, with the school's terms for fines. */
+type LoanCtx = LibrarySettingsDto & { terms: TermSpan[] };
+
 @Injectable()
 export class LibraryService {
+  constructor(@Optional() private readonly charges: StudentChargeService = new StudentChargeService()) {}
+
   // ─── Settings and context ─────────────────────────────────────────────────
 
   async context(authCtx: AuthContext): Promise<LibraryContextDto> {
@@ -115,6 +151,10 @@ export class LibraryService {
         studentLimit: row.studentLimit,
         staffLimit: row.staffLimit,
         renewalLimit: row.renewalLimit,
+        finesEnabled: row.finesEnabled ? 1 : 0,
+        finePerDay: row.finePerDay,
+        fineGraceDays: row.fineGraceDays,
+        fineCap: row.fineCap,
       });
       return settingsDto(row);
     });
@@ -252,11 +292,11 @@ export class LibraryService {
     return withTenant(authCtx.schoolId, async (db) => {
       const copy = await db.libraryCopy.findFirst({
         where: { schoolId: authCtx.schoolId, accessionNumber: normaliseNumber(accessionNumber) },
-        include: { book: { select: { id: true, title: true, authors: true, referenceOnly: true } } },
+        include: { book: { select: { id: true, title: true, authors: true, referenceOnly: true, replacementPrice: true } } },
       });
       if (!copy) throw new NotFoundError("No copy has that number.");
-      const settings = await readSettings(db, authCtx.schoolId);
-      const loan = await db.libraryLoan.findFirst({ where: { copyId: copy.id, returnedAt: null }, include: LOAN_INCLUDE });
+      const settings = await readLoanCtx(db, authCtx.schoolId);
+      const loan = await db.libraryLoan.findFirst({ where: { copyId: copy.id, ...OPEN }, include: LOAN_INCLUDE });
       const classes = loan?.studentId ? await classNames(db, [loan.studentId]) : new Map<string, string>();
       return {
         copy: { id: copy.id, accessionNumber: copy.accessionNumber, status: copy.status },
@@ -275,7 +315,7 @@ export class LibraryService {
       if (input.dueOn !== undefined && input.dueOn < today) {
         throw new ValidationError("DUE_DATE_PAST", "The due date cannot be in the past.");
       }
-      const settings = await readSettings(db, authCtx.schoolId);
+      const settings = await readLoanCtx(db, authCtx.schoolId);
       const copy = await lockCopy(db, authCtx.schoolId, { accessionNumber: input.accessionNumber });
       const book = await db.libraryBook.findUniqueOrThrow({ where: { id: copy.book_id }, select: { referenceOnly: true } });
       if (book.referenceOnly) throw new ConflictError("REFERENCE_ONLY", "This book is for reference only and stays in the library.");
@@ -286,7 +326,7 @@ export class LibraryService {
       const kind: LibraryBorrowerKind = input.studentId ? "STUDENT" : "STAFF";
       await lockBorrower(db, authCtx.schoolId, kind, (input.studentId ?? input.userId)!);
       const out = await db.libraryLoan.count({
-        where: { returnedAt: null, ...(kind === "STUDENT" ? { studentId: input.studentId } : { userId: input.userId }) },
+        where: { ...OPEN, ...(kind === "STUDENT" ? { studentId: input.studentId } : { userId: input.userId }) },
       });
       const limit = kind === "STUDENT" ? settings.studentLimit : settings.staffLimit;
       if (out >= limit) {
@@ -312,34 +352,100 @@ export class LibraryService {
     });
   }
 
-  async returnCopy(authCtx: AuthContext, input: ReturnLoanInput, req: RequestContext): Promise<LibraryLoanDto> {
+  async returnCopy(authCtx: AuthContext, input: ReturnLoanInput, req: RequestContext): Promise<LibraryLoanResultDto> {
     await assertUserActiveAndHasOneOf(authCtx, LIBRARY_ROLES);
     return withTenant(authCtx.schoolId, async (db) => {
-      const settings = await readSettings(db, authCtx.schoolId);
+      const ctx = await readLoanCtx(db, authCtx.schoolId);
       const copy = await lockCopy(db, authCtx.schoolId, { accessionNumber: input.accessionNumber });
-      const open = await db.libraryLoan.findFirst({ where: { copyId: copy.id, returnedAt: null }, select: { id: true, dueOn: true } });
+      const open = await db.libraryLoan.findFirst({ where: { copyId: copy.id, ...OPEN }, include: LOAN_INCLUDE });
       if (!open) throw new ConflictError("NOT_ON_LOAN", "This copy is not out on loan.");
+      const today = lagosTodayIso();
+      const dueOn = isoOf(open.dueOn);
+      const fine = open.studentId && ctx.finesEnabled ? fineFor(dueOn, today, ctx.terms, ctx) : 0;
+      const days = daysLate(dueOn, today);
+      const waived = fine > 0 && input.waiveReason !== undefined;
       const loan = await db.libraryLoan.update({
         where: { id: open.id },
-        data: { returnedAt: new Date(), returnedBy: authCtx.userId },
+        data: {
+          returnedAt: new Date(),
+          returnedBy: authCtx.userId,
+          fineAmount: fine > 0 ? fine : null,
+          ...(waived ? { fineWaivedReason: input.waiveReason!, fineWaivedBy: authCtx.userId } : {}),
+        },
         include: LOAN_INCLUDE,
       });
       await db.libraryCopy.update({ where: { id: copy.id }, data: { status: "AVAILABLE" } });
-      await audit(db, authCtx, req, AUDIT.return, loan.id, { copyId: copy.id, daysLate: daysLate(isoOf(open.dueOn), lagosTodayIso()) });
-      return loanDto(loan, settings, await classNames(db, loan.studentId ? [loan.studentId] : []));
+      const charged =
+        fine > 0 && !waived
+          ? await this.raiseCharge(db, authCtx, req, ctx, open.studentId!, loan.id, fine, `Library fine — ${open.copy.book.title}, ${days} ${days === 1 ? "day" : "days"} late`)
+          : 0;
+      await audit(db, authCtx, req, AUDIT.return, loan.id, { copyId: copy.id, daysLate: days, fine, waived: waived ? 1 : 0, charged });
+      return { loan: loanDto(loan, ctx, await classNames(db, loan.studentId ? [loan.studentId] : [])), charged };
+    });
+  }
+
+  /** An open loan whose book is lost (CP6-D4): closes it, and charges a student the replacement price. */
+  async markLost(authCtx: AuthContext, loanId: string, input: MarkLostInput, req: RequestContext): Promise<LibraryLoanResultDto> {
+    await assertUserActiveAndHasOneOf(authCtx, LIBRARY_ROLES);
+    return withTenant(authCtx.schoolId, async (db) => {
+      const ctx = await readLoanCtx(db, authCtx.schoolId);
+      const current = await lockLoan(db, authCtx.schoolId, loanId);
+      if (current.returned_at || current.lost_at) throw new ConflictError("NOT_ON_LOAN", "This loan is already closed.");
+      await lockCopy(db, authCtx.schoolId, { id: current.copy_id });
+      const book = await db.libraryCopy.findUniqueOrThrow({ where: { id: current.copy_id }, select: { book: { select: { title: true, replacementPrice: true } } } });
+      const price = current.student_id ? (book.book.replacementPrice ?? 0) : 0;
+      const waived = price > 0 && input.waiveReason !== undefined;
+      const loan = await db.libraryLoan.update({
+        where: { id: loanId },
+        data: {
+          lostAt: new Date(),
+          returnedBy: authCtx.userId,
+          fineAmount: price > 0 ? price : null,
+          ...(waived ? { fineWaivedReason: input.waiveReason!, fineWaivedBy: authCtx.userId } : {}),
+        },
+        include: LOAN_INCLUDE,
+      });
+      await db.libraryCopy.update({ where: { id: current.copy_id }, data: { status: "LOST" } });
+      const charged =
+        price > 0 && !waived
+          ? await this.raiseCharge(db, authCtx, req, ctx, current.student_id!, loanId, price, `Lost book — ${book.book.title}`)
+          : 0;
+      await audit(db, authCtx, req, AUDIT.lost, loanId, { copyId: current.copy_id, price, waived: waived ? 1 : 0, charged });
+      return { loan: loanDto(loan, ctx, await classNames(db, loan.studentId ? [loan.studentId] : [])), charged };
+    });
+  }
+
+  /** A lost book back on the shelf: a charge still waiting is voided; a billed one stays. */
+  async markFound(authCtx: AuthContext, loanId: string, req: RequestContext): Promise<LibraryLoanResultDto> {
+    await assertUserActiveAndHasOneOf(authCtx, LIBRARY_ROLES);
+    return withTenant(authCtx.schoolId, async (db) => {
+      const ctx = await readLoanCtx(db, authCtx.schoolId);
+      const current = await lockLoan(db, authCtx.schoolId, loanId);
+      if (!current.lost_at) throw new ConflictError("NOT_LOST", "This book was not marked lost.");
+      if (current.found_at) throw new ConflictError("ALREADY_FOUND", "This book has already been marked found.");
+      const copy = await lockCopy(db, authCtx.schoolId, { id: current.copy_id });
+      const loan = await db.libraryLoan.update({ where: { id: loanId }, data: { foundAt: new Date() }, include: LOAN_INCLUDE });
+      if (copy.status === "LOST") await db.libraryCopy.update({ where: { id: copy.id }, data: { status: "AVAILABLE" } });
+      const charge = await this.charges.voidBySource(db, actorOf(authCtx, req), {
+        sourceModule: CHARGE_SOURCE,
+        sourceId: loanId,
+        reason: "The lost book was found.",
+      });
+      await audit(db, authCtx, req, AUDIT.found, loanId, { copyId: copy.id, charge });
+      return { loan: loanDto(loan, ctx, await classNames(db, loan.studentId ? [loan.studentId] : [])), charged: 0, charge };
     });
   }
 
   async renew(authCtx: AuthContext, loanId: string, req: RequestContext): Promise<LibraryLoanDto> {
     await assertUserActiveAndHasOneOf(authCtx, LIBRARY_ROLES);
     return withTenant(authCtx.schoolId, async (db) => {
-      const settings = await readSettings(db, authCtx.schoolId);
-      const rows = await db.$queryRaw<{ id: string; due_on: Date; renewals: number; returned_at: Date | null }[]>`
-        SELECT id, due_on, renewals, returned_at FROM library_loans WHERE id = ${loanId} AND school_id = ${authCtx.schoolId} FOR UPDATE
+      const settings = await readLoanCtx(db, authCtx.schoolId);
+      const rows = await db.$queryRaw<{ id: string; due_on: Date; renewals: number; returned_at: Date | null; lost_at: Date | null }[]>`
+        SELECT id, due_on, renewals, returned_at, lost_at FROM library_loans WHERE id = ${loanId} AND school_id = ${authCtx.schoolId} FOR UPDATE
       `;
       const current = rows[0];
       if (!current) throw new NotFoundError("Loan not found.");
-      if (current.returned_at) throw new ConflictError("NOT_ON_LOAN", "This book has already been returned.");
+      if (current.returned_at || current.lost_at) throw new ConflictError("NOT_ON_LOAN", "This loan is already closed.");
       const today = lagosTodayIso();
       const dueOn = isoOf(current.due_on);
       if (dueOn < today) throw new ConflictError("LOAN_OVERDUE", "This book is overdue. Return it first, then lend it again.");
@@ -360,13 +466,13 @@ export class LibraryService {
   async listLoans(authCtx: AuthContext, query: ListLoansInput): Promise<LibraryLoanDto[]> {
     await assertUserActiveAndHasOneOf(authCtx, LIBRARY_ROLES);
     return withTenant(authCtx.schoolId, async (db) => {
-      const settings = await readSettings(db, authCtx.schoolId);
+      const settings = await readLoanCtx(db, authCtx.schoolId);
       const today = dateOf(lagosTodayIso());
       const q = query.q?.trim();
       const rows = await db.libraryLoan.findMany({
         where: {
           schoolId: authCtx.schoolId,
-          ...(query.state === "RETURNED" ? { returnedAt: { not: null } } : { returnedAt: null }),
+          ...(query.state === "RETURNED" ? { returnedAt: { not: null } } : query.state === "LOST" ? { lostAt: { not: null } } : OPEN),
           ...(query.state === "OVERDUE" ? { dueOn: { lt: today } } : {}),
           ...(q
             ? {
@@ -380,7 +486,7 @@ export class LibraryService {
             : {}),
         },
         include: LOAN_INCLUDE,
-        orderBy: query.state === "RETURNED" ? { returnedAt: "desc" } : { dueOn: "asc" },
+        orderBy: query.state === "RETURNED" ? { returnedAt: "desc" } : query.state === "LOST" ? { lostAt: "desc" } : { dueOn: "asc" },
         take: 500,
       });
       const classes = await classNames(db, rows.flatMap((r) => (r.studentId ? [r.studentId] : [])));
@@ -415,7 +521,7 @@ export class LibraryService {
               { admissionNumber: { contains: q, mode: "insensitive" } },
             ],
           },
-          select: { id: true, firstName: true, lastName: true, admissionNumber: true, _count: { select: { libraryLoans: { where: { returnedAt: null } } } } },
+          select: { id: true, firstName: true, lastName: true, admissionNumber: true, _count: { select: { libraryLoans: { where: OPEN } } } },
           orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
           take: 20,
         });
@@ -435,7 +541,7 @@ export class LibraryService {
           isActive: true,
           OR: [{ firstName: { contains: q, mode: "insensitive" } }, { lastName: { contains: q, mode: "insensitive" } }],
         },
-        select: { id: true, firstName: true, lastName: true, _count: { select: { libraryLoans: { where: { returnedAt: null } } } } },
+        select: { id: true, firstName: true, lastName: true, _count: { select: { libraryLoans: { where: OPEN } } } },
         orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
         take: 20,
       });
@@ -450,14 +556,53 @@ export class LibraryService {
     });
   }
 
+  // ─── Families (CP6-D6) ────────────────────────────────────────────────────
+
+  /** GET /portal/students/:id/library — a parent's own child's books out. */
+  async libraryForGuardian(guardianCtx: GuardianAuthContext, studentId: string): Promise<FamilyLibraryDto> {
+    return withTenant(guardianCtx.schoolId, (db) =>
+      withGuardian(guardianCtx.guardianId, studentId, db, (db2) => familyLoans(db2, guardianCtx.schoolId, studentId)),
+    );
+  }
+
+  /** GET /student-portal/me/library — the child's own books out. */
+  async libraryForStudent(schoolId: string, studentId: string): Promise<FamilyLibraryDto> {
+    return withTenant(schoolId, (db) => familyLoans(db, schoolId, studentId));
+  }
+
   // ─── Internals ────────────────────────────────────────────────────────────
+
+  /** Raises a student's LIBRARY_FINE charge for a loan; returns the kobo raised (0 with no term). */
+  private async raiseCharge(
+    db: Db,
+    authCtx: AuthContext,
+    req: RequestContext,
+    ctx: LoanCtx,
+    studentId: string,
+    loanId: string,
+    amount: number,
+    description: string,
+  ): Promise<number> {
+    const termId = chargeTermFor(lagosTodayIso(), ctx.terms);
+    if (!termId) return 0;
+    await this.charges.raise(db, actorOf(authCtx, req), {
+      studentId,
+      termId,
+      kind: "LIBRARY_FINE",
+      description: description.slice(0, 200),
+      amount,
+      sourceModule: CHARGE_SOURCE,
+      sourceId: loanId,
+    });
+    return amount;
+  }
 
   private async borrowerLoans(authCtx: AuthContext, kind: LibraryBorrowerKind, id: string): Promise<LibraryBorrowerLoansDto> {
     await assertUserActiveAndHasOneOf(authCtx, LIBRARY_ROLES);
     return withTenant(authCtx.schoolId, async (db) => {
-      const settings = await readSettings(db, authCtx.schoolId);
+      const settings = await readLoanCtx(db, authCtx.schoolId);
       const rows = await db.libraryLoan.findMany({
-        where: { schoolId: authCtx.schoolId, returnedAt: null, ...(kind === "STUDENT" ? { studentId: id } : { userId: id }) },
+        where: { schoolId: authCtx.schoolId, ...OPEN, ...(kind === "STUDENT" ? { studentId: id } : { userId: id }) },
         include: LOAN_INCLUDE,
         orderBy: { dueOn: "asc" },
       });
@@ -469,9 +614,9 @@ export class LibraryService {
   private async readBook(db: Db, schoolId: string, id: string): Promise<LibraryBookDto> {
     const row = await db.libraryBook.findFirst({ where: { id, schoolId }, include: BOOK_INCLUDE });
     if (!row) throw new NotFoundError("Book not found.");
-    const settings = await readSettings(db, schoolId);
+    const settings = await readLoanCtx(db, schoolId);
     const openLoans = await db.libraryLoan.findMany({
-      where: { returnedAt: null, copyId: { in: row.copies.map((c) => c.id) } },
+      where: { ...OPEN, copyId: { in: row.copies.map((c) => c.id) } },
       include: LOAN_INCLUDE,
     });
     const classes = await classNames(db, openLoans.flatMap((l) => (l.studentId ? [l.studentId] : [])));
@@ -507,8 +652,62 @@ async function readSettings(db: Db, schoolId: string): Promise<LibrarySettingsDt
   return row ? settingsDto(row) : { ...DEFAULT_SETTINGS };
 }
 
+/** The settings, with the school's terms when fines are on (for the fine so far). */
+async function readLoanCtx(db: Db, schoolId: string): Promise<LoanCtx> {
+  const settings = await readSettings(db, schoolId);
+  if (!settings.finesEnabled) return { ...settings, terms: [] };
+  const terms = await db.term.findMany({ where: { schoolId }, select: { id: true, startDate: true, endDate: true, isCurrent: true } });
+  return {
+    ...settings,
+    terms: terms.map((t) => ({ id: t.id, startDate: isoOf(t.startDate), endDate: isoOf(t.endDate), isCurrent: t.isCurrent })),
+  };
+}
+
 function settingsDto(row: LibrarySettingsDto): LibrarySettingsDto {
-  return { loanDays: row.loanDays, studentLimit: row.studentLimit, staffLimit: row.staffLimit, renewalLimit: row.renewalLimit, nextAccession: row.nextAccession };
+  return {
+    loanDays: row.loanDays,
+    studentLimit: row.studentLimit,
+    staffLimit: row.staffLimit,
+    renewalLimit: row.renewalLimit,
+    nextAccession: row.nextAccession,
+    finesEnabled: row.finesEnabled,
+    finePerDay: row.finePerDay,
+    fineGraceDays: row.fineGraceDays,
+    fineCap: row.fineCap,
+  };
+}
+
+function actorOf(authCtx: AuthContext, req: RequestContext): ChargeActor {
+  return { schoolId: authCtx.schoolId, userId: authCtx.userId, ipAddress: req.ipAddress };
+}
+
+/** Locks a loan row for the rest of the transaction. */
+async function lockLoan(
+  db: Db,
+  schoolId: string,
+  id: string,
+): Promise<{ copy_id: string; student_id: string | null; returned_at: Date | null; lost_at: Date | null; found_at: Date | null }> {
+  const rows = await db.$queryRaw<{ copy_id: string; student_id: string | null; returned_at: Date | null; lost_at: Date | null; found_at: Date | null }[]>`
+    SELECT copy_id, student_id, returned_at, lost_at, found_at FROM library_loans WHERE id = ${id} AND school_id = ${schoolId} FOR UPDATE
+  `;
+  if (rows.length === 0) throw new NotFoundError("Loan not found.");
+  return rows[0]!;
+}
+
+/** A child's books out: titles and dates only, nothing about who lent them. */
+async function familyLoans(db: Db, schoolId: string, studentId: string): Promise<FamilyLibraryDto> {
+  const rows = await db.libraryLoan.findMany({
+    where: { schoolId, studentId, ...OPEN },
+    select: { id: true, dueOn: true, copy: { select: { book: { select: { title: true, authors: true } } } } },
+    orderBy: { dueOn: "asc" },
+  });
+  const today = lagosTodayIso();
+  return {
+    loans: rows.map((r) => {
+      const late = daysLate(isoOf(r.dueOn), today);
+      return { id: r.id, title: r.copy.book.title, authors: r.copy.book.authors, dueOn: isoOf(r.dueOn), overdue: late > 0, daysLate: late };
+    }),
+  };
 }
 
 /**
@@ -627,9 +826,11 @@ function bookSummaryDto(row: BookRow): LibraryBookSummaryDto {
   };
 }
 
-function loanDto(row: LoanRow, settings: LibrarySettingsDto, classes: Map<string, string>): LibraryLoanDto {
+function loanDto(row: LoanRow, settings: LoanCtx, classes: Map<string, string>): LibraryLoanDto {
   const dueOn = isoOf(row.dueOn);
-  const late = row.returnedAt ? 0 : daysLate(dueOn, lagosTodayIso());
+  const open = !row.returnedAt && !row.lostAt;
+  const today = lagosTodayIso();
+  const late = open ? daysLate(dueOn, today) : 0;
   const borrower = row.student
     ? { kind: "STUDENT" as const, id: row.student.id, name: `${row.student.firstName} ${row.student.lastName}`, detail: studentDetail(row.student.admissionNumber, classes.get(row.student.id)) }
     : { kind: "STAFF" as const, id: row.user!.id, name: `${row.user!.firstName} ${row.user!.lastName}`, detail: "Staff" };
@@ -645,8 +846,13 @@ function loanDto(row: LoanRow, settings: LibrarySettingsDto, classes: Map<string
     renewals: row.renewals,
     renewalsLeft: Math.max(0, settings.renewalLimit - row.renewals),
     returnedAt: row.returnedAt?.toISOString() ?? null,
+    lostAt: row.lostAt?.toISOString() ?? null,
+    foundAt: row.foundAt?.toISOString() ?? null,
     overdue: late > 0,
     daysLate: late,
+    fineSoFar: open && row.studentId && settings.finesEnabled ? fineFor(dueOn, today, settings.terms, settings) : null,
+    fineAmount: row.fineAmount,
+    fineWaivedReason: row.fineWaivedReason,
   };
 }
 

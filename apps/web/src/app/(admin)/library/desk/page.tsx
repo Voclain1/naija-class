@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 
 import {
   addDaysIso,
+  formatKobo,
   lagosTodayIso,
   type LibraryBorrowerDto,
   type LibraryBorrowerKind,
@@ -16,12 +17,17 @@ import { InlineAlert } from "@/components/shared/inline-alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { findBorrowers, getLibraryContext, issueLoan, lookupCopy, renewLoan, returnLoan } from "@/lib/library/library-api";
+import { findBorrowers, getLibraryContext, issueLoan, lookupCopy, markLost, renewLoan, returnLoan } from "@/lib/library/library-api";
 
 // Phase 9 / CP6.1 — the lending desk (docs/modules/phase-9.md §14 CP6-D2).
 // Type or scan a copy's accession number. A copy on the shelf is lent to a
 // student or a member of staff; a copy out on loan is returned or renewed.
 // Limits, due dates and renewals are the API's to decide.
+//
+// CP6.2 (CP6-D3/D4): a late student's fine, worked out by the API, is shown
+// before the book is taken back, and can be waived with a reason. A lost book
+// charges a student the book's replacement price. Both reach the family as a
+// line on their fees.
 
 export default function LendingDeskPage() {
   const [context, setContext] = useState<LibraryContextDto | null>(null);
@@ -102,37 +108,28 @@ export default function LendingDeskPage() {
           </div>
 
           {found.loan ? (
-            <div className={`space-y-3 rounded-md p-3 text-sm ${found.loan.overdue ? "bg-amber-500/10" : "bg-muted/40"}`}>
-              <p>
-                Lent to <span className="font-medium">{found.loan.borrower.name}</span> ({found.loan.borrower.detail}). {dueText(found.loan)}.
-              </p>
-              <p className="text-muted-foreground">
-                {found.loan.renewalsLeft > 0 ? `${found.loan.renewalsLeft} renewal${found.loan.renewalsLeft === 1 ? "" : "s"} left.` : "No renewals left."}
-              </p>
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  disabled={busy}
-                  onClick={() => void act(async () => {
-                    const loan = await returnLoan(found.copy.accessionNumber);
-                    return `"${loan.title}" is back from ${loan.borrower.name}.`;
-                  })}
-                >
-                  Return book
-                </Button>
-                {!found.loan.overdue && found.loan.renewalsLeft > 0 && (
-                  <Button
-                    variant="outline"
-                    disabled={busy}
-                    onClick={() => void act(async () => {
-                      const loan = await renewLoan(found.loan!.id);
-                      return `Renewed. "${loan.title}" is now ${dueText(loan).toLowerCase()}.`;
-                    })}
-                  >
-                    Renew
-                  </Button>
-                )}
-              </div>
-            </div>
+            <LoanActions
+              found={found}
+              busy={busy}
+              onReturn={(waiveReason) =>
+                act(async () => {
+                  const { loan, charged } = await returnLoan(found.copy.accessionNumber, waiveReason);
+                  return `"${loan.title}" is back from ${loan.borrower.name}.${chargedText(charged, loan.fineWaivedReason, "fine")}`;
+                })
+              }
+              onRenew={() =>
+                act(async () => {
+                  const loan = await renewLoan(found.loan!.id);
+                  return `Renewed. "${loan.title}" is now ${dueText(loan).toLowerCase()}.`;
+                })
+              }
+              onLost={(waiveReason) =>
+                act(async () => {
+                  const { loan, charged } = await markLost(found.loan!.id, waiveReason);
+                  return `"${loan.title}" is marked lost.${chargedText(charged, loan.fineWaivedReason, "replacement price")}`;
+                })
+              }
+            />
           ) : found.book.referenceOnly ? (
             <p className="rounded-md bg-muted/40 p-3 text-sm">This book is for reference only and stays in the library.</p>
           ) : found.copy.status !== "AVAILABLE" ? (
@@ -264,6 +261,107 @@ function LendForm({
               </ul>
             ))}
         </>
+      )}
+    </div>
+  );
+}
+
+/** What a return or a loss did about money, in words. */
+function chargedText(charged: number, waivedReason: string | null, what: string): string {
+  if (charged > 0) return ` ${formatKobo(charged)} added to the family's fees as a library charge.`;
+  if (waivedReason) return ` The ${what} was waived.`;
+  return "";
+}
+
+function LoanActions({
+  found,
+  busy,
+  onReturn,
+  onRenew,
+  onLost,
+}: {
+  found: LibraryCopyLookupDto;
+  busy: boolean;
+  onReturn: (waiveReason?: string) => Promise<void>;
+  onRenew: () => Promise<void>;
+  onLost: (waiveReason?: string) => Promise<void>;
+}) {
+  const loan = found.loan!;
+  const fine = loan.fineSoFar ?? 0;
+  const isStudent = loan.borrower.kind === "STUDENT";
+  const price = isStudent ? (found.book.replacementPrice ?? 0) : 0;
+  const [mode, setMode] = useState<"return" | "lost">("return");
+  const [waive, setWaive] = useState(false);
+  const [reason, setReason] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const owed = mode === "return" ? fine : price;
+
+  function go(fn: (waiveReason?: string) => Promise<void>) {
+    if (waive && owed > 0 && reason.trim().length < 3) return setError("Say why it is waived.");
+    setError(null);
+    void fn(waive && owed > 0 ? reason.trim() : undefined);
+  }
+
+  return (
+    <div className={`space-y-3 rounded-md p-3 text-sm ${loan.overdue ? "bg-amber-500/10" : "bg-muted/40"}`}>
+      <p>
+        Lent to <span className="font-medium">{loan.borrower.name}</span> ({loan.borrower.detail}). {dueText(loan)}.
+      </p>
+      <p className="text-muted-foreground">
+        {loan.renewalsLeft > 0 ? `${loan.renewalsLeft} renewal${loan.renewalsLeft === 1 ? "" : "s"} left.` : "No renewals left."}
+      </p>
+
+      {mode === "return" && fine > 0 && (
+        <p className="font-medium text-amber-900 dark:text-amber-200">Fine if returned today: {formatKobo(fine)}.</p>
+      )}
+      {mode === "lost" && (
+        <p className="font-medium">
+          {!isStudent
+            ? "Staff are not charged for a lost book."
+            : price > 0
+              ? `Marking it lost charges the family the replacement price, ${formatKobo(price)}, instead of any fine.`
+              : "This book has no replacement price, so nothing is charged."}
+        </p>
+      )}
+      {owed > 0 && (
+        <div className="space-y-2">
+          <label className="flex items-center gap-2">
+            <input type="checkbox" className="h-4 w-4" checked={waive} onChange={(e) => setWaive(e.target.checked)} />
+            {mode === "return" ? "Waive the fine" : "Waive the charge"}
+          </label>
+          {waive && (
+            <div className="space-y-1">
+              <Label htmlFor="desk-waive-reason">Reason</Label>
+              <Input id="desk-waive-reason" value={reason} maxLength={300} onChange={(e) => setReason(e.target.value)} />
+            </div>
+          )}
+        </div>
+      )}
+      {error && <InlineAlert>{error}</InlineAlert>}
+
+      {mode === "return" ? (
+        <div className="flex flex-wrap gap-2">
+          <Button disabled={busy} onClick={() => go(onReturn)}>
+            Return book
+          </Button>
+          {!loan.overdue && loan.renewalsLeft > 0 && (
+            <Button variant="outline" disabled={busy} onClick={() => void onRenew()}>
+              Renew
+            </Button>
+          )}
+          <Button variant="outline" disabled={busy} onClick={() => { setMode("lost"); setWaive(false); }}>
+            Book lost
+          </Button>
+        </div>
+      ) : (
+        <div className="flex flex-wrap gap-2">
+          <Button disabled={busy} onClick={() => go(onLost)}>
+            Mark lost
+          </Button>
+          <Button variant="outline" disabled={busy} onClick={() => { setMode("return"); setWaive(false); }}>
+            Cancel
+          </Button>
+        </div>
       )}
     </div>
   );

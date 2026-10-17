@@ -94,6 +94,8 @@ const STAFF_KEYS: Record<string, readonly unknown[]> = {
   staffSickbayVisits: queryKeys.staffSickbayVisits(SCHOOL, USER, "stu_1"),
   staffTransportRoutes: queryKeys.staffTransportRoutes(SCHOOL, USER),
   staffTransportDaily: queryKeys.staffTransportDaily(SCHOOL, USER, "route_1", "2026-10-17"),
+  staffLibraryLoans: queryKeys.staffLibraryLoans(SCHOOL, USER, "OVERDUE"),
+  staffLibraryCopy: queryKeys.staffLibraryCopy(SCHOOL, USER, "42"),
   staffAssignmentMarking: queryKeys.staffAssignmentMarking(SCHOOL, USER, "hw_1"),
   staffStudentWork: queryKeys.staffStudentWork(SCHOOL, USER, "hw_1", "stu_1"),
 };

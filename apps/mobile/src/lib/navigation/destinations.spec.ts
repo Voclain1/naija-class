@@ -86,6 +86,15 @@ describe("an owner", () => {
     expect(keys(BURSAR)).not.toContain("discipline");
   });
 
+  it("gets the Library; so does the Librarian, and nothing from school or money besides", () => {
+    expect(staffDestinations(OWNER).find((d) => d.key === "library")?.route).toBe("/staff/library");
+    const librarian = staffDestinations({ ...base, roles: [{ key: "librarian" }], permissions: ["library.read", "library.manage", "library.lend"] });
+    expect(librarian.map((d) => d.key)).toContain("library");
+    for (const key of ["students", "approvals", "collections", "discipline", "health"]) expect(librarian.map((d) => d.key)).not.toContain(key);
+    expect(keys(TEACHER)).not.toContain("library");
+    expect(keys(BURSAR)).not.toContain("library");
+  });
+
   it("gets Health; so does the Health officer, and nothing from school or money besides", () => {
     expect(staffDestinations(OWNER).find((d) => d.key === "health")?.route).toBe("/staff/health");
     const officer = staffDestinations({ ...base, roles: [{ key: "health_officer" }], permissions: ["health.read", "health.manage", "sickbay.manage"] });

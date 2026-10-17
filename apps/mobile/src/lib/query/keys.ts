@@ -45,6 +45,8 @@ export const queryKeys = {
   healthRecord: (studentId: string) => ["students", studentId, "health"] as const,
   // Phase 9 / CP5.3 — the child's school bus this term.
   studentTransport: (studentId: string) => ["students", studentId, "transport"] as const,
+  // Phase 9 / CP6.2 — a parent's child's library books out.
+  studentLibrary: (studentId: string) => ["students", studentId, "library"] as const,
   // Phase 9 / CP3.3 — the child's sickbay visits. Also `persist: false`.
   sickbayVisits: (studentId: string) => ["students", studentId, "sickbay"] as const,
 
@@ -86,6 +88,8 @@ export const queryKeys = {
   // feed is short and the server decides what is still current.
   guardianAnnouncements: ["announcements"] as const,
   myAnnouncements: ["me", "announcements"] as const,
+  // Phase 9 / CP6.2 — the student's own library books out.
+  myLibrary: ["me", "library"] as const,
 
   // Homework (the-school-day.md Part B). Persisted like the calendar and
   // announcements: "questions 1 to 10 by Friday" is exactly what a child needs
@@ -315,6 +319,12 @@ export const queryKeys = {
     ["staff", schoolId, userId, "transport-routes"] as const,
   staffTransportDaily: (schoolId: string, userId: string, routeId: string, date: string) =>
     ["staff", schoolId, userId, "transport-daily", routeId, date] as const,
+  // Phase 9 / CP6.2 — the library's loans and the lending desk's look-ups:
+  // children's names and books, so staff-prefixed.
+  staffLibraryLoans: (schoolId: string, userId: string, state: string) =>
+    ["staff", schoolId, userId, "library-loans", state] as const,
+  staffLibraryCopy: (schoolId: string, userId: string, accessionNumber: string) =>
+    ["staff", schoolId, userId, "library-copy", accessionNumber] as const,
   // Phase 9 / CP4.1 — handed-in work for one homework item, and one student's attempts.
   staffAssignmentMarking: (schoolId: string, userId: string, homeworkId: string) =>
     ["staff", schoolId, userId, "assignment-marking", homeworkId] as const,

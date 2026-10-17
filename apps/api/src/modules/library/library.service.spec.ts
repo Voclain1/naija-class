@@ -4,6 +4,8 @@ import { basePrisma, withTenant } from "@school-kit/db";
 import { addDaysIso, ConflictError, ForbiddenError, lagosTodayIso, NotFoundError, ValidationError } from "@school-kit/types";
 
 import { AuthService } from "../auth/auth.service";
+import { StudentChargeService } from "../finance/student-charge.service";
+import { InvoiceGenerationService } from "../invoices/invoice-generation.service";
 import { LibraryService } from "./library.service";
 
 // Phase 9 / CP6.1 — the library's catalogue and lending (docs/modules/phase-9.md
@@ -53,7 +55,9 @@ interface Fixture {
 }
 
 describe("LibraryService (integration)", () => {
-  const library = new LibraryService();
+  const charges = new StudentChargeService();
+  const library = new LibraryService(charges);
+  const invoices = new InvoiceGenerationService(undefined, charges);
   const schoolIds = new Set<string>();
   let A: Fixture;
   let B: Fixture;
@@ -150,7 +154,8 @@ describe("LibraryService (integration)", () => {
       expect(after.copyList.find((c) => c.accessionNumber === b.accessionNumbers[0])).toMatchObject({ status: "ON_LOAN", loan: { id: loan.id } });
 
       const returned = await library.returnCopy(librarian(A), { accessionNumber: b.accessionNumbers[0]! }, reqCtx);
-      expect(returned.returnedAt).not.toBeNull();
+      expect(returned.loan.returnedAt).not.toBeNull();
+      expect(returned.charged).toBe(0);
       expect((await library.getBook(librarian(A), b.id)).available).toBe(2);
       // A copy on the shelf cannot be returned.
       await expect(library.returnCopy(librarian(A), { accessionNumber: b.accessionNumbers[0]! }, reqCtx)).rejects.toBeInstanceOf(ConflictError);
@@ -368,6 +373,162 @@ describe("LibraryService (integration)", () => {
       );
       expect(rows.map((r) => r.action)).toEqual(["library.book", "library.loan.issue", "library.loan.return"]);
       expect(JSON.stringify(rows.map((r) => r.metadata))).not.toContain("Ada");
+    });
+  });
+
+  // ── CP6.2: fines and lost books (CP6-D3/D4), through F2 ─────────────────
+
+  describe("fines and lost books", () => {
+    let F: Fixture;
+    const RATE = 5_000; // ₦50 a day
+
+    beforeAll(async () => {
+      F = await setUp("fines");
+      await library.updateSettings(ctx(F.schoolId, F.adminId), { finesEnabled: true, finePerDay: RATE, fineGraceDays: 0 }, reqCtx);
+    });
+
+    /** Lends a fresh copy and moves its due date `daysAgo` days into the past. */
+    async function lateLoan(f: Fixture, daysAgo: number, borrower: { studentId?: string; userId?: string }, opts: { price?: number } = {}) {
+      n += 1;
+      const b = await library.createBook(librarian(f), { title: `Late book ${n}`, replacementPrice: opts.price ?? null, copies: { accessionNumbers: [`L${n}-${runId}`] } }, reqCtx);
+      const accessionNumber = b.copyList[0]!.accessionNumber;
+      const loan = await library.issue(librarian(f), { accessionNumber, ...borrower }, reqCtx);
+      if (daysAgo > 0) {
+        await withTenant(f.schoolId, (db) => db.libraryLoan.update({ where: { id: loan.id }, data: { dueOn: day(addDaysIso(lagosTodayIso(), -daysAgo)) } }));
+      }
+      return { loan, accessionNumber, bookId: b.id };
+    }
+
+    const chargesFor = (f: Fixture, loanId: string) =>
+      withTenant(f.schoolId, (db) => db.studentCharge.findMany({ where: { sourceModule: "library", sourceId: loanId } }));
+
+    it("a late return raises one library charge for the fine, in the term, and the estimate matched it", async () => {
+      const kid = await student(F);
+      const { loan, accessionNumber } = await lateLoan(F, 3, { studentId: kid });
+      const overdue = await library.listLoans(librarian(F), { state: "OVERDUE" });
+      expect(overdue.find((l) => l.id === loan.id)).toMatchObject({ daysLate: 3, fineSoFar: 3 * RATE });
+
+      const result = await library.returnCopy(librarian(F), { accessionNumber }, reqCtx);
+      expect(result.charged).toBe(3 * RATE);
+      expect(result.loan).toMatchObject({ fineAmount: 3 * RATE, fineWaivedReason: null, fineSoFar: null });
+      const rows = await chargesFor(F, loan.id);
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({ studentId: kid, termId: F.termId, kind: "LIBRARY_FINE", amount: 3 * RATE, status: "OPEN" });
+      expect(rows[0]!.description).toMatch(/^Library fine — Late book \d+, 3 days late$/);
+
+      // It reaches the term invoice like any charge.
+      await invoices.generateForArm(ctx(F.schoolId, F.bursarId), { termId: F.termId, classArmId: F.armId }, reqCtx);
+      const billed = await chargesFor(F, loan.id);
+      expect(billed[0]).toMatchObject({ status: "BILLED" });
+    });
+
+    it("charges nothing on time, for staff, with fines off, or when waived — and records the waiver", async () => {
+      const kid = await student(F);
+      const onTime = await lateLoan(F, 0, { studentId: kid });
+      expect((await library.returnCopy(librarian(F), { accessionNumber: onTime.accessionNumber }, reqCtx))).toMatchObject({ charged: 0, loan: { fineAmount: null } });
+
+      const staff = await lateLoan(F, 5, { userId: F.teacherId });
+      expect(staff.loan.fineSoFar).toBeNull();
+      expect((await library.returnCopy(librarian(F), { accessionNumber: staff.accessionNumber }, reqCtx)).charged).toBe(0);
+
+      const waived = await lateLoan(F, 4, { studentId: kid });
+      const result = await library.returnCopy(librarian(F), { accessionNumber: waived.accessionNumber, waiveReason: "Was in hospital" }, reqCtx);
+      expect(result).toMatchObject({ charged: 0, loan: { fineAmount: 4 * RATE, fineWaivedReason: "Was in hospital" } });
+      expect(await chargesFor(F, waived.loan.id)).toHaveLength(0);
+      const auditRow = await withTenant(F.schoolId, (db) => db.auditLog.findFirstOrThrow({ where: { action: "library.loan.return", entityId: waived.loan.id } }));
+      expect(auditRow.metadata).toMatchObject({ fine: 4 * RATE, waived: 1, charged: 0 });
+
+      // School A never turned fines on.
+      const offKid = await student(A);
+      const off = await lateLoan(A, 6, { studentId: offKid });
+      expect(off.loan.fineSoFar).toBeNull();
+      expect((await library.returnCopy(librarian(A), { accessionNumber: off.accessionNumber }, reqCtx)).charged).toBe(0);
+      expect(await chargesFor(A, off.loan.id)).toHaveLength(0);
+    });
+
+    it("a lost book charges its replacement price instead of the fine, and closes the loan", async () => {
+      const kid = await student(F);
+      const { loan, accessionNumber } = await lateLoan(F, 10, { studentId: kid }, { price: 450_000 });
+      const result = await library.markLost(librarian(F), loan.id, {}, reqCtx);
+      expect(result).toMatchObject({ charged: 450_000, loan: { fineAmount: 450_000, lostAt: expect.any(String), overdue: false } });
+      const rows = await chargesFor(F, loan.id);
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({ amount: 450_000, kind: "LIBRARY_FINE", status: "OPEN" });
+      expect(rows[0]!.description).toMatch(/^Lost book — /);
+
+      // Closed: off the open list, on the lost list, no longer counted, copy not lendable.
+      expect((await library.listLoans(librarian(F), { state: "OPEN" })).some((l) => l.id === loan.id)).toBe(false);
+      expect((await library.listLoans(librarian(F), { state: "LOST" })).some((l) => l.id === loan.id)).toBe(true);
+      expect((await library.studentLoans(librarian(F), kid)).loans).toHaveLength(0);
+      await expect(library.issue(librarian(F), { accessionNumber, studentId: kid }, reqCtx)).rejects.toMatchObject({ code: "COPY_NOT_AVAILABLE" });
+      await expect(library.renew(librarian(F), loan.id, reqCtx)).rejects.toMatchObject({ code: "NOT_ON_LOAN" });
+      await expect(library.markLost(librarian(F), loan.id, {}, reqCtx)).rejects.toMatchObject({ code: "NOT_ON_LOAN" });
+      await expect(library.returnCopy(librarian(F), { accessionNumber }, reqCtx)).rejects.toMatchObject({ code: "NOT_ON_LOAN" });
+    });
+
+    it("a lost book with no price, a staff loss, or a waiver raises nothing", async () => {
+      const kid = await student(F);
+      const noPrice = await lateLoan(F, 0, { studentId: kid });
+      expect((await library.markLost(librarian(F), noPrice.loan.id, {}, reqCtx)).charged).toBe(0);
+      const staff = await lateLoan(F, 0, { userId: F.teacherId }, { price: 300_000 });
+      expect((await library.markLost(librarian(F), staff.loan.id, {}, reqCtx)).charged).toBe(0);
+      const waived = await lateLoan(F, 0, { studentId: kid }, { price: 300_000 });
+      expect(await library.markLost(librarian(F), waived.loan.id, { waiveReason: "Family lost home in flood" }, reqCtx)).toMatchObject({
+        charged: 0,
+        loan: { fineAmount: 300_000, fineWaivedReason: "Family lost home in flood" },
+      });
+      expect(await chargesFor(F, waived.loan.id)).toHaveLength(0);
+    });
+
+    it("found again: a waiting charge is voided and the copy goes back on the shelf; a billed charge stays", async () => {
+      const kid = await student(F);
+      const waiting = await lateLoan(F, 0, { studentId: kid }, { price: 200_000 });
+      await library.markLost(librarian(F), waiting.loan.id, {}, reqCtx);
+      const found = await library.markFound(librarian(F), waiting.loan.id, reqCtx);
+      expect(found).toMatchObject({ charge: "voided", loan: { foundAt: expect.any(String) } });
+      expect((await chargesFor(F, waiting.loan.id))[0]).toMatchObject({ status: "VOID" });
+      expect((await library.lookupCopy(librarian(F), waiting.accessionNumber)).copy.status).toBe("AVAILABLE");
+      await expect(library.markFound(librarian(F), waiting.loan.id, reqCtx)).rejects.toMatchObject({ code: "ALREADY_FOUND" });
+
+      const billedKid = await student(F);
+      const billed = await lateLoan(F, 0, { studentId: billedKid }, { price: 200_000 });
+      await library.markLost(librarian(F), billed.loan.id, {}, reqCtx);
+      await invoices.generateForArm(ctx(F.schoolId, F.bursarId), { termId: F.termId, classArmId: F.armId }, reqCtx);
+      expect(await library.markFound(librarian(F), billed.loan.id, reqCtx)).toMatchObject({ charge: "billed" });
+      expect((await chargesFor(F, billed.loan.id))[0]).toMatchObject({ status: "BILLED" });
+
+      // Only a lost loan can be found.
+      const open = await lateLoan(F, 0, { studentId: await student(F) });
+      await expect(library.markFound(librarian(F), open.loan.id, reqCtx)).rejects.toMatchObject({ code: "NOT_LOST" });
+    });
+
+    it("parents see their own child's books and due dates, children see their own, and nothing else", async () => {
+      const kid = await student(F);
+      const other = await student(F);
+      const { loan } = await lateLoan(F, 2, { studentId: kid });
+      await lateLoan(F, 0, { studentId: other });
+      const guardianId = await withTenant(F.schoolId, async (db) => {
+        const g = await db.guardian.create({ data: { schoolId: F.schoolId, firstName: "Ngozi", lastName: "Parent", relationship: "MOTHER", phone: "08030000009" } });
+        await db.studentGuardian.create({ data: { schoolId: F.schoolId, studentId: kid, guardianId: g.id, isPrimary: true } });
+        return g.id;
+      });
+      const g = { sessionId: "s", schoolId: F.schoolId, guardianId };
+      const seen = await library.libraryForGuardian(g, kid);
+      expect(seen.loans).toEqual([{ id: loan.id, title: loan.title, authors: null, dueOn: addDaysIso(lagosTodayIso(), -2), overdue: true, daysLate: 2 }]);
+      await expect(library.libraryForGuardian(g, other)).rejects.toThrow();
+      await expect(library.libraryForGuardian({ ...g, schoolId: A.schoolId }, kid)).rejects.toThrow();
+      expect((await library.libraryForStudent(F.schoolId, kid)).loans.map((l) => l.id)).toEqual([loan.id]);
+      expect((await library.libraryForStudent(F.schoolId, other)).loans).toHaveLength(1);
+    });
+
+    it("only the desk may mark lost or found; the rules stay owner and admin", async () => {
+      const { loan } = await lateLoan(F, 0, { studentId: await student(F) });
+      for (const userId of [F.teacherId, F.bursarId]) {
+        await expect(library.markLost(ctx(F.schoolId, userId), loan.id, {}, reqCtx)).rejects.toBeInstanceOf(ForbiddenError);
+        await expect(library.markFound(ctx(F.schoolId, userId), loan.id, reqCtx)).rejects.toBeInstanceOf(ForbiddenError);
+      }
+      await expect(library.updateSettings(librarian(F), { finePerDay: 1 }, reqCtx)).rejects.toBeInstanceOf(ForbiddenError);
+      expect((await library.context(librarian(F))).settings).toMatchObject({ finesEnabled: true, finePerDay: RATE, fineGraceDays: 0, fineCap: null });
     });
   });
 });

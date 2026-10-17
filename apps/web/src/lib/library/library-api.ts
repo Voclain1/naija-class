@@ -10,6 +10,7 @@ import type {
   LibraryContextDto,
   LibraryCopyLookupDto,
   LibraryLoanDto,
+  LibraryLoanResultDto,
   LibrarySettingsDto,
   UpdateBookInput,
   UpdateCopyInput,
@@ -46,11 +47,15 @@ export const lookupCopy = (accessionNumber: string) =>
 
 export const findBorrowers = (kind: LibraryBorrowerKind, q: string) =>
   apiFetch<LibraryBorrowerDto[]>(`/library/borrowers${query({ kind, q })}`, { method: "GET" });
-export const listLoans = (state: "OPEN" | "OVERDUE" | "RETURNED", q?: string) =>
+export const listLoans = (state: "OPEN" | "OVERDUE" | "RETURNED" | "LOST", q?: string) =>
   apiFetch<LibraryLoanDto[]>(`/library/loans${query({ state, q })}`, { method: "GET" });
 export const issueLoan = (body: IssueLoanInput) => apiFetch<LibraryLoanDto>("/library/loans/issue", { method: "POST", body });
-export const returnLoan = (accessionNumber: string) =>
-  apiFetch<LibraryLoanDto>("/library/loans/return", { method: "POST", body: { accessionNumber } });
+export const returnLoan = (accessionNumber: string, waiveReason?: string) =>
+  apiFetch<LibraryLoanResultDto>("/library/loans/return", { method: "POST", body: { accessionNumber, ...(waiveReason ? { waiveReason } : {}) } });
+// CP6.2 — a lost book, and the same book found again.
+export const markLost = (loanId: string, waiveReason?: string) =>
+  apiFetch<LibraryLoanResultDto>(`/library/loans/${id(loanId)}/lost`, { method: "POST", body: waiveReason ? { waiveReason } : {} });
+export const markFound = (loanId: string) => apiFetch<LibraryLoanResultDto>(`/library/loans/${id(loanId)}/found`, { method: "POST" });
 export const renewLoan = (loanId: string) => apiFetch<LibraryLoanDto>(`/library/loans/${id(loanId)}/renew`, { method: "POST" });
 
 export const getStudentLoans = (studentId: string) =>

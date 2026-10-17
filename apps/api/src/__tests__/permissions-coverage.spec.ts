@@ -1578,7 +1578,7 @@ describe("Phase 9 CP6.1 RBAC coverage: the library", () => {
     for (const handler of ["createBook", "updateBook", "deleteBook", "addCopies", "updateCopy"]) {
       expect(perms(handler), handler).toEqual(["library.manage"]);
     }
-    for (const handler of ["findBorrowers", "issue", "returnCopy", "renew"]) {
+    for (const handler of ["findBorrowers", "issue", "returnCopy", "renew", "markLost", "markFound"]) {
       expect(perms(handler), handler).toEqual(["library.lend"]);
     }
     expect(perms("updateSettings")).toEqual(["library.settings"]);
