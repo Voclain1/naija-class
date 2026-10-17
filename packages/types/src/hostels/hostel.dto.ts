@@ -223,3 +223,106 @@ export interface PortalStudentHostelDto {
   bedNumber: number;
   houseMasters: string[];
 }
+
+// ─── Exeats: a boarder's leave out (CP6b.3, §15 CP6b-D6) ───────────────────
+
+export const hostelExeatStatusValues = ["REQUESTED", "APPROVED", "REFUSED", "OUT", "BACK", "CANCELLED"] as const;
+export type HostelExeatStatus = (typeof hostelExeatStatusValues)[number];
+
+/** What each status is called on every screen, for staff and parents alike. */
+export const HOSTEL_EXEAT_STATUS_LABEL: Record<HostelExeatStatus, string> = {
+  REQUESTED: "Waiting for the house master",
+  APPROVED: "Approved",
+  REFUSED: "Not approved",
+  OUT: "Out of school",
+  BACK: "Back in school",
+  CANCELLED: "Cancelled",
+};
+
+export const HOSTEL_EXEAT_LIMITS = { reason: 300, note: 300, collectedBy: 120, maxDays: 30, aheadDays: 90 } as const;
+
+const moment = z.string().datetime({ offset: true });
+
+export const requestHostelExeatSchema = z
+  .object({
+    outAt: moment,
+    backBy: moment,
+    reason: z.string().trim().min(1, "Say why the child is going out.").max(HOSTEL_EXEAT_LIMITS.reason),
+    collectorName: z.string().trim().min(1, "Say who will collect the child.").max(80),
+    collectorRelationship: z.string().trim().min(1, "Say who they are to the child.").max(40),
+    collectorPhone: z.string().trim().regex(/^\+?[0-9 ]{7,20}$/, "Enter the collector's phone number."),
+  })
+  .refine((v) => new Date(v.backBy) > new Date(v.outAt), { message: "The time back must be after the time out.", path: ["backBy"] });
+export type RequestHostelExeatInput = z.infer<typeof requestHostelExeatSchema>;
+
+/** The school enters a request taken by phone: the same, for a named boarder. */
+export const staffHostelExeatSchema = z
+  .object({ studentId: z.string().uuid() })
+  .and(requestHostelExeatSchema);
+export type StaffHostelExeatInput = z.infer<typeof staffHostelExeatSchema>;
+
+export const approveHostelExeatSchema = z.object({
+  note: z.string().trim().max(HOSTEL_EXEAT_LIMITS.note).optional().transform((v) => (v ? v : undefined)),
+});
+export type ApproveHostelExeatInput = z.infer<typeof approveHostelExeatSchema>;
+
+export const refuseHostelExeatSchema = z.object({
+  note: z.string().trim().min(1, "Say why, so the parent knows.").max(HOSTEL_EXEAT_LIMITS.note),
+});
+export type RefuseHostelExeatInput = z.infer<typeof refuseHostelExeatSchema>;
+
+export const hostelExeatLeftSchema = z.object({
+  /** Who actually collected the child, when not the person named. */
+  collectedBy: z.string().trim().max(HOSTEL_EXEAT_LIMITS.collectedBy).optional().transform((v) => (v ? v : undefined)),
+  at: moment.optional(),
+});
+export type HostelExeatLeftInput = z.infer<typeof hostelExeatLeftSchema>;
+
+export const hostelExeatBackSchema = z.object({ at: moment.optional() });
+export type HostelExeatBackInput = z.infer<typeof hostelExeatBackSchema>;
+
+/** "open": waiting, approved or out. "past": refused, back or cancelled, newest first. */
+export const listHostelExeatsSchema = z.object({ view: z.enum(["open", "past"]).default("open") });
+export type ListHostelExeatsInput = z.infer<typeof listHostelExeatsSchema>;
+
+export interface HostelExeatDto {
+  id: string;
+  studentId: string;
+  studentName: string;
+  hostelName: string;
+  outAt: string | Date;
+  backBy: string | Date;
+  reason: string;
+  collector: { name: string; relationship: string; phone: string };
+  status: HostelExeatStatus;
+  /** Out, and past the time agreed. Shown as late; nothing is sent. */
+  late: boolean;
+  /** Came back after the time agreed. */
+  returnedLate: boolean;
+  /** "Parent: Ngozi Okafor" or "School: Mr Bello". */
+  requestedBy: string;
+  decidedByName: string | null;
+  decidedAt: string | Date | null;
+  decisionNote: string | null;
+  leftAt: string | Date | null;
+  collectedBy: string | null;
+  backAt: string | Date | null;
+  cancelledAt: string | Date | null;
+}
+
+/** The parent's view of their child's exeats: no staff names. */
+export interface PortalHostelExeatDto {
+  id: string;
+  outAt: string | Date;
+  backBy: string | Date;
+  reason: string;
+  collector: { name: string; relationship: string; phone: string };
+  status: HostelExeatStatus;
+  late: boolean;
+  decisionNote: string | null;
+  leftAt: string | Date | null;
+  collectedBy: string | null;
+  backAt: string | Date | null;
+  /** Whether the parent may still cancel it. */
+  canCancel: boolean;
+}

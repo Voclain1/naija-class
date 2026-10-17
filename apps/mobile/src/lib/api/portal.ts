@@ -1,6 +1,8 @@
 import type {
   FamilyLibraryDto,
+  PortalHostelExeatDto,
   PortalStudentHostelDto,
+  RequestHostelExeatInput,
   PortalStudentTransportDto,
   PortalBankDetailsResponse,
   FamilyTimetableDto,
@@ -286,6 +288,22 @@ export function guardianVaccinationDocumentUrl(studentId: string, vaccinationId:
 // Phase 9 / CP6.2 — the child's library books out (CP6-D6).
 export function guardianLibrary(studentId: string): Promise<FamilyLibraryDto> {
   return apiFetch<FamilyLibraryDto>(`/portal/students/${encodeURIComponent(studentId)}/library`);
+}
+
+// Phase 9 / CP6b.3 — the child's leave out (exeats): list, ask, cancel.
+export function guardianExeats(studentId: string): Promise<PortalHostelExeatDto[]> {
+  return apiFetch<PortalHostelExeatDto[]>(`/portal/students/${encodeURIComponent(studentId)}/exeats`);
+}
+
+export function guardianAskExeat(studentId: string, body: RequestHostelExeatInput): Promise<PortalHostelExeatDto> {
+  return apiFetch<PortalHostelExeatDto>(`/portal/students/${encodeURIComponent(studentId)}/exeats`, { method: "POST", body });
+}
+
+export function guardianCancelExeat(studentId: string, exeatId: string): Promise<PortalHostelExeatDto> {
+  return apiFetch<PortalHostelExeatDto>(
+    `/portal/students/${encodeURIComponent(studentId)}/exeats/${encodeURIComponent(exeatId)}/cancel`,
+    { method: "POST", body: {} },
+  );
 }
 
 // Phase 9 / CP6b.2 — the child's hostel bed this term; null for a day pupil.

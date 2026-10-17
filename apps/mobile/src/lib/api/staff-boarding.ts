@@ -1,4 +1,4 @@
-import type { HostelVisitDto, HouseBoardersDto, HouseHostelDto, LogHostelVisitInput } from "@school-kit/types";
+import type { HostelExeatDto, HostelVisitDto, HouseBoardersDto, HouseHostelDto, LogHostelVisitInput } from "@school-kit/types";
 
 import { apiFetch } from "./client";
 
@@ -24,4 +24,13 @@ export function staffLogHostelVisit(hostelId: string, body: LogHostelVisitInput)
 
 export function staffVisitorLeft(visitId: string): Promise<HostelVisitDto> {
   return apiFetch<HostelVisitDto>(`/boarding/visits/${encodeURIComponent(visitId)}/left`, { method: "PATCH", body: {} });
+}
+
+// Phase 9 / CP6b.3 — leave out (exeats): the open ones, and each step.
+export function staffHostelExeats(hostelId: string): Promise<HostelExeatDto[]> {
+  return apiFetch<HostelExeatDto[]>(`/boarding/hostels/${encodeURIComponent(hostelId)}/exeats?view=open`);
+}
+
+export function staffExeatStep(exeatId: string, step: "approve" | "refuse" | "left" | "back", body: Record<string, string> = {}): Promise<HostelExeatDto> {
+  return apiFetch<HostelExeatDto>(`/boarding/exeats/${encodeURIComponent(exeatId)}/${step}`, { method: "POST", body });
 }

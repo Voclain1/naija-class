@@ -3711,3 +3711,104 @@ both shipped, and copies the shape transport proved in CP5.
     without the visitor.
   - `/boarding` and the portal card were checked at 320 and 390 px with no
     sideways scroll.
+
+### 15.11 As built — CP6b.3, exeats (2026-10-17)
+
+- **Data** (migration `20261105120000_hostel_exeats`): `hostel_exeats`, with:
+  - the hostel and the boarder;
+  - out at and back by (a `CHECK` that back is after out);
+  - the reason (1–300 characters);
+  - who will collect: name, relationship and phone;
+  - the status (enum `HostelExeatStatus`);
+  - who asked: a guardian **or** a member of staff, exactly one (a `CHECK`);
+  - who decided, when, and the decision note (a `CHECK` that a refusal has
+    one);
+  - left at, and who actually collected the child; back at; cancelled at.
+
+  RLS enabled and forced, with `tenant_isolation`. No SECURITY DEFINER
+  function; the count stays 23. No new permission: the house master's side
+  is `hostel.house`, scoped to the hostels kept as in CP6b.2, and the
+  parent's side is `withGuardian`.
+- **Statuses only move forward:** REQUESTED → APPROVED or REFUSED → OUT →
+  BACK, or CANCELLED before the child leaves. Each move is a conditional
+  update on the status it expects, so two people acting at once cannot both
+  succeed. The loser is told where the leave out now stands ("The child has
+  already left.").
+  - An approval can be withdrawn, with a note, before the child leaves.
+  - "Has left" before an approval answers "Approve the leave out before the
+    child leaves."
+- **Asking.**
+  - Any linked guardian may ask (owner's answer 5), but only for a child who
+    holds a bed this term and is still at the school.
+  - The school can enter a request taken by phone, for a boarder of a hostel
+    it keeps.
+  - Checks on the times:
+    - back must be after out, and not already past;
+    - at most 30 days out;
+    - at most 90 days ahead;
+    - not overlapping another open leave out for the same child
+      (`EXEAT_OVERLAPS`). A cancelled one frees its time.
+- **Telling the parents.**
+  - On approval or refusal every linked guardian is told: push when the app
+    reaches them, else SMS where the school sends SMS (the sickbay's rule,
+    without its "only when sent home" limit).
+  - The message is "Adaeze's leave out on 18 Oct 2026 was approved." or "…
+    was not approved. Open the app to see why."
+  - The refusal note is read in the app, never put in an SMS.
+  - Counts per channel are audited. Nothing is sent for out, back or late.
+- **Late.**
+  - A child OUT past the time agreed is `late` on the house master's list
+    (tinted red, "Late: was due back …") and to the parent ("Late back"). No
+    message is sent.
+  - A child back after the time agreed is marked "Came back late".
+- **API:**
+  - house master (`hostel.house`):
+    - `GET /boarding/hostels/:id/exeats?view=open|past`;
+    - `POST /boarding/hostels/:id/exeats`: a request taken by phone;
+    - `POST /boarding/exeats/:id/approve|refuse|left|back|cancel`.
+  - parent:
+    - `GET` and `POST /portal/students/:id/exeats`;
+    - `POST /portal/students/:id/exeats/:exeatId/cancel`.
+
+    The parent's view names no member of staff.
+- **Web:**
+  - a **Leave out** section on the Boarding page, between the boarders and
+    the visitor log, with Open and Past views;
+  - a waiting request is tinted amber and says "Waiting for the house
+    master"; an out one is tinted blue; a late one is tinted red, in words;
+  - actions: Approve; Refuse with a note the parent reads; Has left, with an
+    optional "Collected by, if not …"; Is back; Cancel it;
+  - an "Enter a request taken by phone" form.
+- **Portal and parent app.**
+  - Under the hostel card, the child's leave outs: each status in words, the
+    school's note on a refusal, "Late back", and "Cancel this leave out"
+    while it can be.
+  - "Ask for leave out" opens a form with days, times, reason and collector.
+    The parent app uses its own screen, with days as number boxes.
+  - Times are Lagos wall-clock.
+- **Staff app.** The hostel screen gains **Leave out**, the open list, with:
+  - Approve;
+  - Refuse or Withdraw approval, with a note;
+  - Has left (the named collector);
+  - Is back.
+- **Tests:**
+  - `hostel-exeat.service.spec.ts` (8 tests, real database):
+    - the whole path, forward only, every step audited;
+    - who is told, and by which channel;
+    - a refusal's note: in the app, not in the message, with no staff names
+      for the parent;
+    - late and came back late;
+    - cancelling and overlaps;
+    - times checked;
+    - only the child's own guardian, and only for a boarder;
+    - phone requests and who may decide;
+    - the message wording.
+  - Permission coverage for the new routes.
+  - e2e `hostel-exeats.spec.ts`: the parent asks in the portal; the house
+    master approves, logs the child out with someone else collecting, then
+    back; the parent sees each step.
+  - The Boarding page and the portal panel, with the forms open, were
+    checked at 320 and 390 px with no sideways scroll.
+- **Left out:** a scheduled reminder or SMS when a child is late, gate
+  passes, and cancelling open leave outs automatically on withdrawal (a
+  withdrawn child's open request stays until the school cancels it).

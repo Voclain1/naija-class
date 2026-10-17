@@ -55,7 +55,7 @@ interface RequestContext {
   ipAddress: string | null;
 }
 /** Every hostel, or the ones this person is house master of. */
-type Keeper = { all: true } | { all: false; hostelIds: Set<string> };
+export type Keeper = { all: true } | { all: false; hostelIds: Set<string> };
 
 @Injectable()
 export class HostelHouseService {
@@ -217,17 +217,25 @@ export class HostelHouseService {
 
   // ─── Internals ────────────────────────────────────────────────────────────
 
-  private async keeper(authCtx: AuthContext): Promise<Keeper> {
-    const roles = await getActiveUserRoleKeys(authCtx);
-    if (roles.some((r) => (ALL_HOSTELS_ROLES as readonly string[]).includes(r))) return { all: true };
-    if (!roles.some((r) => (HOUSE_ROLES as readonly string[]).includes(r))) {
-      throw new ForbiddenError(`This action requires one of the following roles: ${HOUSE_ROLES.join(", ")}.`);
-    }
-    const rows = await withTenant(authCtx.schoolId, (db) =>
-      db.hostelHouseMaster.findMany({ where: { schoolId: authCtx.schoolId, userId: authCtx.userId }, select: { hostelId: true } }),
-    );
-    return { all: false, hostelIds: new Set(rows.map((r) => r.hostelId)) };
+  private keeper(authCtx: AuthContext): Promise<Keeper> {
+    return houseKeeper(authCtx);
   }
+}
+
+/**
+ * Which hostels the caller keeps: every one for owner and admin, else those
+ * they are house master of. Shared with the exeats service (CP6b.3).
+ */
+export async function houseKeeper(authCtx: AuthContext): Promise<Keeper> {
+  const roles = await getActiveUserRoleKeys(authCtx);
+  if (roles.some((r) => (ALL_HOSTELS_ROLES as readonly string[]).includes(r))) return { all: true };
+  if (!roles.some((r) => (HOUSE_ROLES as readonly string[]).includes(r))) {
+    throw new ForbiddenError(`This action requires one of the following roles: ${HOUSE_ROLES.join(", ")}.`);
+  }
+  const rows = await withTenant(authCtx.schoolId, (db) =>
+    db.hostelHouseMaster.findMany({ where: { schoolId: authCtx.schoolId, userId: authCtx.userId }, select: { hostelId: true } }),
+  );
+  return { all: false, hostelIds: new Set(rows.map((r) => r.hostelId)) };
 }
 
 /** Whether this teacher keeps any hostel, for the teacher portal's and staff app's menus. */
@@ -250,7 +258,7 @@ export async function boarderLabels(db: Db, schoolId: string, studentIds: string
   return new Map(beds.map((b) => [b.studentId, `${b.hostel.name}, ${b.room.name}`]));
 }
 
-async function kept(db: Db, schoolId: string, keeper: Keeper, hostelId: string) {
+export async function kept(db: Db, schoolId: string, keeper: Keeper, hostelId: string) {
   if (!keeper.all && !keeper.hostelIds.has(hostelId)) throw new NotFoundError("Hostel not found.");
   const hostel = await db.hostel.findFirst({ where: { id: hostelId, schoolId }, select: { id: true, name: true, forGender: true } });
   if (!hostel) throw new NotFoundError("Hostel not found.");
@@ -266,7 +274,7 @@ async function keptVisit(db: Db, schoolId: string, keeper: Keeper, visitId: stri
   return visit;
 }
 
-async function currentTerm(db: Db, schoolId: string) {
+export async function currentTerm(db: Db, schoolId: string) {
   return db.term.findFirst({ where: { schoolId, isCurrent: true }, select: { id: true, name: true } });
 }
 
