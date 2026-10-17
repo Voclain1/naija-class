@@ -1672,7 +1672,22 @@ describe("Phase 9 CP6b.2 RBAC coverage: boarding", () => {
     ) as string[];
 
   it("every house master route needs hostel.house; the service narrows it to the hostels kept", () => {
-    for (const handler of ["hostels", "boarders", "visits", "logVisit", "visitLeft", "deleteVisit"]) {
+    for (const handler of [
+      "hostels",
+      "boarders",
+      "visits",
+      "logVisit",
+      "visitLeft",
+      "deleteVisit",
+      // CP6b.3 — exeats.
+      "listExeats",
+      "createExeat",
+      "approveExeat",
+      "refuseExeat",
+      "exeatLeft",
+      "exeatBack",
+      "cancelExeat",
+    ]) {
       expect(perms(handler), handler).toEqual(["hostel.house"]);
     }
   });

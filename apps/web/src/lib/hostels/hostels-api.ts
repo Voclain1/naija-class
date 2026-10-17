@@ -5,6 +5,7 @@ import type {
   CreateHostelInput,
   HostelBedDto,
   HostelDto,
+  HostelExeatDto,
   HostelVisitDto,
   HouseBoardersDto,
   HouseHostelDto,
@@ -13,6 +14,7 @@ import type {
   MoveBedInput,
   RoomInput,
   SetHostelFeeResultDto,
+  StaffHostelExeatInput,
   StudentHostelDto,
   UpdateHostelInput,
   UpdateRoomInput,
@@ -63,3 +65,18 @@ export const logHostelVisit = (hostelId: string, body: LogHostelVisitInput) =>
 export const markVisitorLeft = (visitId: string) =>
   apiFetch<HostelVisitDto>(`/boarding/visits/${id(visitId)}/left`, { method: "PATCH", body: {} });
 export const deleteHostelVisit = (visitId: string) => apiFetch<void>(`/boarding/visits/${id(visitId)}`, { method: "DELETE" });
+
+// ─── Exeats: a boarder's leave out (CP6b.3) ─────────────────────────────────
+
+export const hostelExeats = (hostelId: string, view: "open" | "past") =>
+  apiFetch<HostelExeatDto[]>(`/boarding/hostels/${id(hostelId)}/exeats?${new URLSearchParams({ view })}`, { method: "GET" });
+export const enterHostelExeat = (hostelId: string, body: StaffHostelExeatInput) =>
+  apiFetch<HostelExeatDto>(`/boarding/hostels/${id(hostelId)}/exeats`, { method: "POST", body });
+export const approveHostelExeat = (exeatId: string, note?: string) =>
+  apiFetch<HostelExeatDto>(`/boarding/exeats/${id(exeatId)}/approve`, { method: "POST", body: note ? { note } : {} });
+export const refuseHostelExeat = (exeatId: string, note: string) =>
+  apiFetch<HostelExeatDto>(`/boarding/exeats/${id(exeatId)}/refuse`, { method: "POST", body: { note } });
+export const hostelExeatLeft = (exeatId: string, collectedBy?: string) =>
+  apiFetch<HostelExeatDto>(`/boarding/exeats/${id(exeatId)}/left`, { method: "POST", body: collectedBy ? { collectedBy } : {} });
+export const hostelExeatBack = (exeatId: string) => apiFetch<HostelExeatDto>(`/boarding/exeats/${id(exeatId)}/back`, { method: "POST", body: {} });
+export const cancelHostelExeat = (exeatId: string) => apiFetch<HostelExeatDto>(`/boarding/exeats/${id(exeatId)}/cancel`, { method: "POST", body: {} });

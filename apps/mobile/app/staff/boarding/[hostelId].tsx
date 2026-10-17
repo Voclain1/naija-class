@@ -2,14 +2,28 @@ import { useState } from "react";
 import { RefreshControl, ScrollView, StyleSheet, View } from "react-native";
 import { Redirect, Stack, useLocalSearchParams } from "expo-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { formatSickbayTime, sickbayDayOf, type HouseBoarderDto } from "@school-kit/types";
+import {
+  formatSickbayDay,
+  formatSickbayTime,
+  HOSTEL_EXEAT_STATUS_LABEL,
+  sickbayDayOf,
+  type HostelExeatDto,
+  type HouseBoarderDto,
+} from "@school-kit/types";
 
 import { TextField } from "../../../src/components/form";
 import { ListRow, ScreenHeader, Skeleton } from "../../../src/components/layout";
 import { LoadError } from "../../../src/components/load-error";
 import { Body, Button, Caption, Card, Label, Notice, Screen } from "../../../src/components/ui";
 import { ApiError } from "../../../src/lib/api/client";
-import { staffHostelBoarders, staffHostelVisits, staffLogHostelVisit, staffVisitorLeft } from "../../../src/lib/api/staff-boarding";
+import {
+  staffExeatStep,
+  staffHostelBoarders,
+  staffHostelExeats,
+  staffHostelVisits,
+  staffLogHostelVisit,
+  staffVisitorLeft,
+} from "../../../src/lib/api/staff-boarding";
 import { useSession } from "../../../src/lib/auth/session";
 import { queryKeys } from "../../../src/lib/query/keys";
 import { spacing } from "../../../src/theme/tokens";
@@ -47,6 +61,13 @@ export default function HostelBoardingScreen() {
     enabled: authed && !!hostelId,
   });
 
+  const exeatsKey = queryKeys.staffBoardingExeats(schoolId, userId, hostelId ?? "");
+  const exeats = useQuery({
+    queryKey: exeatsKey,
+    queryFn: () => staffHostelExeats(hostelId ?? ""),
+    enabled: authed && !!hostelId,
+  });
+
   if (status === "locked") return <Redirect href="/unlock" />;
   if (!authed) return <Redirect href="/login" />;
 
@@ -69,10 +90,11 @@ export default function HostelBoardingScreen() {
         keyboardShouldPersistTaps="handled"
         refreshControl={
           <RefreshControl
-            refreshing={boarders.isRefetching || visits.isRefetching}
+            refreshing={boarders.isRefetching || visits.isRefetching || exeats.isRefetching}
             onRefresh={() => {
               void boarders.refetch();
               void visits.refetch();
+              void exeats.refetch();
             }}
           />
         }
@@ -90,6 +112,19 @@ export default function HostelBoardingScreen() {
             }}
           />
         ) : null}
+
+        <Label>Leave out</Label>
+        {exeats.isLoading ? (
+          <Skeleton lines={2} />
+        ) : exeats.isError ? (
+          <LoadError error={exeats.error} what="leave outs" onRetry={() => void exeats.refetch()} />
+        ) : (exeats.data ?? []).length === 0 ? (
+          <Body muted>No leave out waiting, approved or under way.</Body>
+        ) : (
+          (exeats.data ?? []).map((e) => (
+            <ExeatCard key={e.id} exeat={e} onChanged={() => void queryClient.invalidateQueries({ queryKey: exeatsKey })} />
+          ))
+        )}
 
         <Label>Today&apos;s visitors</Label>
         {visits.isLoading ? (
@@ -138,6 +173,67 @@ export default function HostelBoardingScreen() {
         )}
       </ScrollView>
     </Screen>
+  );
+}
+
+function moment(at: string | Date): string {
+  return `${formatSickbayDay(at)}, ${formatSickbayTime(at)}`;
+}
+
+/** One leave out, with the next step the house master can take. */
+function ExeatCard({ exeat: e, onChanged }: { exeat: HostelExeatDto; onChanged: () => void }) {
+  const [refusing, setRefusing] = useState(false);
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function step(which: "approve" | "refuse" | "left" | "back", body: Record<string, string> = {}) {
+    setBusy(true);
+    setError(null);
+    try {
+      await staffExeatStep(e.id, which, body);
+      onChanged();
+    } catch (err) {
+      setError(message(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Card>
+      {e.late ? <Notice tone="danger">Late: was due back {moment(e.backBy)}</Notice> : null}
+      {e.status === "REQUESTED" ? <Notice tone="warning">Waiting for your decision</Notice> : null}
+      <Body>{e.studentName}</Body>
+      <Caption>
+        Out {moment(e.outAt)} · back by {moment(e.backBy)}
+      </Caption>
+      <Caption>{e.reason}</Caption>
+      <Caption>
+        Collected by {e.collector.name} ({e.collector.relationship}) · {e.collector.phone}
+      </Caption>
+      <Caption>
+        {HOSTEL_EXEAT_STATUS_LABEL[e.status]} · {e.requestedBy}
+      </Caption>
+      {error ? <Notice tone="danger">{error}</Notice> : null}
+      {e.status === "REQUESTED" && !refusing ? <Button title="Approve" onPress={() => void step("approve")} disabled={busy} /> : null}
+      {(e.status === "REQUESTED" || e.status === "APPROVED") && !refusing ? (
+        <Button variant="secondary" title={e.status === "APPROVED" ? "Withdraw approval" : "Refuse"} onPress={() => setRefusing(true)} disabled={busy} />
+      ) : null}
+      {refusing ? (
+        <>
+          <TextField label="Why not (the parent reads this)" value={note} onChangeText={setNote} maxLength={300} />
+          <Button
+            title={e.status === "APPROVED" ? "Withdraw approval" : "Refuse"}
+            onPress={() => (note.trim() ? void step("refuse", { note: note.trim() }) : setError("Say why, so the parent knows."))}
+            disabled={busy}
+          />
+          <Button variant="secondary" title="Back" onPress={() => setRefusing(false)} disabled={busy} />
+        </>
+      ) : null}
+      {e.status === "APPROVED" && !refusing ? <Button title="Has left" onPress={() => void step("left")} disabled={busy} /> : null}
+      {e.status === "OUT" ? <Button title="Is back" onPress={() => void step("back")} disabled={busy} /> : null}
+    </Card>
   );
 }
 

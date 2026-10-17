@@ -833,6 +833,7 @@ model Student {
   libraryLoans          LibraryLoan[] // Phase 9 / CP6.1
   hostelBeds            HostelBed[] // Phase 9 / CP6b.1
   hostelVisits          HostelVisit[] // Phase 9 / CP6b.2
+  hostelExeats          HostelExeat[] // Phase 9 / CP6b.3
 
   @@unique([schoolId, admissionNumber])
   @@index([schoolId])
@@ -4597,6 +4598,7 @@ model Hostel {
   rooms        HostelRoom[]
   beds         HostelBed[]
   visits       HostelVisit[]
+  exeats       HostelExeat[]
 
   @@unique([schoolId, name])
   @@map("hostels")
@@ -4672,4 +4674,47 @@ model HostelVisit {
   @@index([schoolId, hostelId, arrivedAt])
   @@index([schoolId, studentId])
   @@map("hostel_visits")
+}
+
+enum HostelExeatStatus {
+  REQUESTED
+  APPROVED
+  REFUSED
+  OUT
+  BACK
+  CANCELLED
+}
+
+// Phase 9 / CP6b.3 — a boarder's leave out (§15 CP6b-D6). Asked by a parent or
+// entered by the school (exactly one of the two requester columns); decided by
+// the house master; left and back logged on the day.
+model HostelExeat {
+  id                    String            @id @default(uuid())
+  schoolId              String            @map("school_id")
+  hostelId              String            @map("hostel_id")
+  studentId             String            @map("student_id")
+  outAt                 DateTime          @map("out_at")
+  backBy                DateTime          @map("back_by")
+  reason                String
+  collectorName         String            @map("collector_name")
+  collectorRelationship String            @map("collector_relationship")
+  collectorPhone        String            @map("collector_phone")
+  status                HostelExeatStatus @default(REQUESTED)
+  requestedByGuardianId String?           @map("requested_by_guardian_id")
+  requestedByUserId     String?           @map("requested_by_user_id")
+  decidedBy             String?           @map("decided_by")
+  decidedAt             DateTime?         @map("decided_at")
+  decisionNote          String?           @map("decision_note")
+  leftAt                DateTime?         @map("left_at")
+  collectedBy           String?           @map("collected_by")
+  backAt                DateTime?         @map("back_at")
+  cancelledAt           DateTime?         @map("cancelled_at")
+  createdAt             DateTime          @default(now()) @map("created_at")
+  updatedAt             DateTime          @updatedAt @map("updated_at")
+  hostel                Hostel            @relation(fields: [hostelId], references: [id], onDelete: Restrict)
+  student               Student           @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@index([schoolId, hostelId, status])
+  @@index([schoolId, studentId])
+  @@map("hostel_exeats")
 }

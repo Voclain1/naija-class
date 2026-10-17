@@ -46,6 +46,7 @@ export const queryKeys = {
   // Phase 9 / CP5.3 — the child's school bus this term.
   studentTransport: (studentId: string) => ["students", studentId, "transport"] as const,
   studentHostel: (studentId: string) => ["students", studentId, "hostel"] as const,
+  studentExeats: (studentId: string) => ["students", studentId, "exeats"] as const,
   // Phase 9 / CP6.2 — a parent's child's library books out.
   studentLibrary: (studentId: string) => ["students", studentId, "library"] as const,
   // Phase 9 / CP3.3 — the child's sickbay visits. Also `persist: false`.
@@ -324,6 +325,8 @@ export const queryKeys = {
     ["staff", schoolId, userId, "boarding-boarders", hostelId] as const,
   staffBoardingVisits: (schoolId: string, userId: string, hostelId: string, day: string) =>
     ["staff", schoolId, userId, "boarding-visits", hostelId, day] as const,
+  staffBoardingExeats: (schoolId: string, userId: string, hostelId: string) =>
+    ["staff", schoolId, userId, "boarding-exeats", hostelId] as const,
   staffTransportRoutes: (schoolId: string, userId: string) =>
     ["staff", schoolId, userId, "transport-routes"] as const,
   staffTransportDaily: (schoolId: string, userId: string, routeId: string, date: string) =>

@@ -12,6 +12,7 @@ import {
   type HouseHostelDto,
 } from "@school-kit/types";
 
+import { ExeatsSection } from "@/components/hostels/exeats-section";
 import { InlineAlert } from "@/components/shared/inline-alert";
 import { SELECT_CLASSES } from "@/components/transport/term-picker";
 import { Badge } from "@/components/ui/badge";
@@ -117,6 +118,7 @@ function HostelBoarding({ hostelId }: { hostelId: string }) {
           </ul>
         )}
       </section>
+      <ExeatsSection hostelId={hostelId} boarders={data.boarders} />
       <VisitorLog hostelId={hostelId} boarders={data.boarders} />
     </>
   );

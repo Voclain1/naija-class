@@ -10,6 +10,8 @@ import { useEffect, useState } from "react";
 
 import type { PortalStudentHostelDto } from "@school-kit/types";
 
+import { HostelExeats } from "./hostel-exeats";
+
 export function HostelCard({ studentId }: { studentId: string }) {
   const [hostel, setHostel] = useState<PortalStudentHostelDto | null>(null);
 
@@ -55,6 +57,8 @@ export function HostelCard({ studentId }: { studentId: string }) {
           </div>
         )}
       </dl>
+      {/* Phase 9 / CP6b.3: leave out, for a boarder only. */}
+      <HostelExeats studentId={studentId} />
     </section>
   );
 }
