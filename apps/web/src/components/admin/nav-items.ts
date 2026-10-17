@@ -3,6 +3,7 @@ import {
   BookOpenCheck,
   Bus,
   BedDouble,
+  DoorOpen,
   Library,
   Megaphone,
   CalendarClock,
@@ -167,6 +168,10 @@ export const NAV_ITEMS: NavItem[] = [
   // Phase 9 / CP6b.1 — hostels (docs/modules/phase-9.md §15). hostel.read:
   // owner, admin and the bursar (who sets hostel fees there).
   { label: "Hostels", href: "/hostels", icon: BedDouble, enabled: true, requiredPermission: "hostel.read" },
+  // Phase 9 / CP6b.2 — a hostel's boarders and visitor log. hostel.house:
+  // admin and the House master, whose whole menu this is. (A teacher who keeps
+  // a hostel reaches it from the teacher portal.)
+  { label: "Boarding", href: "/boarding", icon: DoorOpen, enabled: true, requiredPermission: "hostel.house" },
   // Announcements (docs/modules/announcements.md). Gated on
   // announcement.create, not announcement.read: every staff role can READ the
   // school's announcements in their own feed, but this page is the sending

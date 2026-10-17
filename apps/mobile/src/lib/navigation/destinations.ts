@@ -36,6 +36,8 @@ export interface StaffContext {
   formArms: readonly { id: string; name: string }[];
   /** Whether teacher scope lists at least one subject for them. */
   teachesSubjects: boolean;
+  /** Whether teacher scope says they are house master of a hostel (CP6b.2). */
+  housesHostels: boolean;
   /** Whether this build knows the website's address. */
   webConfigured: boolean;
 }
@@ -112,6 +114,12 @@ export function staffDestinations(ctx: StaffContext): Destination[] {
   // main screen this is.
   if (can("library.read")) {
     out.push({ key: "library", label: "Library", hint: "Lend and take back", icon: "library-outline", group: "School", route: "/staff/library" });
+  }
+  // Phase 9 / CP6b.2 — a hostel's boarders and visitor log. hostel.house is a
+  // permission check on the server; the service then keeps a teacher to the
+  // hostels they are house master of, so a teacher without one is not shown it.
+  if (can("hostel.house") && (admin || hasRole(ctx.roles, "house_master") || (teacher && ctx.housesHostels))) {
+    out.push({ key: "boarding", label: "Boarding", hint: "Boarders and visitors", icon: "bed-outline", group: "School", route: "/staff/boarding" });
   }
   if (admin && can("reports.completeness.read")) {
     out.push({ key: "reports", label: "Reports", hint: "What's behind", icon: "bar-chart-outline", group: "School", route: "/staff/reports" });

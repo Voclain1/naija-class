@@ -88,6 +88,9 @@ export interface TeacherScopeDto {
   // empty gradebook can say the admin has not enrolled anyone yet, rather
   // than just showing nothing. Never covers an arm outside the teacher's scope.
   enrolledCountByArm: Record<string, number>;
+  // Phase 9 / CP6b.2 — whether this teacher is house master of any hostel, so
+  // the teacher portal and staff app show Boarding only to those who keep one.
+  housesHostels: boolean;
 }
 
 // Trimmed roster row for the per-arm student list. Deliberately a SUBSET of

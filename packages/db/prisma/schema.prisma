@@ -832,6 +832,7 @@ model Student {
   transportAssignments  TransportAssignment[] // Phase 9 / CP5.2
   libraryLoans          LibraryLoan[] // Phase 9 / CP6.1
   hostelBeds            HostelBed[] // Phase 9 / CP6b.1
+  hostelVisits          HostelVisit[] // Phase 9 / CP6b.2
 
   @@unique([schoolId, admissionNumber])
   @@index([schoolId])
@@ -4595,6 +4596,7 @@ model Hostel {
   houseMasters HostelHouseMaster[]
   rooms        HostelRoom[]
   beds         HostelBed[]
+  visits       HostelVisit[]
 
   @@unique([schoolId, name])
   @@map("hostels")
@@ -4648,4 +4650,26 @@ model HostelBed {
   @@unique([roomId, termId, bedNumber])
   @@index([schoolId, hostelId, termId])
   @@map("hostel_beds")
+}
+
+// Phase 9 / CP6b.2 — the visitor log (§15 CP6b-D5). House master and admin
+// only; parents do not see it (owner, §15.8).
+model HostelVisit {
+  id           String    @id @default(uuid())
+  schoolId     String    @map("school_id")
+  hostelId     String    @map("hostel_id")
+  studentId    String    @map("student_id")
+  visitorName  String    @map("visitor_name")
+  relationship String
+  phone        String?
+  arrivedAt    DateTime  @map("arrived_at")
+  leftAt       DateTime? @map("left_at")
+  loggedBy     String    @map("logged_by")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  hostel       Hostel    @relation(fields: [hostelId], references: [id], onDelete: Restrict)
+  student      Student   @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@index([schoolId, hostelId, arrivedAt])
+  @@index([schoolId, studentId])
+  @@map("hostel_visits")
 }

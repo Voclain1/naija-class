@@ -8,6 +8,7 @@ import {
   CalendarDays,
   Clock,
   BookCopy,
+  DoorOpen,
   Library,
   ShieldAlert,
   Sparkles,
@@ -81,6 +82,14 @@ const SUBJECT_ITEM: NavItem = {
   enabled: true,
 };
 
+// Phase 9 / CP6b.2 — only for a teacher who is house master of a hostel.
+const BOARDING_ITEM: NavItem = {
+  label: "Boarding",
+  href: "/teacher/boarding",
+  icon: DoorOpen,
+  enabled: true,
+};
+
 const PROFILE_ITEM: NavItem = {
   label: "Profile",
   href: "/teacher/profile",
@@ -104,12 +113,15 @@ export function useTeacherNavItems(): NavItem[] {
   // the teacher role, so an owner/admin viewing the teacher portal gets a 403
   // here and the entry stays hidden — they reach the subject surface by URL.
   const [subjectEnabled, setSubjectEnabled] = useState(false);
+  const [housesHostels, setHousesHostels] = useState(false);
 
   useEffect(() => {
     let active = true;
     getMyScope()
       .then((s) => {
-        if (active) setSubjectEnabled(s.subjectAttendanceEnabled);
+        if (!active) return;
+        setSubjectEnabled(s.subjectAttendanceEnabled);
+        setHousesHostels(s.housesHostels);
       })
       .catch(() => undefined);
     return () => {
@@ -117,7 +129,7 @@ export function useTeacherNavItems(): NavItem[] {
     };
   }, []);
 
-  return [...BASE_ITEMS, ...(subjectEnabled ? [SUBJECT_ITEM] : []), PROFILE_ITEM];
+  return [...BASE_ITEMS, ...(subjectEnabled ? [SUBJECT_ITEM] : []), ...(housesHostels ? [BOARDING_ITEM] : []), PROFILE_ITEM];
 }
 
 export function TeacherSidebar() {

@@ -5,7 +5,11 @@ import type {
   CreateHostelInput,
   HostelBedDto,
   HostelDto,
+  HostelVisitDto,
+  HouseBoardersDto,
+  HouseHostelDto,
   HouseMasterCandidateDto,
+  LogHostelVisitInput,
   MoveBedInput,
   RoomInput,
   SetHostelFeeResultDto,
@@ -46,3 +50,16 @@ export const copyBeds = (body: CopyBedsInput) => apiFetch<CopyBedsResultDto>("/h
 
 export const getStudentHostel = (studentId: string) =>
   apiFetch<StudentHostelDto | null>(`/hostels/students/${id(studentId)}`, { method: "GET" });
+
+// ─── Boarding: what a house master keeps (CP6b.2) ───────────────────────────
+
+export const myHostels = () => apiFetch<HouseHostelDto[]>("/boarding/hostels", { method: "GET" });
+export const hostelBoarders = (hostelId: string) =>
+  apiFetch<HouseBoardersDto>(`/boarding/hostels/${id(hostelId)}/boarders`, { method: "GET" });
+export const hostelVisits = (hostelId: string, day: string) =>
+  apiFetch<HostelVisitDto[]>(`/boarding/hostels/${id(hostelId)}/visits?${new URLSearchParams({ day })}`, { method: "GET" });
+export const logHostelVisit = (hostelId: string, body: LogHostelVisitInput) =>
+  apiFetch<HostelVisitDto>(`/boarding/hostels/${id(hostelId)}/visits`, { method: "POST", body });
+export const markVisitorLeft = (visitId: string) =>
+  apiFetch<HostelVisitDto>(`/boarding/visits/${id(visitId)}/left`, { method: "PATCH", body: {} });
+export const deleteHostelVisit = (visitId: string) => apiFetch<void>(`/boarding/visits/${id(visitId)}`, { method: "DELETE" });

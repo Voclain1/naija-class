@@ -175,6 +175,7 @@ export default function StaffDashboardScreen() {
     permissions,
     formArms,
     teachesSubjects,
+    housesHostels: data?.housesHostels ?? false,
     webConfigured,
   });
 

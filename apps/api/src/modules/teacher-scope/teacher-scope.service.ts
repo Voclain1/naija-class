@@ -10,6 +10,7 @@ import {
 
 import type { AuthContext } from "../../common/auth/auth-context";
 import { assertUserActiveAndHasOneOf } from "../../common/auth/role-check";
+import { housesAnyHostel } from "../hostels/hostel-house.service.js";
 import { getTeacherScope } from "./teacher-scope.helper";
 
 @Injectable()
@@ -68,6 +69,8 @@ export class TeacherScopeService {
         formTeacherArmIds: scope.formTeacherArmIds,
         subjectAttendanceEnabled: school?.subjectAttendanceEnabled ?? false,
         enrolledCountByArm,
+        // Phase 9 / CP6b.2 — Boarding shows only to a teacher who keeps a hostel.
+        housesHostels: await housesAnyHostel(db, authCtx.schoolId, authCtx.userId),
       };
     });
   }
