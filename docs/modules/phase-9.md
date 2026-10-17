@@ -3257,3 +3257,238 @@ charges, for fines and lost books), both shipped.
     subject and class and opens it through its signed link; the admin sees
     it and adds a link; the teacher cannot remove the admin's link.
   - Phone fit at 320 and 390 px.
+
+## 15. CP6b plan-first — Hostel and boarding
+
+Written 2026-10-17 for the owner's approval. Nothing is built until it is
+approved. It uses F2 (student charges, for hostel fees) and CP3 (the sickbay),
+both shipped, and copies the shape transport proved in CP5.
+
+### 15.1 What exists today (read from the code)
+
+- **No hostel tables or routes exist.** `docs/ARCHITECTURE.md` §6.13 lists:
+  - a hostel and room registry;
+  - bed allocation per term;
+  - house masters;
+  - a visitor log and leave-out tracking;
+  - a link to the sickbay.
+- **F2 is ready.** `StudentChargeService` already has the `HOSTEL` kind
+  (labelled "Hostel" on invoices), and `raise`, `reprice` and `voidBySource`
+  are what a per-term fee needs. Transport (CP5.2) is the working pattern:
+  - one charge per place;
+  - re-priced while it is still waiting;
+  - voided on removal;
+  - copied to next term;
+  - dropped for later terms on withdrawal.
+- **Capacity under concurrency** is solved in transport with a row lock
+  (`SELECT … FOR UPDATE`) plus a unique index.
+- **The sickbay** (CP3.3) records visits with a complaint, action taken, "sent
+  home", and a parent notice. Teachers see only the "For teachers" health
+  note, never the record.
+- **Students have a `gender`** (MALE, FEMALE, OTHER).
+- **Notifications:** `NotificationDispatchService` already sends to parents'
+  phones and email (the sickbay notice uses it).
+
+### 15.2 Decisions (owner may overrule any)
+
+- **CP6b-D1. Hostels, rooms and beds.**
+  - A **hostel** has:
+    - a name;
+    - who it is for: boys, girls, or mixed;
+    - its **house masters** (one or more members of staff);
+    - a **fee per term** in kobo (0 for none).
+  - A **room** belongs to a hostel and has a name ("Room 4", "Dorm B") and a
+    number of beds (1 to 60).
+  - Beds are numbered 1 to that count within the room. A school that labels
+    its beds differently still has one number per bed.
+  - A room with boarders in it this term cannot have its beds reduced below
+    them, and cannot be deleted. A hostel likewise.
+- **CP6b-D2. Putting a child in a bed.**
+  - A student gets **one bed for a term**: hostel, room, bed number. Having a
+    bed is what makes a child a boarder that term; there is no separate
+    "boarder" flag to fall out of step.
+  - **No double booking**, by two unique indexes:
+    - one bed per student per term;
+    - one student per bed per term.
+
+    The room row is locked while placing, as transport locks the route, so
+    two staff choosing the last bed at once cannot both succeed.
+  - **Who the hostel is for:** a boys' hostel takes MALE students and a girls'
+    hostel FEMALE ones; a mixed hostel takes anyone. A student recorded as
+    OTHER goes in a mixed hostel, or the admin changes the hostel's setting.
+    This is a question for the owner (§15.7).
+  - The screen offers the first free bed; the admin may choose another.
+- **CP6b-D3. Fees through F2, exactly as transport.**
+  - Placing a child in a hostel that charges a fee raises one `HOSTEL` charge
+    for that term at the hostel's fee. Nobody types an amount per child.
+  - **Moving within the term** keeps the one charge:
+    - still waiting, it takes the new hostel's fee;
+    - already billed, it stays as it is.
+  - **Removing** the child voids a waiting charge; a billed one stays.
+  - Changing a hostel's fee re-prices the waiting charges of this and later
+    terms.
+  - **Copy to next term** keeps every boarder in the same bed where it is
+    free, and raises next term's charges.
+  - **Withdrawal** removes the child's later-term beds and voids their
+    waiting charges, through the path transport already uses.
+  - **No pro-rating**, as for transport (owner, 2026-10-16): the full term's
+    fee, adjustable by voiding and adding a smaller charge by hand.
+  - Setting a fee needs `charge.raise`, so the bursar can set it.
+- **CP6b-D4. House masters.**
+  - A house master is a **member of staff assigned to a hostel**, usually a
+    teacher. It is an assignment, **not a new role** (question for the owner,
+    §15.7).
+  - House masters see their own hostel's boarders: name, class, room and
+    bed. They keep its visitor log and decide its exeats. They do not see
+    other hostels.
+  - Owner and admin see and do everything for every hostel.
+- **CP6b-D5. The visitor log.**
+  - **What the house master logs:**
+    - the boarder visited;
+    - the visitor's name and relationship;
+    - a phone number (optional);
+    - the time they arrived and the time they left.
+  - **Who sees it:** the house master and admin see the whole hostel's log.
+  - **Parents** see their own child's visits: who, when, and for how long.
+    For a boarding child this is a safeguard as much as a courtesy (question
+    for the owner, §15.7).
+- **CP6b-D6. Exeats (leave-out).**
+  - **Requesting:** a **parent** asks in the portal or parent app, giving:
+    - the day and time out and the day and time back;
+    - the reason;
+    - **who will collect** the child (name, relationship, phone).
+
+    Any guardian linked to the child with portal access may ask. The school
+    may also enter a request taken by phone.
+  - **Deciding:** the **house master approves or refuses**, with a note when
+    refusing. The parent is told in the app, and by SMS or email per the
+    existing notification preferences.
+  - **Logging movements:** on the day, the house master logs **left at**
+    (and who actually collected the child, if not the person named), then
+    **back at**.
+  - **Late return:** a child not back by the time agreed shows as **late** on
+    the house master's list, in words and tinted. No automatic message is
+    sent.
+  - **Cancelling:** the parent may cancel while the request waits or before
+    the child leaves.
+  - **Statuses:** REQUESTED → APPROVED or REFUSED → OUT → BACK, or CANCELLED.
+- **CP6b-D7. The sickbay link (CP3).**
+  - The house master's boarder list shows **"Seen at the sickbay today"**,
+    and **"Sent home"** when that was the outcome. It does **not** show the
+    complaint, the action or any medicine: those stay with the health
+    officer, owner and admin, as CP3 decided for teachers (question for the
+    owner, §15.7).
+  - On the sickbay page, a boarder is labelled "Boarder: hostel, room", so
+    the health officer knows whom to tell.
+- **CP6b-D8. Families.** The portal and parent app show the child's hostel,
+  room and bed this term, and the house masters' names. They do not show the
+  house masters' phone numbers; the school's contact details are already on
+  every page. They also show:
+  - the child's visits (D5);
+  - the exeat requests and their status (D6).
+- **CP6b-D9. Who.** New permissions:
+  - `hostel.read`: owner, admin and bursar.
+  - `hostel.manage` (hostels, rooms, house masters, beds): owner and admin.
+  - `hostel.house` (the boarder list, visitor log and exeats of hostels the
+    person is house master of): teacher, owner and admin. The service checks
+    the assignment, as the question bank checks a teacher's subjects.
+  - A hostel's **fee** needs `charge.raise` (owner, admin, bursar), as a
+    route's fee does.
+  - Parents act only through `withGuardian` on their own children.
+- **CP6b-D10. Plans.** Boarding is not a paid extra.
+
+### 15.3 What gets built
+
+| Slice | PR | What |
+|---|---|---|
+| **CP6b.1** | its own, reviewed first | **Hostels, rooms and beds.** Tables, RLS, permissions; hostels with house masters and fees, rooms with beds; placing, moving and removing a child with the gender rule and the room lock; fees through F2; copy to next term; withdrawal. Web pages under **Hostels**, and the student page's "Hostel this term" line. |
+| **CP6b.2** | second | **House masters and families.** The house master's boarder list with the sickbay flag (web and staff app); the visitor log; the sickbay page's boarder label; the hostel card and visits on the portal and parent app. |
+| **CP6b.3** | third | **Exeats.** Requests from the portal and parent app, and by the school; approval and refusal with the parent told; left and back logging; the late list; cancelling. |
+
+### 15.4 Data
+
+- `hostels`: name, `for_gender` (BOYS, GIRLS, MIXED), fee per term (kobo),
+  plus `hostel_house_masters` (hostel, user).
+- `hostel_rooms`: hostel, name, beds (1 to 60).
+- `hostel_beds`: student, term, hostel, room and bed number.
+  - `UNIQUE(student_id, term_id)`;
+  - `UNIQUE(room_id, bed_number, term_id)`;
+  - a `CHECK` that the bed number is at least 1 (the upper bound is checked
+    against the room, with the room locked).
+- `hostel_visits`: boarder, hostel, visitor name, relationship, phone,
+  arrived at, left at, logged by.
+- `hostel_exeats`: boarder, hostel, out and back times, reason, collector
+  (name, relationship, phone), status, who requested it (guardian or staff),
+  who decided, the decision note, left at, back at, collected by.
+- Every table: `school_id`, RLS enabled and forced, `tenant_isolation`,
+  explicit grants. No SECURITY DEFINER function; the count stays 23.
+- Money in `Int` kobo. Moments as `DateTime`; the term is the term row.
+
+### 15.5 Tests (the rules first)
+
+- **Beds:**
+  - two staff placing the last bed at once, exactly one succeeds;
+  - the same bed twice in a term is refused;
+  - a student twice in a term is refused;
+  - the gender rule holds for boys', girls' and mixed hostels;
+  - beds cannot be reduced below the boarders in a room;
+  - a room or hostel with boarders cannot be deleted.
+- **Money (F2), as transport:**
+  - placing raises one HOSTEL charge at the fee;
+  - a move keeps one charge and re-prices it only while it is waiting;
+  - removal voids a waiting charge and leaves a billed one;
+  - a fee change re-prices waiting charges only;
+  - copy to next term honours free beds and raises next term's charges;
+  - withdrawal clears later terms;
+  - `student-charge-writes.spec.ts` still passes.
+- **House masters:**
+  - they see only their hostels' boarders, visits and exeats;
+  - another hostel's boarder is not found;
+  - a teacher who is not a house master is refused.
+- **Sickbay link:** the house master sees "seen today" and "sent home" and
+  never the complaint, action or medicine.
+- **Exeats:**
+  - statuses move only forward;
+  - only the boarder's own guardian can request or cancel;
+  - a refusal needs a note;
+  - the parent is notified of the decision;
+  - a child past the agreed time shows as late;
+  - cancelling is refused after the child has left.
+- **Families and tenancy:**
+  - a parent sees only their own child's hostel, visits and exeats;
+  - RLS hides another school's hostels.
+- **e2e:**
+  - the admin builds a hostel with rooms and a fee, places a child, and the
+    charge appears;
+  - the parent sees the hostel card;
+  - (CP6b.3) the parent requests an exeat, the house master approves it and
+    logs the child out and back, and the parent sees each step.
+- **Phone fit:** every new screen at 320 and 390 px.
+
+### 15.6 Left out on purpose
+
+- Night roll call and attendance in the hostel.
+- Meals, laundry and inventory (mattresses, lockers).
+- Different fees per room or bed; pro-rating.
+- Parents choosing or swapping rooms.
+- Gate passes with QR codes, and SMS on departure and return. The exeat
+  status in the app is the record.
+- A separate "hostel officer" role (see question 1).
+
+### 15.7 Questions for the owner
+
+1. **House masters as an assignment of existing staff, not a new role**
+   (CP6b-D4, D9)? Recommended: yes. A teacher or any member of staff can be
+   made house master of a hostel; a "hostel officer" role can come later if
+   a school's boarding staff are not otherwise staff.
+2. **Boys', girls' and mixed hostels, enforced when placing a child**
+   (CP6b-D2)? Recommended: yes. A student recorded as "other" goes in a
+   mixed hostel.
+3. **Parents see their child's visitor log** (CP6b-D5)? Recommended: yes.
+4. **The house master sees only that a boarder was at the sickbay, and
+   whether they were sent home, not why** (CP6b-D7)? Recommended: yes, as
+   CP3 decided for teachers.
+5. **Any linked guardian may request an exeat, naming who will collect**
+   (CP6b-D6)? Recommended: yes.
+6. **One fee per hostel per term, no pro-rating** (CP6b-D3)? Recommended:
+   yes, as transport.
