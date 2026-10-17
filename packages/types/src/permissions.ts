@@ -738,6 +738,11 @@ export const LIBRARY_RESOURCE_PERMISSIONS = ["library.resource.read", "library.r
 export const HOSTEL_READ_PERMISSIONS = ["hostel.read"] as const;
 export const HOSTEL_PERMISSIONS = ["hostel.read", "hostel.manage"] as const;
 export const HOSTEL_HOUSE_PERMISSIONS = ["hostel.house"] as const;
+// Phase 9 / CP7 — online admission applications (docs/modules/phase-9.md §16):
+// owner, admin and the optional Admissions officer role (§16.8 answer 1).
+export const ADMISSION_PERMISSIONS = ["admission.read", "admission.manage"] as const;
+// The form, the switch and the officers: owner and admin only, never an officer.
+export const ADMISSION_SETTINGS_PERMISSIONS = ["admission.settings"] as const;
 
 // Phase 8 / CP2 — Recording Completeness (docs/modules/phase-8.md §16 D39).
 // Owner/admin only. Named `reports.*`, deliberately not `report-card.*`.
@@ -866,6 +871,8 @@ export const ALL_PERMISSIONS = [
   ...LIBRARY_RESOURCE_PERMISSIONS,
   ...HOSTEL_PERMISSIONS,
   ...HOSTEL_HOUSE_PERMISSIONS,
+  ...ADMISSION_PERMISSIONS,
+  ...ADMISSION_SETTINGS_PERMISSIONS,
   ...REPORTS_PERMISSIONS,
   ...TABLE_EXPORT_PERMISSIONS,
   ...TIMETABLE_PERMISSIONS,

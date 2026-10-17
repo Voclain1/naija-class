@@ -22,6 +22,8 @@ import {
   HOSTEL_PERMISSIONS,
   HOSTEL_READ_PERMISSIONS,
   HOSTEL_HOUSE_PERMISSIONS,
+  ADMISSION_PERMISSIONS,
+  ADMISSION_SETTINGS_PERMISSIONS,
   BEHAVIOUR_PERMISSIONS_LIST,
   HOMEWORK_MANAGE_PERMISSIONS,
   HOMEWORK_READ_PERMISSIONS,
@@ -145,6 +147,8 @@ const ADMIN_PERMISSIONS: readonly string[] = [
   // prisma/migrations/20261103120000_hostels.
   ...HOSTEL_PERMISSIONS,
   ...HOSTEL_HOUSE_PERMISSIONS,
+  ...ADMISSION_PERMISSIONS,
+  ...ADMISSION_SETTINGS_PERMISSIONS,
   // Phase 8 / CP2 — Recording Completeness: the school-wide report and the
   // per-teacher recording-activity view (audited per read). Owner/admin only;
   // never teacher or bursar (§16 D39, pinned in permissions-coverage.spec.ts).
@@ -321,6 +325,17 @@ export const SYSTEM_ROLE_SEEDS: SystemRoleSeed[] = [
     description:
       "Boarding house master — sees the boarders of the hostels they are assigned to, keeps the visitor log and decides leave-out requests. No academic, finance, health, staff or settings access.",
     permissions: [...HOSTEL_HOUSE_PERMISSIONS],
+  },
+  // Phase 9 / CP7 — the optional Admissions officer (docs/modules/phase-9.md
+  // §16.8 answer 1). Nobody holds it by default; an admin grants it to staff
+  // who keep their own role. Kept IN SYNC with the INSERT in
+  // prisma/migrations/20261106120000_admissions.
+  {
+    key: "admission_officer",
+    name: "Admissions officer",
+    description:
+      "Handles admission applications: reads them and moves them through review, offer and admission. Given by an admin to staff alongside their own role.",
+    permissions: [...ADMISSION_PERMISSIONS],
   },
   // Phase 3 / Slice 15 — `bursar` role wire-up + RBAC close-out. Finance-only
   // system role: fee catalog, discounts, invoices, payments (not refunds),

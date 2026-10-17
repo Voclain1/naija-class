@@ -239,6 +239,9 @@ export class DashboardService {
       // extra queries and, more to the point, zero extra transactions.
       const financeTotals = buildFinanceTotalsFromRows(invoicesForGroups);
 
+      // Phase 9 / CP7.1 — new admission applications, waiting to be looked at.
+      const newAdmissionCount = await db.admissionApplication.count({ where: { status: "SUBMITTED" } });
+
       const needsYouToday = [
         { type: "overdue_fees" as const, count: overdueCount, href: "/finance/debtors" },
         {
@@ -251,6 +254,7 @@ export class DashboardService {
           count: pendingInvitationCount,
           href: "/staff",
         },
+        { type: "new_admission_applications" as const, count: newAdmissionCount, href: "/admissions" },
         {
           type: "term_health" as const,
           count: termHealthSignals.length,

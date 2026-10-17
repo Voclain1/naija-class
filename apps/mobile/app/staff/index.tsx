@@ -76,6 +76,11 @@ const ALERT_COPY: Record<DashboardAlertType, (count: number) => { label: string;
     label: `${n} thing${n === 1 ? "" : "s"} to fix in this term's setup`,
     icon: "construct-outline",
   }),
+  // Phase 9 / CP7.1 — admission applications not yet looked at.
+  new_admission_applications: (n) => ({
+    label: `${n} new admission application${n === 1 ? "" : "s"}`,
+    icon: "person-add-outline",
+  }),
 };
 
 export default function StaffDashboardScreen() {

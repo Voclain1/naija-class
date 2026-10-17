@@ -4191,3 +4191,117 @@ shows "Apply" by default.
 |---|---|---|
 | **CP7.1** | its own, reviewed first | **Settings, the form, the alerts and the list.** Tables, RLS, permissions; the Admissions officer role and its grant; Settings → Admissions (switch on by default, classes, built-in fields, documents, the school's questions, who is told, SMS on or off, the default offer letter); the public form, with honeypot, rate limits, consent and the `admission-document` key; the confirmation email with the tracking link; the alerts by push, email and SMS with the daily SMS cap; the **Admissions** page (list, and an application's page with its answers and documents); the dashboard line; the nightly purge. |
 | **CP7.2** | second | **Review, assessment, offer and admitting.** Under review; booking the assessment; offer with its letter; reject and withdraw; the status emails; the **tracking page** (status, assessment, offer letter, Accept the offer, Withdraw); recording an acceptance by the school; **Admit** (create and enrol the student, create or link the guardian, the possible-duplicate warning); the student page's admission documents; the 12-month close. |
+
+### 16.9 As built — CP7.1, settings, the form, the alerts and the list (2026-10-17)
+
+- **Data** (migration `20261106120000_admissions`):
+  - `admission_settings`: one row per school, written on first save. Until
+    then the defaults apply and applications are **open**.
+  - `admission_applications`, with:
+    - a reference unique per school, matching `APP-YYYY-NNNN`;
+    - the core fields for the child and the parent;
+    - `answers`, a JSON holding the optional fields and the school's own
+      questions, with their labels copied in;
+    - the status, and when it last changed;
+    - consent: time and wording version;
+    - the tracking token's sha256;
+    - a student id, which only an ADMITTED application may carry (a
+      `CHECK`).
+  - `admission_documents`: a slot (one of six), extension and size, with
+    `CHECK`s.
+  - `admission_reference_counters` and `admission_sms_counters`, each taken
+    by one atomic upsert.
+
+  Every table has RLS enabled and forced. No SECURITY DEFINER function; the
+  count stays 23.
+- **Permissions and the role.**
+  - `admission.read` and `admission.manage`: admin, and the new
+    **Admissions officer** role (those two only). Nobody holds the role by
+    default.
+  - `admission.settings`: admin only. It guards the form, the switch and the
+    officers, so an officer handles applications but never shapes the form.
+    The two-gate conformance spec found the disagreement that made this a
+    separate permission.
+  - Officers are granted as an **extra** role, in Settings → Admissions, to
+    active staff who are not owners or admins. Each grant and removal is
+    audited.
+- **Settings → Admissions** (owner, admin):
+  - the switch and the form's address;
+  - the introduction;
+  - the classes open;
+  - the eight built-in fields, each required, optional or not asked;
+  - the three standard documents, plus up to three the school names;
+  - up to five questions of its own (short answer, long answer, yes/no, one
+    of a list);
+  - SMS alerts on or off, and an extra email address;
+  - the default offer letter (used in CP7.2);
+  - the officers.
+
+  Defaults: photo and birth certificate optional, last report not asked;
+  middle name, previous school and class, address and medical needs
+  optional; religion, state of origin and a second parent not asked.
+- **The public form** at `portal.schoolkit.ng/apply/<slug>`.
+  - It calls the API directly from the browser, as the result checker does,
+    so the per-address limits key on each family: 30 a minute to read, 5 an
+    hour to submit.
+  - Answers and up to six files go in **one** multipart request.
+  - The API checks every rule again:
+    - a required field or document is required;
+    - one not asked is dropped (fields) or refused (documents);
+    - questions are checked by kind;
+    - the class must be open;
+    - the date of birth must be real and between 1 and 25 years ago;
+    - files are typed by their bytes;
+    - at most 3 open applications per email per school (case-insensitive).
+  - Files are stored first, under fresh ids, and removed again if the row
+    cannot be written.
+  - A filled **honeypot** gets a plausible reference, and nothing is stored
+    or sent.
+  - A school switched off, or one suspended by the platform, says so.
+- **The family.** On success they see the reference and get an email with a
+  private tracking link, `/apply/<slug>/track/<token>`. The page shows the
+  status in words, the class, the reference and the date. The assessment,
+  offer letter, accepting and withdrawing come in CP7.2.
+- **The school is told** of each application, after it is saved and never
+  failing it:
+  - push on the staff app to the owner, admins and officers, through
+    `notifyOfEvent` (event `admission.applied`), with no child's name on the
+    lock screen;
+  - email to each of them and the copy-to address, with the applicant's text
+    HTML-escaped;
+  - SMS to each of them with a phone, unless switched off. At most **30 a
+    school a Lagos day** (one conditional upsert); the 30th says the limit is
+    reached.
+- **Admissions page** (`/admissions`; `/teacher/admissions` for a teacher who
+  is an officer).
+  - One tab per status with counts, "New" first and oldest first.
+  - An application's page shows the child, the parents, "More about the
+    child" (the fields and questions as answered) and the documents, each
+    opened through a 5-minute link that is audited.
+  - Applicants are never students until admitted (CP7.2).
+  - The dashboard's "Needs you today" gains "New admission applications".
+- **The purge.** Every night at 02:35, rejected and withdrawn applications
+  90 days past closing are deleted, files first. Open and admitted ones stay.
+- **Settings link.** `NEXT_PUBLIC_PORTAL_URL` (apps/web, optional; defaults
+  as `NEXT_PUBLIC_CBT_URL` does) prints the form's address.
+- **Tests:**
+  - `admissions.service.spec.ts` (13 tests, real database and storage):
+    - defaults;
+    - who may shape the form;
+    - officers;
+    - storing and acknowledging, with the tracking link;
+    - who is told and how;
+    - the SMS cap and switch;
+    - the honeypot;
+    - the school's own form, rule by rule;
+    - switched off and unknown school;
+    - the per-email limit;
+    - the list, the detail and audited document links;
+    - the purge;
+    - tenancy.
+  - Permission coverage for the routes and the role.
+  - e2e `admissions-apply.spec.ts`: the admin requires the photo and adds a
+    question; a family applies on the portal; the application waits on
+    Admissions with the answer and the document.
+  - All the pages were checked at 320 and 390 px (the form's document inputs
+    were fixed to fit).
