@@ -2823,8 +2823,8 @@ recommendation; the owner's approval of this plan is that answer.
 
 ## 14. CP6 plan-first — Library
 
-Written 2026-10-17 for the owner's approval. Nothing is built until it is
-approved. It uses F1 (private files, for digital resources) and F2 (student
+Written 2026-10-17 for the owner's approval. **Owner, 2026-10-17: approved
+as written, with all six recommendations in §14.7.** It uses F1 (private files, for digital resources) and F2 (student
 charges, for fines and lost books), both shipped.
 
 ### 14.1 What exists today (read from the code)
@@ -3049,3 +3049,69 @@ charges, for fines and lost books), both shipped.
    (CP6-D7)? Recommended: yes.
 6. **Parents see the child's books and due dates** (CP6-D6), but not the
    digital resources? Recommended: yes.
+
+### 14.8 As built — CP6.1, the catalogue and lending (2026-10-17)
+
+- **Data** (migration `20261031120000_library`): `library_settings` (one row
+  per school, created on first save; until then the defaults apply),
+  `library_books`, `library_book_levels`, `library_copies` and
+  `library_loans`, every one carrying `school_id` with RLS enabled and forced
+  and the `tenant_isolation` policy. A loan names a student **or** a member of
+  staff (a `CHECK` that exactly one is set). One open loan per copy is the
+  partial unique index `library_loans_open_copy_key`. Accession numbers and
+  ISBNs are checked in SQL too (upper case; 10 or 13 digits). No SECURITY
+  DEFINER function; the count stays 23. School deletion needs no change: its
+  child-before-parent order is read from the catalog.
+- **The librarian role** is inserted by the migration and seeded in
+  `system-roles.ts`, holding `library.read`, `library.manage` and
+  `library.lend`. Admin gains those three and `library.settings`. The role is
+  on the staff invite form, lands on `/library` after sign-in, and is pinned
+  in `permissions-coverage.spec.ts` and the two-gate conformance spec.
+- **No roster permission for the librarian.** `GET /library/context` returns
+  the subjects and class levels the book form needs, and
+  `GET /library/borrowers` returns only a name, the admission number and
+  class (or "Staff") and the books out, as the health page does for the
+  Health officer.
+- **API** (`apps/api/src/modules/library/`):
+  - catalogue: `GET/POST /library/books`, `GET/PATCH/DELETE /library/books/:id`,
+    `POST /library/books/:id/copies`, `PATCH /library/copies/:id`
+    (withdraw or put back), `GET /library/copies/lookup`;
+  - lending: `POST /library/loans/issue`, `POST /library/loans/return` (both
+    by accession number), `POST /library/loans/:id/renew`,
+    `GET /library/loans?state=OPEN|OVERDUE|RETURNED`;
+  - per borrower: `GET /library/students/:id/loans`,
+    `GET /library/staff/:id/loans`;
+  - rules: `PUT /library/settings` (owner, admin).
+- **How the rules came out:**
+  - Issuing locks the copy row and the borrower's row (`FOR UPDATE`), so the
+    one-loan-per-copy rule and the borrower's limit both hold when two
+    librarians work at once; the unique index is the backstop.
+  - A student who has left, or a staff account that is switched off, cannot
+    borrow (`BORROWER_NOT_ACTIVE`).
+  - A renewal runs one loan period **from the day it is renewed**, never
+    earlier than the current due date; a second renewal on the same day
+    therefore keeps the date. It is refused once the book is overdue.
+  - "Number them for me" hands out the school's next number, skipping any
+    number already typed by hand, with the settings row locked.
+  - A book that has ever been lent cannot be deleted; its copies are
+    withdrawn instead. A copy on loan cannot be withdrawn.
+  - Every change is audited (`library.book`, `library.copy`,
+    `library.loan.issue|return|renew`, `library.settings`) with ids, dates
+    and counts, never a name.
+- **Web** (`apps/web/src/app/(admin)/library/`): the catalogue with search
+  and **Add a book**; a book's page with its details, copies, who has each
+  one and the due date, **Add copies**, **Withdraw** and **Delete book**; the
+  **Lending desk** (type or scan a number, then lend, return or renew);
+  **Loans** (out now, overdue, returned, with the export menu); and **Rules**
+  for the owner and admin. "Library books out" appears on the student page
+  and the staff page for those who hold `library.read`. An overdue loan is
+  tinted and says "Overdue by n days" in words. Nav item "Library".
+- **Tests:** `library.service.spec.ts` (16, against real Postgres: the
+  concurrent issue, limits per kind, renewals, reference and withdrawn
+  copies, numbering, deleting, the borrower search, who may do what, RLS and
+  the audit trail); RBAC coverage pins; e2e `library-lending.spec.ts` (the
+  Librarian catalogues, lends at the desk, sees the loan, takes it back; the
+  admin sees the book on the student page and saves the rules). Every page
+  checked at 320 and 390 px.
+- **Left for CP6.2 as planned:** fines and lost books, the overdue list's
+  fine estimate, the staff app, and the parent and student views.

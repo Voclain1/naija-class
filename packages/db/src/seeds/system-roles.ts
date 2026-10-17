@@ -16,6 +16,8 @@ import {
   TRANSPORT_PERMISSIONS,
   TRANSPORT_READ_PERMISSIONS,
   HEALTH_PERMISSIONS,
+  LIBRARY_PERMISSIONS,
+  LIBRARY_SETTINGS_PERMISSIONS,
   BEHAVIOUR_PERMISSIONS_LIST,
   HOMEWORK_MANAGE_PERMISSIONS,
   HOMEWORK_READ_PERMISSIONS,
@@ -128,6 +130,10 @@ const ADMIN_PERMISSIONS: readonly string[] = [
   // Phase 9 / CP5.2 — transport. Kept IN SYNC with
   // prisma/migrations/20261030120000_transport.
   ...TRANSPORT_PERMISSIONS,
+  // Phase 9 / CP6.1 — the library, and its settings (owner/admin only). Kept
+  // IN SYNC with prisma/migrations/20261031120000_library.
+  ...LIBRARY_PERMISSIONS,
+  ...LIBRARY_SETTINGS_PERMISSIONS,
   // Phase 8 / CP2 — Recording Completeness: the school-wide report and the
   // per-teacher recording-activity view (audited per read). Owner/admin only;
   // never teacher or bursar (§16 D39, pinned in permissions-coverage.spec.ts).
@@ -271,6 +277,19 @@ export const SYSTEM_ROLE_SEEDS: SystemRoleSeed[] = [
     description:
       "School health officer — reads and keeps students' health records and the sickbay log, and writes the note teachers see. No academic, finance, staff or settings access.",
     permissions: [...HEALTH_PERMISSIONS],
+  },
+  // Phase 9 / CP6.1 — the Librarian (docs/modules/phase-9.md §14 CP6-D8). The
+  // catalogue and lending only; not library.settings (owner/admin). No
+  // academic, finance, health, staff or settings access: the library's own
+  // routes return the student, staff, subject and class-level names its
+  // screens need. Kept IN SYNC with the INSERT in
+  // prisma/migrations/20261031120000_library.
+  {
+    key: "librarian",
+    name: "Librarian",
+    description:
+      "School librarian — keeps the catalogue and lends books to students and staff. No academic, finance, health, staff or settings access.",
+    permissions: [...LIBRARY_PERMISSIONS],
   },
   // Phase 3 / Slice 15 — `bursar` role wire-up + RBAC close-out. Finance-only
   // system role: fee catalog, discounts, invoices, payments (not refunds),

@@ -14,5 +14,7 @@ export function homeRouteForRoles(roles: AuthMeRoleDto[]): string {
   if (roles.some((r) => r.key === "bursar")) return "/finance/dashboard";
   // Phase 9 / CP3.1 — the Health officer's only page.
   if (roles.some((r) => r.key === "health_officer")) return "/health";
+  // Phase 9 / CP6.1 — the Librarian's pages.
+  if (roles.some((r) => r.key === "librarian")) return "/library";
   return "/teacher/dashboard";
 }
