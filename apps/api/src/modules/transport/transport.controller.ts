@@ -5,6 +5,7 @@ import {
   createPlaceSchema,
   createRouteSchema,
   createVehicleSchema,
+  dailyRouteListSchema,
   listPlacesSchema,
   listRoutesSchema,
   movePlaceSchema,
@@ -19,6 +20,8 @@ import {
   type CreatePlaceInput,
   type CreateRouteInput,
   type CreateVehicleInput,
+  type DailyRouteListDto,
+  type DailyRouteListInput,
   type ListPlacesInput,
   type ListRoutesInput,
   type MovePlaceInput,
@@ -247,6 +250,17 @@ export class TransportController {
     @Ip() ip: string,
   ): Promise<SetRouteFeeResultDto> {
     return this.service.setFee(authCtx, id, dto, { ipAddress: ip });
+  }
+
+  // Phase 9 / CP5.3 — the day's list for the driver, with guardians' phones.
+  @Get("routes/:id/daily")
+  @Permissions("transport.read")
+  dailyList(
+    @CurrentUser() authCtx: AuthContext,
+    @Param("id", new ParseUUIDPipe()) id: string,
+    @Query(new ZodValidationPipe(dailyRouteListSchema)) query: DailyRouteListInput,
+  ): Promise<DailyRouteListDto> {
+    return this.service.dailyList(authCtx, id, query);
   }
 
   @Get("routes/:id/places")

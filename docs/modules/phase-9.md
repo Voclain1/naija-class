@@ -2781,3 +2781,42 @@ recommendation; the owner's approval of this plan is that answer.
     words), a route with stops, vehicle, driver and fee, a child at the second
     stop, the student page line, and the charge on Finance → Charges.
   - The three pages were checked at 320px and 390px, with no overflow.
+
+### 13.10 As built — CP5.3, the daily route list and parents (2026-10-17)
+
+- **The daily list** (`GET /transport/routes/:id/daily?date=`, `transport.read`):
+  - It shows the route's stops in order with pickup times. At each stop are the
+    children placed on the route in the term that the date falls in, with
+    their class and their **primary guardian's phone** (owner, 2026-10-16).
+  - "Enrolled on the date" uses the current record: the child's enrollment
+    for that term is ENROLLED, and the child is not WITHDRAWN or GRADUATED.
+  - A date outside every term lists nobody and says so.
+  - Every read is audited (`transport.daily_list.read`, with the route id, the
+    date and a count), because the list carries phone numbers.
+- **Printing.** On the website the list is at `/transport/routes/[id]/daily`
+  (linked as **Today's list** from the route page). It is printed through the
+  browser, or exported as PDF and Excel through the existing audited list
+  export (F3). The page and every copy carry "Confidential: for the driver's
+  use on this route."
+- **Staff app.** **Bus routes** in the School menu (`transport.read`: owner,
+  admin and bursar; never a teacher) opens the routes list, then each route's
+  day. The day screen has **Day before** and **Day after**, a call button for
+  each parent, and the same confidential line. The query keys are
+  staff-prefixed, so nothing is kept on the phone. Type-checked and covered by
+  the menu and query-key specs; these screens were not driven in a simulator.
+- **Parents.** `GET /portal/students/:id/transport` (behind `withGuardian`)
+  returns the child's route, stop, pickup time, driver's name and phone, and
+  the plate for the current term. It returns null when the child has no place.
+  The portal and the parent app show a **School bus** card, absent when there
+  is nothing to show. The fee is on the invoice, as before.
+- **Licence warnings** shipped in CP5.2 (the driver list: valid, expiring
+  within 30 days, or expired, in words and with a tint).
+- **Tests:**
+  - `transport.service.spec.ts` gains 4: the list's stop order, phones and
+    audit; leavers left out; an out-of-term date and who may read; the parent
+    read, including another child and another school.
+  - e2e `transport-daily.spec.ts`: the website list with the parent's phone
+    and the confidential line, an out-of-term date, and the parent's
+    **School bus** card in the portal.
+  - The list and the portal card were checked at 320px and 390px, with no
+    overflow.

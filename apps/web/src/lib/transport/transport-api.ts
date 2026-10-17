@@ -5,6 +5,7 @@ import type {
   CreatePlaceInput,
   CreateRouteInput,
   CreateVehicleInput,
+  DailyRouteListDto,
   MovePlaceInput,
   SetRouteFeeResultDto,
   SetStopsInput,
@@ -69,3 +70,10 @@ export const copyPlaces = (body: CopyPlacesInput) =>
 
 export const getStudentTransport = (studentId: string) =>
   apiFetch<StudentTransportDto | null>(`/transport/students/${id(studentId)}`, { method: "GET" });
+
+// Phase 9 / CP5.3 — the day's list for the driver.
+export const getDailyList = (routeId: string, date: string) =>
+  apiFetch<DailyRouteListDto>(
+    `/transport/routes/${id(routeId)}/daily?${new URLSearchParams({ date })}`,
+    { method: "GET" },
+  );

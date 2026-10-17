@@ -110,6 +110,7 @@ export default function StaffTabsLayout() {
       <Tabs.Screen name="online-exams" options={{ href: null }} />
       <Tabs.Screen name="discipline" options={{ href: null }} />
       <Tabs.Screen name="health" options={{ href: null }} />
+      <Tabs.Screen name="transport" options={{ href: null }} />
     </Tabs>
   );
 }

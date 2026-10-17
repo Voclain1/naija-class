@@ -195,3 +195,53 @@ export interface StudentTransportDto {
   stopName: string;
   pickupMinute: number | null;
 }
+
+// ─── The daily route list (CP5.3, CP5-D9) ──────────────────────────────────
+
+export const dailyRouteListSchema = z.object({ date });
+export type DailyRouteListInput = z.infer<typeof dailyRouteListSchema>;
+
+/**
+ * The route for one day, stop by stop, for the driver. Carries the primary
+ * guardian's phone (owner, 2026-10-16) so a driver waiting at a stop can
+ * call; the printed copy is marked confidential. Only children enrolled in
+ * the term that day covers, and still at the school.
+ */
+export interface DailyRouteListDto {
+  date: string; // YYYY-MM-DD
+  termId: string | null;
+  termName: string | null;
+  route: {
+    id: string;
+    name: string;
+    vehiclePlate: string | null;
+    driverName: string | null;
+    driverPhone: string | null;
+  };
+  stops: Array<{
+    id: string;
+    name: string;
+    pickupMinute: number | null;
+    children: Array<{
+      studentId: string;
+      name: string;
+      admissionNumber: string;
+      classArm: string | null;
+      guardianPhone: string | null;
+    }>;
+  }>;
+  total: number;
+}
+
+// ─── What a parent sees (CP5.3, CP5-D10) ───────────────────────────────────
+
+/** A child's route this term, for their parent: route, stop, driver and bus. */
+export interface PortalStudentTransportDto {
+  termName: string;
+  routeName: string;
+  stopName: string;
+  pickupMinute: number | null;
+  driverName: string | null;
+  driverPhone: string | null;
+  vehiclePlate: string | null;
+}

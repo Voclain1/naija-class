@@ -43,6 +43,8 @@ export const queryKeys = {
   // Phase 9 / CP3.1 — the child's health record. Read with
   // `meta: { persist: false }`: special-category health data stays in memory.
   healthRecord: (studentId: string) => ["students", studentId, "health"] as const,
+  // Phase 9 / CP5.3 — the child's school bus this term.
+  studentTransport: (studentId: string) => ["students", studentId, "transport"] as const,
   // Phase 9 / CP3.3 — the child's sickbay visits. Also `persist: false`.
   sickbayVisits: (studentId: string) => ["students", studentId, "sickbay"] as const,
 
@@ -307,6 +309,12 @@ export const queryKeys = {
   // Phase 9 / CP3.3 — one child's sickbay visits.
   staffSickbayVisits: (schoolId: string, userId: string, studentId: string) =>
     ["staff", schoolId, userId, "sickbay", studentId] as const,
+  // Phase 9 / CP5.3 — bus routes and a route's day: children's names and
+  // parents' phones, so staff-prefixed.
+  staffTransportRoutes: (schoolId: string, userId: string) =>
+    ["staff", schoolId, userId, "transport-routes"] as const,
+  staffTransportDaily: (schoolId: string, userId: string, routeId: string, date: string) =>
+    ["staff", schoolId, userId, "transport-daily", routeId, date] as const,
   // Phase 9 / CP4.1 — handed-in work for one homework item, and one student's attempts.
   staffAssignmentMarking: (schoolId: string, userId: string, homeworkId: string) =>
     ["staff", schoolId, userId, "assignment-marking", homeworkId] as const,

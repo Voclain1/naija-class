@@ -1,6 +1,6 @@
 import { Injectable, Optional } from "@nestjs/common";
 
-import { Prisma, withTenant, type PrismaClient } from "@school-kit/db";
+import { Prisma, withGuardian, withTenant, type PrismaClient } from "@school-kit/db";
 import {
   ConflictError,
   LICENCE_WARNING_DAYS,
@@ -11,6 +11,9 @@ import {
   type CreatePlaceInput,
   type CreateRouteInput,
   type CreateVehicleInput,
+  type DailyRouteListDto,
+  type DailyRouteListInput,
+  type PortalStudentTransportDto,
   type LicenceState,
   type ListPlacesInput,
   type ListRoutesInput,
@@ -29,6 +32,7 @@ import {
 } from "@school-kit/types";
 
 import type { AuthContext } from "../../common/auth/auth-context.js";
+import type { GuardianAuthContext } from "../../common/auth/guardian-auth-context.js";
 import { assertUserActiveAndHasOneOf } from "../../common/auth/role-check.js";
 import { StudentChargeService, type ChargeActor } from "../finance/student-charge.service.js";
 
@@ -66,6 +70,7 @@ const AUDIT = {
   move: "transport.place.move",
   remove: "transport.place.remove",
   copy: "transport.place.copy",
+  dailyList: "transport.daily_list.read",
 } as const;
 
 type Db = PrismaClient;
@@ -479,6 +484,119 @@ export class TransportService {
       if (!place) return null;
       return { termId: term.id, termName: term.name, routeName: place.route.name, stopName: place.stop.name, pickupMinute: place.stop.pickupMinute };
     });
+  }
+
+  // ─── The daily route list (CP5.3, CP5-D9) ─────────────────────────────────
+
+  /**
+   * The route for a date, stop by stop, for the driver: each child enrolled
+   * in the term that date falls in (and still at the school), their class,
+   * and their primary guardian's phone (owner, 2026-10-16). The read is
+   * audited, with ids and a count, because it carries phone numbers.
+   */
+  async dailyList(authCtx: AuthContext, routeId: string, input: DailyRouteListInput): Promise<DailyRouteListDto> {
+    await assertUserActiveAndHasOneOf(authCtx, READ_ROLES);
+    return withTenant(authCtx.schoolId, async (db) => {
+      const route = await db.transportRoute.findFirst({
+        where: { id: routeId, schoolId: authCtx.schoolId },
+        include: ROUTE_INCLUDE,
+      });
+      if (!route) throw new NotFoundError("Route not found.");
+      const day = new Date(`${input.date}T00:00:00.000Z`);
+      const term = await db.term.findFirst({
+        where: { schoolId: authCtx.schoolId, startDate: { lte: day }, endDate: { gte: day } },
+        select: { id: true, name: true },
+        orderBy: { startDate: "desc" },
+      });
+      const places = term
+        ? await db.transportAssignment.findMany({
+            where: {
+              schoolId: authCtx.schoolId,
+              routeId,
+              termId: term.id,
+              student: {
+                status: { notIn: ["WITHDRAWN", "GRADUATED"] },
+                enrollments: { some: { termId: term.id, status: "ENROLLED" } },
+              },
+            },
+            include: {
+              student: {
+                select: {
+                  id: true,
+                  firstName: true,
+                  lastName: true,
+                  admissionNumber: true,
+                  enrollments: { where: { termId: term.id }, select: { classArm: { select: { name: true } } } },
+                  guardians: { where: { isPrimary: true }, select: { guardian: { select: { phone: true } } }, take: 1 },
+                },
+              },
+            },
+          })
+        : [];
+      const byStop = new Map<string, DailyRouteListDto["stops"][number]["children"]>();
+      for (const p of places) {
+        const list = byStop.get(p.stopId) ?? [];
+        list.push({
+          studentId: p.student.id,
+          name: `${p.student.firstName} ${p.student.lastName}`.trim(),
+          admissionNumber: p.student.admissionNumber,
+          classArm: p.student.enrollments[0]?.classArm.name ?? null,
+          guardianPhone: p.student.guardians[0]?.guardian.phone ?? null,
+        });
+        byStop.set(p.stopId, list);
+      }
+      for (const list of byStop.values()) list.sort((a, b) => a.name.localeCompare(b.name));
+      await audit(db, authCtx, { ipAddress: null }, AUDIT.dailyList, routeId, { date: input.date, children: places.length });
+      return {
+        date: input.date,
+        termId: term?.id ?? null,
+        termName: term?.name ?? null,
+        route: {
+          id: route.id,
+          name: route.name,
+          vehiclePlate: route.vehicle?.plate ?? null,
+          driverName: route.driver?.name ?? null,
+          driverPhone: route.driver?.phone ?? null,
+        },
+        stops: route.stops.map((s) => ({ id: s.id, name: s.name, pickupMinute: s.pickupMinute, children: byStop.get(s.id) ?? [] })),
+        total: places.length,
+      };
+    });
+  }
+
+  // ─── What a parent sees (CP5.3, CP5-D10) ──────────────────────────────────
+
+  /** The child's route, stop, driver and bus this term, for a linked guardian. */
+  async transportForGuardian(guardianCtx: GuardianAuthContext, studentId: string): Promise<PortalStudentTransportDto | null> {
+    return withTenant(guardianCtx.schoolId, (db) =>
+      withGuardian(guardianCtx.guardianId, studentId, db, async (db2) => {
+        const term = await db2.term.findFirst({ where: { schoolId: guardianCtx.schoolId, isCurrent: true }, select: { id: true, name: true } });
+        if (!term) return null;
+        const place = await db2.transportAssignment.findFirst({
+          where: { schoolId: guardianCtx.schoolId, studentId, termId: term.id },
+          include: {
+            stop: { select: { name: true, pickupMinute: true } },
+            route: {
+              select: {
+                name: true,
+                vehicle: { select: { plate: true } },
+                driver: { select: { name: true, phone: true } },
+              },
+            },
+          },
+        });
+        if (!place) return null;
+        return {
+          termName: term.name,
+          routeName: place.route.name,
+          stopName: place.stop.name,
+          pickupMinute: place.stop.pickupMinute,
+          driverName: place.route.driver?.name ?? null,
+          driverPhone: place.route.driver?.phone ?? null,
+          vehiclePlate: place.route.vehicle?.plate ?? null,
+        };
+      }),
+    );
   }
 
   // ─── Private ──────────────────────────────────────────────────────────────

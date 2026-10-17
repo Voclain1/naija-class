@@ -423,4 +423,84 @@ describe("TransportService (integration)", () => {
       await expect(transport.studentTransport(admin(A), await student(A))).resolves.toBeNull();
     });
   });
+
+  // ── CP5.3: the daily list and parents ────────────────────────────────────
+
+  describe("the daily route list and parents", () => {
+    async function guardianFor(f: Fixture, studentId: string, phone: string, isPrimary = true) {
+      return withTenant(f.schoolId, async (db) => {
+        const g = await db.guardian.create({ data: { schoolId: f.schoolId, firstName: "Ngozi", lastName: "Parent", relationship: "MOTHER", phone } });
+        await db.studentGuardian.create({ data: { schoolId: f.schoolId, studentId, guardianId: g.id, isPrimary } });
+        return g.id;
+      });
+    }
+
+    it("lists the day's children stop by stop, with class and the primary guardian's phone", async () => {
+      const f = await setUp(`daily${n}`);
+      const r = await route(f, { stops: ["Lekki", "Ajah"] });
+      const atAjah = await student(f);
+      const atLekki = await student(f);
+      await transport.createPlace(admin(f), { studentId: atAjah, termId: f.termId, routeId: r.id, stopId: r.stops[1]!.id }, reqCtx);
+      await transport.createPlace(admin(f), { studentId: atLekki, termId: f.termId, routeId: r.id, stopId: r.stops[0]!.id }, reqCtx);
+      await guardianFor(f, atLekki, "08030000001", false);
+      await guardianFor(f, atLekki, "08030000002", true);
+      // Next term's place is not on today's list.
+      await place(f, await student(f), r, f.nextTermId);
+
+      const list = await transport.dailyList(admin(f), r.id, { date: "2026-03-02" });
+      expect(list).toMatchObject({ date: "2026-03-02", termId: f.termId, termName: "This Term", total: 2 });
+      expect(list.route).toMatchObject({ id: r.id, name: r.name, driverPhone: "08031234567" });
+      expect(list.stops.map((s) => [s.name, s.children.map((c) => c.studentId)])).toEqual([
+        ["Lekki", [atLekki]],
+        ["Ajah", [atAjah]],
+      ]);
+      expect(list.stops[0]!.children[0]).toMatchObject({ classArm: "JSS1A", guardianPhone: "08030000002" });
+      expect(list.stops[1]!.children[0]!.guardianPhone).toBeNull();
+
+      // The read is audited: it carries phone numbers.
+      const audit = await withTenant(f.schoolId, (db) => db.auditLog.findMany({ where: { entityId: r.id, action: "transport.daily_list.read" } }));
+      expect(audit).toHaveLength(1);
+    });
+
+    it("leaves out a child who has left the school or the class", async () => {
+      const f = await setUp(`left${n}`);
+      const r = await route(f);
+      const [stays, withdrawn, unenrolled] = [await student(f), await student(f), await student(f)];
+      for (const kid of [stays, withdrawn, unenrolled]) await place(f, kid, r);
+      await withTenant(f.schoolId, async (db) => {
+        await db.student.update({ where: { id: withdrawn }, data: { status: "WITHDRAWN", withdrawnAt: new Date() } });
+        await db.enrollment.updateMany({ where: { studentId: unenrolled }, data: { status: "WITHDRAWN", withdrawnAt: new Date() } });
+      });
+      const list = await transport.dailyList(admin(f), r.id, { date: "2026-03-02" });
+      expect(list.stops.flatMap((s) => s.children.map((c) => c.studentId))).toEqual([stays]);
+    });
+
+    it("a date outside every term has no children, and a teacher may not read the list", async () => {
+      const r = await route(A);
+      const list = await transport.dailyList(admin(A), r.id, { date: "2025-12-25" });
+      expect(list).toMatchObject({ termId: null, total: 0 });
+      expect(list.stops.every((s) => s.children.length === 0)).toBe(true);
+      await expect(transport.dailyList(ctx(A.schoolId, A.teacherId), r.id, { date: "2026-03-02" })).rejects.toBeInstanceOf(ForbiddenError);
+      await expect(transport.dailyList(ctx(A.schoolId, A.bursarId), r.id, { date: "2026-03-02" })).resolves.toBeTruthy();
+    });
+
+    it("a parent sees their own child's route, stop, driver and bus this term, and no one else's", async () => {
+      const r = await route(A, { stops: ["Ikoyi"] });
+      const kid = await student(A);
+      const other = await student(A);
+      await place(A, kid, r);
+      await place(A, other, r);
+      const guardianId = await guardianFor(A, kid, "08039999999");
+      const g = { sessionId: "s", schoolId: A.schoolId, guardianId };
+      const seen = await transport.transportForGuardian(g, kid);
+      expect(seen).toMatchObject({ termName: "This Term", routeName: r.name, stopName: "Ikoyi", driverName: expect.any(String), driverPhone: "08031234567" });
+      expect(seen!.vehiclePlate).toMatch(/^LAG /);
+      await expect(transport.transportForGuardian(g, other)).rejects.toThrow();
+      await expect(transport.transportForGuardian({ sessionId: "s", schoolId: B.schoolId, guardianId }, kid)).rejects.toThrow();
+      // A child with no place this term.
+      const noBus = await student(A);
+      await withTenant(A.schoolId, (db) => db.studentGuardian.create({ data: { schoolId: A.schoolId, studentId: noBus, guardianId, isPrimary: true } }));
+      await expect(transport.transportForGuardian(g, noBus)).resolves.toBeNull();
+    });
+  });
 });

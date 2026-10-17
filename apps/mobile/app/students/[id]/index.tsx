@@ -28,6 +28,7 @@ import { FreshnessLabel, useIsOnline } from "../../../src/components/freshness-l
 import { ListRow } from "../../../src/components/layout";
 import { DisciplineNotices } from "../../../src/components/discipline-notices";
 import { HealthRecord } from "../../../src/components/health-record";
+import { TransportCard } from "../../../src/components/transport-card";
 import { StudentPortalAccess } from "../../../src/components/student-portal-access";
 import {
   canPay,
@@ -190,6 +191,9 @@ export default function StudentDetailScreen() {
 
         {/* Phase 9 / CP3.1: the child's health record, read-only. */}
         <HealthRecord studentId={studentId} />
+
+        {/* Phase 9 / CP5.3: the child's school bus this term. Absent with no place. */}
+        <TransportCard studentId={studentId} />
 
         {/* Portal access sits under Results and above Fees: it is a
             one-off setup action, not something a parent returns to daily. */}
