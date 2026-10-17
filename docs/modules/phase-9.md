@@ -3492,3 +3492,49 @@ both shipped, and copies the shape transport proved in CP5.
    (CP6b-D6)? Recommended: yes.
 6. **One fee per hostel per term, no pro-rating** (CP6b-D3)? Recommended:
    yes, as transport.
+
+### 15.8 Owner's answers (2026-10-17) and what they change
+
+1. **House masters.** "If it is worth a role on the platform, then it's left
+   to admin to assign, so it's optional."
+   - A house master can do only these things, for their own hostels:
+     - see its boarders (name, class, room, bed);
+     - keep its visitor log;
+     - decide its exeats and log the child out and back;
+     - see "Sent home by the sickbay today".
+   - They see no fees, no health records and no other hostel.
+   - **Two ways to be one, both optional for the admin.** Today a member of
+     staff holds one role, set at invitation, and no screen adds a second.
+     - A new **House master** system role, invited like the Health officer,
+       for boarding staff who are not teachers. It holds `hostel.house` only.
+     - A **teacher** may be assigned as a hostel's house master without
+       changing their role (teachers hold `hostel.house`).
+   - On the hostel's page the admin picks its house masters from staff who
+     hold `hostel.house`. A house master sees only the hostels they are
+     assigned to.
+   - This replaces "not a new role" in D4 and D9.
+2. **Separate hostels.** "Hostels are mainly separately, boys separate from
+   girls."
+   - Every hostel is **Boys** or **Girls**. MIXED is dropped from D1, D2 and
+     the data.
+   - Placing a child is checked against the student's recorded gender.
+   - A student recorded as OTHER cannot be placed until the record is set;
+     the screen says so.
+3. **Visitor log.** Parents do **not** see it: house master and admin only.
+   D5 and D8 change accordingly; the parent sees the hostel, room, bed, house
+   masters' names and the exeats.
+4. **Sickbay.** "The less info the better."
+   - The house master sees only **"Sent home by the sickbay today"**, because
+     that changes where the child is.
+   - A visit where the child stayed in school shows nothing to the house
+     master.
+   - Never the complaint, action or medicine. D7 changes accordingly.
+5. **Exeats.** Any linked guardian may request one, naming who will collect.
+   As D6.
+6. **Fees.** "Unless it is changed, it remains same fee for next term or
+   session."
+   - The fee belongs to the hostel and applies to every term, in this
+     session and the next, until someone changes it.
+   - **Copy to next term**, including into a new session, charges the
+     hostel's fee as it stands.
+   - Changing it re-prices only waiting charges, as D3. No pro-rating.
