@@ -1,4 +1,5 @@
 import type {
+  FamilyLibraryDto,
   PortalStudentTransportDto,
   PortalBankDetailsResponse,
   FamilyTimetableDto,
@@ -281,6 +282,11 @@ export function guardianVaccinationDocumentUrl(studentId: string, vaccinationId:
 }
 
 // Phase 9 / CP5.3 — the child's school bus this term; null with no place.
+// Phase 9 / CP6.2 — the child's library books out (CP6-D6).
+export function guardianLibrary(studentId: string): Promise<FamilyLibraryDto> {
+  return apiFetch<FamilyLibraryDto>(`/portal/students/${encodeURIComponent(studentId)}/library`);
+}
+
 export function guardianTransport(studentId: string): Promise<PortalStudentTransportDto | null> {
   return apiFetch<PortalStudentTransportDto | null>(`/portal/students/${encodeURIComponent(studentId)}/transport`);
 }

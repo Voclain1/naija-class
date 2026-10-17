@@ -3115,3 +3115,76 @@ charges, for fines and lost books), both shipped.
   checked at 320 and 390 px.
 - **Left for CP6.2 as planned:** fines and lost books, the overdue list's
   fine estimate, the staff app, and the parent and student views.
+
+### 14.9 As built — CP6.2, fines, lost books and families (2026-10-17)
+
+- **Data** (migration `20261101120000_library_fines`):
+  - `library_settings` gains `fines_enabled` (off by default),
+    `fine_per_day`, `fine_grace_days` and `fine_cap` (kobo, `CHECK`ed).
+  - `library_loans` gains `lost_at`, `found_at`, `fine_amount` (the fine at
+    return, or the replacement price at a loss), `fine_waived_reason` and
+    `fine_waived_by`. `CHECK`s: a loan is returned or lost, never both; only a
+    lost loan can be found.
+  - A lost loan is **closed**: `library_loans_open_copy_key` is recreated
+    `WHERE returned_at IS NULL AND lost_at IS NULL`, and every "books out"
+    count, limit and list leaves lost loans out.
+  - No SECURITY DEFINER function; the count stays 23.
+- **The fine** (`apps/api/src/modules/library/library-fines.ts`, pure,
+  tested on its own):
+  - Late days are calendar days after the due date, up to the return, that
+    fall inside a term. Each day counts **once** even where two terms overlap.
+    The e2e run found a school whose onboarding term overlapped a later one;
+    counting per term had doubled the fine.
+  - fine = rate × (late days − grace), floored at 0, capped.
+  - The charge's term is the term the day falls in (the **current** term where
+    two do), otherwise the next term to start, otherwise the last to end.
+  - The overdue list's "fine so far" and the fine raised at return use the
+    same function on the same day, so they agree.
+- **Money goes through F2 only.** A late student return or a student's lost
+  book raises one `LIBRARY_FINE` charge through `StudentChargeService.raise`
+  (source `library`, the loan's id), described "Library fine — title, n days
+  late" or "Lost book — title". A lost book charges the replacement price
+  **instead of** the fine. Staff, fines off, an on-time return or a book with
+  no price raise nothing. A waiver needs a reason, is kept on the loan and is
+  audited (`fine`, `waived`, `charged` in the metadata). Found again
+  (`POST /library/loans/:id/found`): a waiting charge is voided through
+  `voidBySource`, a billed one stays, and the screen says which.
+  `student-charge-writes.spec.ts` still passes.
+- **Routes:**
+  - `POST /library/loans/return` takes an optional `waiveReason` and returns
+    `{ loan, charged }`;
+  - `POST /library/loans/:id/lost` and `/found` need `library.lend`;
+  - `GET /library/loans?state=LOST`;
+  - `GET /portal/students/:id/library` (behind `withGuardian`) and
+    `GET /student-portal/me/library` return titles, authors and due dates
+    only: nothing about the staff who lent them.
+- **Web:**
+  - The lending desk shows "Fine if returned today: ₦…" before the book is
+    taken back, with **Waive the fine** and a reason field.
+  - **Book lost** says what will be charged (the replacement price, or that
+    nothing is) before **Mark lost**.
+  - Loans gains a **Lost** tab with **Found it**, the fine so far on overdue
+    rows, the figure (or waiver) on closed ones, and a Fine column in exports.
+  - Rules gains **Fine students for late books**, the daily fine, days of
+    grace and the most per book.
+- **Apps and portal:**
+  - Staff app: **Library** (owner, admin, Librarian), with the overdue and
+    out-now lists including the fine so far, and a **Lending desk** screen:
+    lend, return with the fine shown and waivable, renew, mark lost.
+  - Parent app and portal: a **Library books** card on the child's page.
+  - Student app: **My library books**.
+  - An overdue book is tinted and says "Overdue by n days" in words.
+- **Tests:**
+  - `library-fines.spec.ts`: 16 pure tests, including overlapping terms and
+    the current-term rule.
+  - `library.service.spec.ts`: 7 more integration tests, through real invoice
+    generation: the fine reaches the term invoice; staff, fines off and
+    waivers raise nothing; lost replaces the fine and closes the loan; found
+    voids a waiting charge and leaves a billed one; parents and children see
+    only their own; only the desk marks lost or found.
+  - RBAC pins for lost and found; mobile destination and staff-key tests.
+  - e2e `library-fines.spec.ts`: the admin turns fines on, the parent sees the
+    book overdue, the desk shows ₦150 for three days and takes it back, and
+    the fine is a waiting library charge on Finance → Charges.
+  - Phone fit at 320 and 390 px: the desk with fine and loss, the Lost tab,
+    the rules and the portal card.

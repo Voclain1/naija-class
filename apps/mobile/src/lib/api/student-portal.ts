@@ -1,4 +1,5 @@
 import type {
+  FamilyLibraryDto,
   FamilyTimetableDto,
   PortalInvoiceListResponse,
   StudentAttendanceResponse,
@@ -200,4 +201,9 @@ export function submitStudentWork(homeworkId: string, input: SubmitWorkInput): P
     method: "POST",
     body: input,
   });
+}
+
+// Phase 9 / CP6.2 — the student's own library books out (CP6-D6).
+export function studentLibrary(): Promise<FamilyLibraryDto> {
+  return apiFetch<FamilyLibraryDto>("/student-portal/me/library");
 }

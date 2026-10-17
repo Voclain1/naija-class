@@ -7,12 +7,14 @@ import {
   listBorrowersSchema,
   listLoansSchema,
   lookupCopySchema,
+  markLostSchema,
   returnLoanSchema,
   updateBookSchema,
   updateCopySchema,
   updateLibrarySettingsSchema,
   type AddCopiesInput,
   type CreateBookInput,
+  type FamilyLibraryDto,
   type IssueLoanInput,
   type LibraryBookDto,
   type LibraryBookSummaryDto,
@@ -21,11 +23,13 @@ import {
   type LibraryContextDto,
   type LibraryCopyLookupDto,
   type LibraryLoanDto,
+  type LibraryLoanResultDto,
   type LibrarySettingsDto,
   type ListBooksInput,
   type ListBorrowersInput,
   type ListLoansInput,
   type LookupCopyInput,
+  type MarkLostInput,
   type ReturnLoanInput,
   type UpdateBookInput,
   type UpdateCopyInput,
@@ -34,7 +38,13 @@ import {
 
 import type { AuthContext } from "../../common/auth/auth-context.js";
 import { AuthGuard } from "../../common/auth/auth.guard.js";
+import { CurrentGuardian } from "../../common/auth/current-guardian.decorator.js";
+import { CurrentStudent } from "../../common/auth/current-student.decorator.js";
 import { CurrentUser } from "../../common/auth/current-user.decorator.js";
+import type { GuardianAuthContext } from "../../common/auth/guardian-auth-context.js";
+import { GuardianAuthGuard } from "../../common/auth/guardian-auth.guard.js";
+import type { StudentAuthContext } from "../../common/auth/student-auth-context.js";
+import { StudentAuthGuard } from "../../common/auth/student-auth.guard.js";
 import { Permissions } from "../../common/auth/permissions.decorator.js";
 import { PermissionsGuard } from "../../common/auth/permissions.guard.js";
 import { ZodValidationPipe } from "../../common/zod-validation.pipe.js";
@@ -174,8 +184,28 @@ export class LibraryController {
     @CurrentUser() authCtx: AuthContext,
     @Body(new ZodValidationPipe(returnLoanSchema)) dto: ReturnLoanInput,
     @Ip() ip: string,
-  ): Promise<LibraryLoanDto> {
+  ): Promise<LibraryLoanResultDto> {
     return this.service.returnCopy(authCtx, dto, { ipAddress: ip });
+  }
+
+  // CP6.2 — a lost book (CP6-D4), and the same book found again.
+  @Post("loans/:id/lost")
+  @HttpCode(200)
+  @Permissions("library.lend")
+  markLost(
+    @CurrentUser() authCtx: AuthContext,
+    @Param("id", new ParseUUIDPipe()) id: string,
+    @Body(new ZodValidationPipe(markLostSchema)) dto: MarkLostInput,
+    @Ip() ip: string,
+  ): Promise<LibraryLoanResultDto> {
+    return this.service.markLost(authCtx, id, dto, { ipAddress: ip });
+  }
+
+  @Post("loans/:id/found")
+  @HttpCode(200)
+  @Permissions("library.lend")
+  markFound(@CurrentUser() authCtx: AuthContext, @Param("id", new ParseUUIDPipe()) id: string, @Ip() ip: string): Promise<LibraryLoanResultDto> {
+    return this.service.markFound(authCtx, id, { ipAddress: ip });
   }
 
   @Post("loans/:id/renew")
@@ -195,5 +225,32 @@ export class LibraryController {
   @Permissions("library.read")
   staffLoans(@CurrentUser() authCtx: AuthContext, @Param("id", new ParseUUIDPipe()) id: string): Promise<LibraryBorrowerLoansDto> {
     return this.service.staffLoans(authCtx, id);
+  }
+}
+
+// Phase 9 / CP6.2 — a parent reads their own child's library books out: title,
+// author and due date, nothing about the staff who lent them (CP6-D6). Behind
+// withGuardian.
+@Controller("portal")
+@UseGuards(GuardianAuthGuard)
+export class PortalLibraryController {
+  constructor(private readonly service: LibraryService) {}
+
+  @Get("students/:id/library")
+  library(@CurrentGuardian() guardianCtx: GuardianAuthContext, @Param("id", new ParseUUIDPipe()) id: string): Promise<FamilyLibraryDto> {
+    return this.service.libraryForGuardian(guardianCtx, id);
+  }
+}
+
+// Phase 9 / CP6.2 — the child's own books out. The session is the identity: no
+// student id in the path.
+@Controller("student-portal")
+@UseGuards(StudentAuthGuard)
+export class StudentLibraryController {
+  constructor(private readonly service: LibraryService) {}
+
+  @Get("me/library")
+  library(@CurrentStudent() ctx: StudentAuthContext): Promise<FamilyLibraryDto> {
+    return this.service.libraryForStudent(ctx.schoolId, ctx.studentId);
   }
 }

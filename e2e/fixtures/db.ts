@@ -70,3 +70,15 @@ export async function seedTeacherInvitation(opts: {
 
   return { rawToken, acceptPath: `/invitations/${rawToken}` };
 }
+
+// Phase 9 / CP6.2 — move a library loan's due date into the past, so a test can
+// return a late book. The API refuses a due date in the past by design, so the
+// one synthetic step is this update, through the tenant client like the seed
+// above; the return, the fine and the charge are all the real API's.
+export async function backdateLibraryLoan(schoolId: string, loanId: string, daysAgo: number): Promise<void> {
+  const due = new Date(Date.now() + 60 * 60 * 1000); // Lagos is UTC+1
+  due.setUTCDate(due.getUTCDate() - daysAgo);
+  await withTenant(schoolId, (db) =>
+    db.libraryLoan.update({ where: { id: loanId }, data: { dueOn: new Date(`${due.toISOString().slice(0, 10)}T00:00:00.000Z`) } }),
+  );
+}

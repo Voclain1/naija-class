@@ -36,6 +36,7 @@ import {
 import { DisciplineNotices } from "@/components/discipline-notices";
 import { HealthRecord } from "@/components/health-record";
 import { HomeworkCard } from "@/components/homework-card";
+import { LibraryCard } from "@/components/library-card";
 import { TransportCard } from "@/components/transport-card";
 import { StudentPortalAccess } from "@/components/student-portal-access";
 import { SchoolBanner } from "@/components/school-banner";
@@ -308,6 +309,7 @@ export default function StudentDetailPage() {
 
           {/* Phase 9 / CP5.3: the child's school bus this term. Absent with no place. */}
           <TransportCard studentId={state.student.id} />
+          <LibraryCard studentId={state.student.id} />
 
           {/* Phase 8 / CP4 (docs/modules/phase-8.md §18 D39): the class timetable the school PUBLISHED. */}
           <section className="flex flex-col gap-2 rounded-lg border bg-card p-4 shadow-sm">

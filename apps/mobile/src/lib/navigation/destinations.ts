@@ -107,6 +107,12 @@ export function staffDestinations(ctx: StaffContext): Destination[] {
   if (can("transport.read")) {
     out.push({ key: "transport", label: "Bus routes", hint: "Today's pickups", icon: "bus-outline", group: "School", route: "/staff/transport" });
   }
+  // Phase 9 / CP6.2 — the library's loans and lending desk. library.read is a
+  // permission check on the server: owner, admin and the Librarian, whose
+  // main screen this is.
+  if (can("library.read")) {
+    out.push({ key: "library", label: "Library", hint: "Lend and take back", icon: "library-outline", group: "School", route: "/staff/library" });
+  }
   if (admin && can("reports.completeness.read")) {
     out.push({ key: "reports", label: "Reports", hint: "What's behind", icon: "bar-chart-outline", group: "School", route: "/staff/reports" });
   }

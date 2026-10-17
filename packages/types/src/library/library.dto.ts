@@ -51,13 +51,26 @@ export interface LibrarySettingsDto {
   renewalLimit: number;
   /** The next number "Number them for me" hands out. */
   nextAccession: number;
+  /** CP6.2 — fines, off by default (CP6-D3). Students only. Kobo. */
+  finesEnabled: boolean;
+  finePerDay: number;
+  fineGraceDays: number;
+  /** The most one loan can be fined; null for no cap. */
+  fineCap: number | null;
 }
+
+/** ₦10,000 a day in kobo — the highest daily fine. */
+export const MAX_FINE_PER_DAY_KOBO = 1_000_000;
 
 export const updateLibrarySettingsSchema = z.object({
   loanDays: z.number().int().min(1).max(180).optional(),
   studentLimit: z.number().int().min(0).max(20).optional(),
   staffLimit: z.number().int().min(0).max(50).optional(),
   renewalLimit: z.number().int().min(0).max(10).optional(),
+  finesEnabled: z.boolean().optional(),
+  finePerDay: z.number().int().min(0).max(MAX_FINE_PER_DAY_KOBO).optional(),
+  fineGraceDays: z.number().int().min(0).max(30).optional(),
+  fineCap: z.number().int().min(0).max(MAX_REPLACEMENT_PRICE_KOBO).nullable().optional(),
 });
 export type UpdateLibrarySettingsInput = z.infer<typeof updateLibrarySettingsSchema>;
 
@@ -107,9 +120,21 @@ export interface LibraryLoanDto {
   /** Renewals still allowed under the school's limit. */
   renewalsLeft: number;
   returnedAt: string | null;
+  /** CP6.2 — set when the book was marked lost; a lost loan is closed. */
+  lostAt: string | null;
+  foundAt: string | null;
   /** Open and past its due date, by Lagos calendar day. */
   overdue: boolean;
   daysLate: number;
+  /**
+   * An open student loan, fines on: what returning it today would cost, by the
+   * same rule the return applies. 0 when nothing is due yet. Null otherwise.
+   */
+  fineSoFar: number | null;
+  /** A closed loan: the fine or replacement price worked out, if any (kobo). */
+  fineAmount: number | null;
+  /** Set when the librarian waived it. */
+  fineWaivedReason: string | null;
 }
 
 export interface LibraryCopyDto {
@@ -183,7 +208,7 @@ export type UpdateCopyInput = z.infer<typeof updateCopySchema>;
 /** The lending desk's look-up of a copy by its accession number. */
 export interface LibraryCopyLookupDto {
   copy: { id: string; accessionNumber: string; status: LibraryCopyStatus };
-  book: { id: string; title: string; authors: string | null; referenceOnly: boolean };
+  book: { id: string; title: string; authors: string | null; referenceOnly: boolean; replacementPrice: number | null };
   loan: LibraryLoanDto | null;
 }
 
@@ -214,11 +239,15 @@ export const issueLoanSchema = z
   });
 export type IssueLoanInput = z.infer<typeof issueLoanSchema>;
 
-export const returnLoanSchema = z.object({ accessionNumber });
+export const returnLoanSchema = z.object({
+  accessionNumber,
+  /** Waives the fine (CP6-D3). A reason is required to waive. */
+  waiveReason: z.string().trim().min(3, "Say why the fine is waived.").max(300).optional(),
+});
 export type ReturnLoanInput = z.infer<typeof returnLoanSchema>;
 
 export const listLoansSchema = z.object({
-  state: z.enum(["OPEN", "OVERDUE", "RETURNED"]).default("OPEN"),
+  state: z.enum(["OPEN", "OVERDUE", "RETURNED", "LOST"]).default("OPEN"),
   q: z.string().trim().max(100).optional(),
 });
 export type ListLoansInput = z.infer<typeof listLoansSchema>;
@@ -231,3 +260,34 @@ export interface LibraryBorrowerLoansDto {
 
 export const lookupCopySchema = z.object({ accessionNumber: z.string().trim().min(1).max(30) });
 export type LookupCopyInput = z.infer<typeof lookupCopySchema>;
+
+/** CP6.2 — marking an open loan lost (CP6-D4). */
+export const markLostSchema = z.object({
+  waiveReason: z.string().trim().min(3, "Say why the charge is waived.").max(300).optional(),
+});
+export type MarkLostInput = z.infer<typeof markLostSchema>;
+
+/** What a return or a loss charged, said back to the librarian. */
+export interface LibraryLoanResultDto {
+  loan: LibraryLoanDto;
+  /** Kobo raised as a student charge; 0 when nothing was raised. */
+  charged: number;
+  /** For a book found again: what happened to its charge. */
+  charge?: "voided" | "billed" | "none";
+}
+
+// ─── Families (CP6-D6) ─────────────────────────────────────────────────────
+
+/** A book a child has out, for the parent and the child. No borrower details. */
+export interface FamilyLibraryLoanDto {
+  id: string;
+  title: string;
+  authors: string | null;
+  dueOn: string;
+  overdue: boolean;
+  daysLate: number;
+}
+
+export interface FamilyLibraryDto {
+  loans: FamilyLibraryLoanDto[];
+}
