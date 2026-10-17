@@ -271,6 +271,9 @@ export function SickbayVisitItem({
                 Sent home
               </span>
             )}
+            {visit.boarder && (
+              <span className="rounded bg-muted px-2 py-0.5 text-xs text-muted-foreground">Boarder: {visit.boarder}</span>
+            )}
             <span className="rounded bg-muted px-2 py-0.5 text-xs text-muted-foreground">
               {visit.shareWithParent ? "Details shared with the parent" : "Details not shared"}
             </span>

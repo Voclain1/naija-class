@@ -34,6 +34,7 @@ import { HealthController } from "../modules/health/health.controller";
 import { SickbayController } from "../modules/health/sickbay.controller";
 import { LibraryResourcesController } from "../modules/library/library-resources.controller";
 import { LibraryController } from "../modules/library/library.controller";
+import { BoardingController } from "../modules/hostels/boarding.controller";
 import { HostelController } from "../modules/hostels/hostel.controller";
 import { AssignmentsController } from "../modules/assignments/assignments.controller";
 import { CalendarController } from "../modules/calendar/calendar.controller";
@@ -1660,5 +1661,25 @@ describe("Phase 9 CP6b.1 RBAC coverage: hostels", () => {
     const teacher = new Set(roleSeed("teacher").permissions);
     expect(teacher.has("hostel.house")).toBe(true);
     for (const p of ["hostel.read", "hostel.manage"]) expect(teacher.has(p), `teacher must not hold ${p}`).toBe(false);
+  });
+});
+
+describe("Phase 9 CP6b.2 RBAC coverage: boarding", () => {
+  const perms = (handler: string): string[] =>
+    Reflect.getMetadata(
+      PERMISSIONS_METADATA_KEY,
+      (BoardingController.prototype as unknown as Record<string, object>)[handler]!,
+    ) as string[];
+
+  it("every house master route needs hostel.house; the service narrows it to the hostels kept", () => {
+    for (const handler of ["hostels", "boarders", "visits", "logVisit", "visitLeft", "deleteVisit"]) {
+      expect(perms(handler), handler).toEqual(["hostel.house"]);
+    }
+  });
+
+  it("the bursar, health officer and librarian do not hold hostel.house", () => {
+    for (const key of ["bursar", "health_officer", "librarian"]) {
+      expect(new Set(roleSeed(key).permissions).has("hostel.house"), key).toBe(false);
+    }
   });
 });

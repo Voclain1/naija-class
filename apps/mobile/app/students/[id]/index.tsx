@@ -28,6 +28,7 @@ import { FreshnessLabel, useIsOnline } from "../../../src/components/freshness-l
 import { ListRow } from "../../../src/components/layout";
 import { DisciplineNotices } from "../../../src/components/discipline-notices";
 import { HealthRecord } from "../../../src/components/health-record";
+import { HostelCard } from "../../../src/components/hostel-card";
 import { LibraryCard } from "../../../src/components/library-card";
 import { TransportCard } from "../../../src/components/transport-card";
 import { StudentPortalAccess } from "../../../src/components/student-portal-access";
@@ -195,6 +196,8 @@ export default function StudentDetailScreen() {
 
         {/* Phase 9 / CP5.3: the child's school bus this term. Absent with no place. */}
         <TransportCard studentId={studentId} />
+        {/* Phase 9 / CP6b.2: the child's hostel bed this term. Absent for a day pupil. */}
+        <HostelCard studentId={studentId} />
         <LibraryCard studentId={studentId} />
 
         {/* Portal access sits under Results and above Fees: it is a

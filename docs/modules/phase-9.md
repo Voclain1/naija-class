@@ -3618,3 +3618,96 @@ both shipped, and copies the shape transport proved in CP5.
   - `e2e/tests/hostel-beds.spec.ts`: a girls' hostel, a room and a fee, a
     girl given a bed, the student page line, and the hostel line on Finance →
     Charges.
+
+### 15.10 As built — CP6b.2, house masters, the visitor log and families (2026-10-17)
+
+- **Data** (migration `20261104120000_hostel_visits`): `hostel_visits`, with:
+  - the hostel and the boarder;
+  - the visitor's name (1–80 characters) and relationship (1–40);
+  - a phone number, optional (7–20 characters);
+  - arrived at, and left at (null while they are still there; a `CHECK` that
+    it is not before the arrival);
+  - who logged it.
+
+  RLS enabled and forced, with `tenant_isolation`. No SECURITY DEFINER
+  function; the count stays 23. No new permission: `hostel.house` came in
+  CP6b.1.
+- **Who keeps which hostel.** `HostelHouseService` re-reads the caller's
+  roles on every call:
+  - owner and admin keep every hostel;
+  - a teacher or House master keeps only the hostels they are assigned to on
+    the hostel's page;
+  - anyone else is refused (403).
+
+  Another hostel answers 404 ("Hostel not found"), not 403, as the question
+  bank answers for a subject the teacher does not teach. A teacher's
+  `GET /teacher-scope/me` now carries `housesHostels`, so the teacher portal
+  and staff app show Boarding only to a teacher who keeps a hostel.
+- **API** (`apps/api/src/modules/hostels/`, all `hostel.house`):
+  - `GET /boarding/hostels`: the hostels kept, with this term's boarder count;
+  - `GET /boarding/hostels/:id/boarders`: this term's boarders by room and
+    bed;
+  - `GET /boarding/hostels/:id/visits?day=`: one Lagos day of the log, today
+    by default;
+  - `POST /boarding/hostels/:id/visits`: log a visitor, arriving now unless a
+    time is given;
+  - `PATCH /boarding/visits/:id/left`: once only (`VISIT_ALREADY_LEFT`);
+  - `DELETE /boarding/visits/:id`: an entry made by mistake, audited.
+
+  The routes sit under `/boarding`, not `/hostels`, because `GET /hostels/:id`
+  would otherwise catch `/hostels/house`.
+- **The sickbay (owner's answer 4).**
+  - A boarder carries one fact from the sickbay: `sentHomeToday`. It is true
+    only for a visit today (Lagos day) marked "sent home" and not withdrawn.
+  - A visit where the child stayed in school shows nothing.
+  - The complaint, the action and any medicine are never read into the
+    house master's answer; a test checks that the JSON carries none of them.
+  - The sickbay page labels a boarder "Boarder: hostel, room"
+    (`SickbayVisitDto.boarder`), so the health officer knows whom to tell.
+- **Visitors (owner's answer 3).** House master and admin only. The audit
+  row records who logged what, without the visitor's name or phone.
+  Logging needs the child to have a bed in that hostel this term. A time in
+  the future is refused, with five minutes allowed for a fast clock.
+- **Families.**
+  - `GET /portal/students/:id/hostel` (behind `withGuardian`) returns the
+    hostel, room and bed this term and the names of the house masters whose
+    accounts are active. It returns nothing for a day pupil.
+  - No phone numbers and no visits.
+  - The card is on the portal's child page and the parent app's child screen,
+    beside the school bus card.
+- **Web:**
+  - `/boarding` in the admin shell, for admin and the House master, whose
+    home page it is;
+  - `/teacher/boarding`, in the teacher sidebar only for a teacher who keeps
+    a hostel;
+  - one shared panel: a hostel picker when there is more than one, then the
+    boarders, then the visitor log with a day picker, "Has left", "Remove"
+    and a "Log a visitor" form;
+  - a boarder sent home today is tinted amber and labelled "Sent home by the
+    sickbay today" in words;
+  - the staff invite form offers **House master**, and the staff list names
+    the role.
+- **Staff app:** Boarding (a bed icon) in the School group, for admin, the
+  House master and a teacher who keeps a hostel. It has the hostel list,
+  then per hostel:
+  - today's visitors, with "Has left";
+  - the boarders, each with the sent-home notice where it applies; tapping
+    one logs a visitor arriving now.
+
+  The query keys are staff-prefixed, so nothing is kept on the phone.
+- **Tests:**
+  - `hostel-house.service.spec.ts` (9 tests, real database):
+    - who keeps which hostel;
+    - the teacher-scope flag;
+    - another school;
+    - the sent-home flag: today, stayed in school, withdrawn, two days ago;
+    - the sickbay label;
+    - the visitor log's rules and audit;
+    - the parent's card and what it leaves out.
+  - Permission coverage for every `/boarding` route.
+  - The staff app's menu spec.
+  - e2e `hostel-boarding.spec.ts`: the boarder flagged without the complaint,
+    a visitor logged and gone, the sickbay label, and the parent's card
+    without the visitor.
+  - `/boarding` and the portal card were checked at 320 and 390 px with no
+    sideways scroll.

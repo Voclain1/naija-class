@@ -23,6 +23,7 @@ import { assertUserActiveAndHasOneOf } from "../../common/auth/role-check.js";
 import { redactPhone } from "../../common/redact.js";
 import { smsSenderFor } from "../../common/termii/sms-sender.js";
 import { normalizeNigerianPhone, TermiiService } from "../../common/termii/termii.service.js";
+import { boarderLabels } from "../hostels/hostel-house.service.js";
 import { NotificationDispatchService, type DeliveryChannel } from "../notifications/notification-dispatch.service.js";
 
 // Phase 9 / CP3.3 — the sickbay log (docs/modules/phase-9.md §10 CP3-D5,
@@ -424,6 +425,9 @@ export class SickbayService {
     const userIds = [...new Set(rows.flatMap((r) => [r.recordedBy, ...r.medications.map((m) => m.givenBy)]))];
     const users = await db.user.findMany({ where: { id: { in: userIds } }, select: { id: true, firstName: true, lastName: true } });
     const userName = new Map(users.map((u) => [u.id, fullName(u)]));
+    // Phase 9 / CP6b.2 — a boarder is labelled with their hostel and room, so
+    // the health officer knows whom to tell (§15 CP6b-D7).
+    const boarder = await boarderLabels(db, rows[0]!.schoolId, studentIds);
     return rows.map((r) => {
       const s = student.get(r.studentId);
       return {
@@ -431,6 +435,7 @@ export class SickbayService {
         studentId: r.studentId,
         studentName: s ? fullName(s) : "Unknown student",
         className: s?.enrollments[0]?.classArm.name ?? null,
+        boarder: boarder.get(r.studentId) ?? null,
         visitedAt: r.visitedAt,
         complaint: r.complaint,
         actionTaken: r.actionTaken,

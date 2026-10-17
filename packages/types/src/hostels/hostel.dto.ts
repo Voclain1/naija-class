@@ -138,3 +138,88 @@ export interface StudentHostelDto {
   roomName: string;
   bedNumber: number;
 }
+
+// ─── House masters (CP6b.2, §15 CP6b-D4, D5, D7) ───────────────────────────
+
+/** A hostel the caller keeps: their own as house master, or every one for owner and admin. */
+export interface HouseHostelDto {
+  id: string;
+  name: string;
+  forGender: HostelGender;
+  /** Boarders this term (0 when no term is current). */
+  boarders: number;
+}
+
+/**
+ * A boarder on the house master's list. The sickbay shows only that the child
+ * was sent home today, never the complaint, action or medicine (owner, §15.8).
+ */
+export interface HouseBoarderDto {
+  bedId: string;
+  studentId: string;
+  studentName: string;
+  admissionNumber: string;
+  classArm: string | null;
+  roomName: string;
+  bedNumber: number;
+  sentHomeToday: boolean;
+}
+
+export interface HouseBoardersDto {
+  hostel: { id: string; name: string; forGender: HostelGender };
+  /** The current term; null when none is set, and then there are no boarders. */
+  term: { id: string; name: string } | null;
+  boarders: HouseBoarderDto[];
+}
+
+export const HOSTEL_VISIT_LIMITS = { visitorName: 80, relationship: 40 } as const;
+
+export const logHostelVisitSchema = z.object({
+  studentId: z.string().uuid(),
+  visitorName: z.string().trim().min(1, "Enter the visitor's name.").max(HOSTEL_VISIT_LIMITS.visitorName),
+  relationship: z.string().trim().min(1, "Say who the visitor is to the child.").max(HOSTEL_VISIT_LIMITS.relationship),
+  phone: z
+    .string()
+    .trim()
+    .regex(/^\+?[0-9 ]{7,20}$/, "Enter a phone number, or leave it empty.")
+    .optional()
+    .or(z.literal("").transform(() => undefined)),
+  /** Now when left out. */
+  arrivedAt: z.string().datetime({ offset: true }).optional(),
+});
+export type LogHostelVisitInput = z.infer<typeof logHostelVisitSchema>;
+
+export const hostelVisitLeftSchema = z.object({
+  /** Now when left out. */
+  leftAt: z.string().datetime({ offset: true }).optional(),
+});
+export type HostelVisitLeftInput = z.infer<typeof hostelVisitLeftSchema>;
+
+/** One Lagos day of the log (YYYY-MM-DD); today when left out. */
+export const listHostelVisitsSchema = z.object({
+  day: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use a date like 2026-10-15.").optional(),
+});
+export type ListHostelVisitsInput = z.infer<typeof listHostelVisitsSchema>;
+
+export interface HostelVisitDto {
+  id: string;
+  studentId: string;
+  studentName: string;
+  visitorName: string;
+  relationship: string;
+  phone: string | null;
+  arrivedAt: string | Date;
+  leftAt: string | Date | null;
+  loggedByName: string | null;
+}
+
+// ─── Families (CP6b.2, §15 CP6b-D8) ────────────────────────────────────────
+
+/** The parent's hostel card: this term's bed and the house masters' names. No phones, no visits. */
+export interface PortalStudentHostelDto {
+  termName: string;
+  hostelName: string;
+  roomName: string;
+  bedNumber: number;
+  houseMasters: string[];
+}

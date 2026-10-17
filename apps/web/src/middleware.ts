@@ -113,6 +113,8 @@ export const config = {
     "/library/:path*",
     // Hostels (Phase 9 / CP6b.1), added in the same PR as the pages.
     "/hostels/:path*",
+    // Boarding (Phase 9 / CP6b.2), added in the same PR as the page.
+    "/boarding/:path*",
     "/teacher/:path*",
     "/super-admin/dashboard/:path*",
   ],

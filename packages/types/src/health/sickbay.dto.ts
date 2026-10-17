@@ -79,6 +79,8 @@ export interface SickbayVisitDto {
   studentId: string;
   studentName: string;
   className: string | null;
+  /** "Hostel, Room" when the child boards this term (CP6b.2). */
+  boarder: string | null;
   visitedAt: string | Date;
   complaint: string;
   actionTaken: string | null;

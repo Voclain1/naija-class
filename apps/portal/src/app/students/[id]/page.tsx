@@ -35,6 +35,7 @@ import {
 } from "@/lib/session-end";
 import { DisciplineNotices } from "@/components/discipline-notices";
 import { HealthRecord } from "@/components/health-record";
+import { HostelCard } from "@/components/hostel-card";
 import { HomeworkCard } from "@/components/homework-card";
 import { LibraryCard } from "@/components/library-card";
 import { TransportCard } from "@/components/transport-card";
@@ -309,6 +310,8 @@ export default function StudentDetailPage() {
 
           {/* Phase 9 / CP5.3: the child's school bus this term. Absent with no place. */}
           <TransportCard studentId={state.student.id} />
+          {/* Phase 9 / CP6b.2: the child's hostel bed this term. Absent for a day pupil. */}
+          <HostelCard studentId={state.student.id} />
           <LibraryCard studentId={state.student.id} />
 
           {/* Phase 8 / CP4 (docs/modules/phase-8.md §18 D39): the class timetable the school PUBLISHED. */}

@@ -15,6 +15,7 @@ const base: StaffContext = {
   permissions: [],
   formArms: [],
   teachesSubjects: false,
+  housesHostels: false,
   webConfigured: true,
 };
 
@@ -174,5 +175,16 @@ describe("menu grouping", () => {
         expect(Boolean(d.route) !== Boolean(d.web)).toBe(true);
       }
     }
+  });
+});
+
+describe("boarding (Phase 9 / CP6b.2)", () => {
+  it("shows Boarding to admin, the House master, and a teacher who keeps a hostel — no one else", () => {
+    expect(staffDestinations(OWNER).find((d) => d.key === "boarding")?.route).toBe("/staff/boarding");
+    expect(keys({ ...base, roles: [{ key: "house_master" }], permissions: ["hostel.house"] })).toEqual(["boarding"]);
+    const teacher = { ...TEACHER, permissions: [...TEACHER.permissions, "hostel.house"] };
+    expect(keys(teacher)).not.toContain("boarding");
+    expect(keys({ ...teacher, housesHostels: true })).toContain("boarding");
+    expect(keys(BURSAR)).not.toContain("boarding");
   });
 });
