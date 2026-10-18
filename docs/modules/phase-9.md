@@ -5352,3 +5352,77 @@ the web. The debtors page shows a level and its reasons.
    student's own finance tab? *Recommendation: as above, and yes on the
    student tab.*
 4. **Should families ever see anything about risk?** *Recommendation: never.*
+
+### 19.7 Owner's answers (2026-10-18)
+
+All four recommendations were approved:
+- one answer per parent;
+- whole school or chosen classes;
+- Low / Watch / High as written, also shown on the student's finance tab;
+- families never see anything about risk.
+
+### 19.8 As built — CP10.1, event RSVPs (2026-10-18)
+
+Migration `20261111120000_event_rsvps`. No new SECURITY DEFINER function;
+the count stays 23.
+
+- **Setting up (web `/events`, owner and admin):**
+  - In the event form, "Ask families to reply" offers:
+    - a reply-by date (optional, on or before the start date; a CHECK
+      constraint and the API both refuse a later one);
+    - "Ask how many people will come";
+    - "Every family" or "Families in chosen classes" (the classes must be
+      this school's).
+  - Switching it off later keeps the answers but stops asking.
+  - **Changed from the plan:** setting it up is on the website only. The
+    staff app's event screen shows the reply counts and points to the
+    website for the list and the download.
+- **Who is asked:**
+  - every parent linked to a child enrolled this term, in the chosen classes
+    when there are any;
+  - a parent whose portal access is switched off is not asked and cannot
+    answer.
+- **Answering (portal calendar, parent app calendar):**
+  - Yes, No or Maybe, and 1–10 coming when asked (a No carries no number).
+  - One answer per parent (`event_rsvps`, unique per event and parent), which
+    the parent can change.
+  - Answers close at the end of the reply-by date, or of the start date when
+    there is none (Lagos calendar days).
+  - A parent sees only their own answer: the guardian calendar read adds
+    `rsvp` to that family's own entries only.
+- **The school sees** (`GET /calendar/events/:id/rsvps`,
+  `calendar-event.update`, role-checked owner/admin):
+  - the counts: asked, yes, no, maybe, not answered, coming, and maybe
+    coming;
+  - every asked parent with their children, answer and number;
+  - a CSV download, built in the browser from that list.
+- **Reminder:** a cron at 08:00 Lagos.
+  - For each event whose reply-by date is tomorrow, it pushes once to the
+    asked parents who have not answered.
+  - The push is lockscreen-safe: "An event is waiting for your reply. Replies
+    close tomorrow." It does not carry the event's title, by rule N3. This is
+    a change from the plan, which said "only its title".
+  - `rsvp_reminded_at` is claimed before sending, so an event is reminded
+    once. An event without a reply-by date gets no reminder.
+- **Records:** each answer writes an `event.rsvp` audit row: the parent's id,
+  the answer and the number, nothing typed.
+- **Tests:** `event-rsvp.service.spec.ts` (7 tests, real database):
+  - a class event asks only that class, never a switched-off parent;
+  - one answer, changeable, with counts that add up and a number only when
+    asked;
+  - a parent sees only their own answer;
+  - closing after the reply-by date, the reply-by date check on create and
+    update, and switching replies off;
+  - the classes must be this school's, the owner and admins only see the
+    list, and another school sees nothing;
+  - the reminder: once, only to parents who have not answered, without the
+    event's words;
+  - the audit row.
+- **e2e** `event-rsvps.spec.ts`: the admin adds an event asking families,
+  with numbers → a parent answers Yes, 3 coming, in the portal → the admin
+  sees the counts and the reply in the list.
+- **Found by the e2e:** with the reply options open, the add-event dialog grew
+  taller than a laptop screen and its buttons went out of reach. The dialog
+  now scrolls (`max-h-[90vh] overflow-y-auto`, as other long dialogs do).
+- **Phone fit:** the event form with replies open, the replies list, and the
+  portal reply card all fit at 320 and 390 px with no sideways scroll.

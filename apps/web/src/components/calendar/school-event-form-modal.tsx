@@ -133,7 +133,7 @@ export function SchoolEventFormModal({
         if (!next) onClose();
       }}
     >
-      <DialogContent>
+      <DialogContent className="max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{editing ? "Edit event" : "Add an event"}</DialogTitle>
         </DialogHeader>
