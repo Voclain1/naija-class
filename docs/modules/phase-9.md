@@ -4953,3 +4953,260 @@ the count stays 23.
     3. the admin clears the flag;
     4. the parent reports the conversation;
     5. the admin sees the report and its note.
+
+### 17.11 CP8.3 plan-first — email broadcasts for announcements (2026-10-18)
+
+This builds CP8-D7 (§17.2) on the code as it stands today. Nothing here is
+built until the owner approves it.
+
+**What exists today (read from the code)**
+
+- **Sending.** Owner and admin send an announcement to EVERYONE, PARENTS,
+  STAFF or one CLASS:
+  - from the web (`/announcements`) and the staff app (`/staff/announcements`);
+  - it is never edited, only withdrawn.
+- **Who gets the push.** `EventNotifierService.announcementPosted` pushes to
+  the families of every child enrolled this term (or this term in that class):
+  every guardian linked to the child, not only the primary one.
+- **Email** (`EmailService.send`, Resend v6, "<School> via SchoolKit"):
+  - sends one email per call;
+  - the SDK supports custom headers, tags, a batch send (up to 100 a call) and
+    `webhooks.verify` for signed webhooks.
+- **Webhooks.** The API already keeps raw request bodies for webhook
+  signatures (Paystack).
+- **Background jobs** run on BullMQ queues inside the API, like push and
+  imports.
+
+**What gets built**
+
+1. **"Also email families"** on the compose form, web and staff app.
+   - Off by default, and offered only for EVERYONE, PARENTS and CLASS (STAFF
+     sends no email).
+   - The confirmation says: "It will also be emailed to N families with an
+     email address. An email cannot be withdrawn."
+   - Stored on the announcement as `email_families`.
+2. **The send job** (new `announcement-email` queue):
+   - It starts after the announcement is saved and runs outside the request,
+     in groups of 100 through Resend's batch send.
+   - **Recipients:** the same families the push reaches, each email address
+     once.
+   - **Left out, each with a reason:**
+     - no address;
+     - the address has unsubscribed from this school's announcements;
+     - the address has bounced or complained;
+     - past the daily cap.
+   - The email holds the title and the full text (escaped, line breaks kept),
+     the school's name, a "Read it in the parent portal" link and an
+     unsubscribe link.
+   - Each email carries `List-Unsubscribe` and `List-Unsubscribe-Post`
+     (one-click) headers, and Resend tags (school id, announcement id).
+   - If the school's email channel is switched off, nothing is sent and the
+     outbox says why.
+   - A job that is retried does not send twice: each (announcement, address)
+     row is claimed once.
+3. **Unsubscribe**:
+   - `GET` and `POST /email/unsubscribe?s=<slug>&e=<email>&t=<token>`, where
+     the token is an HMAC of (school, email) under `RESULT_PIN_HMAC_KEY` with
+     its own label, as admissions tracking does.
+   - The link opens a portal page, "You will no longer get announcement
+     emails from <School>", with a button to undo.
+   - It stops announcement emails only. Message replies, receipts and
+     password emails still arrive.
+   - Parents can switch announcement emails back on in the portal, on a new
+     **Settings → Emails** card.
+4. **Resend webhook** (`POST /webhooks/resend`):
+   - The signature is checked with `RESEND_WEBHOOK_SECRET`. It is new, set on
+     `school-kit-api` only, and the route answers 503 while it is unset.
+   - Delivered, bounced and complained events update the email's row.
+   - A hard bounce or a complaint suppresses that address for the school's
+     announcement emails and its other non-essential email.
+   - Payloads are never logged.
+5. **Daily cap.** 1,000 announcement emails a school a Lagos day, taken
+   atomically as for SMS. Anything past the cap is marked "not sent (daily
+   limit)" and is not sent later.
+6. **The outbox (web and staff app)**:
+   - each emailed announcement shows its counts: sent, delivered, bounced,
+     unsubscribed, not sent (no address / daily limit / email off);
+   - on the web, a "Bounced addresses" list (parent's name, address and child)
+     so the school can fix them.
+   - Counts only; nobody sees who opened what (announcements A5).
+
+**Data** (one migration; no SECURITY DEFINER function, so the count stays 23):
+
+- `announcements.email_families` (boolean).
+- `announcement_emails`:
+  - columns: school, announcement, guardian, email (lower-cased), status
+    (QUEUED, SENT, DELIVERED, BOUNCED, COMPLAINED, SKIPPED), skip reason
+    (NO_EMAIL, UNSUBSCRIBED, SUPPRESSED, CAPPED, EMAIL_OFF), the Resend id,
+    times;
+  - unique per (announcement, email).
+- `email_suppressions`:
+  - columns: school, email, reason (UNSUBSCRIBED, BOUNCED, COMPLAINED), scope
+    (ANNOUNCEMENTS, ALL), created at;
+  - unique per (school, email, scope).
+- `announcement_email_counters`: per school per Lagos day.
+- RLS enabled and forced, `tenant_isolation` and explicit grants on all three
+  tables.
+- The webhook finds the school from the Resend tag, then writes under that
+  school's GUC.
+
+**Tests first**:
+
+- one email per address in the audience;
+- none to the unsubscribed, the suppressed, or a STAFF audience;
+- the cap holds and the extras are recorded as such;
+- a retried job sends nothing twice;
+- the email switch off sends nothing;
+- an unsubscribe token for one school or address does not work for another;
+- unsubscribing and re-subscribing;
+- a webhook with a bad signature changes nothing;
+- a bounce suppresses, and the next announcement skips that address;
+- the outbox counts add up;
+- no address and no email text in any log or audit row.
+
+e2e: compose with "Also email families" → the outbox shows the counts (with
+mail captured in dev) → the unsubscribe page and the undo.
+
+**Left out on purpose**: scheduled sending, attachments, open and click
+tracking, emailing staff, and SMS broadcasts.
+
+**Questions for the owner**
+
+1. **Who receives the email:** every guardian linked to the child (what the
+   push already does), or only the primary guardian? *Recommendation: every
+   linked guardian with an address, as push does.*
+2. **A parent whose portal access the school switched off:** still emailed?
+   They stay the child's contact, but the school may have switched them off
+   for a reason (custody, for example). *Recommendation: no, leave them out.*
+3. **Only checked addresses:** most guardian addresses are typed in by the
+   school, not confirmed by the parent. Send to every address on file, or only
+   to those a parent has signed in with? *Recommendation: every address on
+   file; bounces take care of the wrong ones.*
+4. **The daily cap of 1,000 a school**: keep it? A school of 600 families with
+   two parents each would hit it with one announcement. *Recommendation: raise
+   it to 3,000 a school a day.*
+
+**Owner's answers (2026-10-18)**
+
+1. **Every parent** linked to the child gets the email, as with the push.
+2. **A parent whose portal access the school switched off is left out**, as
+   proposed.
+3. **Every address on file is used, including those that came from an
+   admission application.** Admit already writes the application's email
+   onto the parent it creates or links (`linkOrCreatePrimaryGuardianInTx`),
+   so those families are included once the child is admitted and enrolled.
+   Applicants who have not been admitted are not in any audience.
+4. **Email limits are part of the pricing**, so a Free school never gets
+   3,000 a day. The single 1,000 cap is replaced by a daily limit per plan,
+   kept beside the student caps in `@school-kit/types`
+   (`PLAN_ANNOUNCEMENT_EMAILS_PER_DAY`):
+
+   | Plan | Students | Announcement emails a day |
+   |---|---|---|
+   | Free | up to 100 | 200 |
+   | Starter | up to 200 | 400 |
+   | Growth | up to 600 | 1,200 |
+   | Professional | up to 1,200 | 2,400 |
+   | Enterprise | by agreement | 5,000 |
+
+   That is about one announcement a day to two parents per student at the
+   top of each plan's range.
+   - The limit always applies, whatever `PLAN_ENFORCEMENT` says, because
+     every email costs money.
+   - Settings → Plan lists it.
+   - The compose form warns before sending when the families with an address
+     exceed what is left of today's allowance: "N will not be emailed today
+     (your plan's daily limit)".
+   - No per-school override yet. Enterprise schools that need more are handled
+     by the operator later.
+
+### 17.12 As built — CP8.3, email broadcasts for announcements (2026-10-18)
+
+Migration `20261110120000_announcement_emails`. No new SECURITY DEFINER
+function; the count stays 23.
+
+- **Compose (web `/announcements`, staff app):** "Also email families".
+  - Offered for Everyone, Parents and One class; never for Staff. The API and
+    a CHECK constraint refuse it too.
+  - While ticked, it shows how many parents will be emailed, how many have no
+    address, and what is left of today's plan limit.
+  - The confirmation adds "It will also be emailed to N parents. An email
+    cannot be withdrawn." and how many will not be emailed today.
+- **Who:** every guardian linked to a child enrolled this term (or in the
+  class), as the push reaches.
+  - Parents whose portal access is switched off are left out.
+  - Every address on file is used, including one written by Admit from an
+    admission application.
+  - Each lower-cased address gets one email.
+- **The send:**
+  - It is a job on the push queue (`announcement-email`), not a fifth worker.
+  - Step 1 writes one row per address: QUEUED, or SKIPPED with a reason
+    (UNSUBSCRIBED, SUPPRESSED, CAPPED, EMAIL_OFF). It takes the day's allowance
+    under a row lock on `announcement_email_counters`.
+  - Step 2 claims up to 100 rows (QUEUED → SENDING) and sends them with one
+    Resend batch call, then marks each SENT with its Resend id, or FAILED. A
+    retried job emails nobody twice, and a failed batch is not retried.
+  - Each email carries the title and the full text (escaped, paragraphs kept),
+    a portal link, an unsubscribe link, `List-Unsubscribe` and
+    `List-Unsubscribe-Post` headers, and the tags `school` and `announcement`.
+- **Daily limit by plan** (`PLAN_ANNOUNCEMENT_EMAILS_PER_DAY`): Free 200,
+  Starter 400, Growth 1,200, Professional 2,400, Enterprise 5,000.
+  - It applies whatever `PLAN_ENFORCEMENT` says.
+  - Settings → Plan states it. Emails past it are recorded as not sent and are
+    not sent later.
+- **Unsubscribe:**
+  - The link is `portal/email/unsubscribe?s=<slug>&e=<email>&t=<HMAC>`. The
+    HMAC is of (school, address) under `RESULT_PIN_HMAC_KEY`, labelled
+    `email-unsubscribe:v1:`, and no table holds it.
+  - Opening the page does not unsubscribe, because mail scanners open links;
+    the parent presses the button, and "Undo" turns emails back on.
+  - The one-click header POSTs to `portal/api/email/unsubscribe`, which
+    forwards to the API's `email/unsubscribe/one-click`.
+  - It stops announcement emails only.
+  - A wrong school, address or token gets the same "This link is not valid."
+- **Portal Settings** (`/settings`, linked from home): "Email me the school's
+  announcements".
+  - It saves with `POST /portal/email-preferences`, a POST because the
+    portal's proxy forwards only GET and POST.
+  - An address that bounced or was marked as spam shows as blocked until the
+    school fixes it.
+- **Resend webhook** (`POST /webhooks/resend`):
+  - The signature is checked against `RESEND_WEBHOOK_SECRET`; the route answers
+    503 while it is unset.
+  - The school comes from the `school` tag, then the email's row is found by
+    its Resend id under that school's GUC.
+  - Delivered moves SENT to DELIVERED; bounced and complained are recorded.
+  - A permanent bounce or a complaint adds an ALL suppression for that school.
+  - Payloads are never logged.
+- **Outbox (web and staff app):** counts only, in shared sentences
+  (`announcementEmailLines`): sent, delivered, bounced, failed, unsubscribed,
+  skipped after a bounce, over the daily limit, email off, no address.
+  - On the web, "Show the addresses to fix" lists each bounced parent, their
+    children and the address.
+  - A withdrawn announcement says that withdrawing does not unsend an email.
+- **Records:** audit rows (`email.announcements-off`, `-on`) and
+  `announcement.create` (now with `emailFamilies`) carry no address and no
+  text.
+- **Tests:**
+  - `announcement-email.service.spec.ts` (14 tests, real database):
+    - the preview;
+    - the class audience: once each, lower-cased, never switched off,
+      unsubscribed or bounced;
+    - the email's escaping, headers and tags;
+    - not unless asked, and never for staff;
+    - a retried job sends nothing twice;
+    - email off;
+    - the daily limit;
+    - a failed batch;
+    - the unsubscribe link working for its own school and address only;
+    - unsubscribe, undo and the portal switch;
+    - a bad webhook signature;
+    - delivered, then a bounce that suppresses and is skipped next time;
+    - another school's webhook;
+    - no address or text in audit rows.
+  - e2e `announcement-emails.spec.ts`: compose with the email → the outbox's
+    email block → Settings → Plan → the unsubscribe page and undo → a tampered
+    link → the portal switch.
+  - Every new page fits at 320 and 390 px.
+- **Before production:** set `RESEND_WEBHOOK_SECRET` and point the Resend
+  webhook at `https://api.schoolkit.ng/api/v1/webhooks/resend`.

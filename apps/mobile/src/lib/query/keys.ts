@@ -278,6 +278,9 @@ export const queryKeys = {
     ["staff", schoolId, userId, "announcements"] as const,
   staffAnnouncementFeed: (schoolId: string, userId: string) =>
     ["staff", schoolId, userId, "announcement-feed"] as const,
+  // Phase 9 / CP8.3: how many parents "Also email families" would reach.
+  staffAnnouncementEmailPreview: (schoolId: string, userId: string, audience: string, classArmId: string | null) =>
+    ["staff", schoolId, userId, "announcement-email-preview", audience, classArmId ?? ""] as const,
 
   // Homework a teacher set. Staff-prefixed like everything else on that side:
   // the list names classes and the work set for them.

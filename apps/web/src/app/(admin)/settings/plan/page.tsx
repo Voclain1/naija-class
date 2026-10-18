@@ -122,6 +122,18 @@ export default function PlanPage() {
           </p>
         </section>
       ) : null}
+
+      {plan ? (
+        <section className="flex flex-col gap-2" aria-labelledby="plan-emails">
+          <h2 id="plan-emails" className="font-medium">
+            Announcement emails
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            Your {plan.label} plan can email up to {plan.announcementEmailsPerDay.toLocaleString("en-NG")} announcement
+            emails a day. Past that, the rest are not sent, and the announcement says how many.
+          </p>
+        </section>
+      ) : null}
     </div>
   );
 }

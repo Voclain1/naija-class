@@ -919,6 +919,7 @@ PORTAL_BASE_URL
 RESULT_PIN_HMAC_KEY
 PORTAL_PROXY_SECRET
 SESSION_COOKIE_DOMAIN
+RESEND_WEBHOOK_SECRET
 ```
 
 Never commit. Never log. Test keys and live keys are different env files.
@@ -974,6 +975,15 @@ A Vercel production build **refuses to start** unless both are true
 Otherwise every member of staff would be signed out on the next click. The
 switch-over steps are in `docs/runbooks/web-session-cookie.md`. Never put the
 token back in a response body or in page state.
+
+`RESEND_WEBHOOK_SECRET` — the signing secret (`whsec_…`) of the Resend
+webhook at `POST /api/v1/webhooks/resend` (2026-10-18,
+`docs/modules/phase-9.md` §17.12). Set it on `school-kit-api` only. Point
+the Resend dashboard's webhook at that URL for `email.delivered`,
+`email.bounced` and `email.complained`. Unset, the route answers 503 and
+announcement emails show as "sent" but never "delivered". Without it, bounced
+and complained addresses are not suppressed automatically. Announcement emails
+still go out. Rotating it in Resend means setting it again here.
 
 `CORS_ORIGIN_CBT` / `NEXT_PUBLIC_CBT_URL` — online exams (`docs/modules/cbt.md`).
 The first is the exam app's origin (`https://cbt.schoolkit.ng`), allowed by

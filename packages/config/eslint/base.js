@@ -273,6 +273,12 @@ export const baseConfig = [
       // conversations (Phase 9 / CP8.1). Same category: basePrisma fetches
       // ONLY the school id list; every update goes through withTenant.
       "**/modules/messages/messages-close.service.ts",
+      // email-preferences.service.ts — the PUBLIC unsubscribe link and the
+      // signed Resend webhook (Phase 9 / CP8.3). Same category as the Result
+      // Checker: its only basePrisma reads are `schools` (non-RLS), by slug
+      // or by the id tagged on the email, to learn which tenant the request
+      // is for; every read and write after that goes through withTenant.
+      "**/modules/announcements/email-preferences.service.ts",
       "**/common/auth/platform-admin.guard.ts",
       "**/modules/platform-admin/platform-admin.service.ts",
       // school-deletion.ts (platform-admin tools slice 2, 2026-10-07) only

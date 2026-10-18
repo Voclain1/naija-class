@@ -1,7 +1,11 @@
-import { Body, Controller, Get, HttpCode, Ip, Param, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, HttpCode, Ip, Param, ParseUUIDPipe, Post, Query, UseGuards } from "@nestjs/common";
 
 import {
+  announcementEmailPreviewSchema,
   createAnnouncementSchema,
+  type AnnouncementBouncedDto,
+  type AnnouncementEmailPreviewDto,
+  type AnnouncementEmailPreviewInput,
   type AnnouncementDto,
   type AnnouncementFeedResponse,
   type AnnouncementListResponse,
@@ -20,6 +24,7 @@ import { StudentAuthGuard } from "../../common/auth/student-auth.guard.js";
 import { CurrentStudent } from "../../common/auth/current-student.decorator.js";
 import type { StudentAuthContext } from "../../common/auth/student-auth-context.js";
 import { ZodValidationPipe } from "../../common/zod-validation.pipe.js";
+import { AnnouncementEmailService } from "./announcement-email.service.js";
 import { AnnouncementsService } from "./announcements.service.js";
 
 // Announcements (docs/modules/announcements.md), one controller per
@@ -33,7 +38,28 @@ import { AnnouncementsService } from "./announcements.service.js";
 @Controller("announcements")
 @UseGuards(AuthGuard, PermissionsGuard)
 export class AnnouncementsController {
-  constructor(private readonly service: AnnouncementsService) {}
+  constructor(
+    private readonly service: AnnouncementsService,
+    private readonly emails: AnnouncementEmailService,
+  ) {}
+
+  // Phase 9 / CP8.3: how many addresses "Also email families" would reach,
+  // and what is left of today's plan allowance.
+  @Get("email-preview")
+  @Permissions("announcement.create")
+  async emailPreview(
+    @CurrentUser() authCtx: AuthContext,
+    @Query(new ZodValidationPipe(announcementEmailPreviewSchema)) query: AnnouncementEmailPreviewInput,
+  ): Promise<AnnouncementEmailPreviewDto> {
+    return this.emails.preview(authCtx, query);
+  }
+
+  // CP8.3: the addresses that bounced or complained, for the school to fix.
+  @Get(":id/bounced")
+  @Permissions("announcement.create")
+  async bounced(@CurrentUser() authCtx: AuthContext, @Param("id", new ParseUUIDPipe()) id: string): Promise<AnnouncementBouncedDto[]> {
+    return this.emails.bounced(authCtx, id);
+  }
 
   @Post()
   @HttpCode(201)

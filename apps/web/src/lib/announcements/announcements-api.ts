@@ -2,6 +2,8 @@
 // Shapes come from @school-kit/types so the client cannot drift from the API.
 
 import type {
+  AnnouncementBouncedDto,
+  AnnouncementEmailPreviewDto,
   AnnouncementDto,
   AnnouncementFeedResponse,
   AnnouncementListResponse,
@@ -25,4 +27,14 @@ export function withdrawAnnouncement(id: string): Promise<AnnouncementDto> {
 /** What the signed-in staff member should read themselves. */
 export function getStaffAnnouncementFeed(): Promise<AnnouncementFeedResponse> {
   return apiFetch<AnnouncementFeedResponse>("/announcements/feed");
+}
+
+// Phase 9 / CP8.3 — "Also email families".
+export function getAnnouncementEmailPreview(audience: "EVERYONE" | "PARENTS" | "CLASS", classArmId?: string): Promise<AnnouncementEmailPreviewDto> {
+  const qs = new URLSearchParams({ audience, ...(classArmId ? { classArmId } : {}) });
+  return apiFetch<AnnouncementEmailPreviewDto>(`/announcements/email-preview?${qs}`);
+}
+
+export function getAnnouncementBounced(id: string): Promise<AnnouncementBouncedDto[]> {
+  return apiFetch<AnnouncementBouncedDto[]>(`/announcements/${encodeURIComponent(id)}/bounced`);
 }

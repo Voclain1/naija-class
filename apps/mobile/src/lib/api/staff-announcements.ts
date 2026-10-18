@@ -1,4 +1,5 @@
 import type {
+  AnnouncementEmailPreviewDto,
   AnnouncementDto,
   AnnouncementFeedResponse,
   AnnouncementListResponse,
@@ -33,4 +34,11 @@ export function withdrawStaffAnnouncement(id: string): Promise<AnnouncementDto> 
 
 export function markStaffAnnouncementRead(id: string): Promise<void> {
   return apiFetch<void>(`/announcements/${encodeURIComponent(id)}/read`, { method: "POST" });
+}
+
+// Phase 9 / CP8.3 — "Also email families": the addresses it would reach, and
+// what is left of today's plan allowance.
+export function staffAnnouncementEmailPreview(audience: "EVERYONE" | "PARENTS" | "CLASS", classArmId: string | null): Promise<AnnouncementEmailPreviewDto> {
+  const qs = new URLSearchParams({ audience, ...(classArmId ? { classArmId } : {}) }).toString();
+  return apiFetch<AnnouncementEmailPreviewDto>(`/announcements/email-preview?${qs}`);
 }
