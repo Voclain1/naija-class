@@ -81,6 +81,11 @@ const ALERT_COPY: Record<DashboardAlertType, (count: number) => { label: string;
     label: `${n} new admission application${n === 1 ? "" : "s"}`,
     icon: "person-add-outline",
   }),
+  // Phase 9 / CP8.1 — parents' messages addressed to this person, unread.
+  unread_messages: (n) => ({
+    label: `${n} unread message${n === 1 ? "" : "s"} from parents`,
+    icon: "chatbubbles-outline",
+  }),
 };
 
 export default function StaffDashboardScreen() {

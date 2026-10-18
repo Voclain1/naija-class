@@ -49,6 +49,7 @@ import { TransportModule } from "./modules/transport/transport.module";
 import { LibraryModule } from "./modules/library/library.module";
 import { HostelModule } from "./modules/hostels/hostel.module";
 import { AdmissionsModule } from "./modules/admissions/admissions.module";
+import { MessagesModule } from "./modules/messages/messages.module";
 import { AssignmentsModule } from "./modules/assignments/assignments.module";
 import { HomeworkModule } from "./modules/homework/homework.module";
 import { SchoolContactModule } from "./modules/school-contact/school-contact.module";
@@ -148,6 +149,7 @@ const isProd = process.env.NODE_ENV === "production";
     LibraryModule,
     HostelModule,
     AdmissionsModule,
+    MessagesModule,
     AssignmentsModule,
     SchoolContactModule,
     // Phase 5 / Slice 2 — lesson plan generator (first AI feature).
