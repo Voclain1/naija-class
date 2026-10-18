@@ -1,9 +1,21 @@
-import { Body, Controller, Get, Ip, Param, ParseUUIDPipe, Put, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, HttpCode, Ip, Param, ParseUUIDPipe, Post, Put, Query, UseGuards } from "@nestjs/common";
 import {
+  admitApplicationSchema,
+  bookAdmissionAssessmentSchema,
   listAdmissionsSchema,
+  offerAdmissionSchema,
+  recordAdmissionAcceptanceSchema,
+  rejectAdmissionSchema,
   setAdmissionOfficersSchema,
   updateAdmissionSettingsSchema,
   type AdmissionDetailDto,
+  type AdmitApplicationInput,
+  type AdmitApplicationResultDto,
+  type BookAdmissionAssessmentInput,
+  type OfferAdmissionInput,
+  type RecordAdmissionAcceptanceInput,
+  type RejectAdmissionInput,
+  type StudentAdmissionDocumentsDto,
   type AdmissionListDto,
   type AdmissionOfficerDto,
   type AdmissionSettingsDto,
@@ -18,6 +30,7 @@ import { CurrentUser } from "../../common/auth/current-user.decorator.js";
 import { Permissions } from "../../common/auth/permissions.decorator.js";
 import { PermissionsGuard } from "../../common/auth/permissions.guard.js";
 import { ZodValidationPipe } from "../../common/zod-validation.pipe.js";
+import { AdmissionDecisionsService } from "./admission-decisions.service.js";
 import { AdmissionsSettingsService } from "./admissions-settings.service.js";
 import { AdmissionsService } from "./admissions.service.js";
 
@@ -25,12 +38,16 @@ import { AdmissionsService } from "./admissions.service.js";
 // §16.8). admission.read / admission.manage: owner, admin and the optional
 // Admissions officer. Settings and officers need admission.settings, which
 // only owner and admin hold; the service re-checks the role on every call.
+// CP7.2: the moves to a decision need admission.manage; Admit, which creates
+// the student, and a student's admission documents need admission.admit
+// (owner, admin).
 @Controller("admissions")
 @UseGuards(AuthGuard, PermissionsGuard)
 export class AdmissionsController {
   constructor(
     private readonly service: AdmissionsService,
     private readonly settings: AdmissionsSettingsService,
+    private readonly decisions: AdmissionDecisionsService,
   ) {}
 
   @Get("settings")
@@ -86,5 +103,98 @@ export class AdmissionsController {
     @Ip() ip: string,
   ): Promise<{ url: string }> {
     return this.service.documentUrl(authCtx, id, documentId, { ipAddress: ip });
+  }
+
+  @Post("applications/:id/review")
+  @HttpCode(204)
+  @Permissions("admission.manage")
+  async review(@CurrentUser() authCtx: AuthContext, @Param("id", new ParseUUIDPipe()) id: string, @Ip() ip: string): Promise<void> {
+    await this.decisions.review(authCtx, id, { ipAddress: ip });
+  }
+
+  @Put("applications/:id/assessment")
+  @HttpCode(204)
+  @Permissions("admission.manage")
+  async assessment(
+    @CurrentUser() authCtx: AuthContext,
+    @Param("id", new ParseUUIDPipe()) id: string,
+    @Body(new ZodValidationPipe(bookAdmissionAssessmentSchema)) dto: BookAdmissionAssessmentInput,
+    @Ip() ip: string,
+  ): Promise<void> {
+    await this.decisions.bookAssessment(authCtx, id, dto, { ipAddress: ip });
+  }
+
+  @Post("applications/:id/offer")
+  @HttpCode(204)
+  @Permissions("admission.manage")
+  async offer(
+    @CurrentUser() authCtx: AuthContext,
+    @Param("id", new ParseUUIDPipe()) id: string,
+    @Body(new ZodValidationPipe(offerAdmissionSchema)) dto: OfferAdmissionInput,
+    @Ip() ip: string,
+  ): Promise<void> {
+    await this.decisions.offer(authCtx, id, dto, { ipAddress: ip });
+  }
+
+  @Post("applications/:id/reject")
+  @HttpCode(204)
+  @Permissions("admission.manage")
+  async reject(
+    @CurrentUser() authCtx: AuthContext,
+    @Param("id", new ParseUUIDPipe()) id: string,
+    @Body(new ZodValidationPipe(rejectAdmissionSchema)) dto: RejectAdmissionInput,
+    @Ip() ip: string,
+  ): Promise<void> {
+    await this.decisions.reject(authCtx, id, dto, { ipAddress: ip });
+  }
+
+  @Post("applications/:id/withdraw")
+  @HttpCode(204)
+  @Permissions("admission.manage")
+  async withdraw(@CurrentUser() authCtx: AuthContext, @Param("id", new ParseUUIDPipe()) id: string, @Ip() ip: string): Promise<void> {
+    await this.decisions.withdraw(authCtx, id, { ipAddress: ip });
+  }
+
+  @Post("applications/:id/accept")
+  @HttpCode(204)
+  @Permissions("admission.manage")
+  async accept(
+    @CurrentUser() authCtx: AuthContext,
+    @Param("id", new ParseUUIDPipe()) id: string,
+    @Body(new ZodValidationPipe(recordAdmissionAcceptanceSchema)) dto: RecordAdmissionAcceptanceInput,
+    @Ip() ip: string,
+  ): Promise<void> {
+    await this.decisions.recordAcceptance(authCtx, id, dto, { ipAddress: ip });
+  }
+
+  @Post("applications/:id/admit")
+  @Permissions("admission.admit")
+  admit(
+    @CurrentUser() authCtx: AuthContext,
+    @Param("id", new ParseUUIDPipe()) id: string,
+    @Body(new ZodValidationPipe(admitApplicationSchema)) dto: AdmitApplicationInput,
+    @Ip() ip: string,
+  ): Promise<AdmitApplicationResultDto> {
+    return this.decisions.admit(authCtx, id, dto, { ipAddress: ip });
+  }
+
+  @Get("students/:studentId/documents")
+  @Permissions("admission.admit")
+  studentDocuments(
+    @CurrentUser() authCtx: AuthContext,
+    @Param("studentId", new ParseUUIDPipe()) studentId: string,
+  ): Promise<StudentAdmissionDocumentsDto | null> {
+    return this.service.studentDocuments(authCtx, studentId);
+  }
+
+  @Get("students/:studentId/documents/:documentId/url")
+  @Permissions("admission.admit")
+  studentDocumentUrl(
+    @CurrentUser() authCtx: AuthContext,
+    @Param("studentId", new ParseUUIDPipe()) studentId: string,
+    @Param("documentId", new ParseUUIDPipe()) documentId: string,
+    @Ip() ip: string,
+  ): Promise<{ url: string }> {
+    return this.service.studentDocumentUrl(authCtx, studentId, documentId, { ipAddress: ip });
   }
 }

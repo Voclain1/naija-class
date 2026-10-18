@@ -1,15 +1,21 @@
 import { Injectable } from "@nestjs/common";
 
-import { withTenant } from "@school-kit/db";
+import { withTenant, type PrismaClient } from "@school-kit/db";
 import {
+  ADMISSION_ASSESSMENT_LABEL,
   admissionStatusValues,
+  formatSickbayTime,
+  sickbayDayOf,
   NotFoundError,
+  type AdmissionAssessmentKind,
+  type AdmissionDecisionDto,
   type AdmissionDetailDto,
   type AdmissionDocumentSlot,
   type AdmissionListDto,
   type AdmissionListItemDto,
   type AdmissionStatus,
   type ListAdmissionsInput,
+  type StudentAdmissionDocumentsDto,
 } from "@school-kit/types";
 
 import type { AuthContext } from "../../common/auth/auth-context.js";
@@ -17,6 +23,9 @@ import { assertUserActiveAndHasOneOf } from "../../common/auth/role-check.js";
 import { PRIVATE_FILE_URL_TTL_SECONDS } from "../../common/storage/private-file.js";
 import { StorageService } from "../../common/storage/storage.service.js";
 import type { PrivateFileExt } from "../../common/storage/storage.types.js";
+import { loadAdmissionSettings } from "./admissions.shared.js";
+
+type Db = PrismaClient;
 
 // Phase 9 / CP7.1 — the school's Admissions list (docs/modules/phase-9.md
 // §16.8). Applicants are NOT students: they live here, by status and class,
@@ -25,6 +34,8 @@ import type { PrivateFileExt } from "../../common/storage/storage.types.js";
 // audited.
 
 const ADMISSION_ROLES = ["owner", "admin", "admission_officer"] as const;
+/** CP7.2: the student page's admission documents, with Admit (admission.admit). */
+const ADMIT_ROLES = ["owner", "admin"] as const;
 
 interface RequestContext {
   ipAddress: string | null;
@@ -79,10 +90,21 @@ export class AdmissionsService {
           answers: true,
           consentAt: true,
           statusChangedAt: true,
+          assessmentKind: true,
+          assessmentAt: true,
+          assessmentNote: true,
+          offerLetter: true,
+          offeredAt: true,
+          acceptedAt: true,
+          acceptedByUserId: true,
+          decisionNote: true,
+          admittedAt: true,
+          student: { select: { id: true, firstName: true, lastName: true, admissionNumber: true } },
           documents: { orderBy: { slot: "asc" }, select: { id: true, slot: true, label: true, ext: true, sizeBytes: true } },
         },
       });
       if (!row) throw new NotFoundError("Application not found.");
+      const decision = await this.decision(db, authCtx.schoolId, row);
       const answers = (row.answers ?? {}) as {
         fields?: { label: string; value: string }[];
         questions?: { label: string; answer: string }[];
@@ -102,13 +124,126 @@ export class AdmissionsService {
         documentFiles: row.documents.map((d) => ({ ...d, slot: d.slot as AdmissionDocumentSlot })),
         consentAt: row.consentAt,
         statusChangedAt: row.statusChangedAt,
+        decision,
       };
     });
+  }
+
+  /**
+   * What the application page needs for its actions (CP7.2): the assessment,
+   * the offer, who recorded the acceptance, the student once admitted, and
+   * the two checks Admit shows first: a possible duplicate (same names and
+   * date of birth, never blocking) and the guardian who will be linked.
+   */
+  private async decision(
+    db: Db,
+    schoolId: string,
+    row: {
+      status: AdmissionStatus;
+      childFirstName: string;
+      childLastName: string;
+      dateOfBirth: Date;
+      guardianEmail: string;
+      assessmentKind: string | null;
+      assessmentAt: Date | null;
+      assessmentNote: string | null;
+      offerLetter: string | null;
+      offeredAt: Date | null;
+      acceptedAt: Date | null;
+      acceptedByUserId: string | null;
+      decisionNote: string | null;
+      admittedAt: Date | null;
+      student: { id: string; firstName: string; lastName: string; admissionNumber: string } | null;
+    },
+  ): Promise<AdmissionDecisionDto> {
+    const deciding = row.status !== "ADMITTED" && row.status !== "REJECTED" && row.status !== "WITHDRAWN";
+    const [duplicates, guardian, acceptedBy, settings] = await Promise.all([
+      deciding
+        ? db.student.findMany({
+            where: {
+              schoolId,
+              dateOfBirth: row.dateOfBirth,
+              firstName: { equals: row.childFirstName, mode: "insensitive" },
+              lastName: { equals: row.childLastName, mode: "insensitive" },
+            },
+            select: { id: true, firstName: true, lastName: true, admissionNumber: true, status: true },
+            take: 5,
+          })
+        : Promise.resolve([]),
+      deciding
+        ? db.guardian.findFirst({
+            where: { schoolId, email: { equals: row.guardianEmail, mode: "insensitive" } },
+            select: { id: true, firstName: true, lastName: true, phone: true },
+          })
+        : Promise.resolve(null),
+      row.acceptedByUserId
+        ? db.user.findFirst({ where: { id: row.acceptedByUserId }, select: { firstName: true, lastName: true } })
+        : Promise.resolve(null),
+      row.status === "SUBMITTED" || row.status === "UNDER_REVIEW" ? loadAdmissionSettings(db, schoolId) : Promise.resolve(null),
+    ]);
+    return {
+      assessment:
+        row.assessmentKind && row.assessmentAt
+          ? {
+              kind: row.assessmentKind as AdmissionAssessmentKind,
+              label: ADMISSION_ASSESSMENT_LABEL[row.assessmentKind as AdmissionAssessmentKind],
+              day: sickbayDayOf(row.assessmentAt),
+              time: formatSickbayTime(row.assessmentAt),
+              note: row.assessmentNote,
+            }
+          : null,
+      offerLetter: row.offerLetter,
+      offeredAt: row.offeredAt,
+      acceptedAt: row.acceptedAt,
+      acceptedBy: row.acceptedAt ? (acceptedBy ? `${acceptedBy.firstName} ${acceptedBy.lastName}`.trim() : row.acceptedByUserId ? "A member of staff" : "The family, online") : null,
+      decisionNote: row.decisionNote,
+      admittedAt: row.admittedAt,
+      student: row.student ? { id: row.student.id, name: `${row.student.firstName} ${row.student.lastName}`.trim(), admissionNumber: row.student.admissionNumber } : null,
+      possibleDuplicates: duplicates.map((d) => ({ id: d.id, name: `${d.firstName} ${d.lastName}`.trim(), admissionNumber: d.admissionNumber, status: d.status })),
+      existingGuardian: guardian ? { id: guardian.id, name: `${guardian.firstName} ${guardian.lastName}`.trim(), phone: guardian.phone } : null,
+      defaultOfferLetter: settings?.offerLetter ?? null,
+    };
+  }
+
+  /** A student's admission documents, from the application they were admitted from (owner, admin). */
+  async studentDocuments(authCtx: AuthContext, studentId: string): Promise<StudentAdmissionDocumentsDto | null> {
+    await assertUserActiveAndHasOneOf(authCtx, ADMIT_ROLES);
+    return withTenant(authCtx.schoolId, async (db) => {
+      const app = await db.admissionApplication.findFirst({
+        where: { schoolId: authCtx.schoolId, studentId, status: "ADMITTED" },
+        orderBy: { admittedAt: "desc" },
+        select: { id: true, reference: true, admittedAt: true, documents: { orderBy: { slot: "asc" }, select: { id: true, slot: true, label: true, ext: true, sizeBytes: true } } },
+      });
+      if (!app) return null;
+      return {
+        applicationId: app.id,
+        reference: app.reference,
+        admittedAt: app.admittedAt,
+        documents: app.documents.map((d) => ({ ...d, slot: d.slot as AdmissionDocumentSlot })),
+      };
+    });
+  }
+
+  /** A 5-minute link to one of a student's admission documents (owner, admin). Audited. */
+  async studentDocumentUrl(authCtx: AuthContext, studentId: string, documentId: string, req: RequestContext): Promise<{ url: string }> {
+    await assertUserActiveAndHasOneOf(authCtx, ADMIT_ROLES);
+    const app = await withTenant(authCtx.schoolId, (db) =>
+      db.admissionApplication.findFirst({
+        where: { schoolId: authCtx.schoolId, studentId, status: "ADMITTED", documents: { some: { id: documentId } } },
+        select: { id: true },
+      }),
+    );
+    if (!app) throw new NotFoundError("Document not found.");
+    return this.signDocument(authCtx, app.id, documentId, req);
   }
 
   /** A 5-minute link to one document. Audited. */
   async documentUrl(authCtx: AuthContext, applicationId: string, documentId: string, req: RequestContext): Promise<{ url: string }> {
     await assertUserActiveAndHasOneOf(authCtx, ADMISSION_ROLES);
+    return this.signDocument(authCtx, applicationId, documentId, req);
+  }
+
+  private async signDocument(authCtx: AuthContext, applicationId: string, documentId: string, req: RequestContext): Promise<{ url: string }> {
     const doc = await withTenant(authCtx.schoolId, async (db) => {
       const d = await db.admissionDocument.findFirst({ where: { id: documentId, applicationId, schoolId: authCtx.schoolId }, select: { id: true, ext: true } });
       if (!d) throw new NotFoundError("Document not found.");

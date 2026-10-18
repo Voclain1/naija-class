@@ -24,6 +24,7 @@ import {
   HOSTEL_HOUSE_PERMISSIONS,
   ADMISSION_PERMISSIONS,
   ADMISSION_SETTINGS_PERMISSIONS,
+  ADMISSION_ADMIT_PERMISSIONS,
   BEHAVIOUR_PERMISSIONS_LIST,
   HOMEWORK_MANAGE_PERMISSIONS,
   HOMEWORK_READ_PERMISSIONS,
@@ -149,6 +150,8 @@ const ADMIN_PERMISSIONS: readonly string[] = [
   ...HOSTEL_HOUSE_PERMISSIONS,
   ...ADMISSION_PERMISSIONS,
   ...ADMISSION_SETTINGS_PERMISSIONS,
+  // CP7.2: kept IN SYNC with prisma/migrations/20261107120000_admission_decisions.
+  ...ADMISSION_ADMIT_PERMISSIONS,
   // Phase 8 / CP2 — Recording Completeness: the school-wide report and the
   // per-teacher recording-activity view (audited per read). Owner/admin only;
   // never teacher or bursar (§16 D39, pinned in permissions-coverage.spec.ts).

@@ -283,6 +283,8 @@ export interface AdmissionTrackDto {
   status: AdmissionStatus;
   statusLabel: string;
   submittedAt: string | Date;
+  /** CP7.2. */
+  decision: AdmissionTrackDecisionDto;
 }
 
 // ─── The school's list ─────────────────────────────────────────────────────
@@ -330,4 +332,108 @@ export interface AdmissionDetailDto extends AdmissionListItemDto {
   documentFiles: AdmissionDocumentDto[];
   consentAt: string | Date;
   statusChangedAt: string | Date;
+  /** CP7.2. */
+  decision: AdmissionDecisionDto;
+}
+
+// ─── CP7.2: review, assessment, offer and admitting ────────────────────────
+
+export const admissionAssessmentKindValues = ["ENTRANCE_EXAM", "INTERVIEW", "ONLINE", "OTHER"] as const;
+export type AdmissionAssessmentKind = (typeof admissionAssessmentKindValues)[number];
+export const ADMISSION_ASSESSMENT_LABEL: Record<AdmissionAssessmentKind, string> = {
+  ENTRANCE_EXAM: "Entrance exam",
+  INTERVIEW: "Interview",
+  ONLINE: "Online assessment",
+  OTHER: "Assessment",
+};
+
+/** Applications still being decided; the only ones a family or the school can withdraw. */
+export const ADMISSION_OPEN_STATUSES = ["SUBMITTED", "UNDER_REVIEW", "OFFERED", "OFFER_ACCEPTED"] as const;
+
+const lagosDay = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Choose the date.");
+const lagosTime = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Enter the time as HH:MM.");
+
+/** Book (or change) the assessment. Moves a new application to Under review. */
+export const bookAdmissionAssessmentSchema = z.object({
+  kind: z.enum(admissionAssessmentKindValues),
+  day: lagosDay,
+  time: lagosTime,
+  note: optionalText(1000),
+});
+export type BookAdmissionAssessmentInput = z.infer<typeof bookAdmissionAssessmentSchema>;
+
+/** Offer a place, with the letter the family will see in full. */
+export const offerAdmissionSchema = z.object({
+  letter: z.string().trim().min(1, "Write the offer letter.").max(5000),
+});
+export type OfferAdmissionInput = z.infer<typeof offerAdmissionSchema>;
+
+/** Not successful. The note is sent to the family only when typed. */
+export const rejectAdmissionSchema = z.object({
+  note: optionalText(1000),
+});
+export type RejectAdmissionInput = z.infer<typeof rejectAdmissionSchema>;
+
+/** The school records that the family accepted (by phone or in person). */
+export const recordAdmissionAcceptanceSchema = z.object({
+  familySawLetter: z.literal(true, { errorMap: () => ({ message: "Confirm the family has seen the full offer letter." }) }),
+});
+export type RecordAdmissionAcceptanceInput = z.infer<typeof recordAdmissionAcceptanceSchema>;
+
+/** Admit: create the student and place them in a class. */
+export const admitApplicationSchema = z.object({
+  termId: z.string().uuid("Choose the term."),
+  classArmId: z.string().uuid("Choose the class."),
+  admissionNumber: z
+    .string()
+    .trim()
+    .max(40)
+    .optional()
+    .transform((v) => (v ? v : undefined)),
+});
+export type AdmitApplicationInput = z.infer<typeof admitApplicationSchema>;
+
+export interface AdmitApplicationResultDto {
+  studentId: string;
+  admissionNumber: string;
+  guardianId: string;
+  /** True when the parent was already a guardian at the school (a sibling's). */
+  linkedExistingGuardian: boolean;
+}
+
+/** What the application page needs for its actions. */
+export interface AdmissionDecisionDto {
+  assessment: { kind: AdmissionAssessmentKind; label: string; day: string; time: string; note: string | null } | null;
+  offerLetter: string | null;
+  offeredAt: string | Date | null;
+  acceptedAt: string | Date | null;
+  /** "the family, online" or the staff member's name. */
+  acceptedBy: string | null;
+  decisionNote: string | null;
+  admittedAt: string | Date | null;
+  student: { id: string; name: string; admissionNumber: string } | null;
+  /** Students at the school with the same names and date of birth. Never blocks. */
+  possibleDuplicates: { id: string; name: string; admissionNumber: string; status: string }[];
+  /** A guardian at the school with the parent's email; Admit links them. */
+  existingGuardian: { id: string; name: string; phone: string } | null;
+  /** The school's default offer letter, for a new offer. */
+  defaultOfferLetter: string | null;
+}
+
+/** The tracking page, CP7.2: what the family sees and may do. */
+export interface AdmissionTrackDecisionDto {
+  assessment: { label: string; day: string; time: string; note: string | null } | null;
+  offerLetter: string | null;
+  acceptedAt: string | Date | null;
+  decisionNote: string | null;
+  canAccept: boolean;
+  canWithdraw: boolean;
+}
+
+/** A student's admission documents, on the student page (owner, admin). */
+export interface StudentAdmissionDocumentsDto {
+  applicationId: string;
+  reference: string;
+  admittedAt: string | Date | null;
+  documents: AdmissionDocumentDto[];
 }

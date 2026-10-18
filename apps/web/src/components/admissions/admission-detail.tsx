@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 
 import { ADMISSION_STATUS_LABEL, formatSickbayDay, formatSickbayTime, type AdmissionDetailDto } from "@school-kit/types";
 
+import { AdmissionActions } from "@/components/admissions/admission-actions";
 import { InlineAlert } from "@/components/shared/inline-alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -13,7 +14,8 @@ import { ApiError } from "@/lib/api-client";
 
 // Phase 9 / CP7.1 — one application, as the family sent it: the child, the
 // parent, the school's own fields and questions, and the documents, each
-// opened through a 5-minute link. Review, offer and admitting come in CP7.2.
+// opened through a 5-minute link. CP7.2: the Decision panel (review, the
+// assessment, the offer, acceptance and Admit).
 
 const GENDER = { MALE: "Male", FEMALE: "Female", OTHER: "Other" } as const;
 const RELATIONSHIP: Record<string, string> = {
@@ -36,6 +38,10 @@ export function AdmissionDetail({ id, backHref }: { id: string; backHref: string
       .then(setA)
       .catch((e: unknown) => setError(e instanceof ApiError ? e.message : "Could not load the application."));
   }, [id]);
+
+  async function reload() {
+    setA(await getAdmission(id));
+  }
 
   async function open(documentId: string) {
     setError(null);
@@ -62,9 +68,13 @@ export function AdmissionDetail({ id, backHref }: { id: string; backHref: string
             {a.reference} · applied {formatSickbayDay(a.submittedAt)} at {formatSickbayTime(a.submittedAt)} · for {a.classLevel}
           </p>
         </div>
-        <Badge variant={a.status === "SUBMITTED" ? "warning" : "muted"}>{ADMISSION_STATUS_LABEL[a.status]}</Badge>
+        <Badge variant={a.status === "SUBMITTED" ? "warning" : a.status === "ADMITTED" || a.status === "OFFER_ACCEPTED" ? "success" : "muted"}>
+          {ADMISSION_STATUS_LABEL[a.status]}
+        </Badge>
       </div>
       {error && <InlineAlert>{error}</InlineAlert>}
+
+      <AdmissionActions a={a} onChanged={reload} />
 
       <section aria-labelledby="adm-child" className="space-y-2 rounded-md border bg-card p-4 text-sm">
         <h2 id="adm-child" className="font-medium">

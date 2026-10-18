@@ -4,6 +4,10 @@ import type {
   AdmissionOfficerDto,
   AdmissionSettingsDto,
   AdmissionStatus,
+  AdmitApplicationInput,
+  AdmitApplicationResultDto,
+  BookAdmissionAssessmentInput,
+  StudentAdmissionDocumentsDto,
   UpdateAdmissionSettingsInput,
 } from "@school-kit/types";
 
@@ -28,3 +32,22 @@ export const getAdmission = (applicationId: string) =>
   apiFetch<AdmissionDetailDto>(`/admissions/applications/${id(applicationId)}`, { method: "GET" });
 export const admissionDocumentUrl = (applicationId: string, documentId: string) =>
   apiFetch<{ url: string }>(`/admissions/applications/${id(applicationId)}/documents/${id(documentId)}/url`, { method: "GET" });
+
+// CP7.2 — decisions and Admit.
+const app = (applicationId: string, step: string) => `/admissions/applications/${id(applicationId)}/${step}`;
+export const reviewAdmission = (applicationId: string) => apiFetch<void>(app(applicationId, "review"), { method: "POST" });
+export const bookAdmissionAssessment = (applicationId: string, body: BookAdmissionAssessmentInput) =>
+  apiFetch<void>(app(applicationId, "assessment"), { method: "PUT", body });
+export const offerAdmission = (applicationId: string, letter: string) => apiFetch<void>(app(applicationId, "offer"), { method: "POST", body: { letter } });
+export const rejectAdmission = (applicationId: string, note?: string) =>
+  apiFetch<void>(app(applicationId, "reject"), { method: "POST", body: note ? { note } : {} });
+export const withdrawAdmission = (applicationId: string) => apiFetch<void>(app(applicationId, "withdraw"), { method: "POST" });
+export const recordAdmissionAcceptance = (applicationId: string) =>
+  apiFetch<void>(app(applicationId, "accept"), { method: "POST", body: { familySawLetter: true } });
+export const admitApplication = (applicationId: string, body: AdmitApplicationInput) =>
+  apiFetch<AdmitApplicationResultDto>(app(applicationId, "admit"), { method: "POST", body });
+
+export const getStudentAdmissionDocuments = (studentId: string) =>
+  apiFetch<StudentAdmissionDocumentsDto | null>(`/admissions/students/${id(studentId)}/documents`, { method: "GET" });
+export const studentAdmissionDocumentUrl = (studentId: string, documentId: string) =>
+  apiFetch<{ url: string }>(`/admissions/students/${id(studentId)}/documents/${id(documentId)}/url`, { method: "GET" });

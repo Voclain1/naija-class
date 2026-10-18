@@ -941,7 +941,10 @@ RESULT_PIN_HMAC_KEY=$(openssl rand -hex 32) -a school-kit-api`) before the
 first deploy that carries it — the lesson of the `PORTAL_BASE_URL` miss below,
 turned from a silent failure into a loud one. Only the API app needs it; the
 render worker never loads the PIN module. Dev and test use a fixed
-non-production key. Rotating it voids every unredeemed PIN.
+non-production key. Rotating it voids every unredeemed PIN. Since 2026-10-18 it
+also derives each admission application's private tracking link
+(`apps/api/src/modules/admissions/admission-tracking.ts`, under a label of its
+own), so rotating it also ends every family's tracking link.
 
 `PORTAL_PROXY_SECRET` — shared by `school-kit-portal` (Vercel) and
 `school-kit-api` (Fly), the **same value on both**. The portal's server routes

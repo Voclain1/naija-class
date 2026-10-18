@@ -4305,3 +4305,151 @@ shows "Apply" by default.
     Admissions with the answer and the document.
   - All the pages were checked at 320 and 390 px (the form's document inputs
     were fixed to fit).
+
+### 16.10 As built — CP7.2, review, assessment, offer and admitting (2026-10-18)
+
+- **Data** (migration `20261107120000_admission_decisions`). No new table.
+  `admission_applications` gains:
+  - the **assessment**: its kind (entrance exam, interview, online
+    assessment, other), time and note;
+  - the **offer letter** as the family saw it, and when it was offered;
+  - the **acceptance**: when, and the member of staff who recorded it
+    (empty means the family accepted online);
+  - the school's optional note when an application is not successful;
+  - when it was admitted, and by whom.
+
+  `CHECK`s make an offer impossible without its letter, and an accepted offer
+  impossible without the time it was accepted. The SECURITY DEFINER count
+  stays 23.
+- **Who.** A new permission, `admission.admit`, for owner and admin.
+  - An Admissions officer takes an application as far as an accepted offer:
+    review, the assessment, the offer, not successful, withdrawn, and
+    recording the family's acceptance.
+  - **Admit** creates the student, so the admin clears the child into a class
+    ("until cleared by admin", §16.8).
+  - `admission.admit` also reads a student's admission documents. The two-gate
+    conformance spec and the permission coverage pin both.
+- **Statuses.**
+  - Every move is one conditional update on the expected status, so two
+    people acting at once cannot both succeed; the second is told the
+    application's new status.
+  - Moves go only forward: New → Under review → Offered → Offer accepted →
+    Admitted, with Not successful or Withdrawn from any open state.
+  - Booking the assessment moves a new application to Under review. It can be
+    changed while the application is being decided, but not set in the past.
+- **The family's emails** go after each change is saved and never fail it:
+  - the assessment booked, or changed;
+  - the offer, with the **letter in full**;
+  - not successful, with the school's note only if it typed one;
+  - admitted, with the admission number;
+  - withdrawn: by the family, by the school, or closed after 12 months.
+
+  Each names the child by first name and the school, gives the reference and
+  carries the private tracking link.
+- **The tracking link in every email.** CP7.1 kept only the link's sha256, so
+  it could not be put in later emails. The token is now **derived**: an HMAC
+  of the application's id under the server key `RESULT_PIN_HMAC_KEY` (which
+  production refuses to start without), under a label of its own. The API can
+  rebuild the link for each email, while a stolen database still holds no
+  working link.
+  - Rotating that key ends every tracking link, as it voids PINs. An email for
+    an application whose link no longer rebuilds says to use the first email's
+    link instead.
+  - The applications sent before this change (CP7.1 only) are in the same
+    position.
+- **The tracking page** shows:
+  - the status in words;
+  - the assessment, while the application is open;
+  - the offer letter in full;
+  - the school's note when it is not successful.
+
+  Under the letter, **Accept the offer** works only once "I have read the full
+  offer letter above" is ticked. **Withdraw** asks to confirm. Both are limited
+  to 10 an hour per address, and each is audited with no user, marked as the
+  family's.
+- **The application page's Decision panel** (web; the teacher portal for an
+  officer):
+  - **Start review**;
+  - **Book an assessment** (kind, date, time, a note for the family);
+  - **Offer a place**, prefilled with the school's default letter and editable;
+  - **Record the family's acceptance**, with the tickbox "The family has seen
+    the full offer letter";
+  - **Not successful**, with an optional note;
+  - **Withdraw**.
+
+  It also shows the assessment, the letter, who recorded the acceptance, and,
+  once admitted, the student with a link to them.
+- **Admit** (owner, admin), offered only once the offer is accepted. In **one
+  transaction**:
+  - the application is claimed (Offer accepted → Admitted), so a second admin
+    pressing Admit at the same moment is refused;
+  - the student is created and placed through **`createStudentInTx`**, the
+    body of `StudentsService.create` moved out unchanged. It applies the plan's
+    cap (`PLAN_STUDENT_LIMIT` under `enforce`, shown in words), the school's
+    numbering including per-class order, and the unique admission number. The
+    admin chooses the class and the term, with the class applied for listed
+    first, and may type a number.
+  - The parent is linked as primary guardian through
+    **`linkOrCreatePrimaryGuardianInTx`**. An existing guardian at the school
+    with the same email (a sibling's parent), matched case-insensitively, is
+    **linked, never duplicated**. Otherwise a new guardian is created. The audit
+    rows are those of the guardian screens.
+  - The student takes the middle name, home address, religion and state of
+    origin from the application where they were asked.
+
+  Any failure, for example a typed number already taken or the cap, leaves no
+  student, no guardian and the offer still accepted. Before Admit, the panel
+  shows a **possible duplicate** (a student with the same names, ignoring case,
+  and date of birth), linked and never blocking, and says which guardian will
+  be linked or added.
+- **Admission documents on the student page** (Bio tab, owner and admin): the
+  application's reference, when the child was admitted, and each document
+  through a 5-minute link, audited. Nothing shows for a child not admitted
+  online.
+- **The 12-month close.** The nightly job first closes applications submitted
+  more than 365 days ago and still undecided, as Withdrawn. Each family is
+  emailed, and each move is audited as `by: "STALE"`. Then the 90-day deletion
+  runs as before.
+- **Left as they are.**
+  - A second parent on the application stays on the application. Only the
+    first is made a guardian. Adding the second is the guardian screens' job.
+  - Medical needs stay on the application; the health record is the school
+    nurse's.
+  - The family's portal invitation stays the separate step on the guardian's
+    page.
+- **Tests:**
+  - `admission-decisions.service.spec.ts` (22 tests, real database and
+    storage):
+    - the tracking link in every email;
+    - review, then the assessment booked and changed;
+    - a past date refused;
+    - the offer letter in full by email and on the tracking page, and the
+      family's acceptance;
+    - the school's recorded acceptance and who recorded it;
+    - two offers at once;
+    - moving only forward;
+    - not successful with and without a note;
+    - withdrawing by the family and by the school;
+    - a tracking link opens only its own school;
+    - no applicant text in audit rows;
+    - a plain teacher refused, and an officer unable to admit;
+    - another school's application;
+    - Admit end to end, including the admission documents;
+    - Admit only once accepted;
+    - linking a sibling's guardian;
+    - the duplicate warning;
+    - a failure leaving nothing;
+    - per-class numbering;
+    - the plan's cap;
+    - the 12-month close.
+  - Permission coverage for the new routes and `admission.admit`.
+  - e2e `admissions-admit.spec.ts`:
+    1. a family applies with a photo;
+    2. the admin books an entrance exam and offers a place;
+    3. the family reads the letter on the tracking page and accepts;
+    4. the admin admits the child into a class;
+    5. the student page shows the admission documents.
+
+    `admissions-apply.spec.ts` still passes.
+  - The tracking page with an offer, the application page with each panel and
+    the Admit form, and the student page all fit at 320 and 390 px.

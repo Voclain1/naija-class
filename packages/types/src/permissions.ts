@@ -743,6 +743,10 @@ export const HOSTEL_HOUSE_PERMISSIONS = ["hostel.house"] as const;
 export const ADMISSION_PERMISSIONS = ["admission.read", "admission.manage"] as const;
 // The form, the switch and the officers: owner and admin only, never an officer.
 export const ADMISSION_SETTINGS_PERMISSIONS = ["admission.settings"] as const;
+// CP7.2 — Admit creates the student, so it is the admin's (owner, admin): an
+// officer takes an application as far as an accepted offer (§16.8). The same
+// permission reads a student's admission documents from the student page.
+export const ADMISSION_ADMIT_PERMISSIONS = ["admission.admit"] as const;
 
 // Phase 8 / CP2 — Recording Completeness (docs/modules/phase-8.md §16 D39).
 // Owner/admin only. Named `reports.*`, deliberately not `report-card.*`.
@@ -873,6 +877,7 @@ export const ALL_PERMISSIONS = [
   ...HOSTEL_HOUSE_PERMISSIONS,
   ...ADMISSION_PERMISSIONS,
   ...ADMISSION_SETTINGS_PERMISSIONS,
+  ...ADMISSION_ADMIT_PERMISSIONS,
   ...REPORTS_PERMISSIONS,
   ...TABLE_EXPORT_PERMISSIONS,
   ...TIMETABLE_PERMISSIONS,

@@ -1722,3 +1722,23 @@ describe("Phase 9 CP7.1 RBAC coverage: admissions", () => {
     }
   });
 });
+
+describe("Phase 9 CP7.2 RBAC coverage: decisions and Admit", () => {
+  const perms = (handler: string): string[] =>
+    Reflect.getMetadata(
+      PERMISSIONS_METADATA_KEY,
+      (AdmissionsController.prototype as unknown as Record<string, object>)[handler]!,
+    ) as string[];
+
+  it("moving an application needs admission.manage; Admit and a student's admission documents need admission.admit", () => {
+    for (const handler of ["review", "assessment", "offer", "reject", "withdraw", "accept"]) expect(perms(handler), handler).toEqual(["admission.manage"]);
+    for (const handler of ["admit", "studentDocuments", "studentDocumentUrl"]) expect(perms(handler), handler).toEqual(["admission.admit"]);
+  });
+
+  it("admission.admit is admin's (owner by wildcard), never the Admissions officer's or anyone else's", () => {
+    expect(new Set(roleSeed("admin").permissions).has("admission.admit")).toBe(true);
+    for (const key of ["admission_officer", "teacher", "bursar", "health_officer", "librarian", "house_master"]) {
+      expect(new Set(roleSeed(key).permissions).has("admission.admit"), `${key} must not hold admission.admit`).toBe(false);
+    }
+  });
+});
