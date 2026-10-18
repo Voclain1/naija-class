@@ -324,6 +324,10 @@ export const queryKeys = {
   staffClassHealthNotes: (schoolId: string, userId: string, armId: string) =>
     ["staff", schoolId, userId, "class-health-notes", armId] as const,
   // Phase 9 / CP3.3 — one child's sickbay visits.
+  // Phase 9 / CP11.2 — the sickbay's visits for one Lagos day.
+  staffSickbayDay: (schoolId: string, userId: string, day: string) => ["staff", schoolId, userId, "sickbay-day", day] as const,
+  // Phase 9 / CP11.2 — behaviour incidents this person may see.
+  staffBehaviourIncidents: (schoolId: string, userId: string) => ["staff", schoolId, userId, "behaviour-incidents"] as const,
   staffSickbayVisits: (schoolId: string, userId: string, studentId: string) =>
     ["staff", schoolId, userId, "sickbay", studentId] as const,
   // Phase 9 / CP5.3 — bus routes and a route's day: children's names and
@@ -340,8 +344,9 @@ export const queryKeys = {
     ["staff", schoolId, userId, "boarding-boarders", hostelId] as const,
   staffBoardingVisits: (schoolId: string, userId: string, hostelId: string, day: string) =>
     ["staff", schoolId, userId, "boarding-visits", hostelId, day] as const,
-  staffBoardingExeats: (schoolId: string, userId: string, hostelId: string) =>
-    ["staff", schoolId, userId, "boarding-exeats", hostelId] as const,
+  // CP11.2: "open" (waiting, approved, out) or "past" (refused, back, cancelled).
+  staffBoardingExeats: (schoolId: string, userId: string, hostelId: string, view: "open" | "past" = "open") =>
+    ["staff", schoolId, userId, "boarding-exeats", hostelId, view] as const,
   staffTransportRoutes: (schoolId: string, userId: string) =>
     ["staff", schoolId, userId, "transport-routes"] as const,
   staffTransportDaily: (schoolId: string, userId: string, routeId: string, date: string) =>

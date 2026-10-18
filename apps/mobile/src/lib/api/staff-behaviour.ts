@@ -1,5 +1,6 @@
 import type {
   BehaviourIncidentDto,
+  BehaviourIncidentListResponse,
   BehaviourIncidentOptionsDto,
   BehaviourIncidentRosterDto,
   CreateBehaviourIncidentInput,
@@ -48,6 +49,12 @@ export function staffIncidentRoster(armId: string): Promise<BehaviourIncidentRos
 
 export function createStaffIncident(input: CreateBehaviourIncidentInput): Promise<BehaviourIncidentDto> {
   return apiFetch<BehaviourIncidentDto>("/behaviour/incidents", { method: "POST", body: input });
+}
+
+// CP11.2 (docs/modules/phase-9.md §20): the incidents this person may see,
+// read-only — a teacher's own classes, everything for an owner or admin.
+export function staffBehaviourIncidents(): Promise<BehaviourIncidentListResponse> {
+  return apiFetch<BehaviourIncidentListResponse>("/behaviour/incidents");
 }
 
 // Phase 9 / CP2.3 — discipline (docs/modules/phase-9.md §9 CP2-D3). A teacher

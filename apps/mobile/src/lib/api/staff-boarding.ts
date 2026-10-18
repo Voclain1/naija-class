@@ -1,4 +1,4 @@
-import type { HostelExeatDto, HostelVisitDto, HouseBoardersDto, HouseHostelDto, LogHostelVisitInput } from "@school-kit/types";
+import type { HostelExeatDto, HostelVisitDto, HouseBoardersDto, HouseHostelDto, LogHostelVisitInput, StaffHostelExeatInput } from "@school-kit/types";
 
 import { apiFetch } from "./client";
 
@@ -27,10 +27,15 @@ export function staffVisitorLeft(visitId: string): Promise<HostelVisitDto> {
 }
 
 // Phase 9 / CP6b.3 — leave out (exeats): the open ones, and each step.
-export function staffHostelExeats(hostelId: string): Promise<HostelExeatDto[]> {
-  return apiFetch<HostelExeatDto[]>(`/boarding/hostels/${encodeURIComponent(hostelId)}/exeats?view=open`);
+export function staffHostelExeats(hostelId: string, view: "open" | "past" = "open"): Promise<HostelExeatDto[]> {
+  return apiFetch<HostelExeatDto[]>(`/boarding/hostels/${encodeURIComponent(hostelId)}/exeats?view=${view}`);
 }
 
-export function staffExeatStep(exeatId: string, step: "approve" | "refuse" | "left" | "back", body: Record<string, string> = {}): Promise<HostelExeatDto> {
+// CP11.2 (docs/modules/phase-9.md §20): a request taken by phone, and cancel.
+export function staffRecordExeat(hostelId: string, input: StaffHostelExeatInput): Promise<HostelExeatDto> {
+  return apiFetch<HostelExeatDto>(`/boarding/hostels/${encodeURIComponent(hostelId)}/exeats`, { method: "POST", body: input });
+}
+
+export function staffExeatStep(exeatId: string, step: "approve" | "refuse" | "left" | "back" | "cancel", body: Record<string, string> = {}): Promise<HostelExeatDto> {
   return apiFetch<HostelExeatDto>(`/boarding/exeats/${encodeURIComponent(exeatId)}/${step}`, { method: "POST", body });
 }

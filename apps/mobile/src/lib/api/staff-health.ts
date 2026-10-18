@@ -75,6 +75,11 @@ export function staffSickbayVisits(studentId: string): Promise<SickbayVisitListR
   return apiFetch<SickbayVisitListResponse>(`/health/sickbay/visits?studentId=${encodeURIComponent(studentId)}`);
 }
 
+// CP11.2 (docs/modules/phase-9.md §20): one day's visits, for the day list.
+export function staffSickbayDay(day: string): Promise<SickbayVisitListResponse> {
+  return apiFetch<SickbayVisitListResponse>(`/health/sickbay/visits?date=${encodeURIComponent(day)}`);
+}
+
 export function recordStaffSickbayVisit(input: CreateSickbayVisitInput): Promise<SickbayVisitDto> {
   return apiFetch<SickbayVisitDto>("/health/sickbay/visits", { method: "POST", body: input });
 }

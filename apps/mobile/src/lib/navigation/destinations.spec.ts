@@ -196,3 +196,12 @@ describe("messages (Phase 9 / CP8.1)", () => {
     expect(keys({ ...base, roles: [{ key: "house_master" }], permissions: ["hostel.house"] })).not.toContain("messages");
   });
 });
+
+describe("Incidents (Phase 9 / CP11.2)", () => {
+  it("is offered on behaviour.read, under Teaching for a teacher and School otherwise", () => {
+    const teacher = staffDestinations({ ...TEACHER, permissions: [...TEACHER.permissions, "behaviour.read"] }).find((d) => d.key === "incidents");
+    expect(teacher).toMatchObject({ route: "/staff/behaviour", group: "Teaching" });
+    expect(staffDestinations(OWNER).find((d) => d.key === "incidents")).toMatchObject({ group: "School" });
+    expect(keys(BURSAR)).not.toContain("incidents");
+  });
+});

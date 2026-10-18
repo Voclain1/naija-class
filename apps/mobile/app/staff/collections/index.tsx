@@ -22,6 +22,7 @@ import {
   Notice,
   Screen,
 } from "../../../src/components/ui";
+import { WebsiteLink } from "../../../src/components/website-link";
 
 // Collections at a glance, for the current term.
 //
@@ -41,6 +42,8 @@ export default function CollectionsScreen() {
   const schoolId = staff?.school.id ?? "";
   const userId = staff?.user.id ?? "";
   const canRead = hasPermission(staff?.permissions ?? [], "finance.dashboard.read");
+  // CP11.2: one-off charges (transport, hostel, library, by hand) are on the website.
+  const canCharges = hasPermission(staff?.permissions ?? [], "charge.read");
 
   const termContext = useTermContext({ schoolId, userId, enabled: authed && canRead });
   const termId = termContext.data?.term?.termId ?? "";
@@ -150,6 +153,7 @@ export default function CollectionsScreen() {
           Recording payments, refunds and reminders stay on the web app. This screen is
           read-only.
         </Notice>
+        {canCharges ? <WebsiteLink path="/finance/charges" title="Charges on the website" /> : null}
       </ScrollView>
     </Screen>
   );

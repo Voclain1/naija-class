@@ -41,6 +41,7 @@ import {
 } from "../../../src/components/ui";
 import { ScreenHeader, Skeleton } from "../../../src/components/layout";
 import { ChoiceChips, DateBoxes, TextField } from "../../../src/components/form";
+import { WebsiteLink } from "../../../src/components/website-link";
 
 // CP9a — add, edit or remove a school event.
 //
@@ -274,7 +275,7 @@ export default function SchoolEventScreen() {
                 {`${original.rsvp.counts.yes} yes · ${original.rsvp.counts.no} no · ${original.rsvp.counts.maybe} maybe · ${original.rsvp.counts.notAnswered} not answered, of ${original.rsvp.counts.asked} asked`}
               </BodyText>
               {original.rsvp.askCount ? <Caption>{`${original.rsvp.counts.attending} people coming${original.rsvp.counts.maybeAttending ? `, ${original.rsvp.counts.maybeAttending} more maybe` : ""}.`}</Caption> : null}
-              <Caption>The list of replies and the download are on the website, under Events.</Caption>
+              <WebsiteLink path="/events" title="See the replies and download them" hint="The list of replies and the download are on the website, under Events." />
             </Card>
           ) : null}
 

@@ -36,6 +36,8 @@ import { useSession } from "../../../src/lib/auth/session";
 import { queryKeys } from "../../../src/lib/query/keys";
 import { useTheme } from "../../../src/theme/theme-provider";
 import { spacing } from "../../../src/theme/tokens";
+import { WebsiteLink } from "../../../src/components/website-link";
+import { isSchoolAdmin } from "../../../src/lib/auth/roles";
 
 // Phase 9 / CP4.1 — handed-in work for one homework item, in the staff app
 // (docs/modules/phase-9.md §11). Tap a student to read and mark their work.
@@ -367,9 +369,12 @@ export default function HandedInWorkScreen() {
               {d.questions.length > 0 ? (
                 <Card>
                   <Label>Questions</Label>
-                  <Caption>
-                    Marked automatically when a student hands in. Add or change them on the website, before anyone hands in.
-                  </Caption>
+                  {/* CP11.2: questions are set on the website; open the right page, signed in. */}
+                  <WebsiteLink
+                    path={isSchoolAdmin(staff?.roles) ? `/homework/${homeworkId}` : `/teacher/homework/${homeworkId}`}
+                    title="Add or change questions"
+                    hint="Marked automatically when a student hands in. Add or change them on the website, before anyone hands in."
+                  />
                   {d.questions.map((q) => (
                     <View key={q.id} style={styles.question}>
                       <Body>

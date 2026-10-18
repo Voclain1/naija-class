@@ -96,6 +96,11 @@ export function staffDestinations(ctx: StaffContext): Destination[] {
   }
   // Phase 9 / CP2.3 — proposed discipline actions to approve or reject. The
   // service checks the owner/admin role behind behaviour.decide.
+  // Phase 9 / CP11.2 — incidents, read-only. The service shows a teacher
+  // their own classes and an owner or admin everything.
+  if (can("behaviour.read")) {
+    out.push({ key: "incidents", label: "Incidents", hint: "Behaviour incidents recorded", icon: "alert-circle-outline", group: teacher ? "Teaching" : "School", route: "/staff/behaviour" });
+  }
   if (admin && can("behaviour.decide")) {
     out.push({ key: "discipline", label: "Behaviour decisions", hint: "Approve or reject", icon: "shield-checkmark-outline", group: "School", route: "/staff/discipline" });
   }

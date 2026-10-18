@@ -5595,3 +5595,47 @@ of it there, and seven real gaps.
   - `messages.spec.ts`: the alert routing and the phone digits;
   - the menu spec gains `/settings`;
   - the staff-keys spec gains the parent search key.
+
+### 20.6 As built — CP11.2 (2026-10-18)
+
+- **Leave out** (`app/staff/boarding/[hostelId].tsx`, `exeat-new.tsx`):
+  - an Open / Past switch;
+  - "Record a request taken by phone": choose the boarder, then the same
+    form a parent fills in. It arrives as waiting and is approved like any
+    other.
+  - "Cancel it" (with a confirmation) on a waiting or approved one.
+  - The form check is now one tested helper, `src/lib/hostels/exeat-form.ts`,
+    shared by the parent's request screen and the staff one.
+  - A change refreshes both Open and Past.
+- **Library** (`app/staff/library/index.tsx`):
+  - a Lost tab, with "Found it" for `library.lend`, in the website's words:
+    the replacement charge cancelled, already billed, or none
+    (`foundNotice`, tested).
+- **Incidents** (`app/staff/behaviour/index.tsx`, menu → Incidents on
+  `behaviour.read`):
+  - read-only, grouped by day (`groupByDay`, tested); a tap opens the
+    details, the students' notes and the witnesses;
+  - the server keeps a teacher to their own classes.
+- **Sickbay day list** (`app/staff/health/sickbay.tsx`, from Health on
+  `sickbay.manage`):
+  - a day at a time, back and forward up to today (`shiftDay`, tested);
+  - visits, medicines and "Sent home".
+- **Signed-in website links** (`src/components/website-link.tsx`): each shows
+  only to people with the permission, and is hidden when the app has no
+  website set. They are:
+  - event replies → `/events`;
+  - an assignment's questions → `/teacher/homework/:id` (or
+    `/homework/:id` for an owner or admin);
+  - the library catalogue → `/library`;
+  - class reading → `/library/resources`;
+  - hostels → `/hostels`;
+  - transport → `/transport`;
+  - charges → `/finance/charges`;
+  - behaviour categories → `/settings/behaviour`;
+  - the sickbay (backdating, medicine later) → `/sickbay`.
+- **Not built:** a link to the AI-drafts school switch. It is an owner's
+  setting, already reachable from "Open the website".
+- **Tests:**
+  - `exeat-form.spec.ts`, `library.spec.ts`, `days.spec.ts`;
+  - the menu spec (Incidents);
+  - the staff-keys spec (`staffSickbayDay`, `staffBehaviourIncidents`).

@@ -6,7 +6,7 @@ import { useQuery } from "@tanstack/react-query";
 import { ChoiceChips, TextField } from "../../../src/components/form";
 import { ListRow, ScreenHeader, Skeleton } from "../../../src/components/layout";
 import { LoadError } from "../../../src/components/load-error";
-import { Body, Caption, Card, Notice, Screen } from "../../../src/components/ui";
+import { Body, Button, Caption, Card, Notice, Screen } from "../../../src/components/ui";
 import { staffHealthList } from "../../../src/lib/api/staff-health";
 import { hasPermission } from "../../../src/lib/auth/permissions";
 import { useSession } from "../../../src/lib/auth/session";
@@ -23,6 +23,8 @@ export default function HealthListScreen() {
   const { status, principal, staff } = useSession();
   const authed = status === "authenticated" && principal === "staff";
   const canRead = hasPermission(staff?.permissions ?? [], "health.read");
+  // CP11.2: the sickbay's visits a day at a time.
+  const canSickbay = hasPermission(staff?.permissions ?? [], "sickbay.manage");
   const schoolId = staff?.school.id ?? "";
   const userId = staff?.user.id ?? "";
   const [typed, setTyped] = useState("");
@@ -54,6 +56,7 @@ export default function HealthListScreen() {
         refreshControl={<RefreshControl refreshing={list.isRefetching} onRefresh={() => void list.refetch()} />}
       >
         <ScreenHeader title="Health" subtitle="Students' health records" />
+        {canSickbay ? <Button variant="secondary" title="Sickbay visits by day" onPress={() => router.push("/staff/health/sickbay")} /> : null}
         {!canRead ? (
           <Notice tone="info">Your account can&apos;t see health records.</Notice>
         ) : (

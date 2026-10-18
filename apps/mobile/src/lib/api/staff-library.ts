@@ -15,7 +15,7 @@ import { apiFetch } from "./client";
 
 const q = (params: Record<string, string>) => new URLSearchParams(params).toString();
 
-export function staffLibraryLoans(state: "OPEN" | "OVERDUE"): Promise<LibraryLoanDto[]> {
+export function staffLibraryLoans(state: "OPEN" | "OVERDUE" | "LOST"): Promise<LibraryLoanDto[]> {
   return apiFetch<LibraryLoanDto[]>(`/library/loans?${q({ state })}`);
 }
 
@@ -47,4 +47,9 @@ export function staffLibraryLost(loanId: string, waiveReason?: string): Promise<
     method: "POST",
     body: waiveReason ? { waiveReason } : {},
   });
+}
+
+// CP11.2 (docs/modules/phase-9.md §20): the same lost book found again.
+export function staffLibraryFound(loanId: string): Promise<LibraryLoanResultDto> {
+  return apiFetch<LibraryLoanResultDto>(`/library/loans/${encodeURIComponent(loanId)}/found`, { method: "POST", body: {} });
 }
