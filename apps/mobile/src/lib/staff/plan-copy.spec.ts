@@ -12,6 +12,7 @@ const plan = (over: Partial<SchoolPlanDto>): SchoolPlanDto => ({
   enforcement: "warn",
   status: "ok",
   features: [],
+  announcementEmailsPerDay: 200,
   ...over,
 });
 

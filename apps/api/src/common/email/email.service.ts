@@ -88,6 +88,44 @@ export class EmailService {
       throw new InternalError(`Email send failed: ${failure}`);
     }
   }
+
+  /**
+   * Phase 9 / CP8.3 — up to 100 emails in one call (Resend's batch send), for
+   * announcement emails. Returns each email's Resend id, in order. Throws on
+   * any failure, so the caller marks the whole batch failed; the addresses
+   * never reach a log line (count only).
+   */
+  async sendBatch(
+    items: { to: string; subject: string; html: string; headers?: Record<string, string>; tags?: { name: string; value: string }[] }[],
+    params: { schoolName?: string; purpose: string },
+  ): Promise<string[]> {
+    if (!this.client) {
+      throw new InternalError("RESEND_API_KEY is not configured on this server");
+    }
+    if (items.length === 0) return [];
+    if (items.length > 100) throw new InternalError("A batch holds at most 100 emails.");
+    let failure: string | null = null;
+    let ids: string[] = [];
+    try {
+      const from = emailFrom(params.schoolName);
+      const { data, error } = await this.client.batch.send(items.map((i) => ({ from, ...i })));
+      if (error) failure = error.message;
+      else ids = (data?.data ?? []).map((d) => d.id);
+    } catch (err) {
+      failure = err instanceof Error ? err.message : String(err);
+    }
+    if (failure === null && ids.length !== items.length) failure = `expected ${items.length} ids, got ${ids.length}`;
+    if (failure !== null) {
+      this.logger.error(`Resend batch of ${items.length} failed: ${failure}`);
+      Sentry.captureMessage("Email batch failed", {
+        level: "error",
+        tags: { component: "email", purpose: params.purpose },
+        extra: { count: items.length, reason: failure },
+      });
+      throw new InternalError(`Email batch failed: ${failure}`);
+    }
+    return ids;
+  }
 }
 
 const FROM_ADDRESS = "no-reply@schoolkit.ng";

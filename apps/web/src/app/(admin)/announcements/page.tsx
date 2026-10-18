@@ -5,8 +5,11 @@ import { useCallback, useEffect, useState } from "react";
 import {
   ANNOUNCEMENT_BODY_MAX,
   ANNOUNCEMENT_TITLE_MAX,
+  announcementEmailLines,
   type AnnouncementAudience,
+  type AnnouncementBouncedDto,
   type AnnouncementDto,
+  type AnnouncementEmailPreviewDto,
   type ClassArmDto,
 } from "@school-kit/types";
 
@@ -16,6 +19,8 @@ import { InlineAlert } from "@/components/shared/inline-alert";
 import { ApiError } from "@/lib/api-client";
 import {
   createAnnouncement,
+  getAnnouncementBounced,
+  getAnnouncementEmailPreview,
   listAnnouncements,
   withdrawAnnouncement,
 } from "@/lib/announcements/announcements-api";
@@ -31,6 +36,10 @@ import { listClassArms } from "@/lib/class-arms/class-arms-api";
 // Sending is owner/admin only. The API enforces that twice (the permission
 // grant, and a role re-check in the service). The controls on this page are a
 // third, cosmetic layer — they are not the boundary.
+//
+// Phase 9 / CP8.3 (phase-9.md §17.11): "Also email families" sends the full
+// announcement to the families' email addresses too, within the plan's daily
+// limit. The outbox shows counts only, and the addresses that bounced.
 
 const AUDIENCE_LABELS: Record<AnnouncementAudience, string> = {
   EVERYONE: "Everyone — parents, students and staff",
@@ -59,6 +68,9 @@ export default function AnnouncementsPage() {
   const [audience, setAudience] = useState<AnnouncementAudience>("EVERYONE");
   const [classArmId, setClassArmId] = useState("");
   const [urgent, setUrgent] = useState(false);
+  const [emailFamilies, setEmailFamilies] = useState(false);
+  const [preview, setPreview] = useState<AnnouncementEmailPreviewDto | null>(null);
+  const [bounced, setBounced] = useState<Record<string, AnnouncementBouncedDto[]>>({});
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   const [sent, setSent] = useState<string | null>(null);
@@ -81,6 +93,39 @@ export default function AnnouncementsPage() {
     void load();
   }, [load]);
 
+  const emailable = audience !== "STAFF" && (audience !== "CLASS" || classArmId !== "");
+  useEffect(() => {
+    setPreview(null);
+    if (!emailFamilies || !emailable) return;
+    let live = true;
+    getAnnouncementEmailPreview(audience, audience === "CLASS" ? classArmId : undefined)
+      .then((p) => live && setPreview(p))
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [emailFamilies, emailable, audience, classArmId]);
+
+  function emailWarning(): string {
+    if (!emailFamilies || audience === "STAFF") return "";
+    if (!preview) return "\n\nIt will also be emailed to the families.";
+    if (!preview.emailEnabled) return "\n\nEmail is switched off for your school, so nobody will be emailed.";
+    const over = Math.max(0, preview.addresses - preview.remainingToday);
+    return (
+      `\n\nIt will also be emailed to ${preview.addresses} parent${preview.addresses === 1 ? "" : "s"} with an email address. An email cannot be withdrawn.` +
+      (over > 0 ? ` ${over} will not be emailed today (your plan's daily limit).` : "")
+    );
+  }
+
+  async function showBounced(id: string) {
+    try {
+      const list = await getAnnouncementBounced(id);
+      setBounced((b) => ({ ...b, [id]: list }));
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "Could not load the bounced addresses.");
+    }
+  }
+
   async function send(event: React.FormEvent) {
     event.preventDefault();
     setSendError(null);
@@ -96,7 +141,7 @@ export default function AnnouncementsPage() {
     const warning = urgent
       ? "\n\nThis is marked urgent: it will wake phones tonight, outside quiet hours."
       : "";
-    if (!window.confirm(`Send "${title.trim()}" to ${who}?${warning}\n\nAnnouncements cannot be unsent.`)) return;
+    if (!window.confirm(`Send "${title.trim()}" to ${who}?${warning}\n\nAnnouncements cannot be unsent.${emailWarning()}`)) return;
 
     setSending(true);
     try {
@@ -106,10 +151,12 @@ export default function AnnouncementsPage() {
         audience,
         ...(audience === "CLASS" ? { classArmId } : {}),
         ...(urgent ? { urgent: true } : {}),
+        ...(emailFamilies && audience !== "STAFF" ? { emailFamilies: true } : {}),
       });
       setTitle("");
       setBody("");
       setUrgent(false);
+      setEmailFamilies(false);
       setClassArmId("");
       setAudience("EVERYONE");
       setSent("Sent.");
@@ -225,6 +272,31 @@ export default function AnnouncementsPage() {
             </span>
           </label>
 
+          {audience !== "STAFF" && (
+            <div className="flex flex-col gap-1 text-sm">
+              <label className="flex items-start gap-2">
+                <input type="checkbox" className="mt-1" checked={emailFamilies} onChange={(e) => setEmailFamilies(e.target.checked)} />
+                <span>
+                  <span className="font-medium">Also email families</span>
+                  <span className="block text-xs text-muted-foreground">
+                    The whole announcement goes to every parent with an email address. An email cannot be withdrawn.
+                    Parents can unsubscribe from announcement emails.
+                  </span>
+                </span>
+              </label>
+              {emailFamilies && preview && (
+                <p className={["ml-6 rounded-md px-3 py-2 text-xs", preview.emailEnabled && preview.addresses <= preview.remainingToday ? "bg-muted" : "bg-amber-50 text-amber-950 dark:bg-amber-950/30 dark:text-amber-100"].join(" ")}>
+                  {!preview.emailEnabled
+                    ? "Email is switched off for your school (Settings → Notifications), so nobody will be emailed."
+                    : `${preview.addresses} parent${preview.addresses === 1 ? "" : "s"} will be emailed` +
+                      (preview.noAddress > 0 ? `; ${preview.noAddress} ha${preview.noAddress === 1 ? "s" : "ve"} no email address` : "") +
+                      `. Today's limit on your plan: ${preview.remainingToday} of ${preview.dailyLimit} left.` +
+                      (preview.addresses > preview.remainingToday ? ` ${preview.addresses - preview.remainingToday} will not be emailed today.` : "")}
+                </p>
+              )}
+            </div>
+          )}
+
           {sendError && <InlineAlert>{sendError}</InlineAlert>}
           {sent && <p className="text-sm text-primary">{sent}</p>}
 
@@ -282,6 +354,33 @@ export default function AnnouncementsPage() {
                   )}
                 </div>
                 <p className="mt-2 whitespace-pre-wrap text-sm text-foreground">{item.body}</p>
+                {item.email && (
+                  <div className="mt-3 rounded-md bg-muted/50 p-3 text-xs" aria-label="Email to families">
+                    <p className="mb-1 font-medium text-foreground">Emailed to families</p>
+                    <ul className="flex flex-col gap-0.5 text-muted-foreground">
+                      {announcementEmailLines(item.email).map((line) => (
+                        <li key={line}>{line}</li>
+                      ))}
+                    </ul>
+                    {item.withdrawnAt && <p className="mt-1 text-muted-foreground">Withdrawing does not unsend an email.</p>}
+                    {item.email.bounced + item.email.complained > 0 &&
+                      (bounced[item.id] ? (
+                        <ul className="mt-2 flex flex-col gap-1" aria-label="Bounced addresses">
+                          {bounced[item.id]!.map((b) => (
+                            <li key={b.email} className="break-words text-foreground">
+                              {b.guardianName ?? "A parent"}
+                              {b.children.length ? ` (parent of ${b.children.join(", ")})` : ""}: {b.email}
+                              {b.status === "COMPLAINED" ? " (marked as spam)" : ""}
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <button type="button" className="mt-2 text-primary hover:underline" onClick={() => void showBounced(item.id)}>
+                          Show the addresses to fix
+                        </button>
+                      ))}
+                  </div>
+                )}
               </li>
             ))}
           </ul>

@@ -3,6 +3,7 @@ import { Module } from "@nestjs/common";
 
 import { PushModule } from "../../common/push/push.module";
 import { PUSH_QUEUE } from "../../common/queue";
+import { AnnouncementsModule } from "../announcements/announcements.module";
 import { AuthModule } from "../auth/auth.module";
 import { NotificationDispatchModule } from "./notification-dispatch.module";
 import { NotificationPreferencesController } from "./notification-preferences.controller";
@@ -22,6 +23,7 @@ import { PushProcessor } from "./push.processor";
 @Module({
   imports: [
     AuthModule,
+    AnnouncementsModule,
     PushModule,
     NotificationDispatchModule,
     BullModule.registerQueue({ name: PUSH_QUEUE }),

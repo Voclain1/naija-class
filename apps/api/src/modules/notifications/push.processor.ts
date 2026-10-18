@@ -1,5 +1,5 @@
 import { InjectQueue, Processor, WorkerHost } from "@nestjs/bullmq";
-import { Logger } from "@nestjs/common";
+import { Logger, Optional } from "@nestjs/common";
 import { Job, Queue } from "bullmq";
 
 import { withTenant } from "@school-kit/db";
@@ -9,7 +9,8 @@ import {
   ExpoPushService,
   type ExpoPushMessage,
 } from "../../common/push/expo-push.service";
-import { PUSH_JOB_RECEIPTS, PUSH_JOB_SEND, PUSH_QUEUE } from "../../common/queue";
+import { ANNOUNCEMENT_EMAIL_JOB, PUSH_JOB_RECEIPTS, PUSH_JOB_SEND, PUSH_QUEUE } from "../../common/queue";
+import { AnnouncementEmailService, type AnnouncementEmailJobData } from "../announcements/announcement-email.service";
 import type { PushReceiptsJobData, PushSendJobData } from "./push.jobs";
 import { WORKER_TUNING } from "../../common/queue/worker-tuning.js";
 
@@ -35,6 +36,7 @@ export class PushProcessor extends WorkerHost {
   constructor(
     private readonly expo: ExpoPushService,
     @InjectQueue(PUSH_QUEUE) private readonly queue: Queue,
+    @Optional() private readonly announcementEmails?: AnnouncementEmailService,
   ) {
     super();
   }
@@ -63,6 +65,13 @@ export class PushProcessor extends WorkerHost {
         return this.handleSend(job.data as PushSendJobData);
       case PUSH_JOB_RECEIPTS:
         return this.handleReceipts(job.data as PushReceiptsJobData);
+      // Phase 9 / CP8.3: an announcement's email to the families. Each step
+      // opens its own short tenant transaction, as pruneTokens does here.
+      case ANNOUNCEMENT_EMAIL_JOB: {
+        const data = job.data as AnnouncementEmailJobData;
+        if (!this.announcementEmails) throw new Error("PushProcessor: announcement email is not wired in this process.");
+        return this.announcementEmails.run(data.schoolId, data.announcementId);
+      }
       default:
         throw new Error(`PushProcessor received unknown job name '${job.name}'`);
     }

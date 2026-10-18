@@ -1017,11 +1017,12 @@ model Guardian {
   createdAt  DateTime @default(now()) @map("created_at")
   updatedAt  DateTime @updatedAt @map("updated_at")
 
-  students       StudentGuardian[]
-  sessions       GuardianSession[]
-  invitations    GuardianInvitation[]
-  passwordResets GuardianPasswordResetToken[]
-  deviceTokens   DeviceToken[] // Phase 6 / Slice 5.
+  students           StudentGuardian[]
+  sessions           GuardianSession[]
+  invitations        GuardianInvitation[]
+  passwordResets     GuardianPasswordResetToken[]
+  deviceTokens       DeviceToken[] // Phase 6 / Slice 5.
+  announcementEmails AnnouncementEmail[]
 
   // Decision C (phase-4.md) — scoped per school, not global. A guardian with
   // children at two schools gets two separate portal accounts (intentional).
@@ -3571,23 +3572,28 @@ model DisciplineNotice {
 }
 
 model Announcement {
-  id          String               @id @default(uuid())
-  schoolId    String               @map("school_id")
-  title       String
-  body        String
-  audience    AnnouncementAudience
-  classArmId  String?              @map("class_arm_id") // set only when audience = CLASS
+  id             String               @id @default(uuid())
+  schoolId       String               @map("school_id")
+  title          String
+  body           String
+  audience       AnnouncementAudience
+  classArmId     String?              @map("class_arm_id") // set only when audience = CLASS
   // A4: skips quiet hours and wakes phones. Audited on every send.
-  urgent      Boolean              @default(false)
-  createdBy   String               @map("created_by")
-  createdAt   DateTime             @default(now()) @map("created_at")
+  urgent         Boolean              @default(false)
+  createdBy      String               @map("created_by")
+  createdAt      DateTime             @default(now()) @map("created_at")
   // A2: an announcement is sent once and never silently reworded. It can be
   // withdrawn — it stops appearing and says so — and a correction is a new
   // announcement. There is deliberately no updatedAt and no edit path.
-  withdrawnAt DateTime?            @map("withdrawn_at")
-  withdrawnBy String?              @map("withdrawn_by")
+  withdrawnAt    DateTime?            @map("withdrawn_at")
+  withdrawnBy    String?              @map("withdrawn_by")
+  // Phase 9 / CP8.3: also emailed to the families (not for STAFF).
+  emailFamilies  Boolean              @default(false) @map("email_families")
+  // Families in the audience with no address when the email was prepared.
+  emailNoAddress Int                  @default(0) @map("email_no_address")
 
-  reads AnnouncementRead[]
+  reads  AnnouncementRead[]
+  emails AnnouncementEmail[]
 
   @@index([schoolId, createdAt])
   @@map("announcements")
@@ -4957,4 +4963,53 @@ model MessageImage {
   @@index([messageId])
   @@index([schoolId, uploaderKind, uploaderId])
   @@map("message_images")
+}
+
+// Phase 9 / CP8.3 — one announcement email to one address
+// (docs/modules/phase-9.md §17.11). Claimed once (QUEUED → SENDING), so a
+// retried job never sends twice. Webhook events move SENT to DELIVERED,
+// BOUNCED or COMPLAINED.
+model AnnouncementEmail {
+  id             String       @id @default(uuid())
+  schoolId       String       @map("school_id")
+  announcementId String       @map("announcement_id")
+  guardianId     String?      @map("guardian_id")
+  email          String
+  status         String
+  skipReason     String?      @map("skip_reason")
+  providerId     String?      @unique @map("provider_id")
+  createdAt      DateTime     @default(now()) @map("created_at")
+  sentAt         DateTime?    @map("sent_at")
+  updatedAt      DateTime     @default(now()) @updatedAt @map("updated_at")
+  announcement   Announcement @relation(fields: [announcementId], references: [id], onDelete: Cascade)
+  guardian       Guardian?    @relation(fields: [guardianId], references: [id], onDelete: SetNull)
+
+  @@unique([announcementId, email])
+  @@index([schoolId, announcementId, status])
+  @@map("announcement_emails")
+}
+
+// An address that gets no more announcement emails (ANNOUNCEMENTS: it
+// unsubscribed) or no non-essential email at all (ALL: a hard bounce or a
+// complaint), from one school.
+model EmailSuppression {
+  id        String   @id @default(uuid())
+  schoolId  String   @map("school_id")
+  email     String
+  reason    String
+  scope     String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([schoolId, email, scope])
+  @@map("email_suppressions")
+}
+
+// Announcement emails a school has sent in a Lagos day, against its plan's limit.
+model AnnouncementEmailCounter {
+  schoolId String   @map("school_id")
+  day      DateTime @db.Date
+  sent     Int      @default(0)
+
+  @@id([schoolId, day])
+  @@map("announcement_email_counters")
 }

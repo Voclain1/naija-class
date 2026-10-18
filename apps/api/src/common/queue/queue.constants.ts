@@ -72,6 +72,11 @@ export const PUSH_JOB_SEND = "send";
 // per-batch, and a cron would have to persist which tickets are outstanding
 // somewhere else to find them again.
 export const PUSH_JOB_RECEIPTS = "receipts";
+// Phase 9 / CP8.3 — emailing an announcement to the families (phase-9.md
+// §17.11). A job NAME on the push queue, not a queue of its own: it is pure
+// third-party I/O like push, and a fifth worker would add idle Redis polling
+// for a job that runs a few times a week.
+export const ANNOUNCEMENT_EMAIL_JOB = "announcement-email";
 
 // Phase 7 / CP2 — curriculum document ingestion (embedding).
 //

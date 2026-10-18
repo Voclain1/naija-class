@@ -5,6 +5,7 @@ import {
   ConflictError,
   NotFoundError,
   type AnnouncementDto,
+  type AnnouncementEmailSummaryDto,
   type AnnouncementFeedItemDto,
   type AnnouncementFeedResponse,
   type AnnouncementListResponse,
@@ -14,6 +15,7 @@ import {
 import type { AuthContext } from "../../common/auth/auth-context.js";
 import { assertUserActiveAndHasOneOf } from "../../common/auth/role-check.js";
 import { EventNotifierService } from "../notifications/event-notifier.service.js";
+import { AnnouncementEmailService } from "./announcement-email.service.js";
 
 // Announcements (docs/modules/announcements.md).
 //
@@ -29,6 +31,10 @@ import { EventNotifierService } from "../notifications/event-notifier.service.js
 //       SMS (N4).
 //  A5 — READ STATE IS THE READER'S. It drives their own unread dot and never
 //       travels back to the school as a receipt.
+//
+// Phase 9 / CP8.3 (phase-9.md §17.11): "Also email families" adds an email
+// to the families, sent on the queue by AnnouncementEmailService, which owns
+// the only sending code. The outbox shows its counts, never who opened it.
 
 const AUDIT = {
   create: "announcement.create",
@@ -43,7 +49,10 @@ const AUDIT = {
 export class AnnouncementsService {
   private readonly logger = new Logger(AnnouncementsService.name);
 
-  constructor(@Optional() private readonly events?: EventNotifierService) {}
+  constructor(
+    @Optional() private readonly events?: EventNotifierService,
+    @Optional() private readonly emails?: AnnouncementEmailService,
+  ) {}
 
   async create(
     authCtx: AuthContext,
@@ -65,6 +74,7 @@ export class AnnouncementsService {
           audience: input.audience,
           classArmId: input.classArmId ?? null,
           urgent: input.urgent ?? false,
+          emailFamilies: (input.emailFamilies ?? false) && input.audience !== "STAFF",
           createdBy: authCtx.userId,
         },
       });
@@ -78,7 +88,7 @@ export class AnnouncementsService {
           ipAddress: reqCtx.ipAddress,
           // Urgent is recorded because it wakes phones at any hour (A4) —
           // a decision someone should be accountable for.
-          metadata: { audience: row.audience, classArmId: row.classArmId, urgent: row.urgent },
+          metadata: { audience: row.audience, classArmId: row.classArmId, urgent: row.urgent, emailFamilies: row.emailFamilies },
         },
       });
       return row;
@@ -86,8 +96,9 @@ export class AnnouncementsService {
 
     // After the commit, and never able to fail the announcement itself.
     await this.events?.announcementPosted({ schoolId: authCtx.schoolId, announcementId: announcement.id });
+    if (announcement.emailFamilies) await this.emails?.enqueue(authCtx.schoolId, announcement.id);
 
-    return this.toDto(announcement, null, null);
+    return this.toDto(announcement, null, null, null);
   }
 
   /** The staff list: everything this school has sent, newest first. */
@@ -101,12 +112,19 @@ export class AnnouncementsService {
         db.user.findMany({ where: { id: { in: senderIds } }, select: { id: true, firstName: true, lastName: true } }),
       ]);
       const armName = new Map<string, string>(arms.map((a): [string, string] => [a.id, a.name]));
+      const emailed = rows.filter((r) => r.emailFamilies).map((r) => r.id);
+      const summaries = this.emails ? await this.emails.summaries(db, authCtx.schoolId, emailed) : new Map();
       const senderName = new Map<string, string>(
         senders.map((u): [string, string] => [u.id, `${u.firstName} ${u.lastName}`]),
       );
       return {
         data: rows.map((row) =>
-          this.toDto(row, row.classArmId ? (armName.get(row.classArmId) ?? null) : null, senderName.get(row.createdBy) ?? null),
+          this.toDto(
+            row,
+            row.classArmId ? (armName.get(row.classArmId) ?? null) : null,
+            senderName.get(row.createdBy) ?? null,
+            summaries.get(row.id) ?? null,
+          ),
         ),
       };
     });
@@ -143,7 +161,7 @@ export class AnnouncementsService {
           metadata: { audience: row.audience },
         },
       });
-      return this.toDto(row, null, null);
+      return this.toDto(row, null, null, null);
     });
   }
 
@@ -252,6 +270,7 @@ export class AnnouncementsService {
     },
     className: string | null,
     createdByName: string | null,
+    email: AnnouncementEmailSummaryDto | null,
   ): AnnouncementDto {
     return {
       id: row.id,
@@ -264,6 +283,7 @@ export class AnnouncementsService {
       createdAt: row.createdAt,
       createdByName,
       withdrawnAt: row.withdrawnAt,
+      email,
     };
   }
 }

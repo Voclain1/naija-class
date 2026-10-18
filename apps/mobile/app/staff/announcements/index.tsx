@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ANNOUNCEMENT_BODY_MAX,
   ANNOUNCEMENT_TITLE_MAX,
+  announcementEmailLines,
   type AnnouncementAudience,
   type AnnouncementDto,
 } from "@school-kit/types";
@@ -12,6 +13,7 @@ import {
 import {
   createStaffAnnouncement,
   markStaffAnnouncementRead,
+  staffAnnouncementEmailPreview,
   staffAnnouncementFeed,
   staffAnnouncementsSent,
   withdrawStaffAnnouncement,
@@ -42,6 +44,10 @@ import { ChoiceChips, TextField } from "../../../src/components/form";
 // The confirmation before sending names WHO it is about to reach, and says
 // plainly that an announcement cannot be unsent: withdrawing takes it out of
 // the feeds, but the phones have already buzzed.
+//
+// Phase 9 / CP8.3: "Also email families" emails the whole announcement to the
+// parents' addresses too, within the plan's daily limit; the Sent list shows
+// how the email went, in counts.
 
 const AUDIENCE_OPTIONS: readonly { value: AnnouncementAudience; label: string }[] = [
   { value: "EVERYONE", label: "Everyone" },
@@ -81,6 +87,7 @@ export default function StaffAnnouncementsScreen() {
   const [audience, setAudience] = useState<AnnouncementAudience>("EVERYONE");
   const [classArmId, setClassArmId] = useState<string | null>(null);
   const [urgent, setUrgent] = useState(false);
+  const [emailFamilies, setEmailFamilies] = useState(false);
 
   const feed = useQuery({
     queryKey: queryKeys.staffAnnouncementFeed(schoolId, userId),
@@ -105,6 +112,13 @@ export default function StaffAnnouncementsScreen() {
     staleTime: 60 * 60_000,
   });
 
+  const emailAudience = audience === "STAFF" ? null : audience;
+  const preview = useQuery({
+    queryKey: queryKeys.staffAnnouncementEmailPreview(schoolId, userId, audience, classArmId),
+    queryFn: () => staffAnnouncementEmailPreview(emailAudience!, audience === "CLASS" ? classArmId : null),
+    enabled: ready && admin && emailFamilies && emailAudience !== null && (audience !== "CLASS" || classArmId !== null),
+  });
+
   const markRead = useMutation({ mutationFn: (id: string) => markStaffAnnouncementRead(id) });
   const onRead = useCallback((id: string) => markRead.mutate(id), [markRead]);
 
@@ -116,11 +130,13 @@ export default function StaffAnnouncementsScreen() {
         audience,
         ...(audience === "CLASS" && classArmId ? { classArmId } : {}),
         ...(urgent ? { urgent: true } : {}),
+        ...(emailFamilies && audience !== "STAFF" ? { emailFamilies: true } : {}),
       }),
     onSuccess: () => {
       setTitle("");
       setBody("");
       setUrgent(false);
+      setEmailFamilies(false);
       setClassArmId(null);
       setAudience("EVERYONE");
       void queryClient.invalidateQueries({ queryKey: queryKeys.staffAnnouncements(schoolId, userId) });
@@ -149,9 +165,19 @@ export default function StaffAnnouncementsScreen() {
     const armName = arms.data?.find((a) => a.id === classArmId)?.name;
     const who = audience === "CLASS" ? (armName ?? "one class") : AUDIENCE_WORDS[audience];
     const warning = urgent ? "\n\nMarked urgent: it will wake phones tonight, outside quiet hours." : "";
+    const p = preview.data;
+    const mail =
+      !emailFamilies || audience === "STAFF"
+        ? ""
+        : !p
+          ? "\n\nIt will also be emailed to the families. An email cannot be withdrawn."
+          : !p.emailEnabled
+            ? "\n\nEmail is switched off for your school, so nobody will be emailed."
+            : `\n\nIt will also be emailed to ${p.addresses} parent${p.addresses === 1 ? "" : "s"}. An email cannot be withdrawn.` +
+              (p.addresses > p.remainingToday ? ` ${p.addresses - p.remainingToday} will not be emailed today (your plan's daily limit).` : "");
     Alert.alert(
       "Send this?",
-      `"${title.trim()}" goes to ${who}.${warning}\n\nAn announcement cannot be unsent.`,
+      `"${title.trim()}" goes to ${who}.${warning}\n\nAn announcement cannot be unsent.${mail}`,
       [
         { text: "Cancel", style: "cancel" },
         { text: "Send", onPress: () => send.mutate() },
@@ -250,6 +276,24 @@ export default function StaffAnnouncementsScreen() {
                     Urgent skips quiet hours (9pm–6am) and buzzes phones at any time. It is recorded against your name.
                   </Notice>
                 )}
+                {audience !== "STAFF" && (
+                  <ChoiceChips
+                    label="Also email families"
+                    options={[
+                      { value: "no", label: "No email" },
+                      { value: "yes", label: "Email it too" },
+                    ]}
+                    value={emailFamilies ? "yes" : "no"}
+                    onChange={(next) => setEmailFamilies(next === "yes")}
+                  />
+                )}
+                {emailFamilies && audience !== "STAFF" && preview.data ? (
+                  <Notice tone={preview.data.emailEnabled && preview.data.addresses <= preview.data.remainingToday ? "info" : "warning"}>
+                    {!preview.data.emailEnabled
+                      ? "Email is switched off for your school, so nobody will be emailed."
+                      : `${preview.data.addresses} parent${preview.data.addresses === 1 ? "" : "s"} will be emailed. Today's limit on your plan: ${preview.data.remainingToday} of ${preview.data.dailyLimit} left. An email cannot be withdrawn.`}
+                  </Notice>
+                ) : null}
                 <Button
                   title={send.isPending ? "Sending…" : "Send announcement"}
                   onPress={confirmSend}
@@ -290,6 +334,7 @@ export default function StaffAnnouncementsScreen() {
                       {item.withdrawnAt ? " · withdrawn" : ""}
                     </Label>
                     <Body>{item.body}</Body>
+                    {item.email ? <Label>{`Emailed to families: ${announcementEmailLines(item.email).join(" · ")}.`}</Label> : null}
                     {!item.withdrawnAt && (
                       <Button title="Withdraw" variant="secondary" onPress={() => confirmWithdraw(item)} />
                     )}

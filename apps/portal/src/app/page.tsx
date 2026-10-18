@@ -156,6 +156,9 @@ export default function DashboardPage() {
           Messages
           {unreadMessages > 0 ? ` (${unreadMessages} new)` : ""} →
         </Link>
+        <Link href="/settings" className="text-sm font-medium text-primary hover:underline">
+          Settings →
+        </Link>
       </nav>
 
       {state.kind === "loading" && <PageSkeleton rows={2} />}

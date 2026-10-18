@@ -3,6 +3,7 @@ import {
   ForbiddenError,
   ON_ROLL_STUDENT_STATUSES,
   PLAN_ERROR_CODES,
+  PLAN_ANNOUNCEMENT_EMAILS_PER_DAY,
   PLAN_FEATURES,
   PLAN_FEATURE_LABELS,
   PLAN_FEATURE_MIN_PLAN,
@@ -55,6 +56,7 @@ export async function readSchoolPlan(
       included: planIncludesFeature(school.plan, feature),
       available: planFeatureAvailable(school.plan, feature, enforcement),
     })),
+    announcementEmailsPerDay: PLAN_ANNOUNCEMENT_EMAILS_PER_DAY[school.plan],
   };
 }
 

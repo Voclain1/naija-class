@@ -27,6 +27,19 @@ export const PLAN_STUDENT_CAPS: Record<SchoolPlan, number | null> = {
   ENTERPRISE: null,
 };
 
+/**
+ * Phase 9 / CP8.3 (phase-9.md §17.11, owner 2026-10-18): announcement emails a
+ * school may send in a Lagos day. Part of the pricing, so it applies whatever
+ * PLAN_ENFORCEMENT says: every email costs money.
+ */
+export const PLAN_ANNOUNCEMENT_EMAILS_PER_DAY: Record<SchoolPlan, number> = {
+  FREE: 200,
+  STARTER: 400,
+  GROWTH: 1200,
+  PROFESSIONAL: 2400,
+  ENTERPRISE: 5000,
+};
+
 /** Statuses that count toward the cap (plans.md D2). Withdrawn and graduated do not. */
 export const ON_ROLL_STUDENT_STATUSES = ["ACTIVE", "INACTIVE", "SUSPENDED"] as const;
 
@@ -116,6 +129,8 @@ export interface SchoolPlanDto {
   enforcement: PlanEnforcement;
   status: PlanUsageStatus;
   features: SchoolPlanFeatureDto[];
+  /** CP8.3: announcement emails a day on this plan. */
+  announcementEmailsPerDay: number;
 }
 
 // PATCH /platform-admin/schools/:schoolId/plan
