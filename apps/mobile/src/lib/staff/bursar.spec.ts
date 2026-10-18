@@ -1,7 +1,7 @@
 import type { DebtorDto, FinanceDashboardDto } from "@school-kit/types";
 import { describe, expect, it } from "vitest";
 
-import { dedupeByRoute, filterDebtors, moneyBand, quickActions, showsMoneyBand } from "./bursar";
+import { dedupeByRoute, filterDebtors, filterDebtorsByRisk, moneyBand, quickActions, showsMoneyBand } from "./bursar";
 import { visibleStaffTabs } from "./tabs";
 
 // The bursar's home (docs/modules/phone-for-every-role.md D1).
@@ -168,5 +168,18 @@ describe("one screen, one tile (found on a device 2026-09-25)", () => {
       { key: "classes", route: "/staff/classes" },
     ];
     expect(dedupeByRoute(grid, []).map((i) => i.key)).toEqual(["marks", "classes"]);
+  });
+});
+
+describe("filterDebtorsByRisk (Phase 9 / CP10.2)", () => {
+  const rows = [
+    { id: "a", risk: { level: "HIGH" } },
+    { id: "b", risk: { level: "WATCH" } },
+    { id: "c", risk: { level: "HIGH" } },
+  ];
+  it("keeps every row for ALL and only the chosen level otherwise", () => {
+    expect(filterDebtorsByRisk(rows, "ALL").map((r) => r.id)).toEqual(["a", "b", "c"]);
+    expect(filterDebtorsByRisk(rows, "HIGH").map((r) => r.id)).toEqual(["a", "c"]);
+    expect(filterDebtorsByRisk(rows, "LOW")).toEqual([]);
   });
 });
