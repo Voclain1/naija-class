@@ -5473,8 +5473,11 @@ the count stays 23.
   - **Change from the plan:** the student page has no finance tab, so the
     risk is a line on the Bio tab ("Fee payment risk (staff only)"), beside
     transport and hostel. It shows only to `finance.debtors.read`.
-- **Staff app:** the debtor rows carry `risk`. The mobile contract spec's
-  pinned key set gains it; the app does not draw it yet.
+- **Staff app:** the debtor rows carry `risk` (the mobile contract spec's
+  pinned key set gains it). The "Who owes" screen shows each row's level on
+  a tinted tag with its reasons, and a Risk filter
+  (`filterDebtorsByRisk`, tested in `bursar.spec.ts`). Added on the owner's
+  request after CP10.2 merged.
 - **Tests:**
   - `fee-risk.spec.ts`, 15 tests:
     - each rule over made-up histories;
