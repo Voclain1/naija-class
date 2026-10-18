@@ -4743,3 +4743,26 @@ Images may be attached.
 | **CP8.1** | its own, reviewed first | **Conversations.** Tables, RLS, permissions, the Inbox officer role; the four recipients and who sees what; parents start, reply and list (portal + parent app); staff inbox for each recipient (web: admin, teacher portal; staff app), reply, pass on, mark handled, close; the office starting a conversation; "Seen"; pushes to recipients and the dashboard line; reply alerts to parents (push → email → capped SMS); rate limits; the 30-day close. |
 | **CP8.2** | second | **Images, safety and retention.** Image attachments; report and flag, opening the conversation to owner and admins, with alerts and clearing; the safeguarding word list; the 2-year deletion that skips flagged conversations. |
 | **CP8.3** | third | **Email broadcasts**, as planned. |
+
+**Owner's follow-up (2026-10-18), and approval ("Start"):**
+
+- **Principal and head teacher are appointed roles.** The admin appoints a
+  **Principal** and/or a **Head teacher** (headmaster or headmistress), as
+  extra roles like the Inbox officer. So a parent's recipients are:
+  - the child's **form teacher** (JSS, SSS) or **class teacher** (nursery,
+    primary);
+  - the **bursar**;
+  - the **principal** (offered for a JSS or SSS child) or the **head
+    teacher** (nursery or primary child); for a general conversation, either
+    one the school has appointed;
+  - the **school admin** (owner and admins);
+  - the **school office** (Inbox officers, or owner and admins if none).
+
+  A recipient nobody holds is not offered.
+- **Answer 1 (safeguarding): confirmed.** A reported or flagged conversation
+  opens to the owner and admins (CP8.2).
+- **Answer 2: messaging is private and separate from announcements.** A
+  message goes to one parent, one member of staff or the school. The school
+  office (admins and Inbox officers) may start a conversation with a
+  particular parent; teachers, bursars, principals and head teachers reply but
+  do not start.
