@@ -25,6 +25,12 @@
 //                                 Reset deliberately does NOT establish a
 //                                 session (see the API service's own comment),
 //                                 so there is no token here to set.
+// POST  .../messages/images     — Phase 9 / CP8.2: the ONE multipart route.
+//                                 The bytes and the browser's multipart
+//                                 Content-Type are passed through unchanged
+//                                 (one photo, compressed in the browser to
+//                                 stay under Vercel's 4.5 MB request cap).
+//                                 Every other route stays JSON text.
 
 import { cookies, headers } from "next/headers";
 import { NextRequest, NextResponse } from "next/server";
@@ -35,6 +41,7 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000/api/v
 const COOKIE_NAME = "sk_portal_session";
 const COOKIE_MAX_AGE = 2_592_000; // 30 days — matches GUARDIAN_SESSION_TTL_MS server-side
 const PRODUCTION_HOST = "portal.schoolkit.ng";
+const MULTIPART_PATH = "messages/images";
 
 // Bug found 2026-07-17 during the guardian-invite manual test: a
 // misconfigured NEXT_PUBLIC_API_URL made this route's fetch() fail with
@@ -49,10 +56,11 @@ const PRODUCTION_HOST = "portal.schoolkit.ng";
 async function forward(
   method: string,
   subPath: string,
-  body: string | undefined,
+  body: string | ArrayBuffer | undefined,
   sessionToken: string | undefined,
   host: string,
   forwardedFor: Record<string, string>,
+  contentType = "application/json",
 ): Promise<NextResponse> {
   // Logout is the ONLY sub-path that clears rather than (possibly) sets.
   // Matched here rather than in a separate route handler so every cookie
@@ -66,7 +74,7 @@ async function forward(
     resp = await fetch(`${API_BASE}/portal/${subPath}`, {
       method,
       headers: {
-        "Content-Type": "application/json",
+        "Content-Type": contentType,
         ...(sessionToken ? { Authorization: `Bearer ${sessionToken}` } : {}),
         // The parent's own address, signed, so the API's per-address limits
         // key on them rather than on this server (lib/client-ip-signature.ts).
@@ -196,6 +204,11 @@ export async function POST(req: NextRequest, ctx: Context): Promise<NextResponse
   const sessionToken = cookieStore.get(COOKIE_NAME)?.value;
   const headerList = await headers();
   const host = headerList.get("host") ?? "";
+  const forwardedFor = clientIpHeaders((name) => headerList.get(name));
+  const incomingType = req.headers.get("content-type") ?? "";
+  if (subPath === MULTIPART_PATH && incomingType.startsWith("multipart/form-data")) {
+    return forward("POST", subPath, await req.arrayBuffer(), sessionToken, host, forwardedFor, incomingType);
+  }
   const body = await req.text();
-  return forward("POST", subPath, body, sessionToken, host, clientIpHeaders((name) => headerList.get(name)));
+  return forward("POST", subPath, body, sessionToken, host, forwardedFor);
 }

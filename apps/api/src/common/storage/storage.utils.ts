@@ -108,6 +108,15 @@ export function pathFor(schoolId: string, key: StorageObjectKey): string {
       }
       return `schools/${schoolId}/admissions/${key.documentId}.${key.ext}`;
     }
+    case "message-image": {
+      if (!UUID_RE.test(key.imageId)) {
+        throw new Error(`storage: imageId is not a UUID: ${redact(key.imageId)}`);
+      }
+      if (!["jpg", "png", "webp"].includes(key.ext)) {
+        throw new Error(`storage: unsupported message-image extension: ${redact(key.ext)}`);
+      }
+      return `schools/${schoolId}/messages/${key.imageId}.${key.ext}`;
+    }
   }
 }
 

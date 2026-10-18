@@ -1,7 +1,7 @@
 import { Injectable, Logger } from "@nestjs/common";
 
 import { Prisma, withTenant } from "@school-kit/db";
-import { MESSAGE_LIMITS } from "@school-kit/types";
+import { MESSAGE_FLAG_LABEL, MESSAGE_LIMITS, type MessageFlagReason } from "@school-kit/types";
 
 import { EmailService } from "../../common/email/email.service.js";
 import { portalBaseUrl } from "../../common/portal-url.js";
@@ -10,7 +10,7 @@ import { smsSenderFor } from "../../common/termii/sms-sender.js";
 import { normalizeNigerianPhone, TermiiService } from "../../common/termii/termii.service.js";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service.js";
 import { NotificationPreferencesService } from "../notifications/notification-preferences.service.js";
-import { lagosToday, recipientsOf } from "./messages.shared.js";
+import { holdersOf, lagosToday, recipientsOf } from "./messages.shared.js";
 
 // Phase 9 / CP8.1 — telling people of a new message (docs/modules/phase-9.md
 // §17.2 CP8-D6, §17.8 answer 6). Never the text, and never a child's name on
@@ -27,6 +27,7 @@ import { lagosToday, recipientsOf } from "./messages.shared.js";
 
 export const MESSAGE_TO_STAFF_EVENT = "message.received";
 export const MESSAGE_TO_GUARDIAN_EVENT = "message.reply";
+export const MESSAGE_FLAGGED_EVENT = "message.flagged";
 
 @Injectable()
 export class MessageAlertsService {
@@ -124,6 +125,47 @@ export class MessageAlertsService {
     }
   }
 
+  /**
+   * CP8.2: a conversation was flagged. Push and email to the owner and admins
+   * (not the one who flagged it), with the reason and never the text.
+   */
+  async toAdmins(schoolId: string, threadId: string, reason: MessageFlagReason, exceptUserId: string | null): Promise<void> {
+    try {
+      const found = await withTenant(schoolId, async (db) => {
+        const ids = (await holdersOf(db, schoolId, "ADMIN")).filter((id) => id !== exceptUserId);
+        const users = await db.user.findMany({ where: { schoolId, id: { in: ids } }, select: { id: true, email: true } });
+        const school = await db.school.findUnique({ where: { id: schoolId }, select: { name: true } });
+        return { users, school };
+      });
+      const why = MESSAGE_FLAG_LABEL[reason];
+      const link = `${webBaseUrl()}/messages/${threadId}`;
+      for (const u of found.users) {
+        await this.dispatch.notifyOfEvent({
+          schoolId,
+          principal: { type: "STAFF", userId: u.id },
+          eventType: MESSAGE_FLAGGED_EVENT,
+          eventId: `${threadId}:${reason}:${Date.now()}`,
+          title: found.school?.name ?? "SchoolKit",
+          body: `A conversation was flagged: ${why}.`,
+          data: { screen: "messages", threadId },
+        });
+        if (u.email && this.email.isConfigured) {
+          await this.email
+            .send({
+              to: u.email,
+              purpose: "message-flagged",
+              schoolName: found.school?.name,
+              subject: "A conversation with a parent was flagged",
+              html: `<p>A conversation with a parent was flagged (${escape(why)}).</p><p><a href="${link}">Open SchoolKit to read it</a>.</p>`,
+            })
+            .catch((err: unknown) => this.logger.warn(`Flag email failed: ${String(err)}`));
+        }
+      }
+    } catch (err) {
+      this.logger.error(`Telling admins of a flag failed; the flag stands. ${String(err)}`);
+    }
+  }
+
   /** Takes one of today's SMS places; null when all are used. */
   private async takeSmsPlace(schoolId: string): Promise<number | null> {
     const day = lagosToday();
@@ -136,6 +178,10 @@ export class MessageAlertsService {
     );
     return rows[0]?.sent ?? null;
   }
+}
+
+function webBaseUrl(): string {
+  return process.env.WEB_BASE_URL ?? "http://localhost:3001";
 }
 
 function escape(text: string): string {

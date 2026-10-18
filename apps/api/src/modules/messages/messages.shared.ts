@@ -60,6 +60,8 @@ export function visibleTo(me: StaffMessagingIdentity, schoolId: string): Prisma.
       { recipient: "CLASS_TEACHER", recipientUserId: me.userId },
       { passes: { some: { OR: [{ recipient: { in: groups } }, { recipient: "CLASS_TEACHER", recipientUserId: me.userId }, { passedByUserId: me.userId }] } } },
       { messages: { some: { userId: me.userId } } },
+      // CP8.2: a flagged conversation is open to the owner and admins.
+      ...(me.groups.has("ADMIN") ? [{ flaggedAt: { not: null } }] : []),
     ],
   };
 }
@@ -156,4 +158,11 @@ export async function unreadMessagesFor(db: Db, schoolId: string, userId: string
     take: 500,
   });
   return rows.filter((r) => !r.reads[0] || r.reads[0].lastReadAt < r.lastMessageAt).length;
+}
+
+/** CP8.2: flagged conversations, for the owner and admins; 0 for anyone else. */
+export async function flaggedMessagesFor(db: Db, schoolId: string, userId: string): Promise<number> {
+  const me = await messagingIdentity(db, schoolId, userId);
+  if (!me.groups.has("ADMIN")) return 0;
+  return db.messageThread.count({ where: { schoolId, flaggedAt: { not: null } } });
 }

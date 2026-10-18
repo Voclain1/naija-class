@@ -336,6 +336,11 @@ export function guardianMessage(threadId: string): Promise<PortalMessageThreadDt
   return apiFetch<PortalMessageThreadDto>(`/portal/messages/${encodeURIComponent(threadId)}`);
 }
 
-export function guardianReplyMessage(threadId: string, body: string): Promise<PortalMessageThreadDto> {
-  return apiFetch<PortalMessageThreadDto>(`/portal/messages/${encodeURIComponent(threadId)}`, { method: "POST", body: { body } });
+export function guardianReplyMessage(threadId: string, body: string, imageIds: string[] = []): Promise<PortalMessageThreadDto> {
+  return apiFetch<PortalMessageThreadDto>(`/portal/messages/${encodeURIComponent(threadId)}`, { method: "POST", body: { body, imageIds } });
+}
+
+// CP8.2 — "Report this conversation" to the school's owner and admins.
+export function guardianReportMessage(threadId: string, note: string): Promise<PortalMessageThreadDto> {
+  return apiFetch<PortalMessageThreadDto>(`/portal/messages/${encodeURIComponent(threadId)}/report`, { method: "POST", body: note ? { note } : {} });
 }

@@ -86,6 +86,11 @@ const ALERT_COPY: Record<DashboardAlertType, (count: number) => { label: string;
     label: `${n} unread message${n === 1 ? "" : "s"} from parents`,
     icon: "chatbubbles-outline",
   }),
+  // CP8.2 — conversations flagged for the owner and admins.
+  flagged_messages: (n) => ({
+    label: `${n} flagged conversation${n === 1 ? "" : "s"}`,
+    icon: "flag-outline",
+  }),
 };
 
 export default function StaffDashboardScreen() {

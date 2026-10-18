@@ -755,6 +755,9 @@ export const ADMISSION_ADMIT_PERMISSIONS = ["admission.admit"] as const;
 export const MESSAGE_PERMISSIONS = ["messages.read", "messages.reply"] as const;
 export const MESSAGE_START_PERMISSIONS = ["messages.start"] as const;
 export const MESSAGE_SETTINGS_PERMISSIONS = ["messages.settings"] as const;
+// CP8.2 — clearing a flagged conversation (owner, admin): the flag opened it
+// to them, and only they decide it is resolved.
+export const MESSAGE_OVERSEE_PERMISSIONS = ["messages.oversee"] as const;
 
 // Phase 8 / CP2 — Recording Completeness (docs/modules/phase-8.md §16 D39).
 // Owner/admin only. Named `reports.*`, deliberately not `report-card.*`.
@@ -889,6 +892,7 @@ export const ALL_PERMISSIONS = [
   ...MESSAGE_PERMISSIONS,
   ...MESSAGE_START_PERMISSIONS,
   ...MESSAGE_SETTINGS_PERMISSIONS,
+  ...MESSAGE_OVERSEE_PERMISSIONS,
   ...REPORTS_PERMISSIONS,
   ...TABLE_EXPORT_PERMISSIONS,
   ...TIMETABLE_PERMISSIONS,

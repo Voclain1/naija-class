@@ -4,6 +4,9 @@
 // school's replies are signed by who answered ("Mrs Okafor, Form teacher") or
 // by the office. "Seen" appears once the school has opened the parent's
 // latest message. A closed conversation is read-only.
+//
+// CP8.2: photos, and "Report this conversation", which lets the school's owner
+// and admins read it. The parent sees that they reported it, nothing more.
 
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
@@ -13,6 +16,7 @@ import { MESSAGE_LIMITS, type PortalMessageThreadDto } from "@school-kit/types";
 
 import { PageHeader, PageSkeleton } from "@school-kit/ui";
 
+import { MessagePhotos, PhotoPicker, type PickedPhoto } from "@/components/message-photos";
 import { SchoolBanner } from "@/components/school-banner";
 import { messageTime, portalJson } from "@/lib/portal-api";
 
@@ -23,6 +27,9 @@ export default function MessageThreadPage() {
   const [error, setError] = useState<string | null>(null);
   const [reply, setReply] = useState("");
   const [busy, setBusy] = useState(false);
+  const [photos, setPhotos] = useState<PickedPhoto[]>([]);
+  const [reporting, setReporting] = useState(false);
+  const [reportNote, setReportNote] = useState("");
 
   useEffect(() => {
     void portalJson<PortalMessageThreadDto>(`/messages/${encodeURIComponent(params.id)}`, {}, (url) => router.replace(url)).then((r) => {
@@ -35,11 +42,28 @@ export default function MessageThreadPage() {
     e.preventDefault();
     setBusy(true);
     setError(null);
-    const r = await portalJson<PortalMessageThreadDto>(`/messages/${encodeURIComponent(params.id)}`, { method: "POST", json: { body: reply.trim() } });
+    const r = await portalJson<PortalMessageThreadDto>(`/messages/${encodeURIComponent(params.id)}`, {
+      method: "POST",
+      json: { body: reply.trim(), imageIds: photos.map((p) => p.id) },
+    });
     setBusy(false);
     if (r.ok) {
       setThread(r.body);
       setReply("");
+      setPhotos([]);
+    } else setError(r.message);
+  }
+
+  async function report(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    const note = reportNote.trim();
+    const r = await portalJson<PortalMessageThreadDto>(`/messages/${encodeURIComponent(params.id)}/report`, { method: "POST", json: note ? { note } : {} });
+    setBusy(false);
+    if (r.ok) {
+      setThread(r.body);
+      setReporting(false);
     } else setError(r.message);
   }
 
@@ -62,7 +86,8 @@ export default function MessageThreadPage() {
               <span className="text-xs font-medium text-muted-foreground">
                 {m.author} · {messageTime(m.sentAt)}
               </span>
-              <p className="whitespace-pre-wrap break-words">{m.body}</p>
+              {m.body && <p className="whitespace-pre-wrap break-words">{m.body}</p>}
+              <MessagePhotos images={m.images} />
               {m.id === lastMine?.id && thread.seen && <span className="self-end text-xs text-muted-foreground">Seen</span>}
             </li>
           ))}
@@ -91,12 +116,48 @@ export default function MessageThreadPage() {
               value={reply}
               maxLength={MESSAGE_LIMITS.body}
               onChange={(e) => setReply(e.target.value)}
-              required
+              required={photos.length === 0}
             />
           </label>
-          <button type="submit" disabled={busy || !reply.trim()} className="h-10 self-start rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground disabled:opacity-50">
+          <PhotoPicker photos={photos} onChange={setPhotos} onError={setError} />
+          <button type="submit" disabled={busy || (!reply.trim() && photos.length === 0)} className="h-10 self-start rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground disabled:opacity-50">
             Send
           </button>
+        </form>
+      )}
+      {thread?.reported && (
+        <p className="rounded-md bg-amber-50 p-3 text-sm text-amber-950 dark:bg-amber-950/30 dark:text-amber-100">
+          You reported this conversation. The school&apos;s owner and admins can read it.
+        </p>
+      )}
+      {thread && !thread.reported && !reporting && (
+        <button type="button" onClick={() => setReporting(true)} className="self-start text-sm text-muted-foreground underline">
+          Report this conversation
+        </button>
+      )}
+      {thread && reporting && (
+        <form onSubmit={report} className="flex min-w-0 flex-col gap-2 rounded-lg bg-muted/50 p-4 text-sm" aria-label="Report">
+          <p>
+            If something in this conversation worries you, report it. The school&apos;s owner and admins will be told and can read the whole conversation.
+          </p>
+          <label className="flex flex-col gap-1">
+            <span className="font-medium">What worries you? (optional)</span>
+            <textarea
+              className="w-full min-w-0 rounded-md border border-input bg-background px-3 py-2 text-sm"
+              rows={3}
+              maxLength={MESSAGE_LIMITS.flagNote}
+              value={reportNote}
+              onChange={(e) => setReportNote(e.target.value)}
+            />
+          </label>
+          <div className="flex flex-wrap gap-2">
+            <button type="submit" disabled={busy} className="h-10 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground disabled:opacity-50">
+              Report
+            </button>
+            <button type="button" onClick={() => setReporting(false)} className="h-10 rounded-md px-4 text-sm">
+              Cancel
+            </button>
+          </div>
         </form>
       )}
     </main>
