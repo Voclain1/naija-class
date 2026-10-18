@@ -5085,3 +5085,37 @@ tracking, emailing staff, and SMS broadcasts.
 4. **The daily cap of 1,000 a school**: keep it? A school of 600 families with
    two parents each would hit it with one announcement. *Recommendation: raise
    it to 3,000 a school a day.*
+
+**Owner's answers (2026-10-18)**
+
+1. **Every parent** linked to the child gets the email, as with the push.
+2. **A parent whose portal access the school switched off is left out**, as
+   proposed.
+3. **Every address on file is used, including those that came from an
+   admission application.** Admit already writes the application's email
+   onto the parent it creates or links (`linkOrCreatePrimaryGuardianInTx`),
+   so those families are included once the child is admitted and enrolled.
+   Applicants who have not been admitted are not in any audience.
+4. **Email limits are part of the pricing**, so a Free school never gets
+   3,000 a day. The single 1,000 cap is replaced by a daily limit per plan,
+   kept beside the student caps in `@school-kit/types`
+   (`PLAN_ANNOUNCEMENT_EMAILS_PER_DAY`):
+
+   | Plan | Students | Announcement emails a day |
+   |---|---|---|
+   | Free | up to 100 | 200 |
+   | Starter | up to 200 | 400 |
+   | Growth | up to 600 | 1,200 |
+   | Professional | up to 1,200 | 2,400 |
+   | Enterprise | by agreement | 5,000 |
+
+   That is about one announcement a day to two parents per student at the
+   top of each plan's range.
+   - The limit always applies, whatever `PLAN_ENFORCEMENT` says, because
+     every email costs money.
+   - Settings → Plan lists it.
+   - The compose form warns before sending when the families with an address
+     exceed what is left of today's allowance: "N will not be emailed today
+     (your plan's daily limit)".
+   - No per-school override yet. Enterprise schools that need more are handled
+     by the operator later.
