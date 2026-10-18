@@ -98,6 +98,8 @@ const STAFF_KEYS: Record<string, readonly unknown[]> = {
   staffBoardingBoarders: queryKeys.staffBoardingBoarders(SCHOOL, USER, "hostel_1"),
   staffBoardingVisits: queryKeys.staffBoardingVisits(SCHOOL, USER, "hostel_1", "2026-10-17"),
   staffBoardingExeats: queryKeys.staffBoardingExeats(SCHOOL, USER, "hostel_1"),
+  staffMessages: queryKeys.staffMessages(SCHOOL, USER, "OPEN"),
+  staffMessage: queryKeys.staffMessage(SCHOOL, USER, "thread_1"),
   staffLibraryLoans: queryKeys.staffLibraryLoans(SCHOOL, USER, "OVERDUE"),
   staffLibraryCopy: queryKeys.staffLibraryCopy(SCHOOL, USER, "42"),
   staffAssignmentMarking: queryKeys.staffAssignmentMarking(SCHOOL, USER, "hw_1"),

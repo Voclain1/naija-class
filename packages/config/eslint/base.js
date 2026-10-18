@@ -269,6 +269,10 @@ export const baseConfig = [
       // category as the sweeps above: basePrisma fetches ONLY the school id
       // list; every read and delete goes through withTenant per school.
       "**/modules/admissions/admissions-purge.service.ts",
+      // messages-close.service.ts — the nightly 30-day close of quiet
+      // conversations (Phase 9 / CP8.1). Same category: basePrisma fetches
+      // ONLY the school id list; every update goes through withTenant.
+      "**/modules/messages/messages-close.service.ts",
       "**/common/auth/platform-admin.guard.ts",
       "**/modules/platform-admin/platform-admin.service.ts",
       // school-deletion.ts (platform-admin tools slice 2, 2026-10-07) only

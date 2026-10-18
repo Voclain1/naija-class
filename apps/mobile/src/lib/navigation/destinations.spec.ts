@@ -135,8 +135,8 @@ describe("a bursar", () => {
 });
 
 describe("families", () => {
-  it("gives a parent their children and the calendar", () => {
-    expect(guardianDestinations().map((d) => d.route)).toEqual(["/students", "/announcements", "/calendar"]);
+  it("gives a parent their children, messages and the calendar", () => {
+    expect(guardianDestinations().map((d) => d.route)).toEqual(["/students", "/announcements", "/messages", "/calendar"]);
   });
 
   it("gives a student every part of their own school work", () => {
@@ -186,5 +186,13 @@ describe("boarding (Phase 9 / CP6b.2)", () => {
     expect(keys(teacher)).not.toContain("boarding");
     expect(keys({ ...teacher, housesHostels: true })).toContain("boarding");
     expect(keys(BURSAR)).not.toContain("boarding");
+  });
+});
+
+describe("messages (Phase 9 / CP8.1)", () => {
+  it("shows Messages to whoever holds messages.read, and to no one else", () => {
+    expect(keys({ ...base, roles: [{ key: "principal" }], permissions: ["messages.read", "messages.reply"] })).toEqual(["messages"]);
+    expect(staffDestinations(OWNER).find((d) => d.key === "messages")?.route).toBe("/staff/messages");
+    expect(keys({ ...base, roles: [{ key: "house_master" }], permissions: ["hostel.house"] })).not.toContain("messages");
   });
 });

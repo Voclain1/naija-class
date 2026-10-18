@@ -25,6 +25,9 @@ import {
   ADMISSION_PERMISSIONS,
   ADMISSION_SETTINGS_PERMISSIONS,
   ADMISSION_ADMIT_PERMISSIONS,
+  MESSAGE_PERMISSIONS,
+  MESSAGE_START_PERMISSIONS,
+  MESSAGE_SETTINGS_PERMISSIONS,
   BEHAVIOUR_PERMISSIONS_LIST,
   HOMEWORK_MANAGE_PERMISSIONS,
   HOMEWORK_READ_PERMISSIONS,
@@ -152,6 +155,10 @@ const ADMIN_PERMISSIONS: readonly string[] = [
   ...ADMISSION_SETTINGS_PERMISSIONS,
   // CP7.2: kept IN SYNC with prisma/migrations/20261107120000_admission_decisions.
   ...ADMISSION_ADMIT_PERMISSIONS,
+  // CP8.1: kept IN SYNC with prisma/migrations/20261108120000_messaging.
+  ...MESSAGE_PERMISSIONS,
+  ...MESSAGE_START_PERMISSIONS,
+  ...MESSAGE_SETTINGS_PERMISSIONS,
   // Phase 8 / CP2 — Recording Completeness: the school-wide report and the
   // per-teacher recording-activity view (audited per read). Owner/admin only;
   // never teacher or bursar (§16 D39, pinned in permissions-coverage.spec.ts).
@@ -236,6 +243,9 @@ export const SYSTEM_ROLE_SEEDS: SystemRoleSeed[] = [
       "enrollment.read",
       // Phase 2 (slice 9) — granted at the guard; getTeacherScope narrows them
       // to the teacher's own (arm, subject). See PHASE_2_TEACHER_PERMISSIONS.
+      // Phase 9 / CP8.1 — messages a parent addresses to their child's form
+      // or class teacher. Kept IN SYNC with 20261108120000_messaging.
+      ...MESSAGE_PERMISSIONS,
       ...PHASE_2_TEACHER_PERMISSIONS,
       // Phase 5 / Slice 2 — the lesson-plan generator is teacher-facing by
       // definition. Deliberately excludes ai-usage.read: school-level AI spend
@@ -340,6 +350,31 @@ export const SYSTEM_ROLE_SEEDS: SystemRoleSeed[] = [
       "Handles admission applications: reads them and moves them through review, offer and admission. Given by an admin to staff alongside their own role.",
     permissions: [...ADMISSION_PERMISSIONS],
   },
+  // Phase 9 / CP8.1 — the appointed messaging roles (docs/modules/phase-9.md
+  // §17.8). Nobody holds them by default; an admin appoints them in Settings
+  // → Messaging, alongside the person's own role. Kept IN SYNC with the INSERT
+  // in prisma/migrations/20261108120000_messaging.
+  {
+    key: "principal",
+    name: "Principal",
+    description:
+      "Receives and answers messages parents send to the principal (JSS and SSS). Appointed by an admin, alongside the person's own role.",
+    permissions: [...MESSAGE_PERMISSIONS],
+  },
+  {
+    key: "head_teacher",
+    name: "Head teacher",
+    description:
+      "Receives and answers messages parents send to the head teacher (nursery and primary). Appointed by an admin, alongside the person's own role.",
+    permissions: [...MESSAGE_PERMISSIONS],
+  },
+  {
+    key: "inbox_officer",
+    name: "Inbox officer",
+    description:
+      "Answers messages parents send to the school office, and may start a conversation with a parent. Appointed by an admin, alongside the person's own role.",
+    permissions: [...MESSAGE_PERMISSIONS, ...MESSAGE_START_PERMISSIONS],
+  },
   // Phase 3 / Slice 15 — `bursar` role wire-up + RBAC close-out. Finance-only
   // system role: fee catalog, discounts, invoices, payments (not refunds),
   // payment plans, debtor reminders, expenses, the finance dashboard, and
@@ -379,6 +414,9 @@ export const SYSTEM_ROLE_SEEDS: SystemRoleSeed[] = [
       // Phase 9 / CP6b.1 — hostels, read only; hostel fees via charge.raise.
       // Kept IN SYNC with prisma/migrations/20261103120000_hostels.
       ...HOSTEL_READ_PERMISSIONS,
+      // Phase 9 / CP8.1 — messages a parent addresses to the bursar. Kept IN
+      // SYNC with 20261108120000_messaging.
+      ...MESSAGE_PERMISSIONS,
     ],
   },
 ];

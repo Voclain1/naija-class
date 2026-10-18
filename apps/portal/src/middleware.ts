@@ -79,5 +79,5 @@ export function middleware(req: NextRequest): NextResponse {
 //   /api/*                     — the proxy route handles its own auth by
 //                                forwarding (or not forwarding) the cookie.
 export const config = {
-  matcher: ["/", "/students/:path*", "/calendar"],
+  matcher: ["/", "/students/:path*", "/calendar", "/messages/:path*"],
 };

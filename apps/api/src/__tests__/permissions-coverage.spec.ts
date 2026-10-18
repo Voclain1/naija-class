@@ -10,6 +10,7 @@ import {
   STUDENT_CHARGE_PERMISSIONS,
   TRANSPORT_READ_PERMISSIONS,
   HOSTEL_READ_PERMISSIONS,
+  MESSAGE_PERMISSIONS,
   TIMETABLE_PERMISSIONS,
   TIMETABLE_OWN_READ_PERMISSIONS,
   PHASE_0_PERMISSIONS,
@@ -36,6 +37,7 @@ import { LibraryResourcesController } from "../modules/library/library-resources
 import { LibraryController } from "../modules/library/library.controller";
 import { BoardingController } from "../modules/hostels/boarding.controller";
 import { AdmissionsController } from "../modules/admissions/admissions.controller";
+import { MessagesController } from "../modules/messages/messages.controller";
 import { HostelController } from "../modules/hostels/hostel.controller";
 import { AssignmentsController } from "../modules/assignments/assignments.controller";
 import { CalendarController } from "../modules/calendar/calendar.controller";
@@ -790,7 +792,10 @@ describe("Phase 3 RBAC close-out: seeded role grants", () => {
         // Phase 9 CP5.2: transport, read only (route fees ride on charge.raise).
         TRANSPORT_READ_PERMISSIONS.length +
         // Phase 9 CP6b.1: hostels, read only (hostel fees ride on charge.raise).
-        HOSTEL_READ_PERMISSIONS.length,
+        HOSTEL_READ_PERMISSIONS.length +
+        // Phase 9 CP8.1: messages parents address to the bursar (the service
+        // narrows to those; the bursar never starts one).
+        MESSAGE_PERMISSIONS.length,
     );
     expect(bursarPerms.has("transport.read")).toBe(true);
     expect(bursarPerms.has("transport.manage")).toBe(false);
@@ -1739,6 +1744,38 @@ describe("Phase 9 CP7.2 RBAC coverage: decisions and Admit", () => {
     expect(new Set(roleSeed("admin").permissions).has("admission.admit")).toBe(true);
     for (const key of ["admission_officer", "teacher", "bursar", "health_officer", "librarian", "house_master"]) {
       expect(new Set(roleSeed(key).permissions).has("admission.admit"), `${key} must not hold admission.admit`).toBe(false);
+    }
+  });
+});
+
+describe("Phase 9 CP8.1 RBAC coverage: messaging", () => {
+  const perms = (handler: string): string[] =>
+    Reflect.getMetadata(
+      PERMISSIONS_METADATA_KEY,
+      (MessagesController.prototype as unknown as Record<string, object>)[handler]!,
+    ) as string[];
+
+  it("reading needs messages.read, writing messages.reply, starting messages.start, appointing messages.settings", () => {
+    for (const handler of ["list", "get"]) expect(perms(handler), handler).toEqual(["messages.read"]);
+    for (const handler of ["reply", "pass", "handled", "close"]) expect(perms(handler), handler).toEqual(["messages.reply"]);
+    for (const handler of ["start", "guardians"]) expect(perms(handler), handler).toEqual(["messages.start"]);
+    for (const handler of ["staff", "setRoles"]) expect(perms(handler), handler).toEqual(["messages.settings"]);
+  });
+
+  it("the appointed roles hold messaging only; teachers and bursars read and reply but never start", () => {
+    expect([...roleSeed("principal").permissions].sort()).toEqual(["messages.read", "messages.reply"]);
+    expect([...roleSeed("head_teacher").permissions].sort()).toEqual(["messages.read", "messages.reply"]);
+    expect([...roleSeed("inbox_officer").permissions].sort()).toEqual(["messages.read", "messages.reply", "messages.start"]);
+    const admin = new Set(roleSeed("admin").permissions);
+    for (const p of ["messages.read", "messages.reply", "messages.start", "messages.settings"]) expect(admin.has(p), p).toBe(true);
+    for (const key of ["teacher", "bursar"]) {
+      const held = new Set(roleSeed(key).permissions);
+      expect(held.has("messages.read") && held.has("messages.reply"), key).toBe(true);
+      expect(held.has("messages.start") || held.has("messages.settings"), `${key} must not start or appoint`).toBe(false);
+    }
+    for (const key of ["health_officer", "librarian", "house_master", "admission_officer"]) {
+      const held = new Set(roleSeed(key).permissions);
+      for (const p of ["messages.read", "messages.reply", "messages.start", "messages.settings"]) expect(held.has(p), `${key} must not hold ${p}`).toBe(false);
     }
   });
 });

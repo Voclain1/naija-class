@@ -740,15 +740,16 @@ model ClassSubject {
 // "current" semantic on Student.
 
 model Student {
-  id              String        @id @default(uuid())
-  schoolId        String        @map("school_id")
-  admissionNumber String        @map("admission_number") // free-text, unique per school
-  firstName       String        @map("first_name")
-  middleName      String?       @map("middle_name")
-  lastName        String        @map("last_name")
-  dateOfBirth     DateTime      @map("date_of_birth") @db.Date // calendar date — see CLAUDE.md
+  messageThreads  MessageThread[] // CP8.1
+  id              String          @id @default(uuid())
+  schoolId        String          @map("school_id")
+  admissionNumber String          @map("admission_number") // free-text, unique per school
+  firstName       String          @map("first_name")
+  middleName      String?         @map("middle_name")
+  lastName        String          @map("last_name")
+  dateOfBirth     DateTime        @map("date_of_birth") @db.Date // calendar date — see CLAUDE.md
   gender          Gender
-  photoUrl        String?       @map("photo_url") // string only; upload UI deferred (Phase 2/4)
+  photoUrl        String?         @map("photo_url") // string only; upload UI deferred (Phase 2/4)
   address         String?
   phone           String?
   email           String?
@@ -756,9 +757,9 @@ model Student {
   // docs/modules/phase-9.md §10 CP3-D4): health data is read by a narrower set
   // of people than the rest of the student record, and audited on every read.
   religion        String?
-  stateOfOrigin   String?       @map("state_of_origin")
-  nationality     String        @default("Nigerian")
-  status          StudentStatus @default(ACTIVE)
+  stateOfOrigin   String?         @map("state_of_origin")
+  nationality     String          @default("Nigerian")
+  status          StudentStatus   @default(ACTIVE)
 
   // ---- Smart Student Import — extraction provenance (2026-08-20) --------
   // TRUE when this row's field values originated from a camera-captured
@@ -983,13 +984,14 @@ model StudentPortalInvitation {
 // belt-and-braces guard, not the primary unlink path.
 
 model Guardian {
-  id           String       @id @default(uuid())
-  schoolId     String       @map("school_id")
-  firstName    String       @map("first_name")
-  lastName     String       @map("last_name")
-  relationship Relationship
-  phone        String // NOT globally unique — see header comment
-  email        String?
+  messageThreads MessageThread[] // CP8.1
+  id             String          @id @default(uuid())
+  schoolId       String          @map("school_id")
+  firstName      String          @map("first_name")
+  lastName       String          @map("last_name")
+  relationship   Relationship
+  phone          String // NOT globally unique — see header comment
+  email          String?
 
   // Phase 4 / Slice 2 — portal auth (Decision A, docs/modules/phase-4.md §3/§4).
   // Guardian is extended directly rather than a companion table, mirroring how
@@ -4828,4 +4830,103 @@ model AdmissionSmsCounter {
 
   @@id([schoolId, day])
   @@map("admission_sms_counters")
+}
+
+// ─── Phase 9 / CP8.1 — private messaging (docs/modules/phase-9.md §17.8) ──
+// A parent writes to ONE recipient about one child or in general; only that
+// recipient, anyone it is passed to and anyone who has written in it see it.
+
+enum MessageRecipient {
+  CLASS_TEACHER
+  BURSAR
+  PRINCIPAL
+  HEAD_TEACHER
+  ADMIN
+  OFFICE
+}
+
+model MessageThread {
+  id              String           @id @default(uuid())
+  schoolId        String           @map("school_id")
+  guardianId      String           @map("guardian_id")
+  studentId       String?          @map("student_id")
+  recipient       MessageRecipient
+  /// The class teacher addressed, for CLASS_TEACHER only, fixed at the start.
+  recipientUserId String?          @map("recipient_user_id")
+  subject         String
+  status          String           @default("OPEN")
+  /// NULL: the guardian started it; otherwise the office member who did.
+  startedByUserId String?          @map("started_by_user_id")
+  lastMessageAt   DateTime         @default(now()) @map("last_message_at")
+  lastMessageBy   String           @map("last_message_by")
+  handledByUserId String?          @map("handled_by_user_id")
+  closedAt        DateTime?        @map("closed_at")
+  closedByUserId  String?          @map("closed_by_user_id")
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime         @updatedAt @map("updated_at")
+  guardian        Guardian         @relation(fields: [guardianId], references: [id], onDelete: Cascade)
+  student         Student?         @relation(fields: [studentId], references: [id], onDelete: SetNull)
+  messages        Message[]
+  passes          MessagePass[]
+  reads           MessageRead[]
+
+  @@index([schoolId, status, lastMessageAt])
+  @@index([schoolId, guardianId])
+  @@index([schoolId, recipient])
+  @@index([recipientUserId])
+  @@map("message_threads")
+}
+
+model MessagePass {
+  id              String           @id @default(uuid())
+  schoolId        String           @map("school_id")
+  threadId        String           @map("thread_id")
+  recipient       MessageRecipient
+  recipientUserId String?          @map("recipient_user_id")
+  passedByUserId  String           @map("passed_by_user_id")
+  createdAt       DateTime         @default(now()) @map("created_at")
+  thread          MessageThread    @relation(fields: [threadId], references: [id], onDelete: Cascade)
+
+  @@index([threadId])
+  @@index([schoolId, recipient])
+  @@map("message_passes")
+}
+
+model Message {
+  id          String            @id @default(uuid())
+  schoolId    String            @map("school_id")
+  threadId    String            @map("thread_id")
+  authorKind  String            @map("author_kind")
+  guardianId  String?           @map("guardian_id")
+  userId      String?           @map("user_id")
+  /// For a staff message, the recipient the writer answered as.
+  asRecipient MessageRecipient? @map("as_recipient")
+  body        String
+  createdAt   DateTime          @default(now()) @map("created_at")
+  thread      MessageThread     @relation(fields: [threadId], references: [id], onDelete: Cascade)
+
+  @@index([threadId, createdAt])
+  @@index([schoolId, guardianId, createdAt])
+  @@map("messages")
+}
+
+model MessageRead {
+  schoolId   String        @map("school_id")
+  threadId   String        @map("thread_id")
+  readerKind String        @map("reader_kind")
+  readerId   String        @map("reader_id")
+  lastReadAt DateTime      @map("last_read_at")
+  thread     MessageThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+
+  @@id([threadId, readerKind, readerId])
+  @@map("message_reads")
+}
+
+model MessageSmsCounter {
+  schoolId String   @map("school_id")
+  day      DateTime @db.Date
+  sent     Int      @default(0)
+
+  @@id([schoolId, day])
+  @@map("message_sms_counters")
 }

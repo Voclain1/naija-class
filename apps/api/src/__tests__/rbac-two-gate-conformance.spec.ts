@@ -10,7 +10,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { AppModule } from "../app.module.js";
 import { PERMISSIONS_METADATA_KEY } from "../common/auth/permissions.decorator";
 
-type RoleKey = "owner" | "admin" | "teacher" | "bursar" | "health_officer" | "librarian" | "house_master" | "admission_officer";
+type RoleKey = "owner" | "admin" | "teacher" | "bursar" | "health_officer" | "librarian" | "house_master" | "admission_officer" | "principal" | "head_teacher" | "inbox_officer";
 type NamedFunction = { readonly name: string; toString(): string };
 
 type RouteGate = {
@@ -22,7 +22,7 @@ type RouteGate = {
 
 // health_officer: Phase 9 / CP3.1 (docs/modules/phase-9.md §10 CP3-D1).
 // librarian: Phase 9 / CP6.1 (§14 CP6-D8). house_master: CP6b.1 (§15.8).
-const STAFF_ROLE_KEYS: RoleKey[] = ["owner", "admin", "teacher", "bursar", "health_officer", "librarian", "house_master", "admission_officer"];
+const STAFF_ROLE_KEYS: RoleKey[] = ["owner", "admin", "teacher", "bursar", "health_officer", "librarian", "house_master", "admission_officer", "principal", "head_teacher", "inbox_officer"];
 
 // I2 exceptions are design contracts, not a generic allowlist. Every entry is
 // grouped by the narrower authorization rule that justifies it. The test below

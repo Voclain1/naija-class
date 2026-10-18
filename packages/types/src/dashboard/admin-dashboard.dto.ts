@@ -41,6 +41,7 @@ export type DashboardAlertType =
   | "pending_staff_invitations"
   // Phase 9 / CP7.1: applications not yet looked at; links to /admissions.
   | "new_admission_applications"
+  | "unread_messages"
   // Phase 8 / CP2 (§16 Q33): count of active term-health signals for the
   // current term, linking to /reports. Computed by the same helper the
   // completeness report uses, inside the dashboard's one transaction.

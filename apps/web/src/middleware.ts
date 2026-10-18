@@ -117,6 +117,8 @@ export const config = {
     "/boarding/:path*",
     // Admissions (Phase 9 / CP7.1), added in the same PR as the pages.
     "/admissions/:path*",
+    // Messages (Phase 9 / CP8.1), added in the same PR as the pages.
+    "/messages/:path*",
     "/teacher/:path*",
     "/super-admin/dashboard/:path*",
   ],

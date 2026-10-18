@@ -747,6 +747,14 @@ export const ADMISSION_SETTINGS_PERMISSIONS = ["admission.settings"] as const;
 // officer takes an application as far as an accepted offer (§16.8). The same
 // permission reads a student's admission documents from the student page.
 export const ADMISSION_ADMIT_PERMISSIONS = ["admission.admit"] as const;
+// Phase 9 / CP8 — private messaging (docs/modules/phase-9.md §17, §17.8).
+// read/reply: every role a parent can write to (teacher, bursar, the appointed
+// principal, head teacher and Inbox officer, admin); the service narrows each
+// to the conversations addressed or passed to them. start: the school office
+// (admin, Inbox officer). settings: appointing them (admin).
+export const MESSAGE_PERMISSIONS = ["messages.read", "messages.reply"] as const;
+export const MESSAGE_START_PERMISSIONS = ["messages.start"] as const;
+export const MESSAGE_SETTINGS_PERMISSIONS = ["messages.settings"] as const;
 
 // Phase 8 / CP2 — Recording Completeness (docs/modules/phase-8.md §16 D39).
 // Owner/admin only. Named `reports.*`, deliberately not `report-card.*`.
@@ -878,6 +886,9 @@ export const ALL_PERMISSIONS = [
   ...ADMISSION_PERMISSIONS,
   ...ADMISSION_SETTINGS_PERMISSIONS,
   ...ADMISSION_ADMIT_PERMISSIONS,
+  ...MESSAGE_PERMISSIONS,
+  ...MESSAGE_START_PERMISSIONS,
+  ...MESSAGE_SETTINGS_PERMISSIONS,
   ...REPORTS_PERMISSIONS,
   ...TABLE_EXPORT_PERMISSIONS,
   ...TIMETABLE_PERMISSIONS,

@@ -16,6 +16,7 @@ import {
   BILLED_EXCLUDED_STATUSES,
   buildFinanceTotalsFromRows,
 } from "../finance/finance-totals.js";
+import { unreadMessagesFor } from "../messages/messages.shared.js";
 import { computeTermHealth } from "../reports/term-health.js";
 
 const TREND_WEEKS = 8;
@@ -241,6 +242,9 @@ export class DashboardService {
 
       // Phase 9 / CP7.1 — new admission applications, waiting to be looked at.
       const newAdmissionCount = await db.admissionApplication.count({ where: { status: "SUBMITTED" } });
+      // Phase 9 / CP8.1 — parents' messages this person has not read, among
+      // the conversations addressed or passed to them (only theirs, §17.8).
+      const unreadMessageCount = await unreadMessagesFor(db, authCtx.schoolId, authCtx.userId);
 
       const needsYouToday = [
         { type: "overdue_fees" as const, count: overdueCount, href: "/finance/debtors" },
@@ -255,6 +259,7 @@ export class DashboardService {
           href: "/staff",
         },
         { type: "new_admission_applications" as const, count: newAdmissionCount, href: "/admissions" },
+        { type: "unread_messages" as const, count: unreadMessageCount, href: "/messages" },
         {
           type: "term_health" as const,
           count: termHealthSignals.length,

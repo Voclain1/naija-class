@@ -12,7 +12,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
-import { callSchoolHref, type AnnouncementFeedResponse, type PortalStudentDto, type SchoolContactResponse } from "@school-kit/types";
+import { callSchoolHref, type AnnouncementFeedResponse, type PortalMessageListDto, type PortalStudentDto, type SchoolContactResponse } from "@school-kit/types";
 
 import {
   buildLoginUrl,
@@ -38,6 +38,7 @@ export default function DashboardPage() {
   // for, and a school message nobody can count is still readable one tap
   // away. A failure shows no badge rather than a zero, which would be a lie.
   const [unread, setUnread] = useState(0);
+  const [unreadMessages, setUnreadMessages] = useState(0);
   // Same treatment as the unread count: fetched on its own, silent on failure,
   // and no button at all when the school has set no number (D12).
   const [callHref, setCallHref] = useState<string | null>(null);
@@ -98,6 +99,17 @@ export default function DashboardPage() {
       }
     }
 
+    async function loadMessages() {
+      try {
+        const res = await fetch("/api/portal/messages");
+        if (!res.ok) return;
+        const body = (await res.json()) as PortalMessageListDto;
+        if (!cancelled) setUnreadMessages(body.unread);
+      } catch {
+        // Silent, like the announcements count.
+      }
+    }
+
     async function loadSchool() {
       try {
         const res = await fetch("/api/portal/school");
@@ -111,6 +123,7 @@ export default function DashboardPage() {
 
     void load();
     void loadUnread();
+    void loadMessages();
     void loadSchool();
     return () => {
       cancelled = true;
@@ -138,6 +151,10 @@ export default function DashboardPage() {
         <Link href="/announcements" className="text-sm font-medium text-primary hover:underline">
           From the school
           {unread > 0 ? ` (${unread} new)` : ""} →
+        </Link>
+        <Link href="/messages" className="text-sm font-medium text-primary hover:underline">
+          Messages
+          {unreadMessages > 0 ? ` (${unreadMessages} new)` : ""} →
         </Link>
       </nav>
 

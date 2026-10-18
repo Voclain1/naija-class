@@ -4453,3 +4453,427 @@ shows "Apply" by default.
     `admissions-apply.spec.ts` still passes.
   - The tracking page with an offer, the application page with each panel and
     the Admit form, and the student page all fit at 320 and 390 px.
+
+## 17. CP8 plan-first — Messaging and email broadcasts
+
+Written 2026-10-18 for the owner's approval. Nothing is built until it is
+approved. It answers Q1 (§3) in the recommended **D13 shape**, and it
+deliberately reverses **D11 in part** (the-school-day.md): "no general
+messaging" becomes "one school inbox for parents, nothing else". D11's reasons
+(safeguarding, moderation, retention, support) are why the safety pieces below
+are part of the first slice, not a later one.
+
+### 17.1 What exists today (read from the code)
+
+- **No messaging of any kind.** There is no thread, message or inbox model and
+  no `messages.*` permission. Families have **Call the school** (D12) on every
+  family surface.
+- **Announcements** (`apps/api/src/modules/announcements`):
+  - audience EVERYONE, PARENTS, STAFF or one CLASS arm;
+  - no editing; a correction is a new announcement, and the old one is
+    withdrawn;
+  - delivery is **push only** through `EventNotifierService.announcementPosted`,
+    with a generic lock-screen text. Announcements "can never reach SMS" (N4).
+  - Read state stays in the app; no read receipts go back to the school (A5).
+- **Notifications:**
+  - `notifyOfEvent` claims one `notification_deliveries` row per person per
+    event (channel `PUSH | SMS | EMAIL | NONE`), then pushes, held during quiet
+    hours (21:00–06:00 Lagos) unless urgent.
+  - `notifyGuardian` decides push, else SMS; the caller sends the SMS.
+  - Channels are switched per school (`notification_preferences`: email on,
+    SMS off, push off by default). **No per-guardian opt-out exists.**
+- **Email** (`EmailService.send`, Resend, "<school> via SchoolKit"): HTML only,
+  no custom headers, so no `List-Unsubscribe`. **No unsubscribe, suppression
+  or bounce table, and no Resend webhook.**
+- **Daily caps:** only admissions has one (`admission_sms_counters`, one atomic
+  upsert). Its shape is the model for any new cap.
+- **Guardians** carry `phone`, `email` (unique per school, optional) and
+  `email_verified`, and their portal sessions resolve through
+  `auth_resolve_guardian_session`.
+- **Nothing** exists for safeguarding keywords or reporting a message.
+
+### 17.2 Decisions (owner may overrule any)
+
+- **CP8-D1. One inbox per school (Q1, D13 shape).**
+  - A **guardian** starts a conversation, about one of their linked children
+    or "general", with a subject and a message. Only from the portal and the
+    parent app.
+  - The **school** replies as the school. A guardian sees "<School name>",
+    never a staff member's name. Inside the school every message records which
+    member of staff wrote it, and owner and admin see it.
+  - **Never:** student accounts, staff starting conversations with families,
+    family-to-family messages, teacher-to-teacher messages, or attachments.
+    The school starting a conversation stays the job of announcements (to many)
+    and the phone (to one).
+  - Text only, 2,000 characters a message.
+- **CP8-D2. Who reads and replies.**
+  - New permissions `messages.read` and `messages.reply`. Owner and admin hold
+    both and see **every** conversation.
+  - A new optional system role, **Inbox officer** (`messages.read`,
+    `messages.reply` only), held by nobody until an admin grants it, as an
+    extra role, exactly like the Admissions officer (§16.8 answer 1). A
+    teacher made an officer reaches the inbox from the teacher portal.
+  - Every conversation is visible to every holder; there is no private
+    assignment in v1. A conversation can be **marked as handled by** one
+    person so two people do not reply twice.
+- **CP8-D3. Read state, for messages only.**
+  - Each side has unread counts (the school's inbox; the parent's
+    conversation list). Announcements keep A5.
+  - The parent sees **"Seen by the school"** under their last message once any
+    officer has opened it. (Question 2.)
+- **CP8-D4. Closing and retention (NDPR).**
+  - A conversation **closes** after **30 days** with no new message, or when
+    the school closes it. A closed one is read-only; the parent starts a new
+    one.
+  - Closed conversations are **deleted 2 years after closing**, by the nightly
+    job, unless flagged (below). The parent is told the period when they start
+    one. (Question 3.)
+  - Withdrawing a child or switching a parent's portal off does not delete
+    the record; the school keeps it for the same period.
+- **CP8-D5. Safety.**
+  - **Report:** the parent can report a message from the school, and an
+    officer can flag a parent's message. Either way owner and admins are told
+    (push and email), the conversation is **kept** until an admin clears the
+    flag, and the flag is audited.
+  - **Safeguarding words:** a fixed list, maintained in the code, of words and
+    phrases about harm, abuse and self-harm (English and Nigerian Pidgin). A
+    match never blocks a message. It flags the conversation for owner and
+    admins with a push and an email, saying only that a flagged conversation
+    is waiting, never the text. (Question 4.)
+  - Rate limits: 5 new conversations a day and 30 messages an hour per
+    guardian.
+  - Nothing a parent typed reaches a log line or an audit row; audit rows
+    carry ids and kinds.
+  - No AI touches messages (Q6 stands; translation stays unbuilt).
+- **CP8-D6. Telling people.**
+  - **The school:** a new conversation or a new parent message pushes "New
+    message from a parent" to owner, admins and officers (no child's name on
+    the lock screen), and puts "Messages waiting" on the dashboard's "Needs you
+    today". No SMS to staff.
+  - **The parent:** a reply goes by **push**; a parent without the app gets
+    an **email** if they have an address. It is **SMS only if the school has
+    SMS switched on**, and then capped at **50 a school a day** (one atomic
+    upsert, like admissions). The email and SMS say only "<School> replied to
+    your message. Open the parent portal to read it.", never the text.
+- **CP8-D7. Email broadcasts for announcements.**
+  - Composing an announcement to EVERYONE, PARENTS or a CLASS gains **"Also
+    email families"** (off by default). It sends the **full announcement** to
+    every guardian in that audience with an email address, once each.
+    Withdrawing an announcement does not unsend an email; the outbox says so
+    before sending.
+  - Sent through the existing queue in batches, not inside the request.
+  - **Unsubscribe:** every email has a one-click link (and a
+    `List-Unsubscribe` header) that stops **announcement emails** from that
+    school to that address. Messages and receipts are not affected. The
+    guardian can switch it back on in the portal.
+  - **Bounces and complaints:** a Resend webhook (signed, new
+    `RESEND_WEBHOOK_SECRET`) records delivered, bounced and complained. A hard
+    bounce or a complaint stops all non-essential email to that address.
+  - **Cap:** **1,000 announcement emails a school a day** (Resend's own limits
+    and cost); past it, the rest are not sent and the outbox says how many.
+    (Question 5.)
+  - **Delivery status** in the outbox per announcement: sent, delivered,
+    bounced, unsubscribed, not sent (no address or capped). Counts only, plus
+    the list of bounced guardians for the school to fix addresses.
+  - Email is switched per school by the existing `notification_preferences`
+    email switch.
+- **CP8-D8. Plans.** Messaging and email broadcasts are on **every plan**; SMS
+  follows the school's own SMS switch.
+- **CP8-D9. Surfaces.**
+  - **Parents:** portal (Messages page, start a conversation, reply, report)
+    and the parent app (same screens).
+  - **School:** the web inbox (`/messages`, and `/teacher/messages` for an
+    officer) and the **staff app** inbox (reply, mark handled, flag), since
+    replies are often written on a phone.
+  - Students: nothing.
+
+### 17.3 What gets built
+
+| Slice | PR | What |
+|---|---|---|
+| **CP8.1** | its own, reviewed first | **The inbox.** Tables, RLS, permissions, the Inbox officer role and its grant; guardian start/reply/list (portal + parent app); school inbox list/read/reply/mark handled/close (web + teacher portal + staff app); read state and "Seen by the school"; staff push and the dashboard line; parent reply push → email → capped SMS; rate limits; the 30-day close. |
+| **CP8.2** | second | **Safety and retention.** Report and flag, with admin alerts and clearing; the safeguarding word list and its alerts; the 2-year deletion that skips flagged conversations; the audit trail; tests that no text reaches logs or audits. |
+| **CP8.3** | third | **Email broadcasts.** "Also email families"; the batched send job; unsubscribe links, the header and the portal switch; the Resend webhook, suppression of bounces and complaints; the daily cap; delivery status in the outbox (web and staff app). |
+
+### 17.4 Data
+
+- `message_threads`: school, guardian, the child (nullable, "general"),
+  subject, status (OPEN, CLOSED), last message time, handled by (user,
+  nullable), flagged at / by / reason kind (nullable), closed at, created at.
+- `messages`: school, thread, author kind (GUARDIAN, STAFF), the guardian or
+  the user, body (≤ 2,000), safeguarding match (boolean), created at.
+- `message_reads`: thread, reader kind and id, last read time (one row per
+  reader per thread).
+- `message_sms_counters`: per school per Lagos day.
+- `email_suppressions`: school, email (lower-cased), reason (UNSUBSCRIBED,
+  BOUNCED, COMPLAINED), scope (ANNOUNCEMENTS, ALL), created at; unique per
+  school and email and scope.
+- `announcement_emails`: announcement, guardian, email, status (QUEUED, SENT,
+  DELIVERED, BOUNCED, COMPLAINED, SUPPRESSED, CAPPED), provider id, times.
+- `announcement_email_counters`: per school per Lagos day.
+- Every table has `school_id`, RLS enabled and forced, `tenant_isolation`
+  and explicit grants.
+- **The webhook and the unsubscribe link need no SECURITY DEFINER function.**
+  - The unsubscribe link carries the school's slug and an HMAC of
+    (school, email) under the server key, so the school resolves through
+    `schools` (no RLS) and the write runs under its GUC.
+  - The webhook carries the Resend message id plus tags set when sending
+    (school id), so it too writes under that school's GUC after the signature
+    checks.
+  - The count stays 23.
+
+### 17.5 Tests (the rules first)
+
+- **Tenancy and reach:** a guardian sees only their own conversations, about
+  only their own children; another school's thread is not found; a student
+  token and a teacher without the permission are refused.
+- **Two-gate:** `messages.reply` holders all pass the service check; the
+  Inbox officer holds those two and nothing else.
+- **Replies:** the guardian sees the school's name only; owner and admin see
+  who wrote it; a closed conversation refuses new messages; marking handled
+  and closing are conditional updates.
+- **Notifications:** one push per new message per person; the parent gets
+  push, else email, else SMS only with the school's SMS on, and the 51st SMS
+  of the day does not go; no message text in any push, email or SMS about a
+  reply.
+- **Safety:** a safeguarding word flags and alerts without blocking; a report
+  keeps the conversation past its deletion date; clearing is admin-only and
+  audited; nothing typed reaches an audit row or a log line.
+- **Retention:** 30-day close; deletion 2 years after closing; flagged ones
+  stay.
+- **Email broadcasts:** each guardian in the audience with an address gets
+  one email; suppressed and unsubscribed addresses get none; the cap holds;
+  the unsubscribe link works without a login and only for its own school and
+  address; a forged webhook is refused; a bounce suppresses the address.
+- **e2e:** a parent writes from the portal about their child; the school
+  replies from the web inbox; the parent reads it; an announcement sent with
+  "Also email families" shows its delivery counts.
+- **Phone fit** at 320 and 390 px for every new page.
+
+### 17.6 Left out on purpose
+
+- Staff starting a conversation with a family; group messages; teacher ↔
+  parent threads assigned to a named teacher.
+- Students in any form; family-to-family; teacher-to-teacher.
+- Attachments, voice notes, images.
+- WhatsApp (CP9) and translation (Q6).
+- Read receipts for announcements (A5 stands).
+- Editing or deleting a sent message (the record is the record).
+- Scheduling announcement emails for later.
+
+### 17.7 Questions for the owner
+
+1. **The D13 shape** (CP8-D1, D2): parents write to **the school**, replies
+   come from "the school", any admin or Inbox officer can answer, no named
+   teacher threads, and staff cannot start conversations with families?
+   Recommended: yes.
+2. **"Seen by the school"** shown to the parent once the school opens their
+   message (CP8-D3)? Recommended: yes; it stops "did you get it?" calls.
+3. **Retention** (CP8-D4): close after 30 days quiet; delete 2 years after
+   closing unless flagged? Recommended: yes.
+4. **Safeguarding words** (CP8-D5): a fixed list in the code, flag and alert
+   only, never block, never AI? Recommended: yes.
+5. **Email broadcasts** (CP8-D7): off by default per announcement, full text
+   in the email, one-click unsubscribe, bounce suppression, 1,000 a school a
+   day? Recommended: yes.
+6. **Reply alerts to parents** (CP8-D6): push, else email, else SMS only if
+   the school's SMS switch is on, capped at 50 a day? Recommended: yes.
+
+### 17.8 Owner's answers (2026-10-18) and what they change
+
+The owner widened the inbox: **a parent chooses who they are writing to**, and
+**only that person or group, and whoever handles it, sees the conversation**.
+Images may be attached.
+
+- **Who a parent can write to** (replaces "one inbox" in CP8-D1). Starting a
+  conversation, the parent picks one child (or "general") and one recipient:
+  - **The child's form teacher** (JSS and SSS) or **class teacher** (nursery
+    and primary): the class arm's `class_teacher_id` for the current term,
+    named by the class level's stage. Offered only when the arm has one.
+  - **The bursar**: every holder of the bursar role.
+  - **The principal or school admin**: the owner and admins (there is no
+    separate principal role; the owner and admins are the school's head).
+  - **The school office** ("general"): the Inbox officers, or the owner and
+    admins when the school has appointed none.
+
+  The conversation is addressed to that person or group **at the time it
+  starts**; a new form teacher next term does not inherit it.
+- **Who sees it** (replaces "admins see every thread" in CP8-D2).
+  - Only the recipients above for that conversation. No other member of
+    staff, including other admins and officers, unless:
+    - it is **passed on**: any recipient can pass a conversation to another of
+      the four (a fee question to the bursar), and the new recipients then see
+      all of it; the person who passed it keeps it too ("whoever handled it");
+    - it is **flagged** (CP8.2): a report, or a safeguarding word, opens it to
+      the owner and admins, because a safeguarding concern cannot stay with one
+      teacher. (Confirm below.)
+  - The audit trail records each pass and each read by someone outside the
+    original recipients.
+- **Names** (replaces "replies come from the school"). A reply shows its
+  recipient's label and the writer's name ("Mrs Okafor, Form teacher";
+  "Bursar"; "Principal"); the school office replies as "<School name> office".
+- **Answer 1: who starts.** Teachers, bursars and officers cannot start a
+  conversation. **The school office can**: an admin or Inbox officer may start
+  one with a guardian ("school messaging"), seen by the office recipients.
+  Announcements remain the way to write to many. (Confirm below.)
+- **Images** (replaces "text only").
+  - Both sides may attach up to **3 images a message**, JPG, PNG or WebP,
+    **up to 5 MB each**, typed by their bytes (F1). No PDFs or other files.
+  - Stored privately (a new `message-image` key), opened through 5-minute
+    links, readable only by those who can see the conversation, and deleted
+    with it.
+  - Cost: storage on R2 is a few naira a gigabyte a month with no download
+    fees, so a school's images cost close to nothing. Images are shown smaller
+    in the app to save the family's data.
+- **Answer 2:** "Seen" is shown to the parent once a recipient has opened their
+  message.
+- **Answer 3:** close after 30 quiet days; delete 2 years after closing unless
+  flagged.
+- **Answer 4:** a fixed safeguarding word list that flags and alerts, never
+  blocks. **No AI anywhere in messaging**, now or in this checkpoint's
+  follow-ups.
+- **Answer 5:** email broadcasts as CP8-D7.
+- **Answer 6:** reply alerts to parents as CP8-D6. New messages to staff push
+  only to that conversation's recipients.
+
+**What gets built, revised:**
+
+| Slice | PR | What |
+|---|---|---|
+| **CP8.1** | its own, reviewed first | **Conversations.** Tables, RLS, permissions, the Inbox officer role; the four recipients and who sees what; parents start, reply and list (portal + parent app); staff inbox for each recipient (web: admin, teacher portal; staff app), reply, pass on, mark handled, close; the office starting a conversation; "Seen"; pushes to recipients and the dashboard line; reply alerts to parents (push → email → capped SMS); rate limits; the 30-day close. |
+| **CP8.2** | second | **Images, safety and retention.** Image attachments; report and flag, opening the conversation to owner and admins, with alerts and clearing; the safeguarding word list; the 2-year deletion that skips flagged conversations. |
+| **CP8.3** | third | **Email broadcasts**, as planned. |
+
+**Owner's follow-up (2026-10-18), and approval ("Start"):**
+
+- **Principal and head teacher are appointed roles.** The admin appoints a
+  **Principal** and/or a **Head teacher** (headmaster or headmistress), as
+  extra roles like the Inbox officer. So a parent's recipients are:
+  - the child's **form teacher** (JSS, SSS) or **class teacher** (nursery,
+    primary);
+  - the **bursar**;
+  - the **principal** (offered for a JSS or SSS child) or the **head
+    teacher** (nursery or primary child); for a general conversation, either
+    one the school has appointed;
+  - the **school admin** (owner and admins);
+  - the **school office** (Inbox officers, or owner and admins if none).
+
+  A recipient nobody holds is not offered.
+- **Answer 1 (safeguarding): confirmed.** A reported or flagged conversation
+  opens to the owner and admins (CP8.2).
+- **Answer 2: messaging is private and separate from announcements.** A
+  message goes to one parent, one member of staff or the school. The school
+  office (admins and Inbox officers) may start a conversation with a
+  particular parent; teachers, bursars, principals and head teachers reply but
+  do not start.
+
+### 17.9 As built — CP8.1, conversations (2026-10-18)
+
+- **Data** (migration `20261108120000_messaging`):
+  - `message_threads`: the guardian, the child (or none for general), the
+    recipient, the class teacher fixed at the start for `CLASS_TEACHER`, the
+    subject, OPEN or CLOSED, who started it (empty: the guardian), when and by
+    whom the last message came, who is handling it, and the close.
+  - `message_passes`: each pass to another recipient, and who passed it.
+  - `messages`: the author (a guardian or a member of staff), the recipient a
+    member of staff answered as, and the text (1–2,000 characters).
+  - `message_reads`: one row per reader per conversation.
+  - `message_sms_counters`: SMS alerts per school per Lagos day.
+
+  `CHECK`s cover the subject and body lengths, the status/closed pairing, a
+  class-teacher conversation always having its teacher and its child, and each
+  message having exactly one author. RLS is forced on every table. No SECURITY
+  DEFINER function; the count stays 23.
+- **Roles and permissions.**
+  - `messages.read` and `messages.reply`: admin, teacher, bursar, and the three
+    new appointed roles.
+  - `messages.start`: admin and the Inbox officer.
+  - `messages.settings`: admin.
+  - New optional system roles **Principal**, **Head teacher** (read, reply)
+    and **Inbox officer** (read, reply, start), held by nobody until an admin
+    appoints them in **Settings → Messaging**, alongside their own role. Each
+    appointment and removal is audited.
+- **Who a parent can write to** (`GET /portal/messages/recipients`). It is
+  worked out when the parent writes, and a recipient nobody holds is not
+  offered:
+  - the child's arm's class teacher this term, labelled **Form teacher** for
+    JSS and SSS and **Class teacher** for nursery and primary, with their name;
+  - **Bursar**;
+  - **Principal** for a JSS or SSS child, **Head teacher** for a nursery or
+    primary child, both for a general message;
+  - **School admin**;
+  - **<School> office**.
+- **Who sees a conversation** (`messages.shared.ts`, one rule used by every
+  read):
+  - its recipient group;
+  - anyone it was passed to, and whoever passed it;
+  - anyone who has written in it.
+
+  **Nobody else, admins included.** The office is the Inbox officers, or the
+  owner and admins when the school has appointed none. Any other id is "not
+  found".
+- **Staff** (web `/messages` and `/teacher/messages`, the staff app's
+  Messages):
+  - Open and Closed, unread ones tinted and labelled "New".
+  - In a conversation they can reply, **pass on** to a recipient it has not yet
+    reached (the new recipients then see all of it), mark **I'm handling
+    this**, and **close** it.
+  - Each reply records the recipient the writer answered as, so the family
+    sees "Mrs Okafor, Form teacher" or "<School> office", while the school also
+    sees who wrote it.
+  - The office writes to one parent from **Write to a parent** (search by name
+    or phone, choose a child or general). Teachers, bursars, principals and
+    head teachers cannot start a conversation.
+- **Parents** (portal `/messages`, the parent app's Messages):
+  - the list with unread replies;
+  - **Write a message**: choose the child or general, then the recipient, a
+    subject and the message;
+  - the conversation, with **Seen** under the parent's latest message once a
+    recipient has opened it;
+  - a closed conversation is read-only and offers a new one.
+
+  The portal and app home screens gain a Messages link with the unread count.
+- **Telling people** (never the text, never a child's name on a lock screen):
+  - A parent's message pushes "New message from a parent." to that
+    conversation's recipients only.
+  - The school's reply goes to the parent by push. Without the app, it goes by
+    email ("<School> replied to your message", with a link) when the school's
+    email channel is on. Failing that, by SMS only when the school's SMS
+    channel is on, at most 50 a school a Lagos day.
+  - The staff dashboard's "Needs you today" gains "Unread messages from
+    parents", counting only the person's own conversations.
+- **Limits:** 5 new conversations a Lagos day and 30 messages an hour per
+  guardian, plus per-address throttles on the two writing routes.
+- **Closing:** every night at 02:45, open conversations with no message for 30
+  days are closed. Deleting two years after closing, and keeping flagged ones,
+  come in CP8.2 with the report button, the safeguarding words and images.
+- **Records:** audit rows carry the conversation id, the recipient kind and
+  whether there is a child, never the subject or any text.
+- **Tests:**
+  - `messages.service.spec.ts` (18 tests, real database):
+    - the recipients for a JSS child, a primary child and in general, before
+      and after appointing;
+    - a child who is not theirs;
+    - a form-teacher message seen by that teacher only, not another teacher,
+      the bursar, the admin or the owner;
+    - replying, the signature and "Seen";
+    - passing to the bursar;
+    - the office with and without Inbox officers, and the office starting one;
+    - the school admin recipient;
+    - teachers and bursars unable to start one;
+    - guardian and school isolation;
+    - email and capped SMS fallback with no text;
+    - unread counts and the dashboard line;
+    - closing and the 30-day close;
+    - the daily limit;
+    - handling;
+    - no text in audit rows;
+    - appointing as admin only.
+  - Permission coverage and the two-gate conformance spec cover the new routes
+    and roles. The mobile menu and push routes are tested too.
+  - e2e `messages.spec.ts`:
+    1. a parent writes from the portal to the school admin about their child;
+    2. the admin reads it in the web inbox and replies;
+    3. the parent sees the reply signed and "Seen";
+    4. Settings → Messaging opens.
+  - Every new page fits at 320 and 390 px.

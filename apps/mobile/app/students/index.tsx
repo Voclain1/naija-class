@@ -168,6 +168,13 @@ export default function StudentsScreen() {
         })}
 
         <SectionHeader title="The school" />
+        {/* Phase 9 / CP8.1 — private messages with a teacher or the school. */}
+        <ListRow
+          icon="chatbubbles-outline"
+          title="Messages"
+          subtitle="Write to a teacher, the bursar or the school"
+          onPress={() => router.push("/messages")}
+        />
         <ListRow
           icon="today-outline"
           title="School calendar"

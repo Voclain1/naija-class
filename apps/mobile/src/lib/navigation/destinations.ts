@@ -121,6 +121,12 @@ export function staffDestinations(ctx: StaffContext): Destination[] {
   if (can("hostel.house") && (admin || hasRole(ctx.roles, "house_master") || (teacher && ctx.housesHostels))) {
     out.push({ key: "boarding", label: "Boarding", hint: "Boarders and visitors", icon: "bed-outline", group: "School", route: "/staff/boarding" });
   }
+  // Phase 9 / CP8.1 — parents' messages. messages.read is the server's own
+  // check; the service then shows each person only what is addressed or
+  // passed to them (docs/modules/phase-9.md §17.8).
+  if (can("messages.read")) {
+    out.push({ key: "messages", label: "Messages", hint: "From parents", icon: "chatbubbles-outline", group: "School", route: "/staff/messages" });
+  }
   if (admin && can("reports.completeness.read")) {
     out.push({ key: "reports", label: "Reports", hint: "What's behind", icon: "bar-chart-outline", group: "School", route: "/staff/reports" });
   }
@@ -216,6 +222,8 @@ export function guardianDestinations(): Destination[] {
   return [
     { key: "children", label: "My children", icon: "people-outline", group: "Your child", route: "/students" },
     { key: "announcements", label: "From the school", hint: "Announcements", icon: "megaphone-outline", group: "Your child", route: "/announcements" },
+    // Phase 9 / CP8.1 — private conversations with a teacher or the school.
+    { key: "messages", label: "Messages", hint: "Write to a teacher or the school", icon: "chatbubbles-outline", group: "Your child", route: "/messages" },
     { key: "calendar", label: "School calendar", icon: "today-outline", group: "Calendar", route: "/calendar" },
   ];
 }
