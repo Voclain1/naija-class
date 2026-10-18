@@ -1,4 +1,6 @@
 import type {
+  AnswerRsvpInput,
+  FamilyRsvpDto,
   FamilyLibraryDto,
   PortalHostelExeatDto,
   PortalStudentHostelDto,
@@ -221,6 +223,11 @@ export function getGuardianCalendar(window: { from: string; to: string }): Promi
   return apiFetch<CalendarResponse>(
     `/portal/calendar?from=${encodeURIComponent(window.from)}&to=${encodeURIComponent(window.to)}`,
   );
+}
+
+// Phase 9 / CP10.1 — a parent's reply to an event that asks them.
+export function guardianAnswerRsvp(eventId: string, body: AnswerRsvpInput): Promise<FamilyRsvpDto> {
+  return apiFetch<FamilyRsvpDto>(`/portal/calendar/events/${encodeURIComponent(eventId)}/rsvp`, { method: "POST", body });
 }
 
 /** Phase 8 / CP4 — a linked child's PUBLISHED class timetable for the current term (§18 D39, D45). */

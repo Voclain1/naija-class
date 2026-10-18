@@ -3,7 +3,10 @@ import { Injectable } from "@nestjs/common";
 import { withTenant } from "@school-kit/db";
 import {
   NotFoundError,
+  ValidationError,
   type CalendarEntryDto,
+  type EventRsvpSettingsInput,
+  type RsvpCountsDto,
   type CalendarResponse,
   type CalendarWindowQuery,
   type CreateSchoolEventInput,
@@ -14,6 +17,7 @@ import {
 
 import type { AuthContext } from "../../common/auth/auth-context.js";
 import { assertUserActiveAndHasOneOf } from "../../common/auth/role-check.js";
+import { familyRsvps, rsvpCounts, RSVP_EVENT_SELECT, type RsvpEventRow } from "./event-rsvp.service.js";
 
 // Phase 8 / CP1 — Event Calendar. Plan-first: docs/modules/phase-8.md §15.
 //
@@ -29,6 +33,10 @@ import { assertUserActiveAndHasOneOf } from "../../common/auth/role-check.js";
 // There is no create/update/delete for it in this service, and there could not
 // be a working one. The school-side "hide" writes only the tenant-scoped
 // school_hidden_national_events table.
+//
+// Phase 9 / CP10.1 (phase-9.md §19.2): an event may ask families to reply.
+// The settings ride on create/update; the counts come back on the management
+// list; a guardian's calendar read carries that family's own answer.
 
 interface RequestContext {
   ipAddress: string | null;
@@ -59,6 +67,10 @@ const SCHOOL_EVENT_SELECT = {
   endDate: true,
   createdAt: true,
   updatedAt: true,
+  rsvpOpen: true,
+  rsvpDeadline: true,
+  rsvpAskCount: true,
+  rsvpClassArmIds: true,
 } as const;
 
 type SchoolEventRow = {
@@ -70,7 +82,7 @@ type SchoolEventRow = {
   endDate: Date;
   createdAt: Date;
   updatedAt: Date;
-};
+} & RsvpEventRow;
 
 /** A @db.Date value as YYYY-MM-DD. Prisma returns DATE columns at UTC midnight. */
 function isoDate(d: Date): string {
@@ -82,7 +94,7 @@ function dateOnly(s: string): Date {
   return new Date(`${s}T00:00:00.000Z`);
 }
 
-function toSchoolEventDto(row: SchoolEventRow): SchoolEventDto {
+function toSchoolEventDto(row: SchoolEventRow, counts?: RsvpCountsDto): SchoolEventDto {
   return {
     id: row.id,
     title: row.title,
@@ -92,6 +104,31 @@ function toSchoolEventDto(row: SchoolEventRow): SchoolEventDto {
     endDate: isoDate(row.endDate),
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
+    rsvp: row.rsvpOpen
+      ? {
+          deadline: row.rsvpDeadline ? isoDate(row.rsvpDeadline) : null,
+          askCount: row.rsvpAskCount,
+          classArmIds: row.rsvpClassArmIds,
+          counts: counts ?? { asked: 0, yes: 0, no: 0, maybe: 0, notAnswered: 0, attending: 0, maybeAttending: 0 },
+        }
+      : null,
+  };
+}
+
+/** The columns an RSVP setting writes; null switches replies off (answers are kept). */
+async function rsvpData(db: TenantDb, schoolId: string, rsvp: EventRsvpSettingsInput | undefined) {
+  if (rsvp === undefined) return {};
+  if (rsvp === null) return { rsvpOpen: false };
+  const arms = [...new Set(rsvp.classArmIds)];
+  if (arms.length) {
+    const found = await db.classArm.count({ where: { schoolId, id: { in: arms } } });
+    if (found !== arms.length) throw new ValidationError("Choose classes from this school.");
+  }
+  return {
+    rsvpOpen: true,
+    rsvpDeadline: rsvp.deadline ? dateOnly(rsvp.deadline) : null,
+    rsvpAskCount: rsvp.askCount,
+    rsvpClassArmIds: arms,
   };
 }
 
@@ -231,8 +268,16 @@ export class CalendarService {
   }
 
   /** Guardian read — the school comes from the guardian's session, never from the request. */
-  async getGuardianCalendar(schoolId: string, window: CalendarWindowQuery): Promise<CalendarResponse> {
-    return this.respond(schoolId, window);
+  async getGuardianCalendar(schoolId: string, window: CalendarWindowQuery, guardianId?: string): Promise<CalendarResponse> {
+    if (!guardianId) return this.respond(schoolId, window);
+    const entries = await withTenant(schoolId, async (db) => {
+      const list = await this.buildCalendar(db, schoolId, window);
+      const ids = list.filter((e) => e.source === "SCHOOL").map((e) => e.id.slice("school:".length));
+      const events = ids.length ? await db.schoolEvent.findMany({ where: { schoolId, id: { in: ids }, rsvpOpen: true }, select: RSVP_EVENT_SELECT }) : [];
+      const mine = await familyRsvps(db, schoolId, guardianId, events);
+      return list.map((e) => (e.source === "SCHOOL" && mine.has(e.id.slice("school:".length)) ? { ...e, rsvp: mine.get(e.id.slice("school:".length))! } : e));
+    });
+    return { from: window.from, to: window.to, entries };
   }
 
   /** Student read — the school comes from the student's session, never from the request. */
@@ -260,7 +305,8 @@ export class CalendarService {
         select: SCHOOL_EVENT_SELECT,
         orderBy: [{ startDate: "asc" }, { title: "asc" }],
       });
-      return rows.map(toSchoolEventDto);
+      const counts = await rsvpCounts(db, authCtx.schoolId, rows);
+      return rows.map((r) => toSchoolEventDto(r, counts.get(r.id)));
     });
   }
 
@@ -282,6 +328,7 @@ export class CalendarService {
           endDate: dateOnly(input.endDate),
           createdBy: authCtx.userId,
           updatedBy: authCtx.userId,
+          ...(await rsvpData(db, authCtx.schoolId, input.rsvp)),
         },
         select: SCHOOL_EVENT_SELECT,
       });
@@ -299,11 +346,12 @@ export class CalendarService {
             category: created.category,
             startDate: input.startDate,
             endDate: input.endDate,
+            rsvp: input.rsvp ? { deadline: input.rsvp.deadline, askCount: input.rsvp.askCount, classes: input.rsvp.classArmIds.length } : null,
           },
         },
       });
 
-      return toSchoolEventDto(created);
+      return toSchoolEventDto(created, (await rsvpCounts(db, authCtx.schoolId, [created])).get(created.id));
     });
   }
 
@@ -325,6 +373,12 @@ export class CalendarService {
       });
       if (!existing) throw new NotFoundError("Event not found.");
 
+      // The reply-by date may never fall after the start date, whichever of
+      // the two this update changes.
+      const start = input.startDate ?? isoDate(existing.startDate);
+      const deadline = input.rsvp !== undefined ? (input.rsvp?.deadline ?? null) : existing.rsvpDeadline ? isoDate(existing.rsvpDeadline) : null;
+      if (deadline && deadline > start) throw new ValidationError("Reply-by must be on or before the start date.");
+
       const updated = await db.schoolEvent.update({
         where: { id },
         data: {
@@ -333,6 +387,7 @@ export class CalendarService {
           ...(input.category !== undefined ? { category: input.category } : {}),
           ...(input.startDate !== undefined ? { startDate: dateOnly(input.startDate) } : {}),
           ...(input.endDate !== undefined ? { endDate: dateOnly(input.endDate) } : {}),
+          ...(await rsvpData(db, authCtx.schoolId, input.rsvp)),
           updatedBy: authCtx.userId,
         },
         select: SCHOOL_EVENT_SELECT,
@@ -358,7 +413,7 @@ export class CalendarService {
         },
       });
 
-      return toSchoolEventDto(updated);
+      return toSchoolEventDto(updated, (await rsvpCounts(db, authCtx.schoolId, [updated])).get(updated.id));
     });
   }
 

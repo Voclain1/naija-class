@@ -20,6 +20,6 @@ export class PortalCalendarController {
     @CurrentGuardian() guardianCtx: GuardianAuthContext,
     @Query(new ZodValidationPipe(calendarWindowQuerySchema)) window: CalendarWindowQuery,
   ): Promise<CalendarResponse> {
-    return this.service.getGuardianCalendar(guardianCtx.schoolId, window);
+    return this.service.getGuardianCalendar(guardianCtx.schoolId, window, guardianCtx.guardianId);
   }
 }

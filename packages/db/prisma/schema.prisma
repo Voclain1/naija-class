@@ -1023,6 +1023,7 @@ model Guardian {
   passwordResets     GuardianPasswordResetToken[]
   deviceTokens       DeviceToken[] // Phase 6 / Slice 5.
   announcementEmails AnnouncementEmail[]
+  eventRsvps         EventRsvp[]
 
   // Decision C (phase-4.md) — scoped per school, not global. A guardian with
   // children at two schools gets two separate portal accounts (intentional).
@@ -3113,17 +3114,25 @@ model NationalEvent {
 }
 
 model SchoolEvent {
-  id          String              @id @default(uuid())
-  schoolId    String              @map("school_id")
-  title       String
-  description String?
-  category    SchoolEventCategory
-  startDate   DateTime            @map("start_date") @db.Date // inclusive, all-day only
-  endDate     DateTime            @map("end_date") @db.Date // inclusive; CHECK end_date >= start_date in raw SQL
-  createdBy   String              @map("created_by") // users.id — plain FK convention
-  updatedBy   String              @map("updated_by") // users.id
-  createdAt   DateTime            @default(now()) @map("created_at")
-  updatedAt   DateTime            @updatedAt @map("updated_at")
+  id              String              @id @default(uuid())
+  schoolId        String              @map("school_id")
+  title           String
+  description     String?
+  category        SchoolEventCategory
+  startDate       DateTime            @map("start_date") @db.Date // inclusive, all-day only
+  endDate         DateTime            @map("end_date") @db.Date // inclusive; CHECK end_date >= start_date in raw SQL
+  createdBy       String              @map("created_by") // users.id — plain FK convention
+  updatedBy       String              @map("updated_by") // users.id
+  createdAt       DateTime            @default(now()) @map("created_at")
+  updatedAt       DateTime            @updatedAt @map("updated_at")
+  // Phase 9 / CP10.1 — ask families to reply (phase-9.md §19.2).
+  rsvpOpen        Boolean             @default(false) @map("rsvp_open")
+  rsvpDeadline    DateTime?           @map("rsvp_deadline") @db.Date
+  rsvpAskCount    Boolean             @default(false) @map("rsvp_ask_count")
+  // Empty: the whole school.
+  rsvpClassArmIds String[]            @default([]) @map("rsvp_class_arm_ids")
+  rsvpRemindedAt  DateTime?           @map("rsvp_reminded_at")
+  rsvps           EventRsvp[]
 
   @@index([schoolId])
   @@index([schoolId, startDate, endDate])
@@ -5012,4 +5021,22 @@ model AnnouncementEmailCounter {
 
   @@id([schoolId, day])
   @@map("announcement_email_counters")
+}
+
+// Phase 9 / CP10.1 — one parent's answer to an event (docs/modules/phase-9.md §19.2).
+model EventRsvp {
+  id         String      @id @default(uuid())
+  schoolId   String      @map("school_id")
+  eventId    String      @map("event_id")
+  guardianId String      @map("guardian_id")
+  answer     String
+  attending  Int?
+  createdAt  DateTime    @default(now()) @map("created_at")
+  updatedAt  DateTime    @default(now()) @updatedAt @map("updated_at")
+  event      SchoolEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  guardian   Guardian    @relation(fields: [guardianId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, guardianId])
+  @@index([schoolId, eventId])
+  @@map("event_rsvps")
 }
