@@ -362,7 +362,9 @@ into an assignment.
   - It falls back to SMS when WhatsApp fails or the guardian has not opted
     in.
   - Per-school switch and cost reporting, as SMS has.
-- **Translation:** build only if Q6 approves it as its own allowlisted prompt.
+- **Translation: DROPPED** (owner, 2026-10-18). Parents' phones already
+  translate text on screen, and it would send messages that can name
+  children to a model.
 
 ### CP10 — Event RSVPs; fee-default risk
 
@@ -5210,3 +5212,143 @@ function; the count stays 23.
   - Every new page fits at 320 and 390 px.
 - **Before production:** set `RESEND_WEBHOOK_SECRET` and point the Resend
   webhook at `https://api.schoolkit.ng/api/v1/webhooks/resend`.
+
+## 18. CP9 — WhatsApp: owner's answers and template drafts (2026-10-18)
+
+**Owner's answers:**
+- **One number, not one per school.** SchoolKit holds one Meta-verified
+  WhatsApp Business number and sends for every school, as one Termii account
+  already sends SMS for all of them.
+  - The chat shows SchoolKit's name; each message names the school in its
+    first line.
+  - Meta's business verification needs SchoolKit's CAC registration, which is
+    in progress.
+  - A school's own number may be an option later; it is not needed.
+- **Translation is dropped.**
+- **The build waits for the number**, because the code must match the
+  approved template text exactly and cannot be tested without a live number.
+  CP10 goes first.
+
+**Template drafts, to submit to Meta once the number exists.** All are
+"utility" category. `{{n}}` are the variables. No child's full name is used:
+the first name only, as in the push notifications.
+
+| Name | Text |
+|---|---|
+| `absence_alert` | {{1}}: {{2}} was marked absent today ({{3}}). If this is unexpected, please contact the school. |
+| `fee_reminder` | {{1}}: a balance of {{2}} is due for {{3}} ({{4}}). Pay or view the invoice in the parent portal: {{5}} |
+| `announcement_notice` | {{1}} has posted an announcement: "{{2}}". Read it in the parent portal: {{3}} |
+| `message_reply` | {{1}} replied to your message. Open the parent portal to read it: {{2}} |
+
+The plan-first for the build itself follows once the number is approved: the
+per-school switch, the fallback to SMS, the cost per plan, opt-in, and
+delivery status.
+
+## 19. CP10 plan-first — Event RSVPs and fee-default risk (2026-10-18)
+
+### 19.1 What exists today (read from the code)
+
+- **Calendar events** (`school_events`): title, description, category
+  (MEETING, EVENT and others), all-day start and end dates, whole school.
+  - Staff create them on the web (`calendar-event.*`).
+  - Families see them in the portal and the parent app (`/portal/calendar`).
+  - Events have no audience and no replies today.
+- **Invoices:** one term invoice per student per term (plus supplementary
+  invoices), with `dueDate`, `totalAmount`, `totalPaid` and a status.
+  **Payments** carry `paidAt`.
+  - The debtors page (`/finance/debtors`, `finance.debtors.read`: owner,
+    admin, bursar) lists unpaid invoices for a term.
+
+### 19.2 RSVPs
+
+- **Ask families to reply.** On an event (web, and the staff app's
+  calendar), the school switches on "Ask families to reply" with:
+  - who is asked: the whole school, or chosen classes;
+  - an optional reply-by date, on or before the event's start;
+  - whether to ask "how many people will come".
+- **Families answer** in the portal and the parent app, on the event: Yes,
+  No or Maybe, with the number attending (1–10) when it is asked.
+  - One answer per parent, changeable until the reply-by date, or until the
+    event starts if there is none.
+  - A parent sees only their own answer.
+- **The school sees** counts (yes, no, maybe, people coming, not answered)
+  and the list by parent and child, on the web and in the staff app, and can
+  download it (the F3 export).
+- **Reminder:** one push the day before the reply-by date to parents who
+  have not answered. Never the event's description, only its title. Email or
+  SMS are not used for this.
+- **Data:**
+  - `school_events` gains `rsvp_open`, `rsvp_deadline` (date),
+    `rsvp_ask_count`, and `rsvp_class_arm_ids` (empty means the whole
+    school).
+  - New table `event_rsvps` (school, event, guardian, answer, count,
+    updated at), unique per event and guardian, with RLS.
+- **Who:** `calendar-event.update` switches it on, which the existing roles
+  already hold. Reading the replies uses the same permission.
+
+### 19.3 Fee-default risk (rules, not AI)
+
+- **Where:** a "Risk" column and a filter on the debtors page (web), owner,
+  admin and bursar only. Teachers and families never see it.
+- **Per student, from their own invoices over the last three terms.** No
+  external data and no model.
+  - **Paid late:** a term invoice paid in full after its due date.
+  - **Not paid by the due date:** part-paid or unpaid when the due date
+    passed.
+  - **Owing from an earlier term:** a balance still open on a past term's
+    invoice.
+  - **This term:** overdue now.
+- **Shown as a level, not a number:** "Low", "Watch" or "High", with the
+  reasons in words, e.g. "Paid late in 2 of the last 3 terms; ₦45,000 still
+  owing from Second Term."
+  - High: owing from an earlier term, or late in 2 of the last 3 terms and
+    overdue now.
+  - Watch: one late or part-paid term, or overdue now.
+  - Low: otherwise.
+  - A new student with fewer than two terms of invoices reads "Too new to
+    say".
+- **It never acts by itself.** No automatic message, block or change: it is a
+  prompt for the bursar to talk to the family. Not stored; computed when the
+  page loads.
+- **Siblings:** each child is scored on their own, and the reasons say
+  "Sibling of …" when a brother or sister also scores Watch or High (same
+  primary guardian).
+
+### 19.4 Tests first
+
+- **RSVPs:**
+  - only the families asked can reply;
+  - one answer per parent, changeable until the deadline and refused after;
+  - the counts add up;
+  - a parent sees only their own answer;
+  - the reminder goes only to those who have not answered, once;
+  - another school sees nothing.
+- **Risk:**
+  - each rule against made-up payment histories (on time, late, part-paid,
+    an earlier balance, new student);
+  - the levels and reasons;
+  - only owner, admin and bursar get the column.
+
+e2e: an event asks families → a parent replies in the portal → the counts on
+the web. The debtors page shows a level and its reasons.
+
+### 19.5 Slices
+
+| Slice | What |
+|---|---|
+| **CP10.1** | RSVPs (data, API, web and staff-app setup and counts, portal and parent-app answers, reminder, export). |
+| **CP10.2** | Fee-default risk on the debtors page. |
+
+### 19.6 Questions for the owner
+
+1. **One answer per parent, or per child?** A mother with two children
+   at the school answers once for the family, with the number coming.
+   *Recommendation: per parent.*
+2. **Who is asked:** the whole school or chosen classes, as above. Is that
+   enough, or do you also want "staff only" events? *Recommendation: whole
+   school or chosen classes.*
+3. **Risk levels:** are "Low / Watch / High" and the rules above right for
+   your schools? Should the bursar's view also show the risk on the
+   student's own finance tab? *Recommendation: as above, and yes on the
+   student tab.*
+4. **Should families ever see anything about risk?** *Recommendation: never.*
