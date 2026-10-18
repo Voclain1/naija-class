@@ -4678,3 +4678,68 @@ are part of the first slice, not a later one.
    day? Recommended: yes.
 6. **Reply alerts to parents** (CP8-D6): push, else email, else SMS only if
    the school's SMS switch is on, capped at 50 a day? Recommended: yes.
+
+### 17.8 Owner's answers (2026-10-18) and what they change
+
+The owner widened the inbox: **a parent chooses who they are writing to**, and
+**only that person or group, and whoever handles it, sees the conversation**.
+Images may be attached.
+
+- **Who a parent can write to** (replaces "one inbox" in CP8-D1). Starting a
+  conversation, the parent picks one child (or "general") and one recipient:
+  - **The child's form teacher** (JSS and SSS) or **class teacher** (nursery
+    and primary): the class arm's `class_teacher_id` for the current term,
+    named by the class level's stage. Offered only when the arm has one.
+  - **The bursar**: every holder of the bursar role.
+  - **The principal or school admin**: the owner and admins (there is no
+    separate principal role; the owner and admins are the school's head).
+  - **The school office** ("general"): the Inbox officers, or the owner and
+    admins when the school has appointed none.
+
+  The conversation is addressed to that person or group **at the time it
+  starts**; a new form teacher next term does not inherit it.
+- **Who sees it** (replaces "admins see every thread" in CP8-D2).
+  - Only the recipients above for that conversation. No other member of
+    staff, including other admins and officers, unless:
+    - it is **passed on**: any recipient can pass a conversation to another of
+      the four (a fee question to the bursar), and the new recipients then see
+      all of it; the person who passed it keeps it too ("whoever handled it");
+    - it is **flagged** (CP8.2): a report, or a safeguarding word, opens it to
+      the owner and admins, because a safeguarding concern cannot stay with one
+      teacher. (Confirm below.)
+  - The audit trail records each pass and each read by someone outside the
+    original recipients.
+- **Names** (replaces "replies come from the school"). A reply shows its
+  recipient's label and the writer's name ("Mrs Okafor, Form teacher";
+  "Bursar"; "Principal"); the school office replies as "<School name> office".
+- **Answer 1: who starts.** Teachers, bursars and officers cannot start a
+  conversation. **The school office can**: an admin or Inbox officer may start
+  one with a guardian ("school messaging"), seen by the office recipients.
+  Announcements remain the way to write to many. (Confirm below.)
+- **Images** (replaces "text only").
+  - Both sides may attach up to **3 images a message**, JPG, PNG or WebP,
+    **up to 5 MB each**, typed by their bytes (F1). No PDFs or other files.
+  - Stored privately (a new `message-image` key), opened through 5-minute
+    links, readable only by those who can see the conversation, and deleted
+    with it.
+  - Cost: storage on R2 is a few naira a gigabyte a month with no download
+    fees, so a school's images cost close to nothing. Images are shown smaller
+    in the app to save the family's data.
+- **Answer 2:** "Seen" is shown to the parent once a recipient has opened their
+  message.
+- **Answer 3:** close after 30 quiet days; delete 2 years after closing unless
+  flagged.
+- **Answer 4:** a fixed safeguarding word list that flags and alerts, never
+  blocks. **No AI anywhere in messaging**, now or in this checkpoint's
+  follow-ups.
+- **Answer 5:** email broadcasts as CP8-D7.
+- **Answer 6:** reply alerts to parents as CP8-D6. New messages to staff push
+  only to that conversation's recipients.
+
+**What gets built, revised:**
+
+| Slice | PR | What |
+|---|---|---|
+| **CP8.1** | its own, reviewed first | **Conversations.** Tables, RLS, permissions, the Inbox officer role; the four recipients and who sees what; parents start, reply and list (portal + parent app); staff inbox for each recipient (web: admin, teacher portal; staff app), reply, pass on, mark handled, close; the office starting a conversation; "Seen"; pushes to recipients and the dashboard line; reply alerts to parents (push → email → capped SMS); rate limits; the 30-day close. |
+| **CP8.2** | second | **Images, safety and retention.** Image attachments; report and flag, opening the conversation to owner and admins, with alerts and clearing; the safeguarding word list; the 2-year deletion that skips flagged conversations. |
+| **CP8.3** | third | **Email broadcasts**, as planned. |
