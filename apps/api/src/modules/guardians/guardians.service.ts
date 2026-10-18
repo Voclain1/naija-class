@@ -1343,3 +1343,55 @@ function mapStudentGuardianLinkUniqueViolation(e: unknown): unknown {
   }
   return e;
 }
+
+// ----------------------------------------------------------------------
+// linkOrCreatePrimaryGuardianInTx — Phase 9 / CP7.2's Admit
+// (docs/modules/phase-9.md §16 CP7-D5), inside the caller's transaction.
+//
+// A guardian's email is unique per school, so a parent who is already a
+// guardian here (a sibling's) is LINKED, never duplicated: matching their
+// email, case-insensitively, is what keeps Admit from failing on the unique
+// email. Otherwise a new guardian is created. Either way the link is primary,
+// since a newly created student has no other. Same audit rows as
+// createAndLink / linkExisting. The CALLER checks the role.
+// ----------------------------------------------------------------------
+export async function linkOrCreatePrimaryGuardianInTx(
+  db: import("@school-kit/db").PrismaClient,
+  authCtx: Pick<AuthContext, "schoolId" | "userId">,
+  studentId: string,
+  input: Pick<CreateGuardianInput, "firstName" | "lastName" | "relationship" | "phone" | "address"> & { email: string },
+  reqCtx: RequestContext,
+): Promise<{ guardianId: string; linkedExisting: boolean }> {
+  const existing = await db.guardian.findFirst({
+    where: { schoolId: authCtx.schoolId, email: { equals: input.email, mode: "insensitive" } },
+    select: { id: true },
+  });
+  let guardianId: string;
+  if (existing) {
+    guardianId = existing.id;
+  } else {
+    let guardian;
+    try {
+      guardian = await db.guardian.create({
+        data: guardianCreateData(authCtx.schoolId, { ...input, address: input.address ?? null }),
+        select: { id: true, relationship: true },
+      });
+    } catch (e) {
+      throw mapGuardianEmailUniqueViolation(e);
+    }
+    await writeGuardianCreateAudit(db, authCtx as AuthContext, reqCtx, guardian.id, guardian.relationship);
+    guardianId = guardian.id;
+  }
+  await demoteOtherPrimaries(db, studentId);
+  let link;
+  try {
+    link = await db.studentGuardian.create({
+      data: { schoolId: authCtx.schoolId, studentId, guardianId, isPrimary: true, canPickup: true },
+      select: LINK_SELECT,
+    });
+  } catch (e) {
+    throw mapStudentGuardianLinkUniqueViolation(e);
+  }
+  await writeLinkCreateAudit(db, authCtx as AuthContext, reqCtx, link);
+  return { guardianId, linkedExisting: Boolean(existing) };
+}

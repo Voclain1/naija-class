@@ -4772,6 +4772,19 @@ model AdmissionApplication {
   consentVersion       String              @map("consent_version")
   trackingTokenHash    String              @unique @map("tracking_token_hash")
   studentId            String?             @map("student_id")
+  /// CP7.2: ENTRANCE_EXAM, INTERVIEW, ONLINE or OTHER, with its time and note.
+  assessmentKind       String?             @map("assessment_kind")
+  assessmentAt         DateTime?           @map("assessment_at")
+  assessmentNote       String?             @map("assessment_note")
+  /// The offer letter the family saw, in full.
+  offerLetter          String?             @map("offer_letter")
+  offeredAt            DateTime?           @map("offered_at")
+  acceptedAt           DateTime?           @map("accepted_at")
+  /// Who recorded the acceptance; NULL means the family accepted online.
+  acceptedByUserId     String?             @map("accepted_by_user_id")
+  decisionNote         String?             @map("decision_note")
+  admittedAt           DateTime?           @map("admitted_at")
+  admittedByUserId     String?             @map("admitted_by_user_id")
   createdAt            DateTime            @default(now()) @map("created_at")
   updatedAt            DateTime            @updatedAt @map("updated_at")
   classLevel           ClassLevel          @relation(fields: [classLevelId], references: [id], onDelete: Restrict)

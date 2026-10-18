@@ -5,6 +5,8 @@ import { TermiiModule } from "../../common/termii/termii.module.js";
 import { AuthModule } from "../auth/auth.module.js";
 import { NotificationDispatchModule } from "../notifications/notification-dispatch.module.js";
 import { AdmissionAlertsService } from "./admission-alerts.service.js";
+import { AdmissionDecisionsService } from "./admission-decisions.service.js";
+import { AdmissionMailService } from "./admission-mail.service.js";
 import { AdmissionsPublicController } from "./admissions-public.controller.js";
 import { AdmissionsPublicService } from "./admissions-public.service.js";
 import { AdmissionsPurgeService } from "./admissions-purge.service.js";
@@ -16,6 +18,6 @@ import { AdmissionsService } from "./admissions.service.js";
 @Module({
   imports: [AuthModule, EmailModule, NotificationDispatchModule, TermiiModule],
   controllers: [AdmissionsController, AdmissionsPublicController],
-  providers: [AdmissionsService, AdmissionsSettingsService, AdmissionsPublicService, AdmissionAlertsService, AdmissionsPurgeService],
+  providers: [AdmissionsService, AdmissionsSettingsService, AdmissionsPublicService, AdmissionAlertsService, AdmissionsPurgeService, AdmissionDecisionsService, AdmissionMailService],
 })
 export class AdmissionsModule {}

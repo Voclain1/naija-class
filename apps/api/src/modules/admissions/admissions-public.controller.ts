@@ -3,10 +3,12 @@ import { FileFieldsInterceptor } from "@nestjs/platform-express";
 import { Throttle } from "@nestjs/throttler";
 import {
   admissionDocumentSlotValues,
+  recordAdmissionAcceptanceSchema,
   submitAdmissionSchema,
   ValidationError,
   type AdmissionDocumentSlot,
   type AdmissionTrackDto,
+  type RecordAdmissionAcceptanceInput,
   type PublicAdmissionFormDto,
   type SubmitAdmissionInput,
   type SubmitAdmissionResultDto,
@@ -68,5 +70,26 @@ export class AdmissionsPublicController {
   @Throttle({ default: { ttl: 60_000, limit: 30 } })
   track(@Param("slug") slug: string, @Param("token") token: string): Promise<AdmissionTrackDto> {
     return this.service.track(slug, token);
+  }
+
+  // CP7.2: the family's two actions on the tracking page. Accepting sends the
+  // same tickbox the school's record uses: the letter is shown in full above it.
+  @Post(":slug/track/:token/accept")
+  @HttpCode(200)
+  @Throttle({ default: { ttl: 3_600_000, limit: 10 } })
+  accept(
+    @Param("slug") slug: string,
+    @Param("token") token: string,
+    @Body(new ZodValidationPipe(recordAdmissionAcceptanceSchema)) _dto: RecordAdmissionAcceptanceInput,
+    @Ip() ip: string,
+  ): Promise<AdmissionTrackDto> {
+    return this.service.acceptOffer(slug, token, { ipAddress: ip });
+  }
+
+  @Post(":slug/track/:token/withdraw")
+  @HttpCode(200)
+  @Throttle({ default: { ttl: 3_600_000, limit: 10 } })
+  withdraw(@Param("slug") slug: string, @Param("token") token: string, @Ip() ip: string): Promise<AdmissionTrackDto> {
+    return this.service.withdraw(slug, token, { ipAddress: ip });
   }
 }

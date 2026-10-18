@@ -1,21 +1,26 @@
-import { randomBytes, randomInt, randomUUID } from "node:crypto";
+import { randomInt, randomUUID } from "node:crypto";
 
 import { Injectable, Logger } from "@nestjs/common";
 
 import { basePrisma, Prisma, withTenant, type PrismaClient } from "@school-kit/db";
 import {
+  ADMISSION_ASSESSMENT_LABEL,
   ADMISSION_CONSENT_VERSION,
   ADMISSION_DOCUMENT_LABEL,
   ADMISSION_FIELD_LABEL,
   ADMISSION_LIMITS,
+  ADMISSION_OPEN_STATUSES,
   ADMISSION_STANDARD_DOCUMENTS,
   ADMISSION_STANDARD_SLOT,
   ADMISSION_STATUS_FAMILY_LABEL,
   admissionConsentText,
   ConflictError,
+  formatSickbayDay,
+  formatSickbayTime,
   NotFoundError,
   sickbayDayOf,
   ValidationError,
+  type AdmissionAssessmentKind,
   type AdmissionDocumentSlot,
   type AdmissionFormConfig,
   type AdmissionTrackDto,
@@ -31,6 +36,8 @@ import { LOGO_URL_TTL_SECONDS, parseLogoExt } from "../../common/storage/school-
 import { StorageService } from "../../common/storage/storage.service.js";
 import type { PrivateFileExt } from "../../common/storage/storage.types.js";
 import { AdmissionAlertsService } from "./admission-alerts.service.js";
+import { AdmissionMailService } from "./admission-mail.service.js";
+import { admissionTrackingToken } from "./admission-tracking.js";
 import { escapeHtml, hashToken, loadAdmissionSettings, openClassLevels } from "./admissions.shared.js";
 
 // Phase 9 / CP7.1 — the PUBLIC side of admissions (docs/modules/phase-9.md
@@ -60,7 +67,6 @@ export const ADMISSION_UPLOAD_FIELDS: Record<AdmissionDocumentSlot, string> = {
   CUSTOM_3: "custom3",
 };
 
-const OPEN_STATUSES = ["SUBMITTED", "UNDER_REVIEW", "OFFERED", "OFFER_ACCEPTED"] as const;
 
 @Injectable()
 export class AdmissionsPublicService {
@@ -70,6 +76,7 @@ export class AdmissionsPublicService {
     private readonly storage: StorageService,
     private readonly email: EmailService,
     private readonly alerts: AdmissionAlertsService,
+    private readonly mail: AdmissionMailService,
   ) {}
 
   /** What the public page needs to draw the school's form. */
@@ -113,7 +120,7 @@ export class AdmissionsPublicService {
       const level = open.find((l) => l.id === input.classLevelId);
       if (!level) throw new ValidationError("Choose one of the classes open for application.");
       const email = input.guardian.email.toLowerCase();
-      const already = await db.admissionApplication.count({ where: { schoolId: school.id, guardianEmail: email, status: { in: [...OPEN_STATUSES] } } });
+      const already = await db.admissionApplication.count({ where: { schoolId: school.id, guardianEmail: email, status: { in: [...ADMISSION_OPEN_STATUSES] } } });
       if (already >= ADMISSION_LIMITS.openPerEmail) {
         throw new ConflictError(
           "TOO_MANY_OPEN_APPLICATIONS",
@@ -140,13 +147,16 @@ export class AdmissionsPublicService {
       throw err;
     }
 
-    const token = randomBytes(32).toString("base64url");
+    // The id is chosen here so the tracking link can be derived from it (CP7.2).
+    const applicationId = randomUUID();
+    const token = admissionTrackingToken(applicationId);
     let created: { id: string; reference: string };
     try {
       created = await withTenant(school.id, async (db) => {
         const reference = await nextReference(db, school.id, year);
         const app = await db.admissionApplication.create({
           data: {
+            id: applicationId,
             schoolId: school.id,
             reference,
             classLevelId: prepared.level.id,
@@ -198,13 +208,9 @@ export class AdmissionsPublicService {
   /** The family's private tracking link (§16.8 answer 3). */
   async track(slug: string, token: string): Promise<AdmissionTrackDto> {
     const school = await resolveSchool(slug);
-    if (!/^[A-Za-z0-9_-]{20,80}$/.test(token)) throw new NotFoundError("This tracking link is not valid.");
     return withTenant(school.id, async (db) => {
-      const app = await db.admissionApplication.findUnique({
-        where: { trackingTokenHash: hashToken(token) },
-        select: { schoolId: true, reference: true, childFirstName: true, status: true, createdAt: true, classLevel: { select: { name: true } } },
-      });
-      if (!app || app.schoolId !== school.id) throw new NotFoundError("This tracking link is not valid.");
+      const app = await findByToken(db, school.id, token);
+      const open = (ADMISSION_OPEN_STATUSES as readonly string[]).includes(app.status);
       return {
         schoolName: school.name,
         reference: app.reference,
@@ -213,8 +219,82 @@ export class AdmissionsPublicService {
         status: app.status,
         statusLabel: ADMISSION_STATUS_FAMILY_LABEL[app.status],
         submittedAt: app.createdAt,
+        decision: {
+          // Shown while it can still matter: not once the application is closed.
+          assessment:
+            app.assessmentKind && app.assessmentAt && open
+              ? {
+                  label: ADMISSION_ASSESSMENT_LABEL[app.assessmentKind as AdmissionAssessmentKind],
+                  day: formatSickbayDay(app.assessmentAt),
+                  time: formatSickbayTime(app.assessmentAt),
+                  note: app.assessmentNote,
+                }
+              : null,
+          offerLetter: app.status === "OFFERED" || app.status === "OFFER_ACCEPTED" || app.status === "ADMITTED" ? app.offerLetter : null,
+          acceptedAt: app.acceptedAt,
+          decisionNote: app.status === "REJECTED" ? app.decisionNote : null,
+          canAccept: app.status === "OFFERED",
+          canWithdraw: open,
+        },
       };
     });
+  }
+
+  /**
+   * The family accepts on the tracking page, which shows the letter in full
+   * above the button (§16.8 answer 2). No member of staff recorded it, so
+   * `accepted_by_user_id` stays NULL: that is the record it was the family.
+   */
+  async acceptOffer(slug: string, token: string, req: RequestContext): Promise<AdmissionTrackDto> {
+    const school = await resolveSchool(slug);
+    await withTenant(school.id, async (db) => {
+      const app = await findByToken(db, school.id, token);
+      const now = new Date();
+      const done = await db.admissionApplication.updateMany({
+        where: { id: app.id, schoolId: school.id, status: "OFFERED" },
+        data: { status: "OFFER_ACCEPTED", statusChangedAt: now, acceptedAt: now, acceptedByUserId: null },
+      });
+      if (done.count !== 1) throw new ConflictError("ADMISSION_CHANGED", "This offer can no longer be accepted here. Please contact the school.");
+      await db.auditLog.create({
+        data: {
+          schoolId: school.id,
+          userId: null,
+          action: "admission.accept",
+          entityType: "admission_application",
+          entityId: app.id,
+          ipAddress: req.ipAddress,
+          metadata: { from: "OFFERED", to: "OFFER_ACCEPTED", via: "FAMILY" },
+        },
+      });
+    });
+    return this.track(slug, token);
+  }
+
+  /** The family withdraws the application themselves. */
+  async withdraw(slug: string, token: string, req: RequestContext): Promise<AdmissionTrackDto> {
+    const school = await resolveSchool(slug);
+    const id = await withTenant(school.id, async (db) => {
+      const app = await findByToken(db, school.id, token);
+      const done = await db.admissionApplication.updateMany({
+        where: { id: app.id, schoolId: school.id, status: { in: [...ADMISSION_OPEN_STATUSES] } },
+        data: { status: "WITHDRAWN", statusChangedAt: new Date() },
+      });
+      if (done.count !== 1) throw new ConflictError("ADMISSION_CHANGED", "This application can no longer be withdrawn here. Please contact the school.");
+      await db.auditLog.create({
+        data: {
+          schoolId: school.id,
+          userId: null,
+          action: "admission.withdraw",
+          entityType: "admission_application",
+          entityId: app.id,
+          ipAddress: req.ipAddress,
+          metadata: { from: app.status, to: "WITHDRAWN", by: "FAMILY" },
+        },
+      });
+      return app.id;
+    });
+    await this.mail.send(school.id, id, { kind: "WITHDRAWN", by: "FAMILY" });
+    return this.track(slug, token);
   }
 
   private async acknowledge(schoolName: string, slug: string, to: string, childFirstName: string, levelName: string, reference: string, token: string) {
@@ -242,6 +322,31 @@ export class AdmissionsPublicService {
       await this.storage.delete(schoolId, { kind: "admission-document", documentId: s.id, ext: s.ext }).catch(() => undefined);
     }
   }
+}
+
+/** One application by its tracking token, at this school only. */
+async function findByToken(db: Db, schoolId: string, token: string) {
+  if (!/^[A-Za-z0-9_-]{20,80}$/.test(token)) throw new NotFoundError("This tracking link is not valid.");
+  const app = await db.admissionApplication.findUnique({
+    where: { trackingTokenHash: hashToken(token) },
+    select: {
+      id: true,
+      schoolId: true,
+      reference: true,
+      childFirstName: true,
+      status: true,
+      createdAt: true,
+      assessmentKind: true,
+      assessmentAt: true,
+      assessmentNote: true,
+      offerLetter: true,
+      acceptedAt: true,
+      decisionNote: true,
+      classLevel: { select: { name: true } },
+    },
+  });
+  if (!app || app.schoolId !== schoolId) throw new NotFoundError("This tracking link is not valid.");
+  return app;
 }
 
 async function resolveSchool(slug: string) {
