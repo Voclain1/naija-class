@@ -3,7 +3,8 @@
 // Phase 8 / CP1 — the school calendar for parents (docs/modules/phase-8.md §15).
 // GET /api/portal/calendar → the API's single merged calendar read (D27): public
 // holidays (minus any the school hid), term dates and the school's own events.
-// Read-only by definition; a guardian has no calendar controls.
+// Read-only by definition; a guardian has no calendar controls. CP10.1: the
+// one exception is replying to an event that asks this family.
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -23,6 +24,7 @@ import { Appear, EmptyState, PageHeader, PageSkeleton, SectionHeader } from "@sc
 
 import { SignOutButton } from "@/components/sign-out-button";
 import { buildLoginUrl, errorCodeFromBody, reasonFromErrorCode } from "@/lib/session-end";
+import { RsvpAnswer } from "@/components/rsvp-answer";
 import { SchoolBanner } from "@/components/school-banner";
 
 type LoadState =
@@ -126,6 +128,7 @@ export default function CalendarPage() {
                     {e.description && (
                       <p className="whitespace-pre-wrap text-sm text-muted-foreground">{e.description}</p>
                     )}
+                    {e.rsvp && <RsvpAnswer eventId={e.id.replace(/^school:/, "")} title={e.title} rsvp={e.rsvp} />}
                   </li>
                 ))}
               </ul>

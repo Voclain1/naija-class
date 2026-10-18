@@ -30,9 +30,11 @@ import {
 } from "../../../src/lib/staff/event-form";
 import { spacing } from "../../../src/theme/tokens";
 import {
+  Body as BodyText,
   Button,
   Caption,
   Card,
+  Heading,
   CenteredMessage,
   Notice,
   Screen,
@@ -262,6 +264,19 @@ export default function SchoolEventScreen() {
               autoCapitalize="sentences"
             />
           </Card>
+
+          {original?.rsvp ? (
+            // Phase 9 / CP10.1: the replies so far. Asking families is set up
+            // on the website, where the list and the download are.
+            <Card style={styles.card}>
+              <Heading>Replies from families</Heading>
+              <BodyText>
+                {`${original.rsvp.counts.yes} yes · ${original.rsvp.counts.no} no · ${original.rsvp.counts.maybe} maybe · ${original.rsvp.counts.notAnswered} not answered, of ${original.rsvp.counts.asked} asked`}
+              </BodyText>
+              {original.rsvp.askCount ? <Caption>{`${original.rsvp.counts.attending} people coming${original.rsvp.counts.maybeAttending ? `, ${original.rsvp.counts.maybeAttending} more maybe` : ""}.`}</Caption> : null}
+              <Caption>The list of replies and the download are on the website, under Events.</Caption>
+            </Card>
+          ) : null}
 
           {failure ? <Notice tone="danger">{failure}</Notice> : null}
           {notice ? <Notice tone="info">{notice}</Notice> : null}

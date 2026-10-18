@@ -9,6 +9,8 @@ import {
   SCHOOL_EVENT_DESCRIPTION_MAX,
   SCHOOL_EVENT_TITLE_MAX,
   lagosTodayIso,
+  type ClassArmDto,
+  type EventRsvpSettingsInput,
   type SchoolEventCategory,
   type SchoolEventDto,
 } from "@school-kit/types";
@@ -17,6 +19,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { ApiError } from "@/lib/api-client";
+import { listClassArms } from "@/lib/class-arms/class-arms-api";
 
 export interface SchoolEventFormValues {
   title: string;
@@ -24,6 +27,8 @@ export interface SchoolEventFormValues {
   category: SchoolEventCategory;
   startDate: string;
   endDate: string;
+  /** Phase 9 / CP10.1: null when families are not asked to reply. */
+  rsvp: EventRsvpSettingsInput;
 }
 
 const FIELD =
@@ -33,6 +38,9 @@ const FIELD =
 // the form on purpose (D25): every school event is seen by everyone at the
 // school, parents and students included, and an admin must know that BEFORE
 // they publish a "staff meeting", not after.
+//
+// Phase 9 / CP10.1: "Ask families to reply" — the whole school or chosen
+// classes, an optional reply-by date, and optionally how many are coming.
 export function SchoolEventFormModal({
   open,
   editing,
@@ -49,6 +57,11 @@ export function SchoolEventFormModal({
   const [category, setCategory] = useState<SchoolEventCategory>("EVENT");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
+  const [askReply, setAskReply] = useState(false);
+  const [deadline, setDeadline] = useState("");
+  const [askCount, setAskCount] = useState(false);
+  const [classArmIds, setClassArmIds] = useState<string[]>([]);
+  const [arms, setArms] = useState<ClassArmDto[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -60,6 +73,10 @@ export function SchoolEventFormModal({
       setCategory(editing.category);
       setStartDate(editing.startDate);
       setEndDate(editing.endDate);
+      setAskReply(editing.rsvp !== null);
+      setDeadline(editing.rsvp?.deadline ?? "");
+      setAskCount(editing.rsvp?.askCount ?? false);
+      setClassArmIds(editing.rsvp?.classArmIds ?? []);
     } else {
       const today = lagosTodayIso();
       setTitle("");
@@ -67,15 +84,27 @@ export function SchoolEventFormModal({
       setCategory("EVENT");
       setStartDate(today);
       setEndDate(today);
+      setAskReply(false);
+      setDeadline("");
+      setAskCount(false);
+      setClassArmIds([]);
     }
     setError(null);
     setSubmitting(false);
   }, [open, editing]);
 
+  useEffect(() => {
+    if (!open || !askReply || arms.length) return;
+    listClassArms()
+      .then(setArms)
+      .catch(() => undefined);
+  }, [open, askReply, arms.length]);
+
   // Display-only check so the button reflects the obvious mistake; the API's Zod
   // schema and the database CHECK constraint are what actually enforce it.
   const rangeInvalid = Boolean(startDate && endDate && endDate < startDate);
-  const canSubmit = title.trim().length > 0 && Boolean(startDate) && Boolean(endDate) && !rangeInvalid;
+  const deadlineInvalid = Boolean(askReply && deadline && startDate && deadline > startDate);
+  const canSubmit = title.trim().length > 0 && Boolean(startDate) && Boolean(endDate) && !rangeInvalid && !deadlineInvalid;
 
   async function submit() {
     if (!canSubmit) return;
@@ -88,6 +117,7 @@ export function SchoolEventFormModal({
         category,
         startDate,
         endDate,
+        rsvp: askReply ? { deadline: deadline || null, askCount, classArmIds } : null,
       });
     } catch (e) {
       setError(e instanceof ApiError ? e.message : "Could not save the event.");
@@ -187,6 +217,69 @@ export function SchoolEventFormModal({
               onChange={(e) => setDescription(e.target.value)}
             />
           </div>
+
+          <label className="flex items-start gap-2 text-sm">
+            <input type="checkbox" className="mt-1" checked={askReply} onChange={(e) => setAskReply(e.target.checked)} />
+            <span>
+              <span className="font-medium">Ask families to reply</span>
+              <span className="block text-xs text-muted-foreground">Parents answer Yes, No or Maybe in the portal and the app.</span>
+            </span>
+          </label>
+          {askReply && (
+            <div className="flex flex-col gap-3 rounded-md bg-muted/50 p-3 text-sm">
+              <div className="flex flex-col gap-1">
+                <Label htmlFor="event-rsvp-deadline">Reply by (optional)</Label>
+                <input
+                  id="event-rsvp-deadline"
+                  type="date"
+                  className={FIELD}
+                  value={deadline}
+                  max={startDate || undefined}
+                  onChange={(e) => setDeadline(e.target.value)}
+                  aria-invalid={deadlineInvalid}
+                />
+                <span className="text-xs text-muted-foreground">
+                  {deadlineInvalid ? "Reply-by must be on or before the start date." : "Without one, replies close at the end of the start date. Parents who have not replied get one reminder the day before."}
+                </span>
+              </div>
+              <label className="flex items-center gap-2">
+                <input type="checkbox" checked={askCount} onChange={(e) => setAskCount(e.target.checked)} />
+                Ask how many people will come
+              </label>
+              <fieldset className="flex flex-col gap-1">
+                <legend className="mb-1 font-medium">Who is asked</legend>
+                <label className="flex items-center gap-2">
+                  <input type="radio" name="rsvp-who" checked={classArmIds.length === 0} onChange={() => setClassArmIds([])} />
+                  Every family at the school
+                </label>
+                <label className="flex items-center gap-2">
+                  <input
+                    type="radio"
+                    name="rsvp-who"
+                    checked={classArmIds.length > 0}
+                    onChange={() => arms[0] && classArmIds.length === 0 && setClassArmIds([arms[0].id])}
+                  />
+                  Families in chosen classes
+                </label>
+                {classArmIds.length > 0 && (
+                  <div className="ml-6 grid max-h-40 grid-cols-2 gap-1 overflow-y-auto">
+                    {arms.map((a) => (
+                      <label key={a.id} className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={classArmIds.includes(a.id)}
+                          onChange={(e) =>
+                            setClassArmIds((ids) => (e.target.checked ? [...ids, a.id] : ids.filter((x) => x !== a.id).length ? ids.filter((x) => x !== a.id) : ids))
+                          }
+                        />
+                        {a.name}
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </fieldset>
+            </div>
+          )}
         </div>
 
         <DialogFooter>

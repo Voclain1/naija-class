@@ -279,6 +279,10 @@ export const baseConfig = [
       // or by the id tagged on the email, to learn which tenant the request
       // is for; every read and write after that goes through withTenant.
       "**/modules/announcements/email-preferences.service.ts",
+      // event-rsvp.service.ts — the daily RSVP reminder (Phase 9 / CP10.1).
+      // Same category as the sweeps above: basePrisma fetches ONLY the school
+      // list; every read and write goes through withTenant per school.
+      "**/modules/calendar/event-rsvp.service.ts",
       "**/common/auth/platform-admin.guard.ts",
       "**/modules/platform-admin/platform-admin.service.ts",
       // school-deletion.ts (platform-admin tools slice 2, 2026-10-07) only

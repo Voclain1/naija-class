@@ -2,10 +2,12 @@ import { useMemo, useState } from "react";
 import { RefreshControl, ScrollView, StyleSheet } from "react-native";
 import { Redirect, Stack } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
+import type { CalendarEntryDto, FamilyRsvpDto } from "@school-kit/types";
 
 import { getGuardianCalendar } from "../src/lib/api/portal";
 import { queryKeys } from "../src/lib/query/keys";
 import { CalendarView } from "../src/components/calendar-view";
+import { RsvpCard } from "../src/components/rsvp-card";
 import { monthBounds, monthOf } from "../src/lib/calendar/month-grid";
 import { useSession } from "../src/lib/auth/session";
 import { useTheme } from "../src/theme/theme-provider";
@@ -19,6 +21,9 @@ import { FreshnessLabel, useIsOnline } from "../src/components/freshness-label";
 // child's screen. Cached for a day and persisted: holidays and term dates change
 // rarely, and a parent checking resumption day with no data bundle is the case
 // the offline cache exists for. Pull to refresh is the explicit refresh.
+//
+// Phase 9 / CP10.1: events in the month that ask this family to reply are
+// listed under the calendar, with the answer buttons.
 const ONE_DAY_MS = 1000 * 60 * 60 * 24;
 
 export default function GuardianCalendarScreen() {
@@ -85,6 +90,11 @@ export default function GuardianCalendarScreen() {
                 setSelectedDate(null);
               }}
             />
+            {query.data.entries
+              .filter((e): e is CalendarEntryDto & { rsvp: FamilyRsvpDto } => Boolean(e.rsvp))
+              .map((e) => (
+                <RsvpCard key={e.id} entry={e} onSaved={() => void query.refetch()} />
+              ))}
           </>
         )}
       </ScrollView>

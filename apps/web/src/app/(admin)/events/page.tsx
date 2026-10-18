@@ -1,6 +1,6 @@
 "use client";
 
-import { Eye, EyeOff, Loader2, Pencil, PlusCircle, Trash2 } from "lucide-react";
+import { Download, Eye, EyeOff, Loader2, Pencil, PlusCircle, Trash2, Users } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
@@ -8,7 +8,10 @@ import {
   CALENDAR_CATEGORY_LABELS,
   defaultCalendarWindow,
   formatCalendarRange,
+  RSVP_ANSWER_LABELS,
   type CalendarEntryDto,
+  type EventRsvpListDto,
+  type RsvpCountsDto,
   type ManagedNationalEventDto,
   type SchoolEventDto,
 } from "@school-kit/types";
@@ -24,6 +27,7 @@ import {
   createSchoolEvent,
   deleteSchoolEvent,
   getCalendar,
+  getEventRsvps,
   hideNationalEvent,
   listNationalEvents,
   listSchoolEvents,
@@ -31,6 +35,14 @@ import {
   updateSchoolEvent,
 } from "@/lib/calendar/calendar-api";
 import { hasPermission } from "@/lib/auth/has-permission";
+import { exportRowsAsCsv } from "@/lib/csv-export";
+
+/** "12 yes · 3 no · 2 maybe · 20 not answered · 30 coming". */
+function rsvpLine(c: RsvpCountsDto, askCount: boolean): string {
+  const parts = [`${c.yes} yes`, `${c.no} no`, `${c.maybe} maybe`, `${c.notAnswered} not answered`];
+  if (askCount) parts.push(`${c.attending} coming${c.maybeAttending ? ` (+${c.maybeAttending} maybe)` : ""}`);
+  return `${parts.join(" · ")} of ${c.asked} asked`;
+}
 
 // /events — Phase 8 / CP1 Event Calendar (docs/modules/phase-8.md §15).
 //
@@ -41,6 +53,9 @@ import { hasPermission } from "@/lib/auth/has-permission";
 // There are deliberately no create/edit controls for public holidays. They are
 // platform data no runtime path can write (D22); a school can only hide one from
 // its own calendar (D19).
+//
+// Phase 9 / CP10.1: an event that asks families to reply shows its counts,
+// and "See replies" opens the list by parent and child, with a CSV download.
 export default function EventsPage() {
   const { permissions } = useAuth();
   const canRead = hasPermission(permissions, "calendar-event.read");
@@ -57,6 +72,29 @@ export default function EventsPage() {
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<SchoolEventDto | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [replies, setReplies] = useState<EventRsvpListDto | null>(null);
+
+  async function openReplies(id: string) {
+    if (replies?.event.id === id) {
+      setReplies(null);
+      return;
+    }
+    try {
+      setReplies(await getEventRsvps(id));
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : "Could not load the replies.");
+    }
+  }
+
+  function downloadReplies(r: EventRsvpListDto) {
+    exportRowsAsCsv(`replies-${r.event.title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}.csv`, r.rows, [
+      { header: "Parent", accessor: (x) => x.guardianName },
+      { header: "Phone", accessor: (x) => x.phone },
+      { header: "Children", accessor: (x) => x.children.map((c) => (c.className ? `${c.name} (${c.className})` : c.name)).join("; ") },
+      { header: "Answer", accessor: (x) => (x.answer ? RSVP_ANSWER_LABELS[x.answer] : "Not answered") },
+      ...(r.event.askCount ? [{ header: "Coming", accessor: (x: EventRsvpListDto["rows"][number]) => x.attending }] : []),
+    ]);
+  }
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -188,8 +226,47 @@ export default function EventsPage() {
                         <span className="text-sm text-muted-foreground">
                           {formatCalendarRange(e.startDate, e.endDate)} · {CALENDAR_CATEGORY_LABELS[e.category]}
                         </span>
+                        {e.rsvp && (
+                          <span className="text-sm text-foreground">
+                            Replies: {rsvpLine(e.rsvp.counts, e.rsvp.askCount)}
+                            {e.rsvp.deadline ? ` · reply by ${formatCalendarRange(e.rsvp.deadline, e.rsvp.deadline)}` : ""}
+                          </span>
+                        )}
+                        {replies?.event.id === e.id && (
+                          <div className="mt-2 flex flex-col gap-2 rounded-md bg-muted/50 p-3 text-sm" aria-label={`Replies to ${e.title}`}>
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <span className="font-medium">{replies.event.open ? "Replies are open" : "Replies have closed"}</span>
+                              <Button variant="outline" size="sm" onClick={() => downloadReplies(replies)}>
+                                <Download className="h-4 w-4" /> Download CSV
+                              </Button>
+                            </div>
+                            {replies.rows.length === 0 ? (
+                              <p className="text-muted-foreground">No families are asked: no children are enrolled in these classes this term.</p>
+                            ) : (
+                              <ul className="flex flex-col divide-y">
+                                {replies.rows.map((r) => (
+                                  <li key={r.guardianId} className="flex flex-wrap justify-between gap-2 py-1.5">
+                                    <span className="min-w-0 break-words">
+                                      {r.guardianName}
+                                      <span className="text-muted-foreground"> · {r.children.map((c) => c.name).join(", ")}</span>
+                                    </span>
+                                    <span className={r.answer ? "font-medium" : "text-muted-foreground"}>
+                                      {r.answer ? RSVP_ANSWER_LABELS[r.answer] : "Not answered"}
+                                      {r.attending ? ` · ${r.attending} coming` : ""}
+                                    </span>
+                                  </li>
+                                ))}
+                              </ul>
+                            )}
+                          </div>
+                        )}
                       </div>
-                      <div className="flex gap-2">
+                      <div className="flex flex-wrap gap-2">
+                        {e.rsvp && (
+                          <Button variant="outline" size="sm" aria-expanded={replies?.event.id === e.id} onClick={() => void openReplies(e.id)}>
+                            <Users className="h-4 w-4" /> {replies?.event.id === e.id ? "Hide replies" : "See replies"}
+                          </Button>
+                        )}
                         <Button
                           variant="outline"
                           size="sm"

@@ -2,6 +2,7 @@
 // @school-kit/types so the client cannot drift from the API.
 
 import type {
+  EventRsvpListDto,
   CalendarResponse,
   CreateSchoolEventInput,
   ManagedNationalEventDto,
@@ -45,4 +46,9 @@ export function hideNationalEvent(id: string): Promise<void> {
 
 export function unhideNationalEvent(id: string): Promise<void> {
   return apiFetch<void>(`/calendar/national-events/${encodeURIComponent(id)}/hide`, { method: "DELETE" });
+}
+
+// Phase 9 / CP10.1 — the replies to an event that asks families.
+export function getEventRsvps(id: string): Promise<EventRsvpListDto> {
+  return apiFetch<EventRsvpListDto>(`/calendar/events/${encodeURIComponent(id)}/rsvps`);
 }
