@@ -259,7 +259,9 @@ jobs:
     # 45, not 30 (2026-10-16): at 160 tests a green run takes ~28 minutes, and
     # one dev-server memory restart (a 3-minute retry) cancelled the run on
     # its last spec with nothing failing (PR #441).
-    timeout-minutes: 45
+    # 60, not 45 (2026-10-18): with the dev server's larger heap a green run
+    # took 44m38s (PR #457), too close to the limit.
+    timeout-minutes: 60
 
     services:
       postgres:
