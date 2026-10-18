@@ -20,6 +20,7 @@ export * from './health/index.js';
 export * from './transport/index.js';
 export * from './library/index.js';
 export * from './hostels/index.js';
+export * from './admissions/index.js';
 export * from './homework/index.js';
 export * from './assignments/index.js';
 export * from './question-bank/index.js';

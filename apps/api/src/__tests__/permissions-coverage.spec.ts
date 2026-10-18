@@ -35,6 +35,7 @@ import { SickbayController } from "../modules/health/sickbay.controller";
 import { LibraryResourcesController } from "../modules/library/library-resources.controller";
 import { LibraryController } from "../modules/library/library.controller";
 import { BoardingController } from "../modules/hostels/boarding.controller";
+import { AdmissionsController } from "../modules/admissions/admissions.controller";
 import { HostelController } from "../modules/hostels/hostel.controller";
 import { AssignmentsController } from "../modules/assignments/assignments.controller";
 import { CalendarController } from "../modules/calendar/calendar.controller";
@@ -1695,6 +1696,29 @@ describe("Phase 9 CP6b.2 RBAC coverage: boarding", () => {
   it("the bursar, health officer and librarian do not hold hostel.house", () => {
     for (const key of ["bursar", "health_officer", "librarian"]) {
       expect(new Set(roleSeed(key).permissions).has("hostel.house"), key).toBe(false);
+    }
+  });
+});
+
+describe("Phase 9 CP7.1 RBAC coverage: admissions", () => {
+  const perms = (handler: string): string[] =>
+    Reflect.getMetadata(
+      PERMISSIONS_METADATA_KEY,
+      (AdmissionsController.prototype as unknown as Record<string, object>)[handler]!,
+    ) as string[];
+
+  it("the list and an application need admission.read; settings and officers admission.settings", () => {
+    for (const handler of ["list", "get", "documentUrl"]) expect(perms(handler), handler).toEqual(["admission.read"]);
+    for (const handler of ["getSettings", "updateSettings", "officers", "setOfficers"]) expect(perms(handler), handler).toEqual(["admission.settings"]);
+  });
+
+  it("the Admissions officer holds the two admission permissions and nothing else; admin holds both; no one else does", () => {
+    expect([...roleSeed("admission_officer").permissions].sort()).toEqual(["admission.manage", "admission.read"]);
+    const admin = new Set(roleSeed("admin").permissions);
+    for (const p of ["admission.read", "admission.manage", "admission.settings"]) expect(admin.has(p), p).toBe(true);
+    for (const key of ["teacher", "bursar", "health_officer", "librarian", "house_master"]) {
+      const held = new Set(roleSeed(key).permissions);
+      for (const p of ["admission.read", "admission.manage", "admission.settings"]) expect(held.has(p), `${key} must not hold ${p}`).toBe(false);
     }
   });
 });

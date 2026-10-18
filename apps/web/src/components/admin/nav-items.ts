@@ -4,6 +4,7 @@ import {
   Bus,
   BedDouble,
   DoorOpen,
+  Inbox,
   Library,
   Megaphone,
   CalendarClock,
@@ -172,6 +173,9 @@ export const NAV_ITEMS: NavItem[] = [
   // admin and the House master, whose whole menu this is. (A teacher who keeps
   // a hostel reaches it from the teacher portal.)
   { label: "Boarding", href: "/boarding", icon: DoorOpen, enabled: true, requiredPermission: "hostel.house" },
+  // Phase 9 / CP7.1 — admission applications (docs/modules/phase-9.md §16.8).
+  // admission.read: owner, admin and Admissions officers.
+  { label: "Admissions", href: "/admissions", icon: Inbox, enabled: true, requiredPermission: "admission.read" },
   // Announcements (docs/modules/announcements.md). Gated on
   // announcement.create, not announcement.read: every staff role can READ the
   // school's announcements in their own feed, but this page is the sending

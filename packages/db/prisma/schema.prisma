@@ -599,6 +599,7 @@ model ClassLevel {
 
   libraryBookLevels     LibraryBookLevel[] // Phase 9 / CP6.1
   libraryResourceLevels LibraryResourceLevel[] // Phase 9 / CP6.3
+  admissionApplications AdmissionApplication[] // Phase 9 / CP7.1
 
   @@unique([schoolId, code])
   @@index([schoolId])
@@ -834,6 +835,7 @@ model Student {
   hostelBeds            HostelBed[] // Phase 9 / CP6b.1
   hostelVisits          HostelVisit[] // Phase 9 / CP6b.2
   hostelExeats          HostelExeat[] // Phase 9 / CP6b.3
+  admissionApplications AdmissionApplication[] // Phase 9 / CP7 (set when admitted)
 
   @@unique([schoolId, admissionNumber])
   @@index([schoolId])
@@ -4717,4 +4719,100 @@ model HostelExeat {
   @@index([schoolId, hostelId, status])
   @@index([schoolId, studentId])
   @@map("hostel_exeats")
+}
+
+// ---------- Phase 9 / CP7 — online admission applications (§16, §16.8) ----------
+
+enum AdmissionStatus {
+  SUBMITTED
+  UNDER_REVIEW
+  OFFERED
+  OFFER_ACCEPTED
+  ADMITTED
+  REJECTED
+  WITHDRAWN
+}
+
+// One row per school, written on first save. Until then the defaults apply,
+// and applications are OPEN (owner, §16.8).
+model AdmissionSettings {
+  id                  String   @id @default(uuid())
+  schoolId            String   @unique @map("school_id")
+  enabled             Boolean  @default(true)
+  intro               String?
+  smsAlerts           Boolean  @default(true) @map("sms_alerts")
+  notifyEmail         String?  @map("notify_email")
+  offerLetter         String?  @map("offer_letter")
+  form                Json     @default("{}")
+  closedClassLevelIds Json     @default("[]") @map("closed_class_level_ids")
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  @@map("admission_settings")
+}
+
+model AdmissionApplication {
+  id                   String              @id @default(uuid())
+  schoolId             String              @map("school_id")
+  reference            String
+  classLevelId         String              @map("class_level_id")
+  childFirstName       String              @map("child_first_name")
+  childLastName        String              @map("child_last_name")
+  dateOfBirth          DateTime            @map("date_of_birth") @db.Date
+  gender               Gender
+  guardianFirstName    String              @map("guardian_first_name")
+  guardianLastName     String              @map("guardian_last_name")
+  guardianRelationship Relationship        @map("guardian_relationship")
+  guardianPhone        String              @map("guardian_phone")
+  guardianEmail        String              @map("guardian_email")
+  answers              Json                @default("{}")
+  status               AdmissionStatus     @default(SUBMITTED)
+  statusChangedAt      DateTime            @default(now()) @map("status_changed_at")
+  consentAt            DateTime            @map("consent_at")
+  consentVersion       String              @map("consent_version")
+  trackingTokenHash    String              @unique @map("tracking_token_hash")
+  studentId            String?             @map("student_id")
+  createdAt            DateTime            @default(now()) @map("created_at")
+  updatedAt            DateTime            @updatedAt @map("updated_at")
+  classLevel           ClassLevel          @relation(fields: [classLevelId], references: [id], onDelete: Restrict)
+  student              Student?            @relation(fields: [studentId], references: [id], onDelete: SetNull)
+  documents            AdmissionDocument[]
+
+  @@unique([schoolId, reference])
+  @@index([schoolId, status])
+  @@index([schoolId, guardianEmail])
+  @@map("admission_applications")
+}
+
+model AdmissionDocument {
+  id            String               @id @default(uuid())
+  schoolId      String               @map("school_id")
+  applicationId String               @map("application_id")
+  slot          String
+  label         String
+  ext           String
+  sizeBytes     Int                  @map("size_bytes")
+  createdAt     DateTime             @default(now()) @map("created_at")
+  application   AdmissionApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@unique([applicationId, slot])
+  @@map("admission_documents")
+}
+
+model AdmissionReferenceCounter {
+  schoolId String @map("school_id")
+  year     Int
+  next     Int    @default(1)
+
+  @@id([schoolId, year])
+  @@map("admission_reference_counters")
+}
+
+model AdmissionSmsCounter {
+  schoolId String   @map("school_id")
+  day      DateTime @db.Date
+  sent     Int      @default(0)
+
+  @@id([schoolId, day])
+  @@map("admission_sms_counters")
 }

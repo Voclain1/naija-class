@@ -9,6 +9,7 @@ import {
   Clock,
   BookCopy,
   DoorOpen,
+  Inbox,
   Library,
   ShieldAlert,
   Sparkles,
@@ -26,6 +27,8 @@ import { useEffect, useState } from "react";
 
 import type { NavItem } from "@/components/admin/nav-items";
 import { PoweredBySchoolKit, SchoolBrand } from "@/components/school/school-brand";
+import { hasPermission } from "@/lib/auth/has-permission";
+import { useAuth } from "@/lib/auth/use-auth";
 import { getMyScope } from "@/lib/teacher/teacher-scope-api";
 import { cn } from "@/lib/utils";
 
@@ -90,6 +93,14 @@ const BOARDING_ITEM: NavItem = {
   enabled: true,
 };
 
+// Phase 9 / CP7.1 — only for a teacher an admin has made an Admissions officer.
+const ADMISSIONS_ITEM: NavItem = {
+  label: "Admissions",
+  href: "/teacher/admissions",
+  icon: Inbox,
+  enabled: true,
+};
+
 const PROFILE_ITEM: NavItem = {
   label: "Profile",
   href: "/teacher/profile",
@@ -129,7 +140,15 @@ export function useTeacherNavItems(): NavItem[] {
     };
   }, []);
 
-  return [...BASE_ITEMS, ...(subjectEnabled ? [SUBJECT_ITEM] : []), ...(housesHostels ? [BOARDING_ITEM] : []), PROFILE_ITEM];
+  const { permissions } = useAuth();
+  const admissions = hasPermission(permissions, "admission.read");
+  return [
+    ...BASE_ITEMS,
+    ...(subjectEnabled ? [SUBJECT_ITEM] : []),
+    ...(housesHostels ? [BOARDING_ITEM] : []),
+    ...(admissions ? [ADMISSIONS_ITEM] : []),
+    PROFILE_ITEM,
+  ];
 }
 
 export function TeacherSidebar() {
