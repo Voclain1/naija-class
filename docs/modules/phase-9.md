@@ -5490,3 +5490,108 @@ the count stays 23.
     reason on the debtors page; the filter hides and shows the row; the
     student page agrees.
   - Phone fit at 320 and 390 px.
+
+## 20. CP11 plan-first — closing the app gaps (2026-10-18)
+
+The owner asked whether every Phase 9 build is also in the app, not only on
+the web. An audit of the app's screens and API clients (§20.1) found most
+of it there, and seven real gaps.
+
+### 20.1 What the audit found
+
+- **In the app for every audience that uses it:**
+  - discipline and parent notices;
+  - health records and vaccinations;
+  - assignments: students submit and answer, teachers mark, use AI drafts,
+    check similarity and send to the gradebook, parents see results;
+  - the daily bus list and the parent transport card;
+  - boarders, the parent hostel card and leave-out requests;
+  - messages with photos and reporting;
+  - announcement emails (staff);
+  - event replies (parents);
+  - report summaries with exports;
+  - fee risk (#456).
+- **On the website on purpose** (the owner, CP7-D10 and each checkpoint's
+  scope):
+  - admissions;
+  - adding and changing questions;
+  - the AI-drafts school switch;
+  - behaviour categories;
+  - managing routes, vehicles, hostels and beds;
+  - the library catalogue;
+  - the Charges page;
+  - setting up event replies and the reply list;
+  - the "addresses to fix" list.
+
+  The app opens these on the website already signed in (the web handoff),
+  and the dashboard's "Needs you" alerts, new admission applications among
+  them, open the right website page the same way.
+- **Gaps** (done on web or portal, never decided web-only):
+  1. a parent's announcement-email switch;
+  2. "Write to a parent" for the office;
+  3. recording a leave-out request taken by phone, and cancelling one;
+  4. "Found it" for a lost library book;
+  5. the behaviour incidents list;
+  6. past leave-outs;
+  7. the sickbay day list.
+
+### 20.2 Plan
+
+- **Every gap uses an endpoint that already exists,** with the same
+  permission as the web. No migration, no new route, no new role.
+- **Staff-app keys keep the "staff" prefix,** so the data stays off the
+  phone's disk.
+
+| # | Who | App | Endpoint |
+|---|---|---|---|
+| 1 | Parent | Settings → Emails switch (blocked address said in words) | `GET/POST /portal/email-preferences` |
+| 2 | Office (`messages.start`) | Messages → "Write to a parent": find by name, a child or General, subject, message | `GET /messages/guardians`, `POST /messages` |
+| 3 | House master | Leave out → "Record a request" and Cancel | `POST /boarding/hostels/:id/exeats`, `POST /boarding/exeats/:id/cancel` |
+| 4 | Librarian | Lost books list with "Found it" | `POST /library/loans/:id/found` |
+| 5 | Staff (teacher: own classes) | Behaviour → Incidents, read-only | `GET /behaviour/incidents[/:id]` |
+| 6 | House master | Leave out → Open / Past | `view=past` |
+| 7 | Nurse | Sickbay day list, a day at a time | `GET /health/sickbay/visits` |
+
+- **Also:**
+  - the "unread messages" and "flagged conversations" alerts open the app's
+    inbox (Flagged tab), not the website;
+  - a signed-in "Open on the website" link at each place where work stays
+    on the web.
+
+### 20.3 Owner's answers (2026-10-18)
+
+1. Starting a conversation stays with the office (`messages.start`), as on
+   the web.
+2. The sickbay day list can step back a day at a time, read-only.
+
+### 20.4 Slices
+
+| Slice | What |
+|---|---|
+| **CP11.1** | Gaps 1 and 2, and the message alerts in the app. |
+| **CP11.2** | Gaps 3–7, and the signed-in website links. |
+
+### 20.5 As built — CP11.1 (2026-10-18)
+
+- **Parent Settings** (`apps/mobile/app/settings.tsx`, menu → Account →
+  Settings):
+  - the same switch and wording as the portal's Settings page;
+  - "no address" and "blocked address" are said in words.
+- **"Write to a parent"** (`app/staff/messages/new.tsx`), shown only with
+  `messages.start`:
+  - find a parent by name (two letters or more);
+  - each match shows the children and the last four digits of the phone, to
+    tell two parents of the same name apart;
+  - choose a child or General, write a subject and message, send;
+  - the new conversation opens.
+  - Photos are not offered when starting, the same as the web; they can be
+    added in replies.
+- **"Needs you" alerts:** routing is now `alertInAppRoute`
+  (`src/lib/staff/messages.ts`, tested):
+  - "unread messages" opens the app inbox;
+  - "flagged conversations" opens it on Flagged;
+  - every other alert keeps opening the website, signed in.
+- **Tests:**
+  - `messages.spec.ts`: the alert routing and the phone digits;
+  - the menu spec gains `/settings`;
+  - the staff-keys spec gains the parent search key.

@@ -101,6 +101,7 @@ const STAFF_KEYS: Record<string, readonly unknown[]> = {
   staffBoardingExeats: queryKeys.staffBoardingExeats(SCHOOL, USER, "hostel_1"),
   staffMessages: queryKeys.staffMessages(SCHOOL, USER, "OPEN"),
   staffMessage: queryKeys.staffMessage(SCHOOL, USER, "thread_1"),
+  staffMessageGuardians: queryKeys.staffMessageGuardians(SCHOOL, USER, "okafor"),
   staffLibraryLoans: queryKeys.staffLibraryLoans(SCHOOL, USER, "OVERDUE"),
   staffLibraryCopy: queryKeys.staffLibraryCopy(SCHOOL, USER, "42"),
   staffAssignmentMarking: queryKeys.staffAssignmentMarking(SCHOOL, USER, "hw_1"),
