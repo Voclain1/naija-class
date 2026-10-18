@@ -2,14 +2,15 @@ import { useState } from "react";
 import { Alert, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { Redirect, Stack, useRouter } from "expo-router";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { formatKobo } from "@school-kit/types";
+import { FEE_RISK_LEVEL_LABELS, FEE_RISK_LEVELS, formatKobo, type FeeRiskLevel } from "@school-kit/types";
 
 import { staffDebtors } from "../../../src/lib/api/staff-finance";
 import { staffSendReminders } from "../../../src/lib/api/staff-money";
 import { ApiError, ApiNetworkError } from "../../../src/lib/api/client";
 import { moneyAbilities } from "../../../src/lib/staff/money";
-import { filterDebtors } from "../../../src/lib/staff/bursar";
-import { TextField } from "../../../src/components/form";
+import { filterDebtors, filterDebtorsByRisk } from "../../../src/lib/staff/bursar";
+import { ChoiceChips, TextField } from "../../../src/components/form";
+import { FeeRiskTag } from "../../../src/components/fee-risk-tag";
 import { queryKeys } from "../../../src/lib/query/keys";
 import { useSession } from "../../../src/lib/auth/session";
 import { hasPermission } from "../../../src/lib/auth/permissions";
@@ -45,6 +46,9 @@ import {
 //      and the SERVER looks up each family's contact — the phone never holds a
 //      parent's phone number to send one.
 //
+// Phase 9 / CP10.2: each row shows the child's fee-default risk (rules over
+// their own invoices, staff-only, never acts by itself) with a Risk filter.
+//
 // CP9b (D38): each row opens that family's page (record a payment, remind,
 // share a payment link), and "Remind every family" sends in batches of the
 // server's limit after a confirmation that says texts cost money.
@@ -69,6 +73,8 @@ export default function DebtorsScreen() {
   const router = useRouter();
   const abilities = moneyAbilities(staff?.roles, staff?.permissions ?? []);
   const [search, setSearch] = useState("");
+  // Phase 9 / CP10.2 — show one fee-risk level only.
+  const [riskLevel, setRiskLevel] = useState<FeeRiskLevel | "ALL">("ALL");
   const [notice, setNotice] = useState<string | null>(null);
   const [remindFailure, setRemindFailure] = useState<string | null>(null);
 
@@ -101,7 +107,7 @@ export default function DebtorsScreen() {
   // Filtered on the phone, not the server: the whole term's debtor list is
   // already here, and a bursar with a parent at the counter should not wait
   // for a round trip to find them.
-  const rows = filterDebtors(all, search);
+  const rows = filterDebtorsByRisk(filterDebtors(all, search), riskLevel);
   const totalOwed = all.reduce((sum, r) => sum + r.balance, 0);
 
   function confirmRemindAll(): void {
@@ -126,6 +132,15 @@ export default function DebtorsScreen() {
           value={search}
           onChangeText={setSearch}
           placeholder="Name, admission number or class"
+        />
+      ) : null}
+
+      {all.length > 0 ? (
+        <ChoiceChips<FeeRiskLevel | "ALL">
+          label="Risk"
+          options={[{ value: "ALL", label: "Every level" }, ...FEE_RISK_LEVELS.map((l) => ({ value: l, label: FEE_RISK_LEVEL_LABELS[l] }))]}
+          value={riskLevel}
+          onChange={setRiskLevel}
         />
       ) : null}
 
@@ -160,7 +175,7 @@ export default function DebtorsScreen() {
           <EmptyState
             icon="search-outline"
             title="No family matches"
-            body={`Nobody owing matches "${search.trim()}".`}
+            body={search.trim() ? `Nobody owing matches "${search.trim()}" at this risk level.` : "Nobody owing is at this risk level."}
           />
         ) : null}
 
@@ -188,7 +203,7 @@ export default function DebtorsScreen() {
           <Pressable
             key={row.invoiceId}
             accessibilityRole="button"
-            accessibilityLabel={`${row.studentName}, ${formatKobo(row.balance)} outstanding`}
+            accessibilityLabel={`${row.studentName}, ${formatKobo(row.balance)} outstanding, risk ${FEE_RISK_LEVEL_LABELS[row.risk.level]}`}
             onPress={() =>
               router.push({
                 pathname: "/staff/collections/[invoiceId]",
@@ -210,6 +225,7 @@ export default function DebtorsScreen() {
               {row.dueDate ? ` · due ${row.dueDate}` : ""}
               {row.hasPaymentPlan ? " · on a payment plan" : ""}
             </Label>
+            <FeeRiskTag risk={row.risk} />
           </Card>
           </Pressable>
         ))}

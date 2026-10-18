@@ -139,6 +139,14 @@ export function filterDebtors<T extends { studentName: string; admissionNumber: 
 }
 
 /**
+ * Phase 9 / CP10.2 — keep only the rows at one fee-risk level ("ALL" keeps
+ * every row). On the phone for the same reason as the search above.
+ */
+export function filterDebtorsByRisk<T extends { risk: { level: string } }>(rows: readonly T[], level: string): T[] {
+  return level === "ALL" ? [...rows] : rows.filter((row) => row.risk.level === level);
+}
+
+/**
  * Drops anything whose route is already offered above it on the same screen.
  *
  * The staff home renders three things that can name one screen: the money
