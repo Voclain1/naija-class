@@ -19,6 +19,7 @@ import { serverToday } from "../../src/lib/staff/server-date";
 import { formatLongDate as formatToday, greeting, isoWeekdayOf } from "../../src/lib/when";
 import { useTermContext } from "../../src/lib/staff/use-term-context";
 import { WEB_NOT_CONFIGURED_MESSAGE, signedInWebUrl, webUrl } from "../../src/lib/web-handoff";
+import { alertInAppRoute } from "../../src/lib/staff/messages";
 import { staffWebHandoff } from "../../src/lib/api/staff-auth";
 import { staffDestinations, type Destination } from "../../src/lib/navigation/destinations";
 import { AppMenu, MenuButton, useAppMenu } from "../../src/components/app-menu";
@@ -330,16 +331,14 @@ export default function StaffDashboardScreen() {
                 <Card style={styles.band}>
                   {alerts.map((alert) => {
                     const copy = ALERT_COPY[alert.type](alert.count);
-                    // Report card approval is on the phone now (CP4b); every
-                    // other alert still resolves on the website.
-                    const inAppRoute =
-                      alert.type === "pending_report_card_approval" && canApprove
-                        ? "/staff/approvals"
-                        : alert.type === "term_health" &&
-                            schoolAdmin &&
-                            hasPermission(permissions, "reports.completeness.read")
-                          ? "/staff/reports"
-                          : null;
+                    // Report card approval (CP4b) and messages (CP11.1) are
+                    // on the phone; every other alert opens on the website.
+                    const inAppRoute = alertInAppRoute(alert.type, {
+                      canApprove,
+                      canCheckTermHealth: schoolAdmin && hasPermission(permissions, "reports.completeness.read"),
+                      canReadMessages: hasPermission(permissions, "messages.read"),
+                      canOverseeMessages: hasPermission(permissions, "messages.oversee"),
+                    });
                     const inApp = inAppRoute !== null;
                     return (
                       <StatRow
@@ -356,7 +355,7 @@ export default function StaffDashboardScreen() {
                         }
                         onPress={
                           inApp
-                            ? () => router.push(inAppRoute)
+                            ? () => router.push(inAppRoute as never)
                             : webConfigured
                               ? () => openOnWeb(alert.href)
                               : undefined

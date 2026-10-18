@@ -1,12 +1,12 @@
 import { useState } from "react";
 import { RefreshControl, ScrollView, StyleSheet } from "react-native";
-import { Redirect, Stack, useRouter } from "expo-router";
+import { Redirect, Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
 
 import { ChoiceChips } from "../../../src/components/form";
 import { EmptyState, ListRow, ScreenHeader, Skeleton } from "../../../src/components/layout";
 import { LoadError } from "../../../src/components/load-error";
-import { Notice, Screen } from "../../../src/components/ui";
+import { Button, Notice, Screen } from "../../../src/components/ui";
 import { staffMessages, type StaffMessageBox } from "../../../src/lib/api/staff-messages";
 import { hasPermission } from "../../../src/lib/auth/permissions";
 import { useSession } from "../../../src/lib/auth/session";
@@ -15,7 +15,7 @@ import { spacing } from "../../../src/theme/tokens";
 
 // Phase 9 / CP8.1 — parents' messages addressed or passed to this person, and
 // only those (docs/modules/phase-9.md §17.8). Writing to a parent first is the
-// school office's, on the website.
+// school office's (messages.start) — CP11.1 brings it to the app (§20).
 
 function when(value: string | Date): string {
   return new Date(value).toLocaleString("en-NG", { timeZone: "Africa/Lagos", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
@@ -28,7 +28,10 @@ export default function StaffMessagesScreen() {
   const canRead = hasPermission(staff?.permissions ?? [], "messages.read");
   // CP8.2: the owner and admins also have Flagged.
   const canOversee = hasPermission(staff?.permissions ?? [], "messages.oversee");
-  const [box, setBox] = useState<StaffMessageBox>("OPEN");
+  const canStart = hasPermission(staff?.permissions ?? [], "messages.start");
+  // CP11.1: the "flagged conversations" alert opens straight on Flagged.
+  const params = useLocalSearchParams<{ box?: string }>();
+  const [box, setBox] = useState<StaffMessageBox>(params.box === "FLAGGED" && canOversee ? "FLAGGED" : "OPEN");
   const list = useQuery({
     queryKey: queryKeys.staffMessages(staff?.school.id ?? "", staff?.user.id ?? "", box),
     queryFn: () => staffMessages(box),
@@ -48,6 +51,7 @@ export default function StaffMessagesScreen() {
           <Notice tone="info">Your account can&apos;t see messages.</Notice>
         ) : (
           <>
+            {canStart ? <Button title="Write to a parent" variant="secondary" onPress={() => router.push("/staff/messages/new")} /> : null}
             <ChoiceChips
               options={[
                 { value: "OPEN" as const, label: "Open" },

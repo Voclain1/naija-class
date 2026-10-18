@@ -1,4 +1,4 @@
-import type { MessageRecipient, StaffMessageListDto, StaffMessageThreadDto, StaffMessageThreadSummaryDto } from "@school-kit/types";
+import type { MessageGuardianOptionDto, MessageRecipient, OfficeStartMessageInput, StaffMessageListDto, StaffMessageThreadDto, StaffMessageThreadSummaryDto } from "@school-kit/types";
 
 import { apiFetch } from "./client";
 
@@ -41,4 +41,15 @@ export function staffFlagMessage(threadId: string, note: string): Promise<StaffM
 
 export function staffClearMessageFlag(threadId: string): Promise<StaffMessageThreadSummaryDto> {
   return apiFetch<StaffMessageThreadSummaryDto>(`/messages/${id(threadId)}/clear-flag`, { method: "POST", body: {} });
+}
+
+// Phase 9 / CP11.1 — the school office writes to a parent first, as on the
+// website (messages.start; docs/modules/phase-9.md §20). Search needs two
+// letters; the reply is the new conversation.
+export function staffSearchMessageGuardians(q: string): Promise<MessageGuardianOptionDto[]> {
+  return apiFetch<MessageGuardianOptionDto[]>(`/messages/guardians?q=${encodeURIComponent(q)}`);
+}
+
+export function staffStartMessage(input: OfficeStartMessageInput): Promise<StaffMessageThreadDto> {
+  return apiFetch<StaffMessageThreadDto>("/messages", { method: "POST", body: input });
 }

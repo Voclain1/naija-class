@@ -37,6 +37,8 @@ import type {
 
 import type { MessageRecipientOptionDto, PortalMessageListDto, PortalMessageThreadDto, StartMessageInput } from "@school-kit/types";
 
+import type { PortalEmailPreferencesDto } from "@school-kit/types";
+
 import { apiFetch } from "./client";
 
 // Typed bindings for the guardian portal API.
@@ -350,4 +352,14 @@ export function guardianReplyMessage(threadId: string, body: string, imageIds: s
 // CP8.2 — "Report this conversation" to the school's owner and admins.
 export function guardianReportMessage(threadId: string, note: string): Promise<PortalMessageThreadDto> {
   return apiFetch<PortalMessageThreadDto>(`/portal/messages/${encodeURIComponent(threadId)}/report`, { method: "POST", body: note ? { note } : {} });
+}
+
+// Phase 9 / CP11.1 — the parent's own announcement-email switch, the same
+// endpoint as the portal's Settings page (docs/modules/phase-9.md §17.11).
+export function guardianEmailPreferences(): Promise<PortalEmailPreferencesDto> {
+  return apiFetch<PortalEmailPreferencesDto>("/portal/email-preferences");
+}
+
+export function guardianSetEmailPreferences(announcements: boolean): Promise<PortalEmailPreferencesDto> {
+  return apiFetch<PortalEmailPreferencesDto>("/portal/email-preferences", { method: "POST", body: { announcements } });
 }
