@@ -6,12 +6,17 @@ import { MessageCircle } from "lucide-react";
 import {
   buildDebtorReminderMessage,
   buildNoRecipientWhatsAppUrl,
+  FEE_RISK_LEVEL_LABELS,
+  FEE_RISK_LEVELS,
+  feeRiskSummary,
+  type FeeRiskLevel,
   resolveSchoolBankDetails,
   type AcademicYearDto,
   type DebtorDto,
   type TermDto,
 } from "@school-kit/types";
 
+import { FeeRiskBadge, FeeRiskReasons } from "@/components/finance/fee-risk";
 import { ListExportMenu } from "@/components/shared/list-export-menu";
 import { InlineAlert } from "@/components/shared/inline-alert";
 import { PrintButton } from "@/components/shared/print-button";
@@ -38,6 +43,8 @@ const DEBTOR_EXPORT_COLUMNS: CsvColumn<DebtorDto>[] = [
   { header: "Status", accessor: (d) => STATUS_LABELS[d.status] },
   { header: "Payment Plan", accessor: (d) => (d.hasPaymentPlan ? "Yes" : "No") },
   { header: "Invoice", accessor: (d) => (d.supplementary ? "Supplementary" : "Term") },
+  { header: "Risk", accessor: (d) => FEE_RISK_LEVEL_LABELS[d.risk.level] },
+  { header: "Risk Reasons", accessor: (d) => feeRiskSummary(d.risk) },
 ];
 
 type Status = "ISSUED" | "PARTIALLY_PAID" | "OVERDUE";
@@ -77,6 +84,8 @@ export default function DebtorsPage() {
   const [reminding, setReminding] = useState(false);
   const [reminderResult, setReminderResult] = useState<{ sent: number; skipped: number } | null>(null);
   const [sharingInvoiceId, setSharingInvoiceId] = useState<string | null>(null);
+  // Phase 9 / CP10.2 — show one risk level only ("" = every level).
+  const [riskFilter, setRiskFilter] = useState<FeeRiskLevel | "">("");
 
   // Load academic years on mount
   useEffect(() => {
@@ -150,11 +159,13 @@ export default function DebtorsPage() {
     });
   }
 
+  const shown = riskFilter ? debtors.filter((d) => d.risk.level === riskFilter) : debtors;
+
   function toggleSelectAll() {
-    if (selected.size === debtors.length) {
+    if (selected.size === shown.length) {
       setSelected(new Set());
     } else {
-      setSelected(new Set(debtors.map((d) => d.studentId)));
+      setSelected(new Set(shown.map((d) => d.studentId)));
     }
   }
 
@@ -174,7 +185,7 @@ export default function DebtorsPage() {
     }
   }
 
-  const totalBalance = debtors.reduce((sum, d) => sum + d.balance, 0);
+  const totalBalance = shown.reduce((sum, d) => sum + d.balance, 0);
   // Named in the shared message, so a parent knows WHICH term is owed.
   const selectedTermName = terms.find((t) => t.id === termId)?.name ?? "this term";
 
@@ -256,7 +267,30 @@ export default function DebtorsPage() {
             ))}
           </select>
         </div>
+
+        <div>
+          <label htmlFor="fin-debtors-risk" className="mb-1 block text-sm font-medium text-foreground">Risk</label>
+          <select id="fin-debtors-risk"
+            className={SELECT_CLASSES}
+            value={riskFilter}
+            onChange={(e) => {
+              setRiskFilter(e.target.value as FeeRiskLevel | "");
+              setSelected(new Set());
+            }}
+          >
+            <option value="">Every level</option>
+            {FEE_RISK_LEVELS.map((l) => (
+              <option key={l} value={l}>{FEE_RISK_LEVEL_LABELS[l]}</option>
+            ))}
+          </select>
+        </div>
       </div>
+
+      {/* Phase 9 / CP10.2 — what the level means, and what it is not. */}
+      <p className="text-xs text-muted-foreground print:hidden">
+        Risk is worked out from each child&apos;s own fees over the last three terms. It is for staff only, never
+        shown to families, and never sends or blocks anything by itself.
+      </p>
 
       {/* Error */}
       {error && (
@@ -293,12 +327,16 @@ export default function DebtorsPage() {
       )}
 
       {/* Table */}
-      {debtors.length > 0 && (
+      {termId && !loading && !error && debtors.length > 0 && shown.length === 0 && (
+        <p className="text-sm text-muted-foreground">No outstanding invoices at this risk level.</p>
+      )}
+
+      {shown.length > 0 && (
         <>
           {/* Summary + actions bar */}
           <div className="flex flex-wrap items-center justify-between gap-4">
             <p className="text-sm text-muted-foreground">
-              <strong className="text-foreground">{debtors.length}</strong> outstanding invoice{debtors.length !== 1 ? "s" : ""} —
+              <strong className="text-foreground">{shown.length}</strong> outstanding invoice{shown.length !== 1 ? "s" : ""} —
               total balance <strong className="text-foreground">{formatKobo(totalBalance)}</strong>
             </p>
             <div className="flex flex-wrap gap-2 print:hidden">
@@ -306,8 +344,8 @@ export default function DebtorsPage() {
                 title="Debtors"
                 csvFilename="debtors.csv"
                 columns={DEBTOR_EXPORT_COLUMNS}
-                getRows={() => debtors}
-                disabled={debtors.length === 0}
+                getRows={() => shown}
+                disabled={shown.length === 0}
               />
               <PrintButton />
               <Button onClick={handleRemind} disabled={reminding || selected.size === 0}>
@@ -328,7 +366,7 @@ export default function DebtorsPage() {
                     <input
                       type="checkbox"
                       className="rounded"
-                      checked={selected.size === debtors.length}
+                      checked={selected.size === shown.length}
                       onChange={toggleSelectAll}
                     />
                   </TableHead>
@@ -340,11 +378,12 @@ export default function DebtorsPage() {
                   <TableHead>Due date</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Plan</TableHead>
+                  <TableHead>Risk</TableHead>
                   <TableHead className="print:hidden sr-only">Share</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {debtors.map((d) => (
+                {shown.map((d) => (
                   <TableRow
                     key={d.invoiceId}
                     className={selected.has(d.studentId) ? "cursor-pointer bg-primary/5" : "cursor-pointer"}
@@ -377,6 +416,10 @@ export default function DebtorsPage() {
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">
                       {d.hasPaymentPlan ? "✓ Plan" : "—"}
+                    </TableCell>
+                    <TableCell aria-label={`Risk for ${d.studentName}`}>
+                      <FeeRiskBadge level={d.risk.level} />
+                      <FeeRiskReasons risk={d.risk} />
                     </TableCell>
                     {/* Per-row WhatsApp share. Deliberately ONE family at a
                         time: wa.me opens with no recipient, so the sender picks
