@@ -4862,6 +4862,13 @@ model MessageThread {
   handledByUserId String?          @map("handled_by_user_id")
   closedAt        DateTime?        @map("closed_at")
   closedByUserId  String?          @map("closed_by_user_id")
+  /// CP8.2: a report, a staff flag or a safeguarding word. Opens the
+  /// conversation to owner and admins and keeps it until cleared.
+  flaggedAt       DateTime?        @map("flagged_at")
+  flagReason      String?          @map("flag_reason")
+  flagNote        String?          @map("flag_note")
+  flaggedByKind   String?          @map("flagged_by_kind")
+  flaggedById     String?          @map("flagged_by_id")
   createdAt       DateTime         @default(now()) @map("created_at")
   updatedAt       DateTime         @updatedAt @map("updated_at")
   guardian        Guardian         @relation(fields: [guardianId], references: [id], onDelete: Cascade)
@@ -4874,6 +4881,7 @@ model MessageThread {
   @@index([schoolId, guardianId])
   @@index([schoolId, recipient])
   @@index([recipientUserId])
+  @@index([schoolId, flaggedAt])
   @@map("message_threads")
 }
 
@@ -4893,17 +4901,20 @@ model MessagePass {
 }
 
 model Message {
-  id          String            @id @default(uuid())
-  schoolId    String            @map("school_id")
-  threadId    String            @map("thread_id")
-  authorKind  String            @map("author_kind")
-  guardianId  String?           @map("guardian_id")
-  userId      String?           @map("user_id")
+  id                String            @id @default(uuid())
+  schoolId          String            @map("school_id")
+  threadId          String            @map("thread_id")
+  authorKind        String            @map("author_kind")
+  guardianId        String?           @map("guardian_id")
+  userId            String?           @map("user_id")
   /// For a staff message, the recipient the writer answered as.
-  asRecipient MessageRecipient? @map("as_recipient")
-  body        String
-  createdAt   DateTime          @default(now()) @map("created_at")
-  thread      MessageThread     @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  asRecipient       MessageRecipient? @map("as_recipient")
+  body              String
+  /// CP8.2: the text matched a safeguarding word.
+  safeguardingMatch Boolean           @default(false) @map("safeguarding_match")
+  createdAt         DateTime          @default(now()) @map("created_at")
+  thread            MessageThread     @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  images            MessageImage[]
 
   @@index([threadId, createdAt])
   @@index([schoolId, guardianId, createdAt])
@@ -4929,4 +4940,21 @@ model MessageSmsCounter {
 
   @@id([schoolId, day])
   @@map("message_sms_counters")
+}
+
+/// CP8.2: an image on a message. Staged (no message) until the message is sent.
+model MessageImage {
+  id           String   @id @default(uuid())
+  schoolId     String   @map("school_id")
+  messageId    String?  @map("message_id")
+  uploaderKind String   @map("uploader_kind")
+  uploaderId   String   @map("uploader_id")
+  ext          String
+  sizeBytes    Int      @map("size_bytes")
+  createdAt    DateTime @default(now()) @map("created_at")
+  message      Message? @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@index([messageId])
+  @@index([schoolId, uploaderKind, uploaderId])
+  @@map("message_images")
 }

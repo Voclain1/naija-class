@@ -4,11 +4,14 @@ import { withTenant, type Prisma, type PrismaClient } from "@school-kit/db";
 import {
   ConflictError,
   ForbiddenError,
+  MESSAGE_FLAG_LABEL,
   messageRecipientLabel,
   NotFoundError,
   ValidationError,
+  type FlagMessageInput,
   type ListMessagesInput,
   type MarkHandledInput,
+  type MessageFlagReason,
   type MessageGuardianOptionDto,
   type MessageRecipient,
   type MessageRecipientOptionDto,
@@ -17,12 +20,15 @@ import {
   type ReplyMessageInput,
   type StaffMessageListDto,
   type StaffMessageThreadDto,
+  type StagedMessageImageDto,
   type StaffMessageThreadSummaryDto,
 } from "@school-kit/types";
 
 import type { AuthContext } from "../../common/auth/auth-context.js";
 import { assertUserActiveAndHasOneOf } from "../../common/auth/role-check.js";
+import { StorageService } from "../../common/storage/storage.service.js";
 import { MessageAlertsService } from "./message-alerts.service.js";
+import { attachMessageImages, checkSafeguarding, flagThread, messageImageLinks, stageMessageImage } from "./message-safety.js";
 import { childPlacement, holdersOf, messagingIdentity, staffAuthorLabel, visibleTo, type StaffMessagingIdentity } from "./messages.shared.js";
 
 // Phase 9 / CP8.1 — the school's side of messaging (docs/modules/phase-9.md
@@ -34,9 +40,14 @@ import { childPlacement, holdersOf, messagingIdentity, staffAuthorLabel, visible
 //
 // Nothing anyone typed reaches an audit row or a log line: audit rows carry
 // ids and recipients only.
+//
+// CP8.2 (§17.10): images, a member of staff's flag, and safeguarding words.
+// A flagged conversation is open to the owner and admins (visibleTo), and
+// only they see why it was flagged; they alone clear it (messages.oversee).
 
 const MESSAGE_ROLES = ["owner", "admin", "teacher", "bursar", "principal", "head_teacher", "inbox_officer"] as const;
 const OFFICE_START_ROLES = ["owner", "admin", "inbox_officer"] as const;
+const OVERSEE_ROLES = ["owner", "admin"] as const;
 
 type Db = PrismaClient;
 
@@ -54,6 +65,9 @@ const THREAD_SELECT = {
   lastMessageBy: true,
   closedAt: true,
   handledByUserId: true,
+  flaggedAt: true,
+  flagReason: true,
+  flagNote: true,
   guardian: { select: { id: true, firstName: true, lastName: true, phone: true, relationship: true } },
   student: { select: { id: true, firstName: true, lastName: true } },
   passes: { orderBy: { createdAt: "asc" }, select: { recipient: true, recipientUserId: true, passedByUserId: true, createdAt: true } },
@@ -63,7 +77,10 @@ type ThreadRow = Prisma.MessageThreadGetPayload<{ select: typeof THREAD_SELECT }
 
 @Injectable()
 export class MessagesService {
-  constructor(private readonly alerts: MessageAlertsService) {}
+  constructor(
+    private readonly alerts: MessageAlertsService,
+    private readonly storage: StorageService,
+  ) {}
 
   async list(authCtx: AuthContext, query: ListMessagesInput): Promise<StaffMessageListDto> {
     await assertUserActiveAndHasOneOf(authCtx, MESSAGE_ROLES);
@@ -71,13 +88,13 @@ export class MessagesService {
       const me = await messagingIdentity(db, authCtx.schoolId, authCtx.userId);
       const visible = visibleTo(me, authCtx.schoolId);
       const rows = await db.messageThread.findMany({
-        where: { AND: [visible, { status: query.box }] },
+        where: { AND: [visible, query.box === "FLAGGED" ? { flaggedAt: { not: null } } : { status: query.box }] },
         orderBy: { lastMessageAt: "desc" },
         take: 200,
         select: { ...THREAD_SELECT, reads: { where: { readerKind: "STAFF", readerId: authCtx.userId }, select: { lastReadAt: true } } },
       });
       const names = await userNames(db, authCtx.schoolId, rows.flatMap((r) => [r.handledByUserId, r.recipientUserId, ...r.passes.map((p) => p.recipientUserId)]));
-      const items = rows.map((r) => summary(r, names, isUnread(r, r.reads[0]?.lastReadAt)));
+      const items = rows.map((r) => summary(r, names, isUnread(r, r.reads[0]?.lastReadAt), me));
       const unread = await countUnread(db, authCtx.userId, visible);
       return { items, unread };
     });
@@ -94,9 +111,15 @@ export class MessagesService {
     });
   }
 
+  /** CP8.2: stages one photo for the next message this person sends. */
+  async stageImage(authCtx: AuthContext, buffer: Buffer | undefined): Promise<StagedMessageImageDto> {
+    await assertUserActiveAndHasOneOf(authCtx, MESSAGE_ROLES);
+    return stageMessageImage(this.storage, authCtx.schoolId, { kind: "STAFF", id: authCtx.userId }, buffer);
+  }
+
   async reply(authCtx: AuthContext, id: string, input: ReplyMessageInput, req: RequestContext): Promise<StaffMessageThreadDto> {
     await assertUserActiveAndHasOneOf(authCtx, MESSAGE_ROLES);
-    const messageId = await withTenant(authCtx.schoolId, async (db) => {
+    const sent = await withTenant(authCtx.schoolId, async (db) => {
       const me = await messagingIdentity(db, authCtx.schoolId, authCtx.userId);
       const thread = await loadVisible(db, me, authCtx.schoolId, id);
       if (thread.status !== "OPEN") throw new ConflictError("MESSAGE_CLOSED", "This conversation is closed. The parent can start a new one.");
@@ -105,12 +128,15 @@ export class MessagesService {
         data: { schoolId: authCtx.schoolId, threadId: id, authorKind: "STAFF", userId: authCtx.userId, asRecipient: actingAs(me, thread), body: input.body },
         select: { id: true },
       });
+      await attachMessageImages(db, authCtx.schoolId, { kind: "STAFF", id: authCtx.userId }, input.imageIds, message.id);
+      const flagged = await checkSafeguarding(db, authCtx.schoolId, id, message.id, input.body);
       await db.messageThread.update({ where: { id }, data: { lastMessageAt: now, lastMessageBy: "STAFF" } });
       await markRead(db, authCtx.schoolId, id, authCtx.userId, now);
-      await audit(db, authCtx, req, "message.reply", id, { messageId: message.id });
-      return message.id;
+      await audit(db, authCtx, req, "message.reply", id, { messageId: message.id, images: input.imageIds.length, safeguarding: flagged });
+      return { messageId: message.id, flagged };
     });
-    await this.alerts.toGuardian(authCtx.schoolId, id, messageId);
+    await this.alerts.toGuardian(authCtx.schoolId, id, sent.messageId);
+    if (sent.flagged) await this.alerts.toAdmins(authCtx.schoolId, id, "SAFEGUARDING_WORDS", null);
     return this.get(authCtx, id);
   }
 
@@ -159,6 +185,38 @@ export class MessagesService {
     return this.get(authCtx, id);
   }
 
+  /** CP8.2: any member of staff on the conversation may flag it for the owner and admins. */
+  async flag(authCtx: AuthContext, id: string, input: FlagMessageInput, req: RequestContext): Promise<StaffMessageThreadDto> {
+    await assertUserActiveAndHasOneOf(authCtx, MESSAGE_ROLES);
+    const flagged = await withTenant(authCtx.schoolId, async (db) => {
+      const me = await messagingIdentity(db, authCtx.schoolId, authCtx.userId);
+      await loadVisible(db, me, authCtx.schoolId, id);
+      const fresh = await flagThread(db, authCtx.schoolId, id, { reason: "STAFF_FLAG", note: input.note ?? null, byKind: "STAFF", byId: authCtx.userId });
+      if (fresh) await audit(db, authCtx, req, "message.flag", id, { note: input.note !== undefined });
+      return fresh;
+    });
+    if (flagged) await this.alerts.toAdmins(authCtx.schoolId, id, "STAFF_FLAG", authCtx.userId);
+    return this.get(authCtx, id);
+  }
+
+  /** CP8.2: the owner or an admin clears a flag; the conversation goes back to its own recipients. */
+  async clearFlag(authCtx: AuthContext, id: string, req: RequestContext): Promise<StaffMessageThreadSummaryDto> {
+    await assertUserActiveAndHasOneOf(authCtx, OVERSEE_ROLES);
+    return withTenant(authCtx.schoolId, async (db) => {
+      const me = await messagingIdentity(db, authCtx.schoolId, authCtx.userId);
+      const thread = await loadVisible(db, me, authCtx.schoolId, id);
+      if (!thread.flaggedAt) throw new ConflictError("MESSAGE_NOT_FLAGGED", "This conversation is not flagged.");
+      await db.messageThread.update({
+        where: { id },
+        data: { flaggedAt: null, flagReason: null, flagNote: null, flaggedByKind: null, flaggedById: null },
+      });
+      await audit(db, authCtx, req, "message.flag-clear", id, { reason: thread.flagReason });
+      // The admin may no longer see it, so return what they had, unflagged.
+      const names = await userNames(db, authCtx.schoolId, [thread.handledByUserId, thread.recipientUserId, ...thread.passes.map((p) => p.recipientUserId)]);
+      return summary({ ...thread, flaggedAt: null, flagReason: null, flagNote: null }, names, false, me);
+    });
+  }
+
   /** The school office starts a conversation with one parent (§17.8 answer 2). */
   async officeStart(authCtx: AuthContext, input: OfficeStartMessageInput, req: RequestContext): Promise<StaffMessageThreadDto> {
     await assertUserActiveAndHasOneOf(authCtx, OFFICE_START_ROLES);
@@ -187,11 +245,13 @@ export class MessagesService {
         data: { schoolId: authCtx.schoolId, threadId: thread.id, authorKind: "STAFF", userId: authCtx.userId, asRecipient: "OFFICE", body: input.body },
         select: { id: true },
       });
+      const flagged = await checkSafeguarding(db, authCtx.schoolId, thread.id, message.id, input.body);
       await markRead(db, authCtx.schoolId, thread.id, authCtx.userId, now);
-      await audit(db, authCtx, req, "message.office-start", thread.id, { child: input.studentId !== null });
-      return { threadId: thread.id, messageId: message.id };
+      await audit(db, authCtx, req, "message.office-start", thread.id, { child: input.studentId !== null, safeguarding: flagged });
+      return { threadId: thread.id, messageId: message.id, flagged };
     });
     await this.alerts.toGuardian(authCtx.schoolId, created.threadId, created.messageId);
+    if (created.flagged) await this.alerts.toAdmins(authCtx.schoolId, created.threadId, "SAFEGUARDING_WORDS", null);
     return this.get(authCtx, created.threadId);
   }
 
@@ -236,8 +296,10 @@ export class MessagesService {
     const messages = await db.message.findMany({
       where: { threadId: thread.id },
       orderBy: { createdAt: "asc" },
-      select: { id: true, authorKind: true, userId: true, asRecipient: true, body: true, createdAt: true },
+      select: { id: true, authorKind: true, userId: true, asRecipient: true, body: true, createdAt: true, safeguardingMatch: true },
     });
+    const images = await messageImageLinks(db, this.storage, authCtx.schoolId, messages.map((m) => m.id));
+    const overseer = me.groups.has("ADMIN");
     const school = await db.school.findUniqueOrThrow({ where: { id: authCtx.schoolId }, select: { name: true } });
     const placement = thread.student ? await childPlacement(db, authCtx.schoolId, thread.student.id) : null;
     const secondary = placement?.secondary ?? false;
@@ -254,17 +316,18 @@ export class MessagesService {
     const writer = new Map(writers.map((w) => [w.id, w]));
     const guardianName = `${thread.guardian.firstName} ${thread.guardian.lastName}`.trim();
     return {
-      ...summary(thread, names, false),
+      ...summary(thread, names, false, me),
       guardian: { id: thread.guardian.id, name: guardianName, phone: thread.guardian.phone, relationship: thread.guardian.relationship },
       child: thread.student ? { id: thread.student.id, name: `${thread.student.firstName} ${thread.student.lastName}`.trim(), className: placement?.armName ?? null } : null,
       messages: messages.map((m) =>
         m.authorKind === "GUARDIAN"
-          ? { id: m.id, mine: false, author: guardianName, body: m.body, sentAt: m.createdAt, writtenBy: null }
+          ? { id: m.id, mine: false, author: guardianName, body: m.body, images: images.get(m.id) ?? [], sentAt: m.createdAt, writtenBy: null }
           : {
               id: m.id,
               mine: m.userId === authCtx.userId,
               author: staffAuthorLabel(m.asRecipient!, writer.get(m.userId!) ?? null, { secondary, schoolName: school.name }),
               body: m.body,
+              images: images.get(m.id) ?? [],
               sentAt: m.createdAt,
               writtenBy: names.get(m.userId!) ?? null,
             },
@@ -273,6 +336,8 @@ export class MessagesService {
       closedAt: thread.closedAt,
       passOptions: thread.status === "OPEN" ? (await passOptions(db, authCtx.schoolId, thread)).map(({ userId: _u, ...o }) => o) : [],
       canClose: thread.status === "OPEN",
+      canClearFlag: overseer && thread.flaggedAt !== null,
+      safeguardingMessageIds: overseer ? messages.filter((m) => m.safeguardingMatch).map((m) => m.id) : [],
     };
   }
 }
@@ -345,7 +410,7 @@ function target(recipient: MessageRecipient, userId: string | null, names: Map<s
   return messageRecipientLabel(recipient);
 }
 
-function summary(r: ThreadRow, names: Map<string, string>, unread: boolean): StaffMessageThreadSummaryDto {
+function summary(r: ThreadRow, names: Map<string, string>, unread: boolean, me: StaffMessagingIdentity): StaffMessageThreadSummaryDto {
   const guardianName = `${r.guardian.firstName} ${r.guardian.lastName}`.trim();
   const childName = r.student ? `${r.student.firstName} ${r.student.lastName}`.trim() : null;
   return {
@@ -360,6 +425,12 @@ function summary(r: ThreadRow, names: Map<string, string>, unread: boolean): Sta
     unread,
     addressedTo: [target(r.recipient, r.recipientUserId, names), ...r.passes.map((p) => target(p.recipient, p.recipientUserId, names))],
     handledBy: r.handledByUserId ? (names.get(r.handledByUserId) ?? "A member of staff") : null,
+    // Why it was flagged is for the owner and admins only: the person a
+    // parent reported should not learn it from their own inbox.
+    flag:
+      r.flaggedAt && r.flagReason && me.groups.has("ADMIN")
+        ? { reason: r.flagReason as MessageFlagReason, label: MESSAGE_FLAG_LABEL[r.flagReason as MessageFlagReason], note: r.flagNote, at: r.flaggedAt }
+        : null,
   };
 }
 

@@ -85,7 +85,11 @@ export type StorageObjectKey =
   | { kind: "library-resource"; resourceId: string; ext: "pdf" }
   // Phase 9 / CP7 — a document sent with an admission application. Private;
   // read only by owner, admin and Admissions officers through a short link.
-  | { kind: "admission-document"; documentId: string; ext: PrivateFileExt };
+  | { kind: "admission-document"; documentId: string; ext: PrivateFileExt }
+  // Phase 9 / CP8.2 — an image on a private message. Private, typed by its
+  // bytes (images only); read through a five-minute link by those who can
+  // see the conversation, deleted with it.
+  | { kind: "message-image"; imageId: string; ext: "jpg" | "png" | "webp" };
 
 // The file types a private upload may be (F1). Decided from the file's own
 // first bytes, never from the name or the browser's declared type.

@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { basePrisma, withTenant } from "@school-kit/db";
-import { ConflictError, ForbiddenError, NotFoundError, RateLimitError, type StartMessageInput } from "@school-kit/types";
+import { ConflictError, ForbiddenError, NotFoundError, RateLimitError, ValidationError, type StartMessageInput } from "@school-kit/types";
 
 import { AuthService } from "../auth/auth.service";
 import type { EventNotification } from "../notifications/notification-dispatch.service";
@@ -9,7 +9,8 @@ import { MessageAlertsService } from "./message-alerts.service";
 import { MessagesCloseService } from "./messages-close.service";
 import { MessagesSettingsService } from "./messages-settings.service";
 import { MessagesService } from "./messages.service";
-import { lagosToday, unreadMessagesFor } from "./messages.shared";
+import { hasSafeguardingWord } from "./safeguarding-words";
+import { flaggedMessagesFor, lagosToday, unreadMessagesFor } from "./messages.shared";
 import { PortalMessagesService } from "./portal-messages.service";
 
 // Phase 9 / CP8.1 — private messaging (docs/modules/phase-9.md §17, owner's
@@ -61,6 +62,25 @@ class FakeTermii {
   }
 }
 
+class FakeStorage {
+  objects = new Map<string, Buffer>();
+  private path(schoolId: string, key: { imageId: string; ext: string }) {
+    return `${schoolId}/${key.imageId}.${key.ext}`;
+  }
+  async put(schoolId: string, key: { imageId: string; ext: string }, body: Buffer) {
+    this.objects.set(this.path(schoolId, key), body);
+  }
+  async delete(schoolId: string, key: { imageId: string; ext: string }) {
+    this.objects.delete(this.path(schoolId, key));
+  }
+  async signUrl(schoolId: string, key: { imageId: string; ext: string }) {
+    return `https://files.test/${this.path(schoolId, key)}?ttl=300`;
+  }
+}
+
+const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(64, 1)]);
+const PDF = Buffer.from("%PDF-1.4 not an image");
+
 interface Fixture {
   schoolId: string;
   schoolName: string;
@@ -83,10 +103,11 @@ describe("Messaging (integration)", () => {
   const email = new FakeEmail();
   const termii = new FakeTermii();
   const alerts = new MessageAlertsService(dispatch as never, preferences as never, email as never, termii as never);
-  const staff = new MessagesService(alerts);
-  const portal = new PortalMessagesService(alerts);
+  const storage = new FakeStorage();
+  const staff = new MessagesService(alerts, storage as never);
+  const portal = new PortalMessagesService(alerts, storage as never);
   const settings = new MessagesSettingsService();
-  const closer = new MessagesCloseService();
+  const closer = new MessagesCloseService(storage as never);
   const schoolIds = new Set<string>();
   let A: Fixture;
   let B: Fixture;
@@ -161,7 +182,7 @@ describe("Messaging (integration)", () => {
 
   const g = (f: Fixture, guardianId = f.guardianId) => ({ sessionId: `gs-${runId}`, schoolId: f.schoolId, guardianId });
   const write = (f: Fixture, input: Partial<StartMessageInput> & Pick<StartMessageInput, "recipient">) =>
-    portal.start(g(f), { studentId: null, subject: "About homework", body: "Good morning. Please help.", ...input }, reqCtx);
+    portal.start(g(f), { studentId: null, subject: "About homework", body: "Good morning. Please help.", imageIds: [], ...input }, reqCtx);
   const sees = async (f: Fixture, userId: string, threadId: string) =>
     (await staff.list(ctx(f.schoolId, userId), { box: "OPEN" })).items.some((t) => t.id === threadId);
 
@@ -240,7 +261,7 @@ describe("Messaging (integration)", () => {
     await staff.get(ctx(A.schoolId, A.classTeacherId), t.id);
     expect((await portal.get(g(A), t.id)).seen).toBe(true);
     dispatch.calls = [];
-    await staff.reply(ctx(A.schoolId, A.classTeacherId), t.id, { body: "Yes, page 12." }, reqCtx);
+    await staff.reply(ctx(A.schoolId, A.classTeacherId), t.id, { body: "Yes, page 12.", imageIds: [] }, reqCtx);
     const fam = await portal.get(g(A), t.id);
     expect(fam.messages.map((m) => [m.author, m.body])).toEqual([
       ["You", "Is there homework?"],
@@ -259,11 +280,11 @@ describe("Messaging (integration)", () => {
     expect(await sees(A, A.bursarId, t.id)).toBe(true);
     expect(await sees(A, A.formTeacherId, t.id)).toBe(true);
     expect(await sees(A, A.adminId, t.id)).toBe(false);
-    await staff.reply(ctx(A.schoolId, A.bursarId), t.id, { body: "The bus fee was added." }, reqCtx);
+    await staff.reply(ctx(A.schoolId, A.bursarId), t.id, { body: "The bus fee was added.", imageIds: [] }, reqCtx);
     expect((await portal.get(g(A), t.id)).messages.at(-1)!.author).toBe("Bola Staff, Bursar");
     // A parent's next message reaches both.
     dispatch.calls = [];
-    await portal.reply(g(A), t.id, { body: "Thank you." }, reqCtx);
+    await portal.reply(g(A), t.id, { body: "Thank you.", imageIds: [] }, reqCtx);
     expect(dispatch.calls.map((c) => (c.principal as { userId: string }).userId).sort()).toEqual([A.bursarId, A.formTeacherId].sort());
   });
 
@@ -310,7 +331,7 @@ describe("Messaging (integration)", () => {
   it("no app: the reply goes by email, saying nothing of the text", async () => {
     const t = await write(A, { recipient: "BURSAR" });
     dispatch.channel = "NONE";
-    await staff.reply(ctx(A.schoolId, A.bursarId), t.id, { body: "Secret fee detail" }, reqCtx);
+    await staff.reply(ctx(A.schoolId, A.bursarId), t.id, { body: "Secret fee detail", imageIds: [] }, reqCtx);
     expect(email.sent).toHaveLength(1);
     expect(email.sent[0]!.to).toBe(A.guardianEmail);
     expect(email.sent[0]!.html).not.toContain("Secret fee detail");
@@ -321,14 +342,14 @@ describe("Messaging (integration)", () => {
     const t = await write(A, { recipient: "BURSAR" });
     dispatch.channel = "NONE";
     preferences.channels = { email: false, sms: false, push: true };
-    await staff.reply(ctx(A.schoolId, A.bursarId), t.id, { body: "One" }, reqCtx);
+    await staff.reply(ctx(A.schoolId, A.bursarId), t.id, { body: "One", imageIds: [] }, reqCtx);
     expect(termii.sent).toHaveLength(0);
     preferences.channels = { email: false, sms: true, push: true };
-    await staff.reply(ctx(A.schoolId, A.bursarId), t.id, { body: "Two" }, reqCtx);
+    await staff.reply(ctx(A.schoolId, A.bursarId), t.id, { body: "Two", imageIds: [] }, reqCtx);
     expect(termii.sent).toHaveLength(1);
     expect(termii.sent[0]!.message).not.toContain("Two");
     await withTenant(A.schoolId, (db) => db.messageSmsCounter.update({ where: { schoolId_day: { schoolId: A.schoolId, day: lagosToday() } }, data: { sent: 50 } }));
-    await staff.reply(ctx(A.schoolId, A.bursarId), t.id, { body: "Three" }, reqCtx);
+    await staff.reply(ctx(A.schoolId, A.bursarId), t.id, { body: "Three", imageIds: [] }, reqCtx);
     expect(termii.sent).toHaveLength(1);
   });
 
@@ -340,7 +361,7 @@ describe("Messaging (integration)", () => {
     expect(before).toBeGreaterThanOrEqual(1);
     await staff.get(ctx(A.schoolId, A.formTeacherId), t.id);
     expect(await withTenant(A.schoolId, (db) => unreadMessagesFor(db, A.schoolId, A.formTeacherId))).toBe(before - 1);
-    await staff.reply(ctx(A.schoolId, A.formTeacherId), t.id, { body: "Noted." }, reqCtx);
+    await staff.reply(ctx(A.schoolId, A.formTeacherId), t.id, { body: "Noted.", imageIds: [] }, reqCtx);
     expect((await portal.list(g(A))).items.find((i) => i.id === t.id)!.unread).toBe(true);
     await portal.get(g(A), t.id);
     expect((await portal.list(g(A))).items.find((i) => i.id === t.id)!.unread).toBe(false);
@@ -349,8 +370,8 @@ describe("Messaging (integration)", () => {
   it("a closed conversation takes no more messages; quiet ones close after 30 days", async () => {
     const t = await write(A, { recipient: "BURSAR" });
     await staff.close(ctx(A.schoolId, A.bursarId), t.id, reqCtx);
-    await expect(portal.reply(g(A), t.id, { body: "Hello?" }, reqCtx)).rejects.toBeInstanceOf(ConflictError);
-    await expect(staff.reply(ctx(A.schoolId, A.bursarId), t.id, { body: "Hi" }, reqCtx)).rejects.toBeInstanceOf(ConflictError);
+    await expect(portal.reply(g(A), t.id, { body: "Hello?", imageIds: [] }, reqCtx)).rejects.toBeInstanceOf(ConflictError);
+    await expect(staff.reply(ctx(A.schoolId, A.bursarId), t.id, { body: "Hi", imageIds: [] }, reqCtx)).rejects.toBeInstanceOf(ConflictError);
 
     const quiet = await write(B, { recipient: "BURSAR" });
     const fresh = await write(B, { recipient: "ADMIN" });
@@ -374,7 +395,7 @@ describe("Messaging (integration)", () => {
 
   it("nothing anyone typed reaches an audit row", async () => {
     const t = await write(A, { recipient: "BURSAR", subject: "SubjectXYZ", body: "BodyXYZ" });
-    await staff.reply(ctx(A.schoolId, A.bursarId), t.id, { body: "ReplyXYZ" }, reqCtx);
+    await staff.reply(ctx(A.schoolId, A.bursarId), t.id, { body: "ReplyXYZ", imageIds: [] }, reqCtx);
     const rows = await withTenant(A.schoolId, (db) => db.auditLog.findMany({ where: { entityId: t.id } }));
     expect(rows.length).toBeGreaterThanOrEqual(2);
     expect(JSON.stringify(rows)).not.toMatch(/XYZ/);
@@ -384,5 +405,144 @@ describe("Messaging (integration)", () => {
     await expect(settings.staff(ctx(A.schoolId, A.formTeacherId))).rejects.toBeInstanceOf(ForbiddenError);
     const list = await settings.staff(ctx(A.schoolId, A.adminId));
     expect(list.find((s) => s.id === A.formTeacherId)).toMatchObject({ roles: ["Teacher"], principal: false });
+  });
+
+  // ── CP8.2: photos, reports, flags, safeguarding words, deletion ─────────
+
+  describe("photos on a message", () => {
+    it("a parent stages up to 3 photos and sends them; whoever sees the conversation gets 5-minute links", async () => {
+      const ids: string[] = [];
+      for (let i = 0; i < 3; i += 1) ids.push((await portal.stageImage(g(A), PNG)).id);
+      const t = await write(A, { recipient: "BURSAR", body: "", imageIds: ids });
+      expect(t.messages[0]!.images.map((i) => i.id)).toEqual(ids);
+      expect(t.messages[0]!.images[0]!.url).toMatch(/ttl=300/);
+      const seen = await staff.get(ctx(A.schoolId, A.bursarId), t.id);
+      expect(seen.messages[0]!.images).toHaveLength(3);
+    });
+
+    it("only images, at most 5 MB, typed by their bytes", async () => {
+      await expect(portal.stageImage(g(A), PDF)).rejects.toBeInstanceOf(ValidationError);
+      await expect(portal.stageImage(g(A), Buffer.concat([PNG, Buffer.alloc(5 * 1024 * 1024)]))).rejects.toBeInstanceOf(ValidationError);
+      await expect(portal.stageImage(g(A), undefined)).rejects.toBeInstanceOf(ValidationError);
+    });
+
+    it("a photo can be attached once, and only by the one who added it", async () => {
+      const mine = (await portal.stageImage(g(A), PNG)).id;
+      const theirs = (await staff.stageImage(ctx(A.schoolId, A.bursarId), PNG)).id;
+      await expect(write(A, { recipient: "BURSAR", imageIds: [theirs] })).rejects.toBeInstanceOf(ValidationError);
+      await expect(write(A, { recipient: "BURSAR", imageIds: [mine] })).resolves.toBeTruthy();
+      await expect(write(A, { recipient: "BURSAR", imageIds: [mine] })).rejects.toBeInstanceOf(ValidationError);
+      // Another school's guardian cannot use it either.
+      await expect(write(B, { recipient: "ADMIN", imageIds: [theirs] })).rejects.toBeInstanceOf(ValidationError);
+    });
+
+    it("staff reply with a photo", async () => {
+      const t = await write(A, { recipient: "BURSAR" });
+      const img = (await staff.stageImage(ctx(A.schoolId, A.bursarId), PNG)).id;
+      const after = await staff.reply(ctx(A.schoolId, A.bursarId), t.id, { body: "", imageIds: [img] }, reqCtx);
+      expect(after.messages.at(-1)!.images.map((i) => i.id)).toEqual([img]);
+      expect((await portal.get(g(A), t.id)).messages.at(-1)!.images).toHaveLength(1);
+    });
+  });
+
+  describe("reports and flags open a conversation to the owner and admins", () => {
+    it("a parent reports a conversation with the form teacher; the owner and admin now see it, and why; the teacher does not see why", async () => {
+      const t = await write(A, { recipient: "CLASS_TEACHER", studentId: A.jssChildId });
+      expect(await sees(A, A.adminId, t.id)).toBe(false);
+      dispatch.calls = [];
+      const reported = await portal.report(g(A), t.id, { note: "The tone was not right." }, reqCtx);
+      expect(reported.reported).toBe(true);
+      for (const who of [A.adminId, A.ownerId]) {
+        const seen = await staff.get(ctx(A.schoolId, who), t.id);
+        expect(seen.flag).toMatchObject({ reason: "REPORTED", label: "Reported by the parent", note: "The tone was not right." });
+        expect(seen.canClearFlag).toBe(true);
+      }
+      const teacher = await staff.get(ctx(A.schoolId, A.formTeacherId), t.id);
+      expect(teacher.flag).toBeNull();
+      expect(teacher.canClearFlag).toBe(false);
+      // Push to the owner and admin only; never the text.
+      const pushed = dispatch.calls.filter((c) => c.eventType === "message.flagged").map((c) => (c.principal as { userId: string }).userId);
+      expect(new Set(pushed)).toEqual(new Set([A.adminId, A.ownerId]));
+      expect(JSON.stringify(dispatch.calls)).not.toMatch(/tone/);
+      expect((await staff.list(ctx(A.schoolId, A.adminId), { box: "FLAGGED" })).items.map((i) => i.id)).toContain(t.id);
+      expect(await withTenant(A.schoolId, (db) => flaggedMessagesFor(db, A.schoolId, A.adminId))).toBeGreaterThan(0);
+      expect(await withTenant(A.schoolId, (db) => flaggedMessagesFor(db, A.schoolId, A.formTeacherId))).toBe(0);
+      await expect(portal.report(g(A), t.id, {}, reqCtx)).rejects.toBeInstanceOf(ConflictError);
+    });
+
+    it("a member of staff flags; only an admin or the owner clears it, and the conversation goes back to its recipients", async () => {
+      const t = await write(A, { recipient: "BURSAR" });
+      const flagged = await staff.flag(ctx(A.schoolId, A.bursarId), t.id, {}, reqCtx);
+      expect(flagged.flag).toBeNull(); // the bursar is not an admin
+      expect((await portal.get(g(A), t.id)).reported).toBe(false); // the family is not told
+      expect(await sees(A, A.adminId, t.id)).toBe(true); // open to the admins while flagged
+      expect((await staff.list(ctx(A.schoolId, A.adminId), { box: "FLAGGED" })).items.find((i) => i.id === t.id)?.flag?.reason).toBe("STAFF_FLAG");
+      await expect(staff.clearFlag(ctx(A.schoolId, A.bursarId), t.id, reqCtx)).rejects.toBeInstanceOf(ForbiddenError);
+      const cleared = await staff.clearFlag(ctx(A.schoolId, A.adminId), t.id, reqCtx);
+      expect(cleared.flag).toBeNull();
+      await expect(staff.get(ctx(A.schoolId, A.adminId), t.id)).rejects.toBeInstanceOf(NotFoundError);
+      expect(await sees(A, A.bursarId, t.id)).toBe(true);
+    });
+
+    it("another school's admin never sees a flagged conversation", async () => {
+      const t = await write(A, { recipient: "BURSAR" });
+      await portal.report(g(A), t.id, {}, reqCtx);
+      await expect(staff.get(ctx(B.schoolId, B.adminId), t.id)).rejects.toBeInstanceOf(NotFoundError);
+      expect((await staff.list(ctx(B.schoolId, B.adminId), { box: "FLAGGED" })).items.map((i) => i.id)).not.toContain(t.id);
+    });
+  });
+
+  describe("safeguarding words", () => {
+    it("the list matches whole words in English and Pidgin, not parts of words", () => {
+      expect(hasSafeguardingWord("My son said a boy beat him at break")).toBe(true);
+      expect(hasSafeguardingWord("Dem dey beat am for hostel")).toBe(true);
+      expect(hasSafeguardingWord("She is being BULLIED")).toBe(true);
+      expect(hasSafeguardingWord("talk of self harm")).toBe(true);
+      expect(hasSafeguardingWord("Please help with homework")).toBe(false);
+      expect(hasSafeguardingWord("The bullying-free week")).toBe(true);
+      expect(hasSafeguardingWord("rapeseed oil for the canteen")).toBe(false);
+    });
+
+    it("a match never blocks: the message is sent, marked, the conversation flagged, and admins alerted without the text", async () => {
+      dispatch.calls = [];
+      email.sent = [];
+      const t = await write(A, { recipient: "CLASS_TEACHER", studentId: A.primaryChildId, body: "Someone touched her in the bus" });
+      expect(t.messages[0]!.body).toBe("Someone touched her in the bus");
+      const seen = await staff.get(ctx(A.schoolId, A.adminId), t.id);
+      expect(seen.flag?.reason).toBe("SAFEGUARDING_WORDS");
+      expect(seen.safeguardingMessageIds).toEqual([t.messages[0]!.id]);
+      expect((await staff.get(ctx(A.schoolId, A.classTeacherId), t.id)).safeguardingMessageIds).toEqual([]);
+      const flagPush = dispatch.calls.filter((c) => c.eventType === "message.flagged");
+      expect(flagPush.length).toBe(2);
+      expect(JSON.stringify(flagPush)).not.toMatch(/touched|bus/);
+      expect(email.sent.some((m) => m.subject === "A conversation with a parent was flagged")).toBe(true);
+      expect(JSON.stringify(email.sent)).not.toMatch(/touched|bus/);
+      // The family is not told the school's system flagged it.
+      expect((await portal.get(g(A), t.id)).reported).toBe(false);
+    });
+  });
+
+  describe("deletion", () => {
+    it("closed conversations are deleted two years after closing with their photos, unless flagged; unsent photos after a day", async () => {
+      const img = (await portal.stageImage(g(B), PNG)).id;
+      const old = await write(B, { recipient: "ADMIN", imageIds: [img] });
+      const kept = await write(B, { recipient: "ADMIN" });
+      await portal.report(g(B), kept.id, {}, reqCtx);
+      const longAgo = new Date(Date.now() - 731 * 24 * 60 * 60 * 1000);
+      await withTenant(B.schoolId, (db) => db.messageThread.updateMany({ where: { id: { in: [old.id, kept.id] } }, data: { status: "CLOSED", closedAt: longAgo } }));
+      const stale = (await portal.stageImage(g(B), PNG)).id;
+      const fresh = (await portal.stageImage(g(B), PNG)).id;
+      await withTenant(B.schoolId, (db) => db.messageImage.update({ where: { id: stale }, data: { createdAt: new Date(Date.now() - 25 * 60 * 60 * 1000) } }));
+
+      const done = await closer.deleteOld(new Date());
+      expect(done.threads).toBeGreaterThanOrEqual(1);
+      await expect(portal.get(g(B), old.id)).rejects.toBeInstanceOf(NotFoundError);
+      expect((await portal.get(g(B), kept.id)).status).toBe("CLOSED");
+      expect([...storage.objects.keys()].some((k) => k.includes(img))).toBe(false);
+      expect([...storage.objects.keys()].some((k) => k.includes(stale))).toBe(false);
+      expect([...storage.objects.keys()].some((k) => k.includes(fresh))).toBe(true);
+      const rows = await withTenant(B.schoolId, (db) => db.messageImage.findMany({ where: { id: { in: [img, stale, fresh] } }, select: { id: true } }));
+      expect(rows.map((r) => r.id)).toEqual([fresh]);
+    });
   });
 });

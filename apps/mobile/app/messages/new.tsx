@@ -6,8 +6,10 @@ import { MESSAGE_LIMITS, type MessageRecipient } from "@school-kit/types";
 
 import { ChoiceChips, TextField } from "../../src/components/form";
 import { Skeleton } from "../../src/components/layout";
+import { MessagePhotoPicker, type PickedPhoto } from "../../src/components/message-photo-picker";
 import { Body, Button, Caption, Notice, Screen } from "../../src/components/ui";
 import { ApiError } from "../../src/lib/api/client";
+import { guardianStageMessageImage } from "../../src/lib/api/message-images";
 import { guardianMessageRecipients, guardianStartMessage, listStudents } from "../../src/lib/api/portal";
 import { useSession } from "../../src/lib/auth/session";
 import { queryKeys } from "../../src/lib/query/keys";
@@ -28,6 +30,7 @@ export default function NewMessageScreen() {
   const [recipient, setRecipient] = useState<MessageRecipient | null>(null);
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
+  const [photos, setPhotos] = useState<PickedPhoto[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -42,11 +45,17 @@ export default function NewMessageScreen() {
   if (status === "authenticated" && principal !== "guardian") return <Redirect href="/" />;
 
   async function send() {
-    if (!recipient || !subject.trim() || !body.trim()) return setError("Choose who to write to, and fill in the subject and message.");
+    if (!recipient || !subject.trim() || (!body.trim() && photos.length === 0)) return setError("Choose who to write to, and fill in the subject and message.");
     setBusy(true);
     setError(null);
     try {
-      const t = await guardianStartMessage({ studentId: about && about !== GENERAL ? about : null, recipient, subject: subject.trim(), body: body.trim() });
+      const t = await guardianStartMessage({
+        studentId: about && about !== GENERAL ? about : null,
+        recipient,
+        subject: subject.trim(),
+        body: body.trim(),
+        imageIds: photos.map((p) => p.id),
+      });
       await queryClient.invalidateQueries({ queryKey: queryKeys.guardianMessages });
       router.replace({ pathname: "/messages/[id]", params: { id: t.id } });
     } catch (e) {
@@ -92,9 +101,10 @@ export default function NewMessageScreen() {
           ))}
         <TextField label="Subject" value={subject} onChangeText={setSubject} maxLength={MESSAGE_LIMITS.subject} />
         <TextField label="Message" value={body} onChangeText={setBody} multiline maxLength={MESSAGE_LIMITS.body} />
+        <MessagePhotoPicker photos={photos} onChange={setPhotos} stage={guardianStageMessageImage} />
         <Caption>Conversations close after {MESSAGE_LIMITS.closeAfterDays} days without a new message.</Caption>
         {error ? <Notice tone="danger">{error}</Notice> : null}
-        <Button title="Send" onPress={() => void send()} loading={busy} disabled={!recipient || !subject.trim() || !body.trim()} />
+        <Button title="Send" onPress={() => void send()} loading={busy} disabled={!recipient || !subject.trim() || (!body.trim() && photos.length === 0)} />
       </ScrollView>
     </Screen>
   );

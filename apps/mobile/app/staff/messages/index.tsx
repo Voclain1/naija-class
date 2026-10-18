@@ -7,7 +7,7 @@ import { ChoiceChips } from "../../../src/components/form";
 import { EmptyState, ListRow, ScreenHeader, Skeleton } from "../../../src/components/layout";
 import { LoadError } from "../../../src/components/load-error";
 import { Notice, Screen } from "../../../src/components/ui";
-import { staffMessages } from "../../../src/lib/api/staff-messages";
+import { staffMessages, type StaffMessageBox } from "../../../src/lib/api/staff-messages";
 import { hasPermission } from "../../../src/lib/auth/permissions";
 import { useSession } from "../../../src/lib/auth/session";
 import { queryKeys } from "../../../src/lib/query/keys";
@@ -26,7 +26,9 @@ export default function StaffMessagesScreen() {
   const { status, principal, staff } = useSession();
   const authed = status === "authenticated" && principal === "staff";
   const canRead = hasPermission(staff?.permissions ?? [], "messages.read");
-  const [box, setBox] = useState<"OPEN" | "CLOSED">("OPEN");
+  // CP8.2: the owner and admins also have Flagged.
+  const canOversee = hasPermission(staff?.permissions ?? [], "messages.oversee");
+  const [box, setBox] = useState<StaffMessageBox>("OPEN");
   const list = useQuery({
     queryKey: queryKeys.staffMessages(staff?.school.id ?? "", staff?.user.id ?? "", box),
     queryFn: () => staffMessages(box),
@@ -46,20 +48,28 @@ export default function StaffMessagesScreen() {
           <Notice tone="info">Your account can&apos;t see messages.</Notice>
         ) : (
           <>
-            <ChoiceChips options={[{ value: "OPEN", label: "Open" }, { value: "CLOSED", label: "Closed" }] as const} value={box} onChange={setBox} />
+            <ChoiceChips
+              options={[
+                { value: "OPEN" as const, label: "Open" },
+                { value: "CLOSED" as const, label: "Closed" },
+                ...(canOversee ? [{ value: "FLAGGED" as const, label: "Flagged" }] : []),
+              ]}
+              value={box}
+              onChange={setBox}
+            />
             {list.isLoading ? (
               <Skeleton lines={3} />
             ) : list.isError ? (
               <LoadError error={list.error} what="messages" onRetry={() => void list.refetch()} />
             ) : items.length === 0 ? (
-              <EmptyState icon="chatbubbles-outline" title={box === "OPEN" ? "No open conversations." : "No closed conversations."} body="Messages parents address or pass to you appear here. Nobody else at the school can see them." />
+              <EmptyState icon="chatbubbles-outline" title={box === "OPEN" ? "No open conversations." : box === "CLOSED" ? "No closed conversations." : "No flagged conversations."} body="Messages parents address or pass to you appear here. Nobody else at the school can see them." />
             ) : (
               items.map((t) => (
                 <ListRow
                   key={t.id}
                   icon={t.unread ? "chatbubble-ellipses" : "chatbubbles-outline"}
                   title={t.subject}
-                  subtitle={`${t.unread ? "New · " : ""}${t.withLabel} · ${when(t.lastMessageAt)}${t.handledBy ? ` · ${t.handledBy} is handling it` : ""}`}
+                  subtitle={`${t.flag ? `Flagged: ${t.flag.label} · ` : ""}${t.unread ? "New · " : ""}${t.withLabel} · ${when(t.lastMessageAt)}${t.handledBy ? ` · ${t.handledBy} is handling it` : ""}`}
                   onPress={() => router.push({ pathname: "/staff/messages/[threadId]", params: { threadId: t.id } })}
                 />
               ))

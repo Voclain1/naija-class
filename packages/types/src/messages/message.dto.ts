@@ -19,6 +19,12 @@ export const MESSAGE_LIMITS = {
   closeAfterDays: 30,
   /** SMS "you have a reply" alerts a school may send in a Lagos day. */
   smsPerDay: 50,
+  /** CP8.2: images a message may carry, and each one's size. */
+  images: 3,
+  imageBytes: 5 * 1024 * 1024,
+  /** A closed conversation is deleted this long after closing, unless flagged. */
+  keepClosedDays: 730,
+  flagNote: 500,
 } as const;
 
 /** The recipient as a family reads it. The class teacher's label follows the child's stage. */
@@ -51,21 +57,36 @@ export interface MessageRecipientOptionDto {
   name: string | null;
 }
 
-export const startMessageSchema = z.object({
-  studentId: z.string().uuid().nullable().default(null),
-  recipient: z.enum(messageRecipientValues),
-  subject: text(1, MESSAGE_LIMITS.subject, "Write a subject."),
-  body: text(1, MESSAGE_LIMITS.body, "Write your message."),
-});
+/** CP8.2: images staged first (POST …/images), then named here. */
+const imageIds = z.array(z.string().uuid()).max(MESSAGE_LIMITS.images, `Attach at most ${MESSAGE_LIMITS.images} images.`).default([]);
+const bodyText = z.string().trim().max(MESSAGE_LIMITS.body).default("");
+const textOrImage = <T extends { body: string; imageIds: string[] }>(v: T) => v.body.length > 0 || v.imageIds.length > 0;
+
+export const startMessageSchema = z
+  .object({
+    studentId: z.string().uuid().nullable().default(null),
+    recipient: z.enum(messageRecipientValues),
+    subject: text(1, MESSAGE_LIMITS.subject, "Write a subject."),
+    body: bodyText,
+    imageIds,
+  })
+  .refine(textOrImage, { message: "Write your message or attach an image.", path: ["body"] });
 export type StartMessageInput = z.infer<typeof startMessageSchema>;
 
-export const replyMessageSchema = z.object({
-  body: text(1, MESSAGE_LIMITS.body, "Write your message."),
-});
+export const replyMessageSchema = z
+  .object({ body: bodyText, imageIds })
+  .refine(textOrImage, { message: "Write your message or attach an image.", path: ["body"] });
 export type ReplyMessageInput = z.infer<typeof replyMessageSchema>;
+
+export interface MessageImageDto {
+  id: string;
+  /** A 5-minute link. */
+  url: string;
+}
 
 export interface MessageDto {
   id: string;
+  images: MessageImageDto[];
   /** The family's own messages are "You" on their side. */
   mine: boolean;
   /** "Mrs Okafor, Form teacher", "<School> office", or the parent's name. */
@@ -87,6 +108,8 @@ export interface MessageThreadSummaryDto {
 }
 
 export interface PortalMessageThreadDto extends MessageThreadSummaryDto {
+  /** CP8.2: the parent has reported this conversation to the school's admins. */
+  reported: boolean;
   messages: MessageDto[];
   /** The school has opened the family's latest message. */
   seen: boolean;
@@ -101,11 +124,22 @@ export interface PortalMessageListDto {
 // ─── The school's side ─────────────────────────────────────────────────────
 
 export const listMessagesSchema = z.object({
-  box: z.enum(["OPEN", "CLOSED"]).default("OPEN"),
+  /** FLAGGED (CP8.2): the conversations flagged for the owner and admins. */
+  box: z.enum(["OPEN", "CLOSED", "FLAGGED"]).default("OPEN"),
 });
 export type ListMessagesInput = z.infer<typeof listMessagesSchema>;
 
+export const messageFlagReasonValues = ["REPORTED", "STAFF_FLAG", "SAFEGUARDING_WORDS"] as const;
+export type MessageFlagReason = (typeof messageFlagReasonValues)[number];
+export const MESSAGE_FLAG_LABEL: Record<MessageFlagReason, string> = {
+  REPORTED: "Reported by the parent",
+  STAFF_FLAG: "Flagged by a member of staff",
+  SAFEGUARDING_WORDS: "Safeguarding words",
+};
+
 export interface StaffMessageThreadSummaryDto extends MessageThreadSummaryDto {
+  /** CP8.2: why the owner and admins can see it, until cleared. */
+  flag: { reason: MessageFlagReason; label: string; note: string | null; at: string | Date } | null;
   guardianName: string;
   /** Who the conversation is addressed (or passed) to, in words. */
   addressedTo: string[];
@@ -126,6 +160,10 @@ export interface StaffMessageThreadDto extends StaffMessageThreadSummaryDto {
   /** Recipients this conversation can still be passed to. */
   passOptions: MessageRecipientOptionDto[];
   canClose: boolean;
+  /** CP8.2: owner and admins may clear a flag. */
+  canClearFlag: boolean;
+  /** Messages that matched a safeguarding word (owner and admins only). */
+  safeguardingMessageIds: string[];
 }
 
 export const passMessageSchema = z.object({ recipient: z.enum(messageRecipientValues) });
@@ -174,3 +212,19 @@ export const setMessagingRolesSchema = z.object({
   inboxOfficerIds: z.array(z.string().uuid()).max(20),
 });
 export type SetMessagingRolesInput = z.infer<typeof setMessagingRolesSchema>;
+
+// ─── CP8.2: images, reports and flags ──────────────────────────────────────
+
+export interface StagedMessageImageDto {
+  id: string;
+}
+
+export const flagMessageSchema = z.object({
+  note: z
+    .string()
+    .trim()
+    .max(MESSAGE_LIMITS.flagNote)
+    .optional()
+    .transform((v) => (v ? v : undefined)),
+});
+export type FlagMessageInput = z.infer<typeof flagMessageSchema>;

@@ -4877,3 +4877,79 @@ Images may be attached.
     3. the parent sees the reply signed and "Seen";
     4. Settings → Messaging opens.
   - Every new page fits at 320 and 390 px.
+
+### 17.10 As built — CP8.2, photos, reports, flags and deletion (2026-10-18)
+
+Migration `20261109120000_message_safety`. No new SECURITY DEFINER function;
+the count stays 23.
+
+- **Photos:**
+  - Up to 3 a message: JPG, PNG or WebP, 5 MB each. The type is read from the
+    file's own bytes (`sniffPrivateFile`; PDF refused).
+  - Each photo is uploaded on its own and **staged**
+    (`POST /portal/messages/images`, `POST /messages/images`, multipart field
+    `file`). The message then names the staged ids in `imageIds`. Only the
+    person who uploaded a photo can attach it, and only once.
+  - A message may be photos only; it needs text or at least one photo.
+  - Photos are stored privately (`schools/<id>/messages/<imageId>.<ext>`) and
+    read through 5-minute links by whoever can see the conversation.
+  - The portal shrinks each photo in the browser (longest side 1600 px, JPEG),
+    because Vercel passes a request on only up to 4.5 MB. The portal proxy
+    forwards multipart bytes for that one path; every other path stays JSON.
+  - The apps use the native uploader. The web app sends the photo straight to
+    the API.
+  - A staged photo never sent is deleted after a day. One person may have 12
+    staged photos at once.
+- **Flags.** A conversation is flagged by:
+  - **the parent's "Report this conversation"** (optional note);
+  - **any member of staff on it** ("Flag for the owner and admins", optional
+    note);
+  - **a safeguarding word** (below).
+
+  What a flag does:
+  - The owner and admins can see the conversation (`visibleTo`), in Open and
+    under **Flagged**, and are alerted by push and email, never with the text.
+  - Only they see why it was flagged, so a reported teacher does not learn it
+    from their own inbox.
+  - The parent sees only their own report. A school flag or a safeguarding
+    word is not shown to them.
+  - A parent's report replaces an earlier flag's reason, so the admins read the
+    parent's words.
+  - **Clear flag** (`messages.oversee`, new, admin; owner by `*`; role-checked
+    owner/admin) returns the conversation to its own recipients.
+  - The dashboard gains "Flagged conversations" for the owner and admins.
+- **Safeguarding words** (`safeguarding-words.ts`):
+  - A fixed list in English and Pidgin, matched on whole words in every
+    message, the family's and the school's. It is kept narrow on purpose:
+    abuse, touching, violence, threats, self-harm and bullying.
+  - A match never blocks or changes a message. It marks the message
+    (`safeguarding_match`), and the owner and admins see it tinted and labelled
+    "Safeguarding word". It flags the conversation if it is not flagged
+    already. No AI.
+- **Deletion.** Nightly, with the 30-day close:
+  - closed conversations are deleted two years after closing, photos first,
+    unless flagged;
+  - a flagged one stays until the flag is cleared.
+- **Records:** audit rows (`message.flag`, `message.flag-clear`,
+  `message.report`) carry ids, the photo count and whether a note was given,
+  never the note or any text.
+- **Tests:**
+  - `messages.service.spec.ts` now has 28 tests. The 10 new ones cover:
+    - staging, attaching and links;
+    - the type and size checks;
+    - attach once, own photos only, own school only;
+    - staff photos;
+    - a parent's report: who sees it and why, push recipients, no text, the
+      Flagged box, the dashboard count, no second report;
+    - a staff flag cleared by an admin only;
+    - another school's admin seeing nothing;
+    - the word list;
+    - a match flagging without blocking, alerting with no text, and the family
+      not told;
+    - two-year deletion with photos and the stale-photo purge.
+  - e2e `messages.spec.ts`, a second test:
+    1. a parent sends a photo with a safeguarding word;
+    2. the admin finds it under Flagged with the word marked and the photo;
+    3. the admin clears the flag;
+    4. the parent reports the conversation;
+    5. the admin sees the report and its note.

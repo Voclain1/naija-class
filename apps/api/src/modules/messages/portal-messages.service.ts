@@ -8,16 +8,20 @@ import {
   NotFoundError,
   RateLimitError,
   ValidationError,
+  type FlagMessageInput,
   type MessageRecipientOptionDto,
   type MessageThreadSummaryDto,
   type PortalMessageListDto,
   type PortalMessageThreadDto,
   type ReplyMessageInput,
+  type StagedMessageImageDto,
   type StartMessageInput,
 } from "@school-kit/types";
 
 import type { GuardianAuthContext } from "../../common/auth/guardian-auth-context.js";
+import { StorageService } from "../../common/storage/storage.service.js";
 import { MessageAlertsService } from "./message-alerts.service.js";
+import { attachMessageImages, checkSafeguarding, flagThread, messageImageLinks, stageMessageImage } from "./message-safety.js";
 import { childPlacement, holdersOf, lagosDayStart, staffAuthorLabel } from "./messages.shared.js";
 
 // Phase 9 / CP8.1 — the family's side of messaging (docs/modules/phase-9.md
@@ -26,6 +30,10 @@ import { childPlacement, holdersOf, lagosDayStart, staffAuthorLabel } from "./me
 // holds is not offered. Limits: 5 new conversations a Lagos day and 30
 // messages an hour per guardian. Nothing a parent types reaches an audit row
 // or a log line.
+//
+// CP8.2 (§17.10): photos on a message, and "Report this conversation", which
+// opens it to the owner and admins. The family sees only that they reported
+// it, never a flag the school or a safeguarding word set.
 
 type Db = PrismaClient;
 
@@ -37,7 +45,38 @@ const HOUR_MS = 60 * 60 * 1000;
 
 @Injectable()
 export class PortalMessagesService {
-  constructor(private readonly alerts: MessageAlertsService) {}
+  constructor(
+    private readonly alerts: MessageAlertsService,
+    private readonly storage: StorageService,
+  ) {}
+
+  /** CP8.2: stages one photo for the family's next message. */
+  async stageImage(guardianCtx: GuardianAuthContext, buffer: Buffer | undefined): Promise<StagedMessageImageDto> {
+    return stageMessageImage(this.storage, guardianCtx.schoolId, { kind: "GUARDIAN", id: guardianCtx.guardianId }, buffer);
+  }
+
+  /** CP8.2: the family reports a conversation to the school's owner and admins. */
+  async report(guardianCtx: GuardianAuthContext, id: string, input: FlagMessageInput, req: RequestContext): Promise<PortalMessageThreadDto> {
+    const result = await withTenant(guardianCtx.schoolId, async (db) => {
+      const thread = await ownThread(db, guardianCtx, id);
+      if (thread.flaggedAt && thread.flaggedByKind === "GUARDIAN") throw new ConflictError("MESSAGE_REPORTED", "You have already reported this conversation.");
+      const flag = { reason: "REPORTED" as const, note: input.note ?? null, byKind: "GUARDIAN" as const, byId: guardianCtx.guardianId };
+      let fresh = await flagThread(db, guardianCtx.schoolId, id, flag);
+      if (!fresh) {
+        // Already flagged by the school or a safeguarding word: the family's
+        // report replaces the reason, so the admins read the parent's words.
+        await db.messageThread.update({
+          where: { id },
+          data: { flagReason: flag.reason, flagNote: flag.note, flaggedByKind: flag.byKind, flaggedById: flag.byId },
+        });
+        fresh = true;
+      }
+      await audit(db, guardianCtx, req, "message.report", id, { note: input.note !== undefined });
+      return fresh;
+    });
+    if (result) await this.alerts.toAdmins(guardianCtx.schoolId, id, "REPORTED", null);
+    return this.get(guardianCtx, id);
+  }
 
   /** Whom the family may write to, about this child or (studentId null) in general. */
   async recipients(guardianCtx: GuardianAuthContext, studentId: string | null): Promise<MessageRecipientOptionDto[]> {
@@ -98,16 +137,19 @@ export class PortalMessagesService {
         data: { schoolId: guardianCtx.schoolId, threadId: thread.id, authorKind: "GUARDIAN", guardianId: guardianCtx.guardianId, body: input.body },
         select: { id: true },
       });
+      await attachMessageImages(db, guardianCtx.schoolId, { kind: "GUARDIAN", id: guardianCtx.guardianId }, input.imageIds, message.id);
+      const flagged = await checkSafeguarding(db, guardianCtx.schoolId, thread.id, message.id, input.body);
       await markFamilyRead(db, guardianCtx, thread.id, now);
-      await audit(db, guardianCtx, req, "message.start", thread.id, { recipient: input.recipient, child: input.studentId !== null });
-      return { threadId: thread.id, messageId: message.id };
+      await audit(db, guardianCtx, req, "message.start", thread.id, { recipient: input.recipient, child: input.studentId !== null, images: input.imageIds.length });
+      return { threadId: thread.id, messageId: message.id, flagged };
     });
     await this.alerts.toStaff(guardianCtx.schoolId, created.threadId, created.messageId);
+    if (created.flagged) await this.alerts.toAdmins(guardianCtx.schoolId, created.threadId, "SAFEGUARDING_WORDS", null);
     return this.get(guardianCtx, created.threadId);
   }
 
   async reply(guardianCtx: GuardianAuthContext, id: string, input: ReplyMessageInput, req: RequestContext): Promise<PortalMessageThreadDto> {
-    const messageId = await withTenant(guardianCtx.schoolId, async (db) => {
+    const sent = await withTenant(guardianCtx.schoolId, async (db) => {
       const thread = await ownThread(db, guardianCtx, id);
       if (thread.status !== "OPEN") throw new ConflictError("MESSAGE_CLOSED", "This conversation is closed. Start a new one if you need to.");
       const now = new Date();
@@ -119,12 +161,15 @@ export class PortalMessagesService {
         data: { schoolId: guardianCtx.schoolId, threadId: id, authorKind: "GUARDIAN", guardianId: guardianCtx.guardianId, body: input.body },
         select: { id: true },
       });
+      await attachMessageImages(db, guardianCtx.schoolId, { kind: "GUARDIAN", id: guardianCtx.guardianId }, input.imageIds, message.id);
+      const flagged = await checkSafeguarding(db, guardianCtx.schoolId, id, message.id, input.body);
       await db.messageThread.update({ where: { id }, data: { lastMessageAt: now, lastMessageBy: "GUARDIAN" } });
       await markFamilyRead(db, guardianCtx, id, now);
-      await audit(db, guardianCtx, req, "message.reply", id, { messageId: message.id });
-      return message.id;
+      await audit(db, guardianCtx, req, "message.reply", id, { messageId: message.id, images: input.imageIds.length });
+      return { messageId: message.id, flagged };
     });
-    await this.alerts.toStaff(guardianCtx.schoolId, id, messageId);
+    await this.alerts.toStaff(guardianCtx.schoolId, id, sent.messageId);
+    if (sent.flagged) await this.alerts.toAdmins(guardianCtx.schoolId, id, "SAFEGUARDING_WORDS", null);
     return this.get(guardianCtx, id);
   }
 
@@ -135,6 +180,7 @@ export class PortalMessagesService {
       orderBy: { createdAt: "asc" },
       select: { id: true, authorKind: true, userId: true, asRecipient: true, body: true, createdAt: true },
     });
+    const images = await messageImageLinks(db, this.storage, guardianCtx.schoolId, messages.map((m) => m.id));
     const writers = await db.user.findMany({
       where: { schoolId: guardianCtx.schoolId, id: { in: messages.map((m) => m.userId).filter((v): v is string => !!v) } },
       select: { id: true, firstName: true, lastName: true },
@@ -153,8 +199,10 @@ export class PortalMessagesService {
         mine: m.authorKind === "GUARDIAN",
         author: m.authorKind === "GUARDIAN" ? "You" : staffAuthorLabel(m.asRecipient!, writer.get(m.userId!) ?? null, { secondary, schoolName: school.name }),
         body: m.body,
+        images: images.get(m.id) ?? [],
         sentAt: m.createdAt,
       })),
+      reported: thread.flaggedAt !== null && thread.flaggedByKind === "GUARDIAN",
       seen: Boolean(lastFamily) && seenBy > 0,
       closedAt: thread.closedAt,
     };
@@ -170,6 +218,8 @@ const SUMMARY_SELECT = {
   lastMessageAt: true,
   lastMessageBy: true,
   closedAt: true,
+  flaggedAt: true,
+  flaggedByKind: true,
   student: { select: { id: true, firstName: true, lastName: true } },
 } as const;
 
@@ -182,6 +232,8 @@ type SummaryRow = {
   lastMessageAt: Date;
   lastMessageBy: string;
   closedAt: Date | null;
+  flaggedAt: Date | null;
+  flaggedByKind: string | null;
   student: { id: string; firstName: string; lastName: string } | null;
 };
 

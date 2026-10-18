@@ -34,6 +34,7 @@ const ALERT_LABELS: Record<DashboardAlertType, string> = {
   // Phase 9 / CP7.1 — admission applications not yet looked at.
   new_admission_applications: "New admission applications",
   unread_messages: "Unread messages from parents",
+  flagged_messages: "Flagged conversations",
   // Phase 8 / CP2 (§16 Q33) — count of active term-health signals; links to /reports.
   term_health: "Term setup issues to fix",
 };

@@ -13,6 +13,7 @@ import { MESSAGE_LIMITS, type MessageRecipient, type MessageRecipientOptionDto, 
 
 import { PageHeader } from "@school-kit/ui";
 
+import { PhotoPicker, type PickedPhoto } from "@/components/message-photos";
 import { SchoolBanner } from "@/components/school-banner";
 import { portalJson } from "@/lib/portal-api";
 
@@ -26,6 +27,7 @@ export default function NewMessagePage() {
   const [recipient, setRecipient] = useState<MessageRecipient | "">("");
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
+  const [photos, setPhotos] = useState<PickedPhoto[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -57,7 +59,7 @@ export default function NewMessagePage() {
     setError(null);
     const r = await portalJson<PortalMessageThreadDto>("/messages", {
       method: "POST",
-      json: { studentId: studentId && studentId !== "general" ? studentId : null, recipient, subject: subject.trim(), body: body.trim() },
+      json: { studentId: studentId && studentId !== "general" ? studentId : null, recipient, subject: subject.trim(), body: body.trim(), imageIds: photos.map((p) => p.id) },
     });
     setBusy(false);
     if (r.ok) router.push(`/messages/${r.body.id}`);
@@ -107,8 +109,9 @@ export default function NewMessagePage() {
         </label>
         <label className="flex flex-col gap-1 text-sm">
           <span className="font-medium">Message</span>
-          <textarea className={FIELD} rows={6} value={body} maxLength={MESSAGE_LIMITS.body} onChange={(e) => setBody(e.target.value)} required />
+          <textarea className={FIELD} rows={6} value={body} maxLength={MESSAGE_LIMITS.body} onChange={(e) => setBody(e.target.value)} required={photos.length === 0} />
         </label>
+        <PhotoPicker photos={photos} onChange={setPhotos} onError={setError} />
         <p className="text-xs text-muted-foreground">
           Conversations close after {MESSAGE_LIMITS.closeAfterDays} days without a new message, and the school keeps them for two years after that.
         </p>
@@ -119,7 +122,7 @@ export default function NewMessagePage() {
         )}
         <button
           type="submit"
-          disabled={busy || !recipient || !subject.trim() || !body.trim()}
+          disabled={busy || !recipient || !subject.trim() || (!body.trim() && photos.length === 0)}
           className="h-10 self-start rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground disabled:opacity-50"
         >
           Send

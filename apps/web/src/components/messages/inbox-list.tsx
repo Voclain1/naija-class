@@ -10,24 +10,38 @@ import { Button } from "@/components/ui/button";
 import { ApiError } from "@/lib/api-client";
 import { hasPermission } from "@/lib/auth/has-permission";
 import { useAuth } from "@/lib/auth/use-auth";
-import { listMessages } from "@/lib/messages/messages-api";
+import { listMessages, type MessageBox } from "@/lib/messages/messages-api";
 
 // Phase 9 / CP8.1 — the conversations addressed or passed to this member of
 // staff, and only those (docs/modules/phase-9.md §17.8). Open first; unread
 // ones tinted and labelled "New", never a coloured edge.
+//
+// CP8.2: the owner and admins also have "Flagged": conversations a parent
+// reported, a member of staff flagged, or that contain a safeguarding word.
 
 export function InboxList({ basePath }: { basePath: string }) {
   const { permissions } = useAuth();
   const canStart = hasPermission(permissions, "messages.start");
-  const [box, setBox] = useState<"OPEN" | "CLOSED">("OPEN");
+  const canOversee = hasPermission(permissions, "messages.oversee");
+  const [box, setBox] = useState<MessageBox | null>(null);
   const [data, setData] = useState<StaffMessageListDto | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // The dashboard's "Flagged conversations" links to ?box=FLAGGED.
   useEffect(() => {
+    setBox(new URLSearchParams(window.location.search).get("box") === "FLAGGED" ? "FLAGGED" : "OPEN");
+  }, []);
+
+  useEffect(() => {
+    if (!box) return;
+    let live = true;
     setData(null);
     listMessages(box)
-      .then(setData)
-      .catch((e: unknown) => setError(e instanceof ApiError ? e.message : "Could not load messages."));
+      .then((d) => live && setData(d))
+      .catch((e: unknown) => live && setError(e instanceof ApiError ? e.message : "Could not load messages."));
+    return () => {
+      live = false;
+    };
   }, [box]);
 
   return (
@@ -40,6 +54,11 @@ export function InboxList({ basePath }: { basePath: string }) {
           <Button size="sm" variant={box === "CLOSED" ? "default" : "outline"} aria-pressed={box === "CLOSED"} onClick={() => setBox("CLOSED")}>
             Closed
           </Button>
+          {canOversee && (
+            <Button size="sm" variant={box === "FLAGGED" ? "default" : "outline"} aria-pressed={box === "FLAGGED"} onClick={() => setBox("FLAGGED")}>
+              Flagged
+            </Button>
+          )}
         </div>
         {canStart && (
           <Button size="sm" variant="outline" asChild>
@@ -51,16 +70,21 @@ export function InboxList({ basePath }: { basePath: string }) {
       {!data ? (
         <p className="text-sm text-muted-foreground">Loading…</p>
       ) : data.items.length === 0 ? (
-        <p className="text-sm text-muted-foreground">{box === "OPEN" ? "No open conversations." : "No closed conversations."}</p>
+        <p className="text-sm text-muted-foreground">{box === "OPEN" ? "No open conversations." : box === "CLOSED" ? "No closed conversations." : "No flagged conversations."}</p>
       ) : (
         <ul className="divide-y rounded-md border bg-card">
           {data.items.map((t) => (
-            <li key={t.id} className={t.unread ? "bg-primary/5" : undefined}>
+            <li key={t.id} className={t.flag ? "bg-amber-50 dark:bg-amber-950/30" : t.unread ? "bg-primary/5" : undefined}>
               <Link href={`${basePath}/${t.id}`} className="flex flex-wrap items-start justify-between gap-2 p-3 text-sm hover:bg-muted/40">
                 <div className="min-w-0">
                   <p className="flex flex-wrap items-center gap-2">
                     <span className="break-words font-medium">{t.subject}</span>
                     {t.unread && <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">New</span>}
+                    {t.flag && (
+                      <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-900 dark:bg-amber-900/40 dark:text-amber-200">
+                        Flagged: {t.flag.label}
+                      </span>
+                    )}
                   </p>
                   <p className="break-words text-muted-foreground">{t.withLabel}</p>
                   <p className="break-words text-xs text-muted-foreground">

@@ -325,7 +325,7 @@ export const queryKeys = {
   // Phase 9 / CP6b.2 — boarding. Staff-prefixed, so never kept on the phone.
   staffBoardingHostels: (schoolId: string, userId: string) => ["staff", schoolId, userId, "boarding-hostels"] as const,
   // Phase 9 / CP8.1 — the conversations addressed or passed to this person.
-  staffMessages: (schoolId: string, userId: string, box: "OPEN" | "CLOSED") => ["staff", schoolId, userId, "messages", box] as const,
+  staffMessages: (schoolId: string, userId: string, box: "OPEN" | "CLOSED" | "FLAGGED") => ["staff", schoolId, userId, "messages", box] as const,
   staffMessage: (schoolId: string, userId: string, threadId: string) => ["staff", schoolId, userId, "message", threadId] as const,
   staffBoardingBoarders: (schoolId: string, userId: string, hostelId: string) =>
     ["staff", schoolId, userId, "boarding-boarders", hostelId] as const,

@@ -1,4 +1,4 @@
-import type { MessageRecipient, StaffMessageListDto, StaffMessageThreadDto } from "@school-kit/types";
+import type { MessageRecipient, StaffMessageListDto, StaffMessageThreadDto, StaffMessageThreadSummaryDto } from "@school-kit/types";
 
 import { apiFetch } from "./client";
 
@@ -8,7 +8,9 @@ import { apiFetch } from "./client";
 
 const id = (value: string) => encodeURIComponent(value);
 
-export function staffMessages(box: "OPEN" | "CLOSED"): Promise<StaffMessageListDto> {
+export type StaffMessageBox = "OPEN" | "CLOSED" | "FLAGGED";
+
+export function staffMessages(box: StaffMessageBox): Promise<StaffMessageListDto> {
   return apiFetch<StaffMessageListDto>(`/messages?box=${box}`);
 }
 
@@ -16,8 +18,8 @@ export function staffMessageThread(threadId: string): Promise<StaffMessageThread
   return apiFetch<StaffMessageThreadDto>(`/messages/${id(threadId)}`);
 }
 
-export function staffReplyMessage(threadId: string, body: string): Promise<StaffMessageThreadDto> {
-  return apiFetch<StaffMessageThreadDto>(`/messages/${id(threadId)}/reply`, { method: "POST", body: { body } });
+export function staffReplyMessage(threadId: string, body: string, imageIds: string[] = []): Promise<StaffMessageThreadDto> {
+  return apiFetch<StaffMessageThreadDto>(`/messages/${id(threadId)}/reply`, { method: "POST", body: { body, imageIds } });
 }
 
 export function staffPassMessage(threadId: string, recipient: MessageRecipient): Promise<StaffMessageThreadDto> {
@@ -30,4 +32,13 @@ export function staffMarkHandled(threadId: string, handled: boolean): Promise<St
 
 export function staffCloseMessage(threadId: string): Promise<StaffMessageThreadDto> {
   return apiFetch<StaffMessageThreadDto>(`/messages/${id(threadId)}/close`, { method: "POST", body: {} });
+}
+
+// CP8.2 — flag for the owner and admins; and (messages.oversee) clear a flag.
+export function staffFlagMessage(threadId: string, note: string): Promise<StaffMessageThreadDto> {
+  return apiFetch<StaffMessageThreadDto>(`/messages/${id(threadId)}/flag`, { method: "POST", body: note ? { note } : {} });
+}
+
+export function staffClearMessageFlag(threadId: string): Promise<StaffMessageThreadSummaryDto> {
+  return apiFetch<StaffMessageThreadSummaryDto>(`/messages/${id(threadId)}/clear-flag`, { method: "POST", body: {} });
 }

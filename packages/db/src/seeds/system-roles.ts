@@ -28,6 +28,7 @@ import {
   MESSAGE_PERMISSIONS,
   MESSAGE_START_PERMISSIONS,
   MESSAGE_SETTINGS_PERMISSIONS,
+  MESSAGE_OVERSEE_PERMISSIONS,
   BEHAVIOUR_PERMISSIONS_LIST,
   HOMEWORK_MANAGE_PERMISSIONS,
   HOMEWORK_READ_PERMISSIONS,
@@ -159,6 +160,8 @@ const ADMIN_PERMISSIONS: readonly string[] = [
   ...MESSAGE_PERMISSIONS,
   ...MESSAGE_START_PERMISSIONS,
   ...MESSAGE_SETTINGS_PERMISSIONS,
+  // CP8.2: kept IN SYNC with prisma/migrations/20261109120000_message_safety.
+  ...MESSAGE_OVERSEE_PERMISSIONS,
   // Phase 8 / CP2 — Recording Completeness: the school-wide report and the
   // per-teacher recording-activity view (audited per read). Owner/admin only;
   // never teacher or bursar (§16 D39, pinned in permissions-coverage.spec.ts).
