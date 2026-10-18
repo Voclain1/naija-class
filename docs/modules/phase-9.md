@@ -4766,3 +4766,114 @@ Images may be attached.
   office (admins and Inbox officers) may start a conversation with a
   particular parent; teachers, bursars, principals and head teachers reply but
   do not start.
+
+### 17.9 As built — CP8.1, conversations (2026-10-18)
+
+- **Data** (migration `20261108120000_messaging`):
+  - `message_threads`: the guardian, the child (or none for general), the
+    recipient, the class teacher fixed at the start for `CLASS_TEACHER`, the
+    subject, OPEN or CLOSED, who started it (empty: the guardian), when and by
+    whom the last message came, who is handling it, and the close.
+  - `message_passes`: each pass to another recipient, and who passed it.
+  - `messages`: the author (a guardian or a member of staff), the recipient a
+    member of staff answered as, and the text (1–2,000 characters).
+  - `message_reads`: one row per reader per conversation.
+  - `message_sms_counters`: SMS alerts per school per Lagos day.
+
+  `CHECK`s cover the subject and body lengths, the status/closed pairing, a
+  class-teacher conversation always having its teacher and its child, and each
+  message having exactly one author. RLS is forced on every table. No SECURITY
+  DEFINER function; the count stays 23.
+- **Roles and permissions.**
+  - `messages.read` and `messages.reply`: admin, teacher, bursar, and the three
+    new appointed roles.
+  - `messages.start`: admin and the Inbox officer.
+  - `messages.settings`: admin.
+  - New optional system roles **Principal**, **Head teacher** (read, reply)
+    and **Inbox officer** (read, reply, start), held by nobody until an admin
+    appoints them in **Settings → Messaging**, alongside their own role. Each
+    appointment and removal is audited.
+- **Who a parent can write to** (`GET /portal/messages/recipients`). It is
+  worked out when the parent writes, and a recipient nobody holds is not
+  offered:
+  - the child's arm's class teacher this term, labelled **Form teacher** for
+    JSS and SSS and **Class teacher** for nursery and primary, with their name;
+  - **Bursar**;
+  - **Principal** for a JSS or SSS child, **Head teacher** for a nursery or
+    primary child, both for a general message;
+  - **School admin**;
+  - **<School> office**.
+- **Who sees a conversation** (`messages.shared.ts`, one rule used by every
+  read):
+  - its recipient group;
+  - anyone it was passed to, and whoever passed it;
+  - anyone who has written in it.
+
+  **Nobody else, admins included.** The office is the Inbox officers, or the
+  owner and admins when the school has appointed none. Any other id is "not
+  found".
+- **Staff** (web `/messages` and `/teacher/messages`, the staff app's
+  Messages):
+  - Open and Closed, unread ones tinted and labelled "New".
+  - In a conversation they can reply, **pass on** to a recipient it has not yet
+    reached (the new recipients then see all of it), mark **I'm handling
+    this**, and **close** it.
+  - Each reply records the recipient the writer answered as, so the family
+    sees "Mrs Okafor, Form teacher" or "<School> office", while the school also
+    sees who wrote it.
+  - The office writes to one parent from **Write to a parent** (search by name
+    or phone, choose a child or general). Teachers, bursars, principals and
+    head teachers cannot start a conversation.
+- **Parents** (portal `/messages`, the parent app's Messages):
+  - the list with unread replies;
+  - **Write a message**: choose the child or general, then the recipient, a
+    subject and the message;
+  - the conversation, with **Seen** under the parent's latest message once a
+    recipient has opened it;
+  - a closed conversation is read-only and offers a new one.
+
+  The portal and app home screens gain a Messages link with the unread count.
+- **Telling people** (never the text, never a child's name on a lock screen):
+  - A parent's message pushes "New message from a parent." to that
+    conversation's recipients only.
+  - The school's reply goes to the parent by push. Without the app, it goes by
+    email ("<School> replied to your message", with a link) when the school's
+    email channel is on. Failing that, by SMS only when the school's SMS
+    channel is on, at most 50 a school a Lagos day.
+  - The staff dashboard's "Needs you today" gains "Unread messages from
+    parents", counting only the person's own conversations.
+- **Limits:** 5 new conversations a Lagos day and 30 messages an hour per
+  guardian, plus per-address throttles on the two writing routes.
+- **Closing:** every night at 02:45, open conversations with no message for 30
+  days are closed. Deleting two years after closing, and keeping flagged ones,
+  come in CP8.2 with the report button, the safeguarding words and images.
+- **Records:** audit rows carry the conversation id, the recipient kind and
+  whether there is a child, never the subject or any text.
+- **Tests:**
+  - `messages.service.spec.ts` (18 tests, real database):
+    - the recipients for a JSS child, a primary child and in general, before
+      and after appointing;
+    - a child who is not theirs;
+    - a form-teacher message seen by that teacher only, not another teacher,
+      the bursar, the admin or the owner;
+    - replying, the signature and "Seen";
+    - passing to the bursar;
+    - the office with and without Inbox officers, and the office starting one;
+    - the school admin recipient;
+    - teachers and bursars unable to start one;
+    - guardian and school isolation;
+    - email and capped SMS fallback with no text;
+    - unread counts and the dashboard line;
+    - closing and the 30-day close;
+    - the daily limit;
+    - handling;
+    - no text in audit rows;
+    - appointing as admin only.
+  - Permission coverage and the two-gate conformance spec cover the new routes
+    and roles. The mobile menu and push routes are tested too.
+  - e2e `messages.spec.ts`:
+    1. a parent writes from the portal to the school admin about their child;
+    2. the admin reads it in the web inbox and replies;
+    3. the parent sees the reply signed and "Seen";
+    4. Settings → Messaging opens.
+  - Every new page fits at 320 and 390 px.
