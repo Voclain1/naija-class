@@ -1,4 +1,4 @@
-import { Award, BarChart3, Inbox, Bell, Building2, CalendarCheck, CalendarClock, CreditCard, FileText, Gauge, Hash, Layers, Percent, ShieldCheck, SlidersHorizontal, Sparkles, User, Users, Wallet, type LucideIcon } from "lucide-react";
+import { MessagesSquare, Award, BarChart3, Inbox, Bell, Building2, CalendarCheck, CalendarClock, CreditCard, FileText, Gauge, Hash, Layers, Percent, ShieldCheck, SlidersHorizontal, Sparkles, User, Users, Wallet, type LucideIcon } from "lucide-react";
 import Link from "next/link";
 
 import { PageHeader } from "@/components/layout/page-primitives";
@@ -31,6 +31,12 @@ const LINKS: SettingsLink[] = [
     href: "/settings/admissions",
     description: "Your online application form, the classes open, and who hears about each new application.",
     icon: Inbox,
+  },
+  {
+    label: "Messaging",
+    href: "/settings/messaging",
+    description: "Appoint the principal, head teacher and Inbox officers parents can write to.",
+    icon: MessagesSquare,
   },
   { label: "Users", href: "/settings/users", description: "Staff accounts, roles, and invitations.", icon: Users },
   { label: "Academics", href: "/settings/academic", description: "Years, terms, levels, arms, and subjects.", icon: BarChart3 },

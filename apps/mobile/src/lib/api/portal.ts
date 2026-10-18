@@ -33,6 +33,8 @@ import type {
   AssignmentFileUrlDto,
 } from "@school-kit/types";
 
+import type { MessageRecipientOptionDto, PortalMessageListDto, PortalMessageThreadDto, StartMessageInput } from "@school-kit/types";
+
 import { apiFetch } from "./client";
 
 // Typed bindings for the guardian portal API.
@@ -313,4 +315,27 @@ export function guardianHostel(studentId: string): Promise<PortalStudentHostelDt
 
 export function guardianTransport(studentId: string): Promise<PortalStudentTransportDto | null> {
   return apiFetch<PortalStudentTransportDto | null>(`/portal/students/${encodeURIComponent(studentId)}/transport`);
+}
+
+// Phase 9 / CP8.1 — the parent's own conversations with the school
+// (docs/modules/phase-9.md §17.8).
+export function guardianMessages(): Promise<PortalMessageListDto> {
+  return apiFetch<PortalMessageListDto>("/portal/messages");
+}
+
+export function guardianMessageRecipients(studentId: string | null): Promise<MessageRecipientOptionDto[]> {
+  const qs = studentId ? `?${new URLSearchParams({ studentId }).toString()}` : "";
+  return apiFetch<MessageRecipientOptionDto[]>(`/portal/messages/recipients${qs}`);
+}
+
+export function guardianStartMessage(body: StartMessageInput): Promise<PortalMessageThreadDto> {
+  return apiFetch<PortalMessageThreadDto>("/portal/messages", { method: "POST", body });
+}
+
+export function guardianMessage(threadId: string): Promise<PortalMessageThreadDto> {
+  return apiFetch<PortalMessageThreadDto>(`/portal/messages/${encodeURIComponent(threadId)}`);
+}
+
+export function guardianReplyMessage(threadId: string, body: string): Promise<PortalMessageThreadDto> {
+  return apiFetch<PortalMessageThreadDto>(`/portal/messages/${encodeURIComponent(threadId)}`, { method: "POST", body: { body } });
 }

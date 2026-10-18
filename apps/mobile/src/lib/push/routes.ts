@@ -30,6 +30,9 @@ const ROUTES: Record<Principal, Record<string, string>> = {
     // to land where the parent can see WHICH — the children list, not a
     // single child's page.
     attendance: "/students",
+    // Phase 9 / CP8.1 — a reply from the school (the list; the data also
+    // names the conversation, but the list is the safe landing).
+    messages: "/messages",
   },
   student: {
     results: "/me/results",
@@ -50,6 +53,8 @@ const ROUTES: Record<Principal, Record<string, string>> = {
     fees: "/staff/collections",
     announcements: "/staff/announcements",
     homework: "/staff/homework",
+    // Phase 9 / CP8.1 — a parent's message addressed to this person.
+    messages: "/staff/messages",
   },
 };
 

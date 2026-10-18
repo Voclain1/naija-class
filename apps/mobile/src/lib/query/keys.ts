@@ -89,6 +89,9 @@ export const queryKeys = {
   // sign-out (D12). Unlike the calendar it carries no window in the key — the
   // feed is short and the server decides what is still current.
   guardianAnnouncements: ["announcements"] as const,
+  // Phase 9 / CP8.1 — the parent's own conversations.
+  guardianMessages: ["messages"] as const,
+  guardianMessage: (threadId: string) => ["messages", threadId] as const,
   myAnnouncements: ["me", "announcements"] as const,
   // Phase 9 / CP6.2 — the student's own library books out.
   myLibrary: ["me", "library"] as const,
@@ -321,6 +324,9 @@ export const queryKeys = {
   // parents' phones, so staff-prefixed.
   // Phase 9 / CP6b.2 — boarding. Staff-prefixed, so never kept on the phone.
   staffBoardingHostels: (schoolId: string, userId: string) => ["staff", schoolId, userId, "boarding-hostels"] as const,
+  // Phase 9 / CP8.1 — the conversations addressed or passed to this person.
+  staffMessages: (schoolId: string, userId: string, box: "OPEN" | "CLOSED") => ["staff", schoolId, userId, "messages", box] as const,
+  staffMessage: (schoolId: string, userId: string, threadId: string) => ["staff", schoolId, userId, "message", threadId] as const,
   staffBoardingBoarders: (schoolId: string, userId: string, hostelId: string) =>
     ["staff", schoolId, userId, "boarding-boarders", hostelId] as const,
   staffBoardingVisits: (schoolId: string, userId: string, hostelId: string, day: string) =>

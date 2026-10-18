@@ -20,6 +20,7 @@ import {
   ScrollText,
   MonitorCheck,
   UserCircle,
+  MessagesSquare,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -101,6 +102,15 @@ const ADMISSIONS_ITEM: NavItem = {
   enabled: true,
 };
 
+// Phase 9 / CP8.1 — messages parents address to this teacher (as form or
+// class teacher, principal or head teacher, or Inbox officer).
+const MESSAGES_ITEM: NavItem = {
+  label: "Messages",
+  href: "/teacher/messages",
+  icon: MessagesSquare,
+  enabled: true,
+};
+
 const PROFILE_ITEM: NavItem = {
   label: "Profile",
   href: "/teacher/profile",
@@ -142,11 +152,13 @@ export function useTeacherNavItems(): NavItem[] {
 
   const { permissions } = useAuth();
   const admissions = hasPermission(permissions, "admission.read");
+  const messages = hasPermission(permissions, "messages.read");
   return [
     ...BASE_ITEMS,
     ...(subjectEnabled ? [SUBJECT_ITEM] : []),
     ...(housesHostels ? [BOARDING_ITEM] : []),
     ...(admissions ? [ADMISSIONS_ITEM] : []),
+    ...(messages ? [MESSAGES_ITEM] : []),
     PROFILE_ITEM,
   ];
 }

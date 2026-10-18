@@ -30,6 +30,7 @@ import {
   Users,
   Wallet,
   type LucideIcon,
+  MessagesSquare,
 } from "lucide-react";
 
 export interface NavItem {
@@ -176,6 +177,11 @@ export const NAV_ITEMS: NavItem[] = [
   // Phase 9 / CP7.1 — admission applications (docs/modules/phase-9.md §16.8).
   // admission.read: owner, admin and Admissions officers.
   { label: "Admissions", href: "/admissions", icon: Inbox, enabled: true, requiredPermission: "admission.read" },
+  // Phase 9 / CP8.1 — private messages from parents (docs/modules/phase-9.md
+  // §17.8). messages.read: admin and bursar here (teachers, principals and
+  // head teachers reach it from the teacher portal); the service shows each
+  // only the conversations addressed or passed to them.
+  { label: "Messages", href: "/messages", icon: MessagesSquare, enabled: true, requiredPermission: "messages.read" },
   // Announcements (docs/modules/announcements.md). Gated on
   // announcement.create, not announcement.read: every staff role can READ the
   // school's announcements in their own feed, but this page is the sending
