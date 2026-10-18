@@ -76,6 +76,11 @@ export default defineConfig({
           stdout: "pipe",
           stderr: "pipe",
           cwd: "..",
+          // A full run compiles every page; with the default heap the Next.js
+          // dev server restarts mid-run ("approaching the used memory
+          // threshold") and the test on screen stalls until the job times
+          // out (#454, #456). More heap; GitHub's runners have 16 GB.
+          env: { NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ""} --max-old-space-size=6144`.trim() },
         },
     // apps/portal (:3002), added 2026-08-27 for the guardian auth suite.
     // Until then this harness only ever booted api + web, so the guardian
