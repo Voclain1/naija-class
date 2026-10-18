@@ -101,6 +101,7 @@ describe("plan limits against the database", () => {
         },
         { feature: "aiMarkingFeedback", label: "AI drafts of marking feedback", included: false, available: true },
       ],
+      announcementEmailsPerDay: 200,
     });
     // Under enforce, a Free school has none of them.
     const enforced = await withTenant(schoolId, (db) => readSchoolPlan(db, schoolId, "enforce"));

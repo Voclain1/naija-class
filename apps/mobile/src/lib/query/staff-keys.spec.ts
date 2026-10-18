@@ -78,6 +78,7 @@ const STAFF_KEYS: Record<string, readonly unknown[]> = {
   // message is internal.
   staffAnnouncements: queryKeys.staffAnnouncements(SCHOOL, USER),
   staffAnnouncementFeed: queryKeys.staffAnnouncementFeed(SCHOOL, USER),
+  staffAnnouncementEmailPreview: queryKeys.staffAnnouncementEmailPreview(SCHOOL, USER, "EVERYONE", null),
   staffHomework: queryKeys.staffHomework(SCHOOL, USER, ""),
   // A named child and a written judgement — the single most sensitive thing
   // the staff app caches.
