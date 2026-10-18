@@ -1,4 +1,5 @@
 import type { SchoolBankDetails } from "./bank-details.js";
+import type { FeeRiskDto } from "./fee-risk.dto.js";
 import { formatKobo } from "./format.js";
 import { z } from "zod";
 
@@ -20,6 +21,8 @@ export interface DebtorDto {
   hasPaymentPlan: boolean;
   /** Phase 9 / CP5.1 — a supplementary invoice, not the term invoice. */
   supplementary: boolean;
+  /** Phase 9 / CP10.2 — the child's fee-default risk (rules, not a model). */
+  risk: FeeRiskDto;
 }
 
 // ---------------------------------------------------------------------------
@@ -30,6 +33,12 @@ export const listDebtorsSchema = z.object({
   termId: z.string().uuid(),
 });
 export type ListDebtorsInput = z.infer<typeof listDebtorsSchema>;
+
+/** GET /finance/students/:studentId/fee-risk — the current term when omitted. */
+export const studentFeeRiskQuerySchema = z.object({
+  termId: z.string().uuid().optional(),
+});
+export type StudentFeeRiskQuery = z.infer<typeof studentFeeRiskQuerySchema>;
 
 export const sendRemindersSchema = z.object({
   termId: z.string().uuid(),

@@ -5426,3 +5426,64 @@ the count stays 23.
   now scrolls (`max-h-[90vh] overflow-y-auto`, as other long dialogs do).
 - **Phone fit:** the event form with replies open, the replies list, and the
   portal reply card all fit at 320 and 390 px with no sideways scroll.
+
+### 19.9 As built — CP10.2, fee-default risk (2026-10-18)
+
+- **Rules:** `apps/api/src/modules/finance/fee-risk.ts`.
+  - `assessFeeRisk` holds the rules, pure, over a summary of one child's
+    history.
+  - `computeFeeRisks` reads the invoices and payments under the caller's
+    `withTenant`, siblings included.
+  - Nothing is stored, and nothing acts on the result.
+- **What "the last three terms" means:** the three terms before the term
+  being looked at (by start date). The term being looked at is the "overdue
+  now" part.
+  - A history term invoice (the term invoice, with a due date) is:
+    - *on time* when successful payments made on or before the due date
+      (a Lagos day) cover it;
+    - *paid late* when it was paid in full afterwards;
+    - *not paid in full by the due date* when it is still short.
+  - Reversed, pending and failed payments do not count.
+  - **Owing** is any open balance on an earlier term (any age), term or
+    supplementary invoices alike, named by term and year.
+  - **Too new to say** is fewer than two terms with a term invoice, unless an
+    earlier balance is owing.
+- **Levels as planned:**
+  - High: owing from an earlier term, or late (or short) in 2 of the last 3
+    terms and overdue now.
+  - Watch: one late or short term, or overdue now.
+  - Low: otherwise ("Paid on time in the last N terms").
+- **Siblings:** same primary guardian (`is_primary`). Each child is scored on
+  their own; a sibling who is Watch or High adds "Sibling of <name>
+  (<level>)". A non-primary link does not count.
+- **Reasons travel as data** (`FeeRiskReason`, amounts in kobo). They are
+  worded at the display layer by `feeRiskReasonText` in `@school-kit/types`,
+  per the money rule.
+- **Where:**
+  - `DebtorDto.risk` on `GET /finance/debtors`.
+  - `GET /finance/students/:studentId/fee-risk?termId=` (current term when
+    omitted; `null` with no current term; 404 for another school's child).
+  - Both require `finance.debtors.read` (owner, admin, bursar).
+  - No family endpoint carries it.
+- **Web:**
+  - The debtors page gains a Risk column (the level as a word on a tinted
+    badge, plus the reasons), a Risk filter, and Risk and Risk Reasons in the
+    CSV.
+  - A line under the filters says it is staff-only and never acts by itself.
+  - **Change from the plan:** the student page has no finance tab, so the
+    risk is a line on the Bio tab ("Fee payment risk (staff only)"), beside
+    transport and hostel. It shows only to `finance.debtors.read`.
+- **Staff app:** the debtor rows carry `risk`. The mobile contract spec's
+  pinned key set gains it; the app does not draw it yet.
+- **Tests:**
+  - `fee-risk.spec.ts`, 15 tests:
+    - each rule over made-up histories;
+    - against the database: on time, a payment on the due date versus a day
+      later, late twice and overdue now with a reversed payment ignored, an
+      earlier balance on a supplementary invoice, a new student, siblings
+      (primary only), the debtor rows and the student read, and another
+      school.
+  - e2e `fee-risk.spec.ts`: an earlier-term balance shows High with its
+    reason on the debtors page; the filter hides and shows the row; the
+    student page agrees.
+  - Phone fit at 320 and 390 px.

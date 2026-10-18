@@ -1,11 +1,13 @@
-import { Body, Controller, Get, HttpCode, Post, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Post, Query, UseGuards } from "@nestjs/common";
 import {
   financeDashboardQuerySchema,
   collectionByLevelQuerySchema,
   listDebtorsSchema,
   revenueTrajectoryQuerySchema,
   sendRemindersSchema,
+  studentFeeRiskQuerySchema,
   type DebtorDto,
+  type FeeRiskDto,
   type FinanceDashboardDto,
   type FinanceDashboardQuery,
   type CollectionByLevelDto,
@@ -15,6 +17,7 @@ import {
   type RevenueTrajectoryQuery,
   type SendRemindersInput,
   type SendRemindersResult,
+  type StudentFeeRiskQuery,
 } from "@school-kit/types";
 
 import type { AuthContext } from "../../common/auth/auth-context.js";
@@ -39,6 +42,21 @@ export class FinanceController {
     @Query(new ZodValidationPipe(listDebtorsSchema)) query: ListDebtorsInput,
   ): Promise<DebtorDto[]> {
     return this.service.listDebtors(authCtx, query.termId);
+  }
+
+  // ─── GET /finance/students/:studentId/fee-risk?termId= ───────────────────
+  //
+  // Phase 9 / CP10.2 — the same people who read the debtor list (owner,
+  // admin, bursar). Never a family surface.
+
+  @Get("students/:studentId/fee-risk")
+  @Permissions("finance.debtors.read")
+  async getStudentFeeRisk(
+    @CurrentUser() authCtx: AuthContext,
+    @Param("studentId", new ParseUUIDPipe()) studentId: string,
+    @Query(new ZodValidationPipe(studentFeeRiskQuerySchema)) query: StudentFeeRiskQuery,
+  ): Promise<FeeRiskDto | null> {
+    return this.service.getStudentFeeRisk(authCtx, studentId, query.termId);
   }
 
   // ─── POST /finance/debtors/remind ────────────────────────────────────────

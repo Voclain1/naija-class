@@ -76,6 +76,10 @@ const DEBTOR_KEYS = [
   // invoice, no contact detail. The staff app labels the row "Supplementary"
   // so a family with two rows reads as two invoices, not a duplicate.
   "supplementary",
+  // Phase 9 / CP10.2 (docs/modules/phase-9.md §19.3): the fee-default risk
+  // level and its reasons, for the same readers (finance.debtors.read). No
+  // contact detail; a sibling reason names only the child.
+  "risk",
 ].sort();
 
 const DASHBOARD_KEYS = [

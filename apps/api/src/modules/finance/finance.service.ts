@@ -5,6 +5,7 @@ import { basePrisma, withTenant } from "@school-kit/db";
 import {
   NotFoundError,
   type DebtorDto,
+  type FeeRiskDto,
   type FinanceDashboardDto,
   type CollectionByLevelDto,
   type RevenueTrajectoryBucketDto,
@@ -27,6 +28,7 @@ import { normalizeNigerianPhone, TermiiService } from "../../common/termii/termi
 import { NotificationPreferencesService } from "../notifications/notification-preferences.service.js";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service.js";
 import { smsSenderFor } from "../../common/termii/sms-sender";
+import { computeFeeRisks } from "./fee-risk.js";
 
 // onModuleInit must never block NestFactory.create() indefinitely. Same fix
 // as PartitionService (see docs/deferred.md's "recurring dev-server bootstrap
@@ -135,6 +137,11 @@ export class FinanceService implements OnModuleInit {
       });
       const planSet = new Set(plans.map((p) => p.invoiceId));
 
+      // Phase 9 / CP10.2 — each child's fee-default risk, from their own
+      // invoices (fee-risk.ts). Same permission as the list itself.
+      const risks = await computeFeeRisks(db, authCtx.schoolId, termId, studentIds);
+      const TOO_NEW: FeeRiskDto = { level: "TOO_NEW", reasons: [{ kind: "TOO_NEW" }] };
+
       const STATUS_ORDER: Record<string, number> = {
         OVERDUE: 0,
         PARTIALLY_PAID: 1,
@@ -161,6 +168,7 @@ export class FinanceService implements OnModuleInit {
           dueDate: dueDateStr,
           hasPaymentPlan: planSet.has(inv.id),
           supplementary: inv.sequence > 0,
+          risk: risks.get(inv.studentId) ?? TOO_NEW,
         };
       });
 
@@ -172,6 +180,24 @@ export class FinanceService implements OnModuleInit {
       });
 
       return debtors;
+    });
+  }
+
+  // ─── One child's fee-default risk ─────────────────────────────────────────
+  //
+  // Phase 9 / CP10.2 — the student page's line. The current term unless one
+  // is named; null when the school has no current term or the child is not
+  // this school's.
+  async getStudentFeeRisk(authCtx: AuthContext, studentId: string, termId?: string): Promise<FeeRiskDto | null> {
+    return withTenant(authCtx.schoolId, async (db) => {
+      const student = await db.student.findFirst({ where: { id: studentId, schoolId: authCtx.schoolId }, select: { id: true } });
+      if (!student) throw new NotFoundError("Student not found.");
+      const term = termId
+        ? await db.term.findFirst({ where: { id: termId, schoolId: authCtx.schoolId }, select: { id: true } })
+        : await db.term.findFirst({ where: { schoolId: authCtx.schoolId, isCurrent: true }, select: { id: true } });
+      if (!term) return null;
+      const risks = await computeFeeRisks(db, authCtx.schoolId, term.id, [studentId]);
+      return risks.get(studentId) ?? null;
     });
   }
 
