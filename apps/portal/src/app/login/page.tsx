@@ -93,7 +93,7 @@ function LoginForm() {
   const submitting = state.kind === "submitting";
 
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center gap-8 px-4 py-10">
+    <main className="sk-entry flex min-h-screen flex-col items-center justify-center gap-8 px-4 py-10">
       <BrandHeading />
 
       {/* Shown only when the redirect actually carried a reason. A parent who

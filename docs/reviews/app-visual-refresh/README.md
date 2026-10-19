@@ -25,3 +25,12 @@ authenticated staff-app smoke. Staff sign-in still requires a device lock and
 remains unavailable on the web target. The local fixture route was removed
 after the export and is not committed or shipped. `expo-web-login.png` is the
 actual Expo web sign-in route.
+
+## App-wide rollout
+
+`coverage.md` records the layout-based coverage and its verification limits.
+`rollout/` contains actual local page renders using sample responses: student
+roster, school settings, finance, parent home, public checker, the 320px modal
+and the exam entry page. No sample records were saved to an application backend.
+The app's Android and iOS production bundles also build; native device/simulator
+smoke is still required before a release.

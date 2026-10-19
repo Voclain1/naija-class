@@ -57,6 +57,7 @@ export const colors = {
     /** Offline / stale indicators. Amber, deliberately not red: stale data is
      *  a caution, not an error. */
     warning: palette.goldSpark,
+    warningForeground: "#8A4B08",
     danger: "#B3261E",
   },
   dark: {
@@ -76,6 +77,7 @@ export const colors = {
     secondaryForeground: "#1A1405",
     border: "#243238",
     warning: palette.goldSpark,
+    warningForeground: "#F6D779",
     danger: "#F2B8B5",
   },
 } as const;

@@ -10,10 +10,10 @@ import { SchoolKitIcon } from "@/components/brand/schoolkit-mark";
 export function BrandMark({ size = 32 }: { size?: number }) {
   return (
     <div className="flex flex-col items-center gap-3" data-testid="brand-preloader">
-      <div className="animate-pulse">
+      <div className="animate-pulse motion-reduce:animate-none">
         <SchoolKitIcon size={size} />
       </div>
-      <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" aria-label="Loading" />
+      <Loader2 className="h-5 w-5 animate-spin text-primary motion-reduce:animate-none" aria-label="Loading" />
     </div>
   );
 }

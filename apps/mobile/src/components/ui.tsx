@@ -222,11 +222,11 @@ export function Notice({
     tone === "danger"
       ? colors.danger
       : tone === "warning"
-        ? colors.warning
+        ? colors.warningForeground
         : colors.mutedForeground;
 
   return (
-    <View style={[styles.notice, { borderColor: color }]}>
+    <View style={[styles.notice, { borderColor: colors.border, backgroundColor: tone === "warning" ? colors.tileGold : tone === "danger" ? colors.danger + "0D" : colors.card }]}>
       <Text style={[styles.noticeText, { color }]}>{children}</Text>
     </View>
   );

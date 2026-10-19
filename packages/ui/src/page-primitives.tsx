@@ -55,9 +55,9 @@ export function PageHeader({
   actions?: ReactNode;
 }) {
   return (
-    <header className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+    <header className="sk-page-header flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
       <div className="flex flex-col gap-1">
-        <h1 className="font-sans text-3xl font-bold tracking-tight text-foreground">{title}</h1>
+        <h1 className="sk-page-title font-sans text-3xl font-bold tracking-tight text-foreground">{title}</h1>
         {subtitle ? <p className="text-sm text-muted-foreground">{subtitle}</p> : null}
       </div>
       {/* Wraps below the title on a phone rather than squeezing beside it: a

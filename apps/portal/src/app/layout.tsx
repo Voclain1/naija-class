@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import type { ReactNode } from "react";
 
 import "./globals.css";
+import "@school-kit/ui/surfaces.css";
 
 // Same sans family and visual tokens as the staff app.
 const dmSans = DM_Sans({
@@ -36,7 +37,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
       <body
-        className={`${dmSans.variable} min-h-screen bg-background font-sans antialiased`}
+        className={`${dmSans.variable} schoolkit-surface min-h-screen bg-background font-sans antialiased`}
       >
         {children}
       </body>

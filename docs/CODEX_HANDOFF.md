@@ -196,6 +196,9 @@ Treat it as history. The current picture:
 
 - **UI-only review branch (second pass after owner feedback):** `design/app-visual-refresh`. Shared web/portal and
   Expo presentation refreshed, with no business logic or navigation changes.
+  The approved direction now rolls through staff/parent root styles and
+  shared controls; native refinement stays restrained. Source coverage and
+  verification: `docs/reviews/app-visual-refresh/coverage.md`.
   Design scope: `docs/modules/app-visual-refresh.md`; verification and remaining
   device/screen-review limits: `docs/journal/2026-10-19.md`. Not deployed by this
   session. Check the PR before treating this branch as merged.

@@ -1,0 +1,108 @@
+/* Shared SchoolKit screen presentation. Imported after each app's Tailwind
+ * sheet. The class on BODY reaches lazy routes and portal-mounted dialogs,
+ * including older screens that still compose plain HTML controls.
+ * Screen-only: report/exam printouts and physical ID-card sizing stay owned
+ * by their document renderers. No layout, visibility, selection or data rules. */
+@media screen {
+  .schoolkit-surface {
+    --surface-radius: 1.35rem;
+    --surface-shadow: 0 3px 12px -8px hsl(var(--foreground) / .16);
+  }
+
+  /* Both the shared PageHeader and legacy inline headings. Dashboard welcome
+   * typography is more specific and keeps its approved display scale. */
+  .schoolkit-surface :where(h1.font-serif, h1.sk-page-title):not(.sr-only) {
+    font-family: var(--font-sans, ui-sans-serif), system-ui, sans-serif;
+    font-size: clamp(1.55rem, 2.5vw, 2.15rem);
+    font-weight: 750;
+    line-height: 1.2;
+    letter-spacing: -.045em;
+    overflow-wrap: anywhere;
+    text-decoration: underline;
+    text-decoration-color: hsl(var(--secondary) / .45);
+    text-decoration-thickness: .17em;
+    text-underline-offset: -.03em;
+    text-decoration-skip-ink: none;
+  }
+  .schoolkit-surface .dashboard-welcome h1 { text-decoration: none; }
+  .schoolkit-surface .sk-page-header { gap: 1rem; padding-bottom: .35rem; }
+  .schoolkit-surface :where(h2, h3) { letter-spacing: -.02em; }
+
+  /* Regular content panels only. Avoid blanket rounded-* overrides: those
+   * would distort avatars, pills, grid cells, QR codes and crop canvases. */
+  .schoolkit-surface :where(section, article, div, ul, dl, form, a).border.bg-card:not(.sk-section-tab) {
+    border-radius: var(--surface-radius);
+    box-shadow: var(--surface-shadow);
+  }
+  .schoolkit-surface :where(div).border.overflow-hidden:not([class*="bg-"]),
+  .schoolkit-surface :where(div).border.overflow-x-auto {
+    border-radius: 1rem;
+    background-color: hsl(var(--card));
+  }
+  .schoolkit-surface :where(table) :where(thead) {
+    background-color: hsl(var(--muted) / .5);
+  }
+  .schoolkit-surface :where(th) { font-weight: 600; }
+
+  /* Native browser form controls stay native. Width, height, input type,
+   * validation, disabled state and focus handlers remain with each caller. */
+  .schoolkit-surface :where(select, textarea, input:not([type]), input[type="text"], input[type="email"], input[type="password"], input[type="search"], input[type="tel"], input[type="number"], input[type="date"], input[type="url"]).border:not([aria-invalid="true"]):not([class*="border-destructive"]):not([class*="border-red"]) {
+    min-width: 0;
+    max-width: 100%;
+    border-radius: .75rem;
+    border-color: hsl(var(--input));
+    background-color: hsl(var(--card));
+    color: hsl(var(--foreground));
+    box-shadow: 0 1px 2px hsl(var(--foreground) / .035);
+  }
+  .schoolkit-surface :where(select, textarea, input).border:focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
+  }
+  .schoolkit-surface :where(button, a).bg-primary:not(.rounded-r-none):not(.rounded-l-none):not(.rounded-none) {
+    border-radius: .75rem;
+    font-weight: 600;
+  }
+  .schoolkit-surface :where(button, a).border:not(.rounded-full):not(.rounded-none):not(.rounded-r-none):not(.rounded-l-none) {
+    border-radius: .75rem;
+  }
+  .schoolkit-surface .sk-school-banner {
+    padding: .75rem 1rem;
+    border-radius: 1rem;
+    background-color: hsl(var(--primary) / .06);
+  }
+
+  /* Entry screens use existing copy/logo/form with a quiet branded frame. */
+  .schoolkit-surface .sk-entry { position: relative; isolation: isolate; }
+  .schoolkit-surface .sk-entry::before {
+    content: "";
+    position: absolute;
+    z-index: -1;
+    pointer-events: none;
+    width: min(34rem, 88vw);
+    height: 15rem;
+    top: 0;
+    background: hsl(var(--primary) / .055);
+    border-radius: 0 0 45% 45%;
+  }
+  .schoolkit-surface .sk-entry-brand { padding: 1rem; }
+  .schoolkit-surface .sk-entry-brand > p { letter-spacing: -.01em; }
+}
+
+/* Colour feedback only; never changes geometry or delays a form submit. */
+@media screen and (prefers-reduced-motion: no-preference) {
+  .schoolkit-surface :where(select, textarea, input).border {
+    transition: border-color 150ms ease, box-shadow 150ms ease;
+  }
+}
+
+@media screen {
+  .schoolkit-surface [role="dialog"] .flex > .flex-1 { min-width: 0; }
+}
+@media screen and (max-width: 479.98px) {
+  /* Native date widgets need their full text and calendar button. Keep the
+   * original order, stack paired dates when two columns cannot fit. */
+  .schoolkit-surface [role="dialog"] div.flex:has(> .flex-1 > input[type="date"]) {
+    flex-direction: column;
+  }
+}

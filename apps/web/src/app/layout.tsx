@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import { Providers } from "@/lib/providers";
 
 import "./globals.css";
+import "@school-kit/ui/surfaces.css";
 
 // One sans family across body, headings and figures. Self-hosted by Next;
 // no runtime font request. See docs/modules/app-visual-refresh.md.
@@ -38,7 +39,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en" suppressHydrationWarning>
       <body
-        className={`${dmSans.variable} min-h-screen bg-background font-sans antialiased`}
+        className={`${dmSans.variable} schoolkit-surface min-h-screen bg-background font-sans antialiased`}
       >
         <Providers>{children}</Providers>
       </body>

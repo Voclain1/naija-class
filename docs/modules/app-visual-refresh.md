@@ -91,3 +91,18 @@ unchanged. The fixture composes the same native header, StatRow and ActionTile
 components using sample data, is exported locally, then removed from source.
 It is a component preview, not a native device screenshot or an authentication
 verification. No fixture route is shipped.
+
+## App-wide rollout after direction approval
+
+The owner approved the second-pass direction and requested it throughout the
+site, while retaining the native app's current restraint. The shared screen
+layer (`@school-kit/ui/surfaces.css`) now ships from both staff and parent root
+layouts. It covers legacy headings and hand-written form/panel styles as well
+as shared components. Tabs, dropdowns, dialogs, auth/onboarding entry surfaces
+and the payment callback match. The exam app gets only matching typography,
+white surfaces and control treatment. Physical document rendering stays separate.
+
+Native refinement is intentionally small: consistent form text leading and
+readable tinted notices. Existing home styling, workflows and navigation stay.
+Full source coverage and verification boundaries are recorded in
+`docs/reviews/app-visual-refresh/coverage.md`.
