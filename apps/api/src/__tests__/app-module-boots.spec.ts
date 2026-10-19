@@ -2,6 +2,13 @@ import { Test } from "@nestjs/testing";
 import { describe, expect, it } from "vitest";
 
 import { AppModule } from "../app.module.js";
+import { AiJobRegistry } from "../common/ai/ai-jobs.registry.js";
+import {
+  AI_JOB_ASSIGNMENT_FEEDBACK,
+  AI_JOB_FORM_COMMENT,
+  AI_JOB_PARENT_SUMMARY,
+  AI_JOB_SUBJECT_COMMENT,
+} from "../common/queue/index.js";
 
 // Can the API actually be constructed?
 //
@@ -44,6 +51,12 @@ describe("AppModule", () => {
     const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
 
     expect(moduleRef).toBeDefined();
+    // The AI queue's one worker finds each feature's handler here; a feature
+    // whose service stopped registering would leave its jobs failing as
+    // "unknown job name". One registry instance serves the whole app.
+    expect(moduleRef.get(AiJobRegistry, { strict: false }).names()).toEqual(
+      [AI_JOB_ASSIGNMENT_FEEDBACK, AI_JOB_FORM_COMMENT, AI_JOB_PARENT_SUMMARY, AI_JOB_SUBJECT_COMMENT].sort(),
+    );
     await moduleRef.close();
   });
 });

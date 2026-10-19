@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
 
 import { AiGenerationService } from "./ai-generation.service.js";
+import { AiJobRegistry } from "./ai-jobs.registry.js";
 
 // Phase 5 / Slice 1 CP2. Feature modules import AiModule and inject
 // AiGenerationService — they must never construct an Anthropic client
@@ -13,7 +14,7 @@ import { AiGenerationService } from "./ai-generation.service.js";
 // by cost and PII hard rules.
 @Module({
   imports: [ConfigModule],
-  providers: [AiGenerationService],
-  exports: [AiGenerationService],
+  providers: [AiGenerationService, AiJobRegistry],
+  exports: [AiGenerationService, AiJobRegistry],
 })
 export class AiModule {}

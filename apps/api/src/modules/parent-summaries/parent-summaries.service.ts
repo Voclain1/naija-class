@@ -1,5 +1,5 @@
 import { InjectQueue } from "@nestjs/bullmq";
-import { Injectable, Logger } from "@nestjs/common";
+import { Injectable, Logger, Optional } from "@nestjs/common";
 import { Cron } from "@nestjs/schedule";
 import { Queue } from "bullmq";
 
@@ -21,6 +21,7 @@ import {
 } from "@school-kit/types";
 
 import { AiGenerationService } from "../../common/ai/ai-generation.service.js";
+import { AiJobRegistry } from "../../common/ai/ai-jobs.registry.js";
 import { AI_ERROR_CODES } from "../../common/ai/ai.constants.js";
 import type { AuthContext } from "../../common/auth/auth-context.js";
 import type { GuardianAuthContext } from "../../common/auth/guardian-auth-context.js";
@@ -121,7 +122,13 @@ export class ParentSummariesService {
     private readonly ai: AiGenerationService,
     private readonly email: EmailService,
     @InjectQueue(AI_QUEUE) private readonly queue: Queue,
-  ) {}
+  
+    // The AI queue's one worker runs this feature's jobs through the registry
+    // (common/ai). Optional so unit specs can build the service bare.
+    @Optional() registry?: AiJobRegistry,
+  ) {
+    registry?.register<ParentSummaryJobData>(AI_JOB_PARENT_SUMMARY, { required: ["schoolId", "studentId", "weekStart"], run: (d) => this.generateForStudent(d) });
+  }
 
   // =========================================================================
   // The weekly sweep. Cron entry point.

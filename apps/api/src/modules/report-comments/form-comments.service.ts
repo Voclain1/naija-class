@@ -1,5 +1,5 @@
 import { InjectQueue } from "@nestjs/bullmq";
-import { Injectable, Logger } from "@nestjs/common";
+import { Injectable, Logger, Optional } from "@nestjs/common";
 import { Queue } from "bullmq";
 
 import {
@@ -19,6 +19,7 @@ import {
 } from "@school-kit/types";
 
 import { AiGenerationService } from "../../common/ai/ai-generation.service.js";
+import { AiJobRegistry } from "../../common/ai/ai-jobs.registry.js";
 import { AI_ERROR_CODES } from "../../common/ai/ai.constants.js";
 import type { AuthContext } from "../../common/auth/auth-context.js";
 import { assertUserActiveAndHasOneOf } from "../../common/auth/role-check.js";
@@ -86,7 +87,13 @@ export class FormCommentsService {
   constructor(
     private readonly ai: AiGenerationService,
     @InjectQueue(AI_QUEUE) private readonly queue: Queue,
-  ) {}
+  
+    // The AI queue's one worker runs this feature's jobs through the registry
+    // (common/ai). Optional so unit specs can build the service bare.
+    @Optional() registry?: AiJobRegistry,
+  ) {
+    registry?.register<FormCommentJobData>(AI_JOB_FORM_COMMENT, { required: ["schoolId", "studentId", "termId", "classArmId", "reportCardId"], run: (d) => this.generateForStudent(d) });
+  }
 
   // =========================================================================
   // POST /report-card-comments/form/generate

@@ -1,5 +1,5 @@
 import { InjectQueue } from "@nestjs/bullmq";
-import { Injectable, Logger } from "@nestjs/common";
+import { Injectable, Logger, Optional } from "@nestjs/common";
 import { Queue } from "bullmq";
 
 import {
@@ -24,6 +24,7 @@ import {
 } from "@school-kit/types";
 
 import { AiGenerationService } from "../../common/ai/ai-generation.service.js";
+import { AiJobRegistry } from "../../common/ai/ai-jobs.registry.js";
 import { AI_ERROR_CODES } from "../../common/ai/ai.constants.js";
 import type { AuthContext } from "../../common/auth/auth-context.js";
 import { assertUserActiveAndHasOneOf, getActiveUserRoleKeys } from "../../common/auth/role-check.js";
@@ -122,7 +123,13 @@ export class AssignmentFeedbackService {
   constructor(
     private readonly ai: AiGenerationService,
     @InjectQueue(AI_QUEUE) private readonly queue: Queue,
-  ) {}
+  
+    // The AI queue's one worker runs this feature's jobs through the registry
+    // (common/ai). Optional so unit specs can build the service bare.
+    @Optional() registry?: AiJobRegistry,
+  ) {
+    registry?.register<AssignmentFeedbackJobData>(AI_JOB_ASSIGNMENT_FEEDBACK, { required: ["schoolId", "userId", "submissionId"], run: (d) => this.generate(d) });
+  }
 
   // =========================================================================
   // GET/PUT /assignments/ai-drafts/settings — the school's own switch

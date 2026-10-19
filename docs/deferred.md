@@ -360,13 +360,14 @@ the module doc or the PR, then link it here.
   Next's sync cancels the in-flight navigation exactly as `router.replace`
   does. Both were tried on PR #388
 ### Docs and tooling
-- [ ] **Move the AI-queue dispatcher into `common/ai`.** `SubjectCommentProcessor`
-  (report-comments) is the one `@Processor` on the AI queue and now serves four
-  features, CP4b's `assignment-feedback` the latest
-  (`docs/modules/phase-9.md` §12.7). Its own note said the honest refactor at a
-  fourth feature is a dispatcher in `common/ai`, with each feature registering
-  its handler. **Trigger:** the next AI job, or the next change to that
-  processor.
+- [x] **DONE 2026-10-19 — the AI-queue dispatcher is in `common/ai`.**
+  `AiJobProcessor` (`common/ai/ai-job.processor.ts`, provided by
+  `AiQueueModule`, imported once by AppModule) is the one worker on AI_QUEUE.
+  Each AI feature's service registers its job with `AiJobRegistry`, naming the
+  fields the job must carry (schoolId first); the registry refuses a job
+  missing one. `AI_QUEUE_JOB_OPTIONS` is the one set of retry options every
+  registration of the queue uses. `app-module-boots.spec.ts` checks all four
+  jobs register. A new AI job registers a handler; it never adds a @Processor.
 - [x] **DONE 2026-10-08 — `docs/journal/` caught up** with a single catch-up
   entry, `docs/journal/2026-10-08.md`, covering 2026-09-06 to today by theme.
 - [ ] **`RESERVED_SLUGS` is exact-match only.** **Trigger:** before adding any
