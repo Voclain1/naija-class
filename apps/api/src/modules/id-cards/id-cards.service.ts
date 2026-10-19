@@ -84,10 +84,21 @@ function isoDate(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
+/** A student in one of these has left: their card scans as LEFT. A suspended student has not left. */
+const LEFT_STUDENT_STATUSES = new Set(["WITHDRAWN", "GRADUATED", "INACTIVE"]);
+
 /** What a scan of the card says. */
-export function verdictFor(status: IdCardStatusDto, validUntil: string, today: string): IdCardVerdictDto {
+export function verdictFor(
+  status: IdCardStatusDto,
+  validUntil: string,
+  today: string,
+  holderCurrent = true,
+): IdCardVerdictDto {
   if (status === "CANCELLED") return "CANCELLED";
   if (status === "REPLACED") return "REPLACED";
+  // Nothing cancels a card when its holder leaves, so the check asks: a
+  // withdrawn student's or a switched-off staff member's card is not accepted.
+  if (!holderCurrent) return "LEFT";
   return today <= validUntil ? "VALID" : "EXPIRED";
 }
 
@@ -204,6 +215,9 @@ export class IdCardsService {
         throw new ValidationError("NO_CURRENT_SESSION", "Set the current session under Sessions & classes first.");
       }
       const ids = [...new Set(input.holderIds)];
+      // Lock before the "already holds a card" check, so two issues at once
+      // for the same person queue rather than both pass it.
+      await this.lockSchool(db, authCtx.schoolId);
       const known =
         input.kind === "STUDENT"
           ? (await db.student.findMany({ where: { id: { in: ids }, status: "ACTIVE" }, select: { id: true } })).map((s) => s.id)
@@ -247,18 +261,32 @@ export class IdCardsService {
    * row first, so two issues at once queue rather than share a number.
    */
   private async reserveNumbers(db: PrismaClient, schoolId: string): Promise<number> {
-    await db.$executeRaw`SELECT id FROM schools WHERE id = ${schoolId} FOR UPDATE`;
+    await this.lockSchool(db, schoolId);
     return (await db.idCard.count()) + 1;
+  }
+
+  private async lockSchool(db: PrismaClient, schoolId: string): Promise<void> {
+    await db.$executeRaw`SELECT id FROM schools WHERE id = ${schoolId} FOR UPDATE`;
+  }
+
+  /**
+   * Ends a card only if it is still active, so a cancel and a reissue racing
+   * each other cannot both end it (or overwrite REPLACED with CANCELLED).
+   */
+  private async endCard(
+    db: PrismaClient,
+    cardId: string,
+    data: { status: "CANCELLED" | "REPLACED"; endedBy: string; endReason: string },
+  ): Promise<void> {
+    const ended = await db.idCard.updateMany({ where: { id: cardId, status: "ACTIVE" }, data: { ...data, endedAt: new Date() } });
+    if (ended.count !== 1) throw new ValidationError("CARD_NOT_ACTIVE", "This card has already been cancelled or replaced.");
   }
 
   async cancel(authCtx: AuthContext, cardId: string, reason: string, reqCtx: RequestContext): Promise<{ ok: true }> {
     await assertHolds(authCtx, "id-card.issue");
     return withTenant(authCtx.schoolId, async (db) => {
       const card = await this.activeCard(db, cardId);
-      await db.idCard.update({
-        where: { id: card.id },
-        data: { status: "CANCELLED", endedAt: new Date(), endedBy: authCtx.userId, endReason: reason },
-      });
+      await this.endCard(db, card.id, { status: "CANCELLED", endedBy: authCtx.userId, endReason: reason });
       await this.audit(db, authCtx, "id-card.cancel", card.id, reqCtx, { cardNumber: card.cardNumber, reason });
       return { ok: true as const };
     });
@@ -271,10 +299,7 @@ export class IdCardsService {
       const card = await this.activeCard(db, cardId);
       const year = await db.academicYear.findUniqueOrThrow({ where: { id: card.academicYearId } });
       // End the old card first: the one-active-card index would refuse the new one otherwise.
-      await db.idCard.update({
-        where: { id: card.id },
-        data: { status: "REPLACED", endedAt: new Date(), endedBy: authCtx.userId, endReason: reason },
-      });
+      await this.endCard(db, card.id, { status: "REPLACED", endedBy: authCtx.userId, endReason: reason });
       const next = await this.reserveNumbers(db, authCtx.schoolId);
       const fresh = await db.idCard.create({
         data: {
@@ -354,8 +379,11 @@ export class IdCardsService {
       const card = await db.idCard.findUnique({ where: { id: read.cardId }, select: CARD_SELECT });
       if (!card) throw new NotFoundError("This code is not a School Kit ID card.");
       const [p] = await this.printable(db, school.id, [card], PUBLIC_PHOTO_TTL_SECONDS);
+      const holderCurrent = card.studentId
+        ? !LEFT_STUDENT_STATUSES.has((await db.student.findUnique({ where: { id: card.studentId }, select: { status: true } }))?.status ?? "WITHDRAWN")
+        : (await db.user.findUnique({ where: { id: card.userId! }, select: { isActive: true } }))?.isActive === true;
       return {
-        verdict: verdictFor(card.status, p!.validUntil, lagosToday()),
+        verdict: verdictFor(card.status, p!.validUntil, lagosToday(), holderCurrent),
         schoolName: school.name,
         kind: p!.kind,
         name: p!.name,

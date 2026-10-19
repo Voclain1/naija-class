@@ -11,6 +11,7 @@ import { EmptyState, PageHeader } from "@/components/layout/page-primitives";
 import { InlineAlert } from "@/components/shared/inline-alert";
 import { ListExportMenu } from "@/components/shared/list-export-menu";
 import { ItemFormDialog } from "@/components/store/item-form-dialog";
+import { PriceListSwitch } from "@/components/store/price-list-switch";
 import { StoreNav } from "@/components/store/store-nav";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -130,6 +131,8 @@ function StorePageInner() {
           Running low only
         </Button>
       </div>
+
+      <PriceListSwitch />
 
       {error && <InlineAlert>{error}</InlineAlert>}
 

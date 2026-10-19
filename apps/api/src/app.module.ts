@@ -63,6 +63,7 @@ import { InsightsModule } from "./modules/insights/insights.module";
 import { AiUsageModule } from "./modules/ai-usage/ai-usage.module";
 import { ParentSummariesModule } from "./modules/parent-summaries/parent-summaries.module";
 import { ReportCommentsModule } from "./modules/report-comments/report-comments.module";
+import { AiQueueModule } from "./common/ai/ai-queue.module";
 import { OnboardingNudgeModule } from "./modules/onboarding-nudge/onboarding-nudge.module.js";
 import { PayrollModule } from "./modules/payroll/payroll.module";
 import { PlatformAdminModule } from "./modules/platform-admin/platform-admin.module";
@@ -163,6 +164,8 @@ const isProd = process.env.NODE_ENV === "production";
     LessonPlansModule,
     ReportCommentsModule,
     ParentSummariesModule,
+    // The AI queue's one worker; each AI feature registers its job handler.
+    AiQueueModule,
     AiUsageModule,
     InsightsModule,
     GuardiansModule,

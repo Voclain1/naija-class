@@ -19,6 +19,8 @@ import {
 
 import type { AuthContext } from "../../common/auth/auth-context";
 import { assertUserActiveAndHasOneOf } from "../../common/auth/role-check";
+import { removeHostelBedsAfterWithdrawal } from "../hostels/hostel.service";
+import { removeTransportAfterWithdrawal } from "../transport/transport.service";
 import {
   armIndexWithinLevel,
   resolveYearDestination,
@@ -465,6 +467,13 @@ export class PromotionsService {
             },
             data: { status: "GRADUATED", graduatedAt: new Date() },
           });
+          // As StudentsService.graduate: later terms' bus places and beds go.
+          const leaver = { schoolId: authCtx.schoolId, userId: authCtx.userId, ipAddress: reqCtx.ipAddress };
+          const now = new Date();
+          for (const studentId of graduatedStudentIds) {
+            await removeTransportAfterWithdrawal(db, leaver, studentId, now);
+            await removeHostelBedsAfterWithdrawal(db, leaver, studentId, now);
+          }
         }
 
         const result: PromotionCommitResultDto = {

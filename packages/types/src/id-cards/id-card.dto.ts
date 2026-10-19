@@ -117,7 +117,8 @@ export interface MyIdCardDto {
 }
 
 /** GET /public/id-cards/verify?t= — the public QR check. */
-export type IdCardVerdictDto = "VALID" | "EXPIRED" | "CANCELLED" | "REPLACED";
+/** LEFT: the card itself is live, but its holder has left the school (withdrawn, or the account switched off). */
+export type IdCardVerdictDto = "VALID" | "EXPIRED" | "CANCELLED" | "REPLACED" | "LEFT";
 
 export interface IdCardVerificationDto {
   verdict: IdCardVerdictDto;

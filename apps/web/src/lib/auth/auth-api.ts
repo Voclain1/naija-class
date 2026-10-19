@@ -32,7 +32,8 @@ import { apiFetch, proxyFetch } from "../api-client";
 
 /** A session-issuing response as the browser receives it: the proxy keeps the token. */
 export type WebLoginResponse =
-  | Omit<Extract<LoginResponse, { requiresTwoFactor: false }>, "token">
+  | Omit<Extract<LoginResponse, { requiresTwoFactor: false; token: string }>, "token">
+  | Extract<LoginResponse, { passwordUpdateRequired: true }>
   | Extract<LoginResponse, { requiresTwoFactor: true }>;
 export type WebSignupOwnerResponse = Omit<SignupOwnerResponse, "token">;
 

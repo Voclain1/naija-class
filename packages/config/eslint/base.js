@@ -213,6 +213,11 @@ export const baseConfig = [
       // the school id list (schools has no RLS); every read and delete of
       // report_exports goes through withTenant per school.
       "**/modules/reports/report-export-sweeper.service.ts",
+      // staged-files-sweeper.service.ts — pre-launch sweep (2026-10-19). Same
+      // category: a daily cron that iterates every school. basePrisma fetches
+      // ONLY the school id list; every read and delete of
+      // assignment_submission_files goes through withTenant per school.
+      "**/modules/assignments/staged-files-sweeper.service.ts",
       // parent-summaries.service.ts — Phase 5 / Slice 5. Same category again:
       // sweepWeeklySummaries is a weekly system cron that iterates every
       // ACTIVE school which has opted into parent summaries. basePrisma

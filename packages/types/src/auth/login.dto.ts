@@ -19,6 +19,18 @@ export type LoginInput = z.infer<typeof loginSchema>;
 // that token + a TOTP code to /auth/2fa/challenge to complete the flow.
 // Both branches share the same HTTP 200 status; the client branches on
 // `requiresTwoFactor`.
+//
+// A third branch (2026-10-19): the password was right but was set under the
+// older Phase 0 rules. No session is issued; `resetToken` is a single-use,
+// 15-minute password-reset token for POST /auth/reset-password, so the person
+// chooses a password under today's rules and then signs in with it.
 export type LoginResponse =
-  | { requiresTwoFactor: false; user: SignupOwnerUserDto; school: SignupOwnerSchoolDto; token: string }
+  | {
+      requiresTwoFactor: false;
+      passwordUpdateRequired?: false;
+      user: SignupOwnerUserDto;
+      school: SignupOwnerSchoolDto;
+      token: string;
+    }
+  | { requiresTwoFactor: false; passwordUpdateRequired: true; resetToken: string }
   | { requiresTwoFactor: true; challengeToken: string };

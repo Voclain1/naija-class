@@ -341,8 +341,12 @@ export class StoreService {
       const studentId = "studentId" in input ? (input.studentId ?? null) : null;
       const userId = "userId" in input ? (input.userId ?? null) : null;
       if (studentId) {
-        const student = await db.student.findUnique({ where: { id: studentId }, select: { id: true } });
+        const student = await db.student.findUnique({ where: { id: studentId }, select: { status: true } });
         if (!student) throw new NotFoundError("Student not found.");
+        // A child who has left is not billed (as transport, hostels and the library refuse).
+        if (input.kind === "SELL" && student.status !== "ACTIVE") {
+          throw new ConflictError("STUDENT_LEFT", "This student is no longer at the school.");
+        }
       }
       if (userId) {
         const user = await db.user.findUnique({ where: { id: userId }, select: { id: true } });
@@ -632,14 +636,11 @@ export class StoreService {
       if (!lines.some((l) => l.counted !== null)) {
         throw new ValidationError("NOTHING_COUNTED", "Enter at least one count before submitting.");
       }
+      await this.moveTake(db, id, ["OPEN"], { status: "SUBMITTED", submittedBy: authCtx.userId, submittedAt: new Date() });
       const live = await stockByVariant(db, lines.map((l) => l.variantId));
       for (const l of lines) {
         await db.storeStockTakeLine.update({ where: { id: l.id }, data: { expected: live.get(l.variantId)?.onHand ?? 0 } });
       }
-      await db.storeStockTake.update({
-        where: { id },
-        data: { status: "SUBMITTED", submittedBy: authCtx.userId, submittedAt: new Date() },
-      });
       await audit(db, authCtx, "store.stocktake.submit", "store_stock_take", id, reqCtx, {
         counted: lines.filter((l) => l.counted !== null).length,
       });
@@ -656,6 +657,10 @@ export class StoreService {
     await assertAnyOf(authCtx, "store.approve");
     return withTenant(authCtx.schoolId, async (db) => {
       const take = await this.takeIn(db, id, ["SUBMITTED"]);
+      // Claim the take before writing anything: a second approve (a double
+      // click) or a racing cancel then finds it no longer SUBMITTED. The ledger
+      // is append-only, so a doubled adjustment could not be taken back.
+      await this.moveTake(db, id, ["SUBMITTED"], { status: "APPROVED", decidedBy: authCtx.userId, decidedAt: new Date() });
       const lines = await db.storeStockTakeLine.findMany({
         where: { stockTakeId: id, counted: { not: null } },
         include: { variant: { select: { itemId: true } } },
@@ -679,10 +684,6 @@ export class StoreService {
         });
         adjusted++;
       }
-      await db.storeStockTake.update({
-        where: { id },
-        data: { status: "APPROVED", decidedBy: authCtx.userId, decidedAt: new Date() },
-      });
       await audit(db, authCtx, "store.stocktake.approve", "store_stock_take", id, reqCtx, { adjusted });
       return this.stockTakeDto(db, id);
     });
@@ -692,13 +693,21 @@ export class StoreService {
     await assertAnyOf(authCtx, "store.manage", "store.approve");
     return withTenant(authCtx.schoolId, async (db) => {
       await this.takeIn(db, id, ["OPEN", "SUBMITTED"]);
-      await db.storeStockTake.update({
-        where: { id },
-        data: { status: "CANCELLED", decidedBy: authCtx.userId, decidedAt: new Date() },
-      });
+      await this.moveTake(db, id, ["OPEN", "SUBMITTED"], { status: "CANCELLED", decidedBy: authCtx.userId, decidedAt: new Date() });
       await audit(db, authCtx, "store.stocktake.cancel", "store_stock_take", id, reqCtx, {});
       return this.stockTakeDto(db, id);
     });
+  }
+
+  /** Moves a take on only if it is still in one of `allowed`: the check and the write are one statement. */
+  private async moveTake(
+    db: PrismaClient,
+    id: string,
+    allowed: StoreStockTakeStatus[],
+    data: { status: StoreStockTakeStatus; submittedBy?: string; submittedAt?: Date; decidedBy?: string; decidedAt?: Date },
+  ): Promise<void> {
+    const moved = await db.storeStockTake.updateMany({ where: { id, status: { in: allowed } }, data });
+    if (moved.count !== 1) throw new ValidationError("STOCK_TAKE_STATE", "This stock take has just been changed by someone else.");
   }
 
   private async takeIn(db: PrismaClient, id: string, allowed: StoreStockTakeStatus[]) {

@@ -51,6 +51,16 @@ export async function blockedAddresses(db: Db, schoolId: string, emails: string[
   return out;
 }
 
+/**
+ * An address that hard-bounced or marked the school's mail as spam (scope
+ * ALL). Every non-essential email to it stops, not just announcements:
+ * message alerts and admission updates check this too.
+ */
+export async function isSuppressedForAll(db: Db, schoolId: string, email: string): Promise<boolean> {
+  const row = await db.emailSuppression.findFirst({ where: { schoolId, email: email.trim().toLowerCase(), scope: "ALL" }, select: { email: true } });
+  return row !== null;
+}
+
 // ─── The unsubscribe link ──────────────────────────────────────────────────
 //
 // An HMAC of (school, address) under the result-checker key, with a label of

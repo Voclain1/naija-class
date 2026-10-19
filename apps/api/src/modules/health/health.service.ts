@@ -412,14 +412,7 @@ export class HealthService {
     if (row.withdrawnAt) throw new ConflictError("VACCINATION_WITHDRAWN", "That vaccination was withdrawn.");
 
     await this.storage.put(authCtx.schoolId, { kind: "health-document", documentId: id, ext: kind.ext }, file.buffer, kind.mime);
-    if (row.documentExt && row.documentExt !== kind.ext) {
-      await this.storage.delete(authCtx.schoolId, {
-        kind: "health-document",
-        documentId: id,
-        ext: row.documentExt as PrivateFileExt,
-      });
-    }
-    return withTenant(authCtx.schoolId, async (db) => {
+    const profile = await withTenant(authCtx.schoolId, async (db) => {
       await db.healthVaccination.update({ where: { id }, data: { documentExt: kind.ext, documentSize: file.buffer.length } });
       await db.auditLog.create({
         data: {
@@ -434,6 +427,16 @@ export class HealthService {
       });
       return this.readProfile(db, row.studentId);
     });
+    // Only now that the row points at the new file: deleting first would leave
+    // a dead link if the update failed.
+    if (row.documentExt && row.documentExt !== kind.ext) {
+      await this.storage.delete(authCtx.schoolId, {
+        kind: "health-document",
+        documentId: id,
+        ext: row.documentExt as PrivateFileExt,
+      });
+    }
+    return profile;
   }
 
   /** GET /health/vaccinations/:id/document — a five-minute link, audited. */

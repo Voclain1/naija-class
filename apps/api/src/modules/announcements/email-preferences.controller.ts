@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Headers, HttpCode, Ip, Post, Query, Req, UseGuards } from "@nestjs/common";
-import { Throttle } from "@nestjs/throttler";
+import { SkipThrottle, Throttle } from "@nestjs/throttler";
 import type { Request } from "express";
 
 import {
@@ -81,7 +81,10 @@ export class PortalEmailPreferencesController {
 export class ResendWebhookController {
   constructor(private readonly service: EmailPreferencesService) {}
 
+  // Resend sends a burst of reports from a few addresses after a big send;
+  // the per-address limit would turn them away. The signature is the gate.
   @Post()
+  @SkipThrottle()
   @HttpCode(200)
   async receive(@Req() req: Request & { rawBody?: Buffer }, @Headers() headers: Record<string, string | string[] | undefined>): Promise<{ ok: true }> {
     await this.service.webhook(req.rawBody, headers);

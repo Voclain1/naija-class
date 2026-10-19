@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { basePrisma, withTenant } from "@school-kit/db";
@@ -55,7 +57,8 @@ describe("AuthService.login (Phase 0 Prompt 4)", () => {
     const before = Date.now();
     const input = loginSchema.parse({ email: testEmail, password: testPassword });
     const result = await service.login(input, ctx);
-    if (result.requiresTwoFactor) throw new Error("Expected a session, not a 2FA challenge");
+    if (result.requiresTwoFactor || result.passwordUpdateRequired) throw new Error("Expected a session, not a 2FA challenge");
+    if (result.passwordUpdateRequired) throw new Error("Expected a session, not a password update");
 
     expect(result.user.id).toBe(testUserId);
     expect(result.user.schoolId).toBe(testSchoolId);
@@ -164,7 +167,43 @@ describe("AuthService.login (Phase 0 Prompt 4)", () => {
   it("email is case-insensitive at the boundary (Zod lowercases)", async () => {
     const input = loginSchema.parse({ email: testEmail.toUpperCase(), password: testPassword });
     const result = await service.login(input, ctx);
-    if (result.requiresTwoFactor) throw new Error("Expected a session, not a 2FA challenge");
+    if (result.requiresTwoFactor || result.passwordUpdateRequired) throw new Error("Expected a session, not a 2FA challenge");
     expect(result.user.id).toBe(testUserId);
+  });
+
+  it("a right password set under the older rules gets a reset token, not a session; the new password then signs in", async () => {
+    const weak = "oldpass123"; // Phase 0 rules: a letter and a digit
+    await withTenant(testSchoolId, async (db) =>
+      db.user.update({ where: { id: testUserId }, data: { passwordHash: await password.hashPassword(weak) } }),
+    );
+    const sessionsBefore = await withTenant(testSchoolId, (db) => db.session.count({ where: { userId: testUserId } }));
+
+    const result = await service.login(loginSchema.parse({ email: testEmail, password: weak }), ctx);
+    if (result.requiresTwoFactor || !result.passwordUpdateRequired) throw new Error("Expected a password update");
+    expect(result.resetToken).toMatch(/^[A-Za-z0-9_-]{20,}$/);
+    expect(await withTenant(testSchoolId, (db) => db.session.count({ where: { userId: testUserId } }))).toBe(sessionsBefore);
+    const audit = await withTenant(testSchoolId, (db) =>
+      db.auditLog.findFirst({ where: { userId: testUserId, action: "auth.password_update_required" } }),
+    );
+    expect(audit).not.toBeNull();
+    expect(JSON.stringify(audit?.metadata)).not.toContain(weak);
+
+    // A wrong password never reaches the check: same INVALID_CREDENTIALS as ever.
+    await expect(service.login(loginSchema.parse({ email: testEmail, password: "oldpass124" }), ctx)).rejects.toBeInstanceOf(
+      UnauthorizedError,
+    );
+
+    // The token is an ordinary single-use password-reset token, 15 minutes long.
+    // (Choosing the new password with it is POST /auth/reset-password, covered
+    // by auth.password-reset.spec.ts and the e2e sign-in spec.)
+    const hash = createHash("sha256").update(result.resetToken).digest("hex");
+    const row = await withTenant(testSchoolId, (db) => db.passwordResetToken.findFirst({ where: { tokenHash: hash } }));
+    expect(row?.userId).toBe(testUserId);
+    expect(row?.usedAt).toBeNull();
+    expect(row!.expiresAt.getTime() - Date.now()).toBeLessThanOrEqual(15 * 60 * 1000);
+
+    await withTenant(testSchoolId, async (db) =>
+      db.user.update({ where: { id: testUserId }, data: { passwordHash: await password.hashPassword(testPassword) } }),
+    );
   });
 });

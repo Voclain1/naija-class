@@ -1,5 +1,5 @@
 import { InjectQueue } from "@nestjs/bullmq";
-import { Injectable, Logger } from "@nestjs/common";
+import { Injectable, Logger, Optional } from "@nestjs/common";
 import { Queue } from "bullmq";
 
 import {
@@ -24,6 +24,7 @@ import {
 } from "@school-kit/types";
 
 import { AiGenerationService } from "../../common/ai/ai-generation.service.js";
+import { AiJobRegistry } from "../../common/ai/ai-jobs.registry.js";
 import { AI_ERROR_CODES } from "../../common/ai/ai.constants.js";
 import type { AuthContext } from "../../common/auth/auth-context.js";
 import { assertUserActiveAndHasOneOf, getActiveUserRoleKeys } from "../../common/auth/role-check.js";
@@ -122,7 +123,13 @@ export class AssignmentFeedbackService {
   constructor(
     private readonly ai: AiGenerationService,
     @InjectQueue(AI_QUEUE) private readonly queue: Queue,
-  ) {}
+  
+    // The AI queue's one worker runs this feature's jobs through the registry
+    // (common/ai). Optional so unit specs can build the service bare.
+    @Optional() registry?: AiJobRegistry,
+  ) {
+    registry?.register<AssignmentFeedbackJobData>(AI_JOB_ASSIGNMENT_FEEDBACK, { required: ["schoolId", "userId", "submissionId"], run: (d) => this.generate(d) });
+  }
 
   // =========================================================================
   // GET/PUT /assignments/ai-drafts/settings — the school's own switch
@@ -373,18 +380,32 @@ export class AssignmentFeedbackService {
 
   private async enqueue(authCtx: AuthContext, submissionIds: readonly string[]): Promise<void> {
     const stamp = String(Date.now());
-    for (const submissionId of submissionIds) {
+    for (const [i, submissionId] of submissionIds.entries()) {
       // Ids only: the answer is read when the job runs (allowlist rule 1).
       const data: AssignmentFeedbackJobData = { schoolId: authCtx.schoolId, userId: authCtx.userId, submissionId };
-      await this.queue.add(AI_JOB_ASSIGNMENT_FEEDBACK, data, {
-        jobId: queueJobId("assignment-feedback", submissionId, stamp),
-        // Each retry is a paid call; a failure is shown to the teacher, who can
-        // press again. One attempt.
-        attempts: 1,
-        removeOnComplete: { age: 3600 },
-        removeOnFail: { age: 86400 },
-      });
+      try {
+        await this.add(data, stamp);
+      } catch (err) {
+        // The drafts were committed PENDING before this; left so, they would
+        // block "Draft" until discarded by hand. Mark the rest FAILED, so the
+        // teacher sees the failure and can press again.
+        for (const rest of submissionIds.slice(i)) {
+          await this.fail({ schoolId: authCtx.schoolId, userId: authCtx.userId, submissionId: rest }, "Could not start the draft. Try again.");
+        }
+        throw err;
+      }
     }
+  }
+
+  private async add(data: AssignmentFeedbackJobData, stamp: string): Promise<void> {
+    await this.queue.add(AI_JOB_ASSIGNMENT_FEEDBACK, data, {
+      jobId: queueJobId("assignment-feedback", data.submissionId, stamp),
+      // Each retry is a paid call; a failure is shown to the teacher, who can
+      // press again. One attempt.
+      attempts: 1,
+      removeOnComplete: { age: 3600 },
+      removeOnFail: { age: 86400 },
+    });
   }
 
   private async fail(job: AssignmentFeedbackJobData, failure: string): Promise<void> {

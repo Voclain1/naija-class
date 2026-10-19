@@ -74,6 +74,8 @@ export const queryKeys = {
   // up resumption day offline is exactly who the persisted cache is for. The
   // window is part of the key so a cached window is never shown for another.
   guardianCalendar: (from: string, to: string) => ["calendar", from, to] as const,
+  // The school store's price list for parents: school-wide, not per child.
+  storePrices: () => ["store-prices"] as const,
   myCalendar: (from: string, to: string) => ["me", "calendar", from, to] as const,
 
   // Phase 8 / CP4 — the class timetable families see: the school's PUBLISHED

@@ -66,7 +66,16 @@ export async function attachMessageImages(db: Db, schoolId: string, uploader: Up
   const ids = [...new Set(imageIds)];
   if (ids.length === 0) return;
   const done = await db.messageImage.updateMany({
-    where: { id: { in: ids }, schoolId, uploaderKind: uploader.kind, uploaderId: uploader.id, messageId: null },
+    // Staged within the last 20 hours: the nightly sweep deletes photos staged a
+    // day ago, and one attached as it runs would point at a deleted file.
+    where: {
+      id: { in: ids },
+      schoolId,
+      uploaderKind: uploader.kind,
+      uploaderId: uploader.id,
+      messageId: null,
+      createdAt: { gt: new Date(Date.now() - 20 * 60 * 60 * 1000) },
+    },
     data: { messageId },
   });
   if (done.count !== ids.length) throw new ValidationError("INVALID_IMAGE", "A photo could not be attached. Add it again.");

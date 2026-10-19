@@ -38,6 +38,7 @@ const AUDIT = {
   void: "charge.void",
   bill: "charge.bill",
   release: "charge.release",
+  reattach: "charge.reattach",
 } as const;
 
 /** Who is acting, for the audit row. `userId` null only for system work. */
@@ -286,6 +287,41 @@ export class StudentChargeService {
   }
 
   // ─── Private ──────────────────────────────────────────────────────────────
+
+  /**
+   * A place (bus seat, bed) was removed after its charge was billed, then the
+   * student was put back for the same term. The billed charge outlived its
+   * removed source; it moves to the new one instead of a second charge being
+   * raised. One place per student per term makes any other live charge of this
+   * module for the student and term an orphan. True if one was moved.
+   */
+  async reattachOrphan(
+    db: PrismaClient,
+    actor: ChargeActor,
+    args: { studentId: string; termId: string; kind: StudentChargeKind } & ChargeSource,
+  ): Promise<boolean> {
+    const orphan = await db.studentCharge.findFirst({
+      where: {
+        schoolId: actor.schoolId,
+        studentId: args.studentId,
+        termId: args.termId,
+        kind: args.kind,
+        sourceModule: args.sourceModule,
+        sourceId: { not: args.sourceId },
+        status: "BILLED",
+      },
+      select: { id: true, sourceId: true, amount: true },
+    });
+    if (!orphan) return false;
+    await db.studentCharge.update({ where: { id: orphan.id }, data: { sourceId: args.sourceId } });
+    await audit(db, actor, AUDIT.reattach, orphan.id, {
+      studentId: args.studentId,
+      termId: args.termId,
+      amount: orphan.amount,
+      sourceModule: args.sourceModule,
+    });
+    return true;
+  }
 
   private async voidOpen(db: PrismaClient, actor: ChargeActor, id: string, reason: string): Promise<StudentChargeDto | null> {
     const { count } = await db.studentCharge.updateMany({

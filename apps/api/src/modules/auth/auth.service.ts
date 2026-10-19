@@ -9,6 +9,7 @@ import {
   ForbiddenError,
   GoneError,
   InternalError,
+  meetsPasswordPolicy,
   NotFoundError,
   UnauthorizedError,
   ValidationError,
@@ -54,6 +55,7 @@ const LOGOUT_AUDIT_ACTION = "auth.logout";
 const TOTP_ENABLE_AUDIT_ACTION = "auth.2fa.enable";
 const TOTP_DISABLE_AUDIT_ACTION = "auth.2fa.disable";
 const PASSWORD_RESET_REQUESTED_AUDIT_ACTION = "auth.password_reset_requested";
+const PASSWORD_UPDATE_REQUIRED_AUDIT_ACTION = "auth.password_update_required";
 const PASSWORD_RESET_AUDIT_ACTION = "auth.password_reset";
 
 const CHALLENGE_TTL_SECONDS = 300;
@@ -89,6 +91,8 @@ const SIGNUP_TRANSACTION_TIMEOUT_MS = 20_000;
 // unused in an inbox is a bigger compromise window than a short one that
 // just gets re-requested if missed.
 const PASSWORD_RESET_TTL_MS = 1000 * 60 * 60; // 1 hour
+// Sign-in that finds an old-rules password: the person is at the screen now.
+const PASSWORD_UPDATE_TTL_MS = 1000 * 60 * 15;
 
 // Same purpose as users.service.ts's webBaseUrl() / commit-teachers.row.ts's
 // copy — duplicated rather than shared, matching this codebase's existing
@@ -368,6 +372,16 @@ export class AuthService {
       throw new ForbiddenError("STAFF_MOBILE_DISABLED", "Staff mobile access is not enabled for this school.");
     }
 
+    // A right password set under the older Phase 0 rules (2026-10-19): no
+    // session. The person gets a single-use reset token instead and chooses a
+    // password under today's rules. Checked only after the password matched,
+    // so it tells nobody without the password anything about the account.
+    // Before 2FA: they will meet the second factor when they sign in again.
+    if (!meetsPasswordPolicy(input.password)) {
+      const resetToken = await this.issuePasswordUpdateToken(row.school_id, row.user_id, ctx);
+      return { requiresTwoFactor: false, passwordUpdateRequired: true, resetToken };
+    }
+
     if (totpEnabled) {
       // Issue a single-use, short-lived challenge token instead of a session.
       // The client must POST this token + a TOTP code to /auth/2fa/challenge.
@@ -433,6 +447,34 @@ export class AuthService {
     });
 
     return { requiresTwoFactor: false, user, school, token: rawToken };
+  }
+
+  /**
+   * A password-reset token for someone who has just proved their password, so
+   * that it can be replaced with one under today's rules. Same table and same
+   * POST /auth/reset-password as forgot-password; shorter-lived, and returned
+   * to the person instead of emailed.
+   */
+  private async issuePasswordUpdateToken(schoolId: string, userId: string, ctx: RequestContext): Promise<string> {
+    const rawToken = crypto.randomBytes(32).toString("base64url");
+    const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
+    await withTenant(schoolId, async (db) => {
+      await db.passwordResetToken.create({
+        data: { schoolId, userId, tokenHash, expiresAt: new Date(Date.now() + PASSWORD_UPDATE_TTL_MS) },
+      });
+      await db.auditLog.create({
+        data: {
+          schoolId,
+          userId,
+          action: PASSWORD_UPDATE_REQUIRED_AUDIT_ACTION,
+          entityType: "user",
+          entityId: userId,
+          ipAddress: ctx.ipAddress,
+          metadata: { userAgent: ctx.userAgent },
+        },
+      });
+    });
+    return rawToken;
   }
 
   async mobileLogin(input: StaffMobileLoginInput, ctx: RequestContext): Promise<LoginResponse> {

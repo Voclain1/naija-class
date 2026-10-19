@@ -236,6 +236,8 @@ export function guardianDestinations(): Destination[] {
     // Phase 9 / CP8.1 — private conversations with a teacher or the school.
     { key: "messages", label: "Messages", hint: "Write to a teacher or the school", icon: "chatbubbles-outline", group: "Your child", route: "/messages" },
     { key: "calendar", label: "School calendar", icon: "today-outline", group: "Calendar", route: "/calendar" },
+    // 2026-10-19 — what the school store sells and the price.
+    { key: "store", label: "School store prices", hint: "Uniforms, books and more", icon: "pricetags-outline", group: "Your child", route: "/store-prices" },
     // Phase 9 / CP11.1 — the announcement-email switch, as on the portal.
     { key: "settings", label: "Settings", hint: "Emails from the school", icon: "settings-outline", group: "Account", route: "/settings" },
   ];

@@ -82,3 +82,16 @@ export async function backdateLibraryLoan(schoolId: string, loanId: string, days
     db.libraryLoan.update({ where: { id: loanId }, data: { dueOn: new Date(`${due.toISOString().slice(0, 10)}T00:00:00.000Z`) } }),
   );
 }
+
+/**
+ * Gives a staff account the password "oldpass123", which meets only the older
+ * Phase 0 rules (a letter and a digit), as an account from before the stronger
+ * rules would have. The hash is precomputed (e2e has no argon2 of its own): an
+ * argon2id string carries its own salt and settings, so it verifies anywhere.
+ */
+export const OLD_RULES_PASSWORD = "oldpass123";
+const OLD_RULES_HASH = "$argon2id$v=19$m=65536,p=4,t=3$PiO6VWy9iPqkeDQNfOTryg$6G0mcG2D1SIUlorneBC5Rz0zUY9LRHhrNhv4GG49gZY";
+
+export async function setOldRulesPassword(schoolId: string, userId: string): Promise<void> {
+  await withTenant(schoolId, (db) => db.user.update({ where: { id: userId }, data: { passwordHash: OLD_RULES_HASH } }));
+}

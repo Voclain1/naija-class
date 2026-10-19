@@ -72,7 +72,7 @@ describe("HttpExceptionFilter — Sentry capture branching", () => {
     expect(status).toHaveBeenCalledWith(500);
     expect(captureException).toHaveBeenCalledTimes(1);
     expect(captureException).toHaveBeenCalledWith(err, {
-      extra: { method: "POST", url: "/api/v1/oops" },
+      extra: { method: "POST", route: "(unmatched)" },
     });
   });
 

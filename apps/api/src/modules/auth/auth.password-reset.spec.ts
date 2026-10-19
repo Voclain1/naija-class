@@ -148,7 +148,7 @@ describe("AuthService.forgotPassword / resetPassword", () => {
       // Establish a session that must be killed by the reset.
       const loginInput = loginSchema.parse({ email: testEmail, password: originalPassword });
       const loginResult = await service.login(loginInput, ctx);
-      if (loginResult.requiresTwoFactor) throw new Error("Expected a session, not a 2FA challenge");
+      if (loginResult.requiresTwoFactor || loginResult.passwordUpdateRequired) throw new Error("Expected a session, not a 2FA challenge");
       const sessionsBefore = await withTenant(testSchoolId, (db) =>
         db.session.count({ where: { userId: testUserId } }),
       );
@@ -185,7 +185,7 @@ describe("AuthService.forgotPassword / resetPassword", () => {
         loginSchema.parse({ email: testEmail, password: newPassword }),
         ctx,
       );
-      if (relogin.requiresTwoFactor) throw new Error("Expected a session, not a 2FA challenge");
+      if (relogin.requiresTwoFactor || relogin.passwordUpdateRequired) throw new Error("Expected a session, not a 2FA challenge");
       expect(relogin.user.id).toBe(testUserId);
 
       // Restore original password so later tests in this file keep working

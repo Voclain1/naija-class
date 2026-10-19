@@ -35,6 +35,8 @@ import { announcementEmailHtml, blockedAddresses, familyAddresses, lagosToday, u
 type Db = PrismaClient;
 
 const BATCH = 100;
+/** A row SENDING for longer than this was left by a worker that died mid-batch. */
+const STUCK_SENDING_MS = 15 * 60 * 1000;
 const OWNER_ADMIN = ["owner", "admin"] as const;
 
 export interface AnnouncementEmailJobData {
@@ -100,6 +102,14 @@ export class AnnouncementEmailService {
     const channels = await this.preferences.getEnabledChannels(schoolId);
     const ctx = await this.prepare(schoolId, announcementId, channels.email);
     if (!ctx) return;
+    // Rows a dead worker left SENDING: Resend may or may not have taken them,
+    // so they are marked FAILED rather than sent again (no one emailed twice).
+    await withTenant(schoolId, (db) =>
+      db.announcementEmail.updateMany({
+        where: { schoolId, announcementId, status: "SENDING", updatedAt: { lt: new Date(Date.now() - STUCK_SENDING_MS) } },
+        data: { status: "FAILED" },
+      }),
+    );
     for (;;) {
       const claimed = await withTenant(schoolId, async (db) => {
         const rows = await db.announcementEmail.findMany({
@@ -113,8 +123,9 @@ export class AnnouncementEmailService {
         return rows;
       });
       if (claimed.length === 0) return;
+      let ids: string[];
       try {
-        const ids = await this.email.sendBatch(
+        ids = await this.email.sendBatch(
           claimed.map((r) => {
             const links = unsubscribeLinks(schoolId, ctx.slug, r.email);
             return {
@@ -130,19 +141,22 @@ export class AnnouncementEmailService {
           }),
           { schoolName: ctx.schoolName, purpose: "announcement" },
         );
-        const now = new Date();
-        await withTenant(schoolId, async (db) => {
-          for (const [i, r] of claimed.entries()) {
-            await db.announcementEmail.update({ where: { id: r.id }, data: { status: "SENT", providerId: ids[i]!, sentAt: now } });
-          }
-        });
       } catch {
         // Logged (count only) by EmailService. These addresses are not tried
         // again: a half-accepted batch must not email anyone twice.
         await withTenant(schoolId, (db) =>
           db.announcementEmail.updateMany({ where: { id: { in: claimed.map((r) => r.id) }, status: "SENDING" }, data: { status: "FAILED" } }),
         );
+        continue;
       }
+      // Outside the try: Resend has accepted these, so a failure here must
+      // not mark them FAILED (their delivery reports would then be ignored).
+      const now = new Date();
+      await withTenant(schoolId, async (db) => {
+        for (const [i, r] of claimed.entries()) {
+          await db.announcementEmail.update({ where: { id: r.id }, data: { status: "SENT", providerId: ids[i]!, sentAt: now } });
+        }
+      });
     }
   }
 

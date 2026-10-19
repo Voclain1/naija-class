@@ -84,14 +84,17 @@ export class HttpExceptionFilter implements ExceptionFilter {
     // Sending modelled 4xx errors would flood the dashboard with normal
     // validation / not-found noise; we want only what genuinely surprised us.
     // captureException is a documented no-op when SENTRY_DSN_API is unset.
+    // The route template, not the URL: paths and query strings can carry an
+    // unsubscribe token and a parent's email, or an admissions tracking token.
+    const route = routeTemplate(req);
     Sentry.captureException(exception, {
       extra: {
         method: req.method,
-        url: req.originalUrl,
+        route,
       },
     });
     this.logger.error(
-      `Unhandled exception on ${req.method} ${req.originalUrl}`,
+      `Unhandled exception on ${req.method} ${route}`,
       exception instanceof Error ? exception.stack : String(exception),
     );
     res.status(500).json({

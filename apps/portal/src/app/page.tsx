@@ -156,6 +156,9 @@ export default function DashboardPage() {
           Messages
           {unreadMessages > 0 ? ` (${unreadMessages} new)` : ""} →
         </Link>
+        <Link href="/store" className="text-sm font-medium text-primary hover:underline">
+          School store prices →
+        </Link>
         <Link href="/settings" className="text-sm font-medium text-primary hover:underline">
           Settings →
         </Link>
