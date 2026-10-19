@@ -265,6 +265,13 @@ export const baseConfig = [
       // learn which tenant a public request is for; every read and write
       // after that goes through withTenant.
       "**/modules/admissions/admissions-public.service.ts",
+      // id-cards.service.ts — the PUBLIC QR check and the card's school
+      // details (2026-10-19, docs/modules/id-cards-and-store.md §3). Same
+      // category: its only basePrisma reads are `schools` (non-RLS), by slug
+      // to learn the tenant a scanned code names, and by id for the name,
+      // address, phone and logo printed on the card. Every card, student and
+      // staff read goes through withTenant.
+      "**/modules/id-cards/id-cards.service.ts",
       // admissions-purge.service.ts — the nightly NDPR purge (CP7.1). Same
       // category as the sweeps above: basePrisma fetches ONLY the school id
       // list; every read and delete goes through withTenant per school.
