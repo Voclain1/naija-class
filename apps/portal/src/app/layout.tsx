@@ -37,7 +37,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
       <body
-        className={`${dmSans.variable} schoolkit-surface min-h-screen bg-background font-sans antialiased`}
+        className={`${dmSans.variable} schoolkit-surface min-h-screen bg-background font-sans`}
       >
         {children}
       </body>

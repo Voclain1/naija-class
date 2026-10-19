@@ -5,6 +5,9 @@
  * by their document renderers. No layout, visibility, selection or data rules. */
 @media screen {
   .schoolkit-surface {
+    /* A modest variable-font weight keeps small body copy firm without
+     * competing with explicit medium/semibold labels or display headings. */
+    font-weight: 450;
     --surface-radius: 1.35rem;
     --surface-shadow: 0 3px 12px -8px hsl(var(--foreground) / .16);
   }

@@ -33,7 +33,7 @@
     --secondary: 40 74% 53%; /* Gold Spark #E0A52E — used sparingly per the mockup */
     --secondary-foreground: 198 42% 13%;
     --muted: 150 12% 93%;
-    --muted-foreground: 198 15% 40%;
+    --muted-foreground: 198 18% 32%;
     --accent: 155 25% 92%;
     --accent-foreground: 198 42% 13%;
     /* Darkened so `text-destructive` on the existing destructive/5 banner
@@ -68,7 +68,7 @@
     --secondary: 40 74% 53%; /* Gold Spark, unchanged — reads fine on dark too */
     --secondary-foreground: 198 42% 10%;
     --muted: 198 25% 18%;
-    --muted-foreground: 45 12% 65%;
+    --muted-foreground: 45 12% 75%;
     --accent: 198 25% 20%;
     --accent-foreground: 45 20% 92%;
     /* In dark mode the alert text needs the opposite polarity: this light red

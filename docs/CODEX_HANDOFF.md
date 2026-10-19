@@ -488,3 +488,5 @@ Code, tell it explicitly: "read `docs/CODEX_HANDOFF.md`'s Latest state
 section and recent git log, then update your memory." Claude Code's memory
 system will not automatically know what Codex did in the interim — it only
 captures what happens in its own conversations.
+
+Typography follow-up (2026-10-19): body contrast strengthened; web/portal body weight 450, native body Medium. See journal.

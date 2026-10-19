@@ -48,7 +48,7 @@ export const colors = {
     card: "#FFFFFF",
     foreground: palette.ink,
     /** De-emphasised text — captions, "as of" timestamps. */
-    mutedForeground: "#5B6B72",
+    mutedForeground: "#43565F",
     primary: palette.deepEmerald,
     primaryForeground: palette.paper,
     secondary: palette.goldSpark,
@@ -70,7 +70,7 @@ export const colors = {
     tileGold: "#363120",
     card: "#132228",
     foreground: "#E8EDEE",
-    mutedForeground: "#9AAAB0",
+    mutedForeground: "#B7C3C8",
     primary: palette.brightEmerald,
     primaryForeground: "#06231A",
     secondary: palette.goldSpark,
@@ -95,7 +95,7 @@ export type ThemeColors = (typeof colors)[ColorScheme];
  */
 export const fonts = {
   /** Hanken Grotesk — body text, labels, nav. */
-  sans: "HankenGrotesk_400Regular",
+  sans: "HankenGrotesk_500Medium",
   sansMedium: "HankenGrotesk_500Medium",
   sansSemibold: "HankenGrotesk_600SemiBold",
   /** Legacy display alias: headings and numerals now use the sans family. */
