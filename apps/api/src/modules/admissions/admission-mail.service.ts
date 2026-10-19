@@ -5,6 +5,7 @@ import { ADMISSION_ASSESSMENT_LABEL, formatSickbayDay, formatSickbayTime, type A
 
 import { EmailService } from "../../common/email/email.service.js";
 import { portalBaseUrl } from "../../common/portal-url.js";
+import { isSuppressedForAll } from "../announcements/announcement-email.shared.js";
 import { rebuildTrackingToken } from "./admission-tracking.js";
 import { escapeHtml } from "./admissions.shared.js";
 
@@ -53,6 +54,8 @@ export class AdmissionMailService {
       }));
       const { school, app } = found;
       if (!school || !app) return;
+      // An address that bounced or complained gets no more mail from the school.
+      if (await withTenant(schoolId, (db) => isSuppressedForAll(db, schoolId, app.guardianEmail))) return;
       const token = rebuildTrackingToken(applicationId, app.trackingTokenHash);
       const link = token ? `${portalBaseUrl()}/apply/${school.slug}/track/${token}` : null;
       const child = escapeHtml(app.childFirstName);

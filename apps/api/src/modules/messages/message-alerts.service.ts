@@ -8,6 +8,7 @@ import { portalBaseUrl } from "../../common/portal-url.js";
 import { redactPhone } from "../../common/redact.js";
 import { smsSenderFor } from "../../common/termii/sms-sender.js";
 import { normalizeNigerianPhone, TermiiService } from "../../common/termii/termii.service.js";
+import { isSuppressedForAll } from "../announcements/announcement-email.shared.js";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service.js";
 import { NotificationPreferencesService } from "../notifications/notification-preferences.service.js";
 import { holdersOf, lagosToday, recipientsOf } from "./messages.shared.js";
@@ -76,7 +77,9 @@ export class MessageAlertsService {
           select: { guardian: { select: { id: true, email: true, phone: true } } },
         });
         const school = await db.school.findUnique({ where: { id: schoolId }, select: { name: true, smsSenderId: true, smsSenderStatus: true } });
-        return { guardian: thread?.guardian ?? null, school };
+        const email = thread?.guardian.email;
+        const emailBlocked = email ? await isSuppressedForAll(db, schoolId, email) : false;
+        return { guardian: thread?.guardian ?? null, school, emailBlocked };
       });
       if (!ctx.guardian || !ctx.school) return "NONE";
       const { guardian, school } = ctx;
@@ -94,7 +97,7 @@ export class MessageAlertsService {
 
       const channels = await this.preferences.getEnabledChannels(schoolId);
       const link = `${portalBaseUrl()}/messages/${threadId}`;
-      if (channels.email && guardian.email && this.email.isConfigured) {
+      if (channels.email && guardian.email && !ctx.emailBlocked && this.email.isConfigured) {
         try {
           await this.email.send({
             to: guardian.email,

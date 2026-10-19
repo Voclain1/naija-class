@@ -600,6 +600,12 @@ export class StudentsService {
         data: { status: "GRADUATED" },
       });
 
+      // As on withdrawal: bus places and beds in terms that start after the
+      // graduation are freed, and their waiting charges voided.
+      const leaver = { schoolId: authCtx.schoolId, userId: authCtx.userId, ipAddress: reqCtx.ipAddress };
+      await removeTransportAfterWithdrawal(db, leaver, id, graduatedAt);
+      await removeHostelBedsAfterWithdrawal(db, leaver, id, graduatedAt);
+
       await db.auditLog.create({
         data: {
           schoolId: authCtx.schoolId,

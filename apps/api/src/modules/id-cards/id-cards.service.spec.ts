@@ -176,6 +176,17 @@ describe("IdCardsService (integration)", () => {
     const mine = await service.mineAsStaff(ctx(A.schoolId, A.teacherId));
     expect(mine.card?.cardNumber).toBe("ID-2026-00002");
   });
+
+  it("a card whose holder has left scans as LEFT, though nobody cancelled it", async () => {
+    const card = await withTenant(A.schoolId, (db) => db.idCard.findFirstOrThrow({ where: { userId: A.teacherId, status: "ACTIVE" } }));
+    expect((await service.verify(idCardToken(A.slug, card.id))).verdict).toBe("VALID");
+    await withTenant(A.schoolId, (db) => db.user.update({ where: { id: A.teacherId }, data: { isActive: false } }));
+    try {
+      expect((await service.verify(idCardToken(A.slug, card.id))).verdict).toBe("LEFT");
+    } finally {
+      await withTenant(A.schoolId, (db) => db.user.update({ where: { id: A.teacherId }, data: { isActive: true } }));
+    }
+  });
 });
 
 describe("ID card rules", () => {
@@ -183,6 +194,8 @@ describe("ID card rules", () => {
     expect(verdictFor("ACTIVE", "2027-07-31", "2027-07-31")).toBe("VALID");
     expect(verdictFor("ACTIVE", "2027-07-31", "2027-08-01")).toBe("EXPIRED");
     expect(verdictFor("CANCELLED", "2099-01-01", "2027-01-01")).toBe("CANCELLED");
+    expect(verdictFor("ACTIVE", "2099-01-01", "2027-01-01", false)).toBe("LEFT");
+    expect(verdictFor("REPLACED", "2099-01-01", "2027-01-01", false)).toBe("REPLACED");
   });
 
   it("numbers by session year and running count; Lagos date is UTC+1", () => {

@@ -173,6 +173,17 @@ describe("StoreService (integration)", () => {
       ).rejects.toBeInstanceOf(ValidationError);
     });
 
+    it("a child who has left cannot be sold to", async () => {
+      await withTenant(A.schoolId, (db) => db.student.update({ where: { id: A.child }, data: { status: "WITHDRAWN" } }));
+      try {
+        await expect(
+          store.record(ctx(A.schoolId, A.bursarId), { kind: "SELL", variantId: blazer.size10, quantity: 1, studentId: A.child }, reqCtx),
+        ).rejects.toMatchObject({ code: "STUDENT_LEFT" });
+      } finally {
+        await withTenant(A.schoolId, (db) => db.student.update({ where: { id: A.child }, data: { status: "ACTIVE" } }));
+      }
+    });
+
     it("the bursar cannot change items or receive stock", async () => {
       await expect(store.updateItem(ctx(A.schoolId, A.bursarId), blazer.id, { reorderLevel: 1 }, reqCtx)).rejects.toBeInstanceOf(ForbiddenError);
       await expect(
@@ -220,8 +231,16 @@ describe("StoreService (integration)", () => {
 
     it("the storekeeper cannot approve their own count; the bursar can", async () => {
       await expect(store.approveStockTake(ctx(A.schoolId, A.keeperId), takeId, reqCtx)).rejects.toBeInstanceOf(ForbiddenError);
-      const approved = await store.approveStockTake(ctx(A.schoolId, A.bursarId), takeId, reqCtx);
+      // A double click: two approves at once adjust the stock once, not twice.
+      const both = await Promise.allSettled([
+        store.approveStockTake(ctx(A.schoolId, A.bursarId), takeId, reqCtx),
+        store.approveStockTake(ctx(A.schoolId, A.bursarId), takeId, reqCtx),
+      ]);
+      expect(both.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+      const approved = (both.find((r) => r.status === "fulfilled") as PromiseFulfilledResult<{ status: string }>).value;
       expect(approved.status).toBe("APPROVED");
+      const adjusts = await withTenant(A.schoolId, (db) => db.storeMovement.count({ where: { stockTakeId: takeId } }));
+      expect(adjusts).toBe(1);
       const item = await store.getItem(ctx(A.schoolId, A.keeperId), blazer.id);
       expect(item.variants.find((v) => v.id === blazer.size10)!.onHand).toBe(3);
       expect(item.movements[0]).toMatchObject({ kind: "ADJUST", quantity: -2 });

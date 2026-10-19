@@ -123,7 +123,12 @@ export class TransportService {
       const existing = await db.transportVehicle.findFirst({ where: { id, schoolId: authCtx.schoolId }, include: { routes: { select: { id: true } } } });
       if (!existing) throw new NotFoundError("Vehicle not found.");
       if (input.seats !== undefined && input.seats < existing.seats) {
-        for (const route of existing.routes) await assertFits(db, authCtx.schoolId, route.id, input.seats);
+        // Lock each route first (in id order, as everywhere), so a child
+        // placed at the same moment cannot slip past the smaller count.
+        for (const route of [...existing.routes].sort((a, b) => a.id.localeCompare(b.id))) {
+          await lockRoute(db, authCtx.schoolId, route.id);
+          await assertFits(db, authCtx.schoolId, route.id, input.seats);
+        }
       }
       const row = await uniqueOr("VEHICLE_EXISTS", "A vehicle with this plate number is already recorded.", () =>
         db.transportVehicle.update({

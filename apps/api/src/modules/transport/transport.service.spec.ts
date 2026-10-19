@@ -324,6 +324,13 @@ describe("TransportService (integration)", () => {
       await invoices.generateForArm(ctx(A.schoolId, A.bursarId), { termId: A.termId, classArmId: A.armId }, reqCtx);
       await transport.removePlace(admin(A), pb.id, reqCtx);
       expect((await chargesOf(A, billed)).map((c) => c.status)).toEqual(["BILLED"]);
+
+      // Put back the same term by mistake-and-undo: the billed charge follows
+      // the new place; the family is not billed a second time.
+      const back = await place(A, billed, r);
+      const after = await chargesOf(A, billed);
+      expect(after.map((c) => c.status)).toEqual(["BILLED"]);
+      expect(after[0]!.sourceId).toBe(back.id);
     });
   });
 
