@@ -174,3 +174,95 @@ is now a two-page section. Old names stay as search words in **Find a page**
   (items, receiving, issuing, stock takes, assets). The **bursar** sees stock
   value and reports, sells to students (billing) and approves stock-take
   adjustments, but does not edit items. **Owner and admin** have full control.
+
+## 4a. As built (ST, 2026-10-19)
+
+**Data.** Migration `20261115120000_store`:
+- `store_items`, `store_item_variants`, `store_movements`,
+  `store_stock_takes`, `store_stock_take_lines`, `fixed_assets` and
+  `fixed_asset_events`, every one under FORCE RLS `tenant_isolation`. Child
+  rows reference `(school_id, id)` of their parent, so a row cannot point
+  across schools.
+- `STORE` is added to `StudentChargeKind` (shown as "School store").
+- Item codes and asset tags are unique per school, ignoring case. There is at
+  most one live (open or submitted) stock take per school.
+
+**Stock.** Stock lives on the variant (size). An item without sizes has one
+unnamed variant. Adding the first size renames that variant, so stock already
+received keeps its place. On hand is the sum of movement quantities. Value is
+on hand × the weighted average cost of every RECEIVE that carried a cost.
+
+**Ledger rules.**
+- `store_movements` is append-only. A trigger refuses UPDATE and DELETE,
+  except while a school is being deleted (`schools.deletion_started_at`).
+- CHECKs: RECEIVE and RETURN are positive, ISSUE, SELL and WRITE_OFF are
+  negative, ADJUST is either. A SELL needs a student, a price and a charge.
+  WRITE_OFF and ADJUST need a reason.
+- Every outgoing movement locks its variant row (`FOR UPDATE`) and refuses
+  to take stock below zero (`NOT_ENOUGH_STOCK`).
+- A sale raises a student charge through `StudentChargeService.raise` in the
+  same transaction. The charge has kind `STORE`, `sourceModule` `store` and
+  the movement's id as `sourceId`, and is billed for the current term
+  (`chargeTermFor`). It rides on the term invoice or a supplementary one, like
+  every other charge.
+- **A return gives no refund.** Taking back a sold item puts it back in
+  stock and nothing else. If the family is owed money, the bursar voids the
+  charge if it has not been billed, or records a credit through Bursary.
+  Refunds are deliberately left to Bursary, not the Store.
+
+**Stock takes.** A stock take is started with one line per active variant.
+Counts are saved, then the take is submitted, which freezes each line's
+expected stock. Approving it (`store.approve`) writes one ADJUST movement per
+counted line that differs (counted − expected at submission). Anything issued
+or received between submission and approval is therefore kept, not undone.
+Uncounted lines change nothing. A take can be cancelled until it is approved.
+
+**Assets.** The register keeps tag, category, location, holder (a member of
+staff or free text), condition, status, purchase date, cost, serial number and
+supplier. Every change is written to `fixed_asset_events`: ADDED, MOVED,
+ASSIGNED, CONDITION, STATUS, EDITED or DISPOSED, with an optional note. A
+disposed asset is frozen. The register hides disposed assets unless that
+status is chosen.
+
+**Routes** (all under `/api/v1`):
+
+| Route | Permission |
+|---|---|
+| `GET /store/items` (`?q=&category=&low=true&includeInactive=true`), `GET /store/items/:id` | `store.read` |
+| `POST /store/items`, `PATCH /store/items/:id`, `POST /store/items/:id/variants`, `PATCH /store/variants/:id` | `store.manage` |
+| `POST /store/movements` | SELL: `store.sell`. Everything else: `store.manage` |
+| `GET /store/movements` (`?itemId=&kind=&from=&to=`) | `store.read` |
+| `GET /store/people` (student or staff search for the forms) | `store.manage` or `store.sell` |
+| `GET /store/stock-takes`, `GET /store/stock-takes/:id` | `store.read` |
+| `POST /store/stock-takes`, `PUT …/:id/counts`, `POST …/:id/submit` | `store.manage` |
+| `POST …/:id/approve` | `store.approve` |
+| `POST …/:id/cancel` | `store.manage` or `store.approve` |
+| `GET /store/reports/stock`, `GET /store/reports/sales` (`?from=&to=`) | `store.read` |
+| `GET /assets`, `GET /assets/:id` | `asset.read` |
+| `POST /assets`, `PATCH /assets/:id`, `POST /assets/:id/dispose` | `asset.manage` |
+
+Audited as `store.item.create|update`, `store.variant.add|update`,
+`store.movement.<kind>`, `store.stocktake.start|submit|approve|cancel`, and
+`asset.create|update|dispose`.
+
+**Who holds what.**
+
+| Role | Permissions |
+|---|---|
+| Owner | everything (`*`) |
+| Admin | all six store and asset permissions |
+| Storekeeper (new) | `store.read`, `store.manage`, `asset.read`, `asset.manage`, `export.table` |
+| Bursar | `store.read`, `store.sell`, `store.approve`, `asset.read` |
+
+A storekeeper signs in to the Store (`/store`). The role is offered in
+**Staff → Invite staff**.
+
+**Screens.**
+- Web: **Facilities → Store** (`/store`), with tabs for Items, Stock takes,
+  Reports and Assets. The item page has the movement buttons and the sizes.
+  Low rows are tinted and labelled **Low**. Lists export to Excel, CSV and
+  PDF.
+- Dashboard: a "Store items running low" line, linking to `/store?low=true`.
+- Staff app: a read-only **Store** screen with stock on hand and a
+  **Running low** filter. Receiving, selling and stock takes stay on the
+  website.

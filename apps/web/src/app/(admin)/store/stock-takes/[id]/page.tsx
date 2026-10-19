@@ -129,7 +129,7 @@ export default function StockTakePage() {
         <div className="rounded-md bg-amber-50 p-4 text-sm text-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
           {differences.length === 0
             ? "Every count matches the records. Approving changes nothing."
-            : `${differences.length} line${differences.length === 1 ? "" : "s"} differ from the records. Approving adjusts the stock to the count.`}
+            : `${differences.length === 1 ? "1 line differs" : `${differences.length} lines differ`} from the records. Approving adjusts the stock to the count.`}
           {!canApprove && " The bursar, an admin or the owner approves it."}
         </div>
       )}
