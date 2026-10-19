@@ -11,6 +11,7 @@ import { hasPermission } from "../../../src/lib/auth/permissions";
 import { useSession } from "../../../src/lib/auth/session";
 import { queryKeys } from "../../../src/lib/query/keys";
 import { spacing } from "../../../src/theme/tokens";
+import { WebsiteLink } from "../../../src/components/website-link";
 
 // Phase 9 / CP6b.2 — the hostels this person keeps (docs/modules/phase-9.md
 // §15 CP6b-D4): their own as house master, or every one for owner and admin.
@@ -19,6 +20,8 @@ export default function BoardingScreen() {
   const { status, principal, staff } = useSession();
   const authed = status === "authenticated" && principal === "staff";
   const canKeep = hasPermission(staff?.permissions ?? [], "hostel.house");
+  // CP11.2: hostels, rooms and beds are set up on the website.
+  const canManage = hasPermission(staff?.permissions ?? [], "hostel.manage");
   const schoolId = staff?.school.id ?? "";
   const userId = staff?.user.id ?? "";
 
@@ -61,6 +64,7 @@ export default function BoardingScreen() {
             />
           ))
         )}
+        {canManage ? <WebsiteLink path="/hostels" title="Hostels, rooms and beds on the website" /> : null}
       </ScrollView>
     </Screen>
   );

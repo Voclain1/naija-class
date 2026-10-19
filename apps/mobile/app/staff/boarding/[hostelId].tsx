@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { RefreshControl, ScrollView, StyleSheet, View } from "react-native";
-import { Redirect, Stack, useLocalSearchParams } from "expo-router";
+import { Alert, RefreshControl, ScrollView, StyleSheet, View } from "react-native";
+import { Redirect, Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   formatSickbayDay,
@@ -11,7 +11,7 @@ import {
   type HouseBoarderDto,
 } from "@school-kit/types";
 
-import { TextField } from "../../../src/components/form";
+import { ChoiceChips, TextField } from "../../../src/components/form";
 import { ListRow, ScreenHeader, Skeleton } from "../../../src/components/layout";
 import { LoadError } from "../../../src/components/load-error";
 import { Body, Button, Caption, Card, Label, Notice, Screen } from "../../../src/components/ui";
@@ -46,7 +46,10 @@ export default function HostelBoardingScreen() {
   const schoolId = staff?.school.id ?? "";
   const userId = staff?.user.id ?? "";
   const today = sickbayDayOf(new Date());
+  const router = useRouter();
   const [visiting, setVisiting] = useState<HouseBoarderDto | null>(null);
+  // CP11.2: past leave outs (refused, back, cancelled), as on the website.
+  const [exeatView, setExeatView] = useState<"open" | "past">("open");
   const [error, setError] = useState<string | null>(null);
 
   const boarders = useQuery({
@@ -61,10 +64,10 @@ export default function HostelBoardingScreen() {
     enabled: authed && !!hostelId,
   });
 
-  const exeatsKey = queryKeys.staffBoardingExeats(schoolId, userId, hostelId ?? "");
+  const exeatsKey = queryKeys.staffBoardingExeats(schoolId, userId, hostelId ?? "", exeatView);
   const exeats = useQuery({
     queryKey: exeatsKey,
-    queryFn: () => staffHostelExeats(hostelId ?? ""),
+    queryFn: () => staffHostelExeats(hostelId ?? "", exeatView),
     enabled: authed && !!hostelId,
   });
 
@@ -114,15 +117,30 @@ export default function HostelBoardingScreen() {
         ) : null}
 
         <Label>Leave out</Label>
+        <ChoiceChips
+          options={[
+            { value: "open" as const, label: "Open" },
+            { value: "past" as const, label: "Past" },
+          ]}
+          value={exeatView}
+          onChange={setExeatView}
+        />
+        {exeatView === "open" && hostelId ? (
+          <Button
+            variant="secondary"
+            title="Record a request taken by phone"
+            onPress={() => router.push({ pathname: "/staff/boarding/exeat-new", params: { hostelId } })}
+          />
+        ) : null}
         {exeats.isLoading ? (
           <Skeleton lines={2} />
         ) : exeats.isError ? (
           <LoadError error={exeats.error} what="leave outs" onRetry={() => void exeats.refetch()} />
         ) : (exeats.data ?? []).length === 0 ? (
-          <Body muted>No leave out waiting, approved or under way.</Body>
+          <Body muted>{exeatView === "open" ? "No leave out waiting, approved or under way." : "No past leave outs yet."}</Body>
         ) : (
           (exeats.data ?? []).map((e) => (
-            <ExeatCard key={e.id} exeat={e} onChanged={() => void queryClient.invalidateQueries({ queryKey: exeatsKey })} />
+            <ExeatCard key={e.id} exeat={e} onChanged={() => void queryClient.invalidateQueries({ queryKey: exeatsKey.slice(0, 5) })} />
           ))
         )}
 
@@ -187,7 +205,7 @@ function ExeatCard({ exeat: e, onChanged }: { exeat: HostelExeatDto; onChanged: 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function step(which: "approve" | "refuse" | "left" | "back", body: Record<string, string> = {}) {
+  async function step(which: "approve" | "refuse" | "left" | "back" | "cancel", body: Record<string, string> = {}) {
     setBusy(true);
     setError(null);
     try {
@@ -233,6 +251,20 @@ function ExeatCard({ exeat: e, onChanged }: { exeat: HostelExeatDto; onChanged: 
       ) : null}
       {e.status === "APPROVED" && !refusing ? <Button title="Has left" onPress={() => void step("left")} disabled={busy} /> : null}
       {e.status === "OUT" ? <Button title="Is back" onPress={() => void step("back")} disabled={busy} /> : null}
+      {/* CP11.2: cancel when the family no longer needs it, as on the website. */}
+      {(e.status === "REQUESTED" || e.status === "APPROVED") && !refusing ? (
+        <Button
+          variant="secondary"
+          title="Cancel it"
+          onPress={() =>
+            Alert.alert(`Cancel ${e.studentName}'s leave out?`, "Do this when the family no longer needs it.", [
+              { text: "Keep it", style: "cancel" },
+              { text: "Cancel it", style: "destructive", onPress: () => void step("cancel") },
+            ])
+          }
+          disabled={busy}
+        />
+      ) : null}
     </Card>
   );
 }

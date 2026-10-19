@@ -10,6 +10,7 @@ import { hasPermission } from "../../../src/lib/auth/permissions";
 import { useSession } from "../../../src/lib/auth/session";
 import { queryKeys } from "../../../src/lib/query/keys";
 import { spacing } from "../../../src/theme/tokens";
+import { WebsiteLink } from "../../../src/components/website-link";
 
 // Phase 9 / CP5.3 — the school's bus routes (docs/modules/phase-9.md §13): a
 // way to the day's list for each. Setting routes up stays on the website.
@@ -18,6 +19,8 @@ export default function TransportRoutesScreen() {
   const { status, principal, staff } = useSession();
   const authed = status === "authenticated" && principal === "staff";
   const canRead = hasPermission(staff?.permissions ?? [], "transport.read");
+  // CP11.2: routes, stops, vehicles and drivers are managed on the website.
+  const canManage = hasPermission(staff?.permissions ?? [], "transport.manage");
   const schoolId = staff?.school.id ?? "";
   const userId = staff?.user.id ?? "";
 
@@ -62,6 +65,7 @@ export default function TransportRoutesScreen() {
             />
           ))
         )}
+        {canManage ? <WebsiteLink path="/transport" title="Routes and vehicles on the website" /> : null}
       </ScrollView>
     </Screen>
   );
