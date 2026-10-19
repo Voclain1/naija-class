@@ -25,6 +25,7 @@ const ROLE_NAMES: Record<string, string> = {
   health_officer: "Health officer",
   librarian: "Librarian",
   house_master: "House master",
+  storekeeper: "Storekeeper",
 };
 
 const ADMISSION_SETTINGS_ROLES = ["owner", "admin"] as const;

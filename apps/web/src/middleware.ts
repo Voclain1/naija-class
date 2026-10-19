@@ -115,6 +115,8 @@ export const config = {
     "/transport/:path*",
     // The library (Phase 9 / CP6.1), added in the same PR as the pages.
     "/library/:path*",
+    // The school store (2026-10-19), added in the same PR as the pages.
+    "/store/:path*",
     // Hostels (Phase 9 / CP6b.1), added in the same PR as the pages.
     "/hostels/:path*",
     // Boarding (Phase 9 / CP6b.2), added in the same PR as the page.

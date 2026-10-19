@@ -29,8 +29,9 @@ export const inviteAdminSchema = z
     firstName: z.string().trim().min(1).max(60).optional(),
     lastName: z.string().trim().min(1).max(60).optional(),
     // health_officer added Phase 9 / CP3.1 (docs/modules/phase-9.md §10 CP3-D1);
-    // librarian Phase 9 / CP6.1 (§14 CP6-D8); house_master CP6b.1 (§15.8).
-    roleKey: z.enum(["admin", "bursar", "teacher", "health_officer", "librarian", "house_master"]).default("admin"),
+    // librarian Phase 9 / CP6.1 (§14 CP6-D8); house_master CP6b.1 (§15.8);
+    // storekeeper 2026-10-19 (docs/modules/id-cards-and-store.md §4).
+    roleKey: z.enum(["admin", "bursar", "teacher", "health_officer", "librarian", "house_master", "storekeeper"]).default("admin"),
     // 2026-10-19 — the monthly salary, kobo, optional. Held on the invitation
     // and moved to the staff member's saved salary when they accept, which
     // payroll then prefills from (finance/staff-salary.dto.ts). Only someone

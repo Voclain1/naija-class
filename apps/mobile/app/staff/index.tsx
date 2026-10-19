@@ -92,6 +92,11 @@ const ALERT_COPY: Record<DashboardAlertType, (count: number) => { label: string;
     label: `${n} flagged conversation${n === 1 ? "" : "s"}`,
     icon: "flag-outline",
   }),
+  // 2026-10-19 — store items at or below their reorder level.
+  low_stock_items: (n) => ({
+    label: `${n} store item${n === 1 ? " is" : "s are"} running low`,
+    icon: "cube-outline",
+  }),
 };
 
 export default function StaffDashboardScreen() {

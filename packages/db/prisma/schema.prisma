@@ -2518,6 +2518,7 @@ enum StudentChargeKind {
   LIBRARY_FINE
   HOSTEL
   OTHER
+  STORE
 }
 
 enum StudentChargeStatus {
@@ -5102,4 +5103,220 @@ model IdCard {
   @@index([studentId])
   @@index([userId])
   @@map("id_cards")
+}
+
+// ---------- The Store and fixed assets (2026-10-19, docs/modules/id-cards-and-store.md §4) ----------
+
+enum StoreCategory {
+  UNIFORM
+  TEXTBOOK
+  STATIONERY
+  LABORATORY
+  SPORTS
+  ICT
+  CLEANING
+  KITCHEN
+  OTHER
+}
+
+enum StoreMovementKind {
+  RECEIVE
+  ISSUE
+  SELL
+  RETURN
+  WRITE_OFF
+  ADJUST
+}
+
+enum StoreStockTakeStatus {
+  OPEN
+  SUBMITTED
+  APPROVED
+  CANCELLED
+}
+
+enum FixedAssetCategory {
+  ICT
+  FURNITURE
+  LABORATORY
+  SPORTS
+  AUDIO_VISUAL
+  VEHICLE
+  KITCHEN
+  BUILDING
+  OTHER
+}
+
+enum FixedAssetCondition {
+  NEW
+  GOOD
+  FAIR
+  POOR
+  BROKEN
+}
+
+enum FixedAssetStatus {
+  IN_USE
+  IN_STORE
+  UNDER_REPAIR
+  DISPOSED
+}
+
+enum FixedAssetEventKind {
+  ADDED
+  MOVED
+  ASSIGNED
+  CONDITION
+  STATUS
+  EDITED
+}
+
+// What the store holds. Stock is kept per variant (a size, or one unnamed).
+// The code is unique per school ignoring case (an expression index in SQL).
+model StoreItem {
+  id           String        @id @default(uuid())
+  schoolId     String        @map("school_id")
+  name         String
+  code         String?
+  category     StoreCategory
+  unit         String        @default("piece")
+  reorderLevel Int           @default(0) @map("reorder_level")
+  sellPrice    Int?          @map("sell_price") // kobo
+  notes        String?
+  isActive     Boolean       @default(true) @map("is_active")
+  createdBy    String        @map("created_by")
+  createdAt    DateTime      @default(now()) @map("created_at")
+  updatedAt    DateTime      @updatedAt @map("updated_at")
+
+  variants  StoreItemVariant[]
+  movements StoreMovement[]
+
+  @@unique([schoolId, id])
+  @@map("store_items")
+}
+
+model StoreItemVariant {
+  id        String   @id @default(uuid())
+  schoolId  String   @map("school_id")
+  itemId    String   @map("item_id")
+  label     String?
+  sellPrice Int?     @map("sell_price") // kobo, overrides the item's
+  isActive  Boolean  @default(true) @map("is_active")
+  sortOrder Int      @default(0) @map("sort_order")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  item          StoreItem             @relation(fields: [schoolId, itemId], references: [schoolId, id], onDelete: Cascade)
+  movements     StoreMovement[]
+  stockTakeRows StoreStockTakeLine[]
+
+  @@unique([schoolId, id])
+  @@map("store_item_variants")
+}
+
+// The ledger: append-only (a trigger refuses UPDATE and DELETE).
+model StoreMovement {
+  id              String            @id @default(uuid())
+  schoolId        String            @map("school_id")
+  variantId       String            @map("variant_id")
+  itemId          String            @map("item_id")
+  kind            StoreMovementKind
+  quantity        Int // signed: + in, - out
+  unitCost        Int?              @map("unit_cost") // kobo
+  unitPrice       Int?              @map("unit_price") // kobo
+  studentId       String?           @map("student_id")
+  userId          String?           @map("user_id")
+  department      String?
+  supplier        String?
+  reference       String?
+  reason          String?
+  studentChargeId String?           @map("student_charge_id")
+  stockTakeId     String?           @map("stock_take_id")
+  createdBy       String            @map("created_by")
+  createdAt       DateTime          @default(now()) @map("created_at")
+
+  variant StoreItemVariant @relation(fields: [schoolId, variantId], references: [schoolId, id])
+  item    StoreItem        @relation(fields: [schoolId, itemId], references: [schoolId, id])
+
+  @@index([variantId])
+  @@index([schoolId, createdAt])
+  @@index([studentId])
+  @@map("store_movements")
+}
+
+model StoreStockTake {
+  id          String               @id @default(uuid())
+  schoolId    String               @map("school_id")
+  status      StoreStockTakeStatus @default(OPEN)
+  note        String?
+  createdBy   String               @map("created_by")
+  createdAt   DateTime             @default(now()) @map("created_at")
+  submittedBy String?              @map("submitted_by")
+  submittedAt DateTime?            @map("submitted_at")
+  decidedBy   String?              @map("decided_by")
+  decidedAt   DateTime?            @map("decided_at")
+
+  lines StoreStockTakeLine[]
+
+  @@unique([schoolId, id])
+  @@map("store_stock_takes")
+}
+
+model StoreStockTakeLine {
+  id          String @id @default(uuid())
+  schoolId    String @map("school_id")
+  stockTakeId String @map("stock_take_id")
+  variantId   String @map("variant_id")
+  expected    Int?
+  counted     Int?
+
+  stockTake StoreStockTake   @relation(fields: [schoolId, stockTakeId], references: [schoolId, id], onDelete: Cascade)
+  variant   StoreItemVariant @relation(fields: [schoolId, variantId], references: [schoolId, id], onDelete: Cascade)
+
+  @@unique([stockTakeId, variantId])
+  @@map("store_stock_take_lines")
+}
+
+model FixedAsset {
+  id               String              @id @default(uuid())
+  schoolId         String              @map("school_id")
+  tag              String
+  name             String
+  category         FixedAssetCategory
+  location         String?
+  assignedToUserId String?             @map("assigned_to_user_id")
+  assignedToText   String?             @map("assigned_to_text")
+  condition        FixedAssetCondition @default(GOOD)
+  status           FixedAssetStatus    @default(IN_USE)
+  serialNumber     String?             @map("serial_number")
+  supplier         String?
+  purchaseDate     DateTime?           @map("purchase_date") @db.Date
+  purchaseCost     Int?                @map("purchase_cost") // kobo
+  notes            String?
+  disposedAt       DateTime?           @map("disposed_at") @db.Date
+  disposalReason   String?             @map("disposal_reason")
+  createdBy        String              @map("created_by")
+  createdAt        DateTime            @default(now()) @map("created_at")
+  updatedAt        DateTime            @updatedAt @map("updated_at")
+
+  events FixedAssetEvent[]
+
+  @@unique([schoolId, id])
+  @@map("fixed_assets")
+}
+
+model FixedAssetEvent {
+  id        String              @id @default(uuid())
+  schoolId  String              @map("school_id")
+  assetId   String              @map("asset_id")
+  kind      FixedAssetEventKind
+  fromValue String?             @map("from_value")
+  toValue   String?             @map("to_value")
+  note      String?
+  createdBy String              @map("created_by")
+  createdAt DateTime            @default(now()) @map("created_at")
+
+  asset FixedAsset @relation(fields: [schoolId, assetId], references: [schoolId, id], onDelete: Cascade)
+
+  @@index([assetId, createdAt])
+  @@map("fixed_asset_events")
 }

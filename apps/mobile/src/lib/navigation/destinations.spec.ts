@@ -87,6 +87,15 @@ describe("an owner", () => {
     expect(keys(BURSAR)).not.toContain("discipline");
   });
 
+  it("gets the Store; so do the Storekeeper and a bursar holding store.read, and a teacher does not", () => {
+    expect(staffDestinations(OWNER).find((d) => d.key === "store")?.route).toBe("/staff/store");
+    const storekeeper = staffDestinations({ ...base, roles: [{ key: "storekeeper" }], permissions: ["store.read", "store.manage", "asset.read", "asset.manage"] });
+    expect(storekeeper.map((d) => d.key)).toContain("store");
+    for (const key of ["students", "approvals", "collections", "library"]) expect(storekeeper.map((d) => d.key)).not.toContain(key);
+    expect(keys({ ...BURSAR, permissions: [...BURSAR.permissions, "store.read"] })).toContain("store");
+    expect(keys(TEACHER)).not.toContain("store");
+  });
+
   it("gets the Library; so does the Librarian, and nothing from school or money besides", () => {
     expect(staffDestinations(OWNER).find((d) => d.key === "library")?.route).toBe("/staff/library");
     const librarian = staffDestinations({ ...base, roles: [{ key: "librarian" }], permissions: ["library.read", "library.manage", "library.lend"] });

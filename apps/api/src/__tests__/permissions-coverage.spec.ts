@@ -795,8 +795,15 @@ describe("Phase 3 RBAC close-out: seeded role grants", () => {
         HOSTEL_READ_PERMISSIONS.length +
         // Phase 9 CP8.1: messages parents address to the bursar (the service
         // narrows to those; the bursar never starts one).
-        MESSAGE_PERMISSIONS.length,
+        MESSAGE_PERMISSIONS.length +
+        // The Store (2026-10-19, owner's answer 5): sees stock and the asset
+        // register, sells to students and approves stock takes; never edits
+        // items or assets (store.manage, asset.manage).
+        4,
     );
+    for (const p of ["store.read", "store.sell", "store.approve", "asset.read"]) expect(bursarPerms.has(p)).toBe(true);
+    expect(bursarPerms.has("store.manage")).toBe(false);
+    expect(bursarPerms.has("asset.manage")).toBe(false);
     expect(bursarPerms.has("transport.read")).toBe(true);
     expect(bursarPerms.has("transport.manage")).toBe(false);
     for (const p of STUDENT_CHARGE_PERMISSIONS) expect(bursarPerms.has(p)).toBe(true);

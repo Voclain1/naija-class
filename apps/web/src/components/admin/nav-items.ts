@@ -7,6 +7,7 @@ import {
   DoorOpen,
   Inbox,
   Library,
+  Package,
   Megaphone,
   CalendarClock,
   CalendarDays,
@@ -173,6 +174,9 @@ export const NAV_ITEMS: NavItem[] = [
   // Phase 9 / CP6.1 — the library (docs/modules/phase-9.md §14). library.read:
   // owner, admin and the Librarian, whose whole menu this is.
   { label: "Library", href: "/library", icon: Library, group: "facilities", keywords: ["books", "borrow"], enabled: true, requiredPermission: "library.read" },
+  // The school store (2026-10-19, docs/modules/id-cards-and-store.md §4).
+  // store.read: owner, admin, the Storekeeper and the bursar.
+  { label: "Store", href: "/store", icon: Package, group: "facilities", keywords: ["inventory", "stock", "uniforms", "stores", "assets", "asset register"], enabled: true, requiredPermission: "store.read" },
   { label: "Bursary", href: "/finance/dashboard", icon: Wallet, keywords: ["finance", "fees", "invoices", "payments", "debtors", "expenses", "payroll", "salary"], enabled: true, requiredPermission: "finance.dashboard.read" },
   // Phase 9 / CP8.1 — private messages from parents (docs/modules/phase-9.md
   // §17.8). messages.read: admin and bursar here (teachers, principals and

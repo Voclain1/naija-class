@@ -38,7 +38,9 @@ import type { ExportFile, RequestContext } from "./report-exports.service.js";
 // copy is audited (`export.table`, with its title, format and row count), and
 // the PDF names the school and the date it was printed.
 
-const STAFF_ROLES = ["owner", "admin", "teacher", "bursar"] as const;
+// The storekeeper (2026-10-19) exports the store's own lists: stock, sales and
+// the asset register.
+const STAFF_ROLES = ["owner", "admin", "teacher", "bursar", "storekeeper"] as const;
 const AUDIT_TABLE_EXPORT = "export.table";
 /** The report_exports.report value for a list copy; the title is in the audit row. */
 const TABLE_REPORT_KEY = "table";

@@ -120,6 +120,12 @@ export function staffDestinations(ctx: StaffContext): Destination[] {
   if (can("library.read")) {
     out.push({ key: "library", label: "Library", hint: "Lend and take back", icon: "library-outline", group: "School", route: "/staff/library" });
   }
+  // The school store's stock (docs/modules/id-cards-and-store.md §4).
+  // store.read is a permission check on the server: owner, admin, the
+  // Storekeeper (whose main screen this is) and the bursar.
+  if (can("store.read")) {
+    out.push({ key: "store", label: "Store", hint: "Stock on hand", icon: "cube-outline", group: "School", route: "/staff/store" });
+  }
   // Phase 9 / CP6b.2 — a hostel's boarders and visitor log. hostel.house is a
   // permission check on the server; the service then keeps a teacher to the
   // hostels they are house master of, so a teacher without one is not shown it.

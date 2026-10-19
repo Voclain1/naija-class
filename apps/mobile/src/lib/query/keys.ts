@@ -352,6 +352,9 @@ export const queryKeys = {
     ["staff", schoolId, userId, "transport-routes"] as const,
   staffTransportDaily: (schoolId: string, userId: string, routeId: string, date: string) =>
     ["staff", schoolId, userId, "transport-daily", routeId, date] as const,
+  // The school store: items and stock on hand, all or only those running low.
+  staffStoreItems: (schoolId: string, userId: string, low: boolean) =>
+    ["staff", schoolId, userId, "store-items", low] as const,
   // Phase 9 / CP6.2 — the library's loans and the lending desk's look-ups:
   // children's names and books, so staff-prefixed.
   staffLibraryLoans: (schoolId: string, userId: string, state: string) =>

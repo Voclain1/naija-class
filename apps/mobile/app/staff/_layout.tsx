@@ -112,6 +112,7 @@ export default function StaffTabsLayout() {
       <Tabs.Screen name="health" options={{ href: null }} />
       <Tabs.Screen name="transport" options={{ href: null }} />
       <Tabs.Screen name="library" options={{ href: null }} />
+      <Tabs.Screen name="store" options={{ href: null }} />
       <Tabs.Screen name="boarding" options={{ href: null }} />
       <Tabs.Screen name="messages" options={{ href: null }} />
       <Tabs.Screen name="behaviour" options={{ href: null }} />

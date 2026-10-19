@@ -73,7 +73,7 @@ Every button name in **bold** in this guide is exactly what you will see on your
   - **Academics** — Timetable, Scheme of work, Lesson notes, Homework, Question bank;
   - **Examinations & results** — Gradebook, Exam papers, CBT exams, Report cards, Result checker;
   - **Student welfare** — Behaviour & discipline, Health records, Sickbay;
-  - **Facilities** — Transport, Hostels, Boarding, Library;
+  - **Facilities** — Transport, Hostels, Boarding, Library, Store;
   - **Communication** — Messages, Announcements, School news, Events calendar;
   - **Reports** — Reports, Insights;
   - **School setup** — Sessions & classes, Grading, Settings.
@@ -237,6 +237,7 @@ You can run SchoolKit on your own, but teachers need their own accounts before t
    - **Teacher** — takes registers and enters scores for their own classes;
    - **Health officer** — keeps the children's health records and the sickbay log;
    - **Librarian** — keeps the library's books and lends them;
+   - **Storekeeper** — runs the school store: stock, uniforms and books, stock takes and the asset register;
    - **House master** — looks after a hostel's boarders (choose their hostel on its page after they join).
 3. If you like, type their **Monthly salary in naira**, for example `150,000`. It is saved to their record when they accept, and filled in for you each month when you **Run payroll** under **Bursary → Payroll**. You can change it any time on their staff page, under **Monthly salary**. (Only people who run payroll see this box.)
 4. Press **Send invitation**.
@@ -501,9 +502,10 @@ Parents can reset their own password from **Forgot password?** on the portal sig
 
 - **You (the owner)** — everything, including settings, approving and releasing results, and reopening a class's report cards.
 - **Admin** — almost everything the owner can do. Good for a principal, vice‑principal or school secretary.
-- **Bursar** — Finance: fees, invoices, recording payments, receipts, debtors, discounts, expenses and preparing payroll (including staff salaries). They can also look up a class's homework, set transport and hostel fees, read parents' messages to the office, and see the calendar and school news. Bursars do not see student records, staff records, results or settings. Reversing a payment and sending salary transfers are kept for you and your admins.
+- **Bursar** — Finance: fees, invoices, recording payments, receipts, debtors, discounts, expenses and preparing payroll (including staff salaries). They can also look up a class's homework, set transport and hostel fees, sell from the school store to a child's bill, see stock and its value, approve stock takes, read parents' messages to the office, and see the calendar and school news. Bursars do not see student records, staff records, results or settings. Reversing a payment and sending salary transfers are kept for you and your admins.
 - **Health officer** — Health and Sickbay only.
 - **Librarian** — the Library only.
+- **Storekeeper** — the Store only: items, stock, stock takes and the asset register. Selling to a child's bill is for the bursar, admins and you.
 - **House master** — Boarding only: their hostel's boarders, visitors and leave‑outs.
 - **Admissions officer, principal, head teacher, Inbox officer** — given to a member of staff on top of their main role, in **Settings → Admissions** and **Settings → Messaging**. They add **Admissions** or **Messages** to that person's menu.
 - **Everyone on the staff** sees **School news** (the school's announcements) and **My profile**, where they add their Bank Verification Number for payroll.
@@ -529,6 +531,15 @@ You do not need any of these to get started. Use them when you are ready.
   - **Lost cards:** press **Replace** beside the person. A new card is issued and the old one scans as "replaced". To charge for a replacement, add a charge on the student's page.
   - **People who leave:** press **Cancel** beside them.
   - **On phones:** students see their card under **My ID card** in the student app, and staff under their profile in the staff app.
+- **The school store** — under **Facilities → Store**, keep uniforms, textbooks, stationery and other stock.
+  - **Items and sizes:** press **Add item**. Give sizes (for example `Size 8, Size 10, Size 12`) and stock is kept for each size. Set **Reorder when down to** and the item is marked **Low** when it gets there; your dashboard says how many items are running low.
+  - **Stock in and out:** on an item's page, press **Receive stock** when a delivery arrives, **Issue** to hand items out without charging, **Write off** for damaged or lost items (say why), or **Take back a return**. Nothing is ever edited or deleted: every change is a line in the item's history.
+  - **Selling to a child:** press **Sell to a student**. The amount is added to the child's charges and shows on their next invoice. Taking back a sold item does not refund the parent; the bursar sorts out any money owed under **Bursary**.
+  - **Stock takes:** under **Stock takes**, press **Start a stock take**, type what you count on the shelves, and press **Submit for approval**. The bursar, an admin or you then press **Approve and adjust stock**, and the stock changes to match the count.
+  - **Reports:** stock on hand and its value at cost, and sales between two dates, with Excel, CSV and PDF downloads.
+  - **Asset register:** under **Assets**, record computers, projectors, furniture and laboratory equipment with a tag number, where each one is and who has it. Moves, condition changes and disposal are kept as history.
+  - **Who can do what:** a **Storekeeper** runs the store day to day. The **bursar** sees stock and its value, sells to children and approves stock takes, but does not change items. You and your admins can do everything.
+  - **On phones:** the staff app shows stock on hand under **Store**, with a **Running low** filter.
 - **Your own photo** — every member of staff can add their own photo under **My profile** (or the profile screen in the staff app). It goes on their staff ID card.
 - **Payroll** — run monthly salaries under **Bursary → Payroll**. Press **Run payroll** and choose a member of staff: their saved monthly salary fills in by itself, and you can change it for that month. Set or change a saved salary on the staff member's page, or when you invite them.
 - **Bursary dashboard** — **Bursary** in the menu shows how much has been billed and collected this term, class by class.

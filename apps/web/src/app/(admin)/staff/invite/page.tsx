@@ -49,7 +49,7 @@ const inviteFormSchema = z.object({
     .email("Enter a valid email address."),
   firstName: z.string().trim().max(60, "First name is too long."),
   lastName: z.string().trim().max(60, "Last name is too long."),
-  roleKey: z.enum(["admin", "bursar", "teacher", "health_officer", "librarian", "house_master"]),
+  roleKey: z.enum(["admin", "bursar", "teacher", "health_officer", "librarian", "house_master", "storekeeper"]),
   // Monthly salary in naira, optional (2026-10-19). Turned into kobo with
   // string arithmetic (nairaInputToKobo); the field shows only to someone who
   // runs payroll.
@@ -202,7 +202,9 @@ export default function InviteStaffPage() {
                   ? "the librarian, who keeps the library's books and lends them"
                   : roleKey === "house_master"
                     ? "a house master, who keeps a hostel's boarders and visitor log (choose their hostel on its page after they join)"
-                    : "an admin"}
+                    : roleKey === "storekeeper"
+                      ? "the storekeeper, who runs the school store and the asset register"
+                      : "an admin"}
           .
         </p>
       </header>
@@ -260,6 +262,7 @@ export default function InviteStaffPage() {
             <option value="health_officer">Health officer</option>
             <option value="librarian">Librarian</option>
             <option value="house_master">House master</option>
+            <option value="storekeeper">Storekeeper</option>
           </select>
         </div>
 

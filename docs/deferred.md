@@ -498,6 +498,7 @@ the module doc or the PR, then link it here.
 | `packages/ui` `main` → `dist/` | Anything outside Next importing it |
 | Forced reset for Phase 0-policy passwords | Before public launch |
 | Transport and hostels (`docs/ARCHITECTURE.md` §6.12, §6.13) | Owner confirmed 2026-10-11 they are wanted later; plan-first when the owner schedules them |
+| Parents ordering from the school store in the portal and parent app (`docs/modules/id-cards-and-store.md` §4a). A read-only price list first, then orders the storekeeper fulfils as ordinary SELL movements | A school asking. Owner, 2026-10-19: not common practice in Nigerian schools yet, so not built |
 
 ## 6. Ideas
 

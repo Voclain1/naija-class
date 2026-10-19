@@ -30,7 +30,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
     // 2026-10-19 for someone holding one of them alone (home-route.ts); the
     // menu still shows only what their permissions allow.
     <RequireAuth
-      roles={["owner", "admin", "bursar", "health_officer", "librarian", "house_master", "admission_officer", "principal", "head_teacher", "inbox_officer"]}
+      roles={["owner", "admin", "bursar", "health_officer", "librarian", "house_master", "storekeeper", "admission_officer", "principal", "head_teacher", "inbox_officer"]}
     >
       <TourProvider mobileNavOpen={mobileNavOpen} setMobileNavOpen={setMobileNavOpen}>
         <AdminShell mobileNavOpen={mobileNavOpen} setMobileNavOpen={setMobileNavOpen}>

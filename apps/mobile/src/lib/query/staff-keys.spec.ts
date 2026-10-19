@@ -97,6 +97,7 @@ const STAFF_KEYS: Record<string, readonly unknown[]> = {
   staffBehaviourIncidents: queryKeys.staffBehaviourIncidents(SCHOOL, USER),
   staffTransportRoutes: queryKeys.staffTransportRoutes(SCHOOL, USER),
   staffTransportDaily: queryKeys.staffTransportDaily(SCHOOL, USER, "route_1", "2026-10-17"),
+  staffStoreItems: queryKeys.staffStoreItems(SCHOOL, USER, true),
   staffBoardingHostels: queryKeys.staffBoardingHostels(SCHOOL, USER),
   staffBoardingBoarders: queryKeys.staffBoardingBoarders(SCHOOL, USER, "hostel_1"),
   staffBoardingVisits: queryKeys.staffBoardingVisits(SCHOOL, USER, "hostel_1", "2026-10-17"),

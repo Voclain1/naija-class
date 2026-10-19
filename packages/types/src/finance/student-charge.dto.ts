@@ -8,7 +8,7 @@ import { z } from "zod";
 // the bursar bills waiting charges), or VOID with a reason. Money is kobo.
 // ---------------------------------------------------------------------------
 
-export const studentChargeKindValues = ["TRANSPORT", "LIBRARY_FINE", "HOSTEL", "OTHER"] as const;
+export const studentChargeKindValues = ["TRANSPORT", "LIBRARY_FINE", "HOSTEL", "OTHER", "STORE"] as const;
 export type StudentChargeKind = (typeof studentChargeKindValues)[number];
 
 export const studentChargeStatusValues = ["OPEN", "BILLED", "VOID"] as const;
@@ -20,6 +20,7 @@ export const STUDENT_CHARGE_KIND_LABELS: Record<StudentChargeKind, string> = {
   LIBRARY_FINE: "Library",
   HOSTEL: "Hostel",
   OTHER: "Other charges",
+  STORE: "School store",
 };
 
 /** ₦10,000,000 in kobo — the database's own ceiling. */
