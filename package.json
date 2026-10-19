@@ -42,7 +42,7 @@
     "api:backfill-invoice-arms": "pnpm --filter @school-kit/api backfill-invoice-arms"
   },
   "devDependencies": {
-    "turbo": "^2.11.7",
+    "turbo": "^2.11.9",
     "typescript": "^5.6.3"
   },
   "pnpm": {
