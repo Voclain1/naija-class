@@ -10,6 +10,7 @@ import { useSession } from "../../../src/lib/auth/session";
 import { useTheme } from "../../../src/theme/theme-provider";
 import { fontSizes, fonts, radii, spacing } from "../../../src/theme/tokens";
 import { ScreenHeader, SectionHeader, Skeleton } from "../../../src/components/layout";
+import { OwnPhotoCard } from "../../../src/components/own-photo-card";
 import {
   Body,
   Button,
@@ -138,6 +139,8 @@ export default function ProfileScreen() {
         />
 
         <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+          <OwnPhotoCard schoolId={schoolId} userId={userId} />
+
           <Card style={styles.card}>
             <Label>Specialty</Label>
             <TextInput

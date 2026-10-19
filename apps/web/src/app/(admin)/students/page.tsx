@@ -1,6 +1,6 @@
 "use client";
 
-import { Camera, ChevronDown, FileUp, Loader2, Rows3, UserPlus } from "lucide-react";
+import { Camera, ChevronDown, FileUp, Images, Loader2, Rows3, UserPlus } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
@@ -185,6 +185,12 @@ export default function StudentsRosterPage() {
                 disabled={students.length === 0}
               />
               <PrintButton />
+              <Button asChild size="sm" variant="outline">
+                <Link href="/students/photos">
+                  <Images className="h-4 w-4" />
+                  Photos
+                </Link>
+              </Button>
             </div>
 
           <div className="flex items-center">
