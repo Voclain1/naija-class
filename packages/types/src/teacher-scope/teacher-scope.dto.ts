@@ -107,6 +107,7 @@ export interface TeacherRosterStudentDto {
   lastName: string;
   gender: GenderDto;
   photoUrl: string | null;
+  hasPhoto: boolean;
   status: StudentStatusDto;
 }
 

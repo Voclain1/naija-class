@@ -13,11 +13,15 @@ import { StudentAdmissionDocumentsField } from "@/components/admissions/student-
 import { StudentHostelField } from "@/components/hostels/student-hostel";
 import { BooksOutField } from "@/components/library/books-out";
 import { StudentTransportField } from "@/components/transport/student-transport";
+import { PhotoField } from "@/components/photos/photo-field";
+import { hasPermission } from "@/lib/auth/has-permission";
+import { useAuth } from "@/lib/auth/use-auth";
 import { cn } from "@/lib/utils";
 
 interface Props {
   student: StudentDetailDto;
   onGuardiansChanged: (next: StudentGuardianRefDto[]) => void;
+  onPhotoChanged?: (hasPhoto: boolean) => void;
 }
 
 type TabKey = "bio" | "guardians" | "enrollments" | "health" | "behaviour";
@@ -51,7 +55,7 @@ function formatDateTime(value: string | Date | null): string {
 // Tabbed view. Guardians populated in slice 5 cp2; Enrollments still empty
 // in slice 4 — slice 9 fills it. The shape (detail returns guardians: [])
 // means the enrollments tab will swap in real rows without a v2 endpoint.
-export function StudentDetailTabs({ student, onGuardiansChanged }: Props) {
+export function StudentDetailTabs({ student, onGuardiansChanged, onPhotoChanged }: Props) {
   const [tab, setTab] = useState<TabKey>("bio");
 
   return (
@@ -88,7 +92,7 @@ export function StudentDetailTabs({ student, onGuardiansChanged }: Props) {
         })}
       </nav>
 
-      {tab === "bio" && <BioPanel student={student} />}
+      {tab === "bio" && <BioPanel student={student} onPhotoChanged={onPhotoChanged} />}
       {tab === "guardians" && (
         <GuardiansTab
           studentId={student.id}
@@ -103,9 +107,26 @@ export function StudentDetailTabs({ student, onGuardiansChanged }: Props) {
   );
 }
 
-function BioPanel({ student }: { student: StudentDetailDto }) {
+function BioPanel({
+  student,
+  onPhotoChanged,
+}: {
+  student: StudentDetailDto;
+  onPhotoChanged?: (hasPhoto: boolean) => void;
+}) {
+  const { permissions } = useAuth();
   return (
     <dl className="grid grid-cols-1 gap-x-8 gap-y-3 rounded-md border bg-card p-4 text-sm sm:grid-cols-2">
+      <Field label="Passport photo" full>
+        <PhotoField
+          kind="student"
+          id={student.id}
+          name={`${student.firstName} ${student.lastName}`}
+          hasPhoto={student.hasPhoto}
+          canEdit={hasPermission(permissions, "student.update")}
+          onChange={onPhotoChanged}
+        />
+      </Field>
       <Field label="Admission number">
         <span className="font-mono">{student.admissionNumber}</span>
       </Field>

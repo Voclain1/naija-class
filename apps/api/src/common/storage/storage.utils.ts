@@ -117,6 +117,18 @@ export function pathFor(schoolId: string, key: StorageObjectKey): string {
       }
       return `schools/${schoolId}/messages/${key.imageId}.${key.ext}`;
     }
+    case "student-photo": {
+      if (!UUID_RE.test(key.studentId)) {
+        throw new Error(`storage: studentId is not a UUID: ${redact(key.studentId)}`);
+      }
+      return `schools/${schoolId}/photos/students/${key.studentId}.jpg`;
+    }
+    case "staff-photo": {
+      if (!UUID_RE.test(key.userId)) {
+        throw new Error(`storage: userId is not a UUID: ${redact(key.userId)}`);
+      }
+      return `schools/${schoolId}/photos/staff/${key.userId}.jpg`;
+    }
   }
 }
 

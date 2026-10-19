@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import type { StudentDto } from "@school-kit/types";
 
 import { StudentAvatar } from "@/components/students/student-avatar";
+import { usePhotoUrls } from "@/lib/photos/use-photo-urls";
 import { StudentStatusBadge } from "@/components/students/student-status-badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
@@ -30,6 +31,7 @@ interface Props {
 // fifty times with nothing to tell the children apart.
 export function StudentsRosterTable({ students }: Props) {
   const router = useRouter();
+  const photos = usePhotoUrls("student", students.filter((s) => s.hasPhoto).map((s) => s.id));
   return (
     <div className="overflow-hidden rounded-md border">
       <Table stackOnMobile>
@@ -53,7 +55,7 @@ export function StudentsRosterTable({ students }: Props) {
                   <StudentAvatar
                     firstName={s.firstName}
                     lastName={s.lastName}
-                    photoUrl={s.photoUrl}
+                    photoUrl={photos[s.id] ?? s.photoUrl}
                     size="sm"
                   />
                   <Link

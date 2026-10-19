@@ -326,6 +326,8 @@ model User {
   emailVerified     Boolean   @default(false) @map("email_verified")
   phoneVerified     Boolean   @default(false) @map("phone_verified")
   lastLoginAt       DateTime? @map("last_login_at")
+  // 2026-10-19 — an uploaded passport photo exists (storage key staff-photo).
+  photoUploadedAt   DateTime? @map("photo_uploaded_at")
   totpPendingSecret String?   @map("totp_pending_secret")
   totpSecret        String?   @map("totp_secret")
   totpEnabled       Boolean   @default(false) @map("totp_enabled")
@@ -753,6 +755,8 @@ model Student {
   dateOfBirth     DateTime        @map("date_of_birth") @db.Date // calendar date — see CLAUDE.md
   gender          Gender
   photoUrl        String?         @map("photo_url") // string only; upload UI deferred (Phase 2/4)
+  // 2026-10-19 — an uploaded passport photo exists (storage key student-photo).
+  photoUploadedAt DateTime?       @map("photo_uploaded_at")
   address         String?
   phone           String?
   email           String?

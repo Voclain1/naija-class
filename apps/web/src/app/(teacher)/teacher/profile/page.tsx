@@ -14,6 +14,7 @@ import {
   type UpdateMyTeacherProfileInput,
 } from "@school-kit/types";
 
+import { OwnPhotoSection } from "@/components/photos/own-photo-section";
 import { BvnSection } from "@/components/staff/bvn-section";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -158,6 +159,7 @@ export default function TeacherProfilePage() {
         </header>
         {/* BVN lives on User, not TeacherProfile — available regardless of
             whether an admin has set up the HR profile yet. */}
+        <OwnPhotoSection />
         <BvnSection mode="self" />
         <div className="flex flex-col items-start gap-2 rounded-md border border-dashed bg-muted/30 p-8 text-sm">
           <p className="font-medium">Your profile isn&apos;t set up yet.</p>
@@ -175,6 +177,7 @@ export default function TeacherProfilePage() {
     return (
       <div className="mx-auto flex w-full max-w-2xl flex-col gap-4">
         <h1 className="font-serif text-2xl font-medium tracking-tight text-foreground">My profile</h1>
+        <OwnPhotoSection />
         <BvnSection mode="self" />
         <div className="rounded-md border border-destructive/40 bg-destructive/5 p-4 text-sm text-destructive">
           {loadError ?? "Could not load your profile."}
@@ -193,7 +196,8 @@ export default function TeacherProfilePage() {
         </p>
       </header>
 
-      <BvnSection mode="self" />
+      <OwnPhotoSection />
+        <BvnSection mode="self" />
 
       {/* Read-only, admin-managed fields */}
       <dl className="grid grid-cols-1 gap-x-6 gap-y-3 rounded-md border bg-card p-4 sm:grid-cols-3">

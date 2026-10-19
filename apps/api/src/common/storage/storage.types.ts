@@ -89,7 +89,17 @@ export type StorageObjectKey =
   // Phase 9 / CP8.2 — an image on a private message. Private, typed by its
   // bytes (images only); read through a five-minute link by those who can
   // see the conversation, deleted with it.
-  | { kind: "message-image"; imageId: string; ext: "jpg" | "png" | "webp" };
+  | { kind: "message-image"; imageId: string; ext: "jpg" | "png" | "webp" }
+  // 2026-10-19 — passport photos for students and staff, for ID cards and the
+  // places a photo already shows (docs/modules/id-cards-and-store.md §2).
+  // Layout: schools/<schoolId>/photos/{students|staff}/<id>.jpg
+  //
+  // Always JPEG: the browser and the app crop to passport shape and encode
+  // JPEG before sending, and the API refuses any other bytes. One object per
+  // person, so a new photo overwrites the old in place (the extension never
+  // changes, unlike school-logo). Private; read through short-lived links.
+  | { kind: "student-photo"; studentId: string }
+  | { kind: "staff-photo"; userId: string };
 
 // The file types a private upload may be (F1). Decided from the file's own
 // first bytes, never from the name or the browser's declared type.

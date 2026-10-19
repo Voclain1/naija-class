@@ -18,6 +18,7 @@ import { StudentStatusBadge } from "@/components/students/student-status-badge";
 import { Button } from "@/components/ui/button";
 import { PageSkeleton } from "@/components/layout/page-primitives";
 import { ApiError } from "@/lib/api-client";
+import { usePhotoUrls } from "@/lib/photos/use-photo-urls";
 import { getStudent } from "@/lib/students/students-api";
 
 export default function StudentDetailPage() {
@@ -26,6 +27,7 @@ export default function StudentDetailPage() {
   const [student, setStudent] = useState<StudentDetailDto | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const photos = usePhotoUrls("student", student?.hasPhoto ? [student.id] : []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -102,7 +104,7 @@ export default function StudentDetailPage() {
           <StudentAvatar
             firstName={student.firstName}
             lastName={student.lastName}
-            photoUrl={student.photoUrl}
+            photoUrl={photos[student.id] ?? student.photoUrl}
             size="lg"
           />
           <div className="flex flex-col gap-1">
@@ -135,6 +137,7 @@ export default function StudentDetailPage() {
       <StudentDetailTabs
         student={student}
         onGuardiansChanged={onGuardiansChanged}
+        onPhotoChanged={(hasPhoto) => setStudent((prev) => (prev ? { ...prev, hasPhoto } : prev))}
       />
     </div>
   );
