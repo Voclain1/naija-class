@@ -36,6 +36,8 @@ type FormValues = z.infer<typeof formSchema>;
 
 interface Props {
   token: string;
+  /** Sent here by sign-in, because the password was set under the older rules. */
+  oldRules?: boolean;
 }
 
 // No GET pre-check endpoint exists for this token (unlike invitations' GET
@@ -49,7 +51,7 @@ type State =
   | { status: "error"; variant: "expired" | "used" | "notFound" }
   | { status: "success" };
 
-export function ResetPasswordForm({ token }: Props) {
+export function ResetPasswordForm({ token, oldRules = false }: Props) {
   const [state, setState] = useState<State>({ status: "form" });
   const [submitting, setSubmitting] = useState(false);
   const [networkError, setNetworkError] = useState<string | null>(null);
@@ -138,7 +140,11 @@ export function ResetPasswordForm({ token }: Props) {
     <Card className="w-full max-w-sm">
       <CardHeader>
         <CardTitle>Set a new password</CardTitle>
-        <CardDescription>Choose a new password for your account.</CardDescription>
+        <CardDescription>
+          {oldRules
+            ? "Your password was set before SchoolKit asked for stronger ones. Choose a new one to carry on, then sign in with it."
+            : "Choose a new password for your account."}
+        </CardDescription>
       </CardHeader>
       <CardContent>
         <form method="post" onSubmit={onSubmit} className="flex flex-col gap-4" noValidate>

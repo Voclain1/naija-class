@@ -20,6 +20,7 @@ import { shouldCollapseSchoolField } from "../src/lib/auth/school-hint";
 import { useTheme } from "../src/theme/theme-provider";
 import { fontSizes, fonts, radii, spacing } from "../src/theme/tokens";
 import { Body, Button, Heading, Notice, Screen } from "../src/components/ui";
+import { StaffNewPassword } from "../src/components/staff-new-password";
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports -- React Native bundles images through require()
 const SCHOOLKIT_ICON = require("../assets/icon.png");
@@ -51,6 +52,9 @@ export default function LoginScreen() {
   const [sessionEndMessage, setSessionEndMessage] = useState<string | null>(null);
   const [challengeToken, setChallengeToken] = useState<string | null>(null);
   const [twoFactorCode, setTwoFactorCode] = useState("");
+  // Sign-in found a password set under the older rules: choose a new one first.
+  const [resetToken, setResetToken] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   // The school code remembered from the last student sign-in or activation on
   // this device, and whether the user has asked to change it. Kept separate
   // from schoolSlug because schoolSlug is what gets SUBMITTED and is editable;
@@ -128,6 +132,7 @@ export default function LoginScreen() {
 
   async function onSubmit() {
     setError(null);
+    setNotice(null);
     setSubmitting(true);
     try {
       if (challengeToken) {
@@ -143,8 +148,9 @@ export default function LoginScreen() {
           password,
         });
       } else if (isStaff) {
-        const challenge = await signInStaff({ email: email.trim().toLowerCase(), password });
-        if (challenge) setChallengeToken(challenge);
+        const next = await signInStaff({ email: email.trim().toLowerCase(), password });
+        if (next && "challengeToken" in next) setChallengeToken(next.challengeToken);
+        else if (next && "resetToken" in next) setResetToken(next.resetToken);
       } else {
         await signIn({ email: email.trim().toLowerCase(), password });
       }
@@ -197,6 +203,19 @@ export default function LoginScreen() {
         behavior={Platform.OS === "ios" ? "padding" : undefined}
         style={styles.fill}
       >
+        {resetToken ? (
+          <View style={styles.form}>
+            <StaffNewPassword
+              token={resetToken}
+              onCancel={() => setResetToken(null)}
+              onDone={() => {
+                setResetToken(null);
+                setPassword("");
+                setNotice("Your password is changed. Sign in with your new password.");
+              }}
+            />
+          </View>
+        ) : (
         <View style={styles.form}>
           {/* SchoolKit's mark: the school is not known until someone signs
               in, so this is the app's own (mobile review, 2026-10-13). */}
@@ -353,6 +372,7 @@ export default function LoginScreen() {
             style={inputStyle}
           /> : null}
 
+          {notice ? <Notice tone="info">{notice}</Notice> : null}
           {error ? <Notice tone="danger">{error}</Notice> : null}
           {sessionEndMessage ? <Notice tone="danger">{sessionEndMessage}</Notice> : null}
 
@@ -400,6 +420,7 @@ export default function LoginScreen() {
             <Body muted>Forgot your password? Ask your parent to reset it from their SchoolKit app.</Body>
           ) : null}
         </View>
+        )}
       </KeyboardAvoidingView>
     </Screen>
   );

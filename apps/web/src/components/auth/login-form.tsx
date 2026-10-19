@@ -81,6 +81,8 @@ export function LoginForm() {
       const result = await login(values);
       if (result.requiresTwoFactor) {
         setStep({ kind: "totp", challengeToken: result.challengeToken });
+      } else if (result.passwordUpdateRequired) {
+        router.replace(`/reset-password/${encodeURIComponent(result.resetToken)}?why=old-rules`);
       } else {
         router.replace(destinationFor(result.roles));
       }

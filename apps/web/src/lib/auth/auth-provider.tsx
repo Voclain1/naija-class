@@ -56,7 +56,9 @@ export interface AuthContextValue extends AuthState {
   // that point in the render that captured it.
   login: (
     input: LoginInput,
-  ) => Promise<{ requiresTwoFactor: true; challengeToken: string } | { requiresTwoFactor: false; roles: AuthMeRoleDto[] }>;
+  ) => Promise<{ requiresTwoFactor: true; challengeToken: string }
+    | { requiresTwoFactor: false; passwordUpdateRequired: true; resetToken: string }
+    | { requiresTwoFactor: false; passwordUpdateRequired?: false; roles: AuthMeRoleDto[] }>;
   // Always succeeds or throws (the 2FA challenge endpoint never itself asks
   // for a further challenge) — returns the resolved roles for the same
   // reason `login()` does above.
@@ -203,7 +205,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     async (
       input: LoginInput,
     ): Promise<
-      { requiresTwoFactor: true; challengeToken: string } | { requiresTwoFactor: false; roles: AuthMeRoleDto[] }
+      { requiresTwoFactor: true; challengeToken: string }
+    | { requiresTwoFactor: false; passwordUpdateRequired: true; resetToken: string }
+    | { requiresTwoFactor: false; passwordUpdateRequired?: false; roles: AuthMeRoleDto[] }
     > => {
       const response = await loginRequest(input);
 
@@ -212,6 +216,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // challenge data so LoginForm can collect the TOTP code and call
         // loginWithChallenge. Auth state stays "loading" until that resolves.
         return response;
+      }
+      if (response.passwordUpdateRequired) {
+        // A password set under the older rules: no session, no cookie. The
+        // caller sends the person to choose a new one with this token.
+        return { requiresTwoFactor: false, passwordUpdateRequired: true, resetToken: response.resetToken };
       }
 
       // Full session: the proxy set the sk_session cookie, which the /auth/me

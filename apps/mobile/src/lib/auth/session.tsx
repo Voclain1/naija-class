@@ -77,7 +77,14 @@ interface SessionValue {
   consumeSessionEnd: () => void;
   signIn: (input: GuardianLoginInput) => Promise<void>;
   signInStudent: (input: StudentLoginInput) => Promise<void>;
-  signInStaff: (input: Omit<StaffMobileLoginInput, "deviceId" | "deviceName">) => Promise<string | null>;
+  /**
+   * Null when signed in. `challengeToken`: an authenticator code is needed.
+   * `resetToken`: the password was right but set under the older rules; a new
+   * one must be chosen before signing in.
+   */
+  signInStaff: (
+    input: Omit<StaffMobileLoginInput, "deviceId" | "deviceName">,
+  ) => Promise<{ challengeToken: string } | { resetToken: string } | null>;
   completeStaffTwoFactor: (challengeToken: string, code: string) => Promise<void>;
   unlock: () => Promise<boolean>;
   /**
@@ -256,7 +263,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     if (!(await canProtectStaffSession())) throw new Error("DEVICE_LOCK_REQUIRED");
     const device = await getStaffDevice();
     const response = await staffMobileLogin({ ...input, ...device });
-    if (response.requiresTwoFactor) return response.challengeToken;
+    if (response.requiresTwoFactor) return { challengeToken: response.challengeToken };
+    if (response.passwordUpdateRequired) return { resetToken: response.resetToken };
     await adoptStaffSession(response.token);
     return null;
   }, [adoptStaffSession]);
@@ -265,6 +273,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     const device = await getStaffDevice();
     const response = await staffMobileChallenge({ challengeToken, code, ...device });
     if (response.requiresTwoFactor) throw new Error("Unexpected nested 2FA challenge");
+    // The password rules are checked before the code is asked for, so the
+    // challenge never asks for a new password.
+    if (response.passwordUpdateRequired) throw new Error("Unexpected password update after 2FA");
     await adoptStaffSession(response.token);
   }, [adoptStaffSession]);
 

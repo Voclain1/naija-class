@@ -100,7 +100,7 @@ describe("AuthService — 2FA login flow (Phase 3 Slice 2 CP2)", () => {
     const challengeResult = await svc.loginWithChallenge(challengeInput, ctx);
 
     expect(challengeResult.requiresTwoFactor).toBe(false);
-    if (challengeResult.requiresTwoFactor) throw new Error("Expected session");
+    if (challengeResult.requiresTwoFactor || challengeResult.passwordUpdateRequired) throw new Error("Expected session");
     expect(challengeResult.user.id).toBe(userId);
     expect(challengeResult.user.schoolId).toBe(schoolId);
     expect(challengeResult.school.id).toBe(schoolId);
@@ -163,7 +163,7 @@ describe("AuthService — 2FA login flow (Phase 3 Slice 2 CP2)", () => {
       ctx,
     );
     expect(retryResult.requiresTwoFactor).toBe(false);
-    if (retryResult.requiresTwoFactor) throw new Error("Expected session on retry");
+    if (retryResult.requiresTwoFactor || retryResult.passwordUpdateRequired) throw new Error("Expected session on retry");
     expect(retryResult.user.id).toBe(userId);
     expect(typeof retryResult.token).toBe("string");
   });
