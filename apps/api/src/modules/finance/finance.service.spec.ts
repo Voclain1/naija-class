@@ -1,7 +1,7 @@
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 
 import { basePrisma, withTenant } from "@school-kit/db";
-import { NotFoundError, type InvoiceStatus } from "@school-kit/types";
+import { NotFoundError, reminderResultText, type InvoiceStatus } from "@school-kit/types";
 
 import type { EmailService } from "../../common/email/email.service.js";
 import type { TermiiService } from "../../common/termii/termii.service.js";
@@ -481,6 +481,7 @@ describe("FinanceService (integration)", () => {
     schoolId: string,
     studentId: string,
     contact: { email?: string | null; phone?: string | null },
+    isPrimary = true,
   ): Promise<void> {
     await withTenant(schoolId, async (db) => {
       const guardian = await db.guardian.create({
@@ -495,10 +496,99 @@ describe("FinanceService (integration)", () => {
         select: { id: true },
       });
       await db.studentGuardian.create({
-        data: { schoolId, studentId, guardianId: guardian.id, isPrimary: true },
+        data: { schoolId, studentId, guardianId: guardian.id, isPrimary },
       });
     });
   }
+
+  // 2026-10-19 — the owner's "no guardian email" report. The reminder read
+  // only the PRIMARY guardian, and guardians added from the student page or
+  // the import are not primary unless ticked, so a child whose guardian had
+  // an email got nothing and the page blamed a missing email.
+  describe("sendReminders — every linked guardian, and a reason for each skip", () => {
+    const emailOnly = () => ({ getEnabledChannels: vi.fn(async () => ({ email: true, sms: false, push: false })) });
+
+    it("emails a guardian who is linked but not marked primary", async () => {
+      const { schoolId, ownerId } = await makeSchool("remind-nonprimary");
+      const { termId, studentId } = await makeInvoice(schoolId, ownerId, { totalDue: 100_000, status: "ISSUED" });
+      const email = `np-${runId}@example.test`;
+      await linkPrimaryGuardian(schoolId, studentId, { email }, false);
+      const emailStub = makeEmailStub({ isConfigured: true });
+      const svc = makeFinanceService({
+        email: { isConfigured: true, send: emailStub.send },
+        notificationPreferences: emailOnly(),
+      });
+
+      const result = await svc.sendReminders(ctx(schoolId, ownerId), { termId, studentIds: [studentId] });
+
+      expect(result).toMatchObject({ sent: 1, skipped: 0, noChannel: false });
+      expect(emailStub.send).toHaveBeenCalledWith(expect.objectContaining({ to: email }));
+    });
+
+    it("emails every linked guardian with an address, but not one that bounced", async () => {
+      const { schoolId, ownerId } = await makeSchool("remind-many");
+      const { termId, studentId } = await makeInvoice(schoolId, ownerId, { totalDue: 100_000, status: "ISSUED" });
+      const mum = `mum-${runId}@example.test`;
+      const dad = `dad-${runId}@example.test`;
+      const bounced = `aunt-${runId}@example.test`;
+      await linkPrimaryGuardian(schoolId, studentId, { email: mum });
+      await linkPrimaryGuardian(schoolId, studentId, { email: dad }, false);
+      await linkPrimaryGuardian(schoolId, studentId, { email: bounced }, false);
+      await withTenant(schoolId, (db) =>
+        db.emailSuppression.create({ data: { schoolId, email: bounced, scope: "ALL", reason: "BOUNCED" } }),
+      );
+      const emailStub = makeEmailStub({ isConfigured: true });
+      const svc = makeFinanceService({
+        email: { isConfigured: true, send: emailStub.send },
+        notificationPreferences: emailOnly(),
+      });
+
+      const result = await svc.sendReminders(ctx(schoolId, ownerId), { termId, studentIds: [studentId] });
+
+      expect(result.sent).toBe(1);
+      const sentTo = vi.mocked(emailStub.send).mock.calls.map((c) => c[0].to).sort();
+      expect(sentTo).toEqual([dad, mum].sort());
+    });
+
+    it("says why each debtor was skipped", async () => {
+      const { schoolId, ownerId } = await makeSchool("remind-reasons");
+      const noGuardian = await makeInvoice(schoolId, ownerId, { totalDue: 100_000, status: "ISSUED" });
+      const noEmail = await makeInvoice(schoolId, ownerId, { totalDue: 100_000, status: "ISSUED" });
+      await linkPrimaryGuardian(schoolId, noEmail.studentId, { email: null });
+      const paid = await makeInvoice(schoolId, ownerId, { totalDue: 100_000, totalPaid: 100_000, status: "PAID" });
+      const svc = makeFinanceService({
+        email: { isConfigured: true, send: makeEmailStub({ isConfigured: true }).send },
+        notificationPreferences: emailOnly(),
+      });
+
+      // Each fixture invoice is in its own term; ask about each in turn.
+      const a = await svc.sendReminders(ctx(schoolId, ownerId), { termId: noGuardian.termId, studentIds: [noGuardian.studentId] });
+      const b = await svc.sendReminders(ctx(schoolId, ownerId), { termId: noEmail.termId, studentIds: [noEmail.studentId] });
+      const c = await svc.sendReminders(ctx(schoolId, ownerId), { termId: paid.termId, studentIds: [paid.studentId] });
+
+      expect(a.skippedBy).toMatchObject({ NO_GUARDIAN: 1 });
+      expect(b.skippedBy).toMatchObject({ NO_CONTACT: 1 });
+      expect(c.skippedBy).toMatchObject({ NO_BALANCE: 1 });
+      expect(reminderResultText(b)).toBe(
+        "Reminders sent for 0 students. Not sent: 1 has a guardian with no email, phone or app.",
+      );
+    });
+
+    it("tells the school its channels are off, rather than blaming the families", async () => {
+      const { schoolId, ownerId } = await makeSchool("remind-nochannel");
+      const { termId, studentId } = await makeInvoice(schoolId, ownerId, { totalDue: 100_000, status: "ISSUED" });
+      await linkPrimaryGuardian(schoolId, studentId, { email: `nc-${runId}@example.test` });
+      const svc = makeFinanceService({
+        email: { isConfigured: false, send: vi.fn() },
+        notificationPreferences: { getEnabledChannels: vi.fn(async () => ({ email: true, sms: false, push: false })) },
+      });
+
+      const result = await svc.sendReminders(ctx(schoolId, ownerId), { termId, studentIds: [studentId] });
+
+      expect(result).toMatchObject({ sent: 0, skipped: 1, noChannel: true });
+      expect(reminderResultText(result)).toMatch(/Settings → Notifications/);
+    });
+  });
 
   describe("sendReminders — Phase 4 / Slice 6 channel preferences", () => {
     it("sends email via EmailService when emailEnabled and configured", async () => {

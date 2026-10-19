@@ -4,7 +4,7 @@ import { withTenant } from "@school-kit/db";
 
 import { seedTeacherInvitation } from "../fixtures/db.js";
 import { apiCreateStudent } from "../fixtures/finance.js";
-import { createApiContext, loginAsAdmin, loginAsTeacher, uniqueSuffix } from "../fixtures/index.js";
+import { createApiContext, loginAsAdmin, loginAsTeacher, uniqueSuffix, openFromMenu } from "../fixtures/index.js";
 
 // /guardians — the guardian roster (2026-09-16).
 //
@@ -89,7 +89,7 @@ test("the guardian roster shows every parent's portal access and lets an owner a
     // after loading, which can swallow a sidebar click made before it settles.
     await page.goto("/students");
     await expect(page.getByRole("heading", { name: "Students", level: 1 })).toBeVisible({ timeout: 60_000 });
-    await page.getByRole("link", { name: "Guardians" }).first().click();
+    await openFromMenu(page, "Guardians");
     await expect(page).toHaveURL(/\/guardians$/, { timeout: 60_000 });
     await expect(page.getByRole("heading", { name: "Guardians", level: 1 })).toBeVisible({ timeout: 60_000 });
 

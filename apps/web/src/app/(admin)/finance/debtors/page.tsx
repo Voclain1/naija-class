@@ -14,6 +14,8 @@ import {
   type AcademicYearDto,
   type DebtorDto,
   type TermDto,
+  reminderResultText,
+  type SendRemindersResult,
 } from "@school-kit/types";
 
 import { FeeRiskBadge, FeeRiskReasons } from "@/components/finance/fee-risk";
@@ -82,7 +84,7 @@ export default function DebtorsPage() {
 
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [reminding, setReminding] = useState(false);
-  const [reminderResult, setReminderResult] = useState<{ sent: number; skipped: number } | null>(null);
+  const [reminderResult, setReminderResult] = useState<SendRemindersResult | null>(null);
   const [sharingInvoiceId, setSharingInvoiceId] = useState<string | null>(null);
   // Phase 9 / CP10.2 — show one risk level only ("" = every level).
   const [riskFilter, setRiskFilter] = useState<FeeRiskLevel | "">("");
@@ -307,9 +309,18 @@ export default function DebtorsPage() {
 
       {/* Reminder result */}
       {reminderResult && (
-        <div className="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-300">
-          Reminders sent: <strong>{reminderResult.sent}</strong>
-          {reminderResult.skipped > 0 && ` (${reminderResult.skipped} skipped — no guardian email)`}
+        // Each skip says why (reminderResultText): the old line blamed "no
+        // guardian email" for every one, even when the guardian had an email
+        // and only lacked the "primary" tick, or the school had email off.
+        <div
+          role="status"
+          className={
+            reminderResult.sent > 0
+              ? "rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950 dark:text-emerald-300"
+              : "rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-300"
+          }
+        >
+          {reminderResultText(reminderResult)}
         </div>
       )}
 

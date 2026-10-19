@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 
 import { withTenant } from "@school-kit/db";
 
-import { createApiContext, inviteAndAcceptTeacher, loginAsAdmin, loginAsTeacher, uniqueSuffix } from "../fixtures/index.js";
+import { createApiContext, inviteAndAcceptTeacher, loginAsAdmin, loginAsTeacher, uniqueSuffix, openFromMenu } from "../fixtures/index.js";
 
 // Phase 8 / CP3 — the timetable builder's conflict-resolution flow, end to end.
 // Plan-first: docs/modules/phase-8.md §17.6 item 9.
@@ -90,7 +90,7 @@ test("owner sets a bell schedule, hits a real clash naming the other class, move
     await page.screenshot({ path: `${SHOTS}/1-bell-schedule.png`, fullPage: true });
 
     // ---- 2. Class A: whole-year timetable, Tunde on Monday Period 1 --------
-    await page.getByRole("link", { name: "Timetable" }).first().click();
+    await openFromMenu(page, "Timetable");
     await expect(page.getByRole("heading", { name: "Timetable", level: 1 })).toBeVisible({ timeout: 60_000 });
     await page.getByLabel("Class").selectOption({ label: classA });
     await page.getByRole("button", { name: "Create whole-year timetable" }).click();

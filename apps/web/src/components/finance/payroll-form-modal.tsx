@@ -9,6 +9,8 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { ApiError } from "@/lib/api-client";
+import { formatKobo } from "@/lib/finance/format";
+import { koboToNairaInput, nairaInputToKobo } from "@/lib/finance/naira-input";
 
 // Phase 3 / Payroll CP4b — create-payroll-item modal, the counterpart to
 // ExpenseFormModal. Deductions are flat named lines (not a PAYE tax-bracket
@@ -23,12 +25,15 @@ export function PayrollFormModal({
   open,
   onClose,
   staff,
+  salaries,
   defaultPeriod,
   onSubmit,
 }: {
   open: boolean;
   onClose: () => void;
   staff: UserListItemDto[];
+  /** Saved monthly salaries, kobo, by staff id (2026-10-19). Choosing a person fills the gross from here. */
+  salaries?: Map<string, number>;
   defaultPeriod: string;
   onSubmit: (values: {
     userId: string;
@@ -57,9 +62,16 @@ export function PayrollFormModal({
   const canSubmit =
     userId &&
     /^\d{4}-(0[1-9]|1[0-2])$/.test(period) &&
-    grossSalaryNaira &&
-    !isNaN(parseFloat(grossSalaryNaira)) &&
-    deductions.every((d) => d.name.trim() && d.amountNaira && !isNaN(parseFloat(d.amountNaira)));
+    nairaInputToKobo(grossSalaryNaira) !== null &&
+    deductions.every((d) => d.name.trim() && nairaInputToKobo(d.amountNaira) !== null);
+
+  const savedSalary = userId ? salaries?.get(userId) : undefined;
+
+  function chooseStaff(id: string) {
+    setUserId(id);
+    const saved = salaries?.get(id);
+    if (saved !== undefined) setGrossSalaryNaira(koboToNairaInput(saved));
+  }
 
   function addDeduction() {
     setDeductions((prev) => [...prev, { name: "", amountNaira: "" }]);
@@ -80,7 +92,7 @@ export function PayrollFormModal({
     try {
       await onSubmit({ userId, period, grossSalaryNaira, deductions });
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : "Could not create payroll item.");
+      setError(e instanceof ApiError || e instanceof Error ? e.message : "Could not create payroll item.");
     } finally {
       setSubmitting(false);
     }
@@ -106,7 +118,7 @@ export function PayrollFormModal({
               id="payroll-staff"
               className="h-10 rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               value={userId}
-              onChange={(e) => setUserId(e.target.value)}
+              onChange={(e) => chooseStaff(e.target.value)}
             >
               <option value="">Select staff member</option>
               {staff.map((s) => (
@@ -132,14 +144,20 @@ export function PayrollFormModal({
             <Label htmlFor="payroll-gross">Gross salary (₦ naira)</Label>
             <input
               id="payroll-gross"
-              type="number"
-              min="0"
-              step="0.01"
+              inputMode="decimal"
               className="h-10 rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               value={grossSalaryNaira}
               onChange={(e) => setGrossSalaryNaira(e.target.value)}
               placeholder="e.g. 300000"
+              aria-describedby="payroll-gross-help"
             />
+            <p id="payroll-gross-help" className="text-xs text-muted-foreground">
+              {savedSalary !== undefined
+                ? `Filled in from their saved salary of ${formatKobo(savedSalary)}. Change it for this month if you need to.`
+                : userId
+                  ? "No saved salary for this person yet. Save one on their staff page and it fills in here next time."
+                  : "Choose a staff member: a saved salary fills in here."}
+            </p>
           </div>
 
           <div className="flex flex-col gap-2">

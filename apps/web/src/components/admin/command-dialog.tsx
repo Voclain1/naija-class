@@ -7,14 +7,28 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { announceNavigation } from "@/lib/navigation-intent";
 
-import { NAV_ITEMS } from "./nav-items";
+import { matchesNavSearch } from "./nav-groups";
+import type { NavItem } from "./nav-items";
 
 // Minimal, dependency-free command palette: filters the real nav (not a
 // general command system — see the dashboard rebuild plan-first, "the
 // command palette's full command set is out of scope for this pass").
 // Triggered by ⌘K/Ctrl+K anywhere in the admin shell, or by clicking the
 // search bar / "A · Command" quick action.
-export function CommandDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+//
+// `items` is the signed-in person's own menu (2026-10-19): it used to search
+// every admin page whatever the role, so a bursar or a teacher could pick a
+// page that only refused them. Matching also takes a page's family and its
+// everyday words (nav-groups.ts), as the menu's own search box does.
+export function CommandDialog({
+  open,
+  onOpenChange,
+  items,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  items: NavItem[];
+}) {
   const router = useRouter();
   const [query, setQuery] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
@@ -37,10 +51,8 @@ export function CommandDialog({ open, onOpenChange }: { open: boolean; onOpenCha
   }, [open, onOpenChange]);
 
   const matches = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return NAV_ITEMS;
-    return NAV_ITEMS.filter((item) => item.label.toLowerCase().includes(q));
-  }, [query]);
+    return items.filter((item) => matchesNavSearch(item, query));
+  }, [items, query]);
 
   if (!open || typeof document === "undefined") return null;
 

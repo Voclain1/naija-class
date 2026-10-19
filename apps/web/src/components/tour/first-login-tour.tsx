@@ -15,6 +15,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 
+import { revealNavItem } from "@/components/admin/nav-list";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth/use-auth";
 import { completeTourRequest } from "@/lib/tour/tour-api";
@@ -210,6 +211,13 @@ export function TourProvider({
   // fold on a laptop and in the lower half of the phone drawer. Centring the
   // item leaves room above or below it for the card (tour-placement.ts).
   // Once per stop, so it never fights someone scrolling the menu themselves.
+  // The menu folds into sections (nav-groups.ts), so a stop's item may sit in
+  // a closed one: ask the menu to open it. A layout effect, so the section
+  // opens in the same frame, before the measuring below looks for the item.
+  useLayoutEffect(() => {
+    if (visible && targetHref) revealNavItem(targetHref);
+  }, [visible, targetHref, mobileNavOpen]);
+
   const scrolledForRef = useRef<string | null>(null);
   useEffect(() => {
     if (!visible || !targetHref) {
@@ -239,7 +247,7 @@ export function TourProvider({
       const el = findTarget();
       setRect(el ? el.getBoundingClientRect() : null);
     }
-    const raf = requestAnimationFrame(() => {
+    function locate() {
       const el = findTarget();
       const stopKey = `${targetHref}|${mobileNavOpen}`;
       if (el && scrolledForRef.current !== stopKey) {
@@ -248,11 +256,14 @@ export function TourProvider({
         el.scrollIntoView({ block: "center", inline: "nearest", behavior: reduceMotion ? "auto" : "smooth" });
       }
       measure();
-    });
+    }
+    const raf = requestAnimationFrame(locate);
+    const retry = window.setTimeout(locate, 150);
     window.addEventListener("resize", measure);
     window.addEventListener("scroll", measure, true);
     return () => {
       cancelAnimationFrame(raf);
+      window.clearTimeout(retry);
       window.removeEventListener("resize", measure);
       window.removeEventListener("scroll", measure, true);
     };

@@ -13,6 +13,7 @@ import {
   loginAsTeacher,
   setupAcademicStructure,
   uniqueSuffix,
+  openFromMenu,
 } from "../fixtures/index.js";
 
 // Owner/admin gradebook (/gradebook), 2026-09-15.
@@ -97,7 +98,7 @@ test("an owner with no teacher identity enters scores, signs off and builds repo
     // The dashboard writes its term into the URL once loaded; a click before
     // that lands is overwritten by its router.replace.
     await page.waitForURL(/\/dashboard\?termId=/, { timeout: 60_000 });
-    await page.getByRole("link", { name: "Gradebook" }).first().click();
+    await openFromMenu(page, "Gradebook");
     await expect(page).toHaveURL(/\/gradebook$/, { timeout: 60_000 });
     await expect(page.getByRole("heading", { name: "Gradebook", level: 1 })).toBeVisible({ timeout: 60_000 });
     await page.getByLabel("Class").selectOption({ label: "JSS 2 Gold" });

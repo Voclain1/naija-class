@@ -7,6 +7,7 @@ import {
   GoneError,
   InternalError,
   NotFoundError,
+  STAFF_SALARY_SET_AUDIT_ACTION,
   type AcceptInvitationInput,
   type AcceptInvitationResponse,
   type PublicInvitationDto,
@@ -189,6 +190,36 @@ export class InvitationsService {
           },
         },
       });
+
+      // 6. A salary typed on the invite form (2026-10-19) becomes the staff
+      //    member's saved salary, which payroll prefills from. Read by id
+      //    under the school's GUC: the token resolver's return shape is left
+      //    alone. Audited as the inviter's act, which it was.
+      const pending = await db.invitation.findUnique({
+        where: { id: row.invitation_id },
+        select: { pendingMonthlyGross: true },
+      });
+      if (pending?.pendingMonthlyGross) {
+        await db.staffSalary.create({
+          data: {
+            schoolId: row.school_id,
+            userId: user.id,
+            monthlyGross: pending.pendingMonthlyGross,
+            updatedBy: row.invited_by,
+          },
+        });
+        await db.auditLog.create({
+          data: {
+            schoolId: row.school_id,
+            userId: row.invited_by,
+            action: STAFF_SALARY_SET_AUDIT_ACTION,
+            entityType: "user",
+            entityId: user.id,
+            ipAddress: ctx.ipAddress,
+            metadata: { source: "invitation", invitationId: row.invitation_id, monthlyGross: pending.pendingMonthlyGross },
+          },
+        });
+      }
 
       return { user, schoolId: row.school_id };
     });

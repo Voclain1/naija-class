@@ -18,5 +18,12 @@ export function homeRouteForRoles(roles: AuthMeRoleDto[]): string {
   if (roles.some((r) => r.key === "librarian")) return "/library";
   // Phase 9 / CP6b.2 — the House master's page.
   if (roles.some((r) => r.key === "house_master")) return "/boarding";
+  if (roles.some((r) => r.key === "teacher")) return "/teacher/dashboard";
+  // 2026-10-19 (the role audit): these four are normally added on top of a
+  // main role, but a school can give one on its own — an office clerk who
+  // only reads parents' messages. Sent to the teacher shell, such a person met
+  // a teacher's menu where every page refused them; their own page is here.
+  if (roles.some((r) => r.key === "admission_officer")) return "/admissions";
+  if (roles.some((r) => ["principal", "head_teacher", "inbox_officer"].includes(r.key))) return "/messages";
   return "/teacher/dashboard";
 }

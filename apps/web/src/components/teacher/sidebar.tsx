@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  ArrowLeft,
   BookMarked,
   BookOpen,
   CalendarCheck,
@@ -19,19 +20,19 @@ import {
   LayoutDashboard,
   ScrollText,
   MonitorCheck,
+  Newspaper,
   UserCircle,
   MessagesSquare,
 } from "lucide-react";
-import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import type { NavItem } from "@/components/admin/nav-items";
+import { NavList } from "@/components/admin/nav-list";
 import { PoweredBySchoolKit, SchoolBrand } from "@/components/school/school-brand";
 import { hasPermission } from "@/lib/auth/has-permission";
 import { useAuth } from "@/lib/auth/use-auth";
 import { getMyScope } from "@/lib/teacher/teacher-scope-api";
-import { cn } from "@/lib/utils";
 
 // The teacher portal's MINIMAL nav. Dashboard / Classes / Profile shipped in
 // slice 11 cp3; Gradebook in Phase 2 / Slice 3; Attendance in Slice 7. The
@@ -44,45 +45,47 @@ import { cn } from "@/lib/utils";
 // `enabled: true` (no "coming soon" entries on this portal).
 const BASE_ITEMS: NavItem[] = [
   { label: "Dashboard", href: "/teacher/dashboard", icon: LayoutDashboard, enabled: true },
-  { label: "Classes", href: "/teacher/classes", icon: BookOpen, enabled: true },
-  { label: "Gradebook", href: "/teacher/gradebook", icon: ClipboardList, enabled: true },
-  { label: "Report Cards", href: "/teacher/report-cards", icon: FileText, enabled: true },
-  { label: "Attendance", href: "/teacher/attendance", icon: CalendarCheck, enabled: true },
+  { label: "Classes", href: "/teacher/classes", icon: BookOpen, group: "my-classes", enabled: true },
+  { label: "Attendance", href: "/teacher/attendance", icon: CalendarCheck, group: "my-classes", enabled: true },
   // Homework (docs/modules/the-school-day.md Part B). Directly under
   // Attendance: both are daily, both are about the class in front of you, and
   // this is the one a student's family sees the same day.
-  { label: "Homework", href: "/teacher/homework", icon: BookMarked, enabled: true },
+  { label: "Homework", href: "/teacher/homework", icon: BookMarked, group: "my-classes", enabled: true },
   // Phase 9 / CP2.2 — incidents involving more than one student. A single
   // child's record stays on their page in Classes.
-  { label: "Behaviour", href: "/teacher/behaviour", icon: ShieldAlert, enabled: true },
+  { label: "Behaviour", href: "/teacher/behaviour", icon: ShieldAlert, group: "my-classes", enabled: true },
   // Phase 5 / Slice 2 — lesson plan generator. Unconditional: unlike subject
   // attendance it needs no per-school opt-in, and unlike gradebook/report
   // cards it needs no prior data, so it is usable by every school from day one.
-  { label: "Lesson plans", href: "/teacher/lesson-plans", icon: Sparkles, enabled: true },
+  { label: "Lesson plans", href: "/teacher/lesson-plans", icon: Sparkles, group: "lessons", enabled: true },
   // Phase 7 / CP2 — the curriculum library that grounds lesson plans. Sits
   // directly beneath "Lesson plans" because that is the only thing it feeds:
   // its whole purpose is to make the item above it produce better output, and
   // separating them would leave a teacher wondering what it is for.
-  { label: "Curriculum", href: "/teacher/curriculum", icon: Library, enabled: true },
+  { label: "Curriculum", href: "/teacher/curriculum", icon: Library, group: "lessons", enabled: true },
+  // Scores and results, first in the "Exams & results" family (nav-groups.ts).
+  { label: "Gradebook", href: "/teacher/gradebook", icon: ClipboardList, group: "results", enabled: true },
+  { label: "Report Cards", href: "/teacher/report-cards", icon: FileText, group: "results", enabled: true },
   // Phase 8c / CP5b (docs/modules/phase-8.md §22.2) — exam questions for the
   // subjects this teacher teaches. Grounded in the same curriculum as above.
-  { label: "Question bank", href: "/teacher/question-bank", icon: FileQuestion, enabled: true },
+  { label: "Question bank", href: "/teacher/question-bank", icon: FileQuestion, group: "results", enabled: true },
   // Phase 9 / CP6.3 — PDFs and links for the subjects the teacher teaches.
-  { label: "Library resources", href: "/teacher/resources", icon: BookCopy, enabled: true },
+  { label: "Library resources", href: "/teacher/resources", icon: BookCopy, group: "lessons", enabled: true },
   // Phase 8c / CP5c (§22.3) — papers set from the approved questions above.
-  { label: "Exam papers", href: "/teacher/exam-papers", icon: ScrollText, enabled: true },
+  { label: "Exam papers", href: "/teacher/exam-papers", icon: ScrollText, group: "results", enabled: true },
   // Online exams (CBT, docs/modules/cbt.md) — a final paper sat in the lab.
-  { label: "Online exams", href: "/teacher/cbt", icon: MonitorCheck, enabled: true },
+  { label: "Online exams", href: "/teacher/cbt", icon: MonitorCheck, group: "results", enabled: true },
   // Phase 8 / CP1 — read-only school calendar (docs/modules/phase-8.md §15).
-  { label: "Calendar", href: "/teacher/calendar", icon: CalendarDays, enabled: true },
+  { label: "Calendar", href: "/teacher/calendar", icon: CalendarDays, group: "school", enabled: true },
   // Phase 8 / CP4 (docs/modules/phase-8.md §18 D37): own lessons + form-class grids.
-  { label: "My timetable", href: "/teacher/timetable", icon: Clock, enabled: true },
+  { label: "My timetable", href: "/teacher/timetable", icon: Clock, group: "my-classes", enabled: true },
 ];
 
 const SUBJECT_ITEM: NavItem = {
   label: "Subject attendance",
   href: "/teacher/attendance/subject",
   icon: CalendarClock,
+  group: "my-classes",
   enabled: true,
 };
 
@@ -91,6 +94,7 @@ const BOARDING_ITEM: NavItem = {
   label: "Boarding",
   href: "/teacher/boarding",
   icon: DoorOpen,
+  group: "school",
   enabled: true,
 };
 
@@ -99,6 +103,7 @@ const ADMISSIONS_ITEM: NavItem = {
   label: "Admissions",
   href: "/teacher/admissions",
   icon: Inbox,
+  group: "school",
   enabled: true,
 };
 
@@ -108,6 +113,33 @@ const MESSAGES_ITEM: NavItem = {
   label: "Messages",
   href: "/teacher/messages",
   icon: MessagesSquare,
+  group: "school",
+  enabled: true,
+};
+
+// For an owner or admin visiting the teacher shell: the pages the admin menu
+// links into, and a way home.
+const ADMIN_VISIBLE_HREFS = new Set([
+  "/teacher/lesson-plans",
+  "/teacher/curriculum",
+  "/teacher/question-bank",
+  "/teacher/exam-papers",
+  "/teacher/cbt",
+]);
+
+const BACK_TO_ADMIN_ITEM: NavItem = {
+  label: "Back to admin",
+  href: "/dashboard",
+  icon: ArrowLeft,
+  enabled: true,
+};
+
+// 2026-10-19 — the school's announcements, to read (components/announcements/staff-news.tsx).
+const NEWS_ITEM: NavItem = {
+  label: "School news",
+  href: "/teacher/news",
+  icon: Newspaper,
+  group: "school",
   enabled: true,
 };
 
@@ -150,15 +182,28 @@ export function useTeacherNavItems(): NavItem[] {
     };
   }, []);
 
-  const { permissions } = useAuth();
+  const { permissions, roles } = useAuth();
   const admissions = hasPermission(permissions, "admission.read");
   const messages = hasPermission(permissions, "messages.read");
+
+  // An owner or admin who is not also a teacher reaches this shell only
+  // through the admin menu's cross-shell links (Lesson plans, Curriculum,
+  // Question bank, Exam papers, Online exams). They used to get the whole
+  // teacher menu, where Classes, Attendance and the rest refuse anyone without
+  // a teaching timetable (the role audit, 2026-10-19). Now: those pages, and a
+  // way back.
+  const isTeacher = roles.some((r) => r.key === "teacher");
+  const isAdmin = roles.some((r) => r.key === "owner" || r.key === "admin");
+  if (isAdmin && !isTeacher) {
+    return [BACK_TO_ADMIN_ITEM, ...BASE_ITEMS.filter((i) => ADMIN_VISIBLE_HREFS.has(i.href))];
+  }
   return [
     ...BASE_ITEMS,
     ...(subjectEnabled ? [SUBJECT_ITEM] : []),
     ...(housesHostels ? [BOARDING_ITEM] : []),
     ...(admissions ? [ADMISSIONS_ITEM] : []),
     ...(messages ? [MESSAGES_ITEM] : []),
+    ...(hasPermission(permissions, "announcement.read") ? [NEWS_ITEM] : []),
     PROFILE_ITEM,
   ];
 }
@@ -167,43 +212,16 @@ export function TeacherSidebar() {
   const pathname = usePathname();
   const items = useTeacherNavItems();
 
-  // Disambiguate the daily vs subject attendance entries so both don't light up
-  // on the /teacher/attendance/subject sub-tree.
-  const onSubjectTree = pathname.startsWith("/teacher/attendance/subject");
-  function isActive(href: string): boolean {
-    if (href === "/teacher/attendance") {
-      return (pathname === href || pathname.startsWith(`${href}/`)) && !onSubjectTree;
-    }
-    if (href === "/teacher/attendance/subject") return onSubjectTree;
-    return pathname === href || pathname.startsWith(`${href}/`);
-  }
-
+  // The shared NavList (components/admin/nav-list.tsx), so the teacher menu
+  // folds into the same families as the admin one and scrolls when long. Its
+  // longest-match rule keeps daily and subject attendance from both lighting
+  // up on /teacher/attendance/subject.
   return (
     <aside className="hidden w-60 shrink-0 border-r border-border bg-card md:flex md:flex-col">
       <div className="flex h-14 items-center border-b border-border px-4">
         <SchoolBrand />
       </div>
-      <nav className="flex flex-1 flex-col gap-1 p-2">
-        {items.map((item) => {
-          const Icon = item.icon;
-          const active = isActive(item.href);
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={cn(
-                "flex items-center gap-3 rounded-md px-3 py-2 text-sm",
-                active
-                  ? "bg-accent text-accent-foreground"
-                  : "text-foreground/80 hover:bg-accent hover:text-accent-foreground",
-              )}
-            >
-              <Icon className="h-4 w-4" />
-              <span>{item.label}</span>
-            </Link>
-          );
-        })}
-      </nav>
+      <NavList pathname={pathname} items={items} laterPhaseItems={[]} />
       <PoweredBySchoolKit />
     </aside>
   );

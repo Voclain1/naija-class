@@ -99,6 +99,8 @@ export const config = {
     // because middleware.spec.ts refused the PR without it, which is the
     // whole point of that spec existing.
     "/announcements/:path*",
+    // School news, the staff reading view of announcements (2026-10-19).
+    "/news/:path*",
     // The homework lookup, added 2026-10-14 in the same PR as the page.
     "/homework/:path*",
     // Behaviour incidents (Phase 9 / CP2.2), added in the same PR as the page.

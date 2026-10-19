@@ -1,7 +1,11 @@
+"use client";
+
 import { MessagesSquare, Award, BarChart3, Inbox, Bell, Building2, CalendarCheck, CalendarClock, CreditCard, FileText, Gauge, Hash, Layers, Percent, ShieldCheck, SlidersHorizontal, Sparkles, User, Users, Wallet, type LucideIcon } from "lucide-react";
 import Link from "next/link";
 
 import { PageHeader } from "@/components/layout/page-primitives";
+import { hasPermission } from "@/lib/auth/has-permission";
+import { useAuth } from "@/lib/auth/use-auth";
 
 // /settings — a small hub linking the settings areas. (Previously a bare
 // redirect to /settings/users; grew a card per area as they landed —
@@ -11,6 +15,10 @@ interface SettingsLink {
   href: string;
   description: string;
   icon: LucideIcon;
+  // Shown only to someone holding this permission (2026-10-19). The Security
+  // card was shown to every admin, but two-factor is the owner's alone
+  // (auth.2fa.manage), so an admin who opened it met errors.
+  requiredPermission?: string;
 }
 
 const LINKS: SettingsLink[] = [
@@ -121,6 +129,7 @@ const LINKS: SettingsLink[] = [
     href: "/settings/security",
     description: "Two-factor authentication for your owner account.",
     icon: ShieldCheck,
+    requiredPermission: "auth.2fa.manage",
   },
   {
     label: "My profile",
@@ -131,6 +140,8 @@ const LINKS: SettingsLink[] = [
 ];
 
 export default function SettingsIndex() {
+  const { permissions } = useAuth();
+  const links = LINKS.filter((l) => !l.requiredPermission || hasPermission(permissions, l.requiredPermission));
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-6">
       {/* This page had NO page header at all — a bare `text-2xl font-semibold`
@@ -140,7 +151,7 @@ export default function SettingsIndex() {
       <PageHeader title="Settings" subtitle="Manage your school's configuration." />
 
       <ul className="grid gap-4 sm:grid-cols-2">
-        {LINKS.map((link) => {
+        {links.map((link) => {
           const Icon = link.icon;
           return (
             <li key={link.href}>

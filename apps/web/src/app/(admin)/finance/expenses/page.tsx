@@ -185,7 +185,9 @@ export default function ExpensesPage() {
             else that feeds the P&amp;L.
           </p>
         </div>
-        <div className="flex gap-2 print:hidden">
+        {/* Wraps on a phone: four buttons in one row ran past the screen
+            edge, cutting off "New expense" (owner, 2026-10-19). */}
+        <div className="flex flex-wrap gap-2 print:hidden">
           <ListExportMenu
             title="Expenses"
             csvFilename="expenses.csv"

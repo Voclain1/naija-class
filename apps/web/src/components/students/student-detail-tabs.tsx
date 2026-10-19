@@ -56,8 +56,12 @@ export function StudentDetailTabs({ student, onGuardiansChanged }: Props) {
 
   return (
     <div className="flex flex-col gap-4">
+      {/* Below `sm` the five tabs wrap into rows of rounded buttons, the
+          SectionTabs pattern (components/shared/section-tabs.tsx): as a
+          single underlined row they were wider than a phone, so Health and
+          Behaviour sat past the edge of the screen (owner, 2026-10-19). */}
       <nav
-        className="flex gap-1 border-b"
+        className="flex flex-wrap gap-2 sm:gap-1 sm:border-b"
         role="tablist"
         aria-label="Student detail sections"
       >
@@ -71,10 +75,11 @@ export function StudentDetailTabs({ student, onGuardiansChanged }: Props) {
               aria-selected={active}
               onClick={() => setTab(t.key)}
               className={cn(
-                "border-b-2 px-3 py-2 text-sm font-medium",
+                "whitespace-nowrap rounded-full border px-3 py-1.5 text-sm font-medium",
+                "sm:-mb-px sm:rounded-none sm:border-0 sm:border-b-2 sm:py-2",
                 active
-                  ? "border-primary text-foreground"
-                  : "border-transparent text-muted-foreground hover:text-foreground",
+                  ? "border-primary/40 bg-primary/10 text-primary sm:border-primary sm:bg-transparent sm:text-foreground"
+                  : "border-border text-muted-foreground hover:text-foreground sm:border-transparent",
               )}
             >
               {t.label}
@@ -143,11 +148,11 @@ function Field({
   children: React.ReactNode;
 }) {
   return (
-    <div className={cn("flex flex-col gap-0.5", full && "sm:col-span-2")}>
+    <div className={cn("flex min-w-0 flex-col gap-0.5", full && "sm:col-span-2")}>
       <dt className="text-xs uppercase tracking-wide text-muted-foreground">
         {label}
       </dt>
-      <dd>{children}</dd>
+      <dd className="break-words">{children}</dd>
     </div>
   );
 }

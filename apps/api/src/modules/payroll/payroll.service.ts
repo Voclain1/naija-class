@@ -13,6 +13,9 @@ import {
   type PayslipUrlDto,
   type TransferPayrollResultDto,
   type UpdatePayrollItemInput,
+  STAFF_SALARY_SET_AUDIT_ACTION,
+  type SetStaffSalaryInput,
+  type StaffSalaryDto,
 } from "@school-kit/types";
 
 import type { AuthContext } from "../../common/auth/auth-context.js";
@@ -201,6 +204,56 @@ export class PayrollService {
     if (!user || user.schoolId !== schoolId) {
       throw new NotFoundError("Staff member not found.");
     }
+  }
+
+  // ─── Saved salaries (2026-10-19) ─────────────────────────────────────────
+  //
+  // One current monthly gross per staff member (StaffSalary), set on the
+  // invite form or here, and read by the payroll page to prefill "Add to
+  // payroll". Changing it never touches a PayrollItem: each month keeps the
+  // amount it was run with.
+
+  async listSalaries(authCtx: AuthContext): Promise<StaffSalaryDto[]> {
+    return withTenant(authCtx.schoolId, async (db) => {
+      const rows = await db.staffSalary.findMany({
+        where: { schoolId: authCtx.schoolId },
+        select: { userId: true, monthlyGross: true, updatedAt: true },
+      });
+      return rows;
+    });
+  }
+
+  async setSalary(
+    authCtx: AuthContext,
+    userId: string,
+    dto: SetStaffSalaryInput,
+    reqCtx: RequestContext,
+  ): Promise<StaffSalaryDto> {
+    return withTenant(authCtx.schoolId, async (db) => {
+      await this.assertUserExists(db, authCtx.schoolId, userId);
+      const before = await db.staffSalary.findUnique({
+        where: { schoolId_userId: { schoolId: authCtx.schoolId, userId } },
+        select: { monthlyGross: true },
+      });
+      const saved = await db.staffSalary.upsert({
+        where: { schoolId_userId: { schoolId: authCtx.schoolId, userId } },
+        create: { schoolId: authCtx.schoolId, userId, monthlyGross: dto.monthlyGross, updatedBy: authCtx.userId },
+        update: { monthlyGross: dto.monthlyGross, updatedBy: authCtx.userId },
+        select: { userId: true, monthlyGross: true, updatedAt: true },
+      });
+      await db.auditLog.create({
+        data: {
+          schoolId: authCtx.schoolId,
+          userId: authCtx.userId,
+          action: STAFF_SALARY_SET_AUDIT_ACTION,
+          entityType: "user",
+          entityId: userId,
+          ipAddress: reqCtx.ipAddress,
+          metadata: { source: "staff", from: before?.monthlyGross ?? null, to: dto.monthlyGross },
+        },
+      });
+      return saved;
+    });
   }
 
   async findAll(authCtx: AuthContext, query: ListPayrollQuery = {}): Promise<PayrollItemDto[]> {

@@ -38,3 +38,8 @@ export function getAnnouncementEmailPreview(audience: "EVERYONE" | "PARENTS" | "
 export function getAnnouncementBounced(id: string): Promise<AnnouncementBouncedDto[]> {
   return apiFetch<AnnouncementBouncedDto[]>(`/announcements/${encodeURIComponent(id)}/bounced`);
 }
+
+/** Marks one announcement read for the signed-in staff member. */
+export function markStaffAnnouncementRead(id: string): Promise<void> {
+  return apiFetch<void>(`/announcements/${encodeURIComponent(id)}/read`, { method: "POST" });
+}

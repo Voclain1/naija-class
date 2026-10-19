@@ -1,4 +1,4 @@
-import { ForbiddenError, UnauthorizedError } from "@school-kit/types";
+import { ForbiddenError, PERMISSION_WILDCARD, UnauthorizedError } from "@school-kit/types";
 
 import { withTenant } from "@school-kit/db";
 
@@ -74,4 +74,23 @@ export async function assertUserActiveAndHasOneOf(
       `This action requires one of the following roles: ${allowedRoleKeys.join(", ")}.`,
     );
   }
+}
+
+/**
+ * Whether the signed-in person holds `permission` (the owner's `*` included),
+ * for a request that carries an optional part only some callers may send — the
+ * salary on a staff invitation (2026-10-19). The route's own PermissionsGuard
+ * still decides whether the request is allowed at all.
+ */
+export async function userHoldsPermission(authCtx: AuthContext, permission: string): Promise<boolean> {
+  return withTenant(authCtx.schoolId, async (db) => {
+    const grants = await db.userRole.findMany({
+      where: { userId: authCtx.userId },
+      select: { role: { select: { permissions: true } } },
+    });
+    return grants.some((g) => {
+      const held = Array.isArray(g.role.permissions) ? g.role.permissions : [];
+      return held.includes(PERMISSION_WILDCARD) || held.includes(permission);
+    });
+  });
 }

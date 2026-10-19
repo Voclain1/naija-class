@@ -20,9 +20,11 @@ import {
   createPayrollItem,
   generatePayslip,
   listPayroll,
+  listStaffSalaries,
   transferPayrollItem,
 } from "@/lib/finance/payroll-api";
 import { listStaff } from "@/lib/staff/staff-api";
+import { nairaInputToKobo } from "@/lib/finance/naira-input";
 import { hasPermission } from "@/lib/auth/has-permission";
 
 // /finance/payroll — Phase 3 / Payroll CP3 (run without money movement) +
@@ -55,10 +57,14 @@ const STATUS_VARIANTS: Record<string, BadgeProps["variant"]> = {
 export default function PayrollPage() {
   const { permissions } = useAuth();
   const canTransfer = hasPermission(permissions, "payroll.transfer");
+  const canProcess = hasPermission(permissions, "payroll.process");
 
   const [period, setPeriod] = useState(currentPeriod());
   const [staff, setStaff] = useState<UserListItemDto[]>([]);
   const [items, setItems] = useState<PayrollItemDto[]>([]);
+  // Each staff member's saved monthly salary, kobo (2026-10-19): the
+  // "Run payroll" form fills its gross from here.
+  const [salaries, setSalaries] = useState<Map<string, number>>(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
@@ -75,6 +81,10 @@ export default function PayrollPage() {
       ]);
       setStaff(staffList);
       setItems(payrollItems);
+      if (canProcess) {
+        const saved = await listStaffSalaries().catch(() => []);
+        setSalaries(new Map(saved.map((x) => [x.userId, x.monthlyGross])));
+      }
     } catch (e) {
       logFinanceError("listPayroll", e);
       setError(financeErrorMessage(e));
@@ -124,11 +134,15 @@ export default function PayrollPage() {
     grossSalaryNaira: string;
     deductions: { name: string; amountNaira: string }[];
   }) {
-    const grossSalary = Math.round(parseFloat(values.grossSalaryNaira) * 100);
-    const deductions = values.deductions.map((d) => ({
-      name: d.name.trim(),
-      amount: Math.round(parseFloat(d.amountNaira) * 100),
-    }));
+    // String arithmetic to kobo (nairaInputToKobo), never a float: this used
+    // Math.round(parseFloat(x) * 100), against CLAUDE.md's money rule.
+    const grossSalary = nairaInputToKobo(values.grossSalaryNaira);
+    if (grossSalary === null) throw new Error("Enter the gross salary in naira, like 150000 or 150,000.50.");
+    const deductions = values.deductions.map((d) => {
+      const amount = nairaInputToKobo(d.amountNaira);
+      if (amount === null) throw new Error(`Enter the amount for "${d.name.trim()}" in naira.`);
+      return { name: d.name.trim(), amount };
+    });
     const created = await createPayrollItem({
       userId: values.userId,
       period: values.period,
@@ -306,6 +320,7 @@ export default function PayrollPage() {
         open={showForm}
         onClose={() => setShowForm(false)}
         staff={staff}
+        salaries={salaries}
         defaultPeriod={period}
         onSubmit={handleCreate}
       />

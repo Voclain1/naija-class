@@ -4,6 +4,7 @@ import { Injectable, Logger } from "@nestjs/common";
 import { Prisma, basePrisma, withTenant, type PrismaClient } from "@school-kit/db";
 import {
   ConflictError,
+  ForbiddenError,
   NotFoundError,
   ValidationError,
   type InviteAdminInput,
@@ -18,7 +19,7 @@ import {
 } from "@school-kit/types";
 
 import type { AuthContext } from "../../common/auth/auth-context";
-import { assertUserActiveAndHasOneOf } from "../../common/auth/role-check";
+import { assertUserActiveAndHasOneOf, userHoldsPermission } from "../../common/auth/role-check";
 import { redactEmail } from "../../common/redact";
 import { USER_RESPONSE_SELECT } from "../auth/auth.service";
 
@@ -170,6 +171,14 @@ export class UsersService {
       );
     }
 
+    // A salary on the invite is payroll information: only someone who runs
+    // payroll may set it (finance/staff-salary.dto.ts). Owner and admin hold
+    // payroll.process today; this keeps a future invite-only role from
+    // setting pay by the back door.
+    if (input.monthlyGross !== undefined && !(await userHoldsPermission(authCtx, "payroll.process"))) {
+      throw new ForbiddenError("Setting a salary needs the payroll permission (payroll.process).");
+    }
+
     const rawToken = crypto.randomBytes(32).toString("base64url");
     const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
     const expiresAt = new Date(Date.now() + INVITATION_TTL_MS);
@@ -211,6 +220,7 @@ export class UsersService {
           tokenHash,
           invitedBy: authCtx.userId,
           expiresAt,
+          pendingMonthlyGross: input.monthlyGross ?? null,
         },
         select: INVITATION_CREATED_SELECT,
       });
@@ -227,7 +237,9 @@ export class UsersService {
             email: redactEmail(input.email),
             roleKey,
             // firstName / lastName intentionally not in audit metadata —
-            // they're on the invitation row directly now.
+            // they're on the invitation row directly now. The salary itself
+            // is audited as staff-salary.set when the person accepts.
+            salaryPending: input.monthlyGross !== undefined,
           },
         },
       });
@@ -301,6 +313,8 @@ export class UsersService {
           tokenHash,
           invitedBy: authCtx.userId,
           expiresAt,
+          // The salary rides on the new link too.
+          pendingMonthlyGross: old.pendingMonthlyGross,
         },
         select: INVITATION_CREATED_SELECT,
       });
@@ -370,6 +384,7 @@ export class UsersService {
             roleKey: true,
             expiresAt: true,
             acceptedAt: true,
+            pendingMonthlyGross: true,
           },
         })
       : null;

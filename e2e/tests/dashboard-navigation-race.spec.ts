@@ -1,6 +1,6 @@
 import { expect, test, type Route } from "@playwright/test";
 
-import { loginAsAdmin, setupAcademicStructure } from "../fixtures/index.js";
+import { loginAsAdmin, setupAcademicStructure, openFromMenu } from "../fixtures/index.js";
 
 // The /dashboard navigation race (docs/deferred-archive.md, captured
 // 2026-07-31; fixed 2026-10-10). The topbar's term selector writes the
@@ -30,7 +30,7 @@ test("a click made before the dashboard picks its term is not undone", async ({ 
     // Click, and let the terms response through while that navigation is
     // still in flight: the window in which the old router.replace() cancelled
     // it. Then let everything settle and see where the person ended up.
-    await page.getByRole("link", { name: "Students", exact: true }).first().click();
+    await openFromMenu(page, "Students");
     releasing = true;
     const released = page.waitForResponse(/\/academic-years\/[^/]+\/terms/);
     for (const route of held) await route.continue();

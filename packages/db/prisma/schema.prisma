@@ -452,6 +452,9 @@ model Invitation {
   expiresAt  DateTime  @map("expires_at")
   acceptedAt DateTime? @map("accepted_at")
   createdAt  DateTime  @default(now()) @map("created_at")
+  // Kobo. A monthly salary typed on the invite form, moved into
+  // staff_salaries when the person accepts (migration 20261112120000).
+  pendingMonthlyGross Int? @map("pending_monthly_gross")
 
   school School @relation(fields: [schoolId], references: [id], onDelete: Cascade)
 
@@ -2783,9 +2786,9 @@ model Expense {
 // webhook resolves it to PAID or FAILED — there is no PAID/FAILED transition
 // that doesn't pass through PROCESSING first (see PayrollService.transfer).
 //
-// grossSalary/deductions are entered fresh per period (no reusable "salary
-// structure" table — see the plan-first D2: build one only if schools prove
-// they want a prefill shortcut). deductions is a flat line-item list
+// grossSalary/deductions are entered per period. Since 2026-10-19 the gross
+// is prefilled from the staff member's saved StaffSalary (the D2 prefill,
+// asked for by the owner), and stays editable on each month's row. deductions is a flat line-item list
 // ([{ name, amount }] kobo), NOT a Nigerian PAYE tax-bracket engine (D3) —
 // the bursar computes/enters PAYE externally as one of the line items.
 // netSalary is computed server-side (grossSalary - sum(deductions)) and
@@ -2861,6 +2864,25 @@ model StaffBankAccount {
 
   @@unique([schoolId, userId]) // one current bank account per staff member per school
   @@map("staff_bank_accounts")
+}
+
+// A staff member's current monthly salary (2026-10-19, migration
+// 20261112120000_staff_salaries) — the prefill PayrollItem's D2 deferred. Set
+// on the invite form or the staff page, read by "Run payroll". Each
+// PayrollItem keeps its own grossSalary, so a change here never rewrites a
+// month already run. Gated by payroll.process; every change is audited as
+// staff-salary.set.
+model StaffSalary {
+  id           String   @id @default(uuid())
+  schoolId     String   @map("school_id")
+  userId       String   @map("user_id") // plain FK -> users.id, as StaffBankAccount
+  monthlyGross Int      @map("monthly_gross") // kobo
+  updatedBy    String   @map("updated_by")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@unique([schoolId, userId])
+  @@map("staff_salaries")
 }
 
 // ---------- Subject-period attendance (Phase 2 / Slice 8 — opt-in) ----------

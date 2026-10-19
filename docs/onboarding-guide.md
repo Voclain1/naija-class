@@ -67,10 +67,21 @@ Every button name in **bold** in this guide is exactly what you will see on your
 
 ## How to find your way around
 
-- **The menu down the left side** takes you to every part of SchoolKit: Dashboard, Students, Guardians, Staff, Finance, Report Cards, Settings and so on. On a phone, tap the **three lines** at the top to open the same menu.
+- **The menu down the left side** takes you to every part of SchoolKit. Pages that belong together sit in one section, so the menu stays short:
+  - **People** — Students, Guardians, Staff, Enrollments, Admissions;
+  - **Teaching** — Timetable, Lesson plans, Curriculum, Homework, Question bank;
+  - **Exams & results** — Gradebook, Exam papers, Online exams, Report Cards, Result Checker;
+  - **Student care** — Behaviour, Health, Sickbay;
+  - **School services** — Transport, Library, Hostels, Boarding;
+  - **Messages & events** — Messages, Announcements, Event Calendar;
+  - **Reports & insights** — Reports, Insights;
+  - **School setup** — Academics, Grading, Settings.
+
+  **Dashboard**, **Finance** and **My profile** sit on their own. Tap a section's name to open or close it. The section holding the page you are on is always open, and SchoolKit remembers which sections you left open. Someone who uses only a few pages, such as a bursar or a librarian, sees a short plain list instead. On a phone, tap the **three lines** at the top to open the same menu.
+- **Find a page** — the box at the top of the menu. Type a page's name, or an everyday word such as "fees", "parents", "salary" or "exeat", and press the page you want.
 - **The Dashboard** is your home page. Until your school is fully set up, it shows a **checklist** of what is left to do, with a button beside each item that takes you straight to the right page.
 - **The question mark (?)** at the top of the screen opens **Getting started guide** (this page), **Watch the demo**, and **Replay tour** (a one‑minute tour of the menu).
-- **The search box** at the top ("Search or run a command") lets you type the name of a page — for example "invoices" — and go straight there.
+- **The search box** at the top ("Search or run a command") does the same from anywhere: type a page's name or an everyday word and press **Enter**. It only offers pages you are allowed to open.
 - **Settings** (at the bottom of the menu) is where you change your school's details, logo, school year, fees, grading and so on.
 
 **Tip:** You cannot break anything by looking around. Every page that changes something has a clear button, such as **Save** or **Create**, and nothing changes until you press it.
@@ -215,8 +226,12 @@ You can run SchoolKit on your own, but teachers need their own accounts before t
 2. Type their **Email**, and choose their **Role**:
    - **Admin** — can do almost everything you can;
    - **Bursar** — handles fees and money;
-   - **Teacher** — takes registers and enters scores for their own classes.
-3. Press **Send invitation**.
+   - **Teacher** — takes registers and enters scores for their own classes;
+   - **Health officer** — keeps the children's health records and the sickbay log;
+   - **Librarian** — keeps the library's books and lends them;
+   - **House master** — looks after a hostel's boarders (choose their hostel on its page after they join).
+3. If you like, type their **Monthly salary in naira**, for example `150,000`. It is saved to their record when they accept, and filled in for you each month when you **Run payroll** under **Finance → Payroll**. You can change it any time on their staff page, under **Monthly salary**. (Only people who run payroll see this box.)
+4. Press **Send invitation**.
 
 **Important — SchoolKit does not email staff invitations for you.** After you press **Send invitation**, the screen shows an **Accept link** with a **Copy** button. Copy it and send it to the person yourself — by WhatsApp, text message or email. When they open it, they choose their own password.
 
@@ -335,7 +350,7 @@ The balance updates straight away, and the parent sees it too.
 
 Go to **Finance → Debtors**. Choose the year and term to see every child who still owes money.
 
-- Tick the families you want to remind and press **Send reminder**. SchoolKit sends each family a reminder of what they owe.
+- Tick the families you want to remind and press **Send reminder**. SchoolKit emails the reminder to **every parent or guardian linked to the child** who has an email address, and sends one text or app alert to one of them. Afterwards a line tells you how many were sent and, for any that were not, why — for example "1 has no parent or guardian linked" or "1 has a guardian with no email, phone or app". If it says email, SMS and app alerts are all off, turn one on in **Settings → Notifications**.
 - Or press **WhatsApp** beside a family to send them a ready‑written reminder from your own WhatsApp. (WhatsApp opens without a contact chosen — pick the right parent before you send.)
 
 **Payment link on WhatsApp:** on any invoice, under **Share payment link**, you can create a link for the balance and press **Share on WhatsApp**. The parent can pay by card or transfer through it. This needs online payment to be switched on — see the next section.
@@ -478,11 +493,16 @@ Parents can reset their own password from **Forgot password?** on the portal sig
 
 - **You (the owner)** — everything, including settings, approving and releasing results, and reopening a class's report cards.
 - **Admin** — almost everything the owner can do. Good for a principal, vice‑principal or school secretary.
-- **Bursar** — Finance only: fees, invoices, recording payments, receipts, debtors, discounts, expenses and preparing payroll. Bursars do not see student records, staff records, results or settings. Reversing a payment and sending salary transfers are kept for you and your admins.
+- **Bursar** — Finance: fees, invoices, recording payments, receipts, debtors, discounts, expenses and preparing payroll (including staff salaries). They can also look up a class's homework, set transport and hostel fees, read parents' messages to the office, and see the calendar and school news. Bursars do not see student records, staff records, results or settings. Reversing a payment and sending salary transfers are kept for you and your admins.
+- **Health officer** — Health and Sickbay only.
+- **Librarian** — the Library only.
+- **House master** — Boarding only: their hostel's boarders, visitors and leave‑outs.
+- **Admissions officer, principal, head teacher, Inbox officer** — given to a member of staff on top of their main role, in **Settings → Admissions** and **Settings → Messaging**. They add **Admissions** or **Messages** to that person's menu.
+- **Everyone on the staff** sees **School news** (the school's announcements) and **My profile**, where they add their Bank Verification Number for payroll.
 - **Teacher** — their own classes only: registers (form teachers), scores for the subjects they teach, report card comments (form teachers), homework, lesson plans and their timetable.
 - **Parents** — only their own children, on the parent portal.
 
-**For your teachers, in short:** sign in at **app.schoolkit.ng/login**, then use the menu on the left — **Attendance** for the morning register, **Gradebook** for scores, **Report Cards** for form teachers' comments, **Homework** to set homework that parents can see.
+**For your teachers, in short:** sign in at **app.schoolkit.ng/login**, then use the menu on the left. It has the same kind of sections: **My classes** (Classes, Attendance for the morning register, Homework, Behaviour, My timetable), **Lessons** (Lesson plans, Curriculum, Library resources), **Exams & results** (Gradebook for scores, Report Cards for form teachers' comments, Question bank, Exam papers, Online exams) and **School** (Calendar, Messages, School news).
 
 ---
 
@@ -494,7 +514,7 @@ You do not need any of these to get started. Use them when you are ready.
 - **Homework** — teachers set homework from **Homework** in their menu. The class and their parents can see it the same day.
 - **Behaviour records** — on a student's **Behaviour** tab, staff can record a **Commendation** or a **Concern**. These are for staff only; parents do not see them.
 - **Expenses** — record the school's spending under **Finance → Expenses**, with receipts.
-- **Payroll** — run monthly salaries under **Finance → Payroll**.
+- **Payroll** — run monthly salaries under **Finance → Payroll**. Press **Run payroll** and choose a member of staff: their saved monthly salary fills in by itself, and you can change it for that month. Set or change a saved salary on the staff member's page, or when you invite them.
 - **Finance dashboard** — **Finance** in the menu shows how much has been billed and collected this term, class by class.
 - **Reports** — shows which classes are behind on registers and score entry, so you know who to follow up.
 - **Insights** — answers questions such as "Which students are at risk of failing?" and "Where is attendance worst?".
@@ -508,6 +528,12 @@ You do not need any of these to get started. Use them when you are ready.
 ---
 
 # Problems and questions
+
+**I can't find a page in the menu.**
+It may be inside a closed section — tap the section's name to open it. Or type what you are looking for in **Find a page** at the top of the menu (for example "fees" or "sickbay"). If it is still not there, your role does not include that page; ask the owner or an admin.
+
+**A reminder says a family was "not sent".**
+The line under the list says why. "No parent or guardian linked": open the child's page, go to **Guardians**, and add one. "A guardian with no email, phone or app": add the parent's email or phone on the same tab.
 
 **A teacher logs in and sees no classes.**
 They have not been given any classes yet. Go to **Staff**, click their name, and add their **Teaching assignments** ([Step 9](#step-9-say-who-teaches-what)). For the daily register, they must also be the class's form teacher ([Step 8](#step-8-choose-a-form-teacher-for-each-class)).

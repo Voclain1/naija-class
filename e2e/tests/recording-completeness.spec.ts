@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 
 import { withTenant } from "@school-kit/db";
 
-import { createApiContext, inviteAndAcceptTeacher, loginAsAdmin, loginAsTeacher, uniqueSuffix } from "../fixtures/index.js";
+import { createApiContext, inviteAndAcceptTeacher, loginAsAdmin, loginAsTeacher, uniqueSuffix, openFromMenu } from "../fixtures/index.js";
 
 // Phase 8 / CP2 — Recording Completeness, the real end-to-end path.
 // Plan-first: docs/modules/phase-8.md §16.5 item 6.
@@ -84,7 +84,7 @@ test("owner sees the ended term and '1 of 18 school days'; opening teacher activ
     // sidebar link before it does is the pre-existing /dashboard navigation race
     // recorded in docs/deferred.md, not something this checkpoint introduced.
     await expect(admin.page).toHaveURL(/\/dashboard\?termId=/, { timeout: 60_000 });
-    await admin.page.getByRole("link", { name: "Reports" }).first().click();
+    await openFromMenu(admin.page, "Reports");
     await expect(admin.page).toHaveURL(/\/reports/);
     // Pin the fixture's term explicitly (the topbar selector appends ?termId=).
     // Generous timeout: Next dev mode compiles /reports on first request (~15s).
