@@ -250,7 +250,7 @@ test("an owner with no teacher identity enters scores, signs off and builds repo
     const bursarApi = await createApiContext(bursar.token);
     try {
       await bursar.page.goto("/finance/dashboard");
-      await expect(bursar.page.getByRole("link", { name: "Finance" }).first()).toBeVisible();
+      await expect(bursar.page.getByRole("link", { name: "Bursary" }).first()).toBeVisible();
       await expect(bursar.page.getByRole("link", { name: "Gradebook" })).toHaveCount(0);
       const okaforId = await studentIdOf(admin.schoolId, "Okafor");
       const refused = await bursarApi.post("assessment-scores/bulk", {

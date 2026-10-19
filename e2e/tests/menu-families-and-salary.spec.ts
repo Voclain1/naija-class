@@ -17,9 +17,9 @@ test("the admin menu is grouped into sections, and finds a page by an everyday w
   const menu = page.locator("aside").getByRole("navigation", { name: "Main menu" });
 
   // The section holding the page you are on is open; another is closed.
-  await expect(menu.getByRole("button", { name: /People/ })).toHaveAttribute("aria-expanded", "true");
+  await expect(menu.getByRole("button", { name: /^Students/ })).toHaveAttribute("aria-expanded", "true");
   await expect(menu.getByRole("link", { name: "Students", exact: true })).toBeVisible();
-  const care = menu.getByRole("button", { name: /Student care/ });
+  const care = menu.getByRole("button", { name: /Student welfare/ });
   await expect(care).toHaveAttribute("aria-expanded", "false");
   await expect(menu.getByRole("link", { name: "Sickbay", exact: true })).toHaveCount(0);
 
@@ -27,9 +27,9 @@ test("the admin menu is grouped into sections, and finds a page by an everyday w
   await care.click();
   await expect(menu.getByRole("link", { name: "Sickbay", exact: true })).toBeVisible();
 
-  // "fees" is not a page name, but it finds Finance.
+  // "fees" is not a page name, but it finds Bursary.
   await menu.getByLabel("Find a page").fill("fees");
-  await menu.getByRole("link", { name: "Finance", exact: true }).click();
+  await menu.getByRole("link", { name: "Bursary", exact: true }).click();
   await expect(page).toHaveURL(/\/finance\/dashboard/);
 
   await admin.context.close();

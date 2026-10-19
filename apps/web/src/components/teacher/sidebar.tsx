@@ -53,19 +53,19 @@ const BASE_ITEMS: NavItem[] = [
   { label: "Homework", href: "/teacher/homework", icon: BookMarked, group: "my-classes", enabled: true },
   // Phase 9 / CP2.2 — incidents involving more than one student. A single
   // child's record stays on their page in Classes.
-  { label: "Behaviour", href: "/teacher/behaviour", icon: ShieldAlert, group: "my-classes", enabled: true },
+  { label: "Behaviour & discipline", href: "/teacher/behaviour", icon: ShieldAlert, group: "my-classes", enabled: true },
   // Phase 5 / Slice 2 — lesson plan generator. Unconditional: unlike subject
   // attendance it needs no per-school opt-in, and unlike gradebook/report
   // cards it needs no prior data, so it is usable by every school from day one.
-  { label: "Lesson plans", href: "/teacher/lesson-plans", icon: Sparkles, group: "lessons", enabled: true },
+  { label: "Lesson notes", href: "/teacher/lesson-plans", icon: Sparkles, group: "lessons", enabled: true },
   // Phase 7 / CP2 — the curriculum library that grounds lesson plans. Sits
   // directly beneath "Lesson plans" because that is the only thing it feeds:
   // its whole purpose is to make the item above it produce better output, and
   // separating them would leave a teacher wondering what it is for.
-  { label: "Curriculum", href: "/teacher/curriculum", icon: Library, group: "lessons", enabled: true },
+  { label: "Scheme of work", href: "/teacher/curriculum", icon: Library, group: "lessons", enabled: true },
   // Scores and results, first in the "Exams & results" family (nav-groups.ts).
   { label: "Gradebook", href: "/teacher/gradebook", icon: ClipboardList, group: "results", enabled: true },
-  { label: "Report Cards", href: "/teacher/report-cards", icon: FileText, group: "results", enabled: true },
+  { label: "Report cards", href: "/teacher/report-cards", icon: FileText, group: "results", enabled: true },
   // Phase 8c / CP5b (docs/modules/phase-8.md §22.2) — exam questions for the
   // subjects this teacher teaches. Grounded in the same curriculum as above.
   { label: "Question bank", href: "/teacher/question-bank", icon: FileQuestion, group: "results", enabled: true },
@@ -74,7 +74,7 @@ const BASE_ITEMS: NavItem[] = [
   // Phase 8c / CP5c (§22.3) — papers set from the approved questions above.
   { label: "Exam papers", href: "/teacher/exam-papers", icon: ScrollText, group: "results", enabled: true },
   // Online exams (CBT, docs/modules/cbt.md) — a final paper sat in the lab.
-  { label: "Online exams", href: "/teacher/cbt", icon: MonitorCheck, group: "results", enabled: true },
+  { label: "CBT exams", href: "/teacher/cbt", icon: MonitorCheck, group: "results", enabled: true },
   // Phase 8 / CP1 — read-only school calendar (docs/modules/phase-8.md §15).
   { label: "Calendar", href: "/teacher/calendar", icon: CalendarDays, group: "school", enabled: true },
   // Phase 8 / CP4 (docs/modules/phase-8.md §18 D37): own lessons + form-class grids.

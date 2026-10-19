@@ -8,9 +8,10 @@ import { NAV_ITEMS, type NavItem } from "./nav-items";
 // page you are on is lit exactly once.
 
 describe("admin menu families", () => {
-  it("puts every admin page in a family, except Dashboard and My profile", () => {
+  it("puts every admin page in a family, except Dashboard, Bursary and My profile", () => {
+    const alone = ["/dashboard", "/finance/dashboard", "/settings/profile"];
     for (const item of NAV_ITEMS) {
-      if (item.href === "/dashboard" || item.href === "/settings/profile") expect(item.group).toBeUndefined();
+      if (alone.includes(item.href)) expect(item.group).toBeUndefined();
       else expect(item.group, item.label).toBeDefined();
     }
   });
@@ -20,17 +21,19 @@ describe("admin menu families", () => {
     expect(blocks[0]).toMatchObject({ kind: "item", item: { href: "/dashboard" } });
     const sections = blocks.filter((b) => b.kind === "group").map((b) => b.label);
     expect(sections).toEqual([
-      "People",
-      "Teaching",
-      "Exams & results",
-      "Student care",
-      "School services",
-      "Messages & events",
-      "Reports & insights",
+      "Students",
+      "Academics",
+      "Examinations & results",
+      "Student welfare",
+      "Facilities",
+      "Communication",
+      "Reports",
       "School setup",
     ]);
-    // Money holds one page (Finance has its own tabs), so it is not a section.
+    // Bursary (the Finance pages, which have their own tabs) and Staff (one
+    // page until Staff ID cards join it) stand alone.
     expect(blocks).toContainEqual({ kind: "item", item: expect.objectContaining({ href: "/finance/dashboard" }) });
+    expect(blocks).toContainEqual({ kind: "item", item: expect.objectContaining({ href: "/staff" }) });
   });
 
   it("keeps every page reachable: each one is in exactly one block", () => {
@@ -54,11 +57,12 @@ describe("admin menu families", () => {
 
   it("finds pages by everyday words as well as their names", () => {
     const find = (q: string) => NAV_ITEMS.filter((i) => matchesNavSearch(i, q)).map((i) => i.label);
-    expect(find("fees")).toContain("Finance");
-    expect(find("parents")).toContain("Guardians");
-    expect(find("salary")).toContain("Finance");
+    expect(find("fees")).toContain("Bursary");
+    expect(find("finance")).toContain("Bursary");
+    expect(find("parents")).toContain("Parents & guardians");
+    expect(find("salary")).toContain("Bursary");
     expect(find("exeat")).toContain("Boarding");
-    expect(find("STUDENT CARE")).toEqual(["Behaviour", "Health", "Sickbay"]);
+    expect(find("STUDENT WELFARE")).toEqual(["Behaviour & discipline", "Health records", "Sickbay"]);
   });
 
   it("labels every family it uses", () => {

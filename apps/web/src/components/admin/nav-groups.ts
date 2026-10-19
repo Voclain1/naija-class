@@ -5,8 +5,7 @@ import type { NavItem } from "./nav-items";
 // non-technical user to navigate without getting stuck or lost").
 //
 // A family is what a member of staff would call the work, not how the code is
-// organised: the classes a pupil sits in, the money, the school's own
-// services. Each item names its family in nav-items.ts (`group`); NavList
+// organised: the students, the staff, the academics, the school's facilities. Each item names its family in nav-items.ts (`group`); NavList
 // (nav-list.tsx) folds them into sections that open and close.
 //
 // Rules the menu keeps, so a short menu never turns into a maze:
@@ -16,18 +15,20 @@ import type { NavItem } from "./nav-items";
 //     own, with nothing to open.
 //   * The section holding the page you are on is always open.
 export const NAV_GROUP_LABELS = {
-  people: "People",
-  teaching: "Teaching",
-  results: "Exams & results",
-  care: "Student care",
-  services: "School services",
-  money: "Money",
-  communication: "Messages & events",
-  reports: "Reports & insights",
+  // Names approved by the owner on 2026-10-19 (docs/modules/id-cards-and-store.md
+  // §1): students and staff apart, and the words a Nigerian school office uses.
+  students: "Students",
+  staff: "Staff",
+  academics: "Academics",
+  results: "Examinations & results",
+  welfare: "Student welfare",
+  facilities: "Facilities",
+  communication: "Communication",
+  reports: "Reports",
   setup: "School setup",
   // Teacher portal families.
   "my-classes": "My classes",
-  lessons: "Lessons",
+  lessons: "Lesson notes",
   school: "School",
 } as const;
 
