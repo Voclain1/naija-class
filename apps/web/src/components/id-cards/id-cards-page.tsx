@@ -218,7 +218,7 @@ export function IdCardsPage({ kind }: { kind: IdCardHolderKindDto }) {
           {kind === "STUDENT" ? "No students are enrolled in this class this term." : "No active staff yet."}
         </p>
       ) : (
-        <div className="overflow-x-auto rounded-md border">
+        <div className="relative overflow-x-auto rounded-md border">
           <table className="w-full text-sm">
             <thead className="bg-muted/40 text-left text-xs uppercase tracking-wide text-muted-foreground">
               <tr>
@@ -235,7 +235,11 @@ export function IdCardsPage({ kind }: { kind: IdCardHolderKindDto }) {
                 <th className="px-3 py-2">{copy.detailLabel}</th>
                 <th className="px-3 py-2">Photo</th>
                 <th className="px-3 py-2">Card</th>
-                {canIssue && <th className="px-3 py-2 sr-only">Actions</th>}
+                {canIssue && (
+                  <th className="px-3 py-2">
+                    <span className="sr-only">Actions</span>
+                  </th>
+                )}
               </tr>
             </thead>
             <tbody className="divide-y">

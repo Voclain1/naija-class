@@ -305,7 +305,7 @@ export default function InviteStaffPage() {
             />
             <p id="invite-salary-help" className="text-xs text-muted-foreground">
               Saved to their record when they accept, and filled in for you when you run payroll under
-              Finance → Payroll. You can change it later on their staff page.
+              Bursary → Payroll. You can change it later on their staff page.
             </p>
             {form.formState.errors.salary && (
               <p className="text-sm text-destructive">{form.formState.errors.salary.message}</p>

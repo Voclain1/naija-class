@@ -43,8 +43,8 @@ Only labels change: every address stays the same.
 ## 2. Photos (ID1)
 
 - Today `students.photo_url` is free text and staff have no photo. Both get a
-  real upload: a JPEG, PNG or WebP up to 5 MB, cropped to passport shape
-  (35 × 45) in the browser or the staff app.
+  real upload: any picture the browser or phone can open, cropped to passport
+  shape (35 × 45) there and sent as a JPEG of at most 5 MB.
 - Stored privately (`student-photo`, `staff-photo` storage keys, one object
   per person, extension-bearing like `school-logo`); shown through short-lived
   signed addresses. Wherever a student's photo already shows, the upload is
@@ -80,6 +80,75 @@ Only labels change: every address stays the same.
 - **Apps:** the student app and the staff app show the card on screen with its
   QR code.
 - **Permissions:** `id-card.read`, `id-card.issue`: owner and admin.
+
+## 3a. As built (ID1, 2026-10-19)
+
+**Menu.** As in §1, plus **Student ID cards** (`/id-cards/students`, Students
+section) and **Staff ID cards** (`/id-cards/staff`, Staff section), so Staff
+is now a two-page section. Old names stay as search words in **Find a page**
+("finance", "guardians", "lesson plans", "online exams" and so on).
+
+**Photos.**
+- Migration `20261113120000_people_photos`: `photo_uploaded_at` on `students`
+  and `users`. The old free-text `students.photo_url` stays, as the older
+  typed-in address; an uploaded photo wins wherever both exist.
+- Storage keys `student-photo` / `staff-photo`:
+  `schools/<id>/photos/{students|staff}/<id>.jpg`, one object per person,
+  overwritten in place.
+- The browser crops to 35 × 45 and encodes a 420 × 540 JPEG
+  (`apps/web/src/lib/photos/crop.ts`). The API takes JPEG only, by its first
+  bytes, at most 5 MB (`PHOTO_MAX_BYTES`).
+- Routes: `POST|DELETE /students/:id/photo` (student.update),
+  `POST /students/photo-urls` (student.read, up to 200 ids, one-hour links),
+  `POST|DELETE /users/:id/photo` (user.update, or yourself),
+  `POST|DELETE /users/me/photo`, `POST /users/photo-urls` (anyone's with
+  user.read, otherwise only your own). Audited as `student.photo.set|remove`
+  and `staff.photo.set|remove`.
+- `StudentDto`, `UserListItemDto` and the teacher roster carry `hasPhoto`;
+  avatars ask for links in one batch (`usePhotoUrls`).
+- Bulk upload: **Students → Photos** (`/students/photos`). Each file is named
+  by admission number (case ignored), cropped around its centre, and sent in
+  turn. Unmatched names are listed. Students who already have a photo are
+  skipped unless **Replace** is ticked.
+- Staff set their own photo under **My profile** (web) and on the staff
+  app's profile screen. The app crops with the picker's own editor, which is
+  passport-shaped on Android and square on iOS. The card fills its frame from
+  the centre.
+
+**ID cards.**
+- Migration `20261114120000_id_cards`: `id_cards`, FORCE RLS
+  `tenant_isolation`, one ACTIVE card per holder per session (partial unique
+  indexes), CHECKs on the holder and on status versus `ended_at`.
+  `id-card.read` and `id-card.issue` go to admin; the owner holds `*`.
+- Card numbers are `ID-<first year of the session>-<5-digit running count>`.
+  The count is per school, taken under a row lock on `schools`.
+- Routes: `GET /id-cards?kind=&classArmId=` and `POST /id-cards/print`
+  (id-card.read); `POST /id-cards/issue`, `/:id/cancel`, `/:id/reissue`
+  (id-card.issue, with a reason); `GET /id-cards/me` (any staff);
+  `GET /student-portal/me/id-card`; and the public
+  `GET /id-card-check/:token`, limited to 30 a minute per address.
+- Audited as `id-card.issue|cancel|reissue`. Reissue marks the old card
+  REPLACED, links it to the new one, and keeps the session.
+- QR code: `<portal>/id/<slug>.<card id>.<signature>`. The signature is a
+  22-character HMAC of the card id under `RESULT_PIN_HMAC_KEY`, labelled
+  `id-card:v1:` (`id-card-token.ts`). No SECURITY DEFINER function: the
+  school comes from its slug (`schools` has no RLS), and the card is read
+  under that school's GUC.
+- What the check shows: valid, expired (Lagos date after the session's end),
+  cancelled or replaced, plus the photo (a five-minute link), name, class or
+  role, school, session and card number. It does not show the admission
+  number.
+- Printing: `/id-cards/print`, in one of two layouts.
+  - **A4**: ten a page, two by five, with a dashed cut line. The backs sheet
+    is mirrored by row, so a long-edge double-sided print lines up.
+  - **Card printer**: one card per page at 85.6 × 54 mm.
+  - The QR is drawn in the browser (`react-qr-code`). People without a
+    photo are named, with a link, before printing.
+- Apps: the student app's **My ID card** screen and the staff profile show the
+  card with its QR, drawn with plain Views from `qrcode-generator`, a new
+  mobile dependency.
+- Optional fee: not a new mechanism. After a student's replacement, the page
+  points to the student's charges.
 
 ## 4. The Store (ST)
 

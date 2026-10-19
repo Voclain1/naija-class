@@ -22,6 +22,7 @@ describe("admin menu families", () => {
     const sections = blocks.filter((b) => b.kind === "group").map((b) => b.label);
     expect(sections).toEqual([
       "Students",
+      "Staff",
       "Academics",
       "Examinations & results",
       "Student welfare",
@@ -30,10 +31,11 @@ describe("admin menu families", () => {
       "Reports",
       "School setup",
     ]);
-    // Bursary (the Finance pages, which have their own tabs) and Staff (one
-    // page until Staff ID cards join it) stand alone.
+    // Bursary (the Finance pages, which have their own tabs) stands alone;
+    // Staff is a section now that Staff ID cards sit beside it.
     expect(blocks).toContainEqual({ kind: "item", item: expect.objectContaining({ href: "/finance/dashboard" }) });
-    expect(blocks).toContainEqual({ kind: "item", item: expect.objectContaining({ href: "/staff" }) });
+    const staff = blocks.find((b) => b.kind === "group" && b.label === "Staff");
+    expect(staff && staff.kind === "group" ? staff.items.map((i) => i.href) : []).toEqual(["/staff", "/id-cards/staff"]);
   });
 
   it("keeps every page reachable: each one is in exactly one block", () => {
